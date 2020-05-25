@@ -1,0 +1,2194 @@
+
+\documentstyle[12pt,epiman,chgbar]{book}
+
+\author{Thunderstone Software \\ Expansion Programs International, Inc.}
+
+\begin{document}
+
+\tableofcontents
+\chapter{Introduction}
+
+This document answers the most frequently asked  questions about
+Texis. It is intended for use by salespersons, support personnel and
+consultants.
+
+\chapter{Why Is This Technology Important?}
+
+\subsection{Why is Texis important?}
+
+Customers are demanding fully integrated systems that manage information -
+regardless of
+data source.  Data could be conventional structured data,
+text, graphics,
+images, video or sound.
+
+They want the ability to store, search, retrieve and view these data
+objects together in a single, integrated application and deploy that
+application over a variety of network topologies.
+
+\subsection{What does a Text Retrieval RDBMS provide?}
+
+An effective system provides the ability to store, manage
+and subsequently retrieve textual information.  The text can consist of
+complete documents, or be abstracts/bibliographies, email, notes,
+keywords, names, titles etc.  Documents can of course be multi-media
+made up of text, graphics, images, drawings, etc.
+
+A key requirement is that text can be placed into the system in an
+unstructured (free) format, i.e. the format of books, memos, etc.
+
+Another key requirement is that the user must be able to search and
+retrieve information based upon the content of documents (words), together
+with (and not solely on) conventional structured fields, e.g. document
+number date, author name.
+
+\subsection{Why is Thunderstone Corporation interested in an RDBMS?}
+
+The marketplace for internetworked information
+management/retrieval systems is
+rapidly expanding.  Texis represents a
+crucial part of the
+ information requirement by symmetrically merging
+relational data and full text retrieval.
+
+No other product can make this claim, and no integration of other products
+can easily replicate Texis functionality.
+
+\subsection{What is Texis' approach?}
+
+Texis' approach is to provide text retrieval capability, within the
+framework of a database management system.
+
+By providing this integrated approach two key benefits are obtained by
+users:
+
+(i) Required applications, containing both documents and structured data,
+can be generated effectively.
+
+(ii) All applications can be created, maintained and run in a common
+software environment.  This means that return on investment in software,
+staff training and support can be maximized.
+
+\subsection{What is the opportunity for Thunderstone?}
+
+By taking this unique approach we realize the following benefits:
+
+(i) It will expand the number of applications that customers can use
+Thunderstone products for.  This will generate significant product revenue for
+Texis, as well as leverage additional revenue from incremental
+product sales, consultancy and support fees.
+
+(ii)    The technology will be used in other Thunderstone products, e.g. CASE, Personnel,
+4GL Tools, and Office Automation, adding unique facilities to these
+important product areas.
+
+(iii)   We will provide a unique product to Thunderstone's Original Equipment
+Manufacturers (OEM's) and VAR's - making us more attractive to them.
+
+(iv) Thunderstone's consultancy operation can include a True database in
+all the applications we specify design and build for customers.
+
+(v) It confirms Thunderstone as the company with the best product
+portfolio for serving the ever growing Internet application market.
+
+(vi) It differentiates us greatly from our competitors.
+
+\chapter{Product Features}
+
+\section{General}
+
+\subsection{What is Texis?}
+
+Texis is a highly portable information retrieval and management product that
+fully integrates
+documents into strategic business applications, and deploys these applications
+over a variety of Intra/Inter-net topologies.
+
+\subsection{What does it do?}
+
+It enables both structured data and unstructured data to be stored and
+retrieved efficiently, so that ALL relevant information can be retrieved
+when required.
+
+The product provides you with the ability to:
+
+(i) Load documents or text fields into a TEXIS database, in several
+different ways from several sources, e.g.  HTML, WP systems, OCR., existing
+files, archive systems.  Or, alternatively leave your text within the
+operating system files in its native format.
+
+(ii) Index the text automatically, via several options, which enables the
+text to be searched and retrieved efficiently and in a totally flexible
+manner.
+
+(iii) Generate queries that will retrieve the relevant textual and
+structured information.
+
+(iv) Allow the retrieved information to be displayed in a chosen sequence
+onto a web browser, selected output device, or launch an application e.g.
+image viewer.
+
+(v) Maintain the information, automatically updating the text if desired.
+
+(vi) Provides usage audit and access control mechanisms.
+
+\subsection{What are the components of Texis?}
+
+Texis consists of:
+\begin{itemize}
+ \item  a powerful scripting language for creating Intra/Inter-net applications.
+
+ \item  utilities for maintenance of the text data dictionary
+
+ \item  utilities for text loading/indexing
+
+ \item  retrieval language (SQL with the addition of a sophisticated
+\verb`LIKE` clauses)
+
+ \item  various client interfaces for generation of user applications via
+third party 5GL tools.
+
+ \item  an ad hoc command language
+
+ \item  set of demonstration samples
+
+\end{itemize}
+
+\subsection{What are the software dependencies?}
+
+Unix, Windows NT/2000 for a server, and any web browser for a client.
+Client APIs are supported on the same platforms as the server.
+
+TCP/IP if operating in a client server environment.
+
+\subsection{Are there any hardware dependencies?}
+
+No.
+
+Texis is portable to all hardware environments that
+have the required software ported (see item above).
+
+\subsection{What additional functionalility does Texis provide over Metamorph and 3DB?}
+
+Texis provides a completely structured environment for management, control
+and dissemination of data around the core functionality of Metamorph.
+
+Texis provides the ability to create any application the user
+desires instead of accepting a single retrieval methodology.
+
+\subsection{What major performance improvements does Texis provide over Metamorph and 3DB?}
+
+Texis contains many technology advances that provide improved performance:
+\begin{itemize}
+\item Variable key size Btree's for word index storage which greatly
+reduce disk activity during searching and indexing.
+
+\item Improved index compression techniques which result in faster
+retrieval and lower overhead.
+
+\item The zero-latency index queue which dramatically reduces the
+time required to keep text indexes current.
+\end{itemize}
+
+\subsection{How have these terrific performance improvements been achieved?}
+
+Texis = 17 Years of experience + 7 Years development time + A ton of
+customer feedback.
+
+
+\subsection{With all this new technology and functionality in how
+compatible is it with Metamorph and 3DB?}
+
+Texis is 100 percent compatible with the existing Metamorph Query
+Language, API calls, and network interface.
+
+Texis represents the next generation of the 3DB product, and is not binary
+compatible with 3DB's databases.  However, we provide an an API layer over
+TEXIS which will fully emulate 3DB's functionality.
+
+\section{Text Storage}
+
+\subsection{How Is text stored in an Texis database?}
+
+Documents can be stored in a single field per record, or split into
+several fields within a Texis table structure.  These fields might be for
+example, author, title, abstract and the body of the text.  Also
+additional fields can be designed containing traditional structured data,
+for example numeric or date information.
+
+\subsection{What size of text database can Texis handle?}
+
+There is no limit to the size of a database (see also question 2.7).
+
+\subsection{What size of individual document can Texis handle?}
+
+Texis can handle documents of up to 2 Gigabytes each on all platforms,
+and on operating systems that support it, it can handle 64-bit files.
+
+\subsection{What is the index overhead}
+
+There are two different indexing schemes available, one has roughly
+10-15\% overhead, and the other has roughly 40\%.
+
+\subsection{How fast can it create an index?}
+
+Texis can index text data at around 2 Gigabytes / Hour on a 200MHz Pentium Pro.
+Actual index times will vary with the number of documents and their average size.
+
+\subsection{Can there be multiple text columns per text table?}
+
+Yes
+
+Unlimited columns may be present in any table, each one defined to
+be of the available data types.
+
+\subsection{Can the text be compressed to reduce storage requirements?}
+
+Text may be stored compressed, but we don't recommend this practice.
+The decompression can cause delays and increases server load
+when a users want to view documents.
+
+\subsection{Do all documents need to be stored in Texis tables?}
+
+Documents, either formatted or not, do not have to be stored in Texis
+tables.  Applications may be created where the text remains outside the
+Texis database.  The Texis environment is used to provide the required
+security and control of the text indexes and application.  This
+functionality is provided through the INDIRECT data type - with pointers
+in the field relating to where the documents are stored externally.  Texis
+supports operating system files (which could have been created from CDROM
+or optical disks) and word processor files.
+
+There are no changes required to run a client application with external
+documents.  Also full text retrieval functionality is available
+to external text, e.g. indexing, searching, display, editing.
+
+Retrieval times are faster however when full-text is actually stored in
+a Texis table.
+
+\subsection{Can we store additional information alongside the text?}
+Yes
+
+Structured data can be stored alongside the text in a Texis table in the
+usual way.  It can either exist on the database already or be loaded as
+part of the text load operation.
+
+\subsection{Can we work with compound documents that contain text, data and
+ images?}
+
+Yes
+
+Text and data of any type can be stored in the same Texis table.  Compound
+documents created by say, MS Word or WordPerfect, that contain both text
+and graphics
+ can also be managed.  The lexical 'filter' will ignore graphic
+information
+and other non-text content as it indexes the files.
+
+\subsection{How do we get text into the database?}
+
+Texis provides several utilities for loading/indexing data.  Timport
+(Texis import) program is the most common method. It also supports
+ODBC, XBASE/dBase file import, and delimited text.
+
+\subsection{Where can it originate from?}
+
+Text can be generated from a range of sources - word processing files,
+OCR, electronic mail, existing Texis tables, etc. and is loaded onto the
+database in its original format.
+
+\subsection{Are facilities for dumping and loading data supplied with the
+product?}
+
+Yes
+
+Comprehensive utilities are supplied that enable a wide range of options
+for handling text and structured data.
+
+\section{Indexing}
+
+\subsection{What indexing strategy does Texis provide?}
+
+Texis has two main indexing strategies available.
+It has a coarse-grained inverted index method, which provides
+the benefits of both speed for many queries and index compactness.
+
+The second strategy is a complete inversion, which provides improved
+performance for many searches at the cost of a slightly larger index.
+
+\subsection{What is a Text Index?}
+
+A Text Index is a special indexing facility which enables efficient
+retrieval of text information.
+ Text indexes are not natively available in
+any other RDBMS.
+
+See index Schema diagram.
+
+\subsection{Why is the Text Index important?}
+
+Text retrieval is based on the identification of individual words or
+phrases within natural language.  If no index was implemented, the whole
+of the document file would have to be scanned, looking for the words and
+phrases of the query.  This scan would have to be repeated for each user
+search request and the search time would increase linearly with the text
+database size and may become impracticable.
+
+\subsection{What indexing utilities are supplied?}
+
+To index a text field of any type you use a SQL {\tt CREATE INDEX} statement.
+
+There is a background utility program that will monitor the tables within
+a database to see if the indexes are in need of maintenance. This utility
+operates on a per index basis using both size change and time as
+controlling parameters.
+(See CHKIND).
+
+At no time is the user query results affected by the state of the index.
+Texis will always provide the same results without regard to index status.
+
+\subsection{Is there one index per application or table or database?}
+
+Each text field may have its own index and index parameters.  These parameters
+include:  index update time rate, index update size rate, and the lexical
+'filter' that applies to that field.
+
+Text indexes may also be created on Virtual Fields which are logically created
+combinations of existing fields.
+
+\subsection{Is the indexing separate from Texis and where is the resultant text index
+held?}
+
+Text indexing is performed by Texis and the text indexes themselves
+are always stored within the Texis database (the same as any other field
+type).
+
+You may direct Texis to place index files on separate physical devices
+if desired. This is usually done to increase performance.
+
+\subsection{How are non-text objects indexed, e.g. graphical images?}
+
+Through a combination of 'structured data' attributes, such as Creation
+date, Customer name, possible reference number PLUS a textual description
+of the object, or on text that has been generated alongside the object, as
+say, part of an article containing both text and graphics (compound
+documents).
+
+\subsection{Where are the indexes for external documents?}
+
+External documents are logically part of the text table, even though they
+are physically outside.  Therefore they are indexed in the same way as all
+other documents, with the index being held within the database for
+security and integrity.
+
+\subsection{Is there an overhead in space utilization?}
+
+Overhead for a coarse-grained text index will range between 7\% and 25\% of
+the size of the data to which it refers.  The average overhead tends to
+be 15%.
+
+The overhead for a fully inverted index will range between 20\% and 60\%,
+depending on the nature of the text.
+The average overhead is about 40% overhead.
+
+\subsection{Is Texis case sensitive?}
+
+Not by default, but users may perform case sensitive queries on any
+text field if they wish.
+
+\subsection{Can the wordlist be viewed?}
+
+Yes, a utility for viewing the contents of a word index is provided.
+
+\subsection{Can the wordlist be modified?}
+
+No, it is an index and it would be inappropriate to perform modifications
+directly to it.
+
+The lexical 'filter' provides mechanisms for controlling the content of
+the words within an index.
+
+\subsection{Do you supply a STOP LIST and can it be modified?}
+
+Yes
+
+We supply a list of about 150 words with the software.  It is stored in a
+master profile and can be modified.
+
+\subsection{In what languages do you provide the stop list?}
+
+The stop list provided with the software is in English.  Users
+may redefine this list for other languages if desired.
+
+\subsection{Do you control suffixes of words in the index?}
+
+The index will contain the full form of every word.  Morpheme processing
+(word form changing) is performed at query time to allow a user to find
+and validate the differing versions of the same word.
+
+\subsection{Does Texis support automatic reindexing?}
+
+Yes.
+
+Texis supports both timed and incremental reindexing. Details on
+indexing may be found under the Text Maintenance section.
+
+\section{Document Retrieval}
+
+\subsection{Is the Retrieval Language based upon SQL?}
+
+Yes
+
+Texis is based on the industry standard SQL language.  To do searching on
+text fields we have extended SQL by adding a new \verb`LIKE` clause.  This new
+clause provides the full power of the Metamorph search within the
+database environment.
+
+\subsection{Is this as powerful as other text retrieval software?}
+
+Even more so, because the full SQL language, together with the text
+content searching extensions, can be used in the same query.
+
+Texis doesn't just rely on one retrieval method. It currently supports
+five different retrieval algorithms which may be used individually
+or in combination.
+
+\subsection{Are the extensions to SQL proprietary?}
+
+Yes, at the moment, since there are no defined standards for such
+extensions to SQL.
+
+\subsection{How has 'extended SQL' been extended?}
+
+The extended SQL has an added \verb`LIKE` clause that defines the text to be
+searched for within the document set.  These search conditions have a rich
+functionality that includes truncation, wild cards, proximity fuzzy
+matching, saved query expressions and a wide range of concept search
+facilities.  All of these can be used with standard Boolean logic to build
+up comprehensive topics.
+
+\subsection{How complicated is the extended SQL?}
+
+About the same as SQL.  Simple queries could be written by end users, but
+in general you would develop an application that shields end users from
+the language.
+
+\subsection{Can Natural Language queries be used as input?}
+
+Natural language queries may be used inside a \verb`LIKE` clause to match against
+the content of a field.  However, putting in a query of the form:  "Show
+me all the consultants who know about Texis RDBMS and make less than
+\$50,000." cannot be handled.  This would require extensions via
+third-party products such as QandA or EasyTalk that generate SQL from
+english.
+
+\subsection{What are the options then for generating queries?}
+
+There are several Options:
+\begin{itemize}
+ \item  Using Texis Webscript from a Web browser.
+
+ \item  Use any Windows ODBC client package.  (like:  Powerbuilder,
+         Microsoft Access, Visual Basic..)
+
+ \item  Use a  C-based application and invoke supplied C function calls.
+
+ \item  Query via the TSQL command line application.
+\end{itemize}
+\subsection{Can we search on 'noise' words?}
+
+Yes
+
+Phrase searching and proximity will take account of noise words, so you can
+search on such phrases as 'United Sates of America' or 'state of the art'.
+
+\subsection{Can we do Boolean searches?}
+
+Yes, it can do full Boolean searches based on SQL.
+
+\subsection{Can we search on numbers or dates?}
+
+Yes
+
+Any quantity, range, date, or pattern may be located within a text field
+through the use of the features provided by the Metamorph search.  Numbers
+and dates stored within fields may be located with traditional SQL.
+
+\subsection{Can we use wildcard searches?}
+
+Yes:
+\begin{itemize}
+ \item        word* Anything beginning with word (forward truncation)
+ \item        w*d Anything ending in 'd' and beginning with 'w'
+ \item        w*d*f Multiple wildcards.
+ \item        Use the Reqular Expression matcher for more complex items
+\end{itemize}
+\subsection{Do you have a Thesaurus?}
+
+Texis comes with a 250,000 word association thesaurus.  Add to that its
+ability to derive word forms and its vocabulary is huge.  The provided
+thesuarus contains only commonly used English.  Industry specific terms,
+phrases, and acronyms may be added by the user.
+
+\subsection{What relationships are allowed?}
+
+Texis allows true thesaural and synonym relationships. The concepts that can
+be used in a query to expand the search include:
+\begin{itemize}
+ \item        link to other thesauri
+
+ \item        synonyms
+
+ \item        related terms
+
+ \item        saved macro expressions
+
+ \item        rules of inclusion and exclusion
+\end{itemize}
+\section{The Thesuarus}
+
+\subsection{Do the thesaural relationships conform to any standard?}
+
+Yes
+
+It includes a full implementation of the ISO 2788 standard for Thesaurus and
+Synonym Relationships.
+
+\subsection{Can we import/export conceptual definitions across databases?}
+
+Yes
+
+Forms-based interactive browsing and maintenance of the 'concepts'
+database is provided, together with dump, load and remove facilities (via
+utilities).
+
+\subsection{Can an independently-supplied thesaurus handler be used in conjunction with
+Texis?}
+
+No
+
+However if the thesaurus handler allows the unloading of its data, then
+this data could be loaded into the Texis thesaurus management system.
+
+        Note: There may need to be some data format conversion.
+
+\section{Search and Retrieval}
+
+
+\subsection{What is fuzzy matching?}
+
+Fuzzy matching is the searching for words that are 'similar' to the search term. It is
+used to compensate for errors in data entry and phonetics.
+
+\subsection{How is fuzzy matching implemented?}
+
+Texis uses a proprietary Thunderstone algorithm that generates a
+similarity measure between any two words or patterns. This measure
+is expresses as a percentage of "closeness" to the users input.
+
+\subsection{Do we have to view all the documents retrieved by a query?}
+
+No
+
+The queries are ordinary select statements, so you can choose which
+fields to see.  If one of these fields is a key to the table it can
+later be used to retrieve the desired document.  This allows an
+application to build a 'Hitlist' that allows you to decide which
+documents you are interested in.
+
+\subsection{Can we browse the database as well as the hitlist?}
+
+Yes
+
+At any time the application can switch from hitlist browse to database
+browse mode, and visa versa.
+
+\subsection{Is the hitlist available for other application processes?}
+
+Yes.
+
+The hitlist is simply the result set from the query.  The application
+that executed the query can do whatever it wants with the information.
+
+\subsection{Can Texis do relevance ranking of retrieved documents?}
+
+Yes.  It is possible to have Texis return the result set ordered by
+relevance, as well as produce a rank associated with the document.
+Many controls are provided to tune the ranking to your needs.
+
+\subsection{After a search can the resulting text be highlighted?}
+
+Yes
+
+Texis Webscript has all the functionality builtin to highlight text.
+
+The data specifying the location and size of the match is
+available to the application program via the APIs, to display the hit
+highlighted.
+
+\subsection{Having done one query, I wish to search on a more limited range.  Can
+I do this without re-executing the entire query?}
+
+Absolutely!
+
+The results of a query can be saved into a temporary table, and then this
+temporary table searched in a more refined manner.
+
+\subsection{What is User Profiling and can Texis do it?}
+
+User Profiling (sometimes called Automated Message Handling (AMHS) or
+Selective Dissemination of Information (SDl) in Europe) is the ability to
+store predefined queries and execute them automatically against new
+information in the database.  Texis can store queries under users - so an
+application could be developed to periodically run them against the
+database, or the insertion of the data can fire a trigger to perform the
+dissemination.  This works well with data in the form of 'real-time' data
+feeds (see question 5.1).
+
+\subsection{What is fuzzy matching?}
+
+Fuzzy matching is the searching for words that are 'similar' to the search term. It is
+used to compensate for errors in data entry and phonetics.
+
+\subsection{How is fuzzy matching implemented?}
+
+Texis uses a proprietary Thunderstone algorithm that generates a
+similarity measure between any two words or patterns. This measure
+is expresses as a percentage of "closeness" to the users input.
+
+
+\section{Text Maintenance}
+
+\subsection{Can we edit documents from our text retrieval application?}
+
+Yes
+
+Any operating system editor, word processor or desktop publishing system
+may be used providing that:
+\begin{itemize}
+ \item  for non-ASCii documents, there is a conversion
+filter
+
+ \item  the text retrieval application has been set up to call the
+appropriate application software
+\end{itemize}
+A chosen document is 'passed' to the editing software - which can be
+called from the text application.  At the end of editing control is passed
+back to the text application.
+
+Note:  The Zero Latency feature will handle the indexing of the revised
+text -  making it always current and available for searching.
+
+\subsection{Is the text index automatically updated after editing?}
+
+When control passes back to the application it will inform Texis that
+the text has changed.  This will be immediately noted in the index, so
+subsequent searches will work as expected.  A seperate maintenance
+program monitors the index to keep it in an efficient form.
+
+(See prior question)
+
+\subsection{Can documents be printed as well as displayed?}
+
+Yes
+
+This is handled in a manner similar to editing.
+
+\subsection{Is there an AUDIT trail facility?}
+
+Yes
+
+In that you can use the Texis DBMS facilities.
+
+\subsection{Can documents be deleted from the Texis system?}
+
+As documents are treated the same as any other record in Texis they can
+be deleted with a SQL \verb`DELETE` command.
+
+\subsection{Once physically deleted, are external documents accessible from the
+operating system and/or can they be reinstated within Texis?}
+
+The external documents are always accessible from the operating system -
+only the Texis record and index information are removed.  They can be
+reinstated by reloading this information into Texis and then indexing.
+
+\subsection{When maintaining text does the user come from the application or the
+word processor used to create the text?}
+
+The user is taken seamlessly from the application to the word processor
+used to create the text.  If this route is not taken then the data in the
+WP file might be 'out-of-step' with the text index used by the
+application!
+
+\section{External Data Sources}
+
+\subsection{Will it load formatted Word Processor (WP) files?}
+
+Texis currently supports about 100 different file formats.
+Documents with full WP format control characters can be loaded. Texis'
+lexical filter will reccognize the language content, and discard the
+control information.
+
+\subsection{How does Texis handle formatted WP files?}
+
+Documents with full WP format control characters are stored in an Texis
+table in their original format.
+
+\subsection{Can we use a WP directly on retrieved text?}
+
+A WP package can be used directly on the text when a document has been
+retrieved. The WP package would be launched from the application. Also a
+retrieved document could be placed in a standard file and then accessed by any
+appropriate WP system.
+
+\subsection{Can we interface to third party publishing packages like Interleaf, Ventura and
+PageMaker?}
+
+Yes
+
+In exactly the same way as word processor documents are handled.
+
+\subsection{Does Texis work with mass storage devices such as CD-ROM?}
+
+By definition, CDROM is read-only.  Thus the only use that can be made of
+it is as a SOURCE of data for Texis.  However there may be situations
+where data is distributed on CDROM, and we want to select certain data
+from it (using the retrieval system which is usually supplied with the
+disk).  This data could then be loaded into Texis in the normal way.
+
+The possible uses of CDROM are:
+\begin{itemize}
+ \item  a complete Texis database could be built on CDROM.  As a CDROM
+is typically slower than a hard disk, a corresponding reduction in
+retrieval rate will be seen.
+
+ \item  The files on a CDROM can be indexed by Texis as external
+documents.  Again the slower transfer rate must be taken into account.
+\end{itemize}
+
+\subsection{Can Texis handle structured documents?}
+
+Yes. By correctly defining the 'look' of the doument structure to Texis-import.
+
+\subsection{Do we support HTML/XML/SGML documents?}
+
+The Texis program Webinator provides full HTML 3.0 import support.
+XML/SGML tag / structure information may be described for use by Texis-import
+either with XQL or by regular expression.
+
+\subsection{Can we use spreadsheet information?}
+
+Yes, in the same way as word processing files.
+
+\subsection{Can we use PDF, Postscript and EPS?}
+
+Thunderstone supports Adobe Acrobat / PDF files directly on platforms
+where the Adobe toolkit is available.
+
+Postscript files may be imported by Texis. Certain postscript files may not be
+legible to the text index program however; it depends on the origin
+of the file.
+
+\section{Application Development}
+
+\subsection{How can customers generate their required solution?}
+
+Thunderstone's Texis Webscript is the best and fastest way to create
+Internet / Intranet Web aplications.
+
+Thunderstone provides a complete API that can be used to build
+applications using standard C.  These calls allow the easy embedding
+of SQL into C programs.
+
+Texis also supports ODBC, and provides an ODBC driver for Windows.
+The same ODBC call set is also available to developers on all
+platforms supported by Texis.
+
+\subsection{Can customers integrate documents into existing Texis applications?}
+
+Document storage and retrieval can be easily added to existing Web, ODBC
+and C-based applications.  It involves basically creating new tables
+and indexes.
+
+\subsection{Is ODBC the only API supported?}
+
+No.
+
+As well as supporting ODBC on all platforms we also provide our own
+proprietary 'C' APIs which are faster and simpler than ODBC for talking to
+Texis.
+
+\subsection{Is there support for Network Code Generator applications?}
+
+An NCG interface is supplied for use by Thunderstone customers to
+integrate into their other NCG applications.
+
+\subsection{Does Texis use Thunderstone's Metamorph API?}
+
+Yes
+
+You can use any of the normal metamorph API functions within a Texis
+application, although this is not generally required.  Texis does not
+however use the 3DB API.  In fact it is possible to implement the 3DB API
+using Texis.
+
+\subsection{Can Texis messages in an application be customized?}
+Yes
+
+Because the generated messages are passed to a function in the application
+which can analyze and modify them, and optionally display them.
+
+\subsection{What areas are covered by the API?}
+
+Both toolkits consist of over 50 user exits or function calls that can be
+classified into the following areas:
+\begin{itemize}
+ \item  Query Manipulation - creation and modification of the
+extended-SQL statement.
+
+ \item  Query Execution - performs the search against the database and
+optionally generates the result set.
+
+ \item  Result Set Control - builds the resulting results and provides
+functions to access the data with in the result set.
+
+ \item  Text Display/Printing - ability to determine where in the result
+set the hit occurred.
+
+ \item  Text Manipulation - provides the required updating capability,
+including the immediate updating of the text index in online mode.
+
+ \item  System Control - initialization and termination of sessions,
+saving of queries, and invoking of operating system commands.
+\end{itemize}
+\subsection{Is there a new API with this version?}
+
+Yes, Texis has it's own APIs, which are either standards (ODBC), or
+are modelled after the rest of the Thunderstone APIs.
+
+\subsection{Is a command language supplied?}
+
+Yes
+
+The command language used is SQL, with some added functions for loading
+text.  Almost all of the required interaction can be performed entirely
+within SQL.
+
+\section{Client/Server Issues}
+
+\subsection{Can Texis work in client/server mode?}
+
+Absolutely, this is the intented purpose of Texis!
+
+Because an NCG interface and an ODBC interface are provided the Texis
+application they will work seamlessly over a network.  Any programs
+written to the server level API will not work over a network.
+
+\subsection{How do we invoke Texis over a WAN?}
+
+Any WAN issue is handled by NCG or ODBC rather than Texis.
+
+\subsection{Does the document, if external, have to be in the domain of the
+database?}
+
+Yes, the documents must be accessible to the server, otherwise it is
+impossible for Texis to read them for the purpose of indexing them.
+
+\subsection{Does Texis have to be installed on both the client and the server?}
+
+Not if its Web Based.
+
+In client server mode the product is split into two distinct parts.
+The server and the client
+library.  The only part required to reside on the client side is the
+client library, which only provides access to Texis.
+
+\subsection{Where does the processing take place?}
+
+Query formulation, and text editing will occur at the client.  All
+indexing and query execution occur on the server.
+
+\subsection{Where are the text table indexes held?}
+
+Each table can have its own index and each index can reside on different
+physical devices.
+
+\section{Miscellaneous}
+
+\subsection{Will Texis work in a bitmapped environment?}
+
+Yes
+
+Since applications can run under ODBC then all environments that ODBC
+operates in are available to text retrieval applications.  Also any
+environment capable of calling a standard library can access Texis, so
+this opens up almost all environments.
+
+\subsection{Are hypertext links supported in the product?}
+
+Yes, there are a plethora of uses for hyperlinks within HTML environments
+using Texis Webscript.
+
+\subsection{What languages does this version work with?}
+
+The text can be in any language.  The definition of a word is completely
+flexible.  Currently the morpheme processing has been tuned to work best
+with English like suffixes and prefixes.
+
+\subsection{What levels of security exist for accessing data within an application?}
+
+All normal Texis access and security levels can be used.  In addition a
+user of a Texis application must be a registered user in the Text
+Dictionary (as well as in the Texis Dictionary).  Registered users have
+username/password combinations.  Also, individual document (row) security
+level could be easily coded in a 5GL application.
+
+\subsection{How does Texis handle images?}
+
+Texis stores, manages, and delivers these objects.
+
+The display of images would be via another application or a
+third party image system like a web browser, Visual-Basic, Powerbuilder,
+Diamondhead, or
+Microsoft Access.
+
+The index for image objects normally consists of precoded attributes,
+stored in the database.  If some text can be associated with an image, via
+data entry or the use of Optical Character Recognition (OCR) software,
+then a text index for the images can be created.
+
+\subsection{In what type of applications would you use Texis?}
+\begin{itemize}
+
+ \item        any kind of Web site application
+
+ \item        Integrated data application market
+
+ \item        Largescale Document Retrieval applications
+
+ \item        'Enterprise and wide' data-sharing market
+
+ \item        Personnel records; career development plans, organization skills register.
+
+ \item        Legal records; client history, caselaw.
+
+ \item        Project Management; activity tracking, contract management.
+
+ \item        Market research; competitive information, market analysis, demographic
+data.
+
+ \item        Company Information services; products, pricing, services, sales channels,
+customers, applications, policies.
+
+ \item        Materials and Services catalogues.
+
+ \item        Document tracking, drawings management.
+
+ \item        Bibliographics and Abstracts.
+
+ \item        Research databases (all research fields).
+
+ \item        Regulatory information.
+
+ \item        Help desks.
+\end{itemize}
+
+\subsection{Which are the key vertical markets where Texis can be used?}
+
+These are substantially the same as our installed base:
+\begin{itemize}
+ \item        Internet, Intranet - Texis has global apllicability here.
+
+ \item        Pharmaceuticals - largescale document retrieval - FDA drug submission.
+
+ \item        Energy - safety information, procedures, marketing and product data, project
+information.
+
+ \item        Legal - Texis will supplant Thunderstone's  already significant share of this vertical market.
+
+ \item        Utilities - need Texis for Regulatory control - especially Nuclear!
+
+ \item        Government - Military, Intelligence, and Police systems.
+\end{itemize}
+\subsection{Is it targeted at any particular industries?}
+
+No
+
+Texis can be used to create software solutions in all industries.  Our
+customers constantly come up with new and innovative applications.  ( In
+fact, they are better at it than we are.  )
+
+\subsection{How does the user benefit?}
+
+The ability to handle text (especially with structured data) means that
+new applications can now be undertaken.  The user has control and use of
+an important information resource - the written word.  We already have
+many customers who have gained significant competitive edge by harnessing
+the combination of text and structured data.
+
+
+\end{document}
+
+%
+%\subsection{In Version 1.1 the utilities did not have a good 'look and feel'. Has anything been
+%done to improve them?}
+%
+%You bet!
+%All maintenance and set-up utilities have been randwrillen using SQL*Forms 3.0
+%and Menu 5.0. They now look and work great! No more having to remember
+%those names ... STRRD(, SThTDU, SThDBA, STROIX, etc.
+%
+%
+%
+%
+%
+%
+%
+%
+%
+%
+%
+%
+%\chapter{Sales/Marketing}
+%
+%\subsection{What is the current status of Texis?}
+%
+%As at November 1st 1992, Texis has gone production and is available on two
+%platforms, Sun/Sparc and VAX/VMS. Also a production~uality porting kit is
+%available for all other Thunderstone porting groups. The latest porting kit, is a dual
+%interoperable release working with Texis Version 6.0 and Texis7.
+%
+%\subsection{What is the market for this product?}
+%
+%By integrating text retrieval functionality with DBMS and 4GL tools and by
+%providing an 'open' product which can be combined with other technologies such
+%as image or drawing systems - Orade has redefined the market. Now text retrieval
+%becomes an integrated component of every information application, rather than a
+%niche application for librarians. As such its market potential is huge and will
+%rapidly grow into a billion dollar market.
+%
+%We can now compete in:
+%
+% \item        Integrated data application market
+%
+% \item        Largescale Document Retrieval applications
+%
+% \item        'Enterpri sandwide' data-sharing market
+%
+%\subsection{Which main application area does it cover?}
+%
+%sQL*TextRetrieval is suitable for a very wide range of applications. Some example
+%application areas are listed below:
+%
+% \item        Personnel records; career development plans, organization skills register.
+%
+% \item        Legal records; client history, caselaw.
+%
+% \item        Project Management; activity tracking, contract management.
+%
+% \item        Market research; competitive information, market analysis, demographic
+%data.
+%
+% \item        Company Information services; products, pricing, services, sales channels,
+%customers, applications, policies.
+%
+% \item        Materials and Services catalogues.
+%
+% \item        Document tracking, drawings management.
+%
+% \item        Bibliographics and Abstracts.
+%
+% \item        Research databases (all research fields).
+%
+% \item        Regulatory information.
+%
+% \item        Help desks.
+%
+%\subsection{Is it targeted at any particular industries?}
+%
+%No
+%
+%Texis can be used to create software solutions in all industries.
+%
+%\subsection{Which are the key vertical markets where Texis can be used to develop
+%Thunderstone accounts?}
+%
+%There are already five key areas emerging:
+%
+% \item        Pharmaceuticals - largandscale document retrieval - FDA drug submission.
+%
+% \item        Energy - safety information, procedures, marketing and product data, project
+%information.
+%
+% \item        Legal - will help Thunderstone to gain a significant new share of this vertical market worldwide.
+%
+% \item        Utilities - need Texis for Regulatory control - especially Nuclear!
+%
+% \item        Government - 'Intelligence'/Police systerns.
+%
+%\subsection{What new words must I learn to talk about text systems?}
+%
+%Please see the glossary of terms at the end of this document.
+%
+%\subsection{What are the top selling points of Texis?}
+%
+%1.      Application Development Tool
+%
+%Texis is an application development tool that enhances the
+%Texis application environment by adding full function text retrieval
+%capabilities to the database. It combines the management of text and structured
+%data in an integrated system, thereby allowing organizations to create a much
+%richer set of applications.
+%
+%2.      A Flexible and Complete Approach
+%
+%Texis enhances an organization's development environment by
+%allowing any Thunderstone application to be tailored to a company's needs.
+%Centralized and distributed approaches can be used, augrnented by
+%easy-to-use ad hoc query capability to retrieve valuable information. This
+%offers a great deal of flexibility in how applications are created and who can
+%access the information.
+%
+%3.      Full Integration
+%
+%Texis is fully integrated with the Thunderstone Database Management
+%System. lt extends SQL, the industry-standard language for data handling. The
+%result is a comrnon language for storage and retrieval of structured data and
+%text, and coordination of multi-media both from within the database and on
+%any other file system.
+%
+%4.      Powerful Retrieval Options
+%
+%Comprehensive retrieval capabilities are an integral part of the system. By
+%extending the SQL language to include a simple CONTAINS clause, it enables
+%the user to easily retrieve data and text in the same query. Full Boolean logic,
+%complete word, phrase and fuzzy matching logic provide the options to get the
+%data that is needed. This improves productivity by delivering accurate, timely
+%and complete information.
+%
+%5.      Efficient Application Methods
+%
+%Applications can be created by using Thunderstone's 4th generation application tools
+%like SQL*Forms or C Language programs. Both provide all benefits of rapid
+%application development and the ability to change applications fast.
+%
+%
+%6.      Common Software Environment
+%
+%All applications can be aeated, maintained and run in a common software
+%environment, Texis. This equates to a high return on an organization's
+%investment in software, staff training and support.
+%
+%7.      Flexible End User Access
+%
+%SQL~extRetrieval and other Orade software allow the application access and
+%functionality to be tailored to the end user's needs. The end user interacts with
+%all data in a common way, using interfaces with a common 'look and feel'.
+%
+%8.      Efficient Organization Cf Data
+%
+%A sophisticated array index is the key to flexible fast retrieval of information.
+%Words and data can be organized and indexed based on the need within the
+%application. This option increases the efficiency of a search because it will
+%provide specific information requested by the user in the form that will be most
+%useful.
+%
+%9.      Concept (Topic) Searching
+%
+%Texis provides users with the ability to specify relationships with
+%the data to include synonyms, thesauri and alternative words. This allows them
+%to customize the data based on their particular business language. By
+%integrating concepts within the application, powerful options can be created
+%that define subjects and topics. ALL relevant information can now be retrieved.
+%
+%10.     Single Vendor/Competitive Price Point
+%
+%Texis is very competitively priced at 30% of the RDBMS. By
+%adding this valuandadded tool to the suite of development products, Thunderstone
+%delivers an RDBMS, 4th generation tools and text retrieval software from one
+%source.
+%
+%None of Thunderstone's major competitors can offer this combined functionality.
+%
+%\subsection{What types of applications are {\em not} suitable for Texis?}
+%
+%Texis is {\em not} aimed at the 'real-time' news feed market nor the CD-ROM
+%mastering process.
+%
+%\subsection{Is this version going to be marketed broadly?}
+%
+%Yes, it will be marketed in most of the 92 countries Thunderstone sells and supports its
+%products in.
+%
+%\subsection{Are there any easy ways to sell Texis?}
+%
+%Yes
+%
+%The easiest way to sell your first copies will be to your customer base, where
+%existing Texis applications can be enhanced to include a textual component.
+%Most Texis applications fall into this category though obvious end-users
+%will be:
+%
+% \item        Information officers/lnformation Resources Departments.
+%
+% \item        Commerdal /Contracts Executives.
+%
+% \item        Project Managers.
+%
+% \item        Marketing Departments.
+%
+% \item        Service Departments (especially computer departments).
+%
+% \item        Human Resource / Personnel Executives.
+%
+%
+%\subsection{What should I focus on when selllng at departmental level?}
+%
+%The typical sale at departmental level is to an MIS or project manager. The key
+%selling point to these decision makers is integration:
+%
+% \item        integration management of data and documents
+%
+% \item        one universal' query language
+%
+% \item        integrated CASE and development tools
+%
+% \item        support for integrating applications such as word processors
+%
+%\subsection{What should I focus on when selling at executive level?}
+%
+%Texis can be sold effectively at executive level by focussing on the
+%strategic uses of documents as part of enterpris~wide information systems and on
+%the high costs of not having a document management strategy. Sales at this level
+%should stress that a large percentage of important corporate information is locked
+%up in paper-based or proprietary electronic filing systems, but that
+%Texis can provide ways of unlocking that information and integrating
+%it with all other corporate data.
+%
+%\subsection{How can it leverage other sales?}
+%
+%By selling Texis the customer can expand his applications - which in
+%turn will lead to more copies of Texis and tools. Also with many sales it has
+%been possible to sell consultancy to design and implement a complete solution.
+%
+%\subsection{What is a typical sales cycle?}
+%
+%Since initial sales would be to existing Texis users the cycle could be very short
+%- a matter of weeks, provided the customer has identified an application.
+%
+%\subsection{How many customers do you have currently?}
+%
+%Over 300 customers bought Version 1.1, comprising 450 copies. Texis has just
+%really started to be sold.
+%
+%\subsection{What kinds of customers have purchased the product so far?}
+%
+%Texis customers typically tend to be chemical companies, police and
+%intelligence forces, legal firms and departments.
+%
+%A partial customer list and active references can be obtained by emailing
+%AJEFFRIE.UK, or your local marketing contact.
+%
+%\subsection{What are customers doing with the product?}
+%
+%The most common use is to manage large collections of word processor documents.
+%Other common categories are imaging and managing paper flow.
+%
+%\subsection{Who inside a company will use this product?}
+%
+%Developers who create document management, workflow and imaging
+%applications. The users of the application may be anyone: secretaries, attorneys,
+%managers, clerks, research scientists, etc.
+%
+%\subsection{Has anyone bought this who did not have an Texis database?}
+%
+%Yes. An increasing number of users select Thunderstone because of Texis and
+%buy the database as a requirement.
+%
+%\subsection{How does the user benefit?}
+%
+%The ability to handle text (especially with structured data) means that new
+%applications can now be undertaken. The user has control and use of an important
+%information resource - the written word. We already have many customers who
+%have gained significant competitive edge by harnessing the combination of text and
+%structured data.
+%
+%\subsection{How is the product priced?}
+%
+%Each individual country is responsible for pridng. The recommended price i~ 3()~
+%of Texis kernel or equivalent single-user price. Please check with your local
+%marketing group.
+%
+%\subsection{Has the price been increased over Version 1.1?}
+%
+%No
+%
+%The price of Texis is the same. Customers who have a maintenance
+%contract for Version 1.1 receive a free upgrade.
+%
+%\subsection{How will my customers be supported?}
+%
+%Your customers will be supported through the normal Thunderstone support channels.
+%
+%\subsection{How will my customers be trained?}
+%
+%Your customers will be trained through the normal Thunderstone training channels. A
+%threeday customer training course is now available for your country to run.
+%
+%\subsection{How is it used in Consultancy?}
+%
+%Consultants can now define and build systems for customers that use document
+%storage and retrieval as part of a total solution. Several customers have already
+%used Thunderstone consultancy in this way It is a unique dimension that we can bring to a
+%sale.
+%
+%\subsection{What user documentation is available for the product?}
+%
+%        Documentation   Part No.
+%        Texis Developer's Guide     0363200792
+%        Texis Administrator's Guide 036~200792
+%        Texis Messages      03~200792
+%        Texis Installation Guide    Msg PIm INFO
+%
+%
+%\subsection{What Sales/Marketing collateral is currently available for the product?}
+%
+%The Sales/Marketing collateral currently available is:
+%
+%1.      Product Demos
+%
+%        Collateral      Part No.
+%        Texis V2.O  50836-0792
+%        Scripts for the Suite of Demonstration Applications
+%        This document completely describes the demos
+%        included on the distribution tape, along with
+%        instructions for installing them.
+%
+%
+%2.      Customer Collateral
+%
+%        Collateral      Part No.
+%        Texis Data Sheet    51~)o2#)792
+%        Texis V2.O Technical Overview       50674~792
+%        Thunderstone at Work - Centocor       52793#?692
+%        Research, legal, and document management applica-
+%        tions at a leading biotechnology firm.
+%        Thunderstone at Work - Baring Securities      506764)190
+%        Market research applications in the financial indus-
+%        tries.
+%        Thunderstone at Work - VACT   526674)592
+%        Legislation, case law, and regulation retrieval sys-
+%        tern used by judges of an Australian government
+%agency.
+%Thunderstone at Work - Thunderstone Worldwide Support       52245-1091
+%Help desk application implemented by the UK
+%Worldwide Support Center. Contains useful mea-
+%sures for quantifying the benefits of SQL*ThxtRetri~
+%val.
+%
+%
+%3.      Sales Aids for lnternal Thunderstone Use Only
+%
+%
+%        Collateral      Part No.
+%        Texis Questions and Answers 50108-1192
+%        Texis V2    506924)792
+%        Product Overview Presentation
+%This comprises a set of 35mm slides plus hardcopy
+%
+%
+%In addition to the items listed above, all of which are available from US shipping,
+%your local marketing contact for Texis may have information relating
+%to competitors, internal sales/technical presentations and customer lists and
+%references.
+%
+%\subsection{What demonstrations are available?}
+%
+%A suite of demonstration applications are shipped with Texis Version
+%2.0. They cover a wide range of Texis's features and include
+%applications for manufacturing, pharmaceuticals and legal systems. A full
+%demonstration script is available, Part No.508360792.
+%
+%For major customer presentations prototypes of the customer's application can be
+%created in a mafter of days by pr~sales consultants.
+%
+%\subsection{Are there any help lines available?}
+%
+%INFOSTh - sales/marketing questions
+%
+%HELPSTh - technical questions
+%
+%QUICKINFO - direct online information for browsing
+%
+%\subsection{Has the company really made a commitment to the product?}
+%
+%Yes. Texis is a tier 1 Thunderstone product, internally developed to corporate
+%standards.
+%
+%\subsection{Who develops SQL*TextRetrleval?}
+%
+%The product is developed by the Text Retrieval SBU. This group, part of Thunderstone's
+%Product Division, is located in Chertsey, England.
+%
+%\subsection{Are there any SBU contacts?}
+%
+%ALAN JEFFIcIES (AJEFFRlE.UK) - Worldwide Marketing Manager (ChertsQv, UK)
+%
+%ROGER FORD (RAFORD.UK) - Development Support Manager (Chertsey, UK)
+%
+%\subsection{What is our position with customers who want to store and retrieve both images
+%and textual documents?}
+%
+%More customers are using Imaging Technology to store large volumes of
+%documents. The problem is that images cannot be searched for content; only by
+%piHiefined attributes. This can be overcome by a combination of storing
+%documents in textual format (perhaps an abstract) with the full document in image
+%format. The text documents can then be used to search for the relevant documents
+%and then Image software/hardware can be used to retrieve and display the
+%required images. Several customers are using or building these ldnds of
+%applications.
+%
+%\subsection{Does Thunderstone provide any of this Image technology?}
+%
+%Not Today.
+%
+%However, oCSC (USA) has a strong capability as system integrators to build
+%applications for customers. Also, there are many good image systems from
+%third-parties. Most either use Texis for their attribute indexes or can be
+%easily linked via a pointer mechanism. Thunderstone has two OEM's - FILENET and
+%Oki-Data - who are strong in the Image marketplace (for more information call
+%the OEM group in World Headquarters).
+%
+%\subsection{Do you see Texis becoming part of the database?}
+%
+%Eventually, either as part of the database or more closely associated with the
+%database.
+%
+%
+%\chapter{The Competition}
+%
+%
+%\subsection{What broad areas do the competition fall into?}
+%
+%There are three main areas of competition for Texis in the
+%content-based retrieval (CBR) market:
+%
+% \item        relatively small companies with uWt~ate technology
+%
+% \item        systems and hardware vendors that use bought-in or licensed products
+%
+% \item        older vendors of host-based systems
+%
+%\subsection{Do these small companies pose a threat to us?}
+%
+%These companies tend to be very young or Start-up companies. On their own they
+%are too small to pose a threat to Thunderstone. However, they may pose a threat in the
+%future if VARs and hardware vendors partner with them for their technology,
+%leaving us out of the picture as suppliers.
+%
+%\subsection{What's the position of the systems and hardware vendors?}
+%
+%The current position of the systems and hardware vendors is as follows;
+%
+% \item        DEC has a joint development effort with Verity to provide the retrieval
+%capabilities Topic as a NAS service. It is also combining with the startup
+%company, Information Access systems (lAS) to incorporate similar
+%technology into Rdb.
+%
+% \item        Hewlett-Packard is coupled with reOuest from Harris and Paulson and Saros
+%Mezzanine library services. However, their long term strategic direction is to
+%develop retrieval capabilities based on technology licensed from Verity.
+%
+% \item        IBM has the old Stairs, which has been upgraded and renamed
+%BookManager. Their current development may be dropped in favour of a
+%purchased product.
+%
+% \item        NCR licenses technology from Fulcrum.
+%
+% \item        Sun Micro systems licenses technology from Fulcrum.
+%
+%It is believed that none of these companies is so totally 'locked-in' to other text
+%retrieval vendors that we cannot replace them.
+%
+%\subsection{Are the older vendors a threat to us?}
+%
+%Just the opposite in fact! Although these vendors have a large customer base, their
+%products are monolithic and closed in architecture terms. As these become obsolete,
+%Thunderstone can make use of this opportunity to increase its market share.
+%
+%\subsection{Are there no players from the RDBMS marketplace?}
+%
+%Not yet!
+%
+% \item        Sybase - are able to query long text fields directly, but this does not appear to
+%be any more than essentially a \verb`LIKE` function in the SQL statement. There are
+%certainly no concept search management facilities.
+%
+% \item        Informix - have some BLOB support but it does not compare against
+%Texis in its query fadlities.
+%
+% \item        Ingres - have announced they will support BLOBs and provide extensions to
+%SQL for this purpose in the next major release.
+%
+% \item        Interbase - have good support for BLOBs, but poor query facilities.
+%
+%
+%\subsection{Which companies are our main competitors?}
+%
+%At the moment the market is highly fragmented and is populated by numen~u~
+%small vendors, none of whom possess a commanding market share. Only two of
+%them, Verity and Fulcrum, have competitive products based on client/server
+%technology The current market share leader, Information Dimensions Inc (IDI),
+%dominates the mainframe sector, but up to now has not entered the LANbased
+%marketplace.
+%
+%\subsection{What is really unique about Texis?}
+%
+%There are three main differentiators for Texis:
+%
+%1.      Fully integrated with Texis DBMS and tools.
+%
+%2.      Uses an extension of the industry standard SQL language.
+%
+%3.      Uses 4GL application development tools for text retrieval applications.
+%
+%\subsection{What are our strengths against these competitors?}
+%
+%Texis and Thunderstone are strongly positioned against the rival products.
+%Thunderstone has the advantage of its relatively large size, existing RDBMS base and an
+%integrated development environment.
+%
+%\subsection{Do you compete directly with Verity and IDI?}
+%
+%Yes, these two companies are among our strongest rivals.
+%
+%\subsection{How does Thunderstone's approach compare against Verity?}
+%
+%Verity is young aggressive company that has excellent PR as well as product. They
+%license technology to other companies and sell high end tools rather than customer
+%applications. They have strong distribution capabilities from their close relationship
+%with DEC. Their weakness lies in viewing text retrieval as a departmental concern
+%rather than executive level, unlike Thunderstone which can provide corporatewide
+%solutions. Also they are too small to support large, global companies.
+%
+%\subsection{What is Verity's product like?}
+%
+%Their product, TOPIC, is a client/server system available on mid-range to desktop
+%platforms. It has strong integration with word processing packages and is used
+%extensively as a filtering agent for newswire and other on-line data sources.
+%
+%Queries are difficult to design effectively and build; its data access language is
+%proprietary. However, Topic does support the ranking of query results by
+%user-supplied weights. It also has gateways to Texis, Sybase, Ingres,
+%INFORMIX, and Rdb provided by SQL Bridge though the RDBMS interface
+%functionality is very weak.
+%
+%Compared to Texis it is very expensive.
+%
+%\subsection{How does Thunderstone's approach compare against IDI?}
+%
+%IDI is the acknowledged market leader. They dominate the mainframe arena but
+%have not yet entered the LAN-based systems market. (Though with their
+%acquisition of Zylab they may integrate the two product ranges to cover both
+%markets.) They supply high quality, high end systems. Their weakness is like
+%Verity's, in that they are too small to support large global companies.
+%
+%\subsection{What is IDI's product like?}
+%
+%Their product, BASISplus, uses a client/server architecture and has been ported to
+%several platforms, some Unix, VMS, MVS and VM. It is based on what IDI calls a
+%"relational" database (but actually a network database) which does not support
+%SQL and is not easily integrated with RDBMS applications. However their product
+%set is well integrated and has good support for word processors.
+%
+%Again compared to Texis, it is very expensive.
+%
+%\subsection{How does Thunderstone's approach compare to Fulcrum Technologies Inc.'s?}
+%
+%Fulcrum sells a text retrieval engine and an API. You can implement the
+%applications any way you want. However, you have to code the entire application
+%yourself in C, there are no development tools to help you. Also their product ha~ no
+%integration with RDBMS.
+%
+%\subsection{Who will be the competition irt the future?}
+%
+%Other DBMS vendors will develop or acquire a 'document storage and retrieval'
+%capability Also this technology will be increasingly part of fully functional
+%electronic document management offerings, from such companies as Lotus, Xerox,
+%Hewlett-Packard and Interleaf.
+%
+%\chapter{Standards, Thunderstone and Third Party Products}
+%
+%\subsection{Can it be used with external news services (e.g. INFO GLOBE, Dow Jones, etc.)?}
+%We do not target Texis at this application area.
+%
+%\subsection{How many ISV's (Independent Software Vendors) and VAR's do you have lined
+%up for this?}
+%
+%Several are already using early copies of Texis to
+%incorporate text retrieval facilities into their applications. Many more are interested
+%now that Texis has reached production.
+%
+%\subsection{Does the software support the following:}
+%
+%(i)     DCA (Document Content Architecture)
+%
+%(ii)    DDIF (Distributed Document interchange Format)
+%(iii) SGML (Standard Generalized Markup Language)
+%(iv) ODA (Office Document Architecture)
+%
+%(v)     CDA (Content Document Architecture)
+%
+%These are all ISO or industry standards for document markup and document
+%structure definition. These are supported in as much as we provide an interface for
+%customers to write their own filters for documents of those types.
+%
+%\subsection{How does it relate to Thunderstone BookViewer?}
+%
+%Essentially the two products are complementary.
+%
+%BookViewer is aimed at the display of multi-media documents. It can also navigate
+%through documents using hypertext techniques. Also once within a large document
+%you can search for words or phrases.
+%
+%However, it is not targeted to be used for searching and retrieving documents in
+%large databases, nor can it search on combined text and structured fields. So the two
+%products could be used together, where sQL*TextRetrieval could be used to find a
+%required set of documents and Thunderstone BookViewer could be used to display, browse
+%and navigate through the results set.
+%
+%\subsection{What other Thunderstone products does Texis work with?}
+%Tools
+%
+%Because sQL*TextRetrieval is integrated with Texis, most products that
+%work with Texis can be used with document applications. These include
+%SQL*Net, SQL*ReportWriter, SQL*Forms 3.0 and PRO*C.
+%
+%CASE
+%
+%CASE*Generator Texis for SQL*Forms/SQL*Menu will generate
+%applications with text retrieval functionality~ CASE*Dictionary Version 5.0 has
+%some embedded Texis technology.
+%
+%Personnel
+%
+%Texis has been built as an option to Thunderstone Personnel.
+%
+%\subsection{Is the ANSI SQL committee looking at text retrieval extensions?}
+%
+%Yes.
+%
+%ANSI has now become very active through the SQL3 committee. Thunderstone is very
+%active in providing its experiences and customer feedback concerning text
+%extensions.
+%
+%\subsection{What is the stance on SFQL?}
+%
+%SFQL superficially appears ver,' similar to Texis's extended SQL, but
+%SFQL has no connections with either SQL or RDBMS. Thunderstone's position is that
+%customers are best served by a single data specification language that can handle all
+%types of data, structured and uns~ructured, together in the same quefl'.
+%
+%\subsection{Can you use Thunderstone Card as a front end?}
+%
+%Not currently, but a development plan is in place to use it with Texis of
+%Texis in the future.
+%
+%\subsection{Is Texis designed for use with Texis7?}
+%
+%It works with both Texis Version 6.0 and Texis7.
+%
+%\subsection{Are there any Office Automation products coming out in the near future that
+%relate to this?}
+%
+%The first Office Automation product that will have Texis fully
+%integrated into it, will be Document Manager.
+%
+%\end{document}
+%
+%List of Questions
+%
+%1.      Why Is This Technology Important?
+%        1.1     Why is Text important to our customers?
+%        1.2     What does a Text Retrieval System provide?      3
+%        1.3     Why is Thunderstone Corporation interested in Text Retrieval? 3
+%        1.4     What is Thunderstone's approach?      3
+%        1.5     What is the opportunity for Thunderstone?     4
+%
+%
+%2.      Product Features
+%
+%        General         5
+%        2.1     What is sQL*TextRetrieval?      5
+%        2.2     What does it do?        5
+%        2.3     What are the components of Texis?   5
+%        2.4     What are the software dependencies?     5
+%        2.5     Are there any hardware dependencies?    5
+%        2.6     What additional functionality does Texis provide over Version 1.1?        6
+%        2.7     What major performance improvements does Texis offer over Version 1.1?    6
+%        2.8     How have these terrific performance improvements been achieved? 6
+%        2.9     With all this new technology and functionality in Texis, how compatible is it
+%                with Version 1.1?       7
+%
+%        Text    Storage 7
+%        2.10    How is text stored in an Texis database?       7
+%        2.11    What size of text database can Texis handle?      7
+%        2.12    What size of individual document can Texis handle?        7
+%        2.13    Can there be multiple text columns per text table?      7
+%        2.14    Can the text be compressed to reduce storage requirements?      7
+%        2.15    Does the tokenized text sit inside or outside the database?     7
+%        2.16    Do all documents need to be stored in Texis tables?    8
+%        2.17    Can we store additional information alongside the text? 8
+%        2.18    Can we work with compound documents that contain text, data and images? 8
+%        2.19    How do we get text into the database?   8
+%        2.20    Where can it originate from?    8
+%        2.21    Are facilities for dumping and loading data supplied with the product?  8
+%
+%        indexing                8
+%        2.22    What indexing strategy does Texis provide?  8
+%        2.23    What is a Text index?   8
+%        2.24    Why is the Text Index important?        9
+%        2.25    What indexing utilities are supplied?   9
+%        2.26    Is there one index per application or table or database?        9
+%        2.27    Is the indexing separate from Texis and where is the resultant text index held?        9
+%        2.28    How are non-text objects indexed, e.g. graphical images?        9
+%        2.29    Where are the indexes for external documents?   9
+%        2.30    Is there an overhead in space utilization?      9
+%        2.31    Is Texis case sensitive?    9
+%        2.32    Can the wordlist be viewed?     9
+%        2.33    Can the wordlist be modified?   9
+%        2.34    Do you supply a STOP LIST and can it be modified?       10
+%        2.35    In what languages do you provide the STOP LIST? 10
+%
+%
+%Coinpany Confidential
+%2.36    Do you control plurals of words in the index7   10
+%2.37    Does Texis support automatic randindexing7    10
+%
+%Document Retrieval              10
+%2.38    Is the Retrieval Language based upon SQL7       10
+%2.39    is this as powerful as the query capability in the database?    10
+%2A0     Are the extensions to SQL proprietary?  10
+%2.41    How has 'extended SQL' been extended7   10
+%2A2     How complicated is the extended SQL?    10
+%2A3     Can Natural Language queries be used as input7  10
+%2.44    What are the options then for generating queries7       11
+%2A5     Can we search on 'noise' words7 11
+%2A7     Can we search on numbers or dates7      11
+%2.48    Can we use wildcard searches7   11
+%2.49    Do you have a Thesaurus7        11
+%2.50    What relationships are allowed7 11
+%2.51    Do the thesaural relationships conform to any standard7 12
+%2.52    Can we import/export conceptual definitions across databases7   12
+%2.53    Can an independently-supplied thesaurus handler be used in conjunction
+%        with SQL~extRetrieval7  12
+%2.54    What is fuzzy matching? 12
+%2.55    How is fuzzy matching implemented7      12
+%2.56    Do we have to view all the documents retrieved by a query7      12
+%2.57    Can we browse the database as well as the hitlist7      12
+%2.58    is the hitlist available for other application processes?       12
+%2.59    Can Texis do relevance ranking of retrieved documents7      12
+%2.60    After a search can the resulting text be highlighted7   12
+%2.61    Havin done one query, I wish to search on a more limited range.
+%        Can I 0 this without ie~executing the entire query7     13
+%2.62    What is User Profiling and can Texis do it~ 13
+%
+%Text    Maintenance     13
+%2.63    Can we edit documents from our text retrieval application?      13
+%2.64    Is the text index automatically updated after editing7  13
+%2.65    Can documents be printed as well as displayed?  13
+%2.66    Is there an AUDIT trail facility7       13
+%2.67    Can documents be deleted from the Texis system7     14
+%2.68    Once physically deleted, are external documents accessible from the operating system
+%        and/or can they be reinstated within Texis7 14
+%2.69    When maintaining text does the user come from the application or the word processor
+%        used to create the text7        14
+%
+%External Data Sources           14
+%2.70    Will it load formatted Word Processor (WP) files7       14
+%2.71    How does Texis handle formatted WP files7   14
+%2.72    Can we use a WP directly on retrieved text7     14
+%2.73    Can we interface to third party publishing packages like Interleaf, Ventura
+%        and PageMaker7  14
+%2.74    Does Texis have any 'format managers' included in the product7      15
+%2.75    Does Texis work with mass storage devices such as CD-ROM7   15
+%2.76    Can Texis handle structured documents7      15
+%2.77    Do we support Standard Graphical Markup Language (SGML) documents7      15
+%2.78    Do you have a bridge to move from one word processor to another7        15
+%2.79    Hdw is word processor independence implemented? 15
+%2.80    Can we use spreadsheet information7     15
+%2.81    Can we use EPS (Encapsulated Post Script)7      15
+%
+%
+%2  SOL~extRetrieva1
+%        Application Development         16
+%        2.82    How can customers generate their required solution?     16
+%        2.83    Can customers integrate documents into existing Texis applications?    16
+%        2.84    Is PRO*C the only precompiler supported?        16
+%        2.85    Is there support for Application Foundation applications?       16
+%        2.86    Does Texis use Thunderstone's Adaptive User Interface (Toolkit)?  16
+%        2.87    Can Texis messages in a SQL*Forms application be customized?        16
+%        2.88    What areas are covered by the API?      16
+%        2.89    Is there a new API with this version?   17
+%        2.90    Is a command language supplied? 17
+%
+%        Client/Server Issues            17
+%        2.91    Can Texis work in client/server mode?       17
+%        2.92    How do we invoke Texis over a WAN?  17
+%        2.93    Does the document, if external, have to be in the domain of the database?       17
+%        2.94    Does Texis have to be installed on both the client and the server?  17
+%        2.95    Where does the processing take place?   17
+%        2.96    Where are the text table indexes held?  17
+%
+%        Miscellaneous           18
+%        2.97    Will Texis work in a bitmapped environment? 18
+%        2.98    Are hypertext links supported in the product?   18
+%        2.99    What languages does this version work with?     18
+%        2.100 What levels of security exist for accessing data within an application?           18
+%        2.101   In Version 1.1 the utilities did not have a good 'look and feel'.
+%                Has anything been done to improve them? 18
+%        2.102 How does Texis handle images?         18
+%
+%
+%3. Sales/Marketing
+%        3.1     What is the current status of sQL*TextRetrieval?        19
+%        3.2     What is the market for this product?    19
+%        3.3     Which main application area does it cover?      19
+%        3.4     Is it targeted at any particular industries?    19
+%        3.5     Which are the key vertical markets where Texis can be used to develop
+%                Thunderstone accounts?        20
+%        3.6     What new words must I learn to talk about text systems? 20
+%        3.7     What are the top selling points of Texis?   20
+%        3.8     What types of applications are {\em not} suitable for Texis?      21
+%        3.9     Is this version going to be marketed broadly?   21
+%        3.10    Are there any easy ways to sell sQL*TextRetrieval?      21
+%        3.11    What should I focus on when selling at departmental level?      22
+%        3.12    What should I focus on when selling at executive level7 22
+%        3.13    How can it leverage other sales?        22
+%        3.14    What is a typical sales cycle?  22
+%        3.15    How many customers do you have currently?       22
+%        3.16    What kinds of customers have purchased the product so far7      22
+%        3.17    What are customers doing with the product?      22
+%        3.18    Who inside a company will use this product?     22
+%        3.19    Has anyone bought this who did not have an Texis database?     22
+%        3.20    How does the user benefit?      22
+%        3.21    How is the product priced7      23
+%        3.22    Has the price been increased over Version 1.1~  23
+%        3.23    How will my customers be supported7     23
+%        3.24    How will my customers be trained7       23
+%
+%
+%        Company Confidential    3
+%        3.25    How is it used in Consultancy7  23
+%        3.26    What user documentation is available for the product7   23
+%        3.27    What Sales/Marketing collateral is currently available for the product7 23
+%        3.28    What demonstrations are available7      24
+%        3.29    Are there any help lines available7     24
+%        3.30    Has the company really made a commitment to the product7        24
+%        3.31    Who develops SQL~extRetrieval7  24
+%        3.32    Are there any SBU contacts7     25
+%        3.33    What is our osition with customers who want to store and retrieve both images
+%                and textual ocuments7   25
+%        3.34    Does Thunderstone provide any of this Image technology7       25
+%        3.35    Do you see SQL~extRetrieval becoming part of the database7      25
+%
+%
+%4.      The     Competition
+%        4.1     What broad areas do the competition fall into7  26
+%        4.2     Do these small companies pose a threat to us7   26
+%        4.3     What's the position of the systems and hardware vendors7        26
+%        4A      Are the older vendors a threat to us7   26
+%        4.5     Are there no players from the RDBMS marketplace7        26
+%        4.6     Which companies are our main competitors7       27
+%        4.7     What is really unique about sQL*TextRetrieval7  27
+%        4.8     What are our strengths against these competitors7       27
+%        4.9     Do you compete directly with Verity and 1D17    27
+%        4.10    How does Thunderstone's approach compare against Verity7      27
+%        4.11    What is Verity's product like7  27
+%        4.12    How does Thunderstone's approach compare against 1D17 27
+%        4.13    What is IDI's product like7     27
+%        4.14    How does Thunderstone's approach compare to Fulcrum Technologies Inc.'s7      28
+%        4.15    Who will be the competition in the future7      28
+%
+%5.      Standards, Thunderstone and Thfrd Party Products
+%        5.1     Can it be used with external news services (e.g. INFOGLOBE, Dow Jones, etc.)7    29
+%        5.2     How many ISVs (Independent Software Vendors) and VARSs do you have lined
+%                up for this7    29
+%        5.3     Does the software support the following:        29
+%        5A      How does it relate to Thunderstone BookViewer7        29
+%        5.5     What other Thunderstone products does Texis work with7    29
+%        5.6     Is the ANSI SQL committee looking at text retrieval extensions7 29
+%        5.7     What is the stance on SFQL7     30
+%        5.8     Can you use Thunderstone Card as a front end7 30
+%        5.9     Is Texis designed for use with Texis77   30
+%        5.10    Are there an Office Automation products coming out in the near future that
+%                relate to this  30
+%
+%
+%Glossary
+%
+%Automatic Document Abstracting  The use of      query is placed in the storage using the same
+%computer software, lexical tools, and expert systems    algorithms used to position the documents. The
+%to automatically create synopses or abstracts of        location of the query becomes a centre around which
+%documents. see also Document Abstract.  a retrieval sphere is formed. Documents that are
+%        within a spedfied distance to the query are retrieved
+%Boolean Operators  Used in search statements to as relevant.
+%combine search terms. Usual operators are {\tt AND}, {\tt OR}
+%and {\tt NOT}.  Concept-based Retrieval A textual search based
+%        on a concept rather than an exact word match. A
+%Breaking on a Predetermined Character  Use of a concept automatically defines a list of search terms,
+%character (or characters) to delimit text at word,      phrases, and rules. Accomplished at various levels of
+%sentence, paragraph, page or document level. See        sophistication through various tools and
+%also Lexical Rules.     methodologies (i.e. a synonym list, thesaurus, topic
+%        definitions, concept-based clustering). Also known
+%Broader Term  A term that represents a more     as concept searching.
+%general definition of another term. A thesaurus
+%operator that allows the tracking of broader terms.     Compound Document  A document that contains
+%Using Broader Term and Narrower Term operators, a       information in several formats: text, graphic, and
+%thesaurus can establish a definition hierarchy. See     image.
+%also Narrower Term.
+%        Cross-database Searching  Ability to search across
+%Browse on Index  Ability to search the index of a       more than one database in a single query. See also
+%text database for specific words or look through the    Concatenated.
+%entire index.
+%        Current Awareness  Ability of an application to
+%Clustering  A method for logically storing      automatically tell individual users about new
+%documents based on relationships between        information on the database that matches their
+%documents. Documents that are most relevant to one      personal predesigned selection criteria. See also
+%another are logically stored close together. See also   Selective Dissemination of Information.
+%Concept-based Clustering.
+%        Document  Any item, printed or otherwise, that is
+%Compound Term  An indexing term that can be     amenable to cataloguing and indexing. This
+%factorized morphologically into separate        definition refers not only to written and printed
+%components, each of which could be expressed, or        material in paper or microfilm versions (e.g. books,
+%reexpressed, as a noun that is capable of serving       diagrams, maps), but also to non-print media (e.g.
+%independently as an indexing term. See also     machin~readable records, films, sound recordings),
+%Multi-word Term.        and threedimensional objects or realizations
+%        (models) used as spedmens.
+%Concatenated  Joined together. Enables more than
+%one text database to be searched for the same query,    Document Abstract  A synopsis of a document's
+%with the results combined. See also Crossdatabase       content which highlights key concepts, significant
+%Searching.      data, and areas of interest in the document.
+%        Document abstracts are used as a form of document
+%Concept  A unit of thought. The semantic content of     management and retrieval by providing researchers
+%a concept can be reexpressed by a combination of        with condse insights into the full document library.
+%other and different concepts, which may vary from       The abstracting process has traditionally been
+%one language or culture to another.     performed manually. Recent advances in technology
+%        have made the automation of the process possible.
+%Concept-based Clustering A full text-retrieval  See also Automatic Document Abstracting.
+%search methodology based on document clustering.
+%Documents are logically stored in a virtual storage     Field-directed Searching  Ability to limit a search
+%area (clustering) based on document content and the     to a specified field (or fields); for example, author,
+%defined relationship of terms to subject matter. A      title, date. See also Limited Search by Field.
+%
+%
+%        Company Confidential    ~
+%Free Text Scanning A full text-retrieval search fixed-length identifier field values (i.e. author, title,
+%methodology that 'reads' the entire text database for   date). Also known as Image Processing.
+%each query submitted. Typically utilizes a Text Array
+%Processor (TAP) to fadlitate the text scarming  Index or Indexes An alphabetical or systematic
+%process.        listing of subjects which refers to the position of each
+%        subject in a document or collection of documents.
+%Free text Text presented to the application in an
+%unstructured format.    Indexing Term The representation of a concept in
+%        the form of either: a term derived from natural
+%Full-text Retrieval (Fin) A software or hardware        language, preferably a noun or a noun phrase, or a
+%process that provides the functionality to retrieve     classification symbol.
+%textual documents based on the words, phrases, or
+%concepts contained in the documents. Also known as      Indicative Text (ITh) Text that identifies and points
+%Text Information Management Systems and Text    to documents held elsewhere; for example, library
+%Retrieval Systems.      catalogues, bibliographies, abstracts.
+%
+%Full Text (FTX) Unabridged documents; that is, not      Internal Character Masking A character used to
+%bibliographies or abstracts.    mean 'any one' or 'contiguous set of characters'
+%        within a word or phrase. See also Wild Card.
+%
+%Go List List of all allowable terms in the index. See
+%also Pass list  Inverted Index An index created from an inversion
+%        of all the words contained in all of the documents in
+%
+%
+%History Can be used in a thesaurus for  a text database.
+%documenting meaning (or changes in meaning) of a
+%term.   Keywords Additional terms that can be added to
+%        document records and used in searching. Typically
+%
+%        these would be used for classification of documents
+%Hitlist An automatically generated list showing the     or to restrict the search vocabulary.
+%results of a search. It will display details of how
+%many occurrences (hits) of the query have been  Lemmatization Reduction of all words with the
+%found and in which documents.
+%same root to a single form. See also Stemming.
+%
+%Homograph One of two or more words spelled      Lexical Rules The rules whereby a stream of text is
+%alike but different in meaning, derivation or   broken down into tokens. See also Token.
+%pronunciation; for example, the noun conduct and
+%the verb conduct.       Limited Search by Field It is normal to be able to
+%
+%        search for the occurrence of a term or word in a
+%Homonym A class of words with more than one     specific field such as the field for name or the field
+%meaning to the same spelling. Homonyms subdivide        for title. See also Field-directed Searching.
+%into homographs and polysemes.
+%        Location List List of words pointing to where they
+%Hypermedia An extension of the hypertext        occur in the original document. See also Pointer File.
+%concept. Hypermedia supports the linking of
+%non-text nodes as well (i.e. images, graphics, audio,   Morpheme A component of a compound word or
+%and video).     term.
+%
+%Hypertext A text-retrieval search methodology   Multi-word Term Such as Hydrogen Chloride,
+%based on assodative memory process. Hypertext   where the combination of two or more words gives
+%organizes textual information into sections known as    rise to a new meaning, which should be entered in
+%nodes or chunks. The nodes can be linked together       the index. See also Compound Term.
+%via macros that are automatically built by the system,
+%based on user input.    Na~ower Term A term that represents a more
+%        focused definition of another term. A thesaurus
+%Imaging A method of electronic document operator that allows the tracking of narrower terms.
+%management in which documents are stored as     Using Broader Term and Narrower Term operators, a
+%bit-mapped representations or copies of the     thesaurus can establish a definition hierarchy. See
+%document. Imaging systems limit retrieval access to     also Broader Term.
+%
+%
+%
+%2  SQL~ThxtRetrieva1
+%Node Label  A 'dummy' term not assigned to      Posting  Individual entry in the pointer file
+%documents when indexing, but inserted into the  representing the occurrence of one entry, of a word in
+%systematic section of some types of thesauri to the original text.
+%indicate the logical basis on which a category has
+%been divided; sometimes known as a 'facet       Precision The measure of a text-retrieval system's
+%indicator'.     ability to deliver only the relevant documents to a
+%        user query. Precision is calculated as the ratio of
+%Non-preferred Term The synonym or       relevant documents retrieved to the total number of
+%quasi-synonym of a preferred term. A non-preferred      documents retrieved.
+%term is not assigned to documents, but is provided      Preferred Term A term used consistently when
+%as an entry point in a thesaurus or alphabetical
+%index, the user being directed by an instruction (e.g.  indexing to represent a given concept; sometimes
+%USE or SEE) to the appropriate preferred term;  known as a 'descriptor'. See also Use Term.
+%sometimes known as a non~escriptor'.    Proximity Searching  Searching for two words,
+%
+%        where the user specifies their relative location to each
+%Normalization A process that reduces all query  other; for example, words must be adjacent or within
+%
+%terms, including irregular forms of the word and        a given number of words of each other.
+%verb tenses, and document terms to their common
+%root word.      Query Language  Defined syntax for the
+%
+%Numerics Numbers ~9, represented as text        specification of queries. Language employed by the
+%strings, unless specified otherwise     user to specify search criteria.
+%        Range Searching  Searching for terms between
+%ODA/ODIF An architecture for describing specified values. Normally relates to numeric or
+%compound documents in such a way that they are  structured fields; for example, dates, ages.
+%readable by any system. ISO standard 8613.
+%        Recall The measure of a text-retrieval system's
+%Optical Character Recognition Often known as    ability to deliver all of the documents relevant to a
+%OCR, software used in conjunction with a scanner        user query. Recall is calculated as the ratio of the
+%which translates scanned textual images into    documents retrieved to the total number of relevant
+%ASCIl/EBCDlC text files.        documents available.
+%
+%Pass List List of all allowable terms in the index.     Related Term  A term that provides greater insight
+%See also Go List.       on another term, but is not synonymous or a
+%        broader/narrower definition of that term. Related
+%Pattern Recognition A full-text retrieval search        Terms can be tracked in a thesaurus using the
+%methodology in which the patterns created by the        Related Term operator.
+%groups of letters in the document text are stored and
+%indexed as bit vectors. User~ueries are processed       Relevancy ranking  Displaying retrieved
+%using the same pattern creation algorithms. The documents in descending order of the level to which
+%retrieval process looks for similarities between the    they are pertinent to the query statement.
+%patterns in the query and in the text.  Relation, Relationship Indication  Hierarchical
+%
+%Phonetic Searching A soundex facility.  relationship between terms in the thesaurus
+%        structure. The relationship is expressed in: preferred
+%
+%        term; non-preferred terms; synonyms;
+%Pointer File  List of words pointing to where they      quasi-synonyms; abbreviations; acronyms; top term;
+%
+%occur in the original document. See also Location       broader term; narrower term; related terms.
+%List.
+%        Scope Note  lnformation that provides insight into
+%Polyseme  A word with multiplicity of meaning; for     a Use Term in a thesaurus. Scope notes can provide
+%
+%example, the noun 'beams' as 'radiation' or     information regarding term qualities such as the
+%structures'.
+%        availability of related terms or dated definitions of a
+%
+%        term. These insights are tracked in a thesaurus using
+%Positional Inverted Index A full-text retrieval the Scope Note operator..
+%search methodology in which an inverted index is
+%created which tracks the exact location of words in     Selective Dissemination of Information (SDI)
+%documents. See also Inverted Index.     Ability of an application to automatically tell
+%
+%
+%        Coinpany Confidential   3
+%individual users about new information in the   Top Term  The broadest dass to which a concept
+%database that matches their personal, predesigned       belongs; sometimes used in the alphabetical section
+%selection criteria. see Current Awareness.      of a thesaurus.
+%
+%Serial Text Searching  Processing text by examining     Topic Definition A facility that permits concept
+%each character in turn (scanning).      searching by providing a structure that links words
+%
+%                and phrases that are related in a hierarchical manner.
+%Soundex Allows searches to be carried out on a  Each node in the topic definition can be a term,
+%sounds like' basis for phonetically similar words and           compound term, Boolean search expression, a
+%phrases.                wildcard term, soundex search, a date range
+%
+%Stemming  Reduction of all words with the same  regarding the source, or the source itself. Topic terms
+%        can also be topics within themselves, allowing for
+%root to a single form. See also Lemmatizatio~   intricate and sophisticated networked topic
+%
+%
+%        definitions.
+%Stop List  A list of insignificant words that are not
+%to be included in the index and selected by the user.
+%Such words might include: and, to, but, the, as.        Truncation, forward and backward  This is a search
+%facility enabling the user to search on a part of a
+%
+%Structured  Structured data is typically numerical      word; for example, the truncated form of planning
+%graphical or tabular.   would be plan. A search using the truncated form
+%would also reveal occurrences of plan, planner,
+%
+%Subject Any concept or combination of concepts  planned.
+%representing a theme in a document.
+%        Up-posting Facility  The ability to post a word
+%Synonyms  A collection of words that represent the      under more than one existing term in a word list.
+%same, or similat concepts.      These terms would be linked via a thesaurus.
+%
+%Tagging  An alternative to the automatic
+%production of an index by the software. Significant     Use Term The main or preferred term in a synonym
+%words are manually tagged during input to produce       list or thesaurus entry. In a thesaurus the Use For
+%        operator is used to track these terms. Also known as
+%a go list.      a Preferred Term or Lead Term. See also Preferred
+%
+%
+%        Term.
+%Term  Entry in thesaurus as either preferred term or
+%non-preferred term.
+%User Profile  A continuously running text-retrieval
+%
+%Term Weighting  Assigning a numerical value to a        query submitted in background. User profiles will
+%term representing its importance to a database of       typically notify their respective owner of any new
+%text, a defined topic, or a query. Term weights can be  submissions to the text database that satisfy the
+%assigned by a user or automatically determined by a     query. See also Selective Dissemination of
+%text-retrieval system.  Information and Current Awareness.
+%
+%Text File  File where original text is stored   Variable Length Field  Field containing documents
+%(normally in original format).  that need not be a defined, fixed length.
+%
+%Thesaurus  The vocabulary of a controlled indexing     Wild Card  A character used to mean 'any one
+%language, formally organized so that the
+%relationships between concepts (e.g. 'broader' and      character' or 'a contiguous set of characters' within a
+%narrower') are made explidt.    word or phrase. See also Internal Character
+%        Masking.
+%
+%
+%Token The lowest level single unit of text. Often a
+%word, but it may, for example, be a hyphenated word     Wordlist  A list of all the useful words in the text
+%or a date.      file. See also Inverted Index.
+%
+%
+%
+%
+%
+%
+%
+%
+%
+%4  sQL*TextRetrieval

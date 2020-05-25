@@ -1,0 +1,26 @@
+-- Test metamorph indirects
+-- Set defaults for known state, eg. in case texis.cnf mods:
+set querysettings = 'defaults';
+-- Turn off query protection so we can do linear searches etc.:
+set querysettings = 'protectionoff';
+
+
+create table test (x varchar(100), y indirect);
+
+insert into test values ('alien', '@CMAKE_CURRENT_BINARY_DIR@/text/alien');
+insert into test values ('constn', '@CMAKE_CURRENT_BINARY_DIR@/text/constn');
+insert into test values ('declare', '@CMAKE_CURRENT_BINARY_DIR@/text/declare');
+insert into test values ('events', '@CMAKE_CURRENT_BINARY_DIR@/text/events');
+insert into test values ('garden', '@CMAKE_CURRENT_BINARY_DIR@/text/garden');
+insert into test values ('gettysbg.txt', '@CMAKE_CURRENT_BINARY_DIR@/text/gettysbg.txt');
+insert into test values ('kids', '@CMAKE_CURRENT_BINARY_DIR@/text/kids');
+insert into test values ('liberty', '@CMAKE_CURRENT_BINARY_DIR@/text/liberty');
+insert into test values ('qadhafi', '@CMAKE_CURRENT_BINARY_DIR@/text/qadhafi');
+insert into test values ('socrates', '@CMAKE_CURRENT_BINARY_DIR@/text/socrates');
+
+select x from test where y like '~power ~struggle';
+create metamorph index ix_mm on test (y) ;
+select x from test where y like '~power ~struggle';
+
+drop table test;
+

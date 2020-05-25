@@ -1,0 +1,94 @@
+Texis Version ...
+
+SQL 1 line 1> -- Test metamorph indirects
+SQL 2 line 2> -- Set defaults for known state, eg. in case texis.cnf mods:
+SQL 3 line 3> set querysettings = 'defaults';
+
+SQL 1 line 4> -- Turn off query protection so we can do linear searches etc.:
+SQL 2 line 5> set querysettings = 'protectionoff';
+
+SQL 1 line 6> 
+SQL 1 line 7> 
+SQL 1 line 8> create table test (x varchar(100), y indirect);
+     x            y      
+------------+------------+
+
+SQL 1 line 9> 
+SQL 1 line 10> insert into test values ('alien', 'TMPDIR/text/alien');
+     x            y      
+------------+------------+
+alien        TMPDIR/text/alien
+
+SQL 1 line 11> insert into test values ('constn', 'TMPDIR/text/constn');
+     x            y      
+------------+------------+
+constn       TMPDIR/text/constn
+
+SQL 1 line 12> insert into test values ('declare', 'TMPDIR/text/declare');
+     x            y      
+------------+------------+
+declare      TMPDIR/text/declare
+
+SQL 1 line 13> insert into test values ('events', 'TMPDIR/text/events');
+     x            y      
+------------+------------+
+events       TMPDIR/text/events
+
+SQL 1 line 14> insert into test values ('garden', 'TMPDIR/text/garden');
+     x            y      
+------------+------------+
+garden       TMPDIR/text/garden
+
+SQL 1 line 15> insert into test values ('gettysbg.txt', 'TMPDIR/text/gettysbg.txt');
+     x            y      
+------------+------------+
+gettysbg.txt TMPDIR/text/gettysbg.txt
+
+SQL 1 line 16> insert into test values ('kids', 'TMPDIR/text/kids');
+     x            y      
+------------+------------+
+kids         TMPDIR/text/kids
+
+SQL 1 line 17> insert into test values ('liberty', 'TMPDIR/text/liberty');
+     x            y      
+------------+------------+
+liberty      TMPDIR/text/liberty
+
+SQL 1 line 18> insert into test values ('qadhafi', 'TMPDIR/text/qadhafi');
+     x            y      
+------------+------------+
+qadhafi      TMPDIR/text/qadhafi
+
+SQL 1 line 19> insert into test values ('socrates', 'TMPDIR/text/socrates');
+     x            y      
+------------+------------+
+socrates     TMPDIR/text/socrates
+
+SQL 1 line 20> 
+SQL 1 line 21> select x from test where y like '~power ~struggle';
+     x      
+------------+
+alien
+declare
+events
+kids
+liberty
+qadhafi
+
+SQL 1 line 22> create metamorph index ix_mm on test (y) ;
+
+SQL 1 line 23> select x from test where y like '~power ~struggle';
+     x      
+------------+
+alien
+declare
+events
+kids
+liberty
+qadhafi
+
+SQL 1 line 24> 
+SQL 1 line 25> drop table test;
+
+SQL 1 line 26> 
+SQL 1 line 27> 

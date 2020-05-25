@@ -1,0 +1,596 @@
+Texis Version ...
+
+SQL 1 line 1> -- test005
+SQL 2 line 2> -- This tests the simple order by cases, ordering on one field only.
+SQL 3 line 3> 
+SQL 4 line 4> create table test (x char(10), y int);
+     x            y      
+------------+------------+
+
+SQL 1 line 5> insert into test values('d', 3);
+     x            y      
+------------+------------+
+d                       3
+
+SQL 1 line 6> insert into test values('b', 4);
+     x            y      
+------------+------------+
+b                       4
+
+SQL 1 line 7> insert into test values('c', 2);
+     x            y      
+------------+------------+
+c                       2
+
+SQL 1 line 8> insert into test values('f', 5);
+     x            y      
+------------+------------+
+f                       5
+
+SQL 1 line 9> insert into test values('a', 6);
+     x            y      
+------------+------------+
+a                       6
+
+SQL 1 line 10> insert into test values('e', 1);
+     x            y      
+------------+------------+
+e                       1
+
+SQL 1 line 11> select * from test order by x;
+     x            y      
+------------+------------+
+a                       6
+b                       4
+c                       2
+d                       3
+e                       1
+f                       5
+
+SQL 1 line 12> select * from test order by y;
+     x            y      
+------------+------------+
+e                       1
+c                       2
+d                       3
+b                       4
+f                       5
+a                       6
+
+SQL 1 line 13> select * from test order by x desc;
+     x            y      
+------------+------------+
+f                       5
+e                       1
+d                       3
+c                       2
+b                       4
+a                       6
+
+SQL 1 line 14> select * from test order by y desc;
+     x            y      
+------------+------------+
+a                       6
+f                       5
+b                       4
+d                       3
+c                       2
+e                       1
+
+SQL 1 line 15> drop table test;
+
+SQL 1 line 16> 
+SQL 1 line 17> -- test006
+SQL 2 line 18> -- This tests the simple order by cases, ordering on one field only.
+SQL 3 line 19> -- This version also includes indices built on the fly.
+SQL 4 line 20> 
+SQL 5 line 21> create table test (x char(10), y int);
+     x            y      
+------------+------------+
+
+SQL 1 line 22> create index ix_1 on test(x);
+
+SQL 1 line 23> create index ix_2 on test(y);
+
+SQL 1 line 24> create index ix_3 on test(x desc);
+
+SQL 1 line 25> create index ix_4 on test(y desc);
+
+SQL 1 line 26> insert into test values('d', 3);
+     x            y      
+------------+------------+
+d                       3
+
+SQL 1 line 27> insert into test values('b', 4);
+     x            y      
+------------+------------+
+b                       4
+
+SQL 1 line 28> insert into test values('c', 2);
+     x            y      
+------------+------------+
+c                       2
+
+SQL 1 line 29> insert into test values('f', 5);
+     x            y      
+------------+------------+
+f                       5
+
+SQL 1 line 30> insert into test values('a', 6);
+     x            y      
+------------+------------+
+a                       6
+
+SQL 1 line 31> insert into test values('e', 1);
+     x            y      
+------------+------------+
+e                       1
+
+SQL 1 line 32> select * from test order by x;
+     x            y      
+------------+------------+
+a                       6
+b                       4
+c                       2
+d                       3
+e                       1
+f                       5
+
+SQL 1 line 33> select * from test order by y;
+     x            y      
+------------+------------+
+e                       1
+c                       2
+d                       3
+b                       4
+f                       5
+a                       6
+
+SQL 1 line 34> select * from test order by x desc;
+     x            y      
+------------+------------+
+f                       5
+e                       1
+d                       3
+c                       2
+b                       4
+a                       6
+
+SQL 1 line 35> select * from test order by y desc;
+     x            y      
+------------+------------+
+a                       6
+f                       5
+b                       4
+d                       3
+c                       2
+e                       1
+
+SQL 1 line 36> drop table test;
+
+SQL 1 line 37> 
+SQL 1 line 38> -- test007
+SQL 2 line 39> -- This tests the simple order by cases, ordering on one field only.
+SQL 3 line 40> -- Some of these have indices that can be used.
+SQL 4 line 41> 
+SQL 5 line 42> create table test (x char(10), y int);
+     x            y      
+------------+------------+
+
+SQL 1 line 43> create index ix_1 on test(x);
+
+SQL 1 line 44> create index ix_4 on test(y desc);
+
+SQL 1 line 45> insert into test values('d', 3);
+     x            y      
+------------+------------+
+d                       3
+
+SQL 1 line 46> insert into test values('b', 4);
+     x            y      
+------------+------------+
+b                       4
+
+SQL 1 line 47> insert into test values('c', 2);
+     x            y      
+------------+------------+
+c                       2
+
+SQL 1 line 48> insert into test values('f', 5);
+     x            y      
+------------+------------+
+f                       5
+
+SQL 1 line 49> insert into test values('a', 6);
+     x            y      
+------------+------------+
+a                       6
+
+SQL 1 line 50> insert into test values('e', 1);
+     x            y      
+------------+------------+
+e                       1
+
+SQL 1 line 51> select * from test order by x;
+     x            y      
+------------+------------+
+a                       6
+b                       4
+c                       2
+d                       3
+e                       1
+f                       5
+
+SQL 1 line 52> select * from test order by y;
+     x            y      
+------------+------------+
+e                       1
+c                       2
+d                       3
+b                       4
+f                       5
+a                       6
+
+SQL 1 line 53> select * from test order by x desc;
+     x            y      
+------------+------------+
+f                       5
+e                       1
+d                       3
+c                       2
+b                       4
+a                       6
+
+SQL 1 line 54> select * from test order by y desc;
+     x            y      
+------------+------------+
+a                       6
+f                       5
+b                       4
+d                       3
+c                       2
+e                       1
+
+SQL 1 line 55> drop table test;
+
+SQL 1 line 56> 
+SQL 1 line 57> -- test009
+SQL 2 line 58> -- This tests the simple order by cases, ordering on one field only.
+SQL 3 line 59> -- Some of these have indices that can be used.
+SQL 4 line 60> 
+SQL 5 line 61> create table test (x char(10), y unsigned int);
+     x            y      
+------------+------------+
+
+SQL 1 line 62> create inverted index ix_4 on test(y desc);
+
+SQL 1 line 63> insert into test values('d', 3);
+     x            y      
+------------+------------+
+d                       3
+
+SQL 1 line 64> insert into test values('b', 4);
+     x            y      
+------------+------------+
+b                       4
+
+SQL 1 line 65> insert into test values('c', 2);
+     x            y      
+------------+------------+
+c                       2
+
+SQL 1 line 66> insert into test values('f', 5);
+     x            y      
+------------+------------+
+f                       5
+
+SQL 1 line 67> insert into test values('a', 6);
+     x            y      
+------------+------------+
+a                       6
+
+SQL 1 line 68> insert into test values('e', 1);
+     x            y      
+------------+------------+
+e                       1
+
+SQL 1 line 69> select * from test order by x;
+     x            y      
+------------+------------+
+a                       6
+b                       4
+c                       2
+d                       3
+e                       1
+f                       5
+
+SQL 1 line 70> select * from test order by y;
+     x            y      
+------------+------------+
+e                       1
+c                       2
+d                       3
+b                       4
+f                       5
+a                       6
+
+SQL 1 line 71> select * from test order by x desc;
+     x            y      
+------------+------------+
+f                       5
+e                       1
+d                       3
+c                       2
+b                       4
+a                       6
+
+SQL 1 line 72> select * from test order by y desc;
+     x            y      
+------------+------------+
+a                       6
+f                       5
+b                       4
+d                       3
+c                       2
+e                       1
+
+SQL 1 line 73> drop table test;
+
+SQL 1 line 74> 
+SQL 1 line 75> -- test010
+SQL 2 line 76> -- This tests the simple order by cases, ordering on one field only.
+SQL 3 line 77> -- Some of these have indices that can be used.
+SQL 4 line 78> 
+SQL 5 line 79> create table test (x char(10), y unsigned int);
+     x            y      
+------------+------------+
+
+SQL 1 line 80> create index ix_3 on test(y);
+
+SQL 1 line 81> insert into test values('d', 3);
+     x            y      
+------------+------------+
+d                       3
+
+SQL 1 line 82> insert into test values('b', 4);
+     x            y      
+------------+------------+
+b                       4
+
+SQL 1 line 83> insert into test values('c', 2);
+     x            y      
+------------+------------+
+c                       2
+
+SQL 1 line 84> insert into test values('f', 5);
+     x            y      
+------------+------------+
+f                       5
+
+SQL 1 line 85> insert into test values('a', 6);
+     x            y      
+------------+------------+
+a                       6
+
+SQL 1 line 86> insert into test values('e', 1);
+     x            y      
+------------+------------+
+e                       1
+
+SQL 1 line 87> create inverted index ix_4 on test(y desc);
+
+SQL 1 line 88> select * from test where y > 3 order by y desc;
+     x            y      
+------------+------------+
+a                       6
+f                       5
+b                       4
+
+SQL 1 line 89> drop table test;
+
+SQL 1 line 90> 
+SQL 1 line 91> -- test011
+SQL 2 line 92> -- This tests the simple order by cases, ordering on one field only.
+SQL 3 line 93> -- Some of these have indices that can be used.
+SQL 4 line 94> -- This tests creating inverted index on the fly.
+SQL 5 line 95> 
+SQL 6 line 96> create table test (x char(10), y unsigned int);
+     x            y      
+------------+------------+
+
+SQL 1 line 97> create index ix_3 on test(y);
+
+SQL 1 line 98> create inverted index ix_4 on test(y desc);
+
+SQL 1 line 99> insert into test values('d', 3);
+     x            y      
+------------+------------+
+d                       3
+
+SQL 1 line 100> insert into test values('b', 4);
+     x            y      
+------------+------------+
+b                       4
+
+SQL 1 line 101> insert into test values('c', 2);
+     x            y      
+------------+------------+
+c                       2
+
+SQL 1 line 102> insert into test values('f', 5);
+     x            y      
+------------+------------+
+f                       5
+
+SQL 1 line 103> insert into test values('a', 6);
+     x            y      
+------------+------------+
+a                       6
+
+SQL 1 line 104> insert into test values('e', 1);
+     x            y      
+------------+------------+
+e                       1
+
+SQL 1 line 105> select * from test where y > 3 order by y desc;
+     x            y      
+------------+------------+
+a                       6
+f                       5
+b                       4
+
+SQL 1 line 106> drop table test;
+
+SQL 1 line 107> 
+SQL 1 line 108> -- test017
+SQL 2 line 109> 
+SQL 3 line 110> -- This tests the simple order by cases, ordering on one field only.
+SQL 4 line 111> -- Some of these have indices that can be used.
+SQL 5 line 112> 
+SQL 6 line 113> create table test (x char(10), y unsigned int);
+     x            y      
+------------+------------+
+
+SQL 1 line 114> create index ix_3 on test(y);
+
+SQL 1 line 115> insert into test values('d', 3);
+     x            y      
+------------+------------+
+d                       3
+
+SQL 1 line 116> insert into test values('b', 4);
+     x            y      
+------------+------------+
+b                       4
+
+SQL 1 line 117> insert into test values('c', 2);
+     x            y      
+------------+------------+
+c                       2
+
+SQL 1 line 118> insert into test values('f', 5);
+     x            y      
+------------+------------+
+f                       5
+
+SQL 1 line 119> insert into test values('a', 6);
+     x            y      
+------------+------------+
+a                       6
+
+SQL 1 line 120> insert into test values('e', 1);
+     x            y      
+------------+------------+
+e                       1
+
+SQL 1 line 121> create inverted index ix_4 on test(y desc);
+
+SQL 1 line 122> select * from test where y between 2 and 4 order by y desc;
+     x            y      
+------------+------------+
+b                       4
+d                       3
+c                       2
+
+SQL 1 line 123> select * from test where y = 3 ;
+     x            y      
+------------+------------+
+d                       3
+
+SQL 1 line 124> drop table test;
+
+SQL 1 line 125> 
+SQL 1 line 126> -- test020
+SQL 2 line 127> -- This tests the simple order by cases, ordering on one field only.
+SQL 3 line 128> -- This version also includes indices built on the fly.
+SQL 4 line 129> 
+SQL 5 line 130> create table test (x char(10), y int);
+     x            y      
+------------+------------+
+
+SQL 1 line 131> create unique index ix_1 on test(x);
+
+SQL 1 line 132> -- create unique index ix_2 on test(y);
+SQL 2 line 133> insert into test values('d', 3);
+     x            y      
+------------+------------+
+d                       3
+
+SQL 1 line 134> insert into test values('b', 4);
+     x            y      
+------------+------------+
+b                       4
+
+SQL 1 line 135> insert into test values('c', 2);
+     x            y      
+------------+------------+
+c                       2
+
+SQL 1 line 136> insert into test values('f', 5);
+     x            y      
+------------+------------+
+f                       5
+
+SQL 1 line 137> insert into test values('a', 6);
+     x            y      
+------------+------------+
+a                       6
+
+SQL 1 line 138> insert into test values('e', 1);
+     x            y      
+------------+------------+
+e                       1
+
+SQL 1 line 139> insert into test values('a', 6);
+     x            y      
+------------+------------+
+178 Trying to insert duplicate value (a) in index TMPDIR/junk/ix_1.btr
+
+SQL 1 line 140> insert into test values('e', 1);
+     x            y      
+------------+------------+
+178 Trying to insert duplicate value (e) in index TMPDIR/junk/ix_1.btr
+
+SQL 1 line 141> select * from test order by x;
+     x            y      
+------------+------------+
+a                       6
+b                       4
+c                       2
+d                       3
+e                       1
+f                       5
+
+SQL 1 line 142> select * from test order by y;
+     x            y      
+------------+------------+
+e                       1
+c                       2
+d                       3
+b                       4
+f                       5
+a                       6
+
+SQL 1 line 143> select * from test order by x desc;
+     x            y      
+------------+------------+
+f                       5
+e                       1
+d                       3
+c                       2
+b                       4
+a                       6
+
+SQL 1 line 144> select * from test order by y desc;
+     x            y      
+------------+------------+
+a                       6
+f                       5
+b                       4
+d                       3
+c                       2
+e                       1
+
+SQL 1 line 145> drop table test;
+
+SQL 1 line 146> 

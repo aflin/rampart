@@ -1,0 +1,23 @@
+\subsection{Date functions}
+
+The following date functions are available in Texis:
+\verb`dayname`, \verb`month`, \verb`monthname`, \verb`dayofmonth`,
+\verb`dayofweek`, \verb`dayofyear`, \verb`quarter`, \verb`week`,
+\verb`year`, \verb`hour`, \verb`minute`, \verb`second`.
+
+All the functions take a date as an argument.  \verb`dayname` and \verb`monthname` will return a string with the full day or month name based on the current
+locale, and the others return a number.
+
+The \verb`dayofweek` function returns 1 for Sunday.  The quarter is
+based on months, so April 1st is the first day of quarter 2.  Week 1
+begins with the first Sunday of the year.
+
+Added in version: 3.0.948300000
+
+The following functions were added in version 3.01.990400000:
+\verb`monthseq`, \verb`weekseq` and \verb`dayseq` which will return the
+number of months, weeks and days since an arbitrary past date.  These
+can be used when comparing dates to see how many months, weeks or days
+separate them.
+
+% ----------------------------------------------------------------------------

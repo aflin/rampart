@@ -1,0 +1,23 @@
+set(JANSSON_PREFIX jansson-2.12)
+
+ExternalProject_Add(${JANSSON_PREFIX}
+	PREFIX ${JANSSON_PREFIX}
+	SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/${JANSSON_PREFIX}
+	INSTALL_DIR ${JANSSON_PREFIX}
+	INSTALL_COMMAND ""
+	CMAKE_ARGS -DJANSSON_BUILD_DOCS=OFF -DJANSSON_EXAMPLES=OFF
+	LOG_INSTALL 1
+)
+
+# get the unpacked source directory path
+ExternalProject_Get_Property(${JANSSON_PREFIX} SOURCE_DIR)
+message(STATUS "Source directory of ${JANSSON_PREFIX} ${SOURCE_DIR}")
+
+# set the include directory variable and include it
+set(JANSSON_RELEASE_DIR ${CMAKE_CURRENT_BINARY_DIR}/${JANSSON_PREFIX}/src/${JANSSON_PREFIX}-build/lib)
+set(JANSSON_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/${JANSSON_PREFIX}/src/${JANSSON_PREFIX}-build/include)
+include_directories(${JANSSON_INCLUDE_DIRS})
+
+link_directories(${JANSSON_RELEASE_DIR})
+set(JANSSON_LIBS jansson)
+set(JANSSON_LIBRARY_DIRS ${JANSSON_RELEASE_DIR})

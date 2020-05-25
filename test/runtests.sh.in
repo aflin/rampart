@@ -1,0 +1,87 @@
+#!/bin/bash
+
+TESTSDIR=@CMAKE_CURRENT_SOURCE_DIR@
+TESTROOT=@CMAKE_CURRENT_BINARY_DIR@
+TSQL=$2
+DB=$TESTROOT/junk
+BASETEST=`basename $1 .sql`
+OUTDIR=$TESTROOT/out
+RemoveCRIfWinCmd=cat
+AWK=`which awk`
+REX=$3
+
+cleanOutputOrErrorForDiff () {  # file
+    sed '
+s/recid 0x[0-9a-fA-F]*/recid 0x.../g
+s/predicate 0x[0-9a-fA-F]*/predicate 0x.../g
+s/object 0x[0-9a-fA-F]*/object 0x.../g
+' <"$1" | $RemoveCRIfWinCmd >"$DB/rextmp" && mv -f "$DB/rextmp" "$1"
+}
+
+cleanOutputForDiff () { # file
+# Cleans output for diff.  Run for both got and expected results.
+  $REX -t$DB/rextmp -R"..." 'Texis Version \P=\digit=[^\x0A]*' $1
+  $REX -t$DB/rextmp -R"TMPDIR" "\\L$TESTROOT" $1
+  "$AWK" '/200[0-9]-/ {print $0; next} {gsub("2[0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9]", "NNNN-NN-NN NN:NN:NN"); print $0}' <"$1" | $RemoveCRIfWinCmd >"$DB/rextmp" && mv -f "$DB/rextmp" "$1"
+  case "$INUM" in
+    test643)
+      "$AWK" '/^20[0-9][0-9]-..-.. ..:..:..$/ {print "date"; next; } /^CONVERT.*varbyte/ {afterByte=1} afterByte && /^[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*$/ {print "hex-value"; afterByte=0; next; } {gsub("^counter  *,$", "counter  ,")} {print $0}' <"$1" | $RemoveCRIfWinCmd >"$DB/rextmp" && mv -f "$DB/rextmp" "$1"
+      ;;
+    test669)
+      # Floating-point print format differs, and indentation:
+      sed -e 's/e[+]0/e+/' \
+          -e 's/^  *\(-*[0-9][0-9]*[.][0-9]*[eE]*[+]*[0-9]*\) *$/\1/' \
+          <"$1" | $RemoveCRIfWinCmd >"$DB/rextmp" && mv -f "$DB/rextmp" "$1"
+      ;;
+    test657)
+      # strlst sizes differ by platform:
+      # bad date msg may vary:
+      sed 's/strlst([0-9]*)/strlst(N)/g; /fodach/s%/out of range%%' <"$1" | $RemoveCRIfWinCmd >"$DB/rextmp" &&
+          mv -f "$DB/rextmp" "$1"
+      ;;
+  esac
+  cleanOutputOrErrorForDiff "$1"
+}
+
+args="--bufferout line --nomonitorstart -v -d $DB"
+MERGE_ERRS_WITH_OUTPUT=y
+mkdir -p $OUTDIR
+date > /tmp/runtests.log
+echo "BASETEST="$BASETEST >> /tmp/runtests.log
+echo "DB="$DB >> /tmp/runtests.log
+echo "PATH="$PATH >> /tmp/runtests.log
+echo "TSQL="$TSQL >> /tmp/runtests.log
+echo "args="$args >> /tmp/runtests.log
+#
+# Make the database
+#
+$TSQL -q -m -d $DB < /dev/null > /dev/null 2>&1
+#
+# Actually run the test
+#
+i=$TESTROOT/sql/$1
+a=$TESTROOT/sql/${BASETEST}.args
+echo $a > /tmp/runtests.log
+o=${OUTDIR}/${BASETEST}
+e=${OUTDIR}/${BASETEST}-expected
+#
+# Cleanup output files
+#
+rm -f $o $e 2>/dev/null
+if [ -f "${a}" ]; then
+  testargs=`cat "${a}"`
+  args="$args $testargs"
+fi
+args="$args -i" # Use -i for all for new tests
+$TSQL `echo $args` $i > $o 2>&1;
+cp $TESTROOT/expected/$BASETEST $e
+cleanOutputForDiff "$o"
+#cleanOutputForDiff "$e"
+diff $e $o
+diffrc=$?
+if [ $diffrc -eq 0 ]; then
+  rm $o $OUTDIR/${BASETEST}.err $e
+  exit 0
+else
+  exit 1
+fi

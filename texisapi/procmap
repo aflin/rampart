@@ -1,0 +1,98 @@
+#!/usr/bin/nawk -f
+#
+#  Usage: awk -f procmap mapping-file [mapping-file ...]
+#
+#  Processes Unicode mapping file into C array.
+#  Assumes files are #-commented, with three columns:
+#    1.  Charset code in hex
+#    2.  Unicode code in hex (or empty and #UNDEFINED comment)
+#    3.  Unicode character name (in comment)
+
+function errbail(msg) {
+  pfx = "";
+  if (FNR > 0) pfx = sprintf("%d:", FNR);
+  if (FILENAME != "") pfx = sprintf("%s:%s", FILENAME, pfx);
+  if (pfx != "") msg = sprintf("%s %s", pfx, msg);
+  # Gawk understands "/dev/stderr", others do not.
+  # Check for gawk by examining IGNORECASE:
+  if (IGNORECASE == "")
+    printf("%s\n", msg) | "cat 1>&2";
+  else
+    printf("%s\n", msg) >"/dev/stderr";
+  exit 1;
+}
+
+function finish() {
+  while (n < 256)
+    printf("  0xFFFF,       /* 0x%02X no mapping */\n", n++);
+  if (n != 256) errbail("Wrong number of chars");
+  printf("};\n");
+  # Now sort unicodes[] (crudely WTF) and print Unicode-to-charset map:
+  printf("/* HtUnicodeMap_%s[HtUnicodeIndex_%s[n]] == Unicode code, */\n",
+         safename, safename);
+  printf("/* HtUnicodeIndex_%s sorted by Unicode ascending: */\n", safename);
+  printf("CONST byte      HtUnicodeIndex_%s[] =\n{\n", safename);
+  for (j = 0; ; j++)
+    {
+      low = "z";
+      lowi = -1;
+      for (i in unicodes)
+        if ("" unicodes[i] < low)
+          {
+            low = unicodes[i];
+            lowi = i;
+          }
+      if (lowi == -1) break;
+      printf("  0x%02X,         /* %s */\n", lowi, unicodes[lowi]);
+      delete unicodes[lowi];
+    }
+  printf("};\n#define NUM_%s_CODES %d\n", safename, j);
+}
+
+FNR == 1 {
+  # Finish previous charset, if any:
+  if (n) finish();
+  # Start new file:
+  n = 0;
+  printf("\n/* This array generated from %s via procmap */\n\n", FILENAME);
+  safename = FILENAME;
+  gsub(".txt$", "", safename);
+  gsub("^.*/", "", safename);
+  gsub("[^a-zA-Z_0-9]", "_", safename);
+  printf("/* HtUnicodeMap_%s[n] == Unicode code for charset code n */\n",
+         safename);
+  printf("CONST EPI_UINT16 HtUnicodeMap_%s[256] =\n{\n", safename);
+}
+
+# Skip blank/comment lines:
+/^[ \015]*$/ { next; }
+/^[ \015]*#/ { next; }
+
+{
+  gsub("\015", "");
+  charsetcode = $1;
+  unicodecode = $2;
+  # We assume the file is in charset order:
+  # WTF cast hex string to int to avoid this loop:
+  while (n <= 256)
+    {
+      x = sprintf("0x%02X", n++);
+      if (x == charsetcode) break;
+      # WTF use 0xFFFF instead of -1 so we can sort below
+      # (also means we use EPI_UINT16 above instead of EPI_INT16);
+      # can't get awk to convert hex to numeric:
+      printf("  0xFFFF,       /* %s no mapping */\n", x);
+    }
+  if (n > 256) errbail("Out-of-range/sequence char");
+  # get and remove the comment:
+  gsub("^.*#[ 	]*", "");
+  comment = $0;
+  if ("#UNDEFINED" == unicodecode)
+    unicodecode = "0xFFFF";
+  else
+    unicodes[n-1] = unicodecode;
+  unicodecode = unicodecode ",";
+  printf("  %-13s /* %s %s */\n", unicodecode, charsetcode, comment);
+}
+
+END { finish(); }

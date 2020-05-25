@@ -1,0 +1,50 @@
+Texis Version ...
+
+SQL 1 line 1> -- Test String lists
+SQL 2 line 2> 
+SQL 3 line 3> -- Defaults that changed in version 7:
+SQL 4 line 4> set varchartostrlstsep = 'lastchar';
+
+SQL 1 line 5> 
+SQL 1 line 6> -- test245 strlst and matches
+SQL 2 line 7> 
+SQL 3 line 8> create table test(x strlst);
+     x      
+------------+
+
+SQL 1 line 9> insert into test values('a,b,c,d,');
+     x      
+------------+
+a,b,c,d,
+
+SQL 1 line 10> insert into test values('e,f,g,h,');
+     x      
+------------+
+e,f,g,h,
+
+SQL 1 line 11> insert into test values('b,');
+     x      
+------------+
+b,
+
+SQL 1 line 12> insert into test values('a,c,');
+     x      
+------------+
+a,c,
+
+SQL 1 line 13> create index ix1 on test(x);
+
+SQL 1 line 14> select * from test where x matches 'b%';
+     x      
+------------+
+a,b,c,d,
+b,
+
+SQL 1 line 15> select * from test where 'b%' matches x;
+     x      
+------------+
+115 varchar MATCHES varstrlst behavior undefined in the function: fochsl
+
+SQL 1 line 16> drop table test;
+
+SQL 1 line 17> 

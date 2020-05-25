@@ -1,0 +1,350 @@
+\subsection{String Functions}
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{abstract}
+
+Generate an abstract of a given portion of text.  The syntax is
+\begin{verbatim}
+   abstract(text[, maxsize[, style[, query]]])
+\end{verbatim}
+
+  The abstract will be less than \verb`maxsize` characters long, and
+will attempt to end at a word boundary.  If \verb`maxsize` is not
+specified (or is less than or equal to 0) then a default size of 230
+characters is used.
+
+  The \verb`style` argument is a string or integer, and allows a
+choice between several different ways of creating the abstract.
+Note that some of these styles require the \verb`query` argument as
+well, which is a Metamorph query to look for:
+
+\begin{itemize}
+  \item \verb`dumb` (0) \\
+    Start the abstract at the top of the document.
+
+  \item \verb`smart` (1) \\
+    This style will look for the first meaningful chunk of text,
+    skipping over any headers at the top of the text.  This is the
+    default if neither \verb`style` nor \verb`query` is given.
+
+  \item \verb`querysingle` (2) \\
+    Center the abstract contiguously on the best occurence of
+    \verb`query` in the document.
+
+  \item \verb`querymultiple` (3) \\
+    Like \verb`querysingle`, but also break up the abstract into
+    multiple sections (separated with ``\verb`...`'') if needed to
+    help ensure all terms are visible.  Also take care with URLs to
+    try to show the start and end.
+
+  \item \verb`querybest` \\
+    An alias for the best available query-based style; currently the
+    same as \verb`querymultiple`.  Using \verb`querybest` in a script
+    ensures that if improved styles become available in future
+    releases, the script will automatically ``upgrade'' to the best
+    style.
+\end{itemize}
+
+  If no \verb`query` is given for the \verb`query`$...$ modes, they
+fall back to \verb`dumb` mode.  If a \verb`query` is given with a {\em
+non-}\verb`query`$...$ mode (\verb`dumb`/\verb`smart`), the mode is
+promoted to \verb`querybest`.  The current locale and index
+expressions also have an effect on the abstract in the
+\verb`query`$...$ modes, so that it more closely reflects an
+index-obtained hit.
+
+\begin{verbatim}
+     SELECT     abstract(STORY, 0, 1, 'power struggle')
+     FROM       ARTICLES
+     WHERE      ARTID = 'JT09115' ;
+\end{verbatim}
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{text2mm}
+
+Generate \verb`LIKEP` query.  The syntax is
+\begin{verbatim}
+   text2mm(text[, maxwords])
+\end{verbatim}
+
+This function will take a text expression, and produce a list of words
+that can be given to \verb`LIKER` or \verb`LIKEP` to find similar
+documents.  \verb`text2mm` takes an optional second argument which
+specifies how many words should be returned.  If this is not specified
+then 10 words are returned.  Most commonly \verb`text2mm` will be given the
+name of a field.  If it is an \verb`indirect` field you will need to call
+\verb|fromfile| as shown below:
+
+\begin{verbatim}
+     SELECT     text2mm(fromfile(FILENAME))
+     FROM       DOCUMENTS
+     WHERE      DOCID = 'JT09115' ;
+\end{verbatim}
+
+You may also call it as \verb`texttomm()` instead of \verb`text2mm()` .
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{keywords}
+
+Generate list of keywords.  The syntax is
+\begin{verbatim}
+   keywords(text[, maxwords])
+\end{verbatim}
+
+{\tt keywords} is similar to {\tt text2mm} but produces a list of
+phrases, with a linefeed separating them.  The difference between
+{\tt text2mm} and {\tt keywords} is that {\tt keywords} will maintain
+the phrases.
+{\tt keywords} also takes an optional second
+argument which indicates how many words or phrases should be returned.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{length}
+
+Returns the length in characters of a \verb`char` or \verb`varchar`
+expression, or number of strings/items in other types.  The syntax is
+\begin{verbatim}
+  length(value[, mode])
+\end{verbatim}
+
+For example:
+
+\begin{verbatim}
+     SELECT  NAME, length(NAME)
+     FROM    SYSTABLES
+\end{verbatim}
+
+The results are:
+
+\begin{screen}
+\begin{verbatim}
+  NAME                length(NAME)
+ SYSTABLES               9
+ SYSCOLUMNS             10
+ SYSINDEX                8
+ SYSUSERS                8
+ SYSPERMS                8
+ SYSTRIG                 7
+ SYSMETAINDEX           12
+\end{verbatim}
+\end{screen}
+
+  The optional \verb`mode` argument is a
+\verb`stringcomparemode`-style compare mode to use; see the Vortex manual
+on {\tt <apicp stringcomparemode>} for details on syntax and the
+default.  If \verb`mode` is not given, the current {\tt apicp
+stringcomparemode} is used.  Currently the only pertinent \verb`mode`
+flag is ``{\tt iso-8859-1}'', which determines whether to interpret
+\verb`value` as ISO-8859-1 or UTF-8.  This can alter how many characters long
+the string appears to be, as UTF-8 characters are variable-byte-sized,
+whereas ISO-8859-1 characters are always mono-byte.  The \verb`mode`
+argument was added in version 6.
+
+  In version 5.01.1226622000 20081113 and later, if given a \verb`strlst`
+type \verb`value`, \verb`length()` returns the number of string values
+in the list.  For other types, it returns the number of values, e.g.
+for \verb`varint` it returns the number of integer values.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{lower}
+
+Returns the text expression with all letters in lower-case. The syntax is
+\begin{verbatim}
+  lower(text[, mode])
+\end{verbatim}
+
+For example:
+
+\begin{verbatim}
+     SELECT  NAME, lower(NAME)
+     FROM    SYSTABLES
+\end{verbatim}
+
+The results are:
+
+\begin{screen}
+\begin{verbatim}
+  NAME                lower(NAME)
+ SYSTABLES            systables
+ SYSCOLUMNS           syscolumns
+ SYSINDEX             sysindex
+ SYSUSERS             sysusers
+ SYSPERMS             sysperms
+ SYSTRIG              systrig
+ SYSMETAINDEX         sysmetaindex
+\end{verbatim}
+\end{screen}
+
+Added in version 2.6.932060000.
+
+  The optional \verb`mode` argument is a string-folding mode in the
+same format as {\tt <apicp stringcomparemode>}; see the Vortex manual
+for details on the syntax and default.  If \verb`mode` is unspecified,
+the current {\tt apicp stringcomparemode} setting -- with ``{\tt +lowercase}''
+aded -- is used.  The \verb`mode` argument was added in version 6.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{upper}
+
+Returns the text expression with all letters in upper-case. The sytax is
+\begin{verbatim}
+  upper(text[, mode])
+\end{verbatim}
+
+For example:
+
+\begin{verbatim}
+     SELECT  NAME, upper(NAME)
+     FROM    SYSTABLES
+\end{verbatim}
+
+The results are:
+
+\begin{screen}
+\begin{verbatim}
+  NAME                upper(NAME)
+ SYSTABLES            SYSTABLES
+ SYSCOLUMNS           SYSCOLUMNS
+ SYSINDEX             SYSINDEX
+ SYSUSERS             SYSUSERS
+ SYSPERMS             SYSPERMS
+ SYSTRIG              SYSTRIG
+ SYSMETAINDEX         SYSMETAINDEX
+\end{verbatim}
+\end{screen}
+
+Added in version 2.6.932060000.
+
+  The optional \verb`mode` argument is a string-folding mode in the
+same format as {\tt <apicp stringcomparemode>}; see the Vortex manual
+for details on the syntax and default.  If \verb`mode` is unspecified,
+the current {\tt apicp stringcomparemode} setting -- with ``{\tt
++uppercase}'' added -- is used.  The \verb`mode` argument was added in
+version 6.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{initcap}
+
+Capitalizes text.  The syntax is
+\begin{verbatim}
+  initcap(text[, mode])
+\end{verbatim}
+
+Returns the text expression with the first letter of each word in
+title case (i.e. upper case), and all other letters in lower-case.
+For example:
+
+\begin{verbatim}
+     SELECT  NAME, initcap(NAME)
+     FROM    SYSTABLES
+\end{verbatim}
+
+The results are:
+
+\begin{screen}
+\begin{verbatim}
+  NAME                initcap(NAME)
+ SYSTABLES            Systables
+ SYSCOLUMNS           Syscolumns
+ SYSINDEX             Sysindex
+ SYSUSERS             Sysusers
+ SYSPERMS             Sysperms
+ SYSTRIG              Systrig
+ SYSMETAINDEX         Sysmetaindex
+\end{verbatim}
+\end{screen}
+
+Added in version 2.6.932060000.
+
+  The optional \verb`mode` argument is a string-folding mode in the
+same format as {\tt <apicp stringcomparemode>}; see the Vortex manual
+for details on the syntax and default.  If \verb`mode` is unspecified,
+the current {\tt apicp stringcomparemode} setting -- with ``{\tt +titlecase}''
+added -- is used.  The \verb`mode` argument was added in version 6.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{sandr}
+
+Search and replace text.
+\begin{verbatim}
+   sandr(search, replace, text)
+\end{verbatim}
+
+Returns the text expression with the search REX expression replaced
+with the replace expression.  See the REX documentation and the
+Vortex sandr function documentation for complete syntax of the search
+and replace expressions.
+
+\begin{verbatim}
+     SELECT  NAME, sandr('>>=SYS=', 'SYSTEM TABLE ', NAME) DESC
+     FROM    SYSTABLES
+\end{verbatim}
+
+The results are:
+
+\begin{screen}
+\begin{verbatim}
+  NAME                DESC
+ SYSTABLES            SYSTEM TABLE TABLES
+ SYSCOLUMNS           SYSTEM TABLE COLUMNS
+ SYSINDEX             SYSTEM TABLE INDEX
+ SYSUSERS             SYSTEM TABLE USERS
+ SYSPERMS             SYSTEM TABLE PERMS
+ SYSTRIG              SYSTEM TABLE TRIG
+ SYSMETAINDEX         SYSTEM TABLE METAINDEX
+\end{verbatim}
+\end{screen}
+
+Added in version 3.0
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{separator}
+
+Returns the separator character from its \verb`strlst` argument,
+as a \verb`varchar` string:
+
+\begin{verbatim}
+   separator(strlstValue)
+\end{verbatim}
+
+  This can be used in situations where the \verb`strlstValue` argument
+may have a nul character as the separator, in which case simply
+converting \verb`strlstValue` to \verb`varchar` and looking at the
+last character would be incorrect.  Added in version 5.01.1226030000
+20081106.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{stringcompare}
+
+  Compares its string (\verb`varchar`) arguments \verb`a` and
+\verb`b`, returning -1 if \verb`a` is less than \verb`b`, 0 if they
+are equal, or 1 if \verb`a` is greater than \verb`b`:
+
+\begin{verbatim}
+  stringcompare(a, b[, mode])
+\end{verbatim}
+
+  The strings are compared using the optional \verb`mode` argument,
+which is a string-folding mode in the same format as
+{\tt <apicp stringcomparemode>}; see the Vortex manual for details on
+the syntax and default.  If \verb`mode` is unspecified, the current
+{\tt apicp stringcomparemode} setting is used.  Function added
+in version 6.00.1304108000 20110429.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{stringformat}
+
+  Returns its arguments formatted into a string (\verb`varchar`), like
+the equivalent Vortex function \verb`<strfmt>` (based on the C
+function \verb`sprintf()`):
+
+\begin{verbatim}
+  stringformat(format[, arg[, arg[, arg[, arg]]]])
+\end{verbatim}
+
+  The \verb`format` argument is a \verb`varchar` string that describes
+how to print the following argument(s), if any.  See the Vortex manual
+for \verb`<strfmt>` for details.  Added in version 6.00.1300386000
+20110317.
+
+% ----------------------------------------------------------------------------

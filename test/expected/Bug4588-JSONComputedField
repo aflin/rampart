@@ -1,0 +1,174 @@
+Texis Version ...
+
+SQL 1 line 1> -- Tests Bug 4588: JSON Library
+SQL 2 line 2> 
+SQL 3 line 3> set betafeatures = 'json';
+
+SQL 1 line 4> 
+SQL 1 line 5> -- ======================================================================
+SQL 2 line 6> create table test (id int, Json varchar(20), Country varchar(20));
+     id          Json       Country   
+------------+------------+------------+
+
+SQL 1 line 7> insert into test values (1, '{"info":{"type":2,"address":{"town":"Cleveland","county":"Cuyahoga","country":"United States"},"tags":["Sport","Football"]},"type":"Basic"}', 'United States');
+     id          Json       Country   
+------------+------------+------------+
+           1 {"info":{"type":2,"address":{"town":"Cleveland","county":"Cuyahoga","country":"United States"},"tags":["Sport","Football"]},"type":"Basic"} United States
+
+SQL 1 line 8> insert into test values (2, '{"info":{"type":1,"address":{"town":"Bristol","county":"Avon","country":"England"},"tags":["Sport","Water polo"]},"type":"Basic"}', 'England');
+     id          Json       Country   
+------------+------------+------------+
+           2 {"info":{"type":1,"address":{"town":"Bristol","county":"Avon","country":"England"},"tags":["Sport","Water polo"]},"type":"Basic"} England
+
+SQL 1 line 9> insert into test values (3, '{"name":"John","skills":["C#","SQL"]}', '');
+     id          Json       Country   
+------------+------------+------------+
+           3 {"name":"John","skills":["C#","SQL"]} 
+
+SQL 1 line 10> --
+SQL 2 line 11> -- 
+SQL 3 line 12> select Json.$.info.type from test;
+Json.$.info.type
+----------------+
+2
+1
+NULL
+
+SQL 1 line 13> select Json.$.info.address.town from test;
+Json.$.info.address.town
+------------------------+
+Cleveland
+Bristol
+NULL
+
+SQL 1 line 14> select Json.$.info."address" from test;
+Json.$.info.address
+-------------------+
+{"town":"Cleveland","county":"Cuyahoga","country":"United States"}
+{"town":"Bristol","county":"Avon","country":"England"}
+NULL
+
+SQL 1 line 15> select Json.$.info.tags from test;
+Json.$.info.tags
+----------------+
+["Sport","Football"]
+["Sport","Water polo"]
+NULL
+
+SQL 1 line 16> select Json.$.info.type[0] from test;
+Json.$.info.type[0]
+-------------------+
+NULL
+NULL
+NULL
+
+SQL 1 line 17> select Json.$.info.none from test;
+Json.$.info.none
+----------------+
+NULL
+NULL
+NULL
+
+SQL 1 line 18> select Json.$.info.tags[1] from test;
+Json.$.info.tags[1]
+-------------------+
+Football
+Water polo
+NULL
+
+SQL 1 line 19> select Json.$.info.address.town Town from test order by Json.$.info.type;
+    Town    
+------------+
+Bristol
+Cleveland
+
+SQL 1 line 20> select Json.$.info.address.town Town from test order by Json.$.info.address.country;
+    Town    
+------------+
+Bristol
+Cleveland
+
+SQL 1 line 21> select Json.$.info.address.town Town from test where Json.$.info.address.country = 'England' order by Json.$.info.address.country;
+    Town    
+------------+
+Bristol
+
+SQL 1 line 22> 
+SQL 1 line 23> create index ix1 on test(Json.$.info.type);
+
+SQL 1 line 24> create index ix2 on test(Json.$.info.address.country);
+
+SQL 1 line 25> create index ix3 on test(Country);
+
+SQL 1 line 26> 
+SQL 1 line 27> select * from SYSINDEX where TBNAME = 'test' order by NAME, TYPE;
+    NAME        TBNAME       FNAME       COLLSEQ        TYPE      NON_UNIQUE     FIELDS       PARAMS   
+------------+------------+------------+------------+------------+------------+------------+------------+
+ix1          test         ix1          A            B                      01 Json.$.info.type stringcomparemode=unicodemulti,respectcase;
+ix2          test         ix2          A            B                      01 Json.$.info.address.country stringcomparemode=unicodemulti,respectcase;
+ix3          test         ix3          A            B                      01 Country      stringcomparemode=unicodemulti,respectcase;
+
+SQL 1 line 28> 
+SQL 1 line 29> set verbose = 1;
+
+SQL 1 line 30> 
+SQL 1 line 31> select Json.$.info.type Type, Json.$.info.address.town Town from test order by Json.$.info.type;
+200 Opening index TMPDIR/junk/ix1 in the function: opendbidx
+    Type         Town    
+------------+------------+
+NULL         NULL
+1            Bristol
+2            Cleveland
+
+SQL 1 line 32> select Json.$.info.address.country Country, Json.$.info.address.town Town from test where Json.$.info.address.country = 'England' order by Json.$.info.address.country;
+200 Setting pred Json.$.info.address.country = England on table test in the function: settablepred
+200 Opening index TMPDIR/junk/ix2 in the function: opendbidx
+200 Opening index TMPDIR/junk/ix2 in the function: ixbtindex
+200 Expect to read 75% of the index in the function: ixbtindex
+200 Will not use index TMPDIR/junk/ix2: match estimate 75% exceeds btreethreshold 50 in the function: ixbtindex
+200 Opening index TMPDIR/junk/ix2 in the function: opendbidx
+  Country        Town    
+------------+------------+
+England      Bristol
+
+SQL 1 line 33> select Country, Json.$.info.address.town Town from test where Country = 'England' order by Country;
+200 Setting pred Country = England on table test in the function: settablepred
+200 Opening index TMPDIR/junk/ix3 in the function: opendbidx
+200 Opening index TMPDIR/junk/ix3 in the function: ixbtindex
+200 Expect to read 75% of the index in the function: ixbtindex
+200 Will not use index TMPDIR/junk/ix3: match estimate 75% exceeds btreethreshold 50 in the function: ixbtindex
+200 Opening index TMPDIR/junk/ix3 in the function: opendbidx
+  Country        Town    
+------------+------------+
+England      Bristol
+
+SQL 1 line 34> 
+SQL 1 line 35> set indexaccess = 1;
+
+SQL 1 line 36> 
+SQL 1 line 37> select * from ix1;
+Json.$.info.type
+----------------+
+
+1
+2
+
+SQL 1 line 38> select * from ix2;
+Json.$.info.address.country
+---------------------------+
+
+England
+United States
+
+SQL 1 line 39> select * from ix3;
+  Country   
+------------+
+
+England
+United States
+
+SQL 1 line 40> 
+SQL 1 line 41> drop table test;
+200 Setting pred TBNAME = test on table SYSCOLUMNS in the function: settablepred
+
+SQL 1 line 42> 

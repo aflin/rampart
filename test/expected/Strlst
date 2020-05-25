@@ -1,0 +1,308 @@
+Texis Version ...
+
+SQL 1 line 1> -- Test String lists
+SQL 2 line 2> 
+SQL 3 line 3> -- Defaults that changed in version 7:
+SQL 4 line 4> set varchartostrlstsep = 'lastchar';
+
+SQL 1 line 5> 
+SQL 1 line 6> -- test016
+SQL 2 line 7> -- Basic test
+SQL 3 line 8> 
+SQL 4 line 9> create table test (x varchar(10), y strlst);
+     x            y      
+------------+------------+
+
+SQL 1 line 10> 
+SQL 1 line 11> insert into test values ('1,2,3,','1,2,3,');
+     x            y      
+------------+------------+
+1,2,3,       1,2,3,
+
+SQL 1 line 12> insert into test values ('4|5|6|','4|5|6|');
+     x            y      
+------------+------------+
+4|5|6|       4|5|6|
+
+SQL 1 line 13> 
+SQL 1 line 14> select * from test;
+     x            y      
+------------+------------+
+1,2,3,       1,2,3,
+4|5|6|       4|5|6|
+
+SQL 1 line 15> 
+SQL 1 line 16> drop table test;
+
+SQL 1 line 17> 
+SQL 1 line 18> -- test208
+SQL 2 line 19> -- test with a single character strlst, which has '2' as delimiter.
+SQL 3 line 20> -- Make sure search doesn't return it.
+SQL 4 line 21> 
+SQL 5 line 22> create table test (x varchar(10), y strlst);
+     x            y      
+------------+------------+
+
+SQL 1 line 23> 
+SQL 1 line 24> insert into test values ('2,','2');
+     x            y      
+------------+------------+
+2,           2
+
+SQL 1 line 25> insert into test values ('1,2,3,','1,2,3,');
+     x            y      
+------------+------------+
+1,2,3,       1,2,3,
+
+SQL 1 line 26> insert into test values ('4|5|6|','4|5|6|');
+     x            y      
+------------+------------+
+4|5|6|       4|5|6|
+
+SQL 1 line 27> 
+SQL 1 line 28> select * from test;
+     x            y      
+------------+------------+
+2,           2
+1,2,3,       1,2,3,
+4|5|6|       4|5|6|
+
+SQL 1 line 29> 
+SQL 1 line 30> select * from test where '2' in y;
+     x            y      
+------------+------------+
+1,2,3,       1,2,3,
+
+SQL 1 line 31> select * from test where '4' in y;
+     x            y      
+------------+------------+
+4|5|6|       4|5|6|
+
+SQL 1 line 32> select * from test where '3' in y;
+     x            y      
+------------+------------+
+1,2,3,       1,2,3,
+
+SQL 1 line 33> drop table test;
+
+SQL 1 line 34> 
+SQL 1 line 35> -- test243
+SQL 2 line 36> -- multivaluetomultirow
+SQL 3 line 37> 
+SQL 4 line 38> create table test(x strlst);
+     x      
+------------+
+
+SQL 1 line 39> insert into test values('a,b,c,d,');
+     x      
+------------+
+a,b,c,d,
+
+SQL 1 line 40> insert into test values('e,f,g,h,');
+     x      
+------------+
+e,f,g,h,
+
+SQL 1 line 41> insert into test values('b,');
+     x      
+------------+
+b,
+
+SQL 1 line 42> insert into test values('a,c,');
+     x      
+------------+
+a,c,
+
+SQL 1 line 43> create index ix1 on test(x);
+
+SQL 1 line 44> select x from test group by x;          -- multivaluetomultirow default off v7+
+     x      
+------------+
+a,b,c,d,
+a,c,
+b,
+e,f,g,h,
+
+SQL 1 line 45> set multivaluetomultirow=1;
+
+SQL 1 line 46> select x from test group by x;          -- KNG 20090424 Bug 2598
+     x      
+------------+
+a
+b
+c
+d
+e
+f
+g
+h
+
+SQL 1 line 47> select x from test group by x GroupByRenamed;  -- Bug 5079
+     x      
+------------+
+a
+b
+c
+d
+e
+f
+g
+h
+
+SQL 1 line 48> set verbose=2;          -- ensure we see it use the index
+
+SQL 1 line 49> set bubble=0;           -- ensure it says it's opening index
+
+SQL 1 line 50> select * from test where 'b' in x;
+200 Setting pred b IN x on table test in the function: settablepred
+200 Looking for index on test (x) in the function: ddgetindex
+200 Opening index TMPDIR/junk/ix1 in the function: ixbteqindex
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+     x      
+------------+
+200 Handling a table select in the function: TXdotree
+200 Read 1 rows so far from test
+a,b,c,d,
+200 Handling a table select in the function: TXdotree
+200 Read 2 rows so far from test
+b,
+200 Handling a table select in the function: TXdotree
+200 No more rows [2] from test
+
+SQL 1 line 51> select * from test where x in ('b');
+200 Setting pred x IN b on table test in the function: settablepred
+200 Looking for index on test (x) in the function: ddgetindex
+200 Opening index TMPDIR/junk/ix1 in the function: ixbteqindex
+100 Results from index TMPDIR/junk/ix1 will be missing empty rows (if any) in the function: ixbteqindex
+200 Results from index TMPDIR/junk/ix1 will require post-processing: subset op, right-side parameter and multi/zero-item left-side column in the function: ixbteqindex
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+     x      
+------------+
+200 Handling a table select in the function: TXdotree
+200 Read 1 rows so far from test
+b,
+200 Handling a table select in the function: TXdotree
+200 No more rows [1] from test
+
+SQL 1 line 52> select * from test where 'b' = x;
+200 Setting pred b = x on table test in the function: settablepred
+200 Looking for index on test (x) in the function: ddgetindex
+     x      
+------------+
+200 Handling a table select in the function: TXdotree
+200 Read 1 rows so far from test
+b,
+200 Handling a table select in the function: TXdotree
+200 No more rows [1] from test
+
+SQL 1 line 53> select * from test where x = 'b';
+200 Setting pred x = b on table test in the function: settablepred
+200 Looking for index on test (x) in the function: ddgetindex
+     x      
+------------+
+200 Handling a table select in the function: TXdotree
+200 Read 1 rows so far from test
+b,
+200 Handling a table select in the function: TXdotree
+200 No more rows [1] from test
+
+SQL 1 line 54> select * from test where x != 'b';  -- KNG 20081107 Bug 2398
+200 Setting pred x != b on table test in the function: settablepred
+200 Looking for index on test (x) in the function: ddgetindex
+     x      
+------------+
+200 Handling a table select in the function: TXdotree
+200 Read 1 rows so far from test
+a,b,c,d,
+200 Handling a table select in the function: TXdotree
+200 Read 2 rows so far from test
+e,f,g,h,
+200 Handling a table select in the function: TXdotree
+200 Read 3 rows so far from test
+a,c,
+200 Handling a table select in the function: TXdotree
+200 No more rows [3] from test
+
+SQL 1 line 55> select * from test where 'b%' matches x;
+200 Setting pred b% MATCHES x on table test in the function: settablepred
+200 Looking for index on test (x) in the function: ddgetindex
+     x      
+------------+
+200 Handling a table select in the function: TXdotree
+115 varchar MATCHES varstrlst behavior undefined in the function: fochsl
+200 No more rows [0] from test
+
+SQL 1 line 56> select * from test where x matches 'b%';
+200 Setting pred x MATCHES b% on table test in the function: settablepred
+200 Looking for index on test (x) in the function: ddgetindex
+200 Opening index TMPDIR/junk/ix1 in the function: ixbtindex
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Expect to read 25% of the index in the function: ixbtindex
+     x      
+------------+
+200 Handling a table select in the function: TXdotree
+200 Read 1 rows so far from test
+a,b,c,d,
+200 Handling a table select in the function: TXdotree
+200 Read 2 rows so far from test
+b,
+200 Handling a table select in the function: TXdotree
+200 No more rows [2] from test
+
+SQL 1 line 57> set verbose=0;
+
+SQL 1 line 58> select x from test group by x;          -- Bug 2598 w/bubble=0
+     x      
+------------+
+a
+b
+c
+d
+e
+f
+g
+h
+
+SQL 1 line 59> drop table test;
+
+SQL 1 line 60> 
+SQL 1 line 61> set varchartostrlstsep = 'create';
+
+SQL 1 line 62> 

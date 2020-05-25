@@ -1,0 +1,829 @@
+% >>>>> DO NOT EDIT: this file generated from function.src <<<<<
+% -*- mode: LaTeX -*-
+% $Id$
+%
+%  Use:        For:               PDF render:   Online render:
+%  ----        ----               ----------    --------------
+%  \verb`...`  Keywords           Fixed-font    <code> fixed-font red-on-pink
+%  {\tt ... }  User input         Fixed-font    <tt> fixed-font
+%  {\bf ...}   Settings/sections  Bold          <b> bold
+
+\section{Server functions}
+The Texis server has a number of functions built into it which can operate
+on fields.  This can occur anywhere an expression can occur in a SQL
+statement.  It is possible that the server at your site has been extended
+with additional functions.  Each of the arguments can be either a single
+field name, or another expression.
+
+\input{funcs-file}
+\input{funcs-string}
+\input{funcs-math}
+\input{funcs-date}
+\input{funcs-bit}
+\input{funcs-ip}
+\input{funcs-geo}
+\input{funcs-json}
+\subsection{Other Functions}
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{exec}
+
+Execute an external command.  The syntax is
+\begin{verbatim}
+   exec(commandline[, INPUT[, INPUT[, INPUT[, INPUT]]]]);
+\end{verbatim}
+
+Allows execution of an external command.  The first argument is the
+command to execute.  Any subsequent arguments are written to the standard
+input of the process.  The standard output of the command is read as the
+return from the function.
+
+This function allows unlimited extensibility of Texis, although if a
+particular function is being used often then it should be linked into the
+Texis server to avoid the overhead of invoking another process.
+
+For example this could be used to OCR text.  If you have a program which
+will take an image filename on the command line, and return the text on
+standard out you could issue SQL as follows:
+
+\begin{verbatim}
+     UPDATE     DOCUMENTS
+     SET        TEXT = exec('ocr '+IMGFILE)
+     WHERE      TEXT = '';
+\end{verbatim}
+
+Another example would be if you wanted to print envelopes from names and
+addresses in a table you might use the following SQL:
+
+\begin{verbatim}
+     SELECT	exec('envelope ', FIRST_NAME+' '+LAST_NAME+'
+     ', STREET + '
+     ', CITY + ', ' + STATE + ' ' + ZIP)
+     FROM ADDRESSES;
+\end{verbatim}
+
+Notice in this example the addition of spaces and line-breaks between the
+fields.  Texis does not add any delimiters between fields or arguments
+itself.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{mminfo}
+
+This function lets you obtain Metamorph info.  You have the choice of
+either just getting the portions of the document which were the hits, or
+you can also get messages which describe each hit and subhits.
+
+The SQL to use is as follows:
+
+\begin{verbatim}
+    SELECT mminfo(query,data[,nhits,[0,msgs]]) from TABLE
+           [where CONDITION];
+\end{verbatim}
+
+\begin{description}
+\item[query]
+
+Query should be a string containing a metamorph query.
+
+\item[data]
+
+The text to search. May be literal data or a field from the table.
+
+\item[nhits]
+
+The maximum number of hits to return.  If it is 0, which
+is the default, you will get all the hits.
+
+\item[msgs]
+
+An integer; controls what information is returned. A bit-wise OR of
+any combination of the following values:
+\begin{itemize}
+\item 1 to get matches and offset/length information
+\item 2 to suppress text from \verb`data` which matches; printed by default
+\item 4 to get a count of hits (up to \verb`nhits`)
+\item 8 to get the hit count in a numeric parseable format
+\item 16 to get the offset/length in the original query of each search set
+\end{itemize}
+
+Set offset/length information (value 16) is of the form:
+\begin{verbatim}
+Set N offset/len in query: setoff setlen
+\end{verbatim}
+Where \verb`N` is the set number (starting with 1), \verb`setoff` is
+the byte offset from the start of the query where set \verb`N` is,
+and \verb`setlen` is the length of the set.
+This information is available in version 5.01.1220640000 20080905
+and later.
+
+Hit offset/length information is of the form:
+\begin{verbatim}
+300 <Data from Texis> offset length suboff sublen [suboff sublen]..
+301 End of Metamorph hit
+\end{verbatim}
+Where:
+\begin{itemize}
+\item offset is the offset within the data of the overall hit context
+      (sentence, paragraph, etc...)
+\item length is the length of the overall hit context
+\item suboff is the offset within the hit of a matching term
+\item sublen is the length of the matching term
+\item suboff and sublen will be repeated for as many terms as are
+      required to satisfy the query.
+\end{itemize}
+
+\end{description}
+
+
+\begin{verbatim}
+Example:
+   select mminfo('power struggle @0 w/.',Body,0,0,1) inf from html
+          where Title\Meta\Body like 'power struggle';
+Would give something of the form:
+
+300 <Data from Texis> 62 5 0 5
+power
+301 End of Metamorph hit
+300 <Data from Texis> 2042 5 0 5
+power
+301 End of Metamorph hit
+300 <Data from Texis> 2331 5 0 5
+POWER
+301 End of Metamorph hit
+300 <Data from Texis> 2892 8 0 8
+STRUGGLE
+301 End of Metamorph hit
+\end{verbatim}
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{convert}
+\label{convertSqlFunction}
+
+The convert function allows you to change the type of an expression.
+The syntax is
+\begin{verbatim}
+   CONVERT(expression, 'type-name'[, 'mode'])
+\end{verbatim}
+The type name should in general be in lower case.
+
+This
+can be useful in a number of situations.  Some cases where you might want
+to use convert are
+\begin{itemize}
+\item  The display format for a different format is more useful.  For example
+you might want to convert a field of type COUNTER to a DATE field, so you
+can see when the record was inserted, for example:
+
+\begin{verbatim}
+    SELECT convert(id, 'date')
+    FROM   LOG;
+\end{verbatim}
+
+\begin{smscreen}
+\begin{verbatim}
+    CONVERT(id, 'date')
+    1995-01-27 22:43:48
+\end{verbatim}
+\end{smscreen}
+\item  If you have an application which is expecting data in a particular
+type you can use convert to make sure you will receive the correct type.
+\end{itemize}
+
+
+Caveat: Note that in Texis version 7 and later, \verb`convert()`ing
+data from/to \verb`varbyte`/\verb`varchar` no longer converts the data
+to/from hexadecimal by default (as was done in earlier versions) in
+programs other than \verb`tsql`; it is now preserved as-is (though
+truncated at nul for \verb`varchar`).  See the \verb`bintohex()` and
+\verb`hextobin()` functions (p.~\pageref{bintohexSqlFunction}) for
+hexadecimal conversion, and the \verb`hexifybytes` SQL property
+(p.~\pageref{hexifybytesProperty}) for controlling automatic hex
+conversion.
+
+Also in Texis version 7 and later, an optional third argument may be
+given to \verb`convert()`, which is a \verb`varchartostrlstsep` mode
+value (p.~\pageref{`varchartostrlstsep'}).  This third argument may
+only be supplied when converting to type \verb`strlst` or
+\verb`varstrlst`.  It allows the separator character or mode to be
+conveniently specified locally to the conversion, instead of having to
+alter the global \verb`varchartostrlstsep` mode.
+
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{seq}
+
+Returns a sequence number.  The number can be initialized to any value,
+and the increment can be defined for each call.  The syntax is:
+
+\begin{verbatim}
+	seq(increment [, init])
+\end{verbatim}
+
+If {\tt init} is given then the sequence number is initialized to that value,
+which will be the value returned.  It is then incremented by {\tt increment}.
+If {\tt init} is not specified then the current value will be retained.  The
+initial value will be zero if {\tt init} has not been specified.
+
+Examples of typical use:
+
+\begin{verbatim}
+     SELECT  NAME, seq(1)
+     FROM    SYSTABLES
+\end{verbatim}
+
+The results are:
+
+\begin{screen}
+\begin{verbatim}
+  NAME                seq(1)
+ SYSTABLES               0
+ SYSCOLUMNS              1
+ SYSINDEX                2
+ SYSUSERS                3
+ SYSPERMS                4
+ SYSTRIG                 5
+ SYSMETAINDEX            6
+\end{verbatim}
+\end{screen}
+
+\begin{verbatim}
+     SELECT  seq(0, 100)
+     FROM    SYSDUMMY;
+
+     SELECT  NAME, seq(1)
+     FROM    SYSTABLES
+\end{verbatim}
+
+The results are:
+
+\begin{screen}
+\begin{verbatim}
+  seq(0, 100)
+     100
+
+  NAME                seq(1)
+ SYSTABLES             100
+ SYSCOLUMNS            101
+ SYSINDEX              102
+ SYSUSERS              103
+ SYSPERMS              104
+ SYSTRIG               105
+ SYSMETAINDEX          106
+\end{verbatim}
+\end{screen}
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{random}
+
+Returns a random {\tt int}.  The syntax is:
+
+\begin{verbatim}
+	random(max [, seed])
+\end{verbatim}
+
+If {\tt seed} is given then the random number generator is seeded to
+that value.  The random number generator will only be seeded once in
+each session, and will be randomly seeded on the first call if no seed
+is supplied.  The {\tt seed} parameter is ignored in the second and
+later calls to {\tt random} in a process.
+
+The returned number is always non-negative, and never larger than the
+limit of the C lib's random number generator (typically either 32767
+or 2147483647).  If {\tt max} is non-zero, then the returned number
+will also be less than {\tt max}.
+
+This function is typically used to either generate a random number for
+later use, or to generate a random ordering of result records by adding
+{\tt random} to the {\tt ORDER BY} clause.
+
+Examples of typical use:
+
+\begin{verbatim}
+     SELECT  NAME, random(100)
+     FROM    SYSTABLES
+\end{verbatim}
+
+The results might be:
+
+\begin{screen}
+\begin{verbatim}
+  NAME                random(100)
+ SYSTABLES               90
+ SYSCOLUMNS              16
+ SYSINDEX                94
+ SYSUSERS                96
+ SYSPERMS                 1
+ SYSTRIG                 84
+ SYSMETAINDEX            96
+\end{verbatim}
+\end{screen}
+
+\begin{verbatim}
+     SELECT  ENAME
+     FROM    EMPLOYEE
+     ORDER BY random(0);
+\end{verbatim}
+
+The results would be a list of employees in a random order.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{bintohex}
+\label{bintohexSqlFunction}
+
+  Converts a binary (\verb`varbyte`) value into a hexadecimal string.
+
+\begin{verbatim}
+    bintohex(varbyteData[, 'stream|pretty'])
+\end{verbatim}
+
+  A string (\verb`varchar`) hexadecimal representation of the
+\verb`varbyteData` parameter is returned.  This can be useful to
+visually examine binary data that may contain non-printable or nul
+bytes.  The optional second argument is a comma-separated string of
+any of the following flags:
+
+\begin{itemize}
+  \item \verb`stream`: Use the default output mode: a continuous
+    stream of hexadecimal bytes, i.e. the same format that
+    \verb`convert(varbyteData, 'varchar')` would have returned in
+    Texis version 6 and earlier.
+
+  \item \verb`pretty`: Return a ``pretty'' version of the data: print
+    16 byte per line, space-separate the hexadecimal bytes, and print
+    an ASCII dump on the right side.
+\end{itemize}
+
+The \verb`bintohex()` function was added in Texis version 7.  Caveat:
+Note that in version 7 and later, \verb`convert()`ing data from/to
+\verb`varbyte`/\verb`varchar` no longer converts the data to/from
+hexadecimal by default (as was done in earlier versions) in programs
+other than \verb`tsql`; it is now preserved as-is (though truncated at
+nul for \verb`varchar`).  See the \verb`hexifybytes` SQL property
+(p.~\pageref{hexifybytesProperty}) to change this.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{hextobin}
+
+  Converts a hexadecimal stream to its binary representation.
+
+\begin{verbatim}
+    hextobin(hexString[, 'stream|pretty'])
+\end{verbatim}
+
+  The hexadecimal \verb`varchar` string \verb`hexString` is converted
+to its binary representation, and the \verb`varbyte` result returned.
+The optional second argument is a comma-separated string of any of the
+following flags:
+
+\begin{itemize}
+  \item \verb`stream`: Only accept the \verb`stream` format of
+    \verb`bintohex()`, i.e. a stream of hexadecimal bytes, the same
+    format that \verb`convert(varbyteData, 'varchar')` would have
+    returned in Texis version 6 and earlier.  Whitespace is
+    acceptable, but only between (not within) hexadecimal bytes.
+    Case-insensitive.  Non-conforming data will result in an error
+    message and the function failing.
+
+  \item \verb`pretty`: Accept either \verb`stream` or \verb`pretty`
+    format data; if the latter, only the hexadecimal bytes are parsed
+    (e.g. ASCII column is ignored).  Parsing is more liberal, but
+    may be confused if the data deviates significantly from either
+    format.
+\end{itemize}
+
+The \verb`hextobin()` function was added in Texis version 7.  Caveat:
+Note that in version 7 and later, \verb`convert()`ing data from/to
+\verb`varbyte`/\verb`varchar` no longer converts the data to/from
+hexadecimal by default (as was done in earlier versions) in programs
+other than \verb`tsql`; it is now preserved as-is (though truncated at
+nul for \verb`varchar`).  See the \verb`hexifybytes` SQL property
+(p.~\pageref{hexifybytesProperty}) to change this.
+
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{identifylanguage}
+
+  Tries to identify the predominant language of a given string.  By
+  returning a probability in addition to the identified language, this
+  function can also serve as a test of whether the given string is
+  really natural-language text, or perhaps binary/encoded data
+  instead.  Syntax:
+
+\begin{verbatim}
+    identifylanguage(text[, language[, samplesize]])
+\end{verbatim}
+
+  The return value is a two-element \verb`strlst`: a probability and a
+  language code.  The probability is a value from {\tt 0.000} to
+  {\tt 1.000} that the {\tt text} argument is composed in the
+  language named by the returned language code.  The language code is
+  a two-letter ISO-639-1 code.
+
+  If an ISO-639-1 code is given for the optional {\tt language}
+  argument, the probability for that particular language is returned,
+  instead of for the highest-probability language of the
+  known/built-in languages (currently {\tt de}, {\tt es}, {\tt fr},
+  {\tt ja}, {\tt pl}, {\tt tr}, {\tt da}, {\tt en}, {\tt eu},
+  {\tt it}, {\tt ko}, {\tt ru}).
+
+  The optional third argument {\tt samplesize} is the initial integer
+  size in bytes of the {\tt text} to sample when determining language;
+  it defaults to 16384.  The {\tt samplesize} parameter was added in
+  version 7.01.1382113000 20131018.
+
+  Note that since a \verb`strlst` value is returned, the probability
+  is returned as a \verb`strlst` element, not a \verb`double` value,
+  and thus should be cast to \verb`double` during comparisons.  In
+  Vortex with \verb`arrayconvert` on (the default), the return value
+  will be automatically split into a two-element Vortex \verb`varchar`
+  array.
+
+  The \verb`identifylanguage()` function is experimental, and its
+  behavior, syntax, name and/or existence are subject to change
+  without notice.  Added in version 7.01.1381362000 20131009.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{lookup}
+\label{lookup_SqlFunction}
+
+By combining the \verb`lookup()` function with a \verb`GROUP BY`, a
+column may be grouped into bins or ranges -- e.g. for price-range
+grouping -- instead of distinct individual values.  Syntax:
+
+\begin{verbatim}
+    lookup(keys, ranges[, names])
+\end{verbatim}
+
+The {\tt keys} argument is one (or more, e.g. \verb`strlst`) values to
+look up; each is searched for in the {\tt ranges} argument, which is
+one (or more, e.g. \verb`strlst`) ranges.  All range(s) that the given
+key(s) match will be returned.  If the {\tt names} argument is given,
+the corresponding {\tt names} value(s) are returned instead; this
+allows ranges to be renamed into human-readable values.  If {\tt
+  names} is given, the number of its values must equal the number of
+ranges.
+
+Each range is a pair of values (lower and upper bounds) separated by
+``{\tt ..}'' (two periods).  The range is optionally surrounded by
+square (bound included) or curly (bound excluded) brackets.  E.g.:
+
+\begin{verbatim}
+[10..20}
+\end{verbatim}
+
+denotes the range 10 to 20: including 10 (``{\tt [}'') but not
+  including (``{\tt \}}'') 20.  Both an upper and lower bracket must
+  be given if either is present (though they need not be the same
+  type).  The default if no brackets are given is to include the lower
+  bound but exclude the upper bound; this makes consecutive ranges
+  non-overlapping, if they have the same upper and lower bound and no
+  brackets (e.g. ``0..10,10..20'').  Either bound may be omitted, in
+  which case that bound is unlimited.  Each range's lower bound must
+  not be greater than its upper bound, nor equal if either bound is
+  exclusive.
+
+If a {\tt ranges} value is not {\tt varchar}/{\tt char}, or does not
+contain ``{\tt ..}'', its entire value is taken as a single inclusive
+lower bound, and the exclusive upper bound will be the next {\tt
+  ranges} value's lower bound (or unlimited if no next value).
+E.g. the \verb`varint` lower-bound list:
+
+\begin{verbatim}
+0,10,20,30
+\end{verbatim}
+
+is equivalent to the \verb`strlst` range list:
+
+\begin{verbatim}
+[0..10},[10..20},[20..30},[30..]
+\end{verbatim}
+
+By using the \verb`lookup()` function in a \verb`GROUP BY`, a column may
+be grouped into ranges.  For example, given a table {\tt Products}
+with the following SKUs and \verb`float` prices:
+
+\begin{verbatim}
+    SKU    Price
+    ------------
+    1234   12.95
+    1235    5.99
+    1236   69.88
+    1237   39.99
+    1238   29.99
+    1239   25.00
+    1240   50.00
+    1241   -2.00
+    1242  499.95
+    1243   19.95
+    1244    9.99
+    1245  125.00
+\end{verbatim}
+
+they may be grouped into price ranges (with most-products first) with
+this SQL:
+
+\begin{samepage}
+{\small
+\begin{verbatim}
+SELECT   lookup(Price, convert('0..25,25..50,50..,', 'strlst', 'lastchar'),
+     convert('Under $25,$25-49.99,$50 and up,', 'strlst', 'lastchar'))
+       PriceRange, count(SKU) NumberOfProducts
+FROM Products
+GROUP BY lookup(Price, convert('0..25,25..50,50..,', 'strlst', 'lastchar'),
+     convert('Under $25,$25-49.99,$50 and up,', 'strlst', 'lastchar'))
+ORDER BY 2 DESC;
+\end{verbatim}
+}
+\end{samepage}
+
+or this Vortex:
+
+\begin{samepage}
+\begin{verbatim}
+<$binValues =   "0..25"      "25..50"     "50..">
+<$binDisplays = "Under $$25" "$$25-49.99" "$$50 and up">
+<sql row "select lookup(Price, $binValues, $binDisplays) PriceRange,
+              count(SKU) NumberOfProducts
+          from Products
+          group by lookup(Price, $binValues, $binDisplays)
+          order by 2 desc">
+  <fmt "%10s: %d\n" $PriceRange $NumberOfProducts>
+</sql>
+\end{verbatim}
+\end{samepage}
+
+which would give these results:
+
+\begin{verbatim}
+  PriceRange NumberOfProducts
+------------+------------+
+Under $25,              4
+$50 and up,             4
+$25-49.99,              3
+                        1
+\end{verbatim}
+
+The trailing commas in {\tt PriceRange} values are due to them being
+\verb`strlst` values, for possible multiple ranges.  Note the empty
+{\tt PriceRange} for the fourth row: the -2 {\tt Price} matched
+no ranges, and hence an empty {\tt PriceRange} was returned for
+it.
+
+\CAVEATS
+
+The \verb`lookup()` function as described above was added in Texis
+version 7.06.1528745000 20180611.
+
+A different version of the \verb`lookup()` function was first added in
+version 7.01.1386980000 20131213: it only took the second range syntax
+variant (single lower bound); range values had to be in ascending
+order (by {\tt keys} type); only the first matching range was
+returned; and if a key did not match any range the first range was
+returned.
+
+\SEE
+
+\verb`lookupCanonicalizeRanges`, \verb`lookupParseRange`
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{lookupCanonicalizeRanges}
+\label{lookupCanonicalizeRanges_SqlFunction}
+
+The \verb`lookupCanonicalizeRanges()` function returns the canonical
+version(s) of its {\tt ranges} argument, which is zero or more ranges
+of the syntaxes acceptable to \verb`lookup()`
+(p.~\pageref{lookup_SqlFunction}):
+
+\begin{verbatim}
+    lookupCanonicalizeRanges(ranges, keyType)
+\end{verbatim}
+
+The canonical version always includes both a lower and upper
+inclusive/exclusive bracket/brace, both lower and upper bounds (unless
+unlimited), the ``{\tt ..}'' range operator, and is independent of
+other ranges that may be in the sequence.
+
+The {\tt keyType} parameter is a \verb`varchar` string denoting the
+SQL type of the key field that would be looked up in the given
+range(s).  This ensures that comparisons are done correctly.  E.g. for
+a \verb`strlst` range list of ``{\tt 0,500,1000}'', {\tt keyType}
+should be ``{\tt integer}'', so that ``{\tt 500}'' is not compared
+alphabetically with ``{\tt 1000}'' and considered invalid (greater than).
+
+This function can be used to verify the syntax of a range, or to
+transform it into a standard form for \verb`lookupParseRange()`
+(p.~\pageref{lookupParseRange_SqlFunction}).
+
+\CAVEATS
+
+For an implicit-upper-bound range, the upper bound is determined by
+the {\em next} range's lower bound.  Thus the full list of ranges (if
+multiple) should be given to \verb`lookupCanonicalizeRanges()` -- even
+if only one range needs to be canonicalized -- so that each range gets
+its proper bounds.
+
+The \verb`lookupCanonicalizeRanges()` function was added in version
+7.06.1528837000 20180612.  The {\tt keyType} parameter was added
+in version 7.06.1535500000 20180828.
+
+\SEE
+
+\verb`lookup`, \verb`lookupParseRange`
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{lookupParseRange}
+\label{lookupParseRange_SqlFunction}
+
+The \verb`lookupParseRange()` function parses a single
+\verb`lookup()`-style range into its constituent parts, returning them
+as strings in one \verb`strlst` value.  This can be used by Vortex
+scripts to edit a range.  Syntax:
+
+\begin{verbatim}
+    lookupParseRange(range, parts)
+\end{verbatim}
+
+The {\tt parts} argument is zero or more of the following part tokens
+as strings:
+
+\begin{itemize}
+  \item \verb`lowerInclusivity`: Returns the inclusive/exclusive operator
+    for the lower bound, e.g. ``{\tt \{}'' or ``{\tt [}''
+  \item \verb`lowerBound`: Returns the lower bound
+  \item \verb`rangeOperator`: Returns the range operator, e.g. ``{\tt ..}''
+  \item \verb`upperBound`: Returns the upper bound
+  \item \verb`upperInclusivity`: Returns the inclusive/exclusive operator
+    for the upper bound, e.g. ``{\tt \}}'' or ``{\tt ]}''
+\end{itemize}
+
+If a requested part is not present, an empty string is returned for
+that part.  The concatenation of the above listed parts, in the above
+order, should equal the given range.  Non-string range arguments are
+not supported.
+
+The \verb`lookupParseRange()` function was added in
+version 7.06.1528837000 20180612.
+
+\EXAMPLE
+
+\begin{verbatim}
+    lookupParseRange('10..20', 'lowerInclusivity')
+\end{verbatim}
+
+would return a single empty-string \verb`strlst`, as there is no
+lower-bound inclusive/exclusive operator in the range ``{\tt 10..20}''.
+
+\begin{verbatim}
+    lookupParseRange('10..20', 'lowerBound')
+\end{verbatim}
+
+would return a \verb`strlst` with the single value ``{\tt 10}''.
+
+\CAVEATS
+
+For an implicit-upper-bound range, the upper bound is determined by
+the {\em next} range's lower bound.  Since \verb`lookupParseRange()`
+only takes one range, passing such a range to it may result in an
+incorrect (unlimited) upper bound.  Thus the full list of ranges (if
+multiple) should always be given to \verb`lookupCanonicalizeRanges()`
+first, and only then the desired canonicalized range passed to
+\verb`lookupParseRange()`.
+
+\SEE
+
+\verb`lookup`, \verb`lookupCanonicalizeRanges`
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{hasFeature}
+
+Returns 1 if given feature is supported, 0 if not (or unknown).
+The syntax is:
+
+\begin{verbatim}
+	hasFeature(feature)
+\end{verbatim}
+
+where {\tt feature} is one of the following \verb`varchar` tokens:
+
+\begin{itemize}
+  \item \verb`RE2`  For RE2 regular expression support in REX
+\end{itemize}
+
+This function is typically used in Vortex scripts to test if a feature
+is supported with the current version of Texis, and if not, to work
+around that fact if possible.  For example:
+
+\begin{verbatim}
+     <if hasFeature( "RE2" ) = 1>
+       ... proceed with RE2 expressions ...
+     <else>
+       ... use REX instead ...
+     </if>
+\end{verbatim}
+
+Note that in a Vortex script that does not support {\tt hasFeature()}
+itself, such an \verb`<if>` statement will still compile and run,
+but will be false (with an error message).
+
+Added in version 7.06.1481662000 20161213.  Some feature tokens were
+added in later versions.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{ifNull}
+
+Substitute another value for NULL values.  Syntax:
+
+\begin{verbatim}
+   ifNull(testVal, replaceVal)
+\end{verbatim}
+
+  If \verb`testVal` is a SQL NULL value, then \verb`replaceVal` (cast
+to the type of \verb`testVal`) is returned; otherwise \verb`testVal`
+is returned.  This function can be used to ensure that NULL value(s)
+in a column are replaced with a non-NULL value, if a non-NULL value
+is required:
+
+\begin{verbatim}
+    SELECT ifNull(myColumn, 'Unknown') FROM myTable;
+\end{verbatim}
+
+Added in version 7.02.1405382000 20140714.  Note that SQL NULL is not
+yet fully supported in Texis (including in tables).  See also
+\verb`isNull`.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{isNull}
+
+Tests a value, and returns a \verb`long` value of 1 if NULL, 0 if not.
+Syntax:
+
+\begin{verbatim}
+   isNull(testVal)
+\end{verbatim}
+
+\begin{verbatim}
+    SELECT isNull(myColumn) FROM myTable;
+\end{verbatim}
+
+Added in version 7.02.1405382000 20140714.  Note that SQL NULL is
+not yet fully supported in Texis (including in tables).  Also note
+that Texis \verb`isNull` behavior differs from some other SQL
+implementations; see also \verb`ifNull`.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{xmlTreeQuickXPath}
+
+Extracts information from an XML document.
+
+\begin{verbatim}
+	xmlTreeQuickXPath(string xmlRaw, string xpathQuery
+        [, string[] xmlns)
+\end{verbatim}
+
+Parameters:
+\begin{itemize}
+\item \verb`xmlRaw` - the plain text of the xml document you want to
+  extract information from
+\item \verb`xpathQuery` - the XPath expression that identifies the
+  nodes you want to extract the data from
+\item \verb`xmlns` {\em(optional)} - an array of \verb`prefix=URI`
+  namespaces to use in the XPath query
+\end{itemize}
+
+Returns:
+\begin{itemize}
+\item String values of the node from the XML document \verb`xmlRaw`
+  that match \verb`xpathQuery`
+\end{itemize}
+
+\verb`xmlTreeQuickXPath` allows you to easily extract information from
+an XML document in a one-shot function.  It is intended to be used in
+SQL statements to extract specific information from a field that
+contains XML data.
+
+It is essentially a one statement version of the following:
+\begin{verbatim}
+    <$doc = (xmlTreeNewDocFromString($xmlRaw))>
+    <$xpath = (xmlTreeNewXPath($doc))>
+    <$nodes = (xmlTreeXPathExecute($xpathQuery))>
+    <loop $nodes>
+        <$ret = (xmlTreeGetAllContent($nodes))>
+        <$content = $content $ret>
+    </loop>
+\end{verbatim}
+
+\EXAMPLE
+if the \verb`xmlData` field of a table has content like this:
+\begin{verbatim}
+<extraInfo>
+    <price>8.99</price>
+    <author>John Doe</author>
+    <isbn>978-0-06-051280-4</isbn>
+</extraInfo>
+\end{verbatim}
+
+Then the following SQL statement will match that row:
+\begin{verbatim}
+SELECT * from myTable where xmlTreeQuickXPath(data,
+'/extraInfo/author') = 'John Doe'
+\end{verbatim}

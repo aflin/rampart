@@ -1,0 +1,147 @@
+#ifndef TX_CORECONFIG_H
+#define TX_CORECONFIG_H
+
+/*
+ * Include files
+ */
+#cmakedefine EPI_HAVE_ARPA_INET_H
+#cmakedefine EPI_HAVE_ARPA_NAMESER_H
+#cmakedefine EPI_HAVE_IO_H
+#cmakedefine EPI_HAVE_NETDB_H
+#cmakedefine EPI_HAVE_UNISTD_H
+#cmakedefine HAVE_WINDOWS_H
+
+/*
+ * Functions
+ */
+#cmakedefine EPI_HAVE_ALIGNOF
+#cmakedefine EPI_HAVE__ALIGNOF
+#cmakedefine EPI_HAVE___ALIGNOF
+#cmakedefine EPI_HAVE___ALIGNOF__
+#cmakedefine EPI_HAVE_ATOMIC_FETCH_FUNCTIONS
+#cmakedefine EPI_HAVE_BZERO
+#cmakedefine EPI_HAVE_DLOPEN
+#cmakedefine EPI_HAVE_ECVT
+#cmakedefine EPI_HAVE_FCVT
+#cmakedefine EPI_HAVE_FDATASYNC
+#cmakedefine EPI_HAVE_FSYNC
+#cmakedefine EPI_HAVE_HSTRERROR
+#cmakedefine EPI_HAVE_GCVT
+#cmakedefine EPI_HAVE_GETGROUPS
+#cmakedefine EPI_HAVE_GETPAGESIZE
+#cmakedefine EPI_HAVE_GETPWUID_R_INT
+#cmakedefine EPI_HAVE_GETPWUID_R_PW
+#cmakedefine EPI_HAVE_MADVISE
+#cmakedefine EPI_HAVE_MMAP
+#cmakedefine EPI_HAVE_MSYNC
+#cmakedefine EPI_HAVE_PTHREADS
+#cmakedefine HAVE_PTHREAD_MUTEX_INITIALIZER
+#ifdef HAVE_PTHREAD_MUTEX_INITIALIZER
+#	define EPI_PTHREAD_MUTEX_INITIALIZER PTHREAD_MUTEX_INITIALIZER
+#else
+#	define EPI_PTHREAD_MUTEX_INITIALIZER {{{0,0,0,0},0},{{{0,0,0,0,0,0,0,0}}},0}
+#endif
+#cmakedefine EPI_HAVE_QSORT_R
+#cmakedefine EPI_HAVE_QSORT_S
+#cmakedefine EPI_HAVE_SNPRINTF
+#cmakedefine EPI_HAVE_STATVFS
+#cmakedefine EPI_HAVE_STATVFS_BAVAIL
+#cmakedefine EPI_HAVE_STDARG
+#cmakedefine     HAVE_STRERROR
+#cmakedefine EPI_HAVE_STRNCASECMP
+#cmakedefine EPI_HAVE_STRNICMP
+#cmakedefine EPI_HAVE_SYNC_FETCH_FUNCTIONS
+
+ /*
+  * Types
+  */
+
+#cmakedefine EPI_HAVE___FLOAT128
+#cmakedefine EPI_HAVE_IPC_PERM___KEY
+#cmakedefine EPI_HAVE_IPC_PERM__KEY
+#cmakedefine EPI_HAVE_IPC_PERM_KEY
+#cmakedefine EPI_HAVE___INT64
+#cmakedefine EPI_HAVE_ISINF_CALL
+#cmakedefine EPI_HAVE_ISNAN_CALL
+#cmakedefine EPI_HAVE_LONG_DOUBLE
+#cmakedefine EPI_HAVE_LONG_LONG
+#cmakedefine EPI_HAVE_NAN_CALL
+#cmakedefine EPI_HAVE_NANL_CALL
+#cmakedefine PID_T @pid_t@
+#cmakedefine EPI_HAVE_RLIM_T
+#cmakedefine EPI_HAVE_SIGACTION
+#cmakedefine EPI_HAVE_SA_SIGACTION
+#cmakedefine EPI_HAVE_SIGINFO_T
+#cmakedefine EPI_HAVE_SOCKLEN_T
+#ifdef EPI_HAVE_SOCKLEN_T
+# define EPI_SOCKLEN_T socklen_t
+#else
+# define EPI_SOCKLEN_T int
+#endif
+/*
+ * To standard these should both be socklen_t
+ * Where might they differ?
+ */
+#define EPI_GETSOCKNAME_LEN_TYPE EPI_SOCKLEN_T
+#define EPI_ACCEPT_LEN_TYPE EPI_SOCKLEN_T
+#cmakedefine EPI_HAVE_SIGNED_SSIZE_T
+#cmakedefine EPI_HAVE_SYS_SEM_H
+#cmakedefine EPI_HAVE_TM_GMTOFF
+#cmakedefine HAVE_UINT
+#cmakedefine EPI_HAVE___UINT64
+#cmakedefine EPI_HAVE_UNSIGNED_LONG_LONG
+
+
+#cmakedefine HAVE_CRYPT_DECL
+#cmakedefine HAVE_GETPASS_DECL
+#cmakedefine HAVE_KVM_H
+#cmakedefine HAVE_MACH_TASK_INFO
+#cmakedefine HAVE_PWD_H
+#cmakedefine HAVE_STRINGS_H
+#cmakedefine HAVE_SYS_SHM_H
+#cmakedefine HAVE_SYS_UN_H
+#cmakedefine HAVE_SYS_USER_H
+
+#ifdef EPI_HAVE_SYS_SEM_H
+#	define	HAVE_SEM
+#endif
+#ifdef HAVE_SYS_SHM_H
+#	define	USE_SHM
+#endif
+
+#cmakedefine EPI_HAVE_SIZE_T_ZU_FORMAT
+#cmakedefine EPI_HAVE_SIZE_T_LU_FORMAT
+#cmakedefine EPI_HAVE_SIZE_T_U_FORMAT
+#if defined(EPI_HAVE_SIZE_T_ZU_FORMAT)
+# define EPI_SIZE_T_FORMAT "%zu"
+#elif defined(EPI_HAVE_SIZE_T_LU_FORMAT)
+# define EPI_SIZE_T_FORMAT "%lu"
+#elif defined(EPI_HAVE_SIZE_T_U_FORMAT)
+# define EPI_SIZE_T_FORMAT "%u"
+#else
+# define EPI_SIZE_T_FORMAT "%lu" /* Make a guess */
+#endif
+
+#define EPI_REALLOC_FAIL_SAFE /* WTF Defined by standard, anywhere not true? */
+#define TX_ATOMIC_THREAD_SAFE 1 /* WTF Bootstrap will fail otherwise */
+#cmakedefine EPI_CASE_INSENSITIVE_PATHS
+
+#cmakedefine HAVE_OPENSSL
+#ifdef HAVE_OPENSSL
+#define SSLCRYLIBNAME "@OPENSSL_CRYPTO_LIBRARY@"
+#define SSLSSLLIBNAME "@OPENSSL_SSL_LIBRARY@"
+#endif
+
+#define TX_VERSION_NUM @PROJECT_VERSION@
+#define TX_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define TX_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define TX_VERSION_REV   @PROJECT_VERSION_PATCH@
+
+#define EPI_PLATFORM_DESC "@CMAKE_SYSTEM_PROCESSOR@-@CMAKE_SYSTEM_NAME@-@CMAKE_SYSTEM_VERSION@"
+#include "txcoreconfig_gen.h"
+#include "version.h"
+
+#undef LIBXML2API
+#undef EPI_VORTEX_WATCHPATH
+
+#endif /* TX_CORECONFIG_H */

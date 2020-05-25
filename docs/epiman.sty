@@ -1,0 +1,130 @@
+% WARNING!  DO NOT TYPE ANY OF THE FOLLOWING 10 CHARACTERS EXCEPT AS DIRECTED:
+%                &   $   #   %   _   {   }   ^   ~   \
+%
+% top/left margins are relative 1 inch in (-1 is edge of paper)
+%
+\textheight        8.75in  % 11  inches -1 top -.5 bot -~.5 head
+\textwidth         6.55in    % 6.5in  % 8.5 inches -1 left -1 right
+
+%\textheight        17in    % 11  inches -1 top -.5 bot -~.5 head
+%\textwidth         5.5in    % 6.5in  % 8.5 inches -1 left -1 right
+
+%\oddsidemargin   -1.0in
+\evensidemargin   -0.25in
+\topmargin        -0.5in
+\parskip           0.1in
+%\parindent        0.0in
+\raggedright
+
+%
+%     PBR 09-21-93  added below to mw's definition
+%
+
+\def\n{\linebreak}
+\def\vb{\n\vspace{.125in}}
+
+%\newdimen\subsectionindent
+%\subsectionindent 0 true in
+
+\def\PART#1{\setcounter{chapter}{0}\setcounter{section}{0}\setcounter{subsection}{0}\setcounter{page}{0}\part{#1}}
+
+%%% JMT Added penalties to prevent page breaks.
+
+\def\NAME#1{\newpage\subsection{#1}}
+\def\SYNOPSIS{\addpenalty{\@secpenalty}\noindent{\large SYNOPSIS}\n\vspace{-.125in}}
+\def\DESCRIPTION{\addpenalty{\@secpenalty}\noindent\vb{\large DESCRIPTION}\vb}
+\def\PARAMETERS{\addpenalty{\@secpenalty}\noindent\vb{\large PARAMETERS}\vb}
+\def\CAVEATS{\addpenalty{\@secpenalty}\noindent\vb{\large CAVEATS}\vb}
+\def\EXAMPLE{\addpenalty{\@secpenalty}\noindent\vb{\large EXAMPLE}\n\vspace{-.125in}}
+\def\SEE{\addpenalty{\@secpenalty}\noindent\vb{\large SEE ALSO}\n\vspace{-.0625in}}
+\def\DIAGNOSTICS{\addpenalty{\@secpenalty}\noindent\vb{\large DIAGNOSTICS}\vb}
+\def\NOTES{\addpenalty{\@secpenalty}\noindent\vb{\large NOTES}\vb}
+
+%%%
+%%% The boxedtext environment puts the enclosed text within an outlined box.
+%%% The various widths should probably be determined by variables, but
+%%% constants will do for now.
+%%%
+%%% NOTE that I used to include a \noindent after the \setlength, but that
+%%% caused a strange effect: Either TeX or LaTeX inserted an interword space
+%%% before the first word of the first paragraph!  The result was that the
+%%% first line of the first paragraph was actually indented by about a space,
+%%% and that looked strange.  So now I include the \noindent in the boxed text
+%%% itself.
+%%%
+
+\newenvironment{boxedtext}%
+               {\begin{center}%
+                \begin{tabular}{|@{\hspace{10pt}}c@{\hspace{10pt}}|}%
+                \hline \\ %
+                \begin{minipage}[t]{80em}%
+                \setlength{\parindent}{15pt}}%
+               {\end{minipage} \\ \\ \hline\end{tabular}\end{center}}
+
+\newenvironment{screen}%
+               {\small\begin{center}%
+                \begin{tabular}{|@{\hspace{10pt}}c@{\hspace{10pt}}|}%
+                \hline \\ %
+                \begin{minipage}[t]{6.05in}}%
+               {\end{minipage} \\ \\ \hline\end{tabular}\end{center}}
+
+\newenvironment{smscreen}%
+               {\small\begin{center}%
+                \begin{tabular}{|@{\hspace{10pt}}c@{\hspace{10pt}}|}%
+                \hline \\ %
+                \begin{minipage}[t]{5.05in}}%
+               {\end{minipage} \\ \\ \hline\end{tabular}\end{center}}
+
+%\def\verbatim@font{\normalfont\ttfamily}
+
+% MAW 11-01-2001 - for splitting long example lines
+\newcommand{\split}{$\leadsto$\\\hspace{.25in}$\hookrightarrow$}
+\newcommand{\splitspace}{$\Box$\split}
+
+% JRV degree symbols are done differently for HTML
+\newcommand{\degree}{$^o$}
+
+% MAW 11-01-2001 - from latex2html.d/docs/html.sty
+\def\makeinnocent#1{\catcode`#1=12 }
+\def\csarg#1#2{\expandafter#1\csname#2\endcsname}
+\def\ThrowAwayComment#1{\begingroup
+    \def\CurrentComment{#1}%
+    \let\do\makeinnocent \dospecials
+    \makeinnocent\^^L% and whatever other special cases
+    \endlinechar`\^^M \catcode`\^^M=12 \xComment}
+{\catcode`\^^M=12 \endlinechar=-1 %
+ \gdef\xComment#1^^M{\def\test{#1}
+      \csarg\ifx{PlainEnd\CurrentComment Test}\test
+          \let\html@next\endgroup
+      \else \csarg\ifx{LaLaEnd\CurrentComment Test}\test
+            \edef\html@next{\endgroup\noexpand\end{\CurrentComment}}
+      \else \let\html@next\xComment
+      \fi \fi \html@next}
+}
+\def\includecomment
+ #1{\expandafter\def\csname#1\endcsname{}%
+    \expandafter\def\csname end#1\endcsname{}}
+\def\excludecomment
+ #1{\expandafter\def\csname#1\endcsname{\ThrowAwayComment{#1}}%
+    {\escapechar=-1\relax
+     \csarg\xdef{PlainEnd#1Test}{\string\\end#1}%
+     \csarg\xdef{LaLaEnd#1Test}{\string\\end\string\{#1\string\}}%
+    }}
+%%% HTML ONLY
+%
+% Enclose LaTeX constructs which will only appear in the
+% HTML output and will be ignored by LaTeX with
+% \begin{htmlonly} and \end{htmlonly}
+%
+\excludecomment{htmlonly}
+% Shorter version
+\newcommand{\html}[1]{}
+%%% LaTeX ONLY
+% Enclose LaTeX constructs which will only appear in the
+% DVI output and will be ignored by latex2html with
+%\begin{latexonly} and \end{latexonly}
+%
+\newenvironment{latexonly}{}{}
+% Shorter version
+\newcommand{\latex}[1]{#1}
+

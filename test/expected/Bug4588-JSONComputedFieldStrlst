@@ -1,0 +1,86 @@
+Texis Version ...
+
+SQL 1 line 1> -- Tests Bug 4588: JSON Library
+SQL 2 line 2> 
+SQL 3 line 3> set betafeatures = 'json';
+
+SQL 1 line 4> 
+SQL 1 line 5> -- ======================================================================
+SQL 2 line 6> create table test (id int, Json varchar(20), Country varchar(20));
+     id          Json       Country   
+------------+------------+------------+
+
+SQL 1 line 7> insert into test values (1, '{"info":{"type":2,"address":{"town":"Cleveland","county":"Cuyahoga","country":"United States"},"tags":["Sport","Football"]},"type":"Basic"}', 'United States');
+     id          Json       Country   
+------------+------------+------------+
+           1 {"info":{"type":2,"address":{"town":"Cleveland","county":"Cuyahoga","country":"United States"},"tags":["Sport","Football"]},"type":"Basic"} United States
+
+SQL 1 line 8> insert into test values (2, '{"info":{"type":1,"address":{"town":"Bristol","county":"Avon","country":"England"},"tags":["Sport","Water polo"]},"type":"Basic"}', 'England');
+     id          Json       Country   
+------------+------------+------------+
+           2 {"info":{"type":1,"address":{"town":"Bristol","county":"Avon","country":"England"},"tags":["Sport","Water polo"]},"type":"Basic"} England
+
+SQL 1 line 9> insert into test values (3, '{"name":"John","skills":["C#","SQL"]}', '');
+     id          Json       Country   
+------------+------------+------------+
+           3 {"name":"John","skills":["C#","SQL"]} 
+
+SQL 1 line 10> --
+SQL 2 line 11> -- 
+SQL 3 line 12> 
+SQL 4 line 13> select id, Json.$.skills[*] from test;
+       id        Json.$.skills[*]
+----------------+----------------+
+               1 
+               2 
+               3 C#,SQL,
+
+SQL 1 line 14> select id, Json.$.name from test where Json.$.skills[*] = 'SQL';
+     id      Json.$.name 
+------------+------------+
+
+SQL 1 line 15> select id, Json.$.name from test where 'SQL' IN Json.$.skills[*];
+     id      Json.$.name 
+------------+------------+
+           3 John
+
+SQL 1 line 16> 
+SQL 1 line 17> create index ix4 on test(Json.$.skills[*]);
+
+SQL 1 line 18> 
+SQL 1 line 19> select * from SYSINDEX where TBNAME = 'test';
+    NAME        TBNAME       FNAME       COLLSEQ        TYPE      NON_UNIQUE     FIELDS       PARAMS   
+------------+------------+------------+------------+------------+------------+------------+------------+
+ix4          test         ix4          A            B                      01 Json.$.skills[*] stringcomparemode=unicodemulti,respectcase;
+
+SQL 1 line 20> 
+SQL 1 line 21> set verbose = 1;
+
+SQL 1 line 22> 
+SQL 1 line 23> select id, Json.$.name from test where Json.$.skills[*] = 'SQL';
+200 Setting pred Json.$.skills[*] = SQL on table test in the function: settablepred
+     id      Json.$.name 
+------------+------------+
+
+SQL 1 line 24> select id, Json.$.name from test where 'SQL' IN Json.$.skills[*];
+200 Setting pred SQL IN Json.$.skills[*] on table test in the function: settablepred
+200 Opening index TMPDIR/junk/ix4 in the function: opendbidx
+     id      Json.$.name 
+------------+------------+
+           3 John
+
+SQL 1 line 25> 
+SQL 1 line 26> set indexaccess = 1;
+
+SQL 1 line 27> 
+SQL 1 line 28> select * from ix4;
+Json.$.skills[*]
+----------------+
+C#
+SQL
+
+SQL 1 line 29> 
+SQL 1 line 30> drop table test;
+200 Setting pred TBNAME = test on table SYSCOLUMNS in the function: settablepred
+
+SQL 1 line 31> 

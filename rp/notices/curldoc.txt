@@ -1,0 +1,361 @@
+
+Simple usage:
+
+    var curl=require("./libdukcurl");
+    var ret=curl.fetch("http://google.com/");
+    /* minimally ret={
+                            status:     -1 to 599,
+                            statusText: "string describing status"
+                            text:       "text or html retrieved from the server, if any"
+                     }
+       all possible properties:
+                 ret={
+                            status:       -1 to 599,
+                            statusText:   "string describing status",
+                            text:         "text or html retrieved from the server, if any",
+                            binary:       buffer, //if response is not text, a fixed buffer with binary data. text will be set to the literal string "binary"
+                            rawHeaders:   "header section unparsed as received from server",
+                            headers:      {"STATUS":"200 ok","Content-Type": "text/html",...}
+                            url:          "http://google.com", // as provided
+                            effectiveUrl: "https://www.google.com/", //after any redirects
+                            localIP:      "2001:db8::2" //ip on this machine used to connect
+                            localPort:    66433,    //port on this machine used to connect
+                            primaryIP:    "2001:db8::1", //ip of server
+                            primaryPort:  443, //port of server
+                            httpVersion:  "HTTP 1.1",  //1.0, 1.1 or 2.0
+                            totalTime:    0.05235, // time in libcurl, from request to return of document
+                            cookies:     ["cookie line 1","cookie line 2"] //cookies from cookie jar in netscape format
+                     }
+    */
+
+options may be passed in an object:
+    var ret=curl.fetch("http://google.com/",{
+            location: true, //follow 3xx redirects	
+            max-redirs: 5   //don't allow more than 5 redirects
+    });
+
+get variables can be manually passed:
+    var ret=curl.fetch("https://example.com/search?q=happy+place&collection=fundb");
+
+or via object in "get" option:
+    var ret=curl.fetch("https://example.com/search",{
+            get: {data: {
+				q:"happy place",
+				collection:"fundb"
+			}
+                 }
+    });
+
+You can also include arrays in your query parameters:
+    var ret=curl.fetch("https://example.com/getusers",{
+            get: {data: {
+	                    userids:["frank","sue","abagail"]
+			}
+                 }
+    });  //fetches https://example.com/getusers?userids=frank&userids=sue&userids=abagail
+
+    // with array bracket notation
+    var ret=curl.fetch("https://example.com/getusers",{
+            get: {data: {
+	                    userids:["frank","sue","abagail"]
+			}
+        	  arrayType: "bracket"
+                 }
+    });  //fetches https://example.com/getusers?userids%5B%5D=frank&userids%5B%5D=sue&userids%5B%5D=abagail
+
+    // seperated by commas (any commas in input strings will be url escaped)
+    var ret=curl.fetch("https://example.com/getusers",{
+            get: {data: {
+	                    userids:["frank","sue","abagail"]
+			}
+        	  arrayType: "comma"
+                 }
+    });  //fetches https://example.com/getusers?userids=frank,sue,abagail
+            
+    // as json (any commas in input strings will be url escaped */
+    var ret=curl.fetch("https://example.com/getusers",{
+            get: {data: {
+                    		userids:["frank","sue","abagail"]
+			}
+                    	arrayType: "json"
+                 }
+    });  //fetches https://example.com/getusers?userids=%5b%22frank%22%2c%22sue%22%2c%22abagail%22%5d
+
+Any keys with an object as its value will be converted to json:
+
+    var ret=curl.fetch("https://example.com/getusers",{
+            get: {data: {
+                    		userids:{"user1":"frank","user2":"sue","user3":"abagail"}
+			}
+                 }
+    });//fetches https://example.com/getusers?userids=%7b%22user1%22%3a%22frank%22%2c%22user2%22%3a%22sue%22%2c%22user3%22%3a%22abagail%22%7d
+
+the exact same can be done with posts:
+    var ret=curl.fetch("https://example.com/getusers",{
+            post: {data:{
+	                    userids:["frank","sue","abagail"]
+			}
+                    arrayType: "bracket"
+                 }
+    });  //fetches "https://example.com/getusers"
+         //with body contents => "userids%5B%5D=frank&userids%5B%5D=sue&userids%5B%5D=abagail"
+
+To post arbitrary data (a string or a buffer), use "postbin":
+    var ret=curl.fetch("https://example.com/postSomeData",{
+            postbin: myarraybuffer
+    }
+
+To post the contents of a file
+    var ret=curl.fetch("https://example.com/postSomeData",{
+            postbin: "@/home/abagail/my binary file.bin"
+    }
+
+
+To post a string starting with an @, escape it:
+    var ret=curl.fetch("https://example.com/postSomeData",{
+            postbin: "\@Home is a defunct home telecom service" //string sent="@Home is a defunct home telecom service"
+    }
+
+To post a multipart mime:
+    var ret=curl.fetch("https://example.com/elfinder",{
+            postform: {
+                    "cmd":"upload",
+                    "target":"6A5PdRBEt7M",
+                    "upload_path[]":"6A5PdRBEt7M",
+                    "upload[]": [	// uploading files expects an array of objects with "data" property set. 
+                                    //"filename" and "type" (mime-type) may also be set.
+                            {data:"@/home/abagail/myfile.bin"}, //filename is auto set to "myfile.bin"
+                            {data:"@/home/abagail/pic.jpg",filename:"mypic.jpg",type:"image/jpeg"}
+                    ]
+            }
+    }
+
+To use a callback, provide it as a parameter:
+if ( curl.fetch("https://example.com/",function(res){console.log(res);}) )
+	console.log("fetch successful");
+else 
+	console.log("error fetching: "+curl.error); //curl.error is an array of error messages and is the same as res.errMsg
+
+To fetch several pages in parallel, put urls in an array.
+You must provide a callback.
+You may add more urls to the request from within the callback:
+    var gotit=false;
+    var ret=curl.fetch(["https://yahoo.com/","http://google.com/"],function(res) {
+            print("URL: " + res.url);
+            console.log(res.headers);
+            console.log(this);
+            if(!gotit) {
+                    if(this.addurl("http://example.com/"))
+                            print("successfully added url");
+                    gotit=true;
+            }
+    });
+
+When you are done, optional cleanup ("curl" handle is still good though):
+    curl.cleanup();
+
+Auxilary functions:
+    var querystring=curl.objectToQuery({baseball:"fun",userids:{"user1":"frank","user2":"sue","user3":"abagail"}});
+    //querystring => baseball=fun&userids=%7b%22user1%22%3a%22frank%22%2c%22user2%22%3a%22sue%22%2c%22user3%22%3a%22abagail%22%7d
+    var encoded=curl.encode("string to encode");
+    var decoded=curl.decode("string%20to+decode");
+
+Possible options.  TODO: Proper arguments with comments.
+
+curl option                  argument
+0                            httpv 
+1                            sslver
+2                            sslver
+3                            sslver
+4                            resolv
+6                            resolv
+A                            string
+C                            continue  
+E                            cert
+H                            array_slist
+L                            bool
+P                            string
+Q                            array_slist
+X                            string
+Y                            long
+anyauth                      auth
+b                            string
+basic                        auth
+c                            string
+cacert                       string
+capath                       string
+cert                         cert
+cert-status                  bool
+cert-type                    string
+ciphers                      string
+compressed                   compressed
+compressed-ssh               bool
+connect-timeout              long
+connect-to                   strings
+continue-at                  continue  
+cookie                       string
+cookie-jar                   string
+crlf                         bool
+crlfile                      string
+delegation                   string    
+digest                       auth
+digest-ie                    auth
+disable-eprt                 boolplus
+disable-epsv                 boolplus
+dns-interface                string
+dns-ipv4-addr                string
+dns-ipv6-addr                string
+dns-servers                  string
+e                            string
+expect100_timeout            1000
+false-start                  bool
+ftp-account                  string
+ftp-alternative-to-user      string
+ftp-create-dirs              bool
+ftp-method                   ftpmethod
+ftp-port                     string
+ftp-pret                     bool
+ftp-skip-pasv-ip             bool
+ftp-ssl-ccc                  ssl_ccc
+ftp-ssl-ccc-mode             ssl_ccc
+get                          get
+header                       array_slist
+headers                      array_slist
+hostpubmd5                   string
+http-any                     httpv /* not a command line option (yet?)*/ 
+http1.0                      httpv 
+http1.0                      httpv 
+http1.1                      httpv 
+http2                        httpv 
+http2-prior-knowledge        httpv 
+ignore-content-length        bool
+insecure                     insecure
+interface                    bool
+ipv4                         resolv
+ipv6                         resolv
+j                            bool
+junk-session-cookies         bool
+k                            insecure
+keepalive-time               long
+key                          string
+key-type                     string
+krb                          string
+l                            bool
+limit-rate                   limit
+list-only                    bool
+local-port                   lport
+location                     bool
+location-trusted             boolplus
+login-options                string
+m                            1000
+mail-auth                    string
+mail-from                    string
+mail-rcpt                    array_slist
+max-filesize                 64
+max-redirs                   long
+max-time                     1000
+n                            netrc
+negotiate                    auth
+netrc                        netrc
+netrc-file                   string
+netrc-optional               netrc
+no-alpn                      boolplus
+no-keepalive                 boolplus
+no-npn                       boolplus
+no-sessionid                 boolplus
+noproxy                      string
+ntlm                         auth
+ntlm-wb                      auth
+pass                         string
+path-as-is                   bool
+pinnedpubkey                 string
+post                         post
+post301                      postr
+post302                      postr
+post303                      postr
+postbin                      postbin
+postform                     postform
+postredir                    postr
+preproxy                     string
+proto                        proto
+proto-default                string
+proto-redir                  string
+proxy                        string
+proxy-anyauth                auth
+proxy-basic                  auth
+proxy-cacert                 string
+proxy-capath                 string
+proxy-cert                   cert
+proxy-cert-type              string
+proxy-ciphers                string
+proxy-crlfile                string
+proxy-digest                 auth
+proxy-digest-ie              auth
+proxy-header                 array_slist
+proxy-insecure               insecure
+proxy-key                    string
+proxy-key-type               string
+proxy-negotiate              auth
+proxy-ntlm                   auth
+proxy-ntlm-wb                auth
+proxy-pass                   string
+proxy-service-name           string
+proxy-ssl-allow-beast        sslopt
+proxy-ssl-no-revoke          sslopt
+proxy-tlspassword            string
+proxy-tlsuser                string
+proxy-tlsv1                  sslver
+proxy-user                   string
+proxy1.0		       proxytype
+proxytunnel                  bool
+pubkey                       string
+quote                        array_slist
+r                            string
+random-file                  string
+range                        string
+referer                      string
+request                      string
+request-target               string
+resolve                      array_slist
+sasl-ir                      bool
+service-name                 string
+socks4                       proxytype
+socks4a                      proxytype
+socks5                       proxytype
+socks5-basic                 socks5auth
+socks5-gssapi                socks5auth
+socks5-gssapi-nec            bool
+socks5-gssapi-service        string
+socks5-hostname              proxytype
+speed-limit                  long
+speed-time                   long
+ssl                          fromsub
+ssl-allow-beast              sslopt
+ssl-no-revoke                sslopt
+ssl-reqd                     fromsub
+sslv2                        sslver
+sslv3                        sslver
+suppress-connect-headers     bool
+t                            array_slist
+tcp-fastopen                 bool
+tcp-nodelay                  bool
+telnet-option                array_slist
+tftp-blksize                 long
+tftp-no-options              bool
+time-cond                    long
+tls-max                      tlsmax
+tlspassword                  string
+tlsuser                      string
+tlsv1                        sslver
+tlsv1.0                      sslver
+tlsv1.1                      sslver
+tlsv1.2                      sslver
+tlsv1.3                      sslver
+tr-encoding                  bool
+u                            string
+unix-socket                  string
+user                         string
+user-agent                   string
+x                            string
+y                            long
+z                            long

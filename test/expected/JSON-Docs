@@ -1,0 +1,212 @@
+Texis Version ...
+
+SQL 1 line 1> -- JSON Examples from Docs
+SQL 2 line 2> 
+SQL 3 line 3> create table test(id int, Json varchar(30));
+     id          Json    
+------------+------------+
+
+SQL 1 line 4> insert into test values(1, '{
+SQL 2 line 5>   "items" : [
+SQL 3 line 6>     {
+SQL 4 line 7>       "Num" : 1,
+SQL 5 line 8>       "Text" : "The Name",
+SQL 6 line 9>       "First" : true
+SQL 7 line 10>     },
+SQL 8 line 11>     {
+SQL 9 line 12>       "Num" : 2.0,
+SQL 10 line 13>       "Text" : "The second one",
+SQL 11 line 14>       "First" : false
+SQL 12 line 15>     }
+SQL 13 line 16>     ,
+SQL 14 line 17>     null
+SQL 15 line 18>   ]
+SQL 16 line 19> }
+SQL 17 line 20> ');
+     id          Json    
+------------+------------+
+           1 {
+  "items" : [
+    {
+      "Num" : 1,
+      "Text" : "The Name",
+      "First" : true
+    },
+    {
+      "Num" : 2.0,
+      "Text" : "The second one",
+      "First" : false
+    }
+    ,
+    null
+  ]
+}
+
+
+SQL 1 line 21> -- isjson
+SQL 2 line 22> select isjson('{ "type" : 1 }');
+isjson({ "type" : 1 })
+----------------------+
+                     1
+
+SQL 1 line 23> select isjson('{}');
+ isjson({}) 
+------------+
+           1
+
+SQL 1 line 24> select isjson('json this is not');
+isjson(json this is not)
+------------------------+
+                       0
+
+SQL 1 line 25> 
+SQL 1 line 26> --json_type
+SQL 2 line 27> 
+SQL 3 line 28> select json_type(Json) from test where id = 1;
+json_type(Json)
+---------------+
+OBJECT
+
+SQL 1 line 29> select json_type(Json.$.items[0]) from test where id = 1;
+json_type(Json.$.items[0])
+--------------------------+
+OBJECT
+
+SQL 1 line 30> select json_type(Json.$.items) from test where id = 1;
+json_type(Json.$.items)
+-----------------------+
+ARRAY
+
+SQL 1 line 31> select json_type(Json.$.items[0].Num) from test where id = 1;
+json_type(Json.$.items[0].Num)
+------------------------------+
+INTEGER
+
+SQL 1 line 32> select json_type(Json.$.items[1].Num) from test where id = 1;
+json_type(Json.$.items[1].Num)
+------------------------------+
+DOUBLE
+
+SQL 1 line 33> select json_type(Json.$.items[0].Text) from test where id = 1;
+json_type(Json.$.items[0].Text)
+-------------------------------+
+STRING
+
+SQL 1 line 34> select json_type(Json.$.items[0].First) from test where id = 1;
+json_type(Json.$.items[0].First)
+--------------------------------+
+BOOLEAN
+
+SQL 1 line 35> select json_type(Json.$.items[2]) from test where id = 1;
+json_type(Json.$.items[2])
+--------------------------+
+NULL
+
+SQL 1 line 36> 
+SQL 1 line 37> --json_value
+SQL 2 line 38> 
+SQL 3 line 39> select json_value(Json, '$') from test where id = 1;
+json_value(Json, $)
+-------------------+
+
+
+SQL 1 line 40> select json_value(Json, '$.items[0]') from test where id = 1;
+         items[0])          
+----------------------------+
+
+
+SQL 1 line 41> select json_value(Json, '$.items') from test where id = 1;
+         items)          
+-------------------------+
+
+
+SQL 1 line 42> select json_value(Json, '$.items[0].Num') from test where id = 1;
+json_value(Json, $.items[0].Num)
+--------------------------------+
+1
+
+SQL 1 line 43> select json_value(Json, '$.items[1].Num') from test where id = 1;
+json_value(Json, $.items[1].Num)
+--------------------------------+
+2.000000
+
+SQL 1 line 44> select json_value(Json, '$.items[0].Text') from test where id = 1;
+json_value(Json, $.items[0].Text)
+---------------------------------+
+The Name
+
+SQL 1 line 45> select json_value(Json, '$.items[0].First') from test where id = 1;
+json_value(Json, $.items[0].First)
+----------------------------------+
+true
+
+SQL 1 line 46> select json_value(Json, '$.items[2]') from test where id = 1;
+         items[2])          
+----------------------------+
+
+
+SQL 1 line 47> 
+SQL 1 line 48> --json_query
+SQL 2 line 49> 
+SQL 3 line 50> select json_query(Json, '$') from test where id = 1;
+json_query(Json, $)
+-------------------+
+{"items":[{"Num":1,"Text":"The Name","First":true},{"Num":2.0,"Text":"The second one","First":false},null]}
+
+SQL 1 line 51> select json_query(Json, '$.items[0]') from test where id = 1;
+         items[0])          
+----------------------------+
+{"Num":1,"Text":"The Name","First":true}
+
+SQL 1 line 52> select json_query(Json, '$.items') from test where id = 1;
+         items)          
+-------------------------+
+[{"Num":1,"Text":"The Name","First":true},{"Num":2.0,"Text":"The second one","First":false},null]
+
+SQL 1 line 53> select json_query(Json, '$.items[0].Num') from test where id = 1;
+json_query(Json, $.items[0].Num)
+--------------------------------+
+
+
+SQL 1 line 54> select json_query(Json, '$.items[1].Num') from test where id = 1;
+json_query(Json, $.items[1].Num)
+--------------------------------+
+
+
+SQL 1 line 55> select json_query(Json, '$.items[0].Text') from test where id = 1;
+json_query(Json, $.items[0].Text)
+---------------------------------+
+
+
+SQL 1 line 56> select json_query(Json, '$.items[0].First') from test where id = 1;
+json_query(Json, $.items[0].First)
+----------------------------------+
+
+
+SQL 1 line 57> select json_query(Json, '$.items[2]') from test where id = 1;
+         items[2])          
+----------------------------+
+
+
+SQL 1 line 58> 
+SQL 1 line 59> -- json_modify
+SQL 2 line 60> 
+SQL 3 line 61> select json_modify('{}', '$.foo', 'Some "quote"');
+   #TEMP0   
+------------+
+{"foo":"Some \"quote\""}
+
+SQL 1 line 62> select json_modify('{ "foo" : { "bar": [40, 42] } }', 'append $.foo.bar', 99);
+   #TEMP0   
+------------+
+{"foo":{"bar":[40,42,99]}}
+
+SQL 1 line 63> select json_modify('{ "foo" : { "bar": [40, 42] } }', '$.foo.bar', 99);
+   #TEMP0   
+------------+
+{"foo":{"bar":99}}
+
+SQL 1 line 64> 
+SQL 1 line 65> drop table test;
+
+SQL 1 line 66> 

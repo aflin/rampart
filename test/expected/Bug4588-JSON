@@ -1,0 +1,283 @@
+Texis Version ...
+
+SQL 1 line 1> -- Tests Bug 4588: JSON Library
+SQL 2 line 2> 
+SQL 3 line 3> -- ======================================================================
+SQL 4 line 4> 
+SQL 5 line 5> set betafeatures = 'json';
+
+SQL 1 line 6> 
+SQL 1 line 7> create table test (id int, Json varchar(20));
+     id          Json    
+------------+------------+
+
+SQL 1 line 8> insert into test values (1, '{"info":{"type":2,"address":{"town":"Cleveland","county":"Cuyahoga","country":"United States"},"tags":["Sport","Football"]},"type":"Basic"}');
+     id          Json    
+------------+------------+
+           1 {"info":{"type":2,"address":{"town":"Cleveland","county":"Cuyahoga","country":"United States"},"tags":["Sport","Football"]},"type":"Basic"}
+
+SQL 1 line 9> insert into test values (2, '{"info":{"type":1,"address":{"town":"Bristol","county":"Avon","country":"England"},"tags":["Sport","Water polo"]},"type":"Basic"}');
+     id          Json    
+------------+------------+
+           2 {"info":{"type":1,"address":{"town":"Bristol","county":"Avon","country":"England"},"tags":["Sport","Water polo"]},"type":"Basic"}
+
+SQL 1 line 10> insert into test values (3, '{"name":"John","skills":["C#","SQL"]}');
+     id          Json    
+------------+------------+
+           3 {"name":"John","skills":["C#","SQL"]}
+
+SQL 1 line 11> --
+SQL 2 line 12> -- ISJSON
+SQL 3 line 13> --     bad string
+SQL 4 line 14> select isjson('foo');
+isjson(foo) 
+------------+
+           0
+
+SQL 1 line 15> --     good string
+SQL 2 line 16> select isjson(Json) from test;
+isjson(Json)
+------------+
+           1
+           1
+           1
+
+SQL 1 line 17> --
+SQL 2 line 18> -- JSON_VALUE
+SQL 3 line 19> select json_value(Json, '$') from test;
+json_value(Json, $)
+-------------------+
+
+
+
+
+SQL 1 line 20> select json_value(Json, '$.info.type') from test;
+json_value(Json, $.info.type)
+-----------------------------+
+2
+1
+
+
+SQL 1 line 21> select json_value(Json, '$.info.address.town') from test;
+   #TEMP0   
+------------+
+Cleveland
+Bristol
+
+
+SQL 1 line 22> select json_value(Json, '$.info."address"') from test;
+json_value(Json, $.info."address")
+----------------------------------+
+
+
+
+
+SQL 1 line 23> select json_value(Json, '$.info.tags') from test;
+json_value(Json, $.info.tags)
+-----------------------------+
+
+
+
+
+SQL 1 line 24> select json_value(Json, '$.info.type[0]') from test;
+json_value(Json, $.info.type[0])
+--------------------------------+
+
+
+
+
+SQL 1 line 25> select json_value(Json, '$.info.none') from test;
+json_value(Json, $.info.none)
+-----------------------------+
+
+
+
+
+SQL 1 line 26> select json_value(Json, '$.info.tags[1]') from test;
+json_value(Json, $.info.tags[1])
+--------------------------------+
+Football
+Water polo
+
+
+SQL 1 line 27> select json_value(Json, '$.info.address.town') Town from test order by json_value(Json, '$.info.type');
+    Town    
+------------+
+
+Bristol
+Cleveland
+
+SQL 1 line 28> select json_value(Json, '$.info.address.town') Town from test order by json_value(Json, '$.info.address.country');
+    Town    
+------------+
+
+Bristol
+Cleveland
+
+SQL 1 line 29> select json_value(Json, '$.info.address.town') Town from test where json_value(Json, '$.info.address.country') = 'England' order by json_value(Json, '$.info.address.country');
+    Town    
+------------+
+Bristol
+
+SQL 1 line 30> 
+SQL 1 line 31> select json_value('{ "foo" : { "bar": [40, 42] } }', '$.foo.bar[1]');
+   #TEMP0   
+------------+
+42
+
+SQL 1 line 32> select json_value('{ "foo" : { "bar": [40, 42] } }', '$.foo');
+   #TEMP0   
+------------+
+
+
+SQL 1 line 33> 
+SQL 1 line 34> -- JSON_QUERY
+SQL 2 line 35> select json_query(Json, '$') from test;
+json_query(Json, $)
+-------------------+
+{"info":{"type":2,"address":{"town":"Cleveland","county":"Cuyahoga","country":"United States"},"tags":["Sport","Football"]},"type":"Basic"}
+{"info":{"type":1,"address":{"town":"Bristol","county":"Avon","country":"England"},"tags":["Sport","Water polo"]},"type":"Basic"}
+{"name":"John","skills":["C#","SQL"]}
+
+SQL 1 line 36> select json_query(Json, '$.info.type') from test;
+json_query(Json, $.info.type)
+-----------------------------+
+
+
+
+
+SQL 1 line 37> select json_query(Json, '$.info.address.town') from test;
+   #TEMP0   
+------------+
+
+
+
+
+SQL 1 line 38> select json_query(Json, '$.info."address"') from test;
+json_query(Json, $.info."address")
+----------------------------------+
+
+
+
+
+SQL 1 line 39> select json_query(Json, '$.info.tags') from test;
+json_query(Json, $.info.tags)
+-----------------------------+
+["Sport","Football"]
+["Sport","Water polo"]
+
+
+SQL 1 line 40> select json_query(Json, '$.info.type[0]') from test;
+json_query(Json, $.info.type[0])
+--------------------------------+
+
+
+
+
+SQL 1 line 41> select json_query(Json, '$.info.none') from test;
+json_query(Json, $.info.none)
+-----------------------------+
+
+
+
+
+SQL 1 line 42> 
+SQL 1 line 43> select json_query('{ "foo" : { "bar": [40, 42] } }', '$.foo');
+   #TEMP0   
+------------+
+{"bar":[40,42]}
+
+SQL 1 line 44> select json_query('{ "foo" : { "bar": [40, 42] } }', '$.foo.bar');
+   #TEMP0   
+------------+
+[40,42]
+
+SQL 1 line 45> 
+SQL 1 line 46> -- JSON_MODIFY
+SQL 2 line 47> update test set Json = json_modify(Json, '$.name','Mike') where id = 3;
+     id          Json    
+------------+------------+
+           3 {"name":"Mike","skills":["C#","SQL"]}
+
+SQL 1 line 48> update test set Json = json_modify(Json, '$.surname','Smith') where id = 3;
+     id          Json    
+------------+------------+
+           3 {"name":"Mike","skills":["C#","SQL"],"surname":"Smith"}
+
+SQL 1 line 49> update test set Json = json_modify(Json, 'append $.skills','Azure') where id = 3;
+     id          Json    
+------------+------------+
+           3 {"name":"Mike","skills":["C#","SQL","Azure"],"surname":"Smith"}
+
+SQL 1 line 50> select * from test where id = 3;
+     id          Json    
+------------+------------+
+           3 {"name":"Mike","skills":["C#","SQL","Azure"],"surname":"Smith"}
+
+SQL 1 line 51> 
+SQL 1 line 52> select json_modify('{}', '$.foo', 'Some "quote"');
+   #TEMP0   
+------------+
+{"foo":"Some \"quote\""}
+
+SQL 1 line 53> select json_modify('{ "foo" : { "bar": [40, 42] } }', 'append $.foo.bar', 99);
+   #TEMP0   
+------------+
+{"foo":{"bar":[40,42,99]}}
+
+SQL 1 line 54> select json_modify('{ "foo" : { "bar": [40, 42] } }', '$.foo.bar', 99);
+   #TEMP0   
+------------+
+{"foo":{"bar":99}}
+
+SQL 1 line 55> 
+SQL 1 line 56> set jsonfmt = 'indent(1)';
+
+SQL 1 line 57> 
+SQL 1 line 58> select id, json_query(Json, '$') J from test;
+     id           J      
+------------+------------+
+           1 {
+ "info": {
+  "type": 2,
+  "address": {
+   "town": "Cleveland",
+   "county": "Cuyahoga",
+   "country": "United States"
+  },
+  "tags": [
+   "Sport",
+   "Football"
+  ]
+ },
+ "type": "Basic"
+}
+           2 {
+ "info": {
+  "type": 1,
+  "address": {
+   "town": "Bristol",
+   "county": "Avon",
+   "country": "England"
+  },
+  "tags": [
+   "Sport",
+   "Water polo"
+  ]
+ },
+ "type": "Basic"
+}
+           3 {
+ "name": "Mike",
+ "skills": [
+  "C#",
+  "SQL",
+  "Azure"
+ ],
+ "surname": "Smith"
+}
+
+SQL 1 line 59> 
+SQL 1 line 60> drop table test;
+
+SQL 1 line 61> 

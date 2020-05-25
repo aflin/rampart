@@ -1,0 +1,13 @@
+void  *closeddbf ARGS((void *df));
+void  *openddbf  ARGS((char *fn));
+int    freeddbf  ARGS((void *df, off_t at));
+off_t  ddbfalloc ARGS((void *df,void *buf, size_t n));
+off_t  putddbf   ARGS((void *df, off_t at, void *buf, size_t sz));
+void  *getddbf   ARGS((void *df, off_t at, size_t *psz));
+void  *agetddbf  ARGS((void *df, off_t at, size_t *psz));
+size_t readddbf  ARGS((void *df, off_t at, size_t *off, void *buf, size_t sz));
+off_t  tellddbf  ARGS((void *df));
+char  *getddbffn ARGS((void *df));
+int    getddbffh ARGS((void *df));
+void   setddbfoveralloc ARGS((void *df,int div));
+int    validddbf ARGS((void *df, off_t at));

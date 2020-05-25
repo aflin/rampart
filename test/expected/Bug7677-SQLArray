@@ -1,0 +1,31 @@
+Texis Version ...
+
+SQL 1 line 1> create table test (x int, y int(4), z strlst);
+     x            y            z      
+------------+------------+------------+
+
+SQL 1 line 2> insert into test values(1, [1,2,3], ['a','b','c']);
+     x            y            z      
+------------+------------+------------+
+           1      1,2,3,0 a,b,c,
+
+SQL 1 line 3> insert into test values(1, [1,2,3,4], ['a','b','c','d']);
+     x            y            z      
+------------+------------+------------+
+           1      1,2,3,4 a,b,c,d,
+
+SQL 1 line 4> insert into test values(2, [1,2,3,4,5], [1,2,3]);
+     x            y            z      
+------------+------------+------------+
+           2      1,2,3,4 1,2,3,
+
+SQL 1 line 5> select * from test;
+     x            y            z      
+------------+------------+------------+
+           1      1,2,3,0 a,b,c,
+           1      1,2,3,4 a,b,c,d,
+           2      1,2,3,4 1,2,3,
+
+SQL 1 line 6> drop table test;
+
+SQL 1 line 7> 

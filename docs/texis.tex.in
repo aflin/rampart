@@ -1,0 +1,100 @@
+% Define PARTS for just a single part only, and define that PART_... too:
+
+\def \HaveNull{no}
+\def \HaveViews{no}
+
+% 10-11-99 change to 11pt times (from 12pt no times)
+\documentstyle[11pt,epiman,chgbar,times]{book}
+%\documentstyle[12pt,epiman,chgbar]{book}
+
+% Note: if title changes, make sure docs/Makefile .dvi.ps rule can handle it:
+\title{@PROJECT_NAME@: Text Information Relational Database Server \\ Version @PROJECT_VERSION@ User's Guide}
+\author{Thunderstone Software \\ Expansion Programs International, Inc.}
+
+\begin{document}
+
+% KNG 20100727 this suppresses page number printing on \part pages:
+\makeatletter
+\let\sv@endpart\@endpart
+\def\@endpart{\thispagestyle{empty}\sv@endpart}
+\makeatother
+
+% KNG 20100726 Make the width of page numbers in the TOC wide enough
+% for page 1000+; avoids `Overfull hbox' in *.toc files:
+\makeatletter
+\renewcommand\@pnumwidth{25pt}
+\makeatother
+
+% KNG Roman numerals for page numbers in TOC, then switch to Arabic (below):
+\pagenumbering{roman}
+
+\maketitle
+
+% KNG 20050504 this makes a blank page after the title page, so that TOC
+% page 1 is on right side.  wtf how to do properly, and w/o PDF viewer error?
+\begin{titlepage}
+\end{titlepage}
+
+\tableofcontents
+\listoftables
+
+% KNG change page numbering back to Arabic; also resets page counter to 1:
+\pagenumbering{arabic}
+
+
+\setcounter{part}{0}
+\part{Using Texis}
+\setcounter{chapter}{0}
+\include{texis1}
+\include{texis2}
+\include{texis3}
+% texis3 cut mm section way down and refer to Metamorph section for details
+\include{texis4}
+
+
+\setcounter{part}{1}
+\part{Metamorph Intelligent Query Language}
+% mm1 - mm6 contains all relevant portions of mm3 dos/unix man
+\setcounter{chapter}{0}
+\include{mm1}
+\include{mm2}
+\include{mm3}
+\include{mm4}
+\include{mm5}
+\include{mm6}
+% cut out good parts of mm win manual for end user query tutorial mm7
+%%\include{mm7}
+
+
+\setcounter{part}{2}
+\part{Metamorph API Tools}
+\setcounter{chapter}{0}
+\include{api3}
+%\include{napi}
+
+
+%\setcounter{part}{3}
+%\part{NCG - The Network Code Generator}
+%\setcounter{chapter}{0}
+%\include{ncg}
+
+
+\setcounter{part}{4}
+\part{Texis Programs}
+\setcounter{chapter}{0}
+\include{tsql}
+\include{texis_api}
+\include{trigger}
+\include{exprog}
+\include{loader}
+%
+%\part{CGI Bridge and Library}\label{Part:CGI}
+%\setcounter{chapter}{0}
+%\include{cgisql}
+\include{cgilib}
+
+% KNG 20100727 Vortex now only its own PDF; do not include w/Texis (redundant)
+
+% fixed chapter/section levels so fits TOC better
+
+\end{document}
