@@ -561,7 +561,6 @@ http_callback(evhtp_request_t * req, void * arg)
     /* execute function "myfunc({object});" */
     if( (eno=duk_pcall(dhs->ctx,1)) ) 
     {
-        printf("error in function: %d\n",eno);
         if(duk_is_error(dhs->ctx,-1)){
             duk_get_prop_string(dhs->ctx, -1, "stack");
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
@@ -572,6 +571,9 @@ http_callback(evhtp_request_t * req, void * arg)
             duk_pop(dhs->ctx);
             return;
         }
+        else
+            printf("error in function: %s\n",duk_safe_to_string(dhs->ctx, -1));
+
     }
 
     /* stack has return value from duk function call */    
