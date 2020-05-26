@@ -31,7 +31,9 @@ try {
 
   utils.rmdir("this/is/a/test");
 
-  print(utils.exec("/usr/local/bin/tree", "tree", "this").stdout);
+  print(
+    utils.exec({ path: "/usr/local/bin/tree", args: ["tree", "this"] }).stdout
+  );
 
   utils.rmdir("this/is/a", true);
 } catch (e) {
