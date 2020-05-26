@@ -307,11 +307,31 @@ duk_ret_t duk_util_stat(duk_context *ctx)
   return 1;
 }
 
+#define DUK_UTIL_EXEC_READ_FD(ctx, buf, fildes, nread)                    \
+  {                                                                       \
+    \ 
+    int size = BUFREADSZ;                                                 \
+    REMALLOC(buf, size);                                                  \
+    int nbytes = 0;                                                       \
+    nread = 0;                                                            \
+    while ((nbytes = read(fildes, buf + nread, size - nread)) > 0)        \
+    {                                                                     \
+      size *= 2;                                                          \
+      nread += nbytes;                                                    \
+      REMALLOC(buf, size);                                                \
+    }                                                                     \
+    if (nbytes < 0)                                                       \
+    {                                                                     \
+      duk_push_sprintf(ctx, "error reading stdout: %s", strerror(errno)); \
+      (void)duk_throw(ctx);                                               \
+    }                                                                     \
+  }
+
 /**
  * Executes a command where the arguments are the arguments to execv.
- * @returns a string with the stdout of the file
+ * @returns an object with stdout, stderr and return status
  * Ex.
- * var stdout = utils.exec("/bin/ls", "ls", "-1");
+ * const { stdout: string, stderr: string, exit_status: int } = utils.exec("/bin/ls", "ls", "-1");
  */
 duk_ret_t duk_util_exec(duk_context *ctx)
 {
@@ -326,13 +346,13 @@ duk_ret_t duk_util_exec(duk_context *ctx)
   }
   args[nargs] = NULL;
 
-  int pipes[2];
-  if (pipe(pipes) == -1)
+  int stdout_pipe[2];
+  int stderr_pipe[2];
+  if (pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1)
   {
-    duk_push_sprintf(ctx, "error creating pipes: %s", strerror(errno));
+    duk_push_sprintf(ctx, "error creating pipe: %s", strerror(errno));
     (void)duk_throw(ctx);
   }
-
   pid_t pid;
   if ((pid = fork()) == -1)
   {
@@ -343,37 +363,48 @@ duk_ret_t duk_util_exec(duk_context *ctx)
   {
     // child process
 
-    // redirect to stdout
-    dup2(pipes[1], STDOUT_FILENO);
-    close(pipes[0]);
-    close(pipes[1]);
+    // redirect stdout and stderr
+    dup2(stdout_pipe[1], STDOUT_FILENO);
+    dup2(stderr_pipe[1], STDERR_FILENO);
+
+    // close unused pipes
+    close(stdout_pipe[0]);
+    close(stderr_pipe[0]);
+
     execv(args[0], args + 1);
     fprintf(stderr, "error executing %s\n", args[1]);
     exit(EXIT_FAILURE);
   }
   else
   {
-    // read from stdin and buffer output
-    close(pipes[1]);
-    char *buf = NULL;
-    int size = BUFREADSZ;
-    REMALLOC(buf, size);
-    int nbytes = 0;
-    int nread = 0;
-    while ((nbytes = read(pipes[0], buf + nread, size - nread)) > 0)
-    {
-      size *= 2;
-      nread += nbytes;
-      REMALLOC(buf, size);
-    }
-    if (nbytes < 0)
-    {
-      duk_push_sprintf(ctx, "error reading stdout: %s", strerror(errno));
-      (void)duk_throw(ctx);
-    }
-    // push string to stack and exit
-    duk_push_string(ctx, buf);
-    free(buf);
+    int exit_status;
+    waitpid(-1, &exit_status, 0);
+
+    // close unused pipes
+    close(stdout_pipe[1]);
+    close(stderr_pipe[1]);
+
+    char *stdout_buf = NULL;
+    char *stderr_buf = NULL;
+
+    // read output
+    int stdout_nread, stderr_nread;
+    DUK_UTIL_EXEC_READ_FD(ctx, stdout_buf, stdout_pipe[0], stdout_nread);
+    DUK_UTIL_EXEC_READ_FD(ctx, stderr_buf, stderr_pipe[0], stderr_nread);
+
+    // push return object
+    duk_push_object(ctx);
+
+    duk_push_lstring(ctx, stdout_buf, stdout_nread);
+    duk_put_prop_string(ctx, -2, "stdout");
+
+    duk_push_lstring(ctx, stderr_buf, stderr_nread);
+    duk_put_prop_string(ctx, -2, "stderr");
+
+    DUK_PUT(ctx, int, "exit_status", exit_status, -2);
+
+    free(stdout_buf);
+    free(stderr_buf);
     free(args);
     return 1;
   }
