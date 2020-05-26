@@ -24,7 +24,7 @@ Most of the relevant files will be in `build/rp`. You can run them using the fol
 ```
 ./rp <js-file-path>
 ```
-It may be necessary to up the open files limits when running the webserver:
+It may be necessary to increase the limit of the open files when running the webserver:
 ```
 ulimit -n 16384
 ```
