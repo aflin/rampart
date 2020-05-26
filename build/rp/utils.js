@@ -24,7 +24,7 @@ try {
   
   print("\n-- utils.js rmdir --")
   
-  utils.rmdir("this/is/a");
+  utils.rmdir("this/is/a/test");
 
   print(utils.exec("/usr/local/bin/tree", "tree", "this").stdout);
   
