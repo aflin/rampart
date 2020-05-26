@@ -14,17 +14,22 @@ try {
   print("is file: " + stat.is_file());
   print("atime: " + stat.atime);
   print("mode: " + stat.mode);
-  print("\n-- exec (ls) --");
-  print(utils.exec("/bin/ls", "ls", "-1").stdout);
-  
+  print("\n-- exec (sleep 0.2) --");
+  print(
+    utils.exec({ path: "/bin/sleep", args: ["sleep", "0.2"], timeout: 100000 })
+      .timed_out
+  );
+
   print("\n-- utils.js mdkir --");
   print(utils.mkdir("this/is/a/test"));
-  
-  print("\n-- utils.js rmdir --")
-  
+
+  print("\n-- utils.js rmdir --");
+
   print(utils.rmdir("this/is/a/test"));
 
-  print(utils.exec("/bin/ls", "ls -R this", "-1").stdout);
+  print(
+    utils.exec({ path: "/bin/ls", args: ["ls", "-R", "this", "-1"] }).stdout
+  );
 
   print(utils.rmdir("this/is/a", true));
 } catch (e) {

@@ -11,6 +11,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <pthread.h>
+#include <signal.h>
 #include "duktape.h"
 #define REMALLOC(s, t)               \
   do                                 \
@@ -195,7 +197,6 @@ duk_ret_t duk_util_readln(duk_context *ctx)
 #define DUK_UTIL_STAT_TEST_MODE(mode, test)           \
   duk_ret_t duk_util_stat_is_##mode(duk_context *ctx) \
   {                                                   \
-    \                  
     duk_push_this(ctx);                               \
     duk_get_prop_string(ctx, -1, "mode");             \
     int mode = duk_get_int(ctx, -1);                  \
@@ -306,108 +307,162 @@ duk_ret_t duk_util_stat(duk_context *ctx)
   // see duktape function interface
   return 1;
 }
+struct exec_thread_waitpid_arg
+{
+  pid_t pid;
+  unsigned int timeout;
+  int signal;
+  unsigned int killed;
+};
+void *duk_util_exec_thread_waitpid(void *arg)
+{
+  struct exec_thread_waitpid_arg *arg_s = ((struct exec_thread_waitpid_arg *)arg);
+  usleep(arg_s->timeout);
+  kill(arg_s->pid, arg_s->signal);
+  arg_s->killed = 1;
+  return NULL;
+}
 
-#define DUK_UTIL_EXEC_READ_FD(ctx, buf, fildes, nread)                    \
-  {                                                                       \
-    \ 
-    int size = BUFREADSZ;                                                 \
-    REMALLOC(buf, size);                                                  \
-    int nbytes = 0;                                                       \
-    nread = 0;                                                            \
-    while ((nbytes = read(fildes, buf + nread, size - nread)) > 0)        \
-    {                                                                     \
-      size *= 2;                                                          \
-      nread += nbytes;                                                    \
-      REMALLOC(buf, size);                                                \
-    }                                                                     \
-    if (nbytes < 0)                                                       \
-    {                                                                     \
-      duk_push_sprintf(ctx, "error reading stdout: %s", strerror(errno)); \
-      (void)duk_throw(ctx);                                               \
-    }                                                                     \
+#define DUK_UTIL_EXEC_READ_FD(ctx, buf, fildes, nread)                                                \
+  {                                                                                                   \
+    int size = BUFREADSZ;                                                                             \
+    REMALLOC(buf, size);                                                                              \
+    int nbytes = 0;                                                                                   \
+    nread = 0;                                                                                        \
+    while ((nbytes = read(fildes, buf + nread, size - nread)) > 0)                                    \
+    {                                                                                                 \
+      size *= 2;                                                                                      \
+      nread += nbytes;                                                                                \
+      REMALLOC(buf, size);                                                                            \
+    }                                                                                                 \
+    if (nbytes < 0)                                                                                   \
+    {                                                                                                 \
+      duk_push_error_object(ctx, DUK_ERR_ERROR, "could not read output buffer: %s", strerror(errno)); \
+      return duk_throw(ctx);                                                                          \
+    }                                                                                                 \
   }
 
 /**
  * Executes a command where the arguments are the arguments to execv.
+ * @param {string} path - The path to the program to execute.
+ * @param {string[]} args - The arguments to provide to the program (including the program name).
+ * @param {int} timeout - The optional timeout in microseconds.
+ * @param {int} kill_signal - The signal to use to kill a timed out process. Default is SIGKILL (9)
  * @returns an object with stdout, stderr and return status
  * Ex.
- * const { stdout: string, stderr: string, exit_status: int } = utils.exec("/bin/ls", "ls", "-1");
+ * const { 
+ *    stdout: string, 
+ *    stderr: string, 
+ *    exit_status: int,
+ *    timed_out: bool
+ * } = utils.exec({ 
+ *    path: "/bin/ls", 
+ *    args: ["ls", "-1"], 
+ *    timeout: 1000
+ *    kill_signal: 9 });
  */
 duk_ret_t duk_util_exec(duk_context *ctx)
 {
 
-  // get variadic arguments and store in null terminated argument list
-  duk_idx_t nargs = duk_get_top(ctx);
+  // get options
+  duk_get_prop_string(ctx, -1, "timeout");
+  unsigned int timeout = duk_get_uint_default(ctx, -1, 0);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "kill_signal");
+  int kill_signal = duk_get_int_default(ctx, -1, SIGKILL);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "path");
+  const char *path = duk_get_string(ctx, -1);
+  duk_pop(ctx);
+
+  // get arguments into null terminated buffer
+  duk_get_prop_string(ctx, -1, "args");
+  duk_size_t nargs = duk_get_length(ctx, -1);
   char **args = NULL;
   REMALLOC(args, (nargs + 1) * sizeof(char *));
   for (int i = 0; i < nargs; i++)
   {
-    args[i] = (char *)duk_get_string(ctx, i);
+    duk_get_prop_index(ctx, -1, i);
+    args[i] = (char *)duk_get_string(ctx, -1);
+    duk_pop(ctx);
   }
   args[nargs] = NULL;
+  duk_pop(ctx);
 
   int stdout_pipe[2];
   int stderr_pipe[2];
   if (pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1)
   {
-    duk_push_sprintf(ctx, "error creating pipe: %s", strerror(errno));
-    (void)duk_throw(ctx);
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "could not create pipe: %s", strerror(errno));
+    return duk_throw(ctx);
   }
   pid_t pid;
   if ((pid = fork()) == -1)
   {
-    duk_push_sprintf(ctx, "error forking: %s", strerror(errno));
-    (void)duk_throw(ctx);
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "could not fork: %s", strerror(errno));
+    return duk_throw(ctx);
   }
   else if (pid == 0)
   {
-    // child process
-
-    // redirect stdout and stderr
+    // make pipe equivalent to stdout and stderr
     dup2(stdout_pipe[1], STDOUT_FILENO);
     dup2(stderr_pipe[1], STDERR_FILENO);
 
     // close unused pipes
     close(stdout_pipe[0]);
     close(stderr_pipe[0]);
-
-    execv(args[0], args + 1);
-    fprintf(stderr, "error executing %s\n", args[1]);
+    execv(path, args);
+    fprintf(stderr, "could not execute %s\n", args[0]);
     exit(EXIT_FAILURE);
   }
-  else
+  // create thread for timeout
+  struct exec_thread_waitpid_arg arg;
+  pthread_t thread;
+  arg.signal = kill_signal;
+  arg.pid = pid;
+  arg.timeout = timeout;
+  arg.killed = 0;
+  if (timeout > 0)
   {
-    int exit_status;
-    waitpid(-1, &exit_status, 0);
-
-    // close unused pipes
-    close(stdout_pipe[1]);
-    close(stderr_pipe[1]);
-
-    char *stdout_buf = NULL;
-    char *stderr_buf = NULL;
-
-    // read output
-    int stdout_nread, stderr_nread;
-    DUK_UTIL_EXEC_READ_FD(ctx, stdout_buf, stdout_pipe[0], stdout_nread);
-    DUK_UTIL_EXEC_READ_FD(ctx, stderr_buf, stderr_pipe[0], stderr_nread);
-
-    // push return object
-    duk_push_object(ctx);
-
-    duk_push_lstring(ctx, stdout_buf, stdout_nread);
-    duk_put_prop_string(ctx, -2, "stdout");
-
-    duk_push_lstring(ctx, stderr_buf, stderr_nread);
-    duk_put_prop_string(ctx, -2, "stderr");
-
-    DUK_PUT(ctx, int, "exit_status", exit_status, -2);
-
-    free(stdout_buf);
-    free(stderr_buf);
-    free(args);
-    return 1;
+    pthread_create(&thread, NULL, duk_util_exec_thread_waitpid, &arg);
   }
+  int exit_status;
+  waitpid(pid, &exit_status, 0);
+  // cancel timeout thread in case it is still running
+  if (timeout > 0)
+  {
+    pthread_cancel(thread);
+    pthread_join(thread, NULL);
+  }
+  // close unused pipes
+  close(stdout_pipe[1]);
+  close(stderr_pipe[1]);
+
+  char *stdout_buf = NULL;
+  char *stderr_buf = NULL;
+
+  // read output
+  int stdout_nread, stderr_nread;
+  DUK_UTIL_EXEC_READ_FD(ctx, stdout_buf, stdout_pipe[0], stdout_nread);
+  DUK_UTIL_EXEC_READ_FD(ctx, stderr_buf, stderr_pipe[0], stderr_nread);
+
+  // push return object
+  duk_push_object(ctx);
+
+  duk_push_lstring(ctx, stdout_buf, stdout_nread);
+  duk_put_prop_string(ctx, -2, "stdout");
+
+  duk_push_lstring(ctx, stderr_buf, stderr_nread);
+  duk_put_prop_string(ctx, -2, "stderr");
+
+  DUK_PUT(ctx, boolean, "timed_out", arg.killed, -2);
+  DUK_PUT(ctx, int, "exit_status", exit_status, -2);
+  free(stdout_buf);
+  free(stderr_buf);
+  free(args);
+  return 1;
 }
 
 duk_ret_t duk_util_readdir(duk_context *ctx)
@@ -423,53 +478,57 @@ duk_ret_t duk_util_readdir(duk_context *ctx)
 duk_ret_t duk_util_mkdir(duk_context *ctx)
 {
 
-    duk_idx_t nargs = duk_get_top(ctx);
+  duk_idx_t nargs = duk_get_top(ctx);
 
-    const char *path;
+  const char *path;
 
-    mode_t mode;
-    if (nargs == 2) // a file mode was specified
-    { 
-      path = duk_get_string(ctx, -2);
-      const char *str_mode = duk_get_string(ctx, -1);
-      mode = atoi(str_mode);
-    }
-    else if (nargs == 1)// default to ACCESSPERMS (0777)
+  mode_t mode;
+  if (nargs == 2) // a file mode was specified
+  {
+    path = duk_get_string(ctx, -2);
+    const char *str_mode = duk_get_string(ctx, -1);
+    mode = atoi(str_mode);
+  }
+  else if (nargs == 1) // default to ACCESSPERMS (0777)
+  {
+    path = duk_get_string(ctx, -1);
+    mode = ACCESSPERMS;
+  }
+  else
+  {
+    duk_push_sprintf(ctx, "too many arguments");
+  }
+
+  char _path[PATH_MAX];
+
+  strcpy(_path, path);
+
+  /* Move through the path string to recurisvely create directories */
+  for (char *p = _path + 1; *p; p++)
+  {
+
+    if (*p == '/')
     {
-      path = duk_get_string(ctx, -1);
-      mode = ACCESSPERMS;
+
+      *p = '\0';
+
+      if (mkdir(_path, mode) != 0)
+      {
+        duk_push_sprintf(ctx, "error creating directory: %s", strerror(errno));
+        (void)duk_throw(ctx);
+      }
+
+      *p = '/';
     }
-    else 
-    {
-      duk_push_sprintf(ctx, "too many arguments");
-    }
+  }
 
-    char _path[PATH_MAX];
+  if (mkdir(path, mode) != 0)
+  {
+    duk_push_sprintf(ctx, "error creating directory: %s", strerror(errno));
+    (void)duk_throw(ctx);
+  }
 
-    strcpy(_path, path);
-
-    /* Move through the path string to recurisvely create directories */
-    for (char * p = _path + 1; *p; p++) {
-
-        if (*p == '/') {
-
-            *p = '\0';
-
-            if (mkdir(_path, mode) != 0) {
-              duk_push_sprintf(ctx, "error creating directory: %s", strerror(errno));
-              (void) duk_throw(ctx);
-            }
-
-            *p = '/';
-        }
-    }
-
-    if (mkdir(path, mode) != 0) {
-      duk_push_sprintf(ctx, "error creating directory: %s", strerror(errno));
-      (void) duk_throw(ctx);
-    }   
-
-    return 1;
+  return 1;
 }
 
 /**
@@ -479,65 +538,65 @@ duk_ret_t duk_util_mkdir(duk_context *ctx)
  */
 duk_ret_t duk_util_rmdir(duk_context *ctx)
 {
-    duk_idx_t nargs = duk_get_top(ctx);
+  duk_idx_t nargs = duk_get_top(ctx);
 
-    const char *path;
+  const char *path;
 
-    mode_t mode;
-    int recursive;
-    if (nargs == 1) // Non-recursive deletion
-    { 
-      path = duk_get_string(ctx, -1);
-      recursive = 0;
-    }
-    else if (nargs == 2)// An option was specified
-    {
-      path = duk_get_string(ctx, -2);
-      recursive = duk_get_boolean(ctx, -1);
-    }
-    else 
-    {
-      duk_push_sprintf(ctx, "too many arguments");
-    }
+  mode_t mode;
+  int recursive;
+  if (nargs == 1) // Non-recursive deletion
+  {
+    path = duk_get_string(ctx, -1);
+    recursive = 0;
+  }
+  else if (nargs == 2) // An option was specified
+  {
+    path = duk_get_string(ctx, -2);
+    recursive = duk_get_boolean(ctx, -1);
+  }
+  else
+  {
+    duk_push_sprintf(ctx, "too many arguments");
+  }
 
+  char _path[PATH_MAX];
 
-    char _path[PATH_MAX];
+  strcpy(_path, path);
 
-    strcpy(_path, path);
+  if (rmdir(path) != 0)
+  {
+    duk_push_sprintf(ctx, "error removing directory: %s", strerror(errno));
+    (void)duk_throw(ctx);
+  }
 
-    if(rmdir(path) != 0)
-    {
-      duk_push_sprintf(ctx, "error removing directory: %s", strerror(errno));
-      (void) duk_throw(ctx);
-    }
+  if (recursive)
+  {
+    int length = strlen(_path);
+    for (char *p = _path + length - 1; p != _path; p--)
+    { // Traverse the path backwards to delete nested directories
 
-    if (recursive)
-    {
-      int length = strlen(_path);
-      for (char *p = _path + length - 1; p != _path; p--) { // Traverse the path backwards to delete nested directories
+      if (*p == '/')
+      {
 
-        if (*p == '/') {
+        *p = '\0';
 
-            *p = '\0';
-
-            if (rmdir(_path) != 0) {
-              duk_push_sprintf(ctx, "error removing directory: %s", strerror(errno));
-              (void) duk_throw(ctx);
-            }
-
-            *p = '/';
+        if (rmdir(_path) != 0)
+        {
+          duk_push_sprintf(ctx, "error removing directory: %s", strerror(errno));
+          (void)duk_throw(ctx);
         }
 
-        }
+        *p = '/';
+      }
     }
+  }
 
-    return 1;
-
+  return 1;
 }
 static const duk_function_list_entry utils_funcs[] = {
     {"readln", duk_util_readln, 2 /*nargs*/},
     {"stat", duk_util_stat, 1},
-    {"exec", duk_util_exec, DUK_VARARGS},
+    {"exec", duk_util_exec, 1},
     {"mkdir", duk_util_mkdir, DUK_VARARGS},
     {"rmdir", duk_util_rmdir, DUK_VARARGS},
     {NULL, NULL, 0}};
