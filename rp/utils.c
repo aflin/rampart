@@ -416,9 +416,9 @@ duk_ret_t duk_util_readdir(duk_context *ctx)
 }
 
 /**
- * Creates a directory at the specified path
+ * Creates a directory with the name given as a path
  * Ex.
- * utils.mkdir("new_directory", )
+ * utils.mkdir("new/directory")
  */
 duk_ret_t duk_util_mkdir(duk_context *ctx)
 {
@@ -448,15 +448,16 @@ duk_ret_t duk_util_mkdir(duk_context *ctx)
 
     strcpy(_path, path);
 
-    /* Move through the path string to recurisvely created directories */
+    /* Move through the path string to recurisvely create directories */
     for (char * p = _path + 1; *p; p++) {
-      
+
         if (*p == '/') {
 
             *p = '\0';
 
             if (mkdir(_path, mode) != 0) {
               duk_push_sprintf(ctx, "error creating directory: %s", strerror(errno));
+              (void) duk_throw(ctx);
             }
 
             *p = '/';
@@ -465,16 +466,80 @@ duk_ret_t duk_util_mkdir(duk_context *ctx)
 
     if (mkdir(path, mode) != 0) {
       duk_push_sprintf(ctx, "error creating directory: %s", strerror(errno));
+      (void) duk_throw(ctx);
     }   
 
     return 1;
 }
 
+/**
+ * Removes an empty directory with the name given as a path. Allows recursively removing nested directories 
+ * Ex.
+ * utils.rmdir("directory/to/be/deleted")
+ */
+duk_ret_t duk_util_rmdir(duk_context *ctx)
+{
+    duk_idx_t nargs = duk_get_top(ctx);
+
+    const char *path;
+
+    mode_t mode;
+    int recursive;
+    if (nargs == 1) // Non-recursive deletion
+    { 
+      path = duk_get_string(ctx, -1);
+      recursive = 0;
+    }
+    else if (nargs == 2)// An option was specified
+    {
+      path = duk_get_string(ctx, -2);
+      recursive = duk_get_boolean(ctx, -1);
+    }
+    else 
+    {
+      duk_push_sprintf(ctx, "too many arguments");
+    }
+
+
+    char _path[PATH_MAX];
+
+    strcpy(_path, path);
+
+    if(rmdir(path) != 0)
+    {
+      duk_push_sprintf(ctx, "error removing directory: %s", strerror(errno));
+      (void) duk_throw(ctx);
+    }
+
+    if (recursive)
+    {
+      int length = strlen(_path);
+      for (char *p = _path + length - 1; p != _path; p--) { // Traverse the path backwards to delete nested directories
+
+        if (*p == '/') {
+
+            *p = '\0';
+
+            if (rmdir(_path) != 0) {
+              duk_push_sprintf(ctx, "error removing directory: %s", strerror(errno));
+              (void) duk_throw(ctx);
+            }
+
+            *p = '/';
+        }
+
+        }
+    }
+
+    return 1;
+
+}
 static const duk_function_list_entry utils_funcs[] = {
     {"readln", duk_util_readln, 2 /*nargs*/},
     {"stat", duk_util_stat, 1},
     {"exec", duk_util_exec, DUK_VARARGS},
     {"mkdir", duk_util_mkdir, DUK_VARARGS},
+    {"rmdir", duk_util_rmdir, DUK_VARARGS},
     {NULL, NULL, 0}};
 
 static const duk_number_list_entry file_types[] = {

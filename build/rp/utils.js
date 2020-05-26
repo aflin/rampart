@@ -17,8 +17,16 @@ try {
   print("\n-- exec (ls) --");
   print(utils.exec("/bin/ls", "ls", "-1").stdout);
   
-  print("\n-- mdkir --");
+  print("\n-- utils.js mdkir --");
   print(utils.mkdir("this/is/a/test"));
+  
+  print("\n-- utils.js rmdir --")
+  
+  print(utils.rmdir("this/is/a/test"));
+
+  print(utils.exec("/bin/ls", "ls -R this", "-1").stdout);
+
+  print(utils.rmdir("this/is/a", true));
 } catch (e) {
   print("caught:");
   console.log(e);
