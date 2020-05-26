@@ -965,54 +965,38 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
   *pbuf='\0';
   mmsgfh=fmemopen(pbuf, 1024, "w+");
 
-    /* All Duktape/C functions can be called both as constructors
-     * ("new func()") and functions ("func()").  Sometimes objects
-     * allow both calls, sometimes not.  Here we reject a normal
-     * non-constructor call.
-     -- above from duktape example--
-     */
   if (!duk_is_constructor_call(ctx)) {
     return DUK_RET_TYPE_ERROR;
   }
 
-  GLOCK
-  if(duk_is_boolean(ctx,1) && duk_get_boolean(ctx,1)!=0 ) {
-    FLOCK
-    if(!createdb(db)  && strstr(pbuf,"already exists") == (char *)NULL ){
-     GUNLOCK
-     FUNLOCK
-     duk_rp_log_error(ctx,pbuf);
-     duk_push_sprintf(ctx,"cannot create database at '%s' (root path not found, lacking permission or other error)", db);
-     duk_throw(ctx);
-    }
-    FUNLOCK
-  }
-
-  /* see if we have a db string in 'this'
-     if so, a handle to this database has 
-     been previously opened (but may now be close,
-     but we know the database was there, and hopefully
-     still is)
+  /* 
+     if sql=new Sql("/db/path",true), we will 
+     create the db if it does not exist 
   */
+  if(duk_is_boolean(ctx,1) && duk_get_boolean(ctx,1)!=0 ) {
+    /* check for db first */
+    tx=TEXIS_OPEN((char*)db);
+    if (tx==NULL)
+    {
+      GLOCK
+      FLOCK
+      if(!createdb(db)){
+        GUNLOCK
+        FUNLOCK
+        duk_rp_log_error(ctx,pbuf);
+        duk_push_sprintf(ctx,"cannot create database at '%s' (root path not found, lacking permission or other error)", db);
+        duk_throw(ctx);
+      }
+      FUNLOCK
+      GUNLOCK
+    }
+    else
+     tx=TEXIS_CLOSE(tx);
+  }
 
   duk_push_this(ctx);  /* -> stack: [ db this ] */
-  if(!duk_get_prop_string(ctx,-1,"db"))
-  {
-    /* do a test open to make sure its all good */
-/*
-    if(!(tx=newsql((char*)db)))
-    {
-      GUNLOCK
-      duk_rp_log_error(ctx,pbuf);
-      duk_push_sprintf(ctx,"cannot open database at '%s' (not found, lacking permission or not a db)", db);
-      duk_throw(ctx);
-    }
-    tx=TEXIS_CLOSE(tx);
-    GUNLOCK
-*/
-    duk_push_string(ctx,db);
-    duk_put_prop_string(ctx, -3, "db");
-  }
+  duk_push_string(ctx,db);
+  duk_put_prop_string(ctx, -2, "db");
 
   /* Return undefined: default instance will be used. */
   return 0;
