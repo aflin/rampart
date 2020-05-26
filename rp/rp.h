@@ -13,7 +13,7 @@ extern "C" {
 #define nthreads 12                    /* number of threads for evhtp */
 #define RESMAX_DEFAULT 10              /* default number of sql rows returned if max is not set */
 #define PUTMSG_STDERR                  /* print texis error messages in web server to stdout */
-//#define SINGLETHREADED                  /* don't use threads (despite nthreads above) */
+#define SINGLETHREADED                  /* don't use threads (despite nthreads above) */
 #define USEHANDLECACHE                 /* cache texis handles on a per db/query basis */
 
 // this should probably just exit
