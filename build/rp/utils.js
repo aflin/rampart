@@ -21,17 +21,19 @@ try {
   );
 
   print("\n-- utils.js mdkir --");
-  print(utils.mkdir("this/is/a/test"));
+  utils.mkdir("this/is/a/test");
+
+  print(
+    utils.exec({ path: "/usr/local/bin/tree", args: ["tree", "this"] }).stdout
+  );
 
   print("\n-- utils.js rmdir --");
 
-  print(utils.rmdir("this/is/a/test"));
+  utils.rmdir("this/is/a/test");
 
-  print(
-    utils.exec({ path: "/bin/ls", args: ["ls", "-R", "this", "-1"] }).stdout
-  );
+  print(utils.exec("/usr/local/bin/tree", "tree", "this").stdout);
 
-  print(utils.rmdir("this/is/a", true));
+  utils.rmdir("this/is/a", true);
 } catch (e) {
   print("caught:");
   console.log(e);
