@@ -15,7 +15,7 @@ try {
   print("atime: " + stat.atime);
   print("mode: " + stat.mode);
   print("\n-- exec (ls) --");
-  print(utils.exec("/bin/ls", "ls", "-1"));
+  print(utils.exec("/bin/ls", "ls", "-1").stdout);
 } catch (e) {
   print("caught:");
   console.log(e);
