@@ -381,12 +381,69 @@ duk_ret_t duk_util_exec(duk_context *ctx)
 
 duk_ret_t duk_util_readdir(duk_context *ctx)
 {
+  return 1;
+}
+
+/**
+ * Creates a directory at the specified path
+ * Ex.
+ * utils.mkdir("new_directory", )
+ */
+duk_ret_t duk_util_mkdir(duk_context *ctx)
+{
+
+    duk_idx_t nargs = duk_get_top(ctx);
+
+    const char *path;
+
+    mode_t mode;
+    if (nargs == 2) // a file mode was specified
+    { 
+      path = duk_get_string(ctx, -2);
+      const char *str_mode = duk_get_string(ctx, -1);
+      mode = atoi(str_mode);
+    }
+    else if (nargs == 1)// default to ACCESSPERMS (0777)
+    {
+      path = duk_get_string(ctx, -1);
+      mode = ACCESSPERMS;
+    }
+    else 
+    {
+      duk_push_sprintf(ctx, "too many arguments");
+    }
+
+    char _path[PATH_MAX];
+
+    strcpy(_path, path);
+
+    /* Move through the path string to recurisvely created directories */
+    for (char * p = _path + 1; *p; p++) {
+      
+        if (*p == '/') {
+
+            *p = '\0';
+
+            if (mkdir(_path, mode) != 0) {
+              duk_push_sprintf(ctx, "error creating directory: %s", strerror(errno));
+            }
+
+            *p = '/';
+        }
+    }
+
+    if (mkdir(path, mode) != 0) {
+      duk_push_sprintf(ctx, "error creating directory: %s", strerror(errno));
+    }   
+
+    return 1;
 }
 
 static const duk_function_list_entry utils_funcs[] = {
     {"readln", duk_util_readln, 2 /*nargs*/},
     {"stat", duk_util_stat, 1},
     {"exec", duk_util_exec, DUK_VARARGS},
+    {"mkdir", duk_util_mkdir, DUK_VARARGS},
     {NULL, NULL, 0}};
 
 static const duk_number_list_entry file_types[] = {
