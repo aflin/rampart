@@ -1,14 +1,20 @@
-var utils = require("./libdukutils.so");
-var i = 0;
+var utils = require("./rputils.so");
+var i = 1;
 
 try {
-  utils.readln("./curltest2.js", function (line) {
+  utils.readln("./utils.js", function (line) {
     // print(line);
     i++;
-    if (i > 55) return false;
   });
-  var stat = utils.stat("./curltest2.js");
-  print(stat.last_access);
+  print("\n-- num of lines --");
+  print(i);
+
+  var stat = utils.stat("./utils.js");
+  print("\n-- utils.js stat --");
+  print("is file: " + stat.is_file());
+  print("atime: " + stat.atime);
+  print("mode: " + stat.mode);
+  print("\n-- exec (ls) --");
   print(utils.exec("/bin/ls", "ls", "-1"));
 } catch (e) {
   print("caught:");

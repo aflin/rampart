@@ -192,6 +192,35 @@ duk_ret_t duk_util_readln(duk_context *ctx)
   return 0;
 }
 
+#define DUK_UTIL_STAT_TEST_MODE(mode, test)           \
+  duk_ret_t duk_util_stat_is_##mode(duk_context *ctx) \
+  {                                                   \
+    \                  
+    duk_push_this(ctx);                               \
+    duk_get_prop_string(ctx, -1, "mode");             \
+    int mode = duk_get_int(ctx, -1);                  \
+    duk_push_boolean(ctx, test(mode));                \
+    return 1;                                         \
+  }
+
+DUK_UTIL_STAT_TEST_MODE(block_device, S_ISBLK);
+DUK_UTIL_STAT_TEST_MODE(character_device, S_ISCHR);
+DUK_UTIL_STAT_TEST_MODE(directory, S_ISDIR);
+DUK_UTIL_STAT_TEST_MODE(fifo, S_ISFIFO);
+DUK_UTIL_STAT_TEST_MODE(file, S_ISREG);
+DUK_UTIL_STAT_TEST_MODE(socket, S_ISSOCK);
+DUK_UTIL_STAT_TEST_MODE(symbolic_link, S_ISLNK);
+
+static const duk_function_list_entry stat_methods[] = {
+    {"is_block_device", duk_util_stat_is_block_device, 0},
+    {"is_character_device", duk_util_stat_is_character_device, 0},
+    {"is_directory", duk_util_stat_is_directory, 0},
+    {"is_fifo", duk_util_stat_is_fifo, 0},
+    {"is_file", duk_util_stat_is_file, 0},
+    {"is_socket", duk_util_stat_is_socket, 0},
+    {"is_symbolic_link", duk_util_stat_is_symbolic_link, 0},
+    {NULL, NULL, 0}};
+
 #define DUK_PUT(ctx, type, key, value, idx) \
   {                                         \
     duk_push_##type(ctx, value);            \
@@ -202,31 +231,23 @@ duk_ret_t duk_util_readln(duk_context *ctx)
  *  @param {string} The path name
  *  @returns a javascript object of the following form:
  *  stat: {
- *    dev: { 
- *      major: int, 
- *      minor: int
- *    },
- *    inode: int,
- *    type: int, // st_mode & S_IFMT
- *    mode: int, // st_mode & 07777
- *    num_links: int,
- *    user_id: int,
- *    group_id: int,
- *    rdev: {
- *      major: int,
- *      minor: int
- *    },
+ *    dev: int,
+ *    ino: int,
+ *    mode: int,
+ *    nlink: int,
+ *    uid: int,
+ *    gid: int,
+ *    rdev: int,
  *    size: int,
- *    block_size: int,
+ *    blksize: int,
  *    blocks: int,
- *    last_access: Date,
- *    last_modified: Date,
- *    last_status_change: Date,
+ *    atime: Date,
+ *    mtime: Date,
+ *    ctime: Date,
  *  }
  **/
 duk_ret_t duk_util_stat(duk_context *ctx)
 {
-
   const char *path = duk_get_string(ctx, -1);
   struct stat path_stat;
   int err = stat(path, &path_stat);
@@ -239,29 +260,15 @@ duk_ret_t duk_util_stat(duk_context *ctx)
   // stat
   duk_push_object(ctx);
 
-  // dev
-  duk_push_object(ctx);
-  DUK_PUT(ctx, int, "major", major(path_stat.st_dev), -2);
-  DUK_PUT(ctx, int, "minor", major(path_stat.st_dev), -2);
-  duk_put_prop_string(ctx, -2, "dev");
-
-  DUK_PUT(ctx, int, "inode", path_stat.st_ino, -2);
-  DUK_PUT(ctx, int, "type", path_stat.st_mode &S_IFMT, -2);
-  DUK_PUT(ctx, int, "mode", path_stat.st_mode & 07777, -2);
-  DUK_PUT(ctx, int, "num_links", path_stat.st_nlink, -2);
-  DUK_PUT(ctx, int, "user_id", path_stat.st_uid, -2);
-  DUK_PUT(ctx, int, "group_id", path_stat.st_gid, -2);
-
-  // rdev
-  duk_push_object(ctx);
-  duk_push_int(ctx, major(path_stat.st_rdev));
-  duk_put_prop_string(ctx, -2, "major");
-  duk_push_int(ctx, minor(path_stat.st_rdev));
-  duk_put_prop_string(ctx, -2, "minor");
-  duk_put_prop_string(ctx, -2, "rdev");
-
+  DUK_PUT(ctx, int, "dev", path_stat.st_dev, -2);
+  DUK_PUT(ctx, int, "ino", path_stat.st_ino, -2);
+  DUK_PUT(ctx, int, "mode", path_stat.st_mode, -2);
+  DUK_PUT(ctx, int, "nlink", path_stat.st_nlink, -2);
+  DUK_PUT(ctx, int, "uid", path_stat.st_uid, -2);
+  DUK_PUT(ctx, int, "gid", path_stat.st_gid, -2);
+  DUK_PUT(ctx, int, "rdev", path_stat.st_rdev, -2);
   DUK_PUT(ctx, int, "size", path_stat.st_size, -2);
-  DUK_PUT(ctx, int, "block_size", path_stat.st_blksize, -2);
+  DUK_PUT(ctx, int, "blksize", path_stat.st_blksize, -2);
   DUK_PUT(ctx, int, "blocks", path_stat.st_blocks, -2);
 
   long atime, mtime, ctime;
@@ -275,23 +282,26 @@ duk_ret_t duk_util_stat(duk_context *ctx)
   ctime = path_stat.ctime;
 #endif
 
-  // last_access
+  // atime
   (void)duk_get_global_string(ctx, "Date");
   duk_push_number(ctx, atime);
   duk_new(ctx, 1);
-  duk_put_prop_string(ctx, -2, "last_access");
+  duk_put_prop_string(ctx, -2, "atime");
 
-  // last_modified
+  // mtime
   (void)duk_get_global_string(ctx, "Date");
   duk_push_number(ctx, mtime);
   duk_new(ctx, 1);
-  duk_put_prop_string(ctx, -2, "last_modified");
+  duk_put_prop_string(ctx, -2, "mtime");
 
-  // last_status_change
+  // ctime
   (void)duk_get_global_string(ctx, "Date");
   duk_push_number(ctx, mtime);
   duk_new(ctx, 1);
-  duk_put_prop_string(ctx, -2, "last_status_change");
+  duk_put_prop_string(ctx, -2, "ctime");
+
+  // add methods
+  duk_put_function_list(ctx, -1, stat_methods);
 
   // see duktape function interface
   return 1;
