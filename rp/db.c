@@ -17,7 +17,7 @@
 
 #else
 
- pthread_mutex_t lock;
+pthread_mutex_t lock;
 
 #ifdef PUTMSG_STDERR
 pthread_mutex_t printlock;
@@ -813,6 +813,13 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 #else
   tx=newsql((char*)db);
 #endif
+  if (!tx)
+  {
+    duk_rp_log_error(ctx,pbuf);
+    duk_push_int(ctx,-1);
+    duk_push_string(ctx,pbuf);
+    duk_throw(ctx);
+  }
   /* clear the sql.lastErr string */
   duk_rp_log_error(ctx,"");
 
@@ -874,6 +881,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 #ifndef USEHANDLECACHE
     tx=TEXIS_CLOSE(tx);
 #endif
+
   return 1;  /* returning outer array */
 
 }
@@ -966,18 +974,19 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
   if (!duk_is_constructor_call(ctx)) {
     return DUK_RET_TYPE_ERROR;
   }
+
   GLOCK
-  FLOCK
   if(duk_is_boolean(ctx,1) && duk_get_boolean(ctx,1)!=0 ) {
+    FLOCK
     if(!createdb(db)  && strstr(pbuf,"already exists") == (char *)NULL ){
      GUNLOCK
      FUNLOCK
      duk_rp_log_error(ctx,pbuf);
-     duk_push_sprintf(ctx,"cannot create database at '%s' (root path not found, lacking permission)", db);
+     duk_push_sprintf(ctx,"cannot create database at '%s' (root path not found, lacking permission or other error)", db);
      duk_throw(ctx);
     }
+    FUNLOCK
   }
-  FUNLOCK
 
   /* see if we have a db string in 'this'
      if so, a handle to this database has 
@@ -985,10 +994,12 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
      but we know the database was there, and hopefully
      still is)
   */
+
   duk_push_this(ctx);  /* -> stack: [ db this ] */
   if(!duk_get_prop_string(ctx,-1,"db"))
   {
     /* do a test open to make sure its all good */
+/*
     if(!(tx=newsql((char*)db)))
     {
       GUNLOCK
@@ -998,9 +1009,11 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
     }
     tx=TEXIS_CLOSE(tx);
     GUNLOCK
+*/
     duk_push_string(ctx,db);
     duk_put_prop_string(ctx, -3, "db");
   }
+
   /* Return undefined: default instance will be used. */
   return 0;
 }
