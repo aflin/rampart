@@ -38,5 +38,5 @@ try {
   utils.rmdir("this/is/a", true);
 } catch (e) {
   print("caught:");
-  console.log(e);
+  console.log(e.stack);
 }
