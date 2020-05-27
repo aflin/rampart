@@ -13,7 +13,7 @@ try {
   print("\n-- utils.js stat --");
   print("is file: " + stat.is_file());
   print("atime: " + stat.atime);
-  print("mode: " + stat.mode);
+  print("mode: " + stat.mode.toString(8));
   print("\n-- exec (sleep 0.2) --");
   print(
     "timed_out: " +
@@ -54,6 +54,13 @@ try {
       );
     }
   });
+
+  print("\n-- utils.js chmod --");
+  utils.chmod({ file: "utils-2.js", mode: 0775 });
+  print("file mode: " + utils.stat("utils-2.js").mode.toString(8));
+  print(
+    "correct file mode? " + ((utils.stat("utils-2.js").mode & 0000777) == 0775)
+  );
 
   utils.exec({ path: "/bin/rm", args: ["rm", "utils-2.js"] });
 

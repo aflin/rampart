@@ -473,12 +473,12 @@ duk_ret_t duk_util_readdir(duk_context *ctx)
   {                                                                                                \
     duk_push_error_object(ctx, DUK_ERR_ERROR, "could not remove '%s': %s", file, strerror(errno)); \
     return duk_throw(ctx);                                                                         \
-  }                                                                                                \
-/**                                                                                                \
- * Copies the file from src to dest. Passing overwrite will overwrite any file already present.    \
- * It will try to preserve the file mode.                                                          \
- * @param {{ src: string, dest: string, overwrite: boolean }} options - the options to be given    \
- *                                                                                                 \
+  }
+
+/**                                                                                                
+ * Copies the file from src to dest. Passing overwrite will overwrite any file already present.    
+ * It will try to preserve the file mode.                                                          
+ * @param {{ src: string, dest: string, overwrite: boolean }} options - the options to be given                  
  */
 duk_ret_t duk_util_copy_file(duk_context *ctx)
 {
@@ -546,10 +546,35 @@ duk_ret_t duk_util_copy_file(duk_context *ctx)
   if (chmod(dest_filename, src_stat.st_mode))
   {
     DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error setting file mode '%s': %s", dest_filename, strerror(errno));
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error setting file mode %o for '%s': %s", src_stat.st_mode, dest_filename, strerror(errno));
     return duk_throw(ctx);
   }
 
+  return 0;
+}
+
+/**
+ * Changes file permissions.
+ * @param {{file: string, mode: int}} options
+ * Ex.
+ * utils.chmod("some_file", 0775);
+ * 
+ */
+duk_ret_t duk_util_chmod(duk_context *ctx)
+{
+  duk_get_prop_string(ctx, -1, "file");
+  const char *file = duk_require_string(ctx, -1);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "mode");
+  unsigned int mode = duk_require_uint(ctx, -1);
+  duk_pop(ctx);
+
+  if (chmod(file, mode))
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error setting file mode %o for '%s': %s", mode, file, strerror(errno));
+    return duk_throw(ctx);
+  }
   return 0;
 }
 
@@ -622,6 +647,7 @@ static const duk_function_list_entry utils_funcs[] = {
     {"exec", duk_util_exec, 1},
     {"readdir", duk_util_readdir, 1},
     {"copy_file", duk_util_copy_file, 1},
+    {"chmod", duk_util_chmod, 1},
     {"mkdir", duk_util_mkdir, DUK_VARARGS},
     {"rmdir", duk_util_rmdir, DUK_VARARGS},
     {NULL, NULL, 0}};
