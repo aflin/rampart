@@ -61,7 +61,7 @@ try {
 
   print("\n-- utils.js chmod file --");
 
-  utils.exec({ path: "/usr/bin/touch", args: ["touch", "sample.txt"] });
+  utils.touch({path: "sample.txt"});
 
   var sample_stat = utils.stat("./sample.txt");
   print("mode: " + sample_stat.mode.toString(8));
@@ -70,6 +70,19 @@ try {
   sample_stat = utils.stat("./sample.txt");
   print("mode after chmod: " + sample_stat.mode.toString(8));
 
+  print("\n-- utils.js touch --");
+  utils.touch({path: "sample.txt", nocreate: false});
+
+  var example_stat = utils.stat("./sample.txt");
+  print("atime: " + example_stat.atime);
+  print("mtime: " + example_stat.mtime);
+
+  print("after reference touch")
+  utils.touch({path: "sample.txt", reference: "server.js", setaccess: false});
+  var example_stat = utils.stat("./sample.txt");
+  print("atime: " + example_stat.atime);
+  print("mtime: " + example_stat.mtime);
+
   print("\n-- utils.js link --");
   utils.link({ src: "sample.txt", target: "sample_link.txt", symbolic: false });
   sample_stat = utils.stat("./sample.txt");
@@ -77,6 +90,7 @@ try {
 
   utils.exec({ path: "/bin/rm", args: ["rm", "sample_link.txt"] });
   utils.exec({ path: "/bin/rm", args: ["rm", "sample.txt"] });
+  
 } catch (e) {
   print("caught:");
   console.log(e);

@@ -13,6 +13,7 @@
 #include <dirent.h>
 #include <pthread.h>
 #include <signal.h>
+#include <utime.h> /* utime */
 #include "duktape.h"
 #define REMALLOC(s, t)               \
   do                                 \
@@ -184,8 +185,8 @@ duk_ret_t duk_util_stat(duk_context *ctx)
   long atime, mtime, ctime;
 #if __DARWIN_64_BIT_INO_T || !defined(_POSIX_C_SOURCE) || defined(_DARWIN_C_SOURCE)
   atime = path_stat.st_atimespec.tv_sec * 1000;
-  mtime = path_stat.st_atimespec.tv_sec * 1000;
-  ctime = path_stat.st_atimespec.tv_sec * 1000;
+  mtime = path_stat.st_mtimespec.tv_sec * 1000;
+  ctime = path_stat.st_ctimespec.tv_sec * 1000;
 #else
   atime = path_stat.atime;
   mtime = path_stat.mtime;
@@ -692,6 +693,85 @@ duk_ret_t duk_util_chmod(duk_context *ctx)
   return 0;
 }
 
+/**
+ * Updates last access time to now. Creates the file if it doesn't exist
+ * @param {string} path - The path to the file to update/create
+ * @param {boolean} nocreate - Don't create the file if exist (defaults to false)
+ * @param {string} reference - A file to copy last access time from instead of current time
+ * @param {boolean} setaccess - Set the access time (defaults to setting both access and modified if neither specified)
+ * @param {boolean} setmodify - Set the modified time (defaults to setting both access and modified if neither specified)
+ */
+duk_ret_t duk_util_touch(duk_context *ctx)
+{
+
+  duk_get_prop_string(ctx, -1, "path");
+  const char *path = duk_require_string(ctx, -1);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "nocreate");
+  int nocreate = duk_get_boolean_default(ctx, -1, 0);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "reference");
+  const char *reference = duk_get_string(ctx, -1);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "setaccess");
+  int setaccess = duk_get_boolean_default(ctx, -1, 1);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "setmodify");
+  int setmodify = duk_get_boolean_default(ctx, -1, 1);
+  duk_pop(ctx);
+
+  struct stat filestat;
+  if (stat(path, &filestat) != 0) // file doesn't exist
+  {
+    if (nocreate)
+    {
+      return 0;
+    }
+    else 
+    {
+      FILE* fp = fopen(path, "w"); // create file
+      fclose(fp);
+      return 0;
+    }
+  }
+
+  time_t new_mtime, new_atime;
+
+  struct stat refrence_stat;
+
+  if (reference) 
+  {
+
+    if (stat(reference, &refrence_stat) != 0) //reference file doesn't exist
+    {
+      duk_push_error_object(ctx, DUK_ERR_ERROR, "reference file does not exist");
+      return duk_throw(ctx);
+    }
+
+    new_mtime = setmodify ? refrence_stat.st_mtime : filestat.st_mtime; // if setmodify, update m_time
+    new_atime = setaccess ? refrence_stat.st_atime : filestat.st_atime; // if setacccess, update a_time
+  }
+  else
+  {
+    new_mtime = setmodify ? time(NULL) : filestat.st_mtime; //set to current time if set modify
+    new_atime = setaccess ? time(NULL) : filestat.st_atime;
+  }
+
+  struct utimbuf new_times;
+
+  new_times.actime = new_atime;
+  new_times.modtime = new_mtime;
+
+  utime(path, &new_times);
+
+  return 0;
+}
+ 
+
 static const duk_function_list_entry utils_funcs[] = {
     {"readln", duk_util_readln, 2 /*nargs*/},
     {"stat", duk_util_stat, 1},
@@ -702,6 +782,7 @@ static const duk_function_list_entry utils_funcs[] = {
     {"mkdir", duk_util_mkdir, DUK_VARARGS},
     {"rmdir", duk_util_rmdir, DUK_VARARGS},
     {"chmod", duk_util_chmod, 2},
+    {"touch", duk_util_touch, 1},
     {NULL, NULL, 0}};
 
 static const duk_number_list_entry file_types[] = {
