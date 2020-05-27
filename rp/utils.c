@@ -26,83 +26,8 @@
 
 #define BUFREADSZ 4096
 #define MAXBUFFER 536870912 /* 512mb */
-#define GETDATAEND 1999999
 
-/* fill buffer with more data from file.
-   If "wrappos" > -1, data from wrappos to curend will be moved to
-   the beginning of buf and writing to buf will begin at the end of valid
-   data (curend).
-   cursize and curend will be updated appropriately for multiple calls
-   --  *fd       - file read handle
-   --  *buf      - malloced buffer to fill
-   --  *cursize  - current size of buffer
-   --  *curend   - last byte of valid data in buf
-
-   returns errno or other custom error code
-   buf will be null terminated at curend
-*/
-
-int getdata(FILE *fd, char **buf, char **curend, size_t *cursize, int wrappos)
-{
-  int i = 0, curdatasize = 0;
-  char *b;
-  errno = 0;
-  /* get a block of memory, 
-     curend shouldn't be set in this case*/
-  if (*cursize < BUFREADSZ)
-  {
-    *cursize = BUFREADSZ;
-    REMALLOC(*buf, *cursize + 1);
-  }
-  /* set end of buffer data if not set */
-  if (*curend == (char *)NULL)
-    *curend = *buf + BUFREADSZ; /* -1 == end of buffer */
-
-  /* check if we are wrapping.
-     If so, move data from wrap point to curend to beginning of buffer.
-     set up to write at new curend (buf + (curend-wrappos) )
-     Make sure there is enough space for extra data */
-  if (wrappos > -1)
-  {
-    /* get size of data to copy to beginning of string */
-    curdatasize = *curend - (*buf + wrappos);
-    //printf("curdatasize(%d)=curend(%d) - (buf(%d) + wrappos(%d)\n", curdatasize,(int)*curend,(int)*buf,wrappos);
-    //printf("curend-1='%c', buf+wrappos='%c'\n",*(*curend-1),*(*buf+wrappos));
-    int oldsize = *cursize;
-    /* is our buffer currently large enough for new block of data ? */
-    if (curdatasize + BUFREADSZ > *cursize)
-    {
-      *cursize += BUFREADSZ;
-      if (*cursize > MAXBUFFER)
-        return (2000000); /* so as not to be confused with errno range errors*/
-      REMALLOC(*buf, *cursize + 1);
-    }
-    if (wrappos) /* "Wherever you go, there you are" --Buckaroo Banzai 
-                   "If you don't know where you are going, you'll end up someplace else." -- Yogi Berra. */
-      /* move data that starts at wrappoint to beginning of buf */
-      memmove(*buf, *buf + wrappos, curdatasize);
-    /* else if wrappos is 0, don't memmove from 0 to 0 */
-
-    b = *buf + curdatasize;
-  }
-  /* no wrapping, overwrite buffer */
-  else
-  {
-    b = *buf;
-  }
-  i = (int)fread(b, 1, BUFREADSZ, fd);
-  *curend = b + i;
-
-  *(*curend) = '\0'; /* at 4097 */
-
-  //printf("i=%d\n",i);
-  if (i < BUFREADSZ)
-    return (GETDATAEND);
-
-  return (errno);
-}
-
-FILE *openFileWithCallback(duk_context *ctx, int *func_idx, const char **filename)
+int open_file_with_callback(duk_context *ctx, FILE **fp, int *func_idx, const char **filename)
 {
   int i = 0;
 
@@ -110,8 +35,8 @@ FILE *openFileWithCallback(duk_context *ctx, int *func_idx, const char **filenam
     *filename = duk_get_string(ctx, i);
   else
   {
-    duk_push_string(ctx, "readln requires a file name passed as a string");
-    (void)duk_throw(ctx);
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "readln requires a file name passed as a string");
+    return 1;
   }
 
   i = !i; /* get the other option */
@@ -121,41 +46,24 @@ FILE *openFileWithCallback(duk_context *ctx, int *func_idx, const char **filenam
   else
   {
     duk_push_string(ctx, "readln requires a callback function");
-    (void)duk_throw(ctx);
+    return 1;
   }
 
   struct stat path_stat;
   int err = stat(*filename, &path_stat);
   if (err)
   {
-    duk_push_sprintf(ctx, "error resolving '%s': %s", *filename, strerror(errno));
-    (void)duk_throw(ctx);
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error resolving '%s': %s", *filename, strerror(errno));
+    return 1;
   }
   if (!S_ISREG(path_stat.st_mode))
   {
-    duk_push_sprintf(ctx, "'%s' is not a file", *filename);
-    (void)duk_throw(ctx);
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "'%s' is not a file", *filename);
+    return 1;
   }
-  return fopen(*filename, "r");
+  *fp = fopen(*filename, "r");
+  return 0;
 }
-
-#define NOWRAP -1
-
-#define GETDATA(x)                                                                      \
-  do                                                                                    \
-  {                                                                                     \
-    error = getdata(fp, &buf, &end, &cursize, (x));                                     \
-    if (error && error != GETDATAEND)                                                   \
-    {                                                                                   \
-      if (error == 2000000)                                                             \
-        duk_push_string(ctx, "value too large to parse (>512mb)");                      \
-      else if (error == 2000001)                                                        \
-        duk_push_string(ctx, "error realloc()");                                        \
-      else                                                                              \
-        duk_push_sprintf(ctx, "error opening or parsing'%s': %s", fn, strerror(errno)); \
-      return duk_throw(ctx);                                                            \
-    }                                                                                   \
-  } while (0)
 
 duk_ret_t duk_util_readln(duk_context *ctx)
 {
@@ -166,20 +74,23 @@ duk_ret_t duk_util_readln(duk_context *ctx)
   size_t len = 0;
   ssize_t read;
 
-  fp = openFileWithCallback(ctx, &func_idx, &filename);
+  if (open_file_with_callback(ctx, &fp, &func_idx, &filename))
+  {
+    // return error that was put on stack
+    return duk_throw(ctx);
+  }
 
   if (fp == NULL)
   {
     const char *fn = duk_to_string(ctx, !func_idx);
-    duk_push_sprintf(ctx, "error opening '%s': %s", fn, strerror(errno));
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening '%s': %s", fn, strerror(errno));
     return duk_throw(ctx);
   }
   while ((read = getline(&line, &len, fp)) != -1)
   {
     duk_dup(ctx, func_idx);
     duk_push_this(ctx);
-    *(line + strlen(line) - 1) = '\0';
-    duk_push_string(ctx, line);
+    duk_push_lstring(ctx, line, read - 1);
     duk_call_method(ctx, 1);
     if (duk_is_boolean(ctx, -1) && duk_get_boolean(ctx, -1) == 0)
       break;
@@ -199,7 +110,7 @@ duk_ret_t duk_util_readln(duk_context *ctx)
   {                                                   \
     duk_push_this(ctx);                               \
     duk_get_prop_string(ctx, -1, "mode");             \
-    int mode = duk_get_int(ctx, -1);                  \
+    int mode = duk_require_int(ctx, -1);              \
     duk_push_boolean(ctx, test(mode));                \
     return 1;                                         \
   }
@@ -254,8 +165,8 @@ duk_ret_t duk_util_stat(duk_context *ctx)
   int err = stat(path, &path_stat);
   if (err)
   {
-    duk_push_sprintf(ctx, "error getting status '%s': %s", path, strerror(errno));
-    (void)duk_throw(ctx);
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error getting status '%s': %s", path, strerror(errno));
+    return duk_throw(ctx);
   }
 
   // stat
@@ -374,7 +285,7 @@ duk_ret_t duk_util_exec(duk_context *ctx)
   duk_pop(ctx);
 
   duk_get_prop_string(ctx, -1, "path");
-  const char *path = duk_get_string(ctx, -1);
+  const char *path = duk_require_string(ctx, -1);
   duk_pop(ctx);
 
   // get arguments into null terminated buffer
@@ -385,7 +296,7 @@ duk_ret_t duk_util_exec(duk_context *ctx)
   for (int i = 0; i < nargs; i++)
   {
     duk_get_prop_index(ctx, -1, i);
-    args[i] = (char *)duk_get_string(ctx, -1);
+    args[i] = (char *)duk_require_string(ctx, -1);
     duk_pop(ctx);
   }
   args[nargs] = NULL;
@@ -496,7 +407,8 @@ duk_ret_t duk_util_mkdir(duk_context *ctx)
   }
   else
   {
-    duk_push_sprintf(ctx, "too many arguments");
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "too many arguments");
+    return duk_throw(ctx);
   }
 
   char _path[PATH_MAX];
@@ -514,8 +426,8 @@ duk_ret_t duk_util_mkdir(duk_context *ctx)
 
       if (mkdir(_path, mode) != 0)
       {
-        duk_push_sprintf(ctx, "error creating directory: %s", strerror(errno));
-        (void)duk_throw(ctx);
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error creating directory: %s", strerror(errno));
+        return duk_throw(ctx);
       }
 
       *p = '/';
@@ -524,8 +436,8 @@ duk_ret_t duk_util_mkdir(duk_context *ctx)
 
   if (mkdir(path, mode) != 0)
   {
-    duk_push_sprintf(ctx, "error creating directory: %s", strerror(errno));
-    (void)duk_throw(ctx);
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error creating directory: %s", strerror(errno));
+    return duk_throw(ctx);
   }
 
   return 1;
@@ -546,17 +458,18 @@ duk_ret_t duk_util_rmdir(duk_context *ctx)
   int recursive;
   if (nargs == 1) // Non-recursive deletion
   {
-    path = duk_get_string(ctx, -1);
+    path = duk_require_string(ctx, -1);
     recursive = 0;
   }
   else if (nargs == 2) // An option was specified
   {
-    path = duk_get_string(ctx, -2);
-    recursive = duk_get_boolean(ctx, -1);
+    path = duk_require_string(ctx, -2);
+    recursive = duk_require_boolean(ctx, -1);
   }
   else
   {
-    duk_push_sprintf(ctx, "too many arguments");
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "too many arguments");
+    return duk_throw(ctx);
   }
 
   char _path[PATH_MAX];
@@ -565,8 +478,8 @@ duk_ret_t duk_util_rmdir(duk_context *ctx)
 
   if (rmdir(path) != 0)
   {
-    duk_push_sprintf(ctx, "error removing directory: %s", strerror(errno));
-    (void)duk_throw(ctx);
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error removing directory: %s", strerror(errno));
+    return duk_throw(ctx);
   }
 
   if (recursive)
@@ -582,8 +495,8 @@ duk_ret_t duk_util_rmdir(duk_context *ctx)
 
         if (rmdir(_path) != 0)
         {
-          duk_push_sprintf(ctx, "error removing directory: %s", strerror(errno));
-          (void)duk_throw(ctx);
+          duk_push_error_object(ctx, DUK_ERR_ERROR, "error removing directory: %s", strerror(errno));
+          return duk_throw(ctx);
         }
 
         *p = '/';
