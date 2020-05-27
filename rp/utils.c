@@ -435,7 +435,7 @@ duk_ret_t duk_util_mkdir(duk_context *ctx)
     return duk_throw(ctx);
   }
 
-  return 1;
+  return 0;
 }
 
 /**
@@ -631,7 +631,7 @@ duk_ret_t duk_util_rmdir(duk_context *ctx)
     }
   }
 
-  return 1;
+  return 0;
 }
 
 /**
@@ -650,7 +650,7 @@ duk_ret_t duk_util_chmod(duk_context *ctx)
     return duk_throw(ctx);
   }
 
-  return 1;
+  return 0;
 }
 
 static const duk_function_list_entry utils_funcs[] = {
