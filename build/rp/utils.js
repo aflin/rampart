@@ -16,8 +16,12 @@ try {
   print("mode: " + stat.mode);
   print("\n-- exec (sleep 0.2) --");
   print(
-    utils.exec({ path: "/bin/sleep", args: ["sleep", "0.2"], timeout: 100000 })
-      .timed_out
+    utils.exec({
+      path: "/bin/sleep",
+      args: ["sleep", "0.2"],
+      timeout: 100000,
+      kill_signal: utils.signals.SIGKILL,
+    }).timed_out
   );
 
   print("\n-- utils.js readdir --");

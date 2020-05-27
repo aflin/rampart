@@ -552,6 +552,12 @@ static const duk_number_list_entry file_types[] = {
     {"FIFO", S_IFIFO},
     {NULL, 0.0}};
 
+static const duk_number_list_entry signals[] = {
+    {"SIGKILL", SIGKILL},
+    {"SIGTERM", SIGTERM},
+    {"SIGSTOP", SIGSTOP},
+    {NULL, 0.0}};
+
 static const duk_number_list_entry utils_consts[] = {
     {NULL, 0.0}};
 
@@ -563,6 +569,10 @@ duk_ret_t dukopen_module(duk_context *ctx)
   duk_push_object(ctx);
   duk_put_number_list(ctx, -1, file_types);
   duk_put_prop_string(ctx, -2, "file_types");
+
+  duk_push_object(ctx);
+  duk_put_number_list(ctx, -1, signals);
+  duk_put_prop_string(ctx, -2, "signals");
 
   duk_put_function_list(ctx, -1, utils_funcs);
   duk_put_number_list(ctx, -1, utils_consts);
