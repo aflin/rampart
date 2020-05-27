@@ -55,33 +55,22 @@ try {
     }
   });
 
-  print("\n-- utils.js chmod --");
-  utils.chmod({ file: "utils-2.js", mode: 0775 });
-  print("file mode: " + utils.stat("utils-2.js").mode.toString(8));
-  print(
-    "correct file mode? " + ((utils.stat("utils-2.js").mode & 0000777) == 0775)
-  );
-
   utils.exec({ path: "/bin/rm", args: ["rm", "utils-2.js"] });
 
   utils.rmdir("this/is/a", true);
 
-  print('\n-- utils.js chmod file --');
-  
-  utils.exec({path: "/usr/bin/touch", args: ["touch", "sample.txt"]});
+  print("\n-- utils.js chmod file --");
+
+  utils.exec({ path: "/usr/bin/touch", args: ["touch", "sample.txt"] });
 
   var sample_stat = utils.stat("./sample.txt");
-
-  print("mode: " + sample_stat.mode);
+  print("mode: " + sample_stat.mode.toString(8));
 
   utils.chmod("sample.txt", 0777);
-
   sample_stat = utils.stat("./sample.txt");
+  print("mode after chmod: " + sample_stat.mode.toString(8));
 
-  print("mode after chmod: " + sample_stat.mode)
-
-  utils.exec({path: "/bin/rm", args: ["rm", "sample.txt"]});
-
+  utils.exec({ path: "/bin/rm", args: ["rm", "sample.txt"] });
 } catch (e) {
   print("caught:");
   console.log(e);
