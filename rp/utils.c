@@ -23,7 +23,11 @@
       return (2000001);              \
     }                                \
   } while (0)
-
+#define DUK_PUT(ctx, type, key, value, idx) \
+  {                                         \
+    duk_push_##type(ctx, value);            \
+    duk_put_prop_string(ctx, idx, key);     \
+  }
 #define BUFREADSZ 4096
 #define MAXBUFFER 536870912 /* 512mb */
 
@@ -132,12 +136,6 @@ static const duk_function_list_entry stat_methods[] = {
     {"is_socket", duk_util_stat_is_socket, 0},
     {"is_symbolic_link", duk_util_stat_is_symbolic_link, 0},
     {NULL, NULL, 0}};
-
-#define DUK_PUT(ctx, type, key, value, idx) \
-  {                                         \
-    duk_push_##type(ctx, value);            \
-    duk_put_prop_string(ctx, idx, key);     \
-  }
 /**
  *  Filesystem stat
  *  @param {string} The path name
@@ -470,6 +468,91 @@ duk_ret_t duk_util_readdir(duk_context *ctx)
   return 1;
 }
 
+#define DUK_UTIL_REMOVE_FILE(ctx, file)                                                            \
+  if (remove(file))                                                                                \
+  {                                                                                                \
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "could not remove '%s': %s", file, strerror(errno)); \
+    return duk_throw(ctx);                                                                         \
+  }                                                                                                \
+/**                                                                                                \
+ * Copies the file from src to dest. Passing overwrite will overwrite any file already present.    \
+ * It will try to preserve the file mode.                                                          \
+ * @param {{ src: string, dest: string, overwrite: boolean }} options - the options to be given    \
+ *                                                                                                 \
+ */
+duk_ret_t duk_util_copy_file(duk_context *ctx)
+{
+  duk_get_prop_string(ctx, -1, "src");
+  const char *src_filename = duk_require_string(ctx, -1);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "dest");
+  const char *dest_filename = duk_require_string(ctx, -1);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "overwrite");
+  int overwrite = duk_get_boolean_default(ctx, -1, 0);
+  duk_pop(ctx);
+
+  FILE *src = fopen(src_filename, "r");
+  if (src == NULL)
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "could not open file '%s': %s", src_filename, strerror(errno));
+    return duk_throw(ctx);
+  }
+  struct stat src_stat;
+  if (stat(src_filename, &src_stat))
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error getting status '%s': %s", src_filename, strerror(errno));
+    return duk_throw(ctx);
+  }
+  struct stat dest_stat;
+  int err = stat(dest_filename, &dest_stat);
+  if (!err && !overwrite)
+  {
+    // file exists and shouldn't be overwritten
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error copying '%s': %s", dest_filename, "file already exists");
+    return duk_throw(ctx);
+  }
+  if (err && errno != ENOENT)
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error getting status '%s': %s", dest_filename, strerror(errno));
+    return duk_throw(ctx);
+  }
+
+  FILE *dest = fopen(dest_filename, "w");
+  if (dest == NULL)
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "could not open file '%s': %s", dest_filename, strerror(errno));
+    return duk_throw(ctx);
+  }
+  char buf[BUFREADSZ];
+  int nread;
+  while ((nread = read(fileno(src), buf, BUFREADSZ)) > 0)
+  {
+    if (write(fileno(dest), buf, nread) != nread)
+    {
+      DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
+      duk_push_error_object(ctx, DUK_ERR_ERROR, "could not write to file '%s': %s", dest_filename, strerror(errno));
+      return duk_throw(ctx);
+    }
+  }
+  if (nread < 0)
+  {
+    DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading file '%s': %s", src_filename, strerror(errno));
+    return duk_throw(ctx);
+  }
+  if (chmod(dest_filename, src_stat.st_mode))
+  {
+    DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error setting file mode '%s': %s", dest_filename, strerror(errno));
+    return duk_throw(ctx);
+  }
+
+  return 0;
+}
+
 /**
  * Removes an empty directory with the name given as a path. Allows recursively removing nested directories 
  * Ex.
@@ -538,6 +621,7 @@ static const duk_function_list_entry utils_funcs[] = {
     {"stat", duk_util_stat, 1},
     {"exec", duk_util_exec, 1},
     {"readdir", duk_util_readdir, 1},
+    {"copy_file", duk_util_copy_file, 1},
     {"mkdir", duk_util_mkdir, DUK_VARARGS},
     {"rmdir", duk_util_rmdir, DUK_VARARGS},
     {NULL, NULL, 0}};
@@ -555,7 +639,6 @@ static const duk_number_list_entry file_types[] = {
 static const duk_number_list_entry signals[] = {
     {"SIGKILL", SIGKILL},
     {"SIGTERM", SIGTERM},
-    {"SIGSTOP", SIGSTOP},
     {NULL, 0.0}};
 
 static const duk_number_list_entry utils_consts[] = {

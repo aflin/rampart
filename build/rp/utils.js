@@ -16,12 +16,13 @@ try {
   print("mode: " + stat.mode);
   print("\n-- exec (sleep 0.2) --");
   print(
-    utils.exec({
-      path: "/bin/sleep",
-      args: ["sleep", "0.2"],
-      timeout: 100000,
-      kill_signal: utils.signals.SIGKILL,
-    }).timed_out
+    "timed_out: " +
+      utils.exec({
+        path: "/bin/sleep",
+        args: ["sleep", "0.2"],
+        timeout: 100000,
+        kill_signal: utils.signals.SIGKILL,
+      }).timed_out
   );
 
   print("\n-- utils.js readdir --");
@@ -41,6 +42,20 @@ try {
   print(
     utils.exec({ path: "/usr/local/bin/tree", args: ["tree", "this"] }).stdout
   );
+
+  print("\n-- utils.js copy file --");
+  utils.copy_file({ src: "utils.js", dest: "utils-2.js", overwrite: true });
+
+  utils.readdir(".").forEach(function (v) {
+    if (v == "utils-2.js") {
+      print("found utils-2.js");
+      print(
+        "copied == src stat?: " + (stat.mode == utils.stat("./utils-2.js").mode)
+      );
+    }
+  });
+
+  utils.exec({ path: "/bin/rm", args: ["rm", "utils-2.js"] });
 
   utils.rmdir("this/is/a", true);
 } catch (e) {
