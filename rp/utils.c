@@ -376,6 +376,8 @@ duk_ret_t duk_util_exec(duk_context *ctx)
 
 /**
  * Creates a directory with the name given as a path
+ * @param {path} - the directory to be created
+ * @param {mode} - the mode of the newly created directory (default: 0777)
  * Ex.
  * utils.mkdir("new/directory")
  */
@@ -592,6 +594,8 @@ duk_ret_t duk_util_chmod(duk_context *ctx)
 
 /**
  * Removes an empty directory with the name given as a path. Allows recursively removing nested directories 
+ * @param {path} - The path to the directory to be deleted
+ * @param {recursive: boolean} - recursively delete
  * Ex.
  * utils.rmdir("directory/to/be/deleted")
  */
@@ -653,6 +657,26 @@ duk_ret_t duk_util_rmdir(duk_context *ctx)
 
   return 1;
 }
+
+/**
+ * Changes the file permissions of a specified file
+ * @param {path} - The path to the file
+ * @param {mode} - The new permissions for the file
+ */
+duk_ret_t duk_util_chmod(duk_context *ctx)
+{
+  const char *path = duk_require_string(ctx, -2);
+  mode_t new_mode = duk_require_int(ctx, -1);
+
+  if (chmod(path, new_mode) == -1)
+  {
+      duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing permissions: %s", strerror(errno));
+      return duk_throw(ctx);
+  }
+
+  return 1;
+}
+
 static const duk_function_list_entry utils_funcs[] = {
     {"readln", duk_util_readln, 2 /*nargs*/},
     {"stat", duk_util_stat, 1},
@@ -662,6 +686,7 @@ static const duk_function_list_entry utils_funcs[] = {
     {"chmod", duk_util_chmod, 1},
     {"mkdir", duk_util_mkdir, DUK_VARARGS},
     {"rmdir", duk_util_rmdir, DUK_VARARGS},
+    {"chmod", duk_util_chmod, 2},
     {NULL, NULL, 0}};
 
 static const duk_number_list_entry file_types[] = {
