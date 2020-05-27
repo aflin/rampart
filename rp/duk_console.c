@@ -124,6 +124,9 @@ void duk_console_init(duk_context *ctx, duk_uint_t flags) {
 	duk_eval_string(ctx,
 		"(function (E) {"
 		    "return function format(v){"
+						"if(v instanceof Error) {"
+							"return String(v.stack);"
+						"}"
 		        "try{"
 		            "return E('jx',v);"
 		        "}catch(e){"
