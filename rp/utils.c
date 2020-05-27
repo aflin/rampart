@@ -376,11 +376,6 @@ duk_ret_t duk_util_exec(duk_context *ctx)
   return 1;
 }
 
-duk_ret_t duk_util_readdir(duk_context *ctx)
-{
-  return 1;
-}
-
 /**
  * Creates a directory with the name given as a path
  * Ex.
@@ -440,6 +435,38 @@ duk_ret_t duk_util_mkdir(duk_context *ctx)
     return duk_throw(ctx);
   }
 
+  return 1;
+}
+
+/**
+ * Reads the directory given by path.
+ * @param {path} the directory
+ * @returns an array of file names
+ */
+duk_ret_t duk_util_readdir(duk_context *ctx)
+{
+  const char *path = duk_require_string(ctx, -1);
+  DIR *dir = opendir(path);
+  if (dir == NULL)
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "could not open directory %s: %s", path, strerror(errno));
+    return duk_throw(ctx);
+  }
+
+  struct dirent *entry;
+  errno = 0;
+  duk_push_array(ctx);
+  int i = 0;
+  while ((entry = readdir(dir)) != NULL)
+  {
+    duk_push_string(ctx, entry->d_name);
+    duk_put_prop_index(ctx, -2, i++);
+  }
+  if (errno)
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading directory %s: %s", path, strerror(errno));
+    return duk_throw(ctx);
+  }
   return 1;
 }
 
@@ -510,6 +537,7 @@ static const duk_function_list_entry utils_funcs[] = {
     {"readln", duk_util_readln, 2 /*nargs*/},
     {"stat", duk_util_stat, 1},
     {"exec", duk_util_exec, 1},
+    {"readdir", duk_util_readdir, 1},
     {"mkdir", duk_util_mkdir, DUK_VARARGS},
     {"rmdir", duk_util_rmdir, DUK_VARARGS},
     {NULL, NULL, 0}};

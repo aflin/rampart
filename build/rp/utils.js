@@ -20,7 +20,10 @@ try {
       .timed_out
   );
 
-  print("\n-- utils.js mdkir --");
+  print("\n-- utils.js readdir --");
+  print(utils.readdir("."));
+
+  print("\n-- utils.js mkdir --");
   utils.mkdir("this/is/a/test");
 
   print(
