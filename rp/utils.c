@@ -465,6 +465,7 @@ duk_ret_t duk_util_readdir(duk_context *ctx)
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading directory %s: %s", path, strerror(errno));
     return duk_throw(ctx);
   }
+  closedir(dir);
   return 1;
 }
 
@@ -497,12 +498,14 @@ duk_ret_t duk_util_copy_file(duk_context *ctx)
   FILE *src = fopen(src_filename, "r");
   if (src == NULL)
   {
+    fclose(src);
     duk_push_error_object(ctx, DUK_ERR_ERROR, "could not open file '%s': %s", src_filename, strerror(errno));
     return duk_throw(ctx);
   }
   struct stat src_stat;
   if (stat(src_filename, &src_stat))
   {
+    fclose(src);
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error getting status '%s': %s", src_filename, strerror(errno));
     return duk_throw(ctx);
   }
@@ -511,11 +514,13 @@ duk_ret_t duk_util_copy_file(duk_context *ctx)
   if (!err && !overwrite)
   {
     // file exists and shouldn't be overwritten
+    fclose(src);
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error copying '%s': %s", dest_filename, "file already exists");
     return duk_throw(ctx);
   }
   if (err && errno != ENOENT)
   {
+    fclose(src);
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error getting status '%s': %s", dest_filename, strerror(errno));
     return duk_throw(ctx);
   }
@@ -523,6 +528,7 @@ duk_ret_t duk_util_copy_file(duk_context *ctx)
   FILE *dest = fopen(dest_filename, "w");
   if (dest == NULL)
   {
+    fclose(src);
     duk_push_error_object(ctx, DUK_ERR_ERROR, "could not open file '%s': %s", dest_filename, strerror(errno));
     return duk_throw(ctx);
   }
@@ -532,6 +538,8 @@ duk_ret_t duk_util_copy_file(duk_context *ctx)
   {
     if (write(fileno(dest), buf, nread) != nread)
     {
+      fclose(src);
+      fclose(dest);
       DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
       duk_push_error_object(ctx, DUK_ERR_ERROR, "could not write to file '%s': %s", dest_filename, strerror(errno));
       return duk_throw(ctx);
@@ -539,6 +547,8 @@ duk_ret_t duk_util_copy_file(duk_context *ctx)
   }
   if (nread < 0)
   {
+    fclose(src);
+    fclose(dest);
     DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading file '%s': %s", src_filename, strerror(errno));
     return duk_throw(ctx);
@@ -546,19 +556,21 @@ duk_ret_t duk_util_copy_file(duk_context *ctx)
   if (chmod(dest_filename, src_stat.st_mode))
   {
     DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
+    fclose(src);
+    fclose(dest);
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error setting file mode %o for '%s': %s", src_stat.st_mode, dest_filename, strerror(errno));
     return duk_throw(ctx);
   }
-
+  fclose(src);
+  fclose(dest);
   return 0;
 }
 
 /**
- * Changes file permissions.
+ * Changes file permissions on the given file name to the given mode.
  * @param {{file: string, mode: int}} options
  * Ex.
- * utils.chmod("some_file", 0775);
- * 
+ * utils.chmod({ file: "some_file", mode: 0775 });
  */
 duk_ret_t duk_util_chmod(duk_context *ctx)
 {

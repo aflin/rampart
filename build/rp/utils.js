@@ -20,7 +20,7 @@ try {
       utils.exec({
         path: "/bin/sleep",
         args: ["sleep", "0.2"],
-        timeout: 100000,
+        timeout: 1000000,
         kill_signal: utils.signals.SIGKILL,
       }).timed_out
   );
