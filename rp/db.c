@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <stdarg.h>  /* va_list etc */
 #include <stddef.h>  /* size_t */
 #include <limits.h>
@@ -7,26 +6,17 @@
 #include "rp.h"
 
 
-
 #ifdef SINGLETHREADED
 
-#define GLOCK
-#define GUNLOCK
 #define FLOCK
 #define FUNLOCK
 
 #else
 
 pthread_mutex_t lock;
-
 #ifdef PUTMSG_STDERR
 pthread_mutex_t printlock;
 #endif
-
-#define FINELOCK
-
-#ifdef FINELOCK
-
 #ifdef DBUGLOCKS
 #define FLOCK   printf("%d: locking from thread %lu\n",__LINE__ ,(unsigned long int)pthread_self());fflush(stdout);pthread_mutex_lock  (&lock);
 #define FUNLOCK printf("%d: locking from thread %lu\n",__LINE__ ,(unsigned long int)pthread_self());fflush(stdout);pthread_mutex_unlock(&lock);
@@ -34,24 +24,6 @@ pthread_mutex_t printlock;
 #define FLOCK   pthread_mutex_lock  (&lock);
 #define FUNLOCK pthread_mutex_unlock(&lock);
 #endif
-
-#define GLOCK
-#define GUNLOCK
-
-#else /* ifndef finelock */
-
-#ifdef DBUGLOCKS
-#define GLOCK printf(    "%d: locking from thread %lu\n",__LINE__ ,(unsigned long int)pthread_self());fflush(stdout);pthread_mutex_lock  (&lock);
-#define GUNLOCK printf("%d: unlocking from thread %lu\n",__LINE__ ,(unsigned long int)pthread_self());fflush(stdout);pthread_mutex_unlock(&lock);
-#else
-#define GLOCK   pthread_mutex_lock  (&lock);
-#define GUNLOCK pthread_mutex_unlock(&lock);
-#endif
-
-#define FLOCK
-#define FUNLOCK
-
-#endif /*ifdef finelock */
 
 #endif /* SINGLETHREADED */
 
@@ -491,10 +463,13 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
           {
             const char *rt=duk_to_string(ctx,-1);
             
-            if (!strcasecmp("array",rt))
+            if (!strcasecmp("array",rt)){
               q->retarray=1;
-            if (!strcasecmp("arrayh",rt))
+            } else if (!strcasecmp("arrayh",rt)){
               q->retarray=2;
+            } else if (!strcasecmp("novars",rt)){
+              q->retarray=3;
+            }
           }
 
           duk_pop(ctx);
@@ -616,8 +591,11 @@ int duk_rp_fetch(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
   if (retarray)
   {
     /* push values into subarrays and add to outer array */
-    while ((fl=TEXIS_FETCH(tx,-1)) && rown<resmax)
+    while ( rown<resmax && (fl=TEXIS_FETCH(tx,-1)) )
     {
+      /* novars, we need to get each row (for del and return count value) but not return any vars */
+      if (retarray==3)
+        continue; 
       /* we want first rowto be column names */
       if (retarray==2)
       {
@@ -648,7 +626,7 @@ int duk_rp_fetch(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
      push object of {name:value,name:value,...} into return array */
   {  
 
-    while ((fl=TEXIS_FETCH(tx,-1)) && rown<resmax)
+    while (rown<resmax && (fl=TEXIS_FETCH(tx,-1)) )
     {
       duk_push_object(ctx);
       for (i = 0; i < fl->n; i++)
@@ -674,15 +652,29 @@ int duk_rp_fetchWCallback(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
         callback=q->callback;
     FLDLST *fl;    
 
-    while ( (fl=TEXIS_FETCH(tx,-1))  && rown<resmax) {
+    while ( rown<resmax && (fl=TEXIS_FETCH(tx,-1)) ) {
       duk_dup(ctx,callback);
       duk_push_this(ctx);
 
       /* array requested */
-      if (retarray)
+      switch (retarray)
       {
-        /* requesting first row to be column names*/
-        if (retarray==2)
+        /* novars */
+        case 3:
+        {
+          duk_dup(ctx,callback);
+          duk_push_this(ctx);
+          duk_push_array(ctx);
+          duk_push_int(ctx,rown++);
+          duk_call_method(ctx,2);
+          break;
+        }
+        
+        /* requesting first row to be column names
+           so for the first row, we do two callbacks:
+           one for headers, one for first row
+        */
+        case 2:
         {
           /* set up an extra call to callback */
           duk_dup(ctx,callback);
@@ -695,10 +687,8 @@ int duk_rp_fetchWCallback(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
             duk_put_prop_index(ctx,-2,i);
           }
 
-          duk_push_int(ctx,rown++);
-          GUNLOCK
+          duk_push_int(ctx,-1);
           duk_call_method(ctx,2); /* function(res,resnum){} */
-          GLOCK
           retarray=1; /* give names to callback only once */
 
           /* if function returns false, exit while loop, return number of rows so far */
@@ -707,45 +697,47 @@ int duk_rp_fetchWCallback(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
             return (rown);
           }
           duk_pop(ctx);
+          /* no break, fallthrough */
         }
-
-        duk_push_array(ctx);
-        for (i = 0; i < fl->n; i++)
+        case 1:
         {
-          duk_rp_pushfield(ctx,fl,i);
-          duk_put_prop_index(ctx,-2,i);
-        }
+          duk_dup(ctx,callback);
+          duk_push_this(ctx);
+          duk_push_array(ctx);
+          for (i = 0; i < fl->n; i++)
+          {
+            duk_rp_pushfield(ctx,fl,i);
+            duk_put_prop_index(ctx,-2,i);
+          }
 
-        duk_push_int(ctx,rown++);
-        GUNLOCK
-        duk_call_method(ctx,2); /* function(res,resnum){} */
-        GLOCK        
-      }
-      /* object requested */
-      else
-      {
-        duk_push_object(ctx);
-        for (i = 0; i < fl->n; i++) 
-        {
-          duk_rp_pushfield(ctx,fl,i);
-          duk_put_prop_string(ctx,-2,(const char*)fl->name[i]);
+          duk_push_int(ctx,rown++);
+          duk_call_method(ctx,2); /* function(res,resnum){} */
+          break;
         }
-        duk_push_int(ctx,rown++);
-        GUNLOCK
-        duk_call_method(ctx,2); /* function(res,resnum){} */
-        GLOCK
-      }
+        /* object requested */
+        case 0:
+        {
+          duk_push_object(ctx);
+          for (i = 0; i < fl->n; i++) 
+          {
+            duk_rp_pushfield(ctx,fl,i);
+            duk_put_prop_string(ctx,-2,(const char*)fl->name[i]);
+          }
+          duk_push_int(ctx,rown++);
+          duk_call_method(ctx,2); /* function(res,resnum){} */
+          break;
+        }
+      } /* switch */
 
       /* if function returns false, exit while loop, return number of rows so far */
       if (duk_is_boolean(ctx,-1) && !duk_get_boolean(ctx,-1) ) {
         duk_pop(ctx);
         return (rown);
       }
-
       /* get rid of ret value from callback*/
-      duk_pop(ctx);  
+      duk_pop(ctx);
+    } /* while fetch */
 
-    }/* while fetch */
     return(rown);
 }
 
@@ -787,7 +779,6 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 
 #ifdef USEHANDLECACHE
   duk_push_heap_stash(ctx);
-  GLOCK
   /* check that we have a handle cache for this thread */
   if ( duk_get_prop_string(ctx,-1,"hcache") )
   {
@@ -854,7 +845,6 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 
   if(!TEXIS_EXEC(tx))
   {
-    GUNLOCK
     duk_rp_log_error(ctx,pbuf);
     duk_push_int(ctx,-1);
 #ifndef USEHANDLECACHE
@@ -870,14 +860,14 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
   if (q->callback>-1) {
     int rows=duk_rp_fetchWCallback(ctx,tx,q);    
     duk_push_int(ctx,rows);
-    GUNLOCK
+#ifndef USEHANDLECACHE
     tx=TEXIS_CLOSE(tx);
+#endif
     return (1); /* done with exec() */
   }
 
   /*  No callback, return all rows in array of objects */
   (void) duk_rp_fetch(ctx,tx,q);
-  GUNLOCK
 #ifndef USEHANDLECACHE
     tx=TEXIS_CLOSE(tx);
 #endif
@@ -978,17 +968,14 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
     tx=TEXIS_OPEN((char*)db);
     if (tx==NULL)
     {
-      GLOCK
       FLOCK
       if(!createdb(db)){
-        GUNLOCK
         FUNLOCK
         duk_rp_log_error(ctx,pbuf);
         duk_push_sprintf(ctx,"cannot create database at '%s' (root path not found, lacking permission or other error)", db);
         duk_throw(ctx);
       }
       FUNLOCK
-      GUNLOCK
     }
     else
      tx=TEXIS_CLOSE(tx);
