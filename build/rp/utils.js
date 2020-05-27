@@ -70,6 +70,12 @@ try {
   sample_stat = utils.stat("./sample.txt");
   print("mode after chmod: " + sample_stat.mode.toString(8));
 
+  print("\n-- utils.js link --");
+  utils.link({ src: "sample.txt", target: "sample_link.txt", symbolic: false });
+  sample_stat = utils.stat("./sample.txt");
+  print("symbolic link?: " + (sample_stat.nlink == 2));
+
+  utils.exec({ path: "/bin/rm", args: ["rm", "sample_link.txt"] });
   utils.exec({ path: "/bin/rm", args: ["rm", "sample.txt"] });
 } catch (e) {
   print("caught:");

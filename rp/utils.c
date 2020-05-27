@@ -569,6 +569,45 @@ duk_ret_t duk_util_copy_file(duk_context *ctx)
 }
 
 /**
+ * Creates a hard or symbolic link 
+ * @param {{src: string, target: string, symbolic: boolean }} options
+ * Ex.
+ * utils.link({ src: "some_file", target: "some_link", symbolic: true });
+ */
+duk_ret_t duk_util_link(duk_context *ctx)
+{
+  duk_get_prop_string(ctx, -1, "src");
+  const char *src = duk_require_string(ctx, -1);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "target");
+  const char *target = duk_require_string(ctx, -1);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "symbolic");
+  int symbolic = duk_get_boolean_default(ctx, -1, 0);
+  duk_pop(ctx);
+
+  if (symbolic)
+  {
+    if (symlink(src, target))
+    {
+      duk_push_error_object(ctx, DUK_ERR_ERROR, "error creating symbolic link from '%s' to '%s': %s", src, target, strerror(errno));
+      return duk_throw(ctx);
+    }
+  }
+  else
+  {
+    if (link(src, target))
+    {
+      duk_push_error_object(ctx, DUK_ERR_ERROR, "error creating hard link from '%s' to '%s': %s", src, target, strerror(errno));
+      return duk_throw(ctx);
+    }
+  }
+  return 0;
+}
+
+/**
  * Removes an empty directory with the name given as a path. Allows recursively removing nested directories 
  * @param {path} - The path to the directory to be deleted
  * @param {recursive: boolean} - recursively delete
@@ -659,6 +698,7 @@ static const duk_function_list_entry utils_funcs[] = {
     {"exec", duk_util_exec, 1},
     {"readdir", duk_util_readdir, 1},
     {"copy_file", duk_util_copy_file, 1},
+    {"link", duk_util_link, 1},
     {"mkdir", duk_util_mkdir, DUK_VARARGS},
     {"rmdir", duk_util_rmdir, DUK_VARARGS},
     {"chmod", duk_util_chmod, 2},
