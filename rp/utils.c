@@ -32,6 +32,98 @@
 #define BUFREADSZ 4096
 #define MAXBUFFER 536870912 /* 512mb */
 
+/**
+ * @typedef {Object} ReadFileOptions
+ * @property {string} file - the file to be read
+ * @property {string} mode - the file mode to be used. Defaults to "r"
+ * @property {size_t=} offset - the start position of the read. Defaults to 0.
+ * @property {long=} length - the number of bytes to be read. If undefined, it will read the whole file. Passing in a number, n <= 0 will read n bytes from the end.
+ * @param {ReadFileOptions} The read options.
+ * @returns {Buffer} A buffer containing the read bytes.
+ */
+
+#define SAFE_SEEK(fp, length, whence)                                                                    \
+  if (fseek(f, length, whence))                                                                          \
+  {                                                                                                      \
+    fclose(f);                                                                                           \
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error seeking file '%s': %s", filename, strerror(errno)); \
+    return duk_throw(ctx);                                                                               \
+  }
+
+duk_ret_t duk_util_read_file(duk_context *ctx)
+{
+  duk_get_prop_string(ctx, -1, "file");
+  const char *filename = duk_require_string(ctx, -1);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "mode");
+  const char *mode = duk_get_string_default(ctx, -1, "r");
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "offset");
+  size_t offset = (size_t)duk_get_number_default(ctx, -1, 0);
+  duk_pop(ctx);
+
+  if (offset < 0)
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "offset cannot be negative");
+    return duk_throw(ctx);
+  }
+
+  duk_get_prop_string(ctx, -1, "length");
+  long length = (long)duk_get_number_default(ctx, -1, 0);
+  duk_pop(ctx);
+
+  FILE *f = fopen(filename, mode);
+  if (f == NULL)
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening '%s': %s", filename, strerror(errno));
+    return duk_throw(ctx);
+  }
+
+  if (length > 0)
+  {
+    SAFE_SEEK(f, length, SEEK_SET);
+  }
+  else
+  {
+    SAFE_SEEK(f, length, SEEK_END);
+    long cur_offset;
+    if ((cur_offset = ftell(f)) == -1)
+    {
+      duk_push_error_object(ctx, DUK_ERR_ERROR, "error getting offset '%s': %s", filename, strerror(errno));
+      return duk_throw(ctx);
+    }
+    length = cur_offset - offset;
+  }
+
+  if (length < 0)
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "start position appears after end position");
+    return duk_throw(ctx);
+  }
+
+  SAFE_SEEK(f, offset, SEEK_SET);
+
+  void *buf = duk_push_fixed_buffer(ctx, length);
+
+  size_t off = 0;
+  size_t nbytes;
+  while ((nbytes = fread(buf + off, 1, length - off, f)) != 0)
+  {
+    off += nbytes;
+  }
+
+  if (ferror(f))
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading file '%s': %s", filename, strerror(errno));
+    return duk_throw(ctx);
+  }
+  fclose(f);
+
+  return 1;
+}
+
 int open_file_with_callback(duk_context *ctx, FILE **fp, int *func_idx, const char **filename)
 {
   int i = 0;
@@ -607,6 +699,26 @@ duk_ret_t duk_util_link(duk_context *ctx)
   }
   return 0;
 }
+/**
+ * @param {string} old - the source file or directory
+ * @param {string} new - the target path
+ * 
+ * Ex.
+ * utils.rename("sample.txt", "sample-2.txt");
+ */
+duk_ret_t duk_util_rename(duk_context *ctx)
+{
+  const char *old = duk_require_string(ctx, -2);
+  const char *new = duk_require_string(ctx, -1);
+
+  if (rename(old, new))
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error renaming '%s' to '%s': %s", old, new, strerror(errno));
+    return duk_throw(ctx);
+  }
+
+  return 0;
+}
 
 /**
  * Removes an empty directory with the name given as a path. Allows recursively removing nested directories 
@@ -731,9 +843,9 @@ duk_ret_t duk_util_touch(duk_context *ctx)
     {
       return 0;
     }
-    else 
+    else
     {
-      FILE* fp = fopen(path, "w"); // create file
+      FILE *fp = fopen(path, "w"); // create file
       fclose(fp);
       return 0;
     }
@@ -743,7 +855,7 @@ duk_ret_t duk_util_touch(duk_context *ctx)
 
   struct stat refrence_stat;
 
-  if (reference) 
+  if (reference)
   {
 
     if (stat(reference, &refrence_stat) != 0) //reference file doesn't exist
@@ -770,17 +882,18 @@ duk_ret_t duk_util_touch(duk_context *ctx)
 
   return 0;
 }
- 
 
 static const duk_function_list_entry utils_funcs[] = {
+    {"readFile", duk_util_read_file, 1},
     {"readln", duk_util_readln, 2 /*nargs*/},
     {"stat", duk_util_stat, 1},
     {"exec", duk_util_exec, 1},
     {"readdir", duk_util_readdir, 1},
-    {"copy_file", duk_util_copy_file, 1},
+    {"copyFile", duk_util_copy_file, 1},
     {"link", duk_util_link, 1},
     {"mkdir", duk_util_mkdir, DUK_VARARGS},
     {"rmdir", duk_util_rmdir, DUK_VARARGS},
+    {"rename", duk_util_rename, 2},
     {"chmod", duk_util_chmod, 2},
     {"touch", duk_util_touch, 1},
     {NULL, NULL, 0}};

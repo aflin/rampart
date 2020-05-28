@@ -2,12 +2,17 @@ var utils = require("./rputils.so");
 var i = 1;
 
 try {
+  print("\n-- utils.js read file --");
+  var file = utils.readFile({ file: "./utils.js" });
+  print("length of file: " + file.length);
+
+  print("\n-- utils.js read ln --");
   utils.readln("./utils.js", function (line) {
     // print(line);
     i++;
   });
   print("\n-- num of lines --");
-  print(i);
+  print("num lines: " + i);
 
   var stat = utils.stat("./utils.js");
   print("\n-- utils.js stat --");
@@ -44,7 +49,7 @@ try {
   );
 
   print("\n-- utils.js copy file --");
-  utils.copy_file({ src: "utils.js", dest: "utils-2.js", overwrite: true });
+  utils.copyFile({ src: "utils.js", dest: "utils-2.js", overwrite: true });
 
   utils.readdir(".").forEach(function (v) {
     if (v == "utils-2.js") {
@@ -61,7 +66,7 @@ try {
 
   print("\n-- utils.js chmod file --");
 
-  utils.touch({path: "sample.txt"});
+  utils.touch({ path: "sample.txt" });
 
   var sample_stat = utils.stat("./sample.txt");
   print("mode: " + sample_stat.mode.toString(8));
@@ -71,14 +76,14 @@ try {
   print("mode after chmod: " + sample_stat.mode.toString(8));
 
   print("\n-- utils.js touch --");
-  utils.touch({path: "sample.txt", nocreate: false});
+  utils.touch({ path: "sample.txt", nocreate: false });
 
   var example_stat = utils.stat("./sample.txt");
   print("atime: " + example_stat.atime);
   print("mtime: " + example_stat.mtime);
 
-  print("after reference touch")
-  utils.touch({path: "sample.txt", reference: "server.js", setaccess: false});
+  print("after reference touch");
+  utils.touch({ path: "sample.txt", reference: "server.js", setaccess: false });
   var example_stat = utils.stat("./sample.txt");
   print("atime: " + example_stat.atime);
   print("mtime: " + example_stat.mtime);
@@ -88,9 +93,13 @@ try {
   sample_stat = utils.stat("./sample.txt");
   print("symbolic link?: " + (sample_stat.nlink == 2));
 
+  print("\n-- utils.js rename---");
+  utils.rename("sample.txt", "sample-2.txt");
+  print(utils.readdir("."));
+  utils.rename("sample-2.txt", "sample.txt");
+
   utils.exec({ path: "/bin/rm", args: ["rm", "sample_link.txt"] });
   utils.exec({ path: "/bin/rm", args: ["rm", "sample.txt"] });
-  
 } catch (e) {
   print("caught:");
   console.log(e);
