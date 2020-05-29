@@ -301,15 +301,9 @@ duk_ret_t duk_util_stat(duk_context *ctx)
   DUK_PUT(ctx, int, "blocks", path_stat.st_blocks, -2);
 
   long atime, mtime, ctime;
-#if __DARWIN_64_BIT_INO_T || !defined(_POSIX_C_SOURCE) || defined(_DARWIN_C_SOURCE)
-  atime = path_stat.st_atimespec.tv_sec * 1000;
-  mtime = path_stat.st_mtimespec.tv_sec * 1000;
-  ctime = path_stat.st_ctimespec.tv_sec * 1000;
-#else
-  atime = path_stat.atime;
-  mtime = path_stat.mtime;
-  ctime = path_stat.ctime;
-#endif
+  atime = path_stat.st_atime * 1000;
+  mtime = path_stat.st_mtime * 1000;
+  ctime = path_stat.st_ctime * 1000;
 
   // atime
   (void)duk_get_global_string(ctx, "Date");
@@ -915,7 +909,7 @@ duk_ret_t duk_util_touch(duk_context *ctx)
 */
 duk_ret_t duk_util_delete(duk_context *ctx)
 {
-  const char* file = duk_require_string(ctx, -1);
+  const char *file = duk_require_string(ctx, -1);
 
   if (remove(file) != 0)
   {
@@ -923,7 +917,7 @@ duk_ret_t duk_util_delete(duk_context *ctx)
     return duk_throw(ctx);
   }
 
-  return 0; 
+  return 0;
 }
 
 static const duk_function_list_entry utils_funcs[] = {
