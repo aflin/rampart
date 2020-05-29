@@ -35,7 +35,6 @@
 /**
  * @typedef {Object} ReadFileOptions
  * @property {string} file - the file to be read
- * @property {string} mode - the file mode to be used. Defaults to "r"
  * @property {size_t=} offset - the start position of the read. Defaults to 0.
  * @property {long=} length - the number of bytes to be read. If undefined, it will read the whole file. Passing in a number, n <= 0 will read n bytes from the end.
  * @param {ReadFileOptions} The read options.
@@ -43,9 +42,9 @@
  */
 
 #define SAFE_SEEK(fp, length, whence)                                                                    \
-  if (fseek(f, length, whence))                                                                          \
+  if (fseek(fp, length, whence))                                                                         \
   {                                                                                                      \
-    fclose(f);                                                                                           \
+    fclose(fp);                                                                                          \
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error seeking file '%s': %s", filename, strerror(errno)); \
     return duk_throw(ctx);                                                                               \
   }
@@ -54,10 +53,6 @@ duk_ret_t duk_util_read_file(duk_context *ctx)
 {
   duk_get_prop_string(ctx, -1, "file");
   const char *filename = duk_require_string(ctx, -1);
-  duk_pop(ctx);
-
-  duk_get_prop_string(ctx, -1, "mode");
-  const char *mode = duk_get_string_default(ctx, -1, "r");
   duk_pop(ctx);
 
   duk_get_prop_string(ctx, -1, "offset");
@@ -74,8 +69,8 @@ duk_ret_t duk_util_read_file(duk_context *ctx)
   long length = (long)duk_get_number_default(ctx, -1, 0);
   duk_pop(ctx);
 
-  FILE *f = fopen(filename, mode);
-  if (f == NULL)
+  FILE *fp = fopen(filename, "r");
+  if (fp == NULL)
   {
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening '%s': %s", filename, strerror(errno));
     return duk_throw(ctx);
@@ -83,13 +78,13 @@ duk_ret_t duk_util_read_file(duk_context *ctx)
 
   if (length > 0)
   {
-    SAFE_SEEK(f, length, SEEK_SET);
+    SAFE_SEEK(fp, length, SEEK_SET);
   }
   else
   {
-    SAFE_SEEK(f, length, SEEK_END);
+    SAFE_SEEK(fp, length, SEEK_END);
     long cur_offset;
-    if ((cur_offset = ftell(f)) == -1)
+    if ((cur_offset = ftell(fp)) == -1)
     {
       duk_push_error_object(ctx, DUK_ERR_ERROR, "error getting offset '%s': %s", filename, strerror(errno));
       return duk_throw(ctx);
@@ -103,103 +98,134 @@ duk_ret_t duk_util_read_file(duk_context *ctx)
     return duk_throw(ctx);
   }
 
-  SAFE_SEEK(f, offset, SEEK_SET);
+  SAFE_SEEK(fp, offset, SEEK_SET);
 
   void *buf = duk_push_fixed_buffer(ctx, length);
 
   size_t off = 0;
   size_t nbytes;
-  while ((nbytes = fread(buf + off, 1, length - off, f)) != 0)
+  while ((nbytes = fread(buf + off, 1, length - off, fp)) != 0)
   {
     off += nbytes;
   }
 
-  if (ferror(f))
+  if (ferror(fp))
   {
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading file '%s': %s", filename, strerror(errno));
     return duk_throw(ctx);
   }
-  fclose(f);
+  fclose(fp);
 
   return 1;
 }
 
-int open_file_with_callback(duk_context *ctx, FILE **fp, int *func_idx, const char **filename)
+duk_ret_t duk_util_readln_finalizer(duk_context *ctx)
 {
-  int i = 0;
-
-  if (duk_is_string(ctx, i) || duk_is_string(ctx, ++i))
-    *filename = duk_get_string(ctx, i);
-  else
+  duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filepointer"));
+  FILE *fp = duk_get_pointer(ctx, -1);
+  duk_pop(ctx);
+  if (fp)
   {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "readln requires a file name passed as a string");
-    return 1;
+    fclose(fp);
   }
-
-  i = !i; /* get the other option */
-
-  if (duk_is_function(ctx, i))
-    *func_idx = i;
-  else
-  {
-    duk_push_string(ctx, "readln requires a callback function");
-    return 1;
-  }
-
-  struct stat path_stat;
-  int err = stat(*filename, &path_stat);
-  if (err)
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error resolving '%s': %s", *filename, strerror(errno));
-    return 1;
-  }
-  if (!S_ISREG(path_stat.st_mode))
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "'%s' is not a file", *filename);
-    return 1;
-  }
-  *fp = fopen(*filename, "r");
   return 0;
+}
+
+duk_ret_t duk_util_iter_readln(duk_context *ctx)
+{
+  duk_push_this(ctx);
+
+  duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filename"));
+  const char *filename = duk_get_string(ctx, -1);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filepointer"));
+  FILE *fp = duk_get_pointer(ctx, -1);
+  duk_pop(ctx);
+
+  // already at the end of the iterator
+  if (fp == NULL)
+  {
+    // return object
+    duk_push_object(ctx);
+
+    duk_push_null(ctx);
+    duk_put_prop_string(ctx, -2, "value");
+
+    duk_push_boolean(ctx, 0);
+    duk_put_prop_string(ctx, -2, "done");
+    return 1;
+  }
+
+  char *line = NULL;
+  size_t len = 0;
+  errno = 0;
+  int nread = getline(&line, &len, fp);
+  if (errno)
+  {
+    if (line)
+      free(line);
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading file '%s': %s", filename, strerror(errno));
+    return duk_throw(ctx);
+  }
+  // return object
+  duk_push_object(ctx);
+
+  duk_push_string(ctx, line);
+  duk_put_prop_string(ctx, -2, "value");
+
+  duk_push_boolean(ctx, nread == -1);
+  duk_put_prop_string(ctx, -2, "done");
+
+  if (nread == -1)
+  {
+    fclose(fp);
+  }
+
+  if (line)
+    free(line);
+  return 1;
 }
 
 duk_ret_t duk_util_readln(duk_context *ctx)
 {
-  int func_idx = -1;
-  FILE *fp;
-  const char *filename;
-  char *line = NULL;
-  size_t len = 0;
-  ssize_t read;
-
-  if (open_file_with_callback(ctx, &fp, &func_idx, &filename))
-  {
-    // return error that was put on stack
-    return duk_throw(ctx);
-  }
-
+  const char *filename = duk_require_string(ctx, -1);
+  FILE *fp = fopen(filename, "r");
   if (fp == NULL)
   {
-    const char *fn = duk_to_string(ctx, !func_idx);
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening '%s': %s", fn, strerror(errno));
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening '%s': %s", filename, strerror(errno));
     return duk_throw(ctx);
   }
-  while ((read = getline(&line, &len, fp)) != -1)
-  {
-    duk_dup(ctx, func_idx);
-    duk_push_this(ctx);
-    duk_push_lstring(ctx, line, read - 1);
-    duk_call_method(ctx, 1);
-    if (duk_is_boolean(ctx, -1) && duk_get_boolean(ctx, -1) == 0)
-      break;
 
-    duk_pop(ctx);
-  }
+  // return object
+  duk_push_object(ctx);
 
-  fclose(fp);
-  if (line)
-    free(line);
+  // [Symbol.iterator] function
+  duk_push_string(ctx, "(function() { return function getiter(iter) { return (function () { return iter; }); }})()");
+  duk_eval(ctx);
 
-  return 0;
+  // iterator object
+  duk_push_object(ctx);
+
+  // add fp, filename and finalizer
+  duk_push_pointer(ctx, fp);
+  duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
+
+  duk_push_string(ctx, filename);
+  duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filename"));
+
+  duk_push_c_function(ctx, duk_util_readln_finalizer, 1);
+  duk_set_finalizer(ctx, -2);
+
+  // next
+  duk_push_c_function(ctx, duk_util_iter_readln, 0);
+  duk_put_prop_string(ctx, -2, "next");
+  duk_call(ctx, 1);
+
+  // iterator function is at top of stack
+  duk_put_prop_string(ctx, -2, DUK_WELLKNOWN_SYMBOL("Symbol.iterator"));
+
+  return 1;
 }
 
 #define DUK_UTIL_STAT_TEST_MODE(mode, test)           \
@@ -885,7 +911,7 @@ duk_ret_t duk_util_touch(duk_context *ctx)
 
 static const duk_function_list_entry utils_funcs[] = {
     {"readFile", duk_util_read_file, 1},
-    {"readln", duk_util_readln, 2 /*nargs*/},
+    {"readln", duk_util_readln, 1},
     {"stat", duk_util_stat, 1},
     {"exec", duk_util_exec, 1},
     {"readdir", duk_util_readdir, 1},

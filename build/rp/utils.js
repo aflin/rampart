@@ -7,10 +7,10 @@ try {
   print("length of file: " + file.length);
 
   print("\n-- utils.js read ln --");
-  utils.readln("./utils.js", function (line) {
-    // print(line);
-    i++;
-  });
+  // will be replaced with for (const line of utils.readln("./utils.js")) { ... } when babel is integrated
+  var iter = utils.readln("./utils.js")[Symbol.iterator]();
+  print(iter.next().value);
+
   print("\n-- num of lines --");
   print("num lines: " + i);
 
