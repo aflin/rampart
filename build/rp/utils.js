@@ -6,10 +6,10 @@ try {
   var file = utils.readFile({ file: "./utils.js" });
   print("length of file: " + file.length);
 
-  // print("\n-- utils.js read ln --");
-  // // will be replaced with for (const line of utils.readln("./utils.js")) { ... } when babel is integrated
-  // var iter = utils.readln("./utils.js")[Symbol.iterator]();
-  // print(iter.next().value);
+  print("\n-- utils.js read ln --");
+  // will be replaced with for (const line of utils.readln("./utils.js")) { ... } when babel is integrated
+  var iter = utils.readln("./utils.js")[Symbol.iterator]();
+  print(iter.next().value);
 
   print("\n-- num of lines --");
   print("num lines: " + i);
@@ -60,7 +60,7 @@ try {
     }
   });
 
-  utils.delete("utils-2.js");
+  utils.exec({ path: "/bin/rm", args: ["rm", "utils-2.js"] });
 
   utils.rmdir("this/is/a", true);
 
@@ -98,9 +98,8 @@ try {
   print(utils.readdir("."));
   utils.rename("sample-2.txt", "sample.txt");
 
-  utils.delete("sample_link.txt");
-  utils.delete("sample.txt");
-  
+  utils.exec({ path: "/bin/rm", args: ["rm", "sample_link.txt"] });
+  utils.exec({ path: "/bin/rm", args: ["rm", "sample.txt"] });
 } catch (e) {
   print("caught:");
   console.log(e);
