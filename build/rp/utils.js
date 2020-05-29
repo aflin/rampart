@@ -30,6 +30,17 @@ try {
       }).timed_out
   );
 
+  print("\n-- utils.js kill --");
+  var pid = utils.exec({
+    path: "/bin/sleep",
+    args: ["sleep", "0.2"],
+    background: true,
+  }).pid;
+
+  print("pid: " + pid + " is going to be killed");
+  utils.kill(pid, 0);
+  utils.kill(pid, 9);
+
   print("\n-- utils.js readdir --");
   print(utils.readdir("."));
 

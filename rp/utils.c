@@ -370,18 +370,20 @@ void *duk_util_exec_thread_waitpid(void *arg)
  * @param {string[]} args - The arguments to provide to the program (including the program name).
  * @param {int} timeout - The optional timeout in microseconds.
  * @param {int} kill_signal - The signal to use to kill a timed out process. Default is SIGKILL (9)
+ * @param {int} background - Whether to put the process in the background. stdout, stderr will be null in this case.
  * @returns an object with stdout, stderr and return status
  * Ex.
  * const { 
  *    stdout: string, 
  *    stderr: string, 
  *    exit_status: int,
- *    timed_out: bool
+ *    timed_out: bool,
+ *    pid: int
  * } = utils.exec({ 
  *    path: "/bin/ls", 
  *    args: ["ls", "-1"], 
  *    timeout: 1000
- *    kill_signal: 9 });
+ *    kill_signal: 9, background: false });
  */
 duk_ret_t duk_util_exec(duk_context *ctx)
 {
@@ -397,6 +399,10 @@ duk_ret_t duk_util_exec(duk_context *ctx)
 
   duk_get_prop_string(ctx, -1, "path");
   const char *path = duk_require_string(ctx, -1);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "background");
+  int background = duk_get_boolean_default(ctx, -1, 0);
   duk_pop(ctx);
 
   // get arguments into null terminated buffer
@@ -415,11 +421,12 @@ duk_ret_t duk_util_exec(duk_context *ctx)
 
   int stdout_pipe[2];
   int stderr_pipe[2];
-  if (pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1)
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "could not create pipe: %s", strerror(errno));
-    return duk_throw(ctx);
-  }
+  if (!background)
+    if (pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1)
+    {
+      duk_push_error_object(ctx, DUK_ERR_ERROR, "could not create pipe: %s", strerror(errno));
+      return duk_throw(ctx);
+    }
   pid_t pid;
   if ((pid = fork()) == -1)
   {
@@ -428,13 +435,16 @@ duk_ret_t duk_util_exec(duk_context *ctx)
   }
   else if (pid == 0)
   {
-    // make pipe equivalent to stdout and stderr
-    dup2(stdout_pipe[1], STDOUT_FILENO);
-    dup2(stderr_pipe[1], STDERR_FILENO);
+    if (!background)
+    {
+      // make pipe equivalent to stdout and stderr
+      dup2(stdout_pipe[1], STDOUT_FILENO);
+      dup2(stderr_pipe[1], STDERR_FILENO);
 
-    // close unused pipes
-    close(stdout_pipe[0]);
-    close(stderr_pipe[0]);
+      // close unused pipes
+      close(stdout_pipe[0]);
+      close(stderr_pipe[0]);
+    }
     execv(path, args);
     fprintf(stderr, "could not execute %s\n", args[0]);
     exit(EXIT_FAILURE);
@@ -450,41 +460,80 @@ duk_ret_t duk_util_exec(duk_context *ctx)
   {
     pthread_create(&thread, NULL, duk_util_exec_thread_waitpid, &arg);
   }
-  int exit_status;
-  waitpid(pid, &exit_status, 0);
-  // cancel timeout thread in case it is still running
-  if (timeout > 0)
+
+  if (background)
   {
-    pthread_cancel(thread);
-    pthread_join(thread, NULL);
+    // return object
+    duk_push_object(ctx);
+
+    DUK_PUT(ctx, int, "pid", pid, -2);
+
+    // set stderr and stdout to null
+    duk_push_null(ctx);
+    duk_put_prop_string(ctx, -2, "stderr");
+    duk_push_null(ctx);
+    duk_put_prop_string(ctx, -2, "stdout");
+
+    // set timed_out to false
+    DUK_PUT(ctx, int, "timed_out", 0, -2);
   }
-  // close unused pipes
-  close(stdout_pipe[1]);
-  close(stderr_pipe[1]);
+  else
+  {
+    int exit_status;
+    waitpid(pid, &exit_status, 0);
+    // cancel timeout thread in case it is still running
+    if (timeout > 0)
+    {
+      pthread_cancel(thread);
+      pthread_join(thread, NULL);
+    }
+    // close unused pipes
+    close(stdout_pipe[1]);
+    close(stderr_pipe[1]);
 
-  char *stdout_buf = NULL;
-  char *stderr_buf = NULL;
+    char *stdout_buf = NULL;
+    char *stderr_buf = NULL;
 
-  // read output
-  int stdout_nread, stderr_nread;
-  DUK_UTIL_EXEC_READ_FD(ctx, stdout_buf, stdout_pipe[0], stdout_nread);
-  DUK_UTIL_EXEC_READ_FD(ctx, stderr_buf, stderr_pipe[0], stderr_nread);
+    // read output
+    int stdout_nread, stderr_nread;
+    DUK_UTIL_EXEC_READ_FD(ctx, stdout_buf, stdout_pipe[0], stdout_nread);
+    DUK_UTIL_EXEC_READ_FD(ctx, stderr_buf, stderr_pipe[0], stderr_nread);
 
-  // push return object
-  duk_push_object(ctx);
+    // push return object
+    duk_push_object(ctx);
 
-  duk_push_lstring(ctx, stdout_buf, stdout_nread);
-  duk_put_prop_string(ctx, -2, "stdout");
+    duk_push_lstring(ctx, stdout_buf, stdout_nread);
+    duk_put_prop_string(ctx, -2, "stdout");
 
-  duk_push_lstring(ctx, stderr_buf, stderr_nread);
-  duk_put_prop_string(ctx, -2, "stderr");
+    duk_push_lstring(ctx, stderr_buf, stderr_nread);
+    duk_put_prop_string(ctx, -2, "stderr");
 
-  DUK_PUT(ctx, boolean, "timed_out", arg.killed, -2);
-  DUK_PUT(ctx, int, "exit_status", exit_status, -2);
-  free(stdout_buf);
-  free(stderr_buf);
+    DUK_PUT(ctx, boolean, "timed_out", arg.killed, -2);
+    DUK_PUT(ctx, int, "exit_status", exit_status, -2);
+    DUK_PUT(ctx, int, "pid", pid, -2);
+    free(stdout_buf);
+    free(stderr_buf);
+  }
   free(args);
   return 1;
+}
+/**
+ * Kills a process with the process id given by the argument
+ * @param {int} process id
+ * @param {int} signal
+ */
+duk_ret_t duk_util_kill(duk_context *ctx)
+{
+  pid_t pid = duk_require_int(ctx, -2);
+  int signal = duk_require_int(ctx, -1);
+
+  if (kill(pid, signal))
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error killing '%d' with signal '%d': %s", pid, signal, strerror(errno));
+    return duk_throw(ctx);
+  }
+
+  return 0;
 }
 
 /**
@@ -925,6 +974,7 @@ static const duk_function_list_entry utils_funcs[] = {
     {"readln", duk_util_readln, 1},
     {"stat", duk_util_stat, 1},
     {"exec", duk_util_exec, 1},
+    {"kill", duk_util_kill, 2},
     {"readdir", duk_util_readdir, 1},
     {"copyFile", duk_util_copy_file, 1},
     {"link", duk_util_link, 1},
