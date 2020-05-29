@@ -13,10 +13,11 @@
 
 #else
 
-pthread_mutex_t lock;
-#ifdef PUTMSG_STDERR
-pthread_mutex_t printlock;
-#endif
+int lock_is_init=0;
+
+/* lock around the fetch of all rows, rather than each row */
+//#define LOCK_AROUND_ALL_FETCH
+
 #ifdef DBUGLOCKS
 #define FLOCK   printf("%d: locking from thread %lu\n",__LINE__ ,(unsigned long int)pthread_self());fflush(stdout);pthread_mutex_lock  (&lock);
 #define FUNLOCK printf("%d: locking from thread %lu\n",__LINE__ ,(unsigned long int)pthread_self());fflush(stdout);pthread_mutex_unlock(&lock);
@@ -59,6 +60,15 @@ pthread_mutex_t printlock;
   r;\
 })
 
+#ifdef LOCK_AROUND_ALL_FETCH
+
+#define TEXIS_FETCH(a,b) ({\
+  FLDLST *r=texis_fetch((a),(b));\
+  r;\
+})
+
+#else
+
 #define TEXIS_FETCH(a,b) ({\
   FLOCK\
   /* printf("texisfetch\n");*/\
@@ -66,6 +76,8 @@ pthread_mutex_t printlock;
   FUNLOCK\
   r;\
 })
+
+#endif
 
 #define TEXIS_SKIP(a,b) ({\
   FLOCK\
@@ -106,6 +118,10 @@ DB_HANDLE *new_handle(const char *d,const char *q){
     REMALLOC(h,sizeof(DB_HANDLE));
     mal++;
     h->tx=newsql((char*)(d));
+    if(h->tx==NULL) {
+      free(h);
+      return NULL;
+    }
     h->db=strdup(d);
     h->query=strdup(q);
     h->next=NULL;
@@ -181,7 +197,9 @@ DB_HANDLE *get_handle(DB_HANDLE *head, const char *d, const char *q) {
     h=new_handle(d,q);
     if(h)
       head=add_handle(head,h);
-    
+    else
+      return(NULL);
+
     end:
     return (head);
 }
@@ -583,11 +601,13 @@ int duk_rp_fetch(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
       resmax=q->max,
       retarray=q->retarray;
   FLDLST *fl;
-    
+#ifdef LOCK_AROUND_ALL_FETCH
+  FLOCK
+#endif
   /* create return array (outer array) */
   duk_push_array(ctx);
 
-  /* array of arrays requested */
+  /* array of arrays or novars requested */
   if (retarray)
   {
     /* push values into subarrays and add to outer array */
@@ -595,7 +615,10 @@ int duk_rp_fetch(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
     {
       /* novars, we need to get each row (for del and return count value) but not return any vars */
       if (retarray==3)
+      {
+        rown++;
         continue; 
+      }
       /* we want first rowto be column names */
       if (retarray==2)
       {
@@ -637,6 +660,9 @@ int duk_rp_fetch(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
       duk_put_prop_index(ctx,-2,rown++);
     }
   }
+#ifdef LOCK_AROUND_ALL_FETCH
+  FUNLOCK
+#endif
   return(rown);
 }
 
@@ -651,7 +677,9 @@ int duk_rp_fetchWCallback(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
         retarray=q->retarray,
         callback=q->callback;
     FLDLST *fl;    
-
+#ifdef LOCK_AROUND_ALL_FETCH
+  FLOCK
+#endif
     while ( rown<resmax && (fl=TEXIS_FETCH(tx,-1)) ) {
       duk_dup(ctx,callback);
       duk_push_this(ctx);
@@ -664,7 +692,7 @@ int duk_rp_fetchWCallback(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
         {
           duk_dup(ctx,callback);
           duk_push_this(ctx);
-          duk_push_array(ctx);
+          duk_push_object(ctx);
           duk_push_int(ctx,rown++);
           duk_call_method(ctx,2);
           break;
@@ -694,6 +722,9 @@ int duk_rp_fetchWCallback(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
           /* if function returns false, exit while loop, return number of rows so far */
           if (duk_is_boolean(ctx,-1) && !duk_get_boolean(ctx,-1) ) {
             duk_pop(ctx);
+#ifdef LOCK_AROUND_ALL_FETCH
+  FUNLOCK
+#endif
             return (rown);
           }
           duk_pop(ctx);
@@ -728,15 +759,20 @@ int duk_rp_fetchWCallback(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
           break;
         }
       } /* switch */
-
       /* if function returns false, exit while loop, return number of rows so far */
       if (duk_is_boolean(ctx,-1) && !duk_get_boolean(ctx,-1) ) {
         duk_pop(ctx);
+#ifdef LOCK_AROUND_ALL_FETCH
+        FUNLOCK
+#endif
         return (rown);
       }
       /* get rid of ret value from callback*/
       duk_pop(ctx);
     } /* while fetch */
+#ifdef LOCK_AROUND_ALL_FETCH
+    FUNLOCK
+#endif
 
     return(rown);
 }
@@ -789,11 +825,11 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
   else
   {
     hcache=new_handle(db,q->sql);
-    if(hcache==NULL)
-    {
-      duk_push_string(ctx,"error in texis_prepare");
-      duk_throw(ctx);
-    }
+  }
+  if(hcache==NULL)
+  {
+    duk_push_string(ctx,"error getting handle from cache.\n");
+    duk_throw(ctx);
   }
   /* hcache may have changed.  update it for all cases */
   duk_push_pointer(ctx,(void*)hcache);
@@ -922,11 +958,16 @@ duk_ret_t duk_rp_sql_eval(duk_context *ctx) {
 TEXIS *newsql(char* db)
 {
   TEXIS *tx;
+  char pbuf[1024];
+  *pbuf='\0';
+  mmsgfh=fmemopen(pbuf, 1024, "w+");
+
   tx = TEXIS_OPEN(db);
 
 //  TXsingleuser=1;
   if(!tx)
   {
+    fprintf(stderr,"could not open texis handle: %s\n",pbuf);
     return((TEXIS*)NULL);
   }
   return tx;
@@ -993,6 +1034,28 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
    Initialize Sql into global object. 
    ************************************************** */
 void duk_db_init(duk_context *ctx) {
+  /* Set up locks:
+     this will be run once per new duk_context/thread in server.c
+     but needs to be done only once for all threads
+  */
+#ifndef SINGLETHREADED
+  if(!lock_is_init)
+  {
+    if (pthread_mutex_init(&lock, NULL) != 0)
+    {
+        printf("\n mutex init failed\n");
+        exit(1);
+    }
+#ifdef PUTMSG_STDERR
+    if (pthread_mutex_init(&printlock, NULL) != 0)
+    {
+        printf("\n mutex init failed\n");
+        exit(1);
+    }
+#endif
+    lock_is_init=1;
+  }
+#endif
 
   /* Push constructor function */
   duk_push_c_function(ctx, duk_rp_sql_constructor, 3 /*nargs*/);

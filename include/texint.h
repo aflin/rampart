@@ -3228,6 +3228,7 @@ struct TXAPP_tag
 	byte	unalignedBufferWarning;		/* fbuftofld() warning */
 	byte	createDbOkDirExists;
   byte  NoMonitorStart; /* Don't try and start monitor */
+  byte  NULLSemOp; /**< Skip SEMOP calls */
 	TXtrap	trap;				/* for all but Vortex */
 
 	byte	allowRamTableBlob;		/* RAM table blob ok Bug 4031*/

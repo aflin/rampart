@@ -233,6 +233,12 @@ add_custom_target(txcoreconfig.h)
 #
 # Install Rules
 #
-install(FILES ${CMAKE_BINARY_DIR}/txcoreconfig.h ${CMAKE_BINARY_DIR}/txcoreconfig_gen.h ${CMAKE_BINARY_DIR}/sizes.h
-	TYPE INCLUDE
-)
+if(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
+	install(FILES ${CMAKE_BINARY_DIR}/txcoreconfig.h ${CMAKE_BINARY_DIR}/txcoreconfig_gen.h ${CMAKE_BINARY_DIR}/sizes.h
+		DESTINATION include
+	)
+else(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
+	install(FILES ${CMAKE_BINARY_DIR}/txcoreconfig.h ${CMAKE_BINARY_DIR}/txcoreconfig_gen.h ${CMAKE_BINARY_DIR}/sizes.h
+		TYPE INCLUDE
+	)
+endif(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)

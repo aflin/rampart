@@ -385,9 +385,9 @@ TXshmctl(TXPMBUF *pmbuf, const char *func, int shmid, int cmd,
 #      define CLSHM(a,b) ((a)->shmid=(b))
 #      define RMSHM(a)   TXshmctl(TXPMBUFPN, __FUNCTION__, (a)->shmid, IPC_RMID, NULL)
 #    else /* !USE_SHM */
-#  error add TXgetlockverbose() tracing here
+/* #  error add TXgetlockverbose() tracing here */
 #      define CRSHM(a) crshm(a)
-#      define OPSHM(a, create) open((a),(O_RDWR|((create) ? O_CREAT : 0),0666)
+#      define OPSHM(a, create) open((a),(O_RDWR|((create) ? O_CREAT : 0),0666))
 #      define ATSHM(a) mmap((void *)0, sizeof(IDBLOCK), PROT_READ|PROT_WRITE, MAP_SHARED, (a), 0)
 #      define DISHM(a,b) close(a),unlink(b)
 #      define CLSHM(a,b) close(b)

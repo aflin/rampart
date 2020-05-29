@@ -89,7 +89,7 @@ ddopen(pname)
 const char *pname;
 {
 	TXDDOPENFLAG	flags = (TXDDOPENFLAG)0;
-	flags |=  TXDDOPENFLAG_NO_DB_MONITOR; 
+
 	if (TXsingleuser)
 		flags |= TXDDOPENFLAG_READ_ONLY;
 	if (TXlicIsLicenseMonitor())

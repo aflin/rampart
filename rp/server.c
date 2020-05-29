@@ -22,10 +22,9 @@
 static pthread_key_t key;
 static pthread_once_t key_once = PTHREAD_ONCE_INIT;
 static int threadno=0;
-duk_context *thread_ctx[totnthreads];
-#else
-duk_context *thread_ctx[1];
 #endif
+duk_context **thread_ctx=NULL;
+
 /* **************************************************************************
    This url(en|de)code is public domain from https://www.geekhideout.com/urlcode.shtml 
    ************************************************************************** */
@@ -363,7 +362,8 @@ fileserver(evhtp_request_t * req, void * arg)
         strcpy(fnindex,fn);
         strcat(fnindex,"index.html");
         if (stat(fnindex, &sb) == -1) {
-            /* TODO: add setting to forbid dir listing */
+            /* TODO: add dir listing and
+               setting to forbid dir listing */
             /* try index.htm */
             fnindex[strlen(fnindex)-1]='\0';
             if (stat(fnindex, &sb) == -1)
@@ -516,6 +516,17 @@ static evhtp_res sendobj(DHS *dhs)
     return(res);
 }
 
+static evthr_t *get_request_thr(evhtp_request_t * request) 
+{
+    evhtp_connection_t * htpconn;
+    evthr_t            * thread;
+
+    htpconn = evhtp_request_get_connection(request);
+    thread  = htpconn->thread;
+
+    return thread;
+}
+
 static void
 http_callback(evhtp_request_t * req, void * arg)
 {
@@ -523,13 +534,13 @@ http_callback(evhtp_request_t * req, void * arg)
     FILE  * file_desc;
     evhtp_res res=200;
     int eno;
-#ifdef SINGLETHREADED
-    int tno=0;   
-#else
-    int tno=*((int*)pthread_getspecific(key));
-#endif
-    duk_context *new_ctx = thread_ctx[tno];
     void *buf;
+#ifdef SINGLETHREADED
+    duk_context *new_ctx = thread_ctx[0];   
+#else
+    evthr_t *thread= get_request_thr(req);
+    duk_context *new_ctx = (duk_context*) evthr_get_aux(thread);
+#endif
     
 //printf("starting callback\n");
 
@@ -706,7 +717,7 @@ static void copy_func(DHS *dhs) {
     dhs->bytecode_sz=bc_len;
 }
 */
-static void copy_func(DHS *dhs) {
+static void copy_func(DHS *dhs, int nt) {
     void *bc_ptr;
     duk_size_t bc_len;
     int i=0;
@@ -715,7 +726,7 @@ static void copy_func(DHS *dhs) {
     duk_dump_function(dhs->ctx);
     bc_ptr = duk_require_buffer_data(dhs->ctx, -1, &bc_len);
     /* load function into each of the thread contexts and record position */
-    for(i=0;i<totnthreads;i++){
+    for(i=0;i<nt;i++){
         duk_context *ctx=thread_ctx[i];
         void *buf = duk_push_fixed_buffer(ctx, bc_len);
         memcpy(buf, (const void *) bc_ptr, bc_len);
@@ -731,31 +742,11 @@ static void copy_func(DHS *dhs) {
 /* this never happens?? */
 void endThread ()
 {
-    void *ptr;
-    printf("ending\n");
-    if ((ptr = pthread_getspecific(key)) != NULL) 
-    {
-        free(ptr);
-    }
 }
-
-static void make_key()
-{
-    (void) pthread_key_create(&key, endThread);
-}
-
 
 void initThread (evhtp_t *htp, evthr_t *thr, void *arg)
 {
-    void *ptr;
-
-    (void) pthread_once(&key_once, make_key);
-    if ((ptr = pthread_getspecific(key)) == NULL) 
-    {
-        ptr=malloc(sizeof(int));
-        *((int*)ptr)=threadno++;
-        (void) pthread_setspecific(key, ptr);
-    }
+    evthr_set_aux(thr, thread_ctx[threadno++]);
 }
 #endif
 
@@ -774,10 +765,27 @@ duk_ret_t duk_server_start(duk_context *ctx)
     char ipv4[INET_ADDRSTRLEN]="127.0.0.1";
     uint16_t port=8080, ipv6port=8080;
     void *tptr;
+    int nthr, totnthr;
+#ifndef SINGLETHREADED
+    if(nthreads > 0) 
+        nthr=nthreads;
+     else
+        nthr=sysconf(_SC_NPROCESSORS_ONLN);
+
+    totnthr=nthr*2;
+
+    printf("HTTP server initializing with %d threads per server, %d total\n", nthr,totnthr);
+#else
+    totnthr=1;
+#endif
+    REMALLOC( thread_ctx, (totnthr*sizeof(duk_context*)) );
 //printf("%d?=%d, %lu\n",(int)getpid(),(int)syscall(SYS_gettid),(unsigned long int)pthread_self());
 
+
     /* initialize a context for each thread */
-    for(i=0;i<totnthreads;i++){
+    for(i=0;i<totnthr;i++){
+        thread_ctx[i]=NULL;
+        REMALLOC( thread_ctx[i], sizeof(duk_context*) );
         thread_ctx[i] = duk_create_heap_default();
         /* do all the normal startup done in duk_cmdline but for each thread */
         duk_init_userfunc(thread_ctx[i]);
@@ -795,15 +803,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
      if(duk_is_function(ctx,i))
          dhs->func_idx=i;
-/*
-     else
-     {
-         duk_push_string(ctx,"requires a callback function");
-         (void) duk_throw(ctx);
-     }
-*/
+
     evbase = event_base_new();
-    //evhtp_alloc_assert(evbase);
+
     htp4 = evhtp_new(evbase, NULL);
     htp6 = evhtp_new(evbase, NULL);
 
@@ -876,7 +878,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         duk_idx_t fi=duk_get_top(ctx) - 4;
                         duk_insert(ctx,fi);
                         cb_dhs=newdhs(ctx,fi);
-                        copy_func(cb_dhs);
+                        /* copy function to all the heaps/ctxs */
+                        copy_func(cb_dhs,totnthr);
                         printf("setting %-20s ->    function\n",s);
                         evhtp_set_glob_cb(htp4,s,http_callback,cb_dhs);
                         evhtp_set_glob_cb(htp6,s,http_callback,cb_dhs);
@@ -886,7 +889,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         duk_pop(ctx);
                     }
                     else
-                    //TODO: duk_is_object and get some config options */
+                    /*TODO: duk_is_object and get some config options
+                            for each mapped http path                   */
                     {   /* map to filesystem */
                         DHMAP *map=NULL;
                         
@@ -928,7 +932,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             }
             else
             {
-                duk_push_string(ctx,"value of 'filemap' must be an object");
+                duk_push_string(ctx,"value of 'map' must be an object");
                 duk_throw(ctx);
             }
         }
@@ -945,30 +949,30 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     if( dhs->func_idx !=-1)
     {
-        copy_func(dhs);
+        copy_func(dhs,totnthr);
         evhtp_set_gencb(htp4, http_callback, dhs);
         evhtp_set_gencb(htp6, http_callback, dhs);
     }
 
     if(bind_sock_port(htp4,ipv4,port,2048))
     {
-        duk_push_sprintf(ctx,"could not bind to %s",ipv4);
+        duk_push_sprintf(ctx,"could not bind to %s port %d",ipv4,port);
         duk_throw(ctx);
     }
-
+    /* TODO: don't fail on lack of ipv6 on the system (are there any left?) */
     if (bind_sock_port(htp6,ipv6,ipv6port,2048))
     {
-        duk_push_sprintf(ctx,"could not bind to %s",ipv6);
+        duk_push_sprintf(ctx,"could not bind to %s, %d",ipv6,ipv6port);
         duk_throw(ctx);
     }
 #ifndef SINGLETHREADED
-    evhtp_use_threads_wexit(htp4, initThread, NULL, nthreads, NULL);
-    evhtp_use_threads_wexit(htp6, initThread, NULL, nthreads, NULL);
+    evhtp_use_threads_wexit(htp4, initThread, NULL, nthr, NULL);
+    evhtp_use_threads_wexit(htp6, initThread, NULL, nthr, NULL);
 #else
     printf("in single threaded mode\n");
 #endif
     event_base_loop(evbase, 0);
-
+    /* never gets here */
     return 0;
 }
 

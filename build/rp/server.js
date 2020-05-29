@@ -1,8 +1,12 @@
 #!/usr/local/src/TexisCoreApiTest5b/build/duk/duk
+
+/* load the http server module */
 server=require("rpserver");
 
+/* sql db is built in.  Call with new Sql("/path/to/db") */
 var sql=new Sql("./testdb",true); /* true means make db if it doesn't exist */
 
+/* check if our quicktest table exists.  If not, make it */
 var res=sql.exec("select * from SYSTABLES where NAME='quicktest'");
 if(res.length==0) {
     res=sql.exec("create table quicktest ( I int, Text varchar(16) );");
@@ -10,61 +14,180 @@ if(res.length==0) {
     sql.exec("create index quicktest_I_x on quicktest(I);");
 }
 
-res=sql.exec("select * from SYSTABLES where NAME='dbtest'");
+/* same for inserttest table.  And populate the table with 2000 rows */
+res=sql.exec("select * from SYSTABLES where NAME='inserttest'");
 if(res.length==0) {
-    res=sql.exec("create table dbtest ( I int, D double, Text varchar(16) );");
+    res=sql.exec("create table inserttest ( I int, D double, Text varchar(16) );");
     for (var i=0;i<200;i++)
-        dbtest_callback({},true);
+        inserttest_callback({},true);
+
+    /* test delete of 10 rows */
+    console.log("delete 10");
+    res=sql.exec("delete from inserttest",
+                    {max:10}
+    );
+    console.log(res);
+
+    console.log("count should be 1990");
+    res=sql.exec("select count(*) from inserttest",
+                    {max:10}
+    );
+    console.log(res);
 }
 
+
+/*
+sample calls to sql with/without callback
+with callback returns one row at a time, and can be cancelled by returning false
+without callback returns an array of rows.
+Rows are returned as one of 4 different return types:
+    default -- object or array of objects {col1name:val1,col2name:val2...
+    array   -- [val1, val2, ..]
+    arrayh  -- first row is column names, then like array
+    novars  -- returns empty array, or empty object if using a callback
+*/
+/*
+console.log("return normal");
+res=sql.exec("select * from inserttest",
+                {max:10}
+);
+console.log("no callback results:");
+console.log(res);
+
+console.log("return arrayh");
+res=sql.exec("select * from inserttest",
+                {max:10,returnType:"arrayh"}
+);
+console.log("no callback results:");
+console.log(res);
+
+console.log("return novars");
+res=sql.exec("select * from inserttest",
+                {max:10,returnType:"novars"}
+);
+console.log("no callback results:");
+console.log(res);
+
+console.log("return callback novars");
+res=sql.exec("select * from inserttest",
+                {max:10,returnType:"novars"},
+                function(res,i){
+                    console.log(res,i);
+                }
+
+);
+console.log("total: "+res);
+
+console.log("return callback arrayh");
+res=sql.exec("select * from inserttest",
+                {max:10,returnType:"arrayh"},
+                function(res,i){
+                    console.log(res,i);
+                }
+
+);
+console.log("total: "+res);
+
+console.log("return callback normal");
+res=sql.exec("select * from inserttest",
+                {max:10},
+                function(res,i){
+                    console.log(res,i);
+                }
+
+);
+console.log(res);
+*/
+
+/* 
+   Since the http server is multithreaded, and the javascript interpreter
+   is not, each thread must have its own javascript heap where the callback
+   will be copied.
+   This function is outside the scope of server callback functions
+   below and thus cannot be reached from within the webserver.
+   Think of every function as its own distinct xyz.js file
+   for the http server.
+*/
 function rst() {
     return("return some text");
 }
 
-function dbtest_callback(req,allinserts){
-    function randpic(arr){
-        x=Math.floor(Math.random()*arr.length);
+function inserttest_callback(req,allinserts){
+    /* this function is naturally accessible to 
+       inserttest_callback()
+    */
+    function randpic(arr,x){
+        if(x===undefined)
+            x=Math.floor(Math.random()*arr.length);
+        else
+            x=Math.floor(x*arr.length);
+
         return(arr[x]);
     }
 
     var sql=new Sql('./testdb');
-    var str=["red","orange","yellow","teal","green","cyan","blue","purple","violet"]
+    var str=["zero","one","two","three","four","five","six","seven","eight","nine"];
     var arr;
-    var rf=Math.random();
-    var rp=Math.floor(rf*100);
-    var ri=Math.floor(rf*1000000);
-    var insertmax=5;
-    
+    var r=Math.random();
+    var rf=r*10;
+    var rp=Math.floor(r*100);
+    var ri=Math.floor(r*10);
+    var skip=Math.floor(Math.random()*100);
+    var insertmax=25;
+
+    /* to populate the table */
     if(allinserts) insertmax=100;    
+
     if (rp<insertmax)
     {
-        arr=sql.exec(
-            'insert into dbtest values (?,?,?)',
-            [ri,rf,randpic(str)]
-        );
-        //console.log("insert "+ri);
+        for (var i=0;i<10;i++)
+        {
+          arr=sql.exec(
+            'insert into inserttest values (?,?,?)',
+            [ri,rf,randpic(str,r)]
+          );
+        }
+        //console.log("insert");
     }
-    else if (rp<10)
+    else if (rp<50)
     {
-        arr=sql.exec(
-            "delete from dbtest where I < ?",
-            [50000],
-            {skip:rp, max:1,returnType:"array"}
-        );
-        //console.log("delete "+ri);
+          arr=sql.exec(
+            "delete from inserttest",
+            /* WTF: skipped rows are deleted too 
+            {skip:skip,max:10,returnType:"novars"}
+            */
+            /* 
+               normally deleted rows are also
+               selected and returned.  Here we
+               don't need them
+            */
+            {max:10,returnType:"novars"}
+          );
+        //console.log("delete")
     }
     else
     {
         arr=sql.exec(
-            "select * from dbtest where I > ?",
-            [50000],
-            {skip:rp,max:10,returnType:"array"}
+            "select * from inserttest where I > ?",
+            [5],
+            {skip:skip,max:10,returnType:"array"},
+            /* sanity check callback */
+            function(req) {
+                var f2i=parseInt(req[1]);
+                if(f2i!=req[0] || req[2]!=str[f2i])
+                    console.log("DANGER WILL ROBINSON:",req);
+            }
         );
-//        console.log("select");
+        //console.log("select");
     }
-    
+
+    /* return value is sent to http client
+       use file extensions like text (or txt), html, jpg, etc as key to set
+       the proper mime-type.  Most extensions are mapped to the correct mime type
+       See mime.h for complete listing.
+    */    
     return({
-        text: "this is for doing stress testing, such as: ab -n 10000 -c 100 http://127.0.0.1:8088/simpledbtest.html"
+        text: "this is for doing multithreaded stress testing, such as: ab -n 10000 -c 100 http://127.0.0.1:8088/dbtest.html"
     });
 }
 
@@ -75,6 +198,7 @@ function simple_callback(req){
         {max:1}
     );
     if(sql.lastErr) return(sql.lastErr);
+    /* default mime type is text/plain, if just given a string */
     return(JSON.stringify(arr));
 }
 
@@ -109,6 +233,7 @@ function showreq_callback(req){
     
     //var extra=Math.random();
     var extra="";
+    /* you can set custom headers as well */
     return({
         headers:
             {
@@ -120,7 +245,7 @@ function showreq_callback(req){
     });
     
 }
-
+/* this will print out the error */
 function badRef_callback(req){
     return rst;
 }
@@ -135,14 +260,21 @@ server.start(
     ipv6:"::",
     ipv6port:8088,
     port:8088,
-    /* ordered by priority.  '/' should always be last */
+    /* map urls to functions or paths on the filesystem */
+    /* ordered by priority.  '/' should always be last  */
     map:
      {
-         "/dbtest.html":dbtest_callback,
+         "/dbtest.html":inserttest_callback,
          "/simpledbtest.html":simple_callback,
          "/showreq*":showreq_callback,
          "/badref.html":badRef_callback,
+         /* filesystem mappings are always paths.  "/tetris" => "/tetris/ */
          "/tetris": "./tetris-tutorial/",
          "/": "./mPurpose/"
      }
+     /* 
+        including a function will match everything not matched above
+        i.e. if "/": "./mPurpose/" was not present
+     */
+     /* ,function(){} */
 });
