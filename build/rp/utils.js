@@ -60,7 +60,7 @@ try {
     }
   });
 
-  utils.exec({ path: "/bin/rm", args: ["rm", "utils-2.js"] });
+  utils.delete("utils-2.js");
 
   utils.rmdir("this/is/a", true);
 
@@ -98,8 +98,11 @@ try {
   print(utils.readdir("."));
   utils.rename("sample-2.txt", "sample.txt");
 
-  utils.exec({ path: "/bin/rm", args: ["rm", "sample_link.txt"] });
-  utils.exec({ path: "/bin/rm", args: ["rm", "sample.txt"] });
+  print("\n-- utils.js delete --");
+  print(utils.readdir("."));
+  utils.delete("sample_link.txt");
+  utils.delete("sample.txt");
+  print(utils.readdir("."));
 } catch (e) {
   print("caught:");
   console.log(e);

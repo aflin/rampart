@@ -909,6 +909,23 @@ duk_ret_t duk_util_touch(duk_context *ctx)
   return 0;
 }
 
+/**
+ * Deletes a file at the given path
+ * @param {string} path - the file to be deleted
+*/
+duk_ret_t duk_util_delete(duk_context *ctx)
+{
+  const char* file = duk_require_string(ctx, -1);
+
+  if (remove(file) != 0)
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error deleting file: %s", strerror(errno));
+    return duk_throw(ctx);
+  }
+
+  return 0; 
+}
+
 static const duk_function_list_entry utils_funcs[] = {
     {"readFile", duk_util_read_file, 1},
     {"readln", duk_util_readln, 1},
@@ -922,6 +939,7 @@ static const duk_function_list_entry utils_funcs[] = {
     {"rename", duk_util_rename, 2},
     {"chmod", duk_util_chmod, 2},
     {"touch", duk_util_touch, 1},
+    {"delete", duk_util_delete, 1},
     {NULL, NULL, 0}};
 
 static const duk_number_list_entry file_types[] = {
