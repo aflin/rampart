@@ -15,6 +15,9 @@
 #include <signal.h>
 #include <utime.h> /* utime */
 #include "duktape.h"
+#include <pwd.h> /* getpwnam */
+#include <grp.h> /* getgrnam */
+
 #define REMALLOC(s, t)               \
   do                                 \
   {                                  \
@@ -954,8 +957,8 @@ duk_ret_t duk_util_touch(duk_context *ctx)
 
 /**
  * Deletes a file at the given path
- * @param {string} path - the file to be deleted
-*/
+ * @param {string} file - the file to be deleted
+ */
 duk_ret_t duk_util_delete(duk_context *ctx)
 {
   const char *file = duk_require_string(ctx, -1);
@@ -964,6 +967,94 @@ duk_ret_t duk_util_delete(duk_context *ctx)
   {
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error deleting file: %s", strerror(errno));
     return duk_throw(ctx);
+  }
+
+  return 0;
+}
+
+/** 
+ * Changes ownership of a file to a given user or group
+ * @param {string} path - the path to the file to change
+ * @param {string} group_name - the name of the group to change ownership to
+ * @param {string} user_name - the name of the user to change ownership to
+ * @param {int} group_id - the group identifier to change ownership to 
+ * @param {int} user_id - the user identifier to change ownership to
+ */
+duk_ret_t duk_util_chown(duk_context *ctx)
+{
+  duk_get_prop_string(ctx, -1, "path");
+  const char *path = duk_require_string(ctx, -1);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "group_name");
+  const char *group_name = duk_get_string(ctx, -1);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "user_name");
+  const char *user_name = duk_get_string(ctx, -1);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "group_id");
+  gid_t group_id = duk_get_int(ctx, -1);
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "user_id");
+  uid_t user_id = duk_get_int(ctx, -1);
+  duk_pop(ctx);
+
+  struct stat file_stat;
+
+  if ((user_id != 0) && (user_name != 0)) // both a user name and user_id was specified
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "Error changing ownership: too many users were specified");
+    return duk_throw(ctx);
+  }
+
+  if ((group_id != 0 ) && (group_name != 0)) // both a group name and group_id was specified
+  {
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing ownership: too many groups were specified");
+    return duk_throw(ctx);
+  }
+
+  if (group_name != 0) // a group name was specfied; lookup the group id
+  {
+    struct group* grp = getgrnam(group_name);
+
+    if (grp == NULL)
+    {
+      duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing  ownership: %s", strerror(errno));
+      return duk_throw(ctx);
+    }
+    group_id = grp->gr_gid;
+  }
+
+  if (user_name != 0) // a user name was specified; lookup the user id
+  {
+    struct passwd* user = getpwnam(user_name);
+
+    if (user == NULL)
+    {
+      duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing  ownership: %s", strerror(errno));
+      return duk_throw(ctx);
+    }
+    user_id = user->pw_gid;
+  }
+
+  stat(path, &file_stat);
+  if (user_id == 0 ) // no specified user
+  {
+    user_id = file_stat.st_uid;
+  }
+
+  if (group_id == 0) // no specified group
+  {
+    group_id = file_stat.st_gid;
+  }
+
+  if (chown(path, user_id, group_id) != 0)
+  {
+      duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing  ownership: %s", strerror(errno));
+      return duk_throw(ctx);
   }
 
   return 0;
@@ -984,6 +1075,7 @@ static const duk_function_list_entry utils_funcs[] = {
     {"chmod", duk_util_chmod, 2},
     {"touch", duk_util_touch, 1},
     {"delete", duk_util_delete, 1},
+    {"chown", duk_util_chown, 1},
     {NULL, NULL, 0}};
 
 static const duk_number_list_entry file_types[] = {

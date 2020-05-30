@@ -109,6 +109,11 @@ try {
   print(utils.readdir("."));
   utils.rename("sample-2.txt", "sample.txt");
 
+  print("\n-- utils.js chown ---");
+  utils.chown({path: "sample.txt", group_name: "everyone"});
+  sample_stat = utils.stat("./sample.txt");
+  print("changed group?: " + (sample_stat.gid == 12));
+
   print("\n-- utils.js delete --");
   print(utils.readdir("."));
   utils.delete("sample_link.txt");
