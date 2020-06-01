@@ -1,4 +1,4 @@
-var utils = require("./rputils.so");
+var utils = require("rputils");
 
 function assert(cond) {
   if (!cond) {
