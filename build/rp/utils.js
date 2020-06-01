@@ -1,36 +1,54 @@
 var utils = require("./rputils.so");
-var i = 1;
+
+function assert(cond) {
+  if (!cond) {
+    throw new Error("assert failed");
+  }
+}
+function printTest(name) {
+  print("-- utils.js " + name + " --");
+}
+
+function find(arr, fn) {
+  var found = null;
+  arr.forEach(function (a) {
+    if (fn(a)) {
+      found = a;
+    }
+  });
+  return found;
+}
 
 try {
-  print("\n-- utils.js read file --");
+  printTest("read file");
   var file = utils.readFile({ file: "./utils.js" });
   print("length of file: " + file.length);
 
-  print("\n-- utils.js read ln --");
+  printTest("read ln");
   // will be replaced with for (const line of utils.readln("./utils.js")) { ... } when babel is integrated
   var iter = utils.readln("./utils.js")[Symbol.iterator]();
-  print(iter.next().value);
+  var nextIt = iter.next();
+  assert(nextIt.value != null);
+  assert(nextIt.done == false);
 
-  print("\n-- num of lines --");
-  print("num lines: " + i);
-
+  printTest("stat");
   var stat = utils.stat("./utils.js");
-  print("\n-- utils.js stat --");
+
   print("is file: " + stat.is_file());
+  assert(stat.is_file());
   print("atime: " + stat.atime);
   print("mode: " + stat.mode.toString(8));
-  print("\n-- exec (sleep 0.2) --");
-  print(
-    "timed_out: " +
-      utils.exec({
-        path: "/bin/sleep",
-        args: ["sleep", "0.2"],
-        timeout: 1000000,
-        kill_signal: utils.signals.SIGKILL,
-      }).timed_out
-  );
 
-  print("\n-- utils.js kill --");
+  printTest("exec (sleep 0.2)");
+  var execRes = utils.exec({
+    path: "/bin/sleep",
+    args: ["sleep", "0.2"],
+    timeout: 100000,
+    killSignal: utils.signals.SIGKILL,
+  });
+  assert(execRes.timedOut);
+
+  printTest("kill");
   var pid = utils.exec({
     path: "/bin/sleep",
     args: ["sleep", "0.2"],
@@ -41,84 +59,109 @@ try {
   utils.kill(pid, 0);
   utils.kill(pid, 9);
 
-  print("\n-- utils.js readdir --");
+  printTest("readdir");
   print(utils.readdir("."));
 
-  print("\n-- utils.js mkdir --");
+  printTest("mkdir");
   utils.mkdir("this/is/a/test");
 
-  print(
-    utils.exec({ path: "/usr/local/bin/tree", args: ["tree", "this"] }).stdout
+  assert(
+    find(utils.readdir("."), function (f) {
+      return f == "this";
+    })
   );
 
-  print("\n-- utils.js rmdir --");
+  printTest("rmdir");
 
   utils.rmdir("this/is/a/test");
 
-  print(
-    utils.exec({ path: "/usr/local/bin/tree", args: ["tree", "this"] }).stdout
+  assert(
+    !find(utils.readdir("this/is/a/"), function (f) {
+      return f == "test";
+    })
   );
 
-  print("\n-- utils.js copy file --");
+  printTest("copyFile");
   utils.copyFile({ src: "utils.js", dest: "utils-2.js", overwrite: true });
 
-  utils.readdir(".").forEach(function (v) {
-    if (v == "utils-2.js") {
-      print("found utils-2.js");
-      print(
-        "copied == src stat?: " + (stat.mode == utils.stat("./utils-2.js").mode)
-      );
+  var utils2 = null;
+  utils.readdir(".").forEach(function (filename) {
+    if (filename == "utils-2.js") {
+      utils2 = filename;
     }
   });
+  assert(utils2 != null);
+  assert(stat.mode == utils.stat("./utils-2.js").mode);
 
+  // cleanup
   utils.delete("utils-2.js");
-
   utils.rmdir("this/is/a", true);
 
-  print("\n-- utils.js chmod file --");
-
+  printTest("chmod file");
   utils.touch({ path: "sample.txt" });
-
   var sample_stat = utils.stat("./sample.txt");
-  print("mode: " + sample_stat.mode.toString(8));
+  print("before chmod: " + sample_stat.mode.toString(8));
 
   utils.chmod("sample.txt", 0777);
   sample_stat = utils.stat("./sample.txt");
-  print("mode after chmod: " + sample_stat.mode.toString(8));
+  assert(sample_stat.mode == 0o100777);
 
-  print("\n-- utils.js touch --");
-  utils.touch({ path: "sample.txt", nocreate: false });
+  printTest("touch");
+  utils.touch({
+    path: "sample.txt",
+    nocreate: false,
+    setaccess: false,
+    setmodify: false,
+  });
 
-  var example_stat = utils.stat("./sample.txt");
-  print("atime: " + example_stat.atime);
-  print("mtime: " + example_stat.mtime);
+  sample_stat = utils.stat("./sample.txt");
+  var atime_before = sample_stat.atime;
+  var mtime_before = sample_stat.mtime;
+
+  print("atime: " + atime_before);
+  print("mtime: " + mtime_before);
 
   print("after reference touch");
-  utils.touch({ path: "sample.txt", reference: "server.js", setaccess: false });
-  var example_stat = utils.stat("./sample.txt");
-  print("atime: " + example_stat.atime);
-  print("mtime: " + example_stat.mtime);
+  utils.touch({
+    path: "sample.txt",
+    reference: "server.js",
+    setaccess: false,
+  });
 
-  print("\n-- utils.js link --");
+  assert(sample_stat.atime.getTime() != utils.stat("./server.js").atime);
+
+  printTest("link");
+
   utils.link({ src: "sample.txt", target: "sample_link.txt", symbolic: false });
   sample_stat = utils.stat("./sample.txt");
-  print("symbolic link?: " + (sample_stat.nlink == 2));
+  assert(sample_stat.nlink == 2);
 
-  print("\n-- utils.js rename---");
+  printTest("rename");
+
   utils.rename("sample.txt", "sample-2.txt");
-  print(utils.readdir("."));
+
+  assert(
+    find(utils.readdir("."), function (filename) {
+      return filename == "sample-2.txt";
+    })
+  );
+
   utils.rename("sample-2.txt", "sample.txt");
 
-  print("\n-- utils.js chown ---");
-  utils.chown({path: "sample.txt", group_name: "everyone"});
+  printTest("chown");
+  utils.chown({ path: "sample.txt", group_name: "everyone" });
   sample_stat = utils.stat("./sample.txt");
-  print("changed group?: " + (sample_stat.gid == 12));
+  assert(sample_stat.gid == 12);
 
-  print("\n-- utils.js delete --");
+  printTest("delete");
   print(utils.readdir("."));
   utils.delete("sample_link.txt");
   utils.delete("sample.txt");
-  print(utils.readdir("."));
+  assert(
+    !find(utils.readdir("."), function (filename) {
+      return filename == "sample.txt";
+    })
+  );
 } catch (e) {
   print("caught:");
   console.log(e);
