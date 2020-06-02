@@ -1,0 +1,3 @@
+[submodule "thirdparty/oniguruma"]
+	path = thirdparty/oniguruma
+	url = https://github.com/kkos/oniguruma.git
