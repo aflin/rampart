@@ -148,10 +148,10 @@ try {
 
   utils.rename("sample-2.txt", "sample.txt");
 
-  printTest("chown");
-  utils.chown({ path: "sample.txt", group_name: "everyone" });
-  sample_stat = utils.stat("./sample.txt");
-  assert(sample_stat.gid == 12);
+//   printTest("chown");
+//   utils.chown({ path: "sample.txt", group_name: "everyone" });
+//   sample_stat = utils.stat("./sample.txt");
+//   assert(sample_stat.gid == 12);
 
   printTest("delete");
   print(utils.readdir("."));
