@@ -9,6 +9,7 @@ var sql=new Sql("./testdb",true); /* true means make db if it doesn't exist */
 /* check if our quicktest table exists.  If not, make it */
 var res=sql.exec("select * from SYSTABLES where NAME='quicktest'");
 if(res.length==0) {
+    print("Creating quicktest table");
     res=sql.exec("create table quicktest ( I int, Text varchar(16) );");
     sql.exec("insert into quicktest values(2,'just a test');");
     sql.exec("create index quicktest_I_x on quicktest(I);");
@@ -17,10 +18,12 @@ if(res.length==0) {
 /* same for inserttest table.  And populate the table with 2000 rows */
 res=sql.exec("select * from SYSTABLES where NAME='inserttest'");
 if(res.length==0) {
+    print("Creating inserttest table");
     res=sql.exec("create table inserttest ( I int, D double, Text varchar(16) );");
     for (var i=0;i<200;i++)
         inserttest_callback({},true);
 
+    print("Testing delete");
     /* test delete of 10 rows */
     console.log("delete 10");
     res=sql.exec("delete from inserttest",
@@ -103,11 +106,11 @@ console.log(res);
    Since the http server is multithreaded, and the javascript interpreter
    is not, each thread must have its own javascript heap where the callback
    will be copied.
-   This function is outside the scope of server callback functions
-   below and thus cannot be reached from within the webserver.
-   Think of every function as its own distinct xyz.js file
-   for the http server.
+
+   Most Global function and variables will be copied.  Currently other variables
+   which may be in scope at server start will not be accessible.
 */
+
 function rst() {
     return("return some text");
 }
@@ -191,8 +194,25 @@ function inserttest_callback(req,allinserts){
     });
 }
 
+/* 
+    this won't work.  Sql is a native function
+    and sql.exec() native code will not copy
+    to server threads. 
+*/
+//var sql=new Sql('./testdb');
+
 function simple_callback(req){
+    /* 
+       you can and should get a new Sql here (as opposed to above).
+       Though this statement is executed each time a page is served,
+       sql handles are cached and impact is minimal
+    */
     var sql=new Sql('./testdb');
+
+    /* same thing applies for modules.
+       this is ok and will only load the module once:  */
+    // var curl=require("rpcurl");
+
     var arr=sql.exec(
         'select * from quicktest',
         {max:1}
@@ -202,6 +222,9 @@ function simple_callback(req){
     return(JSON.stringify(arr));
 }
 
+var extra="I'm text from a global var";
+
+/* a function to pretty print our req object */
 function showreq_callback(req){
     // http://jsfiddle.net/KJQ9K/554/
     function syntaxHighlight(json) {
@@ -231,21 +254,33 @@ function showreq_callback(req){
         ".null { color: magenta; }\n"+
         ".key { color: red; }\n";
     
-    //var extra=Math.random();
-    var extra="";
     /* you can set custom headers as well */
     return({
         headers:
             {
-                "Custom-Header":1
+                "X-Custom-Header":1
             },
+        /* 
+           Mime type is set by using the corresponding extension as the property key, 
+           unless overridden in headers above.  Only one extension_key:value pair should be set.
+           @ may be prepended to load a file.
+           \@ may be used to send a literal '@' char at the beginning of a string
+        */
         //jpg: "@/home/user/myimage.jpg"
+        //text: "\\@home network is a now defunct cable broadband provider."
         html:"<html><head><style>"+css+"</style><body>Object sent to this function:<br><pre>"+syntaxHighlight(str)+"</pre>"+extra+"</body></html>"
-        //text: rst()  //DONT DO THIS!!! see badRef()
     });
     
 }
-/* this will print out the error */
+
+/* this will no longer print out an error since rst() is global
+ 
+   If this entire script was wrapped in a function and that function was called,
+   this would produce an error since rst() would no longer be global.
+   Best practice currently is to put functions you need inside the callback
+   function and treat each callback as if it were its own script, and
+   as if it is being executed and exits after each webpage is served.
+*/ 
 function badRef_callback(req){
     return rst;
 }
@@ -253,17 +288,31 @@ function badRef_callback(req){
 print("try a url like http://127.0.0.1:8088/showreq.html?var1=val1&color=red&size=15");
 print("or see a sample website at http://127.0.0.1:8088/");
 print("");
-server.start(
+/* 
+    Configuration and Start of Webserver:
+    server.start() never returns and no code after this will be run
 
+    It will create one thread per cpu core with its own JS interpreter.
+    Global variables and ECMA functions from the main thread will be copied
+    to all of the server threads.
+    
+    Functions are copied as compiled bytecode. Not all functionality will 
+    transfer.  See the Bytecode limitations section here: 
+    https://github.com/svaarala/duktape/blob/master/doc/bytecode.rst
+*/
+
+server.start(
 {
     ip:"0.0.0.0",
     ipv6:"::",
     ipv6port:8088,
     port:8088,
+
     /* map urls to functions or paths on the filesystem */
     /* ordered by priority.  '/' should always be last  */
     map:
      {
+         /* map url to function */
          "/dbtest.html":inserttest_callback,
          "/simpledbtest.html":simple_callback,
          "/showreq*":showreq_callback,
@@ -278,3 +327,5 @@ server.start(
      */
      /* ,function(){} */
 });
+
+print("Execution will never reach here and this will never be printed.");

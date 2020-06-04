@@ -25,6 +25,21 @@ static int threadno=0;
 #endif
 duk_context **thread_ctx=NULL;
 
+
+#define printstack(ctx) duk_push_context_dump((ctx));\
+printf("%s\n", duk_to_string((ctx), -1));\
+duk_pop((ctx));
+
+#define printenum(ctx,idx)  duk_enum((ctx),(idx),DUK_ENUM_INCLUDE_NONENUMERABLE|DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS);\
+    while(duk_next((ctx),-1,1)){\
+      printf("%s -> %s\n",duk_get_string((ctx),-2),duk_safe_to_string((ctx),-1));\
+      duk_pop_2((ctx));\
+    }\
+    duk_pop((ctx));
+
+#define printat(ctx,idx) duk_dup(ctx,idx);printf("at %d: %s\n",(int)(idx),duk_safe_to_string((ctx),-1));duk_pop((ctx));
+
+
 /* **************************************************************************
    This url(en|de)code is public domain from https://www.geekhideout.com/urlcode.shtml 
    ************************************************************************** */
@@ -295,7 +310,7 @@ static void ht_sendfile(evhtp_request_t * req, char *fn)
         else
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "application/octet-stream", 0, 0));
     }
-
+    /* TODO:  somewhere around 20k file size and over, speed dramatically (20x) slows down.  Find out why */
     evbuffer_add_file(req->buffer_out, fd, 0, -1);    
     evhtp_send_reply(req, EVHTP_RES_OK);
 }
@@ -400,6 +415,13 @@ static void sendbuf(DHS *dhs)
        without copying.  duktape will not free it
        when we duk_pop().
     */
+    s=duk_get_string_default(dhs->ctx,-1,"  ");
+    if(*s=='\\' && *(s+1)=='@')
+    {
+        s++;
+        duk_push_string(dhs->ctx,s);
+        duk_replace(dhs->ctx,-2);
+    }
     duk_to_dynamic_buffer(dhs->ctx,-1,NULL);
     s=duk_steal_buffer(dhs->ctx, -1, &sz);
 
@@ -542,12 +564,6 @@ http_callback(evhtp_request_t * req, void * arg)
     duk_context *new_ctx = (duk_context*) evthr_get_aux(thread);
 #endif
     
-//printf("starting callback\n");
-
-//printf("%lu\n",(unsigned long int)pthread_self());
-//printf("%d\n",tno);
-//fflush(stdout); 
-    //dhs->req=req;
 
     /* ****************************
       setup duk function callback 
@@ -559,10 +575,7 @@ http_callback(evhtp_request_t * req, void * arg)
     newdhs.func_idx=dhs->func_idx;
     dhs=&newdhs;
 
-//    dhs->req=req;
     /* copy 'this' next */
-//    duk_push_this(dhs->ctx);
-    //printf("idx is %d, top is %d\n",(int)dhs->func_idx, (int)duk_get_top(dhs->ctx)-1);
     duk_dup(dhs->ctx,dhs->func_idx);
     /* push an empty object */
     duk_push_object(dhs->ctx);
@@ -609,8 +622,6 @@ http_callback(evhtp_request_t * req, void * arg)
 
     duk_pop(dhs->ctx);
     /* logging goes here ? */
-//printf("about to destroy heap\n");
-//    duk_destroy_heap(new_ctx);    
 }
 
 int bind_sock_port(evhtp_t *htp, const char *ip, uint16_t port, int backlog) 
@@ -630,7 +641,6 @@ int bind_sock_port(evhtp_t *htp, const char *ip, uint16_t port, int backlog)
 
         sa_to_string(&sin,addr,INET6_ADDRSTRLEN);
         port = ntohs( ((struct sockaddr_in*)&sin)->sin_port);
-//printf("given address='%s' -- address='%s' : %d\n",&ip[5],addr,(int)port);
         if(((struct sockaddr*)&sin)->sa_family==AF_INET6)
         {
             unsigned char a[sizeof(struct in6_addr)];
@@ -663,8 +673,11 @@ int bind_sock_port(evhtp_t *htp, const char *ip, uint16_t port, int backlog)
 void testcb(evhtp_request_t * req, void * arg)
 {
     char rep[]="hello world";
-//    evhtp_request_set_keepalive(req, 1);
-//    evhtp_headers_add_header(req->headers_out, evhtp_header_new("Connection","keep-alive", 0, 0));
+    /*  
+    TODO: figure out keepalive problem
+    evhtp_request_set_keepalive(req, 1);
+    evhtp_headers_add_header(req->headers_out, evhtp_header_new("Connection","keep-alive", 0, 0));
+    */
     evbuffer_add_printf(req->buffer_out,"%s",rep);
     evhtp_send_reply(req, EVHTP_RES_OK);
 }
@@ -700,23 +713,7 @@ static DHS *newdhs(duk_context *ctx, int idx)
         
     return(dhs);
 }
-/*
-static void copy_func(DHS *dhs) {
-    void *bc_ptr;
-    duk_size_t bc_len;
 
-
-    duk_dup(dhs->ctx,dhs->func_idx);
-    duk_dump_function(dhs->ctx);
-    bc_ptr = duk_require_buffer_data(dhs->ctx, -1, &bc_len);
-    
-    DUKREMALLOC(dhs->ctx,dhs->bytecode,bc_len);
-
-    memcpy(dhs->bytecode, (const void *) bc_ptr, bc_len);
-    duk_pop(dhs->ctx);
-    dhs->bytecode_sz=bc_len;
-}
-*/
 static void copy_func(DHS *dhs, int nt) {
     void *bc_ptr;
     duk_size_t bc_len;
@@ -734,7 +731,6 @@ static void copy_func(DHS *dhs, int nt) {
         if(!i)
             dhs->func_idx=duk_get_top_index(ctx);
     }
-//    printf("idx is %d\n",(int)dhs->func_idx);
     duk_pop(dhs->ctx);
 }
 
@@ -750,6 +746,139 @@ void initThread (evhtp_t *htp, evthr_t *thr, void *arg)
 }
 #endif
 
+
+/* get bytecode from stash and execute it with 
+   js arguments to this function                */
+duk_ret_t duk_rp_bytefunc(duk_context *ctx)
+{
+    const char *name;
+
+    duk_push_current_function(ctx);
+    duk_get_prop_string(ctx,-1,"fname");//we stored function name here
+    name=duk_get_string(ctx,-1);
+    duk_pop_2(ctx);
+
+    duk_push_global_stash(ctx);  //bytecode compiled function was previously stored under "name" in stash
+    duk_get_prop_string(ctx,-1,name); //get the bytecode compiled function
+    duk_insert(ctx,0); //put the bytecode compiled function at beginning
+    duk_pop(ctx); //pop global stash
+    duk_push_this(ctx);
+    duk_insert(ctx,1);
+    duk_call_method(ctx,duk_get_top_index(ctx)-1); //do it    
+    return 1;
+}
+
+/* copy function compiled from bytecode to stash
+   create a function with the proper name that will
+   call duk_rp_bytefunc() to execute.
+   
+   duktape does not allow bytecode compiled function
+   to be pushed to global object afaik
+*/ 
+static void copy_bc_func(duk_context *ctx,duk_context *tctx)
+{
+    void *buf,*bc_ptr;
+    duk_size_t bc_len;
+    const char *name=duk_get_string(ctx,-2);
+    static int i=0;
+    duk_dump_function(ctx); //dump function to bytecode
+    bc_ptr = duk_require_buffer_data(ctx, -1, &bc_len);//get pointer to bytecode
+    buf = duk_push_fixed_buffer(tctx, bc_len); //make a buffer in thread ctx
+    memcpy(buf, (const void *) bc_ptr, bc_len); //copy bytecode to new buffer
+    duk_load_function(tctx); //make copied bytecode a function
+    duk_push_global_stash(tctx); //get global stash and save function there.
+    duk_insert(tctx,-2);
+    duk_put_prop_string(tctx,-2,name);
+    duk_pop(tctx);
+
+    duk_push_c_function(tctx,duk_rp_bytefunc,DUK_VARARGS); //put our wrapper function on stack
+    duk_push_string(tctx,name);  // add desired function name (as set in global stash above)
+    duk_put_prop_string(tctx,-2,"fname");
+    duk_put_prop_string(tctx,-2,name);  //put it in object right above the call of this function
+}
+
+static void copy_prim(duk_context *ctx,duk_context *tctx)
+{
+    const char *name=duk_get_string(ctx,-2);
+
+    if (strcmp(name,"NaN")==0) return;
+    if (strcmp(name,"Infinity")==0) return;
+    if (strcmp(name,"undefined")==0) return;
+
+    switch(duk_get_type(ctx,-1))
+    {
+        case DUK_TYPE_NULL:
+            duk_push_null(tctx);break;
+        case DUK_TYPE_BOOLEAN:
+            duk_push_boolean(tctx,duk_get_boolean(ctx,-1));break;
+        case DUK_TYPE_NUMBER:
+            duk_push_number(tctx,duk_get_number(ctx,-1));break;
+        case DUK_TYPE_STRING:
+            duk_push_string(tctx,duk_get_string(ctx,-1));break;
+        default:
+            duk_push_undefined(tctx);
+    }
+    duk_put_prop_string(tctx,-2,name);
+}
+
+/* ctx object and tctx object should be at top of stack */
+static void copy_obj(duk_context *ctx,duk_context *tctx)
+{
+    const char *s;
+    duk_enum(ctx,-1,0);
+    while(duk_next(ctx,-1,1)){
+
+        if(duk_is_ecmascript_function(ctx,-1))
+        {
+            copy_bc_func(ctx,tctx);
+            duk_pop_2(ctx);
+        }
+
+        else if (duk_check_type_mask(ctx, -1, DUK_TYPE_MASK_STRING|DUK_TYPE_MASK_NUMBER|DUK_TYPE_MASK_BOOLEAN|DUK_TYPE_MASK_NULL|DUK_TYPE_MASK_UNDEFINED)) 
+        {
+            copy_prim(ctx,tctx);
+            duk_pop_2(ctx);
+        }
+
+        else if (duk_is_object(ctx,-1) && !duk_is_function(ctx,-1) && !duk_is_c_function(ctx,-1) )
+        {
+
+            s=duk_get_string(ctx,-2);
+            if ( ! duk_has_prop_string( tctx,-1,s ) 
+                 &&
+                 strcmp(s, "console" )
+                 &&
+                 strcmp(s, "performance" )
+               )
+            {
+                duk_push_object(tctx);
+                copy_obj(ctx,tctx);
+
+                duk_put_prop_string(tctx, -2, duk_get_string(ctx,-2) );
+                duk_pop_2(ctx);
+            }
+            else
+            {
+                duk_pop_2(ctx);
+            }
+        }
+        else 
+        {
+            duk_pop_2(ctx);
+        }
+    }
+    duk_pop(ctx);//enum    
+}
+
+static void copy_all(duk_context *ctx,duk_context *tctx)
+{
+    duk_push_global_object(ctx);
+    duk_push_global_object(tctx);
+    copy_obj(ctx,tctx);
+    duk_pop(ctx);
+    duk_pop_2(tctx);
+}
+
 duk_ret_t duk_server_start(duk_context *ctx)
 {
     /* TODO: make it so it can bind to any number of arbitary ipv4 or ipv6 addresses */
@@ -760,12 +889,13 @@ duk_ret_t duk_server_start(duk_context *ctx)
     const char *fn;
     int i=0;
     DHS *dhs=newdhs(ctx,-1);
-    duk_idx_t ob_idx=-1;
+    duk_idx_t ob_idx=-1,script_idx;
     char ipv6[INET6_ADDRSTRLEN+5]="ipv6:::1";
     char ipv4[INET_ADDRSTRLEN]="127.0.0.1";
     uint16_t port=8080, ipv6port=8080;
     void *tptr;
     int nthr, totnthr;
+    duk_size_t sb_sz;
 #ifndef SINGLETHREADED
     if(nthreads > 0) 
         nthr=nthreads;
@@ -784,11 +914,16 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     /* initialize a context for each thread */
     for(i=0;i<totnthr;i++){
+        void *buf;
+
         thread_ctx[i]=NULL;
         REMALLOC( thread_ctx[i], sizeof(duk_context*) );
+
         thread_ctx[i] = duk_create_heap_default();
         /* do all the normal startup done in duk_cmdline but for each thread */
         duk_init_userfunc(thread_ctx[i]);
+
+        copy_all(ctx,thread_ctx[i]);
     }
 
     i=0;
