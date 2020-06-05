@@ -32,6 +32,7 @@
 #cmakedefine EPI_HAVE_GETPWUID_R_INT
 #cmakedefine EPI_HAVE_GETPWUID_R_PW
 #cmakedefine EPI_HAVE_MADVISE
+#cmakedefine     HAVE_MMAP
 #cmakedefine EPI_HAVE_MMAP
 #cmakedefine EPI_HAVE_MSYNC
 #cmakedefine EPI_HAVE_PTHREADS
@@ -106,7 +107,9 @@
 #	define	HAVE_SEM
 #endif
 #ifdef HAVE_SYS_SHM_H
+#ifndef HAVE_MMAP
 #	define	USE_SHM
+#endif /* EPI_HAVE_MMAP */
 #endif
 
 #cmakedefine EPI_HAVE_SIZE_T_ZU_FORMAT

@@ -410,7 +410,7 @@ dumpsyslocks(DBLOCK *dblock)
 
 /******************************************************************/
 
-static	int	
+static	int
 checktable(dblock, table, fix)
 DBLOCK	*dblock;
 LTABLE	*table;
@@ -745,7 +745,7 @@ TXbool	verbose;
 	putmsg(MINFO, NULL, "Checking server %d, fix=%d", sid, fix);
 #endif
 	do
-	{	
+	{
 		if(VALIDLOCK(server->hlock) && LOCKS(server->hlock)->nsl != -1)
 		{ /* Bad chain */
 			putmsg(MERR, __FUNCTION__, "Server lock chain bad in lock structure for `%s'%s", TX_DBLOCK_PATH(dblock), (fix ? "; fixing" : ""));
@@ -1741,7 +1741,7 @@ ft_counter	*counterp;	/* (in) timestamp to compare */
 
 			twrite = type == V_LCK ? &(t->twrite): &(t->iwrite);
 			if(twrite->date >  counterp->date ||
-			  (twrite->date == counterp->date && 
+			  (twrite->date == counterp->date &&
 			   twrite->seq  >  counterp->seq))
 			{
 				return -2;
@@ -1847,15 +1847,6 @@ LTABLE		*t)		/* (in/out) table lock structure (shmem) */
 }
 
 /******************************************************************/
-
-int
-dblock(ddic, sid, tblid, type, tname, counterp)
-DDIC		*ddic;
-ulong		sid;
-long		*tblid;
-int		type;		/* (in) lock type INDEX_READ etc. */
-char		*tname;
-ft_counter	*counterp;/* (opt.) in: verify it  out: new time (if R/W lck)*/
 /* Returns -2 if `type' is/contains V_LCK/INDEX_VERIFY and `*tblid'/`tname'
  * was modified since `*counterp'; -1 on error; 0 if no mods (or INDEX_VERIFY/
  * V_LCK not set).  Lock only *not* granted if return is -1, or if `type'
@@ -1863,6 +1854,9 @@ ft_counter	*counterp;/* (opt.) in: verify it  out: new time (if R/W lck)*/
  * NOTE: might not issue putmsg() if LOCK_TIMEOUT error set, or if just
  * verifying.
  */
+
+static int
+i_dblock(DDIC *ddic, int sid, long *tblid, int type, char *tname, ft_counter *counterp)
 {
 	static const char	fn[] = "dblock";
 	DBLOCK	*sem;
@@ -1899,7 +1893,7 @@ ft_counter	*counterp;/* (opt.) in: verify it  out: new time (if R/W lck)*/
 	if(ddic->nolocking)
 	{
 #ifndef NEVER
-		if(type == V_LCK || type == INDEX_VERIFY)
+    if(0 != (type & (V_LCK | INDEX_VERIFY)))
 			return TXverifysingle;
 #endif
 		return 0;
@@ -2054,6 +2048,31 @@ ft_counter	*counterp;/* (opt.) in: verify it  out: new time (if R/W lck)*/
 #endif /* NOLOCK */
 }
 
+int
+dblock(ddic, sid, tblid, type, tname, counterp)
+DDIC		*ddic;
+ulong		sid;
+long		*tblid;
+int		type;		/* (in) lock type INDEX_READ etc. */
+char		*tname;
+ft_counter	*counterp;/* (opt.) in: verify it  out: new time (if R/W lck)*/
+/* Returns -2 if `type' is/contains V_LCK/INDEX_VERIFY and `*tblid'/`tname'
+ * was modified since `*counterp'; -1 on error; 0 if no mods (or INDEX_VERIFY/
+ * V_LCK not set).  Lock only *not* granted if return is -1, or if `type'
+ * is V_LCK/INDEX_VERIFY alone (no ...READ/...WRITE/etc.).
+ * NOTE: might not issue putmsg() if LOCK_TIMEOUT error set, or if just
+ * verifying.
+ */
+{
+  int rc;
+
+  rc = i_dblock(ddic, sid, tblid, type, tname, counterp);
+/*
+  printf("DBLOCK: %s(%d:%d): %d\n", tname, type, (type & (V_LCK | INDEX_VERIFY)), rc);
+*/
+  return rc;
+}
+
 /******************************************************************/
 
 static LOCK *getlock ARGS((DBLOCK *, LTABLE *, ulong, int));
@@ -2079,7 +2098,7 @@ int	type;
 		return(NULL);
 	}
 
-	server = &dbl->idbl->servers[sid];	
+	server = &dbl->idbl->servers[sid];
 	locks = &dbl->idbl->locks[0];
 	tables = &dbl->idbl->tblock[0];
 

@@ -350,6 +350,8 @@ TXbool		create;	/* ok to create */
 {
 	int rc, tries, ret;
 
+	if(TXApp->NULLSemOp) return 0;
+
     for (tries = 1; ; tries++)
     {
 	rc = sem_wait(dblock->semid);
@@ -390,6 +392,8 @@ semunlock(pmbuf, dblock)
 TXPMBUF		*pmbuf;
 VOLATILE DBLOCK	*dblock;
 {
+	if(TXApp->NULLSemOp) return 0;
+
 	sem_post(dblock->semid);
 	SEMUNLOCK_END();
 	return 0;
@@ -589,6 +593,8 @@ TXbool		create;	/* ok to create */
 	DWORD	dwWaitResult;
 	int	ret;
 
+	if(TXApp->NULLSemOp) return 0;
+
 #ifdef TX_DEBUG
 	dwWaitResult = WaitForSingleObject(dblock->semid, INFINITE);
 #else
@@ -633,6 +639,8 @@ semunlock(pmbuf, dblock)
 TXPMBUF		*pmbuf;
 VOLATILE DBLOCK	*dblock;
 {
+	if(TXApp->NULLSemOp) return 0;
+
 	ReleaseMutex(dblock->semid);
 	SEMUNLOCK_END();
 	return 0;
@@ -784,7 +792,7 @@ TXprintSemOps(char *buf, size_t bufSz, struct sembuf *ops, unsigned numOps)
 
 		d = buf + htsnpf(buf, bufSz, "semnum %d, op %d, flags %s",
 		       (int)ops->sem_num, (int)ops->sem_op, flagsBuf);
-		if (numOps > 1) 
+		if (numOps > 1)
 			htsnpf(d, (buf + bufSz) - d, "...");
 	}
 }
@@ -898,6 +906,8 @@ TXbool		create;	/* ok to create */
 	struct sembuf s;
 	TXSEMUN	su;
 	long	ntries = 0;
+
+	if(TXApp->NULLSemOp) return 0;
 
 	if (TxLockVerbose & 0x40)
 		txpmbuf_putmsg(pmbuf, MINFO, NULL,
@@ -1023,6 +1033,8 @@ VOLATILE DBLOCK	*dblock;
 	int val, ret;
 	TXSEMUN	su;
 
+	if(TXApp->NULLSemOp) return 0;
+
 	if (TxLockVerbose & 0x40)
 		txpmbuf_putmsg(pmbuf, MINFO, NULL,
 			       "%s() begin for database `%s'", __FUNCTION__,
@@ -1141,6 +1153,7 @@ delmutex(pmbuf, dbl)
 TXPMBUF		*pmbuf;
 VOLATILE DBLOCK	*dbl;
 {
+	if(TXApp->NULLSemOp) return 0;
 	semlock(pmbuf, dbl, TXbool_True);
 	return(tx_delsem(pmbuf, dbl->idbl->semid));
 }

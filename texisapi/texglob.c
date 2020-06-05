@@ -1430,6 +1430,15 @@ char	***argvStripped;	/* (out, opt.) "" `argv', dup'd */
 		ret = TXEXIT_OUTOFMEMORY;
 		goto finally;
 	}
+#ifdef THUNDERSTONE
+  TXsingleuser = 0;
+  TXApp->NULLSemOp = 0;
+  TXApp->NoMonitorStart = 0;
+#else
+TXsingleuser = 0;
+TXApp->NULLSemOp = 1;
+TXApp->NoMonitorStart = 1;
+#endif
 	TXApp->LogBadSYSLOCKS = 0;
 	TXApp->metamorphStrlstMode = TXMSM_equivlist;
   TXApp->charStrlstConfig.toStrlst = TXc2s_unspecified;

@@ -23,7 +23,7 @@
 #undef X509_NAME
 
 #ifndef EPI_STATIC_SSL_COMPILE_TEST
-#  ifndef HEADER_OPENSSL_TYPES_H  /* avoid include of SSL by everyone else */
+#  if !defined(HEADER_OPENSSL_TYPES_H) && !defined(OPENSSL_TYPES_H)  /* avoid include of SSL by everyone else */
 typedef void EVP_MD_CTX;
 typedef void EVP_MD;
 typedef void ENGINE;
@@ -31,15 +31,17 @@ typedef void ENGINE;
 typedef void SSL_CTX;
 typedef void SSL;
 #    endif /* >= 1.0.x */
-#  endif /* !HEADER_OPENSSL_TYPES_H */
-#  ifndef HEADER_SSL_H            /* avoid include of SSL by everyone else */
+#  endif /* ![HEADER_]OPENSSL_TYPES_H */
+#  if !defined(HEADER_PEM_H) && !defined(OPENSSL_TYPES_H)
+typedef void pem_password_cb;
+#  endif
+#  if !defined(HEADER_SSL_H) && !defined(OPENSSL_SSL_H)
 typedef void SSL_METHOD;
 #    if TX_SSL_GET_MAJOR_MINOR_NUM(OPENSSL_VERSION_NUMBER) < 0x100 /* <1.0.x*/
 typedef void SSL_CTX;
 typedef void SSL;
 #    endif /* < 1.0.x */
-typedef void pem_password_cb;
-#  endif /* !HEADER_SSL_H */
+#  endif /* !{HEADER,OPENSSL}_SSL_H */
 #  ifndef HEADER_HMAC_H
 typedef void HMAC_CTX;
 #  endif /* !HEADER_HMAC_H */
@@ -56,7 +58,10 @@ typedef int CRYPTO_EX_new(void);
 typedef int CRYPTO_EX_dup(void);
 typedef int CRYPTO_EX_free(void);
 #  endif /* !HEADER_CRYPTO_H */
-#  ifndef HEADER_OPENSSL_TYPES_H
+#  if !defined(HEADER_ASN1_H) && !defined(OPENSSL_ASN1_H)
+typedef int i2d_of_void(const void *, unsigned char **);
+#  endif
+#  if !defined(HEADER_OPENSSL_TYPES_H) && !defined(OPENSSL_TYPES_H)
 typedef void ASN1_INTEGER;
 typedef void X509;
 typedef void X509_NAME;
@@ -65,13 +70,13 @@ typedef void X509_STORE_CTX;
 typedef void EVP_PKEY;
 typedef void EVP_CIPHER;
 typedef void OPENSSL_INIT_SETTINGS;
-#  endif /* !HEADER_OPENSSL_TYPES_H */
+#  endif /* ![HEADER_]OPENSSL_TYPES_H */
 #  ifndef HEADER_X509_H
 typedef void X509_EXTENSION;
 #  endif /* !HEADER_X509_H */
-#  ifndef HEADER_OPENSSL_TYPES_H
+#  if !defined(HEADER_OPENSSL_TYPES_H) && !defined(OPENSSL_TYPES_H)
 typedef void BIGNUM;
-#  endif /* !HEADER_OPENSSL_TYPES_H */
+#  endif /* ![HEADER_]OPENSSL_TYPES_H */
 #  ifndef HEADER_X509V3_H
 typedef void BASIC_CONSTRAINTS;
 #  endif /* !HEADER_X509V3_H */
@@ -96,6 +101,11 @@ typedef void PKCS7;
 #  define TX_SSL_10x_INT        void
 #  define TX_SSL_10x_VOID       char
 #endif /* < 1.0.x */
+#if TX_SSL_GET_MAJOR_MINOR_NUM(OPENSSL_VERSION_NUMBER) >= 0x300 /* >= 3.0.x */
+#  define TX_SSL_30x_CONST      const
+#else /* < 3.0.x */
+#  define TX_SSL_30x_CONST
+#endif /* < 3.0.x */
 
 /* use typedef to avoid `declared inside parameter list' warnings: */
 typedef STACK_OF(X509)          TX_STACK_OF_X509;
@@ -158,7 +168,7 @@ I(TX_SSL_10x_INT, HMAC_Init_ex, (HMAC_CTX *ctx, const void *key, int key_len,\
                                const EVP_MD *md, ENGINE *impl))         \
 I(TX_SSL_10x_INT, HMAC_Update, (HMAC_CTX *ctx, const unsigned char *data, \
                                 TX_SSL_10x_SIZE_T_INT len))                 \
-I(int,          i2d_X509, (X509 *x, unsigned char **out))               \
+I(int,          i2d_X509, (TX_SSL_30x_CONST X509 *x, unsigned char **out)) \
 I(unsigned char *, MD4, (const unsigned char *d, TX_SSL_10x_SIZE_T_ULONG n, \
                          unsigned char *md))                            \
 I(int,         OPENSSL_init_crypto,    (uint64_t opts,                  \
@@ -167,9 +177,10 @@ I(TX_SSL_10x_VOID *,       PEM_ASN1_read_bio, (TX_SSL_10x_VOID *(*d2i)  \
              (void **a, TX_SSL_10x_CONST unsigned char **in, long len), \
                         CONST char *name, BIO *bp, TX_SSL_10x_VOID **x, \
                                     pem_password_cb *cb, void *u))      \
-I(int,          PEM_ASN1_write_bio, (int (*i2d)(void *, unsigned char **), \
-  CONST char *name, BIO *bp, TX_SSL_10x_VOID *x, CONST EVP_CIPHER *enc, \
-     unsigned char *kstr, int klen, pem_password_cb *cb, void *u))      \
+I(int,          PEM_ASN1_write_bio, (i2d_of_void *i2d,                  \
+  CONST char *name, BIO *bp, TX_SSL_30x_CONST TX_SSL_10x_VOID *x,       \
+  CONST EVP_CIPHER *enc, TX_SSL_30x_CONST unsigned char *kstr,          \
+  int klen, pem_password_cb *cb, void *u))                              \
 I(EVP_PKEY *,   PEM_read_bio_PrivateKey,                                \
   (BIO *bp, EVP_PKEY **x, pem_password_cb *cb, void *u))                \
 I(X509 *,       PEM_read_bio_X509,                                      \
@@ -196,22 +207,24 @@ I(TX_SSL_10x_VOID *, OPENSSL_sk_set, (OPENSSL_STACK *st, int i,         \
 I(void *,       OPENSSL_sk_value,       (const OPENSSL_STACK *st, int i)) \
 I(unsigned long, OpenSSL_version_num,   (void))                         \
 I(void *,       X509V3_EXT_d2i,         (X509_EXTENSION *ext))          \
-I(X509 *,       X509_dup,               (X509 *a))                      \
+I(X509 *,       X509_dup,               (TX_SSL_30x_CONST X509 *a))     \
 I(void,         X509_free,              (X509 *a))                      \
 I(X509_EXTENSION *, X509_get_ext,       (const X509 *x, int loc))       \
 I(int,          X509_get_ext_by_NID,  (const X509 *x, int nid, int lastpos)) \
 I(X509_NAME *,  X509_get_issuer_name,   (const X509 *a))                \
 I(X509_NAME *,  X509_get_subject_name,  (const X509 *a))                \
-I(X509_NAME *,  X509_NAME_dup,          (X509_NAME *xn))                \
+I(X509_NAME *,  X509_NAME_dup,          (TX_SSL_30x_CONST X509_NAME *xn)) \
 I(void,         X509_NAME_free,         (X509_NAME *xn))                \
-I(int,          X509_NAME_get_text_by_NID, (X509_NAME *name, int nid,   \
-                                            char *buf, int len))        \
+I(int,          X509_NAME_get_text_by_NID, (TX_SSL_30x_CONST X509_NAME *name,\
+                                            int nid, char *buf, int len)) \
 I(int,          X509_NAME_print_ex,     (BIO *out, const X509_NAME *nm, \
                                          int indent, unsigned long flags)) \
-I(X509 *,       X509_STORE_CTX_get_current_cert, (X509_STORE_CTX *ctx)) \
-I(int,          X509_STORE_CTX_get_error, (X509_STORE_CTX *ctx))        \
-I(int,          X509_STORE_CTX_get_error_depth, (X509_STORE_CTX *ctx))  \
-I(void *,       X509_STORE_CTX_get_ex_data, (X509_STORE_CTX *ctx, int idx)) \
+I(X509 *,       X509_STORE_CTX_get_current_cert,                        \
+  (TX_SSL_30x_CONST X509_STORE_CTX *ctx))                               \
+I(int, X509_STORE_CTX_get_error,(TX_SSL_30x_CONST X509_STORE_CTX *ctx)) \
+I(int, X509_STORE_CTX_get_error_depth,(TX_SSL_30x_CONST X509_STORE_CTX *ctx))\
+I(void *,       X509_STORE_CTX_get_ex_data,                             \
+  (TX_SSL_30x_CONST X509_STORE_CTX *ctx, int idx))                      \
 I(void,         X509_STORE_CTX_set_error, (X509_STORE_CTX *ctx, int s)) \
 I(int,          X509_STORE_add_cert,    (X509_STORE *ctx, X509 *x))     \
 I(void,         X509_STORE_free,        (X509_STORE *vfy))              \

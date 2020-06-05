@@ -35,15 +35,6 @@
 #define BUFREADSZ 4096
 #define MAXBUFFER 536870912 /* 512mb */
 
-/**
- * @typedef {Object} ReadFileOptions
- * @property {string} file - the file to be read
- * @property {size_t=} offset - the start position of the read. Defaults to 0.
- * @property {long=} length - the number of bytes to be read. If undefined, it will read the whole file. Passing in a number, n <= 0 will read n bytes from the end.
- * @param {ReadFileOptions} The read options.
- * @returns {Buffer} A buffer containing the read bytes.
- */
-
 #define SAFE_SEEK(fp, length, whence)                                                                    \
   if (fseek(fp, length, whence))                                                                         \
   {                                                                                                      \
@@ -51,7 +42,15 @@
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error seeking file '%s': %s", filename, strerror(errno)); \
     return duk_throw(ctx);                                                                               \
   }
-
+/**
+ * Reads a specified number of bytes from a file into a buffer.
+ * @typedef {Object} ReadFileOptions
+ * @property {string} file - the file to be read
+ * @property {size_t=} offset - the start position of the read. Defaults to 0.
+ * @property {long=} length - the number of bytes to be read. If undefined, it will read the whole file. Passing in a number, n <= 0 will read n bytes from the end.
+ * @param {ReadFileOptions} The read options.
+ * @returns {Buffer} A buffer containing the read bytes.
+ */
 duk_ret_t duk_util_read_file(duk_context *ctx)
 {
   duk_get_prop_string(ctx, -1, "file");
@@ -189,7 +188,11 @@ duk_ret_t duk_util_iter_readln(duk_context *ctx)
     free(line);
   return 1;
 }
-
+/**
+ * Reads a file line by line using getline and javascript iterators.
+ * @param {string} filename - the path to the file to be read.
+ * @returns {Iterator} an object with a Symbol.iterator.
+ */
 duk_ret_t duk_util_readln(duk_context *ctx)
 {
   const char *filename = duk_require_string(ctx, -1);
@@ -260,8 +263,23 @@ static const duk_function_list_entry stat_methods[] = {
     {NULL, NULL, 0}};
 /**
  *  Filesystem stat
+ *  @typedef {Object} StatObject
+ *  @property {int} dev - id of device containing file
+ *  @property {int} ino - inode number
+ *  @property {int} mode - the file mode
+ *  @property {int} nlink - the number of hard links
+ *  @property {int} uid - the user id of the owner
+ *  @property {int} gid - the group id of the owner
+ *  @property {int} rdev - device id if special file
+ *  @property {int} size - total size in bytes
+ *  @property {int} blksize - the blocksize for the system I/O
+ *  @property {int} blocks - the number of blocks
+ *  @property {Date} atime - time of last access
+ *  @property {Date} mtime - time of last modification
+ *  @property {Date} ctime - time of last status
+ * 
  *  @param {string} The path name
- *  @returns a javascript object of the following form:
+ *  @returns {StatObject} a javascript object of the following form:
  *  stat: {
  *    dev: int,
  *    ino: int,
@@ -303,7 +321,7 @@ duk_ret_t duk_util_stat(duk_context *ctx)
   DUK_PUT(ctx, int, "blksize", path_stat.st_blksize, -2);
   DUK_PUT(ctx, int, "blocks", path_stat.st_blocks, -2);
 
-  long atime, mtime, ctime;
+  long long atime, mtime, ctime;
   atime = path_stat.st_atime * 1000;
   mtime = path_stat.st_mtime * 1000;
   ctime = path_stat.st_ctime * 1000;
@@ -369,12 +387,22 @@ void *duk_util_exec_thread_waitpid(void *arg)
 
 /**
  * Executes a command where the arguments are the arguments to execv.
- * @param {string} path - The path to the program to execute.
- * @param {string[]} args - The arguments to provide to the program (including the program name).
- * @param {int} timeout - The optional timeout in microseconds.
- * @param {int} kill_signal - The signal to use to kill a timed out process. Default is SIGKILL (9)
- * @param {int} background - Whether to put the process in the background. stdout, stderr will be null in this case.
- * @returns an object with stdout, stderr and return status
+ * @typedef {Object} ExecOptions 
+ * @property {string} path - The path to the program to execute.
+ * @property {string[]} args - The arguments to provide to the program (including the program name).
+ * @property {int} timeout - The optional timeout in microseconds.
+ * @property {int=} killSignal - The signal to use to kill a timed out process. Default is SIGKILL (9)
+ * @property {int=} background - Whether to put the process in the background. stdout, stderr will be null in this case.
+ * 
+ * @typedef {Object} ExecReturnObject 
+ * @property {string?} stdout - The stdout of the program as a string. Will be null if background is set in ExecOptions.
+ * @property {string?} stderr - The stderr of the program as a string. Will be null if background is set in ExecOptions.
+ * @property {int?} exitStatus - The exit status of the program. Will be null if background is set in ExecOptions.
+ * @property {boolean} timedOut - whether the program timed out using after the specified timeout in ExecOptions.
+ * @property {int} pid - the pid of the program.
+ * 
+ * @param {ExecOptions} options
+ * @returns {ExecReturnObject}
  * Ex.
  * const { 
  *    stdout: string, 
@@ -396,7 +424,7 @@ duk_ret_t duk_util_exec(duk_context *ctx)
   unsigned int timeout = duk_get_uint_default(ctx, -1, 0);
   duk_pop(ctx);
 
-  duk_get_prop_string(ctx, -1, "kill_signal");
+  duk_get_prop_string(ctx, -1, "killSignal");
   int kill_signal = duk_get_int_default(ctx, -1, SIGKILL);
   duk_pop(ctx);
 
@@ -476,9 +504,11 @@ duk_ret_t duk_util_exec(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "stderr");
     duk_push_null(ctx);
     duk_put_prop_string(ctx, -2, "stdout");
+    duk_push_null(ctx);
+    duk_put_prop_string(ctx, -2, "exitStatus");
 
     // set timed_out to false
-    DUK_PUT(ctx, int, "timed_out", 0, -2);
+    DUK_PUT(ctx, boolean, "timedOut", 0, -2);
   }
   else
   {
@@ -511,8 +541,8 @@ duk_ret_t duk_util_exec(duk_context *ctx)
     duk_push_lstring(ctx, stderr_buf, stderr_nread);
     duk_put_prop_string(ctx, -2, "stderr");
 
-    DUK_PUT(ctx, boolean, "timed_out", arg.killed, -2);
-    DUK_PUT(ctx, int, "exit_status", exit_status, -2);
+    DUK_PUT(ctx, boolean, "timedOut", arg.killed, -2);
+    DUK_PUT(ctx, int, "exitStatus", exit_status, -2);
     DUK_PUT(ctx, int, "pid", pid, -2);
     free(stdout_buf);
     free(stderr_buf);
@@ -542,7 +572,7 @@ duk_ret_t duk_util_kill(duk_context *ctx)
 /**
  * Creates a directory with the name given as a path
  * @param {path} - the directory to be created
- * @param {mode} - the mode of the newly created directory (default: 0777)
+ * @param {mode=} - the mode of the newly created directory (default: 0777)
  * Ex.
  * utils.mkdir("new/directory")
  */
@@ -645,7 +675,11 @@ duk_ret_t duk_util_readdir(duk_context *ctx)
 
 /**                                                                                                
  * Copies the file from src to dest. Passing overwrite will overwrite any file already present.    
- * It will try to preserve the file mode.                                                          
+ * It will try to preserve the file mode.
+ * @typedef {Object} CopyFileOptions
+ * @property {string} src - the path to the file source.
+ * @property {string} dest - the path to where the file will be moved.
+ * @property {string=} overwrite - whether to overwrite any existing file at dest. Set to false by default.                                                        
  * @param {{ src: string, dest: string, overwrite: boolean }} options - the options to be given                  
  */
 duk_ret_t duk_util_copy_file(duk_context *ctx)
@@ -735,6 +769,10 @@ duk_ret_t duk_util_copy_file(duk_context *ctx)
 
 /**
  * Creates a hard or symbolic link 
+ * @typedef {Object} LinkOptions
+ * @property {string} path - the path to the source file to link
+ * @property {string} target - the path target file that will be created
+ * @property {boolean=} symbolic - whether the link is symbolic. Set to false by default. 
  * @param {{src: string, target: string, symbolic: boolean }} options
  * Ex.
  * utils.link({ src: "some_file", target: "some_link", symbolic: true });
@@ -772,9 +810,9 @@ duk_ret_t duk_util_link(duk_context *ctx)
   return 0;
 }
 /**
+ * Renames or moves a source file to a target path.
  * @param {string} old - the source file or directory
  * @param {string} new - the target path
- * 
  * Ex.
  * utils.rename("sample.txt", "sample-2.txt");
  */
@@ -794,8 +832,8 @@ duk_ret_t duk_util_rename(duk_context *ctx)
 
 /**
  * Removes an empty directory with the name given as a path. Allows recursively removing nested directories 
- * @param {path} - The path to the directory to be deleted
- * @param {recursive: boolean} - recursively delete
+ * @param {string} path - The path to the directory to be deleted
+ * @param {boolean=} recursive - whether to recursively delete. Set to false by default.
  * Ex.
  * utils.rmdir("directory/to/be/deleted")
  */
@@ -878,12 +916,14 @@ duk_ret_t duk_util_chmod(duk_context *ctx)
 }
 
 /**
- * Updates last access time to now. Creates the file if it doesn't exist
- * @param {string} path - The path to the file to update/create
- * @param {boolean} nocreate - Don't create the file if exist (defaults to false)
- * @param {string} reference - A file to copy last access time from instead of current time
- * @param {boolean} setaccess - Set the access time (defaults to setting both access and modified if neither specified)
- * @param {boolean} setmodify - Set the modified time (defaults to setting both access and modified if neither specified)
+ * Updates last access time to now. Creates the file if it doesn't exist.
+ * @typedef {Object} TouchOptions
+ * @property {string} path - The path to the file to update/create
+ * @property {boolean=} nocreate - Don't create the file if exist (defaults to false)
+ * @property {string?} reference - A file to copy last access time from instead of current time
+ * @property {boolean=} setaccess - Set the access time (defaults to setting both access and modified if neither specified)
+ * @property {boolean=} setmodify - Set the modified time (defaults to setting both access and modified if neither specified)
+ * @param {TouchOptions} options
  */
 duk_ret_t duk_util_touch(duk_context *ctx)
 {
@@ -897,7 +937,7 @@ duk_ret_t duk_util_touch(duk_context *ctx)
   duk_pop(ctx);
 
   duk_get_prop_string(ctx, -1, "reference");
-  const char *reference = duk_get_string(ctx, -1);
+  const char *reference = duk_get_string_default(ctx, -1, NULL);
   duk_pop(ctx);
 
   duk_get_prop_string(ctx, -1, "setaccess");
@@ -973,12 +1013,14 @@ duk_ret_t duk_util_delete(duk_context *ctx)
 }
 
 /** 
- * Changes ownership of a file to a given user or group
- * @param {string} path - the path to the file to change
- * @param {string} group_name - the name of the group to change ownership to
- * @param {string} user_name - the name of the user to change ownership to
- * @param {int} group_id - the group identifier to change ownership to 
- * @param {int} user_id - the user identifier to change ownership to
+ * Changes ownership of a file to a given user or group.
+ * @typedef {Object} ChownOptions
+ * @property {string} path - the path to the file to change
+ * @property {string} group_name - the name of the group to change ownership to
+ * @property {string} user_name - the name of the user to change ownership to
+ * @property {int} group_id - the group identifier to change ownership to 
+ * @property {int} user_id - the user identifier to change ownership to
+ * @param {ChownOptions} options
  */
 duk_ret_t duk_util_chown(duk_context *ctx)
 {
@@ -1010,7 +1052,7 @@ duk_ret_t duk_util_chown(duk_context *ctx)
     return duk_throw(ctx);
   }
 
-  if ((group_id != 0 ) && (group_name != 0)) // both a group name and group_id was specified
+  if ((group_id != 0) && (group_name != 0)) // both a group name and group_id was specified
   {
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing ownership: too many groups were specified");
     return duk_throw(ctx);
@@ -1018,7 +1060,7 @@ duk_ret_t duk_util_chown(duk_context *ctx)
 
   if (group_name != 0) // a group name was specfied; lookup the group id
   {
-    struct group* grp = getgrnam(group_name);
+    struct group *grp = getgrnam(group_name);
 
     if (grp == NULL)
     {
@@ -1030,7 +1072,7 @@ duk_ret_t duk_util_chown(duk_context *ctx)
 
   if (user_name != 0) // a user name was specified; lookup the user id
   {
-    struct passwd* user = getpwnam(user_name);
+    struct passwd *user = getpwnam(user_name);
 
     if (user == NULL)
     {
@@ -1041,7 +1083,7 @@ duk_ret_t duk_util_chown(duk_context *ctx)
   }
 
   stat(path, &file_stat);
-  if (user_id == 0 ) // no specified user
+  if (user_id == 0) // no specified user
   {
     user_id = file_stat.st_uid;
   }
@@ -1053,8 +1095,8 @@ duk_ret_t duk_util_chown(duk_context *ctx)
 
   if (chown(path, user_id, group_id) != 0)
   {
-      duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing  ownership: %s", strerror(errno));
-      return duk_throw(ctx);
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing  ownership: %s", strerror(errno));
+    return duk_throw(ctx);
   }
 
   return 0;

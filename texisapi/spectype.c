@@ -2617,6 +2617,8 @@ TXsqlFunc_convert(FLD *srcFld, FLD *typeFld, FLD *modeFld)
 				/* continue, ignoring mode */
 			else
 			{
+				sep = TXApp->charStrlstConfig;
+				sep.toStrlst = TXc2s_unspecified;
 				if(TXstrToTxvssep(TXPMBUFPN,
 						     "strlst separator",
 						     s, s + n, &sep) == -1) goto err;

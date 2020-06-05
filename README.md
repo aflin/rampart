@@ -1,6 +1,6 @@
 # Rampart (rp) #
 
-## Compiling ##
+## Compiling on Macos ##
 
 You will need to install the following dependencies:
 
@@ -23,4 +23,8 @@ Most of the relevant files will be in `build/rp`. You can run them using the fol
 
 ```
 ./rp <js-file-path>
+```
+You may also need to do this before running the webserver:
+```
+ulimit -n 16384
 ```

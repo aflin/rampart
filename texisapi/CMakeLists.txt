@@ -334,7 +334,14 @@ target_link_libraries(texisapi LINK_PUBLIC mmapi3 z ${JANSSON_LIBS})
 #
 # Install Rules
 #
+if(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
 install(TARGETS texisapi
-ARCHIVE
+ARCHIVE DESTINATION lib
 )
+else(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
+  install(TARGETS texisapi
+  ARCHIVE
+  )
+endif(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
+
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ftinternalsyms.h DESTINATION include/texis)
