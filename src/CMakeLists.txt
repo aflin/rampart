@@ -43,11 +43,11 @@ target_link_libraries(rp LINK_PUBLIC m texisapi mmapi3 z dl)
 #message("CMAKE_CXX_COMPILER_ID = ${CMAKE_CXX_COMPILER_ID}")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-include_directories(${PROJECT_SOURCE_DIR}/include ${PROJECT_BINARY_DIR}/texisapi /usr/local/include /usr/local/opt/curl/include /usr/local/opt/openssl@1.1/include)
-link_directories(   ${PROJECT_SOURCE_DIR}/include ${PROJECT_BINARY_DIR}/texisapi /usr/local/lib    /usr/local/opt/curl/lib      /usr/local/opt/openssl@1.1/lib    )
+include_directories(${PROJECT_SOURCE_DIR}/include ${PROJECT_BINARY_DIR}/texis/texisapi /usr/local/include /usr/local/opt/curl/include /usr/local/opt/openssl@1.1/include)
+link_directories(${PROJECT_BINARY_DIR}/texis/texisapi /usr/local/lib /usr/local/opt/curl/lib /usr/local/opt/openssl@1.1/lib)
 else()
-include_directories(${PROJECT_SOURCE_DIR}/include ${PROJECT_BINARY_DIR}/texisapi)
-link_directories(   ${PROJECT_SOURCE_DIR}/include ${PROJECT_BINARY_DIR}/texisapi)
+include_directories(${PROJECT_SOURCE_DIR}/include ${PROJECT_BINARY_DIR}/texis/texisapi)
+link_directories(${PROJECT_BINARY_DIR}/texis/texisapi)
 endif()
 
 add_library(rpcurl SHARED
@@ -61,6 +61,12 @@ add_library(rputils SHARED
 add_library(rpserver SHARED
  server.c
 )
+
+configure_file(server.js ${CMAKE_CURRENT_BINARY_DIR}/server.js COPYONLY)
+configure_file(utils.js ${CMAKE_CURRENT_BINARY_DIR}/utils.js COPYONLY)
+configure_file(dbtest.js ${CMAKE_CURRENT_BINARY_DIR}/dbtest.js COPYONLY)
+file(COPY mPurpose DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/mPurpose)
+file(COPY tetris-tutorial DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/tetris-tutorial)
 
 target_link_libraries(rpcurl curl)
 
