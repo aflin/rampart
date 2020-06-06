@@ -17,7 +17,7 @@ IF(Threads_FOUND)
 ENDIF(Threads_FOUND)
 #
 
-add_definitions(-DDUK_CMDLINE_PRINTALERT_SUPPORT -DDUK_CMDLINE_CONSOLE_SUPPORT -DDUK_CMDLINE_LOGGING_SUPPORT -DDUK_CMDLINE_MODULE_SUPPORT -DDUK_CMDLINE_FILEIO -DDUK_DB_SUPPORT)
+add_definitions(-DRP_USING_DUKTAPE -DDUK_CMDLINE_PRINTALERT_SUPPORT -DDUK_CMDLINE_CONSOLE_SUPPORT -DDUK_CMDLINE_LOGGING_SUPPORT -DDUK_CMDLINE_MODULE_SUPPORT -DDUK_CMDLINE_FILEIO -DDUK_DB_SUPPORT)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Os -g -pedantic -std=c99 -Wall -fstrict-aliasing -fomit-frame-pointer -rdynamic")
 
 add_executable(rp
@@ -28,7 +28,9 @@ add_executable(rp
 	duk_logging.c
 	duk_module_duktape.c
 	modules.c
-	db.c )
+	resp_client.c
+	resp_protocol.c
+	db.c)
 
 set_target_properties(rp PROPERTIES
   ENABLE_EXPORTS 1

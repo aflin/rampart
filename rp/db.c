@@ -3,7 +3,22 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <ctype.h>
+#include <float.h>
 #include "rp.h"
+
+#include <time.h>
+
+#include <unistd.h>
+#include <stdio.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <poll.h>
+#include "duktape.h"
+#include "ramis.h"
+#include "resp_protocol.h"
+#include "respClient.h"
+
 
 
 #ifdef SINGLETHREADED
@@ -378,7 +393,7 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i) {
    like duk_get_int_default but if string, converts 
    string to number with strtol 
    ************************************************** */
-int duk_rp_get_int_default(duk_context *ctx,int i,int def) {
+int duk_rp_get_int_default(duk_context *ctx,duk_idx_t i,int def) {
   if(duk_is_number(ctx,i))
     return duk_get_int_default(ctx,i,def);
   if(duk_is_string(ctx,i))
@@ -391,7 +406,67 @@ int duk_rp_get_int_default(duk_context *ctx,int i,int def) {
   }
   return (def);
 }
+/*
+    CURRENTLY UNUSED and UNTESTED
 
+* **************************************************
+   like duk_require_int but if string, converts 
+   string to number with strtol 
+   ************************************************** *
+int duk_rp_require_int(duk_context *ctx,duk_idx_t i) {
+  if(duk_is_number(ctx,i))
+    return duk_get_int(ctx,i);
+  if(duk_is_string(ctx,i))
+  {
+    char *end,*s=(char *)duk_get_string(ctx,i);
+    int ret=(int)strtol(s, &end, 10);
+          
+    if (end!=s)
+      return (ret);
+  }
+
+  //throw standard error
+  return duk_require_int(ctx,i);
+}
+
+* **************************************************
+   like duk_get_number_default but if string, converts 
+   string to number with strtod 
+   ************************************************** *
+double duk_rp_get_number_default(duk_context *ctx,duk_idx_t i,double def) {
+  if(duk_is_number(ctx,i))
+    return duk_get_number_default(ctx,i,def);
+  if(duk_is_string(ctx,i))
+  {
+    char *end,*s=(char *)duk_get_string(ctx,i);
+    int ret=(double)strtod(s, &end);
+          
+    if (end==s) return (def);
+      return (ret);
+  }
+  return (def);
+}
+
+* **************************************************
+   like duk_require_number but if string, converts 
+   string to number with strtod 
+   ************************************************** *
+int duk_rp_require_number(duk_context *ctx,duk_idx_t i) {
+  if(duk_is_number(ctx,i))
+    return duk_get_number_default(ctx,i,def);
+  if(duk_is_string(ctx,i))
+  {
+    char *end,*s=(char *)duk_get_string(ctx,i);
+    int ret=(int)strtod(s, &end);
+          
+    if (end!=s)
+      return (ret);
+  }
+
+  //throw standard error
+  return duk_require_number(ctx,i);
+}
+*/
 
 /* **************************************************
     initialize query struct
@@ -795,10 +870,12 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
   QUERY_STRUCT *q, q_st;
   DB_HANDLE *hcache=NULL;
   const char *db;
-  char pbuf[1024];
-
-  *pbuf='\0';
-  mmsgfh=fmemopen(pbuf, 1024, "w+");
+  char *pbuf=NULL;
+  size_t sz;
+  FILE* oldfh=mmsgfh;
+  FILE* newfh=fmemopen(pbuf, 1024,"w+");
+  
+  mmsgfh=newfh;
 
   duk_push_this(ctx);
 
@@ -852,7 +929,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 
   /* call parameters error, message is already pushed */
   if(q->err==QS_ERROR_PARAM) {
-    return(1);
+    goto end;
   }
 
   if(!TEXIS_PREP(tx, (char*)q->sql )) {
@@ -861,7 +938,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 #ifndef USEHANDLECACHE
     tx=TEXIS_CLOSE(tx);
 #endif
-    return 1;
+    goto end;
   }
 
   /* sql parameters are the parameters corresponding to "?" in a sql statement
@@ -876,7 +953,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 #ifndef USEHANDLECACHE
       tx=TEXIS_CLOSE(tx);
 #endif
-      return(1);
+      goto end;
     }
 
   if(!TEXIS_EXEC(tx))
@@ -886,7 +963,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 #ifndef USEHANDLECACHE
     tx=TEXIS_CLOSE(tx);
 #endif
-    return 1;
+    goto end;
   }
   /* skip rows using texisapi */
   if(q->skip)
@@ -899,7 +976,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 #ifndef USEHANDLECACHE
     tx=TEXIS_CLOSE(tx);
 #endif
-    return (1); /* done with exec() */
+    goto end; /* done with exec() */
   }
 
   /*  No callback, return all rows in array of objects */
@@ -907,6 +984,12 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 #ifndef USEHANDLECACHE
     tx=TEXIS_CLOSE(tx);
 #endif
+
+  end:
+
+  mmsgfh=oldfh;
+  fclose(newfh);
+  //free(pbuf);
 
   return 1;  /* returning outer array */
 
@@ -958,9 +1041,10 @@ duk_ret_t duk_rp_sql_eval(duk_context *ctx) {
 TEXIS *newsql(char* db)
 {
   TEXIS *tx;
-  char pbuf[1024];
-  *pbuf='\0';
-  mmsgfh=fmemopen(pbuf, 1024, "w+");
+  char *pbuf=NULL;
+  FILE *oldfh=mmsgfh,*newfh;
+
+  newfh=mmsgfh=fmemopen(pbuf, 1024, "w+");
 
   tx = TEXIS_OPEN(db);
 
@@ -970,8 +1054,255 @@ TEXIS *newsql(char* db)
     fprintf(stderr,"could not open texis handle: %s\n",pbuf);
     return((TEXIS*)NULL);
   }
+
+  mmsgfh=oldfh;
+  fclose(newfh);
+  //free(pbuf);
+
   return tx;
 }
+
+const char *duk_rp_require_bufOrStr(duk_context *ctx, duk_idx_t idx)
+{
+  if(duk_is_buffer_data(ctx,idx)) {
+    duk_size_t sz;
+    return ( (const char *) duk_require_buffer_data(ctx,idx,&sz) );
+  }
+  return duk_require_string(ctx,idx);
+}
+
+#define SETARG(type,t,f) do {\
+  r->type = (t) f(ctx,1);\
+} while (0)
+
+RP_VA_RET duk_rp_getarg(duk_context *ctx, const char *type)
+{
+  RP_VA_RET ret, *r=&ret;
+  
+  if(duk_is_undefined(ctx,1))
+  {
+    duk_push_string(ctx,"not enough arguments for exec(fmt,...)");
+    duk_throw(ctx);
+  }
+
+  switch(*type)
+  {
+    case 'c':
+    {
+      SETARG(c,char *,duk_require_string);
+      break;
+    }
+    case 's':
+    {
+      SETARG(s,size_t,duk_require_number);
+      break;
+    }
+    case 'i':
+    {
+      SETARG(i,int,duk_require_int);
+      break;
+    }
+    case 'l':
+    {
+      if (strlen(type)>5)
+        SETARG(L,long long,duk_require_number);
+      else
+        SETARG(l,long,duk_require_number);
+      break;
+    }
+    case 'u':
+    {
+      int len=strlen(type);
+      if (len>13)
+        SETARG(I,unsigned long long,duk_require_number);
+      else if (len>9)
+        SETARG(U,unsigned long,duk_require_number);
+      else
+        SETARG(u,unsigned,duk_require_number);
+      break;
+    }
+    case 'd':
+    {
+      SETARG(d,double, duk_require_number);
+      break;
+    } 
+    case 'b':
+    {
+      SETARG(c,char *,duk_rp_require_bufOrStr);
+      break;
+    } 
+  }
+  duk_pull(ctx,1); //move item to top of stack.  next item is now #1
+  return ret;
+}
+
+
+RESPROTO * rc_send(duk_context *ctx, RESPCLIENT *rcp)
+{
+  char *fmt=(char*)duk_require_string(ctx,0);
+
+  duk_push_undefined(ctx); //marker for end
+
+  return sendRespCommand(rcp,fmt,ctx);
+}
+
+void ra_push_response(duk_context *ctx, RESPROTO *response)
+{
+  int i,endofarray=-1,skipnextput=0;
+  duk_uarridx_t l;  
+
+    duk_push_array(ctx); // the return array
+    if(response)
+     {
+       RESPITEM *item=response->items;
+
+       for(i=0;i<response->nItems;i++,item++)
+       {
+         switch(item->respType)
+         {
+            case RESPISNULL:
+            {
+              duk_push_null(ctx);
+              break;
+            }
+            case RESPISFLOAT:
+            {
+              duk_push_number(ctx,(double)item->rfloat);
+              break;
+            }
+            case RESPISINT:
+            {
+              duk_push_number(ctx,(double)item->rinteger);
+              break;
+            }
+            
+            case RESPISARRAY:
+            {
+              /* create an inner array and keep track
+                 of where it's supposed to end */
+              duk_push_array(ctx);
+              endofarray=i+item->nItems;
+              skipnextput=1;
+              break;
+            }            
+            case RESPISBULKSTR:
+            {
+              size_t l= 1 + strnlen(item->loc,item->length);
+              if(l < item->length)
+              { /* if it's binary, put it in a buffer */
+                void *b=duk_push_fixed_buffer(ctx,item->length);
+                memcpy(b,item->loc,item->length);
+                break;
+              }/* else fall through and copy string */
+            }
+            case RESPISSTR:
+            case RESPISPLAINTXT:
+            {
+              duk_push_string(ctx,(const char*)item->loc);
+              break;
+            }
+            /* TODO: how to return errors?? */
+            case RESPISERRORMSG:
+            {
+              duk_push_sprintf(ctx,"Error message: %s\n",item->loc);
+              break;
+            }
+            
+         }
+         
+         
+
+         if (i==endofarray)
+         { /* the inner array */
+           l=duk_get_length(ctx,-2);
+           duk_put_prop_index(ctx,-2,l);
+           endofarray=-1;
+         }
+
+         l=duk_get_length(ctx,-2);
+
+
+         if(!skipnextput)
+           duk_put_prop_index(ctx,-2,l); //the outer array
+
+         skipnextput=0;
+       }
+     }
+    //TODO: else NULL response == Error, push something useful or throw
+}
+
+
+
+duk_ret_t duk_rp_ra_send(duk_context *ctx) {
+  duk_idx_t top=duk_get_top(ctx);
+  int i=0;
+  RESPCLIENT *rcp;
+  RESPROTO *response;
+
+  /* get the client */
+  duk_push_this(ctx);
+  duk_get_prop_string(ctx,-1,DUK_HIDDEN_SYMBOL("respclient"));
+  rcp=(RESPCLIENT *)duk_get_pointer(ctx,-1);
+  duk_pop_2(ctx);
+  response=rc_send(ctx,rcp);
+  ra_push_response(ctx,response);
+
+  return 1;
+}
+
+
+/* **************************************************
+   Ramis(host,port) constructor
+   var ra=new Ramis("127.0.0.1",6379);
+
+   ************************************************** */
+duk_ret_t duk_rp_ra_constructor(duk_context *ctx) {
+
+  TEXIS *tx;
+  const char *ip=duk_get_string_default(ctx,0,"127.0.0.1");
+  int port = (int) duk_get_int_default(ctx,1,6379);
+  RESPCLIENT *respClient;
+
+  if (!duk_is_constructor_call(ctx)) {
+    return DUK_RET_TYPE_ERROR;
+  }
+
+
+  respClient=connectRespServer((char*)ip,port);
+respClient->waitForever=1;
+//  respClientWaitForever(respClient,1);
+  duk_push_this(ctx);
+  duk_push_pointer(ctx,(void*)respClient);
+  duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("respclient"));
+  return 0;
+}
+
+/* **************************************************
+   Initialize ramis client into global object. 
+   ************************************************** */
+void duk_ra_init(duk_context *ctx) {
+  /* Set up locks:
+     this will be run once per new duk_context/thread in server.c
+     but needs to be done only once for all threads
+  */
+  /* Push constructor function */
+  duk_push_c_function(ctx, duk_rp_ra_constructor, 2 /*nargs*/);
+
+  /* Push object that will be Sql.prototype. */
+  duk_push_object(ctx);  /* -> stack: [ Sql protoObj ] */
+
+  /* Set Sql.prototype.exec. */
+  duk_push_c_function(ctx, duk_rp_ra_send, DUK_VARARGS);  /* [ Sql proto fn_exe ] */
+  duk_put_prop_string(ctx, -2, "exec");  /* [Sql protoObj-->[exe=fn_exe] ] */
+
+  /* Set Sql.prototype = proto */
+  duk_put_prop_string(ctx, -2, "prototype");  /* -> stack: [ Sql-->[prototype-->[exe=fn_exe,...]] ] */
+
+  /* Finally, register Sql to the global object */
+  duk_put_global_string(ctx, "Ramis");  /* -> stack: [ ] */
+
+}
+
 
 /* **************************************************
    Sql('/database/path) constructor
@@ -989,14 +1320,18 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
 
   TEXIS *tx;
   const char * db=duk_get_string(ctx,0);
-  char pbuf[1024];
+  char *pbuf=NULL;
   int i=0;
   int makedb=0;
-
-  *pbuf='\0';
-  mmsgfh=fmemopen(pbuf, 1024, "w+");
+  FILE *oldfh=mmsgfh;
+  FILE *newfh;
+  
+  newfh=mmsgfh=fmemopen(pbuf, 1024, "w+");
 
   if (!duk_is_constructor_call(ctx)) {
+    mmsgfh=oldfh;
+    fclose(newfh);
+    //free(pbuf);
     return DUK_RET_TYPE_ERROR;
   }
 
@@ -1026,9 +1361,34 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
   duk_push_string(ctx,db);
   duk_put_prop_string(ctx, -2, "db");
 
-  /* Return undefined: default instance will be used. */
+  mmsgfh=oldfh;
+  fclose(newfh);
+  //free(pbuf);
   return 0;
 }
+
+duk_ret_t duk_rp_strToBuf(duk_context *ctx)
+{
+  duk_size_t sz;
+  const char *opt=duk_to_string(ctx,1);
+
+  if( !strcmp(opt,"dynamic") )
+    duk_to_dynamic_buffer(ctx,0,&sz);
+  else if ( !strcmp(opt,"fixed") )
+    duk_to_fixed_buffer(ctx,0,&sz);
+  else
+    duk_to_buffer(ctx,0,&sz);
+
+  duk_pop(ctx);
+  return 1;
+}
+
+void duk_strToBuf_init(duk_context *ctx)
+{
+  duk_push_c_function(ctx, duk_rp_strToBuf, 2);
+  duk_put_global_string(ctx, "toBuffer");
+}
+
 
 /* **************************************************
    Initialize Sql into global object. 
@@ -1080,5 +1440,7 @@ void duk_db_init(duk_context *ctx) {
 
   /* Finally, register Sql to the global object */
   duk_put_global_string(ctx, "Sql");  /* -> stack: [ ] */
-
+  /* add ramis from above*/
+  duk_ra_init(ctx);
+  duk_strToBuf_init(ctx);
 }
