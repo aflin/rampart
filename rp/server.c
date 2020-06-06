@@ -23,8 +23,10 @@ static pthread_key_t key;
 static pthread_once_t key_once = PTHREAD_ONCE_INIT;
 static int threadno=0;
 #endif
-duk_context **thread_ctx=NULL;
 
+duk_context **thread_ctx=NULL, *main_ctx;
+
+int totnthreads=0;
 
 #define printstack(ctx) duk_push_context_dump((ctx));\
 printf("%s\n", duk_to_string((ctx), -1));\
@@ -171,7 +173,7 @@ int putkvs(evhtp_kv_t *kv, void *arg)
     return 0;
 }
 
-int putheaders(evhtp_kv_t *kv, void *arg)
+static int putheaders(evhtp_kv_t *kv, void *arg)
 {
     char *v, *k;
     duk_context *ctx=(duk_context*)arg;
@@ -287,32 +289,81 @@ static void dirlist(evhtp_request_t * req, char *fn)
     send403(req);
 }
 
-static void ht_sendfile(evhtp_request_t * req, char *fn)
+static int getrange(evhtp_kv_t *kv, void *arg)
+{
+    char *v, *k;
+    char **range=arg;
+    
+    //printf("%.*s: %.*s\n",(int)kv->klen, kv->key, (int)kv->vlen,kv->val);
+    
+    if(!strncasecmp("range",kv->key,(int)kv->klen))
+        *range=strndup(kv->val,kv->vlen);
+    
+    return 0;
+}
+
+
+static void ht_sendfile(evhtp_request_t * req, char *fn, size_t filesize)
 {
     RP_MTYPES m;
     RP_MTYPES *mres, *m_p=&m;
-    char *ext;
+    char *ext,*range=NULL;
     int fd = -1;
-    
+    ev_off_t beg=0, len=-1;
+    evhtp_res rescode=EVHTP_RES_OK;
+
     if ((fd = open(fn, O_RDONLY)) == -1) {
         send404(req);
         return;
     }
+
     ext=strrchr(fn,'.');
+
     if (!ext) /* || strchr(ext, '/')) shouldn't happen */
         evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "application/octet-stream", 0, 0));
     else
     {
         m.ext=ext+1;
+        /* look for proper mime type listed in mime.h */
         mres=bsearch(m_p,rp_mimetypes,nRpMtypes,sizeof(RP_MTYPES),compare_mtypes);
         if(mres)
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", mres->mime, 0, 0));
         else
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "application/octet-stream", 0, 0));
     }
-    /* TODO:  somewhere around 20k file size and over, speed dramatically (20x) slows down.  Find out why */
-    evbuffer_add_file(req->buffer_out, fd, 0, -1);    
-    evhtp_send_reply(req, EVHTP_RES_OK);
+
+    /* http range - give back partial file, set 206 */
+    evhtp_headers_add_header(req->headers_out, evhtp_header_new("Accept-Ranges", "bytes", 0, 0));
+/* Content-Range: bytes 12812288-70692914/70692915 */
+
+    evhtp_headers_for_each(req->headers_in,getrange,&range);
+    if(range && !strncasecmp("bytes=",range,6)){
+        char *eptr;
+        char reprange[128];
+
+        beg=(ev_off_t)strtol( range+6, &eptr, 10 );
+        if (eptr!=range+6) {
+            ev_off_t endval;
+            
+            eptr++;// skip '-'
+            if(*eptr!='\0');
+            {
+                endval=(ev_off_t)strtol (eptr, NULL, 10 );
+                if(endval && endval>beg) len=endval-beg;
+            }
+            rescode=206;
+            snprintf(reprange,128,"bytes %d-%d/%d",
+                (int) beg,
+                (int) ( (len==-1) ? (filesize-1) : endval),
+                (int) filesize);
+            evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Range", reprange, 0, 1));
+        }
+    }
+
+    free(range);/* chicken 🐣 */
+
+    evbuffer_add_file(req->buffer_out, fd, beg, len);    
+    evhtp_send_reply(req, rescode);
 }
 
 static void sendredir(evhtp_request_t * req, char *fn)
@@ -360,8 +411,9 @@ fileserver(evhtp_request_t * req, void * arg)
         return;
     }
     mode=sb.st_mode&S_IFMT;
+
     if (mode == S_IFREG)
-        ht_sendfile(req,fn);
+        ht_sendfile(req,fn,sb.st_size);
     else if (mode == S_IFDIR)
     {
         /* add 11 for 'index.html\0' */
@@ -384,10 +436,10 @@ fileserver(evhtp_request_t * req, void * arg)
             if (stat(fnindex, &sb) == -1)
                 dirlist(req,fn);
             else
-                ht_sendfile(req,fnindex);
+                ht_sendfile(req,fnindex,sb.st_size);
         }
         else
-            ht_sendfile(req,fnindex);
+            ht_sendfile(req,fnindex,sb.st_size);
     }
     else
         send404(req);
@@ -568,14 +620,13 @@ http_callback(evhtp_request_t * req, void * arg)
     /* ****************************
       setup duk function callback 
        **************************** */
-    /* copy function ref to top of stack */
 
     newdhs.ctx=new_ctx;
     newdhs.req=req;
     newdhs.func_idx=dhs->func_idx;
     dhs=&newdhs;
 
-    /* copy 'this' next */
+    /* copy function ref to top of stack */
     duk_dup(dhs->ctx,dhs->func_idx);
     /* push an empty object */
     duk_push_object(dhs->ctx);
@@ -684,9 +735,19 @@ void testcb(evhtp_request_t * req, void * arg)
 
 void exitcb(evhtp_request_t * req, void * arg)
 {
-    char rep[]="TEST";
+    duk_context *ctx=arg;
+    char rep[]="exit";
+    int i=0;
+    
     evbuffer_add_reference(req->buffer_out,rep,strlen(rep),NULL,NULL);
     evhtp_send_reply(req, EVHTP_RES_OK);
+    for(;i<totnthreads;i++) 
+    {
+        duk_rp_sql_close(thread_ctx[i]);
+        duk_destroy_heap(thread_ctx[i]);
+    }
+    duk_rp_sql_close(main_ctx);
+    duk_destroy_heap(main_ctx);
     exit(0);
 }
 
@@ -894,26 +955,28 @@ duk_ret_t duk_server_start(duk_context *ctx)
     char ipv4[INET_ADDRSTRLEN]="127.0.0.1";
     uint16_t port=8080, ipv6port=8080;
     void *tptr;
-    int nthr, totnthr;
+    int nthr;
     duk_size_t sb_sz;
+
+    main_ctx=ctx;
+
 #ifndef SINGLETHREADED
     if(nthreads > 0) 
         nthr=nthreads;
      else
         nthr=sysconf(_SC_NPROCESSORS_ONLN);
+    totnthreads=nthr*2;
 
-    totnthr=nthr*2;
-
-    printf("HTTP server initializing with %d threads per server, %d total\n", nthr,totnthr);
+    printf("HTTP server initializing with %d threads per server, %d total\n", nthr,totnthreads);
 #else
-    totnthr=1;
+    totnthreads=1;
 #endif
-    REMALLOC( thread_ctx, (totnthr*sizeof(duk_context*)) );
+    REMALLOC( thread_ctx, (totnthreads*sizeof(duk_context*)) );
 //printf("%d?=%d, %lu\n",(int)getpid(),(int)syscall(SYS_gettid),(unsigned long int)pthread_self());
 
 
     /* initialize a context for each thread */
-    for(i=0;i<totnthr;i++){
+    for(i=0;i<totnthreads;i++){
         void *buf;
 
         thread_ctx[i]=NULL;
@@ -948,8 +1011,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
     evhtp_set_cb(htp4, "/test", testcb,NULL);
     evhtp_set_cb(htp6, "/test", testcb,NULL);
     /* testing, quick semi clean exit */
-    evhtp_set_cb(htp4, "/exit", exitcb,NULL);
-    evhtp_set_cb(htp6, "/exit", exitcb,NULL);
+    evhtp_set_cb(htp4, "/exit", exitcb,ctx);
+    evhtp_set_cb(htp6, "/exit", exitcb,ctx);
 
     if(ob_idx!=-1) {
         const char *s;
@@ -1014,7 +1077,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         duk_insert(ctx,fi);
                         cb_dhs=newdhs(ctx,fi);
                         /* copy function to all the heaps/ctxs */
-                        copy_func(cb_dhs,totnthr);
+                        copy_func(cb_dhs,totnthreads);
                         printf("setting %-20s ->    function\n",s);
                         evhtp_set_glob_cb(htp4,s,http_callback,cb_dhs);
                         evhtp_set_glob_cb(htp6,s,http_callback,cb_dhs);
@@ -1084,7 +1147,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     if( dhs->func_idx !=-1)
     {
-        copy_func(dhs,totnthr);
+        copy_func(dhs,totnthreads);
         evhtp_set_gencb(htp4, http_callback, dhs);
         evhtp_set_gencb(htp6, http_callback, dhs);
     }

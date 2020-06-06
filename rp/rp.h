@@ -12,8 +12,8 @@ extern "C" {
 /* settings */
 #define nthreads 0                     /* number of threads for evhtp, set to 0 to use num of cpu cores */
 #define RESMAX_DEFAULT 10              /* default number of sql rows returned if max is not set */
-#define PUTMSG_STDERR                  /* print texis error messages in web server to stdout */
-//#define SINGLETHREADED                  /* don't use threads (despite nthreads above) */
+#define PUTMSG_STDERR                  /* print texis error messages to stderr */
+//#define SINGLETHREADED                 /* don't use threads (despite nthreads above) */
 #define USEHANDLECACHE                 /* cache texis handles on a per db/query basis */
 /* end settings */
 
@@ -22,16 +22,15 @@ extern "C" {
 #define DUKREMALLOC(ctx,s,t)  (s) = realloc( (s) , (t) ); if ((char*)(s)==(char*)NULL){ duk_push_string((ctx),"alloc error"); duk_throw((ctx));}
 #define REMALLOC(s,t)  /*printf("malloc=%d\n",(int)t);*/ (s) = realloc( (s) , (t) ); if ((char*)(s)==(char*)NULL){ fprintf( stderr, "error: realloc() "); exit(-1);}
 
-#ifdef SINGLETHREADED
-#define totnthreads 1
-#else
-#define totnthreads (2*nthreads)       /* twice that for ip and ipv6  */
+#ifndef SINGLETHREADED
+
 pthread_mutex_t lock;
 
 #ifdef PUTMSG_STDERR
 pthread_mutex_t printlock;
 #endif
-#endif
+
+#endif /* end not SINGLETHREADED */
 
 extern void duk_db_init(duk_context *ctx);
 extern TEXIS *newsql(char* db);
@@ -55,6 +54,8 @@ QUERY_STRUCT
     char err;
 }
 ;
+
+duk_ret_t duk_rp_sql_close(duk_context *ctx);
 
 #define DB_HANDLE struct db_handle_s_list
 DB_HANDLE {
