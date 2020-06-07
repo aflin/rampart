@@ -68,9 +68,10 @@ configure_file(dbtest.js ${CMAKE_CURRENT_BINARY_DIR}/dbtest.js COPYONLY)
 file(COPY mPurpose DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/mPurpose)
 file(COPY tetris-tutorial DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/tetris-tutorial)
 
-target_link_libraries(rpcurl curl)
 
-target_link_libraries(rpserver event event_openssl event_core event_extra event_pthreads event_extra ssl crypto event_pthreads pthread onig evhtp )
+target_link_libraries(rpcurl ${CURL_RELEASE_DIR}/libcurl.a)
+
+target_link_libraries(rpserver ${LIBEV_RELEASE_DIR}/libevent.a ${LIBEV_RELEASE_DIR}/libevent_openssl.a ${LIBEV_RELEASE_DIR}/libevent_core.a ${LIBEV_RELEASE_DIR}/libevent_extra.a ${LIBEV_RELEASE_DIR}/libevent_pthreads.a ${LIBEV_RELEASE_DIR}/libevent_extra.a ${OPENSSL_RELEASE_DIR}/libssl.a ${OPENSSL_RELEASE_DIR}/libcrypto.a ${LIBEV_RELEASE_DIR}/libevent_pthreads.a pthread ${ONIGURUMA_RELEASE_DIR}/libonig.a ${LIBEVHTP_RELEASE_DIR}/libevhtp.a)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 set_target_properties(rpcurl rputils rpserver 
