@@ -1257,19 +1257,32 @@ duk_ret_t duk_rp_ra_send(duk_context *ctx) {
 
    ************************************************** */
 duk_ret_t duk_rp_ra_constructor(duk_context *ctx) {
-
-  TEXIS *tx;
   const char *ip=duk_get_string_default(ctx,0,"127.0.0.1");
   int port = (int) duk_get_int_default(ctx,1,6379);
   RESPCLIENT *respClient;
+  char stashvar[32];
 
   if (!duk_is_constructor_call(ctx)) {
     return DUK_RET_TYPE_ERROR;
   }
 
+  snprintf(stashvar,32,"%s:%d",ip,port);
 
-  respClient=connectRespServer((char*)ip,port);
-respClient->waitForever=1;
+  duk_push_heap_stash(ctx);
+  if(duk_get_prop_string(ctx,-1,stashvar))
+  {
+    //printf("got respclient from stash\n");
+    respClient=(RESPCLIENT *)duk_get_pointer(ctx,-1);
+  }
+  else
+  {
+    respClient=connectRespServer((char*)ip,port);
+    duk_push_pointer(ctx,respClient);
+    duk_put_prop_string(ctx,-3,stashvar); /* stack -> [ stash , undefined, pointer ] */
+  }
+
+  // TODO: ask what this should be set to
+  respClient->waitForever=1;
 //  respClientWaitForever(respClient,1);
   duk_push_this(ctx);
   duk_push_pointer(ctx,(void*)respClient);

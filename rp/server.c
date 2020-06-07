@@ -346,7 +346,7 @@ static void ht_sendfile(evhtp_request_t * req, char *fn, size_t filesize)
             ev_off_t endval;
             
             eptr++;// skip '-'
-            if(*eptr!='\0');
+            if(*eptr!='\0')
             {
                 endval=(ev_off_t)strtol (eptr, NULL, 10 );
                 if(endval && endval>beg) len=endval-beg;
@@ -940,6 +940,29 @@ static void copy_all(duk_context *ctx,duk_context *tctx)
     duk_pop_2(tctx);
 }
 
+static void get_secure(duk_context *ctx, duk_idx_t ob_idx, evhtp_ssl_cfg_t *ssl_config)
+{
+    /* all protocols for testing */
+    ssl_config->ssl_opts = 0;
+    if(duk_get_prop_string(ctx,ob_idx,"sslkeyfile"))
+    {
+        ssl_config->privfile=strdup(duk_require_string(ctx,-1));
+    }
+    duk_pop(ctx);
+    if(duk_get_prop_string(ctx,ob_idx,"sslcafile"))
+    {
+        ssl_config->cafile=strdup(duk_require_string(ctx,-1));
+    }
+    duk_pop(ctx);
+    if(duk_get_prop_string(ctx,ob_idx,"sslcertfile"))
+    {
+        ssl_config->pemfile=strdup(duk_require_string(ctx,-1));
+    }
+    duk_pop(ctx);
+}
+
+
+
 duk_ret_t duk_server_start(duk_context *ctx)
 {
     /* TODO: make it so it can bind to any number of arbitary ipv4 or ipv6 addresses */
@@ -957,22 +980,138 @@ duk_ret_t duk_server_start(duk_context *ctx)
     void *tptr;
     int nthr;
     duk_size_t sb_sz;
+    evhtp_ssl_cfg_t *ssl_config=calloc(1, sizeof(evhtp_ssl_cfg_t));
+    int secure=0,usev6=1,usev4=1,confThreads=-1;
+    struct stat f_stat;
 
     main_ctx=ctx;
 
-#ifndef SINGLETHREADED
-    if(nthreads > 0) 
-        nthr=nthreads;
-     else
-        nthr=sysconf(_SC_NPROCESSORS_ONLN);
-    totnthreads=nthr*2;
 
-    printf("HTTP server initializing with %d threads per server, %d total\n", nthr,totnthreads);
+
+
+    i=0;
+    if(
+        (duk_is_object(ctx,   i   ) && !duk_is_array(ctx,i) && !duk_is_function(ctx,i))
+        || 
+        (duk_is_object(ctx,  ++i  ) && !duk_is_array(ctx,i) && !duk_is_function(ctx,i)) 
+    )
+        ob_idx=i;
+      
+     i=!i; /* get the other option. There's only 2 */
+
+     if(duk_is_function(ctx,i))
+         dhs->func_idx=i;
+
+    evbase = event_base_new();
+
+    /* options from server({options},...) */
+    if(ob_idx!=-1) {
+        const char *s;
+
+        /* ip addr */
+        if(duk_get_prop_string(ctx,ob_idx,"ip"))
+        {
+            s=duk_require_string(ctx,-1);
+            strcpy(ipv4,s);
+        }
+        duk_pop(ctx);
+
+        /* ipv6 addr */
+        if(duk_get_prop_string(ctx,ob_idx,"ipv6"))
+        {
+            s=duk_require_string(ctx,-1);
+            strcpy(&ipv6[5],s);
+        }
+        duk_pop(ctx);
+
+        /* port */
+        if(duk_get_prop_string(ctx,ob_idx,"port"))
+        {
+            port=duk_require_int(ctx,-1);
+        }
+        duk_pop(ctx);
+
+        /* threads */
+        if(duk_get_prop_string(ctx,ob_idx,"threads"))
+        {
+            confThreads=duk_require_int(ctx,-1);
+        }
+        duk_pop(ctx);
+
+        /* port ipv6*/
+        if(duk_get_prop_string(ctx,ob_idx,"ipv6port"))
+        {
+            ipv6port=(uint16_t)duk_require_int(ctx,-1);
+        }
+        else ipv6port=port;
+        duk_pop(ctx);
+
+        /* use ipv6*/
+        if(duk_get_prop_string(ctx,ob_idx,"useipv6"))
+        {
+            usev6=duk_require_boolean(ctx,-1);
+        }
+        duk_pop(ctx);
+
+        /* use ipv4*/
+        if(duk_get_prop_string(ctx,ob_idx,"useipv4"))
+        {
+            usev4=duk_require_boolean(ctx,-1);
+        }
+        duk_pop(ctx);
+
+        /* ssl opts*/
+        if(duk_get_prop_string(ctx,ob_idx,"secure"))
+        {
+            secure=duk_require_boolean(ctx,-1);
+        }
+        duk_pop(ctx);
+
+        if(secure)
+            get_secure(ctx,ob_idx,ssl_config);
+    }
+     
+    /* got the essential config options, now do some setup before mapping urls */
+#ifndef SINGLETHREADED
+    if(usev6+usev4 == 0)
+    {
+        duk_push_string(ctx,"useipv6 and useipv4 cannot both be set to false");
+        duk_throw(ctx);
+    }
+
+    /* use specified number of threads */
+    if(confThreads>0)
+    {
+        nthr=confThreads;
+    }
+    else
+        /* not specified, so set to number of processor cores */
+    {
+        /* nthreads set in rp.h */
+        if(nthreads > 0) 
+            nthr=nthreads;
+         else
+            nthr=sysconf(_SC_NPROCESSORS_ONLN);
+    }
+
+    totnthreads=nthr*(usev6+usev4);
+
+    printf("HTTP server for %s%s%s - initializing with %d threads per server, %d total\n", 
+        ((usev4)?"ipv4":""),
+        ((usev4 && usev6)? " and ":""),
+        ((usev6)?"ipv6":""),
+        nthr,
+        totnthreads);
 #else
+    if(confThreads>1) {
+        printf("threads>1 -- compiled single threaded, so using only one thread\n");
+    }
     totnthreads=1;
+    printf("HTTP server for %s%s%s - initializing", 
+        ((usev4)?"ipv4":""),
+        ((usev4 && usev6)? " and ":""));
 #endif
     REMALLOC( thread_ctx, (totnthreads*sizeof(duk_context*)) );
-//printf("%d?=%d, %lu\n",(int)getpid(),(int)syscall(SYS_gettid),(unsigned long int)pthread_self());
 
 
     /* initialize a context for each thread */
@@ -989,66 +1128,20 @@ duk_ret_t duk_server_start(duk_context *ctx)
         copy_all(ctx,thread_ctx[i]);
     }
 
-    i=0;
-    if(
-        (duk_is_object(ctx,i)  && !duk_is_array(ctx,i) && !duk_is_function(ctx,i))
-        || 
-        (duk_is_object(ctx,++i)&& !duk_is_array(ctx,i) && !duk_is_function(ctx,i)) 
-    )
-        ob_idx=i;
-      
-     i=!i; /* get the other option. There's only 2 */
-
-     if(duk_is_function(ctx,i))
-         dhs->func_idx=i;
-
-    evbase = event_base_new();
-
-    htp4 = evhtp_new(evbase, NULL);
-    htp6 = evhtp_new(evbase, NULL);
+    if(usev4) htp4 = evhtp_new(evbase, NULL);
+    if(usev6) htp6 = evhtp_new(evbase, NULL);
 
     /* testing */
-    evhtp_set_cb(htp4, "/test", testcb,NULL);
-    evhtp_set_cb(htp6, "/test", testcb,NULL);
+    if (usev4) evhtp_set_cb(htp4, "/test", testcb,NULL);
+    if (usev6) evhtp_set_cb(htp6, "/test", testcb,NULL);
     /* testing, quick semi clean exit */
-    evhtp_set_cb(htp4, "/exit", exitcb,ctx);
-    evhtp_set_cb(htp6, "/exit", exitcb,ctx);
+    if (usev4) evhtp_set_cb(htp4, "/exit", exitcb,ctx);
+    if (usev6) evhtp_set_cb(htp6, "/exit", exitcb,ctx);
 
+    /* file system and function mapping */
     if(ob_idx!=-1) {
         const char *s;
 
-        /* ip addr */
-        if(duk_get_prop_string(ctx,ob_idx,"ip"))
-        {
-            s=duk_get_string(ctx,-1);
-            strcpy(ipv4,s);
-        }
-        duk_pop(ctx);
-
-        /* ipv6 addr */
-        if(duk_get_prop_string(ctx,ob_idx,"ipv6"))
-        {
-            s=duk_get_string(ctx,-1);
-            strcpy(&ipv6[5],s);
-        }
-        duk_pop(ctx);
-
-        /* port */
-        if(duk_get_prop_string(ctx,ob_idx,"port"))
-        {
-            port=duk_get_int(ctx,-1);
-        }
-        duk_pop(ctx);
-
-        /* port ipv6*/
-        if(duk_get_prop_string(ctx,ob_idx,"ipv6port"))
-        {
-            ipv6port=(uint16_t)duk_get_int(ctx,-1);
-        }
-        else ipv6port=port;
-        duk_pop(ctx);
-
-        /* file system and function mapping */
         if(duk_get_prop_string(ctx,ob_idx,"map")){
             if(duk_is_object(ctx,-1) && !duk_is_function(ctx,-1) && !duk_is_array(ctx,-1))
             {
@@ -1079,8 +1172,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         /* copy function to all the heaps/ctxs */
                         copy_func(cb_dhs,totnthreads);
                         printf("setting %-20s ->    function\n",s);
-                        evhtp_set_glob_cb(htp4,s,http_callback,cb_dhs);
-                        evhtp_set_glob_cb(htp6,s,http_callback,cb_dhs);
+                        if (usev4) evhtp_set_glob_cb(htp4,s,http_callback,cb_dhs);
+                        if (usev6) evhtp_set_glob_cb(htp6,s,http_callback,cb_dhs);
                         //tidx=duk_get_top_index(cb_dhs->ctx);
                         //if(tidx>top_idx) top_idx=tidx;
                         free(s);
@@ -1122,8 +1215,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         else sprintf(fs,"%s",fspath);
                         printf ("setting %-20s ->    %s\n",s,fs);
                         map->val=fs;
-                        evhtp_set_glob_cb(htp4,s,fileserver,map);
-                        evhtp_set_glob_cb(htp6,s,fileserver,map);
+                        if (usev4) evhtp_set_glob_cb(htp4,s,fileserver,map);
+                        if (usev6) evhtp_set_glob_cb(htp6,s,fileserver,map);
                         duk_pop_2(ctx);
                     }
                 }
@@ -1137,35 +1230,81 @@ duk_ret_t duk_server_start(duk_context *ctx)
         duk_pop(ctx);
     }
     
+    if(secure)
+    {
+        int filecount=0;
+        if (ssl_config->pemfile) {
+            filecount++;
+            if (stat(ssl_config->pemfile, &f_stat) != 0) {
+                duk_push_sprintf(ctx,"Cannot load SSL cert '%s' (%s)", ssl_config->pemfile, strerror(errno));
+                duk_throw(ctx);
+            }
+        }
 
+        if (ssl_config->privfile) {
+            filecount++;
+            if (stat(ssl_config->privfile, &f_stat) != 0) {
+                duk_push_sprintf(ctx,"Cannot load SSL key '%s' (%s)", ssl_config->privfile, strerror(errno));
+                duk_throw(ctx);
+            }
+        }
 
-
-    //evhtp_alloc_assert(htp);
-
-    //gencb=evhtp_set_glob_cb(htp4, "/*", http_callback, &dhs);
-    //evhtp_callback_set_hook(gencb,evhtp_hook_on_request_fini, onfinish, ctx);
+        if (ssl_config->cafile) {
+            if (stat(ssl_config->cafile, &f_stat) != 0) {
+                duk_push_sprintf(ctx,"Cannot find SSL CA File '%s' (%s)", ssl_config->cafile, strerror(errno));
+                duk_throw(ctx);
+            }
+        }
+        if(filecount<2)
+        {
+            duk_push_sprintf(ctx,"Minimally ssl must be configured with, e.g. -\n"
+            "{\n\t\"secure\":true,\n\t\"sslkeyfile\": \"/path/to/privkey.pem\","
+            "\n\t\"sslcertfile\":\"/path/to/fullchain.pem\"\n}");
+            duk_throw(ctx);
+        }
+        printf("Initing ssl/tls\n");
+        if (usev4) {
+            if (evhtp_ssl_init(htp4, ssl_config)==-1) {
+                duk_push_string(ctx,"error setting up ssl/tls server");
+                duk_throw(ctx);
+            }
+        }
+        if (usev6) {
+            if (evhtp_ssl_init(htp6, ssl_config)==-1) {
+                duk_push_string(ctx,"error setting up ssl/tls server");
+                duk_throw(ctx);
+            }
+        }
+    }
 
     if( dhs->func_idx !=-1)
     {
         copy_func(dhs,totnthreads);
-        evhtp_set_gencb(htp4, http_callback, dhs);
-        evhtp_set_gencb(htp6, http_callback, dhs);
+        if (usev4) evhtp_set_gencb(htp4, http_callback, dhs);
+        if (usev6) evhtp_set_gencb(htp6, http_callback, dhs);
+    }
+    
+    if (usev4) 
+    {
+        if(bind_sock_port(htp4,ipv4,port,2048))
+        {
+            duk_push_sprintf(ctx,"could not bind to %s port %d",ipv4,port);
+            duk_throw(ctx);
+        }
+    }
+    
+    if (usev6) 
+    {
+        if (bind_sock_port(htp6,ipv6,ipv6port,2048))
+        {
+            duk_push_sprintf(ctx,"could not bind to %s, %d",ipv6,ipv6port);
+            duk_throw(ctx);
+        }
     }
 
-    if(bind_sock_port(htp4,ipv4,port,2048))
-    {
-        duk_push_sprintf(ctx,"could not bind to %s port %d",ipv4,port);
-        duk_throw(ctx);
-    }
-    /* TODO: don't fail on lack of ipv6 on the system (are there any left?) */
-    if (bind_sock_port(htp6,ipv6,ipv6port,2048))
-    {
-        duk_push_sprintf(ctx,"could not bind to %s, %d",ipv6,ipv6port);
-        duk_throw(ctx);
-    }
 #ifndef SINGLETHREADED
-    evhtp_use_threads_wexit(htp4, initThread, NULL, nthr, NULL);
-    evhtp_use_threads_wexit(htp6, initThread, NULL, nthr, NULL);
+    if (usev4) evhtp_use_threads_wexit(htp4, initThread, NULL, nthr, NULL);
+    if (usev6) evhtp_use_threads_wexit(htp6, initThread, NULL, nthr, NULL);
 #else
     printf("in single threaded mode\n");
 #endif

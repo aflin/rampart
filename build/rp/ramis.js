@@ -14,7 +14,7 @@ var len=insertvar.length;
 function runme() {
     var resp;
 
-    resp=ra.exec("DEL *");
+    resp=ra.exec("FLUSHALL");
     console.log(resp);
 
     print("SET (" + len + ")");
