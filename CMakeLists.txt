@@ -11,15 +11,11 @@ add_definitions(-D_XOPEN_SOURCE -D_GNU_SOURCE)
 
 include(CheckIncludeFile)
 include(ExternalProject)
-include(thirdparty/gawk.cmake)
-include(thirdparty/curl.cmake)
-include(thirdparty/oniguruma.cmake)
-include(thirdparty/openssl.cmake)
-include(thirdparty/libev.cmake)
-include(thirdparty/libevhtp.cmake)
-include(thirdparty/jansson.cmake)
+
+include(extern/extern.cmake)
+
+include_directories(texis/include)
 include_directories(${CMAKE_BINARY_DIR})
-include_directories(include)
 
 add_subdirectory(texis)
 add_subdirectory(src)

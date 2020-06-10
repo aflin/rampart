@@ -20,6 +20,7 @@ ENDIF(Threads_FOUND)
 add_definitions(-DDUK_CMDLINE_PRINTALERT_SUPPORT -DDUK_CMDLINE_CONSOLE_SUPPORT -DDUK_CMDLINE_LOGGING_SUPPORT -DDUK_CMDLINE_MODULE_SUPPORT -DDUK_CMDLINE_FILEIO -DDUK_DB_SUPPORT)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Os -g -pedantic -std=c99 -Wall -fstrict-aliasing -fomit-frame-pointer -rdynamic")
 
+
 add_executable(rp
 	duktape.c
 	duk_cmdline.c
@@ -68,10 +69,24 @@ configure_file(dbtest.js ${CMAKE_CURRENT_BINARY_DIR}/dbtest.js COPYONLY)
 file(COPY mPurpose DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/mPurpose)
 file(COPY tetris-tutorial DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/tetris-tutorial)
 
+set(LIBEVENT_TARGET_DIR ${CMAKE_BINARY_DIR}/libevent)
+set(OPENSSL_TARGET_DIR ${CMAKE_BINARY_DIR}/openssl)
+set(ONIGURUMA_TARGET_DIR ${CMAKE_BINARY_DIR}/oniguruma)
+set(CURL_TARGET_DIR ${CMAKE_BINARY_DIR}/curl)
+target_link_libraries(rpcurl ${CURL_TARGET_DIR}/lib/libcurl.a)
 
-target_link_libraries(rpcurl ${CURL_RELEASE_DIR}/libcurl.a)
-
-target_link_libraries(rpserver ${LIBEV_RELEASE_DIR}/libevent.a ${LIBEV_RELEASE_DIR}/libevent_openssl.a ${LIBEV_RELEASE_DIR}/libevent_core.a ${LIBEV_RELEASE_DIR}/libevent_extra.a ${LIBEV_RELEASE_DIR}/libevent_pthreads.a ${LIBEV_RELEASE_DIR}/libevent_extra.a ${OPENSSL_RELEASE_DIR}/libssl.a ${OPENSSL_RELEASE_DIR}/libcrypto.a ${LIBEV_RELEASE_DIR}/libevent_pthreads.a pthread ${ONIGURUMA_RELEASE_DIR}/libonig.a ${LIBEVHTP_RELEASE_DIR}/libevhtp.a)
+target_link_libraries(rpserver 
+	${LIBEVENT_TARGET_DIR}/lib/libevent.a 
+	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a 
+	${LIBEVENT_TARGET_DIR}/lib/libevent_core.a 
+	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a 
+	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
+	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a 
+	${OPENSSL_TARGET_DIR}/lib/libssl.a 
+	${OPENSSL_TARGET_DIR}/lib/libcrypto.a 
+	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a pthread 
+	${ONIGURUMA_TARGET_DIR}/lib/libonig.a 
+	${LIBEVHTP_TARGET_DIR}/libevhtp.a)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 set_target_properties(rpcurl rputils rpserver 
