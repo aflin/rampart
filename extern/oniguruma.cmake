@@ -2,7 +2,10 @@ set(ONIGURUMA_SOURCE_DIR ${EXTERN_DIR}/oniguruma)
 set(ONIGURUMA_TARGET_DIR ${CMAKE_BINARY_DIR}/oniguruma)
 include(${EXTERN_DIR}/autoconf.cmake)
 
+
 autoreconf(oniguruma ${ONIGURUMA_SOURCE_DIR})
+
+set(ENV{CFLAGS} -fPIC)
 execute_process(
   COMMAND ./configure --enable-posix-api --prefix=${ONIGURUMA_TARGET_DIR}
   WORKING_DIRECTORY ${ONIGURUMA_SOURCE_DIR}

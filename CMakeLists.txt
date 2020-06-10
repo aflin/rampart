@@ -8,6 +8,7 @@ set(TEST_ATOMIC_FUNCS OFF CACHE BOOL "Test Thread Safe Atomic Functions")
 set(CMAKE_BUILD_TYPE Debug)
 
 add_definitions(-D_XOPEN_SOURCE -D_GNU_SOURCE)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(CheckIncludeFile)
 include(ExternalProject)

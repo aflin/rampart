@@ -4,6 +4,7 @@ include(${EXTERN_DIR}/autoconf.cmake)
 
 autoreconf(libevent ${LIBEVENT_SOURCE_DIR})
 
+set(ENV{CFLAGS} -fPIC)
 set(ENV{CPPFLAGS} -I${CMAKE_BINARY_DIR}/openssl/include)
 set(ENV{LDFLAGS} -L${CMAKE_BINARY_DIR}/openssl/lib)
 execute_process(
