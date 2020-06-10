@@ -73,20 +73,23 @@ set(LIBEVENT_TARGET_DIR ${CMAKE_BINARY_DIR}/libevent)
 set(OPENSSL_TARGET_DIR ${CMAKE_BINARY_DIR}/openssl)
 set(ONIGURUMA_TARGET_DIR ${CMAKE_BINARY_DIR}/oniguruma)
 set(CURL_TARGET_DIR ${CMAKE_BINARY_DIR}/curl)
-target_link_libraries(rpcurl ${CURL_TARGET_DIR}/lib/libcurl.a)
+target_link_libraries(rpcurl 
+	${CURL_TARGET_DIR}/lib/libcurl.a
+	${OPENSSL_TARGET_DIR}/lib/libssl.a 
+	${OPENSSL_TARGET_DIR}/lib/libcrypto.a
+	)
 
 target_link_libraries(rpserver 
+	${LIBEVHTP_TARGET_DIR}/libevhtp.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent.a 
+	# ${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a 
 	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a 
-	${LIBEVENT_TARGET_DIR}/lib/libevent_core.a 
-	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a 
+	# ${LIBEVENT_TARGET_DIR}/lib/libevent_core.a 
 	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
-	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a 
 	${OPENSSL_TARGET_DIR}/lib/libssl.a 
 	${OPENSSL_TARGET_DIR}/lib/libcrypto.a 
-	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a pthread 
 	${ONIGURUMA_TARGET_DIR}/lib/libonig.a 
-	${LIBEVHTP_TARGET_DIR}/libevhtp.a)
+	pthread)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 set_target_properties(rpcurl rputils rpserver 
