@@ -69,10 +69,12 @@ configure_file(dbtest.js ${CMAKE_CURRENT_BINARY_DIR}/dbtest.js COPYONLY)
 file(COPY mPurpose DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/mPurpose)
 file(COPY tetris-tutorial DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/tetris-tutorial)
 
-set(LIBEVENT_TARGET_DIR ${CMAKE_BINARY_DIR}/libevent)
-set(OPENSSL_TARGET_DIR ${CMAKE_BINARY_DIR}/openssl)
-set(ONIGURUMA_TARGET_DIR ${CMAKE_BINARY_DIR}/oniguruma)
-set(CURL_TARGET_DIR ${CMAKE_BINARY_DIR}/curl)
+set(LIBEVENT_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevent)
+set(OPENSSL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/openssl)
+set(ONIGURUMA_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/oniguruma)
+set(CURL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/curl)
+set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp)
+
 target_link_libraries(rpcurl ${CURL_TARGET_DIR}/lib/libcurl.a)
 
 target_link_libraries(rpserver 
@@ -82,10 +84,10 @@ target_link_libraries(rpserver
 	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a 
 	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
 	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a 
-	${OPENSSL_TARGET_DIR}/lib/libssl.a 
-	${OPENSSL_TARGET_DIR}/lib/libcrypto.a 
+	${OPENSSL_TARGET_DIR}/ssl/libssl.a 
+	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a 
 	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a pthread 
-	${ONIGURUMA_TARGET_DIR}/lib/libonig.a 
+	${ONIGURUMA_TARGET_DIR}/libonig.a 
 	${LIBEVHTP_TARGET_DIR}/libevhtp.a)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")

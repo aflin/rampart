@@ -11,6 +11,7 @@ IF(PARSERS_FOUND)
 #	message(STATUS ${LIBXML2_INCLUDE_DIRS})
 
 	add_library(texisapi
+	STATIC
 ###########################################################################
 #Field Math
 		abstract.c

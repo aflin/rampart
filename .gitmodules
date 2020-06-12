@@ -4,15 +4,12 @@
 [submodule "extern/curl"]
 	path = extern/curl
 	url = https://github.com/curl/curl.git
-[submodule "extern/gawk"]
-	path = extern/gawk
-	url = https://git.savannah.gnu.org/git/gawk.git
-[submodule "extern/openssl"]
-	path = extern/openssl
-	url = https://github.com/openssl/openssl.git
 [submodule "extern/libevent"]
 	path = extern/libevent
 	url = https://github.com/libevent/libevent.git
 [submodule "extern/libevhtp"]
 	path = extern/libevhtp
 	url = https://github.com/criticalstack/libevhtp.git
+[submodule "extern/openssl"]
+	path = extern/openssl
+	url = https://github.com/janbar/openssl-cmake.git
