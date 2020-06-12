@@ -1,0 +1,12 @@
+# cmake manages these; they shouldn't go in version control
+#
+#
+# they aren't going into version control, but shouldn't be
+# completely ignored. I'm removing the mods here.
+#
+docs/
+html/
+build/*
+!build/.gitkeep
+cmake-build-debug
+.idea
