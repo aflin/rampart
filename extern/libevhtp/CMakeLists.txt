@@ -54,10 +54,13 @@ set(LIBEVHTP_SOURCE_FILES
     parser.c
     log.c)
 
-find_package(LibEvent REQUIRED)
-list(APPEND LIBEVHTP_EXTERNAL_LIBS ${LIBEVENT_LIBRARIES})
-list(APPEND LIBEVHTP_EXTERNAL_INCLUDES ${LIBEVENT_INCLUDE_DIRS})
-list(APPEND package_deps LibEvent)
+#find_package(LibEvent REQUIRED)
+#list(APPEND LIBEVHTP_EXTERNAL_LIBS ${LIBEVENT_LIBRARIES})
+#list(APPEND LIBEVHTP_EXTERNAL_INCLUDES ${LIBEVENT_INCLUDE_DIRS})
+#list(APPEND package_deps LibEvent)
+
+list(APPEND LIBEVHTP_EXTERNAL_LIBS ${CMAKE_BINARY_DIR}/extern/libevent/lib/libevent_core.a ${CMAKE_BINARY_DIR}/extern/libevent/lib/libevent_openssl.a ${CMAKE_BINARY_DIR}/extern/libevent/lib/libevent_extra.a)
+list(APPEND LIBEVHTP_EXTERNAL_INCLUDES ${CMAKE_BINARY_DIR}/extern/libevent/include)
 
 set(evhtp_dir_headers
   "include/evhtp/evhtp.h"
@@ -94,7 +97,7 @@ if(NOT EVHTP_DISABLE_REGEX)
         list(APPEND LIBEVHTP_EXTERNAL_LIBS ${ONIGURUMA_LIBRARIES})
         list(APPEND LIBEVHTP_EXTERNAL_INCLUDES ${CMAKE_BINARY_DIR}/extern/oniguruma/include)
         include_directories(${CMAKE_BINARY_DIR}/extern/oniguruma/include)
-        list(APPEND package_deps oniguruma)
+        #list(APPEND package_deps oniguruma)
     # else()
         # message(STATUS "${BoldRed}${CMAKE_BUILD_TYPE}ONIGURUMA NOT FOUND, DISABLING REGEX SUPPORT${ColourReset}")
         # set(EVHTP_DISABLE_REGEX ON)
@@ -114,11 +117,13 @@ elseif(EVHTP_ALLOCATOR STREQUAL "tcmalloc")
         list(APPEND package_deps tcmalloc)
     endif()
 endif()
-
+#-fPIC :
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+#add_library(evhtp SHARED ${LIBEVHTP_SOURCE_FILES})
 add_library(evhtp STATIC ${LIBEVHTP_SOURCE_FILES})
 target_link_libraries(evhtp PUBLIC ${LIBEVHTP_EXTERNAL_LIBS})
 target_include_directories(evhtp PUBLIC ${LIBEVHTP_EXTERNAL_INCLUDES})
-
+# set_target_properties(evhtp PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions(evhtp PUBLIC "PROJECT_VERSION=${PROJECT_VERSION}")
 if(has_stack_protector)
     target_compile_options(evhtp PUBLIC -fstack-protector-strong)

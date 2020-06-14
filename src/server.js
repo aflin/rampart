@@ -1,7 +1,6 @@
-#!/usr/local/src/TexisCoreApiTest5b/build/duk/duk
 
 /* load the http server module */
-server=require("rpserver");
+var server=require("rpserver");
 
 /* sql db is built in.  Call with new Sql("/path/to/db") */
 var sql=new Sql("./testdb",true); /* true means make db if it doesn't exist */
@@ -9,7 +8,6 @@ var sql=new Sql("./testdb",true); /* true means make db if it doesn't exist */
 /* check if our quicktest table exists.  If not, make it */
 var res=sql.exec("select * from SYSTABLES where NAME='quicktest'");
 if(res.length==0) {
-    print("Creating quicktest table");
     res=sql.exec("create table quicktest ( I int, Text varchar(16) );");
     sql.exec("insert into quicktest values(2,'just a test');");
     sql.exec("create index quicktest_I_x on quicktest(I);");
@@ -18,12 +16,10 @@ if(res.length==0) {
 /* same for inserttest table.  And populate the table with 2000 rows */
 res=sql.exec("select * from SYSTABLES where NAME='inserttest'");
 if(res.length==0) {
-    print("Creating inserttest table");
     res=sql.exec("create table inserttest ( I int, D double, Text varchar(16) );");
     for (var i=0;i<200;i++)
         inserttest_callback({},true);
 
-    print("Testing delete");
     /* test delete of 10 rows */
     console.log("delete 10");
     res=sql.exec("delete from inserttest",
@@ -106,17 +102,17 @@ console.log(res);
    Since the http server is multithreaded, and the javascript interpreter
    is not, each thread must have its own javascript heap where the callback
    will be copied.
-
-   Most Global function and variables will be copied.  Currently other variables
-   which may be in scope at server start will not be accessible.
+   This function is outside the scope of server callback functions
+   below and thus cannot be reached from within the webserver.
+   Think of every function as its own distinct xyz.js file
+   for the http server.
 */
-
 function rst() {
     return("return some text");
 }
 
 function inserttest_callback(req,allinserts){
-    /* this function is naturally accessible to 
+    /* randpic function is naturally accessible to 
        inserttest_callback()
     */
     function randpic(arr,x){
@@ -167,6 +163,7 @@ function inserttest_callback(req,allinserts){
             {max:10,returnType:"novars"}
           );
         //console.log("delete")
+        //console.log(arr);
     }
     else
     {
@@ -194,37 +191,21 @@ function inserttest_callback(req,allinserts){
     });
 }
 
-/* 
-    this won't work.  Sql is a native function
-    and sql.exec() native code will not copy
-    to server threads. 
-*/
-//var sql=new Sql('./testdb');
-
 function simple_callback(req){
-    /* 
-       you can and should get a new Sql here (as opposed to above).
-       Though this statement is executed each time a page is served,
-       sql handles are cached and impact is minimal
-    */
     var sql=new Sql('./testdb');
-
-    /* same thing applies for modules.
-       this is ok and will only load the module once:  */
-    // var curl=require("rpcurl");
-
     var arr=sql.exec(
         'select * from quicktest',
         {max:1}
     );
-    if(sql.lastErr) return(sql.lastErr);
+    
     /* default mime type is text/plain, if just given a string */
     return(JSON.stringify(arr));
 }
+var x={msg:"HELLO WORLD",func:showreq_callback};
 
-var extra="I'm text from a global var";
 
-/* a function to pretty print our req object */
+
+
 function showreq_callback(req){
     // http://jsfiddle.net/KJQ9K/554/
     function syntaxHighlight(json) {
@@ -245,6 +226,9 @@ function showreq_callback(req){
             return '<span class="' + cls + '">' + match + '</span>';
         });
     }
+    //For testing timeout:this takes about 5 sec on a semi modern intel i7 3930k.
+//    for (var i=0;i<10000000;i++);
+//    print("DONE WASTING TIME IN JS");
     var str=JSON.stringify(req,null,4);
     var css=
         "pre {outline: 1px solid #ccc; padding: 5px; margin: 5px; }\n"+
@@ -260,19 +244,13 @@ function showreq_callback(req){
             {
                 "X-Custom-Header":1
             },
-        /* 
-           Mime type is set by using the corresponding extension as the property key, 
-           unless overridden in headers above.  Only one extension_key:value pair should be set.
-           @ may be prepended to load a file.
-           \@ may be used to send a literal '@' char at the beginning of a string
-        */
+        //only set one of these.  Setting more than one throws error.
         //jpg: "@/home/user/myimage.jpg"
-        //text: "\\@home network is a now defunct cable broadband provider."
-        html:"<html><head><style>"+css+"</style><body>Object sent to this function:<br><pre>"+syntaxHighlight(str)+"</pre>"+extra+"</body></html>"
+        html:"<html><head><style>"+css+"</style><body>Object sent to this function:<br><pre>"+syntaxHighlight(str)+"</pre>"+x.msg+"</body></html>"
+        //,text: "\\@home network is a now defunct cable broadband provider."
     });
     
 }
-
 /* this will no longer print out an error since rst() is global
  
    If this entire script was wrapped in a function and that function was called,
@@ -282,20 +260,55 @@ function showreq_callback(req){
    as if it is being executed and exits after each webpage is served.
 */ 
 function badRef_callback(req){
-    return rst;
+    return ( x.func(req) );
+}
+
+
+function ramistest(req) {
+    var ra=new Ramis();
+    var insertvar="0123456789abcdef";
+    var rno=Math.floor(Math.random()*1000000);
+
+    for (var i=0;i<333;i++) {
+        resp=ra.exec("SET key%d%d %b",rno, i, insertvar, insertvar.length);
+        if(resp[0]!="OK") {
+            print("get error. got" + resp[0]);
+            return("GET error");
+        }
+    }
+
+    for (var i=0;i<333;i++) {
+        resp=ra.exec("GET key%d%d",rno,i);
+        if(resp[0].length != 16){
+            print("set error. got" + resp[0].length);
+            return("SET error");
+        }
+    }
+
+    for (var i=0;i<333;i++) {
+        resp=ra.exec("DEL key%d%d",rno,i);
+        if(resp[0] != "1") {
+            print("del error. got "+resp[0]);
+            return("DEL error");
+        }
+    }
+
+    return("OK");
 }
 
 print("try a url like http://127.0.0.1:8088/showreq.html?var1=val1&color=red&size=15");
 print("or see a sample website at http://127.0.0.1:8088/");
 print("");
+
 /* 
     Configuration and Start of Webserver:
     server.start() never returns and no code after this will be run
 
-    It will create one thread per cpu core with its own JS interpreter.
+    It will create one thread per cpu core, or with the number configured 
+    each with its own JS interpreter.
     Global variables and ECMA functions from the main thread will be copied
     to all of the server threads.
-    
+
     Functions are copied as compiled bytecode. Not all functionality will 
     transfer.  See the Bytecode limitations section here: 
     https://github.com/svaarala/duktape/blob/master/doc/bytecode.rst
@@ -303,29 +316,52 @@ print("");
 
 server.start(
 {
-    ip:"0.0.0.0",
-    ipv6:"::",
-    ipv6port:8088,
-    port:8088,
+    ip:"0.0.0.0",  //this binds to all. Default is 127.0.0.1
+    ipv6:"::",     //this binds to all. Default is ::1
+    port:8088,     //this is the default
+    ipv6port:8088, //defaults to port above if not set
+    scriptTimeout: 2.0,
+    connectTimeout:20.0,
+    /* for https support, this is the minimum (more options to come): */
+    /*
+
+    secure:true,
+    sslkeyfile:  "/etc/letsencrypt/live/mydom.com/privkey.pem",
+    sslcertfile: "/etc/letsencrypt/live/mydom.com/fullchain.pem",
+    
+    // if files above are invalid, it will silently revert to http
+    */
+    
+    /*  By default server binds to both ipv4 and ipv6.
+        To turn off ipv6 or ipv4, use one of these only */
+    // useipv6: false,
+    // useipv4: false,
+    
+    /*  By default, number of threads is set to cpu core count.
+        ipv6 and ipv4 are separate servers and each get this number of threads.
+        The number can be changed here:
+    */
+    //threads: 4,
 
     /* map urls to functions or paths on the filesystem */
-    /* ordered by priority.  '/' should always be last  */
+    /* order by specificity.  '/' should always be last  */
     map:
-     {
-         /* map url to function */
-         "/dbtest.html":inserttest_callback,
-         "/simpledbtest.html":simple_callback,
-         "/showreq*":showreq_callback,
-         "/badref.html":badRef_callback,
-         /* filesystem mappings are always paths.  "/tetris" => "/tetris/ */
-         "/tetris": "./tetris-tutorial/",
-         "/": "./mPurpose/"
-     }
+    {
+        /* url to function mappings */
+        "/dbtest.html":       inserttest_callback,
+        "/simpledbtest.html": simple_callback,
+        "/showreq*":          showreq_callback,
+        "/badref.html":       badRef_callback,
+        "/ramistest" :        ramistest,
+//"/br":badRef_callback,
+        /* filesystem mappings are always folders.  "/tetris" => "/tetris/ */
+        "/tetris":            "./tetris-tutorial/",
+        //"/docs/" :          "/usr/share/doc/libevhtp-doc/html/",
+        "/":                  "./mPurpose/"
+    }
      /* 
-        including a function will match everything not matched above
-        i.e. if "/": "./mPurpose/" was not present
+        including a function here will match everything not matched above
+        matching "/" if "/" : "./mPurpose/" was not present
      */
      /* ,function(){} */
 });
-
-print("Execution will never reach here and this will never be printed.");

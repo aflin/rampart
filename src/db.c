@@ -3,7 +3,21 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <ctype.h>
+#include <float.h>
 #include "rp.h"
+
+#include <time.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <poll.h>
+#include "duktape.h"
+#include "ramis.h"
+#include "resp_protocol.h"
+#include "respClient.h"
+
 
 
 #ifdef SINGLETHREADED
@@ -19,8 +33,8 @@ int lock_is_init=0;
 //#define LOCK_AROUND_ALL_FETCH
 
 #ifdef DBUGLOCKS
-#define FLOCK   printf("%d: locking from thread %lu\n",__LINE__ ,(unsigned long int)pthread_self());fflush(stdout);pthread_mutex_lock  (&lock);
-#define FUNLOCK printf("%d: locking from thread %lu\n",__LINE__ ,(unsigned long int)pthread_self());fflush(stdout);pthread_mutex_unlock(&lock);
+#define FLOCK   printf("%d: locking from thread %lu\n",  __LINE__ ,(unsigned long int)pthread_self());fflush(stdout);pthread_mutex_lock  (&lock);
+#define FUNLOCK printf("%d: unlocking from thread %lu\n",__LINE__ ,(unsigned long int)pthread_self());fflush(stdout);pthread_mutex_unlock(&lock);
 #else
 #define FLOCK   pthread_mutex_lock  (&lock);
 #define FUNLOCK pthread_mutex_unlock(&lock);
@@ -94,14 +108,11 @@ int lock_is_init=0;
   r;\
 })
 
-
-int mal=0;
 void free_handle(DB_HANDLE *h) {
     h->tx = TEXIS_CLOSE(h->tx);
     free(h->db);
     free(h->query);
     free(h);
-    mal--;
 }
 
 void free_all_handles(DB_HANDLE *h) {
@@ -116,7 +127,6 @@ void free_all_handles(DB_HANDLE *h) {
 DB_HANDLE *new_handle(const char *d,const char *q){
     DB_HANDLE *h=NULL;
     REMALLOC(h,sizeof(DB_HANDLE));
-    mal++;
     h->tx=newsql((char*)(d));
     if(h->tx==NULL) {
       free(h);
@@ -125,15 +135,10 @@ DB_HANDLE *new_handle(const char *d,const char *q){
     h->db=strdup(d);
     h->query=strdup(q);
     h->next=NULL;
-/*  moved
-    if(!TEXIS_PREP(h->tx, h->query )) {
-        free_handle(h);
-        h=NULL;
-    }
-*/
     return(h);
 }
 
+/* for debugging */
 void print_handles(DB_HANDLE *head) {
     DB_HANDLE *h=head;
     if(h==NULL)
@@ -148,13 +153,22 @@ void print_handles(DB_HANDLE *head) {
     }
 }
 
+/* the LRU Texis Handle Cache is indexed by
+   query.  Currently we have to reprep the 
+   query each time it is used, negating the
+   usefullness of indexing it as such, but 
+   there may be a future version in which we 
+   can use the same prepped handle and just 
+   rewind the database to the first row without 
+   having to texis_prep() again.  So for now,
+   this structure stays.
+*/
 
 /* LRU:
    add a handle to beginning of list
    count number of items on list.
-   if one too many, evict last one
+   if one too many, evict last one.
 */
-
 DB_HANDLE *add_handle(DB_HANDLE *head,DB_HANDLE *h){
     int i=1; 
     DB_HANDLE *last;
@@ -177,15 +191,14 @@ DB_HANDLE *add_handle(DB_HANDLE *head,DB_HANDLE *h){
     if found, move to beginning of list
     if not, make new, and add to beginning of list
 */
-
 DB_HANDLE *get_handle(DB_HANDLE *head, const char *d, const char *q) { 
    DB_HANDLE *last=NULL;
    DB_HANDLE *h=head;
    do{
        if( !strcmp((d),h->db) && !strcmp((q),h->query) ){
             if (last!=NULL) { /* if not at beginning of list */
-                last->next=h->next; /*remove item*/
-                h->next=head;
+                last->next=h->next; /*remove/pull item out of list*/
+                h->next=head;  /* put this item at the head of the list */
                 head=h;
             } /* else it's already at beginning */
             goto end;
@@ -221,16 +234,20 @@ duk_ret_t duk_rp_sql_close(duk_context *ctx) {
   return 0;
 }
 
+#define msgbufsz 1024
+#define msgtobuf(buf) \
+  fseek(mmsgfh,0,SEEK_SET);\
+  fread(buf, msgbufsz, 1, mmsgfh);
 
 /* **************************************************
      store an error string in this.lastErr 
    **************************************************   */
-void duk_rp_log_error(duk_context *ctx,char *pbuf)
+void duk_rp_log_error(duk_context *ctx, char *pbuf)
 {
     duk_push_this(ctx);
     duk_push_string(ctx,pbuf);
 #ifdef PUTMSG_STDERR
-    if(strlen(pbuf)) {
+    if(pbuf && strlen(pbuf)) {
 #ifdef SINGLETHREADED
       fprintf(stderr,"%s\n",pbuf);
 #else
@@ -244,8 +261,14 @@ void duk_rp_log_error(duk_context *ctx,char *pbuf)
     duk_pop(ctx);
 }
 
+void duk_rp_log_tx_error(duk_context *ctx, char *buf)
+{
+  msgtobuf(buf);
+  duk_rp_log_error(ctx,buf);
+}
+
 /* **************************************************
-  push a single field 
+  push a single field from a row of the sql results
    ************************************************** */
 void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i) {
   char type=fl->type[i] & 0x3f;
@@ -335,6 +358,7 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i) {
     }
     case FTN_DATE:
     {
+      /* equiv to js "new Date(seconds*1000)" */
       (void) duk_get_global_string(ctx, "Date");
       duk_push_number(ctx,1000.0*(duk_double_t)*((ft_date*)fl->data[i]));
       duk_new(ctx,1);
@@ -343,7 +367,7 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i) {
     case FTN_COUNTER:
     {
       unsigned char *p;
-
+      /* TODO: revisit how we want this to be presented to JS */
       /* create backing buffer and copy data into it */
       //p=(unsigned char *) duk_push_fixed_buffer(ctx, 8 /*size*/);
       //memcpy(p,fl->data[i],8);
@@ -360,12 +384,6 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i) {
       /* create backing buffer and copy data into it */
       p=(unsigned char *) duk_push_fixed_buffer(ctx, fl->ndata[i] /*size*/);
       memcpy(p,fl->data[i],fl->ndata[i]);
-
-      /* DON'T create view  -- leave it for js */
-      //duk_push_buffer_object(ctx,-1,0,fl->ndata[i],DUK_BUFOBJ_UINT8ARRAY);
-      //printf("fl->ndata[i]=%d\n",fl->ndata[i]);
-      /* object is now three back */
-      //idx=-3;
       break;
     }
     default:
@@ -378,7 +396,7 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i) {
    like duk_get_int_default but if string, converts 
    string to number with strtol 
    ************************************************** */
-int duk_rp_get_int_default(duk_context *ctx,int i,int def) {
+int duk_rp_get_int_default(duk_context *ctx,duk_idx_t i,int def) {
   if(duk_is_number(ctx,i))
     return duk_get_int_default(ctx,i,def);
   if(duk_is_string(ctx,i))
@@ -391,7 +409,67 @@ int duk_rp_get_int_default(duk_context *ctx,int i,int def) {
   }
   return (def);
 }
+/*
+    CURRENTLY UNUSED and UNTESTED
 
+* **************************************************
+   like duk_require_int but if string, converts 
+   string to number with strtol 
+   ************************************************** *
+int duk_rp_require_int(duk_context *ctx,duk_idx_t i) {
+  if(duk_is_number(ctx,i))
+    return duk_get_int(ctx,i);
+  if(duk_is_string(ctx,i))
+  {
+    char *end,*s=(char *)duk_get_string(ctx,i);
+    int ret=(int)strtol(s, &end, 10);
+          
+    if (end!=s)
+      return (ret);
+  }
+
+  //throw standard error
+  return duk_require_int(ctx,i);
+}
+
+* **************************************************
+   like duk_get_number_default but if string, converts 
+   string to number with strtod 
+   ************************************************** *
+double duk_rp_get_number_default(duk_context *ctx,duk_idx_t i,double def) {
+  if(duk_is_number(ctx,i))
+    return duk_get_number_default(ctx,i,def);
+  if(duk_is_string(ctx,i))
+  {
+    char *end,*s=(char *)duk_get_string(ctx,i);
+    int ret=(double)strtod(s, &end);
+          
+    if (end==s) return (def);
+      return (ret);
+  }
+  return (def);
+}
+
+* **************************************************
+   like duk_require_number but if string, converts 
+   string to number with strtod 
+   ************************************************** *
+int duk_rp_require_number(duk_context *ctx,duk_idx_t i) {
+  if(duk_is_number(ctx,i))
+    return duk_get_number_default(ctx,i,def);
+  if(duk_is_string(ctx,i))
+  {
+    char *end,*s=(char *)duk_get_string(ctx,i);
+    int ret=(int)strtod(s, &end);
+          
+    if (end!=s)
+      return (ret);
+  }
+
+  //throw standard error
+  return duk_require_number(ctx,i);
+}
+*/
 
 /* **************************************************
     initialize query struct
@@ -411,6 +489,13 @@ void duk_rp_init_qstruct(QUERY_STRUCT *q)
    get up to 4 parameters in any order. 
    object=settings, string=sql, 
    array=params to sql, function=callback 
+   example: 
+   sql.exec(
+     "select * from SYSTABLES where NAME=?",
+     ["mytable"],
+     {max:1,skip:0,returnType:"array:},
+     function (row) {console.log(row);}
+   );
    ************************************************** */
 /* TODO: leave stack as you found it */
 
@@ -457,7 +542,7 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
         if (duk_is_array(ctx,i) && q->arryi==-1)
           q->arryi=i;
                 
-        /* argument is a function */
+        /* argument is a function, save where it is on the stack */
         else if(duk_is_function(ctx,i) )
         {
           q->callback=i;
@@ -510,16 +595,18 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
    Push parameters to the database for parameter 
    substitution (?) is sql. 
    i.e. "select * from tbname where col1 = ? and col2 = ?"
-     an array of two values should be passed and processed here              
+     an array of two values should be passed and will be
+     processed here.
+     arrayi is the place on the stack where the array lives.
    ************************************************** */
 
 int duk_rp_add_parameters(duk_context *ctx, TEXIS *tx, int arryi)
 {
     int rc,arryn=0;
 
-    /* array is at arryi. iterate over members */
-    while(duk_has_prop_index(ctx,arryi,arryn)) /* arryi is where our array is on the duk ctx stack
-                                                  arryn is the index of the array we are examining */
+    /* Array is at arryi. Iterate over members.
+       arryn is the index of the array we are examining */
+    while(duk_has_prop_index(ctx,arryi,arryn)) 
     {
       void *v;    /* value to be passed to db */
       long plen;  /* lenght of value */
@@ -593,6 +680,7 @@ int duk_rp_add_parameters(duk_context *ctx, TEXIS *tx, int arryi)
 }
 
 /* **************************************************
+   This is called when sql.exec() has no callback.
    fetch rows and push results to array 
    return number of rows 
    ************************************************** */
@@ -648,13 +736,16 @@ int duk_rp_fetch(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
   /* array of objects requested
      push object of {name:value,name:value,...} into return array */
   {  
-
+printf("getting rows\n");
     while (rown<resmax && (fl=TEXIS_FETCH(tx,-1)) )
     {
       duk_push_object(ctx);
       for (i = 0; i < fl->n; i++)
       {
         duk_rp_pushfield(ctx,fl, i);
+//duk_dup_top(ctx);
+//printf("%s -> %s\n",fl->name[i],duk_to_string(ctx,-1));
+//duk_pop(ctx);
         duk_put_prop_string(ctx,-2,(const char*)fl->name[i]);
       }
       duk_put_prop_index(ctx,-2,rown++);
@@ -667,6 +758,7 @@ int duk_rp_fetch(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
 }
 
 /* **************************************************
+   This is called when sql.exec() has a callback function 
    Fetch rows and execute JS callback function with 
    results. 
    Return number of rows 
@@ -795,10 +887,12 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
   QUERY_STRUCT *q, q_st;
   DB_HANDLE *hcache=NULL;
   const char *db;
+  size_t sz;
   char pbuf[1024];
-
-  *pbuf='\0';
-  mmsgfh=fmemopen(pbuf, 1024, "w+");
+  FILE* oldfh=mmsgfh;
+  FILE* newfh=fmemopen(NULL, 1024,"w+");
+  
+  mmsgfh=newfh;
 
   duk_push_this(ctx);
 
@@ -828,7 +922,11 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
   }
   if(hcache==NULL)
   {
-    duk_push_string(ctx,"error getting handle from cache.\n");
+    duk_rp_log_tx_error(ctx,pbuf);
+    duk_push_int(ctx,-1);
+    duk_push_string(ctx,pbuf);
+    mmsgfh=oldfh;
+    fclose(newfh);
     duk_throw(ctx);
   }
   /* hcache may have changed.  update it for all cases */
@@ -842,9 +940,11 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 #endif
   if (!tx)
   {
-    duk_rp_log_error(ctx,pbuf);
+    duk_rp_log_tx_error(ctx,pbuf);
     duk_push_int(ctx,-1);
     duk_push_string(ctx,pbuf);
+    mmsgfh=oldfh;
+    fclose(newfh);
     duk_throw(ctx);
   }
   /* clear the sql.lastErr string */
@@ -852,16 +952,18 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 
   /* call parameters error, message is already pushed */
   if(q->err==QS_ERROR_PARAM) {
-    return(1);
+    goto end;
   }
 
   if(!TEXIS_PREP(tx, (char*)q->sql )) {
-    duk_rp_log_error(ctx,pbuf);
-    duk_push_int(ctx,-1);
+    duk_rp_log_tx_error(ctx,pbuf);
+    duk_push_string(ctx,pbuf);
 #ifndef USEHANDLECACHE
     tx=TEXIS_CLOSE(tx);
 #endif
-    return 1;
+    mmsgfh=oldfh;
+    fclose(newfh);
+    duk_throw(ctx);
   }
 
   /* sql parameters are the parameters corresponding to "?" in a sql statement
@@ -871,22 +973,26 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
   if(q->arryi !=-1)
     if(!duk_rp_add_parameters(ctx, tx, q->arryi))
     {
-      duk_rp_log_error(ctx,pbuf);
-      duk_push_int(ctx,-1);
+      duk_rp_log_tx_error(ctx,pbuf);
+      duk_push_string(ctx,pbuf);
 #ifndef USEHANDLECACHE
       tx=TEXIS_CLOSE(tx);
 #endif
-      return(1);
+      mmsgfh=oldfh;
+      fclose(newfh);
+      duk_throw(ctx);
     }
 
   if(!TEXIS_EXEC(tx))
   {
-    duk_rp_log_error(ctx,pbuf);
-    duk_push_int(ctx,-1);
+    duk_rp_log_tx_error(ctx,pbuf);
+    duk_push_string(ctx,pbuf);
 #ifndef USEHANDLECACHE
     tx=TEXIS_CLOSE(tx);
 #endif
-    return 1;
+    mmsgfh=oldfh;
+    fclose(newfh);
+    duk_throw(ctx);
   }
   /* skip rows using texisapi */
   if(q->skip)
@@ -899,7 +1005,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 #ifndef USEHANDLECACHE
     tx=TEXIS_CLOSE(tx);
 #endif
-    return (1); /* done with exec() */
+    goto end; /* done with exec() */
   }
 
   /*  No callback, return all rows in array of objects */
@@ -907,6 +1013,12 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 #ifndef USEHANDLECACHE
     tx=TEXIS_CLOSE(tx);
 #endif
+
+  end:
+
+  mmsgfh=oldfh;
+  fclose(newfh);
+  //free(pbuf);
 
   return 1;  /* returning outer array */
 
@@ -958,32 +1070,307 @@ duk_ret_t duk_rp_sql_eval(duk_context *ctx) {
 TEXIS *newsql(char* db)
 {
   TEXIS *tx;
-  char pbuf[1024];
-  *pbuf='\0';
-  mmsgfh=fmemopen(pbuf, 1024, "w+");
 
   tx = TEXIS_OPEN(db);
 
-//  TXsingleuser=1;
-  if(!tx)
-  {
-    fprintf(stderr,"could not open texis handle: %s\n",pbuf);
-    return((TEXIS*)NULL);
-  }
   return tx;
 }
 
+/* ************************************************************** 
+
+   RAMIS - redis compatible client functions 
+
+   ************************************************************** */
+
+const char *duk_rp_require_bufOrStr(duk_context *ctx, duk_idx_t idx)
+{
+  if(duk_is_buffer_data(ctx,idx)) {
+    duk_size_t sz;
+    return ( (const char *) duk_require_buffer_data(ctx,idx,&sz) );
+  }
+  return duk_require_string(ctx,idx);
+}
+
+#define SETARG(type,t,f) do {\
+  r->type = (t) f(ctx,1);\
+} while (0)
+
+RP_VA_RET duk_rp_getarg(duk_context *ctx, const char *type)
+{
+  RP_VA_RET ret, *r=&ret;
+  
+  if(duk_is_undefined(ctx,1))
+  {
+    duk_push_string(ctx,"not enough arguments for exec(fmt,...)");
+    duk_throw(ctx);
+  }
+
+  switch(*type)
+  {
+    case 'c':
+    {
+      SETARG(c,char *,duk_require_string);
+      break;
+    }
+    case 's':
+    {
+      SETARG(s,size_t,duk_require_number);
+      break;
+    }
+    case 'i':
+    {
+      SETARG(i,int,duk_require_int);
+      break;
+    }
+    case 'l':
+    {
+      if (strlen(type)>5)
+        SETARG(L,long long,duk_require_number);
+      else
+        SETARG(l,long,duk_require_number);
+      break;
+    }
+    case 'u':
+    {
+      int len=strlen(type);
+      if (len>13)
+        SETARG(I,unsigned long long,duk_require_number);
+      else if (len>9)
+        SETARG(U,unsigned long,duk_require_number);
+      else
+        SETARG(u,unsigned,duk_require_number);
+      break;
+    }
+    case 'd':
+    {
+      SETARG(d,double, duk_require_number);
+      break;
+    } 
+    case 'b':
+    {
+      SETARG(c,char *,duk_rp_require_bufOrStr);
+      break;
+    } 
+  }
+  duk_pull(ctx,1); //move item to top of stack.  next item is now #1
+  return ret;
+}
+
+
+RESPROTO * rc_send(duk_context *ctx, RESPCLIENT *rcp)
+{
+  char *fmt=(char*)duk_require_string(ctx,0);
+
+  duk_push_undefined(ctx); //marker for end
+
+  return sendRespCommand(rcp,fmt,ctx);
+}
+
+void ra_push_response(duk_context *ctx, RESPROTO *response)
+{
+  int i,endofarray=-1,skipnextput=0;
+  duk_uarridx_t l;  
+
+    duk_push_array(ctx); // the return array
+    if(response)
+     {
+       RESPITEM *item=response->items;
+
+       for(i=0;i<response->nItems;i++,item++)
+       {
+         switch(item->respType)
+         {
+            case RESPISNULL:
+            {
+              duk_push_null(ctx);
+              break;
+            }
+            case RESPISFLOAT:
+            {
+              duk_push_number(ctx,(double)item->rfloat);
+              break;
+            }
+            case RESPISINT:
+            {
+              duk_push_number(ctx,(double)item->rinteger);
+              break;
+            }
+            
+            case RESPISARRAY:
+            {
+              /* create an inner array and keep track
+                 of where it's supposed to end */
+              duk_push_array(ctx);
+              endofarray=i+item->nItems;
+              skipnextput=1;
+              break;
+            }            
+            case RESPISBULKSTR:
+            {
+              size_t l= 1 + strnlen(item->loc,item->length);
+              if(l < item->length)
+              { /* if it's binary, put it in a buffer */
+                void *b=duk_push_fixed_buffer(ctx,item->length);
+                memcpy(b,item->loc,item->length);
+                break;
+              }/* else fall through and copy string */
+            }
+            case RESPISSTR:
+            case RESPISPLAINTXT:
+            {
+              duk_push_string(ctx,(const char*)item->loc);
+              break;
+            }
+            /* TODO: how to return errors?? */
+            case RESPISERRORMSG:
+            {
+              duk_push_sprintf(ctx,"Error message: %s\n",item->loc);
+              break;
+            }
+            
+         }
+         
+         
+
+         if (i==endofarray)
+         { /* the inner array */
+           l=duk_get_length(ctx,-2);
+           duk_put_prop_index(ctx,-2,l);
+           endofarray=-1;
+         }
+
+         l=duk_get_length(ctx,-2);
+
+
+         if(!skipnextput)
+           duk_put_prop_index(ctx,-2,l); //the outer array
+
+         skipnextput=0;
+       }
+     }
+    //TODO: else NULL response == Error, push something useful or throw
+}
+
+
+
+duk_ret_t duk_rp_ra_send(duk_context *ctx) {
+  duk_idx_t top=duk_get_top(ctx);
+  int i=0;
+  RESPCLIENT *rcp;
+  RESPROTO *response;
+
+  /* get the client */
+  duk_push_this(ctx);
+  duk_get_prop_string(ctx,-1,DUK_HIDDEN_SYMBOL("respclient"));
+  rcp=(RESPCLIENT *)duk_get_pointer(ctx,-1);
+  duk_pop_2(ctx);
+  response=rc_send(ctx,rcp);
+  ra_push_response(ctx,response);
+
+  return 1;
+}
+
+/* **********************************************************
+
+   SQL and RAMIS constructor functions &
+   SQL and RAMIS init function
+
+   ********************************************************** */
+
 /* **************************************************
-   Sql('/database/path) constructor
-   var sql=new Sql("/database/path:);
+   Ramis(host,port) constructor
+   var ra=new Ramis("127.0.0.1",6379);
+
+   ************************************************** */
+duk_ret_t duk_rp_ra_constructor(duk_context *ctx) {
+  const char *ip=duk_get_string_default(ctx,0,"127.0.0.1");
+  int port = (int) duk_get_int_default(ctx,1,6379);
+  RESPCLIENT *respClient=NULL;
+  char stashvar[32];
+
+  if (!duk_is_constructor_call(ctx)) {
+    return DUK_RET_TYPE_ERROR;
+  }
+
+  snprintf(stashvar,32,"%s:%d",ip,port);
+
+  duk_push_heap_stash(ctx);
+  if(duk_get_prop_string(ctx,-1,stashvar))
+  {
+    respClient=(RESPCLIENT *)duk_get_pointer(ctx,-1);
+  }
+  else
+  {
+    respClient=connectRespServer((char*)ip,port);
+    if(respClient)
+    {
+      duk_push_pointer(ctx,respClient);
+      duk_put_prop_string(ctx,-3,stashvar); /* stack -> [ stash , undefined, pointer ] */
+    }
+  }
+
+  if (!respClient)
+  {
+    duk_push_sprintf(ctx,"respClient: Failed to connect to %s:%d\n",ip,port);
+    duk_throw(ctx);
+  }
+  // TODO: ask what this should be set to
+  respClient->waitForever=1;
+//  respClientWaitForever(respClient,1);
+  duk_push_this(ctx);
+  duk_push_pointer(ctx,(void*)respClient);
+  duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("respclient"));
+  return 0;
+}
+
+/* **************************************************
+   Initialize ramis client into global object. 
+   ************************************************** */
+void duk_ra_init(duk_context *ctx) {
+  /* Set up locks:
+     this will be run once per new duk_context/thread in server.c
+     but needs to be done only once for all threads
+  */
+  /* Push constructor function */
+  duk_push_c_function(ctx, duk_rp_ra_constructor, 2 /*nargs*/);
+
+  /* Push object that will be Sql.prototype. */
+  duk_push_object(ctx);  /* -> stack: [ Sql protoObj ] */
+
+  /* Set Sql.prototype.exec. */
+  duk_push_c_function(ctx, duk_rp_ra_send, DUK_VARARGS);  /* [ Sql proto fn_exe ] */
+  duk_put_prop_string(ctx, -2, "exec");  /* [Sql protoObj-->[exe=fn_exe] ] */
+
+  /* Set Sql.prototype = proto */
+  duk_put_prop_string(ctx, -2, "prototype");  /* -> stack: [ Sql-->[prototype-->[exe=fn_exe,...]] ] */
+
+  /* Finally, register Sql to the global object */
+  duk_put_global_string(ctx, "Ramis");  /* -> stack: [ ] */
+
+}
+
+
+/* **************************************************
+   Sql("/database/path") constructor:
+
+   var sql=new Sql("/database/path");
+   var sql=new Sql("/database/path",true); //create db if not exists
 
    There are x handle caches, one for each thread
-   There is one handle cache for all new calls in this thread
-   And there is one database per new Sql();
+   There is one handle cache for all new Sql() calls 
+   in each thread regardless of how many dbs will be opened.
+
+   Calling new Sql() only stores the name of the db path
+   And there is one database per new Sql("/db/path");
 
    Here we only check to see that the database exists and
    construct the js object.  Actual opening and caching
    of handles to the db is done in exec()
+
+   TODO: prevent second server from accessing any db that
+         is opened here, perhaps with a pid file checked
+         once upon the first call of new Sql()
+
    ************************************************** */
 duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
 
@@ -992,11 +1379,15 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
   char pbuf[1024];
   int i=0;
   int makedb=0;
+  FILE *oldfh=mmsgfh;
+  FILE *newfh;
+  
+  newfh=mmsgfh=fmemopen(pbuf, 1024, "w+");
 
-  *pbuf='\0';
-  mmsgfh=fmemopen(pbuf, 1024, "w+");
-
+  /* allow call to Sql() with "new Sql()" only */
   if (!duk_is_constructor_call(ctx)) {
+    mmsgfh=oldfh;
+    fclose(newfh);
     return DUK_RET_TYPE_ERROR;
   }
 
@@ -1012,8 +1403,10 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
       FLOCK
       if(!createdb(db)){
         FUNLOCK
-        duk_rp_log_error(ctx,pbuf);
-        duk_push_sprintf(ctx,"cannot create database at '%s' (root path not found, lacking permission or other error)", db);
+        duk_rp_log_tx_error(ctx,pbuf);
+        duk_push_sprintf(ctx,"cannot create database at '%s' (root path not found, lacking permission or other error\n)", db,pbuf);
+        mmsgfh=oldfh;
+        fclose(newfh);
         duk_throw(ctx);
       }
       FUNLOCK
@@ -1022,13 +1415,44 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
      tx=TEXIS_CLOSE(tx);
   }
 
+  /* save the name of the database in 'this' */
   duk_push_this(ctx);  /* -> stack: [ db this ] */
   duk_push_string(ctx,db);
   duk_put_prop_string(ctx, -2, "db");
 
-  /* Return undefined: default instance will be used. */
+  mmsgfh=oldfh;
+  fclose(newfh);
   return 0;
 }
+
+/* utility function for global object:
+      var buf=toBuffer(val); //fixed if string, same type if already buffer
+        or
+      var buf=toBUffer(val,"[dynamic|fixed]"); //always converted to type
+*/
+
+duk_ret_t duk_rp_strToBuf(duk_context *ctx)
+{
+  duk_size_t sz;
+  const char *opt=duk_to_string(ctx,1);
+
+  if( !strcmp(opt,"dynamic") )
+    duk_to_dynamic_buffer(ctx,0,&sz);
+  else if ( !strcmp(opt,"fixed") )
+    duk_to_fixed_buffer(ctx,0,&sz);
+  else
+    duk_to_buffer(ctx,0,&sz);
+
+  duk_pop(ctx);
+  return 1;
+}
+
+void duk_strToBuf_init(duk_context *ctx)
+{
+  duk_push_c_function(ctx, duk_rp_strToBuf, 2);
+  duk_put_global_string(ctx, "toBuffer");
+}
+
 
 /* **************************************************
    Initialize Sql into global object. 
@@ -1075,10 +1499,15 @@ void duk_db_init(duk_context *ctx) {
   duk_push_c_function(ctx, duk_rp_sql_close, 0 /*nargs*/); /* [Sql proto-->[exe=fn_exe] fn_close ] */
   duk_put_prop_string(ctx, -2, "close"); /*[Sql protoObj-->[exe=fn_exe,query=fn_exe,close=fn_close] ] */
 
-  /* Set Sql.prototype = proto */
+  /* Set Sql.prototype = protoObj */
   duk_put_prop_string(ctx, -2, "prototype");  /* -> stack: [ Sql-->[prototype-->[exe=fn_exe,...]] ] */
 
   /* Finally, register Sql to the global object */
   duk_put_global_string(ctx, "Sql");  /* -> stack: [ ] */
 
+  /* add ramis from above*/
+  duk_ra_init(ctx);
+
+  /* add utility function toBuffer() */
+  duk_strToBuf_init(ctx);
 }

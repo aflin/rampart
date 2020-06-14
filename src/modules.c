@@ -88,27 +88,50 @@ static duk_ret_t load_native_module(duk_context *ctx) {
 	return 0;
 }
 
+
+
+
+
+
+
+
+
+/* unnecessary, duktape caches modules itself
 static const char modSearch[] =
 "Duktape.modSearch = function (id, require, exports, module) {\n"
-"    var name;\n"
+"    var name=[];\n"
 "    var src;\n"
 "    var found = false;\n"
+"    var lib = false;\n"
 "\n"
-"    // FIXME: Should look at various default search paths.\n"
+"    if(Duktape.savedModules && Duktape.savedModules[id]){\n"
+"        lib=Duktape.savedModules[id];\n"
+"        for(var prop in lib) {\n"
+"            exports[prop] = lib[prop];\n"
+"        };\n"
+"        console.log('got cached mod');\n"
+"        return src;//??\n"
+"    }\n"
 "\n"
+"console.log('loading module '+id)\n"
 "    // Try to load a native library\n"
-"    name = id;\n"
-"    var lib = Duktape.loadNativeModule(id);\n"
-"    if (!lib)\n"
-"    {\n"
-"       name = './' + id + '.so';\n"
-"       lib = Duktape.loadNativeModule(name);\n"
+"    name[0]=id;\n"
+"    name[1]='rp'+id;\n"
+"    name[2]='./' + id + '.so';\n"
+"    name[3]='./rp' + id + '.so';\n"
+"    if(Duktape.modulesPath) {\n"
+"        if(Duktape.modulesPath[Duktape.modulesPath.length -1]!='/')\n"
+"            Duktape.modulesPath+='/';\n"
+"        name[4]=Duktape.modulesPath + id;\n"
+"        name[5]=Duktape.modulesPath + 'rp' + id;\n"
+"        name[6]=Duktape.modulesPath + id + '.so';\n"
+"        name[7]=Duktape.modulesPath + './rp' + id + '.so';\n"
 "    }\n"
-"    if (!lib)\n"
-"    {\n"
-"       name = './rp' + id + '.so';\n"
-"       lib = Duktape.loadNativeModule(name);\n"
+"    for (var i=0;i<name.length;i++) {\n"
+"        lib = Duktape.loadNativeModule(name[i]);\n"
+"        if(lib) break;\n"
 "    }\n"
+"\n"
 "    if (lib)\n"
 "    {\n"
 "        for(var prop in lib) {\n"
@@ -117,6 +140,52 @@ static const char modSearch[] =
 "        found = true;\n"
 "    }\n"
 "\n"
+"    if(!Duktape.savedModules) Duktape.savedModules={};\n"
+"    Duktape.savedModules[id]=lib;\n"
+"    return src;\n"
+"}";
+*/
+
+static const char modSearch[] =
+"Duktape.modSearch = function (id, require, exports, module) {\n"
+"    var name=[];\n"
+"    var src;\n"
+"    var lib = false;\n"
+"\n"
+"     if(id.charAt(0)=='/'){ //assume full path, don't modify\n"
+"         lib = Duktape.loadNativeModule(id);\n"
+"         if(!lib) throw new Error('module not found: ' + id);\n"
+"     }\n"
+"\n"
+"    name[0]=id;\n"
+"    name[1]='rp'+id;\n"
+"    name[2]='./' + id + '.so';\n"
+"    name[3]='./rp' + id + '.so';\n"
+"    if(Duktape.modulesPath) {\n"
+"        if(Duktape.modulesPath[Duktape.modulesPath.length -1]!='/')\n"
+"            Duktape.modulesPath+='/';\n"
+"        name[4]=Duktape.modulesPath + id;\n"
+"        name[5]=Duktape.modulesPath + 'rp' + id;\n"
+"        name[6]=Duktape.modulesPath + id + '.so';\n"
+"        name[7]=Duktape.modulesPath + 'rp' + id + '.so';\n"
+"    }\n"
+"    for (var i=0;i<name.length;i++) {\n"
+"        lib = Duktape.loadNativeModule(name[i]);\n"
+"        if(lib) break;\n"
+"    }\n"
+"\n"
+"    if (lib)\n"
+"    {\n"
+"        for(var prop in lib) {\n"
+"            exports[prop] = lib[prop];\n"
+"        }\n"
+"        found = true;\n"
+"    }\n"
+"    else throw new Error('module not found: ' + id);\n"
+"\n"
+"}";
+
+/* FIXME:
 "    // Try to load a JavaScript library\n"
 "    if(!found) {\n"
 "        name = id + '.js';\n"
@@ -130,8 +199,7 @@ static const char modSearch[] =
 "    {\n"
 "        throw new Error('module not found: ' + id);\n"
 "    }\n"
-"    return src;\n"
-"}";
+*/
 
 void init_modules(duk_context *ctx)
 {

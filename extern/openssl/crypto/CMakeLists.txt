@@ -278,7 +278,8 @@ else()
   add_submodule ( . threads_pthread.c )
 endif()
 
-add_library( crypto ${LIBSRC} ${OBJECTS_SRC} )
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+add_library( crypto STATIC ${LIBSRC} ${OBJECTS_SRC} )
 
 target_include_directories( crypto PUBLIC ${PROJECT_BINARY_DIR}/include )
 
@@ -294,7 +295,8 @@ else()
 endif()
 
 set_target_properties( crypto PROPERTIES
-  VERSION "${LIB_VERSION}" SOVERSION "${LIB_SOVERSION}" )
+  VERSION "${LIB_VERSION}" SOVERSION "${LIB_SOVERSION}"
+)
 
 if( ANDROID )
   set_target_properties( crypto PROPERTIES OUTPUT_NAME "crypto_1_1" )

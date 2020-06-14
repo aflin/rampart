@@ -17,7 +17,7 @@ IF(Threads_FOUND)
 ENDIF(Threads_FOUND)
 #
 
-add_definitions(-DDUK_CMDLINE_PRINTALERT_SUPPORT -DDUK_CMDLINE_CONSOLE_SUPPORT -DDUK_CMDLINE_LOGGING_SUPPORT -DDUK_CMDLINE_MODULE_SUPPORT -DDUK_CMDLINE_FILEIO -DDUK_DB_SUPPORT)
+add_definitions(-DRP_USING_DUKTAPE -DDUK_CMDLINE_PRINTALERT_SUPPORT -DDUK_CMDLINE_CONSOLE_SUPPORT -DDUK_CMDLINE_LOGGING_SUPPORT -DDUK_CMDLINE_MODULE_SUPPORT -DDUK_CMDLINE_FILEIO -DDUK_DB_SUPPORT)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Os -g -pedantic -std=c99 -Wall -fstrict-aliasing -fomit-frame-pointer -rdynamic")
 
 
@@ -29,6 +29,8 @@ add_executable(rp
 	duk_logging.c
 	duk_module_duktape.c
 	modules.c
+	resp_client.c
+	resp_protocol.c
 	db.c )
 
 set_target_properties(rp PROPERTIES
@@ -63,6 +65,9 @@ add_library(rpserver SHARED
  server.c
 )
 
+#this is good for later. Right now it interrupts work flow
+#set (CMAKE_CURRENT_BINARY_DIR ${PROJECT_BINARY_DIR}/bin )
+
 configure_file(server.js ${CMAKE_CURRENT_BINARY_DIR}/server.js COPYONLY)
 configure_file(utils.js ${CMAKE_CURRENT_BINARY_DIR}/utils.js COPYONLY)
 configure_file(dbtest.js ${CMAKE_CURRENT_BINARY_DIR}/dbtest.js COPYONLY)
@@ -75,20 +80,20 @@ set(ONIGURUMA_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/oniguruma)
 set(CURL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/curl)
 set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp)
 
-target_link_libraries(rpcurl ${CURL_TARGET_DIR}/lib/libcurl.a)
+target_link_libraries(rpcurl 
+	${CURL_TARGET_DIR}/lib/libcurl.a
+	${OPENSSL_TARGET_DIR}/ssl/libssl.a
+	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
+)
 
 target_link_libraries(rpserver 
-	${LIBEVENT_TARGET_DIR}/lib/libevent.a 
-	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a 
-	${LIBEVENT_TARGET_DIR}/lib/libevent_core.a 
-	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a 
+	${LIBEVHTP_TARGET_DIR}/libevhtp.a
+	${LIBEVENT_TARGET_DIR}/lib/libevent.a
+	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
-	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a 
 	${OPENSSL_TARGET_DIR}/ssl/libssl.a 
-	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a 
-	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a pthread 
-	${ONIGURUMA_TARGET_DIR}/libonig.a 
-	${LIBEVHTP_TARGET_DIR}/libevhtp.a)
+	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
+	${ONIGURUMA_TARGET_DIR}/libonig.a) 
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 set_target_properties(rpcurl rputils rpserver 
@@ -105,3 +110,11 @@ set_target_properties(rpcurl rputils rpserver
 )
 
 endif()
+
+#this is good for later. Right now it interrupts work flow
+#set_target_properties(rpcurl rputils rpserver rp
+#	PROPERTIES
+#	ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+#	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+#	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+#)

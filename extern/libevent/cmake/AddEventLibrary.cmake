@@ -107,7 +107,8 @@ macro(add_event_library LIB_NAME)
         add_library("${LIB_NAME}_static" STATIC ${LIB_SOURCES})
         set_target_properties("${LIB_NAME}_static" PROPERTIES
             OUTPUT_NAME "${LIB_NAME}"
-            CLEAN_DIRECT_OUTPUT 1)
+            CLEAN_DIRECT_OUTPUT 1
+            POSITION_INDEPENDENT_CODE ON)
 
         if(LIB_INNER_LIBRARIES)
             set(INNER_LIBRARIES "${LIB_INNER_LIBRARIES}_static")

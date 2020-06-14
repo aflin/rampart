@@ -42,6 +42,7 @@
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error seeking file '%s': %s", filename, strerror(errno)); \
     return duk_throw(ctx);                                                                               \
   }
+  
 /**
  * Reads a specified number of bytes from a file into a buffer.
  * @typedef {Object} ReadFileOptions
@@ -123,6 +124,7 @@ duk_ret_t duk_util_read_file(duk_context *ctx)
 
 duk_ret_t duk_util_readln_finalizer(duk_context *ctx)
 {
+  duk_push_this(ctx);
   duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filepointer"));
   FILE *fp = duk_get_pointer(ctx, -1);
   duk_pop(ctx);
@@ -165,27 +167,35 @@ duk_ret_t duk_util_iter_readln(duk_context *ctx)
   int nread = getline(&line, &len, fp);
   if (errno)
   {
-    if (line)
-      free(line);
+    free(line);
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading file '%s': %s", filename, strerror(errno));
     return duk_throw(ctx);
   }
   // return object
   duk_push_object(ctx);
 
-  duk_push_string(ctx, line);
-  duk_put_prop_string(ctx, -2, "value");
+  if (nread != -1)
+  {
+    duk_push_string(ctx, line);
+    duk_put_prop_string(ctx, -2, "value");
+  }
+  else
+  {
+    duk_push_undefined(ctx);
+    duk_put_prop_string(ctx, -2, "value");
+  }
 
   duk_push_boolean(ctx, nread == -1);
   duk_put_prop_string(ctx, -2, "done");
 
   if (nread == -1)
   {
+    duk_push_pointer(ctx,NULL);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
     fclose(fp);
   }
 
-  if (line)
-    free(line);
+  free(line);
   return 1;
 }
 /**

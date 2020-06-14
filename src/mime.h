@@ -317,6 +317,7 @@ RP_MTYPES rp_mimetypes[]={
 //  {"mp3", "audio/x-mpeg-3"},
 //  {"mp3", "video/mpeg"},
 //  {"mp3", "video/x-mpeg"},
+  {"mp4", "video/mp4"},
   {"mpa", "audio/mpeg"},
 //  {"mpa", "video/mpeg"},
   {"mpc", "application/x-project"},
@@ -670,4 +671,3 @@ int compare_mtypes(void const *a, void const *b) {
  return strcmp(as, bs);
 }
 #endif
-

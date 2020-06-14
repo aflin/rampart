@@ -60,6 +60,7 @@ string(REGEX MATCH "#define LIBCURL_VERSION_NUM 0x[0-9a-fA-F]+"
   CURL_VERSION_NUM ${CURL_VERSION_H_CONTENTS})
 string(REGEX REPLACE "[^0]+0x" "" CURL_VERSION_NUM ${CURL_VERSION_NUM})
 
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Setup package meta-data
 # SET(PACKAGE "curl")
@@ -77,7 +78,7 @@ include_directories(${CURL_SOURCE_DIR}/include)
 option(CURL_WERROR "Turn compiler warnings into errors" OFF)
 option(PICKY_COMPILER "Enable picky compiler options" ON)
 option(BUILD_CURL_EXE "Set to ON to build curl executable." ON)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
+#set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libraries" FORCE)
 option(ENABLE_ARES "Set to ON to enable c-ares support" OFF)
 if(WIN32)
   option(CURL_STATIC_CRT "Set to ON to build libcurl with static CRT on Windows (/MT)." OFF)
@@ -127,9 +128,9 @@ if(ENABLE_CURLDEBUG)
 endif()
 
 # For debug libs and exes, add "-d" postfix
-if(NOT DEFINED CMAKE_DEBUG_POSTFIX)
-  set(CMAKE_DEBUG_POSTFIX "-d")
-endif()
+# if(NOT DEFINED CMAKE_DEBUG_POSTFIX)
+#   set(CMAKE_DEBUG_POSTFIX "-d")
+# endif()
 
 # initialize CURL_LIBS
 set(CURL_LIBS "")

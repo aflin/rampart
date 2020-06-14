@@ -6,9 +6,12 @@ project(oniguruma
 set(PACKAGE onig)
 set(PACKAGE_VERSION ${PROJECT_VERSION})
 
-option(BUILD_SHARED_LIBS "Build shared libraries" ON)
+#option(BUILD_SHARED_LIBS "Build shared libraries" ON)
+#set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libraries" FORCE)
 option(ENABLE_POSIX_API  "Include POSIX API" ON)
 # set(LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 if(MSVC)
   option(MSVC_STATIC_RUNTIME "Build with static runtime" OFF)
 endif()
@@ -62,7 +65,8 @@ if(ENABLE_POSIX_API)
   add_definitions("-DUSE_POSIX_API")
 endif()
 
-add_library(onig STATIC ${_SRCS})
+add_library(onig ${_SRCS})
+# set_target_properties(onig PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(onig PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)

@@ -21,7 +21,7 @@
 
 cmake_minimum_required(VERSION 3.1.2 FATAL_ERROR)
 
-set(EVENT__LIBRARY_TYPE "STATIC")
+set(EVENT__LIBRARY_TYPE "BOTH")
 
 if (POLICY CMP0054)
     cmake_policy(SET CMP0054 NEW)
@@ -892,6 +892,8 @@ if (NOT EVENT__DISABLE_THREAD_SUPPORT)
         list(APPEND LIB_APPS ${CMAKE_THREAD_LIBS_INIT})
     endif()
 endif()
+
+list(APPEND LIB_APPS "-ldl")
 
 if (NOT EVENT__DISABLE_TESTS)
     # Zlib is only used for testing.
