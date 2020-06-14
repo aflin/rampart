@@ -5,21 +5,19 @@
 You will need to install the following dependencies:
 
 ```
-brew install oniguruma
-brew install libevhtp
-brew install curl
-brew install gawk
+brew install libidn2
 ```
 
 Then, after cloning, you can do the following to build:
 
 ```
+mkdir rampart/build
 cd rampart/build
 cmake ../
 make
 ```
 
-Most of the relevant files will be in `build/rp`. You can run them using the following: 
+Most of the relevant files will be in `build/src`. You can run them using the following: 
 
 ```
 ./rp <js-file-path>
