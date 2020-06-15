@@ -1,22 +1,3 @@
-find_library(MATH_LIBRARY m)
-if(MATH_LIBRARY)
-    target_link_libraries(mmapi3 PUBLIC ${MATH_LIBRARY})
-endif()
-find_library(DYNAMIC_LINK_LIBRARY dl)
-if(DYNAMIC_LINK_LIBRARY)
-    target_link_libraries(texisapi PUBLIC ${DYNAMIC_LINK_LIBRARY})
-endif()
-#
-# EPI_HAVE_PTHREADS
-#
-set(THREADS_PREFER_PTHREADS_FLAG ON)
-find_package(Threads REQUIRED)
-IF(Threads_FOUND)
-	SET(EPI_HAVE_PTHREADS Threads_FOUND)
-	CHECK_SYMBOL_EXISTS(PTHREAD_MUTEX_INITIALIZER	pthread.h	HAVE_PTHREAD_MUTEX_INITIALIZER)
-ENDIF(Threads_FOUND)
-#
-
 add_definitions(-DRP_USING_DUKTAPE -DDUK_CMDLINE_PRINTALERT_SUPPORT -DDUK_CMDLINE_CONSOLE_SUPPORT -DDUK_CMDLINE_LOGGING_SUPPORT -DDUK_CMDLINE_MODULE_SUPPORT -DDUK_CMDLINE_FILEIO -DDUK_DB_SUPPORT)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Os -g -pedantic -std=c99 -Wall -fstrict-aliasing -fomit-frame-pointer -rdynamic")
 
@@ -38,21 +19,22 @@ set_target_properties(rp PROPERTIES
   ENABLE_EXPORTS 1
 )
 
-
-target_link_libraries(rp PUBLIC Threads::Threads)
-target_link_libraries(rp LINK_PUBLIC m texisapi mmapi3 z dl)
+target_link_libraries(rp LINK_PUBLIC 
+	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
+	${PROJECT_BINARY_DIR}/texis/mmapi/libmmapi3.a
+	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
+	m z dl pthread
+)
 
 #-shared -pthread -fPIC curl.c -lcurl
 
-#message("CMAKE_CXX_COMPILER_ID = ${CMAKE_CXX_COMPILER_ID}")
-
-if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-include_directories(${PROJECT_SOURCE_DIR}/include ${PROJECT_BINARY_DIR}/texis/texisapi /usr/local/include /usr/local/opt/curl/include /usr/local/opt/openssl@1.1/include)
-link_directories(${PROJECT_BINARY_DIR}/texis/texisapi /usr/local/lib /usr/local/opt/curl/lib /usr/local/opt/openssl@1.1/lib)
-else()
-include_directories(${PROJECT_SOURCE_DIR}/include ${PROJECT_BINARY_DIR}/texis/texisapi)
-link_directories(${PROJECT_BINARY_DIR}/texis/texisapi)
-endif()
+include_directories(
+	${PROJECT_BINARY_DIR}/texis/texisapi 
+	${PROJECT_BINARY_DIR}/texis 
+	${PROJECT_SOURCE_DIR}/texis/include 
+	${PROJECT_SOURCE_DIR}/extern/curl/include/
+	${PROJECT_BINARY_DIR}/extern/openssl/include/
+)
 
 add_library(rpcurl SHARED
  curl.c

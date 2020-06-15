@@ -1,5 +1,7 @@
-#include "texint.h"
-#include "texsql.h"
+#include <stdio.h>
+#include <string.h>
+#include <libgen.h>
+#include "texisapi.h"
 
 void
 usage(char *programName)
@@ -28,7 +30,7 @@ main(int argc, char *argv[])
   tx = texis_open(argv[1], "PUBLIC", "");
   if(!tx)
     return 1;
-  TXApp->hexifyBytes = 1; /* Print varbyte as hex string */
+  texis_set(tx, "hexifybytes", "on"); /* Print varbyte as hex string */
   texis_prepare(tx, argv[2]);
   for(argnum = 1; argnum < (argc-2); argnum++)
   {
@@ -56,7 +58,7 @@ main(int argc, char *argv[])
     {
 /*      printf("[%d] Type: %d Size: %d\n", i, fl->type[i], fl->ndata[i]); */
       if(fl->type[i] == 66 || fl->type[i] == 194)
-        printf("%*s\t", fl->ndata[i], fl->data[i]);
+        printf("%*s\t", fl->ndata[i], (char *)fl->data[i]);
     }
     printf("\n");
   }

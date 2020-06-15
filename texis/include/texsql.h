@@ -1,6 +1,7 @@
 #ifndef _TEXSQL_H
 #define _TEXSQL_H
 
+#include "sizes.h"
 #include "txsql.h"
 /************************************************************************/
 
@@ -115,7 +116,7 @@ typedef struct	tagSTMT {
 #define SQL_C_INTEGER	(SQL_TYPE_DRIVER_START-3)
 #define SQL_INTERNAL	(SQL_TYPE_DRIVER_START-4)/* KNG for FTN_INTERNAL */
 #define SQL_C_INTERNAL	SQL_INTERNAL
-#ifdef EPI_INT64_SQL
+#if defined(EPI_INT64_SQL) || defined(EPI_INT64_MAX)
 /* Use SQL_BIGINT/SQL_C_SBIGINT for int64
  * WTF no standard SQL_UBIGINT seems to exists;
  * use SQL_UINT64/SQL_C_UBIGINT for uint64
@@ -124,56 +125,6 @@ typedef struct	tagSTMT {
 #else
 	error We should be 64-bit
 #endif /* EPI_INT64_SQL */
-
-#define FLDLSTMAX 1000
-#define FLDLSTPN (FLDLST *)NULL
-/** Container for results from texis_ calls
- *
- * Contains the results from texis_fetch etc.
- *
- * ndata contains the actual size of the data returned.
- * ondata contains the declared size of the field in the table, which may
- * be different than ndata if it is a var field.
- */
-typedef struct FLDLST
-{
-   int      n;                 /**< number of fields in the lstst */
-   int      type [FLDLSTMAX];  /**< Data types - of FTN_ type */
-   void    *data [FLDLSTMAX];  /**< pointer to data */
-   int      ndata[FLDLSTMAX];  /**< number of items in data, e.g. char length */
-   char    *name [FLDLSTMAX];  /**< name of field */
-   int      ondata[FLDLSTMAX]; /**< number of items in schema */
-} FLDLST;
-
-/************************************************************************/
-                             /* MAW 06-27-94 - TEXIS was HSTMT before */
-#define TEXIS struct texis_struct
-#define TEXISPN (TEXIS *)NULL
-TEXIS {
-   HENV     henv;
-   HDBC     hdbc;
-   HSTMT    hstmt;
-   int      donullcb;
-   FLDOP   *fo;/* MAW 10-05-94 - for doing conversions on result rows */
-   FLD     *fld[DDFIELDS];          /* MAW 10-06-94 - for conversions */
-	 FLDLST   fl;
-   int	   nfld;   /* JMT 1999-03-04 - count fld, make free efficient */
-   RETCODE      lastRetcode;    /* last SQLPrepare() etc. RETCODE */
-};
-/************************************************************************/
-TEXIS *texis_open(char *database, char *user, char *password);
-TEXIS *texis_open_options(void *, void *, void *, char *database, char *user, char *group, char *password);
-TEXIS *texis_dup(TEXIS *);
-int texis_prepare(TEXIS *, char *sqlQuery);
-int texis_execute(TEXIS *);
-int texis_param(TEXIS *, int paramNum, void *data, long *dataLen, int cType, int sqlType);
-FLDLST *texis_fetch(TEXIS *, int stringsFrom);
-int texis_flush(TEXIS *tx);
-int texis_flush_scroll(TEXIS *tx, int nrows);
-char **texis_getresultnames(TEXIS *tx);
-int *texis_getresultsizes(TEXIS *tx);
-int texis_getrowcount(TEXIS *tx);
-TEXIS *texis_close(TEXIS *);
 
 /************************************************************************/
 #endif /* _TEXSQL_H */

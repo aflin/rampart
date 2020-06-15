@@ -3,7 +3,8 @@
 
 #include "duktape.h"
 #include "texint.h"
-#include "texsql.h"
+//#include "texsql.h"
+#include "texisapi.h"
 
 #if defined(__cplusplus)
 extern "C" {

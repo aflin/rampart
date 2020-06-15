@@ -15,26 +15,26 @@
  * Revision 1.9  2001-07-09 17:04:22-04  john
  * Compiler warnings
  *
- * 
+ *
  * Revision 1.8  1999-12-16 15:27:26-05  john
  * Params becomes dynamically sized array associated with statement.
  *
  * Revision 1.6  95/12/19  11:34:20  john
  * Use fld calls.
- * 
+ *
  * Revision 1.5  95/01/11  12:51:35  john
  * Add header.
- * 
+ *
  * Revision 1.4  94/12/08  13:22:26  john
  * Free fields when enumeratine.
- * 
+ *
  * Revision 1.3  94/07/29  12:04:46  john
  * Add an unset param function.
- * 
+ *
  * Revision 1.2  94/06/15  11:05:22  john
  * Ifdef RCSID (and get it right).
  * Remove unused var.
- * 
+ *
  * Revision 1.1  94/04/13  17:06:34  john
  * Initial revision
  *
@@ -74,7 +74,7 @@ size_t desired;
 		return 0;
 	}
 	return -1;
-	
+
 }
 
 /******************************************************************/
@@ -235,7 +235,7 @@ int discparam; /* Param-o-rama - Ignore where clause */
 				return 0;
 			else
 				return TXparamunset(q->right, discparam);
-			
+
 		case TABLE_AS_OP:
 			return TXparamunset(q->left, discparam);
 		default:
@@ -278,4 +278,3 @@ TXnextparamnum()
 }
 
 /******************************************************************/
-

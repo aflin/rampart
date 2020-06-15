@@ -1,4 +1,4 @@
-% MAW 09-18-94 removed blob refs, brought rest up to date
+%% MAW 09-18-94 removed blob refs, brought rest up to date
 %**********************************************************************/
 
 %\documentstyle[epiman,12pt]{book}
@@ -19,16 +19,20 @@ use to write your own custom application that talks to Texis.
 {\bf SQL interface}
 \begin{verbatim}
 TEXIS *texis_open(char *database, char *user, char *password);
-TEXIS *texis_open_options(void *, void *, void *, char *database, char *user, char *group, char *password);
+TEXIS *texis_open_options(void *, void *, void *, char *database, char *user,
+                          char *group, char *password);
+int texis_set(TEXIS *, char *, char *);
 int texis_prepare(TEXIS *, char *sqlQuery);
 int texis_execute(TEXIS *);
-int texis_param(TEXIS *, int paramNum, void *data, long *dataLen, int cType, int sqlType);
+int texis_param(TEXIS *, int paramNum, void *data, long *dataLen,
+                int cType, int sqlType);
 FLDLST *texis_fetch(TEXIS *, int stringsFrom);
 int texis_flush(TEXIS *tx);
 int texis_flush_scroll(TEXIS *tx, int nrows);
 char **texis_getresultnames(TEXIS *tx);
 int *texis_getresultsizes(TEXIS *tx);
 int texis_getrowcount(TEXIS *tx);
+int texis_getCountInfo(TEXIS *tx, TXCOUNTINFO *countInfo);
 TEXIS *texis_close(TEXIS *);
 FLDLST *freefldlst(FLDLST *fl);
 
@@ -133,47 +137,88 @@ number.
 
 \verb`FTN_STRLST` --- A delimited list of strings.
 
-The \verb`type` may also be \verb`|`ed with \verb`FTN_NotNullableFlag` (formerly \verb`DDNULLBIT`) and/or
-\verb`DDVARBIT`.  If \verb`FTN_NotNullableFlag` is set, it indicates that the field is not
+The \verb`type` may also be \verb`|`ed with \verb`FTN_NotNullableFlag`
+(formerly \verb`DDNULLBIT`) and/or \verb`DDVARBIT`.
+If \verb`FTN_NotNullableFlag` is set, it indicates that the field is not
 allowed to be NULL. \verb`DDVARBIT` indicated that the field is
 variable length instead of fixed length. When handling result rows
 these bits can generally be ignored.
 
 %**********************************************************************/
 
-\NAME{n\_getindexcount() - Hit information}
+\NAME{TXCOUNTINFO - Struct containing idnex count info}
 
 \SYNOPSIS
 \begin{verbatim}
-#include <sys/types.h>
-#include "tstone.h"
-int n_getindexcount(SERVER *se);
+  typedef struct TXCOUNTINFO
+  {
+    EPI_HUGEINT	rowsMatchedMin;
+    EPI_HUGEINT	rowsMatchedMax;
+    EPI_HUGEINT	rowsReturnedMin;
+    EPI_HUGEINT	rowsReturnedMax;
+    EPI_HUGEINT	indexCount;
+  } TXCOUNTINFO;
+\end{verbatim}
+
+\DESCRIPTION
+The \verb`TXCOUNTINFO` struct contains information about the min/max
+number of table rows matching the query.
+%
+The \verb`rowsMatchedMin`
+and \verb`rowsMatchedMax` members are before
+\begin{itemize}
+  \item GROUP BY
+  \item likeprows
+  \item aggregates (count(*))
+  \item multivaluetomultirow
+\end{itemize}
+
+If the number is unknown the result will be less than 0.  If
+\verb`rowsMatchedMin` and \verb`rowsMatchedMax` are different then
+the exact count is unknown.
+
+The \verb`rowsReturnedMin`
+and \verb`rowsReturnedMax` members indicate the number of rows that
+would be returned by \verb`texis_fetch` and are after
+\begin{itemize}
+  \item GROUP BY
+  \item likeprows
+  \item aggregates (count(*))
+  \item multivaluetomultirow
+\end{itemize}
+
+If the number is unknown the result will be less than 0.  If
+\verb`rowsReturnedMin` and \verb`rowsReturnedMax` are different then
+the exact count is unknown.
+
+
+%**********************************************************************/
+
+\NAME{texis\_getCountInfo() - Hit count information}
+
+\SYNOPSIS
+\begin{verbatim}
+#include "texisapi.h"
+int texis_getCountInfo(TEXIS *tx, TXCOUNTINFO *countinfo);
 \end{verbatim}
 
 \DESCRIPTION
 
 This function will return the count of rows to be read from the index
-for the most recently prepared statement, if available.
+for the prepared statement, if available.
 
 \CAVEATS
 
-The return from this function is only valid under certain circumstances,
-which are when the index has been scanned to get a list of potentially
-matching records.  In a join, the return value will be the number of
-matches in the inner table corresponding to the current outer row, not
-the number of outer table matches.  The actual number of records returned
-may be significantly less if post processing is done to resolve some
-of the where clause.
+This function populates a \verb`TXCOUNTINFO` structure with information
+about the number of rows expected to be returned.  A range of rows may be
+provided if rows may be filtered as rows are returned, for example a
+combination of indexed and unindexed clauses.
 
-The default behaviour of Texis with a single relational operator and an
-index on the field is to walk the index as the rows are returned, which
-is faster at getting the initial rows out.  Since it does not get all the
-matching rows from the index first, {\tt n\_getindexcount()} will return 0.
-This behaviour can be changed with the {\tt bubble} property.
+The lower and upper bounds of the array will be updated as rows are returned
+and they may converge to the same number.
 
-\EXAMPLE
-\begin{verbatim}
-\end{verbatim}
+If the bound is negative that means it is unknown, for example if no index
+is being used.
 
 %**********************************************************************/
 
@@ -209,6 +254,19 @@ SQL statements are setup and executed with \verb`texis_prepare()`,
 \begin{verbatim}
 texis_prepare(), texis_execute(), and texis_fetch()
 \end{verbatim}
+
+%**********************************************************************/
+
+\NAME{texis\_set() - Set properties}
+\SYNOPSIS
+\begin{verbatim}
+int texis_set(TEXIS *, char *property, char *value);
+\end{verbatim}
+
+\DESCRIPTION
+
+Equivalent to the the SQL {\tt SET} statement for setting server properties
+(p.~\pageref{ServerProperties})
 
 %**********************************************************************/
 
@@ -360,20 +418,18 @@ texis_prepare(), texis_execute()
 
 %**********************************************************************/
 
-\NAME{n\_settexisparam(), texis\_param(), n\_resetparamtx() - SQL interface}
+\NAME{texis\_param(), texis\_resetparams() - SQL interface}
 \SYNOPSIS
 \begin{verbatim}
-int texis_param( tx, ipar, buf, len, ctype, sqltype)
-SERVER  *se;
-TEXIS      *tx;
+int texis_param(tx, ipar, buf, len, ctype, sqltype)
+TEXIS   *tx;
 int     ipar;
 void    *buf;
 int     *len;
 int     ctype;
 int     sqltype;
 
-int texis_resetparams( tx)
-SERVER	*se;
+int texis_resetparams(tx)
 TEXIS	*tx;
 \end{verbatim}
 
@@ -424,8 +480,7 @@ counter    & SQL\_COUNTER     & SQL\_C\_COUNTER & ft\_counter \\
 
 \EXAMPLE
 \begin{verbatim}
-SERVER *se;
-TEXIS     *tx;
+TEXIS  *tx;
 char   *description;
 char   *article;
 int     lend, lena;

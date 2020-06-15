@@ -14,6 +14,7 @@
 #ifndef _WIN32                       /* MAW 02-24-94 - cleanup ms isms */
 #  define CALLBACK
 #  define EXPORT
+#  define FAR
 #endif                                                       /* MSDOS */
 
 /*
@@ -198,47 +199,47 @@ typedef int                 RETCODE;
 
 /* Core Function Prototypes */
 
-RETCODE SQL_API SQLAllocConnect ARGS((
+RETCODE SQL_API SQLAllocConnect (
     HENV        henv,
-    HDBC   FAR *phdbc));
+    HDBC   FAR *phdbc);
 
-RETCODE SQL_API SQLAllocEnv ARGS((
-    HENV   FAR *phenv));
+RETCODE SQL_API SQLAllocEnv (
+    HENV   FAR *phenv);
 
-RETCODE SQL_API SQLAllocStmt ARGS((
+RETCODE SQL_API SQLAllocStmt (
     HDBC        hdbc,
-    HSTMT  FAR *phstmt));
+    HSTMT  FAR *phstmt);
 
-RETCODE SQL_API SQLBindCol ARGS((
+RETCODE SQL_API SQLBindCol (
     HSTMT       hstmt,
     UWORD       icol,
     SWORD       fCType,
     PTR         rgbValue,
     SDWORD      cbValueMax,
-    SDWORD FAR *pcbValue));
+    SDWORD FAR *pcbValue);
 
-RETCODE SQL_API SQLCancel ARGS((
-    HSTMT       hstmt));
+RETCODE SQL_API SQLCancel (
+    HSTMT       hstmt);
 
-RETCODE SQL_API SQLColAttributes ARGS((
+RETCODE SQL_API SQLColAttributes (
     HSTMT       hstmt,
     UWORD       icol,
     UWORD       fDescType,
     PTR         rgbDesc,
 	SWORD       cbDescMax,
     SWORD  FAR *pcbDesc,
-    SDWORD FAR *pfDesc));
+    SDWORD FAR *pfDesc);
 
-RETCODE SQL_API SQLConnect ARGS((
+RETCODE SQL_API SQLConnect (
     HDBC        hdbc,
     UCHAR  FAR *szDSN,
     SWORD       cbDSN,
     UCHAR  FAR *szUID,
     SWORD       cbUID,
     UCHAR  FAR *szAuthStr,
-    SWORD       cbAuthStr));
+    SWORD       cbAuthStr);
 
-RETCODE SQL_API SQLDescribeCol ARGS((
+RETCODE SQL_API SQLDescribeCol (
     HSTMT       hstmt,
     UWORD       icol,
     UCHAR  FAR *szColName,
@@ -247,12 +248,12 @@ RETCODE SQL_API SQLDescribeCol ARGS((
     SWORD  FAR *pfSqlType,
     UDWORD FAR *pcbColDef,
     SWORD  FAR *pibScale,
-    SWORD  FAR *pfNullable));
+    SWORD  FAR *pfNullable);
 
-RETCODE SQL_API SQLDisconnect ARGS((
-    HDBC        hdbc));
+RETCODE SQL_API SQLDisconnect (
+    HDBC        hdbc);
 
-RETCODE SQL_API SQLError ARGS((
+RETCODE SQL_API SQLError (
     HENV        henv,
     HDBC        hdbc,
     HSTMT       hstmt,
@@ -260,64 +261,64 @@ RETCODE SQL_API SQLError ARGS((
     SDWORD FAR *pfNativeError,
     UCHAR  FAR *szErrorMsg,
     SWORD       cbErrorMsgMax,
-    SWORD  FAR *pcbErrorMsg));
+    SWORD  FAR *pcbErrorMsg);
 
-RETCODE SQL_API SQLExecDirect ARGS((
+RETCODE SQL_API SQLExecDirect (
     HSTMT       hstmt,
     UCHAR  FAR *szSqlStr,
-    SDWORD      cbSqlStr));
+    SDWORD      cbSqlStr);
 
-RETCODE SQL_API SQLExecute ARGS((
-    HSTMT       hstmt));
+RETCODE SQL_API SQLExecute (
+    HSTMT       hstmt);
 
-RETCODE SQL_API SQLFetch ARGS((
-    HSTMT       hstmt));
+RETCODE SQL_API SQLFetch (
+    HSTMT       hstmt);
 
-RETCODE SQL_API SQLFreeConnect ARGS((
-    HDBC        hdbc));
+RETCODE SQL_API SQLFreeConnect (
+    HDBC        hdbc);
 
-RETCODE SQL_API SQLFreeEnv ARGS((
-    HENV        henv));
+RETCODE SQL_API SQLFreeEnv (
+    HENV        henv);
 
-RETCODE SQL_API SQLFreeStmt ARGS((
+RETCODE SQL_API SQLFreeStmt (
     HSTMT       hstmt,
-    UWORD       fOption));
+    UWORD       fOption);
 
-RETCODE SQL_API SQLGetCursorName ARGS((
+RETCODE SQL_API SQLGetCursorName (
     HSTMT       hstmt,
     UCHAR  FAR *szCursor,
     SWORD       cbCursorMax,
-    SWORD  FAR *pcbCursor));
+    SWORD  FAR *pcbCursor);
 
-RETCODE SQL_API SQLNumResultCols ARGS((
+RETCODE SQL_API SQLNumResultCols (
     HSTMT       hstmt,
-    SWORD  FAR *pccol));
+    SWORD  FAR *pccol);
 
-RETCODE SQL_API SQLPrepare ARGS((
+RETCODE SQL_API SQLPrepare (
     HSTMT       hstmt,
     UCHAR  FAR *szSqlStr,
-    SDWORD      cbSqlStr));
+    SDWORD      cbSqlStr);
 
-RETCODE SQL_API SQLRowCount ARGS((
+RETCODE SQL_API SQLRowCount (
     HSTMT       hstmt,
-    SDWORD FAR *pcrow));
+    SDWORD FAR *pcrow);
 
-RETCODE SQL_API SQLSetCursorName ARGS((
+RETCODE SQL_API SQLSetCursorName (
     HSTMT       hstmt,
     UCHAR  FAR *szCursor,
-    SWORD       cbCursor));
+    SWORD       cbCursor);
 
-RETCODE SQL_API SQLTransact ARGS((
+RETCODE SQL_API SQLTransact (
     HENV        henv,
     HDBC        hdbc,
-    UWORD       fType));
+    UWORD       fType);
 
 #endif /* RC_INVOKED */
 
 /*	Deprecrated functions from prior versions of ODBC */
 #ifndef RC_INVOKED
 
-RETCODE SQL_API SQLSetParam ARGS((		/*	Use SQLBindParameter */
+RETCODE SQL_API SQLSetParam (		/*	Use SQLBindParameter */
     HSTMT       hstmt,
     UWORD       ipar,
     SWORD       fCType,
@@ -325,7 +326,7 @@ RETCODE SQL_API SQLSetParam ARGS((		/*	Use SQLBindParameter */
     UDWORD      cbColDef,
     SWORD       ibScale,
     PTR         rgbValue,
-    SDWORD FAR *pcbValue));
+    SDWORD FAR *pcbValue);
 
 #endif /* RC_INVOKED */
 

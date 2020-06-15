@@ -30,6 +30,7 @@
 #include "dbstruct.h"
 #include "texsql.h"
 #include "texerr.h"
+#include "texisapi.h"
 #include "strbuf.h"
 #include "txtypes.h"                            /* for TXbool */
 
@@ -699,7 +700,6 @@ int		ntexistraps ARGS((int));
 int		settxtimeout ARGS((int));
 EPI_HUGEUINT	getindcount ARGS((void));
 int	TXsqlGetCountInfo(HSTMT hstmt, TXCOUNTINFO *countInfo);
-int	TXgetCountInfo ARGS((TEXIS *tx, TXCOUNTINFO *countInfo));
 const char *TXsqlRetcodeToToken(RETCODE retcode);
 const char *TXsqlRetcodeToMessage(RETCODE retcode);
 RETCODE TXsqlGetRetcode(TEXIS *tx);

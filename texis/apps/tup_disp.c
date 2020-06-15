@@ -141,17 +141,18 @@ printrowbreak(int width)
 void
 printcentered(char *s, int width)
 {
-	int padleft, padright;
+	int padleft, padright, stringlength;
 	size_t slen = strlen(s);
 
-	padleft = (width-slen)/2;
+	stringlength = (int)slen;
+	padleft = (width-stringlength)/2;
 	if (padleft < 0) /* Not enough room */
 	{
 		printf("%*s", width, s);
 		return;
 	}
-	padright = (width - padleft - slen);
-	printf("%*s%*s%*s",padleft,"",slen,s,padright,"");
+	padright = (width - padleft - stringlength);
+	printf("%*s%*s%*s",padleft,"",stringlength,s,padright,"");
 }
 
 int

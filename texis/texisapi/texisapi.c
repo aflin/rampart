@@ -1055,7 +1055,29 @@ texis_flush_scroll(TEXIS *tx, int nrows)
 #endif
 	return rowcount;
 }
+/**********************************************************************/
 
+int
+texis_set(TEXIS *tx, char *property, char *value)
+{
+	LPSTMT lpstmt;
+	DDIC *ddic;
+
+	if(!tx)
+	{
+		return -1;
+	}
+	lpstmt = tx->hstmt;
+	if(lpstmt && lpstmt->dbc && lpstmt->dbc->ddic)
+	{
+		ddic = lpstmt->dbc->ddic;
+	}
+	else
+	{
+		return -1;
+	}
+	return setprop(ddic, property, value);
+}
 /**********************************************************************/
 
 static void CDECL
@@ -1133,7 +1155,7 @@ getindcount()
  * @return 0 on error, 1 on success.
  */
 int
-TXgetCountInfo(TEXIS *tx, TXCOUNTINFO *countInfo)
+texis_getCountInfo(TEXIS *tx, TXCOUNTINFO *countInfo)
 {
 	return(TXsqlGetCountInfo(tx->hstmt, countInfo));
 }

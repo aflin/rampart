@@ -117,7 +117,7 @@ SQL_NUMERIC_STRUCT;
 #if (ODBCVER >= 0x0300)
 #  if defined(_MSC_VER) && (_MSC_VER >= 900)
 #    define ODBCINT64       __int64
-#  endif  
+#  endif
 
   /* If using other compilers, define ODBCINT64 to the
    * approriate 64 bit integer type */
@@ -647,7 +647,7 @@ typedef unsigned long int	BOOKMARK;
 #define SQL_GB_GROUP_BY_EQUALS_SELECT	0x0001
 #define SQL_GB_GROUP_BY_CONTAINS_SELECT	0x0002
 #define SQL_GB_NO_RELATION				0x0003
-													
+
 /* SQL_OWNER_USAGE masks */
 
 #define SQL_OU_DML_STATEMENTS		0x00000001L
@@ -910,7 +910,7 @@ typedef unsigned long int	BOOKMARK;
 #endif	/* ODBCVER >= 0x0200 */
 
 /* Level 1 Prototypes */
-RETCODE SQL_API SQLColumns ARGS((
+RETCODE SQL_API SQLColumns (
     HSTMT       hstmt,
     UCHAR  FAR *szTableQualifier,
     SWORD       cbTableQualifier,
@@ -919,9 +919,9 @@ RETCODE SQL_API SQLColumns ARGS((
     UCHAR  FAR *szTableName,
     SWORD       cbTableName,
     UCHAR  FAR *szColumnName,
-    SWORD       cbColumnName));
+    SWORD       cbColumnName);
 
-RETCODE SQL_API SQLDriverConnect ARGS((
+RETCODE SQL_API SQLDriverConnect (
     HDBC        hdbc,
     HWND        hwnd,
     UCHAR  FAR *szConnStrIn,
@@ -929,62 +929,62 @@ RETCODE SQL_API SQLDriverConnect ARGS((
     UCHAR  FAR *szConnStrOut,
     SWORD       cbConnStrOutMax,
     SWORD  FAR *pcbConnStrOut,
-    UWORD       fDriverCompletion));
+    UWORD       fDriverCompletion);
 
-RETCODE SQL_API SQLGetConnectOption ARGS((
+RETCODE SQL_API SQLGetConnectOption (
     HDBC        hdbc,
     UWORD       fOption,
-    PTR         pvParam));
+    PTR         pvParam);
 
-RETCODE SQL_API SQLGetData ARGS((
+RETCODE SQL_API SQLGetData (
     HSTMT       hstmt,
     UWORD       icol,
     SWORD       fCType,
     PTR         rgbValue,
     SDWORD      cbValueMax,
-    SDWORD FAR *pcbValue));
+    SDWORD FAR *pcbValue);
 
-RETCODE SQL_API SQLGetFunctions ARGS((
+RETCODE SQL_API SQLGetFunctions (
     HDBC        hdbc,
     UWORD       fFunction,
-    UWORD  FAR *pfExists));
+    UWORD  FAR *pfExists);
 
-RETCODE SQL_API SQLGetInfo ARGS((
+RETCODE SQL_API SQLGetInfo (
     HDBC        hdbc,
     UWORD       fInfoType,
     PTR         rgbInfoValue,
     SWORD       cbInfoValueMax,
-    SWORD  FAR *pcbInfoValue));
+    SWORD  FAR *pcbInfoValue);
 
-RETCODE SQL_API SQLGetStmtOption ARGS((
+RETCODE SQL_API SQLGetStmtOption (
     HSTMT       hstmt,
     UWORD       fOption,
-    PTR         pvParam));
+    PTR         pvParam);
 
-RETCODE SQL_API SQLGetTypeInfo ARGS((
+RETCODE SQL_API SQLGetTypeInfo (
     HSTMT       hstmt,
-    SWORD       fSqlType));
+    SWORD       fSqlType);
 
-RETCODE SQL_API SQLParamData ARGS((
+RETCODE SQL_API SQLParamData (
     HSTMT       hstmt,
-    PTR    FAR *prgbValue));
+    PTR    FAR *prgbValue);
 
-RETCODE SQL_API SQLPutData ARGS((
+RETCODE SQL_API SQLPutData (
     HSTMT       hstmt,
     PTR         rgbValue,
-    SDWORD      cbValue));
+    SDWORD      cbValue);
 
-RETCODE SQL_API SQLSetConnectOption ARGS((
+RETCODE SQL_API SQLSetConnectOption (
     HDBC        hdbc,
     UWORD       fOption,
-    UDWORD      vParam));
+    UDWORD      vParam);
 
-RETCODE SQL_API SQLSetStmtOption ARGS((
+RETCODE SQL_API SQLSetStmtOption (
     HSTMT       hstmt,
     UWORD       fOption,
-    UDWORD      vParam));
+    UDWORD      vParam);
 
-RETCODE SQL_API SQLSpecialColumns ARGS((
+RETCODE SQL_API SQLSpecialColumns (
     HSTMT       hstmt,
     UWORD       fColType,
     UCHAR  FAR *szTableQualifier,
@@ -994,9 +994,9 @@ RETCODE SQL_API SQLSpecialColumns ARGS((
     UCHAR  FAR *szTableName,
     SWORD       cbTableName,
     UWORD       fScope,
-    UWORD       fNullable));
+    UWORD       fNullable);
 
-RETCODE SQL_API SQLStatistics ARGS((
+RETCODE SQL_API SQLStatistics (
     HSTMT       hstmt,
     UCHAR  FAR *szTableQualifier,
     SWORD       cbTableQualifier,
@@ -1005,9 +1005,9 @@ RETCODE SQL_API SQLStatistics ARGS((
     UCHAR  FAR *szTableName,
     SWORD       cbTableName,
     UWORD       fUnique,
-    UWORD       fAccuracy));
+    UWORD       fAccuracy);
 
-RETCODE SQL_API SQLTables ARGS((
+RETCODE SQL_API SQLTables (
     HSTMT       hstmt,
     UCHAR  FAR *szTableQualifier,
     SWORD       cbTableQualifier,
@@ -1016,7 +1016,7 @@ RETCODE SQL_API SQLTables ARGS((
     UCHAR  FAR *szTableName,
     SWORD       cbTableName,
     UCHAR  FAR *szTableType,
-    SWORD       cbTableType));
+    SWORD       cbTableType);
 #endif /* RC_INVOKED */
 
 
@@ -1091,15 +1091,15 @@ RETCODE SQL_API SQLTables ARGS((
 #ifndef RC_INVOKED
 
 /* Level 2 Prototypes */
-RETCODE SQL_API SQLBrowseConnect ARGS((
+RETCODE SQL_API SQLBrowseConnect (
     HDBC        hdbc,
     UCHAR  FAR *szConnStrIn,
     SWORD       cbConnStrIn,
     UCHAR  FAR *szConnStrOut,
     SWORD       cbConnStrOutMax,
-    SWORD  FAR *pcbConnStrOut));
+    SWORD  FAR *pcbConnStrOut);
 
-RETCODE SQL_API SQLColumnPrivileges ARGS((
+RETCODE SQL_API SQLColumnPrivileges (
     HSTMT       hstmt,
     UCHAR  FAR *szTableQualifier,
     SWORD       cbTableQualifier,
@@ -1108,9 +1108,9 @@ RETCODE SQL_API SQLColumnPrivileges ARGS((
     UCHAR  FAR *szTableName,
     SWORD       cbTableName,
     UCHAR  FAR *szColumnName,
-    SWORD       cbColumnName));
+    SWORD       cbColumnName);
 
-RETCODE SQL_API SQLDataSources ARGS((
+RETCODE SQL_API SQLDataSources (
     HENV        henv,
     UWORD       fDirection,
     UCHAR  FAR *szDSN,
@@ -1118,24 +1118,24 @@ RETCODE SQL_API SQLDataSources ARGS((
     SWORD  FAR *pcbDSN,
     UCHAR  FAR *szDescription,
     SWORD       cbDescriptionMax,
-    SWORD  FAR *pcbDescription));
+    SWORD  FAR *pcbDescription);
 
-RETCODE SQL_API SQLDescribeParam ARGS((
+RETCODE SQL_API SQLDescribeParam (
     HSTMT       hstmt,
     UWORD       ipar,
     SWORD  FAR *pfSqlType,
     UDWORD FAR *pcbColDef,
     SWORD  FAR *pibScale,
-    SWORD  FAR *pfNullable));
+    SWORD  FAR *pfNullable);
 
-RETCODE SQL_API SQLExtendedFetch ARGS((
+RETCODE SQL_API SQLExtendedFetch (
     HSTMT       hstmt,
     UWORD       fFetchType,
     SDWORD      irow,
     UDWORD FAR *pcrow,
-    UWORD  FAR *rgfRowStatus));
+    UWORD  FAR *rgfRowStatus);
 
-RETCODE SQL_API SQLForeignKeys ARGS((
+RETCODE SQL_API SQLForeignKeys (
     HSTMT       hstmt,
     UCHAR  FAR *szPkTableQualifier,
     SWORD       cbPkTableQualifier,
@@ -1148,38 +1148,38 @@ RETCODE SQL_API SQLForeignKeys ARGS((
     UCHAR  FAR *szFkTableOwner,
     SWORD       cbFkTableOwner,
     UCHAR  FAR *szFkTableName,
-    SWORD       cbFkTableName));
+    SWORD       cbFkTableName);
 
-RETCODE SQL_API SQLMoreResults ARGS((
-    HSTMT       hstmt));
+RETCODE SQL_API SQLMoreResults (
+    HSTMT       hstmt);
 
-RETCODE SQL_API SQLNativeSql ARGS((
+RETCODE SQL_API SQLNativeSql (
     HDBC        hdbc,
     UCHAR  FAR *szSqlStrIn,
     SDWORD      cbSqlStrIn,
     UCHAR  FAR *szSqlStr,
     SDWORD      cbSqlStrMax,
-    SDWORD FAR *pcbSqlStr));
+    SDWORD FAR *pcbSqlStr);
 
-RETCODE SQL_API SQLNumParams ARGS((
+RETCODE SQL_API SQLNumParams (
     HSTMT       hstmt,
-    SWORD  FAR *pcpar));
+    SWORD  FAR *pcpar);
 
-RETCODE SQL_API SQLParamOptions ARGS((
+RETCODE SQL_API SQLParamOptions (
     HSTMT       hstmt,
     UDWORD      crow,
-    UDWORD FAR *pirow));
+    UDWORD FAR *pirow);
 
-RETCODE SQL_API SQLPrimaryKeys ARGS((
+RETCODE SQL_API SQLPrimaryKeys (
     HSTMT       hstmt,
     UCHAR  FAR *szTableQualifier,
     SWORD       cbTableQualifier,
     UCHAR  FAR *szTableOwner,
     SWORD       cbTableOwner,
     UCHAR  FAR *szTableName,
-    SWORD       cbTableName));
+    SWORD       cbTableName);
 
-RETCODE SQL_API SQLProcedureColumns ARGS((
+RETCODE SQL_API SQLProcedureColumns (
     HSTMT       hstmt,
     UCHAR  FAR *szProcQualifier,
     SWORD       cbProcQualifier,
@@ -1188,36 +1188,36 @@ RETCODE SQL_API SQLProcedureColumns ARGS((
     UCHAR  FAR *szProcName,
     SWORD       cbProcName,
     UCHAR  FAR *szColumnName,
-    SWORD       cbColumnName));
+    SWORD       cbColumnName);
 
-RETCODE SQL_API SQLProcedures ARGS((
+RETCODE SQL_API SQLProcedures (
     HSTMT       hstmt,
     UCHAR  FAR *szProcQualifier,
     SWORD       cbProcQualifier,
     UCHAR  FAR *szProcOwner,
     SWORD       cbProcOwner,
     UCHAR  FAR *szProcName,
-    SWORD       cbProcName));
+    SWORD       cbProcName);
 
-RETCODE SQL_API SQLSetPos ARGS((
+RETCODE SQL_API SQLSetPos (
     HSTMT       hstmt,
     UWORD       irow,
     UWORD       fOption,
-    UWORD       fLock));
+    UWORD       fLock);
 
-RETCODE SQL_API SQLTablePrivileges ARGS((
+RETCODE SQL_API SQLTablePrivileges (
     HSTMT       hstmt,
     UCHAR  FAR *szTableQualifier,
     SWORD       cbTableQualifier,
     UCHAR  FAR *szTableOwner,
     SWORD       cbTableOwner,
     UCHAR  FAR *szTableName,
-    SWORD       cbTableName));
+    SWORD       cbTableName);
 
 /* SDK 2.0 Additions */
 
 #if (ODBCVER >= 0x0200)
-RETCODE SQL_API SQLDrivers ARGS((
+RETCODE SQL_API SQLDrivers (
     HENV        henv,
     UWORD       fDirection,
 	UCHAR FAR  *szDriverDesc,
@@ -1225,9 +1225,9 @@ RETCODE SQL_API SQLDrivers ARGS((
 	SWORD FAR  *pcbDriverDesc,
 	UCHAR FAR  *szDriverAttributes,
     SWORD       cbDrvrAttrMax,
-    SWORD  FAR *pcbDrvrAttr));
+    SWORD  FAR *pcbDrvrAttr);
 
-RETCODE SQL_API SQLBindParameter ARGS((
+RETCODE SQL_API SQLBindParameter (
     HSTMT       hstmt,
 	UWORD		ipar,
 	SWORD		fParamType,
@@ -1237,7 +1237,7 @@ RETCODE SQL_API SQLBindParameter ARGS((
     SWORD       ibScale,
     PTR         rgbValue,
 	SDWORD		cbValueMax,
-    SDWORD FAR *pcbValue));
+    SDWORD FAR *pcbValue);
 #endif	/* ODBCVER >= 0x0200 */
 
 #endif /* RC_INVOKED */
@@ -1265,18 +1265,18 @@ RETCODE SQL_API SQLBindParameter ARGS((
 /*	Deprecrated functions from prior versions of ODBC */
 #ifndef RC_INVOKED
 
-RETCODE SQL_API SQLSetScrollOptions ARGS((	/*	Use SQLSetStmtOptions */
+RETCODE SQL_API SQLSetScrollOptions (	/*	Use SQLSetStmtOptions */
     HSTMT       hstmt,
     UWORD       fConcurrency,
     SDWORD      crowKeyset,
-	UWORD		crowRowset));
+	UWORD		crowRowset);
 
 #endif /* RC_INVOKED */
 
-RETCODE SQL_API SQLFetchScroll ARGS((
+RETCODE SQL_API SQLFetchScroll (
 	HSTMT	hstmt,
 	SWORD	direction,
-	SDWORD	offset));
+	SDWORD	offset);
 
 #ifdef __cplusplus
 }                                    /* End of extern "C" { */
