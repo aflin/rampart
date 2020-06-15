@@ -68,8 +68,8 @@ DB_HANDLE {
 
 #define NDB_HANDLES 16
 
-void duk_rp_set_server_cond(duk_context *ctx, int which, int bool);
-int  duk_rp_get_server_cond(duk_context *ctx, int which);
+char *duk_rp_url_encode(char *str, int len);
+char *duk_rp_url_decode(char *str, int len);
 
 #define RP_TIME_T_FOREVER 2147483647
 
@@ -79,29 +79,4 @@ int  duk_rp_get_server_cond(duk_context *ctx, int which);
 #endif  /* end 'extern "C"' wrapper */
 
 #endif /* DUK_DB_H_INCLUDED */
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

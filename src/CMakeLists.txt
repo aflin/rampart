@@ -31,6 +31,7 @@ add_executable(rp
 	modules.c
 	resp_client.c
 	resp_protocol.c
+	printf.c
 	db.c )
 
 set_target_properties(rp PROPERTIES

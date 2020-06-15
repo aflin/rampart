@@ -68,67 +68,6 @@ duk_pop((ctx));
 } while(0);
 
 
-/* **************************************************************************
-   This url(en|de)code is public domain from https://www.geekhideout.com/urlcode.shtml 
-   ************************************************************************** */
-
-/* Converts a hex character to its integer value */
-
-static char from_hex(char ch) {
-  return isdigit(ch) ? ch - '0' : tolower(ch) - 'a' + 10;
-}
-
-/* Converts an integer value to its hex character*/
-static char to_hex(char code) {
-  static char hex[] = "0123456789abcdef";
-  return hex[code & 15];
-}
-
-/* Returns a url-encoded version of str */
-/* IMPORTANT: be sure to free() the returned string after use */
-static char *url_encode(char *str, int len) {
-  char *pstr = str, *buf = malloc(strlen(str) * 3 + 1), *pbuf = buf;
-  
-  if(len<0)len=strlen(str);
-  
-  while (len) {
-    if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~') 
-      *pbuf++ = *pstr;
-    else if (*pstr == ' ') 
-      *pbuf++ = '+';
-    else 
-      *pbuf++ = '%', *pbuf++ = to_hex(*pstr >> 4), *pbuf++ = to_hex(*pstr & 15);
-    pstr++;
-    len--;
-  }
-  *pbuf = '\0';
-  return buf;
-}
-
-/* Returns a url-decoded version of str */
-/* IMPORTANT: be sure to free() the returned string after use */
-static char *url_decode(char *str, int len) {
-  char *pstr = str, *buf = malloc(strlen(str) + 1), *pbuf = buf;
-  
-  if(len<0)len=strlen(str);
-
-  while (len) {
-    if (*pstr == '%' && len>2) {
-        *pbuf++ = from_hex(pstr[1]) << 4 | from_hex(pstr[2]);
-        pstr += 2;
-        len-=2;
-    } else if (*pstr == '+') { 
-      *pbuf++ = ' ';
-    } else {
-      *pbuf++ = *pstr;
-    }
-    pstr++;
-    len--;
-  }
-  *pbuf = '\0';
-  return buf;
-}
-
 static const char * method_strmap[] = {
     "GET",
     "HEAD",
@@ -191,8 +130,8 @@ int putkvs(evhtp_kv_t *kv, void *arg)
     char *v, *k;
     duk_context *ctx=(duk_context*)arg;
 
-    v=url_decode(kv->val,(int)kv->vlen);
-    k=url_decode(kv->key,(int)kv->klen);
+    v=duk_rp_url_decode(kv->val,(int)kv->vlen);
+    k=duk_rp_url_decode(kv->key,(int)kv->klen);
     putval(k,v);
 
     free(k);

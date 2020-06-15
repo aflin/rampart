@@ -19,6 +19,68 @@
 #include "respClient.h"
 
 
+/* **************************************************************************
+   This url(en|de)code is public domain from https://www.geekhideout.com/urlcode.shtml 
+   ************************************************************************** */
+
+/* Converts a hex character to its integer value */
+
+static char from_hex(char ch) {
+  return isdigit(ch) ? ch - '0' : tolower(ch) - 'a' + 10;
+}
+
+/* Converts an integer value to its hex character*/
+static char to_hex(char code) {
+  static char hex[] = "0123456789abcdef";
+  return hex[code & 15];
+}
+
+/* Returns a url-encoded version of str */
+/* IMPORTANT: be sure to free() the returned string after use */
+char *duk_rp_url_encode(char *str, int len) {
+  char *pstr = str, *buf = malloc(strlen(str) * 3 + 1), *pbuf = buf;
+  
+  if(len<0)len=strlen(str);
+  
+  while (len) {
+    if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~') 
+      *pbuf++ = *pstr;
+    else if (*pstr == ' ') 
+      *pbuf++ = '+';
+    else 
+      *pbuf++ = '%', *pbuf++ = to_hex(*pstr >> 4), *pbuf++ = to_hex(*pstr & 15);
+    pstr++;
+    len--;
+  }
+  *pbuf = '\0';
+  return buf;
+}
+
+/* Returns a url-decoded version of str */
+/* IMPORTANT: be sure to free() the returned string after use */
+char *duk_rp_url_decode(char *str, int len) {
+  char *pstr = str, *buf = malloc(strlen(str) + 1), *pbuf = buf;
+  
+  if(len<0)len=strlen(str);
+
+  while (len) {
+    if (*pstr == '%' && len>2) {
+        *pbuf++ = from_hex(pstr[1]) << 4 | from_hex(pstr[2]);
+        pstr += 2;
+        len-=2;
+    } else if (*pstr == '+') { 
+      *pbuf++ = ' ';
+    } else {
+      *pbuf++ = *pstr;
+    }
+    pstr++;
+    len--;
+  }
+  *pbuf = '\0';
+  return buf;
+}
+
+
 
 #ifdef SINGLETHREADED
 
@@ -736,7 +798,6 @@ int duk_rp_fetch(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
   /* array of objects requested
      push object of {name:value,name:value,...} into return array */
   {  
-printf("getting rows\n");
     while (rown<resmax && (fl=TEXIS_FETCH(tx,-1)) )
     {
       duk_push_object(ctx);
@@ -907,6 +968,11 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
   q_st=duk_rp_get_query(ctx);
   q=&q_st;
 
+  /* call parameters error, message is already pushed */
+  if(q->err==QS_ERROR_PARAM) {
+    goto end;
+  }
+
 #ifdef USEHANDLECACHE
   duk_push_heap_stash(ctx);
   /* check that we have a handle cache for this thread */
@@ -950,10 +1016,8 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
   /* clear the sql.lastErr string */
   duk_rp_log_error(ctx,"");
 
-  /* call parameters error, message is already pushed */
-  if(q->err==QS_ERROR_PARAM) {
-    goto end;
-  }
+  //DDIC *ddic=texis_getddic(tx);
+  //setprop(ddic, "likeprows", "2000");
 
   if(!TEXIS_PREP(tx, (char*)q->sql )) {
     duk_rp_log_tx_error(ctx,pbuf);
@@ -1510,4 +1574,7 @@ void duk_db_init(duk_context *ctx) {
 
   /* add utility function toBuffer() */
   duk_strToBuf_init(ctx);
+
+  /* add utility function printf */
+  duk_printf_init(ctx);
 }
