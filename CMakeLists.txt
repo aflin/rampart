@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.13)
 
 project(Rampart VERSION 0.0.1 LANGUAGES C CXX)
 
-set(CMAKE_BUILD_TYPE Debug)
+#set(CMAKE_BUILD_TYPE Debug)
 
 #texis must be cmaked and compiled separately from all this or errors will
 #ensue, especially for Macos

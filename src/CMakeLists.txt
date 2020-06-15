@@ -1,3 +1,5 @@
+set(CMAKE_BUILD_TYPE Debug)
+
 add_definitions(-DRP_USING_DUKTAPE -DDUK_CMDLINE_PRINTALERT_SUPPORT -DDUK_CMDLINE_CONSOLE_SUPPORT -DDUK_CMDLINE_LOGGING_SUPPORT -DDUK_CMDLINE_MODULE_SUPPORT -DDUK_CMDLINE_FILEIO -DDUK_DB_SUPPORT)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Os -g -pedantic -std=c99 -Wall -fstrict-aliasing -fomit-frame-pointer -rdynamic")
 
@@ -51,11 +53,18 @@ add_library(rpserver SHARED
 #this is good for later. Right now it interrupts work flow
 #set (CMAKE_CURRENT_BINARY_DIR ${PROJECT_BINARY_DIR}/bin )
 
-configure_file(server.js ${CMAKE_CURRENT_BINARY_DIR}/server.js COPYONLY)
-configure_file(utils.js ${CMAKE_CURRENT_BINARY_DIR}/utils.js COPYONLY)
-configure_file(dbtest.js ${CMAKE_CURRENT_BINARY_DIR}/dbtest.js COPYONLY)
-file(COPY mPurpose DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/mPurpose)
-file(COPY tetris-tutorial DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/tetris-tutorial)
+
+set(INSTALLFILES
+	"server.js"
+	"utils.js"
+	"dbtest.js"
+	"mPurpose"
+	"tetris-tutorial"
+)
+
+foreach(INSTALLFILE ${INSTALLFILES})
+file(COPY ${INSTALLFILE} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+endforeach()
 
 set(LIBEVENT_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevent)
 set(OPENSSL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/openssl)
