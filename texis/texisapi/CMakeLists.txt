@@ -283,9 +283,6 @@ ELSE(PARSERS_FOUND)
     MESSAGE(SEND_ERROR "The parsing tools (yacc/flex) can't be found.")
 ENDIF(PARSERS_FOUND)
 
-add_dependencies(texisapi sizes.h)
-
-
 #
 # Always generate the texver.c
 #
@@ -297,7 +294,6 @@ add_custom_target(always_gen ALL
   BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/texver.c
 )
 add_dependencies(texisapi always_gen)
-
 #
 # Sort fldFuncs.c
 #
@@ -348,45 +344,17 @@ else(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
   )
 endif(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
 
-set(ARG1 "-DEPI_SHARED_EXT=\"${CMAKE_SHARED_LIBRARY_SUFFIX}\"")
-
-execute_process(
-	COMMAND /usr/bin/cc ${ARG1} "-I${CMAKE_BINARY_DIR}" "-I${CMAKE_SOURCE_DIR}/include" "-o" "${CMAKE_SOURCE_DIR}/bootstrap/sizes" "${CMAKE_SOURCE_DIR}/bootstrap/sizes.c"
-	COMMAND_ECHO STDOUT
-)
-
-execute_process(
-	WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/bootstrap
-	COMMAND ./sizes
-	COMMAND_ECHO STDOUT
-)
-
-execute_process(
-	WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/bootstrap
-	COMMAND mv "${CMAKE_SOURCE_DIR}/bootstrap/sizes.h" "${CMAKE_BINARY_DIR}/sizes.h"
-	COMMAND_ECHO STDOUT
-)
-
-
-
 set(TEXISAPI_H_FILES
   ${CMAKE_BINARY_DIR}/sizes.h
   ${CMAKE_SOURCE_DIR}/include/txsql.h
-  texisapi_struct.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/texisapi_struct.h
   ${CMAKE_SOURCE_DIR}/include/texis_countinfo.h
-  texisapi_funcs.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/texisapi_funcs.h
 )
-function(cat IN_FILE OUT_FILE)
-  file(READ ${IN_FILE} CONTENTS)
-  file(APPEND ${OUT_FILE} "${CONTENTS}")
-endfunction()
-file(WRITE texisapi.h.in "")
-# Call the "cat" function for each input file
-foreach(TEXISAPI_H_FILE ${TEXISAPI_H_FILES})
-  cat(${TEXISAPI_H_FILE} texisapi.h.in)
-endforeach()
-
-# Copy the temporary file to the final location
-configure_file(texisapi.h.in texisapi.h COPYONLY)
+add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/texisapi.h
+  COMMAND cat ${TEXISAPI_H_FILES} > ${CMAKE_BINARY_DIR}/texisapi.h
+  DEPENDS ${TEXISAPI_H_FILES}
+)
+target_sources(genFldFuncsSorted PRIVATE ${CMAKE_BINARY_DIR}/texisapi.h)
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ftinternalsyms.h;${CMAKE_CURRENT_BINARY_DIR}/texisapi.h DESTINATION include/texis)
