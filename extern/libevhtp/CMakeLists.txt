@@ -61,6 +61,7 @@ set(LIBEVHTP_SOURCE_FILES
 
 list(APPEND LIBEVHTP_EXTERNAL_LIBS ${CMAKE_BINARY_DIR}/extern/libevent/lib/libevent_core.a ${CMAKE_BINARY_DIR}/extern/libevent/lib/libevent_openssl.a ${CMAKE_BINARY_DIR}/extern/libevent/lib/libevent_extra.a)
 list(APPEND LIBEVHTP_EXTERNAL_INCLUDES ${CMAKE_BINARY_DIR}/extern/libevent/include)
+list(APPEND LIBEVHTP_EXTERNAL_INCLUDES ${CMAKE_SOURCE_DIR}/extern/libevent/include)
 
 set(evhtp_dir_headers
   "include/evhtp/evhtp.h"

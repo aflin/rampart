@@ -66,8 +66,8 @@ message("###### CONFIGURING DEPENDENCIES ######")
 
 include(extern/extern.cmake)
 #include_directories(${CMAKE_BINARY_DIR})
-#include_directories(${CMAKE_SOURCE_DIR}/texis/include)
-#include_directories(${CMAKE_BINARY_DIR}/texis/)
+#include_directories(${CMAKE_SOURCE_DIR}/extern/libevent/include)
+#include_directories(${CMAKE_SOURCE_DIR}/extern/libevhtp/include)
 #include_directories(${CMAKE_BINARY_DIR}/texis/texisapi/)
 
 message("######   CONFIGURING RAMPART    ######")

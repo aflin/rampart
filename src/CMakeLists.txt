@@ -1,8 +1,22 @@
 set(CMAKE_BUILD_TYPE Debug)
 
-add_definitions(-DRP_USING_DUKTAPE -DDUK_CMDLINE_PRINTALERT_SUPPORT -DDUK_CMDLINE_CONSOLE_SUPPORT -DDUK_CMDLINE_LOGGING_SUPPORT -DDUK_CMDLINE_MODULE_SUPPORT -DDUK_CMDLINE_FILEIO -DDUK_DB_SUPPORT)
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Os -g -pedantic -std=c99 -Wall -fstrict-aliasing -fomit-frame-pointer -rdynamic")
+add_definitions(
+	-DRP_USING_DUKTAPE 
+	-DDUK_CMDLINE_PRINTALERT_SUPPORT 
+	-DDUK_CMDLINE_CONSOLE_SUPPORT 
+	-DDUK_CMDLINE_LOGGING_SUPPORT 
+	-DDUK_CMDLINE_MODULE_SUPPORT 
+	-DDUK_CMDLINE_FILEIO 
+	-DDUK_DB_SUPPORT
+	-D_XOPEN_SOURCE 
+	-D_GNU_SOURCE 
+	-D_LARGEFILE_SOURCE 
+	-D_LARGEFILE64_SOURCE 
+	-D_FILE_OFFSET_BITS=64
+)
 
+#this doesn't work: set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -g -pedantic -std=c99 -Wall -fstrict-aliasing -fomit-frame-pointer -rdynamic")
+#add_compile_options( -O2 -g -pedantic -std=c99 -fstrict-aliasing)
 
 add_executable(rp
 	duktape.c
@@ -34,8 +48,6 @@ include_directories(
 	${PROJECT_BINARY_DIR}/texis/texisapi 
 	${PROJECT_BINARY_DIR}/texis 
 	${PROJECT_SOURCE_DIR}/texis/include 
-	${PROJECT_SOURCE_DIR}/extern/curl/include/
-	${PROJECT_BINARY_DIR}/extern/openssl/include/
 )
 
 add_library(rpcurl SHARED
@@ -72,7 +84,7 @@ set(ONIGURUMA_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/oniguruma)
 set(CURL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/curl)
 set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp)
 
-target_link_libraries(rpcurl 
+target_link_libraries(rpcurl PRIVATE
 	${CURL_TARGET_DIR}/lib/libcurl.a
 	${OPENSSL_TARGET_DIR}/ssl/libssl.a
 	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
@@ -87,6 +99,19 @@ target_link_libraries(rpserver
 	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
 	${ONIGURUMA_TARGET_DIR}/libonig.a) 
 
+target_include_directories(rpserver PRIVATE
+	${PROJECT_BINARY_DIR}/extern/openssl/include/
+	${PROJECT_SOURCE_DIR}/extern/libevent/include/
+	${PROJECT_BINARY_DIR}/extern/libevent/include/
+	${PROJECT_SOURCE_DIR}/extern/libevhtp/include/
+	${PROJECT_BINARY_DIR}/extern/libevhtp/include/
+)
+
+target_include_directories(rpcurl PRIVATE
+	${PROJECT_SOURCE_DIR}/extern/curl/include/
+	${PROJECT_BINARY_DIR}/extern/openssl/include/
+)
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 set_target_properties(rpcurl rputils rpserver 
 	PROPERTIES 
@@ -100,7 +125,6 @@ set_target_properties(rpcurl rputils rpserver
 	SUFFIX       ".so"
 	PREFIX ""
 )
-
 endif()
 
 #this is good for later. Right now it interrupts work flow
