@@ -8,4 +8,6 @@ void rp_register_functions(duk_context *ctx)
   duk_ra_init(ctx); /* register ramis functions */
   
   duk_printf_init(ctx); /* register the printf and sprintf functions from printf.c */
+
+  duk_misc_init(ctx); /* register functions in misc.c */
 }
