@@ -30,8 +30,6 @@
 pthread_mutex_t ctxlock;
 
 #ifndef SINGLETHREADED
-static pthread_key_t key;
-static pthread_once_t key_once = PTHREAD_ONCE_INIT;
 static int threadno=0;
 #endif
 
@@ -142,7 +140,6 @@ int putkvs(evhtp_kv_t *kv, void *arg)
 
 static int putheaders(evhtp_kv_t *kv, void *arg)
 {
-    char *v, *k;
     duk_context *ctx=(duk_context*)arg;
 
     duk_push_lstring(ctx,kv->val,(duk_size_t)kv->vlen);
@@ -170,7 +167,7 @@ void push_req_vars(DHS *dhs)
     evhtp_connection_t *conn = evhtp_request_get_connection(dhs->req);
     void *sa=(void *)conn->saddr;
     char address[INET6_ADDRSTRLEN], *q, *cl;
-    int port=0,i,l;
+    int i,l;
 
     /* get ip address */
     sa_to_string(sa,address,sizeof(address));
@@ -260,7 +257,6 @@ static void dirlist(evhtp_request_t * req, char *fn)
 
 static int getrange(evhtp_kv_t *kv, void *arg)
 {
-    char *v, *k;
     char **range=arg;
     
     if(!strncasecmp("range",kv->key,(int)kv->klen))
@@ -603,7 +599,6 @@ static void copy_bc_func(duk_context *ctx,duk_context *tctx)
     void *buf,*bc_ptr;
     duk_size_t bc_len;
     const char *name=duk_get_string(ctx,-2);
-    static int i=0;
     duk_dump_function(ctx); //dump function to bytecode
     bc_ptr = duk_require_buffer_data(ctx, -1, &bc_len);//get pointer to bytecode
     buf = duk_push_fixed_buffer(tctx, bc_len); //make a buffer in thread ctx
@@ -962,7 +957,6 @@ int bind_sock_port(evhtp_t *htp, const char *ip, uint16_t port, int backlog)
         if(((struct sockaddr*)&sin)->sa_family==AF_INET6)
         {
             unsigned char a[sizeof(struct in6_addr)];
-            char buf[INET6_ADDRSTRLEN];
             
             /* compress our ipv6 address to compare */
             if (inet_pton(AF_INET6, &ip[5], a) == 1){
@@ -1002,7 +996,7 @@ void testcb(evhtp_request_t * req, void * arg)
 
 void exitcb(evhtp_request_t * req, void * arg)
 {
-    duk_context *ctx=arg;
+    //duk_context *ctx=arg;
     char rep[]="exit";
     int i=0;
     
@@ -1103,18 +1097,14 @@ duk_ret_t duk_server_start(duk_context *ctx)
     /* TODO: make it so it can bind to any number of arbitary ipv4 or ipv6 addresses */
     evhtp_t           * htp4;
     evhtp_t           * htp6;
-    evhtp_callback_t  * gencb;
     struct event_base * evbase;
-    const char *fn;
     int i=0;
     DHS *dhs=new_dhs(ctx,-1);
-    duk_idx_t ob_idx=-1,script_idx;
+    duk_idx_t ob_idx=-1;
     char ipv6[INET6_ADDRSTRLEN+5]="ipv6:::1";
     char ipv4[INET_ADDRSTRLEN]="127.0.0.1";
     uint16_t port=8080, ipv6port=8080;
-    void *tptr;
     int nthr;
-    duk_size_t sb_sz;
     evhtp_ssl_cfg_t *ssl_config=calloc(1, sizeof(evhtp_ssl_cfg_t));
     int secure=0,usev6=1,usev4=1,confThreads=-1;
     struct stat f_stat;
@@ -1271,8 +1261,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     /* initialize a context for each thread */
     for(i=0;i<totnthreads;i++){
-        void *buf;
-
         thread_ctx[i] = duk_create_heap_default();
         /* do all the normal startup done in duk_cmdline but for each thread */
         duk_init_userfunc(thread_ctx[i]);
@@ -1290,8 +1278,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     /* file system and function mapping */
     if(ob_idx!=-1) {
-        const char *s;
-
         if(duk_get_prop_string(ctx,ob_idx,"map")){
             if(duk_is_object(ctx,-1) && !duk_is_function(ctx,-1) && !duk_is_array(ctx,-1))
             {

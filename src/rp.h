@@ -18,6 +18,11 @@ extern "C" {
 #define USEHANDLECACHE                 /* cache texis handles on a per db/query basis */
 /* end settings */
 
+/* declare initilization functions here.  Then put them in register.c */
+extern void duk_db_init(duk_context *ctx);
+extern void duk_ra_init(duk_context *ctx);
+extern void duk_printf_init(duk_context *ctx);
+extern void duk_misc_init(duk_context *ctx);
 
 /* this should probably just exit */
 #define DUKREMALLOC(ctx,s,t)  (s) = realloc( (s) , (t) ); if ((char*)(s)==(char*)NULL){ duk_push_string((ctx),"alloc error"); duk_throw((ctx));}
@@ -33,7 +38,7 @@ pthread_mutex_t printlock;
 
 #endif /* end not SINGLETHREADED */
 
-extern void duk_db_init(duk_context *ctx);
+extern void rp_register_functions(duk_context *ctx);
 extern TEXIS *newsql(char* db);
 
 #define QUERY_STRUCT struct rp_query_struct

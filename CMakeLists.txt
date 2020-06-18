@@ -13,7 +13,7 @@ if (
 	( 
 	  "${CMAKE_SOURCE_DIR}/texis/CMakeLists.txt" 
 		IS_NEWER_THAN
-	  "${CMAKE_BINARY_DIR}/texis/CMakeCache.txt"
+	  "${CMAKE_BINARY_DIR}/texis/CMakeFiles/cmake.check_cache"
 	)
 )
 

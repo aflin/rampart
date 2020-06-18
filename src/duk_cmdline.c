@@ -1080,11 +1080,9 @@ void duk_init_userfunc(duk_context *ctx) {
 	duk_console_init(ctx, DUK_CONSOLE_FLUSH /*flags*/);
 #endif
 
-/*  this is the rampart section -ajf */
-#if defined(DUK_DB_SUPPORT)
-	duk_db_init(ctx);
-	init_modules(ctx);
-#endif
+	/*  this is the rampart section -ajf */
+	rp_register_functions(ctx); /* in register.c */
+	init_modules(ctx); /* in modules.c */
 
 	/* Register Duktape.Logger (removed in Duktape 2.x). */
 #if defined(DUK_CMDLINE_LOGGING_SUPPORT)

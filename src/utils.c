@@ -14,6 +14,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <utime.h> /* utime */
+#include <sys/wait.h>
 #include "duktape.h"
 #include <pwd.h> /* getpwnam */
 #include <grp.h> /* getgrnam */
@@ -853,7 +854,6 @@ duk_ret_t duk_util_rmdir(duk_context *ctx)
 
   const char *path;
 
-  mode_t mode;
   int recursive;
   if (nargs == 1) // Non-recursive deletion
   {

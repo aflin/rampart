@@ -304,11 +304,6 @@ char * duk_curl_object2querystring(duk_context *ctx, duk_idx_t qsidx) {
   int i=0,atype=ARRAYREPEAT,end=qsidx+2;
   const char *arraytype;
   char *ret=(char*)NULL, *s;
-  CURL *curl;
-  
-  //duk_curl_check_global(ctx);
-
-  //curl = curl_easy_init();
   
   /* 
      look at next two stack items for a string,
@@ -598,7 +593,6 @@ int copt_get(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption
 int copt_post(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option) {
   duk_idx_t qsidx=-1;
   char *postdata;  
-  int freeme=0;
   
   /* it's a string, use as is */
   if (duk_is_string(ctx,-1))
@@ -608,8 +602,6 @@ int copt_post(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoptio
   /* it's an object, check for prop "data" and "arrayType", then convert to querystring */
   else if(duk_is_object(ctx,-1) && !duk_is_array(ctx,-1) && duk_get_prop_string(ctx,-1,"data"))
   {
-      char *s;
-
       if(duk_get_prop_string(ctx,-2,"expect100") && duk_is_boolean(ctx,-1) && !duk_get_boolean(ctx,-1) )
           addheader(sopts, "EXPECT:");
 
@@ -658,7 +650,6 @@ int post_from_file(duk_context *ctx, CURL *handle, CSOS *sopts, char *fn)
 {
   FILE *file = fopen(fn, "r");
   size_t sz;
-  CURLcode result;
   char hbuf[64];
 
   if (file == NULL) {
@@ -685,9 +676,7 @@ int post_from_file(duk_context *ctx, CURL *handle, CSOS *sopts, char *fn)
 
 int copt_postbin(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option) 
 {
-  duk_idx_t qsidx=-1;
   void *postdata=NULL;  
-  int freeme=0;
   duk_size_t sz=0;
 
   if (duk_is_string(ctx,-1))
@@ -772,7 +761,6 @@ int duk_curl_set_data(duk_context *ctx, curl_mimepart *part, int skiparrays) {
     if(duk_is_object(ctx,-1))
     /* json encode all objects, including arrays if skiparrays=0 */
     {
-      const char *s;
       duk_dup(ctx,-1);
       curl_mime_data(part, duk_json_encode(ctx,-1), CURL_ZERO_TERMINATED);
       duk_pop(ctx);
@@ -807,7 +795,6 @@ char *operrors[]=
 };
 
 int copt_postform(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option) {
-  curl_mime *mime;
   curl_mimepart *part;
 
   if (!duk_is_object(ctx,-1))
@@ -918,6 +905,7 @@ int copt_long(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoptio
   return(0);
 }
 
+/* TODO: fix this function */
 int copt_proto(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option) {
   long b;
   long res=prototonum(&b,duk_to_string(ctx,-1));
@@ -1612,7 +1600,7 @@ void duk_curl_parse_headers(duk_context *ctx,char *header)
 {
   char *start=header, *key=(char*)NULL,  *end=header, buf[32];
   
-  int inval=0, ukn=0, gotstatus=0;
+  int inval=0, gotstatus=0;
   
   if(header==(char*)NULL)
     return;
@@ -1714,7 +1702,6 @@ int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
 
   /* add to errors if 400 or above */
   if(d>399) {
-    char *s=(char*)duk_get_string(ctx,-1);
     duk_push_sprintf(ctx,"%d %s",d,(cres != (HTTP_CODE*)NULL)?cres->msg:"Unknown Status Code" );
     duk_curl_push_err(ctx);
   }
@@ -1857,7 +1844,6 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CSOS *sopts)
   CURL_OPTS opts;
   CURL_OPTS *ores, *opts_p=&opts;
   int funcerr=0;
-  char *msg="";
   
   duk_enum(ctx, (duk_idx_t)idx, DUK_ENUM_SORT_ARRAY_INDICES);
   while (duk_next(ctx, -1 /* index */, 1 /* get_value also */))
@@ -2076,8 +2062,6 @@ duk_ret_t duk_curl_exe(duk_context *ctx) {
   {
     CURLM *cm = curl_multi_init();
     CURLMsg *msg;
-    CURLREQ *preq;
-    CURLMcode mc;
     int still_alive=1, msgs_left = -1;
 
     if(func_idx==-1)
@@ -2135,7 +2119,6 @@ duk_ret_t duk_curl_exe(duk_context *ctx) {
       while((msg = curl_multi_info_read(cm, &msgs_left))) 
       {
         if(msg->msg == CURLMSG_DONE) {
-          CURL *eh = msg->easy_handle;
           curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &preq);
           res=msg->data.result;
           duk_dup(ctx,func_idx);

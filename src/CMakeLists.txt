@@ -17,6 +17,7 @@ add_definitions(
 
 #this doesn't work: set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -g -pedantic -std=c99 -Wall -fstrict-aliasing -fomit-frame-pointer -rdynamic")
 #add_compile_options( -O2 -g -pedantic -std=c99 -fstrict-aliasing)
+add_compile_options(-Wunused-variable)
 
 add_executable(rp
 	duktape.c
@@ -29,7 +30,11 @@ add_executable(rp
 	resp_client.c
 	resp_protocol.c
 	printf.c
-	db.c )
+	db.c 
+	duk_ramis.c
+	misc.c
+	register.c
+)
 
 set_target_properties(rp PROPERTIES
   ENABLE_EXPORTS 1
@@ -42,26 +47,11 @@ target_link_libraries(rp LINK_PUBLIC
 	m z dl pthread
 )
 
-#-shared -pthread -fPIC curl.c -lcurl
-
 include_directories(
 	${PROJECT_BINARY_DIR}/texis/texisapi 
 	${PROJECT_BINARY_DIR}/texis 
 	${PROJECT_SOURCE_DIR}/texis/include 
 )
-
-add_library(rpcurl SHARED
- curl.c
-)
-
-add_library(rputils SHARED
- utils.c
-)
-
-add_library(rpserver SHARED
- server.c
-)
-
 #this is good for later. Right now it interrupts work flow
 #set (CMAKE_CURRENT_BINARY_DIR ${PROJECT_BINARY_DIR}/bin )
 
@@ -69,7 +59,7 @@ add_library(rpserver SHARED
 set(INSTALLFILES
 	"server.js"
 	"utils.js"
-	"dbtest.js"
+#	"dbtest.js"
 	"mPurpose"
 	"tetris-tutorial"
 )
@@ -84,12 +74,31 @@ set(ONIGURUMA_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/oniguruma)
 set(CURL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/curl)
 set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp)
 
+########### ADD MODULES HERE ###############
+
+###CURL###
+add_library(rpcurl SHARED
+ curl.c
+)
 target_link_libraries(rpcurl PRIVATE
 	${CURL_TARGET_DIR}/lib/libcurl.a
 	${OPENSSL_TARGET_DIR}/ssl/libssl.a
 	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
 )
+target_include_directories(rpcurl PRIVATE
+	${PROJECT_SOURCE_DIR}/extern/curl/include/
+	${PROJECT_BINARY_DIR}/extern/openssl/include/
+)
 
+###UTILS###
+add_library(rputils SHARED
+ utils.c
+)
+
+###SERVER###
+add_library(rpserver SHARED
+ server.c
+)
 target_link_libraries(rpserver 
 	${LIBEVHTP_TARGET_DIR}/libevhtp.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent.a
@@ -97,8 +106,8 @@ target_link_libraries(rpserver
 	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
 	${OPENSSL_TARGET_DIR}/ssl/libssl.a 
 	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
-	${ONIGURUMA_TARGET_DIR}/libonig.a) 
-
+	${ONIGURUMA_TARGET_DIR}/libonig.a
+) 
 target_include_directories(rpserver PRIVATE
 	${PROJECT_BINARY_DIR}/extern/openssl/include/
 	${PROJECT_SOURCE_DIR}/extern/libevent/include/
@@ -107,20 +116,29 @@ target_include_directories(rpserver PRIVATE
 	${PROJECT_BINARY_DIR}/extern/libevhtp/include/
 )
 
-target_include_directories(rpcurl PRIVATE
-	${PROJECT_SOURCE_DIR}/extern/curl/include/
-	${PROJECT_BINARY_DIR}/extern/openssl/include/
-)
+###### EXAMPLE USER MODULE######
+#add_library(example_name SHARED
+# example.c
+#)
+#target_link_libraries(example_name
+#	/path/to/library/file.a
+#)
+#target_include_directories(example_name PRIVATE
+#	/path/to/include1
+#	/path/to/include2
+#)
+
+##############  ADD MODULE NAMES HERE  ##############
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-set_target_properties(rpcurl rputils rpserver 
+set_target_properties(rpcurl rputils rpserver #example_name
 	PROPERTIES 
 	LINK_FLAGS   "-undefined dynamic_lookup" 
 	SUFFIX       ".so"
 	PREFIX ""
 )
 else()
-set_target_properties(rpcurl rputils rpserver 
+set_target_properties(rpcurl rputils rpserver #example_name
 	PROPERTIES 
 	SUFFIX       ".so"
 	PREFIX ""
