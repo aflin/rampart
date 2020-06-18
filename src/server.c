@@ -234,6 +234,14 @@ void push_req_vars(DHS *dhs)
     duk_put_prop_string(ctx,-2,"headers");
 }
 
+static void send500(evhtp_request_t * req, char *msg)
+{
+    evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
+    char fmt[]="<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p>%s</p></body></html>";
+    evbuffer_add_printf(req->buffer_out,fmt,msg);
+    evhtp_send_reply(req, 500);
+}
+
 static void send404(evhtp_request_t * req)
 {
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
@@ -448,7 +456,7 @@ static evhtp_res sendobj(DHS *dhs)
 
     RP_MTYPES m;
     RP_MTYPES *mres;
-    int gotdata=0;
+    int gotdata=0,gotct=0;;
     duk_context *ctx=dhs->ctx;
     evhtp_res res=200;
 
@@ -459,7 +467,9 @@ static evhtp_res sendobj(DHS *dhs)
             duk_enum(ctx, -1, DUK_ENUM_SORT_ARRAY_INDICES);
             while (duk_next(ctx, -1 , 1 ))
             {
-                evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new(duk_to_string(ctx,-2),duk_to_string(ctx,-1), 1, 1));            
+                const char *key=duk_require_string(ctx,-2);
+                evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new(key,duk_to_string(ctx,-1), 1, 1));
+                if(!strcasecmp(key,"content-type")) gotct=1;
                 duk_pop_2(ctx);
             }
             duk_pop(ctx); /* pop enum and headers obj */
@@ -494,7 +504,8 @@ static evhtp_res sendobj(DHS *dhs)
         {
             const char *d;
             gotdata=1;
-            evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new("Content-Type", mres->mime, 0, 0));
+            if(!gotct)
+                evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new("Content-Type", mres->mime, 0, 0));
 
             /* if data is a string and starts with '@', its a filename */
             if (duk_is_string(ctx,-1) && ( (d=duk_get_string(ctx,-1))||1) && *d=='@' )
@@ -532,14 +543,19 @@ static evhtp_res sendobj(DHS *dhs)
         }
         else
         {
-           duk_push_sprintf(ctx,"unknown option '%s'",duk_to_string(ctx,-2) );
-           duk_throw(ctx); 
+           const char *bad_option=duk_to_string(ctx,-2);
+           char estr[20+strlen(bad_option)];
+           fprintf(stderr,"unknown option '%s'\n",bad_option);
+           sprintf(estr,"unknown option '%s'",bad_option);
+           send500(dhs->req,estr);
+           return(0);
         }
         
         opterr:
-            fprintf(stderr,"Data already set from '%s', '%s=%s' is redundant.\n",m.ext, duk_to_string(ctx,-2), duk_to_string(ctx,-1));
-            duk_push_sprintf(ctx,"Data already set from '%s', '%s=%s' is redundant.",m.ext, duk_to_string(ctx,-2), duk_to_string(ctx,-1) );
-            duk_throw(ctx);
+        {
+            fprintf(stderr,"Data already set from '%s', '%s=\"%s\"' is redundant.\n",m.ext, duk_to_string(ctx,-2), duk_to_string(ctx,-1));
+            return(res);
+        }
     }
     duk_pop(ctx);
     return(res);
