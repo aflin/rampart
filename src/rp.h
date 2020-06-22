@@ -11,10 +11,8 @@ extern "C" {
 #endif
 
 /* settings */
-#define nthreads 0                     /* number of threads for evhtp, set to 0 to use num of cpu cores */
 #define RESMAX_DEFAULT 10              /* default number of sql rows returned if max is not set */
 //#define PUTMSG_STDERR                  /* print texis error messages to stderr */
-//#define SINGLETHREADED                 /* don't use threads (despite nthreads above) */
 #define USEHANDLECACHE                 /* cache texis handles on a per db/query basis */
 /* end settings */
 
@@ -28,15 +26,12 @@ extern void duk_misc_init(duk_context *ctx);
 #define DUKREMALLOC(ctx,s,t)  (s) = realloc( (s) , (t) ); if ((char*)(s)==(char*)NULL){ duk_push_string((ctx),"alloc error"); duk_throw((ctx));}
 #define REMALLOC(s,t)  /*printf("malloc=%d\n",(int)t);*/ (s) = realloc( (s) , (t) ); if ((char*)(s)==(char*)NULL){ fprintf( stderr, "error: realloc() "); exit(-1);}
 
-#ifndef SINGLETHREADED
-
 pthread_mutex_t lock;
 
 #ifdef PUTMSG_STDERR
 pthread_mutex_t printlock;
 #endif
 
-#endif /* end not SINGLETHREADED */
 
 extern void rp_register_functions(duk_context *ctx);
 extern TEXIS *newsql(char* db);
@@ -79,9 +74,36 @@ char *duk_rp_url_decode(char *str, int len);
 
 #define RP_TIME_T_FOREVER 2147483647
 
+#define printstack(ctx) duk_push_context_dump((ctx));\
+printf("%s\n", duk_to_string((ctx), -1));\
+duk_pop((ctx));
+
+#define printenum(ctx,idx)  duk_enum((ctx),(idx),DUK_ENUM_INCLUDE_NONENUMERABLE|DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS);\
+    while(duk_next((ctx),-1,1)){\
+      printf("%s -> %s\n",duk_get_string((ctx),-2),duk_safe_to_string((ctx),-1));\
+      duk_pop_2((ctx));\
+    }\
+    duk_pop((ctx));
+
+#define printat(ctx,idx) duk_dup(ctx,idx);printf("at %d: %s\n",(int)(idx),duk_safe_to_string((ctx),-1));duk_pop((ctx));
+
+#define printfuncs(ctx) do{\
+    duk_idx_t i=0;\
+    while (duk_get_top(ctx) > i) {\
+        if(duk_is_function(ctx,i)) { \
+            duk_get_prop_string(ctx,i,"name");\
+            printf("func at %d: %s()\n", (int)i, duk_to_string(ctx,-1) );\
+            duk_pop(ctx);\
+        }\
+        i++;\
+    }\
+} while(0);
+
+
 
 #if defined(__cplusplus)
 }
+
 #endif  /* end 'extern "C"' wrapper */
 
 #endif /* DUK_DB_H_INCLUDED */

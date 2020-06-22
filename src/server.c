@@ -11,6 +11,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
+#include <sys/wait.h>
+
 #include "duktape.h"
 #include "duk_cmdline.h"
 #include "evhtp/evhtp.h"
@@ -18,20 +20,22 @@
 #include "mime.h"
 
 
-//#define RP_TO_DEBUG
+struct event_base * evbase;
+int in_child=0;
 
-#ifdef RP_TO_DEBUG
-#define  debugf(fmt, ...)  printf(fmt, __VA_ARGS__);
+//#define RP_TIMEO_DEBUG
+
+#ifdef RP_TIMEO_DEBUG
+#define  debugf(...)  printf(__VA_ARGS__);
 #else
-#define debugf(fmt, ...)    /* Do nothing */
+#define debugf(...)    /* Do nothing */
 #endif
 
 
 pthread_mutex_t ctxlock;
 
-#ifndef SINGLETHREADED
-static int threadno=0;
-#endif
+static int gl_threadno=0;
+static int gl_singlethreaded=0;
 
 duk_context **thread_ctx=NULL, *main_ctx;
 
@@ -40,30 +44,6 @@ int totnthreads=0;
 
 /* DEBUGGING MACROS */
 
-#define printstack(ctx) duk_push_context_dump((ctx));\
-printf("%s\n", duk_to_string((ctx), -1));\
-duk_pop((ctx));
-
-#define printenum(ctx,idx)  duk_enum((ctx),(idx),DUK_ENUM_INCLUDE_NONENUMERABLE|DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS);\
-    while(duk_next((ctx),-1,1)){\
-      printf("%s -> %s\n",duk_get_string((ctx),-2),duk_safe_to_string((ctx),-1));\
-      duk_pop_2((ctx));\
-    }\
-    duk_pop((ctx));
-
-#define printat(ctx,idx) duk_dup(ctx,idx);printf("at %d: %s\n",(int)(idx),duk_safe_to_string((ctx),-1));duk_pop((ctx));
-
-#define printfuncs(ctx) do{\
-    duk_idx_t i=0;\
-    while (duk_get_top(ctx) > i) {\
-        if(duk_is_function(ctx,i)) { \
-            duk_get_prop_string(ctx,i,"name");\
-            printf("func at %d: %s()\n", (int)i, duk_to_string(ctx,-1) );\
-            duk_pop(ctx);\
-        }\
-        i++;\
-    }\
-} while(0);
 
 
 static const char * method_strmap[] = {
@@ -88,12 +68,26 @@ static const char * method_strmap[] = {
 
 /* holds details of http request within a duktape context */
 
+#define FORKINFO struct fork_info_s
+FORKINFO {
+    int par2child;
+    int child2par;
+    pid_t childpid;    
+};
+
+FORKINFO **forkinfo=NULL;
+
+/* a duk http request struct
+    keeps info about request, callback,
+    timeout and thread number for thread specific info
+*/
 #define DHS struct duk_http_s
 DHS {
   duk_idx_t func_idx;      // location of the callback
   duk_context *ctx;        // duk context for this thread
   evhtp_request_t *req;    // the evhtp request struct for the current request
   struct timeval timeout;  // timeout for the duk script
+  int threadno;
 };
 
 /* mapping for url to filesystem */
@@ -168,7 +162,6 @@ void push_req_vars(DHS *dhs)
     void *sa=(void *)conn->saddr;
     char address[INET6_ADDRSTRLEN], *q, *cl;
     int i,l;
-
     /* get ip address */
     sa_to_string(sa,address,sizeof(address));
     putval("ip",address);
@@ -716,12 +709,10 @@ static void copy_all(duk_context *ctx,duk_context *tctx)
 static evthr_t *get_request_thr(evhtp_request_t * request) 
 {
     evhtp_connection_t * htpconn;
-    evthr_t            * thread;
 
     htpconn = evhtp_request_get_connection(request);
-    thread  = htpconn->thread;
 
-    return thread;
+    return htpconn->thread;
 }
 
 
@@ -732,21 +723,32 @@ DHR{
     pthread_mutex_t lock;
     pthread_cond_t cond;
     int have_timeout;
-#ifdef RP_TO_DEBUG
+#ifdef RP_TIMEO_DEBUG
     pthread_t par;
 #endif
 };
 
-static void *http_thread_cb(void *arg)
+
+/* 
+    http_callback -> check for threadsafe
+    |-> http_thread_callback -> for thread safe
+    |   |-> http_dothread -> for the waited on thread (currently http_thread_cb)
+    or
+    |-> http_fork_callback -> for texis, and for discovering thread safe functions
+*/
+
+static void *http_dothread(void *arg)
 {
     DHR *dhr=(DHR*)arg;
     evhtp_request_t *req = dhr->req;
     DHS *dhs = dhr->dhs;
     evhtp_res res=200;
     int eno;
-#ifdef RP_TO_DEBUG
+
+#ifdef RP_TIMEO_DEBUG
     pthread_t x=dhr->par;
 #endif
+
     if(dhr->have_timeout) pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS,NULL);
 
     /* copy function ref to top of stack */
@@ -759,28 +761,27 @@ static void *http_thread_cb(void *arg)
     /* execute function "myfunc({object});" */
     if( (eno=duk_pcall(dhs->ctx,1)) ) 
     {
-        if(duk_is_error(dhs->ctx,-1)){
-            if(dhr->have_timeout)
-            {
-                pthread_mutex_lock(&(dhr->lock));
-                pthread_cond_signal(&(dhr->cond));
-            }
-            
+        char msg[]="<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>%s</pre></p></body></html>";
+        if(dhr->have_timeout)
+        {
+            pthread_mutex_lock(&(dhr->lock));
+            pthread_cond_signal(&(dhr->cond));
+        }
+
+        evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
+        if(duk_is_error(dhs->ctx,-1) || duk_is_string(dhs->ctx,-1)){
             duk_get_prop_string(dhs->ctx, -1, "stack");
-            evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
-            char msg[]="<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>%s</pre></p></body></html>";
             evbuffer_add_printf(req->buffer_out,msg,duk_safe_to_string(dhs->ctx, -1));
-            evhtp_send_reply(req, 500);
             printf("%s\n", duk_safe_to_string(dhs->ctx, -1));
             duk_pop(dhs->ctx);
-            
-            if(dhr->have_timeout) pthread_mutex_unlock(&(dhr->lock));
-            
-            return NULL;
+        } else {
+            evbuffer_add_printf(req->buffer_out,msg,"unknown error");
         }
-        else
-            printf("error in function: %s\n",duk_safe_to_string(dhs->ctx, -1));
+        evhtp_send_reply(req, 500);
 
+        if(dhr->have_timeout) pthread_mutex_unlock(&(dhr->lock));
+ 
+        return NULL;
     }
 
     if(dhr->have_timeout)
@@ -793,6 +794,7 @@ static void *http_thread_cb(void *arg)
 
     /* set some headers */
     setheaders(req);
+
     /* don't accept functions or arrays */
     if(duk_is_function(dhs->ctx,-1) || duk_is_array(dhs->ctx,-1) ){
         duk_push_string(dhs->ctx,"Return value cannot be an array or a function");
@@ -850,54 +852,36 @@ static void redo_ctx(int thrno)
     thread_ctx[thrno]=thr_ctx;
 }
 
-
 static void
-http_callback(evhtp_request_t * req, void * arg)
+http_thread_callback(evhtp_request_t * req, void * arg, int thrno)
 {
-    DHS *dhs = arg, newdhs;
+    DHS *dhs = arg;
     DHR *dhr=NULL;
     pthread_t script_runner;
     pthread_attr_t attr;
     struct timespec ts;
     struct timeval now;
-    int ret=0,thrno=0,*thrno_p;
+    int ret=0;
 
 //pid_t x = syscall(SYS_gettid);
-#ifdef RP_TO_DEBUG
+#ifdef RP_TIMEO_DEBUG
     pthread_t x=pthread_self();
     printf("%d, start\n",(int)x);fflush(stdout);
 #endif
 
     gettimeofday(&now,NULL);
-    duk_context *new_ctx;
-    
-#ifndef SINGLETHREADED
-    evthr_t *thread= get_request_thr(req);
-    thrno_p=evthr_get_aux(thread);
-    thrno=*thrno_p;
-//printf("got context # %d\n",thrno);
-#endif
-    new_ctx = thread_ctx[thrno];
-
-    /* ****************************
-      setup duk function callback 
-       **************************** */
-
-    newdhs.ctx=new_ctx;
-    newdhs.req=req;
-    newdhs.func_idx=dhs->func_idx;
-
-    DUKREMALLOC(new_ctx,dhr,sizeof(DHR));
-    dhr->dhs=&newdhs;
+    DUKREMALLOC(dhs->ctx,dhr,sizeof(DHR));
+    dhr->dhs=dhs;
     dhr->req=req;
-#ifdef RP_TO_DEBUG
+#ifdef RP_TIMEO_DEBUG
     dhr->par=x;
 #endif
+    /* if no timeout, not necessary to thread out the callback */
     if(dhs->timeout.tv_sec==RP_TIME_T_FOREVER)
     {
         debugf("no timeout set");
         dhr->have_timeout=0;        
-        (void)http_thread_cb(dhr);
+        (void)http_dothread(dhr);
         return;
     }
 
@@ -913,8 +897,7 @@ http_callback(evhtp_request_t * req, void * arg)
     }
 
     pthread_cond_init(&(dhr->cond), NULL);
-    
-    
+
     /* is this necessary? https://computing.llnl.gov/tutorials/pthreads/#Joining */
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
@@ -925,14 +908,14 @@ http_callback(evhtp_request_t * req, void * arg)
         exit(1);
     }
 
-    pthread_create(&script_runner, &attr, http_thread_cb, dhr);
+    pthread_create(&script_runner, &attr, http_dothread, dhr);
     debugf("0x%x, cond wait, UNLOCKING\n",(int)x);fflush(stdout);    
 
     /* unlock dhr->lock and wait for pthread_cond_signal in http_thread_cb */
     ret=pthread_cond_timedwait(&(dhr->cond), &(dhr->lock), &ts);    
     /* reacquire lock after timeout or condition signalled */
-    debugf("0x%x, cond wait satisfied, LOCKED\n",(int)x);fflush(stdout);
-
+    debugf("0x%x, cond wait satisfied, ret=%d (==%d(ETIMEOUT)), LOCKED\n",(int)x, (int)ret, (int)ETIMEDOUT);fflush(stdout);
+    
     if(ret==ETIMEDOUT) 
     {
         char msg[]="<html><head><title>500 Internal Server Error - Timeout</title></head><body><h1>Internal Server Error - Timeout</h1><p><pre>Timeout in Script</pre></p></body></html>";
@@ -950,8 +933,377 @@ http_callback(evhtp_request_t * req, void * arg)
     pthread_cond_destroy(&(dhr->cond));
     free(dhr);
 }
+/* call with 0.0 to start, with return value to get elapsed */
+static double
+stopwatch( double dtime )
+{
+    static struct timeval time;
+
+    gettimeofday(&time, NULL);
+
+    return (
+        ((double)time.tv_sec + ((double)time.tv_usec / 1e6))
+        - dtime
+    );
+
+}
+
+//#define tprintf(...)  printf(__VA_ARGS__);
+#define tprintf(...) /*nada */
+
+/* a callback must be run once before we can tell if it is thread safe.
+   So to be safe, run every callback in a fork.  If it is thread safe, mark
+   it as so and next time we will not fork.
+   A c function that is not thread safe must set the hidden global symbol
+   "threadsafe"=false.  After that runs in a thread, "threadsafe" will be checked
+   and will default to true (safe) if not present
+   
+*/
+
+static void
+http_fork_callback(evhtp_request_t * req, DHS *dhs, int have_threadsafe_val)
+{
+    evhtp_res res=200;
+    int preforked=0,child2par[2], par2child[2], eno, pidstatus;
+    double cstart,celapsed;
+    FORKINFO *finfo=forkinfo[dhs->threadno];
+    char *cbor;
+    uint32_t msgOutSz=0;
+
+    signal(SIGPIPE, SIG_IGN); //macos
+    cstart=stopwatch(0.0);
+    tprintf("in fork\n");
+    if(finfo->childpid && !waitpid(finfo->childpid,&pidstatus,WNOHANG))
+    {
+        preforked=1;
+    }
+    else
+    {
+        /* our first run.  create pipes and setup for fork */
+        if (pipe(child2par)==-1) 
+        { 
+            fprintf(stderr, "child2par pipe failed\n" ); 
+            return; 
+        } 
+
+        if (pipe(par2child)==-1) 
+        { 
+            fprintf(stderr, "par2child pipe failed\n" ); 
+            return;
+        } 
+        /* if child died, close old handles */
+        if(finfo->child2par>0)
+        {
+            close(finfo->child2par);
+            finfo->child2par=-1;
+        }
+        if(finfo->par2child>0)
+        {
+            close(finfo->par2child);
+            finfo->par2child=-1;
+        }
+    }
 
 
+    if (!preforked)
+    {
+        finfo->childpid=fork();
+        if (finfo->childpid < 0) 
+        { 
+            fprintf(stderr, "fork Failed" ); 
+            finfo->childpid=0;
+            return;
+        }
+    } 
+
+    if (!preforked && finfo->childpid==0)
+    {   /* child, forked once then talks over pipes */
+
+        duk_size_t bufsz;
+        int i=0;
+        close(child2par[0]);
+        close(par2child[1]);
+        
+        tprintf("beginning with par2child=%d, child2par=%d\n",par2child[0],child2par[1]);
+
+        /* on first round, just forked, so we have all the request info
+            no need to pipe it */
+        /* copy function ref to top of stack */
+        duk_dup(dhs->ctx,dhs->func_idx);
+
+        /* push an empty object */
+        duk_push_object(dhs->ctx);
+        /* populate object with details from client */
+        push_req_vars(dhs);
+
+        do
+        {
+            i++;
+            tprintf("request #%d\n",i);
+            /* execute function "myfunc({object});" */
+            if( (eno=duk_pcall(dhs->ctx,1)) ) 
+            {
+                if(duk_is_error(dhs->ctx,-1) || duk_is_string(dhs->ctx,-1) ){
+                                                  
+                    char msg[]="{\"headers\":{\"status\":500},\"html\":\"<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>%s</pre></p></body></html>\"}";
+                    char *err;
+                    if (duk_is_error(dhs->ctx,-1))
+                    {
+                        err=(char*)duk_safe_to_string(dhs->ctx, -1);
+                    }
+                    else
+                    {
+                        err=(char*)duk_json_encode(dhs->ctx, -1);
+                        //get rid of quotes
+                        err[strlen(err)-1]='\0';
+                        err++;
+                    }
+                    duk_push_sprintf(dhs->ctx,msg,err);
+                }
+                else
+                {
+                    duk_push_string(dhs->ctx,"{\"headers\":{\"status\":500},\"html\":\"<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>unknown javascript error</pre></p></body></html>\"}");
+                }
+                duk_json_decode(dhs->ctx,-1);
+            }
+
+            duk_cbor_encode(dhs->ctx,-1,0);
+            cbor=duk_get_buffer_data(dhs->ctx,-1,&bufsz);
+            msgOutSz=(uint32_t)bufsz;
+            write(child2par[1],&msgOutSz,sizeof(uint32_t));
+
+            if( !have_threadsafe_val )
+            {
+                if (
+                    duk_get_global_string(dhs->ctx,DUK_HIDDEN_SYMBOL("threadsafe")) &&
+                    duk_is_boolean(dhs->ctx,-1) && 
+                    duk_get_boolean(dhs->ctx,-1)==0
+                )  
+                    write(child2par[1],"F",1); //message that thread safe==false
+                else
+                    write(child2par[1],"X",1);//message that thread safe is not to be set one way or another 
+
+                duk_push_global_object(dhs->ctx);
+                duk_del_prop_string(dhs->ctx,-1,DUK_HIDDEN_SYMBOL("threadsafe"));
+                duk_pop_2(dhs->ctx);
+            }
+            else
+            {
+                write(child2par[1],"X",1);//message that thread safe is not to be set one way or another
+            }
+
+            tprintf("child sending cbor message %d long on %d:\n",(int)msgOutSz,child2par[1]);
+            write(child2par[1], cbor, msgOutSz);
+            
+            tprintf("child sent message %d long. Waiting for input\n",(int)msgOutSz);
+
+            duk_pop(dhs->ctx);//buffer
+
+            /* wait for next request and get it's size */
+            read(par2child[0],&msgOutSz,sizeof(uint32_t));
+            tprintf("child to receive message %d long on %d\n",(int)msgOutSz,par2child[0]);
+
+            read(par2child[0],&(dhs->func_idx),sizeof(duk_idx_t));
+            duk_dup(dhs->ctx,dhs->func_idx);
+
+            {
+                char jbuf[msgOutSz], *p=jbuf;
+                int toread=(int)msgOutSz,totread=0;
+                
+                while ((totread=read(par2child[0], p, toread))>0)
+                {
+                    toread-=totread;
+                    p+=totread;
+                }
+                //*(p+1)='\0';
+                p=jbuf;
+                memcpy(duk_push_fixed_buffer(dhs->ctx,(duk_size_t)msgOutSz),p,(size_t)msgOutSz);
+            }
+            duk_cbor_decode(dhs->ctx, -1,0);
+            
+        } while(1);
+
+        close(child2par[1]);
+        exit(0);
+    }
+    else
+    {   /* parent */
+        int totread=0,is_threadsafe=1;
+        uint32_t bsize;
+        duk_size_t bufsz;
+
+        /* check child is still alive */
+        if(preforked)
+        {
+            tprintf("is preforked in parent, c2p:%d p2c%d\n",finfo->child2par,finfo->par2child);
+
+            /* push an empty object */
+            duk_push_object(dhs->ctx);
+            /* populate object with details from client */
+            push_req_vars(dhs);
+            /* convert to cbor and send to child */
+            duk_cbor_encode(dhs->ctx,-1,0);
+            cbor=duk_get_buffer_data(dhs->ctx,-1,&bufsz);
+
+            msgOutSz=(uint32_t)bufsz;
+            
+            tprintf("parent sending cbor, length %d\n",(int)msgOutSz);
+            write(finfo->par2child, &msgOutSz,sizeof(uint32_t));
+            write(finfo->par2child, &(dhs->func_idx),sizeof(duk_idx_t));
+            write(finfo->par2child, cbor, msgOutSz);
+            tprintf("parent sent cbor, length %d\n",(int)msgOutSz);
+            
+            duk_pop(dhs->ctx);
+        }
+        else
+        {
+            tprintf("first run in parent c2p:%d p2c%d\n",child2par[0],par2child[1]);
+            close(child2par[1]);
+            close(par2child[0]);
+            finfo->child2par=child2par[0];
+            finfo->par2child=par2child[1];
+        }
+        tprintf("parent waiting for input\n");
+        if(waitpid(finfo->childpid,&pidstatus,WNOHANG))
+        {
+            send500(req,"Error in Child Process");
+            return;
+        }
+
+        if(dhs->timeout.tv_sec==RP_TIME_T_FOREVER)
+        {
+            if(-1==read(finfo->child2par,&bsize,sizeof(uint32_t)) )
+            {
+                fprintf(stderr,"%d, errno=%d\n",__LINE__,errno);
+                send500(req,"Error in Child Process");
+                return;
+            }
+        }
+        else
+        {
+            double maxtime= (double)dhs->timeout.tv_sec + ((double)dhs->timeout.tv_usec / 1e6);
+
+            /* this loops 4 times for the minimal callback returning a string
+               on a sandy bridge 3.2ghz core (without the time check, just the usleep) */
+            fcntl(finfo->child2par, F_SETFL,O_NONBLOCK);
+            while ( -1 == read(finfo->child2par,&bsize,sizeof(uint32_t)))
+            {
+                celapsed=stopwatch(cstart);
+                if(celapsed > maxtime) 
+                {
+                    char msg[]="<html><head><title>500 Internal Server Error - Timeout</title></head><body><h1>Internal Server Error - Timeout</h1><p><pre>Timeout in Script</pre></p></body></html>";
+
+                    kill(finfo->childpid,15);
+                    finfo->childpid=0;
+                    evbuffer_add(req->buffer_out,msg,sizeof(msg)-1);
+                    evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
+                    evhtp_send_reply(req, 500);
+                    return;
+                }
+                usleep(250);
+            }
+            /* reset to blocking mode */
+            fcntl(finfo->child2par, F_SETFL,0);
+        }
+
+        tprintf("parent about to read %d bytes\n",(int)bsize);
+        {
+            char jbuf[bsize+1], *p=jbuf, c;
+            int toread=(int)bsize;
+            
+            read(finfo->child2par, &c, 1);
+            if(c=='F')
+                is_threadsafe=0;
+
+            while ((totread=read(finfo->child2par, p, toread))>0)
+            {
+                tprintf("total read=%d\n",totread);
+                toread-=totread;
+                p+=totread;
+            }
+            if(totread<1 && toread>0)
+            {
+                fprintf(stderr,"%d, errno=%d\n",__LINE__,errno);
+                send500(req,"Error in Child Process");
+                return;
+            }
+
+            memcpy(duk_push_fixed_buffer(dhs->ctx,(duk_size_t)bsize),jbuf,(size_t)bsize);
+        }
+
+        duk_cbor_decode(dhs->ctx, -1,0);
+
+        if(!have_threadsafe_val)
+        {
+            duk_push_boolean(dhs->ctx, (duk_bool_t) is_threadsafe);
+            duk_put_prop_string(dhs->ctx, dhs->func_idx, DUK_HIDDEN_SYMBOL("threadsafe") );
+        }
+    }    
+    /* stack now has return value from duk function call */    
+
+    /* set some headers */
+    setheaders(req);
+
+    /* don't accept arrays */
+    if(duk_is_array(dhs->ctx,-1) ){
+        duk_push_string(dhs->ctx,"Return value cannot be an array");
+        duk_throw(dhs->ctx);
+    }
+
+    /* object has reply data and options in it */
+    if(duk_is_object(dhs->ctx,-1))
+        res=sendobj(dhs);
+    else /* send string or buffer to client */
+        sendbuf(dhs);
+    
+    if(res)evhtp_send_reply(req, res);
+
+    duk_pop(dhs->ctx);
+    /* logging goes here ? */
+}
+
+
+static void
+http_callback(evhtp_request_t * req, void * arg)
+{
+    DHS newdhs, *dhs = arg;
+    int dofork=1,have_threadsafe_val=0, thrno=0;
+    duk_context *new_ctx;
+    
+    if(!gl_singlethreaded)
+    {
+        evthr_t *thread= get_request_thr(req);
+        thrno=*((int*)evthr_get_aux(thread));
+    }
+    new_ctx = thread_ctx[thrno];
+
+    /* ****************************
+      setup duk function callback 
+       **************************** */
+
+    newdhs.ctx=new_ctx;
+    newdhs.req=req;
+    newdhs.func_idx=dhs->func_idx;
+    newdhs.timeout=dhs->timeout;
+    newdhs.threadno=thrno;
+    dhs=&newdhs;
+
+    /* fork until we know it is safe not to fork:
+       function will have property threadsafe:true if forking not required 
+       after the first time it is called in http_fork_callback              */
+    if( duk_get_prop_string(dhs->ctx, dhs->func_idx, DUK_HIDDEN_SYMBOL("threadsafe")) )
+    {
+        if( duk_is_boolean(dhs->ctx,-1) && duk_get_boolean(dhs->ctx,-1) ) 
+            dofork=0;
+        have_threadsafe_val=1;
+    }
+    duk_pop(dhs->ctx);
+    
+    if(!gl_singlethreaded && dofork)
+        http_fork_callback(req, dhs, have_threadsafe_val);
+    else
+        http_thread_callback(req, dhs, thrno);
+}
 
 int bind_sock_port(evhtp_t *htp, const char *ip, uint16_t port, int backlog) 
 {
@@ -1054,25 +1406,16 @@ static DHS *new_dhs(duk_context *ctx, int idx)
     return(dhs);
 }
 
-#ifndef SINGLETHREADED
-/* this never happens?? */
-void endThread ()
-{
-}
-
 void initThread (evhtp_t *htp, evthr_t *thr, void *arg)
 {
     int *thrno=NULL;
     
     DUKREMALLOC(main_ctx,thrno,sizeof(int));
 
-    *thrno=threadno++;
+    *thrno=gl_threadno++;
 
     evthr_set_aux(thr, thrno);
 }
-#endif
-
-
 
 static void get_secure(duk_context *ctx, duk_idx_t ob_idx, evhtp_ssl_cfg_t *ssl_config)
 {
@@ -1108,12 +1451,12 @@ evhtp_res pre_accept_callback(evhtp_connection_t *conn, void *arg)
     return EVHTP_RES_OK;
 }
 
+
 duk_ret_t duk_server_start(duk_context *ctx)
 {
     /* TODO: make it so it can bind to any number of arbitary ipv4 or ipv6 addresses */
     evhtp_t           * htp4;
     evhtp_t           * htp6;
-    struct event_base * evbase;
     int i=0;
     DHS *dhs=new_dhs(ctx,-1);
     duk_idx_t ob_idx=-1;
@@ -1122,7 +1465,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     uint16_t port=8080, ipv6port=8080;
     int nthr;
     evhtp_ssl_cfg_t *ssl_config=calloc(1, sizeof(evhtp_ssl_cfg_t));
-    int secure=0,usev6=1,usev4=1,confThreads=-1;
+    int secure=0,usev6=1,usev4=1,confThreads=-1,mthread=1;
     struct stat f_stat;
     struct timeval ctimeout;
     duk_idx_t fpos=0;
@@ -1180,6 +1523,14 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         duk_pop(ctx);
 
+        /* multithreaded */
+        if(duk_get_prop_string(ctx,ob_idx,"usethreads"))
+        {
+            mthread=duk_require_boolean(ctx,-1);
+            gl_singlethreaded=!mthread;
+        }
+        duk_pop(ctx);
+
         /* port ipv6*/
         if(duk_get_prop_string(ctx,ob_idx,"ipv6port"))
         {
@@ -1232,49 +1583,60 @@ duk_ret_t duk_server_start(duk_context *ctx)
             get_secure(ctx,ob_idx,ssl_config);
     }
      
-    /* got the essential config options, now do some setup before mapping urls */
-#ifndef SINGLETHREADED
-    if(usev6+usev4 == 0)
+    /*  mapping options from server({map:{mapoptions}})
+        got the essential config options, now do some setup before mapping urls */
+    if(mthread)
     {
-        duk_push_string(ctx,"useipv6 and useipv4 cannot both be set to false");
-        duk_throw(ctx);
-    }
+        if(usev6+usev4 == 0)
+        {
+            duk_push_string(ctx,"useipv6 and useipv4 cannot both be set to false");
+            duk_throw(ctx);
+        }
 
-    /* use specified number of threads */
-    if(confThreads>0)
-    {
-        nthr=confThreads;
-    }
-    else
-        /* not specified, so set to number of processor cores */
-    {
-        /* nthreads set in rp.h */
-        if(nthreads > 0) 
-            nthr=nthreads;
-         else
+        /* use specified number of threads */
+        if(confThreads>0)
+        {
+            nthr=confThreads;
+        }
+        else
+            /* not specified, so set to number of processor cores */
+        {
             nthr=sysconf(_SC_NPROCESSORS_ONLN);
+        }
+
+        totnthreads=nthr*(usev6+usev4);
+
+        printf("HTTP server for %s%s%s - initializing with %d threads per server, %d total\n", 
+            ((usev4)?"ipv4":""),
+            ((usev4 && usev6)? " and ":""),
+            ((usev6)?"ipv6":""),
+            nthr,
+            totnthreads);
+
+        /* set up info structs for forking in threads for thread-unsafe duk_c functions */
+        REMALLOC( forkinfo, (totnthreads*sizeof(FORKINFO*)) );
+        for(i=0;i<totnthreads;i++){
+            forkinfo[i]=NULL;
+            REMALLOC( forkinfo[i],sizeof(FORKINFO) );
+            forkinfo[i]->par2child=-1;
+            forkinfo[i]->child2par=-1;
+            forkinfo[i]->childpid=0;
+        }
+    } 
+    else 
+    {
+        if(confThreads>1) {
+            printf("threads>1 -- usethreads==false, so using only one thread\n");
+        }
+        totnthreads=1;
+        printf("HTTP server for %s%s%s - initializing", 
+            ((usev4)?"ipv4":""),
+            ((usev4 && usev6)? " and ":""),
+            ((usev6)?"ipv6":""));
     }
 
-    totnthreads=nthr*(usev6+usev4);
-
-    printf("HTTP server for %s%s%s - initializing with %d threads per server, %d total\n", 
-        ((usev4)?"ipv4":""),
-        ((usev4 && usev6)? " and ":""),
-        ((usev6)?"ipv6":""),
-        nthr,
-        totnthreads);
-#else
-    if(confThreads>1) {
-        printf("threads>1 -- compiled single threaded, so using only one thread\n");
-    }
-    totnthreads=1;
-    printf("HTTP server for %s%s%s - initializing", 
-        ((usev4)?"ipv4":""),
-        ((usev4 && usev6)? " and ":""));
-#endif
     REMALLOC( thread_ctx, (totnthreads*sizeof(duk_context*)) );
-
-
+    
     /* initialize a context for each thread */
     for(i=0;i<totnthreads;i++){
         thread_ctx[i] = duk_create_heap_default();
@@ -1282,6 +1644,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
         duk_init_userfunc(thread_ctx[i]);
         copy_all(ctx,thread_ctx[i]);
     }
+
+
+
     if(usev4) htp4 = evhtp_new(evbase, NULL);
     if(usev6) htp6 = evhtp_new(evbase, NULL);
 
@@ -1331,9 +1696,36 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         copy_func(cb_dhs,totnthreads);
                         fpos++;
                         printf("mapping function   %-20s ->    function %s()\n",s,fname);
-                        if (usev4) evhtp_set_glob_cb(htp4,s,http_callback,cb_dhs);
-                        if (usev6) evhtp_set_glob_cb(htp6,s,http_callback,cb_dhs);
-
+                        if (*s=='*' || *(s+strlen(s)-1)=='*')
+                        {
+                            if (usev4) 
+                            {
+                                //evhtp_callback_t  *req_callback = 
+                                evhtp_set_glob_cb(htp4,s,http_callback,cb_dhs);
+                                //evhtp_callback_set_hook(req_callback,evhtp_hook_on_request_fini,req_on_finish, NULL);
+                            }
+                            if (usev6) 
+                            {
+                                //evhtp_callback_t  *req_callback = 
+                                evhtp_set_glob_cb(htp6,s,http_callback,cb_dhs);
+                                //evhtp_callback_set_hook(req_callback,evhtp_hook_on_request_fini,req_on_finish, NULL);
+                            }
+                        }
+                        else
+                        {
+                            if (usev4) 
+                            {
+                                //evhtp_callback_t  *req_callback = 
+                                evhtp_set_cb(htp4,s,http_callback,cb_dhs);
+                                //evhtp_callback_set_hook(req_callback,evhtp_hook_on_request_fini,req_on_finish, NULL);
+                            }
+                            if (usev6) 
+                            {
+                                //evhtp_callback_t  *req_callback = 
+                                evhtp_set_cb(htp6,s,http_callback,cb_dhs);
+                                //evhtp_callback_set_hook(req_callback,evhtp_hook_on_request_fini,req_on_finish, NULL);
+                            }
+                        }
                         free(s);
                         duk_pop(ctx);
                     }
@@ -1463,18 +1855,24 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
     }
 
+
+
     if (usev4) evhtp_set_timeouts(htp4, &ctimeout, &ctimeout);
     if (usev6) evhtp_set_timeouts(htp6, &ctimeout, &ctimeout);
 
     if (usev4) evhtp_set_pre_accept_cb(htp4, pre_accept_callback, NULL);
     if (usev6) evhtp_set_pre_accept_cb(htp6, pre_accept_callback, NULL);
 
-#ifndef SINGLETHREADED
-    if (usev4) evhtp_use_threads_wexit(htp4, initThread, NULL, nthr, NULL);
-    if (usev6) evhtp_use_threads_wexit(htp6, initThread, NULL, nthr, NULL);
-#else
-    printf("in single threaded mode\n");
-#endif
+    if(mthread)
+    {
+        if (usev4) evhtp_use_threads_wexit(htp4, initThread, NULL, nthr, NULL);
+        if (usev6) evhtp_use_threads_wexit(htp6, initThread, NULL, nthr, NULL);
+    }
+    else
+    {
+        printf("in single threaded mode\n");
+    }
+
     if( pthread_mutex_init(&ctxlock,NULL)  == EINVAL ) {
         fprintf(stderr,"could not initialize context lock\n");
         exit(1);

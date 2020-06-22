@@ -68,7 +68,9 @@ char *duk_rp_url_decode(char *str, int len) {
   return buf;
 }
 
+int db_is_init=0;
 
+#define SINGLETHREADED
 
 #ifdef SINGLETHREADED
 
@@ -77,7 +79,6 @@ char *duk_rp_url_decode(char *str, int len) {
 
 #else
 
-int db_is_init=0;
 
 /* lock around the fetch of all rows, rather than each row */
 //#define LOCK_AROUND_ALL_FETCH
@@ -158,6 +159,8 @@ int db_is_init=0;
   r;\
 })
 
+DB_HANDLE *g_hcache=NULL;
+
 void free_handle(DB_HANDLE *h) {
     h->tx = TEXIS_CLOSE(h->tx);
     free(h->db);
@@ -184,6 +187,7 @@ DB_HANDLE *new_handle(const char *d,const char *q){
     }
     h->db=strdup(d);
     h->query=strdup(q);
+    //h->query=NULL;
     h->next=NULL;
     return(h);
 }
@@ -234,6 +238,7 @@ DB_HANDLE *add_handle(DB_HANDLE *head,DB_HANDLE *h){
         last->next=NULL;
         free_handle(h);
     }
+    g_hcache=head;
     return(head);
 }
 
@@ -244,8 +249,16 @@ DB_HANDLE *add_handle(DB_HANDLE *head,DB_HANDLE *h){
 DB_HANDLE *get_handle(DB_HANDLE *head, const char *d, const char *q) { 
    DB_HANDLE *last=NULL;
    DB_HANDLE *h=head;
+   if (!head) 
+   {
+       head=new_handle(d,q);
+       g_hcache=head;
+       return(head);
+   }
    do{
-       if( !strcmp((d),h->db) && !strcmp((q),h->query) ){
+       if( !strcmp((d),h->db) && !strcmp((q),h->query) )
+//     if( !strcmp((d),h->db) )
+        {
             if (last!=NULL) { /* if not at beginning of list */
                 last->next=h->next; /*remove/pull item out of list*/
                 h->next=head;  /* put this item at the head of the list */
@@ -264,6 +277,7 @@ DB_HANDLE *get_handle(DB_HANDLE *head, const char *d, const char *q) {
       return(NULL);
 
     end:
+    g_hcache=head;
     return (head);
 }
 
@@ -919,13 +933,6 @@ int duk_rp_fetchWCallback(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
 }
 
 
-void printstack(duk_context *ctx) {
-  duk_push_context_dump(ctx);
-  printf("%s\n",duk_to_string(ctx,-1));
-  duk_pop(ctx);
-}
-
-
 /* ************************************************** 
    Sql.prototype.exec 
    ************************************************** */
@@ -956,31 +963,8 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
   }
 
 #ifdef USEHANDLECACHE
-  duk_push_heap_stash(ctx);
-  /* check that we have a handle cache for this thread */
-  if ( duk_get_prop_string(ctx,-1,"hcache") )
-  {
-    hcache=(DB_HANDLE*)duk_get_pointer(ctx,-1);
-    /* get handle from cache.  If miss, make new one */
-    hcache=get_handle(hcache,db,q->sql);
-  }
-  else
-  {
-    hcache=new_handle(db,q->sql);
-  }
-  if(hcache==NULL)
-  {
-    duk_rp_log_tx_error(ctx,pbuf);
-    duk_push_int(ctx,-1);
-    duk_push_string(ctx,pbuf);
-    duk_throw(ctx);
-  }
-  /* hcache may have changed.  update it for all cases */
-  duk_push_pointer(ctx,(void*)hcache);
-  duk_put_prop_string(ctx,-3,"hcache"); /* [ heap, [undefined|oldpointer], pointer ] */
-  duk_pop_3(ctx);
-
-  tx=hcache->tx;
+    hcache=get_handle(g_hcache,db,q->sql);
+    tx=hcache->tx;
 #else
   tx=newsql((char*)db);
 #endif
@@ -1125,11 +1109,6 @@ TEXIS *newsql(char* db)
    Here we only check to see that the database exists and
    construct the js object.  Actual opening and caching
    of handles to the db is done in exec()
-
-   TODO: prevent second server from accessing any db that
-         is opened here, perhaps with a pid file checked
-         once upon the first call of new Sql()
-
    ************************************************** */
 duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
 
@@ -1139,8 +1118,6 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
 
   /* allow call to Sql() with "new Sql()" only */
   if (!duk_is_constructor_call(ctx)) {
-    //mmsgfh=oldfh;
-    //fclose(newfh);
     return DUK_RET_TYPE_ERROR;
   }
 
@@ -1166,26 +1143,39 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
     else
      tx=TEXIS_CLOSE(tx);
   }
-
+//  get_handle(g_hcache,db,"");
   /* save the name of the database in 'this' */
   duk_push_this(ctx);  /* -> stack: [ db this ] */
   duk_push_string(ctx,db);
   duk_put_prop_string(ctx, -2, "db");
 
+  duk_push_false(ctx);
+  duk_put_global_string(ctx,DUK_HIDDEN_SYMBOL("threadsafe"));
   return 0;
 }
 
+/* if false, turn off.  Otherwise turn on */
+duk_ret_t duk_rp_sql_singleuser(duk_context *ctx)
+{
+    if(duk_is_boolean(ctx,0) && duk_get_boolean(ctx,0)==0 )
+        TXsingleuser = 0;
+    else
+        TXsingleuser = 1;
+        
+    return 0;
+}
 
 /* **************************************************
    Initialize Sql into global object. 
    ************************************************** */
-void duk_db_init(duk_context *ctx) {
+void duk_db_init(duk_context *ctx)
+{
   /* Set up locks:
      this will be run once per new duk_context/thread in server.c
      but needs to be done only once for all threads
   */
-    mmsgfh=fmemopen(NULL, 1024, "w+");
-  
+//    mmsgfh=fmemopen(NULL, 1024, "w+");
+
   if(!db_is_init)
   {
 #ifndef SINGLETHREADED
@@ -1205,6 +1195,10 @@ void duk_db_init(duk_context *ctx) {
     mmsgfh=fmemopen(NULL, 1024, "w+");
     db_is_init=1;
   }
+
+  /* for single_user */
+  duk_push_c_function(ctx, duk_rp_sql_singleuser, 1 /*nargs*/);
+  duk_put_global_string(ctx,"Sql_single_user");
 
   /* Push constructor function */
   duk_push_c_function(ctx, duk_rp_sql_constructor, 3 /*nargs*/);

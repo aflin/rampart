@@ -251,7 +251,7 @@ function showreq_callback(req){
     });
     
 }
-/* this will no longer print out an error since rst() is global
+/* this will not print out an error since x.func is global
  
    If this entire script was wrapped in a function and that function was called,
    this would produce an error since rst() would no longer be global.
@@ -259,7 +259,7 @@ function showreq_callback(req){
    function and treat each callback as if it were its own script, and
    as if it is being executed and exits after each webpage is served.
 */ 
-function badRef_callback(req){
+function globalRef_callback(req){
     return ( x.func(req) );
 }
 
@@ -320,8 +320,9 @@ server.start(
     ipv6:"::",     //this binds to all. Default is ::1
     port:8088,     //this is the default
     ipv6port:8088, //defaults to port above if not set
-    scriptTimeout: 2.0,
-    connectTimeout:20.0,
+    scriptTimeout: 2.0, /* max time to spend in JS */
+    connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
+
     /* for https support, this is the minimum (more options to come): */
     /*
 
@@ -341,22 +342,29 @@ server.start(
         ipv6 and ipv4 are separate servers and each get this number of threads.
         The number can be changed here:
     */
-    //threads: 4,
+    //threads: 8, /* for a 4 core, 8 virtual core hyper-threaded processor */
 
-    /* map urls to functions or paths on the filesystem */
-    /* order by specificity.  '/' should always be last  */
+    //usethreads: false, /* make server single threaded. Overrides "threads" above. */
+
+    /* **********************************************************
+       map urls to functions or paths on the filesystem 
+       order by specificity.  '/' should always be last  
+       If it ends in a '/' then matches everything in that path
+       except a more specific ('/something.html') path
+       ********************************************************** */
     map:
     {
         /* url to function mappings */
         "/dbtest.html":       inserttest_callback,
         "/simpledbtest.html": simple_callback,
-        "/showreq*":          showreq_callback,
-        "/badref.html":       badRef_callback,
+        "/globalref.html":    globakRef_callback,
         "/ramistest" :        ramistest,
-//"/br":badRef_callback,
+
+        /* matching a glob to a function */
+        "/showreq*":          showreq_callback,
+
         /* filesystem mappings are always folders.  "/tetris" => "/tetris/ */
         "/tetris":            "./tetris-tutorial/",
-        //"/docs/" :          "/usr/share/doc/libevhtp-doc/html/",
         "/":                  "./mPurpose/"
     }
      /* 
