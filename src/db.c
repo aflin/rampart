@@ -70,9 +70,8 @@ char *duk_rp_url_decode(char *str, int len) {
 
 int db_is_init=0;
 
-#define SINGLETHREADED
 
-#ifdef SINGLETHREADED
+#ifndef NEVER_EVER_EVER
 
 #define FLOCK
 #define FUNLOCK
@@ -91,7 +90,7 @@ int db_is_init=0;
 #define FUNLOCK pthread_mutex_unlock(&lock);
 #endif
 
-#endif /* SINGLETHREADED */
+#endif /* was SINGLETHREADED */
 
 
 
@@ -312,7 +311,7 @@ void duk_rp_log_error(duk_context *ctx, char *pbuf)
     duk_push_string(ctx,pbuf);
 #ifdef PUTMSG_STDERR
     if(pbuf && strlen(pbuf)) {
-#ifdef SINGLETHREADED
+#ifdef NEVER_EVER_EVER
       fprintf(stderr,"%s\n",pbuf);
 #else
       pthread_mutex_lock  (&printlock);
@@ -1178,19 +1177,19 @@ void duk_db_init(duk_context *ctx)
 
   if(!db_is_init)
   {
-#ifndef SINGLETHREADED
+#ifndef NEVER_EVER_EVER
     if (pthread_mutex_init(&lock, NULL) != 0)
     {
         printf("\n mutex init failed\n");
         exit(1);
     }
+#endif
 #ifdef PUTMSG_STDERR
     if (pthread_mutex_init(&printlock, NULL) != 0)
     {
         printf("\n mutex init failed\n");
         exit(1);
     }
-#endif
 #endif
     mmsgfh=fmemopen(NULL, 1024, "w+");
     db_is_init=1;

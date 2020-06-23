@@ -951,13 +951,12 @@ stopwatch( double dtime )
 //#define tprintf(...)  printf(__VA_ARGS__);
 #define tprintf(...) /*nada */
 
-/* a callback must be run once before we can tell if it is thread safe.
-   So to be safe, run every callback in a fork.  If it is thread safe, mark
-   it as so and next time we will not fork.
+/* all callback must be run once before we can tell if it is thread safe.
+   So to be safe, run every callback in a fork the first time.  If it is 
+   thread safe, mark it as so and next time we know not to fork.
    A c function that is not thread safe must set the hidden global symbol
    "threadsafe"=false.  After that runs in a thread, "threadsafe" will be checked
    and will default to true (safe) if not present
-   
 */
 
 static void
@@ -1020,7 +1019,7 @@ http_fork_callback(evhtp_request_t * req, DHS *dhs, int have_threadsafe_val)
     {   /* child, forked once then talks over pipes */
 
         duk_size_t bufsz;
-        int i=0;
+        //int i=0;
         close(child2par[0]);
         close(par2child[1]);
         
@@ -1038,8 +1037,8 @@ http_fork_callback(evhtp_request_t * req, DHS *dhs, int have_threadsafe_val)
 
         do
         {
-            i++;
-            tprintf("request #%d\n",i);
+            //i++;
+            //tprintf("request #%d\n",i);
             /* execute function "myfunc({object});" */
             if( (eno=duk_pcall(dhs->ctx,1)) ) 
             {
@@ -1066,7 +1065,7 @@ http_fork_callback(evhtp_request_t * req, DHS *dhs, int have_threadsafe_val)
                 }
                 duk_json_decode(dhs->ctx,-1);
             }
-
+            /* encode the result of duk_pcall or the error message if fails */
             duk_cbor_encode(dhs->ctx,-1,0);
             cbor=duk_get_buffer_data(dhs->ctx,-1,&bufsz);
             msgOutSz=(uint32_t)bufsz;
@@ -1086,6 +1085,7 @@ http_fork_callback(evhtp_request_t * req, DHS *dhs, int have_threadsafe_val)
                 duk_push_global_object(dhs->ctx);
                 duk_del_prop_string(dhs->ctx,-1,DUK_HIDDEN_SYMBOL("threadsafe"));
                 duk_pop_2(dhs->ctx);
+                have_threadsafe_val=1;
             }
             else
             {
@@ -1191,13 +1191,9 @@ http_fork_callback(evhtp_request_t * req, DHS *dhs, int have_threadsafe_val)
                 celapsed=stopwatch(cstart);
                 if(celapsed > maxtime) 
                 {
-                    char msg[]="<html><head><title>500 Internal Server Error - Timeout</title></head><body><h1>Internal Server Error - Timeout</h1><p><pre>Timeout in Script</pre></p></body></html>";
-
                     kill(finfo->childpid,15);
                     finfo->childpid=0;
-                    evbuffer_add(req->buffer_out,msg,sizeof(msg)-1);
-                    evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
-                    evhtp_send_reply(req, 500);
+                    send500(req,"Timeout in Script");
                     return;
                 }
                 usleep(250);
