@@ -2,10 +2,9 @@ set(CMAKE_BUILD_TYPE Debug)
 
 add_definitions(
 	-DRP_USING_DUKTAPE 
-	-DDUK_CMDLINE_PRINTALERT_SUPPORT 
 	-DDUK_CMDLINE_CONSOLE_SUPPORT 
-	-DDUK_CMDLINE_LOGGING_SUPPORT 
 	-DDUK_CMDLINE_MODULE_SUPPORT 
+	-DDUK_CMDLINE_FANCY
 	-DDUK_CMDLINE_FILEIO 
 	-DDUK_DB_SUPPORT
 	-D_XOPEN_SOURCE 
@@ -16,24 +15,24 @@ add_definitions(
 )
 
 #this doesn't work: set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -g -pedantic -std=c99 -Wall -fstrict-aliasing -fomit-frame-pointer -rdynamic")
-#add_compile_options( -O2 -g -pedantic -std=c99 -fstrict-aliasing)
+# add_compile_options( -O2 -g -pedantic -std=c99 -fstrict-aliasing)
 add_compile_options(-Wunused-variable)
 
+
 add_executable(rp
-	duktape.c
-	duk_cmdline.c
-	duk_print_alert.c
-	duk_console.c
-	duk_logging.c
-	duk_module_duktape.c
-	modules.c
-	resp_client.c
-	resp_protocol.c
-	printf.c
-	db.c 
-	duk_ramis.c
-	misc.c
-	register.c
+	duktape/register.c
+	duktape/core/duktape.c
+	duktape/core/duk_console.c
+	duktape/core/module.c
+	duktape/globals/db.c
+	duktape/globals/misc.c
+	duktape/globals/printf.c
+	duktape/globals/ramis.c
+
+	ramis/resp_client.c
+	ramis/resp_protocol.c
+
+	cmdline.c
 )
 
 set_target_properties(rp PROPERTIES
@@ -64,9 +63,9 @@ set(INSTALLFILES
 	"tetris-tutorial"
 )
 
-foreach(INSTALLFILE ${INSTALLFILES})
-file(COPY ${INSTALLFILE} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-endforeach()
+# foreach(INSTALLFILE ${INSTALLFILES})
+# file(COPY ${INSTALLFILE} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+# endforeach()
 
 set(LIBEVENT_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevent)
 set(OPENSSL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/openssl)
@@ -78,7 +77,7 @@ set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp)
 
 ###CURL###
 add_library(rpcurl SHARED
- curl.c
+ duktape/modules/curl.c
 )
 target_link_libraries(rpcurl PRIVATE
 	${CURL_TARGET_DIR}/lib/libcurl.a
@@ -92,12 +91,12 @@ target_include_directories(rpcurl PRIVATE
 
 ###UTILS###
 add_library(rputils SHARED
- utils.c
+ duktape/modules/utils.c
 )
 
 ###SERVER###
 add_library(rpserver SHARED
- server.c
+ duktape/modules/server.c
 )
 target_link_libraries(rpserver 
 	${LIBEVHTP_TARGET_DIR}/libevhtp.a
