@@ -2196,7 +2196,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     for(i=0;i<=totnthreads;i++){
         duk_context *tctx;
-        if(i=totnthreads)
+        if(i==totnthreads)
             tctx=ctx;
         else
             tctx=thread_ctx[i];
