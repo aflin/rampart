@@ -409,21 +409,33 @@ fileserver(evhtp_request_t * req, void * arg)
         send404(req);
 }
 
+#define CTXFREER struct ctx_free_buffer_data_str
+
+CTXFREER {
+    duk_context *ctx;
+    int threadno;
+};
+
 /* free the stolen duk buffer after evbuffer is done with it */
 static void refcb(const void *data, size_t datalen, void *val)
 {
-    duk_context *ctx=val;
-    int threadno=(int)datalen;//repurposed
+    CTXFREER *fp=val;
+    duk_context *ctx=fp->ctx;
+    int threadno=(int)fp->threadno;
+
     /* check if the entire stack was already freed and replaced in redo_ctx */
     if (ctx==thread_ctx[threadno])
         duk_free(ctx,(void *)data);
+    free(fp);
 }
 
 static void sendbuf(DHS *dhs)
 {
     duk_size_t sz;
     const char *s;
+    CTXFREER *freeme=NULL;
 
+    REMALLOC(freeme,sizeof(CTXFREER));
     s=duk_get_string_default(dhs->ctx,-1,"  ");
     if(*s=='\\' && *(s+1)=='@')
     {
@@ -440,7 +452,10 @@ static void sendbuf(DHS *dhs)
     duk_to_dynamic_buffer(dhs->ctx,-1,NULL);
     s=duk_steal_buffer(dhs->ctx, -1, &sz);
     /* add buffer to response, and specify callback to free s when done */
-    evbuffer_add_reference(dhs->req->buffer_out,s,(size_t)dhs->threadno,refcb,dhs->ctx);
+    /* note that dhs and ctx might not exist by the time the callback is executed */
+    freeme->ctx=dhs->ctx;
+    freeme->threadno=dhs->threadno;
+    evbuffer_add_reference(dhs->req->buffer_out,s,(size_t)sz,refcb,freeme);
 
     /* with copy - this version needs a check for databuffer
     s=duk_get_lstring(dhs->ctx,1,&sz);
