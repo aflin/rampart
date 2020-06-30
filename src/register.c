@@ -3,7 +3,7 @@
 
 void rp_register_functions(duk_context *ctx)
 {
-  duk_db_init(ctx); /* register database functions from db.c */
+//  duk_db_init(ctx); /* register database functions from db.c */
   
   duk_ra_init(ctx); /* register ramis functions */
   

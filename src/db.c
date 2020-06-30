@@ -3,9 +3,17 @@
 #include <pthread.h>
 #include <ctype.h>
 #include <float.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <errno.h>
 #include "rp.h"
 #include "duktape.h"
 
+
+/* TODO: make not using handle cache work with cancel */
+#ifndef USEHANDLECACHE
+#define USEHANDLECACHE
+#endif
 
 /* **************************************************************************
    This url(en|de)code is public domain from https://www.geekhideout.com/urlcode.shtml 
@@ -69,114 +77,122 @@ char *duk_rp_url_decode(char *str, int len) {
 }
 
 int db_is_init=0;
+int tx_rp_cancelled=0;
 
 
-#ifndef NEVER_EVER_EVER
+#define EXIT_IF_CANCELLED if(tx_rp_cancelled) exit(0);
 
-#define FLOCK
-#define FUNLOCK
+
+#ifdef DEBUG_TX_CALLS
+
+#  define xprintf(...)  printf("(%d): ",(int)getpid());\
+    printf(__VA_ARGS__);
 
 #else
 
+#  define xprintf(...) /* niente */
 
-/* lock around the fetch of all rows, rather than each row */
-//#define LOCK_AROUND_ALL_FETCH
-
-#ifdef DBUGLOCKS
-#define FLOCK   printf("%d: locking from thread %lu\n",  __LINE__ ,(unsigned long int)pthread_self());fflush(stdout);pthread_mutex_lock  (&lock);
-#define FUNLOCK printf("%d: unlocking from thread %lu\n",__LINE__ ,(unsigned long int)pthread_self());fflush(stdout);pthread_mutex_unlock(&lock);
-#else
-#define FLOCK   pthread_mutex_lock  (&lock);
-#define FUNLOCK pthread_mutex_unlock(&lock);
 #endif
 
-#endif /* was SINGLETHREADED */
-
-
-
 #define TEXIS_OPEN(tdb) ({\
-  FLOCK\
+  xprintf("Open\n");\
   TEXIS *rtx=texis_open((tdb), "PUBLIC", "");\
-  FUNLOCK\
+  EXIT_IF_CANCELLED\
   rtx;\
 })
 
 #define TEXIS_CLOSE(rtx) ({\
-  FLOCK\
+  xprintf("Close\n");\
   (rtx)=texis_close((rtx));\
-  FUNLOCK\
+  EXIT_IF_CANCELLED\
   rtx;\
 })
 
+
 #define TEXIS_PREP(a,b) ({\
-  FLOCK\
+  xprintf("Prep\n");\
   /*printf("texisprep %s\n",(b));*/\
   int r=texis_prepare((a),(b));\
-  FUNLOCK\
+  EXIT_IF_CANCELLED\
   r;\
 })
 
 #define TEXIS_EXEC(a) ({\
-  FLOCK\
-  /* printf("texisexec\n"); */\
+  xprintf("Exec\n");\
   int r=texis_execute((a));\
-  FUNLOCK\
+  EXIT_IF_CANCELLED\
   r;\
 })
-
-#ifdef LOCK_AROUND_ALL_FETCH
 
 #define TEXIS_FETCH(a,b) ({\
+  xprintf("Fetch\n");\
   FLDLST *r=texis_fetch((a),(b));\
+  EXIT_IF_CANCELLED\
   r;\
 })
-
-#else
-
-#define TEXIS_FETCH(a,b) ({\
-  FLOCK\
-  /* printf("texisfetch\n");*/\
-  FLDLST *r=texis_fetch((a),(b));\
-  FUNLOCK\
-  r;\
-})
-
-#endif
 
 #define TEXIS_SKIP(a,b) ({\
-  FLOCK\
+  xprintf("skip\n");\
   int r=texis_flush_scroll((a),(b));\
-  FUNLOCK\
+  EXIT_IF_CANCELLED\
   r;\
 })
 
 #define TEXIS_PARAM(a,b,c,d,e,f) ({\
-  FLOCK\
-  /* printf("texisparam\n"); */\
+  xprintf("Param\n");\
   int r=texis_param((a),(b),(c),(d),(e),(f));\
-  FUNLOCK\
+  EXIT_IF_CANCELLED\
   r;\
 })
 
 DB_HANDLE *g_hcache=NULL;
+pid_t g_hcache_pid=0;
 
-void free_handle(DB_HANDLE *h) {
-    h->tx = TEXIS_CLOSE(h->tx);
+static void free_handle(DB_HANDLE *h,int close_tx) {
+    if(close_tx)
+      h->tx = TEXIS_CLOSE(h->tx);
     free(h->db);
     free(h->query);
     free(h);
 }
 
-void free_all_handles(DB_HANDLE *h) {
+void free_all_handles(void *unused) {
   DB_HANDLE *next;
+  DB_HANDLE *h=g_hcache;
   while( h!=NULL ) {
       next=h->next;
-      free_handle(h);
+      free_handle(h,1);
       h=next;
   }
+  g_hcache=NULL;
 }
 
-DB_HANDLE *new_handle(const char *d,const char *q){
+
+void die_nicely(int sig)
+{
+  DB_HANDLE *next;
+  DB_HANDLE *h=g_hcache;
+  while( h!=NULL ) {
+      next=h->next;
+      texis_cancel(h->tx);
+      h=next;
+  }
+  tx_rp_cancelled=1;
+}
+
+
+static void free_all_handles_noClose(void *unused) {
+  DB_HANDLE *next;
+  DB_HANDLE *h=g_hcache;
+  while( h!=NULL ) {
+      next=h->next;
+      free_handle(h,0);
+      h=next;
+  }
+  g_hcache=NULL;
+}
+
+static DB_HANDLE *new_handle(const char *d,const char *q){
     DB_HANDLE *h=NULL;
     REMALLOC(h,sizeof(DB_HANDLE));
     h->tx=newsql((char*)(d));
@@ -192,7 +208,7 @@ DB_HANDLE *new_handle(const char *d,const char *q){
 }
 
 /* for debugging */
-void print_handles(DB_HANDLE *head) {
+static void print_handles(DB_HANDLE *head) {
     DB_HANDLE *h=head;
     if(h==NULL)
         printf("[]\n");
@@ -207,14 +223,20 @@ void print_handles(DB_HANDLE *head) {
 }
 
 /* the LRU Texis Handle Cache is indexed by
-   query.  Currently we have to reprep the 
+   query and db. Currently we have to reprep the 
    query each time it is used, negating the
-   usefullness of indexing it as such, but 
+   usefullness of indexing it by query, but 
    there may be a future version in which we 
    can use the same prepped handle and just 
    rewind the database to the first row without 
-   having to texis_prep() again.  So for now,
-   this structure stays.
+   having to texis_prep() again.  
+   ---
+   Turns out it is not very likely we will ever
+   be able to skip the texis_prep.
+   Indexing by query is still convenient as 
+   it allows us to keep an appropriate number of
+   handles cached.
+   So for now, this structure stays.
 */
 
 /* LRU:
@@ -222,9 +244,9 @@ void print_handles(DB_HANDLE *head) {
    count number of items on list.
    if one too many, evict last one.
 */
-DB_HANDLE *add_handle(DB_HANDLE *head,DB_HANDLE *h){
+static void add_handle(DB_HANDLE *h){
     int i=1; 
-    DB_HANDLE *last;
+    DB_HANDLE *last, *head=g_hcache;
     if(head!=NULL)
         h->next=head;
     head=h;
@@ -235,49 +257,62 @@ DB_HANDLE *add_handle(DB_HANDLE *head,DB_HANDLE *h){
     } 
     if( i == NDB_HANDLES+1 ) {
         last->next=NULL;
-        free_handle(h);
+        free_handle(h,1);
     }
     g_hcache=head;
-    return(head);
 }
 
-/*  search for handle (startin at h==head) that has same query and database
+/*  search for handle (starting at h==g_hcache) that has same query and database
     if found, move to beginning of list
     if not, make new, and add to beginning of list
 */
-DB_HANDLE *get_handle(DB_HANDLE *head, const char *d, const char *q) { 
-   DB_HANDLE *last=NULL;
-   DB_HANDLE *h=head;
-   if (!head) 
+static DB_HANDLE *get_handle(const char *d, const char *q) { 
+   DB_HANDLE *last=NULL,*h=g_hcache;
+
+   if (!g_hcache) 
    {
-       head=new_handle(d,q);
-       g_hcache=head;
-       return(head);
+       /*
+       if(!TXaddabendcb(free_all_handles,(void*)NULL))
+       {
+           fprintf(stderr,"Error registering TXaddabendcb in db.c\n");
+       }
+       */
+       g_hcache_pid=getpid();
+       g_hcache=new_handle(d,q);
+       return(g_hcache);
+   } 
+   else if( g_hcache_pid!=getpid() ) 
+   {
+       /* start over. don't use handles from another proc */
+       //printf("discarding handles from parent proc\n");
+       free_all_handles_noClose(NULL);
+       g_hcache=NULL;
+       return get_handle(d,q);
    }
+
    do{
        if( !strcmp((d),h->db) && !strcmp((q),h->query) )
-//     if( !strcmp((d),h->db) )
-        {
+       {
             if (last!=NULL) { /* if not at beginning of list */
                 last->next=h->next; /*remove/pull item out of list*/
-                h->next=head;  /* put this item at the head of the list */
-                head=h;
+                h->next=g_hcache;  /* put this item at the head of the list */
+                g_hcache=h;
             } /* else it's already at beginning */
-            goto end;
-        }
-        last=h;
-        h=h->next;
+            return (g_hcache);
+       }
+       last=h;
+       h=h->next;
     } while(h!=NULL);
+
     /* got to the end of the list, not found */
     h=new_handle(d,q);
     if(h)
-      head=add_handle(head,h);
+        add_handle(h);
     else
       return(NULL);
 
-    end:
-    g_hcache=head;
-    return (head);
+    /* requested handle will always be at beginning of list */
+    return (g_hcache);
 }
 
 /* **************************************************
@@ -286,11 +321,12 @@ DB_HANDLE *get_handle(DB_HANDLE *head, const char *d, const char *q) {
 duk_ret_t duk_rp_sql_close(duk_context *ctx) {
   DB_HANDLE *hcache=NULL;
   
+  SET_THREAD_UNSAFE(ctx);
   duk_push_heap_stash(ctx);
   if ( duk_get_prop_string(ctx,-1,"hcache") )
   {
     hcache=(DB_HANDLE*)duk_get_pointer(ctx,-1);
-    free_all_handles(hcache);
+    free_all_handles(NULL);
     duk_del_prop_string(ctx,-2,"hcache");
   }
   return 0;
@@ -752,9 +788,6 @@ int duk_rp_fetch(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
       resmax=q->max,
       retarray=q->retarray;
   FLDLST *fl;
-#ifdef LOCK_AROUND_ALL_FETCH
-  FLOCK
-#endif
   /* create return array (outer array) */
   duk_push_array(ctx);
 
@@ -813,9 +846,6 @@ int duk_rp_fetch(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
       duk_put_prop_index(ctx,-2,rown++);
     }
   }
-#ifdef LOCK_AROUND_ALL_FETCH
-  FUNLOCK
-#endif
   return(rown);
 }
 
@@ -831,9 +861,7 @@ int duk_rp_fetchWCallback(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
         retarray=q->retarray,
         callback=q->callback;
     FLDLST *fl;    
-#ifdef LOCK_AROUND_ALL_FETCH
-  FLOCK
-#endif
+
     while ( rown<resmax && (fl=TEXIS_FETCH(tx,-1)) ) {
       duk_dup(ctx,callback);
       duk_push_this(ctx);
@@ -876,9 +904,6 @@ int duk_rp_fetchWCallback(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
           /* if function returns false, exit while loop, return number of rows so far */
           if (duk_is_boolean(ctx,-1) && !duk_get_boolean(ctx,-1) ) {
             duk_pop(ctx);
-#ifdef LOCK_AROUND_ALL_FETCH
-  FUNLOCK
-#endif
             return (rown);
           }
           duk_pop(ctx);
@@ -916,17 +941,11 @@ int duk_rp_fetchWCallback(duk_context *ctx,TEXIS *tx, QUERY_STRUCT *q) {
       /* if function returns false, exit while loop, return number of rows so far */
       if (duk_is_boolean(ctx,-1) && !duk_get_boolean(ctx,-1) ) {
         duk_pop(ctx);
-#ifdef LOCK_AROUND_ALL_FETCH
-        FUNLOCK
-#endif
         return (rown);
       }
       /* get rid of ret value from callback*/
       duk_pop(ctx);
     } /* while fetch */
-#ifdef LOCK_AROUND_ALL_FETCH
-    FUNLOCK
-#endif
 
     return(rown);
 }
@@ -939,9 +958,21 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 {
   TEXIS *tx;
   QUERY_STRUCT *q, q_st;
+#ifdef USEHANDLECACHE
   DB_HANDLE *hcache=NULL;
+#endif
   const char *db;
   char pbuf[2048];
+
+  struct sigaction sa = { 0 };
+  sa.sa_flags   = 0;//SA_NODEFER;
+  sa.sa_handler = die_nicely;
+  sigemptyset (&sa.sa_mask);
+  sigaction (SIGUSR1, &sa, NULL);
+
+//  signal(SIGUSR1, die_nicely);
+
+  SET_THREAD_UNSAFE(ctx);
 
   duk_push_this(ctx);
 
@@ -962,7 +993,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
   }
 
 #ifdef USEHANDLECACHE
-    hcache=get_handle(g_hcache,db,q->sql);
+    hcache=get_handle(db,q->sql);
     tx=hcache->tx;
 #else
   tx=newsql((char*)db);
@@ -994,6 +1025,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 
   /* add sql parameters */
   if(q->arryi !=-1)
+  {
     if(!duk_rp_add_parameters(ctx, tx, q->arryi))
     {
       duk_rp_log_tx_error(ctx,pbuf);
@@ -1003,6 +1035,11 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 #endif
       duk_throw(ctx);
     }
+  }
+  else 
+  {
+    texis_resetparams(tx);
+  }
 
   if(!TEXIS_EXEC(tx))
   {
@@ -1013,11 +1050,12 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 #endif
     duk_throw(ctx);
   }
+
   /* skip rows using texisapi */
   if(q->skip)
     TEXIS_SKIP(tx,q->skip);
-  /* callback - return one row per callback */
 
+  /* callback - return one row per callback */
   if (q->callback>-1) {
     int rows=duk_rp_fetchWCallback(ctx,tx,q);    
     duk_push_int(ctx,rows);
@@ -1130,26 +1168,22 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx) {
     tx=TEXIS_OPEN((char*)db);
     if (tx==NULL)
     {
-      FLOCK
       if(!createdb(db)){
-        FUNLOCK
         duk_rp_log_tx_error(ctx,pbuf);
         duk_push_sprintf(ctx,"cannot create database at '%s' (root path not found, lacking permission or other error\n)", db,pbuf);
         duk_throw(ctx);
       }
-      FUNLOCK
     }
     else
      tx=TEXIS_CLOSE(tx);
   }
-//  get_handle(g_hcache,db,"");
+//  get_handle(db,"");
   /* save the name of the database in 'this' */
   duk_push_this(ctx);  /* -> stack: [ db this ] */
   duk_push_string(ctx,db);
   duk_put_prop_string(ctx, -2, "db");
 
-  duk_push_false(ctx);
-  duk_put_global_string(ctx,DUK_HIDDEN_SYMBOL("threadsafe"));
+  SET_THREAD_UNSAFE(ctx);
   return 0;
 }
 
@@ -1167,13 +1201,13 @@ duk_ret_t duk_rp_sql_singleuser(duk_context *ctx)
 /* **************************************************
    Initialize Sql into global object. 
    ************************************************** */
-void duk_db_init(duk_context *ctx)
+duk_ret_t dukopen_module(duk_context *ctx)
 {
   /* Set up locks:
      this will be run once per new duk_context/thread in server.c
      but needs to be done only once for all threads
   */
-//    mmsgfh=fmemopen(NULL, 1024, "w+");
+
 
   if(!db_is_init)
   {
@@ -1191,7 +1225,8 @@ void duk_db_init(duk_context *ctx)
         exit(1);
     }
 #endif
-    mmsgfh=fmemopen(NULL, 1024, "w+");
+
+    mmsgfh=fmemopen(NULL, 4096, "w+");
     db_is_init=1;
   }
 
@@ -1221,6 +1256,22 @@ void duk_db_init(duk_context *ctx)
   duk_put_prop_string(ctx, -2, "prototype");  /* -> stack: [ Sql-->[prototype-->[exe=fn_exe,...]] ] */
 
   /* Finally, register Sql to the global object */
+  duk_dup(ctx,-1);
   duk_put_global_string(ctx, "Sql");  /* -> stack: [ ] */
 
+  /* duktape will never return a c function (not even in eval code).
+     It will instead return an object with prototype set, but no constructor function.
+     so duk_eval_string(ctx,"Sql"), or duk_eval_string(ctx,"(function(){return Sql;})()");
+     will not work, even though it will work directly in javascript.
+     best we can do is return an object containing the c function
+  */
+  duk_push_object(ctx);
+  duk_pull(ctx,-2);
+  duk_put_prop_string(ctx,-2,"init");
+
+  // this doesn't work either
+  //duk_put_global_string(ctx, "intsql" );
+  //duk_eval_string(ctx,"(function(){return intsql.init;})()");
+  
+  return 1;
 }

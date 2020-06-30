@@ -29,11 +29,8 @@
 //        malloc for printf (and may not be thread safe).
 //
 ///////////////////////////////////////////////////////////////////////////////
-
+// FROM: https://github.com/mpaland/printf
 // MODIFIED BY Aaron Flin for use in duktape
-#define printstack(ctx) duk_push_context_dump((ctx));\
-printf("%s\n", duk_to_string((ctx), -1));\
-duk_pop((ctx));
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -108,7 +105,7 @@ duk_pop((ctx));
 #define FLAGS_LONG_LONG (1U <<  9U)
 #define FLAGS_PRECISION (1U << 10U)
 #define FLAGS_ADAPT_EXP (1U << 11U)
-
+#define FLAGS_BANG      (1U <<  12U)
 
 #include <float.h>
 
@@ -590,6 +587,7 @@ static int _duk_printf(out_fct_type out, char* buffer, const size_t maxlen, duk_
         case '+': flags |= FLAGS_PLUS;    format++; n = 1U; break;
         case ' ': flags |= FLAGS_SPACE;   format++; n = 1U; break;
         case '#': flags |= FLAGS_HASH;    format++; n = 1U; break;
+        case '!': flags |= FLAGS_BANG;    format++; n = 1U; break;
         default :                                   n = 0U; break;
       }
     } while (n);
@@ -766,7 +764,12 @@ static int _duk_printf(out_fct_type out, char* buffer, const size_t maxlen, duk_
       case 'U' : {
         duk_size_t sz;
         const char *s=duk_require_lstring(ctx,fidx,&sz);
-        char *u=duk_rp_url_encode((char*)s,(int)sz);
+        char *u;
+        if (flags & FLAGS_BANG) 
+          u=duk_rp_url_decode((char*)s,(int)sz);
+        else
+          u=duk_rp_url_encode((char*)s,(int)sz);
+
         if(!buffer)
         {
           preserveUfmt=1;
@@ -775,13 +778,15 @@ static int _duk_printf(out_fct_type out, char* buffer, const size_t maxlen, duk_
         duk_push_string(ctx,u);
         free(u);
         duk_replace(ctx,fidx);
-        //no break
+        goto string;
       }  
       case 'J' :
         if(!duk_is_string(ctx,fidx))
           (void) duk_json_encode(ctx,fidx);//no ++
         //no break
-      case 's' : {
+      case 's' : 
+      string:
+      {
         const char* p = duk_require_string(ctx,fidx++);
         unsigned int l = _strnlen_s(p, precision ? precision : (size_t)-1);
         // pre padding

@@ -10,7 +10,7 @@ set(HAVE_MMAP ON CACHE BOOL "Use mmap where possible")
 
 
 add_definitions(-D_XOPEN_SOURCE -D_GNU_SOURCE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64)
-
+add_compile_options(-fPIC)
 #
 # include CPack to make install packages
 #   will need conf

@@ -1,9 +1,17 @@
-
 /* load the http server module */
 var server=require("rpserver");
 
-/* sql db is built in.  Call with new Sql("/path/to/db") */
-var sql=new Sql("./testdb",true); /* true means make db if it doesn't exist */
+/* Circular reference test.  This is copied to each thread's JS stack */
+var obj={foo:"that"}
+obj.newobj=obj;
+
+/* load sql database module */
+var rpsql=require("rpsql");
+
+var sql= new rpsql.init("./testdb",true); /* true means make db if it doesn't exist */
+
+/* this will also work after loading module */
+//var sql=new Sql("./testdb",true);
 
 /* check if our quicktest table exists.  If not, make it */
 var res=sql.exec("select * from SYSTABLES where NAME='quicktest'");
@@ -16,7 +24,8 @@ if(res.length==0) {
 /* same for inserttest table.  And populate the table with 2000 rows */
 res=sql.exec("select * from SYSTABLES where NAME='inserttest'");
 if(res.length==0) {
-    res=sql.exec("create table inserttest ( I int, D double, Text varchar(16) );");
+    sql.exec("create table inserttest ( I int, D double, Text varchar(16) );");
+    sql.exec("create index inserttest_I_x on inserttest(I);");
     for (var i=0;i<200;i++)
         inserttest_callback({},true);
 
@@ -27,10 +36,8 @@ if(res.length==0) {
     );
     console.log(res);
 
-    console.log("count should be 1990");
-    res=sql.exec("select count(*) from inserttest",
-                    {max:10}
-    );
+    console.log("nrows should be 1990");
+    res=sql.exec("select count(*) nrows  from inserttest");
     console.log(res);
 }
 
@@ -45,26 +52,24 @@ Rows are returned as one of 4 different return types:
     arrayh  -- first row is column names, then like array
     novars  -- returns empty array, or empty object if using a callback
 */
+
 /*
-console.log("return normal");
+console.log("return default object");
 res=sql.exec("select * from inserttest",
-                {max:10}
+                {max:10,skip:20}
 );
-console.log("no callback results:");
 console.log(res);
 
 console.log("return arrayh");
 res=sql.exec("select * from inserttest",
                 {max:10,returnType:"arrayh"}
 );
-console.log("no callback results:");
 console.log(res);
 
 console.log("return novars");
 res=sql.exec("select * from inserttest",
                 {max:10,returnType:"novars"}
 );
-console.log("no callback results:");
 console.log(res);
 
 console.log("return callback novars");
@@ -83,7 +88,6 @@ res=sql.exec("select * from inserttest",
                 function(res,i){
                     console.log(res,i);
                 }
-
 );
 console.log("total: "+res);
 
@@ -93,7 +97,6 @@ res=sql.exec("select * from inserttest",
                 function(res,i){
                     console.log(res,i);
                 }
-
 );
 console.log(res);
 */
@@ -102,14 +105,12 @@ console.log(res);
    Since the http server is multithreaded, and the javascript interpreter
    is not, each thread must have its own javascript heap where the callback
    will be copied.
-   This function is outside the scope of server callback functions
-   below and thus cannot be reached from within the webserver.
-   Think of every function as its own distinct xyz.js file
-   for the http server.
+   Globally declared functions and server callback functions
+   below will be copied to each thread's stack.  Scoped variables that are 
+   not global will not be copied.
+   Best practice is to think of every function as its own distinct script
+   as variables copied to each stack will only be local to that thread.
 */
-function rst() {
-    return("return some text");
-}
 
 function inserttest_callback(req,allinserts){
     /* randpic function is naturally accessible to 
@@ -123,10 +124,8 @@ function inserttest_callback(req,allinserts){
 
         return(arr[x]);
     }
-
-    var sql=new Sql('./testdb');
     var str=["zero","one","two","three","four","five","six","seven","eight","nine"];
-    var arr;
+    var res;
     var r=Math.random();
     var rf=r*10;
     var rp=Math.floor(r*100);
@@ -134,23 +133,28 @@ function inserttest_callback(req,allinserts){
     var skip=Math.floor(Math.random()*100);
     var insertmax=25;
 
+//    res=sql.exec("select count(I) cnt from inserttest");
+//    console.log(res);
+
     /* to populate the table */
     if(allinserts) insertmax=100;    
 
     if (rp<insertmax)
     {
+//        console.log("insert");
         for (var i=0;i<10;i++)
         {
-          arr=sql.exec(
+          res=sql.exec(
             'insert into inserttest values (?,?,?)',
             [ri,rf,randpic(str,r)]
           );
         }
-        //console.log("insert");
     }
     else if (rp<50)
+//    else if (rp>100)
     {
-          arr=sql.exec(
+//        console.log("delete")
+          res=sql.exec(
             "delete from inserttest",
             /* WTF: skipped rows are deleted too 
             {skip:skip,max:10,returnType:"novars"}
@@ -162,23 +166,22 @@ function inserttest_callback(req,allinserts){
             */
             {max:10,returnType:"novars"}
           );
-        //console.log("delete")
-        //console.log(arr);
+        //console.log(res);
     }
     else
     {
-        arr=sql.exec(
+//        console.log("select");
+        res=sql.exec(
             "select * from inserttest where I > ?",
             [5],
             {skip:skip,max:10,returnType:"array"},
             /* sanity check callback */
-            function(req) {
-                var f2i=parseInt(req[1]);
-                if(f2i!=req[0] || req[2]!=str[f2i])
+            function(result) {
+                var f2i=parseInt(result[1]);
+                if(f2i!=result[0] || result[2]!=str[f2i])
                     console.log("DANGER WILL ROBINSON:",req);
             }
         );
-        //console.log("select");
     }
 
     /* return value is sent to http client
@@ -187,24 +190,20 @@ function inserttest_callback(req,allinserts){
        See mime.h for complete listing.
     */    
     return({
-        text: "this is for doing multithreaded stress testing, such as: ab -n 10000 -c 100 http://127.0.0.1:8088/dbtest.html"
+        text: "this is for doing multithreaded stress testing, such as: ab -n 10000 -c 100 http://127.0.0.1:8088/dbtest.html\n"
     });
 }
 
 function simple_callback(req){
-    var sql=new Sql('./testdb');
+//    require("rpsql");
+//    var sql=new Sql('./testdb');
     var arr=sql.exec(
         'select * from quicktest',
         {max:1}
     );
-    
     /* default mime type is text/plain, if just given a string */
     return(JSON.stringify(arr));
 }
-var x={msg:"HELLO WORLD",func:showreq_callback};
-
-
-
 
 function showreq_callback(req){
     // http://jsfiddle.net/KJQ9K/554/
@@ -226,8 +225,8 @@ function showreq_callback(req){
             return '<span class="' + cls + '">' + match + '</span>';
         });
     }
-    //For testing timeout:this takes about 5 sec on a semi modern intel i7 3930k.
-//    for (var i=0;i<10000000;i++);
+    //For testing timeout
+//    for (var i=0;i<100000000;i++);
 //    print("DONE WASTING TIME IN JS");
     var str=JSON.stringify(req,null,4);
     var css=
@@ -251,19 +250,23 @@ function showreq_callback(req){
     });
     
 }
-/* this will not print out an error since x.func is global
+/* this works as expected since x.func is global
  
    If this entire script was wrapped in a function and that function was called,
-   this would produce an error since rst() would no longer be global.
+   this would produce an error since x.func would no longer be global.
    Best practice currently is to put functions you need inside the callback
    function and treat each callback as if it were its own script, and
    as if it is being executed and exits after each webpage is served.
 */ 
+
+var x={msg:"HELLO WORLD",func:showreq_callback};
+
+
 function globalRef_callback(req){
     return ( x.func(req) );
 }
 
-
+/* currently a redis server must be running */
 function ramistest(req) {
     var ra=new Ramis();
     var insertvar="0123456789abcdef";
@@ -320,16 +323,21 @@ server.start(
     ipv6:"::",     //this binds to all. Default is ::1
     port:8088,     //this is the default
     ipv6port:8088, //defaults to port above if not set
-    scriptTimeout: 2.0, /* max time to spend in JS */
+    scriptTimeout: 20.0, /* max time to spend in JS */
     connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
+    usethreads: true, /* make server multi-threaded.
+    /*  By default, number of threads is set to cpu core count.
+        ipv6 and ipv4 are separate servers and each get this number of threads.
+        This has no effect unless usethreads is set true.
+        The number can be changed here:
+    */
+    //threads: 8, /* for a 4 core, 8 virtual core hyper-threaded processor. */
 
-    /* for https support, this is the minimum (more options to come): */
+    /* for experimental https support, this is the minimum (more options to come): */
     /*
-
     secure:true,
     sslkeyfile:  "/etc/letsencrypt/live/mydom.com/privkey.pem",
     sslcertfile: "/etc/letsencrypt/live/mydom.com/fullchain.pem",
-    
     // if files above are invalid, it will silently revert to http
     */
     
@@ -338,13 +346,6 @@ server.start(
     // useipv6: false,
     // useipv4: false,
     
-    /*  By default, number of threads is set to cpu core count.
-        ipv6 and ipv4 are separate servers and each get this number of threads.
-        The number can be changed here:
-    */
-    //threads: 8, /* for a 4 core, 8 virtual core hyper-threaded processor */
-
-    //usethreads: false, /* make server single threaded. Overrides "threads" above. */
 
     /* **********************************************************
        map urls to functions or paths on the filesystem 
@@ -357,15 +358,16 @@ server.start(
         /* url to function mappings */
         "/dbtest.html":       inserttest_callback,
         "/simpledbtest.html": simple_callback,
-        "/globalref.html":    globakRef_callback,
+        "/globalref.html":    globalRef_callback,
         "/ramistest" :        ramistest,
 
         /* matching a glob to a function */
         "/showreq*":          showreq_callback,
 
-        /* filesystem mappings are always folders.  "/tetris" => "/tetris/ */
+        /*  filesystem mappings are always folders.  
+            "/tetris" => "/tetris/ & "./mPurpose" => "./mPurpose/" */
         "/tetris":            "./tetris-tutorial/",
-        "/":                  "./mPurpose/"
+        "/":                  "./mPurpose"
     }
      /* 
         including a function here will match everything not matched above

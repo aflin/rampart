@@ -10,10 +10,12 @@
 extern "C" {
 #endif
 
+int texis_resetparams(TEXIS *tx);
+int texis_cancel(TEXIS *tx);
+
 /* settings */
 #define RESMAX_DEFAULT 10              /* default number of sql rows returned if max is not set */
-//#define PUTMSG_STDERR                  /* print texis error messages to stderr */
-#define USEHANDLECACHE                 /* cache texis handles on a per db/query basis */
+#define PUTMSG_STDERR                  /* print texis error messages to stderr */
 /* end settings */
 
 /* declare initilization functions here.  Then put them in register.c */
@@ -21,6 +23,10 @@ extern void duk_db_init(duk_context *ctx);
 extern void duk_ra_init(duk_context *ctx);
 extern void duk_printf_init(duk_context *ctx);
 extern void duk_misc_init(duk_context *ctx);
+
+/* initialization functions for modules.  Used in modules.c and server.c */
+extern duk_ret_t duk_load_native_module(duk_context *ctx);
+extern duk_ret_t duk_load_native_module_string(duk_context *ctx, const char *file);
 
 /* this should probably just exit */
 #define DUKREMALLOC(ctx,s,t)  (s) = realloc( (s) , (t) ); if ((char*)(s)==(char*)NULL){ duk_push_string((ctx),"alloc error"); duk_throw((ctx));}
@@ -72,32 +78,44 @@ DB_HANDLE {
 char *duk_rp_url_encode(char *str, int len);
 char *duk_rp_url_decode(char *str, int len);
 
+#define SET_THREAD_UNSAFE(ctx)   do{\
+  duk_push_false(ctx);\
+  duk_put_global_string(ctx,DUK_HIDDEN_SYMBOL("threadsafe"));\
+  } while (0)
+
 #define RP_TIME_T_FOREVER 2147483647
 
-#define printstack(ctx) duk_push_context_dump((ctx));\
+#define printstack(ctx) do { duk_push_context_dump((ctx));\
 printf("%s\n", duk_to_string((ctx), -1));\
-duk_pop((ctx));
+duk_pop((ctx));}while(0)
 
-#define printenum(ctx,idx)  duk_enum((ctx),(idx),DUK_ENUM_INCLUDE_NONENUMERABLE|DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS);\
+#define printenum(ctx,idx)  do { duk_enum((ctx),(idx),DUK_ENUM_INCLUDE_NONENUMERABLE|DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS);\
     while(duk_next((ctx),-1,1)){\
       printf("%s -> %s\n",duk_get_string((ctx),-2),duk_safe_to_string((ctx),-1));\
       duk_pop_2((ctx));\
     }\
-    duk_pop((ctx));
+    duk_pop((ctx)); }while(0)
 
-#define printat(ctx,idx) duk_dup(ctx,idx);printf("at %d: %s\n",(int)(idx),duk_safe_to_string((ctx),-1));duk_pop((ctx));
+#define printat(ctx,idx) do { duk_dup((ctx),idx);printf("at %d: %s\n",(int)(idx),duk_safe_to_string((ctx),-1));duk_pop((ctx)); } while(0)
 
 #define printfuncs(ctx) do{\
     duk_idx_t i=0;\
     while (duk_get_top(ctx) > i) {\
         if(duk_is_function(ctx,i)) { \
-            duk_get_prop_string(ctx,i,"name");\
-            printf("func at %d: %s()\n", (int)i, duk_to_string(ctx,-1) );\
-            duk_pop(ctx);\
+            duk_get_prop_string(ctx,i,"fname");\
+            if(!duk_is_undefined(ctx,-1)){\
+              printf("func->fname at %d: %s()\n", (int)i, duk_to_string(ctx,-1) );\
+              duk_pop(ctx);\
+            } else {\
+              duk_pop(ctx);\
+              duk_get_prop_string(ctx,i,"name");\
+              printf("func->name at %d: %s()\n", (int)i, duk_to_string(ctx,-1) );\
+              duk_pop(ctx);\
+            }\
         }\
         i++;\
     }\
-} while(0);
+} while(0)
 
 
 

@@ -28,8 +28,9 @@
 #include <dlfcn.h>
 #include <pthread.h>
 #include "duktape.h"
+#include "rp.h"
 
-static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t modlock = PTHREAD_MUTEX_INITIALIZER;
 
 typedef duk_ret_t(*initfn)(duk_context*);
 
@@ -57,94 +58,49 @@ static duk_ret_t read_file(duk_context *ctx) {
 	return 1;
 }
 
-static duk_ret_t load_native_module(duk_context *ctx) {
+duk_ret_t duk_load_native_module_string(duk_context *ctx, const char *file)
+{
+	pthread_mutex_lock(&modlock);
+	void *lib = dlopen(file, RTLD_NOW);
+	if (!lib)
+	{
+		const char *e=dlerror();
+		//printf("%s\n",e);
+		if(!strstr(e,"No such file") && !strstr(e,"not found")){
+			//printf("%s\n",file);
+			duk_push_sprintf(ctx,"error loading: %s",e);
+			duk_throw(ctx);
+		}
+		pthread_mutex_unlock(&modlock);
+		return 0;
+	}
 
+	initfn init = (initfn)dlsym(lib, "dukopen_module");
+	pthread_mutex_unlock(&modlock);
+	if (init)
+	{
+		duk_ret_t ret;
+		ret=init(ctx);
+
+		duk_push_string(ctx,file);
+		duk_put_prop_string(ctx,-2,"rp_modfile");
+
+		return ret;
+	}
+	return 0;
+}
+
+duk_ret_t duk_load_native_module(duk_context *ctx) 
+{
 	duk_idx_t top = duk_get_top(ctx);
 	if (top != 1)
 	{
 		return DUK_RET_TYPE_ERROR;
 	}
 	const char *file = duk_get_string(ctx, -1);
-	pthread_mutex_lock(&lock);
-	void *lib = dlopen(file, RTLD_NOW);
-	if (!lib)
-	{
-		const char *e=dlerror();
-//printf("%s\n",e);
-		if(!strstr(e,"No such file") && !strstr(e,"not found")){
-//printf("%s\n",file);
-			duk_push_sprintf(ctx,"error loading: %s",e);
-			duk_throw(ctx);
-		}
-		pthread_mutex_unlock(&lock);
-		return 0;
-	}
-	initfn init = (initfn)dlsym(lib, "dukopen_module");
-	pthread_mutex_unlock(&lock);
-	if (init)
-	{
-		return init(ctx);
-	}
-	return 0;
+	return duk_load_native_module_string(ctx,file);
 }
 
-
-
-
-
-
-
-
-
-/* unnecessary, duktape caches modules itself
-static const char modSearch[] =
-"Duktape.modSearch = function (id, require, exports, module) {\n"
-"    var name=[];\n"
-"    var src;\n"
-"    var found = false;\n"
-"    var lib = false;\n"
-"\n"
-"    if(Duktape.savedModules && Duktape.savedModules[id]){\n"
-"        lib=Duktape.savedModules[id];\n"
-"        for(var prop in lib) {\n"
-"            exports[prop] = lib[prop];\n"
-"        };\n"
-"        console.log('got cached mod');\n"
-"        return src;//??\n"
-"    }\n"
-"\n"
-"console.log('loading module '+id)\n"
-"    // Try to load a native library\n"
-"    name[0]=id;\n"
-"    name[1]='rp'+id;\n"
-"    name[2]='./' + id + '.so';\n"
-"    name[3]='./rp' + id + '.so';\n"
-"    if(Duktape.modulesPath) {\n"
-"        if(Duktape.modulesPath[Duktape.modulesPath.length -1]!='/')\n"
-"            Duktape.modulesPath+='/';\n"
-"        name[4]=Duktape.modulesPath + id;\n"
-"        name[5]=Duktape.modulesPath + 'rp' + id;\n"
-"        name[6]=Duktape.modulesPath + id + '.so';\n"
-"        name[7]=Duktape.modulesPath + './rp' + id + '.so';\n"
-"    }\n"
-"    for (var i=0;i<name.length;i++) {\n"
-"        lib = Duktape.loadNativeModule(name[i]);\n"
-"        if(lib) break;\n"
-"    }\n"
-"\n"
-"    if (lib)\n"
-"    {\n"
-"        for(var prop in lib) {\n"
-"            exports[prop] = lib[prop];\n"
-"        }\n"
-"        found = true;\n"
-"    }\n"
-"\n"
-"    if(!Duktape.savedModules) Duktape.savedModules={};\n"
-"    Duktape.savedModules[id]=lib;\n"
-"    return src;\n"
-"}";
-*/
 
 static const char modSearch[] =
 "Duktape.modSearch = function (id, require, exports, module) {\n"
@@ -205,7 +161,7 @@ void init_modules(duk_context *ctx)
 {
 	duk_push_global_object(ctx);
 	duk_get_prop_string(ctx, -1, "Duktape");
-	duk_push_c_function(ctx, load_native_module, 1);
+	duk_push_c_function(ctx, duk_load_native_module, 1);
 	duk_put_prop_string(ctx, -2, "loadNativeModule");
 	duk_push_c_function(ctx, read_file, 1);
 	duk_put_prop_string(ctx, -2, "readFile");

@@ -30,7 +30,6 @@ add_executable(rp
 	resp_client.c
 	resp_protocol.c
 	printf.c
-	db.c 
 	duk_ramis.c
 	misc.c
 	register.c
@@ -41,10 +40,7 @@ set_target_properties(rp PROPERTIES
 )
 
 target_link_libraries(rp LINK_PUBLIC 
-	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
-	${PROJECT_BINARY_DIR}/texis/mmapi/libmmapi3.a
-	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
-	m z dl pthread
+	m dl pthread
 )
 
 include_directories(
@@ -75,6 +71,18 @@ set(CURL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/curl)
 set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp)
 
 ########### ADD MODULES HERE ###############
+
+###SQL###
+add_library(rpsql SHARED
+ db.c
+)
+
+target_link_libraries(rpsql
+	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
+	${PROJECT_BINARY_DIR}/texis/mmapi/libmmapi3.a
+	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
+	m z dl pthread
+) 
 
 ###CURL###
 add_library(rpcurl SHARED
@@ -131,14 +139,14 @@ target_include_directories(rpserver PRIVATE
 ##############  ADD MODULE NAMES HERE  ##############
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-set_target_properties(rpcurl rputils rpserver #example_name
+set_target_properties(rpcurl rputils rpserver rpsql #example_name
 	PROPERTIES 
 	LINK_FLAGS   "-undefined dynamic_lookup" 
 	SUFFIX       ".so"
 	PREFIX ""
 )
 else()
-set_target_properties(rpcurl rputils rpserver #example_name
+set_target_properties(rpcurl rputils rpserver rpsql #example_name
 	PROPERTIES 
 	SUFFIX       ".so"
 	PREFIX ""
