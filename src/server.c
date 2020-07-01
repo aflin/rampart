@@ -726,13 +726,15 @@ static void copy_prim(duk_context *ctx,duk_context *tctx, const char *name)
 
 static void clean_obj(duk_context *ctx, duk_context *tctx)
 {
-    if(duk_get_prop_string(ctx,-1,DUK_HIDDEN_SYMBOL("objRefId")))
+    const char *prev=duk_get_string(ctx,-2);
+    /* prototype was not marked, so we need to dive into it regardless */
+    if(duk_get_prop_string(ctx,-1,DUK_HIDDEN_SYMBOL("objRefId")) || ( prev && !strcmp(prev,"prototype")) )
     {
         duk_del_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("objRefId"));
         duk_enum(ctx,-2,DUK_ENUM_INCLUDE_HIDDEN);
         while(duk_next(ctx,-1,1))
         {
-            if (duk_is_object(ctx,-1) )
+            if (duk_is_object(ctx,-1) || duk_is_c_function(ctx,-1))
                 clean_obj(ctx,NULL);
             duk_pop_2(ctx);
         }
@@ -805,6 +807,7 @@ static int copy_obj(duk_context *ctx,duk_context *tctx, int objid)
     }
     /* copy the object on the top of stack before 
        entering copy_obj */
+    cprintf("assigning object id=%d\n",objid);
     duk_push_sprintf(tctx,"%d", objid);          //[ [par obj], [global stash], [stash_obj], [objid] ]
     duk_dup(tctx,-4);                            //[ [par obj], [global stash], [stash_obj], [objid], [copy of par obj] ]
     duk_put_prop(tctx,-3);			 //[ [par obj], [global stash], [stash_obj->{objid:copy of par obj} ]
@@ -813,8 +816,8 @@ static int copy_obj(duk_context *ctx,duk_context *tctx, int objid)
     /************** END dealing with circular references ***************************/
 
 
-    cprintf("%s type %d (obj=%d) cfunc=%d, func=%d, obj=%d, obj already in tctx=%d\n",((prev)?prev:"null"),duk_get_type(ctx,-1), DUK_TYPE_OBJECT,
-            duk_is_c_function(ctx,-1), duk_is_function(ctx,-1), duk_is_object(ctx,-1), duk_has_prop_string( tctx,-1,s ));
+//    cprintf("%s type %d (obj=%d) cfunc=%d, func=%d, obj=%d, obj already in tctx=%d\n",((prev)?prev:"null"),duk_get_type(ctx,-1), DUK_TYPE_OBJECT,
+//            duk_is_c_function(ctx,-1), duk_is_function(ctx,-1), duk_is_object(ctx,-1), duk_has_prop_string( tctx,-1,s ));
 
     enum_object:
 
@@ -824,7 +827,6 @@ static int copy_obj(duk_context *ctx,duk_context *tctx, int objid)
     while(duk_next(ctx,-1,1))
     {
         s=duk_get_string(ctx,-2);
-
         if(duk_is_ecmascript_function(ctx,-1))
         {
             /* turn ecmascript into bytecode and copy */
@@ -863,9 +865,7 @@ static int copy_obj(duk_context *ctx,duk_context *tctx, int objid)
             duk_push_c_function(tctx,copyfunc,length);
             /* recurse and copy JS properties attached to this c function */
             objid=copy_obj(ctx,tctx,objid);
-            
-            duk_put_prop_string(tctx,-2,duk_get_string(ctx,-2));
-                        
+            duk_put_prop_string(tctx,-2,s);
         }
 
         else if (duk_is_object(ctx,-1) && !duk_is_function(ctx,-1) && !duk_is_c_function(ctx,-1) )
@@ -1676,6 +1676,9 @@ void testcb(evhtp_request_t * req, void * arg)
     evhtp_request_set_keepalive(req, 1);
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Connection","keep-alive", 0, 0));
     */
+    //TODO: why is it only using some threads (=nprocessors !=nvirtcores)
+    //sleep(1);
+    //printf("%d\n",(int)pthread_self());
     evbuffer_add_printf(req->buffer_out,"%s",rep);
     evhtp_send_reply(req, EVHTP_RES_OK);
 }
