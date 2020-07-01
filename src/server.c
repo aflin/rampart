@@ -20,9 +20,6 @@
 #include "mime.h"
 
 
-struct event_base * evbase;
-int in_child=0;
-
 //#define RP_TIMEO_DEBUG
 
 #ifdef RP_TIMEO_DEBUG
@@ -1302,6 +1299,7 @@ http_fork_callback(evhtp_request_t * req, DHS *dhs, int have_threadsafe_val)
 
         duk_size_t bufsz;
         struct sigaction sa = { 0 };
+        evhtp_connection_t *conn = evhtp_request_get_connection(req);
 
         sa.sa_flags   = 0;
         sa.sa_handler = rp_exit;
@@ -1310,7 +1308,7 @@ http_fork_callback(evhtp_request_t * req, DHS *dhs, int have_threadsafe_val)
 
         close(child2par[0]);
         close(par2child[1]);
-
+        
         
         tprintf("beginning with par2child=%d, child2par=%d\n",par2child[0],child2par[1]);
 
@@ -1321,13 +1319,17 @@ http_fork_callback(evhtp_request_t * req, DHS *dhs, int have_threadsafe_val)
 
         /* push an empty object */
         duk_push_object(dhs->ctx);
-        /* populate object with details from client */
+        /* populate object with details from client (requires conn) */
         push_req_vars(dhs);
+
+        /* safe to close and free here */
+        evutil_closesocket(conn->sock);
+        evhtp_connection_free(conn);
 
         do
         {
-            /* in first loop, req info is on the stack
-               in subsequent loops, req info is piped in  */
+            /* In first loop, req info is on the stack since we just forked.
+               In subsequent loops, req info is piped in  */
             if( (eno=duk_pcall(dhs->ctx,1)) ) 
             {
                 if(duk_is_error(dhs->ctx,-1) || duk_is_string(dhs->ctx,-1) ){
@@ -1676,9 +1678,9 @@ void testcb(evhtp_request_t * req, void * arg)
     evhtp_request_set_keepalive(req, 1);
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Connection","keep-alive", 0, 0));
     */
-    //TODO: why is it only using some threads (=nprocessors !=nvirtcores)
-    //sleep(1);
-    //printf("%d\n",(int)pthread_self());
+    /*sleep(1);
+    printf("%d\n",(int)pthread_self());
+    fflush(stdout);*/
     evbuffer_add_printf(req->buffer_out,"%s",rep);
     evhtp_send_reply(req, EVHTP_RES_OK);
 }
@@ -1776,8 +1778,6 @@ evhtp_res pre_accept_callback(evhtp_connection_t *conn, void *arg)
 duk_ret_t duk_server_start(duk_context *ctx)
 {
     /* TODO: make it so it can bind to any number of arbitary ipv4 or ipv6 addresses */
-    evhtp_t           * htp4;
-    evhtp_t           * htp6;
     int i=0;
     DHS *dhs=new_dhs(ctx,-1);
     duk_idx_t ob_idx=-1;
@@ -1786,6 +1786,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
     char *ipv4_addr=NULL, *ipv6_addr=NULL;
     uint16_t port=8080, ipv6port=8080;
     int nthr;
+    evhtp_t           * htp4 = NULL;
+    evhtp_t           * htp6 = NULL;
+    struct event_base * evbase;
     evhtp_ssl_cfg_t *ssl_config=calloc(1, sizeof(evhtp_ssl_cfg_t));
     int secure=0,usev6=1,usev4=1,confThreads=-1,mthread=0;
     struct stat f_stat;
