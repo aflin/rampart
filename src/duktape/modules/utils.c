@@ -19,30 +19,30 @@
 #include <grp.h> /* getgrnam */
 #include "../core/duktape.h"
 
-#define REMALLOC(s, t)               \
-  do                                 \
-  {                                  \
-    (s) = realloc((s), (t));         \
-    if ((char *)(s) == (char *)NULL) \
-    {                                \
-      return (2000001);              \
-    }                                \
-  } while (0)
+#define REMALLOC(s, t)                   \
+    do                                   \
+    {                                    \
+        (s) = realloc((s), (t));         \
+        if ((char *)(s) == (char *)NULL) \
+        {                                \
+            return (2000001);            \
+        }                                \
+    } while (0)
 #define DUK_PUT(ctx, type, key, value, idx) \
-  {                                         \
-    duk_push_##type(ctx, value);            \
-    duk_put_prop_string(ctx, idx, key);     \
-  }
+    {                                       \
+        duk_push_##type(ctx, value);        \
+        duk_put_prop_string(ctx, idx, key); \
+    }
 #define BUFREADSZ 4096
 #define MAXBUFFER 536870912 /* 512mb */
 
-#define SAFE_SEEK(fp, length, whence)                                                                    \
-  if (fseek(fp, length, whence))                                                                         \
-  {                                                                                                      \
-    fclose(fp);                                                                                          \
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error seeking file '%s': %s", filename, strerror(errno)); \
-    return duk_throw(ctx);                                                                               \
-  }
+#define SAFE_SEEK(fp, length, whence)                                                                        \
+    if (fseek(fp, length, whence))                                                                           \
+    {                                                                                                        \
+        fclose(fp);                                                                                          \
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error seeking file '%s': %s", filename, strerror(errno)); \
+        return duk_throw(ctx);                                                                               \
+    }
 
 /**
  * Reads a specified number of bytes from a file into a buffer.
@@ -55,149 +55,149 @@
  */
 duk_ret_t duk_util_read_file(duk_context *ctx)
 {
-  duk_get_prop_string(ctx, -1, "file");
-  const char *filename = duk_require_string(ctx, -1);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "file");
+    const char *filename = duk_require_string(ctx, -1);
+    duk_pop(ctx);
 
-  duk_get_prop_string(ctx, -1, "offset");
-  size_t offset = (size_t)duk_get_number_default(ctx, -1, 0);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "offset");
+    size_t offset = (size_t)duk_get_number_default(ctx, -1, 0);
+    duk_pop(ctx);
 
-  if (offset < 0)
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "offset cannot be negative");
-    return duk_throw(ctx);
-  }
-
-  duk_get_prop_string(ctx, -1, "length");
-  long length = (long)duk_get_number_default(ctx, -1, 0);
-  duk_pop(ctx);
-
-  FILE *fp = fopen(filename, "r");
-  if (fp == NULL)
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening '%s': %s", filename, strerror(errno));
-    return duk_throw(ctx);
-  }
-
-  if (length > 0)
-  {
-    SAFE_SEEK(fp, length, SEEK_SET);
-  }
-  else
-  {
-    SAFE_SEEK(fp, length, SEEK_END);
-    long cur_offset;
-    if ((cur_offset = ftell(fp)) == -1)
+    if (offset < 0)
     {
-      duk_push_error_object(ctx, DUK_ERR_ERROR, "error getting offset '%s': %s", filename, strerror(errno));
-      return duk_throw(ctx);
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "offset cannot be negative");
+        return duk_throw(ctx);
     }
-    length = cur_offset - offset;
-  }
 
-  if (length < 0)
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "start position appears after end position");
-    return duk_throw(ctx);
-  }
+    duk_get_prop_string(ctx, -1, "length");
+    long length = (long)duk_get_number_default(ctx, -1, 0);
+    duk_pop(ctx);
 
-  SAFE_SEEK(fp, offset, SEEK_SET);
+    FILE *fp = fopen(filename, "r");
+    if (fp == NULL)
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening '%s': %s", filename, strerror(errno));
+        return duk_throw(ctx);
+    }
 
-  void *buf = duk_push_fixed_buffer(ctx, length);
+    if (length > 0)
+    {
+        SAFE_SEEK(fp, length, SEEK_SET);
+    }
+    else
+    {
+        SAFE_SEEK(fp, length, SEEK_END);
+        long cur_offset;
+        if ((cur_offset = ftell(fp)) == -1)
+        {
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "error getting offset '%s': %s", filename, strerror(errno));
+            return duk_throw(ctx);
+        }
+        length = cur_offset - offset;
+    }
 
-  size_t off = 0;
-  size_t nbytes;
-  while ((nbytes = fread(buf + off, 1, length - off, fp)) != 0)
-  {
-    off += nbytes;
-  }
+    if (length < 0)
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "start position appears after end position");
+        return duk_throw(ctx);
+    }
 
-  if (ferror(fp))
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading file '%s': %s", filename, strerror(errno));
-    return duk_throw(ctx);
-  }
-  fclose(fp);
+    SAFE_SEEK(fp, offset, SEEK_SET);
 
-  return 1;
+    void *buf = duk_push_fixed_buffer(ctx, length);
+
+    size_t off = 0;
+    size_t nbytes;
+    while ((nbytes = fread(buf + off, 1, length - off, fp)) != 0)
+    {
+        off += nbytes;
+    }
+
+    if (ferror(fp))
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading file '%s': %s", filename, strerror(errno));
+        return duk_throw(ctx);
+    }
+    fclose(fp);
+
+    return 1;
 }
 
 duk_ret_t duk_util_readln_finalizer(duk_context *ctx)
 {
-  duk_push_this(ctx);
-  duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filepointer"));
-  FILE *fp = duk_get_pointer(ctx, -1);
-  duk_pop(ctx);
-  if (fp)
-  {
-    fclose(fp);
-  }
-  return 0;
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filepointer"));
+    FILE *fp = duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+    if (fp)
+    {
+        fclose(fp);
+    }
+    return 0;
 }
 
 duk_ret_t duk_util_iter_readln(duk_context *ctx)
 {
-  duk_push_this(ctx);
+    duk_push_this(ctx);
 
-  duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filename"));
-  const char *filename = duk_get_string(ctx, -1);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filename"));
+    const char *filename = duk_get_string(ctx, -1);
+    duk_pop(ctx);
 
-  duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filepointer"));
-  FILE *fp = duk_get_pointer(ctx, -1);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filepointer"));
+    FILE *fp = duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
 
-  // already at the end of the iterator
-  if (fp == NULL)
-  {
+    // already at the end of the iterator
+    if (fp == NULL)
+    {
+        // return object
+        duk_push_object(ctx);
+
+        duk_push_null(ctx);
+        duk_put_prop_string(ctx, -2, "value");
+
+        duk_push_boolean(ctx, 0);
+        duk_put_prop_string(ctx, -2, "done");
+        return 1;
+    }
+
+    char *line = NULL;
+    size_t len = 0;
+    errno = 0;
+    int nread = getline(&line, &len, fp);
+    if (errno)
+    {
+        free(line);
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading file '%s': %s", filename, strerror(errno));
+        return duk_throw(ctx);
+    }
     // return object
     duk_push_object(ctx);
 
-    duk_push_null(ctx);
-    duk_put_prop_string(ctx, -2, "value");
+    if (nread != -1)
+    {
+        duk_push_string(ctx, line);
+        duk_put_prop_string(ctx, -2, "value");
+    }
+    else
+    {
+        duk_push_undefined(ctx);
+        duk_put_prop_string(ctx, -2, "value");
+    }
 
-    duk_push_boolean(ctx, 0);
+    duk_push_boolean(ctx, nread == -1);
     duk_put_prop_string(ctx, -2, "done");
-    return 1;
-  }
 
-  char *line = NULL;
-  size_t len = 0;
-  errno = 0;
-  int nread = getline(&line, &len, fp);
-  if (errno)
-  {
+    if (nread == -1)
+    {
+        duk_push_pointer(ctx, NULL);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
+        fclose(fp);
+    }
+
     free(line);
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading file '%s': %s", filename, strerror(errno));
-    return duk_throw(ctx);
-  }
-  // return object
-  duk_push_object(ctx);
-
-  if (nread != -1)
-  {
-    duk_push_string(ctx, line);
-    duk_put_prop_string(ctx, -2, "value");
-  }
-  else
-  {
-    duk_push_undefined(ctx);
-    duk_put_prop_string(ctx, -2, "value");
-  }
-
-  duk_push_boolean(ctx, nread == -1);
-  duk_put_prop_string(ctx, -2, "done");
-
-  if (nread == -1)
-  {
-    duk_push_pointer(ctx, NULL);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
-    fclose(fp);
-  }
-
-  free(line);
-  return 1;
+    return 1;
 }
 /**
  * Reads a file line by line using getline and javascript iterators.
@@ -206,54 +206,54 @@ duk_ret_t duk_util_iter_readln(duk_context *ctx)
  */
 duk_ret_t duk_util_readln(duk_context *ctx)
 {
-  const char *filename = duk_require_string(ctx, -1);
-  FILE *fp = fopen(filename, "r");
-  if (fp == NULL)
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening '%s': %s", filename, strerror(errno));
-    return duk_throw(ctx);
-  }
+    const char *filename = duk_require_string(ctx, -1);
+    FILE *fp = fopen(filename, "r");
+    if (fp == NULL)
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening '%s': %s", filename, strerror(errno));
+        return duk_throw(ctx);
+    }
 
-  // return object
-  duk_push_object(ctx);
+    // return object
+    duk_push_object(ctx);
 
-  // [Symbol.iterator] function
-  duk_push_string(ctx, "(function() { return function getiter(iter) { return (function () { return iter; }); }})()");
-  duk_eval(ctx);
+    // [Symbol.iterator] function
+    duk_push_string(ctx, "(function() { return function getiter(iter) { return (function () { return iter; }); }})()");
+    duk_eval(ctx);
 
-  // iterator object
-  duk_push_object(ctx);
+    // iterator object
+    duk_push_object(ctx);
 
-  // add fp, filename and finalizer
-  duk_push_pointer(ctx, fp);
-  duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
+    // add fp, filename and finalizer
+    duk_push_pointer(ctx, fp);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
 
-  duk_push_string(ctx, filename);
-  duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filename"));
+    duk_push_string(ctx, filename);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filename"));
 
-  duk_push_c_function(ctx, duk_util_readln_finalizer, 1);
-  duk_set_finalizer(ctx, -2);
+    duk_push_c_function(ctx, duk_util_readln_finalizer, 1);
+    duk_set_finalizer(ctx, -2);
 
-  // next
-  duk_push_c_function(ctx, duk_util_iter_readln, 0);
-  duk_put_prop_string(ctx, -2, "next");
-  duk_call(ctx, 1);
+    // next
+    duk_push_c_function(ctx, duk_util_iter_readln, 0);
+    duk_put_prop_string(ctx, -2, "next");
+    duk_call(ctx, 1);
 
-  // iterator function is at top of stack
-  duk_put_prop_string(ctx, -2, DUK_WELLKNOWN_SYMBOL("Symbol.iterator"));
+    // iterator function is at top of stack
+    duk_put_prop_string(ctx, -2, DUK_WELLKNOWN_SYMBOL("Symbol.iterator"));
 
-  return 1;
+    return 1;
 }
 
-#define DUK_UTIL_STAT_TEST_MODE(mode, test)           \
-  duk_ret_t duk_util_stat_is_##mode(duk_context *ctx) \
-  {                                                   \
-    duk_push_this(ctx);                               \
-    duk_get_prop_string(ctx, -1, "mode");             \
-    int mode = duk_require_int(ctx, -1);              \
-    duk_push_boolean(ctx, test(mode));                \
-    return 1;                                         \
-  }
+#define DUK_UTIL_STAT_TEST_MODE(mode, test)             \
+    duk_ret_t duk_util_stat_is_##mode(duk_context *ctx) \
+    {                                                   \
+        duk_push_this(ctx);                             \
+        duk_get_prop_string(ctx, -1, "mode");           \
+        int mode = duk_require_int(ctx, -1);            \
+        duk_push_boolean(ctx, test(mode));              \
+        return 1;                                       \
+    }
 
 DUK_UTIL_STAT_TEST_MODE(block_device, S_ISBLK);
 DUK_UTIL_STAT_TEST_MODE(character_device, S_ISCHR);
@@ -309,92 +309,92 @@ static const duk_function_list_entry stat_methods[] = {
  **/
 duk_ret_t duk_util_stat(duk_context *ctx)
 {
-  const char *path = duk_get_string(ctx, -1);
-  struct stat path_stat;
-  int err = stat(path, &path_stat);
-  if (err)
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error getting status '%s': %s", path, strerror(errno));
-    return duk_throw(ctx);
-  }
+    const char *path = duk_get_string(ctx, -1);
+    struct stat path_stat;
+    int err = stat(path, &path_stat);
+    if (err)
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error getting status '%s': %s", path, strerror(errno));
+        return duk_throw(ctx);
+    }
 
-  // stat
-  duk_push_object(ctx);
+    // stat
+    duk_push_object(ctx);
 
-  DUK_PUT(ctx, int, "dev", path_stat.st_dev, -2);
-  DUK_PUT(ctx, int, "ino", path_stat.st_ino, -2);
-  DUK_PUT(ctx, int, "mode", path_stat.st_mode, -2);
-  DUK_PUT(ctx, int, "nlink", path_stat.st_nlink, -2);
-  DUK_PUT(ctx, int, "uid", path_stat.st_uid, -2);
-  DUK_PUT(ctx, int, "gid", path_stat.st_gid, -2);
-  DUK_PUT(ctx, int, "rdev", path_stat.st_rdev, -2);
-  DUK_PUT(ctx, int, "size", path_stat.st_size, -2);
-  DUK_PUT(ctx, int, "blksize", path_stat.st_blksize, -2);
-  DUK_PUT(ctx, int, "blocks", path_stat.st_blocks, -2);
+    DUK_PUT(ctx, int, "dev", path_stat.st_dev, -2);
+    DUK_PUT(ctx, int, "ino", path_stat.st_ino, -2);
+    DUK_PUT(ctx, int, "mode", path_stat.st_mode, -2);
+    DUK_PUT(ctx, int, "nlink", path_stat.st_nlink, -2);
+    DUK_PUT(ctx, int, "uid", path_stat.st_uid, -2);
+    DUK_PUT(ctx, int, "gid", path_stat.st_gid, -2);
+    DUK_PUT(ctx, int, "rdev", path_stat.st_rdev, -2);
+    DUK_PUT(ctx, int, "size", path_stat.st_size, -2);
+    DUK_PUT(ctx, int, "blksize", path_stat.st_blksize, -2);
+    DUK_PUT(ctx, int, "blocks", path_stat.st_blocks, -2);
 
-  long long atime, mtime, ctime;
-  atime = path_stat.st_atime * 1000;
-  mtime = path_stat.st_mtime * 1000;
-  ctime = path_stat.st_ctime * 1000;
+    long long atime, mtime, ctime;
+    atime = path_stat.st_atime * 1000;
+    mtime = path_stat.st_mtime * 1000;
+    ctime = path_stat.st_ctime * 1000;
 
-  // atime
-  (void)duk_get_global_string(ctx, "Date");
-  duk_push_number(ctx, atime);
-  duk_new(ctx, 1);
-  duk_put_prop_string(ctx, -2, "atime");
+    // atime
+    (void)duk_get_global_string(ctx, "Date");
+    duk_push_number(ctx, atime);
+    duk_new(ctx, 1);
+    duk_put_prop_string(ctx, -2, "atime");
 
-  // mtime
-  (void)duk_get_global_string(ctx, "Date");
-  duk_push_number(ctx, mtime);
-  duk_new(ctx, 1);
-  duk_put_prop_string(ctx, -2, "mtime");
+    // mtime
+    (void)duk_get_global_string(ctx, "Date");
+    duk_push_number(ctx, mtime);
+    duk_new(ctx, 1);
+    duk_put_prop_string(ctx, -2, "mtime");
 
-  // ctime
-  (void)duk_get_global_string(ctx, "Date");
-  duk_push_number(ctx, mtime);
-  duk_new(ctx, 1);
-  duk_put_prop_string(ctx, -2, "ctime");
+    // ctime
+    (void)duk_get_global_string(ctx, "Date");
+    duk_push_number(ctx, mtime);
+    duk_new(ctx, 1);
+    duk_put_prop_string(ctx, -2, "ctime");
 
-  // add methods
-  duk_put_function_list(ctx, -1, stat_methods);
+    // add methods
+    duk_put_function_list(ctx, -1, stat_methods);
 
-  // see duktape function interface
-  return 1;
+    // see duktape function interface
+    return 1;
 }
 struct exec_thread_waitpid_arg
 {
-  pid_t pid;
-  unsigned int timeout;
-  int signal;
-  unsigned int killed;
+    pid_t pid;
+    unsigned int timeout;
+    int signal;
+    unsigned int killed;
 };
 void *duk_util_exec_thread_waitpid(void *arg)
 {
-  struct exec_thread_waitpid_arg *arg_s = ((struct exec_thread_waitpid_arg *)arg);
-  usleep(arg_s->timeout);
-  kill(arg_s->pid, arg_s->signal);
-  arg_s->killed = 1;
-  return NULL;
+    struct exec_thread_waitpid_arg *arg_s = ((struct exec_thread_waitpid_arg *)arg);
+    usleep(arg_s->timeout);
+    kill(arg_s->pid, arg_s->signal);
+    arg_s->killed = 1;
+    return NULL;
 }
 
-#define DUK_UTIL_EXEC_READ_FD(ctx, buf, fildes, nread)                                                \
-  {                                                                                                   \
-    int size = BUFREADSZ;                                                                             \
-    REMALLOC(buf, size);                                                                              \
-    int nbytes = 0;                                                                                   \
-    nread = 0;                                                                                        \
-    while ((nbytes = read(fildes, buf + nread, size - nread)) > 0)                                    \
-    {                                                                                                 \
-      size *= 2;                                                                                      \
-      nread += nbytes;                                                                                \
-      REMALLOC(buf, size);                                                                            \
-    }                                                                                                 \
-    if (nbytes < 0)                                                                                   \
-    {                                                                                                 \
-      duk_push_error_object(ctx, DUK_ERR_ERROR, "could not read output buffer: %s", strerror(errno)); \
-      return duk_throw(ctx);                                                                          \
-    }                                                                                                 \
-  }
+#define DUK_UTIL_EXEC_READ_FD(ctx, buf, fildes, nread)                                                      \
+    {                                                                                                       \
+        int size = BUFREADSZ;                                                                               \
+        REMALLOC(buf, size);                                                                                \
+        int nbytes = 0;                                                                                     \
+        nread = 0;                                                                                          \
+        while ((nbytes = read(fildes, buf + nread, size - nread)) > 0)                                      \
+        {                                                                                                   \
+            size *= 2;                                                                                      \
+            nread += nbytes;                                                                                \
+            REMALLOC(buf, size);                                                                            \
+        }                                                                                                   \
+        if (nbytes < 0)                                                                                     \
+        {                                                                                                   \
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "could not read output buffer: %s", strerror(errno)); \
+            return duk_throw(ctx);                                                                          \
+        }                                                                                                   \
+    }
 
 /**
  * Executes a command where the arguments are the arguments to execv.
@@ -430,136 +430,136 @@ void *duk_util_exec_thread_waitpid(void *arg)
 duk_ret_t duk_util_exec(duk_context *ctx)
 {
 
-  // get options
-  duk_get_prop_string(ctx, -1, "timeout");
-  unsigned int timeout = duk_get_uint_default(ctx, -1, 0);
-  duk_pop(ctx);
-
-  duk_get_prop_string(ctx, -1, "killSignal");
-  int kill_signal = duk_get_int_default(ctx, -1, SIGKILL);
-  duk_pop(ctx);
-
-  duk_get_prop_string(ctx, -1, "path");
-  const char *path = duk_require_string(ctx, -1);
-  duk_pop(ctx);
-
-  duk_get_prop_string(ctx, -1, "background");
-  int background = duk_get_boolean_default(ctx, -1, 0);
-  duk_pop(ctx);
-
-  // get arguments into null terminated buffer
-  duk_get_prop_string(ctx, -1, "args");
-  duk_size_t nargs = duk_get_length(ctx, -1);
-  char **args = NULL;
-  REMALLOC(args, (nargs + 1) * sizeof(char *));
-  for (int i = 0; i < nargs; i++)
-  {
-    duk_get_prop_index(ctx, -1, i);
-    args[i] = (char *)duk_require_string(ctx, -1);
+    // get options
+    duk_get_prop_string(ctx, -1, "timeout");
+    unsigned int timeout = duk_get_uint_default(ctx, -1, 0);
     duk_pop(ctx);
-  }
-  args[nargs] = NULL;
-  duk_pop(ctx);
 
-  int stdout_pipe[2];
-  int stderr_pipe[2];
-  if (!background)
-    if (pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1)
+    duk_get_prop_string(ctx, -1, "killSignal");
+    int kill_signal = duk_get_int_default(ctx, -1, SIGKILL);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, "path");
+    const char *path = duk_require_string(ctx, -1);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, "background");
+    int background = duk_get_boolean_default(ctx, -1, 0);
+    duk_pop(ctx);
+
+    // get arguments into null terminated buffer
+    duk_get_prop_string(ctx, -1, "args");
+    duk_size_t nargs = duk_get_length(ctx, -1);
+    char **args = NULL;
+    REMALLOC(args, (nargs + 1) * sizeof(char *));
+    for (int i = 0; i < nargs; i++)
     {
-      duk_push_error_object(ctx, DUK_ERR_ERROR, "could not create pipe: %s", strerror(errno));
-      return duk_throw(ctx);
+        duk_get_prop_index(ctx, -1, i);
+        args[i] = (char *)duk_require_string(ctx, -1);
+        duk_pop(ctx);
     }
-  pid_t pid;
-  if ((pid = fork()) == -1)
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "could not fork: %s", strerror(errno));
-    return duk_throw(ctx);
-  }
-  else if (pid == 0)
-  {
+    args[nargs] = NULL;
+    duk_pop(ctx);
+
+    int stdout_pipe[2];
+    int stderr_pipe[2];
     if (!background)
+        if (pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1)
+        {
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "could not create pipe: %s", strerror(errno));
+            return duk_throw(ctx);
+        }
+    pid_t pid;
+    if ((pid = fork()) == -1)
     {
-      // make pipe equivalent to stdout and stderr
-      dup2(stdout_pipe[1], STDOUT_FILENO);
-      dup2(stderr_pipe[1], STDERR_FILENO);
-
-      // close unused pipes
-      close(stdout_pipe[0]);
-      close(stderr_pipe[0]);
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "could not fork: %s", strerror(errno));
+        return duk_throw(ctx);
     }
-    execv(path, args);
-    fprintf(stderr, "could not execute %s\n", args[0]);
-    exit(EXIT_FAILURE);
-  }
-  // create thread for timeout
-  struct exec_thread_waitpid_arg arg;
-  pthread_t thread;
-  arg.signal = kill_signal;
-  arg.pid = pid;
-  arg.timeout = timeout;
-  arg.killed = 0;
-  if (timeout > 0)
-  {
-    pthread_create(&thread, NULL, duk_util_exec_thread_waitpid, &arg);
-  }
+    else if (pid == 0)
+    {
+        if (!background)
+        {
+            // make pipe equivalent to stdout and stderr
+            dup2(stdout_pipe[1], STDOUT_FILENO);
+            dup2(stderr_pipe[1], STDERR_FILENO);
 
-  if (background)
-  {
-    // return object
-    duk_push_object(ctx);
-
-    DUK_PUT(ctx, int, "pid", pid, -2);
-
-    // set stderr and stdout to null
-    duk_push_null(ctx);
-    duk_put_prop_string(ctx, -2, "stderr");
-    duk_push_null(ctx);
-    duk_put_prop_string(ctx, -2, "stdout");
-    duk_push_null(ctx);
-    duk_put_prop_string(ctx, -2, "exitStatus");
-
-    // set timed_out to false
-    DUK_PUT(ctx, boolean, "timedOut", 0, -2);
-  }
-  else
-  {
-    int exit_status;
-    waitpid(pid, &exit_status, 0);
-    // cancel timeout thread in case it is still running
+            // close unused pipes
+            close(stdout_pipe[0]);
+            close(stderr_pipe[0]);
+        }
+        execv(path, args);
+        fprintf(stderr, "could not execute %s\n", args[0]);
+        exit(EXIT_FAILURE);
+    }
+    // create thread for timeout
+    struct exec_thread_waitpid_arg arg;
+    pthread_t thread;
+    arg.signal = kill_signal;
+    arg.pid = pid;
+    arg.timeout = timeout;
+    arg.killed = 0;
     if (timeout > 0)
     {
-      pthread_cancel(thread);
-      pthread_join(thread, NULL);
+        pthread_create(&thread, NULL, duk_util_exec_thread_waitpid, &arg);
     }
-    // close unused pipes
-    close(stdout_pipe[1]);
-    close(stderr_pipe[1]);
 
-    char *stdout_buf = NULL;
-    char *stderr_buf = NULL;
+    if (background)
+    {
+        // return object
+        duk_push_object(ctx);
 
-    // read output
-    int stdout_nread, stderr_nread;
-    DUK_UTIL_EXEC_READ_FD(ctx, stdout_buf, stdout_pipe[0], stdout_nread);
-    DUK_UTIL_EXEC_READ_FD(ctx, stderr_buf, stderr_pipe[0], stderr_nread);
+        DUK_PUT(ctx, int, "pid", pid, -2);
 
-    // push return object
-    duk_push_object(ctx);
+        // set stderr and stdout to null
+        duk_push_null(ctx);
+        duk_put_prop_string(ctx, -2, "stderr");
+        duk_push_null(ctx);
+        duk_put_prop_string(ctx, -2, "stdout");
+        duk_push_null(ctx);
+        duk_put_prop_string(ctx, -2, "exitStatus");
 
-    duk_push_lstring(ctx, stdout_buf, stdout_nread);
-    duk_put_prop_string(ctx, -2, "stdout");
+        // set timed_out to false
+        DUK_PUT(ctx, boolean, "timedOut", 0, -2);
+    }
+    else
+    {
+        int exit_status;
+        waitpid(pid, &exit_status, 0);
+        // cancel timeout thread in case it is still running
+        if (timeout > 0)
+        {
+            pthread_cancel(thread);
+            pthread_join(thread, NULL);
+        }
+        // close unused pipes
+        close(stdout_pipe[1]);
+        close(stderr_pipe[1]);
 
-    duk_push_lstring(ctx, stderr_buf, stderr_nread);
-    duk_put_prop_string(ctx, -2, "stderr");
+        char *stdout_buf = NULL;
+        char *stderr_buf = NULL;
 
-    DUK_PUT(ctx, boolean, "timedOut", arg.killed, -2);
-    DUK_PUT(ctx, int, "exitStatus", exit_status, -2);
-    DUK_PUT(ctx, int, "pid", pid, -2);
-    free(stdout_buf);
-    free(stderr_buf);
-  }
-  free(args);
-  return 1;
+        // read output
+        int stdout_nread, stderr_nread;
+        DUK_UTIL_EXEC_READ_FD(ctx, stdout_buf, stdout_pipe[0], stdout_nread);
+        DUK_UTIL_EXEC_READ_FD(ctx, stderr_buf, stderr_pipe[0], stderr_nread);
+
+        // push return object
+        duk_push_object(ctx);
+
+        duk_push_lstring(ctx, stdout_buf, stdout_nread);
+        duk_put_prop_string(ctx, -2, "stdout");
+
+        duk_push_lstring(ctx, stderr_buf, stderr_nread);
+        duk_put_prop_string(ctx, -2, "stderr");
+
+        DUK_PUT(ctx, boolean, "timedOut", arg.killed, -2);
+        DUK_PUT(ctx, int, "exitStatus", exit_status, -2);
+        DUK_PUT(ctx, int, "pid", pid, -2);
+        free(stdout_buf);
+        free(stderr_buf);
+    }
+    free(args);
+    return 1;
 }
 /**
  * Kills a process with the process id given by the argument
@@ -568,16 +568,16 @@ duk_ret_t duk_util_exec(duk_context *ctx)
  */
 duk_ret_t duk_util_kill(duk_context *ctx)
 {
-  pid_t pid = duk_require_int(ctx, -2);
-  int signal = duk_require_int(ctx, -1);
+    pid_t pid = duk_require_int(ctx, -2);
+    int signal = duk_require_int(ctx, -1);
 
-  if (kill(pid, signal))
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error killing '%d' with signal '%d': %s", pid, signal, strerror(errno));
-    return duk_throw(ctx);
-  }
+    if (kill(pid, signal))
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error killing '%d' with signal '%d': %s", pid, signal, strerror(errno));
+        return duk_throw(ctx);
+    }
 
-  return 0;
+    return 0;
 }
 
 /**
@@ -590,58 +590,58 @@ duk_ret_t duk_util_kill(duk_context *ctx)
 duk_ret_t duk_util_mkdir(duk_context *ctx)
 {
 
-  duk_idx_t nargs = duk_get_top(ctx);
+    duk_idx_t nargs = duk_get_top(ctx);
 
-  const char *path;
+    const char *path;
 
-  mode_t mode;
-  if (nargs == 2) // a file mode was specified
-  {
-    path = duk_get_string(ctx, -2);
-    const char *str_mode = duk_get_string(ctx, -1);
-    mode = atoi(str_mode);
-  }
-  else if (nargs == 1) // default to ACCESSPERMS (0777)
-  {
-    path = duk_get_string(ctx, -1);
-    mode = ACCESSPERMS;
-  }
-  else
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "too many arguments");
-    return duk_throw(ctx);
-  }
+    mode_t mode;
+    if (nargs == 2) // a file mode was specified
+    {
+        path = duk_get_string(ctx, -2);
+        const char *str_mode = duk_get_string(ctx, -1);
+        mode = atoi(str_mode);
+    }
+    else if (nargs == 1) // default to ACCESSPERMS (0777)
+    {
+        path = duk_get_string(ctx, -1);
+        mode = ACCESSPERMS;
+    }
+    else
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "too many arguments");
+        return duk_throw(ctx);
+    }
 
-  char _path[PATH_MAX];
+    char _path[PATH_MAX];
 
-  strcpy(_path, path);
+    strcpy(_path, path);
 
-  /* Move through the path string to recurisvely create directories */
-  for (char *p = _path + 1; *p; p++)
-  {
-
-    if (*p == '/')
+    /* Move through the path string to recurisvely create directories */
+    for (char *p = _path + 1; *p; p++)
     {
 
-      *p = '\0';
+        if (*p == '/')
+        {
 
-      if (mkdir(_path, mode) != 0)
-      {
+            *p = '\0';
+
+            if (mkdir(_path, mode) != 0)
+            {
+                duk_push_error_object(ctx, DUK_ERR_ERROR, "error creating directory: %s", strerror(errno));
+                return duk_throw(ctx);
+            }
+
+            *p = '/';
+        }
+    }
+
+    if (mkdir(path, mode) != 0)
+    {
         duk_push_error_object(ctx, DUK_ERR_ERROR, "error creating directory: %s", strerror(errno));
         return duk_throw(ctx);
-      }
-
-      *p = '/';
     }
-  }
 
-  if (mkdir(path, mode) != 0)
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error creating directory: %s", strerror(errno));
-    return duk_throw(ctx);
-  }
-
-  return 0;
+    return 0;
 }
 
 /**
@@ -651,38 +651,38 @@ duk_ret_t duk_util_mkdir(duk_context *ctx)
  */
 duk_ret_t duk_util_readdir(duk_context *ctx)
 {
-  const char *path = duk_require_string(ctx, -1);
-  DIR *dir = opendir(path);
-  if (dir == NULL)
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "could not open directory %s: %s", path, strerror(errno));
-    return duk_throw(ctx);
-  }
+    const char *path = duk_require_string(ctx, -1);
+    DIR *dir = opendir(path);
+    if (dir == NULL)
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "could not open directory %s: %s", path, strerror(errno));
+        return duk_throw(ctx);
+    }
 
-  struct dirent *entry;
-  errno = 0;
-  duk_push_array(ctx);
-  int i = 0;
-  while ((entry = readdir(dir)) != NULL)
-  {
-    duk_push_string(ctx, entry->d_name);
-    duk_put_prop_index(ctx, -2, i++);
-  }
-  if (errno)
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading directory %s: %s", path, strerror(errno));
-    return duk_throw(ctx);
-  }
-  closedir(dir);
-  return 1;
+    struct dirent *entry;
+    errno = 0;
+    duk_push_array(ctx);
+    int i = 0;
+    while ((entry = readdir(dir)) != NULL)
+    {
+        duk_push_string(ctx, entry->d_name);
+        duk_put_prop_index(ctx, -2, i++);
+    }
+    if (errno)
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading directory %s: %s", path, strerror(errno));
+        return duk_throw(ctx);
+    }
+    closedir(dir);
+    return 1;
 }
 
-#define DUK_UTIL_REMOVE_FILE(ctx, file)                                                            \
-  if (remove(file))                                                                                \
-  {                                                                                                \
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "could not remove '%s': %s", file, strerror(errno)); \
-    return duk_throw(ctx);                                                                         \
-  }
+#define DUK_UTIL_REMOVE_FILE(ctx, file)                                                                \
+    if (remove(file))                                                                                  \
+    {                                                                                                  \
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "could not remove '%s': %s", file, strerror(errno)); \
+        return duk_throw(ctx);                                                                         \
+    }
 
 /**                                                                                                
  * Copies the file from src to dest. Passing overwrite will overwrite any file already present.    
@@ -695,87 +695,87 @@ duk_ret_t duk_util_readdir(duk_context *ctx)
  */
 duk_ret_t duk_util_copy_file(duk_context *ctx)
 {
-  duk_get_prop_string(ctx, -1, "src");
-  const char *src_filename = duk_require_string(ctx, -1);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "src");
+    const char *src_filename = duk_require_string(ctx, -1);
+    duk_pop(ctx);
 
-  duk_get_prop_string(ctx, -1, "dest");
-  const char *dest_filename = duk_require_string(ctx, -1);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "dest");
+    const char *dest_filename = duk_require_string(ctx, -1);
+    duk_pop(ctx);
 
-  duk_get_prop_string(ctx, -1, "overwrite");
-  int overwrite = duk_get_boolean_default(ctx, -1, 0);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "overwrite");
+    int overwrite = duk_get_boolean_default(ctx, -1, 0);
+    duk_pop(ctx);
 
-  FILE *src = fopen(src_filename, "r");
-  if (src == NULL)
-  {
-    fclose(src);
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "could not open file '%s': %s", src_filename, strerror(errno));
-    return duk_throw(ctx);
-  }
-  struct stat src_stat;
-  if (stat(src_filename, &src_stat))
-  {
-    fclose(src);
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error getting status '%s': %s", src_filename, strerror(errno));
-    return duk_throw(ctx);
-  }
-  struct stat dest_stat;
-  int err = stat(dest_filename, &dest_stat);
-  if (!err && !overwrite)
-  {
-    // file exists and shouldn't be overwritten
-    fclose(src);
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error copying '%s': %s", dest_filename, "file already exists");
-    return duk_throw(ctx);
-  }
-  if (err && errno != ENOENT)
-  {
-    fclose(src);
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error getting status '%s': %s", dest_filename, strerror(errno));
-    return duk_throw(ctx);
-  }
-
-  FILE *dest = fopen(dest_filename, "w");
-  if (dest == NULL)
-  {
-    fclose(src);
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "could not open file '%s': %s", dest_filename, strerror(errno));
-    return duk_throw(ctx);
-  }
-  char buf[BUFREADSZ];
-  int nread;
-  while ((nread = read(fileno(src), buf, BUFREADSZ)) > 0)
-  {
-    if (write(fileno(dest), buf, nread) != nread)
+    FILE *src = fopen(src_filename, "r");
+    if (src == NULL)
     {
-      fclose(src);
-      fclose(dest);
-      DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
-      duk_push_error_object(ctx, DUK_ERR_ERROR, "could not write to file '%s': %s", dest_filename, strerror(errno));
-      return duk_throw(ctx);
+        fclose(src);
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "could not open file '%s': %s", src_filename, strerror(errno));
+        return duk_throw(ctx);
     }
-  }
-  if (nread < 0)
-  {
+    struct stat src_stat;
+    if (stat(src_filename, &src_stat))
+    {
+        fclose(src);
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error getting status '%s': %s", src_filename, strerror(errno));
+        return duk_throw(ctx);
+    }
+    struct stat dest_stat;
+    int err = stat(dest_filename, &dest_stat);
+    if (!err && !overwrite)
+    {
+        // file exists and shouldn't be overwritten
+        fclose(src);
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error copying '%s': %s", dest_filename, "file already exists");
+        return duk_throw(ctx);
+    }
+    if (err && errno != ENOENT)
+    {
+        fclose(src);
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error getting status '%s': %s", dest_filename, strerror(errno));
+        return duk_throw(ctx);
+    }
+
+    FILE *dest = fopen(dest_filename, "w");
+    if (dest == NULL)
+    {
+        fclose(src);
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "could not open file '%s': %s", dest_filename, strerror(errno));
+        return duk_throw(ctx);
+    }
+    char buf[BUFREADSZ];
+    int nread;
+    while ((nread = read(fileno(src), buf, BUFREADSZ)) > 0)
+    {
+        if (write(fileno(dest), buf, nread) != nread)
+        {
+            fclose(src);
+            fclose(dest);
+            DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "could not write to file '%s': %s", dest_filename, strerror(errno));
+            return duk_throw(ctx);
+        }
+    }
+    if (nread < 0)
+    {
+        fclose(src);
+        fclose(dest);
+        DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading file '%s': %s", src_filename, strerror(errno));
+        return duk_throw(ctx);
+    }
+    if (chmod(dest_filename, src_stat.st_mode))
+    {
+        DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
+        fclose(src);
+        fclose(dest);
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error setting file mode %o for '%s': %s", src_stat.st_mode, dest_filename, strerror(errno));
+        return duk_throw(ctx);
+    }
     fclose(src);
     fclose(dest);
-    DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error reading file '%s': %s", src_filename, strerror(errno));
-    return duk_throw(ctx);
-  }
-  if (chmod(dest_filename, src_stat.st_mode))
-  {
-    DUK_UTIL_REMOVE_FILE(ctx, dest_filename);
-    fclose(src);
-    fclose(dest);
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error setting file mode %o for '%s': %s", src_stat.st_mode, dest_filename, strerror(errno));
-    return duk_throw(ctx);
-  }
-  fclose(src);
-  fclose(dest);
-  return 0;
+    return 0;
 }
 
 /**
@@ -790,35 +790,35 @@ duk_ret_t duk_util_copy_file(duk_context *ctx)
  */
 duk_ret_t duk_util_link(duk_context *ctx)
 {
-  duk_get_prop_string(ctx, -1, "src");
-  const char *src = duk_require_string(ctx, -1);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "src");
+    const char *src = duk_require_string(ctx, -1);
+    duk_pop(ctx);
 
-  duk_get_prop_string(ctx, -1, "target");
-  const char *target = duk_require_string(ctx, -1);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "target");
+    const char *target = duk_require_string(ctx, -1);
+    duk_pop(ctx);
 
-  duk_get_prop_string(ctx, -1, "symbolic");
-  int symbolic = duk_get_boolean_default(ctx, -1, 0);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "symbolic");
+    int symbolic = duk_get_boolean_default(ctx, -1, 0);
+    duk_pop(ctx);
 
-  if (symbolic)
-  {
-    if (symlink(src, target))
+    if (symbolic)
     {
-      duk_push_error_object(ctx, DUK_ERR_ERROR, "error creating symbolic link from '%s' to '%s': %s", src, target, strerror(errno));
-      return duk_throw(ctx);
+        if (symlink(src, target))
+        {
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "error creating symbolic link from '%s' to '%s': %s", src, target, strerror(errno));
+            return duk_throw(ctx);
+        }
     }
-  }
-  else
-  {
-    if (link(src, target))
+    else
     {
-      duk_push_error_object(ctx, DUK_ERR_ERROR, "error creating hard link from '%s' to '%s': %s", src, target, strerror(errno));
-      return duk_throw(ctx);
+        if (link(src, target))
+        {
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "error creating hard link from '%s' to '%s': %s", src, target, strerror(errno));
+            return duk_throw(ctx);
+        }
     }
-  }
-  return 0;
+    return 0;
 }
 /**
  * Renames or moves a source file to a target path.
@@ -829,16 +829,16 @@ duk_ret_t duk_util_link(duk_context *ctx)
  */
 duk_ret_t duk_util_rename(duk_context *ctx)
 {
-  const char *old = duk_require_string(ctx, -2);
-  const char *new = duk_require_string(ctx, -1);
+    const char *old = duk_require_string(ctx, -2);
+    const char *new = duk_require_string(ctx, -1);
 
-  if (rename(old, new))
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error renaming '%s' to '%s': %s", old, new, strerror(errno));
-    return duk_throw(ctx);
-  }
+    if (rename(old, new))
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error renaming '%s' to '%s': %s", old, new, strerror(errno));
+        return duk_throw(ctx);
+    }
 
-  return 0;
+    return 0;
 }
 
 /**
@@ -850,60 +850,60 @@ duk_ret_t duk_util_rename(duk_context *ctx)
  */
 duk_ret_t duk_util_rmdir(duk_context *ctx)
 {
-  duk_idx_t nargs = duk_get_top(ctx);
+    duk_idx_t nargs = duk_get_top(ctx);
 
-  const char *path;
+    const char *path;
 
-  int recursive;
-  if (nargs == 1) // Non-recursive deletion
-  {
-    path = duk_require_string(ctx, -1);
-    recursive = 0;
-  }
-  else if (nargs == 2) // An option was specified
-  {
-    path = duk_require_string(ctx, -2);
-    recursive = duk_require_boolean(ctx, -1);
-  }
-  else
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "too many arguments");
-    return duk_throw(ctx);
-  }
-
-  char _path[PATH_MAX];
-
-  strcpy(_path, path);
-
-  if (rmdir(path) != 0)
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error removing directory: %s", strerror(errno));
-    return duk_throw(ctx);
-  }
-
-  if (recursive)
-  {
-    int length = strlen(_path);
-    for (char *p = _path + length - 1; p != _path; p--)
-    { // Traverse the path backwards to delete nested directories
-
-      if (*p == '/')
-      {
-
-        *p = '\0';
-
-        if (rmdir(_path) != 0)
-        {
-          duk_push_error_object(ctx, DUK_ERR_ERROR, "error removing directory: %s", strerror(errno));
-          return duk_throw(ctx);
-        }
-
-        *p = '/';
-      }
+    int recursive;
+    if (nargs == 1) // Non-recursive deletion
+    {
+        path = duk_require_string(ctx, -1);
+        recursive = 0;
     }
-  }
+    else if (nargs == 2) // An option was specified
+    {
+        path = duk_require_string(ctx, -2);
+        recursive = duk_require_boolean(ctx, -1);
+    }
+    else
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "too many arguments");
+        return duk_throw(ctx);
+    }
 
-  return 0;
+    char _path[PATH_MAX];
+
+    strcpy(_path, path);
+
+    if (rmdir(path) != 0)
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error removing directory: %s", strerror(errno));
+        return duk_throw(ctx);
+    }
+
+    if (recursive)
+    {
+        int length = strlen(_path);
+        for (char *p = _path + length - 1; p != _path; p--)
+        { // Traverse the path backwards to delete nested directories
+
+            if (*p == '/')
+            {
+
+                *p = '\0';
+
+                if (rmdir(_path) != 0)
+                {
+                    duk_push_error_object(ctx, DUK_ERR_ERROR, "error removing directory: %s", strerror(errno));
+                    return duk_throw(ctx);
+                }
+
+                *p = '/';
+            }
+        }
+    }
+
+    return 0;
 }
 
 /**
@@ -913,16 +913,16 @@ duk_ret_t duk_util_rmdir(duk_context *ctx)
  */
 duk_ret_t duk_util_chmod(duk_context *ctx)
 {
-  const char *path = duk_require_string(ctx, -2);
-  mode_t new_mode = duk_require_int(ctx, -1);
+    const char *path = duk_require_string(ctx, -2);
+    mode_t new_mode = duk_require_int(ctx, -1);
 
-  if (chmod(path, new_mode) == -1)
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing permissions: %s", strerror(errno));
-    return duk_throw(ctx);
-  }
+    if (chmod(path, new_mode) == -1)
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing permissions: %s", strerror(errno));
+        return duk_throw(ctx);
+    }
 
-  return 0;
+    return 0;
 }
 
 /**
@@ -938,71 +938,71 @@ duk_ret_t duk_util_chmod(duk_context *ctx)
 duk_ret_t duk_util_touch(duk_context *ctx)
 {
 
-  duk_get_prop_string(ctx, -1, "path");
-  const char *path = duk_require_string(ctx, -1);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "path");
+    const char *path = duk_require_string(ctx, -1);
+    duk_pop(ctx);
 
-  duk_get_prop_string(ctx, -1, "nocreate");
-  int nocreate = duk_get_boolean_default(ctx, -1, 0);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "nocreate");
+    int nocreate = duk_get_boolean_default(ctx, -1, 0);
+    duk_pop(ctx);
 
-  duk_get_prop_string(ctx, -1, "reference");
-  const char *reference = duk_get_string_default(ctx, -1, NULL);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "reference");
+    const char *reference = duk_get_string_default(ctx, -1, NULL);
+    duk_pop(ctx);
 
-  duk_get_prop_string(ctx, -1, "setaccess");
-  int setaccess = duk_get_boolean_default(ctx, -1, 1);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "setaccess");
+    int setaccess = duk_get_boolean_default(ctx, -1, 1);
+    duk_pop(ctx);
 
-  duk_get_prop_string(ctx, -1, "setmodify");
-  int setmodify = duk_get_boolean_default(ctx, -1, 1);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "setmodify");
+    int setmodify = duk_get_boolean_default(ctx, -1, 1);
+    duk_pop(ctx);
 
-  struct stat filestat;
-  if (stat(path, &filestat) != 0) // file doesn't exist
-  {
-    if (nocreate)
+    struct stat filestat;
+    if (stat(path, &filestat) != 0) // file doesn't exist
     {
-      return 0;
+        if (nocreate)
+        {
+            return 0;
+        }
+        else
+        {
+            FILE *fp = fopen(path, "w"); // create file
+            fclose(fp);
+            return 0;
+        }
+    }
+
+    time_t new_mtime, new_atime;
+
+    struct stat refrence_stat;
+
+    if (reference)
+    {
+
+        if (stat(reference, &refrence_stat) != 0) //reference file doesn't exist
+        {
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "reference file does not exist");
+            return duk_throw(ctx);
+        }
+
+        new_mtime = setmodify ? refrence_stat.st_mtime : filestat.st_mtime; // if setmodify, update m_time
+        new_atime = setaccess ? refrence_stat.st_atime : filestat.st_atime; // if setacccess, update a_time
     }
     else
     {
-      FILE *fp = fopen(path, "w"); // create file
-      fclose(fp);
-      return 0;
-    }
-  }
-
-  time_t new_mtime, new_atime;
-
-  struct stat refrence_stat;
-
-  if (reference)
-  {
-
-    if (stat(reference, &refrence_stat) != 0) //reference file doesn't exist
-    {
-      duk_push_error_object(ctx, DUK_ERR_ERROR, "reference file does not exist");
-      return duk_throw(ctx);
+        new_mtime = setmodify ? time(NULL) : filestat.st_mtime; //set to current time if set modify
+        new_atime = setaccess ? time(NULL) : filestat.st_atime;
     }
 
-    new_mtime = setmodify ? refrence_stat.st_mtime : filestat.st_mtime; // if setmodify, update m_time
-    new_atime = setaccess ? refrence_stat.st_atime : filestat.st_atime; // if setacccess, update a_time
-  }
-  else
-  {
-    new_mtime = setmodify ? time(NULL) : filestat.st_mtime; //set to current time if set modify
-    new_atime = setaccess ? time(NULL) : filestat.st_atime;
-  }
+    struct utimbuf new_times;
 
-  struct utimbuf new_times;
+    new_times.actime = new_atime;
+    new_times.modtime = new_mtime;
 
-  new_times.actime = new_atime;
-  new_times.modtime = new_mtime;
+    utime(path, &new_times);
 
-  utime(path, &new_times);
-
-  return 0;
+    return 0;
 }
 
 /**
@@ -1011,15 +1011,15 @@ duk_ret_t duk_util_touch(duk_context *ctx)
  */
 duk_ret_t duk_util_delete(duk_context *ctx)
 {
-  const char *file = duk_require_string(ctx, -1);
+    const char *file = duk_require_string(ctx, -1);
 
-  if (remove(file) != 0)
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error deleting file: %s", strerror(errno));
-    return duk_throw(ctx);
-  }
+    if (remove(file) != 0)
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error deleting file: %s", strerror(errno));
+        return duk_throw(ctx);
+    }
 
-  return 0;
+    return 0;
 }
 
 /** 
@@ -1034,82 +1034,82 @@ duk_ret_t duk_util_delete(duk_context *ctx)
  */
 duk_ret_t duk_util_chown(duk_context *ctx)
 {
-  duk_get_prop_string(ctx, -1, "path");
-  const char *path = duk_require_string(ctx, -1);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "path");
+    const char *path = duk_require_string(ctx, -1);
+    duk_pop(ctx);
 
-  duk_get_prop_string(ctx, -1, "group_name");
-  const char *group_name = duk_get_string(ctx, -1);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "group_name");
+    const char *group_name = duk_get_string(ctx, -1);
+    duk_pop(ctx);
 
-  duk_get_prop_string(ctx, -1, "user_name");
-  const char *user_name = duk_get_string(ctx, -1);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "user_name");
+    const char *user_name = duk_get_string(ctx, -1);
+    duk_pop(ctx);
 
-  duk_get_prop_string(ctx, -1, "group_id");
-  gid_t group_id = duk_get_int(ctx, -1);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "group_id");
+    gid_t group_id = duk_get_int(ctx, -1);
+    duk_pop(ctx);
 
-  duk_get_prop_string(ctx, -1, "user_id");
-  uid_t user_id = duk_get_int(ctx, -1);
-  duk_pop(ctx);
+    duk_get_prop_string(ctx, -1, "user_id");
+    uid_t user_id = duk_get_int(ctx, -1);
+    duk_pop(ctx);
 
-  struct stat file_stat;
+    struct stat file_stat;
 
-  if ((user_id != 0) && (user_name != 0)) // both a user name and user_id was specified
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "Error changing ownership: too many users were specified");
-    return duk_throw(ctx);
-  }
-
-  if ((group_id != 0) && (group_name != 0)) // both a group name and group_id was specified
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing ownership: too many groups were specified");
-    return duk_throw(ctx);
-  }
-
-  if (group_name != 0) // a group name was specfied; lookup the group id
-  {
-    struct group *grp = getgrnam(group_name);
-
-    if (grp == NULL)
+    if ((user_id != 0) && (user_name != 0)) // both a user name and user_id was specified
     {
-      duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing  ownership: %s", strerror(errno));
-      return duk_throw(ctx);
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "Error changing ownership: too many users were specified");
+        return duk_throw(ctx);
     }
-    group_id = grp->gr_gid;
-  }
 
-  if (user_name != 0) // a user name was specified; lookup the user id
-  {
-    struct passwd *user = getpwnam(user_name);
-
-    if (user == NULL)
+    if ((group_id != 0) && (group_name != 0)) // both a group name and group_id was specified
     {
-      duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing  ownership: %s", strerror(errno));
-      return duk_throw(ctx);
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing ownership: too many groups were specified");
+        return duk_throw(ctx);
     }
-    user_id = user->pw_gid;
-  }
 
-  stat(path, &file_stat);
-  if (user_id == 0) // no specified user
-  {
-    user_id = file_stat.st_uid;
-  }
+    if (group_name != 0) // a group name was specfied; lookup the group id
+    {
+        struct group *grp = getgrnam(group_name);
 
-  if (group_id == 0) // no specified group
-  {
-    group_id = file_stat.st_gid;
-  }
+        if (grp == NULL)
+        {
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing  ownership: %s", strerror(errno));
+            return duk_throw(ctx);
+        }
+        group_id = grp->gr_gid;
+    }
 
-  if (chown(path, user_id, group_id) != 0)
-  {
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing  ownership: %s", strerror(errno));
-    return duk_throw(ctx);
-  }
+    if (user_name != 0) // a user name was specified; lookup the user id
+    {
+        struct passwd *user = getpwnam(user_name);
 
-  return 0;
+        if (user == NULL)
+        {
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing  ownership: %s", strerror(errno));
+            return duk_throw(ctx);
+        }
+        user_id = user->pw_gid;
+    }
+
+    stat(path, &file_stat);
+    if (user_id == 0) // no specified user
+    {
+        user_id = file_stat.st_uid;
+    }
+
+    if (group_id == 0) // no specified group
+    {
+        group_id = file_stat.st_gid;
+    }
+
+    if (chown(path, user_id, group_id) != 0)
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error changing  ownership: %s", strerror(errno));
+        return duk_throw(ctx);
+    }
+
+    return 0;
 }
 
 static const duk_function_list_entry utils_funcs[] = {
@@ -1148,29 +1148,29 @@ static const duk_number_list_entry signals[] = {
 static const duk_number_list_entry utils_consts[] = {
     {NULL, 0.0}};
 
-duk_ret_t dukopen_module(duk_context *ctx)
+duk_ret_t duk_open_module(duk_context *ctx)
 {
-  duk_idx_t exports = duk_push_object(ctx);
+    duk_idx_t exports = duk_push_object(ctx);
 
-  // add stat constants
-  duk_push_object(ctx);
-  duk_put_number_list(ctx, -1, file_types);
-  duk_put_prop_string(ctx, -2, "file_types");
+    // add stat constants
+    duk_push_object(ctx);
+    duk_put_number_list(ctx, -1, file_types);
+    duk_put_prop_string(ctx, -2, "file_types");
 
-  duk_push_object(ctx);
-  duk_put_number_list(ctx, -1, signals);
-  duk_put_prop_string(ctx, -2, "signals");
+    duk_push_object(ctx);
+    duk_put_number_list(ctx, -1, signals);
+    duk_put_prop_string(ctx, -2, "signals");
 
-  duk_put_function_list(ctx, -1, utils_funcs);
-  duk_put_number_list(ctx, -1, utils_consts);
+    duk_put_function_list(ctx, -1, utils_funcs);
+    duk_put_number_list(ctx, -1, utils_consts);
 
-  // duk_push_string(ctx, "(function(e) { console.log(e) } );");
-  // duk_eval(ctx);
-  // duk_dup(ctx, exports);
-  // duk_call(ctx, 1);
-  // duk_pop(ctx);
+    // duk_push_string(ctx, "(function(e) { console.log(e) } );");
+    // duk_eval(ctx);
+    // duk_dup(ctx, exports);
+    // duk_call(ctx, 1);
+    // duk_pop(ctx);
 
-  duk_dup(ctx, exports);
+    duk_dup(ctx, exports);
 
-  return 1;
+    return 1;
 }

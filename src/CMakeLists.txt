@@ -89,6 +89,18 @@ target_include_directories(rpcurl PRIVATE
 	${PROJECT_BINARY_DIR}/extern/openssl/include/
 )
 
+##CRYPTO##
+add_library(rpcrypto SHARED 
+  duktape/modules/crypto.c  
+)
+target_link_libraries(rpcrypto PUBLIC 
+	${OPENSSL_TARGET_DIR}/ssl/libssl.a 
+	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
+)
+target_include_directories(rpcrypto PRIVATE
+  ${PROJECT_BINARY_DIR}/extern/openssl/include/
+)
+
 ###UTILS###
 add_library(rputils SHARED
  duktape/modules/utils.c
@@ -103,8 +115,7 @@ target_link_libraries(rpserver
 	${LIBEVENT_TARGET_DIR}/lib/libevent.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
-	${OPENSSL_TARGET_DIR}/ssl/libssl.a 
-	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
+  rpcrypto
 	${ONIGURUMA_TARGET_DIR}/libonig.a
 ) 
 target_include_directories(rpserver PRIVATE
@@ -114,6 +125,7 @@ target_include_directories(rpserver PRIVATE
 	${PROJECT_SOURCE_DIR}/extern/libevhtp/include/
 	${PROJECT_BINARY_DIR}/extern/libevhtp/include/
 )
+
 
 ###### EXAMPLE USER MODULE######
 #add_library(example_name SHARED
@@ -130,14 +142,14 @@ target_include_directories(rpserver PRIVATE
 ##############  ADD MODULE NAMES HERE  ##############
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-set_target_properties(rpcurl rputils rpserver #example_name
+set_target_properties(rpcurl rputils rpserver rpcrypto #example_name
 	PROPERTIES 
 	LINK_FLAGS   "-undefined dynamic_lookup" 
 	SUFFIX       ".so"
 	PREFIX ""
 )
 else()
-set_target_properties(rpcurl rputils rpserver #example_name
+set_target_properties(rpcurl rputils rpserver rpcrypto #example_name
 	PROPERTIES 
 	SUFFIX       ".so"
 	PREFIX ""

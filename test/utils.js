@@ -6,7 +6,7 @@ function assert(cond) {
   }
 }
 function printTest(name) {
-  print("-- utils.js " + name + " --");
+  console.log("-- utils.js " + name + " --");
 }
 
 function find(arr, fn) {
@@ -22,7 +22,7 @@ function find(arr, fn) {
 try {
   printTest("read file");
   var file = utils.readFile({ file: "./utils.js" });
-  print("length of file: " + file.length);
+  console.log("length of file: " + file.length);
 
   printTest("read ln");
   // will be replaced with for (const line of utils.readln("./utils.js")) { ... } when babel is integrated
@@ -34,10 +34,10 @@ try {
   printTest("stat");
   var stat = utils.stat("./utils.js");
 
-  print("is file: " + stat.is_file());
+  console.log("is file: " + stat.is_file());
   assert(stat.is_file());
-  print("atime: " + stat.atime);
-  print("mode: " + stat.mode.toString(8));
+  console.log("atime: " + stat.atime);
+  console.log("mode: " + stat.mode.toString(8));
 
   printTest("exec (sleep 0.2)");
   var execRes = utils.exec({
@@ -55,12 +55,12 @@ try {
     background: true,
   }).pid;
 
-  print("pid: " + pid + " is going to be killed");
+  console.log("pid: " + pid + " is going to be killed");
   utils.kill(pid, 0);
   utils.kill(pid, 9);
 
   printTest("readdir");
-  print(utils.readdir("."));
+  console.log(utils.readdir("."));
 
   printTest("mkdir");
   utils.mkdir("this/is/a/test");
@@ -100,7 +100,7 @@ try {
   printTest("chmod file");
   utils.touch({ path: "sample.txt" });
   var sample_stat = utils.stat("./sample.txt");
-  print("before chmod: " + sample_stat.mode.toString(8));
+  console.log("before chmod: " + sample_stat.mode.toString(8));
 
   utils.chmod("sample.txt", 0777);
   sample_stat = utils.stat("./sample.txt");
@@ -118,10 +118,10 @@ try {
   var atime_before = sample_stat.atime;
   var mtime_before = sample_stat.mtime;
 
-  print("atime: " + atime_before);
-  print("mtime: " + mtime_before);
+  console.log("atime: " + atime_before);
+  console.log("mtime: " + mtime_before);
 
-  print("after reference touch");
+  console.log("after reference touch");
   utils.touch({
     path: "sample.txt",
     reference: "server.js",
@@ -154,7 +154,7 @@ try {
 //   assert(sample_stat.gid == 12);
 
   printTest("delete");
-  print(utils.readdir("."));
+  console.log(utils.readdir("."));
   utils.delete("sample_link.txt");
   utils.delete("sample.txt");
   assert(
@@ -163,6 +163,6 @@ try {
     })
   );
 } catch (e) {
-  print("caught:");
+  console.log("caught:");
   console.log(e);
 }
