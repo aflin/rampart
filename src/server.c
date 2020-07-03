@@ -156,6 +156,9 @@ void push_req_vars(DHS *dhs)
     evhtp_connection_t *conn = evhtp_request_get_connection(dhs->req);
     void *sa=(void *)conn->saddr;
     char address[INET6_ADDRSTRLEN], *q, *cl;
+    duk_size_t bsz;
+    void *buf;
+
     int i,l;
     /* get ip address */
     sa_to_string(sa,address,sizeof(address));
@@ -194,6 +197,11 @@ void push_req_vars(DHS *dhs)
     evhtp_kvs_for_each(dhs->req->uri->query,putkvs,ctx);
     duk_put_prop_string(ctx,-2,"query");
 
+    bsz=(duk_size_t)evbuffer_get_length(dhs->req->buffer_in);
+    buf=duk_push_fixed_buffer(dhs->ctx,bsz);
+    evbuffer_copyout(dhs->req->buffer_in,buf,(size_t)bsz);
+    duk_put_prop_string(ctx,-2,"body");
+
     /* unfortunately this is a copy of data in buffer plus an extra \0 at the end */
     q=(char *)dhs->req->uri->query_raw;
     if(q)
@@ -219,6 +227,7 @@ void push_req_vars(DHS *dhs)
         else
             putval("query_raw",dhs->req->uri->query_raw);
     }
+
     /*  headers */
     duk_push_object(ctx);
     evhtp_headers_for_each(dhs->req->headers_in,putheaders,ctx);
