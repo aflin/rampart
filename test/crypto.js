@@ -14,3 +14,9 @@ var decBuffer = crypto.decrypt({
 });
 
 console.log(new TextDecoder().decode(decBuffer));
+
+console.log(
+  new TextDecoder().decode(
+    crypto.sha256(new TextEncoder().encode("hello world"))
+  )
+);
