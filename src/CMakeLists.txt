@@ -56,6 +56,8 @@ set(INSTALLFILES
 	"server.js"
 	"utils.js"
 #	"dbtest.js"
+	"dbfunc-test.js"
+	"wiki_00"
 	"mPurpose"
 	"tetris-tutorial"
 )

@@ -1,3 +1,4 @@
+#include "txcoreconfig.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -6,75 +7,21 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include "dbquery.h"
+#include "texint.h"
+#include "cgi.h"
 #include "rp.h"
 #include "duktape.h"
+
+#include "db_misc.c" /* copied and altered thunderstone code for stringformat and abstract */
 
 
 /* TODO: make not using handle cache work with cancel */
 #ifndef USEHANDLECACHE
 #define USEHANDLECACHE
 #endif
-
-/* **************************************************************************
-   This url(en|de)code is public domain from https://www.geekhideout.com/urlcode.shtml 
-   ************************************************************************** */
-
-/* Converts a hex character to its integer value */
-
-static char from_hex(char ch) {
-  return isdigit(ch) ? ch - '0' : tolower(ch) - 'a' + 10;
-}
-
-/* Converts an integer value to its hex character*/
-static char to_hex(char code) {
-  static char hex[] = "0123456789abcdef";
-  return hex[code & 15];
-}
-
-/* Returns a url-encoded version of str */
-/* IMPORTANT: be sure to free() the returned string after use */
-char *duk_rp_url_encode(char *str, int len) {
-  char *pstr = str, *buf = malloc(strlen(str) * 3 + 1), *pbuf = buf;
-  
-  if(len<0)len=strlen(str);
-  
-  while (len) {
-    if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~') 
-      *pbuf++ = *pstr;
-    else if (*pstr == ' ') 
-      *pbuf++ = '+';
-    else 
-      *pbuf++ = '%', *pbuf++ = to_hex(*pstr >> 4), *pbuf++ = to_hex(*pstr & 15);
-    pstr++;
-    len--;
-  }
-  *pbuf = '\0';
-  return buf;
-}
-
-/* Returns a url-decoded version of str */
-/* IMPORTANT: be sure to free() the returned string after use */
-char *duk_rp_url_decode(char *str, int len) {
-  char *pstr = str, *buf = malloc(strlen(str) + 1), *pbuf = buf;
-  
-  if(len<0)len=strlen(str);
-
-  while (len) {
-    if (*pstr == '%' && len>2) {
-        *pbuf++ = from_hex(pstr[1]) << 4 | from_hex(pstr[2]);
-        pstr += 2;
-        len-=2;
-    } else if (*pstr == '+') { 
-      *pbuf++ = ' ';
-    } else {
-      *pbuf++ = *pstr;
-    }
-    pstr++;
-    len--;
-  }
-  *pbuf = '\0';
-  return buf;
-}
 
 int db_is_init=0;
 int tx_rp_cancelled=0;
@@ -1259,14 +1206,89 @@ duk_ret_t dukopen_module(duk_context *ctx)
   duk_dup(ctx,-1);
   duk_put_global_string(ctx, "Sql");  /* -> stack: [ ] */
 
+
+  duk_push_c_function(ctx, RPfunc_stringformat,DUK_VARARGS);
+  duk_put_global_string(ctx,"stringformat");
+
+  duk_push_c_function(ctx, RPsqlFuncs_abstract, 2);
+  duk_put_global_string(ctx,"abstract");
+
+  duk_push_c_function(ctx, RPsqlFunc_sandr, 3);
+  duk_put_global_string(ctx,"sandr");
+
+  /* rex|re2( 
+          expression,                     //string or array of strings 
+          searchItem,                     //string or buffer
+          callback,                       // optional callback function
+          options  -
+            {
+              exclude:                    // string: "none"      - return all hits
+                                          //         "overlap"   - remove the shorter hit if matches overlap
+                                          //         "duplicate" - current default - remove smaller if one hit entirely encompasses another
+              submatches:		  true|false - include submatches in an array.
+                                          if have callback function (true is default)
+                                            - true  --  function(
+                                                          match,
+                                                          submatchinfo={expressionIndex:matchedExpressionNo,submatches:["array","of","submatches"]},{...}...]},
+                                                          matchindex
+                                                        )
+                                            - false --  function(match,matchindex)
+                                          if no function (false is default)
+                                            - true  --  ret= [{match:"match1",expressionIndex:matchedExpressionNo,submatches:["array","of","submatches"]},{...}...]
+                                            - false --  ret= ["match1","match2"...]
+            }
+        );
+   return value is an array of matches.
+   If callback is specified, return value is number of matches.
+  */
+  duk_push_c_function(ctx, RPdbFunc_rex, 4);
+  duk_put_global_string(ctx,"rex");
+
+  duk_push_c_function(ctx, RPdbFunc_re2, 4);
+  duk_put_global_string(ctx,"re2");
+
+  /* rexfile|re2file( 
+          expression,                     //string or array of strings 
+          filename,                       //file with text to be searched
+          callback,                       // optional callback function
+          options  -
+            {
+              exclude:                    // string: "none"      - return all hits
+                                          //         "overlap"   - remove the shorter hit if matches overlap
+                                          //         "duplicate" - current default - remove smaller if one hit entirely encompasses another
+              submatches:		  true|false - include submatches in an array.
+                                          if have callback function (true is default)
+                                            - true  --  function(
+                                                          match,
+                                                          submatchinfo={expressionIndex:matchedExpressionNo,submatches:["array","of","submatches"]},{...}...]},
+                                                          matchindex
+                                                        )
+                                            - false --  function(match,matchindex)
+                                          if no function (false is default)
+                                            - true  --  ret= [{match:"match1",expressionIndex:matchedExpressionNo,submatches:["array","of","submatches"]},{...}...]
+                                            - false --  ret= ["match1","match2"...]
+              delimiter:		  expression to match -- delimiter for end of buffer.  Default is "$" (end of line).  If your pattern crosses lines, specify
+                                                                 a delimiter which will not do so and you will be guaranteed to match even if a match crosses internal read buffer boundry
+            }
+        );
+        
+   return value is an array of matches.
+   If callback is specified, return value is number of matches.
+  */
+  duk_push_c_function(ctx, RPdbFunc_rexfile, 4);
+  duk_put_global_string(ctx,"rexfile");
+
+  duk_push_c_function(ctx, RPdbFunc_re2file, 4);
+  duk_put_global_string(ctx,"re2file");
+
   /* duktape will never return a c function (not even in eval code).
-     It will instead return an object with prototype set, but no constructor function.
-     so duk_eval_string(ctx,"Sql"), or duk_eval_string(ctx,"(function(){return Sql;})()");
+     It will instead return an otherwise empty object with prototype set, but no constructor function or c_function.
+     Even duk_eval_string(ctx,"Sql"), or duk_eval_string(ctx,"(function(){return Sql;})()");
      will not work, even though it will work directly in javascript.
      best we can do is return an object containing the c function
   */
   duk_push_object(ctx);
-  duk_pull(ctx,-2);
+  duk_pull(ctx,-2); //Sql
   duk_put_prop_string(ctx,-2,"init");
 
   // this doesn't work either

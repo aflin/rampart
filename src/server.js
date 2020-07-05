@@ -1,17 +1,54 @@
 /* load the http server module */
 var server=require("rpserver");
 
-/* Circular reference test.  This is copied to each thread's JS stack */
+/* Circular reference test.  This is copied to the javascript stack of each server thread */
 var obj={foo:"that"}
 obj.newobj=obj;
 
 /* load sql database module */
 var rpsql=require("rpsql");
 
-var sql= new rpsql.init("./testdb",true); /* true means make db if it doesn't exist */
+
+
+/* sql module can be loaded here (better) or in callback functions (minor check overhead).
+     If used to create database, the overhead is not minor, and should be done here rather
+     than in a callback
+*/
+
+var sql= new rpsql.init("./testdb",true); /* true means create the database if it doesn't exist */
 
 /* this will also work after loading module */
 //var sql=new Sql("./testdb",true);
+
+
+/* ************************************************
+    Test of added functions from rpsql 
+*************************************************** */
+/* stringformat at https://docs.thunderstone.com/site/vortexman/fmt_strfmt.html */
+printf("TEST OF DB FUNCS:\n");
+printf("query markup:\n\t%s\n",stringformat('%mbH','@0 hello there',"a sentence with hello there in it. Hello there!"));
+printf("time format:\n\t%s\n",stringformat('%at','%c','now'));
+printf("html escape:\n\t%s\n",stringformat('"%H" = htmlesc("%!H")','<div>','&lt;div&gt;' ));
+var txt="The abstract will be less than maxsize characters long, and will attempt to end at a word boundary. "+
+        "If maxsize is not specified (or is less than or equal to 0) then a default size of 230 characters is used.\n"+
+        "The style argument is a string or integer, and allows a choice between several different ways of creating the "+
+        "abstract. Note that some of these styles require the query argument as well, which is a Metamorph query to look for";
+/* abstract at https://docs.thunderstone.com/site/texisman/abstract.html */
+/* takes one or two args in any order. Must have a string.  May have an object with options */
+printf("abstract:\n\t%s\n",abstract({maxsize:100,query:"metamorph query",style:'querybest'},txt)); 
+
+printf('sandr(">>x=", "able", "txs are x to make words searchx"):\n\t%s\n',sandr(">>x=", "able", "txs are x to make words searchx"));
+
+var search=["that=", "is=", "\\.=", "ok=",    " the="];
+var repl  =["those", "are", "s."  , "not \\1"        ];
+var txta  =["that is the bomb.","and that is ok"];
+
+printf('sandr(%J,%J,%J):\n\t%J\n',search,repl,txta,sandr(search,repl,txta));
+
+
+/* ******************************************************
+    Setup of tables for server callback function tests 
+********************************************************* */
 
 /* check if our quicktest table exists.  If not, make it */
 var res=sql.exec("select * from SYSTABLES where NAME='quicktest'");
@@ -26,7 +63,7 @@ res=sql.exec("select * from SYSTABLES where NAME='inserttest'");
 if(res.length==0) {
     sql.exec("create table inserttest ( I int, D double, Text varchar(16) );");
     sql.exec("create index inserttest_I_x on inserttest(I);");
-    for (var i=0;i<200;i++)
+    for (var i=0;i<2000;i++)
         inserttest_callback({},true);
 
     /* test delete of 10 rows */
@@ -42,7 +79,7 @@ if(res.length==0) {
 }
 
 
-/*
+/* *******************************************************************************
 sample calls to sql with/without callback
 with callback returns one row at a time, and can be cancelled by returning false
 without callback returns an array of rows.
@@ -51,7 +88,7 @@ Rows are returned as one of 4 different return types:
     array   -- [val1, val2, ..]
     arrayh  -- first row is column names, then like array
     novars  -- returns empty array, or empty object if using a callback
-*/
+* ********************************************************************************* */
 
 /*
 console.log("return default object");
@@ -101,6 +138,11 @@ res=sql.exec("select * from inserttest",
 console.log(res);
 */
 
+
+/* ******************************************************
+   Callbacks for server test
+   ****************************************************** */
+
 /* 
    Since the http server is multithreaded, and the javascript interpreter
    is not, each thread must have its own javascript heap where the callback
@@ -133,9 +175,6 @@ function inserttest_callback(req,allinserts){
     var skip=Math.floor(Math.random()*100);
     var insertmax=25;
 
-//    res=sql.exec("select count(I) cnt from inserttest");
-//    console.log(res);
-
     /* to populate the table */
     if(allinserts) insertmax=100;    
 
@@ -151,18 +190,17 @@ function inserttest_callback(req,allinserts){
         }
     }
     else if (rp<50)
-//    else if (rp>100)
     {
 //        console.log("delete")
           res=sql.exec(
             "delete from inserttest",
-            /* WTF: skipped rows are deleted too 
+            /* Won't fix: skipped rows are deleted too 
             {skip:skip,max:10,returnType:"novars"}
             */
             /* 
                normally deleted rows are also
                selected and returned.  Here we
-               don't need them
+               don't need them, so "novars" is set
             */
             {max:10,returnType:"novars"}
           );
@@ -205,6 +243,7 @@ function simple_callback(req){
     return(JSON.stringify(arr));
 }
 
+var it=0;
 function showreq_callback(req){
     // http://jsfiddle.net/KJQ9K/554/
     function syntaxHighlight(json) {
@@ -225,9 +264,12 @@ function showreq_callback(req){
             return '<span class="' + cls + '">' + match + '</span>';
         });
     }
+    /* print some extra info provided to each callback */
+    printf("%J\n",rampart);
     //For testing timeout
 //    for (var i=0;i<100000000;i++);
 //    print("DONE WASTING TIME IN JS");
+
     var str=JSON.stringify(req,null,4);
     var css=
         "pre {outline: 1px solid #ccc; padding: 5px; margin: 5px; }\n"+
@@ -299,9 +341,8 @@ function ramistest(req) {
     return("OK");
 }
 
-print("try a url like http://127.0.0.1:8088/showreq.html?var1=val1&color=red&size=15");
-print("or see a sample website at http://127.0.0.1:8088/");
-print("");
+printf("\ntry a url like http://127.0.0.1:8088/showreq.html?var1=val1&color=red&size=15\n");
+printf("or see a sample website at http://127.0.0.1:8088/\n\nSTARTING SERVER:\n");
 
 /* 
     Configuration and Start of Webserver:
@@ -323,7 +364,7 @@ server.start(
     ipv6:"::",     //this binds to all. Default is ::1
     port:8088,     //this is the default
     ipv6port:8088, //defaults to port above if not set
-    scriptTimeout: 20.0, /* max time to spend in JS */
+    scriptTimeout: 1.0, /* max time to spend in JS */
     connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
     usethreads: true, /* make server multi-threaded.
     /*  By default, number of threads is set to cpu core count.
