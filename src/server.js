@@ -6,45 +6,16 @@ var obj={foo:"that"}
 obj.newobj=obj;
 
 /* load sql database module */
-var rpsql=require("rpsql");
+var Sql=require("rpsql");
 
 
 
 /* sql module can be loaded here (better) or in callback functions (minor check overhead).
      If used to create database, the overhead is not minor, and should be done here rather
-     than in a callback
+     than repeatedly in a callback
 */
 
-var sql= new rpsql.init("./testdb",true); /* true means create the database if it doesn't exist */
-
-/* this will also work after loading module */
-//var sql=new Sql("./testdb",true);
-
-
-/* ************************************************
-    Test of added functions from rpsql 
-*************************************************** */
-/* stringformat at https://docs.thunderstone.com/site/vortexman/fmt_strfmt.html */
-printf("TEST OF DB FUNCS:\n");
-printf("query markup:\n\t%s\n",stringformat('%mbH','@0 hello there',"a sentence with hello there in it. Hello there!"));
-printf("time format:\n\t%s\n",stringformat('%at','%c','now'));
-printf("html escape:\n\t%s\n",stringformat('"%H" = htmlesc("%!H")','<div>','&lt;div&gt;' ));
-var txt="The abstract will be less than maxsize characters long, and will attempt to end at a word boundary. "+
-        "If maxsize is not specified (or is less than or equal to 0) then a default size of 230 characters is used.\n"+
-        "The style argument is a string or integer, and allows a choice between several different ways of creating the "+
-        "abstract. Note that some of these styles require the query argument as well, which is a Metamorph query to look for";
-/* abstract at https://docs.thunderstone.com/site/texisman/abstract.html */
-/* takes one or two args in any order. Must have a string.  May have an object with options */
-printf("abstract:\n\t%s\n",abstract({maxsize:100,query:"metamorph query",style:'querybest'},txt)); 
-
-printf('sandr(">>x=", "able", "txs are x to make words searchx"):\n\t%s\n',sandr(">>x=", "able", "txs are x to make words searchx"));
-
-var search=["that=", "is=", "\\.=", "ok=",    " the="];
-var repl  =["those", "are", "s."  , "not \\1"        ];
-var txta  =["that is the bomb.","and that is ok"];
-
-printf('sandr(%J,%J,%J):\n\t%J\n',search,repl,txta,sandr(search,repl,txta));
-
+var sql= new Sql.init("./testdb",true); /* true means create the database if it doesn't exist */
 
 /* ******************************************************
     Setup of tables for server callback function tests 
@@ -63,7 +34,7 @@ res=sql.exec("select * from SYSTABLES where NAME='inserttest'");
 if(res.length==0) {
     sql.exec("create table inserttest ( I int, D double, Text varchar(16) );");
     sql.exec("create index inserttest_I_x on inserttest(I);");
-    for (var i=0;i<2000;i++)
+    for (var i=0;i<200;i++)
         inserttest_callback({},true);
 
     /* test delete of 10 rows */
@@ -195,7 +166,7 @@ function inserttest_callback(req,allinserts){
           res=sql.exec(
             "delete from inserttest",
             /* Won't fix: skipped rows are deleted too 
-            {skip:skip,max:10,returnType:"novars"}
+            {skip:10,max:10,returnType:"novars"} -> 20 rows deleted
             */
             /* 
                normally deleted rows are also
@@ -233,8 +204,8 @@ function inserttest_callback(req,allinserts){
 }
 
 function simple_callback(req){
-//    require("rpsql");
-//    var sql=new Sql('./testdb');
+//    var Sql=require("rpsql");
+//    var sql=new Sql.init('./testdb');
     var arr=sql.exec(
         'select * from quicktest',
         {max:1}
@@ -243,7 +214,8 @@ function simple_callback(req){
     return(JSON.stringify(arr));
 }
 
-var it=0;
+/* print out some info about the request */
+
 function showreq_callback(req){
     // http://jsfiddle.net/KJQ9K/554/
     function syntaxHighlight(json) {
@@ -264,13 +236,13 @@ function showreq_callback(req){
             return '<span class="' + cls + '">' + match + '</span>';
         });
     }
-    /* print some extra info provided to each callback */
+
     printf("%J\n",rampart);
     //For testing timeout
-//    for (var i=0;i<100000000;i++);
-//    print("DONE WASTING TIME IN JS");
+    //for (var i=0;i<100000000;i++);
+    //print("DONE WASTING TIME IN JS");
 
-    var str=JSON.stringify(req,null,4);
+    var str=JSON.stringify({req:req,rampart:rampart},null,4);
     var css=
         "pre {outline: 1px solid #ccc; padding: 5px; margin: 5px; }\n"+
         ".string { color: green; }\n"+
@@ -287,11 +259,12 @@ function showreq_callback(req){
             },
         //only set one of these.  Setting more than one throws error.
         //jpg: "@/home/user/myimage.jpg"
-        html:"<html><head><style>"+css+"</style><body>Object sent to this function:<br><pre>"+syntaxHighlight(str)+"</pre>"+x.msg+"</body></html>"
+        html:"<html><head><style>"+css+"</style><body>Object sent to this function(req) and other info (rampart):<br><pre>"+syntaxHighlight(str)+"</pre>"+x.msg+"</body></html>"
         //,text: "\\@home network is a now defunct cable broadband provider."
     });
     
 }
+
 /* this works as expected since x.func is global
  
    If this entire script was wrapped in a function and that function was called,
@@ -348,10 +321,12 @@ printf("or see a sample website at http://127.0.0.1:8088/\n\nSTARTING SERVER:\n"
     Configuration and Start of Webserver:
     server.start() never returns and no code after this will be run
 
-    It will create one thread per cpu core, or with the number configured 
-    each with its own JS interpreter.
+    It will be started with one thread per cpu core, or with the number configured 
+    Each thread has its own JS interpreter/stack/heap.
     Global variables and ECMA functions from the main thread will be copied
-    to all of the server threads.
+    to all of the server threads.  Modules loaded before server starts
+    will be available in each thread as well. Non global variables
+    that are in scope will not be copied.
 
     Functions are copied as compiled bytecode. Not all functionality will 
     transfer.  See the Bytecode limitations section here: 
@@ -364,12 +339,12 @@ server.start(
     ipv6:"::",     //this binds to all. Default is ::1
     port:8088,     //this is the default
     ipv6port:8088, //defaults to port above if not set
-    scriptTimeout: 1.0, /* max time to spend in JS */
+    scriptTimeout: 10.0, /* max time to spend in JS */
     connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
-    usethreads: true, /* make server multi-threaded.
+    useThreads: true, /* make server multi-threaded. */
     /*  By default, number of threads is set to cpu core count.
         ipv6 and ipv4 are separate servers and each get this number of threads.
-        This has no effect unless usethreads is set true.
+        This has no effect unless useThreads is set true.
         The number can be changed here:
     */
     //threads: 8, /* for a 4 core, 8 virtual core hyper-threaded processor. */
@@ -383,9 +358,9 @@ server.start(
     */
     
     /*  By default server binds to both ipv4 and ipv6.
-        To turn off ipv6 or ipv4, use one of these only */
-    // useipv6: false,
-    // useipv4: false,
+        To turn off ipv6 or ipv4, set one of these to false */
+    // useIpv6: false,
+    // useIpv4: false,
     
 
     /* **********************************************************
@@ -405,8 +380,9 @@ server.start(
         /* matching a glob to a function */
         "/showreq*":          showreq_callback,
 
-        /*  filesystem mappings are always folders.  
-            "/tetris" => "/tetris/ & "./mPurpose" => "./mPurpose/" */
+        //  filesystem mappings are always folders.  
+        //   "/tetris"    becomes  "/tetris/
+        //   "./mPurpose" becomes  "./mPurpose/"
         "/tetris":            "./tetris-tutorial/",
         "/":                  "./mPurpose"
     }

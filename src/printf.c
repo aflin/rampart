@@ -34,11 +34,12 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <errno.h>
 #include "duktape.h"
 #include "rp.h"
 //#include "printf.h"
 
-
+pthread_mutex_t pflock;
 // 'ntoa' conversion buffer size, this must be big enough to hold one converted
 // numeric number including padded zeros (dynamically created on stack)
 // default: 32 byte
@@ -844,7 +845,17 @@ static int _duk_printf(out_fct_type out, char* buffer, const size_t maxlen, duk_
 duk_ret_t duk_printf(duk_context *ctx)
 {
   char buffer[1];
-  int ret=_duk_printf(_out_char,buffer,(size_t)-1, ctx);
+  int ret;
+
+  if( pthread_mutex_lock(&pflock) == EINVAL ) {
+    fprintf(stderr,"could not obtain lock in http_callback\n");
+    exit(1);
+  }
+
+  ret=_duk_printf(_out_char,buffer,(size_t)-1, ctx);
+
+  pthread_mutex_unlock(&pflock);
+
   duk_push_int(ctx,ret);
   return 1;
 }
@@ -871,6 +882,12 @@ void duk_printf_init(duk_context *ctx)
   duk_put_global_string(ctx, "printf");
   duk_push_c_function(ctx, duk_sprintf, DUK_VARARGS);
   duk_put_global_string(ctx, "sprintf");
+  
+  if( pthread_mutex_init(&pflock,NULL)  == EINVAL ) {
+    fprintf(stderr,"could not initialize context lock\n");
+    exit(1);
+  }
+
 }
 
 

@@ -1177,44 +1177,47 @@ duk_ret_t dukopen_module(duk_context *ctx)
     db_is_init=1;
   }
 
-  /* for single_user */
-  duk_push_c_function(ctx, duk_rp_sql_singleuser, 1 /*nargs*/);
-  duk_put_global_string(ctx,"Sql_single_user");
+  duk_push_object(ctx);
+  duk_pull(ctx,-2); //Sql
+  duk_put_prop_string(ctx,-2,"init");
+
+
 
   /* Push constructor function */
   duk_push_c_function(ctx, duk_rp_sql_constructor, 3 /*nargs*/);
 
   /* Push object that will be Sql.prototype. */
-  duk_push_object(ctx);  /* -> stack: [ Sql protoObj ] */
+  duk_push_object(ctx);  /* -> stack: [ {}, Sql protoObj ] */
 
   /* Set Sql.prototype.exec. */
-  duk_push_c_function(ctx, duk_rp_sql_exe, 4 /*nargs*/);  /* [ Sql proto fn_exe ] */
-  duk_put_prop_string(ctx, -2, "exec");  /* [Sql protoObj-->[exe=fn_exe] ] */
+  duk_push_c_function(ctx, duk_rp_sql_exe, 4 /*nargs*/);  /* [ {}, Sql proto fn_exe ] */
+  duk_put_prop_string(ctx, -2, "exec");  /* [ {}, Sql protoObj-->[exe=fn_exe] ] */
 
   /* set Sql.prototype.eval */
-  duk_push_c_function(ctx, duk_rp_sql_eval, 4 /*nargs*/); /*[Sql proto-->[exe=fn_exe] fn_eval ]*/
-  duk_put_prop_string(ctx, -2, "eval"); /*[Sql protoObj-->[exe=fn_exe,eval=fn_eval] ]*/
+  duk_push_c_function(ctx, duk_rp_sql_eval, 4 /*nargs*/); /*[ {}, Sql proto-->[exe=fn_exe] fn_eval ]*/
+  duk_put_prop_string(ctx, -2, "eval"); /*[ {}, Sql protoObj-->[exe=fn_exe,eval=fn_eval] ]*/
 
   /* set Sql.prototype.close */
-  duk_push_c_function(ctx, duk_rp_sql_close, 0 /*nargs*/); /* [Sql proto-->[exe=fn_exe] fn_close ] */
-  duk_put_prop_string(ctx, -2, "close"); /*[Sql protoObj-->[exe=fn_exe,query=fn_exe,close=fn_close] ] */
+  duk_push_c_function(ctx, duk_rp_sql_close, 0 /*nargs*/); /* [ {}, Sql proto-->[exe=fn_exe] fn_close ] */
+  duk_put_prop_string(ctx, -2, "close"); /*[ {}, Sql protoObj-->[exe=fn_exe,query=fn_exe,close=fn_close] ] */
 
   /* Set Sql.prototype = protoObj */
-  duk_put_prop_string(ctx, -2, "prototype");  /* -> stack: [ Sql-->[prototype-->[exe=fn_exe,...]] ] */
+  duk_put_prop_string(ctx, -2, "prototype");  /* -> stack: [ {}, Sql-->[prototype-->[exe=fn_exe,...]] ] */
 
-  /* Finally, register Sql to the global object */
-  duk_dup(ctx,-1);
-  duk_put_global_string(ctx, "Sql");  /* -> stack: [ ] */
+  duk_put_prop_string(ctx,-2, "init"); /* [ {init()} ] */
 
+  /* for single_user */
+  duk_push_c_function(ctx, duk_rp_sql_singleuser, 1 /*nargs*/);
+  duk_put_prop_string(ctx, -2, "single_user");
 
   duk_push_c_function(ctx, RPfunc_stringformat,DUK_VARARGS);
-  duk_put_global_string(ctx,"stringformat");
+  duk_put_prop_string(ctx, -2, "stringformat");
 
   duk_push_c_function(ctx, RPsqlFuncs_abstract, 2);
-  duk_put_global_string(ctx,"abstract");
+  duk_put_prop_string(ctx, -2, "abstract");
 
   duk_push_c_function(ctx, RPsqlFunc_sandr, 3);
-  duk_put_global_string(ctx,"sandr");
+  duk_put_prop_string(ctx, -2, "sandr");
 
   /* rex|re2( 
           expression,                     //string or array of strings 
@@ -1242,10 +1245,10 @@ duk_ret_t dukopen_module(duk_context *ctx)
    If callback is specified, return value is number of matches.
   */
   duk_push_c_function(ctx, RPdbFunc_rex, 4);
-  duk_put_global_string(ctx,"rex");
+  duk_put_prop_string(ctx, -2, "rex");
 
   duk_push_c_function(ctx, RPdbFunc_re2, 4);
-  duk_put_global_string(ctx,"re2");
+  duk_put_prop_string(ctx, -2, "re2");
 
   /* rexfile|re2file( 
           expression,                     //string or array of strings 
@@ -1276,24 +1279,10 @@ duk_ret_t dukopen_module(duk_context *ctx)
    If callback is specified, return value is number of matches.
   */
   duk_push_c_function(ctx, RPdbFunc_rexfile, 4);
-  duk_put_global_string(ctx,"rexfile");
+  duk_put_prop_string(ctx, -2, "rexfile");
 
   duk_push_c_function(ctx, RPdbFunc_re2file, 4);
-  duk_put_global_string(ctx,"re2file");
+  duk_put_prop_string(ctx, -2, "re2file");
 
-  /* duktape will never return a c function (not even in eval code).
-     It will instead return an otherwise empty object with prototype set, but no constructor function or c_function.
-     Even duk_eval_string(ctx,"Sql"), or duk_eval_string(ctx,"(function(){return Sql;})()");
-     will not work, even though it will work directly in javascript.
-     best we can do is return an object containing the c function
-  */
-  duk_push_object(ctx);
-  duk_pull(ctx,-2); //Sql
-  duk_put_prop_string(ctx,-2,"init");
-
-  // this doesn't work either
-  //duk_put_global_string(ctx, "intsql" );
-  //duk_eval_string(ctx,"(function(){return intsql.init;})()");
-  
   return 1;
 }

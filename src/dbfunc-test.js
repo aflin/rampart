@@ -1,4 +1,12 @@
-require("rpsql");
+var Sql=require("rpsql");
+
+var rex=Sql.rex;
+var re2=Sql.re2;
+var sandr=Sql.sandr;
+var rexfile=Sql.rexfile;
+var re2file=Sql.re2file;
+var abstract=Sql.abstract;
+var stringformat=Sql.stringformat;
 
 /* ************************************************
     Test of added functions from rpsql 

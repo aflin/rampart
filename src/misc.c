@@ -23,10 +23,28 @@ duk_ret_t duk_rp_strToBuf(duk_context *ctx)
   return 1;
 }
 
+duk_ret_t duk_rp_bufToStr(duk_context *ctx)
+{
+
+  duk_buffer_to_string(ctx,0);
+
+  return 1;
+}
+
 void duk_strToBuf_init(duk_context *ctx)
 {
+  if (!duk_get_global_string(ctx,"rampart"))
+  {
+    duk_pop(ctx);
+    duk_push_object(ctx);  
+  }
+
   duk_push_c_function(ctx, duk_rp_strToBuf, 2);
-  duk_put_global_string(ctx, "toBuffer");
+  duk_put_prop_string(ctx, -2, "stringToBuffer");
+  duk_push_c_function(ctx, duk_rp_bufToStr, 1);
+  duk_put_prop_string(ctx, -2, "bufferToString");
+
+  duk_put_global_string(ctx,"rampart");
 }
 
 void duk_misc_init(duk_context *ctx)

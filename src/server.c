@@ -107,7 +107,7 @@ static void setheaders(evhtp_request_t * req)
     //TODO: Discover why this breaks everything.
     //evhtp_request_set_keepalive(req, 1);
     //evhtp_headers_add_header(req->headers_out, evhtp_header_new("Connection","keep-alive", 0, 0));
-
+    //evhtp_headers_add_header(req->headers_out, evhtp_header_new("Connection","close",0,0));
 }
 
 #define putval(key,val) if((char *)(val)!=(char*)NULL){duk_push_string(ctx,(const char *)(val));duk_put_prop_string(ctx,-2,(key));} 
@@ -1864,6 +1864,12 @@ duk_ret_t duk_server_start(duk_context *ctx)
             gl_singlethreaded=!mthread;
         }
         duk_pop(ctx);
+        if(duk_get_prop_string(ctx,ob_idx,"useThreads"))
+        {
+            mthread=duk_require_boolean(ctx,-1);
+            gl_singlethreaded=!mthread;
+        }
+        duk_pop(ctx);
 
         /* port ipv6*/
         if(duk_get_prop_string(ctx,ob_idx,"ipv6port"))
@@ -1879,9 +1885,19 @@ duk_ret_t duk_server_start(duk_context *ctx)
             usev6=duk_require_boolean(ctx,-1);
         }
         duk_pop(ctx);
+        if(duk_get_prop_string(ctx,ob_idx,"useIpv6"))
+        {
+            usev6=duk_require_boolean(ctx,-1);
+        }
+        duk_pop(ctx);
 
         /* use ipv4*/
         if(duk_get_prop_string(ctx,ob_idx,"useipv4"))
+        {
+            usev4=duk_require_boolean(ctx,-1);
+        }
+        duk_pop(ctx);
+        if(duk_get_prop_string(ctx,ob_idx,"useIpv4"))
         {
             usev4=duk_require_boolean(ctx,-1);
         }

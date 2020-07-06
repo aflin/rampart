@@ -94,6 +94,7 @@ target_link_libraries(rpcurl PRIVATE
 	${CURL_TARGET_DIR}/lib/libcurl.a
 	${OPENSSL_TARGET_DIR}/ssl/libssl.a
 	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
+	z
 )
 target_include_directories(rpcurl PRIVATE
 	${PROJECT_SOURCE_DIR}/extern/curl/include/
