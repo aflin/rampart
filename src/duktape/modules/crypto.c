@@ -3,9 +3,10 @@
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <openssl/sha.h>
+#include <openssl/md5.h>
+#include <openssl/rand.h>
 #include <string.h>
 #include <stdio.h>
-#include <openssl/md5.h>
 
 #define OPENSSL_ERR_STRING_MAX_SIZE 1024
 #define DUK_OPENSSL_ERROR(ctx)                                                     \
@@ -217,6 +218,42 @@ static duk_ret_t duk_md5(duk_context *ctx)
     return 1;
 }
 
+/**
+ * Uses RAND_bytes to fill a buffer with random data.
+ * @param {uint} the output length of the buffer to be returned
+ * @returns {Buffer} the buffer filled with random data
+ */
+static duk_ret_t duk_rand(duk_context *ctx)
+{
+    duk_size_t len = duk_require_uint(ctx, -1);
+    void *buffer = duk_push_fixed_buffer(ctx, len);
+    /* RAND_bytes may return 0 or -1 on error */
+    if (RAND_bytes(buffer, len) != 1)
+        DUK_OPENSSL_ERROR(ctx);
+    return 1;
+}
+
+/**
+ * Seeds the random number generator with a given file and size.
+ * NOTE: Files are meant to be seed files like /dev/random. See https://wiki.openssl.org/index.php/Random_Numbers
+ * @typedef {Object} SeedOptions
+ * @property {file} The seed file
+ * @property {bytes} the number of bytes to be taken from the seed file.
+ * @param {SeedOptions} The Seed Options
+ */
+static duk_ret_t duk_seed_rand(duk_context *ctx)
+{
+    duk_require_object(ctx, -1);
+    duk_idx_t options_idx = duk_normalize_index(ctx, -1);
+    duk_get_prop_string(ctx, options_idx, "bytes");
+    duk_uint_t bytes = duk_get_uint_default(ctx, -1, 32);
+    duk_get_prop_string(ctx, options_idx, "file");
+    const char *file = duk_get_string_default(ctx, -1, "/dev/random");
+    int rc = RAND_load_file(file, bytes);
+    if (rc != bytes)
+        DUK_OPENSSL_ERROR(ctx);
+    return 0;
+}
 const duk_function_list_entry crypto_funcs[] = {
     {"encrypt", duk_encrypt, 1},
     {"decrypt", duk_decrypt, 1},
@@ -225,6 +262,8 @@ const duk_function_list_entry crypto_funcs[] = {
     {"sha384", duk_sha384, 1},
     {"sha512", duk_sha512, 1},
     {"md5", duk_md5, 1},
+    {"rand", duk_rand, 1},
+    {"seed", duk_seed_rand, 1},
     {NULL, NULL, 0}};
 
 duk_ret_t duk_open_module(duk_context *ctx)
