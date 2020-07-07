@@ -509,7 +509,8 @@ EPI_OFF_T	TXsetrecid ARGS((RECID *, EPI_OFF_T));
 #define TXgetoff2(r)            ((r)->off)
 #define TXsetrecid(r, o)        ((r)->off = (EPI_OFF_T)(o))
 
-char *TXtexisver ARGS((void));          /* KNG 990319 */
+size_t TXgetTexisVersionNumString(char *buf, size_t bufSz, TXbool vortexStyle,
+				  TXbool forHtml);
 
 /******************************************************************/
 
@@ -1420,20 +1421,6 @@ int TXprocessInit(TXPMBUF *pmbuf);
 
 int TXgetmaxdescriptors ARGS((void));
 int TXgetopendescriptors ARGS((void));
-typedef enum TXrawOpenFlag_tag
-{
-  TXrawOpenFlag_None                    = 0,
-  TXrawOpenFlag_Inheritable             = (1 << 0),
-  TXrawOpenFlag_SuppressNoSuchFileErr   = (1 << 1),
-  TXrawOpenFlag_SuppressFileExistsErr   = (1 << 2)
-}
-TXrawOpenFlag;
-int TXrawOpen(TXPMBUF *pmbuf, const char *fn, const char *pathDesc,
-	      const char *path, TXrawOpenFlag txFlags, int flags, int mode);
-int     tx_rawread ARGS((TXPMBUF *pmbuf, int fd, CONST char *fnam, byte *buf,
-                         size_t sz, int flags));
-size_t tx_rawwrite(TXPMBUF *pmbuf, int fd, const char *path,
-		TXbool pathIsDescription, byte *buf, size_t sz, TXbool inSig);
 
 /* stat() buffer with extended information where possible: */
 #ifndef TXSTATBUFPN

@@ -8,6 +8,8 @@ int texis_set(TEXIS *, char *property, char *value);
 int texis_prepare(TEXIS *, char *sqlQuery);
 int texis_execute(TEXIS *);
 int texis_param(TEXIS *, int paramNum, void *data, long *dataLen, int cType, int sqlType);
+int texis_resetparams(TEXIS *);
+int texis_cancel(TEXIS *);
 FLDLST *texis_fetch(TEXIS *, int stringsFrom);
 int texis_flush(TEXIS *tx);
 int texis_flush_scroll(TEXIS *tx, int nrows);

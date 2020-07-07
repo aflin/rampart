@@ -1219,6 +1219,9 @@ duk_ret_t dukopen_module(duk_context *ctx)
   duk_push_c_function(ctx, RPsqlFunc_sandr, 3);
   duk_put_prop_string(ctx, -2, "sandr");
 
+  duk_push_c_function(ctx, RPsqlFunc_sandr2, 3);
+  duk_put_prop_string(ctx, -2, "sandr2");
+
   /* rex|re2( 
           expression,                     //string or array of strings 
           searchItem,                     //string or buffer

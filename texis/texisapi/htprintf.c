@@ -6197,9 +6197,13 @@ static void usage ARGS((void));
 static void
 usage()
 {
-  htpf("Texis Printf Version %d.%02d.%wd %aT\n",
-       (int)TX_VERSION_MAJOR, (int)TX_VERSION_MINOR,
-       (EPI_HUGEINT)TxSeconds, "|%Y%m%d", (time_t)TxSeconds);
+  char  verNumBuf[1024];
+
+  TXgetTexisVersionNumString(verNumBuf, sizeof(verNumBuf),
+                             TXbool_True /* vortexStyle */,
+                             TXbool_False /* !forHtml */);
+  htpf("Texis Printf Version %s %aT\n",
+       verNumBuf, "|%Y%m%d", (time_t)TxSeconds);
 #ifdef TEST
   htpf("Usage: %s [options] [format [arg ...]]\n", Progname);
   htpf("  -t       Run tests\n");

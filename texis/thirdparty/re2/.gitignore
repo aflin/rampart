@@ -1,0 +1,15 @@
+*.pyc
+*.orig
+core
+obj
+benchlog.*
+*.vcxproj
+*.vcxproj.filters
+CMakeCache.txt
+CMakeFiles
+*.sln
+Release
+Win32
+*.dir
+cmake_install.cmake
+x64

@@ -681,7 +681,8 @@ RPsqlFuncs_abstract(duk_context *ctx)
 	ft_long style = TXABS_STYLE_SMART;
 	DBTBL *tbl=NULL;
 	duk_idx_t idx=0;
-	
+	char *ab;
+
 	if (globalcp == APICPPN) globalcp = TXopenapicp();
 
 	if( duk_is_string(ctx,idx) || ( (idx=1) && duk_is_string(ctx,idx) ) )
@@ -719,8 +720,10 @@ RPsqlFuncs_abstract(duk_context *ctx)
             duk_pop(ctx);
 
 	}
-	duk_push_string(ctx, (char*)abstract(text, maxsz, style, query, tbl, CHARPPN, CHARPN));
+	ab=(char*)abstract(text, maxsz, style, query, tbl, CHARPPN, CHARPN);
+	duk_push_string(ctx, ab);
 	free(query);
+	free(ab);
 	return 1;
 }
 
@@ -742,8 +745,8 @@ static const char *get_exp(duk_context *ctx, duk_idx_t idx)
 
 char **VXsandr ARGS((char **, char **, char **));
 
-duk_ret_t
-RPsqlFunc_sandr(duk_context *ctx)
+
+static void sandr(duk_context *ctx, int re2)
 {
         int ns=1, nr=1, nt=1;
         if(duk_get_top(ctx) != 3)
@@ -811,7 +814,16 @@ RPsqlFunc_sandr(duk_context *ctx)
                         duk_push_string(ctx,"sandr: search (arg 1) array must contain only strings/patterns");
                         duk_throw(ctx);
                     }
-                    srch[i]=(char*)exp;
+                    if (re2)
+                    {
+                        char s[strlen(exp)+8];
+
+                        strcpy(s,"\\<re2\\>");
+                        strcat(s,exp);
+                        srch[i]=strdup(s);
+                    }
+                    else
+                        srch[i]=(char*)exp;
                     i++;
                     duk_pop_2(ctx);
                 }
@@ -825,7 +837,16 @@ RPsqlFunc_sandr(duk_context *ctx)
                     duk_push_string(ctx,"sandr: search (arg 1) array must contain only strings/patterns");
                     duk_throw(ctx);
                 }
-                srch[0]=(char*)exp;
+                if (re2)
+                {
+                    char s[strlen(exp)+8];
+                    
+                    strcpy(s,"\\<re2\\>");
+                    strcat(s,exp);
+                    srch[0]=strdup(s);
+                }
+                else
+                    srch[0]=(char*)exp;
             }
 
             if (nr>1)
@@ -851,19 +872,27 @@ RPsqlFunc_sandr(duk_context *ctx)
                         //printf("%d: %s\n",i,out[i]);
                         duk_push_string(ctx,out[i]);
                         duk_put_prop_index(ctx, -2, i);
+                        free(out[i]);
                         i++;
                     }
                 }
                 else
+                {
                     duk_push_string(ctx,out[0]);
+                    free(out[0]);
+                }
             }
             if (out)
                     free(out);
-
+            if(re2)
+            {
+                int i=0;
+                
+                for(;i<ns;i++)
+                    free (srch[i]);
+            }
         }
 #undef getstrings
-
-	return 1;
 }
 
 
@@ -921,10 +950,6 @@ static int rex (
 
 
     /* get expression */
-    if(duk_is_string(ctx,0))
-    {
-        exp=duk_get_string(ctx,0);
-    }
     if (duk_is_array(ctx,0))
     {
         nexp=(int)duk_get_length(ctx,0);    
@@ -1315,4 +1340,18 @@ duk_ret_t
 RPdbFunc_re2file(duk_context *ctx)
 {
     return rex_re2_file(ctx,TXrexSyntax_Re2);
+}
+
+duk_ret_t
+RPsqlFunc_sandr(duk_context *ctx)
+{
+    sandr(ctx, 0);
+    return 1;
+}
+
+duk_ret_t
+RPsqlFunc_sandr2(duk_context *ctx)
+{
+    sandr(ctx, 1);
+    return 1;
 }

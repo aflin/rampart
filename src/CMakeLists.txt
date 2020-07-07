@@ -78,13 +78,17 @@ set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp)
 add_library(rpsql SHARED
  db.c
 )
-
 target_link_libraries(rpsql
 	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
 	${PROJECT_BINARY_DIR}/texis/mmapi/libmmapi3.a
+	z
+	${PROJECT_BINARY_DIR}/texis/thirdparty/re2/libre2.a
+	pthread
+	m
 	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
-	m z dl pthread
 ) 
+# libre2 needs to be linked by c++
+set_target_properties(rpsql PROPERTIES LINKER_LANGUAGE CXX )
 
 ###CURL###
 add_library(rpcurl SHARED

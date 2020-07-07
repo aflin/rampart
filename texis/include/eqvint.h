@@ -92,20 +92,20 @@ EQVNDX {
 #else
 #  define mmcrypt(a,b,c) (a),(b),(c)
 #endif
-extern int  eqvparserec ARGS((EQVREC *rec));
-extern int  eqvpq       ARGS((char *query,char ***lst,int *nlst,
+int  eqvparserec (EQVREC *rec);
+int  eqvpq       (char *query,char ***lst,int *nlst,
                               char ***originalPrefixedTerms, int *isects,
-                              int **a_setqoffs, int **a_setqlens));
+                              int **a_setqoffs, int **a_setqlens);
 
-extern int  eqvwritew   ARGS((word  *val,int n,EQV *eq,word key));
-extern int  eqvreadb    ARGS((byte  *val,int n,EQV *eq,word key));
-extern int  eqvreaddw   ARGS((dword *val,int n,EQV *eq,word key));
-extern int  eqvreadw    ARGS((word  *val,int n,EQV *eq,word key));
-extern int  eqvwriteb   ARGS((byte  *val,int n,EQV *eq,word key));
-extern int  eqvwritedw  ARGS((dword *val,int n,EQV *eq,word key));
-extern int  eqvwritew   ARGS((word  *val,int n,EQV *eq,word key));
+int  eqvwritew   (word  *val,int n,EQV *eq,word key);
+int  eqvreadb    (byte  *val,int n,EQV *eq,word key);
+int  eqvreaddw   (dword *val,int n,EQV *eq,word key);
+int  eqvreadw    (word  *val,int n,EQV *eq,word key);
+int  eqvwriteb   (byte  *val,int n,EQV *eq,word key);
+int  eqvwritedw  (dword *val,int n,EQV *eq,word key);
+int  eqvwritew   (word  *val,int n,EQV *eq,word key);
 
-extern int  rdeqvndx    ARGS((EQV *eq,EQVNDX *ndx,long n));
-extern void strweld     ARGS((byte *,int,word));
+int  rdeqvndx    (EQV *eq,EQVNDX *ndx,long n);
+void strweld     (byte *,int,word);
 /**********************************************************************/
 #endif                                                    /* EQVINT_H */

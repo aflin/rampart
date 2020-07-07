@@ -18,7 +18,8 @@ extern "C" {
 #define _CRT_SECURE_NO_WARNINGS
 #  include <windows.h>
 #endif
-
+#include "txpmbuf.h"
+#include "txtypes.h"
 /**********************************************************************/
 #if defined(_AIX) && !defined(unix)                   /* MAW 07-08-92 */
 #  define unix
@@ -1513,6 +1514,21 @@ typedef int (TXqsort_rCmpFunc)(const void *a, const void *b, void *usr);
 void	TXqsort_r(void *base, size_t numEl, size_t elSz,
 		  TXqsort_rCmpFunc *cmp, void *usr);
 #endif /* !EPI_HAVE_QSORT_R */
+
+typedef enum TXrawOpenFlag_tag
+{
+  TXrawOpenFlag_None                    = 0,
+  TXrawOpenFlag_Inheritable             = (1 << 0),
+  TXrawOpenFlag_SuppressNoSuchFileErr   = (1 << 1),
+  TXrawOpenFlag_SuppressFileExistsErr   = (1 << 2)
+}
+TXrawOpenFlag;
+int TXrawOpen(TXPMBUF *pmbuf, const char *fn, const char *pathDesc,
+	      const char *path, TXrawOpenFlag txFlags, int flags, int mode);
+int     tx_rawread(TXPMBUF *pmbuf, int fd, const char *fnam, byte *buf,
+                   size_t sz, int flags);
+size_t tx_rawwrite(TXPMBUF *pmbuf, int fd, const char *path,
+		TXbool pathIsDescription, byte *buf, size_t sz, TXbool inSig);
 
 #endif                                                     /* MACRO_H */
 #ifdef __cplusplus

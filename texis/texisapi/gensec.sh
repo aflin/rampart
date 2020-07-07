@@ -23,7 +23,7 @@ fi
 
 cat << EOF > texver.c
 #include "txcoreconfig.h"
-int TxSeconds = $commitsecs;
+const long TxSeconds = $commitsecs;
 
 char *
 TXtexisver()

@@ -1436,7 +1436,7 @@ char	***argvStripped;	/* (out, opt.) "" `argv', dup'd */
   TXApp->NoMonitorStart = 0;
 #else
 TXsingleuser = 0;
-TXApp->NULLSemOp = 0;
+TXApp->NULLSemOp = 1;
 TXApp->NoMonitorStart = 1;
 #endif
 	TXApp->LogBadSYSLOCKS = 0;
@@ -1783,6 +1783,9 @@ TXApp->NoMonitorStart = 1;
 	TXsetglobaloptsargv(pmbuf, argcGlobalOpts, argvGlobalOpts);
 
 	txGetApicpDefaults(pmbuf);		/* Bug 6933 even if !TxConf */
+
+/* globalcp init ? */
+  if(!globalcp) globalcp = TXopenapicp();
 
 	TXApp->betafeatures[BETA_JSON] = 1;
 

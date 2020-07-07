@@ -171,6 +171,7 @@ extern int getdtablesize(void);
 #include "cgi.h"                /* for htsnpf() */
 #include "httpi.h"              /* wtf for HTBUF drill */
 #include "authNegotiate.h"		/* for TXsaslProcessInit() */
+#define TXgetTexisVersionNumString(a,b,c,d) (TXtexisver())
 
 /* TX_PIPE_MAX could be MAXINT; pick an upper bound for buffer allocation: */
 #if TX_PIPE_MAX > 8192
@@ -2329,13 +2330,14 @@ ldone:
       memsz = cmpmemsz(phys, pgsz);
     }
 #elif defined(__bsdi__) || defined(__FreeBSD__) || defined(__MACH__)
-  int           mib[2], physmem;                /* BSD[I]/FreeBSD/OSX ----- */
+  int           mib[2];                /* BSD[I]/FreeBSD/OSX ----- */
+  long          physmem;
   size_t        len;
 
   if (TxMemSz != (size_t)(-1)) return(TxMemSz);
 
   mib[0] = CTL_HW;
-  mib[1] = HW_PHYSMEM;
+  mib[1] = HW_MEMSIZE;
   len = sizeof(physmem);
   if (sysctl(mib, sizeof(mib)/sizeof(mib[0]), &physmem, &len, NULL, 0) != -1)
     memsz = (physmem >> 20);
@@ -3366,7 +3368,7 @@ tx_genericsighandler TX_SIG_HANDLER_ARGS
   size_t        lenPrinted;
   TXbool        didBacktrace = TXbool_False;
   char          *infoCur, *infoEnd, *infoPrev, *infoSkipFrom, infoBuf[8192];
-  char          pidBuf[64];
+  char          pidBuf[64], versionNumBuf[128];
 
 #ifndef _WIN32
   (void)context;
@@ -3522,8 +3524,11 @@ __try
       if (trap & TXtrap_InfoLocationBad)
         infoCur += TXprabendloc(infoCur, INFO_BUF_LEFT);
 
+      TXgetTexisVersionNumString(versionNumBuf, sizeof(versionNumBuf),
+                                 TXbool_True /* vortexStyle */,
+                                 TXbool_False /* !forHtml */);
       putmsg(MERR + msgNumAddend, CHARPN,
-             "%s%s version %d.%02d.%wd ABEND:"
+             "%s%s version %s %aT (%s) ABEND:"
 #ifdef _WIN32
              " exception 0x%X"
 #else /* !_WIN32 */
@@ -3531,8 +3536,7 @@ __try
 #endif /* !_WIN32 */
              " (%s)%s; exiting",
              pidBuf, TXsigProcessName,
-             (int)TX_VERSION_MAJOR, (int)TX_VERSION_MINOR,
-             (EPI_HUGEINT)TxSeconds,
+             versionNumBuf, "|%Y%m%d", (time_t)TxSeconds, TxPlatformDesc,
              (int)sigNum, TXsignalname(sigNum), infoBuf);
       break;
     }
@@ -3587,7 +3591,7 @@ TXgenericMcheckHandler(enum mcheck_status mstatus)
   TXbool        didBacktrace = TXbool_False;
   const char    *mDesc;
   char          *infoCur, *infoEnd, *infoPrev, infoBuf[8192];
-  char          pidBuf[64];
+  char          pidBuf[64], versionNumBuf[128];
 
 #  if defined(_WIN32) && defined(_MSC_VER)
  __try
@@ -3657,11 +3661,14 @@ TXgenericMcheckHandler(enum mcheck_status mstatus)
   else
     htsnpf(pidBuf, sizeof(pidBuf), "(%u) ", (unsigned)TXgetpid(1));
 
+  TXgetTexisVersionNumString(versionNumBuf, sizeof(versionNumBuf),
+                             TXbool_True /* vortexStyle */,
+                             TXbool_False /* !forHtml */);
   putmsg(MERR + msgNumAddend, NULL,
-         "%s%s version %d.%02d.%wd ABEND: glibc memory error: %s%s; exiting",
+         "%s%s version %s %aT (%s) ABEND: glibc memory error: %s%s; exiting",
          pidBuf, TXsigProcessName,
-         (int)TX_VERSION_MAJOR, (int)TX_VERSION_MINOR,
-         (EPI_HUGEINT)TxSeconds, mDesc, infoBuf);
+         versionNumBuf, "|%Y%m%d", (time_t)TxSeconds, TxPlatformDesc,
+         mDesc, infoBuf);
 #  ifdef EPI_KILL_OTHER_THREADS_AT_EXIT
   TXkillOtherThreads(TXbool_True);
 #  endif /* EPI_KILL_OTHER_THREADS_AT_EXIT */
@@ -3794,7 +3801,7 @@ TXgenericExceptionHandler(int sigNum,
   TXbool        didBacktrace = TXbool_False;
   char          *infoCur, *infoEnd, *infoPrev, *infoSkipFrom;
   char          infoBuf[8192];
-  char          pidBuf[64];
+  char          pidBuf[64], versionNumBuf[128];
 
   __try
     {
@@ -3851,8 +3858,11 @@ TXgenericExceptionHandler(int sigNum,
       else
         htsnpf(pidBuf, sizeof(pidBuf), "(%u) ", (unsigned)TXgetpid(1));
 
+      TXgetTexisVersionNumString(versionNumBuf, sizeof(versionNumBuf),
+                                 TXbool_True /* vortexStyle */,
+                                 TXbool_False /* !forHtml */);
       putmsg(MERR + msgNumAddend, NULL,
-             "%s%s version %d.%02d.%wd ABEND:"
+             "%s%s version %s %aT (%s) ABEND:"
 #ifdef _WIN32
              " exception 0x%X"
 #else /* !_WIN32 */
@@ -3860,8 +3870,7 @@ TXgenericExceptionHandler(int sigNum,
 #endif /* !_WIN32 */
              " (%s)%s; exiting",
              pidBuf, TXsigProcessName,
-             (int)TX_VERSION_MAJOR, (int)TX_VERSION_MINOR,
-             (EPI_HUGEINT)TxSeconds,
+             versionNumBuf, "|%Y%m%d", (time_t)TxSeconds, TxPlatformDesc,
              (int)sigNum, TXsignalname(sigNum), infoBuf);
 
       if (trap & (TXtrap_InfoStack1K | TXtrap_InfoStack16K))
