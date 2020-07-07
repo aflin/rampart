@@ -1216,11 +1216,8 @@ duk_ret_t duk_open_module(duk_context *ctx)
         db_is_init = 1;
     }
 
-    duk_push_object(ctx);
-    duk_pull(ctx, -2); //Sql
-    duk_put_prop_string(ctx, -2, "init");
+    duk_push_object(ctx); // the return object
 
-    /* Push constructor function */
     duk_push_c_function(ctx, duk_rp_sql_constructor, 3 /*nargs*/);
 
     /* Push object that will be Sql.prototype. */
@@ -1240,8 +1237,8 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     /* Set Sql.prototype = protoObj */
     duk_put_prop_string(ctx, -2, "prototype"); /* -> stack: [ {}, Sql-->[prototype-->[exe=fn_exe,...]] ] */
-
-    duk_put_prop_string(ctx, -2, "init"); /* [ {init()} ] */
+    duk_put_prop_string(ctx, -2, "init");      /* [ {init()} ] */
+    printstack(ctx);
 
     /* for single_user */
     duk_push_c_function(ctx, duk_rp_sql_singleuser, 1 /*nargs*/);
@@ -1323,6 +1320,6 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     duk_push_c_function(ctx, RPdbFunc_re2file, 4);
     duk_put_prop_string(ctx, -2, "re2file");
-
+    printstack(ctx);
     return 1;
 }
