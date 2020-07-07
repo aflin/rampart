@@ -1436,7 +1436,7 @@ char	***argvStripped;	/* (out, opt.) "" `argv', dup'd */
   TXApp->NoMonitorStart = 0;
 #else
 TXsingleuser = 0;
-TXApp->NULLSemOp = 1;
+TXApp->NULLSemOp = 0;
 TXApp->NoMonitorStart = 1;
 #endif
 	TXApp->LogBadSYSLOCKS = 0;
