@@ -48,12 +48,14 @@ static duk_ret_t load_js_module(duk_context *ctx)
     }
     duk_push_global_object(ctx);
 
+    // make 'module' global
     duk_dup(ctx, module_idx);
     duk_put_prop_string(ctx, -2, "module");
 
+    // make 'exports' global
     duk_dup(ctx, module_idx);
     duk_get_prop_string(ctx, -1, "exports");
-    duk_put_prop_string(ctx, -2, "exports");
+    duk_put_prop_string(ctx, -3, "exports");
 
     duk_push_lstring(ctx, buffer, sb.st_size);
     if (duk_peval(ctx) == DUK_EXEC_ERROR)
