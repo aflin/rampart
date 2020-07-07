@@ -3,6 +3,7 @@ var Sql=require("rpsql");
 var rex=Sql.rex;
 var re2=Sql.re2;
 var sandr=Sql.sandr;
+var sandr2=Sql.sandr2;
 var rexfile=Sql.rexfile;
 var re2file=Sql.re2file;
 var abstract=Sql.abstract;
@@ -93,8 +94,8 @@ exclude={exclude:'none'};
 printf("rex(%J,'%s','%J'):\n\t%J\n", search,txt,exclude,rex(search,txt,exclude));
 
 
-//search="is.*";
-//printf("re2(%J,'%s','%s'):\n\t%J\n", search,txt,exclude,re2(search,txt,exclude));
+search="is.*";
+printf("re2(%J,'%J','%J'):\n\t%J\n", search,txt,exclude,re2(search,txt,exclude));
 
 //printf("%J\n",txt.match(/is.*/));
 
@@ -150,16 +151,31 @@ printf("nhits=%d\n",nhits);
 
 console.log(rexfile(">>function=[^\n]+","server.js"));
 
+printf('var nhits=rexfile(">><doc=[^>]+>=","wiki_00",function(match,i){\n\tprintf("match="%%J", matchno=%%d\\n",match,i);\n},{submatches:false});\nprintf("nhits=%%d\\n",nhits);\n');
+
 var nhits=rexfile(">><doc=[^>]+>=","wiki_00",function(match,i){
     printf("match='%J', matchno=%d\n",match,i);
 },{submatches:false});
 printf("nhits=%d\n",nhits);
 
+printf('var ret=rexfile(">><doc=[^>]+>=","wiki_00",{submatches:true});\n');
 var ret=rexfile(">><doc=[^>]+>=","wiki_00",{submatches:true});
 ret=sprintf('%J',ret);
 ret=sandr('>>\\},\\{=','\\},\\\n\\{',ret);
 console.log("ret=",ret);
 
+printf('ret=re2file("<doc[^>]+>","wiki_00",{submatches:true});\n');
+ret=re2file("(<doc)([^>]+)(>)","wiki_00",{submatches:true});
+ret=sprintf('%J',ret);
+ret=sandr('>>\\},\\{=','\\},\\\n\\{',ret);
+console.log("ret=",ret);
+
+
 /* /expr/ can also be used to avoid double backslashes.  It is marginally slower */
 console.log(rex(/\alnum{4}/,"hits are fun"));
-console.log(sandr(/fun=/,"funtimes","we are having fun"));
+console.log(sandr2(/fun/,"funtimes","we are having fun"));
+
+
+
+
+
