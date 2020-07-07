@@ -26,9 +26,12 @@ int texis_prepare(TEXIS *, char *sqlQuery);
 int texis_execute(TEXIS *);
 int texis_param(TEXIS *, int paramNum, void *data, long *dataLen,
                 int cType, int sqlType);
+int texis_resetparams(TEXIS *);
+int texis_cancel(TEXIS *);
 FLDLST *texis_fetch(TEXIS *, int stringsFrom);
 int texis_flush(TEXIS *tx);
 int texis_flush_scroll(TEXIS *tx, int nrows);
+
 char **texis_getresultnames(TEXIS *tx);
 int *texis_getresultsizes(TEXIS *tx);
 int texis_getrowcount(TEXIS *tx);
@@ -499,6 +502,23 @@ int     lend, lena;
       { puts("texis_execute Failed"); return(0); }
    ...
 \end{verbatim}
+
+%**********************************************************************/
+
+\NAME{texis\_cancel() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+int texis_cancel(tx);
+TEXIS      *tx;
+\end{verbatim}
+
+\DESCRIPTION
+
+This function is used to cancel a TEXIS statement.  It can be called in a
+signal handler or thread to flag that the currently executing call on the
+TEXIS handle should terminate at the next possible opportunity.
+
+Once the thread has returned the TEXIS handle should be closed.
 
 %**********************************************************************/
 

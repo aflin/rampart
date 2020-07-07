@@ -63,9 +63,9 @@ MMOFFS                           /* offset info for Metamorph subhits */
 #define SRCHLST struct net_SRCHLST
 #undef SRCHLST
 
-#define TSQL struct tsql_struct
-#define TSQLPN (TSQL *)NULL
-TSQL
+typedef struct TXtsql_struct TSQL;
+#define TSQLPN ((TSQL *)NULL)
+struct TXtsql_struct
 {
    SERVER *se;                            /* remembered server handle */
    int     idresults;             /* issue results from insert,delete */

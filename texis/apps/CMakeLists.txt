@@ -15,6 +15,7 @@ IF(Threads_FOUND)
 	SET(EPI_HAVE_PTHREADS Threads_FOUND)
 	CHECK_SYMBOL_EXISTS(PTHREAD_MUTEX_INITIALIZER	pthread.h	HAVE_PTHREAD_MUTEX_INITIALIZER)
 ENDIF(Threads_FOUND)
+target_link_libraries(re2 PUBLIC Threads::Threads)
 #
 
 add_executable(rex rex.c)

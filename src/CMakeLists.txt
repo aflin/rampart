@@ -24,7 +24,6 @@ add_executable(rp
 	duktape/core/duktape.c
 	duktape/core/duk_console.c
 	duktape/core/module.c
-	duktape/globals/db.c
 	duktape/globals/misc.c
 	duktape/globals/printf.c
 	duktape/globals/ramis.c
@@ -40,10 +39,7 @@ set_target_properties(rp PROPERTIES
 )
 
 target_link_libraries(rp LINK_PUBLIC 
-	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
-	${PROJECT_BINARY_DIR}/texis/mmapi/libmmapi3.a
-	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
-	m z dl pthread
+	m dl pthread
 )
 
 include_directories(
@@ -54,19 +50,6 @@ include_directories(
 #this is good for later. Right now it interrupts work flow
 #set (CMAKE_CURRENT_BINARY_DIR ${PROJECT_BINARY_DIR}/bin )
 
-
-set(INSTALLFILES
-	"server.js"
-	"utils.js"
-#	"dbtest.js"
-	"mPurpose"
-	"tetris-tutorial"
-)
-
-# foreach(INSTALLFILE ${INSTALLFILES})
-# file(COPY ${INSTALLFILE} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-# endforeach()
-
 set(LIBEVENT_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevent)
 set(OPENSSL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/openssl)
 set(ONIGURUMA_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/oniguruma)
@@ -74,6 +57,22 @@ set(CURL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/curl)
 set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp)
 
 ########### ADD MODULES HERE ###############
+
+###SQL###
+add_library(rpsql SHARED
+ duktape/modules/db.c
+)
+target_link_libraries(rpsql
+	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
+	${PROJECT_BINARY_DIR}/texis/mmapi/libmmapi3.a
+	z
+	${PROJECT_BINARY_DIR}/texis/thirdparty/re2/libre2.a
+	pthread
+	m
+	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
+) 
+# libre2 needs to be linked by c++
+set_target_properties(rpsql PROPERTIES LINKER_LANGUAGE CXX )
 
 ###CURL###
 add_library(rpcurl SHARED
@@ -83,6 +82,7 @@ target_link_libraries(rpcurl PRIVATE
 	${CURL_TARGET_DIR}/lib/libcurl.a
 	${OPENSSL_TARGET_DIR}/ssl/libssl.a
 	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
+	z
 )
 target_include_directories(rpcurl PRIVATE
 	${PROJECT_SOURCE_DIR}/extern/curl/include/
@@ -142,14 +142,14 @@ target_include_directories(rpserver PRIVATE
 ##############  ADD MODULE NAMES HERE  ##############
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-set_target_properties(rpcurl rputils rpserver rpcrypto #example_name
+set_target_properties(rpcurl rputils rpserver rpsql rpcrypto #example_name
 	PROPERTIES 
 	LINK_FLAGS   "-undefined dynamic_lookup" 
 	SUFFIX       ".so"
 	PREFIX ""
 )
 else()
-set_target_properties(rpcurl rputils rpserver rpcrypto #example_name
+set_target_properties(rpcurl rputils rpserver rpsql rpcrypto #example_name
 	PROPERTIES 
 	SUFFIX       ".so"
 	PREFIX ""

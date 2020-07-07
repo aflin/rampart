@@ -172,14 +172,9 @@ closeqnode(query)
 QNODE *query;
 {
 	FLD	*fld;
-	int	rc;
 
 	if (query == (QNODE *)NULL)
 		return query;
-	if (query->op == UPD_SEL_OP && query->left->op == SELECT_OP)
-		rc = 0;
-	else
-		rc = 1;
 	if (query->right != (QNODE *)NULL)
 	{
 		if (query->op != TABLE_AS_OP)
@@ -211,10 +206,10 @@ QNODE *query;
 		}
 		else if (query->op == PARAM_OP)
 		{
+#ifdef NEVER
 			PARAM	*p;
 
 			p = query->tname;
-#ifdef NEVER
 			if (p->fld)
 			{
 				freeflddata(p->fld);
@@ -307,6 +302,19 @@ QNODE *query;
 
 			if (TXunpreparetree(query->left)) rc = 1;
 		}
+	if (query->tname != (char *)NULL && query->op == UPD_SEL_OP)
+	{
+		if(((QNODE *)query->tname)->org != QNODEPN)
+		{
+			qn = ((QNODE *)query->tname)->org;
+			((QNODE *)query->tname)->org = QNODEPN;
+			closeqnode(((QNODE *)query->tname));
+			query->tname = qn;
+		}
+
+		if (TXunpreparetree(query->tname)) rc = 1;
+	}
+
 	if (query->q != (QUERY *)NULL)
 	{
 		closequery(query->q);

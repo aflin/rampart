@@ -357,4 +357,4 @@ add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/texisapi.h
 )
 target_sources(genFldFuncsSorted PRIVATE ${CMAKE_BINARY_DIR}/texisapi.h)
 
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ftinternalsyms.h;${CMAKE_CURRENT_BINARY_DIR}/texisapi.h DESTINATION include/texis)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ftinternalsyms.h;${CMAKE_BINARY_DIR}/texisapi.h DESTINATION include/texis)

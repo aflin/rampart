@@ -183,6 +183,6 @@ JDOMSYMBOLS_LIST
 
 /* ------------------------------ jdsec.c: -------------------------------- */
 
-JD_EXTERN_DATA(time_t)          JdSeconds;
+JD_EXTERN_DATA(const long)      JdSeconds;
 
 #endif /* !JDOM_H */

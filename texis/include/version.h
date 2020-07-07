@@ -233,8 +233,10 @@ extern "C" {
 
 /* See also global.mkf, unix.mkf, windows.mkf GLOBALCFLAGS */
 
-extern int      TxSeconds;              /* in sec.c */
-extern int      TxBuild;                /* in sec.c */
+/* in texis/gitCommit.c: */
+extern const long TxSeconds;
+extern const char *TXbuildId, *TXversionSuffix;
+char *TXtexisver();
 
 #ifdef __cplusplus
 }

@@ -2,6 +2,7 @@ set(TEST_FILES
 	"utils.js"
 	"ramis.js"
 	"crypto.js"
+	"dbfunc.js"
 )
 
 # Copying to the src dir is temporary. In the future

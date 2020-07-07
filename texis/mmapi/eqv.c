@@ -66,19 +66,8 @@ static CONST char Copyright[]=
 ** MAW 01-21-91 - renamed mmcrypt() to strweld() for obscurity
 **
 ***********************************************************************/
-#ifdef __stdc__                     /* i really hate ansi, don't you? */
 void
-strweld(
-byte *buf,
-int n,
-word seed)
-#else
-void
-strweld(buf,n,seed)
-byte *buf;
-int n;
-word seed;
-#endif
+strweld(byte *buf, int n, word seed)
 {
 static byte mmckey1[145]={
   35, 174, 132, 225, 108, 198, 174,  66, 128,  73, 225, 225, 171, 233, 235,

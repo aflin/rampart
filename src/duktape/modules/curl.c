@@ -1829,22 +1829,30 @@ int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     }
 
     /* the doc */
-    bsz = strlen((req->body).text);
-    if (bsz == (req->body).size)
+    if ((req->body).text == NULL || !(req->body).size)
     {
-        duk_push_string(ctx, (req->body).text);
+        duk_push_string(ctx, "");
         duk_put_prop_string(ctx, -2, "text");
     }
     else
-    /* it's binary */
     {
-        unsigned char *b;
-        duk_push_fixed_buffer(ctx, (req->body).size);
-        b = (unsigned char *)duk_require_buffer_data(ctx, -1, &bsz);
-        memcpy(b, (req->body).text, bsz);
-        duk_put_prop_string(ctx, -2, "binary");
-        duk_push_string(ctx, "binary");
-        duk_put_prop_string(ctx, -2, "text");
+        bsz = strlen((req->body).text);
+        if (bsz == (req->body).size)
+        {
+            duk_push_string(ctx, (req->body).text);
+            duk_put_prop_string(ctx, -2, "text");
+        }
+        else
+        /* it's binary */
+        {
+            unsigned char *b;
+            duk_push_fixed_buffer(ctx, (req->body).size);
+            b = (unsigned char *)duk_require_buffer_data(ctx, -1, &bsz);
+            memcpy(b, (req->body).text, bsz);
+            duk_put_prop_string(ctx, -2, "binary");
+            duk_push_string(ctx, "binary");
+            duk_put_prop_string(ctx, -2, "text");
+        }
     }
     /* the actual url, in case of redirects */
     curl_easy_getinfo(req->curl, CURLINFO_EFFECTIVE_URL, &s);

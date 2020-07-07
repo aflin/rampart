@@ -1784,6 +1784,9 @@ TXApp->NoMonitorStart = 1;
 
 	txGetApicpDefaults(pmbuf);		/* Bug 6933 even if !TxConf */
 
+/* globalcp init ? */
+  if(!globalcp) globalcp = TXopenapicp();
+
 	TXApp->betafeatures[BETA_JSON] = 1;
 
 	if (TxConf != CONFFILEPN)
