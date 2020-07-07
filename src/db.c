@@ -1200,7 +1200,6 @@ duk_ret_t dukopen_module(duk_context *ctx)
   /* Set Sql.prototype = protoObj */
   duk_put_prop_string(ctx, -2, "prototype");  /* -> stack: [ {}, Sql-->[prototype-->[exe=fn_exe,...]] ] */
   duk_put_prop_string(ctx,-2, "init"); /* [ {init()} ] */
-printstack(ctx);
 
   /* for single_user */
   duk_push_c_function(ctx, duk_rp_sql_singleuser, 1 /*nargs*/);
@@ -1282,6 +1281,6 @@ printstack(ctx);
 
   duk_push_c_function(ctx, RPdbFunc_re2file, 4);
   duk_put_prop_string(ctx, -2, "re2file");
-printstack(ctx);
+
   return 1;
 }
