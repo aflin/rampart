@@ -1251,7 +1251,7 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
 static double
 stopwatch(double dtime)
 {
-    static struct timeval time;
+    struct timeval time;
 
     gettimeofday(&time, NULL);
 
@@ -1539,12 +1539,12 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                     }
                     finfo->childpid = 0;
                     duk_get_prop_string(dhs->ctx, dhs->func_idx, "fname");
-                    fprintf(stderr, "timeout in %s()\n", duk_to_string(dhs->ctx, -1));
+                    fprintf(stderr, "timeout in %s() %f > %f\n", duk_to_string(dhs->ctx, -1), celapsed, maxtime);
                     duk_pop(dhs->ctx);
                     send500(req, "Timeout in Script");
                     return;
                 }
-                usleep(250);
+                usleep(1000);
             }
             /* reset to blocking mode */
             fcntl(finfo->child2par, F_SETFL, 0);
