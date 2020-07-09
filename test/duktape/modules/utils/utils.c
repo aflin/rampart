@@ -66,8 +66,44 @@ void read_ln()
     duk_destroy_heap(ctx);
 }
 
+void stat()
+{
+    duk_context *ctx = duk_create_heap_default();
+    duk_module_init(ctx);
+
+    const char *js =
+        "var utils = require('" UTILS_MODULE_PATH "');"
+        "stat = utils.stat('helloworld.txt');"
+        "stat";
+
+    duk_eval_string(ctx, js);
+
+    // size
+    duk_get_prop_string(ctx, -1, "size");
+    assert(duk_get_uint(ctx, -1) == 11);
+    duk_pop(ctx);
+
+    // is_file
+    duk_eval_string(ctx, "stat.is_file();");
+    assert(duk_get_boolean(ctx, -1));
+    duk_pop(ctx);
+
+    // mode
+    duk_get_prop_string(ctx, -1, "mode");
+    assert(duk_get_uint(ctx, -1) == 0100644);
+    duk_pop(ctx);
+
+    // directory
+    duk_eval_string(ctx, "stat = utils.stat('../utils');");
+    duk_eval_string(ctx, "stat.is_directory();");
+    assert(duk_get_boolean(ctx, -1));
+
+    duk_destroy_heap(ctx);
+}
+
 void test()
 {
     read_file();
     read_ln();
+    stat();
 }
