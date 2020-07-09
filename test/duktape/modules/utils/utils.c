@@ -120,6 +120,35 @@ void exec()
     duk_get_prop_string(ctx, -1, "timedOut");
     assert(duk_get_boolean(ctx, -1));
 
+    const char *js2 =
+        "pid = utils.exec({"
+        "   path: '/bin/sleep',"
+        "   args: ['sleep', '0'],"
+        "   background: true,"
+        "}).pid;";
+
+    // basic background mode
+    duk_eval_string(ctx, js2);
+    assert(duk_get_uint(ctx, -1) != 0);
+
+    duk_destroy_heap(ctx);
+}
+
+void kill()
+{
+    duk_context *ctx = duk_create_heap_default();
+    duk_module_init(ctx);
+    const char *js =
+        "var utils = require('" UTILS_MODULE_PATH "');"
+        "var pid = utils.exec({"
+        "   path: '/bin/sleep',"
+        "   args: ['sleep', '0.2'],"
+        "   background: true,"
+        "}).pid;"
+        "utils.kill(pid, 0); // will error out if not real process"
+        "utils.kill(pid, 9);";
+
+    duk_eval_string(ctx, js);
     duk_destroy_heap(ctx);
 }
 
@@ -129,4 +158,5 @@ void test()
     read_ln();
     stat();
     exec();
+    kill();
 }
