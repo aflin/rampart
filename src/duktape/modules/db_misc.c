@@ -1032,13 +1032,25 @@ static int rex (
     duk_push_int(ctx,rl->i);\
     duk_put_prop_string(ctx,-2,"expressionIndex");\
     duk_push_array(ctx);\
-    do\
-    {\
-        duk_push_lstring(ctx,sub->hit,(duk_size_t)sub->hitsize);\
-        duk_put_prop_index(ctx,-2,(int)sub->subExprIndex);\
-        if(sub==last) break;\
-        sub=sub->next;\
-    } while (1);\
+    if(type==TXrexSyntax_Rex){\
+        FFS *sub= rl->ilst[rl->i].ex->first;\
+        FFS *last=rl->ilst[rl->i].ex->last;\
+        do\
+        {\
+            duk_push_lstring(ctx,sub->hit,(duk_size_t)sub->hitsize);\
+            duk_put_prop_index(ctx,-2,(int)sub->subExprIndex);\
+            if(sub==last) break;\
+            sub=sub->next;\
+        } while (1);\
+    }else{\
+        int i=0,n=rl->ilst[rl->i].ex->re2NumCaptureGroups;\
+        const char **subh=rl->ilst[rl->i].ex->re2CaptureHits;\
+        size_t *ssize=rl->ilst[rl->i].ex->re2CaptureHitSizes;\
+        for (;i<n;i++){\
+            duk_push_lstring( ctx, subh[i], (duk_size_t)ssize[i] );\
+            duk_put_prop_index(ctx,-2,i);\
+        }\
+    }\
     duk_put_prop_string(ctx,-2,"submatches");\
 }while(0)
 
@@ -1051,8 +1063,6 @@ static int rex (
             p=getrlex(rl,str,end,CONTINUESEARCH) 
         ){
             int  psz;
-            FFS *sub= rl->ilst[rl->i].ex->first;
-            FFS *last=rl->ilst[rl->i].ex->last;
 
             p = rlexhit(rl);
             psz=rlexlen(rl);
@@ -1108,8 +1118,6 @@ static int rex (
             p=getrlex(rl,str,end,CONTINUESEARCH) 
         ){
             int  psz;
-            FFS *sub= rl->ilst[rl->i].ex->first;
-            FFS *last=rl->ilst[rl->i].ex->last;
 
             p = rlexhit(rl);
             psz=rlexlen(rl);

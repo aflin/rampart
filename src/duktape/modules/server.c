@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
+#include <sys/wait.h>
 #include "../core/duktape.h"
 #include "evhtp/evhtp.h"
 #include "../../rp.h"
