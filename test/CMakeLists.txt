@@ -1,3 +1,13 @@
+
+set(CMAKE_BUILD_TYPE Debug)
+
+set(SRC ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+include_directories(${SRC})
+
+# example test
+add_executable(simple_test simple_test.c)
+add_test(NAME simple COMMAND simple_test)
+
 set(TEST_FILES
 	"utils.js"
 	"ramis.js"

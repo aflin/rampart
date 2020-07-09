@@ -74,5 +74,6 @@ message("######   CONFIGURING RAMPART    ######")
 
 add_subdirectory(src)
 add_subdirectory(examples)
+enable_testing()
 add_subdirectory(test)
 
