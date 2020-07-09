@@ -101,9 +101,32 @@ void stat()
     duk_destroy_heap(ctx);
 }
 
+void exec()
+{
+    duk_context *ctx = duk_create_heap_default();
+    duk_module_init(ctx);
+
+    const char *js =
+        "var utils = require('" UTILS_MODULE_PATH "');"
+        "execRes = utils.exec({"
+        "   path: '/bin/sleep',"
+        "   args: ['sleep', '0.2'],"
+        "   timeout: 100000,"
+        "   killSignal: utils.signals.SIGKILL,"
+        "});";
+    duk_eval_string(ctx, js);
+
+    // tests path, args, timeout, killSignal
+    duk_get_prop_string(ctx, -1, "timedOut");
+    assert(duk_get_boolean(ctx, -1));
+
+    duk_destroy_heap(ctx);
+}
+
 void test()
 {
     read_file();
     read_ln();
     stat();
+    exec();
 }
