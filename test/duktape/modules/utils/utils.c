@@ -1,8 +1,11 @@
 #include "../../../runner.h"
+#include <sys/stat.h>
+#include <unistd.h>
 #include "duktape/core/duktape.h"
 #include "duktape/core/module.h"
 #define UTILS_MODULE_PATH "../../../../src/rputils"
-void read_file()
+
+void utils_read_file()
 {
     duk_context *ctx = duk_create_heap_default();
     duk_module_init(ctx);
@@ -39,7 +42,7 @@ void read_file()
     duk_destroy_heap(ctx);
 }
 
-void read_ln()
+void utils_readln()
 {
     duk_context *ctx = duk_create_heap_default();
     duk_module_init(ctx);
@@ -66,7 +69,7 @@ void read_ln()
     duk_destroy_heap(ctx);
 }
 
-void stat()
+void utils_stat()
 {
     duk_context *ctx = duk_create_heap_default();
     duk_module_init(ctx);
@@ -101,7 +104,7 @@ void stat()
     duk_destroy_heap(ctx);
 }
 
-void exec()
+void utils_exec()
 {
     duk_context *ctx = duk_create_heap_default();
     duk_module_init(ctx);
@@ -134,7 +137,7 @@ void exec()
     duk_destroy_heap(ctx);
 }
 
-void kill()
+void utils_kill()
 {
     duk_context *ctx = duk_create_heap_default();
     duk_module_init(ctx);
@@ -152,11 +155,62 @@ void kill()
     duk_destroy_heap(ctx);
 }
 
+void utils_mkdir()
+{
+    duk_context *ctx = duk_create_heap_default();
+    duk_module_init(ctx);
+    const char *js =
+        "var utils = require('" UTILS_MODULE_PATH "');"
+        "utils.mkdir('this/is/a/test');";
+    duk_eval_string(ctx, js);
+
+    // should make the directory
+    struct stat dir_stat;
+    stat("this/is/a/test", &dir_stat);
+    assert(S_ISDIR(dir_stat.st_mode));
+
+    rmdir("this/is/a/test");
+    rmdir("this/is/a");
+    rmdir("this/is");
+    rmdir("this");
+    duk_destroy_heap(ctx);
+}
+
+void utils_copy_file()
+{
+    duk_context *ctx = duk_create_heap_default();
+    duk_module_init(ctx);
+    const char *js =
+        "utils = require('" UTILS_MODULE_PATH "');"
+        "utils.copyFile({ src: 'helloworld.txt', dest: 'foo.txt' });";
+
+    duk_eval_string(ctx, js);
+    // check to make sure files have the same content
+    struct stat loremipsum_stat;
+    struct stat helloworld_stat;
+    struct stat foo_stat;
+    stat("loremipsum.txt", &loremipsum_stat);
+    stat("helloworld.txt", &helloworld_stat);
+    stat("foo.txt", &foo_stat);
+
+    // basic usage
+    assert(foo_stat.st_size == helloworld_stat.st_size);
+    duk_eval_string(ctx, "utils.copyFile({ src: 'loremipsum.txt', dest: 'foo.txt', overwrite: true });");
+
+    // override
+    stat("foo.txt", &foo_stat);
+    assert(foo_stat.st_size == loremipsum_stat.st_size);
+
+    remove("foo.txt");
+    duk_destroy_heap(ctx);
+}
+
 void test()
 {
-    read_file();
-    read_ln();
-    stat();
-    exec();
-    kill();
+    utils_read_file();
+    utils_readln();
+    utils_stat();
+    utils_exec();
+    utils_kill();
+    utils_mkdir();
 }
