@@ -12,7 +12,6 @@ add_test(NAME simple COMMAND simple_test)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/duktape/modules/utils)
 
 set(TEST_FILES
-	"utils.js"
 	"ramis.js"
 	"crypto.js"
 	"dbfunc.js"
