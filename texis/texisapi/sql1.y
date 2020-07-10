@@ -70,7 +70,7 @@ static const char	TXpasswordNonStringLiteralNotSupported[] =
 	} while (0)
 
 #ifdef EPI_ENABLE_SQL_HEX_CONSTANTS
-#  define CHECK_HEX_CONSTANTS_ENABLED()	void
+#  define CHECK_HEX_CONSTANTS_ENABLED()	((void)yytext)
 #else /* !EPI_ENABLE_SQL_HEX_CONSTANTS */
 static const char       TXnoHexConstants[] =
 	"Syntax error: Hexadecimal constants not supported yet";
@@ -186,7 +186,10 @@ int stxalrevoke(int f) {int o=txalrevoke; txalrevoke=f; return(o);}
 %type <strval>	cursor opt_for_each opt_table_type stringlit atom_commalist
 %type <strval>	create_table_as_head subset_predicate_head
 %type <strval>	opt_ign_case query_exp query_term opt_with_check_option
-%type <strval>	procedure module target target_commalist alter_list
+/*
+%type <strval>	procedure module
+*/
+%type <strval>  target target_commalist alter_list
 %type <strval>	index_or_all opt_on_table alter_index_action_options
 %type <strval>	create_index_option
 %type <strval>	create_index_option_list opt_create_index_options
@@ -2688,12 +2691,6 @@ column_ref:
                $$ = TXstrcat2("$", $2);
                free($2);
         }
-	|	cname '.' cname
-		{
-			$$ = TXstrcat3($1, ".", $3);
-			free($1);
-			free($3);
-		}
 	|	cname '.' '$' NAME
 		{
 			$$ = TXstrcat3($1, ".$", yytext);
@@ -2918,8 +2915,10 @@ column:		cname
 cursor:		cname
 	;
 
+/*
 module:		cname
 	;
+*/
 
 parameter:
 		'?'
@@ -2938,8 +2937,10 @@ parameter:
         }
 	;
 
+/*
 procedure:	cname
 	;
+*/
 
 range_variable:	cname
 	;

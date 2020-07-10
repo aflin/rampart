@@ -19,7 +19,6 @@ if (
 
 execute_process(
 	COMMAND "mkdir" "-p" "${CMAKE_BINARY_DIR}/texis"
-	COMMAND_ECHO STDOUT
 	RESULT_VARIABLE ret
 )
 if(NOT ret EQUAL 0)
@@ -30,8 +29,7 @@ message("######      BUILDING TEXIS      ######")
 
 execute_process(
 	WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/texis"
-	COMMAND "cmake" "../../texis"
-	COMMAND_ECHO STDOUT
+	COMMAND "cmake" "-D" "GENERATE_PIC=1" "../../texis"
 	RESULT_VARIABLE ret
 )
 if(NOT ret EQUAL 0)
@@ -41,7 +39,6 @@ endif()
 execute_process(
 	WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/texis"
 	COMMAND "make"
-	COMMAND_ECHO STDOUT
 	RESULT_VARIABLE ret
 )
 
@@ -52,7 +49,6 @@ endif()
 execute_process(
 	WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/texis"
 	COMMAND "make" "test"
-	COMMAND_ECHO STDOUT
 	RESULT_VARIABLE ret
 )
 
@@ -74,6 +70,5 @@ message("######   CONFIGURING RAMPART    ######")
 
 add_subdirectory(src)
 add_subdirectory(examples)
-enable_testing()
 add_subdirectory(test)
 

@@ -146,7 +146,7 @@ static DB_HANDLE *new_handle(const char *d, const char *q)
 {
     DB_HANDLE *h = NULL;
     REMALLOC(h, sizeof(DB_HANDLE));
-    h->tx = newsql((char *)(d));
+    h->tx = TEXIS_OPEN((char *)(d));
     if (h->tx == NULL)
     {
         free(h);
@@ -293,6 +293,25 @@ duk_ret_t duk_rp_sql_close(duk_context *ctx)
     }
     return 0;
 }
+
+#ifdef USEHANDLECACHE
+#define throw_tx_error(ctx,pref) do{\
+    char pbuf[2048];\
+    duk_rp_log_tx_error(ctx, pbuf);\
+    duk_push_sprintf(ctx, "%s: %s",pref,pbuf);\
+    duk_throw(ctx);\
+}while(0)
+#else
+#define throw_tx_error(ctx,pref) do{\
+    char pbuf[2048];\
+    duk_rp_log_tx_error(ctx, pbuf);\
+    duk_push_sprintf(ctx, "%s: %s",pref,pbuf);\
+    if(tx) tx = TEXIS_CLOSE(tx);\
+    duk_throw(ctx);\
+}while(0)
+#endif
+
+
 
 #define msgbufsz 2048
 #define msgtobuf(buf)                \
@@ -944,7 +963,6 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
     DB_HANDLE *hcache = NULL;
 #endif
     const char *db;
-    char pbuf[2048];
 
     struct sigaction sa = {0};
     sa.sa_flags = 0; //SA_NODEFER;
@@ -979,15 +997,11 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
     hcache = get_handle(db, q->sql);
     tx = hcache->tx;
 #else
-    tx = newsql((char *)db);
+    tx = TEXIS_OPEN((char *)db);
 #endif
     if (!tx)
-    {
-        duk_rp_log_tx_error(ctx, pbuf);
-        duk_push_int(ctx, -1);
-        duk_push_string(ctx, pbuf);
-        duk_throw(ctx);
-    }
+        throw_tx_error(ctx,"open sql");
+
     /* clear the sql.lastErr string */
     duk_rp_log_error(ctx, "");
 
@@ -995,14 +1009,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
     //setprop(ddic, "likeprows", "2000");
 
     if (!TEXIS_PREP(tx, (char *)q->sql))
-    {
-        duk_rp_log_tx_error(ctx, pbuf);
-        duk_push_string(ctx, pbuf);
-#ifndef USEHANDLECACHE
-        tx = TEXIS_CLOSE(tx);
-#endif
-        duk_throw(ctx);
-    }
+        throw_tx_error(ctx,"sql prep");
 
     /* sql parameters are the parameters corresponding to "?" in a sql statement
      and are provide by passing array in JS call parameters */
@@ -1011,14 +1018,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
     if (q->arryi != -1)
     {
         if (!duk_rp_add_parameters(ctx, tx, q->arryi))
-        {
-            duk_rp_log_tx_error(ctx, pbuf);
-            duk_push_string(ctx, pbuf);
-#ifndef USEHANDLECACHE
-            tx = TEXIS_CLOSE(tx);
-#endif
-            duk_throw(ctx);
-        }
+            throw_tx_error(ctx,"sql add parameters");
     }
     else
     {
@@ -1026,14 +1026,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
     }
 
     if (!TEXIS_EXEC(tx))
-    {
-        duk_rp_log_tx_error(ctx, pbuf);
-        duk_push_string(ctx, pbuf);
-#ifndef USEHANDLECACHE
-        tx = TEXIS_CLOSE(tx);
-#endif
-        duk_throw(ctx);
-    }
+        throw_tx_error(ctx,"sql exec");
 
     /* skip rows using texisapi */
     if (q->skip)
@@ -1105,14 +1098,79 @@ duk_ret_t duk_rp_sql_eval(duk_context *ctx)
     return (duk_rp_sql_exe(ctx));
 }
 
-TEXIS *newsql(char *db)
+duk_ret_t duk_texis_set(duk_context *ctx)
 {
+    LPSTMT lpstmt;
+    DDIC *ddic;
     TEXIS *tx;
+    const char *db,*val;
+    DB_HANDLE *hcache = NULL;
 
-    tx = TEXIS_OPEN(db);
+    duk_push_this(ctx);
 
-    return tx;
+    if (!duk_get_prop_string(ctx, -1, "db"))
+    {
+        duk_push_string(ctx, "no database is open");
+        duk_throw(ctx);
+    }
+    db = duk_get_string(ctx, -1);
+    duk_pop_2(ctx);
+
+#ifdef USEHANDLECACHE
+    hcache = get_handle(db, "settings");
+    tx = hcache->tx;
+#else
+    tx = TEXIS_OPEN((char *)db);
+#endif
+
+    if(!tx)
+        throw_tx_error(ctx,"open sql");
+
+    duk_rp_log_error(ctx, "");
+
+    lpstmt = tx->hstmt;
+    if(lpstmt && lpstmt->dbc && lpstmt->dbc->ddic)
+            ddic = lpstmt->dbc->ddic;
+    else
+        throw_tx_error(ctx,"open sql");
+
+#define throwinvalidprop(s) do{\
+    duk_push_sprintf(ctx,"invalid option '%s'",(s));\
+    duk_throw(ctx);\
+} while(0)
+
+    duk_enum(ctx, -1, 0);
+    while (duk_next(ctx, -1, 1))
+    {
+        if(!(duk_is_string(ctx,-2)))
+            throwinvalidprop( duk_to_string(ctx,-2) );
+        if(duk_is_number(ctx,-1))
+            duk_to_string(ctx,-1);
+        if(duk_is_boolean(ctx,-1))
+        {
+            if(duk_get_boolean(ctx,-1))
+                val="on";
+            else
+                val="off";
+        }
+        else
+        {
+            if(!(duk_is_string(ctx,-1)))
+                throwinvalidprop( duk_to_string(ctx,-1) );
+            val=duk_get_string(ctx,-1);
+        }
+
+        if(setprop(ddic, (char*)duk_get_string(ctx,-2), (char*)val )==-1)
+            throw_tx_error(ctx,"sql set");
+
+        duk_pop_2(ctx);
+    }
+#ifndef USEHANDLECACHE
+    tx=TEXIS_CLOSE(tx);
+#endif
+    return 0;
 }
+
 
 /* **************************************************
    Sql("/database/path") constructor:
@@ -1224,19 +1282,23 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_object(ctx); /* -> stack: [ {}, Sql protoObj ] */
 
     /* Set Sql.prototype.exec. */
-    duk_push_c_function(ctx, duk_rp_sql_exe, 4 /*nargs*/); /* [ {}, Sql proto fn_exe ] */
-    duk_put_prop_string(ctx, -2, "exec");                  /* [ {}, Sql protoObj-->[exe=fn_exe] ] */
+    duk_push_c_function(ctx, duk_rp_sql_exe, 4 /*nargs*/);   /* [ {}, Sql protoObj fn_exe ] */
+    duk_put_prop_string(ctx, -2, "exec");                    /* [ {}, Sql protoObj-->{exe:fn_exe} ] */
 
     /* set Sql.prototype.eval */
-    duk_push_c_function(ctx, duk_rp_sql_eval, 4 /*nargs*/); /*[ {}, Sql proto-->[exe=fn_exe] fn_eval ]*/
-    duk_put_prop_string(ctx, -2, "eval");                   /*[ {}, Sql protoObj-->[exe=fn_exe,eval=fn_eval] ]*/
+    duk_push_c_function(ctx, duk_rp_sql_eval, 4 /*nargs*/);  /*[ {}, Sql protoObj-->{exe:fn_exe} fn_eval ]*/
+    duk_put_prop_string(ctx, -2, "eval");                    /*[ {}, Sql protoObj-->{exe:fn_exe,eval:fn_eval} ]*/
 
     /* set Sql.prototype.close */
-    duk_push_c_function(ctx, duk_rp_sql_close, 0 /*nargs*/); /* [ {}, Sql proto-->[exe=fn_exe] fn_close ] */
-    duk_put_prop_string(ctx, -2, "close");                   /*[ {}, Sql protoObj-->[exe=fn_exe,query=fn_exe,close=fn_close] ] */
+    duk_push_c_function(ctx, duk_rp_sql_close, 0 /*nargs*/); /* [ {}, Sql protoObj-->{exe:fn_exe,...} fn_close ] */
+    duk_put_prop_string(ctx, -2, "close");                   /* [ {}, Sql protoObj-->{exe:fn_exe,query:fn_exe,close:fn_close} ] */
+
+    /* set Sql.prototype.set */
+    duk_push_c_function(ctx, duk_texis_set, 1 /*nargs*/);   /* [ {}, Sql protoObj-->{exe:fn_exe,...} fn_set ] */
+    duk_put_prop_string(ctx, -2, "set");                    /* [ {}, Sql protoObj-->{exe:fn_exe,query:fn_exe,close:fn_close,set:fn_set} ] */
 
     /* Set Sql.prototype = protoObj */
-    duk_put_prop_string(ctx, -2, "prototype"); /* -> stack: [ {}, Sql-->[prototype-->[exe=fn_exe,...]] ] */
+    duk_put_prop_string(ctx, -2, "prototype"); /* -> stack: [ {}, Sql-->[prototype-->{exe=fn_exe,...}] ] */
     duk_put_prop_string(ctx, -2, "init");      /* [ {init()} ] */
 
     /* for single_user */

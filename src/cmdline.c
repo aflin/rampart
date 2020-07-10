@@ -225,6 +225,6 @@ int main(int argc, char *argv[])
             printf("%s\n", duk_safe_to_stacktrace(ctx, -1));
         }
     }
-
+    duk_destroy_heap(ctx);
     return 0;
 }

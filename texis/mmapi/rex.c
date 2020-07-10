@@ -207,7 +207,7 @@ static const SIGNAME	Sigs[] =
   { EXCEPTION_NONCONTINUABLE_EXCEPTION, "NONCONTINUABLE_EXCEPTION" },
   { EXCEPTION_PRIV_INSTRUCTION,         "PRIV_INSTRUCTION" },
   { EXCEPTION_SINGLE_STEP,              "SINGLE_STEP" },
-  { EXCEPTION_STACK_OVERFLOW,           "STACK_OVERFLOW" },  
+  { EXCEPTION_STACK_OVERFLOW,           "STACK_OVERFLOW" },
 #endif /* _WIN32 */
   { EPI_SIGHUP,         "SIGHUP" },
   { EPI_SIGINT,         "SIGINT" },
@@ -343,7 +343,11 @@ __try
 
       d += snprintf(d, e - d, " UID %d PID %d", (int)sigInfo->si_uid,
                     (int)sigInfo->si_pid);
-      if (d >= e) strcpy(e - 4, "...");
+      if (d >= e)
+      {
+        char *TruncationPoint = pidUidBuf + sizeof(pidUidBuf) - 4;
+        strcpy(TruncationPoint, "...");
+      }
       from = " from";
       by = " by";
     }
@@ -1977,7 +1981,7 @@ register FFS *fs;
     fs->hit=fs->end; /* added  11/15/89 */
     if(fs->patsize==0) /* pbr 5/14/97 added buffer anchors */
       return(fs->start==fs->end ? fs->from : -2);
-    
+
 #ifdef _WIN32     /* MAW 07-24-92 - windows far ptrs roll over on dec */
     for(p=fs->end,p-=fs->patsize,s=fs->start;
         fs->n<fs->to && p>=s;
@@ -2229,11 +2233,7 @@ TXrexGetRe2(FFS *fs)
  */
 {
   static const char     fn[] = "TXrexGetRe2";
-#  if EPI_RE2_DATE > 2011-01-18
   typedef cre2_string_t         TXcre2String;
-#  else /* EPI_RE2_DATE <= 2011-01-18 */
-  typedef struct string_piece   TXcre2String;
-#  endif /* EPI_RE2_DATE <= 2011-01-18 */
   TXcre2String          matchesTmp[16], *matches = matchesTmp;
   int                   i, re2BufLen;
 
@@ -2320,7 +2320,7 @@ TXPMOP operation;
  if (noEmpties < 0)
    noEmpties = (getenv("TX_NO_REDUNDANT_EMPTY_REX_HITS") != NULL);
 #endif /* !TX_NO_REDUNDANT_EMPTY_REX_HITS */
- 
+
  if (ffs->patsize == 0 && !ffs->re2)    /* pbr 5/14/97 added buffer anchors */
     {
      if(operation==CONTINUESEARCH || operation==BCONTINUESEARCH)
@@ -2336,7 +2336,7 @@ TXPMOP operation;
         }
      else
      if (ffs->prev!=NULL)
-        { 
+        {
          ffs->hitsize=0;
          backwards=ffs->backwards=1;
          ffs->hit=end;
@@ -2503,11 +2503,7 @@ TXrexOpenRe2(const char *expr)
   static const char     fn[] = "TXrexOpenRe2";
   FFS                   *fs = NULL;
 #ifdef EPI_BUILD_RE2
-#  if EPI_RE2_DATE > 2011-01-18
   cre2_options_t        *opt = NULL;
-#  else /* EPI_RE2_DATE <= 2011-01-18 */
-  cre2_options          *opt = NULL;
-#  endif /* EPI_RE2_DATE <= 2011-01-18 */
 
   opt = cre2_opt_new();
   if (!opt)
@@ -2515,11 +2511,7 @@ TXrexOpenRe2(const char *expr)
       putmsg(MERR, fn, "RE2: Cannot create options object");
       goto err;
     }
-#  if EPI_RE2_DATE > 2011-01-18
   cre2_opt_set_log_errors(opt, 0);              /* no fprintf(stderr) */
-#  else /* EPI_RE2_DATE <= 2011-01-18 */
-  cre2_opt_log_errors(opt, 0);                  /* no fprintf(stderr) */
-#  endif /* EPI_RE2_DATE <= 2011-01-18 */
   fs = (FFS *)calloc(1, sizeof(FFS));
   if (!fs)
     {
@@ -2642,7 +2634,7 @@ TXrexSyntax     syntax;
              putmsg(MERR + UGE, __FUNCTION__,
                    "REX: `%c%c%s%c%c' is only valid with other expressions"
 #ifdef TEST
-                   " (i.e. REXLEX)" 
+                   " (i.e. REXLEX)"
 #endif /* TEST */
                     ,
                     EESC, OPEN_TOKEN, TX_REX_TOKEN_NO_MATCH,
@@ -3888,7 +3880,7 @@ if(xlate)                                        /* only do a translate */
      ex=closerex(ex);
      retcd = TXEXIT_INCORRECTUSAGE; goto EXIT;
     }
-#endif 
+#endif
  allocsrchbuf(); /* added this for shrinking memory. MAW 06-09-93 moved it to after openrex() */
 
  if(srchbuf==BPNULL)
@@ -3985,4 +3977,3 @@ if(xlate)                                        /* only do a translate */
 /************************************************************************/
 #endif /* TEST */
 /************************************************************************/
-

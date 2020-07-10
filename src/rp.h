@@ -21,7 +21,7 @@ extern "C"
 #define USEHANDLECACHE    /* cache texis handles on a per db/query basis */
                           /* end settings */
 #define RESMAX_DEFAULT 10 /* default number of sql rows returned if max is not set */
-#define PUTMSG_STDERR     /* print texis error messages to stderr */
+//#define PUTMSG_STDERR     /* print texis error messages to stderr */
 /* end settings */
 
 /* this should probably just exit */
@@ -47,7 +47,6 @@ extern "C"
 #endif
 
     extern void rp_register_functions(duk_context *ctx);
-    extern TEXIS *newsql(char *db);
 
 #define QUERY_STRUCT struct rp_query_struct
 

@@ -15,10 +15,12 @@ IF(Threads_FOUND)
 	SET(EPI_HAVE_PTHREADS Threads_FOUND)
 	CHECK_SYMBOL_EXISTS(PTHREAD_MUTEX_INITIALIZER	pthread.h	HAVE_PTHREAD_MUTEX_INITIALIZER)
 ENDIF(Threads_FOUND)
+if(HAVE_RE2)
 target_link_libraries(re2 PUBLIC Threads::Threads)
+endif(HAVE_RE2)
 #
 
-add_executable(rex rex.c)
+add_executable(rex ${CMAKE_SOURCE_DIR}/mmapi/rex.c)
 target_compile_definitions(rex PRIVATE TEST=1)
 set(REX_EXE  ${CMAKE_CURRENT_BINARY_DIR}/rex PARENT_SCOPE)
 

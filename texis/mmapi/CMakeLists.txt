@@ -3,7 +3,6 @@ add_library(mmapi3
 	api3.c
 	api3i.c
 	cp.c
-	${CMAKE_SOURCE_DIR}/thirdparty/cre2/src/cre2.cpp
 	dupapi.c
 	eqv.c
 	eqvlst.c
@@ -32,13 +31,16 @@ add_library(mmapi3
 	xpm.c
 )
 
+if(HAVE_RE2)
+	target_sources(mmapi3 PRIVATE ${CMAKE_SOURCE_DIR}/thirdparty/cre2/src/cre2.cpp)
+	target_link_libraries(mmapi3 PUBLIC re2)
+endif(HAVE_RE2)
 if(NO_RAM_EQUIVS)
 	add_definitions(-DNO_RAM_EQUIVS)
 else(NO_RAM_EQUIVS)
 	target_sources(mmapi3 PRIVATE equivs.c)
 endif(NO_RAM_EQUIVS)
 
-target_link_libraries(mmapi3 PUBLIC re2)
 #target_include_directories(mmapi3, PUBLIC, $(CMAKE_CURRENT_SOURCE_DIR))
 #
 # Install Rules

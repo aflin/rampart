@@ -31,10 +31,6 @@
 ///////////////////////////////////////////////////////////////////////////////
 // FROM: https://github.com/mpaland/printf
 // MODIFIED BY Aaron Flin for use in duktape
-#define printstack(ctx)                       \
-    duk_push_context_dump((ctx));             \
-    printf("%s\n", duk_to_string((ctx), -1)); \
-    duk_pop((ctx));
 
 #include <stdbool.h>
 #include <stdint.h>

@@ -10,13 +10,17 @@ set(NO_RAM_EQUIVS OFF CACHE BOOL "Disable Builtin Thesaurus")
 set(TEST_ATOMIC_FUNCS OFF CACHE BOOL "Test Thread Safe Atomic Functions")
 set(HAVE_MMAP ON CACHE BOOL "Use mmap where possible")
 set(LARGE_FILES ON CACHE BOOL "Support large files")
+set(HAVE_RE2 ON CACHE BOOL "Include RE2 Support")
+set(GENERATE_PIC OFF CACHE BOOL "Generate Position Independent Code (-fPIC)")
 
 
 add_definitions(-D_XOPEN_SOURCE -D_GNU_SOURCE)
 if(LARGE_FILES)
   add_definitions(-D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -D_FILE_OFFSET_BITS=64)
 endif(LARGE_FILES)
-add_compile_options(-fPIC)
+if(GENERATE_PIC)
+  add_compile_options(-fPIC)
+endif(GENERATE_PIC)
 #
 # include CPack to make install packages
 #   will need conf
@@ -33,10 +37,12 @@ include(GNUInstallDirs)
 
 include_directories(include)
 include_directories(${CMAKE_BINARY_DIR})
+if(HAVE_RE2)
 include_directories(thirdparty/re2)
 include_directories(thirdparty/cre2/src)
 
 add_subdirectory(thirdparty/re2)
+endif(HAVE_RE2)
 add_subdirectory(bootstrap)
 add_subdirectory(mmapi)
 add_subdirectory(texisapi)

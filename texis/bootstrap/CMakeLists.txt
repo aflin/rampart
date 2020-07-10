@@ -128,10 +128,17 @@ CHECK_TYPE_SIZE("__int64" __INT64_T)
 IF(HAVE___INT64_T)
 		SET(EPI_HAVE___INT64 HAVE___INT64_T)
 ENDIF(HAVE___INT64_T)
-CHECK_TYPE_SIZE("__float128" __FLOAT128)
-IF(HAVE___FLOAT128)
-		SET(EPI_HAVE___FLOAT128 EPI_HAVE___FLOAT128)
-ENDIF(HAVE___FLOAT128)
+#
+# __FLOAT128 Support is currently incomplete and experimental
+# Force a variable to be set to check for and compile
+#
+IF(WANT_FLOAT128)
+	CHECK_TYPE_SIZE("__float128" __FLOAT128)
+	IF(HAVE___FLOAT128)
+			CHECK_C_SOURCE_COMPILES("#include <math.h>\n int main() { __float128 g; return isinf(g);}" EPI_HAVE___FLOAT128)
+#			SET(EPI_HAVE___FLOAT128 EPI_HAVE___FLOAT128)
+	ENDIF(HAVE___FLOAT128)
+ENDIF(WANT_FLOAT128)
 CHECK_TYPE_SIZE("__uint64" __UINT64_T)
 IF(HAVE___UINT64_T)
 		SET(EPI_HAVE___UINT64E_T HAVE___UINT64_T)
