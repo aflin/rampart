@@ -187,6 +187,9 @@ void utils_copy_file()
 {
     duk_context *ctx = duk_create_heap_default();
     duk_module_init(ctx);
+
+    remove("foo.txt");
+
     const char *js =
         "utils = require('" UTILS_MODULE_PATH "');"
         "utils.copyFile({ src: 'helloworld.txt', dest: 'foo.txt' });";
@@ -258,6 +261,10 @@ void utils_rmdir()
     assert(stat("this/is", &dir_stat) == -1);
     assert(stat("this", &dir_stat) == -1);
 
+    rmdir("this/is/a/test");
+    rmdir("this/is/a");
+    rmdir("this/is");
+    rmdir("this");
     duk_destroy_heap(ctx);
 }
 
@@ -287,6 +294,7 @@ void utils_touch()
         "utils = require('" UTILS_MODULE_PATH "');"
         "utils.touch({ path: 'sample.txt' });";
 
+    remove("sample.txt");
     duk_eval_string(ctx, js);
     // basic usage
     struct stat sample_stat;
@@ -334,6 +342,81 @@ void utils_touch()
     duk_destroy_heap(ctx);
 }
 
+void utils_link()
+{
+    duk_context *ctx = duk_create_heap_default();
+    duk_module_init(ctx);
+
+    remove("helloworld-symlink.txt");
+    remove("helloworld-hardlink.txt");
+
+    const char *js =
+        "utils = require('" UTILS_MODULE_PATH "');"
+        "utils.link({ src: 'helloworld.txt', target: 'helloworld-symlink.txt', symbolic: true });";
+
+    struct stat helloworld_stat;
+    stat("helloworld.txt", &helloworld_stat);
+
+    // symbolic link
+    duk_eval_string(ctx, js);
+    struct stat link_stat;
+    lstat("helloworld-symlink.txt", &link_stat);
+    assert(S_ISLNK(link_stat.st_mode));
+    assert(link_stat.st_ino != helloworld_stat.st_ino);
+
+    // hard link
+    duk_eval_string(ctx, "utils.link({ src: 'helloworld-symlink.txt', target: 'helloworld-hardlink.txt' });");
+    lstat("helloworld-hardlink.txt", &link_stat);
+    assert(S_ISREG(link_stat.st_mode));
+    assert(link_stat.st_ino == helloworld_stat.st_ino);
+
+    remove("helloworld-symlink.txt");
+    remove("helloworld-hardlink.txt");
+    duk_destroy_heap(ctx);
+}
+
+void utils_rename()
+{
+    duk_context *ctx = duk_create_heap_default();
+    duk_module_init(ctx);
+
+    const char *js =
+        "utils = require('" UTILS_MODULE_PATH "');"
+        "utils.rename('helloworld-2.txt', 'helloworld-3.txt');";
+
+    remove("helloworld-2.txt");
+    symlink("helloworld.txt", "helloworld-2.txt");
+
+    duk_eval_string(ctx, js);
+
+    struct stat helloworld_3_stat;
+    stat("helloworld-3.txt", &helloworld_3_stat);
+    assert(S_ISREG(helloworld_3_stat.st_mode));
+
+    remove("helloworld-2.txt");
+    remove("helloworld-3.txt");
+    duk_destroy_heap(ctx);
+}
+
+void utils_delete()
+{
+    duk_context *ctx = duk_create_heap_default();
+    duk_module_init(ctx);
+
+    const char *js =
+        "utils = require('" UTILS_MODULE_PATH "');"
+        "utils.delete('helloworld-2.txt');";
+
+    symlink("helloworld.txt", "helloworld-2.txt");
+
+    duk_eval_string(ctx, js);
+    struct stat helloworld_2_stat;
+    assert(stat("helloworld-2.txt", &helloworld_2_stat) != 0);
+
+    remove("helloworld-2.txt");
+    duk_destroy_heap(ctx);
+}
+
 void test()
 {
     utils_read_file();
@@ -346,4 +429,8 @@ void test()
     utils_rmdir();
     utils_chmod();
     utils_touch();
+    utils_link();
+    utils_rename();
+    utils_delete();
+    // TODO: Find a way to test chown
 }
