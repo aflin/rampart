@@ -159,6 +159,12 @@ void utils_mkdir()
 {
     duk_context *ctx = duk_create_heap_default();
     duk_module_init(ctx);
+
+    rmdir("this/is/a/test");
+    rmdir("this/is/a");
+    rmdir("this/is");
+    rmdir("this");
+
     const char *js =
         "var utils = require('" UTILS_MODULE_PATH "');"
         "utils.mkdir('this/is/a/test');";
@@ -205,6 +211,73 @@ void utils_copy_file()
     duk_destroy_heap(ctx);
 }
 
+void utils_readdir()
+{
+    duk_context *ctx = duk_create_heap_default();
+    duk_module_init(ctx);
+    const char *js =
+        "var utils = require('" UTILS_MODULE_PATH "');"
+        "utils.readdir('.').filter(function(file) { return file == 'helloworld.txt'});";
+
+    duk_eval_string(ctx, js);
+
+    // should find 'helloworld.txt'
+    assert(duk_get_length(ctx, -1) == 1);
+
+    duk_destroy_heap(ctx);
+}
+
+void utils_rmdir()
+{
+    duk_context *ctx = duk_create_heap_default();
+    duk_module_init(ctx);
+
+    mkdir("this", 0777);
+    mkdir("this/is", 0777);
+    mkdir("this/is/a", 0777);
+    mkdir("this/is/a/test", 0777);
+
+    const char *js =
+        "utils = require('" UTILS_MODULE_PATH "');"
+        "utils.rmdir('this/is/a/test');";
+
+    duk_eval_string(ctx, js);
+
+    struct stat dir_stat;
+    // should delete non-recursively
+    assert(stat("this/is/a/test", &dir_stat) == -1);
+
+    stat("this/is/a", &dir_stat);
+    assert(S_ISDIR(dir_stat.st_mode));
+
+    duk_eval_string(ctx, "utils.rmdir('this/is/a', true);");
+
+    assert(stat("this/is/a/test", &dir_stat) == -1);
+    assert(stat("this/is/a", &dir_stat) == -1);
+    assert(stat("this/is", &dir_stat) == -1);
+    assert(stat("this", &dir_stat) == -1);
+
+    duk_destroy_heap(ctx);
+}
+
+void utils_chmod()
+{
+    duk_context *ctx = duk_create_heap_default();
+    duk_module_init(ctx);
+    const char *js =
+        "var utils = require('" UTILS_MODULE_PATH "');"
+        "utils.chmod('helloworld.txt', 0o777);";
+
+    duk_eval_string(ctx, js);
+
+    struct stat helloworld_stat;
+    stat("helloworld.txt", &helloworld_stat);
+
+    assert(helloworld_stat.st_mode == 0100777);
+    chmod("helloworld.txt", 0644);
+    duk_destroy_heap(ctx);
+}
+
 void test()
 {
     utils_read_file();
@@ -213,4 +286,7 @@ void test()
     utils_exec();
     utils_kill();
     utils_mkdir();
+    utils_readdir();
+    utils_rmdir();
+    utils_chmod();
 }
