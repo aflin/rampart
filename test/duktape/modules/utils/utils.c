@@ -104,6 +104,7 @@ void utils_stat()
     duk_destroy_heap(ctx);
 }
 
+// TODO: More tests
 void utils_exec()
 {
     duk_context *ctx = duk_create_heap_default();
@@ -278,6 +279,61 @@ void utils_chmod()
     duk_destroy_heap(ctx);
 }
 
+void utils_touch()
+{
+    duk_context *ctx = duk_create_heap_default();
+    duk_module_init(ctx);
+    const char *js =
+        "utils = require('" UTILS_MODULE_PATH "');"
+        "utils.touch({ path: 'sample.txt' });";
+
+    duk_eval_string(ctx, js);
+    // basic usage
+    struct stat sample_stat;
+    stat("sample.txt", &sample_stat);
+    assert(S_ISREG(sample_stat.st_mode));
+
+    // updates atime and mtime
+    // sleep first
+    duk_eval_string(ctx, "utils.touch({ path: 'sample.txt', setaccess: true, setmodify: true });");
+    time_t atime = sample_stat.st_atime;
+    time_t mtime = sample_stat.st_mtime;
+
+    stat("sample.txt", &sample_stat);
+    assert(sample_stat.st_atime >= atime);
+    assert(sample_stat.st_mtime >= mtime);
+
+    // no create
+    duk_eval_string(ctx, "utils.touch({ path: 'sample2.txt', nocreate: true });");
+    struct stat tmp_stat;
+    assert(stat("sample2.txt", &tmp_stat) != 0);
+
+    // reference
+    duk_eval_string(ctx, "utils.touch({ path: 'sample.txt', reference: 'helloworld.txt' });");
+    struct stat helloworld_stat;
+    stat("helloworld.txt", &helloworld_stat);
+    stat("sample.txt", &sample_stat);
+    assert(helloworld_stat.st_mtime == sample_stat.st_mtime);
+    assert(helloworld_stat.st_atime == sample_stat.st_atime);
+
+    // don't set access
+    duk_eval_string(ctx, "utils.touch({ path: 'sample.txt', setaccess: false });");
+    stat("sample.txt", &sample_stat);
+    assert(helloworld_stat.st_atime == sample_stat.st_atime);
+
+    // reset to helloworld reference
+    duk_eval_string(ctx, "utils.touch({ path: 'sample.txt', reference: 'helloworld.txt' });");
+    stat("sample.txt", &sample_stat);
+
+    // don't set modify
+    duk_eval_string(ctx, "utils.touch({ path: 'sample.txt', setmodify: false });");
+    stat("sample.txt", &sample_stat);
+    assert(helloworld_stat.st_mtime == sample_stat.st_mtime);
+
+    remove("sample.txt");
+    duk_destroy_heap(ctx);
+}
+
 void test()
 {
     utils_read_file();
@@ -289,4 +345,5 @@ void test()
     utils_readdir();
     utils_rmdir();
     utils_chmod();
+    utils_touch();
 }
