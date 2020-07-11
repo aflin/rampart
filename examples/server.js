@@ -23,7 +23,7 @@ var sql= new Sql.init("./testdb",true); /* true means create the database if it 
 
 /* check if our quicktest table exists.  If not, make it */
 var res=sql.exec("select * from SYSTABLES where NAME='quicktest'");
-if(res.length==0) {
+if(res.results.length==0) {
     res=sql.exec("create table quicktest ( I int, Text varchar(16) );");
     sql.exec("insert into quicktest values(2,'just a test');");
     sql.exec("create index quicktest_I_x on quicktest(I);");
@@ -31,7 +31,7 @@ if(res.length==0) {
 
 /* same for inserttest table.  And populate the table with 2000 rows */
 res=sql.exec("select * from SYSTABLES where NAME='inserttest'");
-if(res.length==0) {
+if(res.results.length==0) {
     sql.exec("create table inserttest ( I int, D double, Text varchar(16) );");
     sql.exec("create index inserttest_I_x on inserttest(I);");
     for (var i=0;i<200;i++)
@@ -61,7 +61,7 @@ Rows are returned as one of 4 different return types:
     novars  -- returns empty array, or empty object if using a callback
 * ********************************************************************************* */
 
-/*
+// /*
 console.log("return default object");
 res=sql.exec("select * from inserttest",
                 {max:10,skip:20}
@@ -83,8 +83,8 @@ console.log(res);
 console.log("return callback novars");
 res=sql.exec("select * from inserttest",
                 {max:10,returnType:"novars"},
-                function(res,i){
-                    console.log(res,i);
+                function(res,i,info){
+                    console.log(res,i,info);
                 }
 
 );
@@ -93,8 +93,8 @@ console.log("total: "+res);
 console.log("return callback arrayh");
 res=sql.exec("select * from inserttest",
                 {max:10,returnType:"arrayh"},
-                function(res,i){
-                    console.log(res,i);
+                function(res,i,info){
+                    console.log(res,i,info);
                 }
 );
 console.log("total: "+res);
@@ -102,12 +102,12 @@ console.log("total: "+res);
 console.log("return callback normal");
 res=sql.exec("select * from inserttest",
                 {max:10},
-                function(res,i){
-                    console.log(res,i);
+                function(res,i,info){
+                    console.log(res,i,info);
                 }
 );
 console.log(res);
-*/
+// */
 
 
 /* ******************************************************
