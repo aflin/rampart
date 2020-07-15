@@ -980,6 +980,7 @@ int duk_rp_fetchWCallback(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
 
     return (rown);
 }
+#undef pushcounts
 
 /* ************************************************** 
    Sql.prototype.exec 
