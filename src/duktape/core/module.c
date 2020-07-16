@@ -33,6 +33,17 @@ static duk_ret_t load_js_module(duk_context *ctx)
         duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not open %s: %s\n", id, strerror(errno));
         return duk_throw(ctx);
     }
+
+    duk_push_global_object(ctx);
+    duk_get_prop_string(ctx, -1, "Date");
+    duk_dup(ctx, -1);
+    duk_push_number(ctx, sb.st_mtime * 1000);
+    duk_new(ctx, 1);
+    duk_put_prop_string(ctx, module_idx, "modified");
+    duk_push_number(ctx, sb.st_atime * 1000);
+    duk_new(ctx, 1);
+    duk_put_prop_string(ctx, module_idx, "accessed");
+
     FILE *f = fopen(id, "r");
     if (!f)
     {
