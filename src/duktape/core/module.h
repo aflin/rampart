@@ -7,8 +7,9 @@ extern "C"
 #endif
 
 #include "duktape.h"
-  extern void duk_module_init(duk_context *ctx);
-
+    extern void duk_module_init(duk_context *ctx);
+    extern duk_ret_t duk_resolve(duk_context *ctx);
+    extern duk_ret_t duk_require(duk_context *ctx);
 #if defined(__cplusplus)
 }
 #endif /* end 'extern "C"' wrapper */
