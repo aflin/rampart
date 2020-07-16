@@ -101,7 +101,7 @@ static duk_ret_t load_so_module(duk_context *ctx)
     return 0;
 }
 
-static duk_ret_t require(duk_context *ctx)
+static duk_ret_t resolve_id(duk_context *ctx)
 {
     const char *request_id = duk_require_string(ctx, -1);
 
@@ -121,9 +121,35 @@ static duk_ret_t require(duk_context *ctx)
     }
     if (id == NULL)
     {
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not resolve module id %s: %s\n", request_id, strerror(errno));
+        duk_push_null(ctx);
+        return 1;
+    }
+    duk_push_object(ctx);
+    duk_push_string(ctx, id);
+    duk_put_prop_string(ctx, -2, "id");
+    duk_push_int(ctx, module_loader_idx);
+    duk_put_prop_string(ctx, -2, "module_loader_idx");
+    free(id);
+    return 1;
+}
+
+static duk_ret_t require(duk_context *ctx)
+{
+    duk_push_c_function(ctx, resolve_id, 1);
+    duk_dup(ctx, 0); // duplicate request_id
+    duk_call(ctx, 1);
+
+    if (duk_is_null(ctx, -1))
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not resolve module id %s: %s\n", duk_get_string(ctx, 0), strerror(errno));
         return duk_throw(ctx);
     }
+
+    duk_get_prop_string(ctx, -1, "module_loader_idx");
+    int module_loader_idx = duk_get_int(ctx, -1);
+
+    duk_get_prop_string(ctx, -2, "id");
+    const char *id = duk_get_string(ctx, -1);
 
     // get require() for later use
     duk_push_global_object(ctx);
@@ -138,7 +164,6 @@ static duk_ret_t require(duk_context *ctx)
     if (duk_get_prop_string(ctx, -1, id))
     {
         duk_get_prop_string(ctx, -1, "exports");
-        free(id);
         return 1;
     }
     else
@@ -176,10 +201,27 @@ static duk_ret_t require(duk_context *ctx)
         // return exports
         duk_dup(ctx, module_idx);
         duk_get_prop_string(ctx, -1, "exports");
-
-        free(id);
         return 1;
     }
+}
+
+static duk_ret_t resolve(duk_context *ctx)
+{
+    duk_push_c_function(ctx, resolve_id, 1);
+    duk_dup(ctx, 0); // duplicate request_id
+    duk_call(ctx, 1);
+
+    if (duk_is_null(ctx, -1))
+    {
+        return 1;
+    }
+    duk_get_prop_string(ctx, -1, "id");
+    const char *id = duk_get_string(ctx, -1);
+
+    duk_push_global_stash(ctx);
+    duk_get_prop_string(ctx, -1, "module_id_map");
+    duk_get_prop_string(ctx, -1, id);
+    return 1;
 }
 
 void duk_module_init(duk_context *ctx)
@@ -198,4 +240,6 @@ void duk_module_init(duk_context *ctx)
     duk_push_global_stash(ctx);
     duk_push_object(ctx);
     duk_put_prop_string(ctx, -2, "module_id_map");
+    duk_push_c_function(ctx, resolve, 1);
+    duk_put_prop_string(ctx, -2, "resolve");
 }
