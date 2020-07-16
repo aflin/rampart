@@ -135,6 +135,16 @@ static duk_ret_t resolve_id(duk_context *ctx)
 
 duk_ret_t duk_require(duk_context *ctx)
 {
+    if (!duk_resolve(ctx, 0))
+    {
+        return 0;
+    }
+    duk_get_prop_string(ctx, -1, "exports");
+    return 1;
+}
+
+duk_ret_t duk_resolve(duk_context *ctx, int force_reload)
+{
     duk_push_c_function(ctx, resolve_id, 1);
     duk_dup(ctx, 0); // duplicate request_id
     duk_call(ctx, 1);
@@ -161,7 +171,7 @@ duk_ret_t duk_require(duk_context *ctx)
     duk_idx_t module_id_map_idx = duk_get_top_index(ctx);
 
     // if found the module in the module_id_map
-    if (duk_get_prop_string(ctx, -1, id))
+    if (duk_get_prop_string(ctx, -1, id) && !force_reload)
     {
         duk_get_prop_string(ctx, -1, "exports");
         return 1;
@@ -198,30 +208,10 @@ duk_ret_t duk_require(duk_context *ctx)
         duk_dup(ctx, module_idx);
         duk_put_prop_string(ctx, module_id_map_idx, id);
 
-        // return exports
+        // return module
         duk_dup(ctx, module_idx);
-        duk_get_prop_string(ctx, -1, "exports");
         return 1;
     }
-}
-
-duk_ret_t duk_resolve(duk_context *ctx)
-{
-    duk_push_c_function(ctx, resolve_id, 1);
-    duk_dup(ctx, 0); // duplicate request_id
-    duk_call(ctx, 1);
-
-    if (duk_is_null(ctx, -1))
-    {
-        return 1;
-    }
-    duk_get_prop_string(ctx, -1, "id");
-    const char *id = duk_get_string(ctx, -1);
-
-    duk_push_global_stash(ctx);
-    duk_get_prop_string(ctx, -1, "module_id_map");
-    duk_get_prop_string(ctx, -1, id);
-    return 1;
 }
 
 void duk_module_init(duk_context *ctx)
@@ -240,6 +230,4 @@ void duk_module_init(duk_context *ctx)
     duk_push_global_stash(ctx);
     duk_push_object(ctx);
     duk_put_prop_string(ctx, -2, "module_id_map");
-    duk_push_c_function(ctx, duk_resolve, 1);
-    duk_put_prop_string(ctx, -2, "resolve");
 }
