@@ -34,15 +34,10 @@ static duk_ret_t load_js_module(duk_context *ctx)
         return duk_throw(ctx);
     }
 
-    duk_push_global_object(ctx);
-    duk_get_prop_string(ctx, -1, "Date");
-    duk_dup(ctx, -1);
-    duk_push_number(ctx, sb.st_mtime * 1000);
-    duk_new(ctx, 1);
-    duk_put_prop_string(ctx, module_idx, "modified");
-    duk_push_number(ctx, sb.st_atime * 1000);
-    duk_new(ctx, 1);
-    duk_put_prop_string(ctx, module_idx, "accessed");
+    duk_push_number(ctx, sb.st_mtime);
+    duk_put_prop_string(ctx, module_idx, "mtime");
+    duk_push_number(ctx, sb.st_atime);
+    duk_put_prop_string(ctx, module_idx, "atime");
 
     FILE *f = fopen(id, "r");
     if (!f)
