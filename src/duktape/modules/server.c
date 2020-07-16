@@ -15,6 +15,7 @@
 #include "../core/duktape.h"
 #include "evhtp/evhtp.h"
 #include "../../rp.h"
+#include "../core/module.h"
 #include "../../mime.h"
 #include "../register.h"
 //#define RP_TO_DEBUG
@@ -76,11 +77,12 @@ FORKINFO **forkinfo = NULL;
 #define DHS struct duk_http_s
 DHS
 {
-    duk_idx_t func_idx;     // location of the callback
-    duk_context *ctx;       // duk context for this thread
-    evhtp_request_t *req;   // the evhtp request struct for the current request
+    duk_idx_t func_idx;     // location of the callback or object specifying module (set at server start)
+    duk_context *ctx;       // duk context for this thread (updated in thread)
+    evhtp_request_t *req;   // the evhtp request struct for the current request (updated in thread, upon each request)
     struct timeval timeout; // timeout for the duk script
     int threadno;
+    int ismod;              // is normal fuction if 0, otherwise is a js module.
 };
 
 /* mapping for url to filesystem */
@@ -938,6 +940,22 @@ static void copy_all(duk_context *ctx, duk_context *tctx)
     duk_pop(ctx);
     duk_pop(tctx);
 }
+
+static void copy_mod_func(duk_context *ctx, duk_context *tctx, duk_idx_t idx)
+{
+    const char *modname;
+    
+    duk_get_prop_string(ctx,idx,"module");
+    modname=duk_get_string(ctx,-1);
+    duk_pop(ctx);
+
+    duk_push_object(tctx);
+    duk_push_string(tctx,modname);
+    duk_put_prop_string(tctx,-2,"module");
+    if(duk_get_top_index(tctx)!=idx)
+        duk_replace(tctx,idx);
+}
+
 /* ******************************************
   END FUNCTIONS FOR COPYING BETWEEN DUK HEAPS
 ********************************************* */
@@ -1113,8 +1131,20 @@ static duk_context *redo_ctx(int thrno)
     duk_put_prop_string(thr_ctx, -2, "thread_id");
     duk_put_global_string(thr_ctx, "rampart");
 
-    while (duk_is_function(main_ctx, fno))
+    while (duk_is_object(main_ctx, fno))
     {
+    
+        /* check if this is a module function */
+        if(!duk_is_function(main_ctx,fno) )
+        {
+            if (duk_has_prop_string(main_ctx,fno,"module") )
+                copy_mod_func(main_ctx, thr_ctx, fno);
+            else
+                break;
+
+            continue;
+        }
+        
         /* check if function was already copied in copy_all() */
         if (duk_get_prop_string(main_ctx, fno, DUK_HIDDEN_SYMBOL("is_global")) && duk_get_boolean(main_ctx, -1))
         {
@@ -1591,9 +1621,12 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                 fprintf(stderr, "could not obtain lock in http_callback\n");
                 exit(1);
             }
-            /* mark it as thread safe on main_ctx as well (for timeout/redo_ctx) */
-            duk_push_boolean(main_ctx, (duk_bool_t)is_threadsafe);
-            duk_put_prop_string(main_ctx, dhs->func_idx, DUK_HIDDEN_SYMBOL("threadsafe"));
+            /* mark it as thread safe on main_ctx as well (for timeout/redo_ctx, but not if module) */
+            if(!dhs->ismod)
+            {
+                duk_push_boolean(main_ctx, (duk_bool_t)is_threadsafe);
+                duk_put_prop_string(main_ctx, dhs->func_idx, DUK_HIDDEN_SYMBOL("threadsafe"));
+            }
             pthread_mutex_unlock(&ctxlock);
         }
     }
@@ -1617,9 +1650,84 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 
     if (res)
         evhtp_send_reply(req, res);
-
     duk_pop(dhs->ctx);
     /* logging goes here ? */
+}
+
+static duk_idx_t getmod(DHS *dhs)
+{
+    duk_idx_t idx=dhs->func_idx;
+    duk_context *ctx=dhs->ctx;
+    const char *mod;
+
+    /* is it already on the stack? */
+    if (duk_get_prop_string(ctx,idx,"loadedmod") )
+    {
+        struct stat sb;
+        const char *fn;
+        duk_idx_t retidx;
+        
+        retidx=(duk_idx_t) duk_get_int(ctx,-1);
+        duk_pop(ctx);
+        duk_get_prop_string(ctx,retidx,"module_id");
+        fn=duk_get_string(ctx,-1);
+        duk_pop(ctx);
+
+        if (stat(fn, &sb) != -1)
+        {
+            time_t lmtime;
+
+            duk_get_prop_string(ctx,retidx,"mtime");
+            lmtime = (time_t)duk_get_number(ctx,-1);
+            duk_pop(ctx);           
+            if(lmtime>=sb.st_mtime)
+                return retidx;
+            //else reload module below
+        }
+        /* else file is gone?  Don't attempt to reload */
+        else 
+            return retidx;
+    }
+
+    /* load module from file */
+    duk_get_prop_string(ctx,idx,"module");
+    mod=duk_get_string(ctx,-1);
+    duk_pop_2(ctx); //string and undefined from duk_get_prop_string above
+
+    duk_push_sprintf(ctx,"module.resolve(\"%s\",false);", mod);
+    if(duk_peval(ctx) != 0)
+    {
+        char msg[] = "<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>%s</pre></p></body></html>";
+
+        evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
+        if (duk_is_error(ctx, -1) || duk_is_string(ctx, -1))
+        {
+            duk_get_prop_string(ctx, -1, "stack");
+            evbuffer_add_printf(dhs->req->buffer_out, msg, duk_safe_to_string(ctx, -1));
+            printf("error in thread '%s'\n", duk_safe_to_string(ctx, -1));
+            duk_pop(ctx);
+        }
+        else
+        {
+            evbuffer_add_printf(dhs->req->buffer_out, msg, "unknown error");
+        }
+        evhtp_send_reply(dhs->req, 500);
+        return -1;
+    }
+
+
+    duk_get_prop_string(ctx,-1,"exports");
+    /* take mtime & id from modules and put it in exports, then remove modules */
+    duk_get_prop_string(ctx,-2,"mtime");
+    duk_put_prop_string(ctx,-2,"mtime");
+    duk_get_prop_string(ctx,-2,"id");
+    duk_put_prop_string(ctx,-2,"module_id");
+    
+    duk_remove(ctx,-2);
+
+    duk_push_int( ctx, (duk_int_t)duk_get_top_index(ctx) );
+    duk_put_prop_string(ctx,idx,"loadedmod");
+    return duk_get_top_index(ctx);
 }
 
 static void
@@ -1644,8 +1752,15 @@ http_callback(evhtp_request_t *req, void *arg)
     newdhs.func_idx = dhs->func_idx;
     newdhs.timeout = dhs->timeout;
     newdhs.threadno = thrno;
+    newdhs.ismod=dhs->ismod;
     dhs = &newdhs;
 
+    if(dhs->ismod)
+    {
+        newdhs.func_idx = getmod(dhs);
+        if (newdhs.func_idx == -1)
+            return;
+    }
     /* fork until we know it is safe not to fork:
        function will have property threadsafe:true if forking not required 
        after the first time it is called in http_fork_callback              */
@@ -1656,7 +1771,6 @@ http_callback(evhtp_request_t *req, void *arg)
         have_threadsafe_val = 1;
     }
     duk_pop(dhs->ctx);
-
     //    if(!gl_singlethreaded && dofork)
     if (dofork)
         http_fork_callback(req, dhs, have_threadsafe_val);
@@ -2083,7 +2197,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 {
                     char *path, *fspath, *fs = (char *)NULL, *s = (char *)NULL;
 
-                    if (duk_is_function(ctx, -1))
+                    if (duk_is_object(ctx, -1))
                     { /* map to function */
                         /* move the function to earlier in the stack 
                            the stack [object, ?function?, mapobj, enum, path, fspath|func ] 
@@ -2091,10 +2205,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         */
                         DHS *cb_dhs;
                         const char *fname;
-
-                        duk_get_prop_string(ctx, -1, "name");
-                        fname = duk_get_string(ctx, -1);
-                        duk_pop(ctx);
+                        int ismod=0;
 
                         path = (char *)duk_to_string(ctx, -2);
                         DUKREMALLOC(ctx, s, strlen(path) + 2);
@@ -2104,14 +2215,43 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         else
                             sprintf(s, "%s", path);
 
+                        if (duk_is_function(ctx, -1))
+                        {
+                            duk_get_prop_string(ctx, -1, "name");
+                            fname = duk_get_string(ctx, -1);
+                            duk_pop(ctx);
+                            printf("mapping function   %-20s ->    function %s()\n", s, fname);
+                        }
+                        else if (duk_get_prop_string(ctx,-1, "module") )
+                        {
+                            fname = duk_get_string(ctx, -1);
+                            duk_pop(ctx);
+                            printf("mapping function   %-20s ->    module:%s\n", s, fname);
+                            ismod=1;
+                        }
+                        else
+                        {
+                            duk_push_sprintf(ctx,"Option for path %s must be a function or an object to load a module (e.g. {module:'mymodule'}",s);
+                            free(s);
+                            duk_throw(ctx);
+                        }
+
                         duk_insert(ctx, fpos);
                         cb_dhs = new_dhs(ctx, fpos);
+                        cb_dhs->ismod=ismod;
                         cb_dhs->timeout.tv_sec = dhs->timeout.tv_sec;
                         cb_dhs->timeout.tv_usec = dhs->timeout.tv_usec;
                         /* copy function to all the heaps/ctxs */
-                        copy_cb_func(cb_dhs, totnthreads);
+                        if(ismod)
+                        {
+                            for (i=0;i<totnthreads;i++)
+                                copy_mod_func(ctx, thread_ctx[i], fpos);
+                        }
+                        else
+                            copy_cb_func(cb_dhs, totnthreads);
+
                         fpos++;
-                        printf("mapping function   %-20s ->    function %s()\n", s, fname);
+
                         if (*s == '*' || *(s + strlen(s) - 1) == '*')
                         {
                             if (usev4)

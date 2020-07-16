@@ -1057,6 +1057,7 @@ static int rex (
 
     if (docallback)
     {
+        int gotone=0;
 
         for(p=getrlex(rl,str,end,SEARCHNEWBUF);
             p!=BPNULL;
@@ -1094,7 +1095,7 @@ static int rex (
             /* set up next loop */
             duk_dup(ctx,func_idx);/* copy function, setup for callback */
             duk_push_lstring(ctx,p,(duk_size_t)psz);
-
+            gotone=1;
             if(ret_subs)
                 pushsubhit;
 
@@ -1106,9 +1107,11 @@ static int rex (
             i++;
         }//for
         // do the last one on the stack, ignore return val since it's last 
-        runcallback;
-        duk_pop(ctx);
-        
+        if(gotone)
+        {
+            runcallback;
+            duk_pop(ctx);
+        }
     } // end callback
     else //no callback
     {

@@ -293,19 +293,20 @@ duk_ret_t duk_rp_sql_close(duk_context *ctx)
     }
     return 0;
 }
+#define msgbufsz 4096
 
 #ifdef USEHANDLECACHE
 #define throw_tx_error(ctx,pref) do{\
-    char pbuf[2048];\
-    duk_rp_log_tx_error(ctx, pbuf);\
-    duk_push_sprintf(ctx, "%s: %s",pref,pbuf);\
+    char pbuf[msgbufsz];\
+    duk_rp_log_tx_error(ctx,pbuf);\
+    duk_push_sprintf(ctx, "%s error: %s",pref,pbuf);\
     duk_throw(ctx);\
 }while(0)
 #else
 #define throw_tx_error(ctx,pref) do{\
-    char pbuf[2048];\
-    duk_rp_log_tx_error(ctx, pbuf);\
-    duk_push_sprintf(ctx, "%s: %s",pref,pbuf);\
+    char pbuf[msgbufsz];\
+    duk_rp_log_tx_error(ctx,pbuf);\
+    duk_push_sprintf(ctx, "%s error: %s",pref,pbuf);\
     if(tx) tx = TEXIS_CLOSE(tx);\
     duk_throw(ctx);\
 }while(0)
@@ -313,11 +314,14 @@ duk_ret_t duk_rp_sql_close(duk_context *ctx)
 
 
 
-#define msgbufsz 2048
-#define msgtobuf(buf)                \
-    fseek(mmsgfh, 0, SEEK_SET);      \
-    fread(buf, msgbufsz, 1, mmsgfh); \
-    fseek(mmsgfh, 0, SEEK_SET);
+#define msgtobuf(buf)  do {               \
+    size_t sz;                            \
+    fseek(mmsgfh, 0, SEEK_SET);           \
+    sz=fread(buf, 1, msgbufsz-1, mmsgfh); \
+    fclose(mmsgfh);                       \
+    mmsgfh = fmemopen(NULL, 4096, "w+");  \
+    buf[sz]='\0';                         \
+} while(0)
 
 /* **************************************************
      store an error string in this.lastErr 
@@ -325,7 +329,15 @@ duk_ret_t duk_rp_sql_close(duk_context *ctx)
 void duk_rp_log_error(duk_context *ctx, char *pbuf)
 {
     duk_push_this(ctx);
-    duk_push_string(ctx, pbuf);
+    if(duk_has_prop_string(ctx,-1,"lastErr") )
+    {
+        duk_get_prop_string(ctx,-1,"lastErr");
+        duk_push_string(ctx, pbuf);
+        duk_concat(ctx,2);
+    }
+    else
+        duk_push_string(ctx, pbuf);
+
 #ifdef PUTMSG_STDERR
     if (pbuf && strlen(pbuf))
     {
@@ -603,7 +615,7 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
             int l;
             if (q->sql != (char *)NULL)
             {
-                duk_rp_log_error(ctx, "Only one string may be passed as a parameter and must be a sql statement.");
+                duk_rp_log_error(ctx, "Only one string may be passed as a parameter and must be a sql statement.\n");
                 duk_push_int(ctx, -1);
                 q->sql = (char *)NULL;
                 q->err = QS_ERROR_PARAM;
@@ -679,7 +691,7 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
     if (q->sql == (char *)NULL)
     {
         q->err = QS_ERROR_PARAM;
-        duk_rp_log_error(ctx, "No sql statement.");
+        duk_rp_log_error(ctx, "No sql statement present.\n");
         duk_push_int(ctx, -1);
     }
     return (q_st);
@@ -993,6 +1005,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
     DB_HANDLE *hcache = NULL;
 #endif
     const char *db;
+    char pbuf[msgbufsz];
 
     struct sigaction sa = {0};
     sa.sa_flags = 0; //SA_NODEFER;
@@ -1006,9 +1019,11 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 
     duk_push_this(ctx);
 
+    /* clear the sql.lastErr string */
+    duk_del_prop_string(ctx,-1,"lastErr");
     if (!duk_get_prop_string(ctx, -1, "db"))
     {
-        duk_push_string(ctx, "no database is open");
+        duk_push_string(ctx, "no database has been opened");
         duk_throw(ctx);
     }
     db = duk_get_string(ctx, -1);
@@ -1032,8 +1047,6 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
     if (!tx)
         throw_tx_error(ctx,"open sql");
 
-    /* clear the sql.lastErr string */
-    duk_rp_log_error(ctx, "");
 
     //DDIC *ddic=texis_getddic(tx);
     //setprop(ddic, "likeprows", "2000");
@@ -1080,7 +1093,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 #endif
 
 end:
-
+    duk_rp_log_tx_error(ctx,pbuf); /* log any non fatal errors to this.lastErr */
     return 1; /* returning outer array */
 }
 
@@ -1135,6 +1148,7 @@ duk_ret_t duk_texis_set(duk_context *ctx)
     TEXIS *tx;
     const char *db,*val;
     DB_HANDLE *hcache = NULL;
+    char pbuf[msgbufsz];
 
     duk_push_this(ctx);
 
@@ -1198,6 +1212,7 @@ duk_ret_t duk_texis_set(duk_context *ctx)
 #ifndef USEHANDLECACHE
     tx=TEXIS_CLOSE(tx);
 #endif
+    duk_rp_log_tx_error(ctx,pbuf); /* log any non fatal errors to this.lastErr */
     return 0;
 }
 
@@ -1224,7 +1239,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
 
     TEXIS *tx;
     const char *db = duk_get_string(ctx, 0);
-    char pbuf[2048];
+    char pbuf[msgbufsz];
 
     /* allow call to Sql() with "new Sql()" only */
     if (!duk_is_constructor_call(ctx))
@@ -1242,9 +1257,12 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
         tx = TEXIS_OPEN((char *)db);
         if (tx == NULL)
         {
+            /* don't log the error */
+            fclose(mmsgfh);
+            mmsgfh = fmemopen(NULL, 4096, "w+");
             if (!createdb(db))
             {
-                duk_rp_log_tx_error(ctx, pbuf);
+                duk_rp_log_tx_error(ctx,pbuf);
                 duk_push_sprintf(ctx, "cannot create database at '%s' (root path not found, lacking permission or other error\n)", db, pbuf);
                 duk_throw(ctx);
             }
@@ -1259,6 +1277,11 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "db");
 
     SET_THREAD_UNSAFE(ctx);
+    {
+        extern int TXunneededRexEscapeWarning;
+        TXunneededRexEscapeWarning = 0; //silence rex escape warnings
+    }
+    duk_rp_log_tx_error(ctx,pbuf); /* log any non fatal errors to this.lastErr */
     return 0;
 }
 

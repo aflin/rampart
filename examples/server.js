@@ -1,14 +1,8 @@
 /* load the http server module */
 var server=require("rpserver");
 
-/* Circular reference test.  This is copied to the javascript stack of each server thread */
-var obj={foo:"that"}
-obj.newobj=obj;
-
 /* load sql database module */
 var Sql=require("rpsql");
-
-
 
 /* sql module can be loaded here (better) or in callback functions (minor check overhead).
      If used to create database, the overhead is not minor, and should be done here rather
@@ -61,7 +55,7 @@ Rows are returned as one of 4 different return types:
     novars  -- returns empty array, or empty object if using a callback
 * ********************************************************************************* */
 
-// /*
+/*
 console.log("return default object");
 res=sql.exec("select * from inserttest",
                 {max:10,skip:20}
@@ -107,7 +101,7 @@ res=sql.exec("select * from inserttest",
                 }
 );
 console.log(res);
-// */
+*/
 
 
 /* ******************************************************
@@ -216,54 +210,6 @@ function simple_callback(req){
 
 /* print out some info about the request */
 
-function showreq_callback(req){
-    // http://jsfiddle.net/KJQ9K/554/
-    function syntaxHighlight(json) {
-        json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
-            var cls = 'number';
-            if (/^"/.test(match)) {
-                if (/:$/.test(match)) {
-                    cls = 'key';
-                } else {
-                    cls = 'string';
-                }
-            } else if (/true|false/.test(match)) {
-                cls = 'boolean';
-            } else if (/null/.test(match)) {
-                cls = 'null';
-            }
-            return '<span class="' + cls + '">' + match + '</span>';
-        });
-    }
-
-    printf("%J\n",rampart);
-    //For testing timeout
-    //for (var i=0;i<100000000;i++);
-    //print("DONE WASTING TIME IN JS");
-
-    var str=JSON.stringify({req:req,rampart:rampart},null,4);
-    var css=
-        "pre {outline: 1px solid #ccc; padding: 5px; margin: 5px; }\n"+
-        ".string { color: green; }\n"+
-        ".number { color: darkorange; }\n"+
-        ".boolean { color: blue; }\n"+
-        ".null { color: magenta; }\n"+
-        ".key { color: red; }\n";
-    
-    /* you can set custom headers as well */
-    return({
-        headers:
-            {
-                "X-Custom-Header":1
-            },
-        //only set one of these.  Setting more than one throws error.
-        //jpg: "@/home/user/myimage.jpg"
-        html:"<html><head><style>"+css+"</style><body>Object sent to this function(req) and other info (rampart):<br><pre>"+syntaxHighlight(str)+"</pre>"+x.msg+"</body></html>"
-        //,text: "\\@home network is a now defunct cable broadband provider."
-    });
-    
-}
 
 /* this works as expected since x.func is global
  
@@ -274,7 +220,7 @@ function showreq_callback(req){
    as if it is being executed and exits after each webpage is served.
 */ 
 
-var x={msg:"HELLO WORLD",func:showreq_callback};
+var x={msg:"HELLO WORLD",func:simple_callback};
 
 
 function globalRef_callback(req){
@@ -378,7 +324,8 @@ server.start(
         "/ramistest" :        ramistest,
 
         /* matching a glob to a function */
-        "/showreq*":          showreq_callback,
+        /* use function from a module */
+        "/showreq*":          {module:"servermod"},
 
         //  filesystem mappings are always folders.  
         //   "/tetris"    becomes  "/tetris/
