@@ -146,7 +146,7 @@ duk_ret_t duk_require(duk_context *ctx)
 duk_ret_t duk_resolve(duk_context *ctx, int force_reload)
 {
     duk_push_c_function(ctx, resolve_id, 1);
-    duk_dup(ctx, 0); // duplicate request_id
+    duk_dup(ctx, -2); // duplicate request_id
     duk_call(ctx, 1);
 
     if (duk_is_null(ctx, -1))
