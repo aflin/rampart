@@ -54,20 +54,18 @@ static duk_ret_t load_js_module(duk_context *ctx)
         return duk_throw(ctx);
     }
 
-    duk_push_string(ctx, "(function (module, exports) {\n");
+    duk_push_string(ctx, "function (module, exports) {\n");
     duk_push_lstring(ctx, buffer, sb.st_size);
-    duk_push_string(ctx, "\n});");
+    duk_push_string(ctx, "\n}");
     duk_concat(ctx, 3);
-    if (duk_peval(ctx) == DUK_EXEC_ERROR)
-    {
-        return duk_throw(ctx);
-    }
+
+    duk_push_string(ctx, id);
+
+    duk_compile(ctx, DUK_COMPILE_FUNCTION);
+
     duk_dup(ctx, module_idx);
     duk_get_prop_string(ctx, -1, "exports");
-    if (duk_pcall(ctx, 2) == DUK_EXEC_ERROR)
-    {
-        return duk_throw(ctx);
-    }
+    duk_call(ctx, 2);
 
     fclose(f);
     free(buffer);
@@ -145,6 +143,7 @@ duk_ret_t duk_require(duk_context *ctx)
 
 duk_ret_t duk_resolve(duk_context *ctx)
 {
+    // TODO: Move directory logic to resolve_id
     int call_with_default_req_id = 1;
 
     duk_push_global_stash(ctx);

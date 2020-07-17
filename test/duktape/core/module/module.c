@@ -88,6 +88,7 @@ void module_resolve()
     assert(duk_has_prop_string(ctx, -1, "exports"));
     duk_destroy_heap(ctx);
 }
+
 void test()
 {
     module_cyclic();
