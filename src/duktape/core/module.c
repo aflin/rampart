@@ -53,16 +53,6 @@ static duk_ret_t load_js_module(duk_context *ctx)
         duk_push_error_object(ctx, DUK_ERR_ERROR, "Error loading file %s: %s\n", id, strerror(errno));
         return duk_throw(ctx);
     }
-    duk_push_global_object(ctx);
-
-    // make 'module' global
-    duk_dup(ctx, module_idx);
-    duk_put_prop_string(ctx, -2, "module");
-
-    // make 'exports' global
-    duk_dup(ctx, module_idx);
-    duk_get_prop_string(ctx, -1, "exports");
-    duk_put_prop_string(ctx, -3, "exports");
 
     duk_push_lstring(ctx, buffer, sb.st_size);
     if (duk_peval(ctx) == DUK_EXEC_ERROR)
@@ -219,9 +209,30 @@ duk_ret_t duk_resolve(duk_context *ctx)
         duk_push_c_function(ctx, duk_resolve, 2);
         duk_put_prop_string(ctx, -2, "resolve");
 
-        // store module in modules id map
+        // store 'module' in 'module_id_map'
         duk_dup(ctx, module_idx);
         duk_put_prop_string(ctx, module_id_map_idx, id);
+
+        // save existing 'module', 'exports', and 'require' in stash
+        duk_push_global_stash(ctx);
+        duk_get_global_string(ctx, "module");
+        duk_put_prop_string(ctx, -2, "module");
+
+        duk_get_global_string(ctx, "exports");
+        duk_put_prop_string(ctx, -2, "exports");
+
+        // duk_get_global_string(ctx, "require");
+        // duk_put_prop_string(ctx, -2, "require");
+
+        // replace 'module' and exports in global
+        duk_push_global_object(ctx);
+
+        duk_dup(ctx, module_idx);
+        duk_put_prop_string(ctx, -2, "module");
+
+        duk_dup(ctx, module_idx);
+        duk_get_prop_string(ctx, -1, "exports");
+        duk_put_prop_string(ctx, -3, "exports");
 
         // get module source using loader
         // the loader modifies module.exports
@@ -237,6 +248,15 @@ duk_ret_t duk_resolve(duk_context *ctx)
         {
             return duk_throw(ctx);
         }
+
+        // replace 'module', 'exports' from stash
+        duk_push_global_stash(ctx);
+        duk_push_global_object(ctx);
+        duk_get_prop_string(ctx, -2, "module");
+        duk_put_prop_string(ctx, -2, "module");
+
+        duk_get_prop_string(ctx, -2, "exports");
+        duk_put_prop_string(ctx, -2, "exports");
 
         // return module
         duk_dup(ctx, module_idx);
