@@ -22,7 +22,3 @@ Most of the relevant files will be in `build/src`. You can run them using the fo
 ```
 ./rp <js-file-path>
 ```
-You may also need to do this before running the webserver:
-```
-ulimit -n 16384
-```
