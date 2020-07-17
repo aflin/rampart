@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 #define RP_REPL_GREETING             \
     "      |>>            |>>\n"     \
@@ -193,27 +195,27 @@ static int repl(duk_context *ctx)
 int main(int argc, char *argv[])
 {
     struct rlimit rlp;
-    int filelimit=16384, lflimit=filelimit;
-    
+    int filelimit = 16384, lflimit = filelimit;
+
     /* set rlimit to filelimit, or highest allowed value below that */
     getrlimit(RLIMIT_NOFILE, &rlp);
     rlp.rlim_cur = filelimit;
-    while (setrlimit(RLIMIT_NOFILE, &rlp)!=0)
+    while (setrlimit(RLIMIT_NOFILE, &rlp) != 0)
     {
-        lflimit=filelimit;
-        filelimit/=2;
+        lflimit = filelimit;
+        filelimit /= 2;
         rlp.rlim_cur = filelimit;
     }
     if (lflimit != filelimit)
     {
-        do 
+        do
         {
-            rlp.rlim_cur = (filelimit + lflimit)/2;
-            if (setrlimit(RLIMIT_NOFILE, &rlp)==0)
-                filelimit=rlp.rlim_cur;
+            rlp.rlim_cur = (filelimit + lflimit) / 2;
+            if (setrlimit(RLIMIT_NOFILE, &rlp) == 0)
+                filelimit = rlp.rlim_cur;
             else
-                lflimit=rlp.rlim_cur;
-        } while (lflimit > filelimit+1);
+                lflimit = rlp.rlim_cur;
+        } while (lflimit > filelimit + 1);
     }
 
     duk_context *ctx = duk_create_heap_default();
@@ -242,13 +244,48 @@ int main(int argc, char *argv[])
     }
     else if (argc == 2)
     {
-        duk_push_string(ctx, "require('");
+        struct stat entry_file_stat;
+        if (stat(argv[1], &entry_file_stat))
+        {
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not find entry file '%s': %s\n", argv[1], strerror(errno));
+            printf("%s\n", duk_safe_to_stacktrace(ctx, -1));
+            duk_destroy_heap(ctx);
+            return 1;
+        }
+
+        FILE *entry_file = fopen(argv[1], "r");
+        if (entry_file == NULL)
+        {
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not open entry file '%s': %s\n", argv[1], strerror(errno));
+            printf("%s\n", duk_safe_to_stacktrace(ctx, -1));
+            duk_destroy_heap(ctx);
+            return 1;
+        }
+
+        char *file_src = malloc(entry_file_stat.st_size);
+        if (fread(file_src, 1, entry_file_stat.st_size, entry_file) != entry_file_stat.st_size)
+        {
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read entry file '%s': %s\n", argv[1], strerror(errno));
+            printf("%s\n", duk_safe_to_stacktrace(ctx, -1));
+            duk_destroy_heap(ctx);
+            free(file_src);
+            return 1;
+        }
+        duk_push_string(ctx, file_src);
         duk_push_string(ctx, argv[1]);
-        duk_push_string(ctx, "');");
-        duk_concat(ctx, 3);
-        if (duk_peval(ctx) == DUK_EXEC_ERROR)
+        free(file_src);
+        if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
         {
             printf("%s\n", duk_safe_to_stacktrace(ctx, -1));
+            duk_destroy_heap(ctx);
+            return 1;
+        }
+
+        if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
+        {
+            printf("%s\n", duk_safe_to_stacktrace(ctx, -1));
+            duk_destroy_heap(ctx);
+            return 1;
         }
     }
     duk_destroy_heap(ctx);
