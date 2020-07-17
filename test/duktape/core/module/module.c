@@ -75,7 +75,19 @@ void module_popped()
     assert(i == 100);
     duk_destroy_heap(ctx);
 }
-
+void module_resolve()
+{
+    duk_context *ctx = duk_create_heap_default();
+    duk_module_init(ctx);
+    duk_get_global_string(ctx, "module");
+    duk_get_prop_string(ctx, -1, "resolve");
+    duk_eval_string(ctx, "module.resolve('commonjs/relative/program');");
+    assert(duk_has_prop_string(ctx, -1, "id"));
+    assert(duk_has_prop_string(ctx, -1, "mtime"));
+    assert(duk_has_prop_string(ctx, -1, "atime"));
+    assert(duk_has_prop_string(ctx, -1, "exports"));
+    duk_destroy_heap(ctx);
+}
 void test()
 {
     module_cyclic();
@@ -87,4 +99,5 @@ void test()
     module_relative();
     module_transitive();
     module_popped();
+    module_resolve();
 }

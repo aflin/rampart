@@ -211,6 +211,10 @@ duk_ret_t duk_resolve(duk_context *ctx)
         // module
         duk_idx_t module_idx = duk_push_object(ctx);
 
+        // set prototype to be the global module
+        duk_get_global_string(ctx, "module");
+        duk_set_prototype(ctx, -2);
+
         // module.id
         duk_push_string(ctx, id);
         duk_put_prop_string(ctx, -2, "id");
@@ -218,10 +222,6 @@ duk_ret_t duk_resolve(duk_context *ctx)
         // module.exports
         duk_push_object(ctx);
         duk_put_prop_string(ctx, -2, "exports");
-
-        // module.resolve()
-        duk_push_c_function(ctx, duk_resolve, 2);
-        duk_put_prop_string(ctx, -2, "resolve");
 
         // store 'module' in 'module_id_map'
         duk_dup(ctx, module_idx);
@@ -267,6 +267,13 @@ void duk_module_init(duk_context *ctx)
     duk_push_global_object(ctx);
     duk_push_string(ctx, "require");
     duk_push_c_function(ctx, duk_require, 1);
+    duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_HAVE_WRITABLE | DUK_DEFPROP_HAVE_ENUMERABLE | DUK_DEFPROP_ENUMERABLE);
+
+    // module.resolve
+    duk_push_string(ctx, "module");
+    duk_push_object(ctx);
+    duk_push_c_function(ctx, duk_resolve, 2);
+    duk_put_prop_string(ctx, -2, "resolve");
     duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_HAVE_WRITABLE | DUK_DEFPROP_HAVE_ENUMERABLE | DUK_DEFPROP_ENUMERABLE);
 
     // put module_id_map in global stash
