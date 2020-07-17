@@ -176,6 +176,14 @@ console.log(rex(/\alnum{4}/,"hits are fun"));
 console.log(sandr2(/fun/,"funtimes","we are having fun"));
 
 
+//this takes waaaay too long.  Why.  if the doc match ( ([^<]+) ) is not included, it runs much faster. Perhaps they have buffer crossing problems?
+//ret=re2file( /<doc id="(\d+)[^>]*?title="([^"]+)[^>]+>([^<]+)/,"wiki_00",{submatches:true},function(match,info,i){
+//  console.log(info);
+//});
 
 
+//but this is very fast
+//ret=rexfile ( />><doc id\="=\digit+!title*title\="=[^"]+[^>]+>=!<\/doc>*/, "wiki_00",{submatches:true},function(match,info,i){
+//  console.log(info);
+//});
 

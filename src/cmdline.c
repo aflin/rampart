@@ -5,6 +5,8 @@
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 
 #define RP_REPL_GREETING             \
     "      |>>            |>>\n"     \
@@ -190,6 +192,30 @@ static int repl(duk_context *ctx)
 
 int main(int argc, char *argv[])
 {
+    struct rlimit rlp;
+    int filelimit=16384, lflimit=filelimit;
+    
+    /* set rlimit to filelimit, or highest allowed value below that */
+    getrlimit(RLIMIT_NOFILE, &rlp);
+    rlp.rlim_cur = filelimit;
+    while (setrlimit(RLIMIT_NOFILE, &rlp)!=0)
+    {
+        lflimit=filelimit;
+        filelimit/=2;
+        rlp.rlim_cur = filelimit;
+    }
+    if (lflimit != filelimit)
+    {
+        do 
+        {
+            rlp.rlim_cur = (filelimit + lflimit)/2;
+            if (setrlimit(RLIMIT_NOFILE, &rlp)==0)
+                filelimit=rlp.rlim_cur;
+            else
+                lflimit=rlp.rlim_cur;
+        } while (lflimit > filelimit+1);
+    }
+
     duk_context *ctx = duk_create_heap_default();
     if (!ctx)
     {
