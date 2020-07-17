@@ -1703,7 +1703,7 @@ static duk_idx_t getmod(DHS *dhs)
             // remove old here, reload module below
             {
                 duk_remove(ctx,retidx);
-                printf("reload\n");
+                //printf("reload\n");
             }
         }
         /* else file is gone?  Don't attempt to reload */
