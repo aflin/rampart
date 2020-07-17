@@ -1319,15 +1319,29 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
     uint32_t msgOutSz = 0;
 
     signal(SIGPIPE, SIG_IGN); //macos
+    signal(SIGCHLD, SIG_IGN);
+
     cstart = stopwatch(0.0);
     tprintf("in fork\n");
 
     /* use waitpid to eliminate the possibility of getting a process that isn't our child */
     if (finfo->childpid && !waitpid(finfo->childpid, &pidstatus, WNOHANG))
     {
-        preforked = 1;
+        tprintf("ismod=%d\n",dhs->ismod);
+        /* module changed, so must refork */
+        if(dhs->ismod==2)
+        {
+           kill(finfo->childpid, SIGTERM);
+           finfo->childpid=0;
+           close(finfo->child2par);
+           close(finfo->par2child);
+           finfo->child2par = -1;
+           finfo->par2child = -1; 
+        }
+        else
+            preforked = 1;
     }
-    else
+    if(!preforked)
     {
         /* our first run.  create pipes and setup for fork */
         if (pipe(child2par) == -1)
@@ -1654,6 +1668,9 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
     /* logging goes here ? */
 }
 
+/* load module if not loaded, return position on stack
+    if module file is newer than loaded version, reload 
+*/
 static duk_idx_t getmod(DHS *dhs)
 {
     duk_idx_t idx=dhs->func_idx;
@@ -1682,19 +1699,25 @@ static duk_idx_t getmod(DHS *dhs)
             duk_pop(ctx);           
             if(lmtime>=sb.st_mtime)
                 return retidx;
-            //else reload module below
+            else
+            // remove old here, reload module below
+            {
+                duk_remove(ctx,retidx);
+                printf("reload\n");
+            }
         }
         /* else file is gone?  Don't attempt to reload */
         else 
             return retidx;
     }
+    else duk_pop(ctx);
 
     /* load module from file */
     duk_get_prop_string(ctx,idx,"module");
     mod=duk_get_string(ctx,-1);
-    duk_pop_2(ctx); //string and undefined from duk_get_prop_string above
+    duk_pop(ctx);
 
-    duk_push_sprintf(ctx,"module.resolve(\"%s\",false);", mod);
+    duk_push_sprintf(ctx,"module.resolve(\"%s\",true);", mod);
     if(duk_peval(ctx) != 0)
     {
         char msg[] = "<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>%s</pre></p></body></html>";
@@ -1717,12 +1740,14 @@ static duk_idx_t getmod(DHS *dhs)
 
 
     duk_get_prop_string(ctx,-1,"exports");
-    /* take mtime & id from modules and put it in exports, then remove modules */
+    /* take mtime & id from modules and put it in exports, 
+        signal next run requires a refork
+        then remove modules */
     duk_get_prop_string(ctx,-2,"mtime");
     duk_put_prop_string(ctx,-2,"mtime");
     duk_get_prop_string(ctx,-2,"id");
     duk_put_prop_string(ctx,-2,"module_id");
-    
+    dhs->ismod=2;
     duk_remove(ctx,-2);
 
     duk_push_int( ctx, (duk_int_t)duk_get_top_index(ctx) );
@@ -2152,6 +2177,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
             tctx = thread_ctx[i];
             /* do all the normal startup done in duk_cmdline but for each thread */
             duk_init_context(tctx);
+// remove when fixed in duk_init_context
+while(duk_get_top(tctx)) duk_pop(tctx);
             copy_all(ctx, tctx);
         }
 
