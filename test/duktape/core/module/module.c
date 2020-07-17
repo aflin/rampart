@@ -66,6 +66,16 @@ void module_transitive()
     duk_destroy_heap(ctx);
 }
 
+void module_popped()
+{
+    duk_context *ctx = duk_create_heap_default();
+    duk_push_int(ctx, 100);
+    duk_module_init(ctx);
+    int i = duk_get_int(ctx, -1);
+    assert(i == 100);
+    duk_destroy_heap(ctx);
+}
+
 void test()
 {
     module_cyclic();
@@ -76,4 +86,5 @@ void test()
     module_nested();
     module_relative();
     module_transitive();
+    module_popped();
 }

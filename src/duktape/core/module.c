@@ -263,10 +263,6 @@ duk_ret_t duk_resolve(duk_context *ctx)
 
 void duk_module_init(duk_context *ctx)
 {
-    duk_push_global_stash(ctx);
-    duk_push_object(ctx);
-    duk_put_prop_string(ctx, -1, "modules");
-
     // put require as global so code with require can eval
     duk_push_global_object(ctx);
     duk_push_string(ctx, "require");
@@ -278,7 +274,9 @@ void duk_module_init(duk_context *ctx)
     duk_push_object(ctx);
     duk_put_prop_string(ctx, -2, "module_id_map");
 
-    duk_push_global_stash(ctx);
+    // put module_stack in global stash
     duk_push_array(ctx);
     duk_put_prop_string(ctx, -2, "module_stack");
+
+    duk_pop_2(ctx);
 }
