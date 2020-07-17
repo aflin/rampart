@@ -10,6 +10,7 @@ add_executable(simple_test simple_test.c)
 add_test(NAME simple COMMAND simple_test)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/duktape/modules/utils)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/duktape/core/module)
 
 set(TEST_FILES
 	"ramis.js"

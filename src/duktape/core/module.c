@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 #include <dlfcn.h>
 #include <pthread.h>
+#include <libgen.h>
 
 #include "duktape.h"
 #include "module.h"
@@ -145,11 +146,35 @@ duk_ret_t duk_require(duk_context *ctx)
 
 duk_ret_t duk_resolve(duk_context *ctx)
 {
-    duk_push_c_function(ctx, resolve_id, 1);
-    duk_dup(ctx, -3); // duplicate request_id
-    duk_call(ctx, 1);
+    int call_with_default_req_id = 1;
 
-    int force_reload = duk_get_boolean_default(ctx, -2, 0);
+    // if module?.id exists then use dirname(module.id) as cwd
+    if (duk_get_global_string(ctx, "module"))
+    {
+        const char *req_id = duk_get_string(ctx, 0);
+        duk_get_prop_string(ctx, -1, "id");
+        char *dir = dirname((char *)duk_get_string(ctx, -1)); // will be null on failure
+        char req_id_w_dir[strlen(req_id) + 1 + strlen(dir) + 1];
+        if (dir != NULL)
+        {
+            strcpy(req_id_w_dir, dir);
+            strcat(req_id_w_dir, "/");
+            strcat(req_id_w_dir, req_id);
+
+            duk_push_c_function(ctx, resolve_id, 1);
+            duk_push_string(ctx, req_id_w_dir);
+            duk_call(ctx, 1);
+            call_with_default_req_id = 0;
+        }
+    }
+    if (call_with_default_req_id)
+    {
+        duk_push_c_function(ctx, resolve_id, 1);
+        duk_dup(ctx, 0);
+        duk_call(ctx, 1);
+    }
+
+    int force_reload = duk_get_boolean_default(ctx, 2, 0);
 
     if (duk_is_null(ctx, -1))
     {
@@ -194,6 +219,10 @@ duk_ret_t duk_resolve(duk_context *ctx)
         duk_push_c_function(ctx, duk_resolve, 2);
         duk_put_prop_string(ctx, -2, "resolve");
 
+        // store module in modules id map
+        duk_dup(ctx, module_idx);
+        duk_put_prop_string(ctx, module_id_map_idx, id);
+
         // get module source using loader
         // the loader modifies module.exports
         duk_push_c_function(ctx, module_loaders[module_loader_idx].loader, 3);
@@ -208,10 +237,6 @@ duk_ret_t duk_resolve(duk_context *ctx)
         {
             return duk_throw(ctx);
         }
-
-        // store module in modules id map
-        duk_dup(ctx, module_idx);
-        duk_put_prop_string(ctx, module_id_map_idx, id);
 
         // return module
         duk_dup(ctx, module_idx);
