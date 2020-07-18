@@ -1046,12 +1046,16 @@ static void *http_dothread(void *arg)
         }
 
         evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
-        if (duk_is_error(dhs->ctx, -1) || duk_is_string(dhs->ctx, -1))
+        if (duk_is_error(dhs->ctx, -1) )
         {
             duk_get_prop_string(dhs->ctx, -1, "stack");
             evbuffer_add_printf(req->buffer_out, msg, duk_safe_to_string(dhs->ctx, -1));
-            printf("error in thread '%s'\n", duk_safe_to_string(dhs->ctx, -1));
+            printf("error in callback '%s'\n", duk_safe_to_string(dhs->ctx, -1));
             duk_pop(dhs->ctx);
+        }
+        else if (duk_is_string(dhs->ctx, -1))
+        {
+            evbuffer_add_printf(req->buffer_out, msg, duk_safe_to_string(dhs->ctx, -1));
         }
         else
         {
@@ -1424,15 +1428,14 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                     char *err;
                     if (duk_is_error(dhs->ctx, -1))
                     {
-                        err = (char *)duk_safe_to_string(dhs->ctx, -1);
+                        duk_get_prop_string(dhs->ctx, -1, "stack");
+                        duk_remove(dhs->ctx,-2);
                     }
-                    else
-                    {
-                        err = (char *)duk_json_encode(dhs->ctx, -1);
-                        //get rid of quotes
-                        err[strlen(err) - 1] = '\0';
-                        err++;
-                    }
+                    fprintf(stderr,"error in callback: %s\n",duk_get_string(dhs->ctx,-1));
+                    err = (char *)duk_json_encode(dhs->ctx, -1);
+                    //get rid of quotes
+                    err[strlen(err) - 1] = '\0';
+                    err++;
                     duk_push_sprintf(dhs->ctx, msg, err);
                 }
                 else

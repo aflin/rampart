@@ -58,6 +58,12 @@ set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp)
 
 ########### ADD MODULES HERE ###############
 
+## allow linked rpcrypto.so to be loaded from rpserver.so in the same dir
+SET(CMAKE_SKIP_BUILD_RPATH FALSE)
+SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+SET(CMAKE_INSTALL_RPATH "./")
+
+
 ###SQL###
 add_library(rpsql SHARED
  duktape/modules/db.c
