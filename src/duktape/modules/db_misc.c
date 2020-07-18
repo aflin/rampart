@@ -1037,7 +1037,7 @@ static int rex (
         FFS *last=rl->ilst[rl->i].ex->last;\
         do\
         {\
-            duk_push_lstring(ctx,sub->hit,(duk_size_t)sub->hitsize);\
+            duk_push_lstring(ctx,(const char *)sub->hit,(duk_size_t)sub->hitsize);\
             duk_put_prop_index(ctx,-2,(int)sub->subExprIndex);\
             if(sub==last) break;\
             sub=sub->next;\
@@ -1094,7 +1094,7 @@ static int rex (
 
             /* set up next loop */
             duk_dup(ctx,func_idx);/* copy function, setup for callback */
-            duk_push_lstring(ctx,p,(duk_size_t)psz);
+            duk_push_lstring(ctx,(const char *)p,(duk_size_t)psz);
             gotone=1;
             if(ret_subs)
                 pushsubhit;
@@ -1144,7 +1144,7 @@ static int rex (
                 pushsubhit;
 
             /* put it in an array to be returned */
-            duk_push_lstring(ctx,p,(duk_size_t)psz);
+            duk_push_lstring(ctx,(const char *)p,(duk_size_t)psz);
             if(ret_subs)
                 /* put match into subhit object */
                 duk_put_prop_string(ctx,-2,"match"); /* {expressionIndex:X,submatches:Y,match:Z} is on top of stack */
