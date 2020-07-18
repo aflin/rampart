@@ -580,6 +580,7 @@ void duk_rp_init_qstruct(QUERY_STRUCT *q)
     q->skip = 0;
     q->max = RESMAX_DEFAULT;
     q->retarray = 0;
+    q->getCounts = 0;
     q->err = QS_SUCCESS;
 }
 
@@ -651,6 +652,12 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
             /* object of settings */
             else
             {
+
+                if (duk_get_prop_string(ctx, i, "includeCounts"))
+                    q->getCounts = duk_get_boolean_default(ctx, -1, 0);
+
+                duk_pop(ctx);
+
                 if (duk_get_prop_string(ctx, i, "skip"))
                     q->skip = duk_rp_get_int_default(ctx, -1, 0);
 
@@ -787,8 +794,7 @@ int duk_rp_add_parameters(duk_context *ctx, TEXIS *tx, int arryi)
     return (1);
 }
 
-#define pushcounts(rownum) do{\
-    duk_push_int(ctx, (rownum) );\
+#define pushcounts do{\
     duk_push_object(ctx);\
     duk_push_number(ctx,(double)cinfo.indexCount );\
     duk_put_prop_string(ctx,-2,"indexCount");\
@@ -815,7 +821,8 @@ int duk_rp_fetch(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
     FLDLST *fl;
     TXCOUNTINFO cinfo;
 
-    texis_getCountInfo(tx,&cinfo);
+    if(q->getCounts)
+        texis_getCountInfo(tx,&cinfo);
     /* create return object */
     duk_push_object(ctx);
 
@@ -878,8 +885,12 @@ int duk_rp_fetch(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
         }
     }
     duk_put_prop_string(ctx,-2,"results");
-    pushcounts(rown);
-    duk_put_prop_string(ctx,-3,"countInfo");
+    if(q->getCounts)
+    {
+        pushcounts;
+        duk_put_prop_string(ctx,-2,"countInfo");
+    }
+    duk_push_int(ctx, rown);
     duk_put_prop_string(ctx,-2,"rowCount");
     
     return (rown);
@@ -900,7 +911,8 @@ int duk_rp_fetchWCallback(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
     FLDLST *fl;
     TXCOUNTINFO cinfo;
 
-    texis_getCountInfo(tx,&cinfo);
+    if(q->getCounts)
+        texis_getCountInfo(tx,&cinfo);
 
     while (rown < resmax && (fl = TEXIS_FETCH(tx, -1)))
     {
@@ -916,8 +928,16 @@ int duk_rp_fetchWCallback(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
             duk_dup(ctx, callback);
             duk_push_this(ctx);
             duk_push_object(ctx);
-            pushcounts(rown++);
-            duk_call_method(ctx, 3);/* function({_empty_},resnum,info){} */
+            duk_push_int(ctx, rown++ );
+
+            if(q->getCounts)
+            {
+                pushcounts;
+                duk_call_method(ctx, 3);/* function({_empty_},resnum,info){} */
+            }
+            else
+                duk_call_method(ctx, 2);
+
             break;
         }
 
@@ -937,9 +957,17 @@ int duk_rp_fetchWCallback(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
                 duk_push_string(ctx, fl->name[i]);
                 duk_put_prop_index(ctx, -2, i);
             }
+            
+            duk_push_int(ctx, -1 );
+            
+            if(q->getCounts)
+            {
+                pushcounts;
+                duk_call_method(ctx, 3); /* function(res,resnum,info){} */
+            }
+            else
+                duk_call_method(ctx, 2);
 
-            pushcounts(-1);
-            duk_call_method(ctx, 3); /* function(res,resnum,info){} */
             retarray = 1;            /* give names to callback only once */
 
             /* if function returns false, exit while loop, return number of rows so far */
@@ -962,8 +990,16 @@ int duk_rp_fetchWCallback(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
                 duk_put_prop_index(ctx, -2, i);
             }
 
-            pushcounts(rown++);
-            duk_call_method(ctx, 3); /* function(res,resnum,info){} */
+            duk_push_int(ctx, rown++ );
+
+            if(q->getCounts)
+            {
+                pushcounts;
+                duk_call_method(ctx, 3);/* function({_empty_},resnum,info){} */
+            }
+            else
+                duk_call_method(ctx, 2);
+
             break;
         }
         /* object requested */
@@ -975,8 +1011,16 @@ int duk_rp_fetchWCallback(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
                 duk_rp_pushfield(ctx, fl, i);
                 duk_put_prop_string(ctx, -2, (const char *)fl->name[i]);
             }
-            pushcounts(rown++);
-            duk_call_method(ctx, 3); /* function(res,resnum,info){} */
+            duk_push_int(ctx, rown++ );
+
+            if(q->getCounts)
+            {
+                pushcounts;
+                duk_call_method(ctx, 3);/* function({_empty_},resnum,info){} */
+            }
+            else
+                duk_call_method(ctx, 2);
+
             break;
         }
         } /* switch */

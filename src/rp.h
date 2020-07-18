@@ -62,9 +62,11 @@ extern "C"
         int skip;        /* number of results to skip */
         int max;         /* maximum number of results to return */
         char retarray;   /* 0 for return object with key as column names, 
-                    1 for array with no column names and
-                    2 for array with first row populated with column names */
+                            1 for array with no column names and
+                            2 for array with first row populated with column names 
+                            3 for novars                                           */
         char err;
+        char getCounts; /* whether to include metamorph counts in return */
     };
 
     duk_ret_t duk_rp_sql_close(duk_context *ctx);
