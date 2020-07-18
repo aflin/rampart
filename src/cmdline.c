@@ -227,7 +227,45 @@ int main(int argc, char *argv[])
 
     duk_init_context(ctx);
 
-    if (argc == 1)
+    {   /* add process.argv */
+        int i=0;
+
+        duk_push_global_object(ctx);
+        /* get global symbol "process" */
+        if(!duk_get_prop_string(ctx,-1,"process"))
+        {
+            duk_pop(ctx);
+            duk_push_object(ctx);
+        }
+        
+        duk_push_array(ctx); /* process. */
+
+        for (i=0;i<argc;i++)
+        {
+            duk_push_string(ctx,argv[i]);
+            duk_put_prop_index(ctx,-2,(duk_uarridx_t)i);
+        }
+        duk_put_prop_string(ctx,-2,"argv");
+        duk_push_string(ctx,argv[0]);
+        duk_put_prop_string(ctx,-2,"argv0");
+        duk_put_prop_string(ctx,-2,"process");
+        duk_pop(ctx);
+        /* remove any arguments which start with '-' before 
+           the first arg that doesn't */
+
+        // skip the command name */
+        argv++;
+        argc--;
+
+        while( argc && *(argv[0]) == '-')
+        {
+            argc--;
+            argv++;
+        }
+        
+    }
+
+    if (argc == 0)
     {
         // store old terminal settings
         struct termios old_tio, new_tio;
@@ -242,48 +280,79 @@ int main(int argc, char *argv[])
         tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
         return ret;
     }
-    else if (argc == 2)
+    else if (argc > 0)
     {
         struct stat entry_file_stat;
-        if (stat(argv[1], &entry_file_stat))
+        char *file_src, *free_file_src;
+        FILE *entry_file;
+
+        if (stat(argv[0], &entry_file_stat))
         {
-            duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not find entry file '%s': %s\n", argv[1], strerror(errno));
-            printf("%s\n", duk_safe_to_stacktrace(ctx, -1));
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not find entry file '%s': %s\n", argv[0], strerror(errno));
+            fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
             duk_destroy_heap(ctx);
             return 1;
         }
 
-        FILE *entry_file = fopen(argv[1], "r");
+        entry_file = fopen(argv[0], "r");
         if (entry_file == NULL)
         {
-            duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not open entry file '%s': %s\n", argv[1], strerror(errno));
-            printf("%s\n", duk_safe_to_stacktrace(ctx, -1));
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not open entry file '%s': %s\n", argv[0], strerror(errno));
+            fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
             duk_destroy_heap(ctx);
             return 1;
         }
 
-        char *file_src = malloc(entry_file_stat.st_size);
-        if (fread(file_src, 1, entry_file_stat.st_size, entry_file) != entry_file_stat.st_size)
+        file_src = malloc(entry_file_stat.st_size);
+        if(!file_src)
         {
-            duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read entry file '%s': %s\n", argv[1], strerror(errno));
-            printf("%s\n", duk_safe_to_stacktrace(ctx, -1));
+            fprintf(stderr,"Error allocating memory for source file\n");
             duk_destroy_heap(ctx);
-            free(file_src);
             return 1;
         }
+
+        free_file_src=file_src;
+
+        if (fread(file_src, 1, entry_file_stat.st_size, entry_file) != entry_file_stat.st_size)
+        {
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read entry file '%s': %s\n", argv[0], strerror(errno));
+            fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+            duk_destroy_heap(ctx);
+            free(free_file_src);
+            return 1;
+        }
+
+        /* skip over #!/path/to/rampart */
+        if(*file_src=='#')
+        {
+            char *s=strchr(file_src,'\n');
+
+            if(s)
+                s++;
+
+            if(!s || !*s)
+            {
+                duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read beyond first line in entry file '%s'\n", argv[0]);
+                fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+                duk_destroy_heap(ctx);
+                free(free_file_src);
+                return 1;
+            }
+            file_src=s;
+        }
         duk_push_string(ctx, file_src);
-        duk_push_string(ctx, argv[1]);
-        free(file_src);
+        duk_push_string(ctx, argv[0]);
+        free(free_file_src);
         if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
         {
-            printf("%s\n", duk_safe_to_stacktrace(ctx, -1));
+            fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
             duk_destroy_heap(ctx);
             return 1;
         }
 
         if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
         {
-            printf("%s\n", duk_safe_to_stacktrace(ctx, -1));
+            fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
             duk_destroy_heap(ctx);
             return 1;
         }

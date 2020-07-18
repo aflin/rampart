@@ -1,6 +1,7 @@
 #include "misc.h"
 #include "../core/duktape.h"
 #include <ctype.h>
+#include <unistd.h>
 
 /* utility function for global object:
       var buf=toBuffer(val); //fixed if string, same type if already buffer
@@ -48,9 +49,57 @@ void duk_strToBuf_init(duk_context *ctx)
     duk_put_global_string(ctx, "rampart");
 }
 
+duk_ret_t duk_process_exit(duk_context *ctx)
+{
+    int exitval=duk_get_int_default(ctx,0,0);
+    duk_destroy_heap(ctx);
+    exit(exitval);
+    return 0;
+}
+
+void duk_process_init(duk_context *ctx)
+{
+    int i=0;
+    char *env;
+
+    duk_push_global_object(ctx);
+    /* get global symbol "process" */
+    if(!duk_get_prop_string(ctx,-1,"process"))
+    {
+        duk_pop(ctx);
+        duk_push_object(ctx);
+    }
+    
+    duk_push_object(ctx); /* process.env */
+
+    while ( (env=environ[i]) != NULL )
+    {
+        int len;
+        char *val=strchr(env,'=');
+        
+        if(val)
+        {
+            len=val-env;
+            val++;
+            duk_push_lstring(ctx,env,(duk_size_t)len);
+            duk_push_string(ctx,val);
+            duk_put_prop(ctx,-3);
+        }
+        i++;
+    }
+    duk_put_prop_string(ctx,-2,"env");
+
+    duk_push_c_function(ctx,duk_process_exit,1);
+    duk_put_prop_string(ctx,-2,"exit");
+
+    duk_put_prop_string(ctx,-2,"process");
+    duk_pop(ctx);
+}
+
 void duk_misc_init(duk_context *ctx)
 {
     duk_strToBuf_init(ctx);
+    duk_process_init(ctx);
 }
 
 /* **************************************************************************
