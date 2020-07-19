@@ -35,7 +35,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "../../rp.h"
-
+#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <errno.h>
@@ -145,10 +145,16 @@ static inline void _out_char(char character, void *buffer, size_t idx, size_t ma
     (void)buffer;
     (void)idx;
     (void)maxlen;
-    if (character)
-    {
         putchar(character);
-    }
+}
+
+
+static inline void _fout_char(char character, void *stream, size_t idx, size_t maxlen)
+{
+    FILE *out=(FILE*)stream;
+    (void)idx;
+    (void)maxlen;
+    fputc(character,out);
 }
 
 // internal output function wrapper
@@ -619,13 +625,12 @@ static size_t _etoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
     return idx;
 }
 
-static int _duk_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *ctx)
+static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *ctx, duk_idx_t fidx)
 {
     unsigned int flags, width, precision, n;
     size_t idx = 0U;
-    duk_idx_t fidx = 1;
     int preserveUfmt = 0;
-    const char *format = duk_require_string(ctx, 0);
+    const char *format = duk_require_string(ctx, fidx++);
 
     if (!buffer)
     {
@@ -894,7 +899,20 @@ static int _duk_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_
             format++;
             break;
         }
-        /* -AJF: added U and J for urlencode and JSON.stringify */
+        /* -AJF: added B, U and J for buffer, urlencode and JSON.stringify */
+        case 'B':
+        {
+            duk_size_t sz;
+            char *b=(char *)duk_require_buffer_data(ctx,fidx++,&sz);
+            int i=0,isz=(int)sz;
+
+            for (;i<isz;i++)
+            {
+                out(*(b++), buffer, idx++, maxlen);
+            }
+            format++;
+            break;
+        }
         case 'U':
         {
             duk_size_t sz;
@@ -905,11 +923,13 @@ static int _duk_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_
             else
                 u = duk_rp_url_encode((char *)s, (int)sz);
 
+            /* prevent double url encoding on second pass in sprintf*/
             if (!buffer)
             {
                 preserveUfmt = 1;
                 duk_dup(ctx, fidx);
             }
+
             duk_push_string(ctx, u);
             free(u);
             duk_replace(ctx, fidx);
@@ -972,7 +992,7 @@ static int _duk_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_
     }
 
     // termination
-    out((char)0, buffer, idx < maxlen ? idx : maxlen - 1U, maxlen);
+    //out((char)0, buffer, idx < maxlen ? idx : maxlen - 1U, maxlen);
 
     // return written chars without terminating \0
     return (int)idx;
@@ -991,7 +1011,7 @@ duk_ret_t duk_printf(duk_context *ctx)
         exit(1);
     }
 
-    ret = _duk_printf(_out_char, buffer, (size_t)-1, ctx);
+    ret = _printf(_out_char, buffer, (size_t)-1, ctx,0);
 
     pthread_mutex_unlock(&pflock);
 
@@ -999,10 +1019,58 @@ duk_ret_t duk_printf(duk_context *ctx)
     return 1;
 }
 
+duk_ret_t duk_fprintf(duk_context *ctx)
+{
+    int ret;
+    const char *fn=duk_require_string(ctx,0);
+    FILE *out;
+    int append=0;
+    
+    if( duk_is_boolean(ctx,1) )
+    {
+        append=duk_get_boolean(ctx,1);
+        duk_remove(ctx,1);
+    }    
+    
+    if (pthread_mutex_lock(&pflock) == EINVAL)
+    {
+        fprintf(stderr, "could not obtain lock in http_callback\n");
+        exit(1);
+    }
+
+    if(append)
+    {
+        if( (out=fopen(fn,"a")) == NULL )
+        {
+            if( (out=fopen(fn,"w")) == NULL )
+                goto err;
+        }
+        
+    }
+    else
+    {
+        if( (out=fopen(fn,"w")) == NULL )
+            goto err;
+    }
+
+
+    ret = _printf(_fout_char, (void*)out, (size_t)-1, ctx,1);
+    fclose(out);
+
+    pthread_mutex_unlock(&pflock);
+
+    duk_push_int(ctx, ret);
+    return 1;
+    
+    err:
+    duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening file '%s': %s", fn, strerror(errno));
+    return duk_throw(ctx);
+}
+
 duk_ret_t duk_sprintf(duk_context *ctx)
 {
     char *buffer;
-    int size = _duk_printf(_out_null, NULL, (size_t)-1, ctx);
+    int size = _printf(_out_null, NULL, (size_t)-1, ctx,0);
 
     buffer = malloc((size_t)size + 1);
     if (!buffer)
@@ -1010,8 +1078,30 @@ duk_ret_t duk_sprintf(duk_context *ctx)
         duk_push_string(ctx, "malloc error in sprintf");
         duk_throw(ctx);
     }
-    (void)_duk_printf(_out_buffer, buffer, (size_t)-1, ctx);
-    duk_push_string(ctx, buffer);
+    (void)_printf(_out_buffer, buffer, (size_t)-1, ctx,0);
+    duk_push_lstring(ctx, buffer,(duk_size_t)size);
+    free(buffer);
+    return 1;
+}
+
+duk_ret_t duk_bprintf(duk_context *ctx)
+{
+    char *buffer;
+    void *dukbuf;
+
+    int size = _printf(_out_null, NULL, (size_t)-1, ctx,0);
+
+    buffer = malloc((size_t)size + 1);
+    if (!buffer)
+    {
+        duk_push_string(ctx, "malloc error in sprintf");
+        duk_throw(ctx);
+    }
+    (void)_printf(_out_buffer, buffer, (size_t)-1, ctx,0);
+
+    dukbuf = duk_push_fixed_buffer(ctx, (duk_size_t)size);
+    memcpy(dukbuf, (const void *)buffer, (size_t)size);
+
     free(buffer);
     return 1;
 }
@@ -1022,6 +1112,10 @@ void duk_printf_init(duk_context *ctx)
     duk_put_global_string(ctx, "printf");
     duk_push_c_function(ctx, duk_sprintf, DUK_VARARGS);
     duk_put_global_string(ctx, "sprintf");
+    duk_push_c_function(ctx, duk_fprintf, DUK_VARARGS);
+    duk_put_global_string(ctx, "fprintf");
+    duk_push_c_function(ctx, duk_bprintf, DUK_VARARGS);
+    duk_put_global_string(ctx, "bprintf");
 
     if (pthread_mutex_init(&pflock, NULL) == EINVAL)
     {

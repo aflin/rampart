@@ -43,7 +43,7 @@
         duk_push_error_object(ctx, DUK_ERR_ERROR, "error seeking file '%s': %s", filename, strerror(errno)); \
         return duk_throw(ctx);                                                                               \
     }
-
+/* -ajf changed to optionally accept just a string */
 /**
  * Reads a specified number of bytes from a file into a buffer.
  * @typedef {Object} ReadFileOptions
@@ -55,25 +55,53 @@
  */
 duk_ret_t duk_util_read_file(duk_context *ctx)
 {
-    duk_get_prop_string(ctx, -1, "file");
-    const char *filename = duk_require_string(ctx, -1);
-    duk_pop(ctx);
+    const char *filename=NULL;
+    size_t offset=0;
+    long length=0;
+    duk_idx_t obj_idx=0;
+    FILE *fp;
 
-    duk_get_prop_string(ctx, -1, "offset");
-    size_t offset = (size_t)duk_get_number_default(ctx, -1, 0);
-    duk_pop(ctx);
-
-    if (offset < 0)
+    if(duk_is_string(ctx,0))
     {
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "offset cannot be negative");
+        filename = duk_get_string(ctx, 0);            
+    }
+
+    if ( duk_is_object(ctx,obj_idx) || duk_is_object(ctx,++obj_idx) ) 
+    {   
+        if(!filename)
+        {
+            duk_get_prop_string(ctx, obj_idx, "file");
+            filename = duk_require_string(ctx, -1);
+            duk_pop(ctx);
+        }
+        else if (duk_has_prop_string(ctx, obj_idx, "file") )
+        {
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "filename specified twice");
+            return duk_throw(ctx);
+        }
+
+        duk_get_prop_string(ctx, obj_idx, "offset");
+        offset = (size_t)duk_get_number_default(ctx, -1, 0);
+        duk_pop(ctx);
+
+        if (offset < 0)
+        {
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "offset cannot be negative");
+            return duk_throw(ctx);
+        }
+
+        duk_get_prop_string(ctx, obj_idx, "length");
+        length = (long)duk_get_number_default(ctx, -1, 0);
+        duk_pop(ctx);
+    }
+
+    if (!filename)
+    {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error, no filename provided");
         return duk_throw(ctx);
     }
 
-    duk_get_prop_string(ctx, -1, "length");
-    long length = (long)duk_get_number_default(ctx, -1, 0);
-    duk_pop(ctx);
-
-    FILE *fp = fopen(filename, "r");
+    fp = fopen(filename, "r");
     if (fp == NULL)
     {
         duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening '%s': %s", filename, strerror(errno));
