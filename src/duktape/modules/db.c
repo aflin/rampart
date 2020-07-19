@@ -15,6 +15,15 @@
 #include "../../rp.h"
 #include "../core/duktape.h"
 
+#ifdef __APPLE__
+#include <Availability.h>
+#  if __MAC_OS_X_VERSION_MIN_REQUIRED < 101300
+#    include "fmemopen.h"
+#    include "fmemopen.c"
+#  endif
+#endif
+
+
 #include "db_misc.c" /* copied and altered thunderstone code for stringformat and abstract */
 
 /* TODO: make not using handle cache work with cancel */
@@ -28,6 +37,7 @@ int tx_rp_cancelled = 0;
 #define EXIT_IF_CANCELLED \
     if (tx_rp_cancelled)  \
         exit(0);
+
 
 #ifdef DEBUG_TX_CALLS
 

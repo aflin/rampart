@@ -2,6 +2,7 @@
 #include "../core/duktape.h"
 #include <ctype.h>
 #include <unistd.h>
+extern char **environ;
 
 /* utility function for global object:
       var buf=toBuffer(val); //fixed if string, same type if already buffer
