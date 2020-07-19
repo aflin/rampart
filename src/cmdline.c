@@ -303,7 +303,7 @@ int main(int argc, char *argv[])
             return 1;
         }
 
-        file_src = malloc(entry_file_stat.st_size);
+        file_src = malloc(entry_file_stat.st_size + 1);
         if(!file_src)
         {
             fprintf(stderr,"Error allocating memory for source file\n");
@@ -321,6 +321,8 @@ int main(int argc, char *argv[])
             free(free_file_src);
             return 1;
         }
+
+        file_src[entry_file_stat.st_size]='\0';
 
         /* skip over #!/path/to/rampart */
         if(*file_src=='#')
