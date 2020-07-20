@@ -1312,6 +1312,16 @@ void rp_exit(int sig)
    default being true (safe) if not present.
 */
 
+#define killfork do {\
+ kill(finfo->childpid, SIGTERM);\
+ finfo->childpid=0;\
+ close(finfo->child2par);\
+ close(finfo->par2child);\
+ finfo->child2par = -1;\
+ finfo->par2child = -1;\
+} while(0)
+
+
 static void
 http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 {
@@ -1334,14 +1344,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         tprintf("ismod=%d\n",dhs->ismod);
         /* module changed, so must refork */
         if(dhs->ismod==2)
-        {
-           kill(finfo->childpid, SIGTERM);
-           finfo->childpid=0;
-           close(finfo->child2par);
-           close(finfo->par2child);
-           finfo->child2par = -1;
-           finfo->par2child = -1; 
-        }
+            killfork;
         else
             preforked = 1;
     }
@@ -1556,6 +1559,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             {
                 fprintf(stderr, "server.c line %d: errno=%d\n", __LINE__, errno);
                 send500(req, "Error in Child Process");
+                killfork;
                 return;
             }
         }
@@ -1618,6 +1622,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             if (totread < 1 && toread > 0)
             {
                 fprintf(stderr, "server.c line %d, errno=%d\n", __LINE__, errno);
+                killfork;
                 send500(req, "Error in Child Process");
                 return;
             }
@@ -1679,6 +1684,11 @@ static duk_idx_t getmod(DHS *dhs)
     duk_idx_t idx=dhs->func_idx;
     duk_context *ctx=dhs->ctx;
     const char *mod;
+    char msg[] = "<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>%s</pre></p></body></html>";
+
+    duk_get_prop_string(ctx,idx,"module");
+    mod=duk_get_string(ctx,-1);
+    duk_pop(ctx);
 
     /* is it already on the stack? */
     if (duk_get_prop_string(ctx,idx,"loadedmod") )
@@ -1688,7 +1698,7 @@ static duk_idx_t getmod(DHS *dhs)
         duk_idx_t retidx;
         
         retidx=(duk_idx_t) duk_get_int(ctx,-1);
-        duk_pop(ctx);
+        duk_pop(ctx); /*loadedmod */
         duk_get_prop_string(ctx,retidx,"module_id");
         fn=duk_get_string(ctx,-1);
         duk_pop(ctx);
@@ -1700,30 +1710,32 @@ static duk_idx_t getmod(DHS *dhs)
             duk_get_prop_string(ctx,retidx,"mtime");
             lmtime = (time_t)duk_get_number(ctx,-1);
             duk_pop(ctx);           
+            //printf("%d >= %d?\n",(int)lmtime,(int)sb.st_mtime);
             if(lmtime>=sb.st_mtime)
                 return retidx;
             else
-            // remove old here, reload module below
+            /* remove old here, reload module below */
             {
                 duk_remove(ctx,retidx);
                 //printf("reload\n");
             }
         }
-        /* else file is gone?  Don't attempt to reload */
+        /* else file is gone?  Send error */
         else 
-            return retidx;
+        {
+            char submsg[64+strlen(mod)];
+            snprintf(submsg,64+strlen(mod),"Error: Could not resolve module id %s: No such file or directory",mod);
+            evbuffer_add_printf(dhs->req->buffer_out, msg, submsg);
+            evhtp_send_reply(dhs->req, 500);
+            return -1;
+        }
     }
-    else duk_pop(ctx);
+    else duk_pop(ctx);/* loadedmod -undefined */
 
     /* load module from file */
-    duk_get_prop_string(ctx,idx,"module");
-    mod=duk_get_string(ctx,-1);
-    duk_pop(ctx);
-
     duk_push_sprintf(ctx,"module.resolve(\"%s\",true);", mod);
     if(duk_peval(ctx) != 0)
     {
-        char msg[] = "<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>%s</pre></p></body></html>";
 
         evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
         if (duk_is_error(ctx, -1) || duk_is_string(ctx, -1))
@@ -1744,7 +1756,7 @@ static duk_idx_t getmod(DHS *dhs)
 
     duk_get_prop_string(ctx,-1,"exports");
     /* take mtime & id from modules and put it in exports, 
-        signal next run requires a refork
+        signal next run requires a refork by setting dhs->ismod=2;
         then remove modules */
     duk_get_prop_string(ctx,-2,"mtime");
     duk_put_prop_string(ctx,-2,"mtime");
@@ -1753,6 +1765,7 @@ static duk_idx_t getmod(DHS *dhs)
     dhs->ismod=2;
     duk_remove(ctx,-2);
 
+    /* the location on the stack of the callback loaded from the module */
     duk_push_int( ctx, (duk_int_t)duk_get_top_index(ctx) );
     duk_put_prop_string(ctx,idx,"loadedmod");
     return duk_get_top_index(ctx);

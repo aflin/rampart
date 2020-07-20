@@ -177,8 +177,7 @@ duk_ret_t duk_resolve(duk_context *ctx)
         duk_call(ctx, 1);
     }
 
-    int force_reload = duk_get_boolean_default(ctx, 2, 0);
-
+    int force_reload = duk_get_boolean_default(ctx, 1, 0);
     if (duk_is_null(ctx, -1))
     {
         duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not resolve module id %s: %s\n", duk_get_string(ctx, 0), strerror(errno));
@@ -200,64 +199,63 @@ duk_ret_t duk_resolve(duk_context *ctx)
     duk_get_prop_string(ctx, -1, "module_id_map");
     duk_idx_t module_id_map_idx = duk_get_top_index(ctx);
 
+    if(force_reload)
+        duk_del_prop_string(ctx, -1, id);
+
     // if found the module in the module_id_map
-    if (duk_get_prop_string(ctx, -1, id) && !force_reload)
-    {
+    if (duk_get_prop_string(ctx, -1, id))
         return 1;
-    }
-    else
+
+    // module
+    duk_idx_t module_idx = duk_push_object(ctx);
+
+    // set prototype to be the global module
+    duk_get_global_string(ctx, "module");
+    duk_set_prototype(ctx, -2);
+
+    // module.id
+    duk_push_string(ctx, id);
+    duk_put_prop_string(ctx, -2, "id");
+
+    // module.exports
+    duk_push_object(ctx);
+    duk_put_prop_string(ctx, -2, "exports");
+
+    // store 'module' in 'module_id_map'
+    duk_dup(ctx, module_idx);
+    duk_put_prop_string(ctx, module_id_map_idx, id);
+
+    // push current module
+    duk_push_global_stash(ctx);
+    duk_get_prop_string(ctx, -1, "module_stack");
+    duk_push_string(ctx, "push");
+    duk_dup(ctx, module_idx);
+    duk_call_prop(ctx, -3, 1);
+
+    // get module source using loader
+    // the loader modifies module.exports
+    duk_push_c_function(ctx, module_loaders[module_loader_idx].loader, 3);
+    // id
+    duk_push_string(ctx, id);
+    // require
+    duk_dup(ctx, require_idx);
+    // module
+    duk_dup(ctx, module_idx);
+
+    if (duk_pcall(ctx, 3) != DUK_EXEC_SUCCESS)
     {
-        // module
-        duk_idx_t module_idx = duk_push_object(ctx);
-
-        // set prototype to be the global module
-        duk_get_global_string(ctx, "module");
-        duk_set_prototype(ctx, -2);
-
-        // module.id
-        duk_push_string(ctx, id);
-        duk_put_prop_string(ctx, -2, "id");
-
-        // module.exports
-        duk_push_object(ctx);
-        duk_put_prop_string(ctx, -2, "exports");
-
-        // store 'module' in 'module_id_map'
-        duk_dup(ctx, module_idx);
-        duk_put_prop_string(ctx, module_id_map_idx, id);
-
-        // push current module
-        duk_push_global_stash(ctx);
-        duk_get_prop_string(ctx, -1, "module_stack");
-        duk_push_string(ctx, "push");
-        duk_dup(ctx, module_idx);
-        duk_call_prop(ctx, -3, 1);
-
-        // get module source using loader
-        // the loader modifies module.exports
-        duk_push_c_function(ctx, module_loaders[module_loader_idx].loader, 3);
-        // id
-        duk_push_string(ctx, id);
-        // require
-        duk_dup(ctx, require_idx);
-        // module
-        duk_dup(ctx, module_idx);
-
-        if (duk_pcall(ctx, 3) != DUK_EXEC_SUCCESS)
-        {
-            return duk_throw(ctx);
-        }
-
-        // pop current module
-        duk_push_global_stash(ctx);
-        duk_get_prop_string(ctx, -1, "module_stack");
-        duk_push_string(ctx, "pop");
-        duk_call_prop(ctx, -2, 0);
-
-        // return module
-        duk_dup(ctx, module_idx);
-        return 1;
+        return duk_throw(ctx);
     }
+
+    // pop current module
+    duk_push_global_stash(ctx);
+    duk_get_prop_string(ctx, -1, "module_stack");
+    duk_push_string(ctx, "pop");
+    duk_call_prop(ctx, -2, 0);
+
+    // return module
+    duk_dup(ctx, module_idx);
+    return 1;
 }
 
 void duk_module_init(duk_context *ctx)

@@ -1,7 +1,7 @@
 
 Simple usage:
 
-    var curl=require("./libdukcurl");
+    var curl=require("./rpcurl");
     var ret=curl.fetch("http://google.com/");
     /* minimally ret={
                             status:     -1 to 599,
