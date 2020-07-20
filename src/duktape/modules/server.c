@@ -1337,7 +1337,6 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 
     cstart = stopwatch(0.0);
     tprintf("in fork\n");
-
     /* use waitpid to eliminate the possibility of getting a process that isn't our child */
     if (finfo->childpid && !waitpid(finfo->childpid, &pidstatus, WNOHANG))
     {
@@ -1403,7 +1402,6 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         close(par2child[1]);
 
         tprintf("beginning with par2child=%d, child2par=%d\n", par2child[0], child2par[1]);
-
         /* on first round, just forked, so we have all the request info
             no need to pipe it */
         /* copy function ref to top of stack */
@@ -1454,6 +1452,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 
             /* first: write the size of the message to parent */
             write(child2par[1], &msgOutSz, sizeof(uint32_t));
+
             /* second: a single char for thread_safe info */
             if (!have_threadsafe_val)
             {
@@ -1485,6 +1484,8 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             /* wait here for the next request and get it's size */
             read(par2child[0], &msgOutSz, sizeof(uint32_t));
             tprintf("child to receive message %d long on %d\n", (int)msgOutSz, par2child[0]);
+
+            read(par2child[0], &have_threadsafe_val, sizeof(int));
 
             read(par2child[0], &(dhs->func_idx), sizeof(duk_idx_t));
             duk_dup(dhs->ctx, dhs->func_idx);
@@ -1532,6 +1533,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 
             tprintf("parent sending cbor, length %d\n", (int)msgOutSz);
             write(finfo->par2child, &msgOutSz, sizeof(uint32_t));
+            write(finfo->par2child, &have_threadsafe_val,sizeof(int));
             write(finfo->par2child, &(dhs->func_idx), sizeof(duk_idx_t));
             write(finfo->par2child, cbor, msgOutSz);
             tprintf("parent sent cbor, length %d\n", (int)msgOutSz);
@@ -1768,6 +1770,9 @@ static duk_idx_t getmod(DHS *dhs)
     /* the location on the stack of the callback loaded from the module */
     duk_push_int( ctx, (duk_int_t)duk_get_top_index(ctx) );
     duk_put_prop_string(ctx,idx,"loadedmod");
+
+    duk_push_sprintf(ctx,"module:%s",mod);
+    duk_put_prop_string(ctx,-2,"fname");
     return duk_get_top_index(ctx);
 }
 
@@ -1812,7 +1817,7 @@ http_callback(evhtp_request_t *req, void *arg)
         have_threadsafe_val = 1;
     }
     duk_pop(dhs->ctx);
-    //    if(!gl_singlethreaded && dofork)
+
     if (dofork)
         http_fork_callback(req, dhs, have_threadsafe_val);
     else
