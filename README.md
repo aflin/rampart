@@ -5,7 +5,7 @@
 You will need to install the following dependencies:
 
 ```
-brew install libidn2
+brew install libidn2 gawk
 ```
 
 Then, after cloning, you can do the following to build:
