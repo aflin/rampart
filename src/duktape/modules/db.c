@@ -1335,7 +1335,13 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
         extern int TXunneededRexEscapeWarning;
         TXunneededRexEscapeWarning = 0; //silence rex escape warnings
     }
+    /* when sql.init("db") is called in a thread (like in a module), this may
+       happen outside the callback.  Thus it is not being run in a fork.
+       Locking around the access to the stream/buffer prevents problems.
+    */
+    pthread_mutex_lock(&lock);
     duk_rp_log_tx_error(ctx,pbuf); /* log any non fatal errors to this.lastErr */
+    pthread_mutex_unlock(&lock);
     return 0;
 }
 
@@ -1362,13 +1368,11 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     if (!db_is_init)
     {
-#ifndef NEVER_EVER_EVER
         if (pthread_mutex_init(&lock, NULL) != 0)
         {
             printf("\n mutex init failed\n");
             exit(1);
         }
-#endif
 #ifdef PUTMSG_STDERR
         if (pthread_mutex_init(&printlock, NULL) != 0)
         {
