@@ -479,8 +479,9 @@ duk_ret_t duk_util_exec(duk_context *ctx)
     duk_get_prop_string(ctx, -1, "args");
     duk_size_t nargs = duk_get_length(ctx, -1);
     char **args = NULL;
+    int i;
     REMALLOC(args, (nargs + 1) * sizeof(char *));
-    for (int i = 0; i < nargs; i++)
+    for (i = 0; i < nargs; i++)
     {
         duk_get_prop_index(ctx, -1, i);
         args[i] = (char *)duk_require_string(ctx, -1);
@@ -640,12 +641,12 @@ duk_ret_t duk_util_mkdir(duk_context *ctx)
         return duk_throw(ctx);
     }
 
-    char _path[PATH_MAX];
+    char _path[PATH_MAX], *p;
 
     strcpy(_path, path);
 
     /* Move through the path string to recurisvely create directories */
-    for (char *p = _path + 1; *p; p++)
+    for (p = _path + 1; *p; p++)
     {
 
         if (*p == '/')
@@ -912,7 +913,8 @@ duk_ret_t duk_util_rmdir(duk_context *ctx)
     if (recursive)
     {
         int length = strlen(_path);
-        for (char *p = _path + length - 1; p != _path; p--)
+        char *p;
+        for (p = _path + length - 1; p != _path; p--)
         { // Traverse the path backwards to delete nested directories
 
             if (*p == '/')
