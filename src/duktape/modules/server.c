@@ -21,6 +21,8 @@
 //#define RP_TO_DEBUG
 //#define RP_TIMEO_DEBUG
 
+extern int RP_TX_isforked;
+
 #ifdef RP_TIMEO_DEBUG
 #define debugf(...) printf(__VA_ARGS__);
 #else
@@ -1389,6 +1391,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
     { /* child is forked once then talks over pipes. 
            and is killed if timed out                  */
 
+        RP_TX_isforked=1; /* mutex locking not necessary in fork */
         duk_size_t bufsz;
         struct sigaction sa = {0};
         evhtp_connection_t *conn = evhtp_request_get_connection(req);

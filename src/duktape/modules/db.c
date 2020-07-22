@@ -23,6 +23,10 @@
 #  endif
 #endif
 
+extern int RP_TX_isforked;
+
+#define TXLOCK if(!RP_TX_isforked) pthread_mutex_lock(&lock);
+#define TXUNLOCK if(!RP_TX_isforked) pthread_mutex_unlock(&lock);
 
 #include "db_misc.c" /* copied and altered thunderstone code for stringformat and abstract */
 
@@ -53,50 +57,63 @@ int tx_rp_cancelled = 0;
 
 #define TEXIS_OPEN(tdb) ({                        \
     xprintf("Open\n");                            \
+    TXLOCK                                        \
     TEXIS *rtx = texis_open((tdb), "PUBLIC", ""); \
+    TXUNLOCK                                      \
     EXIT_IF_CANCELLED                             \
     rtx;                                          \
 })
 
 #define TEXIS_CLOSE(rtx) ({     \
     xprintf("Close\n");         \
+    TXLOCK                      \
     (rtx) = texis_close((rtx)); \
+    TXUNLOCK                    \
     EXIT_IF_CANCELLED           \
     rtx;                        \
 })
 
 #define TEXIS_PREP(a, b) ({           \
     xprintf("Prep\n");                \
-    /*printf("texisprep %s\n",(b));*/ \
+    TXLOCK                            \
     int r = texis_prepare((a), (b));  \
+    TXUNLOCK                          \
     EXIT_IF_CANCELLED                 \
     r;                                \
 })
 
 #define TEXIS_EXEC(a) ({        \
     xprintf("Exec\n");          \
+    TXLOCK                      \
     int r = texis_execute((a)); \
+    TXUNLOCK                    \
     EXIT_IF_CANCELLED           \
     r;                          \
 })
 
 #define TEXIS_FETCH(a, b) ({           \
     xprintf("Fetch\n");                \
+    TXLOCK                             \
     FLDLST *r = texis_fetch((a), (b)); \
+    TXUNLOCK                           \
     EXIT_IF_CANCELLED                  \
     r;                                 \
 })
 
 #define TEXIS_SKIP(a, b) ({               \
     xprintf("skip\n");                    \
+    TXLOCK                                \
     int r = texis_flush_scroll((a), (b)); \
+    TXUNLOCK                              \
     EXIT_IF_CANCELLED                     \
     r;                                    \
 })
 
 #define TEXIS_PARAM(a, b, c, d, e, f) ({               \
     xprintf("Param\n");                                \
+    TXLOCK                                             \
     int r = texis_param((a), (b), (c), (d), (e), (f)); \
+    TXUNLOCK                                           \
     EXIT_IF_CANCELLED                                  \
     r;                                                 \
 })
@@ -366,7 +383,9 @@ void duk_rp_log_error(duk_context *ctx, char *pbuf)
 
 void duk_rp_log_tx_error(duk_context *ctx, char *buf)
 {
+    TXLOCK
     msgtobuf(buf);
+    TXUNLOCK
     duk_rp_log_error(ctx, buf);
 }
 
@@ -1335,13 +1354,8 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
         extern int TXunneededRexEscapeWarning;
         TXunneededRexEscapeWarning = 0; //silence rex escape warnings
     }
-    /* when sql.init("db") is called in a thread (like in a module), this may
-       happen outside the callback.  Thus it is not being run in a fork.
-       Locking around the access to the stream/buffer prevents problems.
-    */
-    pthread_mutex_lock(&lock);
     duk_rp_log_tx_error(ctx,pbuf); /* log any non fatal errors to this.lastErr */
-    pthread_mutex_unlock(&lock);
+
     return 0;
 }
 

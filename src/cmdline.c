@@ -10,6 +10,8 @@
 #include <sys/stat.h>
 #include <errno.h>
 
+int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
+
 #define RP_REPL_GREETING             \
     "      |>>            |>>\n"     \
     "    __|__          __|__\n"     \
