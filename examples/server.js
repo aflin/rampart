@@ -283,8 +283,10 @@ server.start(
 {
     ip:"0.0.0.0",  //this binds to all. Default is 127.0.0.1
     ipv6:"::",     //this binds to all. Default is ::1
-    port:8088,     //this is the default
+    port:8088,     //This is the default.  If set to <1024 (i.e. 80), you must be root and set user below
     ipv6port:8088, //defaults to port above if not set
+    // if you run as root, you must set user.  If not root, user is ignored.
+    //user: "nobody",
     scriptTimeout: 10.0, /* max time to spend in JS */
     connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
     useThreads: true, /* make server multi-threaded. */

@@ -12,6 +12,11 @@
 #include <fcntl.h>
 #include <time.h>
 #include <sys/wait.h>
+#ifdef __APPLE__
+#include <uuid/uuid.h>
+#else
+#include <pwd.h>
+#endif
 #include "../core/duktape.h"
 #include "evhtp/evhtp.h"
 #include "../../rp.h"
@@ -22,6 +27,8 @@
 //#define RP_TIMEO_DEBUG
 
 extern int RP_TX_isforked;
+uid_t unprivu=0;
+gid_t unprivg=0;
 
 #ifdef RP_TIMEO_DEBUG
 #define debugf(...) printf(__VA_ARGS__);
@@ -1428,7 +1435,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                 if (duk_is_error(dhs->ctx, -1) || duk_is_string(dhs->ctx, -1))
                 {
 
-                    char msg[] = "{\"headers\":{\"status\":500},\"html\":\"<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>%s</pre></p></body></html>\"}";
+                    char msg[] = "{\"headers\":{\"status\":500},\"html\":\"<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>\\n%s</pre></p></body></html>\"}";
                     char *err;
                     if (duk_is_error(dhs->ctx, -1))
                     {
@@ -1552,11 +1559,6 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             finfo->par2child = par2child[1];
         }
         tprintf("parent waiting for input\n");
-        if (waitpid(finfo->childpid, &pidstatus, WNOHANG))
-        {
-            send500(req, "Error in Child Process");
-            return;
-        }
 
         if (dhs->timeout.tv_sec == RP_TIME_T_FOREVER)
         {
@@ -1609,7 +1611,13 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 
         /* get thread safe info char and the message.
            put message in a buffer for decoding      */
-        tprintf("parent about to read %d bytes\n", (int)bsize);
+        tprintf("parent about to read %lld bytes\n", (long long)bsize);
+        /* if child is dead here, bsize is bad, bad things will be read later, causing big boom */
+        if (waitpid(finfo->childpid, &pidstatus, WNOHANG))
+        {
+            send500(req, "Error in Child Process");
+            return;
+        }
         {
             char jbuf[bsize + 1], *p = jbuf, c;
             int toread = (int)bsize;
@@ -1631,7 +1639,6 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                 send500(req, "Error in Child Process");
                 return;
             }
-
             memcpy(duk_push_fixed_buffer(dhs->ctx, (duk_size_t)bsize), jbuf, (size_t)bsize);
         }
         /* decode message */
@@ -1944,9 +1951,25 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
 
     DUKREMALLOC(main_ctx, thrno, sizeof(int));
 
+    /* drop privileges here, after binding port */
+    if(unprivu && !gl_threadno)
+    {
+        if (setgid(unprivg) == -1) 
+        {
+            duk_push_string(main_ctx,"error setting group, setgid() failed");
+            duk_throw(main_ctx);
+        }
+        if (setuid(unprivu) == -1) 
+        {
+            duk_push_string(main_ctx,"error setting user, setuid() failed");
+            duk_throw(main_ctx);
+        }
+    }
+
     *thrno = gl_threadno++;
 
     evthr_set_aux(thr, thrno);
+
 }
 
 static void get_secure(duk_context *ctx, duk_idx_t ob_idx, evhtp_ssl_cfg_t *ssl_config)
@@ -2024,6 +2047,31 @@ duk_ret_t duk_server_start(duk_context *ctx)
     if (ob_idx != -1)
     {
         const char *s;
+
+        /* unprivileged user if we are root */
+        if (geteuid() == 0)
+        {
+            if (duk_get_prop_string(ctx, ob_idx, "user"))
+            {
+                const char *user=duk_require_string(ctx, -1);
+                struct passwd  *pwd;
+                
+                if(! (pwd = getpwnam(user)) )
+                {
+                    duk_push_sprintf(ctx,"error getting user '%s' in start()\n",user);
+                    duk_throw(ctx);
+                }
+                printf("setting unprivileged user '%s'\n",user);
+                unprivu=pwd->pw_uid;
+                unprivg=pwd->pw_gid;
+            }
+            else
+            {
+                duk_push_string(ctx,"starting as root requires you name a {user:'unpriv_user_name'} in start()");
+                duk_throw(ctx);
+            }
+            duk_pop(ctx);
+        }
 
         /* ip addr */
         if (duk_get_prop_string(ctx, ob_idx, "ip"))
@@ -2201,8 +2249,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
             tctx = thread_ctx[i];
             /* do all the normal startup done in duk_cmdline but for each thread */
             duk_init_context(tctx);
-// remove when fixed in duk_init_context
-while(duk_get_top(tctx)) duk_pop(tctx);
             copy_all(ctx, tctx);
         }
 

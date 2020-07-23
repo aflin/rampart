@@ -1113,6 +1113,8 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 
 #ifdef USEHANDLECACHE
     hcache = get_handle(db, q->sql);
+    if(!hcache)
+        throw_tx_error(ctx,"sql open");
     tx = hcache->tx;
 #else
     tx = TEXIS_OPEN((char *)db);
