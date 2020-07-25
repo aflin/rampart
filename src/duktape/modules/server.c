@@ -342,7 +342,7 @@ void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
                 if(*((char*)n)=='\r')n--;
                 sz=(n-begin)+1;
                 //printf("Part is %d long:\n%.*s\n",(int)sz,(int)sz,(char*)begin);
-                //share buffer with body
+                //share buffer with body/evbuffer
                 duk_push_external_buffer(ctx);
                 duk_config_buffer(ctx, -1, begin, sz);
                 /*
@@ -414,8 +414,16 @@ void push_req_vars(DHS *dhs)
     duk_put_prop_string(ctx, -2, "query");
 
     bsz = (duk_size_t)evbuffer_get_length(dhs->req->buffer_in);
-    buf = duk_push_fixed_buffer(ctx, bsz);
-    evbuffer_copyout(dhs->req->buffer_in, buf, (size_t)bsz);
+    if(bsz)
+    {
+        buf=evbuffer_pullup(dhs->req->buffer_in,-1); /* make contiguous and return pointer */
+        duk_push_external_buffer(ctx);
+        duk_config_buffer(ctx,-1,buf,bsz); /* add reference to buf for js buffer */
+    }
+    else
+    {
+        (void) duk_push_fixed_buffer(ctx, 0);
+    }
     duk_put_prop_string(ctx, -2, "body");
 
     q = (char *)dhs->req->uri->query_raw;
@@ -430,7 +438,7 @@ void push_req_vars(DHS *dhs)
         ct=duk_get_string(ctx,-1);
         duk_pop(ctx);
         duk_put_prop_string(ctx, -2, "headers");
-        if(strncmp("multipart/form-data;",ct,20)==0)
+        if(bsz && strncmp("multipart/form-data;",ct,20)==0)
         {
             char *bound=(char*)ct+20;
 
@@ -1585,8 +1593,19 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         /* module changed, so must refork */
         if(dhs->ismod==2)
             killfork;
+        /* if request body is large, fork again rather than piping request.
+           Pipe data in req.body and req.contents are shared and will
+           double when serialized and piped
+        */
+        else if(evbuffer_get_length(dhs->req->buffer_in) > 1048576)
+        {
+            printf("request is large, killing and reforking\n");
+            killfork;
+        }
         else
+        {
             preforked = 1;
+        }
     }
     if(!preforked)
     {
@@ -1613,14 +1632,13 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             close(finfo->par2child);
             finfo->par2child = -1;
         }
-    }
 
-    if (!preforked)
-    {
+        /***** fork ******/
         finfo->childpid = fork();
+
         if (finfo->childpid < 0)
         {
-            fprintf(stderr, "fork Failed");
+            fprintf(stderr, "fork failed");
             finfo->childpid = 0;
             return;
         }
@@ -1733,17 +1751,22 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             duk_dup(dhs->ctx, dhs->func_idx);
 
             {
-                char jbuf[msgOutSz], *p = jbuf;
-                int toread = (int)msgOutSz, totread = 0;
-
-                while ((totread = read(par2child[0], p, toread)) > 0)
+                char *jbuf=NULL, *p;
+                
+                REMALLOC(jbuf,(size_t)msgOutSz);
+                p=jbuf;
+                size_t toread = (size_t)msgOutSz;
+                ssize_t TOTread = 0;
+                TOTread = read(par2child[0], p, toread);
+                while (TOTread > 0)
                 {
-                    toread -= totread;
-                    p += totread;
+                    toread -= (size_t)TOTread;
+                    tprintf("read %d bytes, %d bytes left\n",(int)TOTread,(int)toread);
+                    p += TOTread;
+                    TOTread = read(par2child[0], p, toread);
                 }
-                //*(p+1)='\0';
-                p = jbuf;
-                memcpy(duk_push_fixed_buffer(dhs->ctx, (duk_size_t)msgOutSz), p, (size_t)msgOutSz);
+                memcpy(duk_push_fixed_buffer(dhs->ctx, (duk_size_t)msgOutSz), jbuf, (size_t)msgOutSz);
+                free(jbuf);
             }
             duk_cbor_decode(dhs->ctx, -1, 0);
 
