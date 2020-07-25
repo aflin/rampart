@@ -46,86 +46,6 @@ CURLREQ
     char isclone;
 };
 
-/* return s+adds  s must be a malloced string or ->NULL*/
-char *strcatdup(char *s, char *adds)
-{
-    int freeadds = 0, sl, al;
-    if ((adds == (char *)NULL) || (*adds == '\0'))
-    {
-        if (s == (char *)NULL)
-            s = strdup("");
-        return (s);
-    }
-
-    if (s == (char *)NULL)
-        sl = 0;
-    else
-        sl = strlen(s);
-
-    /* if its the same string or a substring */
-    if (adds >= s && adds < (s + sl))
-    {
-        adds = strdup(adds);
-        freeadds = 1;
-    }
-
-    if (s != (char *)NULL)
-    {
-        al = strlen(adds);
-        REMALLOC(s, al + sl + 1);
-        strcpy(s + sl, adds);
-    }
-    else
-        s = strdup(adds);
-
-    if (freeadds)
-        free(adds);
-
-    return (s);
-}
-
-/* return s+c+adds  s must be a malloced string or ->NULL*/
-char *strjoin(char *s, char *adds, char c)
-{
-    int freeadds = 0, sl, al;
-    if ((adds == (char *)NULL) || (*adds == '\0'))
-    {
-        if (s == (char *)NULL)
-            s = strdup("");
-        return (s);
-    }
-
-    if (s == (char *)NULL)
-        sl = 0;
-    else
-        sl = strlen(s);
-
-    /* if its the same string or a substring */
-    if (adds >= s && adds < (s + sl))
-    {
-        adds = strdup(adds);
-        freeadds = 1;
-    }
-
-    if (s != (char *)NULL)
-    {
-        al = strlen(adds);
-        REMALLOC(s, al + sl + 2);
-        *(s + sl) = c;
-        strcpy(s + sl + 1, adds);
-    }
-    else
-    {
-        REMALLOC(s, al + 2);
-        *s = c;
-        strcpy(s + 1, adds);
-    }
-    if (freeadds)
-        free(adds);
-
-    return (s);
-}
-
 /* copy this.errors to object at idx */
 void duk_curl_copy_errors(duk_context *ctx, duk_idx_t idx)
 {
@@ -196,75 +116,14 @@ void duk_curl_push_err(duk_context *ctx)
 
 /* **************************************************************************
    curl_easy_escape requires a new curl object. That appears to be overkill.
-   This one is public domain from https://www.geekhideout.com/urlcode.shtml 
+   Use the one is public domain from https://www.geekhideout.com/urlcode.shtml 
+   in misc.c
    ************************************************************************** */
-
-/* Converts a hex character to its integer value */
-
-char from_hex(char ch)
-{
-    return isdigit(ch) ? ch - '0' : tolower(ch) - 'a' + 10;
-}
-
-/* Converts an integer value to its hex character*/
-char to_hex(char code)
-{
-    static char hex[] = "0123456789abcdef";
-    return hex[code & 15];
-}
-
-/* Returns a url-encoded version of str */
-/* IMPORTANT: be sure to free() the returned string after use */
-char *url_encode(char *str)
-{
-    char *pstr = str, *buf = malloc(strlen(str) * 3 + 1), *pbuf = buf;
-    while (*pstr)
-    {
-        if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~')
-            *pbuf++ = *pstr;
-        else if (*pstr == ' ')
-            *pbuf++ = '+';
-        else
-            *pbuf++ = '%', *pbuf++ = to_hex(*pstr >> 4), *pbuf++ = to_hex(*pstr & 15);
-        pstr++;
-    }
-    *pbuf = '\0';
-    return buf;
-}
-
-/* Returns a url-decoded version of str */
-/* IMPORTANT: be sure to free() the returned string after use */
-char *url_decode(char *str)
-{
-    char *pstr = str, *buf = malloc(strlen(str) + 1), *pbuf = buf;
-    while (*pstr)
-    {
-        if (*pstr == '%')
-        {
-            if (pstr[1] && pstr[2])
-            {
-                *pbuf++ = from_hex(pstr[1]) << 4 | from_hex(pstr[2]);
-                pstr += 2;
-            }
-        }
-        else if (*pstr == '+')
-        {
-            *pbuf++ = ' ';
-        }
-        else
-        {
-            *pbuf++ = *pstr;
-        }
-        pstr++;
-    }
-    *pbuf = '\0';
-    return buf;
-}
 
 duk_ret_t duk_curl_encode(duk_context *ctx)
 {
     char *s = (char *)duk_to_string(ctx, 0);
-    s = url_encode(s);
+    s = duk_rp_url_encode(s,-1);
     duk_push_string(ctx, s);
     free(s);
     return (1);
@@ -273,7 +132,7 @@ duk_ret_t duk_curl_encode(duk_context *ctx)
 duk_ret_t duk_curl_decode(duk_context *ctx)
 {
     char *s = (char *)duk_to_string(ctx, 0);
-    s = url_decode(s);
+    s = duk_rp_url_decode(s,-1);
     duk_push_string(ctx, s);
     free(s);
     return (1);
@@ -305,168 +164,6 @@ duk_ret_t duk_curl_global_cleanup(duk_context *ctx)
     }
     duk_pop(ctx);
     return 0;
-}
-
-const char *duk_curl_to_strOrJSON(duk_context *ctx, duk_idx_t idx)
-{
-    if (duk_is_object(ctx, idx))
-    {
-        const char *s;
-        duk_dup(ctx, idx);
-        s = duk_json_encode(ctx, -1);
-        return s;
-    }
-    /* expecting a translation (as above) or a copy on the stack */
-    duk_dup(ctx, idx);
-    return duk_to_string(ctx, -1);
-}
-
-#define ARRAYREPEAT 0
-#define ARRAYBRACKETREPEAT 1
-#define ARRAYCOMMA 2
-#define ARRAYJSON 3
-/* *****************************************************
-   serialize object to query string 
-   return val needs to be freed
-   ***************************************************** */
-char *duk_curl_object2querystring(duk_context *ctx, duk_idx_t qsidx)
-{
-    int i = 0, atype = ARRAYREPEAT, end = qsidx + 2;
-    const char *arraytype;
-    char *ret = (char *)NULL, *s;
-
-    /* 
-     look at next two stack items for a string,
-     if i is -1, assume no string and don't wrap 
-     around and go to 0 
-  */
-    if (qsidx != -1)
-    {
-        for (i = qsidx; i < end; i++)
-        {
-            if (duk_is_string(ctx, i))
-            {
-                arraytype = duk_get_string(ctx, i);
-
-                if (!strncmp("bracket", arraytype, 7))
-                    atype = ARRAYBRACKETREPEAT;
-                else if (!strncmp("comma", arraytype, 5))
-                    atype = ARRAYCOMMA;
-                else if (!strcmp("json", arraytype))
-                    atype = ARRAYJSON;
-
-                duk_remove(ctx, i);
-                /* consequence of counting backwards and removing string */
-                if (qsidx < 0 && i != qsidx)
-                    qsidx++;
-            }
-        }
-    }
-    i = 0;
-    if (duk_is_object(ctx, qsidx) && !duk_is_array(ctx, qsidx))
-    {
-
-        duk_enum(ctx, qsidx, DUK_ENUM_SORT_ARRAY_INDICES);
-        while (duk_next(ctx, -1, 1))
-        {
-            const char *stv; /* value from stack */
-            stv = duk_to_string(ctx, -2);
-            //s=curl_easy_escape(curl,stv,0);
-            s = url_encode((char *)stv);
-            if (i)
-                ret = strjoin(ret, s, '&');
-            else
-                ret = strdup(s);
-            /* don't free s just yet */
-
-            if (atype != ARRAYJSON && duk_is_array(ctx, -1))
-            {
-                int j = 0;
-                char *v = (char *)NULL;
-                while (duk_has_prop_index(ctx, -1, j))
-                {
-
-                    duk_get_prop_index(ctx, -1, j);
-                    stv = duk_curl_to_strOrJSON(ctx, -1);
-                    //v=curl_easy_escape(curl,stv,0);
-                    v = url_encode((char *)stv);
-                    duk_pop_2(ctx); /* get_prop_index and strOrJson both leave items on stack */
-                    switch (atype)
-                    {
-
-                        /* var1[]=a&var1[]=b */
-                    case ARRAYBRACKETREPEAT:
-                    {
-                        if (!j)
-                        {
-                            s = strcatdup(s, "%5B%5D");
-                            ret = strcatdup(ret, "%5B%5D");
-                        }
-                        /* no break, fall through */
-                    }
-
-                    /* var1=a&var1=b */
-                    case ARRAYREPEAT:
-                    {
-                        if (j)
-                            ret = strjoin(ret, s, '&');
-
-                        ret = strjoin(ret, v, '=');
-                        break;
-                    }
-
-                    case ARRAYCOMMA:
-                        /* var1=a,b */
-                        {
-                            if (j)
-                                ret = strjoin(ret, v, ',');
-                            else
-                                ret = strjoin(ret, v, '=');
-
-                            break;
-                        }
-                    }
-                    curl_free(v);
-                    j++;
-                }
-                free(s);
-            }
-            else
-            {
-                free(s);
-                //curl_free(s);
-                stv = duk_curl_to_strOrJSON(ctx, -1);
-
-                //s=curl_easy_escape(curl,stv,0);
-                s = url_encode((char *)stv);
-                ret = strjoin(ret, s, '=');
-                duk_pop(ctx); /* duk_curl_to_strOrJSON */
-                //curl_free(s);
-                free(s);
-            }
-
-            i = 1;
-            duk_pop_2(ctx);
-        } /* while */
-    }
-    //else error?
-    duk_remove(ctx, qsidx);
-
-    //  curl_easy_cleanup(curl);
-    return (ret);
-}
-
-/* *****************************************
-   for use directly in JS
-   var curl=require('./thismod');
-   curl.objectToQuery({...});
-******************************************** */
-duk_ret_t duk_curl_object2q(duk_context *ctx)
-{
-    char *s = duk_curl_object2querystring(ctx, 0);
-    duk_push_string(ctx, s);
-    free(s);
-    return 1;
 }
 
 void addheader(CSOS *sopts, char *h)
@@ -627,7 +324,7 @@ int copt_get(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption
         else
             duk_pop(ctx); /* get rid of undefined */
 
-        s = duk_curl_object2querystring(ctx, qsidx);
+        s = duk_rp_object2querystring(ctx, qsidx);
         sopts->url = strjoin(sopts->url, (char *)s, '?');
         free(s);
     }
@@ -662,7 +359,7 @@ int copt_post(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoptio
             duk_pop(ctx); /* get rid of undefined */
 
         /* save this to be freed after transaction is finished */
-        postdata = sopts->postdata = duk_curl_object2querystring(ctx, qsidx);
+        postdata = sopts->postdata = duk_rp_object2querystring(ctx, qsidx);
         duk_pop(ctx);
     }
     else
@@ -2386,7 +2083,7 @@ duk_ret_t duk_curl_exe(duk_context *ctx)
 
 static const duk_function_list_entry curl_funcs[] = {
     {"fetch", duk_curl_exe, 4 /*nargs*/},
-    {"objectToQuery", duk_curl_object2q, 2},
+    {"objectToQuery", duk_rp_object2q, 2},
     {"encode", duk_curl_encode, 1},
     {"decode", duk_curl_decode, 1},
     {"cleanup", duk_curl_global_cleanup, 0},

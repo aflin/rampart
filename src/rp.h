@@ -149,6 +149,17 @@ extern "C"
         }                                                                                \
     } while (0)
 
+/* func from misc.c */
+char *duk_rp_object2querystring(duk_context *ctx, duk_idx_t qsidx);
+void  duk_rp_querystring2object(duk_context *ctx, char *q);
+duk_ret_t duk_rp_object2q(duk_context *ctx);
+char *strcatdup(char *s, char *adds);
+char *strjoin(char *s, char *adds, char c);
+char *duk_rp_url_encode(char *str, int len);
+char *duk_rp_url_decode(char *str, int len);
+
+
+
 #if defined(__cplusplus)
 }
 #endif /* end 'extern "C"' wrapper */

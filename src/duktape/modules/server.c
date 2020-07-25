@@ -160,6 +160,207 @@ void sa_to_string(void *sa, char *buf, size_t bufsz)
         inet_ntop(AF_INET, &((struct sockaddr_in *)sa)->sin_addr, buf, bufsz);
 }
 
+void parseheadline(duk_context *ctx, char *line, size_t linesz)
+{
+    char *p=line,*e,*prop;
+    size_t sz,rem=linesz,propsz;
+
+    e=(char*)memmem(p,rem,":",1);
+    
+    sz=e-line;
+    prop=p;
+    propsz=sz;
+//    printf("'%.*s'=",sz,p);
+    
+    p=e;
+    p++;rem--;
+    if( rem>0 && isspace(*p) ) p++,rem--;
+    
+    while(rem>0 && *e!=';' && *e!='\r' && *e!='\n')
+        e++,rem--;
+    sz=e-p;
+    //printf("'%.*s'\n",sz,p);
+    duk_push_lstring(ctx,p,(duk_size_t)sz);
+    duk_put_prop_lstring(ctx,-2,prop,(duk_size_t)propsz);
+
+    if(*e=='\r' || *e=='\n')
+        return;
+
+    p=e;
+    while( rem>0 && isspace(*p) ) p++,rem--;
+    if(*p!=';' || !rem)
+        return;
+    p++;rem--;
+    while( rem>0 && isspace(*p) ) p++,rem--;
+    
+    // get extra attributes after ';'
+    while(rem>0)
+    {
+        e=p;
+
+        if (rem)
+            e++,rem--;
+
+        while(rem>0 && *e!='=')
+            e++,rem--;
+
+        if(*e=='=')
+        {
+            sz=e-p;
+            prop=p; 
+            propsz=sz;
+            //printf("'%.*s'=",sz,p);
+        }
+        else return;
+        
+        e++;rem--;
+        p=e;
+
+        if(rem)
+        {
+            if(*p=='"')
+            {
+                p++;rem--;
+                e=p;
+                while(rem>0 && *e!='"')
+                    e++,rem--;
+                if(*e=='"')
+                {
+                    sz=e-p;
+                    //printf("'%.*s'\n",sz,p);
+                    duk_push_lstring(ctx,p,(duk_size_t)sz);
+                    duk_put_prop_lstring(ctx,-2,prop,(duk_size_t)propsz);
+                }
+                e++;rem--;
+            }
+            else
+            {
+                 e=p;
+                 while(rem>0 && !isspace(*e) ) e++,rem--;
+                 sz=e-p;
+                 //printf("'%.*s'\n",sz,p);
+                 duk_push_lstring(ctx,p,(duk_size_t)sz);
+                 duk_put_prop_lstring(ctx,-2,prop,(duk_size_t)propsz);
+            }
+        }
+        else
+        {
+            //printf("''\n");
+            duk_push_string(ctx,"");
+            duk_put_prop_lstring(ctx,-2,prop,(duk_size_t)propsz);
+            return;
+        }
+        
+        p=e;
+        while( rem>0 && isspace(*p) ) p++,rem--;
+        if(*p!=';' || !rem)
+            return;
+        p++;rem--;
+        while( rem>0 && isspace(*p) ) p++,rem--;
+    }
+    
+}
+
+
+void parsehead(duk_context *ctx,void *head, size_t headsz)
+{
+    size_t remaining=headsz;
+    char * line=(char *)head;
+    char * eol = (char*) memmem(line,remaining,"\r\n",2) + 2;
+    
+    while(eol)
+    {
+        size_t lsz=eol-line;
+        
+        //printf("LINE='%.*s'\n",(int)lsz,line);
+        parseheadline(ctx,line,lsz);
+        remaining=headsz-(eol-(char*)head);
+        line = eol;
+
+        if(remaining)
+            eol=(char*) memmem(line,remaining,"\r\n",2)+2;
+        else
+            break;
+    }
+
+
+}
+
+void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
+{
+    size_t remaining=(size_t)bsz, bound_sz=strlen(bound);
+    void *b=buf;
+    int i=0;
+    
+    b=memmem(b,remaining,bound,bound_sz);
+    while (b)
+    {
+        b+=bound_sz;
+        if (remaining>3)
+        {
+            void *begin;
+            size_t sz;
+
+            if(strncmp(b,"\r\n",2)==0)
+            {
+                //printf("got beginning\n");
+                begin=b+2;
+                remaining=bsz-(b-buf);
+            }
+            else if (strncmp(b,"--\r\n",4)==0)
+            {
+                //printf("done\n");
+                break;
+            }
+            else
+            {
+                //printf("bad data!\n");
+                break;
+            }
+            b=memmem(begin,remaining,bound,bound_sz);
+            if(b)
+            {
+                void *n=b-1;
+                void *headend=memmem(begin,remaining,"\r\n\r\n",4);
+                size_t headsz;
+                //void *pushbuf;
+                
+                if(headend)
+                {
+                    duk_push_object(ctx);
+                    headsz=2+headend-begin;
+                    //printf("head=%.*s\n",headsz,begin);
+                    parsehead(ctx,begin,headsz);
+                    begin=headend+4;
+                }
+                else
+                    break;
+
+                if(*((char*)n)=='-')n--;//end delim is "--"+bound
+                if(*((char*)n)=='-')n--;
+                if(*((char*)n)=='\n')n--;
+                if(*((char*)n)=='\r')n--;
+                sz=(n-begin)+1;
+                //printf("Part is %d long:\n%.*s\n",(int)sz,(int)sz,(char*)begin);
+                //share buffer with body
+                duk_push_external_buffer(ctx);
+                duk_config_buffer(ctx, -1, begin, sz);
+                /*
+                //copy buffer
+                pushbuf = duk_push_fixed_buffer(ctx, sz);
+                memcpy(pushbuf,begin,sz);
+                */
+                duk_put_prop_string(ctx,-2,"contents");
+                duk_put_prop_index(ctx,-2,(duk_uarridx_t)i);
+                i++;
+            }
+        }
+        else
+            break;
+    }
+    
+}
+
 /* copy request vars from evhtp to duktape */
 
 void push_req_vars(DHS *dhs)
@@ -170,11 +371,11 @@ void push_req_vars(DHS *dhs)
     int method = evhtp_request_get_method(dhs->req);
     evhtp_connection_t *conn = evhtp_request_get_connection(dhs->req);
     void *sa = (void *)conn->saddr;
-    char address[INET6_ADDRSTRLEN], *q, *cl;
+    char address[INET6_ADDRSTRLEN], *q;
+    const char *ct;
     duk_size_t bsz;
-    void *buf;
+    void *buf=NULL;
 
-    int i, l;
     /* get ip address */
     sa_to_string(sa, address, sizeof(address));
     putval("ip", address);
@@ -213,44 +414,75 @@ void push_req_vars(DHS *dhs)
     duk_put_prop_string(ctx, -2, "query");
 
     bsz = (duk_size_t)evbuffer_get_length(dhs->req->buffer_in);
-    buf = duk_push_fixed_buffer(dhs->ctx, bsz);
+    buf = duk_push_fixed_buffer(ctx, bsz);
     evbuffer_copyout(dhs->req->buffer_in, buf, (size_t)bsz);
     duk_put_prop_string(ctx, -2, "body");
 
-    /* unfortunately this is a copy of data in buffer plus an extra \0 at the end */
     q = (char *)dhs->req->uri->query_raw;
-    if (q)
-    {
-        i = (int)strlen(q);
-        cl = (char *)evhtp_kv_find(dhs->req->headers_in, "Content-Length");
-        if (cl)
-        {
-            l = (int)strtol(cl, NULL, 10);
-            if (i == l)
-            {
-                putval("query_raw", q);
-            }
-            else
-            {
-                /* check that our buffer length matches "Content-Length" */
-                i = (int)evbuffer_get_length(dhs->req->buffer_in);
-                if (i == l)
-                {
-                    putval("query_raw", "binary");
-                    duk_push_external_buffer(ctx);
-                    duk_config_buffer(ctx, -1, q, l);
-                    duk_put_prop_string(ctx, -2, "binary");
-                } /* TODO: else ????? */
-            }
-        }
-        else
-            putval("query_raw", dhs->req->uri->query_raw);
-    }
+    if (!q) q="";
+    putval("query_raw", q);
 
     /*  headers */
     duk_push_object(ctx);
     evhtp_headers_for_each(dhs->req->headers_in, putheaders, ctx);
-    duk_put_prop_string(ctx, -2, "headers");
+    if(duk_get_prop_string(ctx, -1, "Content-Type"))
+    {
+        ct=duk_get_string(ctx,-1);
+        duk_pop(ctx);
+        duk_put_prop_string(ctx, -2, "headers");
+        if(strncmp("multipart/form-data;",ct,20)==0)
+        {
+            char *bound=(char*)ct+20;
+
+            if (isspace(*bound)) bound++;
+            if (strncmp("boundary=",bound,9)==0)
+            {
+                bound+=9;
+                duk_push_array(ctx);
+                push_multipart(ctx,bound,buf,bsz);
+                duk_put_prop_string(ctx,-2,"postData");
+            }
+        } else 
+        if(strcmp("application/json",ct)==0)
+        {
+            duk_push_array(ctx);
+            duk_push_object(ctx);
+            duk_push_string(ctx,"application/json");
+            duk_put_prop_string(ctx,-2,"Content-Type");
+
+            duk_get_global_string(ctx,"JSON");
+            duk_get_prop_string(ctx,-1,"parse");
+            duk_remove(ctx,-2);
+            duk_get_prop_string(ctx, -4, "body");
+            duk_buffer_to_string(ctx,-1);
+            if(duk_pcall(ctx,1) != 0)
+            {
+                duk_push_object(ctx);
+                duk_safe_to_string(ctx,-2);
+                duk_pull(ctx,-2);
+                duk_put_prop_string(ctx,-2,"error");
+            }
+            duk_put_prop_string(ctx,-2,"contents");
+            duk_put_prop_index(ctx,-2,0);
+            duk_put_prop_string(ctx,-2,"postData");
+            
+        } else
+        if(strcmp("application/x-www-form-urlencoded",ct)==0)
+        {
+            char *s;
+            duk_get_prop_string(ctx, -1, "body");
+            duk_buffer_to_string(ctx,-1);
+            s=(char *)duk_get_string(ctx,-1);
+            duk_rp_querystring2object(ctx, s);
+            duk_put_prop_string(ctx,-3,"postData");
+            duk_pop(ctx);
+        }
+    }
+    else
+    {
+        duk_pop(ctx);
+        duk_put_prop_string(ctx, -2, "headers");
+    }
 }
 
 static void send500(evhtp_request_t *req, char *msg)
