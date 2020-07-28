@@ -290,6 +290,9 @@ server.start(
     scriptTimeout: 10.0, /* max time to spend in JS */
     connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
     useThreads: true, /* make server multi-threaded. */
+
+    //user:"unpriv_user", /* if binding to, e.g. port 80, start as root and drop privileges as the user named here */
+
     /*  By default, number of threads is set to cpu core count.
         ipv6 and ipv4 are separate servers and each get this number of threads.
         This has no effect unless useThreads is set true.
