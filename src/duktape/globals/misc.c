@@ -1,8 +1,8 @@
+#include <ctype.h>
+#include <unistd.h>
 #include "misc.h"
 #include "../core/duktape.h"
 #include "../../rp.h"
-#include <ctype.h>
-#include <unistd.h>
 extern char **environ;
 
 /* utility function for global object:
