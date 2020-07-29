@@ -14,9 +14,8 @@
 #include <sys/wait.h>
 #ifdef __APPLE__
 #include <uuid/uuid.h>
-#else
-#include <pwd.h>
 #endif
+#include <pwd.h>
 #include "../core/duktape.h"
 #include "evhtp/evhtp.h"
 #include "../../rp.h"

@@ -56,10 +56,14 @@
 duk_ret_t duk_util_read_file(duk_context *ctx)
 {
     const char *filename=NULL;
+    double doff;
     size_t offset=0;
     long length=0;
     duk_idx_t obj_idx=0;
     FILE *fp;
+    void *buf;
+    size_t off;
+    size_t nbytes;
 
     if(duk_is_string(ctx,0))
     {
@@ -81,14 +85,14 @@ duk_ret_t duk_util_read_file(duk_context *ctx)
         }
 
         duk_get_prop_string(ctx, obj_idx, "offset");
-        offset = (size_t)duk_get_number_default(ctx, -1, 0);
+        doff=duk_get_number_default(ctx, -1, 0);
         duk_pop(ctx);
-
-        if (offset < 0)
+        if (doff < 0)
         {
             duk_push_error_object(ctx, DUK_ERR_ERROR, "offset cannot be negative");
             return duk_throw(ctx);
         }
+        offset=(size_t)doff;
 
         duk_get_prop_string(ctx, obj_idx, "length");
         length = (long)duk_get_number_default(ctx, -1, 0);
@@ -132,10 +136,9 @@ duk_ret_t duk_util_read_file(duk_context *ctx)
 
     SAFE_SEEK(fp, offset, SEEK_SET);
 
-    void *buf = duk_push_fixed_buffer(ctx, length);
+    buf = duk_push_fixed_buffer(ctx, length);
 
-    size_t off = 0;
-    size_t nbytes;
+    off = 0;
     while ((nbytes = fread(buf + off, 1, length - off, fp)) != 0)
     {
         off += nbytes;
