@@ -157,7 +157,7 @@ char *strcatdup(char *s, char *adds);
 char *strjoin(char *s, char *adds, char c);
 char *duk_rp_url_encode(char *str, int len);
 char *duk_rp_url_decode(char *str, int len);
-
+void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase);
 
 
 #if defined(__cplusplus)

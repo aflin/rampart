@@ -127,6 +127,107 @@ duk_ret_t duk_process_exit(duk_context *ctx)
     return 0;
 }
 
+void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase)
+{
+    unsigned char *buf,*end;
+    char *out=NULL,*p;
+    duk_size_t sz;
+    if (ucase)
+        ucase=7;
+    else
+        ucase=39;
+
+    duk_to_buffer(ctx,idx,&sz);
+
+    buf=(unsigned char *)duk_get_buffer_data(ctx,idx,&sz);
+
+    end=buf+sz;
+    DUKREMALLOC(ctx,out,sz*2);
+    
+    p=out;
+    /* conver to lowercase hex */
+    while(buf<end)
+    {
+        int nibval;
+        
+        nibval=*buf/16 + 48;
+        if(nibval>57) nibval+=ucase;
+        *p=nibval;
+        p++;
+        
+        nibval=*buf%16 +48;
+        if(nibval>57) nibval+=ucase;
+        *p=nibval;
+        p++;
+
+        buf++;
+    }
+    
+    duk_push_lstring(ctx,out,sz*2);
+    duk_replace(ctx,idx);
+    free(out);
+}
+
+duk_ret_t duk_rp_hexify(duk_context *ctx)
+{
+    if(duk_get_boolean(ctx,1))
+    {
+        duk_pop(ctx);
+        duk_rp_toHex(ctx,0,1);
+    }
+    else
+    {
+        duk_pop(ctx);
+        duk_rp_toHex(ctx,0,0);
+    }
+    return 1;
+}
+
+#define hextonib(bval) ({\
+    int bv=(bval);\
+    if(bv>96)bv-=32;\
+    if(bv>64&&bv<71) bv-=55;\
+    else if(bv>47&&bv<58)bv-=48;\
+    else{duk_push_string(ctx,"hexToBuf: invalid input");duk_throw(ctx);}\
+    (unsigned char) bv;\
+})
+
+void duk_rp_hexToBuf(duk_context *ctx, duk_idx_t idx)
+{
+    const char *s=duk_require_string(ctx,idx);
+    size_t len=strlen(s);
+    unsigned char *buf;
+
+    len++; /* if have an extra nibble, round up */
+    len/=2;
+    
+    buf=(unsigned char*)duk_push_fixed_buffer(ctx,(duk_size_t)len);
+    
+    while(*s)
+    {
+        unsigned char bval;
+
+        bval=16*hextonib((int)*s);        
+        s++;
+
+        if(*s)
+        {
+            bval+=hextonib((int)*s);
+            s++;
+        }
+        *buf=bval;
+        buf++;
+    }
+}
+
+duk_ret_t duk_rp_dehexify(duk_context *ctx)
+{
+    duk_rp_hexToBuf(ctx,0);
+    return 1;
+}
+
+
+
 /* ********************* process.exit, process.env ********************** *
    process.args is in main
 */
@@ -536,6 +637,10 @@ void duk_rampart_init(duk_context *ctx)
         duk_push_object(ctx);
     }
 
+    duk_push_c_function(ctx, duk_rp_hexify, 2);
+    duk_put_prop_string(ctx, -2, "hexify");
+    duk_push_c_function(ctx, duk_rp_dehexify, 2);
+    duk_put_prop_string(ctx, -2, "dehexify");
     duk_push_c_function(ctx, duk_rp_strToBuf, 2);
     duk_put_prop_string(ctx, -2, "stringToBuffer");
     duk_push_c_function(ctx, duk_rp_bufToStr, 1);
