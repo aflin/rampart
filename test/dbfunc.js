@@ -1,3 +1,8 @@
+/* ********************************************************************* 
+   this is a test of the functions that are part of the sql library, 
+   but not directly related to manipulating a database
+************************************************************************ */
+
 var Sql=require("rpsql");
 
 var rex=Sql.rex;
@@ -176,14 +181,21 @@ console.log(rex(/\alnum{4}/,"hits are fun"));
 console.log(sandr2(/fun/,"funtimes","we are having fun"));
 
 
-//this takes waaaay too long.  Why.  if the doc match ( ([^<]+) ) is not included, it runs much faster. Perhaps they have buffer crossing problems?
-//ret=re2file( /<doc id="(\d+)[^>]*?title="([^"]+)[^>]+>([^<]+)/,"wiki_00",{submatches:true},function(match,info,i){
-//  console.log(info);
-//});
+//this takes waaaay too long.  Why?  if the doc match ( ([^<]+) ) is not included, it runs much faster. 
+//Perhaps they have buffer crossing problems? or it checks conditions for a longer match with every char?
+printf("re2file of wiki_00 (slow)\n");
+ret=re2file( /<doc id="(\d+)[^>]*?title="([^"]+)[^>]+>([^<]+)/,"wiki_00",{submatches:true},function(match,info,i){
+  var rep=sprintf("<Doc of %d length>",info.submatches[info.submatches.length-1].length);
+  info.submatches[info.submatches.length-1]=rep;
+  console.log(info);
+});
 
 
 //but this is very fast
-//ret=rexfile ( />><doc id\="=\digit+!title*title\="=[^"]+[^>]+>=!<\/doc>*/, "wiki_00",{submatches:true},function(match,info,i){
-//  console.log(info);
-//});
+printf("rexfile of wiki_00 (fast)\n");
+ret=rexfile ( />><doc id\="=\digit+!title*title\="=[^"]+[^>]+>=!<\/doc>*/, "wiki_00",{submatches:true},function(match,info,i){
+  var rep=sprintf("<Doc of %d length>",info.submatches[info.submatches.length-1].length);
+  info.submatches[info.submatches.length-1]=rep;
+  console.log(info);
+});
 

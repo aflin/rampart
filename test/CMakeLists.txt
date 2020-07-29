@@ -12,11 +12,7 @@ add_test(NAME simple COMMAND simple_test)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/duktape/modules/utils)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/duktape/core/module)
 
-set(TEST_FILES
-	"ramis.js"
-	"crypto.js"
-	"dbfunc.js"
-)
+file(GLOB TEST_FILES "*.js" "wiki_00")
 
 # Copying to the src dir is temporary. In the future
 # a new directory under build called 'test' will be created.

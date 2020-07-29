@@ -1,7 +1,6 @@
 set(EXAMPLE_FILES
 	"server.js"
 	"servermod.js"
-	"wiki_00"
 	"mPurpose"
 	"tetris-tutorial"
 )
