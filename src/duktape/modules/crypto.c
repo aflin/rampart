@@ -132,7 +132,7 @@ void printkiv(unsigned char *key,unsigned char *iv,unsigned char *salt,const EVP
 }
 
 
-static KEYIV pw_to_keyiv(duk_context *ctx, const char *pass, const char *cipher_name, unsigned char *salt_p)
+static KEYIV pw_to_keyiv(duk_context *ctx, const char *pass, const char *cipher_name, unsigned char *salt_p, int iter)
 {
     unsigned char salt[PKCS5_SALT_LEN];
     unsigned char keyiv[EVP_MAX_KEY_LENGTH + EVP_MAX_IV_LENGTH];
@@ -153,7 +153,7 @@ static KEYIV pw_to_keyiv(duk_context *ctx, const char *pass, const char *cipher_
         salt_p=salt;
     }
 
-    if (!PKCS5_PBKDF2_HMAC(pass, strlen(pass), salt_p, sizeof(salt), 10000, EVP_sha256(), klen+ivlen, keyiv))
+    if (!PKCS5_PBKDF2_HMAC(pass, strlen(pass), salt_p, sizeof(salt), iter, EVP_sha256(), klen+ivlen, keyiv))
         DUK_OPENSSL_ERROR(ctx)
         
     memcpy(kiv.key, keyiv,          klen);
@@ -172,6 +172,7 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
     const char *cipher_name = "aes-256-cbc";
     unsigned char *key=NULL, *iv=NULL, salt[PKCS5_SALT_LEN], *salt_p=NULL;
     KEYIV kiv;
+    int iter=10000;
     static const char magic[] = "Salted__";
    
     if(duk_is_object(ctx,0))
@@ -208,14 +209,22 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
         if(duk_get_prop_string(ctx, 0, "pass"))
         {
             const char *pass=duk_require_string(ctx, -1);
-            
+
+            duk_pop(ctx);
             if(!salt_p && decrypt)
                 duk_error(ctx, DUK_ERR_ERROR, "decrypt: ciphertext was not encrypted with a password, use key and iv to decrypt"); 
 
-            kiv=pw_to_keyiv(ctx,pass,cipher_name,salt_p); /* encrypting, salt_p is null */
+            if(duk_get_prop_string(ctx, 0, "iter"))
+            {
+                iter=(int)duk_require_number(ctx,-1);
+                duk_pop(ctx);
+            }
+
+            kiv=pw_to_keyiv(ctx,pass,cipher_name,salt_p,iter); /* encrypting: salt_p is null, decrypting: must be set */
             key=kiv.key;
             iv=kiv.iv;
             salt_p=kiv.salt;
+            duk_pop(ctx);
         }
         else
         {
@@ -227,8 +236,6 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
             iv = (unsigned char *)duk_get_string(ctx, -1);
             duk_pop(ctx);
         }
-
-
     }
     else if(duk_is_string(ctx,0))
     {
@@ -263,7 +270,7 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
                 duk_error(ctx, DUK_ERR_ERROR, "decrypt: ciphertext was not encrypted with a password, use key and iv to decrypt"); 
         }
 
-        kiv=pw_to_keyiv(ctx,pass,cipher_name,salt_p);
+        kiv=pw_to_keyiv(ctx,pass,cipher_name,salt_p,iter);
         key=kiv.key;
         iv=kiv.iv;
         salt_p=kiv.salt;
@@ -279,6 +286,7 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
  * Does encryption given a cipher, buffer, key, and iv
  * @typedef {Object} EncryptOptions
  * @property {String} pass - the password to generate key and iv
+ * @property {Number} iter - the number of iterations for hashing password (default 10000)
  * @property {String} key - the secret key to be used if no pass
  * @property {String} iv - the initialization vector/nonce if no pass
  * @property {String} cipher - The openssl name for the encryption/decryption scheme
@@ -295,8 +303,10 @@ static duk_ret_t duk_encrypt(duk_context *ctx)
 /**
  * Does decryption given a cipher, buffer, key, and iv
  * @typedef {Object} DecryptOptions
- * @property {String} key - the secret key to be used to decrypt
- * @property {String} iv - the initialization vector/nonce
+ * @property {String} pass - the password to generate key and iv
+ * @property {Number} iter - the number of iterations for hashing password (default 10000)
+ * @property {String} key - the secret key to be used if no pass
+ * @property {String} iv - the initialization vector/nonce if no pass
  * @property {String} cipher - The openssl name for the encryption/decryption scheme
  * @property {BufferData} buffer - the data to be decrypted 
  * @param {DecryptOptions} Options
