@@ -1,3 +1,6 @@
+/* make printf et. al. global */
+rampart.globalize(rampart.cfunc);
+
 var crypto = require("rpcrypto");
 var utils = require("rputils");
 

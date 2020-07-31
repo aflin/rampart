@@ -628,6 +628,33 @@ duk_ret_t duk_rp_object2q(duk_context *ctx)
     return 1;
 }
 
+/* export functions in an object to global */
+duk_ret_t duk_rp_globalize(duk_context *ctx)
+{
+
+    if( duk_is_array(ctx,1) )
+    {
+        duk_enum(ctx,1,DUK_ENUM_ARRAY_INDICES_ONLY);
+        while (duk_next(ctx, -1, 1)) 
+        {
+            const char *pname=duk_get_string(ctx,-1);
+            duk_get_prop_string(ctx,0,pname);
+            duk_put_global_string(ctx,pname);
+            duk_pop_2(ctx);
+        }
+    }
+    else
+    {
+        duk_enum(ctx,0,0);
+        while (duk_next(ctx, -1, 1)) 
+        {
+            const char *pname=duk_get_string(ctx,-2);
+            duk_put_global_string(ctx,pname);
+            duk_pop(ctx);
+        }
+    }
+    return 0;
+}
 
 void duk_rampart_init(duk_context *ctx)
 {
@@ -649,6 +676,8 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "objectToQuery");
     duk_push_c_function(ctx, duk_rp_query2o,1);
     duk_put_prop_string(ctx, -2, "queryToObject");
+    duk_push_c_function(ctx, duk_rp_globalize,2);
+    duk_put_prop_string(ctx, -2, "globalize");
     
     duk_put_global_string(ctx, "rampart");
 }

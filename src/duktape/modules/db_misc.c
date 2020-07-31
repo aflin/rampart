@@ -748,7 +748,7 @@ char **VXsandr ARGS((char **, char **, char **));
 
 static void sandr(duk_context *ctx, int re2)
 {
-        int ns=1, nr=1, nt=1;
+        int ns=0, nr=0, nt=0; //length of search, replace and text arrays. 0 if string
         if(duk_get_top(ctx) != 3)
         {
             duk_push_string(ctx,"sandr: exactly three arguments required: search, replace, text_to_search\n");
@@ -793,15 +793,18 @@ static void sandr(duk_context *ctx, int re2)
 }while(0)
 
         {
+            int sl=(ns)?ns:1,
+                rl=(nr)?nr:1,
+                tl=(nt)?nt:1;
 
-            char *srch[ns+1], *repl[nr+1];
-            char *in[nt+1], **out;
+            char *srch[sl+1], *repl[rl+1];
+            char *in[tl+1], **out;
 
-            srch[ns] = NULL;
-            repl[nr] = NULL;
-            in[nt] = NULL;
+            srch[sl] = NULL;
+            repl[rl] = NULL;
+            in[tl] = NULL;
 
-            if (ns>1) 
+            if (ns) 
             {
                 //getstrings(srch,0,"search",1);
                 int i=0;
@@ -849,12 +852,12 @@ static void sandr(duk_context *ctx, int re2)
                     srch[0]=(char*)exp;
             }
 
-            if (nr>1)
+            if (nr)
                 getstrings(repl,1,"replace",2);
             else
                 repl[0]=(char*)duk_get_string(ctx,1);
 
-            if (nt>1)
+            if (nt)
                 getstrings(in,2,"text",3);
             else
                 in[0]=(char*)duk_get_string(ctx,2);
@@ -863,7 +866,7 @@ static void sandr(duk_context *ctx, int re2)
 
             if (out && out[0])
             {
-                if(out[1]!=NULL) //return array
+                if(nt) //return array
                 {
                     int i=0;
                     duk_push_array(ctx);

@@ -1,3 +1,6 @@
+/* make printf et. al. global */
+rampart.globalize(rampart.cfunc);
+
 var crypto=require("rpcrypto");
 var Sql=require("rpsql");
 var sql=new Sql.init("./testdb",true);//create if doesn't exist

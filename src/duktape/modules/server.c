@@ -407,9 +407,13 @@ void push_req_vars(DHS *dhs)
     /* fragment -- portion after # */
     putval("fragment", (char *)dhs->req->uri->fragment);
 
-    /* query string */
+    /* query string * 
+     ****** now handled with duk_rp_querystring2object() ********
     duk_push_object(ctx);
     evhtp_kvs_for_each(dhs->req->uri->query, putkvs, ctx);
+    duk_put_prop_string(ctx, -2, "query");
+    */
+    duk_rp_querystring2object(ctx, (char *)dhs->req->uri->query_raw);
     duk_put_prop_string(ctx, -2, "query");
 
     bsz = (duk_size_t)evbuffer_get_length(dhs->req->buffer_in);

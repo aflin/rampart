@@ -3,8 +3,12 @@
    but not directly related to manipulating a database
 ************************************************************************ */
 
+/* make printf et. al. global */
+rampart.globalize(rampart.cfunc);
+
 var Sql=require("rpsql");
 
+/*  make sql functions global.  Same as doing this:
 var rex=Sql.rex;
 var re2=Sql.re2;
 var sandr=Sql.sandr;
@@ -13,6 +17,8 @@ var rexfile=Sql.rexfile;
 var re2file=Sql.re2file;
 var abstract=Sql.abstract;
 var stringformat=Sql.stringformat;
+*/
+rampart.globalize(Sql);
 
 /* ************************************************
     Test of added functions from rpsql 
