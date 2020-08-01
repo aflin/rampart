@@ -360,6 +360,50 @@ void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
     
 }
 
+#define copy_req_vars(prop) \
+    if(duk_get_prop_string(ctx,-1,prop))\
+    {\
+        duk_enum(ctx,-1,DUK_ENUM_OWN_PROPERTIES_ONLY);\
+        while (duk_next(ctx,-1,1))\
+        {\
+            duk_put_prop(ctx,-6);\
+        }\
+        duk_pop(ctx);\
+    }\
+    duk_pop(ctx);\
+
+#define copy_single_req_var(prop,toprop) \
+    if(duk_get_prop_string(ctx,-1,prop))\
+        duk_put_prop_string(ctx,-3,toprop);\
+    else duk_pop(ctx);\
+
+static duk_ret_t flatten_vars(duk_context *ctx)
+{
+    duk_push_object(ctx);
+    duk_push_this(ctx);
+
+    /* lowest priority first */
+    copy_req_vars("postData")
+    copy_req_vars("query")
+    copy_req_vars("cookies")
+    copy_req_vars("headers")
+
+    copy_single_req_var("ip","clientIp");
+    copy_single_req_var("port","clientPort");
+    copy_single_req_var("method","httpMethod");
+
+    if(duk_get_prop_string(ctx,-1,"path"))
+    {
+        duk_remove(ctx,-2); /* this */
+        copy_single_req_var("file","requestFile");
+        copy_single_req_var("path","requestPath");
+        copy_single_req_var("full","requestFullPath");
+    }
+    duk_pop(ctx); /* leave only return object on stack */
+    return 1;
+}
+
+
 /* copy request vars from evhtp to duktape */
 
 void push_req_vars(DHS *dhs)
@@ -396,13 +440,16 @@ void push_req_vars(DHS *dhs)
     duk_put_prop_string(ctx, -2, "path");
 
     /*  Auth */
-    duk_push_object(ctx);
-    putval("user", auth->username);
-    putval("pass", auth->password);
-    putval("hostname", auth->hostname);
-    duk_push_int(ctx, (duk_int_t)auth->port);
-    duk_put_prop_string(ctx, -2, "port");
-    duk_put_prop_string(ctx, -2, "authority");
+    if( auth->username || auth->password || auth->hostname)
+    {
+        duk_push_object(ctx);
+        putval("user", auth->username);
+        putval("pass", auth->password);
+        putval("hostname", auth->hostname);
+        duk_push_int(ctx, (duk_int_t)auth->port);
+        duk_put_prop_string(ctx, -2, "port");
+        duk_put_prop_string(ctx, -2, "authority");
+    }
 
     /* fragment -- portion after # */
     putval("fragment", (char *)dhs->req->uri->fragment);
@@ -436,10 +483,57 @@ void push_req_vars(DHS *dhs)
     /*  headers */
     duk_push_object(ctx);
     evhtp_headers_for_each(dhs->req->headers_in, putheaders, ctx);
+    /* leave headers here to examine below */
+
+    /* examine headers for cookies */
+    if(duk_get_prop_string(ctx, -1, "Cookie"))
+    {
+        const char *c=duk_get_string(ctx,-1), *cend=c,*k=NULL,*v=NULL;
+        int klen=0,vlen=0;
+
+        duk_pop(ctx);
+
+        duk_push_object(ctx);
+        while(*cend)
+        {
+            cend++;
+            switch(*cend)
+            {
+                case '=':
+                    k=c;
+                    klen=cend-c;
+                    cend++;
+                    c=cend;
+                    break;
+                case ';':
+                case '\0':
+                    v=c;
+                    vlen=cend-c;
+                    if(*cend)cend++;
+                    c=cend;
+                    while(isspace(*c)) c++;
+                    cend=c;
+                    break;
+            }
+            if(v && k)
+            {
+                duk_push_lstring(ctx,v,vlen);
+                duk_put_prop_lstring(ctx,-2,k,klen);
+                v=k=NULL;
+            }
+
+        }
+        duk_put_prop_string(ctx,-3,"cookies");
+    }
+    else
+        duk_pop(ctx);
+
+    /* examine headers for content-type */
     if(duk_get_prop_string(ctx, -1, "Content-Type"))
     {
         ct=duk_get_string(ctx,-1);
         duk_pop(ctx);
+        /* done with headers, move off stack into req. */
         duk_put_prop_string(ctx, -2, "headers");
         if(bsz && strncmp("multipart/form-data;",ct,20)==0)
         {
@@ -494,6 +588,9 @@ void push_req_vars(DHS *dhs)
         duk_pop(ctx);
         duk_put_prop_string(ctx, -2, "headers");
     }
+
+    duk_push_c_function(ctx,flatten_vars,0);
+    duk_put_prop_string(ctx, -2, "flatten");
 }
 
 static void send500(evhtp_request_t *req, char *msg)

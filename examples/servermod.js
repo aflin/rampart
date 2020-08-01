@@ -1,5 +1,6 @@
 /* make printf et. al. global */
 rampart.globalize(rampart.cfunc);
+
 var Sql=require("rpsql");
 rampart.globalize(Sql,["sandr"]);
 
@@ -65,7 +66,7 @@ function showreq_callback(req){
     //for (var i=0;i<100000000;i++);
     //print("DONE WASTING TIME IN JS");
 
-    var str=JSON.stringify({req:req,rampart:rampart,mytrue:true, myfalse:false, mynull:null},null,4);
+    var str=JSON.stringify({flatreq:req.flatten(),req:req,rampart:rampart,process:process},null,4);
     var css=
         "pre {outline: 1px solid #ccc; padding: 5px; margin: 5px; }\n"+
         ".string { color: green; }\n"+

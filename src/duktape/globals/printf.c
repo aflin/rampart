@@ -131,7 +131,6 @@ static inline void _out_char(char character, void *buffer, size_t idx, size_t ma
     (void)maxlen;
         putchar(character);
 }
-
 static inline void _fout_char(char character, void *stream, size_t idx, size_t maxlen)
 {
     FILE *out=(FILE*)stream;
@@ -963,7 +962,7 @@ duk_ret_t duk_fseek(duk_context *ctx)
     long offset=(long)duk_require_number(ctx,1);
     int whence;
     const char *wstr=duk_require_string(ctx,2);
-    
+
     if(!strcmp(wstr,"SEEK_SET"))
         whence=SEEK_SET;
     else if(!strcmp(wstr,"SEEK_END"))
@@ -980,7 +979,7 @@ duk_ret_t duk_fseek(duk_context *ctx)
         duk_push_error_object(ctx, DUK_ERR_ERROR, "error fseek():'%s'", strerror(errno));
         duk_throw(ctx);
     }
-    return 0;   
+    return 0;
 }
 duk_ret_t duk_rewind(duk_context *ctx)
 {
@@ -992,7 +991,7 @@ duk_ret_t duk_ftell(duk_context *ctx)
 {
     FILE *f = getfh_nonull(ctx,0,"ftell()");
     long pos;
-    
+
     pos=ftell(f);
     if(pos==-1)
     {
@@ -1008,13 +1007,13 @@ duk_ret_t duk_fread(duk_context *ctx)
     void *buf;
     size_t read, sz=(size_t)duk_require_number(ctx,1);
     buf=duk_push_dynamic_buffer(ctx, (duk_size_t)sz);
-    
+
     read=fread(buf,1,sz,f);
     if(read != sz)
     {
         if(ferror(f))
         {
-            duk_push_error_object(ctx, DUK_ERR_ERROR, "error fread(): error reading file"); 
+            duk_push_error_object(ctx, DUK_ERR_ERROR, "error fread(): error reading file");
             duk_throw(ctx);
         }
         duk_resize_buffer(ctx, -1, (duk_size_t)read);
@@ -1035,11 +1034,11 @@ duk_ret_t duk_fwrite(duk_context *ctx)
             sz=(size_t)bsz;
     }
     else sz=(size_t)bsz;
-    
+
     wrote=fwrite(buf,1,sz,f);
     if(wrote != sz)
     {
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "error fwrite(): error writing file"); 
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "error fwrite(): error writing file");
         duk_throw(ctx);
     }
     duk_push_number(ctx,(double)wrote);
@@ -1050,15 +1049,15 @@ duk_ret_t duk_fopen(duk_context *ctx)
     FILE *f;
     const char *fn=duk_require_string(ctx,0);
     const char *mode=duk_require_string(ctx,1);
-    
+
     f=fopen(fn,mode);
     if(f==NULL) goto err;
-    
+
     duk_push_object(ctx);
     duk_push_pointer(ctx,(void *)f);
     duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("filehandle") );
     return 1;
-    
+
     err:
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening file '%s': %s", fn, strerror(errno));
     return duk_throw(ctx);
@@ -1066,14 +1065,13 @@ duk_ret_t duk_fopen(duk_context *ctx)
 duk_ret_t duk_fclose(duk_context *ctx)
 {
     FILE *f = getfh(ctx,0,"fclose()");
-    
+
     fclose(f);
     duk_push_pointer(ctx,NULL);
     duk_put_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filehandle") );
-    
+
     return 1;
 }
-
 duk_ret_t duk_fprintf(duk_context *ctx)
 {
     int ret;
@@ -1081,7 +1079,7 @@ duk_ret_t duk_fprintf(duk_context *ctx)
     FILE *out;
     int append=0;
     int closefh=1;
-   
+
     if(duk_is_object(ctx,0))
     {
         if(duk_get_prop_string(ctx,0,"stream"))
@@ -1105,10 +1103,9 @@ duk_ret_t duk_fprintf(duk_context *ctx)
             goto startprint;
         }
         duk_pop(ctx);
-        
+
         if ( duk_get_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filehandle")) )
         {
-                    
             out=duk_get_pointer(ctx,-1);
             duk_pop(ctx);
             closefh=0;
@@ -1120,7 +1117,7 @@ duk_ret_t duk_fprintf(duk_context *ctx)
             goto startprint;
         }
         duk_pop(ctx);
-        
+
         duk_push_string(ctx,"error: fprintf({},...): invalid option");
         duk_throw(ctx);
     }
@@ -1131,13 +1128,8 @@ duk_ret_t duk_fprintf(duk_context *ctx)
         {
             append=duk_get_boolean(ctx,1);
             duk_remove(ctx,1);
-        }    
-        
-        if (pthread_mutex_lock(&pflock) == EINVAL)
-        {
-            fprintf(stderr, "error: could not obtain lock in fprintf\n");
-            exit(1);
         }
+
         if(append)
         {
             if( (out=fopen(fn,"a")) == NULL )
@@ -1145,7 +1137,6 @@ duk_ret_t duk_fprintf(duk_context *ctx)
                 if( (out=fopen(fn,"w")) == NULL )
                     goto err;
             }
-            
         }
         else
         {
@@ -1155,12 +1146,17 @@ duk_ret_t duk_fprintf(duk_context *ctx)
     }
     startprint:
     ret = _printf(_fout_char, (void*)out, (size_t)-1, ctx,1);
+    if (pthread_mutex_lock(&pflock) == EINVAL)
+    {
+        fprintf(stderr, "error: could not obtain lock in fprintf\n");
+        exit(1);
+    }
     if(closefh)
         fclose(out);
     pthread_mutex_unlock(&pflock);
     duk_push_int(ctx, ret);
     return 1;
-    
+
     err:
     duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening file '%s': %s", fn, strerror(errno));
     return duk_throw(ctx);
@@ -1195,7 +1191,6 @@ void duk_printf_init(duk_context *ctx)
         duk_pop(ctx);
         duk_push_object(ctx);
     }
-
     if(!duk_get_prop_string(ctx,-1,"cfunc"))
     {
         duk_pop(ctx);
@@ -1239,53 +1234,3 @@ void duk_printf_init(duk_context *ctx)
         exit(1);
     }
 }
-/*
-int printf_(const char* format, ...)
-{
-  va_list va;
-  va_start(va, format);
-  char buffer[1];
-  const int ret = _vsnprintf(_out_char, buffer, (size_t)-1, format, va);
-  va_end(va);
-  return ret;
-}
-
-int sprintf_(char* buffer, const char* format, ...)
-{
-  va_list va;
-  va_start(va, format);
-  const int ret = _vsnprintf(_out_buffer, buffer, (size_t)-1, format, va);
-  va_end(va);
-  return ret;
-}
-
-int snprintf_(char* buffer, size_t count, const char* format, ...)
-{
-  va_list va;
-  va_start(va, format);
-  const int ret = _vsnprintf(_out_buffer, buffer, count, format, va);
-  va_end(va);
-  return ret;
-}
-
-int vprintf_(const char* format, va_list va)
-{
-  char buffer[1];
-  return _vsnprintf(_out_char, buffer, (size_t)-1, format, va);
-}
-
-int vsnprintf_(char* buffer, size_t count, const char* format, va_list va)
-{
-  return _vsnprintf(_out_buffer, buffer, count, format, va);
-}
-
-int fctprintf(void (*out)(char character, void* arg), void* arg, const char* format, ...)
-{
-  va_list va;
-  va_start(va, format);
-  const out_fct_wrap_type out_fct_wrap = { out, arg };
-  const int ret = _vsnprintf(_out_fct, (char*)(uintptr_t)&out_fct_wrap, (size_t)-1, format, va);
-  va_end(va);
-  return ret;
-}
-*/

@@ -54,7 +54,7 @@ static duk_ret_t load_js_module(duk_context *ctx)
         return duk_throw(ctx);
     }
 
-    duk_push_string(ctx, "function (module, exports) {\n");
+    duk_push_string(ctx, "function (module, exports) { ");
     duk_push_lstring(ctx, buffer, sb.st_size);
     duk_push_string(ctx, "\n}");
     duk_concat(ctx, 3);
@@ -102,9 +102,9 @@ static duk_ret_t load_so_module(duk_context *ctx)
 static duk_ret_t resolve_id(duk_context *ctx)
 {
     const char *request_id = duk_require_string(ctx, -1);
-
     char *id = NULL;
     int module_loader_idx;
+
     for (module_loader_idx = 0; module_loader_idx < sizeof(module_loaders) / sizeof(struct module_loader); module_loader_idx++)
     {
         duk_push_string(ctx, request_id);
@@ -117,11 +117,13 @@ static duk_ret_t resolve_id(duk_context *ctx)
             break;
         }
     }
+
     if (id == NULL)
     {
         duk_push_null(ctx);
         return 1;
     }
+
     duk_push_object(ctx);
     duk_push_string(ctx, id);
     duk_put_prop_string(ctx, -2, "id");
@@ -145,19 +147,23 @@ duk_ret_t duk_resolve(duk_context *ctx)
 {
     // TODO: Move directory logic to resolve_id
     int call_with_default_req_id = 1;
-
+    int force_reload = duk_get_boolean_default(ctx, 1, 0);
+    int module_loader_idx;
+    const char *id;
     duk_push_global_stash(ctx);
     duk_get_prop_string(ctx, -1, "module_stack");
 
     duk_push_global_stash(ctx);
     duk_get_prop_string(ctx, -1, "module_stack");
     duk_get_prop_index(ctx, -1, duk_get_length(ctx, -1) - 1);
+
     if (!duk_is_undefined(ctx, -1))
     {
         const char *req_id = duk_get_string(ctx, 0);
         duk_get_prop_string(ctx, -1, "id");
         char *dir = dirname((char *)duk_get_string(ctx, -1)); // will be null on failure
         char req_id_w_dir[strlen(req_id) + 1 + strlen(dir) + 1];
+
         if (dir != NULL)
         {
             strcpy(req_id_w_dir, dir);
@@ -170,6 +176,7 @@ duk_ret_t duk_resolve(duk_context *ctx)
             call_with_default_req_id = 0;
         }
     }
+
     if (call_with_default_req_id)
     {
         duk_push_c_function(ctx, resolve_id, 1);
@@ -177,7 +184,6 @@ duk_ret_t duk_resolve(duk_context *ctx)
         duk_call(ctx, 1);
     }
 
-    int force_reload = duk_get_boolean_default(ctx, 1, 0);
     if (duk_is_null(ctx, -1))
     {
         duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not resolve module id %s: %s\n", duk_get_string(ctx, 0), strerror(errno));
@@ -185,10 +191,10 @@ duk_ret_t duk_resolve(duk_context *ctx)
     }
 
     duk_get_prop_string(ctx, -1, "module_loader_idx");
-    int module_loader_idx = duk_get_int(ctx, -1);
+    module_loader_idx = duk_get_int(ctx, -1);
 
     duk_get_prop_string(ctx, -2, "id");
-    const char *id = duk_get_string(ctx, -1);
+    id = duk_get_string(ctx, -1);
 
     // get require() for later use
     duk_push_global_object(ctx);
