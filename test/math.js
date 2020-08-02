@@ -1,7 +1,11 @@
+"use babel"
 
-var LibMath = {};
+//var LibMath = {};
 
-LibMath.sum = function (x, y) { return x + y };
-LibMath.pi = 3.141593;
+//LibMath.sum = (x, y) => { x + y };
+//LibMath.pi = 3.141593;
+//module.exports=LibMath;
 
-module.exports=LibMath;
+export function sum (x, y) { return x + y };
+export var pi = 3.141593;
+

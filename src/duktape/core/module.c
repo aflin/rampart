@@ -4,11 +4,11 @@
 #include <dlfcn.h>
 #include <pthread.h>
 #include <libgen.h>
-
 #include "duktape.h"
 #include "module.h"
+#include "../../rp.h"
 
-static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t modlock = PTHREAD_MUTEX_INITIALIZER;
 
 struct module_loader
 {
@@ -53,9 +53,14 @@ static duk_ret_t load_js_module(duk_context *ctx)
         duk_push_error_object(ctx, DUK_ERR_ERROR, "Error loading file %s: %s\n", id, strerror(errno));
         return duk_throw(ctx);
     }
+    buffer[sb.st_size]='\0';
 
     duk_push_string(ctx, "function (module, exports) { ");
-    duk_push_lstring(ctx, buffer, sb.st_size);
+    /* check for babel and push src to stack */
+    if (! duk_rp_babelize(ctx, (char *)id, buffer, sb.st_mtime) )
+    {
+        duk_push_lstring(ctx, buffer, sb.st_size);
+    }
     duk_push_string(ctx, "\n}");
     duk_concat(ctx, 3);
 
@@ -76,17 +81,17 @@ static duk_ret_t load_so_module(duk_context *ctx)
 {
     const char *file = duk_require_string(ctx, -3);
     duk_idx_t module_idx = duk_normalize_index(ctx, -1);
-    pthread_mutex_lock(&lock);
+    pthread_mutex_lock(&modlock);
     void *lib = dlopen(file, RTLD_NOW);
     if (lib == NULL)
     {
         const char *dl_err = dlerror();
         duk_push_error_object(ctx, DUK_ERR_ERROR, "Error loading: %s", dl_err);
-        pthread_mutex_unlock(&lock);
+        pthread_mutex_unlock(&modlock);
         return duk_throw(ctx);
     }
     duk_c_function init = (duk_c_function)dlsym(lib, "duk_open_module");
-    pthread_mutex_unlock(&lock);
+    pthread_mutex_unlock(&modlock);
     if (init != NULL)
     {
         duk_push_c_function(ctx, init, 0);

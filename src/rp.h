@@ -159,6 +159,8 @@ char *duk_rp_url_encode(char *str, int len);
 char *duk_rp_url_decode(char *str, int len);
 void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase);
 
+/* babelize in cmdline.c */
+const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime);
 
 #if defined(__cplusplus)
 }

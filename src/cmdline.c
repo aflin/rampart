@@ -196,10 +196,97 @@ static int repl(duk_context *ctx)
     }
 }
 
-/* babelized source and fn is left on top of stack*/
-const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, char *opt, time_t src_mtime)
+static char *checkbabel(char *src)
 {
-    char *in=src, *s, *babelcode=NULL;
+    char *s=src, *bline, *ret;
+
+    /* skip comments at top of file */
+    while(isspace(*s)) s++;
+    while (*s=='/')
+    {
+        s++;
+        if(*s=='/')
+        {
+            while(*s && *s!='\n') s++;
+            if(!*s) break;
+        }
+        else if (*s=='*')
+        {
+            char *e=(char*)memmem(s,strlen(s),"*/",2);
+            if(e)
+                s=e+2;
+            else
+                break;
+        }
+        else
+            break;
+        while(isspace(*s)) s++;
+    }
+    //printf("'%s'\n",s);
+    bline=s;
+    /* check for use "babel:{options}" or use "babel" */
+#define invalidformat do{\
+    fprintf(stderr,"invalid format: \"use babel:{ options }\"\n");\
+    exit(1);\
+}while(0)
+
+    if(!strncmp("\"use ",s,5) )
+    {
+        if(*s=='\n') s++;
+        s+=5;
+        if (!strncmp("babel",s,5))
+        {
+            char *e;
+
+            s+=5;
+            while(isspace(*s)) s++;
+            if(*s==':')
+            {
+                s++;
+                while(isspace(*s)) s++;
+                if(*s!='{')
+                    invalidformat;
+                e=s;
+                /* must end with } before a " or \n */
+                while(*e != '"' && *e != '\n') e++;
+                if(*e!='"')
+                    invalidformat;
+                
+                e--;
+                while(isspace(*e)) e--;    
+                
+                if(*e!='}')
+                    invalidformat;
+
+                e++;
+
+                {
+                    char opt[1+e-s];
+                    
+                    strncpy(opt,s,e-s);
+                    opt[e-s]='\0';
+                    //file_src=(char *)duk_rp_babelize(ctx, argv[0], file_src, opt, entry_file_stat.st_mtime);
+                    ret=strdup(opt);
+                }
+            }
+            else if (*s=='"')
+            {
+                //file_src=(char *)duk_rp_babelize(ctx, argv[0], file_src, NULL, entry_file_stat.st_mtime);
+                ret=strdup ("{ presets: ['latest'],retainLines:true }");
+            }
+            /* replace "use babel" line with spaces, to preserve line nums */
+            while (*bline && *bline!='\n') *bline++ = ' ';
+            return(ret);            
+        }
+    }
+    return NULL;
+}
+
+
+/* babelized source and fn is left on top of stack*/
+const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime)
+{
+    char *s, *babelcode=NULL, *opt;
     struct stat babstat;
     char babelsrc[strlen(fn)+10];
     FILE *f;
@@ -208,6 +295,9 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, char *opt, ti
     char *pfill_bc=".babel-polyfill.bytecode";
     duk_size_t bsz;
     void *buf;
+
+    opt=checkbabel(src);
+    if(!opt) return NULL;
 
     /* check if polyfill already loaded */
     duk_eval_string(ctx,"global._babelPolyfill");
@@ -360,14 +450,6 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, char *opt, ti
     }
 
     /* file.babel.js does not exist */
-    if(opt==NULL)
-        opt="{ presets: ['latest'],retainLines:true }";
-
-    /* replace first line with spaces, to preserve line nums */
-    if(*in=='\n')in++;
-    while (*in!='\n') *in++ = ' ';
-    if(*in!='\n')
-        return("");
 
     /* load babel.min.js as a module and convert file.js */
     duk_push_sprintf(ctx,"function(input){\nvar b=require('babel.min');\nreturn b.transform(input, %s ).code;\n}\n",opt);
@@ -407,7 +489,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, char *opt, ti
         fclose(f);
     }
     end:
-    duk_push_string(ctx,fn);
+    free(opt);
     return (const char*) babelcode;
 }
 
@@ -513,7 +595,7 @@ int main(int argc, char *argv[])
     else if (argc > 0)
     {
         struct stat entry_file_stat;
-        char *file_src, *free_file_src;
+        char *file_src, *free_file_src, *s;
         FILE *entry_file;
         size_t src_sz;
 
@@ -559,9 +641,9 @@ int main(int argc, char *argv[])
         /* skip over #!/path/to/rampart */
         if(*file_src=='#')
         {
-            char *s=strchr(file_src,'\n');
+            s=strchr(file_src,'\n');
 
-            /* leave blank new line to preserve line numbering */
+            /* leave '\n' to preserve line numbering */
             if(!s || !*s)
             {
                 duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read beyond first line in entry file '%s'\n", argv[0]);
@@ -570,62 +652,17 @@ int main(int argc, char *argv[])
                 free(free_file_src);
                 return 1;
             }
-            src_sz-=(s-file_src);
             file_src=s;
         }
-        /* check for use "babel:{options}" or use "babel" */
-        if(!strncmp("use ",file_src,4) || !strncmp("use ",file_src+1, 4)  )
+
+        /* push babelized source to stack if available */
+        if (! duk_rp_babelize(ctx, argv[0], file_src, entry_file_stat.st_mtime))
         {
-            char *s=file_src;
-            if(*s=='\n') s++;
-            s+=4;
-            if (!strncmp("\"babel",s,6))
-            {
-                char *e;
-
-                s+=6;
-                while(isspace(*s)) s++;
-                if(*s==':')
-                {
-                    s++;
-                    while(isspace(*s)) s++;
-                    if(*s!='{')
-                    {
-                        fprintf(stderr,"invalid format: use \"babel:{ options }\"\n");
-                        exit(1);
-                    }
-                    e=s;
-                    /* must end with } before a " or \n */
-                    while(*e != '"' && *e != '}' && *e != '\n') e++;
-                    if(*e!='}')
-                    {
-                        fprintf(stderr,"invalid format: use \"babel:{ options }\"\n");
-                        exit(1);
-                    }
-
-                    e++;
-
-                    {
-                        char opt[1+e-s];
-                        
-                        strncpy(opt,s,e-s);
-                        opt[e-s]='\0';
-                        file_src=(char *)duk_rp_babelize(ctx, argv[0], file_src, opt, entry_file_stat.st_mtime);
-                        goto compile;
-                    }
-                }
-                else
-                {
-                    file_src=(char *)duk_rp_babelize(ctx, argv[0], file_src, NULL, entry_file_stat.st_mtime);
-                    goto compile;
-                }
-            }
+            duk_push_string(ctx, file_src);
         }
-
-        duk_push_string(ctx, file_src);
+        /* push filename */
         duk_push_string(ctx, argv[0]);
 
-        compile:
         free(free_file_src);
         if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
         {

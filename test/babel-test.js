@@ -1,5 +1,6 @@
 #!./rp
-use "babel:{ presets: ['latest'],retainLines:true }"; // use "babel" must be on the first line, or second if #! above, with no spaces or tabs preceeding it"
+/* use "babel" must be on the first line after comments and  any optional #! above, with no spaces or tabs preceeding it */
+"use babel:{ presets: ['latest'],retainLines:true }";
 
 import * as math from "math";
 
@@ -7,7 +8,7 @@ import { sum, pi } from "math";
 
 rampart.globalize(rampart.cfunc);
 
-function assert(name,test)
+function testFeature(name,test)
 {
     var error=false;
     if (typeof test =='function'){
@@ -26,12 +27,12 @@ function assert(name,test)
     if(error) console.log(error);
 }
 
-assert("polyfill loaded",
+testFeature("polyfill loaded",
     global._babelPolyfill
 );
 
 /* Babel bug? no chrome fails on this as well. 
-assert("parse return on separate line", function(){ return
+testFeature("parse return on separate line", function(){ return
     true;
 });
 */
@@ -50,13 +51,13 @@ assert("parse return on separate line", function(){ return
         function foo () { return 2; }
         foo() === 2;
     }
-    assert("block scoped func",(
+    testFeature("block scoped func",(
     foo() === 1));
 }
 
 var evens=[2,4,6,8];
 var odds  = evens.map(v => v + 1);
-assert("arrow expression bodies",(
+testFeature("arrow expression bodies",(
     odds[0]==3 && odds[1]==5 &&odds[2]==7 && odds[3]==9
 ));
 
@@ -68,7 +69,7 @@ nums.forEach(v => {
    if (v % 5 === 0)
        fives.push(v);
 });
-assert("arrow statement bodies",(
+testFeature("arrow statement bodies",(
     fives[0]==5 && fives[1]==10 &&fives[2]==15 && fives[3]==20
 ));
 
@@ -79,7 +80,7 @@ function altest(){
         if (v % 5 === 0)
             this.fives.push(v)
     })
-    assert("arrow lexical this",(
+    testFeature("arrow lexical this",(
         this.fives[0]==5 && this.fives[1]==10 && this.fives[2]==15 && this.fives[3]==20
     ));
 }
@@ -89,7 +90,7 @@ test.altest();
 function f (x, y = 7, z = 42) {
     return x + y + z;
 }
-assert("default parameters",
+testFeature("default parameters",
     f(1) === 50
 );
 
@@ -97,52 +98,52 @@ assert("default parameters",
 function f2 (x, y, ...a) {
     return (x + y) * a.length;
 }
-assert("rest parameters",
+testFeature("rest parameters",
     f2(1, 2, "hello", true, 7) === 9
 );
 
 
 var str = "foo";
 var c = [ ...str ];
-assert("spread operator",
+testFeature("spread operator",
     c[0]=='f' && c[1]=='o' && c[2]=='o' 
 );
 
-assert("template literals",function(){ 
+testFeature("template literals",function(){ 
     var lit=`${fives[0]} times ${fives[1]} = ${fives[0] * fives[1]}`;
     return lit=="5 times 10 = 50"
 });
 
 var tag=(s)=> s;
-assert("template literals (tag)",function(){
+testFeature("template literals (tag)",function(){
     return tag`this`=="this";
 });
 //`
 
-assert("String.raw",
+testFeature("String.raw",
     String.raw`this\nthat`=="this\\nthat"
 );
 
-assert("bin and oct literal",function(){ 
+testFeature("bin and oct literal",function(){ 
     return 0b111110111 === 503 && 0o767 === 503;
 });
 
-assert("unicode literals",function(){ return(
+testFeature("unicode literals",function(){ return(
     "𠮷".length === 2 && "𠮷".match(/./u)[0].length === 2 && "𠮷" === "\uD842\uDFB7" && "𠮷" === "\u{20BB7}" && "𠮷".codePointAt(0) == 0x20BB7
 )});
 
-assert("RE sticky matching",function(){
+testFeature("RE sticky matching",function(){
     var re = new RegExp('foo', 'y');
     return re.test("foo bar") && !re.test("foo bar")
 });
 
-assert("property shorthand",function(){
+testFeature("property shorthand",function(){
     var x = 1, y = 1;
     var obj = { x, y };
     return obj.x && obj.y;
 });
 
-assert("computed property names",function(){
+testFeature("computed property names",function(){
 
     let obj = {
         foo: "bar",
@@ -151,7 +152,7 @@ assert("computed property names",function(){
     return obj.foo2==42;
 });
 
-assert("method properties",function(){
+testFeature("method properties",function(){
     var obj={
         s(x) { return x;},
         m(x) { return x*x;},
@@ -161,7 +162,7 @@ assert("method properties",function(){
     return obj.s(2)==2 && obj.m(3)==9 && obj.a(3)==6;
 });
 
-assert("method properties with generator",function(){
+testFeature("method properties with generator",function(){
     var obj={
         *g(x) { yield(x);yield(x*x);}
     }
@@ -171,20 +172,20 @@ assert("method properties with generator",function(){
     return gen.next().value==2 && gen.next().value==4;
 });
 
-assert("array matching",function(){
+testFeature("array matching",function(){
     var list = [ 1, 2, 3 ];
     var [ a, , b ] = list;
     [ b, a ] = [ a, b ];
     return a==3 && b==1;
 });
 
-assert("object matching shorthand",function(){
+testFeature("object matching shorthand",function(){
     var obj={a:"a", bOuter:{bInner:"b"}, c:"c"};
     var {a, bOuter:{bInner:b}, c} = obj;
     return a=="a" & b=="b" && c=="c";
 });
 
-assert("matching with defaults",function(){
+testFeature("matching with defaults",function(){
     var obj = { a: 1 };
     var list = [ 1 ];
     var { a, b = 2 } = obj;
@@ -193,27 +194,27 @@ assert("matching with defaults",function(){
 });
 
 
-assert("parameter context matching",function(){
+testFeature("parameter context matching",function(){
     var f = ([a,b])=> a*b;
     var g = ({a:a,b:b})=>a*b;
     
     return f([2,3])==6 && g({a:3,b:4})==12;
 });
 
-assert("fail-soft destructuring",function(){
+testFeature("fail-soft destructuring",function(){
     var list = [ 7, 42 ];
     var [ a = 1, b = 2, c = 3, d ] = list;
     return a === 7 && b === 42 && c === 3 && d === undefined;
 });
 
-/* TODO: export, babel in modules */
-assert("import/export",function(){
+
+testFeature("import/export",function(){
     return 6.283186==math.sum(math.pi, math.pi) && 6.283186==sum(pi, pi);
 });
 
 /* TODO: export defaults http://es6-features.org/#DefaultWildcard */
 
-assert("class defintions and inheritance",function(){
+testFeature("class defintions and inheritance",function(){
     class mult {
         constructor (x, y) {
             this.x=x;
@@ -239,7 +240,7 @@ assert("class defintions and inheritance",function(){
     return 12 == m.mult() && 18 == ma.multadd();
 });
 
-assert("inheritance from expressions", function(){
+testFeature("inheritance from expressions", function(){
     var aggregation = (baseClass, ...mixins) => {
         let base = class _Combined extends baseClass {
             constructor (...args) {
@@ -293,9 +294,27 @@ assert("inheritance from expressions", function(){
     return rect.x==7 && rect.y==42 && rect.z==1000 && rect.color=="red";
 });
 
+/* TODO: http://es6-features.org/#SymbolType and http://es6-features.org/#GlobalSymbols */
+testFeature("iterator and for of",function(){
+    let fibonacci = {
+        [Symbol.iterator]() {
+            let pre = 0, cur = 1;
+            return {
+               next () {
+                   [ pre, cur ] = [ cur, pre + cur ];
+                   return { done: false, value: cur };
+               }
+            };
+        }
+    }
+    var n;
+    for (n of fibonacci) {
+        if (n > 1000)
+            break;
+    }
 
-
-
+    return n==1597;
+});
 
 
 
