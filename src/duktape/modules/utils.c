@@ -374,7 +374,7 @@ duk_ret_t duk_util_stat(duk_context *ctx)
 
     // ctime
     (void)duk_get_global_string(ctx, "Date");
-    duk_push_number(ctx, mtime);
+    duk_push_number(ctx, ctime);
     duk_new(ctx, 1);
     duk_put_prop_string(ctx, -2, "ctime");
 

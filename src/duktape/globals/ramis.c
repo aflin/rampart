@@ -41,7 +41,7 @@ RP_VA_RET duk_rp_getarg(duk_context *ctx, const char *type)
   if (duk_is_undefined(ctx, 1))
   {
     duk_push_string(ctx, "not enough arguments for exec(fmt,...)");
-    duk_throw(ctx);
+    (void)duk_throw(ctx);
   }
 
   switch (*type)
@@ -145,7 +145,7 @@ void ra_push_response(duk_context *ctx, RESPROTO *response)
       }
       case RESPISBULKSTR:
       {
-        size_t l = 1 + strnlen(item->loc, item->length);
+        size_t l = 1 + strnlen((const char *)item->loc, item->length);
         if (l < item->length)
         { /* if it's binary, put it in a buffer */
           void *b = duk_push_fixed_buffer(ctx, item->length);
@@ -245,7 +245,7 @@ duk_ret_t duk_rp_ra_constructor(duk_context *ctx)
   if (!respClient)
   {
     duk_push_sprintf(ctx, "respClient: Failed to connect to %s:%d\n", ip, port);
-    duk_throw(ctx);
+    (void)duk_throw(ctx);
   }
   // TODO: ask what this should be set to
   respClient->waitForever = 1;
@@ -255,7 +255,7 @@ duk_ret_t duk_rp_ra_constructor(duk_context *ctx)
   duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("respclient"));
   return 0;
 }
-
+//FIXME: Make this a module or put it in rampart.Ramis */
 /* **************************************************
    Initialize ramis client into global object. 
    ************************************************** */

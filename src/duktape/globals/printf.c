@@ -935,7 +935,7 @@ duk_ret_t duk_printf(duk_context *ctx)
     if( !duk_get_prop_string(ctx,idx,DUK_HIDDEN_SYMBOL("filehandle")) )\
     {\
         duk_push_sprintf(ctx,"%s: argument is not a file handle",func);\
-        duk_throw(ctx);\
+        (void)duk_throw(ctx);\
     }\
     f=duk_get_pointer(ctx,-1);\
     duk_pop(ctx);\
@@ -946,13 +946,13 @@ duk_ret_t duk_printf(duk_context *ctx)
     if( !duk_get_prop_string(ctx,idx,DUK_HIDDEN_SYMBOL("filehandle")) )\
     {\
         duk_push_sprintf(ctx,"error %s: argument is not a file handle",func);\
-        duk_throw(ctx);\
+        (void)duk_throw(ctx);\
     }\
     f=duk_get_pointer(ctx,-1);\
     duk_pop(ctx);\
     if(f==NULL){\
         duk_push_sprintf(ctx,"error %s: file handle was previously closed",func);\
-        duk_throw(ctx);\
+        (void)duk_throw(ctx);\
     }\
     f;\
 })
@@ -960,7 +960,7 @@ duk_ret_t duk_fseek(duk_context *ctx)
 {
     FILE *f = getfh_nonull(ctx,0,"fseek()");
     long offset=(long)duk_require_number(ctx,1);
-    int whence;
+    int whence=SEEK_SET;
     const char *wstr=duk_require_string(ctx,2);
 
     if(!strcmp(wstr,"SEEK_SET"))
@@ -972,12 +972,12 @@ duk_ret_t duk_fseek(duk_context *ctx)
     else
     {
         duk_push_sprintf(ctx,"error fseek(): invalid argument '%s'",wstr);
-        duk_throw(ctx);
+        (void)duk_throw(ctx);
     }
     if(fseek(f, offset, whence))
     {
         duk_push_error_object(ctx, DUK_ERR_ERROR, "error fseek():'%s'", strerror(errno));
-        duk_throw(ctx);
+        (void)duk_throw(ctx);
     }
     return 0;
 }
@@ -996,7 +996,7 @@ duk_ret_t duk_ftell(duk_context *ctx)
     if(pos==-1)
     {
         duk_push_error_object(ctx, DUK_ERR_ERROR, "error ftell():'%s'", strerror(errno));
-        duk_throw(ctx);
+        (void)duk_throw(ctx);
     }
     duk_push_number(ctx,(double)pos);
     return 1;
@@ -1014,7 +1014,7 @@ duk_ret_t duk_fread(duk_context *ctx)
         if(ferror(f))
         {
             duk_push_error_object(ctx, DUK_ERR_ERROR, "error fread(): error reading file");
-            duk_throw(ctx);
+            (void)duk_throw(ctx);
         }
         duk_resize_buffer(ctx, -1, (duk_size_t)read);
     }
@@ -1039,7 +1039,7 @@ duk_ret_t duk_fwrite(duk_context *ctx)
     if(wrote != sz)
     {
         duk_push_error_object(ctx, DUK_ERR_ERROR, "error fwrite(): error writing file");
-        duk_throw(ctx);
+        (void)duk_throw(ctx);
     }
     duk_push_number(ctx,(double)wrote);
     return(1);
@@ -1076,7 +1076,7 @@ duk_ret_t duk_fprintf(duk_context *ctx)
 {
     int ret;
     const char *fn;
-    FILE *out;
+    FILE *out=NULL;
     int append=0;
     int closefh=1;
 
@@ -1096,7 +1096,7 @@ duk_ret_t duk_fprintf(duk_context *ctx)
             else
             {
                 duk_push_string(ctx,"error: fprintf({stream:""},...): stream must be stdout or stderr");
-                duk_throw(ctx);
+                (void)duk_throw(ctx);
             }
             closefh=0;
             duk_pop(ctx);
@@ -1112,14 +1112,14 @@ duk_ret_t duk_fprintf(duk_context *ctx)
             if(out==NULL)
             {
                 duk_push_string(ctx,"error: fprintf(handle,...): handle was previously closed");
-                duk_throw(ctx);
+                (void)duk_throw(ctx);
             }
             goto startprint;
         }
         duk_pop(ctx);
 
         duk_push_string(ctx,"error: fprintf({},...): invalid option");
-        duk_throw(ctx);
+        (void)duk_throw(ctx);
     }
     else
     {
@@ -1169,7 +1169,7 @@ duk_ret_t duk_sprintf(duk_context *ctx)
     if (!buffer)
     {
         duk_push_string(ctx, "malloc error in sprintf");
-        duk_throw(ctx);
+        (void)duk_throw(ctx);
     }
     (void)_printf(_out_buffer, buffer, (size_t)-1, ctx,0);
     duk_push_lstring(ctx, buffer,(duk_size_t)size);

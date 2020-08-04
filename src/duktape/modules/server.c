@@ -866,7 +866,7 @@ static evhtp_res sendobj(DHS *dhs)
             duk_pop(ctx); /* get rid of 'headers' non object */
             duk_del_prop_string(ctx, -1, "headers");
             duk_push_string(ctx, "headers option in return value must be set to an object (headers:{...})");
-            duk_throw(ctx);
+            (void)duk_throw(ctx);
         }
     }
     duk_pop(ctx);
@@ -1436,7 +1436,7 @@ static void *http_dothread(void *arg)
     if (duk_is_function(dhs->ctx, -1) || duk_is_array(dhs->ctx, -1))
     {
         duk_push_string(dhs->ctx, "Return value cannot be an array or a function");
-        duk_throw(dhs->ctx);
+        (void)duk_throw(dhs->ctx);
     }
     /* object has reply data and options in it */
     if (duk_is_object(dhs->ctx, -1))
@@ -2058,7 +2058,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
     if (duk_is_array(dhs->ctx, -1))
     {
         duk_push_string(dhs->ctx, "Return value cannot be an array");
-        duk_throw(dhs->ctx);
+        (void)duk_throw(dhs->ctx);
     }
 
     /* object has reply data and options in it */
@@ -2342,12 +2342,12 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
         if (setgid(unprivg) == -1) 
         {
             duk_push_string(main_ctx,"error setting group, setgid() failed");
-            duk_throw(main_ctx);
+            (void)duk_throw(main_ctx);
         }
         if (setuid(unprivu) == -1) 
         {
             duk_push_string(main_ctx,"error setting user, setuid() failed");
-            duk_throw(main_ctx);
+            (void)duk_throw(main_ctx);
         }
     }
 
@@ -2444,7 +2444,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 if(! (pwd = getpwnam(user)) )
                 {
                     duk_push_sprintf(ctx,"error getting user '%s' in start()\n",user);
-                    duk_throw(ctx);
+                    (void)duk_throw(ctx);
                 }
                 printf("setting unprivileged user '%s'\n",user);
                 unprivu=pwd->pw_uid;
@@ -2453,7 +2453,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             else
             {
                 duk_push_string(ctx,"starting as root requires you name a {user:'unpriv_user_name'} in start()");
-                duk_throw(ctx);
+                (void)duk_throw(ctx);
             }
             duk_pop(ctx);
         }
@@ -2572,7 +2572,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         if (usev6 + usev4 == 0)
         {
             duk_push_string(ctx, "useipv6 and useipv4 cannot both be set to false");
-            duk_throw(ctx);
+            (void)duk_throw(ctx);
         }
 
         /* use specified number of threads */
@@ -2715,7 +2715,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         {
                             duk_push_sprintf(ctx,"Option for path %s must be a function or an object to load a module (e.g. {module:'mymodule'}",s);
                             free(s);
-                            duk_throw(ctx);
+                            (void)duk_throw(ctx);
                         }
 
                         duk_insert(ctx, fpos);
@@ -2816,7 +2816,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             else
             {
                 duk_push_string(ctx, "value of 'map' must be an object");
-                duk_throw(ctx);
+                (void)duk_throw(ctx);
             }
         }
         duk_pop(ctx);
@@ -2831,7 +2831,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             if (stat(ssl_config->pemfile, &f_stat) != 0)
             {
                 duk_push_sprintf(ctx, "Cannot load SSL cert '%s' (%s)", ssl_config->pemfile, strerror(errno));
-                duk_throw(ctx);
+                (void)duk_throw(ctx);
             }
         }
 
@@ -2841,7 +2841,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             if (stat(ssl_config->privfile, &f_stat) != 0)
             {
                 duk_push_sprintf(ctx, "Cannot load SSL key '%s' (%s)", ssl_config->privfile, strerror(errno));
-                duk_throw(ctx);
+                (void)duk_throw(ctx);
             }
         }
 
@@ -2850,7 +2850,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             if (stat(ssl_config->cafile, &f_stat) != 0)
             {
                 duk_push_sprintf(ctx, "Cannot find SSL CA File '%s' (%s)", ssl_config->cafile, strerror(errno));
-                duk_throw(ctx);
+                (void)duk_throw(ctx);
             }
         }
         if (filecount < 2)
@@ -2858,7 +2858,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             duk_push_sprintf(ctx, "Minimally ssl must be configured with, e.g. -\n"
                                   "{\n\t\"secure\":true,\n\t\"sslkeyfile\": \"/path/to/privkey.pem\","
                                   "\n\t\"sslcertfile\":\"/path/to/fullchain.pem\"\n}");
-            duk_throw(ctx);
+            (void)duk_throw(ctx);
         }
         printf("Initing ssl/tls\n");
         if (usev4)
@@ -2866,7 +2866,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             if (evhtp_ssl_init(htp4, ssl_config) == -1)
             {
                 duk_push_string(ctx, "error setting up ssl/tls server");
-                duk_throw(ctx);
+                (void)duk_throw(ctx);
             }
         }
         if (usev6)
@@ -2874,7 +2874,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             if (evhtp_ssl_init(htp6, ssl_config) == -1)
             {
                 duk_push_string(ctx, "error setting up ssl/tls server");
-                duk_throw(ctx);
+                (void)duk_throw(ctx);
             }
         }
     }
@@ -2896,7 +2896,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         if (!(ipv4_addr = bind_sock_port(htp4, ipv4, port, 2048)))
         {
             duk_push_sprintf(ctx, "could not bind to %s port %d", ipv4, port);
-            duk_throw(ctx);
+            (void)duk_throw(ctx);
         }
     }
 
@@ -2905,7 +2905,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         if (!(ipv6_addr = bind_sock_port(htp6, ipv6, ipv6port, 2048)))
         {
             duk_push_sprintf(ctx, "could not bind to %s, %d", ipv6, ipv6port);
-            duk_throw(ctx);
+            (void)duk_throw(ctx);
         }
     }
 

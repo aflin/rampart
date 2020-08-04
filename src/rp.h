@@ -32,7 +32,7 @@ extern "C"
     if ((char *)(s) == (char *)NULL)           \
     {                                          \
         duk_push_string((ctx), "alloc error"); \
-        duk_throw((ctx));                      \
+        (void)duk_throw((ctx));                \
     }
 #define REMALLOC(s, t) /*printf("malloc=%d\n",(int)t);*/ \
     (s) = realloc((s), (t));                             \

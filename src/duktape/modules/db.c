@@ -204,7 +204,7 @@ static DB_HANDLE *new_handle(const char *d, const char *q)
     return (h);
 }
 
-/* for debugging */
+/* for debugging *
 static void print_handles(DB_HANDLE *head)
 {
     DB_HANDLE *h = head;
@@ -221,7 +221,7 @@ static void print_handles(DB_HANDLE *head)
         printf("]\n");
     }
 }
-
+*/
 /* the LRU Texis Handle Cache is indexed by
    query and db. Currently we have to reprep the 
    query each time it is used, negating the
@@ -326,18 +326,11 @@ static DB_HANDLE *get_handle(const char *d, const char *q)
    ************************************************** */
 duk_ret_t duk_rp_sql_close(duk_context *ctx)
 {
-    DB_HANDLE *hcache = NULL;
-
     SET_THREAD_UNSAFE(ctx);
-    duk_push_heap_stash(ctx);
-    if (duk_get_prop_string(ctx, -1, "hcache"))
-    {
-        hcache = (DB_HANDLE *)duk_get_pointer(ctx, -1);
-        free_all_handles(NULL);
-        duk_del_prop_string(ctx, -2, "hcache");
-    }
+    free_all_handles(NULL);
     return 0;
 }
+
 #define msgbufsz 4096
 
 #ifdef USEHANDLECACHE
@@ -345,7 +338,7 @@ duk_ret_t duk_rp_sql_close(duk_context *ctx)
     char pbuf[msgbufsz];\
     duk_rp_log_tx_error(ctx,pbuf);\
     duk_push_sprintf(ctx, "%s error: %s",pref,pbuf);\
-    duk_throw(ctx);\
+    (void)duk_throw(ctx);\
 }while(0)
 #else
 #define throw_tx_error(ctx,pref) do{\
@@ -353,7 +346,7 @@ duk_ret_t duk_rp_sql_close(duk_context *ctx)
     duk_rp_log_tx_error(ctx,pbuf);\
     duk_push_sprintf(ctx, "%s error: %s",pref,pbuf);\
     if(tx) tx = TEXIS_CLOSE(tx);\
-    duk_throw(ctx);\
+    (void)duk_throw(ctx);\
 }while(0)
 #endif
 
@@ -1115,7 +1108,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
     if (!duk_get_prop_string(ctx, -1, "db"))
     {
         duk_push_string(ctx, "no database has been opened");
-        duk_throw(ctx);
+        (void)duk_throw(ctx);
     }
     db = duk_get_string(ctx, -1);
     duk_pop_2(ctx);
@@ -1237,7 +1230,7 @@ duk_ret_t duk_rp_sql_eval(duk_context *ctx)
 duk_ret_t duk_texis_set(duk_context *ctx)
 {
     LPSTMT lpstmt;
-    DDIC *ddic;
+    DDIC *ddic=NULL;
     TEXIS *tx;
     const char *db,*val;
     DB_HANDLE *hcache = NULL;
@@ -1248,7 +1241,7 @@ duk_ret_t duk_texis_set(duk_context *ctx)
     if (!duk_get_prop_string(ctx, -1, "db"))
     {
         duk_push_string(ctx, "no database is open");
-        duk_throw(ctx);
+        (void)duk_throw(ctx);
     }
     db = duk_get_string(ctx, -1);
     duk_pop_2(ctx);
@@ -1273,7 +1266,7 @@ duk_ret_t duk_texis_set(duk_context *ctx)
 
 #define throwinvalidprop(s) do{\
     duk_push_sprintf(ctx,"invalid option '%s'",(s));\
-    duk_throw(ctx);\
+    (void)duk_throw(ctx);\
 } while(0)
 
     duk_enum(ctx, -1, 0);
@@ -1357,7 +1350,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
             {
                 duk_rp_log_tx_error(ctx,pbuf);
                 duk_push_sprintf(ctx, "cannot create database at '%s' (root path not found, lacking permission or other error\n)", db, pbuf);
-                duk_throw(ctx);
+                (void)duk_throw(ctx);
             }
         }
         else

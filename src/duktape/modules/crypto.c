@@ -14,7 +14,7 @@
     {                                                                              \
         void *err_buf = duk_push_fixed_buffer(ctx, OPENSSL_ERR_STRING_MAX_SIZE);   \
         ERR_error_string_n(ERR_get_error(), err_buf, OPENSSL_ERR_STRING_MAX_SIZE); \
-        duk_error(ctx, DUK_ERR_ERROR, "OpenSSL Error (%d): %s", __LINE__,err_buf);        \
+        (void)duk_error(ctx, DUK_ERR_ERROR, "OpenSSL Error (%d): %s", __LINE__,err_buf);        \
     }
 
 static void rpcrypt(
@@ -45,7 +45,7 @@ static void rpcrypt(
     /* Retrieve the cipher by name */
     cipher = EVP_get_cipherbyname(cipher_name);
     if (cipher == NULL)
-        duk_error(ctx, DUK_ERR_ERROR, "Cipher %s not found", cipher_name);
+        (void)duk_error(ctx, DUK_ERR_ERROR, "Cipher %s not found", cipher_name);
     
     out_buffer = duk_push_dynamic_buffer(ctx, in_len + EVP_CIPHER_block_size(cipher) + saltspace);
 
@@ -168,7 +168,7 @@ static KEYIV pw_to_keyiv(duk_context *ctx, const char *pass, const char *cipher_
 static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
 {
     duk_size_t in_len;
-    void *in_buffer;
+    void *in_buffer=NULL;
     const char *cipher_name = "aes-256-cbc";
     unsigned char *key=NULL, *iv=NULL, salt[PKCS5_SALT_LEN], *salt_p=NULL;
     KEYIV kiv;
@@ -185,7 +185,7 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
         duk_pop(ctx);
 
         if(!duk_get_prop_string(ctx, 0, "data"))
-            duk_error(ctx, DUK_ERR_ERROR, "option 'data' missing from en/decrypt");
+            (void)duk_error(ctx, DUK_ERR_ERROR, "option 'data' missing from en/decrypt");
 
         duk_to_buffer(ctx,-1,&in_len);
         in_buffer = duk_get_buffer_data(ctx, -1, &in_len);
@@ -212,7 +212,7 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
 
             duk_pop(ctx);
             if(!salt_p && decrypt)
-                duk_error(ctx, DUK_ERR_ERROR, "decrypt: ciphertext was not encrypted with a password, use key and iv to decrypt"); 
+                (void)duk_error(ctx, DUK_ERR_ERROR, "decrypt: ciphertext was not encrypted with a password, use key and iv to decrypt"); 
 
             if(duk_get_prop_string(ctx, 0, "iter"))
             {
@@ -242,12 +242,12 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
         const char *pass;
         
         if(!duk_is_string(ctx,0))
-            duk_error(ctx, DUK_ERR_ERROR, "first argument must be a password or an object with options");
+            (void)duk_error(ctx, DUK_ERR_ERROR, "first argument must be a password or an object with options");
 
         pass=duk_get_string(ctx,0);
 
         if( !duk_is_string(ctx,1) && !duk_is_buffer_data(ctx,1))
-            duk_error(ctx, DUK_ERR_ERROR, "second argument must be data to en/decrypt (string or buffer)");
+            (void)duk_error(ctx, DUK_ERR_ERROR, "second argument must be data to en/decrypt (string or buffer)");
 
         duk_to_buffer(ctx,1,&in_len);
         in_buffer = duk_get_buffer_data(ctx, 1, &in_len);
@@ -267,7 +267,7 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
             }
 
             if(!salt_p)
-                duk_error(ctx, DUK_ERR_ERROR, "decrypt: ciphertext was not encrypted with a password, use key and iv to decrypt"); 
+                (void)duk_error(ctx, DUK_ERR_ERROR, "decrypt: ciphertext was not encrypted with a password, use key and iv to decrypt"); 
         }
 
         kiv=pw_to_keyiv(ctx,pass,cipher_name,salt_p,iter);

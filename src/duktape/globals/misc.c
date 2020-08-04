@@ -196,7 +196,7 @@ char *strcatdup(char *s, char *adds)
 /* return s+c+adds  s must be a malloced string or ->NULL*/
 char *strjoin(char *s, char *adds, char c)
 {
-    int freeadds = 0, sl, al;
+    int freeadds = 0, sl, al=0;
     if ((adds == (char *)NULL) || (*adds == '\0'))
     {
         if (s == (char *)NULL)
@@ -216,9 +216,9 @@ char *strjoin(char *s, char *adds, char c)
         freeadds = 1;
     }
 
+    al = strlen(adds);
     if (s != (char *)NULL)
     {
-        al = strlen(adds);
         REMALLOC(s, al + sl + 2);
         *(s + sl) = c;
         strcpy(s + sl + 1, adds);
@@ -330,7 +330,7 @@ duk_ret_t duk_rp_hexify(duk_context *ctx)
     if(bv>96)bv-=32;\
     if(bv>64&&bv<71) bv-=55;\
     else if(bv>47&&bv<58)bv-=48;\
-    else{duk_push_string(ctx,"hexToBuf: invalid input");duk_throw(ctx);}\
+    else{duk_push_string(ctx,"hexToBuf: invalid input");(void)duk_throw(ctx);}\
     (unsigned char) bv;\
 })
 

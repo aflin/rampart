@@ -194,11 +194,12 @@ static int repl(duk_context *ctx)
         }
         duk_pop(ctx);
     }
+    return 0;
 }
 
 static char *checkbabel(char *src)
 {
-    char *s=src, *bline, *ret;
+    char *s=src, *bline, *ret=NULL;
 
     /* skip comments at top of file */
     while(isspace(*s)) s++;
@@ -286,7 +287,8 @@ static char *checkbabel(char *src)
 /* babelized source and fn is left on top of stack*/
 const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime)
 {
-    char *s, *babelcode=NULL, *opt;
+    char *s, *babelcode=NULL;
+    char *opt;
     struct stat babstat;
     char babelsrc[strlen(fn)+10];
     FILE *f;
@@ -457,7 +459,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     /* file.babel.js does not exist */
 
     /* load babel.min.js as a module and convert file.js */
-    duk_push_sprintf(ctx,"function(input){\nvar b=require('babel.min');\nreturn b.transform(input, %s ).code;\n}\n",opt);
+    duk_push_sprintf(ctx, "function(input){\nvar b=require('babel.min');\nreturn b.transform(input, %s ).code;\n}\n", opt);
     duk_push_string(ctx,fn);
     if (duk_pcompile(ctx, DUK_COMPILE_FUNCTION) == DUK_EXEC_ERROR)
     {

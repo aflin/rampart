@@ -1864,7 +1864,7 @@ duk_ret_t duk_curl_exe(duk_context *ctx)
 {
     int i, options_idx = -1, func_idx = -1, array_idx = -1;
     char *url = (char *)NULL;
-    CURLREQ *req;
+    CURLREQ *req=NULL;
     CURLcode res;
 
     /* clear any previous errors */

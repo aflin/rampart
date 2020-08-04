@@ -100,7 +100,7 @@ RP_VA_RET duk_rp_getarg(duk_context *ctx, const char *type);
     if (!duk_is_undefined(ctx, -1))                                 \
     {                                                               \
       duk_push_string(ctx, "too many arguments for exec(fmt,...)"); \
-      duk_throw(ctx);                                               \
+      (void)duk_throw(ctx);                                               \
     }                                                               \
     va_end(a);                                                      \
   } while (0)
