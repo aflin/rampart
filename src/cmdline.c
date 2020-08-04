@@ -15,16 +15,16 @@
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 
 #define RP_REPL_GREETING             \
-    "      |>>            |>>\n"     \
-    "    __|__          __|__\n"     \
-    "   \\  |  /         \\   /\n"   \
-    "    | ^ |          | ^ |  \n"   \
-    "  __| o |__________| o |__\n"   \
-    " [__|_|__|(rp)|  | |______]\n"  \
-    "_[|||||||||||||__|||||||||]_\n" \
-    "powered by Duktape " DUK_GIT_DESCRIBE
+    "         |>>            |>>\n"     \
+    "       __|__          __|__\n"     \
+    "      \\  |  /         \\   /\n"   \
+    "       | ^ |          | ^ |  \n"   \
+    "     __| o |__________| o |__\n"   \
+    "    [__|_|__|(rp)|  | |______]\n"  \
+    "____[|||||||||||||__|||||||||]____\n" \
+    "RAMPART__powered_by_Duktape_" DUK_GIT_DESCRIBE
 
-#define RP_REPL_PREFIX "rp> "
+#define RP_REPL_PREFIX "rampart> "
 #define RP_REPL_MAX_LINE_SIZE 32768
 #define RP_REPL_HISTORY_LENGTH 256
 struct repl_history
@@ -39,6 +39,7 @@ static void handle_input(struct repl_history *history)
     int buffer_end = 0;
     int cur_char;
     int cur_history_idx = history->size - 1;
+
     while ((cur_char = getchar()) != '\n')
     {
         if (cur_char == '\033')
@@ -134,6 +135,7 @@ static void handle_input(struct repl_history *history)
     history->buffer[cur_history_idx][buffer_end] = '\0';
     printf("\n");
     // copy any changed history into current line
+//printf("Line IS '%s'\n",history->buffer[cur_history_idx]);
     memcpy(history->buffer[history->size - 1], history->buffer[cur_history_idx],
            strlen(history->buffer[cur_history_idx]));
 }
@@ -158,7 +160,7 @@ static int repl(duk_context *ctx)
         }
         else
         {
-            // pop last from buffer
+            // shift last from buffer
             free(history.buffer[0]);
             int i = 0;
             for (i = 0; i < RP_REPL_HISTORY_LENGTH-1; i++)
@@ -167,12 +169,14 @@ static int repl(duk_context *ctx)
             }
             history.buffer[RP_REPL_HISTORY_LENGTH - 1] = line;
         }
+
         handle_input(&history);
 
         // ignore empty input
-        if (strlen(line) == 0)
+        while (strlen(line) == 0)
         {
-            continue;
+            printf("%s", RP_REPL_PREFIX);
+            handle_input(&history);
         }
 
         // line too long
@@ -409,53 +413,56 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     }
 
     transpile:
-    /* file.js => file.babel.js */
-    s=strrchr(fn,'.');
-    if(s)
-    {
-        size_t l=s-fn;
-        strncpy(babelsrc,fn,l);
-        babelsrc[l]='\0';
-        strcat(babelsrc,".babel");
-        strcat(babelsrc,s);
-    }
-    else
-    {
-        strcpy (babelsrc, fn);
-        strcat (babelsrc, ".babel.js");
-    }
 
-    /* does the file.babel.js exist? */
-    if (stat(babelsrc, &babstat) != -1)
+    if(strcmp("stdin",fn) != 0 )
     {
-        /* is it newer than the file.js */
-        if(babstat.st_mtime >= src_mtime)
+        /* file.js => file.babel.js */
+        s=strrchr(fn,'.');
+        if(s)
         {
-            /* load the cached file.babel.js */
-            DUKREMALLOC(ctx,babelcode,babstat.st_size);
+            size_t l=s-fn;
+            strncpy(babelsrc,fn,l);
+            babelsrc[l]='\0';
+            strcat(babelsrc,".babel");
+            strcat(babelsrc,s);
+        }
+        else
+        {
+            strcpy (babelsrc, fn);
+            strcat (babelsrc, ".babel.js");
+        }
 
-            f=fopen(babelsrc,"r");
-            if(f==NULL)
+        /* does the file.babel.js exist? */
+        if (stat(babelsrc, &babstat) != -1)
+        {
+            /* is it newer than the file.js */
+            if(babstat.st_mtime >= src_mtime)
             {
-                fprintf(stderr,"error fopen(): error opening file '%s': %s\n",babelsrc,strerror(errno));
-            }
-            else
-            {
-                read=fread(babelcode,1,babstat.st_size,f);
+                /* load the cached file.babel.js */
+                DUKREMALLOC(ctx,babelcode,babstat.st_size);
 
-                if(read != babstat.st_size)
+                f=fopen(babelsrc,"r");
+                if(f==NULL)
                 {
-                    fprintf(stderr,"error fread(): error reading file '%s'\n",babelsrc);
+                    fprintf(stderr,"error fopen(): error opening file '%s': %s\n",babelsrc,strerror(errno));
                 }
-                duk_push_lstring(ctx,babelcode,(duk_size_t)babstat.st_size);
-                free(babelcode);
-                babelcode=(char *)duk_get_string(ctx,-1);
-                fclose(f);
-                goto end;
-            }
-        }        
-    }
+                else
+                {
+                    read=fread(babelcode,1,babstat.st_size,f);
 
+                    if(read != babstat.st_size)
+                    {
+                        fprintf(stderr,"error fread(): error reading file '%s'\n",babelsrc);
+                    }
+                    duk_push_lstring(ctx,babelcode,(duk_size_t)babstat.st_size);
+                    free(babelcode);
+                    babelcode=(char *)duk_get_string(ctx,-1);
+                    fclose(f);
+                    goto end;
+                }
+            }        
+        }
+    }
     /* file.babel.js does not exist */
 
     /* load babel.min.js as a module and convert file.js */
@@ -475,25 +482,28 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
         exit(1);
     }
     babelcode=(char *)duk_get_lstring(ctx,-1,&bsz);
-    f=fopen(babelsrc,"w");
-    if(f==NULL)
+    if(strcmp("stdin",fn) != 0 )
     {
-        fprintf(stderr,"error fopen(): error opening file '%s'\n",babelsrc);
-    }
-    else
-    {
-        size_t wrote;
-        wrote=fwrite(babelcode,1,(size_t)bsz,f);
-        if(wrote!=(size_t)bsz)
+        f=fopen(babelsrc,"w");
+        if(f==NULL)
         {
-            fprintf(stderr,"error fwrite(): error writing file '%s'\n",babelsrc);
-            if(wrote>0 && unlink(babelsrc))
+            fprintf(stderr,"error fopen(): error opening file '%s'\n",babelsrc);
+        }
+        else
+        {
+            size_t wrote;
+            wrote=fwrite(babelcode,1,(size_t)bsz,f);
+            if(wrote!=(size_t)bsz)
             {
-                fprintf(stderr,"error unlink(): error removing '%s'\nNot continuing\n",babelsrc);
-                exit(1);
-            }
-        }    
-        fclose(f);
+                fprintf(stderr,"error fwrite(): error writing file '%s'\n",babelsrc);
+                if(wrote>0 && unlink(babelsrc))
+                {
+                    fprintf(stderr,"error unlink(): error removing '%s'\nNot continuing\n",babelsrc);
+                    exit(1);
+                }
+            }    
+            fclose(f);
+        }
     }
     end:
     free(opt);
@@ -504,7 +514,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
 int main(int argc, char *argv[])
 {
     struct rlimit rlp;
-    int filelimit = 16384, lflimit = filelimit;
+    int filelimit = 16384, lflimit = filelimit, isstdin=0;
     /* https://wiki.duktape.org/howtoglobalobjectreference */
     char globdef[]="if (typeof global === 'undefined') {(function () {var global = new Function('return this;')();Object.defineProperty(global, 'global', {value: global,writable: true,enumerable: false,configurable: true});})()}";
 
@@ -577,112 +587,143 @@ int main(int argc, char *argv[])
         duk_put_prop_string(ctx,-2,"process");
         duk_pop(ctx);
 
-        while( argc != 1)
+        /* skip past process name */
+        argc--;
+        argv++;
+
+        /* skip to filename, if any */
+        while( argc > 1)
         {
             argc--;
             argv++;
         }
     }
 
-    if (argc == 0)
-    {
-        // store old terminal settings
-        struct termios old_tio, new_tio;
-        tcgetattr(STDIN_FILENO, &old_tio);
-        new_tio = old_tio;
-
-        // disable buffered output and echo
-        new_tio.c_lflag &= (~ICANON & ~ECHO);
-        tcsetattr(STDIN_FILENO, TCSANOW, &new_tio);
-        int ret = repl(ctx);
-        // restore terminal settings
-        tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
-        return ret;
-    }
-    else if (argc > 0)
     {
         struct stat entry_file_stat;
-        char *file_src, *free_file_src, *s;
+        char *file_src=NULL, *free_file_src=NULL, *fn=NULL, *s;
         FILE *entry_file;
-        size_t src_sz;
-
-        if (stat(argv[0], &entry_file_stat))
+        size_t src_sz=0;
+        
+        if (argc == 0)
         {
-            duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not find entry file '%s': %s\n", argv[0], strerror(errno));
-            fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-            duk_destroy_heap(ctx);
-            return 1;
-        }
-
-        entry_file = fopen(argv[0], "r");
-        if (entry_file == NULL)
-        {
-            duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not open entry file '%s': %s\n", argv[0], strerror(errno));
-            fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-            duk_destroy_heap(ctx);
-            return 1;
-        }
-
-        src_sz=entry_file_stat.st_size + 1;
-        file_src = malloc(src_sz);
-        if(!file_src)
-        {
-            fprintf(stderr,"Error allocating memory for source file\n");
-            duk_destroy_heap(ctx);
-            return 1;
-        }
-
-        free_file_src=file_src;
-
-        if (fread(file_src, 1, entry_file_stat.st_size, entry_file) != entry_file_stat.st_size)
-        {
-            duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read entry file '%s': %s\n", argv[0], strerror(errno));
-            fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-            duk_destroy_heap(ctx);
-            free(free_file_src);
-            return 1;
-        }
-
-        file_src[src_sz-1]='\0';
-
-        /* skip over #!/path/to/rampart */
-        if(*file_src=='#')
-        {
-            s=strchr(file_src,'\n');
-
-            /* leave '\n' to preserve line numbering */
-            if(!s || !*s)
+            if(!isatty(fileno(stdin)))
             {
-                duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read beyond first line in entry file '%s'\n", argv[0]);
+                isstdin=1;
+                goto dofile;
+            }
+            // store old terminal settings
+            struct termios old_tio, new_tio;
+            tcgetattr(STDIN_FILENO, &old_tio);
+            new_tio = old_tio;
+
+            // disable buffered output and echo
+            new_tio.c_lflag &= (~ICANON & ~ECHO);
+            tcsetattr(STDIN_FILENO, TCSANOW, &new_tio);
+            int ret = repl(ctx);
+            // restore terminal settings
+            tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
+            return ret;
+        }
+        else
+        {
+            dofile:
+
+            if (!strcmp("-",argv[0]))
+                isstdin=1;
+            
+            if(isstdin)
+            {
+                size_t read=0;
+                
+                fn="stdin";
+                REMALLOC(file_src,1024);
+                while( (read=fread(file_src+src_sz, 1, 1024, stdin)) > 0 )
+                {
+                    src_sz+=read;
+                    if(read<1024)
+                        break;
+                    REMALLOC(file_src,src_sz+1024);
+                }
+            }
+            else
+            {
+                if (stat(argv[0], &entry_file_stat))
+                {
+                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not find entry file '%s': %s\n", argv[0], strerror(errno));
+                    fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+                    duk_destroy_heap(ctx);
+                    return 1;
+                }
+                entry_file = fopen(argv[0], "r");
+                if (entry_file == NULL)
+                {
+                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not open entry file '%s': %s\n", argv[0], strerror(errno));
+                    fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+                    duk_destroy_heap(ctx);
+                    return 1;
+                }
+                src_sz=entry_file_stat.st_size + 1;
+                file_src = malloc(src_sz);
+                if(!file_src)
+                {
+                    fprintf(stderr,"Error allocating memory for source file\n");
+                    duk_destroy_heap(ctx);
+                    return 1;
+                }
+
+                if (fread(file_src, 1, entry_file_stat.st_size, entry_file) != entry_file_stat.st_size)
+                {
+                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read entry file '%s': %s\n", argv[0], strerror(errno));
+                    fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+                    duk_destroy_heap(ctx);
+                    free(free_file_src);
+                    return 1;
+                }
+                fn=argv[0];
+            }
+            free_file_src=file_src;
+            file_src[src_sz-1]='\0';
+
+            /* skip over #!/path/to/rampart */
+            if(*file_src=='#')
+            {
+                s=strchr(file_src,'\n');
+
+                /* leave '\n' to preserve line numbering */
+                if(!s || !*s)
+                {
+                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read beyond first line in entry file '%s'\n", fn);
+                    fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+                    duk_destroy_heap(ctx);
+                    free(free_file_src);
+                    return 1;
+                }
+                file_src=s;
+            }
+
+            /* push babelized source to stack if available */
+            if (! duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime))
+            {
+                duk_push_string(ctx, file_src);
+            }
+            /* push filename */
+            duk_push_string(ctx, fn);
+
+            free(free_file_src);
+            if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
+            {
                 fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
                 duk_destroy_heap(ctx);
-                free(free_file_src);
                 return 1;
             }
-            file_src=s;
-        }
 
-        /* push babelized source to stack if available */
-        if (! duk_rp_babelize(ctx, argv[0], file_src, entry_file_stat.st_mtime))
-        {
-            duk_push_string(ctx, file_src);
-        }
-        /* push filename */
-        duk_push_string(ctx, argv[0]);
-
-        free(free_file_src);
-        if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
-        {
-            fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-            duk_destroy_heap(ctx);
-            return 1;
-        }
-
-        if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
-        {
-            fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-            duk_destroy_heap(ctx);
-            return 1;
+            if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
+            {
+                fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+                duk_destroy_heap(ctx);
+                return 1;
+            }
         }
     }
     duk_destroy_heap(ctx);

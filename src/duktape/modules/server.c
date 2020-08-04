@@ -1794,6 +1794,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         {
             /* In first loop, req info is on the stack since we just forked.
                In subsequent loops, req info is piped in  */
+            tprintf("doing callback\n");
             if ((eno = duk_pcall(dhs->ctx, 1)))
             {
                 if (duk_is_error(dhs->ctx, -1) || duk_is_string(dhs->ctx, -1))
@@ -2071,6 +2072,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         evhtp_send_reply(req, res);
     duk_pop(dhs->ctx);
     /* logging goes here ? */
+    tprintf("Parent exit\n");
 }
 
 /* load module if not loaded, return position on stack

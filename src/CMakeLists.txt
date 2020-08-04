@@ -194,6 +194,13 @@ install(CODE "execute_process( \
     )"
 )
 
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_BINARY_DIR}/src/babel.min.js\" \
+    \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
+    )"
+)
+
 install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rpserver.so\")")
 install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rpcrypto.so\")")
 install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rpcurl.so\")")
