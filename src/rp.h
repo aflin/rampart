@@ -1,17 +1,19 @@
 #if !defined(RP_H_INCLUDED)
 #define RP_H_INCLUDED
-
+#include <limits.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <pthread.h>
 #include "duktape/core/duktape.h"
-#include "texint.h"
-#include "texisapi.h"
+//#include "texint.h"
+//#include "texisapi.h"
 
 #if defined(__cplusplus)
 extern "C"
 {
 #endif
 
-    int texis_resetparams(TEXIS *tx);
-    int texis_cancel(TEXIS *tx);
 
 /* settings */
 #define nthreads 0        /* number of threads for evhtp, set to 0 to use num of cpu cores */
@@ -70,18 +72,6 @@ extern "C"
     };
 
     duk_ret_t duk_rp_sql_close(duk_context *ctx);
-
-#define DB_HANDLE struct db_handle_s_list
-    DB_HANDLE
-    {
-        TEXIS *tx;
-        DB_HANDLE *next;
-        char *db;
-        char *query;
-        char putmsg[1024];
-    };
-
-#define NDB_HANDLES 16
 
     char *duk_rp_url_encode(char *str, int len);
     char *duk_rp_url_decode(char *str, int len);
@@ -159,8 +149,20 @@ char *duk_rp_url_encode(char *str, int len);
 char *duk_rp_url_decode(char *str, int len);
 void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase);
 
+#define RPPATH struct rp_path_s
+RPPATH {
+    struct stat stat;
+    char path[PATH_MAX];
+};
+RPPATH rp_find_path(char *file, char *subdir);
+int rp_mkdir_parent(const char *path, mode_t mode);
+RPPATH rp_get_home_path(char *file, char *subdir);
+
 /* babelize in cmdline.c */
 const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime);
+
+
+
 
 #if defined(__cplusplus)
 }

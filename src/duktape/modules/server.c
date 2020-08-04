@@ -842,7 +842,6 @@ static evhtp_res sendobj(DHS *dhs)
     RP_MTYPES m;
     RP_MTYPES *mres;
     int gotdata = 0, gotct = 0;
-    ;
     duk_context *ctx = dhs->ctx;
     evhtp_res res = 200;
 
@@ -1239,7 +1238,10 @@ enum_object:
             duk_func copyfunc = (duk_func)duk_get_c_function(ctx, -1);
 
             if (duk_get_prop_string(ctx, -1, "length"))
+            {
                 length = (duk_idx_t)duk_get_int(ctx, -1);
+                if(!length) length = DUK_VARARGS; 
+            }
             else
                 length = DUK_VARARGS;
             duk_pop(ctx);
@@ -1775,6 +1777,18 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         /* safe to close and free here */
         evutil_closesocket(conn->sock);
         evhtp_connection_free(conn);
+#define childwrite(a,b,c) do{\
+    if(write((a),(b),(c))==-1) {\
+        fprintf(stderr,"child->parent write failed: '%s' -- exiting\n",strerror(errno));\
+        exit(1);\
+    };\
+} while(0)
+#define childread(a,b,c) do{\
+    if(read((a),(b),(c))==-1) {\
+        fprintf(stderr,"child<-parent read failed: '%s' -- exiting\n",strerror(errno));\
+        exit(1);\
+    };\
+} while(0)
 
         do
         {
@@ -1811,7 +1825,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             msgOutSz = (uint32_t)bufsz;
 
             /* first: write the size of the message to parent */
-            write(child2par[1], &msgOutSz, sizeof(uint32_t));
+            childwrite(child2par[1], &msgOutSz, sizeof(uint32_t));
 
             /* second: a single char for thread_safe info */
             if (!have_threadsafe_val)
@@ -1820,9 +1834,9 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                     duk_get_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("threadsafe")) &&
                     duk_is_boolean(dhs->ctx, -1) &&
                     duk_get_boolean(dhs->ctx, -1) == 0)
-                    write(child2par[1], "F", 1); //message that thread safe==false
+                    childwrite(child2par[1], "F", 1); //message that thread safe==false
                 else
-                    write(child2par[1], "X", 1); //message that thread safe is not to be set one way or another
+                    childwrite(child2par[1], "X", 1); //message that thread safe is not to be set one way or another
 
                 duk_push_global_object(dhs->ctx);
                 duk_del_prop_string(dhs->ctx, -1, DUK_HIDDEN_SYMBOL("threadsafe"));
@@ -1831,23 +1845,23 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             }
             else
             {
-                write(child2par[1], "X", 1); //message that thread safe is not to be set one way or another
+                childwrite(child2par[1], "X", 1); //message that thread safe is not to be set one way or another
             }
 
             /* third: write the encoded message */
             tprintf("child sending cbor message %d long on %d:\n", (int)msgOutSz, child2par[1]);
-            write(child2par[1], cbor, msgOutSz);
+            childwrite(child2par[1], cbor, msgOutSz);
 
             tprintf("child sent message %d long. Waiting for input\n", (int)msgOutSz);
 
             duk_pop(dhs->ctx); //buffer
             /* wait here for the next request and get it's size */
-            read(par2child[0], &msgOutSz, sizeof(uint32_t));
+            childread(par2child[0], &msgOutSz, sizeof(uint32_t));
             tprintf("child to receive message %d long on %d\n", (int)msgOutSz, par2child[0]);
 
-            read(par2child[0], &have_threadsafe_val, sizeof(int));
+            childread(par2child[0], &have_threadsafe_val, sizeof(int));
 
-            read(par2child[0], &(dhs->func_idx), sizeof(duk_idx_t));
+            childread(par2child[0], &(dhs->func_idx), sizeof(duk_idx_t));
             duk_dup(dhs->ctx, dhs->func_idx);
 
             {
@@ -1876,6 +1890,27 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         exit(0);
     }
     else
+#define parentabort do{\
+    fprintf(stderr, "server.c line %d: '%s'\n", __LINE__, strerror(errno));\
+    send500(req, "Error in Child Process");\
+    killfork;\
+    return;\
+} while(0)
+
+#define parentwrite(a,b,c) do{\
+    if(write((a),(b),(c))==-1) {\
+        fprintf(stderr,"parent->child write failed: '%s'\n",strerror(errno));\
+        parentabort;\
+    }\
+} while(0)
+#define parentread(a,b,c) do{\
+    if(read((a),(b),(c))==-1) {\
+        fprintf(stderr,"parent<-child read failed: '%s'\n",strerror(errno));\
+        parentabort;\
+    }\
+} while(0)
+
+
     { /* parent */
         int totread = 0, is_threadsafe = 1;
         uint32_t bsize;
@@ -1897,10 +1932,10 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             msgOutSz = (uint32_t)bufsz;
 
             tprintf("parent sending cbor, length %d\n", (int)msgOutSz);
-            write(finfo->par2child, &msgOutSz, sizeof(uint32_t));
-            write(finfo->par2child, &have_threadsafe_val,sizeof(int));
-            write(finfo->par2child, &(dhs->func_idx), sizeof(duk_idx_t));
-            write(finfo->par2child, cbor, msgOutSz);
+            parentwrite(finfo->par2child, &msgOutSz, sizeof(uint32_t));
+            parentwrite(finfo->par2child, &have_threadsafe_val,sizeof(int));
+            parentwrite(finfo->par2child, &(dhs->func_idx), sizeof(duk_idx_t));
+            parentwrite(finfo->par2child, cbor, msgOutSz);
             tprintf("parent sent cbor, length %d\n", (int)msgOutSz);
 
             duk_pop(dhs->ctx);
@@ -1918,12 +1953,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         if (dhs->timeout.tv_sec == RP_TIME_T_FOREVER)
         {
             if (-1 == read(finfo->child2par, &bsize, sizeof(uint32_t)))
-            {
-                fprintf(stderr, "server.c line %d: errno=%d\n", __LINE__, errno);
-                send500(req, "Error in Child Process");
-                killfork;
-                return;
-            }
+                parentabort;
         }
         else
         {
@@ -1977,7 +2007,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             char jbuf[bsize + 1], *p = jbuf, c;
             int toread = (int)bsize;
 
-            read(finfo->child2par, &c, 1);
+            parentread(finfo->child2par, &c, 1);
             if (c == 'F')
                 is_threadsafe = 0;
 

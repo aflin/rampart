@@ -1494,7 +1494,7 @@ int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     HTTP_CODE *cres, *code_p = &code;
     CURLcode res;
     char *s;
-    int d;
+    long d;
     struct curl_slist *cookies = NULL;
     double total;
     size_t bsz;

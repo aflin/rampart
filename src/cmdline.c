@@ -161,7 +161,7 @@ static int repl(duk_context *ctx)
             // pop last from buffer
             free(history.buffer[0]);
             int i = 0;
-            for (i = 0; i < RP_REPL_HISTORY_LENGTH; i++)
+            for (i = 0; i < RP_REPL_HISTORY_LENGTH-1; i++)
             {
                 history.buffer[i] = history.buffer[i + 1];
             }
@@ -295,6 +295,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     char *pfill_bc=".babel-polyfill.bytecode";
     duk_size_t bsz;
     void *buf;
+    RPPATH rppath;
 
     opt=checkbabel(src);
     if(!opt) return NULL;
@@ -308,9 +309,10 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     }
     duk_pop(ctx);
 
-    /* check for bytecode cache of polyfill */
-    if(stat(pfill_bc, &babstat) != -1)
+    rppath=rp_find_path(pfill_bc,"modules/");
+    if(strlen(rppath.path))
     {
+        pfill_bc=rppath.path;
         /* load polyfill bytecode cache */
         f=fopen(pfill_bc,"r");
         if(!f)
@@ -319,10 +321,10 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
         }
         else
         {
-            buf=duk_push_fixed_buffer(ctx,(duk_size_t)babstat.st_size);
+            buf=duk_push_fixed_buffer(ctx,(duk_size_t)rppath.stat.st_size);
 
-            read=fread(buf,1,babstat.st_size,f);
-            if(read != babstat.st_size)
+            read=fread(buf,1,rppath.stat.st_size,f);
+            if(read != rppath.stat.st_size)
             {
                 fprintf(stderr,"error fread(): error reading file '%s'\n",pfill_bc);
             }
@@ -335,11 +337,13 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     }
 
     /* not found, so load and save it */
-    if (stat(pfill, &babstat) == -1)
+    rppath=rp_find_path(pfill,"modules/");
+    if (!strlen(rppath.path))
     {
         fprintf(stderr,"cannot locate babel-polyfill.min.js\n");
         exit(1);
     }
+    pfill=rppath.path;
 
     f=fopen(pfill,"r");
     if(!f)
@@ -347,14 +351,14 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
         fprintf(stderr,"cannot open '%s': %s\n",pfill,strerror(errno));
         exit(1);
     }
-    DUKREMALLOC(ctx,babelcode,babstat.st_size);
-    read=fread(babelcode,1,babstat.st_size,f);
-    if(read != babstat.st_size)
+    DUKREMALLOC(ctx, babelcode, rppath.stat.st_size);
+    read=fread(babelcode, 1, rppath.stat.st_size,f);
+    if(read != rppath.stat.st_size)
     {
         fprintf(stderr,"error fread(): error reading file '%s'\n",pfill);
         exit(1);
     }
-    duk_push_lstring(ctx,babelcode,(duk_size_t)babstat.st_size);
+    duk_push_lstring(ctx,babelcode,(duk_size_t)rppath.stat.st_size);
     free(babelcode);
     babelcode=NULL;
     fclose(f);
@@ -368,11 +372,12 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     }
 
     /* write bytecode out */
+    rppath=rp_get_home_path(pfill_bc,"modules/");
+    pfill_bc=rppath.path;
     duk_dup(ctx,-1);
     duk_dump_function(ctx);
     buf=duk_get_buffer_data(ctx,-1,&bsz);
-    f=fopen(pfill_bc,"w");
-    if(!f)
+    if(!strlen(pfill_bc) || !(f=fopen(pfill_bc,"w")) )
     {
         fprintf(stderr,"cannot open '%s' for write: %s\n",pfill_bc,strerror(errno));
     }

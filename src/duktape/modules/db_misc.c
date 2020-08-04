@@ -891,7 +891,7 @@ static void sandr(duk_context *ctx, int re2)
             {
                 int i=0;
                 
-                for(;i<ns;i++)
+                for(;i<sl;i++)
                     free (srch[i]);
             }
         }

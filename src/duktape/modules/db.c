@@ -11,9 +11,27 @@
 #include <string.h>
 #include "dbquery.h"
 #include "texint.h"
+#include "texisapi.h"
 #include "cgi.h"
 #include "../../rp.h"
 #include "../core/duktape.h"
+
+int texis_resetparams(TEXIS *tx);
+int texis_cancel(TEXIS *tx);
+#define DB_HANDLE struct db_handle_s_list
+    DB_HANDLE
+    {
+        TEXIS *tx;
+        DB_HANDLE *next;
+        char *db;
+        char *query;
+        char putmsg[1024];
+    };
+
+#define NDB_HANDLES 16
+
+
+
 
 #ifdef __APPLE__
 #include <Availability.h>

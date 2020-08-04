@@ -2,6 +2,7 @@ add_executable(utils
         utils.c 
 	${SRC}/duktape/core/duktape.c
 	${SRC}/duktape/core/module.c
+	${SRC}/duktape/globals/misc.c
 )
 target_link_libraries(utils LINK_PUBLIC 
         m dl pthread

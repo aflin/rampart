@@ -9,8 +9,9 @@ enable_testing()
 add_executable(simple_test simple_test.c)
 add_test(NAME simple COMMAND simple_test)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/duktape/modules/utils)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/duktape/core/module)
+#fix or delete these later.  Probably want all testing in javascript anyway
+#add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/duktape/modules/utils)
+#add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/duktape/core/module)
 
 file(GLOB TEST_FILES "*.js" "wiki_00")
 

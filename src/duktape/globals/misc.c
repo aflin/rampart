@@ -1,5 +1,8 @@
 #include <ctype.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
+#include <errno.h>
 #include "misc.h"
 #include "../core/duktape.h"
 #include "../../rp.h"
@@ -10,6 +13,145 @@ extern char **environ;
         or
       var buf=toBUffer(val,"[dynamic|fixed]"); //always converted to type
 */
+
+#define homesubdir "/.rampart/"
+
+/*  Find file searching standard directories */
+
+RPPATH rp_find_path(char *file, char *subdir)
+{
+    int nlocs=2;
+    /* look in these locations and in ./ */
+    char *locs[nlocs];
+    char *home=getenv("HOME");
+    char *rampart_path=getenv("RAMPART_PATH");
+    char homedir[strlen(home)+strlen(homesubdir)+1];
+    char *loc="./";
+    char *sd= (subdir)?subdir:"";
+    RPPATH ret;
+    char path[PATH_MAX];
+    int i=0;
+    struct stat sb;
+//printf("looking for file %s%s\n",subdir,file);
+    if(!home || access(home, R_OK)==-1) home="/tmp";
+
+    strcpy(homedir,home);
+    strcat(homedir,homesubdir);
+    locs[0]=homedir;
+    locs[1]=(rampart_path)?rampart_path:RP_INST_PATH;
+
+    /* start with cur dir "./" */
+    strcpy(path,loc);
+    strcat(path,file);
+//printf("first check\n");
+    while(1) {
+//printf("checking %s\n",path);
+        if (stat(path, &sb) != -1)
+{
+//printf("break at i=%d\n",i);
+            break;
+}
+
+//printf ("not found\n");
+        if(i==nlocs)
+        {
+            i++;
+            break;
+        }
+        strcpy(path,locs[i]);
+        /* in case RAMPART_PATH doesn't have trailing '/' */
+        if(locs[i][strlen(locs[i])-1] != '/')
+            strcat(path,"/");
+        strcat(path,sd);
+        strcat(path,file);
+//printf("new check(%d): %s\n",i,path);
+        i++;
+    }
+
+    if(i<=nlocs){
+        ret.stat=sb;
+        if(!realpath(path,ret.path))
+            strcpy(ret.path,path);
+//printf("FOUND %s\n",ret.path);
+    }
+    else ret.path[0]='\0';
+
+    return ret;
+}
+
+/*  return file path for file to be stored in home.
+    file does not have to exist
+    will make subdirs as needed
+ */
+
+int rp_mkdir_parent(const char *path, mode_t mode)
+{
+    char _path[PATH_MAX], *p;
+
+    errno=0;
+    strcpy(_path, path);
+
+    /* Move through the path string to recurisvely create directories */
+    for (p = _path + 1; *p; p++)
+    {
+        if (*p == '/')
+        {
+            *p = '\0';
+
+            if (mkdir(_path, mode) != 0)
+            {
+                if (errno != EEXIST)
+                    return 1;
+            }
+
+            *p = '/';
+        }
+    }
+
+    if (mkdir(path, mode) != 0)
+    {
+        if (errno != EEXIST)
+            return -1;
+    }
+    return 0;
+}
+
+/* get path to a file to be written to the home in .rampart 
+   if path/file exists, also return stat
+*/
+RPPATH rp_get_home_path(char *file, char *subdir)
+{
+    char *home=getenv("HOME");
+    char homedir[strlen(home)+strlen(homesubdir)+1];
+    char *sd= (subdir)?subdir:"";
+    RPPATH ret;
+    mode_t mode=ACCESSPERMS;
+
+    if( !home || access(home, W_OK)==-1 )
+    {
+         home="/tmp";
+         mode=0777;
+    }
+
+    strcpy(homedir,home);
+    strcat(homedir,homesubdir);
+    strcat(homedir,sd);
+
+    if( rp_mkdir_parent(homedir,mode)==-1)
+    {
+        ret.path[0]='\0';
+        return ret;
+    }
+
+    strcpy(ret.path,homedir);
+    strcat(ret.path,file);
+    if (stat(ret.path, &ret.stat) == -1)
+    {
+        ret.stat=(struct stat){0};
+    }
+
+    return ret;
+}
 
 /* ********** some string functions *************************** */
 

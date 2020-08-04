@@ -17,7 +17,7 @@
         duk_error(ctx, DUK_ERR_ERROR, "OpenSSL Error (%d): %s", __LINE__,err_buf);        \
     }
 
-static void crypt(
+static void rpcrypt(
   duk_context *ctx, 
   unsigned char *key, 
   unsigned char *iv,
@@ -277,7 +277,7 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
     }
     //printkiv(key,iv,salt_p,EVP_get_cipherbyname(cipher_name));
 
-    crypt ( ctx, key, iv, cipher_name, in_buffer, in_len, salt_p, decrypt);
+    rpcrypt ( ctx, key, iv, cipher_name, in_buffer, in_len, salt_p, decrypt);
     
     return 1;
 }

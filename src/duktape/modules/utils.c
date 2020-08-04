@@ -18,16 +18,8 @@
 #include <pwd.h> /* getpwnam */
 #include <grp.h> /* getgrnam */
 #include "../core/duktape.h"
+#include "../../rp.h"
 
-#define REMALLOC(s, t)                   \
-    do                                   \
-    {                                    \
-        (s) = realloc((s), (t));         \
-        if ((char *)(s) == (char *)NULL) \
-        {                                \
-            return (2000001);            \
-        }                                \
-    } while (0)
 #define DUK_PUT(ctx, type, key, value, idx) \
     {                                       \
         duk_push_##type(ctx, value);        \
@@ -411,14 +403,14 @@ void *duk_util_exec_thread_waitpid(void *arg)
 #define DUK_UTIL_EXEC_READ_FD(ctx, buf, fildes, nread)                                                      \
     {                                                                                                       \
         int size = BUFREADSZ;                                                                               \
-        REMALLOC(buf, size);                                                                                \
+        DUKREMALLOC(ctx,buf, size);                                                                                \
         int nbytes = 0;                                                                                     \
         nread = 0;                                                                                          \
         while ((nbytes = read(fildes, buf + nread, size - nread)) > 0)                                      \
         {                                                                                                   \
             size *= 2;                                                                                      \
             nread += nbytes;                                                                                \
-            REMALLOC(buf, size);                                                                            \
+            DUKREMALLOC(ctx,buf, size);                                                                            \
         }                                                                                                   \
         if (nbytes < 0)                                                                                     \
         {                                                                                                   \
@@ -483,7 +475,7 @@ duk_ret_t duk_util_exec(duk_context *ctx)
     duk_size_t nargs = duk_get_length(ctx, -1);
     char **args = NULL;
     int i;
-    REMALLOC(args, (nargs + 1) * sizeof(char *));
+    DUKREMALLOC(ctx,args, (nargs + 1) * sizeof(char *));
     for (i = 0; i < nargs; i++)
     {
         duk_get_prop_index(ctx, -1, i);
@@ -640,39 +632,16 @@ duk_ret_t duk_util_mkdir(duk_context *ctx)
     }
     else
     {
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "too many arguments");
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "too few/many arguments");
         return duk_throw(ctx);
     }
 
-    char _path[PATH_MAX], *p;
-
-    strcpy(_path, path);
-
-    /* Move through the path string to recurisvely create directories */
-    for (p = _path + 1; *p; p++)
-    {
-
-        if (*p == '/')
-        {
-
-            *p = '\0';
-
-            if (mkdir(_path, mode) != 0)
-            {
-                duk_push_error_object(ctx, DUK_ERR_ERROR, "error creating directory: %s", strerror(errno));
-                return duk_throw(ctx);
-            }
-
-            *p = '/';
-        }
-    }
-
-    if (mkdir(path, mode) != 0)
+    if(rp_mkdir_parent(path,mode)==-1)
     {
         duk_push_error_object(ctx, DUK_ERR_ERROR, "error creating directory: %s", strerror(errno));
         return duk_throw(ctx);
     }
-
+    
     return 0;
 }
 

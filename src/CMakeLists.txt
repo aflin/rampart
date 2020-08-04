@@ -1,4 +1,11 @@
-set(CMAKE_BUILD_TYPE Debug)
+#set(CMAKE_BUILD_TYPE Debug)
+
+if(${CMAKE_INSTALL_PREFIX})
+	message("install = ${CMAKE_INSTALL_PREFIX}")
+else()
+	set (CMAKE_INSTALL_PREFIX "/usr/local/rampart")
+	message("setting install = ${CMAKE_INSTALL_PREFIX}")
+endif()
 
 add_definitions(
 	-DRP_USING_DUKTAPE 
@@ -12,14 +19,15 @@ add_definitions(
 	-D_LARGEFILE_SOURCE 
 	-D_LARGEFILE64_SOURCE 
 	-D_FILE_OFFSET_BITS=64
+	-DRP_INST_PATH="${CMAKE_INSTALL_PREFIX}/"
 )
 
 #this doesn't work: set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -g -pedantic -std=c99 -Wall -fstrict-aliasing -fomit-frame-pointer -rdynamic")
 # add_compile_options( -O2 -g -pedantic -std=c99 -fstrict-aliasing)
-add_compile_options(-Wunused-variable)
+add_compile_options(-Wunused-variable -g)
 
 
-add_executable(rp
+add_executable(rampart
 	duktape/register.c
 	duktape/core/duktape.c
 	duktape/core/duk_console.c
@@ -34,11 +42,11 @@ add_executable(rp
 	cmdline.c
 )
 
-set_target_properties(rp PROPERTIES
+set_target_properties(rampart PROPERTIES
   ENABLE_EXPORTS 1
 )
 
-target_link_libraries(rp LINK_PUBLIC 
+target_link_libraries(rampart LINK_PUBLIC 
 	m dl pthread
 )
 
@@ -61,7 +69,7 @@ set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp)
 ## allow linked rpcrypto.so to be loaded from rpserver.so in the same dir
 SET(CMAKE_SKIP_BUILD_RPATH FALSE)
 SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-SET(CMAKE_INSTALL_RPATH "./")
+SET(CMAKE_INSTALL_RPATH "./;${CMAKE_INSTALL_PREFIX}/modules/")
 
 
 ###SQL###
@@ -86,8 +94,9 @@ add_library(rpcurl SHARED
 )
 target_link_libraries(rpcurl PRIVATE
 	${CURL_TARGET_DIR}/lib/libcurl.a
-	${OPENSSL_TARGET_DIR}/ssl/libssl.a
-	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
+#	${OPENSSL_TARGET_DIR}/ssl/libssl.a
+#	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
+	rpcrypto
 	z
 )
 target_include_directories(rpcurl PRIVATE
@@ -161,6 +170,37 @@ set_target_properties(rpcurl rputils rpserver rpsql rpcrypto #example_name
 	PREFIX ""
 )
 endif()
+
+install(TARGETS rampart DESTINATION bin)
+install(TARGETS
+	rpserver
+	rpcrypto
+	rpcurl
+	rpsql
+	rputils
+	DESTINATION modules
+)
+
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E create_symlink \
+    \"${CMAKE_INSTALL_PREFIX}/bin/rampart\" \
+    \"/usr/local/bin/rampart\"   \
+    )"
+)
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E create_symlink \
+    \"${CMAKE_INSTALL_PREFIX}/bin/rampart\" \
+    \"/usr/local/bin/rp\"   \
+    )"
+)
+
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rpserver.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rpcrypto.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rpcurl.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rpsql.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rputils.so\")")
+install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
+
 
 #this is good for later. Right now it interrupts work flow
 #set_target_properties(rpcurl rputils rpserver rp

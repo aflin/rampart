@@ -109,6 +109,7 @@ static duk_ret_t resolve_id(duk_context *ctx)
     const char *request_id = duk_require_string(ctx, -1);
     char *id = NULL;
     int module_loader_idx;
+    RPPATH rppath;
 
     for (module_loader_idx = 0; module_loader_idx < sizeof(module_loaders) / sizeof(struct module_loader); module_loader_idx++)
     {
@@ -116,7 +117,9 @@ static duk_ret_t resolve_id(duk_context *ctx)
         duk_push_string(ctx, module_loaders[module_loader_idx].ext);
         duk_concat(ctx, 2);
 
-        id = realpath(duk_get_string(ctx, -1), 0);
+//        id = realpath(duk_get_string(ctx, -1), 0);
+        rppath=rp_find_path((char *)duk_get_string(ctx,-1), "modules/");
+        id = (strlen(rppath.path))?rppath.path:NULL;
         if (id != NULL)
         {
             break;
@@ -134,60 +137,26 @@ static duk_ret_t resolve_id(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "id");
     duk_push_int(ctx, module_loader_idx);
     duk_put_prop_string(ctx, -2, "module_loader_idx");
-    free(id);
+//    free(id);
     return 1;
 }
 
 duk_ret_t duk_require(duk_context *ctx)
 {
-    duk_push_c_function(ctx, duk_resolve, 2);
-    duk_dup(ctx, -2);
-    duk_push_boolean(ctx, 0);
-    duk_call(ctx, 2);
+    duk_resolve(ctx);
     duk_get_prop_string(ctx, -1, "exports");
     return 1;
 }
 
 duk_ret_t duk_resolve(duk_context *ctx)
 {
-    // TODO: Move directory logic to resolve_id
-    int call_with_default_req_id = 1;
     int force_reload = duk_get_boolean_default(ctx, 1, 0);
     int module_loader_idx;
     const char *id;
-    duk_push_global_stash(ctx);
-    duk_get_prop_string(ctx, -1, "module_stack");
 
-    duk_push_global_stash(ctx);
-    duk_get_prop_string(ctx, -1, "module_stack");
-    duk_get_prop_index(ctx, -1, duk_get_length(ctx, -1) - 1);
-
-    if (!duk_is_undefined(ctx, -1))
-    {
-        const char *req_id = duk_get_string(ctx, 0);
-        duk_get_prop_string(ctx, -1, "id");
-        char *dir = dirname((char *)duk_get_string(ctx, -1)); // will be null on failure
-        char req_id_w_dir[strlen(req_id) + 1 + strlen(dir) + 1];
-
-        if (dir != NULL)
-        {
-            strcpy(req_id_w_dir, dir);
-            strcat(req_id_w_dir, "/");
-            strcat(req_id_w_dir, req_id);
-
-            duk_push_c_function(ctx, resolve_id, 1);
-            duk_push_string(ctx, req_id_w_dir);
-            duk_call(ctx, 1);
-            call_with_default_req_id = 0;
-        }
-    }
-
-    if (call_with_default_req_id)
-    {
-        duk_push_c_function(ctx, resolve_id, 1);
-        duk_dup(ctx, 0);
-        duk_call(ctx, 1);
-    }
+    duk_push_c_function(ctx, resolve_id, 1);
+    duk_dup(ctx, 0);
+    duk_call(ctx, 1);
 
     if (duk_is_null(ctx, -1))
     {
