@@ -242,7 +242,6 @@ static char *checkbabel(char *src)
         if (!strncmp("babel",s,5))
         {
             char *e;
-
             s+=5;
             while(isspace(*s)) s++;
             if(*s==':')
@@ -283,6 +282,7 @@ static char *checkbabel(char *src)
             while (*bline && *bline!='\n') *bline++ = ' ';
             return(ret);            
         }
+        return NULL;
     }
     return NULL;
 }
@@ -412,11 +412,11 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
         duk_destroy_heap(ctx);
         exit(1);
     }
+    duk_pop(ctx);
     duk_eval_string(ctx,"global._babelPolyfill=true;");
     duk_pop(ctx);
 
     transpile:
-
     if(strcmp("stdin",fn) != 0 )
     {
         /* file.js => file.babel.js */
@@ -518,8 +518,6 @@ int main(int argc, char *argv[])
 {
     struct rlimit rlp;
     int filelimit = 16384, lflimit = filelimit, isstdin=0;
-    /* https://wiki.duktape.org/howtoglobalobjectreference */
-    char globdef[]="if (typeof global === 'undefined') {(function () {var global = new Function('return this;')();Object.defineProperty(global, 'global', {value: global,writable: true,enumerable: false,configurable: true});})()}";
 
     /* set rlimit to filelimit, or highest allowed value below that */
     getrlimit(RLIMIT_NOFILE, &rlp);
@@ -548,21 +546,6 @@ int main(int argc, char *argv[])
         printf("could not create duktape context\n");
         return 1;
     }
-
-    if (duk_pcompile_string(ctx, 0, globdef) == DUK_EXEC_ERROR)
-    {
-        fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-        duk_destroy_heap(ctx);
-        return 1;
-    }
-
-    if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
-    {
-        fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-        duk_destroy_heap(ctx);
-        return 1;
-    }
-    duk_pop(ctx);
 
     duk_init_context(ctx);
 
