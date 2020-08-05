@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
+#include <signal.h>
 #include <sys/wait.h>
 #ifdef __APPLE__
 #include <uuid/uuid.h>
@@ -1752,9 +1753,10 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 
         RP_TX_isforked=1; /* mutex locking not necessary in fork */
         duk_size_t bufsz;
-        struct sigaction sa = {0};
+        struct sigaction sa;
         evhtp_connection_t *conn = evhtp_request_get_connection(req);
 
+        memset(&sa, 0, sizeof(struct sigaction));
         sa.sa_flags = 0;
         sa.sa_handler = rp_exit;
         sigemptyset(&sa.sa_mask);
