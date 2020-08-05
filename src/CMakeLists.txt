@@ -196,7 +196,14 @@ install(CODE "execute_process( \
 
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_BINARY_DIR}/src/babel.min.js\" \
+    \"${PROJECT_BINARY_DIR}/src/babel.js\" \
+    \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
+    )"
+)
+
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_BINARY_DIR}/src/babel-polyfill.js\" \
     \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
     )"
 )

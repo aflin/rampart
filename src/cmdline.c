@@ -277,7 +277,7 @@ static char *checkbabel(char *src)
             else if (*s=='"')
             {
                 //file_src=(char *)duk_rp_babelize(ctx, argv[0], file_src, NULL, entry_file_stat.st_mtime);
-                ret=strdup ("{ presets: ['latest'],retainLines:true }");
+                ret=strdup ("{ presets: ['env'],retainLines:true }");
             }
             /* replace "use babel" line with spaces, to preserve line nums */
             while (*bline && *bline!='\n') *bline++ = ' ';
@@ -297,12 +297,13 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     char babelsrc[strlen(fn)+10];
     FILE *f;
     size_t read;
-    char *pfill="babel-polyfill.min.js";
+    char *pfill="babel-polyfill.js";
     char *pfill_bc=".babel-polyfill.bytecode";
     duk_size_t bsz;
     void *buf;
     RPPATH rppath;
 
+    babelsrc[0]='\0';
     opt=checkbabel(src);
     if(!opt) return NULL;
 
@@ -394,9 +395,9 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
         if(wrote!=(size_t)bsz)
         {
             fprintf(stderr,"error fwrite(): error writing file '%s'\n",pfill_bc);
-            if(wrote>0 && unlink(babelsrc))
+            if(wrote>0 && unlink(pfill_bc))
             {
-                fprintf(stderr,"error unlink(): error removing '%s'\nNot continuing\n",pfill_bc);
+                fprintf(stderr,"error unlink(): error removing '%s'\n",pfill_bc);
             }
         }    
         fclose(f);
@@ -411,6 +412,8 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
         duk_destroy_heap(ctx);
         exit(1);
     }
+    duk_eval_string(ctx,"global._babelPolyfill=true;");
+    duk_pop(ctx);
 
     transpile:
 
@@ -466,7 +469,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     /* file.babel.js does not exist */
 
     /* load babel.min.js as a module and convert file.js */
-    duk_push_sprintf(ctx, "function(input){\nvar b=require('babel.min');\nreturn b.transform(input, %s ).code;\n}\n", opt);
+    duk_push_sprintf(ctx, "function(input){var b=require('babel');return b.transform(input, %s ).code;}", opt);
     duk_push_string(ctx,fn);
     if (duk_pcompile(ctx, DUK_COMPILE_FUNCTION) == DUK_EXEC_ERROR)
     {
@@ -507,7 +510,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     }
     end:
     free(opt);
-    return (const char*) babelcode;
+    return (const char*) (strlen(babelsrc)) ? babelsrc: fn;
 }
 
 
@@ -600,9 +603,10 @@ int main(int argc, char *argv[])
     }
 
     {
-        struct stat entry_file_stat;
         char *file_src=NULL, *free_file_src=NULL, *fn=NULL, *s;
+        const char *bfn;
         FILE *entry_file;
+        struct stat entry_file_stat;
         size_t src_sz=0;
         
         if (argc == 0)
@@ -681,6 +685,7 @@ int main(int argc, char *argv[])
                     return 1;
                 }
                 fn=argv[0];
+                fclose(entry_file);
             }
             free_file_src=file_src;
             file_src[src_sz-1]='\0';
@@ -703,12 +708,18 @@ int main(int argc, char *argv[])
             }
 
             /* push babelized source to stack if available */
-            if (! duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime))
+            if (! (bfn=duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime)) )
             {
+                /* No babel, normal compile */
                 duk_push_string(ctx, file_src);
+                /* push filename */
+                duk_push_string(ctx, fn);
             }
-            /* push filename */
-            duk_push_string(ctx, fn);
+            else
+            {
+                /* babel src on stack, push babel filename */
+                duk_push_string(ctx, bfn);
+            }
 
             free(free_file_src);
             if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
