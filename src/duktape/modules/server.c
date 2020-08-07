@@ -120,12 +120,13 @@ static void setheaders(evhtp_request_t *req)
     //evhtp_headers_add_header(req->headers_out, evhtp_header_new("Connection","close",0,0));
 }
 
-#define putval(key, val)                           \
+#define putval(key, val) do {                      \
     if ((char *)(val) != (char *)NULL)             \
     {                                              \
         duk_push_string(ctx, (const char *)(val)); \
         duk_put_prop_string(ctx, -2, (key));       \
-    }
+    }                                              \
+} while(0)
 
 int putkvs(evhtp_kv_t *kv, void *arg)
 {
@@ -343,6 +344,12 @@ void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
                 sz=(n-begin)+1;
                 //printf("Part is %d long:\n%.*s\n",(int)sz,(int)sz,(char*)begin);
                 //share buffer with body/evbuffer
+                if( !duk_get_prop_string(ctx,-1,"name") )
+                {
+                    duk_push_sprintf(ctx,"data-%s",i);
+                    i++;
+                }
+                duk_pull(ctx,-2);
                 duk_push_external_buffer(ctx);
                 duk_config_buffer(ctx, -1, begin, sz);
                 /*
@@ -351,8 +358,9 @@ void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
                 memcpy(pushbuf,begin,sz);
                 */
                 duk_put_prop_string(ctx,-2,"contents");
-                duk_put_prop_index(ctx,-2,(duk_uarridx_t)i);
-                i++;
+                duk_put_prop(ctx,-3);
+                //duk_put_prop_index(ctx,-2,(duk_uarridx_t)i);
+                //i++;
             }
         }
         else
@@ -378,30 +386,32 @@ void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
         duk_put_prop_string(ctx,-3,toprop);\
     else duk_pop(ctx);\
 
-static duk_ret_t flatten_vars(duk_context *ctx)
+static void flatten_vars(duk_context *ctx)
 {
     duk_push_object(ctx);
-    duk_push_this(ctx);
+    duk_dup(ctx,-2);
 
     /* lowest priority first */
     copy_req_vars("postData")
     copy_req_vars("query")
     copy_req_vars("cookies")
     copy_req_vars("headers")
-
+/*
     copy_single_req_var("ip","clientIp");
     copy_single_req_var("port","clientPort");
     copy_single_req_var("method","httpMethod");
 
+
     if(duk_get_prop_string(ctx,-1,"path"))
     {
-        duk_remove(ctx,-2); /* this */
+        duk_remove(ctx,-2); // this
         copy_single_req_var("file","requestFile");
         copy_single_req_var("path","requestPath");
+        copy_single_req_var("base","requestBase");
         copy_single_req_var("full","requestFullPath");
     }
-    duk_pop(ctx); /* leave only return object on stack */
-    return 1;
+*/
+    duk_pop(ctx); /* leave only "flat" object on stack */
 }
 
 
@@ -436,8 +446,16 @@ void push_req_vars(DHS *dhs)
     /* path info */
     duk_push_object(ctx);
     putval("file", path->file);
-    putval("full", path->full);
-    putval("path", path->path);
+    putval("path", path->full);
+    putval("base", path->path);
+    if(dhs->req->uri->query_raw && strlen((char*)dhs->req->uri->query_raw))
+    {
+        duk_push_sprintf(ctx,"%s?%s",path->full,dhs->req->uri->query_raw);
+        duk_put_prop_string(ctx,-2,"full");
+    }
+    else
+        putval("full", path->full);
+
     duk_put_prop_string(ctx, -2, "path");
 
     /*  Auth */
@@ -544,7 +562,7 @@ void push_req_vars(DHS *dhs)
             if (strncmp("boundary=",bound,9)==0)
             {
                 bound+=9;
-                duk_push_array(ctx);
+                duk_push_object(ctx);
                 push_multipart(ctx,bound,buf,bsz);
                 duk_put_prop_string(ctx,-2,"postData");
             }
@@ -590,8 +608,10 @@ void push_req_vars(DHS *dhs)
         duk_put_prop_string(ctx, -2, "headers");
     }
 
-    duk_push_c_function(ctx,flatten_vars,0);
-    duk_put_prop_string(ctx, -2, "flatten");
+    //duk_push_c_function(ctx,flatten_vars,0);
+    //duk_put_prop_string(ctx, -2, "flatten");
+    flatten_vars(ctx);
+    duk_put_prop_string(ctx, -2, "params");
 }
 
 static void send500(evhtp_request_t *req, char *msg)
@@ -1776,9 +1796,6 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         /* populate object with details from client (requires conn) */
         push_req_vars(dhs);
 
-        /* safe to close and free here */
-        evutil_closesocket(conn->sock);
-        evhtp_connection_free(conn);
 #define childwrite(a,b,c) do{\
     if(write((a),(b),(c))==-1) {\
         fprintf(stderr,"child->parent write failed: '%s' -- exiting\n",strerror(errno));\
@@ -1826,7 +1843,13 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             duk_cbor_encode(dhs->ctx, -1, 0);
             cbor = duk_get_buffer_data(dhs->ctx, -1, &bufsz);
             msgOutSz = (uint32_t)bufsz;
-
+            if(conn)
+            {
+                /* safe to close and free here */
+                evutil_closesocket(conn->sock);
+                evhtp_connection_free(conn);
+                conn=NULL;
+            }
             /* first: write the size of the message to parent */
             childwrite(child2par[1], &msgOutSz, sizeof(uint32_t));
 
