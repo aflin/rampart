@@ -37,6 +37,12 @@ gid_t unprivg=0;
 #endif
 
 pthread_mutex_t ctxlock;
+pthread_mutex_t loglock;
+pthread_mutex_t errlock;
+
+FILE *access_fh;
+FILE *error_fh;
+int duk_rp_server_logging=0;
 
 static int gl_threadno = 0;
 static int gl_singlethreaded = 1;
@@ -44,6 +50,8 @@ static int gl_singlethreaded = 1;
 duk_context **thread_ctx = NULL, *main_ctx;
 
 int totnthreads = 0;
+
+static char *scheme="http://";
 
 /* DEBUGGING MACROS */
 
@@ -83,15 +91,16 @@ FORKINFO **forkinfo = NULL;
     keeps info about request, callback,
     timeout and thread number for thread specific info
 */
-#define DHS struct duk_http_s
+#define DHS struct duk_rp_http_s
 DHS
 {
-    duk_idx_t func_idx;     // location of the callback or object specifying module (set at server start)
+    duk_idx_t func_idx;     // location of the callback (set at server start, or for modules, upon require())
+    duk_idx_t mod_idx;      // location of the object specifying module (set at server start)
     duk_context *ctx;       // duk context for this thread (updated in thread)
     evhtp_request_t *req;   // the evhtp request struct for the current request (updated in thread, upon each request)
     struct timeval timeout; // timeout for the duk script
     int threadno;
-    int ismod;              // is normal fuction if 0, otherwise is a js module.
+    int ismod;              // is normal fuction if 0, 1 is js module, 2 js module needs reload.
 };
 
 /* mapping for url to filesystem */
@@ -118,6 +127,96 @@ static void setheaders(evhtp_request_t *req)
     //evhtp_request_set_keepalive(req, 1);
     //evhtp_headers_add_header(req->headers_out, evhtp_header_new("Connection","keep-alive", 0, 0));
     //evhtp_headers_add_header(req->headers_out, evhtp_header_new("Connection","close",0,0));
+}
+
+void sa_to_string(void *sa, char *buf, size_t bufsz)
+{
+    if (((struct sockaddr *)sa)->sa_family == AF_INET6)
+        inet_ntop(AF_INET6, &((struct sockaddr_in6 *)sa)->sin6_addr, buf, bufsz);
+    else
+        inet_ntop(AF_INET, &((struct sockaddr_in *)sa)->sin_addr, buf, bufsz);
+}
+
+#define printerr(args...) do {\
+    time_t now = time(NULL);\
+    struct tm ti_s, *timeinfo;\
+    char date[32];\
+    \
+    timeinfo = localtime_r(&now,&ti_s);\
+    strftime(date,32,"%d/%b-%Y:%H:%M:%S %z",timeinfo);\
+    if (pthread_mutex_lock(&errlock) == EINVAL)\
+    {\
+        fprintf(error_fh, "could not obtain lock in http_callback\n");\
+        exit(1);\
+    }\
+    fprintf(error_fh, "%s ", date);\
+    fprintf(error_fh, args);\
+    pthread_mutex_unlock(&errlock);\
+} while(0)    
+
+
+static void writelog(evhtp_request_t *req, int code)
+{
+    evhtp_connection_t *conn = evhtp_request_get_connection(req);
+    void *sa = (void *)conn->saddr;
+    time_t now = time(NULL);
+    struct tm ti_s, *timeinfo;
+    char address[INET6_ADDRSTRLEN], date[32], 
+        *q="", *qm="", *proto=""; 
+    const char *length, *ua, *ref;
+    int method = evhtp_request_get_method(req);
+    evhtp_path_t *path = req->uri->path;
+   
+    sa_to_string(sa, address, sizeof(address));
+
+    timeinfo = localtime_r(&now,&ti_s);
+    strftime(date,32,"%d/%b-%Y:%H:%M:%S %z",timeinfo);
+
+    if (method >= 16)
+        method = 16;
+
+    if(req->uri->query_raw && strlen((char*)req->uri->query_raw))
+    {
+        qm="?";
+        q=(char*)req->uri->query_raw;
+    }
+
+    if(req->proto==EVHTP_PROTO_10)
+        proto="HTTP/1.0";
+    else if (req->proto==EVHTP_PROTO_11)
+        proto="HTTP/1.1";
+
+    if( !(length=evhtp_kv_find(req->headers_out,"Content-Length")) )
+        length="-";
+    
+    if( !(ref=evhtp_kv_find(req->headers_in,"Referer")) )
+        ref="-";
+
+    if( !(ua=evhtp_kv_find(req->headers_in,"User-Agent")) )
+        ua="-";
+    
+    if (pthread_mutex_lock(&loglock) == EINVAL)
+    {
+        printerr( "could not obtain lock in http_callback\n");
+        exit(1);
+    }
+    
+    fprintf(access_fh,"%s - - [%s] \"%s %s%s%s %s\" %d %s \"%s\" \"%s\"\n",
+        address,date,method_strmap[method],
+        path->full, qm, q, proto,
+        code, length, ref, ua
+    );
+    pthread_mutex_unlock(&loglock);
+}
+
+
+static void sendresp(evhtp_request_t *request, evhtp_res code)
+{
+    evhtp_send_reply(request, code);
+    if(duk_rp_server_logging)
+    {
+        writelog(request, (int)code);
+    }
 }
 
 #define putval(key, val) do {                      \
@@ -151,14 +250,6 @@ static int putheaders(evhtp_kv_t *kv, void *arg)
     duk_put_prop_lstring(ctx, -2, kv->key, (duk_size_t)kv->klen);
 
     return 0;
-}
-
-void sa_to_string(void *sa, char *buf, size_t bufsz)
-{
-    if (((struct sockaddr *)sa)->sa_family == AF_INET6)
-        inet_ntop(AF_INET6, &((struct sockaddr_in6 *)sa)->sin6_addr, buf, bufsz);
-    else
-        inet_ntop(AF_INET, &((struct sockaddr_in *)sa)->sin_addr, buf, bufsz);
 }
 
 void parseheadline(duk_context *ctx, char *line, size_t linesz)
@@ -425,7 +516,9 @@ void push_req_vars(DHS *dhs)
     int method = evhtp_request_get_method(dhs->req);
     evhtp_connection_t *conn = evhtp_request_get_connection(dhs->req);
     void *sa = (void *)conn->saddr;
+    evhtp_uri_t *uri=dhs->req->uri;
     char address[INET6_ADDRSTRLEN], *q;
+    const char *host;
     const char *ct;
     duk_size_t bsz;
     void *buf=NULL;
@@ -445,16 +538,20 @@ void push_req_vars(DHS *dhs)
 
     /* path info */
     duk_push_object(ctx);
+
+    if( !(host=evhtp_kv_find(dhs->req->headers_in,"Host")) )
+        host="localhost";
+
     putval("file", path->file);
     putval("path", path->full);
     putval("base", path->path);
-    if(dhs->req->uri->query_raw && strlen((char*)dhs->req->uri->query_raw))
-    {
-        duk_push_sprintf(ctx,"%s?%s",path->full,dhs->req->uri->query_raw);
-        duk_put_prop_string(ctx,-2,"full");
-    }
+    putval("scheme",scheme);
+    putval("host", host);
+    if(uri->query_raw && strlen((char*)uri->query_raw))
+        duk_push_sprintf(ctx,"%s%s%s?%s",scheme,host,path->full,uri->query_raw);
     else
-        putval("full", path->full);
+        duk_push_sprintf(ctx,"%s%s%s",scheme,host,path->full);
+    duk_put_prop_string(ctx,-2,"url");
 
     duk_put_prop_string(ctx, -2, "path");
 
@@ -471,15 +568,15 @@ void push_req_vars(DHS *dhs)
     }
 
     /* fragment -- portion after # */
-    putval("fragment", (char *)dhs->req->uri->fragment);
+    putval("fragment", (char *)uri->fragment);
 
     /* query string * 
      ****** now handled with duk_rp_querystring2object() ********
     duk_push_object(ctx);
-    evhtp_kvs_for_each(dhs->req->uri->query, putkvs, ctx);
+    evhtp_kvs_for_each(uri->query, putkvs, ctx);
     duk_put_prop_string(ctx, -2, "query");
     */
-    duk_rp_querystring2object(ctx, (char *)dhs->req->uri->query_raw);
+    duk_rp_querystring2object(ctx, (char *)uri->query_raw);
     duk_put_prop_string(ctx, -2, "query");
 
     bsz = (duk_size_t)evbuffer_get_length(dhs->req->buffer_in);
@@ -495,7 +592,7 @@ void push_req_vars(DHS *dhs)
     }
     duk_put_prop_string(ctx, -2, "body");
 
-    q = (char *)dhs->req->uri->query_raw;
+    q = (char *)uri->query_raw;
     if (!q) q="";
     putval("query_raw", q);
 
@@ -619,7 +716,7 @@ static void send500(evhtp_request_t *req, char *msg)
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
     char fmt[] = "<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p>%s</p></body></html>";
     evbuffer_add_printf(req->buffer_out, fmt, msg);
-    evhtp_send_reply(req, 500);
+    sendresp(req, 500);
 }
 
 static void send404(evhtp_request_t *req)
@@ -627,7 +724,7 @@ static void send404(evhtp_request_t *req)
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
     char msg[] = "<html><head><title>404 Not Found</title></head><body><h1>Not Found</h1><p>The requested URL was not found on this server.</p></body></html>";
     evbuffer_add(req->buffer_out, msg, strlen(msg));
-    evhtp_send_reply(req, EVHTP_RES_NOTFOUND);
+    sendresp(req, EVHTP_RES_NOTFOUND);
 }
 
 static void send403(evhtp_request_t *req)
@@ -635,7 +732,7 @@ static void send403(evhtp_request_t *req)
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
     char msg[] = "<html><head><title>403 Forbidden</title></head><body><h1>Forbidden</h1><p>The requested URL is Forbidden.</p></body></html>";
     evbuffer_add(req->buffer_out, msg, strlen(msg));
-    evhtp_send_reply(req, 403);
+    sendresp(req, 403);
 }
 
 static void dirlist(evhtp_request_t *req, char *fn)
@@ -717,7 +814,7 @@ static void ht_sendfile(evhtp_request_t *req, char *fn, size_t filesize)
     free(range); /* chicken 🐣 */
 
     evbuffer_add_file(req->buffer_out, fd, beg, len);
-    evhtp_send_reply(req, rescode);
+    sendresp(req, rescode);
 }
 
 static void sendredir(evhtp_request_t *req, char *fn)
@@ -740,7 +837,7 @@ body, td, th, span { font-family: Geneva,Arial,Helvetica; }\n\
 </body>\n\
 </html>",
                         fn, fn);
-    evhtp_send_reply(req, EVHTP_RES_FOUND);
+    sendresp(req, EVHTP_RES_FOUND);
 }
 
 static void
@@ -857,9 +954,9 @@ static void sendbuf(DHS *dhs)
     */
 }
 
+
 static evhtp_res sendobj(DHS *dhs)
 {
-
     RP_MTYPES m;
     RP_MTYPES *mres;
     int gotdata = 0, gotct = 0;
@@ -889,17 +986,17 @@ static evhtp_res sendobj(DHS *dhs)
             duk_push_string(ctx, "headers option in return value must be set to an object (headers:{...})");
             (void)duk_throw(ctx);
         }
+        if (duk_get_prop_string(ctx, -1, "status"))
+        {
+            res = (evhtp_res)duk_require_number(ctx, -1);
+            if (res < 100)
+                res = 200;
+            duk_del_prop_string(ctx, -2, "status");
+        }
+        duk_pop(ctx);
     }
     duk_pop(ctx);
 
-    if (duk_get_prop_string(ctx, -1, "status"))
-    {
-        res = (evhtp_res)duk_require_number(ctx, -1);
-        if (res < 100)
-            res = 200;
-        duk_del_prop_string(ctx, -2, "status");
-    }
-    duk_pop(ctx);
     duk_enum(ctx, -1, 0);
     while (duk_next(ctx, -1, 1))
     {
@@ -955,7 +1052,7 @@ static evhtp_res sendobj(DHS *dhs)
         {
             const char *bad_option = duk_to_string(ctx, -2);
             char estr[20 + strlen(bad_option)];
-            fprintf(stderr, "unknown option '%s'\n", bad_option);
+            printerr( "unknown option '%s'\n", bad_option);
             sprintf(estr, "unknown option '%s'", bad_option);
             send500(dhs->req, estr);
             return (0);
@@ -963,7 +1060,7 @@ static evhtp_res sendobj(DHS *dhs)
 
     opterr:
     {
-        fprintf(stderr, "Data already set from '%s', '%s=\"%s\"' is redundant.\n", m.ext, duk_to_string(ctx, -2), duk_to_string(ctx, -1));
+        printerr( "Data already set from '%s', '%s=\"%s\"' is redundant.\n", m.ext, duk_to_string(ctx, -2), duk_to_string(ctx, -1));
         return (res);
     }
     }
@@ -992,7 +1089,7 @@ static void copy_cb_func(DHS *dhs, int nt)
 
     duk_get_prop_string(ctx, dhs->func_idx, "name");
     if (!strncmp(duk_get_string(ctx, -1), "bound ", 6))
-        printf("Error: server cannot copy a bound function to threaded stacks\n");
+        printerr("Error: server cannot copy a bound function to threaded stacks\n");
     duk_pop(ctx);
 
     if (duk_get_prop_string(ctx, dhs->func_idx, DUK_HIDDEN_SYMBOL("is_global")) && duk_get_boolean(ctx, -1))
@@ -1422,7 +1519,7 @@ static void *http_dothread(void *arg)
         {
             duk_get_prop_string(dhs->ctx, -1, "stack");
             evbuffer_add_printf(req->buffer_out, msg, duk_safe_to_string(dhs->ctx, -1));
-            printf("error in callback '%s'\n", duk_safe_to_string(dhs->ctx, -1));
+            printerr("error in callback: '%s'\n", duk_safe_to_string(dhs->ctx, -1));
             duk_pop(dhs->ctx);
         }
         else if (duk_is_string(dhs->ctx, -1))
@@ -1433,7 +1530,7 @@ static void *http_dothread(void *arg)
         {
             evbuffer_add_printf(req->buffer_out, msg, "unknown error");
         }
-        evhtp_send_reply(req, 500);
+        sendresp(req, 500);
 
         if (dhr->have_timeout)
             pthread_mutex_unlock(&(dhr->lock));
@@ -1466,7 +1563,7 @@ static void *http_dothread(void *arg)
         sendbuf(dhs);
 
     if (res)
-        evhtp_send_reply(req, res);
+        sendresp(req, res);
 
     duk_pop(dhs->ctx);
 
@@ -1491,7 +1588,7 @@ static duk_context *redo_ctx(int thrno)
     /* copy all the functions previously stored at bottom of stack */
     if (pthread_mutex_lock(&ctxlock) == EINVAL)
     {
-        fprintf(stderr, "could not obtain lock in http_callback\n");
+        printerr( "could not obtain lock in http_callback\n");
         exit(1);
     }
 
@@ -1509,7 +1606,6 @@ static duk_context *redo_ctx(int thrno)
 
     while (duk_is_object(main_ctx, fno))
     {
-    
         /* check if this is a module function */
         if(!duk_is_function(main_ctx,fno) )
         {
@@ -1518,9 +1614,9 @@ static duk_context *redo_ctx(int thrno)
             else
                 break;
 
+            fno++;
             continue;
         }
-        
         /* check if function was already copied in copy_all() */
         if (duk_get_prop_string(main_ctx, fno, DUK_HIDDEN_SYMBOL("is_global")) && duk_get_boolean(main_ctx, -1))
         {
@@ -1542,11 +1638,9 @@ static duk_context *redo_ctx(int thrno)
         }
 
         duk_pop(main_ctx);
-
         duk_dup(main_ctx, fno);
         duk_dump_function(main_ctx);
         bc_ptr = duk_require_buffer_data(main_ctx, -1, &bc_len);
-
         buf = duk_push_fixed_buffer(thr_ctx, bc_len);
         memcpy(buf, (const void *)bc_ptr, bc_len);
         duk_load_function(thr_ctx);
@@ -1554,7 +1648,6 @@ static duk_context *redo_ctx(int thrno)
         duk_insert(thr_ctx, fno);
         fno++;
     }
-
     pthread_mutex_unlock(&ctxlock);
 
     duk_destroy_heap(thread_ctx[thrno]);
@@ -1603,7 +1696,7 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
 
     if (pthread_mutex_init(&(dhr->lock), NULL) == EINVAL)
     {
-        fprintf(stderr, "could not initialize lock in http_callback\n");
+        printerr( "could not initialize lock in http_callback\n");
         exit(1);
     }
 
@@ -1616,7 +1709,7 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
     debugf("0x%x, LOCKING in http_callback\n", (int)x);
     if (pthread_mutex_lock(&(dhr->lock)) == EINVAL)
     {
-        fprintf(stderr, "could not obtain lock in http_callback\n");
+        printerr( "could not obtain lock in http_callback\n");
         exit(1);
     }
 
@@ -1637,15 +1730,35 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
         pthread_cancel(script_runner);
         debugf("%d, cancelled\n", (int)x);
         fflush(stdout);
+        
         dhs->ctx = redo_ctx(thrno);
         debugf("0x%x, context recreated after timeout\n", (int)x);
         fflush(stdout);
-
-        duk_get_prop_string(dhs->ctx, dhs->func_idx, "fname");
-        if (duk_is_undefined(dhs->ctx, -1))
-            fprintf(stderr, "timeout in callback\n");
+        if(dhs->ismod)
+        {
+            if(duk_get_prop_string(dhs->ctx, dhs->mod_idx, "module"))
+                printerr( "timeout in module:%s()\n", duk_to_string(dhs->ctx, -1));
+            else
+                printerr( "timeout in callback\n");
+        
+            duk_pop(dhs->ctx);
+        }
         else
-            fprintf(stderr, "timeout in %s()\n", duk_to_string(dhs->ctx, -1));
+        {
+            duk_get_prop_string(dhs->ctx, dhs->func_idx, "fname");
+            if (duk_is_undefined(dhs->ctx, -1))
+            {
+                duk_pop(dhs->ctx);
+                if(duk_get_prop_string(dhs->ctx, dhs->func_idx, "module"))
+                {
+                    printerr( "timeout in module:%s()\n", duk_to_string(dhs->ctx, -1));
+                }
+                else
+                    printerr( "timeout in callback\n");
+            }
+            else
+                printerr( "timeout in %s()\n", duk_to_string(dhs->ctx, -1));
+        }
         send500(req, "Timeout in Script");
         duk_pop(dhs->ctx);
     }
@@ -1653,6 +1766,7 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
     pthread_join(script_runner, NULL);
     pthread_cond_destroy(&(dhr->cond));
     free(dhr);
+    debugf("exiting http_thread_callback\n");
 }
 /* call with 0.0 to start, use return from first call to get elapsed */
 static double
@@ -1722,7 +1836,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         */
         else if(evbuffer_get_length(dhs->req->buffer_in) > 1048576)
         {
-            printf("request is large, killing and reforking\n");
+            //printf("request is large, killing and reforking\n");
             killfork;
         }
         else
@@ -1735,13 +1849,13 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         /* our first run.  create pipes and setup for fork */
         if (pipe(child2par) == -1)
         {
-            fprintf(stderr, "child2par pipe failed\n");
+            printerr( "child2par pipe failed\n");
             return;
         }
 
         if (pipe(par2child) == -1)
         {
-            fprintf(stderr, "par2child pipe failed\n");
+            printerr( "par2child pipe failed\n");
             return;
         }
         /* if child died, close old handles */
@@ -1761,7 +1875,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 
         if (finfo->childpid < 0)
         {
-            fprintf(stderr, "fork failed");
+            printerr( "fork failed");
             finfo->childpid = 0;
             return;
         }
@@ -1798,13 +1912,13 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 
 #define childwrite(a,b,c) do{\
     if(write((a),(b),(c))==-1) {\
-        fprintf(stderr,"child->parent write failed: '%s' -- exiting\n",strerror(errno));\
+        printerr("child->parent write failed: '%s' -- exiting\n",strerror(errno));\
         exit(1);\
     };\
 } while(0)
 #define childread(a,b,c) do{\
     if(read((a),(b),(c))==-1) {\
-        fprintf(stderr,"child<-parent read failed: '%s' -- exiting\n",strerror(errno));\
+        printerr("child<-parent read failed: '%s' -- exiting\n",strerror(errno));\
         exit(1);\
     };\
 } while(0)
@@ -1826,7 +1940,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                         duk_get_prop_string(dhs->ctx, -1, "stack");
                         duk_remove(dhs->ctx,-2);
                     }
-                    fprintf(stderr,"error in callback: %s\n",duk_get_string(dhs->ctx,-1));
+                    printerr("error in callback: %s\n",duk_get_string(dhs->ctx,-1));
                     err = (char *)duk_json_encode(dhs->ctx, -1);
                     //get rid of quotes
                     err[strlen(err) - 1] = '\0';
@@ -1917,7 +2031,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
     }
     else
 #define parentabort do{\
-    fprintf(stderr, "server.c line %d: '%s'\n", __LINE__, strerror(errno));\
+    printerr( "server.c line %d: '%s'\n", __LINE__, strerror(errno));\
     send500(req, "Error in Child Process");\
     killfork;\
     return;\
@@ -1925,13 +2039,13 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 
 #define parentwrite(a,b,c) do{\
     if(write((a),(b),(c))==-1) {\
-        fprintf(stderr,"parent->child write failed: '%s'\n",strerror(errno));\
+        printerr("parent->child write failed: '%s'\n",strerror(errno));\
         parentabort;\
     }\
 } while(0)
 #define parentread(a,b,c) do{\
     if(read((a),(b),(c))==-1) {\
-        fprintf(stderr,"parent<-child read failed: '%s'\n",strerror(errno));\
+        printerr("parent<-child read failed: '%s'\n",strerror(errno));\
         parentabort;\
     }\
 } while(0)
@@ -2002,14 +2116,14 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                         usleep(50000);
                         if (loop++ > 4)
                         {
-                            fprintf(stderr, "hard timeout in script, no graceful exit.\n");
+                            printerr( "hard timeout in script, no graceful exit.\n");
                             kill(finfo->childpid, SIGTERM);
                             break;
                         }
                     }
                     finfo->childpid = 0;
                     duk_get_prop_string(dhs->ctx, dhs->func_idx, "fname");
-                    fprintf(stderr, "timeout in %s() %f > %f\n", duk_to_string(dhs->ctx, -1), celapsed, maxtime);
+                    printerr( "timeout in %s() %f > %f\n", duk_to_string(dhs->ctx, -1), celapsed, maxtime);
                     duk_pop(dhs->ctx);
                     send500(req, "Timeout in Script");
                     return;
@@ -2045,7 +2159,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             }
             if (totread < 1 && toread > 0)
             {
-                fprintf(stderr, "server.c line %d, errno=%d\n", __LINE__, errno);
+                printerr( "server.c line %d, errno=%d\n", __LINE__, errno);
                 killfork;
                 send500(req, "Error in Child Process");
                 return;
@@ -2063,7 +2177,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 
             if (pthread_mutex_lock(&ctxlock) == EINVAL)
             {
-                fprintf(stderr, "could not obtain lock in http_callback\n");
+                printerr( "could not obtain lock in http_callback\n");
                 exit(1);
             }
             /* mark it as thread safe on main_ctx as well (for timeout/redo_ctx, but not if module) */
@@ -2094,7 +2208,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         sendbuf(dhs);
 
     if (res)
-        evhtp_send_reply(req, res);
+        sendresp(req, res);
     duk_pop(dhs->ctx);
     /* logging goes here ? */
     tprintf("Parent exit\n");
@@ -2150,7 +2264,7 @@ static duk_idx_t getmod(DHS *dhs)
             char submsg[64+strlen(mod)];
             snprintf(submsg,64+strlen(mod),"Error: Could not resolve module id %s: No such file or directory",mod);
             evbuffer_add_printf(dhs->req->buffer_out, msg, submsg);
-            evhtp_send_reply(dhs->req, 500);
+            sendresp(dhs->req, 500);
             return -1;
         }
     }
@@ -2166,14 +2280,14 @@ static duk_idx_t getmod(DHS *dhs)
         {
             duk_get_prop_string(ctx, -1, "stack");
             evbuffer_add_printf(dhs->req->buffer_out, msg, duk_safe_to_string(ctx, -1));
-            printf("error in thread '%s'\n", duk_safe_to_string(ctx, -1));
+            printerr("error in thread '%s'\n", duk_safe_to_string(ctx, -1));
             duk_pop(ctx);
         }
         else
         {
             evbuffer_add_printf(dhs->req->buffer_out, msg, "unknown error");
         }
-        evhtp_send_reply(dhs->req, 500);
+        sendresp(dhs->req, 500);
         return -1;
     }
 
@@ -2198,8 +2312,7 @@ static duk_idx_t getmod(DHS *dhs)
     return duk_get_top_index(ctx);
 }
 
-static void
-http_callback(evhtp_request_t *req, void *arg)
+static void http_callback(evhtp_request_t *req, void *arg)
 {
     DHS newdhs, *dhs = arg;
     int dofork = 1, have_threadsafe_val = 0, thrno = 0;
@@ -2221,6 +2334,7 @@ http_callback(evhtp_request_t *req, void *arg)
     newdhs.timeout = dhs->timeout;
     newdhs.threadno = thrno;
     newdhs.ismod=dhs->ismod;
+    newdhs.mod_idx=dhs->mod_idx;
     dhs = &newdhs;
 
     if(dhs->ismod)
@@ -2309,7 +2423,7 @@ void testcb(evhtp_request_t *req, void *arg)
     printf("%d\n",(int)pthread_self());
     fflush(stdout);*/
     evbuffer_add_printf(req->buffer_out, "%s", rep);
-    evhtp_send_reply(req, EVHTP_RES_OK);
+    sendresp(req, EVHTP_RES_OK);
 }
 
 void exitcb(evhtp_request_t *req, void *arg)
@@ -2319,7 +2433,7 @@ void exitcb(evhtp_request_t *req, void *arg)
     int i = 0;
 
     evbuffer_add_reference(req->buffer_out, rep, strlen(rep), NULL, NULL);
-    evhtp_send_reply(req, EVHTP_RES_OK);
+    sendresp(req, EVHTP_RES_OK);
     for (; i < totnthreads; i++)
     {
         //duk_rp_sql_close(thread_ctx[i]);
@@ -2345,6 +2459,7 @@ static DHS *new_dhs(duk_context *ctx, int idx)
     DHS *dhs = NULL;
     DUKREMALLOC(ctx, dhs, sizeof(DHS));
     dhs->func_idx = idx;
+    dhs->mod_idx = -1;
     dhs->ctx = ctx;
     dhs->req = NULL;
     /* afaik there is no TIME_T_MAX */
@@ -2441,6 +2556,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
     ctimeout.tv_sec = RP_TIME_T_FOREVER;
     ctimeout.tv_usec = 0;
     main_ctx = ctx;
+    access_fh=stdout;
+    error_fh=stderr;
 
     i = 0;
     if (
@@ -2561,6 +2678,51 @@ duk_ret_t duk_server_start(duk_context *ctx)
             usev4 = duk_require_boolean(ctx, -1);
         }
         duk_pop(ctx);
+
+        /* logging */
+        if (duk_get_prop_string(ctx, ob_idx, "log") && duk_get_boolean_default(ctx,-1,0) )
+        {
+            duk_rp_server_logging=1;
+        }
+        duk_pop(ctx);
+
+        if(duk_rp_server_logging)
+        {
+            if(duk_get_prop_string(ctx, ob_idx, "accessLog") )
+            {
+                const char *fn=duk_require_string(ctx,-1);
+                access_fh=fopen(fn,"a");
+                if(access_fh==NULL)
+                {
+                    duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening file '%s': %s", fn, strerror(errno));
+                    return duk_throw(ctx);
+                }
+            }
+            else
+            {
+                printf("no accessLog specified, logging to stdout\n");
+            }
+
+            if(duk_get_prop_string(ctx, ob_idx, "errorLog") )
+            {
+                const char *fn=duk_require_string(ctx,-1);
+                error_fh=fopen(fn,"a");
+                if(error_fh==NULL)
+                {
+                    duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening file '%s': %s", fn, strerror(errno));
+                    return duk_throw(ctx);
+                }
+            }
+            else
+            {
+                printf("no errorLog specified, logging to stderr\n");
+            }
+            if (pthread_mutex_init(&loglock, NULL) == EINVAL)
+            {
+                printerr( "could not initialize log lock\n");
+                exit(1);
+            }
+        }
 
         /* timeout */
         if (duk_get_prop_string(ctx, ob_idx, "connectTimeout"))
@@ -2748,6 +2910,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         duk_insert(ctx, fpos);
                         cb_dhs = new_dhs(ctx, fpos);
                         cb_dhs->ismod=ismod;
+                        // func_idx will change to imported/required mod, save spot of object
+                        if(ismod)
+                            cb_dhs->mod_idx=fpos;
+
                         cb_dhs->timeout.tv_sec = dhs->timeout.tv_sec;
                         cb_dhs->timeout.tv_usec = dhs->timeout.tv_usec;
                         /* copy function to all the heaps/ctxs */
@@ -2904,6 +3070,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 (void)duk_throw(ctx);
             }
         }
+        scheme="https://";
     }
 
     if (dhs->func_idx != -1)
@@ -2992,6 +3159,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
         printf("in single threaded mode\n");
     }
 
+    if (pthread_mutex_init(&errlock, NULL) == EINVAL)
+    {
+        fprintf(stderr, "could not initialize errlog lock\n");
+        exit(1);
+    }
     if (pthread_mutex_init(&ctxlock, NULL) == EINVAL)
     {
         fprintf(stderr, "could not initialize context lock\n");

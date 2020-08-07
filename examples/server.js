@@ -296,6 +296,12 @@ server.start(
 
     //user:"unpriv_user", /* if binding to, e.g. port 80, start as root and drop privileges as the user named here */
 
+    /*** logging ***/
+    //log: true,           //turn logging on
+    //accessLog: "./log",    //access log location
+    //errorLog: "./err",     //error log location
+    
+
     /*  By default, number of threads is set to cpu core count.
         ipv6 and ipv4 are separate servers and each get this number of threads.
         This has no effect unless useThreads is set true.
