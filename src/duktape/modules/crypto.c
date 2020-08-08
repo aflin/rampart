@@ -167,7 +167,7 @@ static KEYIV pw_to_keyiv(duk_context *ctx, const char *pass, const char *cipher_
 
 static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
 {
-    duk_size_t in_len;
+    duk_size_t in_len=0;
     void *in_buffer=NULL;
     const char *cipher_name = "aes-256-cbc";
     unsigned char *key=NULL, *iv=NULL, salt[PKCS5_SALT_LEN], *salt_p=NULL;

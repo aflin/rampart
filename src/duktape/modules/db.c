@@ -1090,8 +1090,8 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 #endif
     const char *db;
     char pbuf[msgbufsz];
+    struct sigaction sa = { {0} };
 
-    struct sigaction sa = {0};
     sa.sa_flags = 0; //SA_NODEFER;
     sa.sa_handler = die_nicely;
     sigemptyset(&sa.sa_mask);
