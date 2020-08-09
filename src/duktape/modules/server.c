@@ -2619,8 +2619,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
     if (duk_is_function(ctx, i))
         dhs->func_idx = i;
 
-    evbase = event_base_new();
-
     /* check if we are forking before doing any setup*/
     if (ob_idx != -1)
     {
@@ -2706,6 +2704,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
             return 1;
         }
     }
+
+    evbase = event_base_new();
+
     /* options from server({options},...) */
     if (ob_idx != -1)
     {
