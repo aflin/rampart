@@ -282,7 +282,7 @@ printf("or see a sample website at http://127.0.0.1:8088/\n\nSTARTING SERVER:\n"
     https://github.com/svaarala/duktape/blob/master/doc/bytecode.rst
 */
 
-server.start(
+var pid=server.start(
 {
     ip:"0.0.0.0",  //this binds to all. Default is 127.0.0.1
     ipv6:"::",     //this binds to all. Default is ::1
@@ -298,9 +298,10 @@ server.start(
 
     /*** logging ***/
     //log: true,           //turn logging on
-    //accessLog: "./log",    //access log location
-    //errorLog: "./err",     //error log location
+    //accessLog: "./access.log",    //access log location
+    //errorLog: "./error.log",     //error log location
     
+    //daemon: true, // fork and run in background.    
 
     /*  By default, number of threads is set to cpu core count.
         ipv6 and ipv4 are separate servers and each get this number of threads.
@@ -309,7 +310,9 @@ server.start(
     */
     //threads: 8, /* for a 4 core, 8 virtual core hyper-threaded processor. */
 
-    /* for experimental https support, this is the minimum (more options to come): */
+    /* for experimental https support, this is the minimum (more options to come): 
+       WARNING: ssl layer dropped silently if key or cert file are invalid
+    */
     /*
     secure:true,
     sslkeyfile:  "/etc/letsencrypt/live/mydom.com/privkey.pem",
@@ -353,3 +356,7 @@ server.start(
      */
      /* ,function(){} */
 });
+
+// if daemon==true then we get the pid of the detached process
+// otherwise server.start never returns
+console.log("pid of rampart-server: " + pid);

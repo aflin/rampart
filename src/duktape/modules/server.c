@@ -151,6 +151,7 @@ void sa_to_string(void *sa, char *buf, size_t bufsz)
     }\
     fprintf(error_fh, "%s ", date);\
     fprintf(error_fh, args);\
+    fflush(error_fh);\
     pthread_mutex_unlock(&errlock);\
 } while(0)    
 
@@ -206,6 +207,7 @@ static void writelog(evhtp_request_t *req, int code)
         path->full, qm, q, proto,
         code, length, ref, ua
     );
+    fflush(access_fh);
     pthread_mutex_unlock(&loglock);
 }
 
@@ -1567,8 +1569,6 @@ static void *http_dothread(void *arg)
 
     duk_pop(dhs->ctx);
 
-    /* logging goes here ? */
-
     debugf("0x%x, UNLOCKING in thread_cb\n", (int)x);
     fflush(stdout);
     if (dhr->have_timeout)
@@ -2210,7 +2210,6 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
     if (res)
         sendresp(req, res);
     duk_pop(dhs->ctx);
-    /* logging goes here ? */
     tprintf("Parent exit\n");
 }
 
@@ -2533,6 +2532,55 @@ evhtp_res pre_accept_callback(evhtp_connection_t *conn, void *arg)
     return EVHTP_RES_OK;
 }
 
+static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
+{
+    /* logging in daemon */
+    if (duk_get_prop_string(ctx, ob_idx, "log") && duk_get_boolean_default(ctx,-1,0) )
+    {
+        duk_rp_server_logging=1;
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_server_logging)
+    {
+        if(duk_get_prop_string(ctx, ob_idx, "accessLog") )
+        {
+            const char *fn=duk_require_string(ctx,-1);
+            access_fh=fopen(fn,"a");
+            if(access_fh==NULL)
+            {
+                duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening file '%s': %s", fn, strerror(errno));
+                (void) duk_throw(ctx);
+            }
+        }
+        else
+        {
+            printf("no accessLog specified, logging to stdout\n");
+        }
+
+        if(duk_get_prop_string(ctx, ob_idx, "errorLog") )
+        {
+            const char *fn=duk_require_string(ctx,-1);
+            error_fh=fopen(fn,"a");
+            if(error_fh==NULL)
+            {
+                duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening file '%s': %s", fn, strerror(errno));
+                (void) duk_throw(ctx);
+            }
+        }
+        else
+        {
+            printf("no errorLog specified, logging to stderr\n");
+        }
+        if (pthread_mutex_init(&loglock, NULL) == EINVAL)
+        {
+            printerr( "could not initialize log lock\n");
+            exit(1);
+        }
+    }
+}
+
+
 duk_ret_t duk_server_start(duk_context *ctx)
 {
     /* TODO: make it so it can bind to any number of arbitary ipv4 or ipv6 addresses */
@@ -2548,10 +2596,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
     evhtp_t *htp6 = NULL;
     struct event_base *evbase;
     evhtp_ssl_cfg_t *ssl_config = calloc(1, sizeof(evhtp_ssl_cfg_t));
-    int secure = 0, usev6 = 1, usev4 = 1, confThreads = -1, mthread = 0;
+    int secure = 0, usev6 = 1, usev4 = 1, confThreads = -1, mthread = 0, daemon=0;
     struct stat f_stat;
     struct timeval ctimeout;
     duk_idx_t fpos = 0;
+    pid_t dpid=0;
 
     ctimeout.tv_sec = RP_TIME_T_FOREVER;
     ctimeout.tv_usec = 0;
@@ -2572,10 +2621,111 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     evbase = event_base_new();
 
+    /* check if we are forking before doing any setup*/
+    if (ob_idx != -1)
+    {
+        /* daemon */
+        if (duk_get_prop_string(ctx, ob_idx, "daemon"))
+        {
+            daemon = duk_require_boolean(ctx, -1);
+        }
+        duk_pop(ctx);
+    }
+
+    if (daemon)
+    {
+        signal(SIGHUP,SIG_IGN);
+        dpid=fork();
+        if(dpid==-1)
+        {
+            fprintf(stderr,"fork failed\n");
+            exit(1);
+        }
+        else if(!dpid)
+        {
+            char *pname=NULL;
+            char portbuf[8];
+            int i=1;
+
+            logging(ctx,ob_idx);
+            if (setsid()==-1) {
+                fprintf(error_fh,"failed to become a session leader while daemonising: %s",strerror(errno));
+                exit(1);
+            }
+
+            /* port */
+            if (duk_get_prop_string(ctx, ob_idx, "port"))
+            {
+                port = duk_require_int(ctx, -1);
+            }
+            duk_pop(ctx);
+
+            pname=strdup("rampart-server:");
+            snprintf(portbuf,8,"%d",port);
+            pname=strcatdup(pname,portbuf);
+            for (;i<rampart_argc;i++)
+            {
+                pname=strcatdup(pname," ");
+                pname=strcatdup(pname,rampart_argv[i]);
+            }
+            strcpy(rampart_argv[0], pname);
+            free(pname);
+            /*
+            pid_t dpid2=fork();
+            
+            if(dpid2==-1)
+            {
+                fprintf(stderr,"fork failed\n");
+                exit(1);
+            }
+            else if (dpid2)
+                exit(0);
+            */
+            close(STDIN_FILENO);
+            close(STDOUT_FILENO);
+            if (open("/dev/null",O_RDONLY) == -1) {
+                fprintf(error_fh,"failed to reopen stdin while daemonising (errno=%d)",errno);
+                exit(1);
+            }
+            if (open("/dev/null",O_WRONLY) == -1) {
+                fprintf(error_fh,"failed to reopen stdout while daemonising (errno=%d)",errno);
+                exit(1);
+            }
+            close(STDERR_FILENO);
+            if (open("/dev/null",O_RDWR) == -1) {
+                /* FIXME: what to do when error_fh=stderr? */
+                fprintf(error_fh,"failed to reopen stderr while daemonising (errno=%d)",errno);
+                exit(1);
+            }
+            stderr=error_fh;
+            stdout=access_fh;            
+        }
+        else
+        {
+            duk_push_int(ctx,(int)dpid);
+            return 1;
+        }
+    }
     /* options from server({options},...) */
     if (ob_idx != -1)
     {
         const char *s;
+
+        /* logging */
+        if(!daemon) 
+        {
+            logging(ctx, ob_idx);
+            stderr=error_fh;
+            stdout=access_fh;            
+
+            /* port */
+            if (duk_get_prop_string(ctx, ob_idx, "port"))
+            {
+                port = duk_require_int(ctx, -1);
+            }
+            duk_pop(ctx);
+
+        }
 
         /* unprivileged user if we are root */
         if (geteuid() == 0)
@@ -2618,13 +2768,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         duk_pop(ctx);
 
-        /* port */
-        if (duk_get_prop_string(ctx, ob_idx, "port"))
-        {
-            port = duk_require_int(ctx, -1);
-        }
-        duk_pop(ctx);
-
         /* threads */
         if (duk_get_prop_string(ctx, ob_idx, "threads"))
         {
@@ -2645,6 +2788,14 @@ duk_ret_t duk_server_start(duk_context *ctx)
             gl_singlethreaded = !mthread;
         }
         duk_pop(ctx);
+
+        /* port */
+        if (!daemon && duk_get_prop_string(ctx, ob_idx, "port"))
+        {
+            port = duk_require_int(ctx, -1);
+        }
+        duk_pop(ctx);
+
 
         /* port ipv6*/
         if (duk_get_prop_string(ctx, ob_idx, "ipv6port"))
@@ -2678,52 +2829,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             usev4 = duk_require_boolean(ctx, -1);
         }
         duk_pop(ctx);
-
-        /* logging */
-        if (duk_get_prop_string(ctx, ob_idx, "log") && duk_get_boolean_default(ctx,-1,0) )
-        {
-            duk_rp_server_logging=1;
-        }
-        duk_pop(ctx);
-
-        if(duk_rp_server_logging)
-        {
-            if(duk_get_prop_string(ctx, ob_idx, "accessLog") )
-            {
-                const char *fn=duk_require_string(ctx,-1);
-                access_fh=fopen(fn,"a");
-                if(access_fh==NULL)
-                {
-                    duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening file '%s': %s", fn, strerror(errno));
-                    return duk_throw(ctx);
-                }
-            }
-            else
-            {
-                printf("no accessLog specified, logging to stdout\n");
-            }
-
-            if(duk_get_prop_string(ctx, ob_idx, "errorLog") )
-            {
-                const char *fn=duk_require_string(ctx,-1);
-                error_fh=fopen(fn,"a");
-                if(error_fh==NULL)
-                {
-                    duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening file '%s': %s", fn, strerror(errno));
-                    return duk_throw(ctx);
-                }
-            }
-            else
-            {
-                printf("no errorLog specified, logging to stderr\n");
-            }
-            if (pthread_mutex_init(&loglock, NULL) == EINVAL)
-            {
-                printerr( "could not initialize log lock\n");
-                exit(1);
-            }
-        }
-
+        
         /* timeout */
         if (duk_get_prop_string(ctx, ob_idx, "connectTimeout"))
         {
@@ -3018,6 +3124,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     if (secure)
     {
         int filecount = 0;
+
         if (ssl_config->pemfile)
         {
             filecount++;
@@ -3171,7 +3278,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
     }
 
     event_base_loop(evbase, 0);
-    /* never gets here */
     return 0;
 }
 

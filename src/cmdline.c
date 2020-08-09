@@ -513,12 +513,15 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     return (const char*) (strlen(babelsrc)) ? babelsrc: fn;
 }
 
-
+char **rampart_argv;
+int   rampart_argc;
 int main(int argc, char *argv[])
 {
     struct rlimit rlp;
     int filelimit = 16384, lflimit = filelimit, isstdin=0;
 
+    rampart_argv=argv;
+    rampart_argc=argc;
     /* set rlimit to filelimit, or highest allowed value below that */
     getrlimit(RLIMIT_NOFILE, &rlp);
     rlp.rlim_cur = filelimit;

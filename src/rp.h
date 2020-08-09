@@ -14,6 +14,9 @@ extern "C"
 {
 #endif
 
+extern char **rampart_argv;
+extern int   rampart_argc;
+
 
 /* settings */
 #define nthreads 0        /* number of threads for evhtp, set to 0 to use num of cpu cores */
