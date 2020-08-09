@@ -6,6 +6,7 @@ rampart.globalize(Sql,["sandr"]);
 
 
 function showreq_callback(req){
+
     /* decoding of embedded json in querystring and multiple same name parameters is automatic*/
     /*e.g. http://localhost:8088/showreq.html?something={%22this%22:%22that%22,%22array%22:[true,false,null,-1.11,%22string%22]}&something=something_else
       results in a javascript object like:
@@ -61,12 +62,16 @@ function showreq_callback(req){
         return sandr(search,replace,json);
     }
 
-    printf("%J\n",rampart);
+//    printf("%J\n",rampart);
     //For testing timeout
-    //for (var i=0;i<100000000;i++);
-    //print("DONE WASTING TIME IN JS");
+    if(req.params.timeout)
+    {
+        for (var i=0;i<1000000000;i++);
+        printf("DONE WASTING TIME IN JS");
+    }
 
-    var str=JSON.stringify({flatreq:req.flatten(),req:req,rampart:rampart,process:process},null,4);
+    var str=JSON.stringify({req:req,rampart:rampart,process:process},null,4);
+
     var css=
         "pre {outline: 1px solid #ccc; padding: 5px; margin: 5px; }\n"+
         ".string { color: green; }\n"+
@@ -83,15 +88,17 @@ function showreq_callback(req){
             },
         //only set one of these.  Setting more than one throws error.
         //jpg: "@/home/user/myimage.jpg"
-        
+        //babel ver:
+        //html:`<html><head><style>${css}</style><body>Object sent to this function(req) and other info (rampart):<br><pre>${sandrHighlight(str)}</pre></body></html>`
+        //reg ver:
         html:"<html><head><style>"+css+"</style><body>Object sent to this function(req) and other info (rampart):<br><pre>"+sandrHighlight(str)+"</pre></body></html>"
         /* with no highlighting */
         //html:"<html><head><style>"+css+"</style><body>Object sent to this function(req) and other info (rampart):<br><pre>"+str+"</pre></body></html>"
         
-        //,text: "\\@home network is a now defunct cable broadband provider." //\\@ for beginning a string with @
+        //text: "\\@home network is a now defunct cable broadband provider." //\\@ for beginning a string with @
     });
     
 }
 
-
+/* export the callback function */
 module.exports=showreq_callback;
