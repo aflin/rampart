@@ -26,7 +26,7 @@ struct module_loader module_loaders[] = {
 
 static duk_ret_t load_js_module(duk_context *ctx)
 {
-    const char *id = duk_require_string(ctx, -3);
+    const char *id = duk_require_string(ctx, -3), *bfn=NULL;
     duk_idx_t module_idx = duk_normalize_index(ctx, -1);
     struct stat sb;
     if (stat(id, &sb))
@@ -57,14 +57,19 @@ static duk_ret_t load_js_module(duk_context *ctx)
 
     duk_push_string(ctx, "function (module, exports) { ");
     /* check for babel and push src to stack */
-    if (! duk_rp_babelize(ctx, (char *)id, buffer, sb.st_mtime) )
+    if (! (bfn=duk_rp_babelize(ctx, (char *)id, buffer, sb.st_mtime)) )
     {
         duk_push_lstring(ctx, buffer, sb.st_size);
     }
     duk_push_string(ctx, "\n}");
     duk_concat(ctx, 3);
-
-    duk_push_string(ctx, id);
+    if(bfn)
+    {
+        duk_push_string(ctx, bfn);
+        free((char*)bfn);
+    } 
+    else
+        duk_push_string(ctx, id);
 
     duk_compile(ctx, DUK_COMPILE_FUNCTION);
 

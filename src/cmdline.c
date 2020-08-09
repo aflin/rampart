@@ -510,7 +510,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     }
     end:
     free(opt);
-    return (const char*) (strlen(babelsrc)) ? babelsrc: fn;
+    return (const char*) (strlen(babelsrc)) ? strdup(babelsrc): strdup(fn);
 }
 
 char **rampart_argv;
@@ -705,6 +705,7 @@ int main(int argc, char *argv[])
             {
                 /* babel src on stack, push babel filename */
                 duk_push_string(ctx, bfn);
+                free((char*)bfn);
             }
 
             free(free_file_src);
