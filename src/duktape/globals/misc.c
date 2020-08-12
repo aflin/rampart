@@ -8,6 +8,7 @@
 #include <utime.h>
 #include <pwd.h>
 #include <grp.h>
+#include <signal.h>
 #include "misc.h"
 #include "../core/duktape.h"
 #include "../../rp.h"
