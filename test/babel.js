@@ -1,4 +1,5 @@
 /* https://babeljs.io/ - MIT licensed - babel-standalone v 7.11.1 - edited on line 23460 to make work with duktape */
+/* minor change to make work with duktape - aaron at flin dot org -ajf line 23460*/
 (function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports) :
   typeof define === 'function' && define.amd ? define(['exports'], factory) :

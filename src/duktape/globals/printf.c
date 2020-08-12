@@ -560,12 +560,70 @@ static size_t _etoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
     }
     return idx;
 }
+
+#define REQUIRE_STRING(ctx,idx) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_string((ctx),i)) {\
+        pthread_mutex_unlock(&pflock);\
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "string required in format string argument %d",i);\
+        return duk_throw(ctx);\
+    }\
+    const char *r=duk_get_string((ctx),i);\
+    r;\
+})
+
+#define REQUIRE_LSTRING(ctx,idx,len) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_string((ctx),i)) {\
+        pthread_mutex_unlock(&pflock);\
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "string required in format string argument %d",i);\
+        return duk_throw(ctx);\
+    }\
+    const char *r=duk_get_lstring((ctx),i,(len));\
+    r;\
+})
+
+#define REQUIRE_INT(ctx,idx) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_number((ctx),i)) {\
+        pthread_mutex_unlock(&pflock);\
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "number required in format string argument %d",i);\
+        return duk_throw(ctx);\
+    }\
+    int r=duk_get_int((ctx),i);\
+    r;\
+})
+
+
+#define REQUIRE_NUMBER(ctx,idx) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_number((ctx),i)) {\
+        pthread_mutex_unlock(&pflock);\
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "number required in format string argument %d",i);\
+        return duk_throw(ctx);\
+    }\
+    double r=duk_get_number((ctx),i);\
+    r;\
+})
+
+#define REQUIRE_BUFFER_DATA(ctx,idx,sz) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_buffer_data((ctx),i)) {\
+        pthread_mutex_unlock(&pflock);\
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "buffer required in format string argument %d",i);\
+        return duk_throw(ctx);\
+    }\
+    void *r=duk_get_buffer_data((ctx),i,(sz));\
+    r;\
+})
+
+
 static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *ctx, duk_idx_t fidx)
 {
     unsigned int flags, width, precision, n;
     size_t idx = 0U;
     int preserveUfmt = 0;
-    const char *format = duk_require_string(ctx, fidx++);
+    const char *format = REQUIRE_STRING(ctx, fidx++);
     if (!buffer)
     {
         // use null output function
@@ -635,7 +693,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
         }
         else if (*format == '*')
         {
-            const int w = duk_require_int(ctx, fidx++);
+            const int w = REQUIRE_INT(ctx, fidx++);
             if (w < 0)
             {
                 flags |= FLAGS_LEFT; // reverse padding
@@ -659,7 +717,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             }
             else if (*format == '*')
             {
-                const int prec = duk_require_int(ctx, fidx++);
+                const int prec = REQUIRE_INT(ctx, fidx++);
                 precision = prec > 0 ? (unsigned int)prec : 0U;
                 format++;
             }
@@ -747,17 +805,17 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                 // signed
                 if (flags & FLAGS_LONG_LONG)
                 {
-                    const long long value = (long long)duk_require_number(ctx, fidx++);
+                    const long long value = (long long)REQUIRE_NUMBER(ctx, fidx++);
                     idx = _ntoa_long_long(out, buffer, idx, maxlen, (unsigned long long)(value > 0 ? value : 0 - value), value < 0, base, precision, width, flags);
                 }
                 else if (flags & FLAGS_LONG)
                 {
-                    const long value = (long)duk_require_number(ctx, fidx++);
+                    const long value = (long)REQUIRE_NUMBER(ctx, fidx++);
                     idx = _ntoa_long(out, buffer, idx, maxlen, (unsigned long)(value > 0 ? value : 0 - value), value < 0, base, precision, width, flags);
                 }
                 else
                 {
-                    const int value = (flags & FLAGS_CHAR) ? (char)duk_require_int(ctx, fidx++) : (flags & FLAGS_SHORT) ? (short int)duk_require_int(ctx, fidx++) : duk_require_int(ctx, fidx++);
+                    const int value = (flags & FLAGS_CHAR) ? (char)REQUIRE_INT(ctx, fidx++) : (flags & FLAGS_SHORT) ? (short int)REQUIRE_INT(ctx, fidx++) : REQUIRE_INT(ctx, fidx++);
                     idx = _ntoa_long(out, buffer, idx, maxlen, (unsigned int)(value > 0 ? value : 0 - value), value < 0, base, precision, width, flags);
                 }
             }
@@ -766,15 +824,15 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                 // unsigned
                 if (flags & FLAGS_LONG_LONG)
                 {
-                    idx = _ntoa_long_long(out, buffer, idx, maxlen, (unsigned long long)duk_require_number(ctx, fidx++), false, base, precision, width, flags);
+                    idx = _ntoa_long_long(out, buffer, idx, maxlen, (unsigned long long)REQUIRE_NUMBER(ctx, fidx++), false, base, precision, width, flags);
                 }
                 else if (flags & FLAGS_LONG)
                 {
-                    idx = _ntoa_long(out, buffer, idx, maxlen, (unsigned long)duk_require_number(ctx, fidx++), false, base, precision, width, flags);
+                    idx = _ntoa_long(out, buffer, idx, maxlen, (unsigned long)REQUIRE_NUMBER(ctx, fidx++), false, base, precision, width, flags);
                 }
                 else
                 {
-                    const unsigned int value = (flags & FLAGS_CHAR) ? (unsigned char)duk_require_number(ctx, fidx++) : (flags & FLAGS_SHORT) ? (unsigned short int)duk_require_number(ctx, fidx++) : (unsigned int)duk_require_number(ctx, fidx++);
+                    const unsigned int value = (flags & FLAGS_CHAR) ? (unsigned char)REQUIRE_NUMBER(ctx, fidx++) : (flags & FLAGS_SHORT) ? (unsigned short int)REQUIRE_NUMBER(ctx, fidx++) : (unsigned int)REQUIRE_NUMBER(ctx, fidx++);
                     idx = _ntoa_long(out, buffer, idx, maxlen, value, false, base, precision, width, flags);
                 }
             }
@@ -785,7 +843,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
         case 'F':
             if (*format == 'F')
                 flags |= FLAGS_UPPERCASE;
-            idx = _ftoa(out, buffer, idx, maxlen, duk_require_number(ctx, fidx++), precision, width, flags);
+            idx = _ftoa(out, buffer, idx, maxlen, REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
             format++;
             break;
         case 'e':
@@ -796,13 +854,13 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                 flags |= FLAGS_ADAPT_EXP;
             if ((*format == 'E') || (*format == 'G'))
                 flags |= FLAGS_UPPERCASE;
-            idx = _etoa(out, buffer, idx, maxlen, duk_require_number(ctx, fidx++), precision, width, flags);
+            idx = _etoa(out, buffer, idx, maxlen, REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
             format++;
             break;
         case 'c':
         {
             unsigned int l = 1U;
-            const char *c = duk_require_string(ctx, fidx++);
+            const char *c = REQUIRE_STRING(ctx, fidx++);
             // pre padding
             if (!(flags & FLAGS_LEFT))
             {
@@ -828,7 +886,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
         case 'B':
         {
             duk_size_t sz;
-            char *b=(char *)duk_require_buffer_data(ctx,fidx++,&sz);
+            char *b=(char *)REQUIRE_BUFFER_DATA(ctx,fidx++,&sz);
             int i=0,isz=(int)sz;
             for (;i<isz;i++)
             {
@@ -840,7 +898,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
         case 'U':
         {
             duk_size_t sz;
-            const char *s = duk_require_lstring(ctx, fidx, &sz);
+            const char *s = REQUIRE_LSTRING(ctx, fidx, &sz);
             char *u;
             if (flags & FLAGS_BANG)
                 u = duk_rp_url_decode((char *)s, (int)sz);
@@ -859,12 +917,21 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
         }
         case 'J':
             if (!duk_is_string(ctx, fidx))
-                (void)duk_json_encode(ctx, fidx); //no ++
-                                                  //no break
+            {
+                if ( !duk_is_function(ctx, fidx) )
+                    (void)duk_json_encode(ctx, fidx); 
+                else
+                {
+                    duk_push_string(ctx,"{_func:true}");
+                    duk_replace(ctx,fidx);
+                }    
+            }
+            //no ++
+            //no break
         case 's':
         string:
         {
-            const char *p = duk_require_string(ctx, fidx++);
+            const char *p = REQUIRE_STRING(ctx, fidx++);
             unsigned int l = _strnlen_s(p, precision ? precision : (size_t)-1);
             // pre padding
             if (flags & FLAGS_PRECISION)
@@ -916,321 +983,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
     return (int)idx;
 }
 ///////////////////////////////////////////////////////////////////////////////
-duk_ret_t duk_printf(duk_context *ctx)
-{
-    char buffer[1];
-    int ret;
-    if (pthread_mutex_lock(&pflock) == EINVAL)
-    {
-        fprintf(stderr, "could not obtain lock in http_callback\n");
-        exit(1);
-    }
-    ret = _printf(_out_char, buffer, (size_t)-1, ctx,0);
-    pthread_mutex_unlock(&pflock);
-    duk_push_int(ctx, ret);
-    return 1;
-}
-#define getfh(ctx,idx,func) ({\
-    FILE *f;\
-    if( !duk_get_prop_string(ctx,idx,DUK_HIDDEN_SYMBOL("filehandle")) )\
-    {\
-        duk_push_sprintf(ctx,"%s: argument is not a file handle",func);\
-        (void)duk_throw(ctx);\
-    }\
-    f=duk_get_pointer(ctx,-1);\
-    duk_pop(ctx);\
-    f;\
-})
-#define getfh_nonull(ctx,idx,func) ({\
-    FILE *f;\
-    if( !duk_get_prop_string(ctx,idx,DUK_HIDDEN_SYMBOL("filehandle")) )\
-    {\
-        duk_push_sprintf(ctx,"error %s: argument is not a file handle",func);\
-        (void)duk_throw(ctx);\
-    }\
-    f=duk_get_pointer(ctx,-1);\
-    duk_pop(ctx);\
-    if(f==NULL){\
-        duk_push_sprintf(ctx,"error %s: file handle was previously closed",func);\
-        (void)duk_throw(ctx);\
-    }\
-    f;\
-})
-duk_ret_t duk_fseek(duk_context *ctx)
-{
-    FILE *f = getfh_nonull(ctx,0,"fseek()");
-    long offset=(long)duk_require_number(ctx,1);
-    int whence=SEEK_SET;
-    const char *wstr=duk_require_string(ctx,2);
-
-    if(!strcmp(wstr,"SEEK_SET"))
-        whence=SEEK_SET;
-    else if(!strcmp(wstr,"SEEK_END"))
-        whence=SEEK_END;
-    else if(!strcmp(wstr,"SEEK_CUR"))
-        whence=SEEK_CUR;
-    else
-    {
-        duk_push_sprintf(ctx,"error fseek(): invalid argument '%s'",wstr);
-        (void)duk_throw(ctx);
-    }
-    if(fseek(f, offset, whence))
-    {
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "error fseek():'%s'", strerror(errno));
-        (void)duk_throw(ctx);
-    }
-    return 0;
-}
-duk_ret_t duk_rewind(duk_context *ctx)
-{
-    FILE *f = getfh_nonull(ctx,0,"rewind()");
-    rewind(f);
-    return 0;
-}
-duk_ret_t duk_ftell(duk_context *ctx)
-{
-    FILE *f = getfh_nonull(ctx,0,"ftell()");
-    long pos;
-
-    pos=ftell(f);
-    if(pos==-1)
-    {
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "error ftell():'%s'", strerror(errno));
-        (void)duk_throw(ctx);
-    }
-    duk_push_number(ctx,(double)pos);
-    return 1;
-}
-duk_ret_t duk_fread(duk_context *ctx)
-{
-    FILE *f = getfh_nonull(ctx,0,"fread()");
-    void *buf;
-    size_t read, sz=(size_t)duk_require_number(ctx,1);
-    buf=duk_push_dynamic_buffer(ctx, (duk_size_t)sz);
-
-    read=fread(buf,1,sz,f);
-    if(read != sz)
-    {
-        if(ferror(f))
-        {
-            duk_push_error_object(ctx, DUK_ERR_ERROR, "error fread(): error reading file");
-            (void)duk_throw(ctx);
-        }
-        duk_resize_buffer(ctx, -1, (duk_size_t)read);
-    }
-    return(1);
-}
-duk_ret_t duk_fwrite(duk_context *ctx)
-{
-    FILE *f = getfh_nonull(ctx,0,"fwrite()");
-    void *buf;
-    size_t wrote, sz=(size_t)duk_get_number_default(ctx,2,-1);
-    duk_size_t bsz;
-    duk_to_buffer(ctx,1,&bsz);
-    buf=duk_get_buffer_data(ctx, 1, &bsz);
-    if(sz !=-1)
-    {
-        if((size_t)bsz < sz)
-            sz=(size_t)bsz;
-    }
-    else sz=(size_t)bsz;
-
-    wrote=fwrite(buf,1,sz,f);
-    if(wrote != sz)
-    {
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "error fwrite(): error writing file");
-        (void)duk_throw(ctx);
-    }
-    duk_push_number(ctx,(double)wrote);
-    return(1);
-}
-duk_ret_t duk_fopen(duk_context *ctx)
-{
-    FILE *f;
-    const char *fn=duk_require_string(ctx,0);
-    const char *mode=duk_require_string(ctx,1);
-
-    f=fopen(fn,mode);
-    if(f==NULL) goto err;
-
-    duk_push_object(ctx);
-    duk_push_pointer(ctx,(void *)f);
-    duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("filehandle") );
-    return 1;
-
-    err:
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening file '%s': %s", fn, strerror(errno));
-    return duk_throw(ctx);
-}
-duk_ret_t duk_fclose(duk_context *ctx)
-{
-    FILE *f = getfh(ctx,0,"fclose()");
-
-    fclose(f);
-    duk_push_pointer(ctx,NULL);
-    duk_put_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filehandle") );
-
-    return 1;
-}
-duk_ret_t duk_fprintf(duk_context *ctx)
-{
-    int ret;
-    const char *fn;
-    FILE *out=NULL;
-    int append=0;
-    int closefh=1;
-
-    if(duk_is_object(ctx,0))
-    {
-        if(duk_get_prop_string(ctx,0,"stream"))
-        {
-            const char *s=duk_require_string(ctx,-1);
-            if (!strcmp(s,"stdout"))
-            {
-                out=stdout;
-            }
-            else if (!strcmp(s,"stderr"))
-            {
-                out=stderr;
-            }
-            else
-            {
-                duk_push_string(ctx,"error: fprintf({stream:""},...): stream must be stdout or stderr");
-                (void)duk_throw(ctx);
-            }
-            closefh=0;
-            duk_pop(ctx);
-            goto startprint;
-        }
-        duk_pop(ctx);
-
-        if ( duk_get_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filehandle")) )
-        {
-            out=duk_get_pointer(ctx,-1);
-            duk_pop(ctx);
-            closefh=0;
-            if(out==NULL)
-            {
-                duk_push_string(ctx,"error: fprintf(handle,...): handle was previously closed");
-                (void)duk_throw(ctx);
-            }
-            goto startprint;
-        }
-        duk_pop(ctx);
-
-        duk_push_string(ctx,"error: fprintf({},...): invalid option");
-        (void)duk_throw(ctx);
-    }
-    else
-    {
-        fn=duk_require_string(ctx,0);
-        if( duk_is_boolean(ctx,1) )
-        {
-            append=duk_get_boolean(ctx,1);
-            duk_remove(ctx,1);
-        }
-
-        if(append)
-        {
-            if( (out=fopen(fn,"a")) == NULL )
-            {
-                if( (out=fopen(fn,"w")) == NULL )
-                    goto err;
-            }
-        }
-        else
-        {
-            if( (out=fopen(fn,"w")) == NULL )
-                goto err;
-        }
-    }
-    startprint:
-    ret = _printf(_fout_char, (void*)out, (size_t)-1, ctx,1);
-    if (pthread_mutex_lock(&pflock) == EINVAL)
-    {
-        fprintf(stderr, "error: could not obtain lock in fprintf\n");
-        exit(1);
-    }
-    if(closefh)
-        fclose(out);
-    pthread_mutex_unlock(&pflock);
-    duk_push_int(ctx, ret);
-    return 1;
-
-    err:
-    duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening file '%s': %s", fn, strerror(errno));
-    return duk_throw(ctx);
-}
-duk_ret_t duk_sprintf(duk_context *ctx)
-{
-    char *buffer;
-    int size = _printf(_out_null, NULL, (size_t)-1, ctx,0);
-    buffer = malloc((size_t)size + 1);
-    if (!buffer)
-    {
-        duk_push_string(ctx, "malloc error in sprintf");
-        (void)duk_throw(ctx);
-    }
-    (void)_printf(_out_buffer, buffer, (size_t)-1, ctx,0);
-    duk_push_lstring(ctx, buffer,(duk_size_t)size);
-    free(buffer);
-    return 1;
-}
-duk_ret_t duk_bprintf(duk_context *ctx)
-{
-    char *buffer;
-    int size = _printf(_out_null, NULL, (size_t)-1, ctx,0);
-    buffer = (char *) duk_push_fixed_buffer(ctx, (duk_size_t)size);
-    (void)_printf(_out_buffer, buffer, (size_t)-1, ctx,0);
-    return 1;
-}
-void duk_printf_init(duk_context *ctx)
-{
-    if (!duk_get_global_string(ctx, "rampart"))
-    {
-        duk_pop(ctx);
-        duk_push_object(ctx);
-    }
-    if(!duk_get_prop_string(ctx,-1,"cfunc"))
-    {
-        duk_pop(ctx);
-        duk_push_object(ctx);
-    }
-    duk_push_c_function(ctx, duk_printf, DUK_VARARGS);
-    duk_put_prop_string(ctx, -2, "printf");
-    duk_push_c_function(ctx, duk_sprintf, DUK_VARARGS);
-    duk_put_prop_string(ctx, -2, "sprintf");
-    duk_push_c_function(ctx, duk_fprintf, DUK_VARARGS);
-    duk_put_prop_string(ctx, -2, "fprintf");
-    duk_push_c_function(ctx, duk_bprintf, DUK_VARARGS);
-    duk_put_prop_string(ctx, -2, "bprintf");
-    duk_push_c_function(ctx, duk_fopen, 2);
-    duk_put_prop_string(ctx, -2, "fopen");
-    duk_push_c_function(ctx, duk_fclose, 1);
-    duk_put_prop_string(ctx, -2, "fclose");
-    duk_push_c_function(ctx, duk_fseek, 3);
-    duk_put_prop_string(ctx, -2, "fseek");
-    duk_push_c_function(ctx, duk_ftell, 1);
-    duk_put_prop_string(ctx, -2, "ftell");
-    duk_push_c_function(ctx, duk_rewind, 1);
-    duk_put_prop_string(ctx, -2, "rewind");
-    duk_push_c_function(ctx, duk_fread, 2);
-    duk_put_prop_string(ctx, -2, "fread");
-    duk_push_c_function(ctx, duk_fwrite, 3);
-    duk_put_prop_string(ctx, -2, "fwrite");
-    duk_push_object(ctx);
-    duk_push_string(ctx,"stdout");
-    duk_put_prop_string(ctx,-2,"stream");
-    duk_put_prop_string(ctx, -2,"stdout");
-    duk_push_object(ctx);
-    duk_push_string(ctx,"stderr");
-    duk_put_prop_string(ctx,-2,"stream");
-    duk_put_prop_string(ctx, -2,"stderr");
-    duk_put_prop_string(ctx, -2,"cfunc");
-    duk_put_global_string(ctx,"rampart");
-    if (pthread_mutex_init(&pflock, NULL) == EINVAL)
-    {
-        fprintf(stderr, "could not initialize context lock\n");
-        exit(1);
-    }
-}
+// END tiny printf
+// FROM: https://github.com/mpaland/printf
+// MODIFIED BY Aaron Flin for use in duktape
+///////////////////////////////////////////////////////////////////////////////

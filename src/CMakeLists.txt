@@ -33,7 +33,7 @@ add_executable(rampart
 	duktape/core/duk_console.c
 	duktape/core/module.c
 	duktape/globals/misc.c
-	duktape/globals/printf.c
+#	duktape/globals/printf.c
 	duktape/globals/ramis.c
 
 	ramis/resp_client.c
@@ -117,9 +117,9 @@ target_include_directories(rpcrypto PRIVATE
 )
 
 ###UTILS###
-add_library(rputils SHARED
- duktape/modules/utils.c
-)
+#add_library(rputils SHARED
+# duktape/modules/utils.c
+#)
 
 ###SERVER###
 add_library(rpserver SHARED
@@ -157,14 +157,14 @@ target_include_directories(rpserver PRIVATE
 ##############  ADD MODULE NAMES HERE  ##############
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-set_target_properties(rpcurl rputils rpserver rpsql rpcrypto #example_name
+set_target_properties(rpcurl rpserver rpsql rpcrypto #example_name
 	PROPERTIES 
 	LINK_FLAGS   "-undefined dynamic_lookup" 
 	SUFFIX       ".so"
 	PREFIX ""
 )
 else()
-set_target_properties(rpcurl rputils rpserver rpsql rpcrypto #example_name
+set_target_properties(rpcurl rpserver rpsql rpcrypto #example_name
 	PROPERTIES 
 	SUFFIX       ".so"
 	PREFIX ""
@@ -177,7 +177,6 @@ install(TARGETS
 	rpcrypto
 	rpcurl
 	rpsql
-	rputils
 	DESTINATION modules
 )
 

@@ -7,7 +7,7 @@ import * as math from "math";
 
 import { sum, pi } from "math";
 
-rampart.globalize(rampart.cfunc);
+rampart.globalize(rampart.utils);
 
 function testFeature(name,test)
 {

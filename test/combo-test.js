@@ -1,5 +1,5 @@
 /* make printf et. al. global */
-rampart.globalize(rampart.cfunc);
+rampart.globalize(rampart.utils);
 
 var crypto=require("rpcrypto");
 var Sql=require("rpsql");
@@ -29,14 +29,14 @@ function assert(cond)
 
 printf("test of sha256 and hexify/dehexify\n");
 var sha_res_buf=sha256("hello",true); //true = return buffer with binary
-var sha_res_upper=rampart.hexify(sha_res_buf,true); // true = upper case A-F
-var sha_res_lower=rampart.hexify(sha_res_buf);
+var sha_res_upper=hexify(sha_res_buf,true); // true = upper case A-F
+var sha_res_lower=hexify(sha_res_buf);
 
-var sha_res1=rampart.dehexify(sha_res_lower);
-var sha_res2=rampart.dehexify(sha_res_upper);
+var sha_res1=dehexify(sha_res_lower);
+var sha_res2=dehexify(sha_res_upper);
 
-sha_res1=rampart.hexify(sha_res1);
-sha_res2=rampart.hexify(sha_res2);
+sha_res1=hexify(sha_res1);
+sha_res2=hexify(sha_res2);
 
 verbsert(sha_res2 = sha_res1)
 
@@ -71,7 +71,7 @@ printf("select md5 hash, convert to hex and compare to md5 of url.  Also do nest
 sql.exec("create table urls2 ( Md5 byte(16), Url varchar(16) );");
 sql.exec("select * from urls",
     function(res){
-        var md5sum=rampart.hexify(res.Md5);
+        var md5sum=hexify(res.Md5);
         var md5comp=crypto.md5(res.Url);
 
         assert(md5sum==md5comp)
@@ -85,7 +85,7 @@ verbsert(ret.results.length==5);
 printf("checking hashes in url2\n");
 sql.exec("select * from urls2",
     function(res){
-        var md5sum=rampart.hexify(res.Md5);
+        var md5sum=hexify(res.Md5);
         var md5comp=crypto.md5(res.Url);
         
         assert(md5sum==md5comp);

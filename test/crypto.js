@@ -1,8 +1,7 @@
 /* make printf et. al. global */
-rampart.globalize(rampart.cfunc);
+rampart.globalize(rampart.utils);
 
 var crypto = require("rpcrypto");
-var utils = require("rputils");
 
 testmodes();
 
@@ -11,7 +10,7 @@ console.log(
   crypto.sha256("hello world")
 );
 
-console.log("hexify of crypto.rand(32):\n",rampart.hexify(crypto.rand(32)));
+console.log("hexify of crypto.rand(32):\n",hexify(crypto.rand(32)));
 
 var encBuffer = crypto.encrypt({
   key: "01234567890123456789012345678901",
@@ -27,17 +26,17 @@ var decBuffer = crypto.decrypt({
   data: encBuffer,
 });
 
-console.log("Crypto (k/iv): ", rampart.bufferToString(decBuffer));
+console.log("Crypto (k/iv): ", bufferToString(decBuffer));
 
 encBuffer= crypto.encrypt("mypassword","encrypt and decrypt of a string with password and aes-256-cbc");
 
 decBuffer = crypto.decrypt("mypassword",encBuffer);
 
 
-console.log("Crypto (pass): ", rampart.bufferToString(decBuffer));
+console.log("Crypto (pass): ", bufferToString(decBuffer));
 
 
-var file=utils.readFile("crypto.js");
+var file=readFile("crypto.js");
 
 var hash=crypto.sha512(file);
 
@@ -153,7 +152,7 @@ function testmodes()
       continue;
     }
       
-    if(plaintext==rampart.bufferToString(decBuffer))
+    if(plaintext==bufferToString(decBuffer))
       printf("%s - ok\n",mcodes[i]);
     else
       printf("%s - >>>>> FAILED <<<<<\n",mcodes[i]);

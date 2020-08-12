@@ -1,5 +1,5 @@
 /* make printf et. al. global */
-rampart.globalize(rampart.cfunc);
+rampart.globalize(rampart.utils);
 
 /* load the http server module */
 var server=require("rpserver");
