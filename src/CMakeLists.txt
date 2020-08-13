@@ -207,12 +207,11 @@ install(CODE "execute_process( \
     )"
 )
 
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rpserver.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rpcrypto.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rpcurl.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rpsql.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/modules/rputils.so\")")
-install(CODE "execute_process(COMMAND strip \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpserver.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpcrypto.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpcurl.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpsql.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
 
 
 #this is good for later. Right now it interrupts work flow
