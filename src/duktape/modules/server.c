@@ -103,6 +103,8 @@ DHS
     int ismod;              // is normal fuction if 0, 1 is js module, 2 js module needs reload.
 };
 
+DHS *dhs404 = NULL;
+
 /* mapping for url to filesystem */
 #define DHMAP struct fsmap_s
 DHMAP
@@ -143,7 +145,7 @@ void sa_to_string(void *sa, char *buf, size_t bufsz)
     char date[32];\
     \
     timeinfo = localtime_r(&now,&ti_s);\
-    strftime(date,32,"%d/%b-%Y:%H:%M:%S %z",timeinfo);\
+    strftime(date,32,"%d/%b/%Y:%H:%M:%S %z",timeinfo);\
     if (pthread_mutex_lock(&errlock) == EINVAL)\
     {\
         fprintf(error_fh, "could not obtain lock in http_callback\n");\
@@ -171,7 +173,7 @@ static void writelog(evhtp_request_t *req, int code)
     sa_to_string(sa, address, sizeof(address));
 
     timeinfo = localtime_r(&now,&ti_s);
-    strftime(date,32,"%d/%b-%Y:%H:%M:%S %z",timeinfo);
+    strftime(date,32,"%d/%b/%Y:%H:%M:%S %z",timeinfo);
 
     if (method >= 16)
         method = 16;
@@ -713,6 +715,8 @@ void push_req_vars(DHS *dhs)
     duk_put_prop_string(ctx, -2, "params");
 }
 
+static void http_callback(evhtp_request_t *req, void *arg);
+
 static void send500(evhtp_request_t *req, char *msg)
 {
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
@@ -723,6 +727,11 @@ static void send500(evhtp_request_t *req, char *msg)
 
 static void send404(evhtp_request_t *req)
 {
+    if (dhs404)
+    {
+        http_callback(req, (void *) dhs404);
+        return;
+    }
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
     char msg[] = "<html><head><title>404 Not Found</title></head><body><h1>Not Found</h1><p>The requested URL was not found on this server.</p></body></html>";
     evbuffer_add(req->buffer_out, msg, strlen(msg));
@@ -2386,7 +2395,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
     newdhs.ismod=dhs->ismod;
     newdhs.mod_idx=dhs->mod_idx;
     dhs = &newdhs;
-
+//printf("%d %p\n",thrno,dhs);
     if(dhs->ismod)
     {
         newdhs.func_idx = getmod(dhs);
@@ -2920,10 +2929,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
         if (secure)
             get_secure(ctx, ob_idx, ssl_config);
+
+
     }
 
-    /*  mapping options from server({map:{mapoptions}})
-        got the essential config options, now do some setup before mapping urls */
+    /*  got the essential config options, now do some setup before mapping urls */
     if (mthread)
     {
         if (usev6 + usev4 == 0)
@@ -3028,6 +3038,65 @@ duk_ret_t duk_server_start(duk_context *ctx)
     /* file system and function mapping */
     if (ob_idx != -1)
     {
+        /* custom 404 page/function */
+        if (duk_get_prop_string(ctx, ob_idx, "notFoundFunc"))
+        {
+            if ( duk_is_object(ctx,-1) )
+            {   /* map to function or module */
+                /* copy the function to array at stack pos 0 */
+                const char *fname;
+                int ismod=0;
+
+                if (duk_is_function(ctx, -1))
+                {
+                    duk_get_prop_string(ctx, -1, "name");
+                    fname = duk_get_string(ctx, -1);
+                    duk_pop(ctx);
+                    printf("mapping function   %-20s ->    function %s()\n", "404", fname);
+                }
+                else if (duk_get_prop_string(ctx,-1, "module") )
+                {
+                    fname = duk_get_string(ctx, -1);
+                    duk_pop(ctx);
+                    printf("mapping function   %-20s ->    module:%s\n", "404", fname);
+                    ismod=1;
+                }
+                else
+                {
+                    duk_push_string(ctx,"Option for notFoundFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
+                    (void)duk_throw(ctx);
+                }
+                /* copy function into array at pos 0 in stack and into index fpos in array */
+                duk_put_prop_index(ctx, 0, fpos);
+
+                dhs404 = new_dhs(ctx, fpos);
+                dhs404->ismod=ismod;
+
+                // func_idx will change to imported/required mod, save spot of object here in mod_idx
+                if(ismod)
+                    dhs404->mod_idx=fpos;
+
+                dhs404->timeout.tv_sec = dhs->timeout.tv_sec;
+                dhs404->timeout.tv_usec = dhs->timeout.tv_usec;
+                /* copy function to all the heaps/ctxs */
+                if(ismod)
+                {
+                    for (i=0;i<totnthreads;i++)
+                        copy_mod_func(ctx, thread_ctx[i], fpos);
+                }
+                else
+                    copy_cb_func(dhs404, totnthreads);
+
+                fpos++;
+            }
+            else
+            {
+                duk_push_string(ctx,"Option for notFoundFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
+                (void)duk_throw(ctx);
+            }
+        }
+        duk_pop(ctx);
+
         if (duk_get_prop_string(ctx, ob_idx, "map"))
         {
             if (duk_is_object(ctx, -1) && !duk_is_function(ctx, -1) && !duk_is_array(ctx, -1))

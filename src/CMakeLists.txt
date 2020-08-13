@@ -1,4 +1,4 @@
-#set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_BUILD_TYPE Debug)
 
 if(${CMAKE_INSTALL_PREFIX})
 	message("install = ${CMAKE_INSTALL_PREFIX}")
@@ -24,7 +24,7 @@ add_definitions(
 
 #this doesn't work: set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -g -pedantic -std=c99 -Wall -fstrict-aliasing -fomit-frame-pointer -rdynamic")
 # add_compile_options( -O2 -g -pedantic -std=c99 -fstrict-aliasing)
-add_compile_options(-Wall -g)
+add_compile_options(-Wall -g -O2)
 
 
 add_executable(rampart

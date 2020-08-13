@@ -294,12 +294,12 @@ var pid=server.start(
     connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
     useThreads: true, /* make server multi-threaded. */
 
-    //user:"unpriv_user", /* if binding to, e.g. port 80, start as root and drop privileges as the user named here */
+    //user:"mywebuser", /* if binding to, e.g. port 80, start as root and drop privileges as the user named here */
 
     /*** logging ***/
-    //log: true,           //turn logging on
-    //accessLog: "./access.log",    //access log location
-    //errorLog: "./error.log",     //error log location
+    log: true,           //turn logging on, by default goes to stdout/stderr
+    //accessLog: "./access.log",    //access log location, instead of stdout
+    //errorLog: "./error.log",     //error log location, instead of stderr
     
     //daemon: true, // fork and run in background.    
 
@@ -310,7 +310,7 @@ var pid=server.start(
     */
     //threads: 8, /* for a 4 core, 8 virtual core hyper-threaded processor. */
 
-    /* for experimental https support, this is the minimum (more options to come): 
+    /* for experimental https support, this is the minimum and maximum number of options needed:
        WARNING: ssl layer dropped silently if key or cert file are invalid
     */
     /*
@@ -324,7 +324,16 @@ var pid=server.start(
         To turn off ipv6 or ipv4, set one of these to false */
     // useIpv6: false,
     // useIpv4: false,
-    
+
+    /* a custom 404 page */
+    notFoundFunc: function(req){
+        return {
+            headers: {status:404},
+            html: '<html><head><title>404 Not Found</title></head><body style="background: url(/img/page-background.png);"><center><h1>Not Found</h1><p>The requested URL '+
+                    req.path.path+
+            ' was not found on this server.</p><p><img style="width:65%" src="/inigo-not-fount.jpg"></p></center></body></html>'
+        }
+    },    
 
     /* **********************************************************
        map urls to functions or paths on the filesystem 
@@ -333,15 +342,14 @@ var pid=server.start(
        except a more specific ('/something.html') path
        ********************************************************** */
     map:
-    {
+      {
         /* url to function mappings */
         "/dbtest.html":       inserttest_callback,
         "/simpledbtest.html": simple_callback,
         "/globalref.html":    globalRef_callback,
         "/ramistest" :        ramistest,
-
         /* matching a glob to a function */
-        /* use function from a module */
+        /* use function from module "servermod.js" */
         "/showreq*":          {module:"servermod"},
 
         //  filesystem mappings are always folders.  
@@ -349,13 +357,18 @@ var pid=server.start(
         //   "./mPurpose" becomes  "./mPurpose/"
         "/tetris":            "./tetris-tutorial/",
         "/":                  "./mPurpose"
-    }
+      }
+}
      /* 
         including a function here will match everything not matched above
         matching "/" if "/" : "./mPurpose/" was not present
      */
-     /* ,function(){} */
-});
+     /*
+     ,function(req) {
+         return {text:"my default response"}
+     }
+     */
+);
 
 // if daemon==true then we get the pid of the detached process
 // otherwise server.start never returns
