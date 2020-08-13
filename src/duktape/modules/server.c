@@ -927,14 +927,15 @@ static void sendbuf(DHS *dhs)
     duk_size_t sz;
     const char *s;
     CTXFREER *freeme = NULL;
+    duk_context *ctx = dhs->ctx;
 
     REMALLOC(freeme, sizeof(CTXFREER));
-    s = duk_get_string_default(dhs->ctx, -1, "  ");
+    s = duk_get_string_default(ctx, -1, "  ");
     if (*s == '\\' && *(s + 1) == '@')
     {
         s++;
-        duk_push_string(dhs->ctx, s);
-        duk_replace(dhs->ctx, -2);
+        duk_push_string(ctx, s);
+        duk_replace(ctx, -2);
     }
 
     /* turn whatever the return val is into a buffer, 
@@ -942,11 +943,11 @@ static void sendbuf(DHS *dhs)
        without copying.  duktape will not free it
        when we duk_pop().
     */
-    duk_to_dynamic_buffer(dhs->ctx, -1, NULL);
-    s = duk_steal_buffer(dhs->ctx, -1, &sz);
+    duk_to_dynamic_buffer(ctx, -1, NULL);
+    s = duk_steal_buffer(ctx, -1, &sz);
     /* add buffer to response, and specify callback to free s when done */
     /* note that dhs and ctx might not exist by the time the callback is executed */
-    freeme->ctx = dhs->ctx;
+    freeme->ctx = ctx;
     freeme->threadno = dhs->threadno;
     evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, refcb, freeme);
 
@@ -1070,9 +1071,9 @@ static evhtp_res sendobj(DHS *dhs)
     return (res);
 }
 
-/* ******************************************
-    FUNCTIONS FOR COPYING BETWEEN DUK HEAPS
-********************************************* */
+/* *************************************************
+    FUNCTIONS FOR COPYING BETWEEN DUK HEAPS/STACKS
+**************************************************** */
 
 static int copy_obj(duk_context *ctx, duk_context *tctx, int objid);
 static void clean_obj(duk_context *ctx, duk_context *tctx);
@@ -1088,18 +1089,23 @@ static void copy_cb_func(DHS *dhs, int nt)
     duk_size_t bc_len;
     int i = 0;
     duk_context *ctx = dhs->ctx;
+    duk_idx_t fidx;
 
-    duk_get_prop_string(ctx, dhs->func_idx, "name");
+    duk_get_prop_index(ctx, 0, (duk_uarridx_t) dhs->func_idx);
+    fidx=duk_get_top_index(ctx);
+
+    duk_get_prop_string(ctx, fidx, "name");
+
     if (!strncmp(duk_get_string(ctx, -1), "bound ", 6))
         printerr("Error: server cannot copy a bound function to threaded stacks\n");
     duk_pop(ctx);
 
-    if (duk_get_prop_string(ctx, dhs->func_idx, DUK_HIDDEN_SYMBOL("is_global")) && duk_get_boolean(ctx, -1))
+    if (duk_get_prop_string(ctx, fidx, DUK_HIDDEN_SYMBOL("is_global")) && duk_get_boolean(ctx, -1))
     {
         const char *name;
         duk_pop(ctx); //true
 
-        if (duk_get_prop_string(ctx, dhs->func_idx, "name"))
+        if (duk_get_prop_string(ctx, fidx, "name"))
         {
             name = duk_get_string(ctx, -1);
             duk_pop(ctx); //name string
@@ -1107,15 +1113,15 @@ static void copy_cb_func(DHS *dhs, int nt)
             for (i = 0; i < nt; i++)
             {
                 duk_context *tctx = thread_ctx[i];
+
                 duk_get_global_string(tctx, name); //put already copied function on stack
                 duk_push_string(tctx, name);       //add fname property to function
                 duk_put_prop_string(tctx, -2, "fname");
-                duk_insert(tctx, dhs->func_idx); //put it in same position on stack as main_ctx
-                /*if(!i)
-                    dhs->func_idx=duk_get_top_index(tctx);*/
+                duk_put_prop_index(tctx, 0, (duk_uarridx_t) dhs->func_idx);
             }
             duk_push_string(ctx, name); //add fname property to function in ctx as well
-            duk_put_prop_string(ctx, dhs->func_idx, "fname");
+            duk_put_prop_string(ctx, fidx, "fname");
+            duk_remove(ctx,fidx);
             return; /* STOP HERE */
         }
     }
@@ -1123,10 +1129,10 @@ static void copy_cb_func(DHS *dhs, int nt)
 
     /* CONTINUE HERE */
     /* if function is not global (i.e. map:{"/":function(req){...} } */
-    duk_dup(ctx, dhs->func_idx);
+    duk_dup(ctx, fidx);
     duk_dump_function(ctx);
     bc_ptr = duk_require_buffer_data(ctx, -1, &bc_len);
-    duk_dup(ctx, dhs->func_idx); /* on top of stack for copy_obj */
+    duk_dup(ctx, fidx); /* on top of stack for copy_obj */
     /* load function into each of the thread contexts at same position */
     for (i = 0; i < nt; i++)
     {
@@ -1136,13 +1142,10 @@ static void copy_cb_func(DHS *dhs, int nt)
         duk_load_function(tctx);
         copy_obj(ctx, tctx, 0);
         clean_obj(ctx, tctx);
-        duk_insert(tctx, dhs->func_idx); //put it in same position on stack as main_ctx
-        /* 
-        if(!i)
-            dhs->func_idx=duk_get_top_index(tctx);
-        */
+        duk_put_prop_index(tctx, 0, (duk_uarridx_t)dhs->func_idx); //put it in same position in array as main_ctx
     }
     duk_pop_2(ctx);
+    duk_remove(ctx,fidx);
 }
 
 /* get bytecode from stash and execute it with 
@@ -1415,16 +1418,17 @@ static void copy_all(duk_context *ctx, duk_context *tctx)
 static void copy_mod_func(duk_context *ctx, duk_context *tctx, duk_idx_t idx)
 {
     const char *modname;
-    
-    duk_get_prop_string(ctx,idx,"module");
+
+    duk_get_prop_index(ctx, 0, (duk_uarridx_t)idx);
+    duk_get_prop_string(ctx,-1,"module");
     modname=duk_get_string(ctx,-1);
-    duk_pop(ctx);
+    duk_pop_2(ctx);
 
     duk_push_object(tctx);
     duk_push_string(tctx,modname);
     duk_put_prop_string(tctx,-2,"module");
-    if(duk_get_top_index(tctx)!=idx)
-        duk_replace(tctx,idx);
+
+    duk_put_prop_index(tctx, 0, (duk_uarridx_t)idx);
 }
 
 /* ******************************************
@@ -1490,6 +1494,7 @@ static void *http_dothread(void *arg)
     DHR *dhr = (DHR *)arg;
     evhtp_request_t *req = dhr->req;
     DHS *dhs = dhr->dhs;
+    duk_context *ctx=dhs->ctx;
     evhtp_res res = 200;
     int eno;
 
@@ -1500,14 +1505,19 @@ static void *http_dothread(void *arg)
         pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
     /* copy function ref to top of stack */
-    duk_dup(dhs->ctx, dhs->func_idx);
+    duk_get_prop_index(ctx, 0, (duk_uarridx_t)dhs->func_idx);
     /* push an empty object */
-    duk_push_object(dhs->ctx);
+    duk_push_object(ctx);
     /* populate object with details from client */
     push_req_vars(dhs);
 
+    /* delete any previous setting of threadsafe flag */
+    duk_push_global_object(ctx);
+    duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("threadsafe"));
+    duk_pop(ctx);
+
     /* execute function "myfunc({object});" */
-    if ((eno = duk_pcall(dhs->ctx, 1)))
+    if ((eno = duk_pcall(ctx, 1)))
     {
         char msg[] = "<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>%s</pre></p></body></html>";
         if (dhr->have_timeout)
@@ -1517,16 +1527,16 @@ static void *http_dothread(void *arg)
         }
 
         evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
-        if (duk_is_error(dhs->ctx, -1) )
+        if (duk_is_error(ctx, -1) )
         {
-            duk_get_prop_string(dhs->ctx, -1, "stack");
-            evbuffer_add_printf(req->buffer_out, msg, duk_safe_to_string(dhs->ctx, -1));
-            printerr("error in callback: '%s'\n", duk_safe_to_string(dhs->ctx, -1));
-            duk_pop(dhs->ctx);
+            duk_get_prop_string(ctx, -1, "stack");
+            evbuffer_add_printf(req->buffer_out, msg, duk_safe_to_string(ctx, -1));
+            printerr("error in callback: '%s'\n", duk_safe_to_string(ctx, -1));
+            duk_pop(ctx);
         }
-        else if (duk_is_string(dhs->ctx, -1))
+        else if (duk_is_string(ctx, -1))
         {
-            evbuffer_add_printf(req->buffer_out, msg, duk_safe_to_string(dhs->ctx, -1));
+            evbuffer_add_printf(req->buffer_out, msg, duk_safe_to_string(ctx, -1));
         }
         else
         {
@@ -1539,7 +1549,18 @@ static void *http_dothread(void *arg)
 
         return NULL;
     }
-
+    /* a function might conditionally run a c function that sets "threadsafe" false
+       check again if this has changed */
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("threadsafe"));
+    if (duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx,-1) )
+    {
+        duk_get_prop_index(ctx, 0, (duk_uarridx_t)dhs->func_idx);
+        duk_push_false(ctx);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("threadsafe") );
+        duk_pop(ctx);
+    }
+    duk_pop(ctx);
+    
     if (dhr->have_timeout)
     {
         debugf("0x%x, LOCKING in thread_cb\n", (int)x);
@@ -1553,13 +1574,13 @@ static void *http_dothread(void *arg)
     setheaders(req);
 
     /* don't accept functions or arrays */
-    if (duk_is_function(dhs->ctx, -1) || duk_is_array(dhs->ctx, -1))
+    if (duk_is_function(ctx, -1) || duk_is_array(ctx, -1))
     {
-        duk_push_string(dhs->ctx, "Return value cannot be an array or a function");
-        (void)duk_throw(dhs->ctx);
+        duk_push_string(ctx, "Return value cannot be an array or a function");
+        (void)duk_throw(ctx);
     }
     /* object has reply data and options in it */
-    if (duk_is_object(dhs->ctx, -1))
+    if (duk_is_object(ctx, -1))
         res = sendobj(dhs);
     else /* send string or buffer to client */
         sendbuf(dhs);
@@ -1567,7 +1588,7 @@ static void *http_dothread(void *arg)
     if (res)
         sendresp(req, res);
 
-    duk_pop(dhs->ctx);
+    duk_pop(ctx);
 
     debugf("0x%x, UNLOCKING in thread_cb\n", (int)x);
     fflush(stdout);
@@ -1583,8 +1604,9 @@ static duk_context *redo_ctx(int thrno)
     duk_idx_t fno = 0;
     void *bc_ptr, *buf;
     duk_size_t bc_len;
-    duk_init_context(thr_ctx);
 
+    duk_init_context(thr_ctx);
+    duk_push_array(thr_ctx);
     /* copy all the functions previously stored at bottom of stack */
     if (pthread_mutex_lock(&ctxlock) == EINVAL)
     {
@@ -1593,6 +1615,63 @@ static duk_context *redo_ctx(int thrno)
     }
 
     copy_all(main_ctx, thr_ctx);
+        
+    duk_get_prop_index(main_ctx,0,fno);
+    while(!duk_is_undefined(main_ctx,-1))
+    {
+        /* check if this is a module function */
+        if(!duk_is_function(main_ctx,-1) )
+        {
+            duk_push_object(thr_ctx);
+            copy_obj(main_ctx,thr_ctx,0);
+            clean_obj(main_ctx,thr_ctx);
+            duk_put_prop_index(thr_ctx,0,fno); //put object in same position as was in main_ctx
+            
+            duk_pop(main_ctx); // object from array[fno]
+            duk_get_prop_index(main_ctx,0, ++fno); // for next loop in while()
+            continue;
+        }
+
+        if (
+            duk_get_prop_string(main_ctx, -1, DUK_HIDDEN_SYMBOL("is_global")) 
+                && 
+            duk_get_boolean_default(main_ctx, -1, 0)  
+           )
+        {
+            const char *name;
+
+            if (duk_get_prop_string(main_ctx, -1, "name"))
+            {
+                name = duk_get_string(main_ctx, -1);
+                duk_pop_2(main_ctx); //name string and true
+
+                duk_get_global_string(thr_ctx, name); //put already copied function on stack
+                duk_push_string(thr_ctx, name);       //add fname property to function
+                duk_put_prop_string(thr_ctx, -2, "fname");
+                duk_put_prop_index(thr_ctx,0,fno); //put function in same position as was in main_ctx
+
+                //next round
+                duk_pop(main_ctx); // object from array[fno]
+                duk_get_prop_index(main_ctx,0, ++fno); // for next loop in while()
+                continue;
+            }
+            duk_pop(main_ctx);// undefined from get_prop_string "name"
+        }
+        duk_pop(main_ctx); //undefined or boolean from get_prop_string is_global
+
+        /* copy the function */
+        duk_dump_function(main_ctx);
+        bc_ptr = duk_require_buffer_data(main_ctx, -1, &bc_len);
+        buf = duk_push_fixed_buffer(thr_ctx, bc_len);
+        memcpy(buf, (const void *)bc_ptr, bc_len);
+        duk_load_function(thr_ctx);
+        duk_put_prop_index(thr_ctx,0,fno);
+
+        //next round
+        duk_pop(main_ctx); //bytecode
+        duk_get_prop_index(main_ctx,0, ++fno);// for next loop in while()
+
+    }
 
     /* renumber this thread in global "rampart" variable */
     if (!duk_get_global_string(thr_ctx, "rampart"))
@@ -1604,50 +1683,6 @@ static duk_context *redo_ctx(int thrno)
     duk_put_prop_string(thr_ctx, -2, "thread_id");
     duk_put_global_string(thr_ctx, "rampart");
 
-    while (duk_is_object(main_ctx, fno))
-    {
-        /* check if this is a module function */
-        if(!duk_is_function(main_ctx,fno) )
-        {
-            if (duk_has_prop_string(main_ctx,fno,"module") )
-                copy_mod_func(main_ctx, thr_ctx, fno);
-            else
-                break;
-
-            fno++;
-            continue;
-        }
-        /* check if function was already copied in copy_all() */
-        if (duk_get_prop_string(main_ctx, fno, DUK_HIDDEN_SYMBOL("is_global")) && duk_get_boolean(main_ctx, -1))
-        {
-            const char *name;
-            duk_pop(main_ctx); //true
-
-            if (duk_get_prop_string(main_ctx, fno, "name"))
-            {
-                name = duk_get_string(main_ctx, -1);
-                duk_pop(main_ctx); //name string
-
-                duk_get_global_string(thr_ctx, name); //put already copied function on stack
-                duk_push_string(thr_ctx, name);       //add fname property to function
-                duk_put_prop_string(thr_ctx, -2, "fname");
-                duk_insert(thr_ctx, fno);
-                fno++;
-                continue;
-            }
-        }
-
-        duk_pop(main_ctx);
-        duk_dup(main_ctx, fno);
-        duk_dump_function(main_ctx);
-        bc_ptr = duk_require_buffer_data(main_ctx, -1, &bc_len);
-        buf = duk_push_fixed_buffer(thr_ctx, bc_len);
-        memcpy(buf, (const void *)bc_ptr, bc_len);
-        duk_load_function(thr_ctx);
-        duk_pop(main_ctx);
-        duk_insert(thr_ctx, fno);
-        fno++;
-    }
     pthread_mutex_unlock(&ctxlock);
 
     duk_destroy_heap(thread_ctx[thrno]);
@@ -1666,7 +1701,7 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
     struct timeval now;
     int ret = 0;
 
-//pid_t x = syscall(SYS_gettid);
+    //printf("in thread\n");
 #ifdef RP_TIMEO_DEBUG
     pthread_t x = pthread_self();
     printf("%d, start\n", (int)x);
@@ -1736,16 +1771,18 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
         fflush(stdout);
         if(dhs->ismod)
         {
-            if(duk_get_prop_string(dhs->ctx, dhs->mod_idx, "module"))
+            duk_get_prop_index(dhs->ctx, 0, (duk_uarridx_t)dhs->mod_idx);
+            if(duk_get_prop_string(dhs->ctx, -1, "module"))
                 printerr( "timeout in module:%s()\n", duk_to_string(dhs->ctx, -1));
             else
                 printerr( "timeout in callback\n");
         
-            duk_pop(dhs->ctx);
+            duk_pop_2(dhs->ctx);
         }
         else
         {
-            duk_get_prop_string(dhs->ctx, dhs->func_idx, "fname");
+            duk_get_prop_index(dhs->ctx, 0, (duk_uarridx_t)dhs->func_idx);
+            duk_get_prop_string(dhs->ctx, -1, "fname");
             if (duk_is_undefined(dhs->ctx, -1))
             {
                 duk_pop(dhs->ctx);
@@ -1758,9 +1795,10 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
             }
             else
                 printerr( "timeout in %s()\n", duk_to_string(dhs->ctx, -1));
+
+            duk_pop_2(dhs->ctx);
         }
         send500(req, "Timeout in Script");
-        duk_pop(dhs->ctx);
     }
 
     pthread_join(script_runner, NULL);
@@ -1817,6 +1855,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
     FORKINFO *finfo = forkinfo[dhs->threadno];
     char *cbor;
     uint32_t msgOutSz = 0;
+    duk_context *ctx = dhs->ctx;
 
     signal(SIGPIPE, SIG_IGN); //macos
     signal(SIGCHLD, SIG_IGN);
@@ -1903,10 +1942,10 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         /* on first round, just forked, so we have all the request info
             no need to pipe it */
         /* copy function ref to top of stack */
-        duk_dup(dhs->ctx, dhs->func_idx);
+        duk_get_prop_index(ctx, 0, (duk_uarridx_t)dhs->func_idx);
 
         /* push an empty object */
-        duk_push_object(dhs->ctx);
+        duk_push_object(ctx);
         /* populate object with details from client (requires conn) */
         push_req_vars(dhs);
 
@@ -1928,34 +1967,34 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             /* In first loop, req info is on the stack since we just forked.
                In subsequent loops, req info is piped in  */
             tprintf("doing callback\n");
-            if ((eno = duk_pcall(dhs->ctx, 1)))
+            if ((eno = duk_pcall(ctx, 1)))
             {
-                if (duk_is_error(dhs->ctx, -1) || duk_is_string(dhs->ctx, -1))
+                if (duk_is_error(ctx, -1) || duk_is_string(ctx, -1))
                 {
 
                     char msg[] = "{\"headers\":{\"status\":500},\"html\":\"<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>\\n%s</pre></p></body></html>\"}";
                     char *err;
-                    if (duk_is_error(dhs->ctx, -1))
+                    if (duk_is_error(ctx, -1))
                     {
-                        duk_get_prop_string(dhs->ctx, -1, "stack");
-                        duk_remove(dhs->ctx,-2);
+                        duk_get_prop_string(ctx, -1, "stack");
+                        duk_remove(ctx,-2);
                     }
-                    printerr("error in callback: %s\n",duk_get_string(dhs->ctx,-1));
-                    err = (char *)duk_json_encode(dhs->ctx, -1);
+                    printerr("error in callback: %s\n",duk_get_string(ctx,-1));
+                    err = (char *)duk_json_encode(ctx, -1);
                     //get rid of quotes
                     err[strlen(err) - 1] = '\0';
                     err++;
-                    duk_push_sprintf(dhs->ctx, msg, err);
+                    duk_push_sprintf(ctx, msg, err);
                 }
                 else
                 {
-                    duk_push_string(dhs->ctx, "{\"headers\":{\"status\":500},\"html\":\"<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>unknown javascript error</pre></p></body></html>\"}");
+                    duk_push_string(ctx, "{\"headers\":{\"status\":500},\"html\":\"<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>unknown javascript error</pre></p></body></html>\"}");
                 }
-                duk_json_decode(dhs->ctx, -1);
+                duk_json_decode(ctx, -1);
             }
             /* encode the result of duk_pcall or the error message if fails */
-            duk_cbor_encode(dhs->ctx, -1, 0);
-            cbor = duk_get_buffer_data(dhs->ctx, -1, &bufsz);
+            duk_cbor_encode(ctx, -1, 0);
+            cbor = duk_get_buffer_data(ctx, -1, &bufsz);
             msgOutSz = (uint32_t)bufsz;
             if(conn)
             {
@@ -1971,16 +2010,16 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             if (!have_threadsafe_val)
             {
                 if (
-                    duk_get_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("threadsafe")) &&
-                    duk_is_boolean(dhs->ctx, -1) &&
-                    duk_get_boolean(dhs->ctx, -1) == 0)
+                    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("threadsafe")) &&
+                    duk_is_boolean(ctx, -1) &&
+                    duk_get_boolean(ctx, -1) == 0)
                     childwrite(child2par[1], "F", 1); //message that thread safe==false
                 else
                     childwrite(child2par[1], "X", 1); //message that thread safe is not to be set one way or another
 
-                duk_push_global_object(dhs->ctx);
-                duk_del_prop_string(dhs->ctx, -1, DUK_HIDDEN_SYMBOL("threadsafe"));
-                duk_pop_2(dhs->ctx);
+                duk_push_global_object(ctx);
+                duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("threadsafe"));
+                duk_pop_2(ctx);
                 have_threadsafe_val = 1;
             }
             else
@@ -1994,7 +2033,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 
             tprintf("child sent message %d long. Waiting for input\n", (int)msgOutSz);
 
-            duk_pop(dhs->ctx); //buffer
+            duk_pop(ctx); //buffer
             /* wait here for the next request and get it's size */
             childread(par2child[0], &msgOutSz, sizeof(uint32_t));
             tprintf("child to receive message %d long on %d\n", (int)msgOutSz, par2child[0]);
@@ -2002,8 +2041,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             childread(par2child[0], &have_threadsafe_val, sizeof(int));
 
             childread(par2child[0], &(dhs->func_idx), sizeof(duk_idx_t));
-            duk_dup(dhs->ctx, dhs->func_idx);
-
+            duk_get_prop_index(ctx, 0, (duk_uarridx_t)dhs->func_idx);
             {
                 char *jbuf=NULL, *p;
                 
@@ -2019,10 +2057,10 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                     p += TOTread;
                     TOTread = read(par2child[0], p, toread);
                 }
-                memcpy(duk_push_fixed_buffer(dhs->ctx, (duk_size_t)msgOutSz), jbuf, (size_t)msgOutSz);
+                memcpy(duk_push_fixed_buffer(ctx, (duk_size_t)msgOutSz), jbuf, (size_t)msgOutSz);
                 free(jbuf);
             }
-            duk_cbor_decode(dhs->ctx, -1, 0);
+            duk_cbor_decode(ctx, -1, 0);
 
         } while (1);
 
@@ -2062,12 +2100,12 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             tprintf("is preforked in parent, c2p:%d p2c%d\n", finfo->child2par, finfo->par2child);
 
             /* push an empty object */
-            duk_push_object(dhs->ctx);
+            duk_push_object(ctx);
             /* populate object with details from client */
             push_req_vars(dhs);
             /* convert to cbor and send to child */
-            duk_cbor_encode(dhs->ctx, -1, 0);
-            cbor = duk_get_buffer_data(dhs->ctx, -1, &bufsz);
+            duk_cbor_encode(ctx, -1, 0);
+            cbor = duk_get_buffer_data(ctx, -1, &bufsz);
 
             msgOutSz = (uint32_t)bufsz;
 
@@ -2078,7 +2116,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             parentwrite(finfo->par2child, cbor, msgOutSz);
             tprintf("parent sent cbor, length %d\n", (int)msgOutSz);
 
-            duk_pop(dhs->ctx);
+            duk_pop(ctx);
         }
         else
         {
@@ -2122,9 +2160,10 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                         }
                     }
                     finfo->childpid = 0;
-                    duk_get_prop_string(dhs->ctx, dhs->func_idx, "fname");
-                    printerr( "timeout in %s() %f > %f\n", duk_to_string(dhs->ctx, -1), celapsed, maxtime);
-                    duk_pop(dhs->ctx);
+                    duk_get_prop_index(ctx, 0, (duk_uarridx_t)dhs->func_idx);
+                    duk_get_prop_string(ctx, -1, "fname");
+                    printerr( "timeout in %s() %f > %f\n", duk_to_string(ctx, -1), celapsed, maxtime);
+                    duk_pop_2(ctx);
                     send500(req, "Timeout in Script");
                     return;
                 }
@@ -2164,17 +2203,17 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                 send500(req, "Error in Child Process");
                 return;
             }
-            memcpy(duk_push_fixed_buffer(dhs->ctx, (duk_size_t)bsize), jbuf, (size_t)bsize);
+            memcpy(duk_push_fixed_buffer(ctx, (duk_size_t)bsize), jbuf, (size_t)bsize);
         }
         /* decode message */
-        duk_cbor_decode(dhs->ctx, -1, 0);
-
+        duk_cbor_decode(ctx, -1, 0);
         /* if we don't already have it, set the threadsafe info on the function */
         if (!have_threadsafe_val)
         {
-            duk_push_boolean(dhs->ctx, (duk_bool_t)is_threadsafe);
-            duk_put_prop_string(dhs->ctx, dhs->func_idx, DUK_HIDDEN_SYMBOL("threadsafe"));
-
+            duk_get_prop_index(ctx, 0, (duk_uarridx_t)dhs->func_idx);
+            duk_push_boolean(ctx, (duk_bool_t)is_threadsafe);
+            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("threadsafe"));
+            duk_pop(ctx);
             if (pthread_mutex_lock(&ctxlock) == EINVAL)
             {
                 printerr( "could not obtain lock in http_callback\n");
@@ -2183,8 +2222,10 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             /* mark it as thread safe on main_ctx as well (for timeout/redo_ctx, but not if module) */
             if(!dhs->ismod)
             {
+                duk_get_prop_index(main_ctx, 0, (duk_uarridx_t)dhs->func_idx);
                 duk_push_boolean(main_ctx, (duk_bool_t)is_threadsafe);
-                duk_put_prop_string(main_ctx, dhs->func_idx, DUK_HIDDEN_SYMBOL("threadsafe"));
+                duk_put_prop_string(main_ctx, -2, DUK_HIDDEN_SYMBOL("threadsafe"));
+                duk_pop(main_ctx);
             }
             pthread_mutex_unlock(&ctxlock);
         }
@@ -2193,23 +2234,22 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 
     /* set some headers */
     setheaders(req);
-
     /* don't accept arrays */
-    if (duk_is_array(dhs->ctx, -1))
+    if (duk_is_array(ctx, -1))
     {
-        duk_push_string(dhs->ctx, "Return value cannot be an array");
-        (void)duk_throw(dhs->ctx);
+        duk_push_string(ctx, "Return value cannot be an array");
+        (void)duk_throw(ctx);
     }
 
     /* object has reply data and options in it */
-    if (duk_is_object(dhs->ctx, -1))
+    if (duk_is_object(ctx, -1))
         res = sendobj(dhs);
     else /* send string or buffer to client */
         sendbuf(dhs);
 
     if (res)
         sendresp(req, res);
-    duk_pop(dhs->ctx);
+    duk_pop(ctx);
     tprintf("Parent exit\n");
 }
 
@@ -2220,23 +2260,28 @@ static duk_idx_t getmod(DHS *dhs)
 {
     duk_idx_t idx=dhs->func_idx;
     duk_context *ctx=dhs->ctx;
+    int loaded_idx=-1;
     const char *mod;
     char msg[] = "<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>%s</pre></p></body></html>";
 
-    duk_get_prop_string(ctx,idx,"module");
+    duk_get_prop_index(ctx, 0, (duk_uarridx_t)idx);
+
+    duk_get_prop_string(ctx,-1,"module");
     mod=duk_get_string(ctx,-1);
     duk_pop(ctx);
 
-    /* is it already on the stack? */
-    if (duk_get_prop_string(ctx,idx,"loadedmod") )
+    /* is it already in the array? */
+    if (duk_get_prop_string(ctx, -1, "loadedmod") )
     {
         struct stat sb;
         const char *fn;
-        duk_idx_t retidx;
         
-        retidx=(duk_idx_t) duk_get_int(ctx,-1);
+        loaded_idx = duk_get_int(ctx,-1);
         duk_pop(ctx); /*loadedmod */
-        duk_get_prop_string(ctx,retidx,"module_id");
+
+        duk_get_prop_index(ctx, 0, (duk_uarridx_t)loaded_idx);
+
+        duk_get_prop_string(ctx, -1, "module_id");
         fn=duk_get_string(ctx,-1);
         duk_pop(ctx);
 
@@ -2244,18 +2289,16 @@ static duk_idx_t getmod(DHS *dhs)
         {
             time_t lmtime;
 
-            duk_get_prop_string(ctx,retidx,"mtime");
+            duk_get_prop_string(ctx,-1,"mtime");
             lmtime = (time_t)duk_get_number(ctx,-1);
             duk_pop(ctx);           
             //printf("%d >= %d?\n",(int)lmtime,(int)sb.st_mtime);
             if(lmtime>=sb.st_mtime)
-                return retidx;
-            else
-            /* remove old here, reload module below */
             {
-                duk_remove(ctx,retidx);
-                //printf("reload\n");
+                duk_pop_2(ctx); //items from idx and retidx of array at 0
+                return (duk_uarridx_t)loaded_idx;
             }
+            /* else leave it in the array at 0, replace it below */
         }
         /* else file is gone?  Send error */
         else 
@@ -2266,6 +2309,7 @@ static duk_idx_t getmod(DHS *dhs)
             sendresp(dhs->req, 500);
             return -1;
         }
+        duk_pop(ctx); // the function at retidx
     }
     else duk_pop(ctx);/* loadedmod -undefined */
 
@@ -2289,10 +2333,10 @@ static duk_idx_t getmod(DHS *dhs)
         sendresp(dhs->req, 500);
         return -1;
     }
-
+    // on stack is module.exports
 
     duk_get_prop_string(ctx,-1,"exports");
-    /* take mtime & id from modules and put it in exports, 
+    /* take mtime & id from "module" and put it in module.exports, 
         signal next run requires a refork by setting dhs->ismod=2;
         then remove modules */
     duk_get_prop_string(ctx,-2,"mtime");
@@ -2300,15 +2344,22 @@ static duk_idx_t getmod(DHS *dhs)
     duk_get_prop_string(ctx,-2,"id");
     duk_put_prop_string(ctx,-2,"module_id");
     dhs->ismod=2;
-    duk_remove(ctx,-2);
+    duk_remove(ctx,-2); // now stack is [ func_array, ..., {module:xxx}, func_exports ]
+
+    if(loaded_idx == -1 )
+        /* first time inserting module.exports into array */
+        loaded_idx=duk_get_length(ctx,0); // length of array/next spot in array holding callback functions
 
     /* the location on the stack of the callback loaded from the module */
-    duk_push_int( ctx, (duk_int_t)duk_get_top_index(ctx) );
-    duk_put_prop_string(ctx,idx,"loadedmod");
+    duk_push_int( ctx, (duk_int_t)loaded_idx );
+    duk_put_prop_string(ctx,-3,"loadedmod");
 
     duk_push_sprintf(ctx,"module:%s",mod);
     duk_put_prop_string(ctx,-2,"fname");
-    return duk_get_top_index(ctx);
+
+    duk_put_prop_index(ctx, 0, (duk_uarridx_t)loaded_idx); // now stack is [ func_array, ..., {module:xxx} ]
+    duk_pop(ctx);  //{module:xxx} from idx
+    return (duk_idx_t) loaded_idx;
 }
 
 static void http_callback(evhtp_request_t *req, void *arg)
@@ -2345,13 +2396,14 @@ static void http_callback(evhtp_request_t *req, void *arg)
     /* fork until we know it is safe not to fork:
        function will have property threadsafe:true if forking not required 
        after the first time it is called in http_fork_callback              */
-    if (duk_get_prop_string(dhs->ctx, dhs->func_idx, DUK_HIDDEN_SYMBOL("threadsafe")))
+    duk_get_prop_index(dhs->ctx, 0, (duk_uarridx_t)dhs->func_idx);
+    if (duk_get_prop_string(dhs->ctx, -1, DUK_HIDDEN_SYMBOL("threadsafe")))
     {
         if (duk_is_boolean(dhs->ctx, -1) && duk_get_boolean(dhs->ctx, -1))
             dofork = 0;
         have_threadsafe_val = 1;
     }
-    duk_pop(dhs->ctx);
+    duk_pop_2(dhs->ctx);
 
     if (dofork)
         http_fork_callback(req, dhs, have_threadsafe_val);
@@ -2599,7 +2651,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
     int secure = 0, usev6 = 1, usev4 = 1, confThreads = -1, mthread = 0, daemon=0;
     struct stat f_stat;
     struct timeval ctimeout;
-    duk_idx_t fpos = 0;
+//    duk_idx_t fpos = 0;
+    duk_uarridx_t fpos =0;
     pid_t dpid=0;
 
     ctimeout.tv_sec = RP_TIME_T_FOREVER;
@@ -2608,13 +2661,21 @@ duk_ret_t duk_server_start(duk_context *ctx)
     access_fh=stdout;
     error_fh=stderr;
 
-    i = 0;
+    /*  an array at stack index 0 to hold all the callback function 
+        This gets it off of an otherwise growing and shrink stack and makes
+        managment of their locations less error prone in the thread stacks.
+    */
+    duk_push_array(ctx);
+    duk_insert(ctx,0);    
+
+    i = 1;
     if (
         (duk_is_object(ctx, i) && !duk_is_array(ctx, i) && !duk_is_function(ctx, i)) ||
         (duk_is_object(ctx, ++i) && !duk_is_array(ctx, i) && !duk_is_function(ctx, i)))
         ob_idx = i;
 
-    i = !i; /* get the other option. There's only 2 */
+    if(i==2) i=1; /* get the other option. There are only 2 */
+    else i=2;
 
     if (duk_is_function(ctx, i))
         dhs->func_idx = i;
@@ -2930,6 +2991,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             tctx = thread_ctx[i];
             /* do all the normal startup done in duk_cmdline but for each thread */
             duk_init_context(tctx);
+            duk_push_array(tctx);
             copy_all(ctx, tctx);
         }
 
@@ -2976,11 +3038,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     char *path, *fspath, *fs = (char *)NULL, *s = (char *)NULL;
 
                     if (duk_is_object(ctx, -1))
-                    { /* map to function */
-                        /* move the function to earlier in the stack 
-                           the stack [object, ?function?, mapobj, enum, path, fspath|func ] 
-                                           move to here--^         
-                        */
+                    { /* map to function or module */
+                        /* copy the function to array at stack pos 0 */
                         DHS *cb_dhs;
                         const char *fname;
                         int ismod=0;
@@ -3013,11 +3072,13 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             free(s);
                             (void)duk_throw(ctx);
                         }
+                        /* copy function into array at pos 0 in stack and into index fpos in array */
+                        duk_put_prop_index(ctx,0,fpos);
 
-                        duk_insert(ctx, fpos);
                         cb_dhs = new_dhs(ctx, fpos);
                         cb_dhs->ismod=ismod;
-                        // func_idx will change to imported/required mod, save spot of object
+
+                        // func_idx will change to imported/required mod, save spot of object here in mod_idx
                         if(ismod)
                             cb_dhs->mod_idx=fpos;
 
@@ -3031,9 +3092,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         }
                         else
                             copy_cb_func(cb_dhs, totnthreads);
-
+                        
                         fpos++;
 
+                        /* register callback with evhtp using the callback dhs struct */
                         if (*s == '*' || *(s + strlen(s) - 1) == '*')
                         {
                             if (usev4)
@@ -3184,7 +3246,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     if (dhs->func_idx != -1)
     {
         duk_pull(ctx, dhs->func_idx);
-        duk_insert(ctx, fpos);
+        duk_put_prop_index(ctx, 0, fpos);
         dhs->func_idx = fpos;
         copy_cb_func(dhs, totnthreads);
         if (usev4)
