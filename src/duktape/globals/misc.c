@@ -118,6 +118,16 @@ RPPATH rp_find_path(char *file, char *subdir)
     char path[PATH_MAX];
     int i=0;
     struct stat sb;
+
+    /* look for it as given before searching paths */
+    if (stat(file, &sb) != -1)
+    {
+        ret.stat=sb;
+        if(!realpath(file,ret.path))
+            strcpy(ret.path,file);
+        return ret;        
+    }
+
 //printf("looking for file %s%s\n",subdir,file);
     if(!home || access(home, R_OK)==-1) home="/tmp";
 

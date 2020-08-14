@@ -294,7 +294,7 @@ var pid=server.start(
     connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
     useThreads: true, /* make server multi-threaded. */
 
-    //user:"mywebuser", /* if binding to, e.g. port 80, start as root and drop privileges as the user named here */
+    //user:"unpriv_user", /* if binding to, e.g. port 80, start as root and drop privileges as the user named here */
 
     /*** logging ***/
     log: true,           //turn logging on, by default goes to stdout/stderr
@@ -328,7 +328,7 @@ var pid=server.start(
     /* a custom 404 page */
     notFoundFunc: function(req){
         return {
-            headers: {status:404},
+            status:404,
             html: '<html><head><title>404 Not Found</title></head><body style="background: url(/img/page-background.png);"><center><h1>Not Found</h1><p>The requested URL '+
                     req.path.path+
             ' was not found on this server.</p><p><img style="width:65%" src="/inigo-not-fount.jpg"></p></center></body></html>'
@@ -337,12 +337,16 @@ var pid=server.start(
 
     /* **********************************************************
        map urls to functions or paths on the filesystem 
-       order by specificity.  '/' should always be last  
        If it ends in a '/' then matches everything in that path
        except a more specific ('/something.html') path
        ********************************************************** */
     map:
       {
+        //  filesystem mappings are always folders.  
+        //   "/tetris"    becomes  "/tetris/
+        //   "./mPurpose" becomes  "./mPurpose/"
+        "/":                  "./mPurpose",
+        "/tetris":            "./tetris-tutorial/",
         /* url to function mappings */
         "/dbtest.html":       inserttest_callback,
         "/simpledbtest.html": simple_callback,
@@ -351,12 +355,8 @@ var pid=server.start(
         /* matching a glob to a function */
         /* use function from module "servermod.js" */
         "/showreq*":          {module:"servermod"},
+        "/modtest/":	      {modulePath:"./servermods/"}
 
-        //  filesystem mappings are always folders.  
-        //   "/tetris"    becomes  "/tetris/
-        //   "./mPurpose" becomes  "./mPurpose/"
-        "/tetris":            "./tetris-tutorial/",
-        "/":                  "./mPurpose"
       }
 }
      /* 

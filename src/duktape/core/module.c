@@ -109,22 +109,35 @@ static duk_ret_t load_so_module(duk_context *ctx)
     return 0;
 }
 
-static duk_ret_t resolve_id(duk_context *ctx)
+static void resolve_id(duk_context *ctx, const char *request_id)
 {
-    const char *request_id = duk_require_string(ctx, -1);
     char *id = NULL;
     int module_loader_idx;
     RPPATH rppath;
+    size_t extlen=0;
 
     for (module_loader_idx = 0; module_loader_idx < sizeof(module_loaders) / sizeof(struct module_loader); module_loader_idx++)
     {
-        duk_push_string(ctx, request_id);
-        duk_push_string(ctx, module_loaders[module_loader_idx].ext);
-        duk_concat(ctx, 2);
+        const char *fext;
 
-//        id = realpath(duk_get_string(ctx, -1), 0);
-        rppath=rp_find_path((char *)duk_get_string(ctx,-1), "modules/");
-        id = (strlen(rppath.path))?rppath.path:NULL;
+        extlen=strlen(module_loaders[module_loader_idx].ext);
+        fext=request_id + ( strlen(request_id) - extlen  );
+
+        if( extlen && !strcmp(fext,module_loaders[module_loader_idx].ext) )
+        {
+            rppath=rp_find_path((char *)duk_get_string(ctx,-1), "modules/");
+            id = (strlen(rppath.path))?rppath.path:NULL;
+        }
+        else
+        {
+            duk_push_string(ctx, request_id);
+            duk_push_string(ctx, module_loaders[module_loader_idx].ext);
+            duk_concat(ctx, 2);
+            rppath=rp_find_path((char *)duk_get_string(ctx,-1), "modules/");
+            id = (strlen(rppath.path))?rppath.path:NULL;
+            duk_pop(ctx);
+        }
+
         if (id != NULL)
         {
             break;
@@ -134,7 +147,7 @@ static duk_ret_t resolve_id(duk_context *ctx)
     if (id == NULL)
     {
         duk_push_null(ctx);
-        return 1;
+        return;
     }
 
     duk_push_object(ctx);
@@ -142,8 +155,7 @@ static duk_ret_t resolve_id(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "id");
     duk_push_int(ctx, module_loader_idx);
     duk_put_prop_string(ctx, -2, "module_loader_idx");
-//    free(id);
-    return 1;
+    return;
 }
 
 duk_ret_t duk_require(duk_context *ctx)
@@ -159,9 +171,7 @@ duk_ret_t duk_resolve(duk_context *ctx)
     int module_loader_idx;
     const char *id;
 
-    duk_push_c_function(ctx, resolve_id, 1);
-    duk_dup(ctx, 0);
-    duk_call(ctx, 1);
+    resolve_id(ctx, duk_get_string(ctx,0));
 
     if (duk_is_null(ctx, -1))
     {

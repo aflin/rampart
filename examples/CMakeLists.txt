@@ -3,6 +3,7 @@ set(EXAMPLE_FILES
 	"servermod.js"
 	"mPurpose"
 	"tetris-tutorial"
+	"servermods"
 )
 
 # Copying to the src dir is temporary. In the future
