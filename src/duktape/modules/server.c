@@ -1532,6 +1532,7 @@ DHR
 #define getfunction(dhs) do {\
     duk_get_prop_index( (dhs)->ctx, 0, (duk_uarridx_t)((dhs)->func_idx) );\
     if( !duk_is_function( (dhs)->ctx, -1) ) {\
+        /* printf("getting %s from %d\n",(dhs)->module_name, (int)(dhs)->func_idx);printstack((dhs)->ctx);*/\
         duk_get_prop_string( (dhs)->ctx, -1, (dhs)->module_name);\
         duk_remove( (dhs)->ctx, -2); /* the module object */\
     }\
@@ -2452,7 +2453,7 @@ static int getmod_path(DHS *dhs)
         // it will be valid for as long as the key exists
         duk_push_string(ctx,modname);
         dhs->module_name=duk_get_string(ctx,-1);
-        //printf("module=%s\n",dhs->module_name);
+
         ret=getmod(dhs);
         duk_pop(ctx); //modname
         return ret;
@@ -2523,7 +2524,8 @@ static void http_callback(evhtp_request_t *req, void *arg)
     /* fork until we know it is safe not to fork:
        function will have property threadsafe:true if forking not required 
        after the first time it is called in http_fork_callback              */
-    duk_get_prop_index(dhs->ctx, 0, (duk_uarridx_t)dhs->func_idx);
+//    duk_get_prop_index(dhs->ctx, 0, (duk_uarridx_t)dhs->func_idx);
+    getfunction(dhs);
     if (duk_get_prop_string(dhs->ctx, -1, DUK_HIDDEN_SYMBOL("threadsafe")))
     {
         if (duk_is_boolean(dhs->ctx, -1) && duk_get_boolean(dhs->ctx, -1))
