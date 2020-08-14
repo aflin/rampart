@@ -107,7 +107,7 @@ DHS
     int threadno;           // our current thread number
     int module;             // is normal fuction if 0, 1 is js module, 2 js module needs reload.
     int pathlen;            // length of the url path if module==MODULE_PATH
-    const char *module_name;      // name of the module 
+    char *module_name;      // name of the module 
 };
 
 DHS *dhs404 = NULL;
@@ -2113,7 +2113,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             /* get the module name, if any */
             if( duk_get_prop_string(ctx, -1, "rp_module_name" ) )
             {
-                dhs->module_name=duk_get_string(ctx,-1);
+                dhs->module_name=(char *) duk_get_string(ctx,-1);
                 duk_del_prop_string(ctx, -2, "rp_module_name");
             }
             else
@@ -2447,12 +2447,7 @@ static int getmod_path(DHS *dhs)
         s=strchr(s,'.');
         if(s) *s='\0';
 
-        // put name on stack and assign it to dhs->module_name.
-        // the same string will be pushed as a key in getmod
-        // and duktape will store it as a pointer to the same location.
-        // it will be valid for as long as the key exists
-        duk_push_string(ctx,modname);
-        dhs->module_name=duk_get_string(ctx,-1);
+        dhs->module_name=strdup(modname);
 
         ret=getmod(dhs);
         duk_pop(ctx); //modname
@@ -2483,6 +2478,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
     newdhs.threadno = thrno;
     newdhs.pathlen = dhs->pathlen;
     newdhs.module=dhs->module;
+    newdhs.module_name=NULL;
     dhs = &newdhs;
     if(dhs->module==MODULE_FILE)
     {
@@ -2495,17 +2491,21 @@ static void http_callback(evhtp_request_t *req, void *arg)
         */
         duk_get_prop_index(dhs->ctx, 0, (duk_uarridx_t)dhs->func_idx);
         duk_get_prop_string(dhs->ctx,-1,"module");
-        dhs->module_name=duk_get_string(dhs->ctx,-1);
+        dhs->module_name=strdup(duk_get_string(dhs->ctx,-1));
         duk_pop_2(dhs->ctx);
         res=getmod(dhs);
         if(res==-1)
+        {
+            free(dhs->module_name);
             return;
+        }
         else if (res==0)
         {
             char submsg[64+strlen(dhs->module_name)];
             snprintf(submsg,64+strlen(dhs->module_name),"Error: Could not resolve module id %s: No such file or directory",dhs->module_name);
             evbuffer_add_printf(dhs->req->buffer_out, msg500, submsg);
             sendresp(dhs->req, 500);
+            free(dhs->module_name);
             return;
         }
     }
@@ -2513,11 +2513,15 @@ static void http_callback(evhtp_request_t *req, void *arg)
     {
         int res=getmod_path(dhs);
         if(res==-1)
+        {
+            free(dhs->module_name);
             return;
+        }
         else if (res==0)
         {
             printf("sending 404\n");
             send404(dhs->req);
+            free(dhs->module_name);
             return;
         }
     }
@@ -2538,6 +2542,8 @@ static void http_callback(evhtp_request_t *req, void *arg)
         http_fork_callback(req, dhs, have_threadsafe_val);
     else
         http_thread_callback(req, dhs, thrno);
+
+    free(dhs->module_name);
 }
 
 /* bind to addr and port.  Return mallocd string of addr, which 
