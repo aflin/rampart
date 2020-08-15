@@ -2448,9 +2448,7 @@ static int getmod_path(DHS *dhs)
         if(s) *s='\0';
 
         dhs->module_name=strdup(modname);
-
         ret=getmod(dhs);
-        duk_pop(ctx); //modname
         return ret;
     }
 }
