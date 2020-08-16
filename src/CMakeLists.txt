@@ -177,6 +177,7 @@ install(TARGETS
 	rpcrypto
 	rpcurl
 	rpsql
+	
 	DESTINATION modules
 )
 
@@ -196,14 +197,42 @@ install(CODE "execute_process( \
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
     \"${PROJECT_BINARY_DIR}/src/babel.js\" \
+    \"${PROJECT_BINARY_DIR}/src/babel-polyfill.js\" \
     \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
     )"
 )
 
+install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/examples/sample-server")
+
+set(INSTALL_EXAMPLE_DIRS
+        "mPurpose"
+        "tetris-tutorial"
+        "servermods"
+)
+
+foreach(INSTALL_EXAMPLE_DIR ${INSTALL_EXAMPLE_DIRS})
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy_directory \
+    \"${PROJECT_BINARY_DIR}/src/${INSTALL_EXAMPLE_DIR}\" \
+    \"${CMAKE_INSTALL_PREFIX}/examples/sample-server/${INSTALL_EXAMPLE_DIR}\"   \
+    )"
+)
+endforeach()
+
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_BINARY_DIR}/src/babel-polyfill.js\" \
-    \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
+    \"${PROJECT_BINARY_DIR}/src/server.js\" \
+    \"${PROJECT_BINARY_DIR}/src/servermod.js\" \
+    \"${CMAKE_INSTALL_PREFIX}/examples/sample-server\"   \
+    )"
+)
+
+
+
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy_directory \
+    \"${PROJECT_BINARY_DIR}/src/wikipedia_search\" \
+    \"${CMAKE_INSTALL_PREFIX}/examples/wikipedia_search\"   \
     )"
 )
 

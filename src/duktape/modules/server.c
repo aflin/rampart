@@ -3459,7 +3459,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
             }
         }
         scheme="https://";
-    }
+    } 
+    else
+        free(ssl_config);
 
     if (dhs->func_idx != -1)
     {

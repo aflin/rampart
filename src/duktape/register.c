@@ -35,4 +35,5 @@ void duk_init_context(duk_context *ctx)
     duk_ra_init(ctx);                         /* register ramis functions */
     duk_printf_init(ctx);                     /* register the printf and sprintf functions from printf.c */
     duk_misc_init(ctx);                       /* register functions in misc.c */
+    duk_process_init(ctx);                    /* register process vars */
 }

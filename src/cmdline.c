@@ -13,6 +13,7 @@
 #include "rp.h"
 
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
+char *RP_script_path=NULL;
 
 #define RP_REPL_GREETING             \
     "         |>>            |>>\n"     \
@@ -546,46 +547,21 @@ int main(int argc, char *argv[])
     duk_context *ctx = duk_create_heap_default();
     if (!ctx)
     {
-        printf("could not create duktape context\n");
+        fprintf(stderr,"could not create duktape context\n");
         return 1;
     }
 
     duk_init_context(ctx);
 
-    {   /* add process.argv */
-        int i=0;
+    /* skip past process name */
+    argc--;
+    argv++;
 
-        duk_push_global_object(ctx);
-        /* get global symbol "process" */
-        if(!duk_get_prop_string(ctx,-1,"process"))
-        {
-            duk_pop(ctx);
-            duk_push_object(ctx);
-        }
-        
-        duk_push_array(ctx); /* process. */
-
-        for (i=0;i<argc;i++)
-        {
-            duk_push_string(ctx,argv[i]);
-            duk_put_prop_index(ctx,-2,(duk_uarridx_t)i);
-        }
-        duk_put_prop_string(ctx,-2,"argv");
-        duk_push_string(ctx,argv[0]);
-        duk_put_prop_string(ctx,-2,"argv0");
-        duk_put_prop_string(ctx,-2,"process");
-        duk_pop(ctx);
-
-        /* skip past process name */
+    /* skip to filename, if any */
+    while( argc > 1)
+    {
         argc--;
         argv++;
-
-        /* skip to filename, if any */
-        while( argc > 1)
-        {
-            argc--;
-            argv++;
-        }
     }
 
     {

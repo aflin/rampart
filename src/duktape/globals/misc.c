@@ -13,6 +13,7 @@
 #include "../core/duktape.h"
 #include "../../rp.h"
 extern char **environ;
+extern char *RP_script_path;
 
 /* utility function for global object:
       var buf=toBuffer(val); //fixed if string, same type if already buffer
@@ -128,6 +129,18 @@ RPPATH rp_find_path(char *file, char *subdir)
         return ret;        
     }
 
+    /* look for it in scriptPath */
+    strcpy(path,RP_script_path);
+    strcat(path,"/");
+    strcat(path,file);
+    if (stat(path, &sb) != -1)
+    {
+        ret.stat=sb;
+        if(!realpath(path,ret.path))
+            strcpy(ret.path,file);
+        return ret;
+    }
+
 //printf("looking for file %s%s\n",subdir,file);
     if(!home || access(home, R_OK)==-1) home="/tmp";
 
@@ -143,10 +156,10 @@ RPPATH rp_find_path(char *file, char *subdir)
     while(1) {
 //printf("checking %s\n",path);
         if (stat(path, &sb) != -1)
-{
+        {
 //printf("break at i=%d\n",i);
             break;
-}
+        }
 
 //printf ("not found\n");
         if(i==nlocs)
@@ -468,7 +481,7 @@ duk_ret_t duk_rp_dehexify(duk_context *ctx)
 
 
 
-/* ********************* process.exit, process.env ********************** *
+/* ********************* process.exit, process.env and others********************** *
    process.args is in main
 */
 void duk_process_init(duk_context *ctx)
@@ -505,6 +518,54 @@ void duk_process_init(duk_context *ctx)
 
     duk_push_c_function(ctx,duk_process_exit,1);
     duk_put_prop_string(ctx,-2,"exit");
+
+    {   /* add process.argv */
+        int i=0;
+
+        duk_push_array(ctx); /* process.argv */
+
+        for (i=0;i<rampart_argc;i++)
+        {
+            duk_push_string(ctx,rampart_argv[i]);
+            duk_put_prop_index(ctx,-2,(duk_uarridx_t)i);
+        }
+        duk_put_prop_string(ctx,-2,"argv");
+
+        duk_push_string(ctx,rampart_argv[0]);
+        duk_put_prop_string(ctx,-2,"argv0");
+
+        if(rampart_argc>0)
+        {
+            char p[PATH_MAX], *s;
+            
+            strcpy(p, rampart_argv[1]);
+            s=strrchr(p,'/');
+            if (s)
+            {
+                char *dupp;
+
+                *s='\0';
+                dupp=strdup(p);
+                s=realpath(dupp,p);
+                free (dupp);
+            }
+            else
+            {
+                if( !(s=getcwd(p,PATH_MAX)) )
+                {
+                    fprintf(stderr,"path to script is longer than allowed\n");
+                    exit(1);
+                }
+            }
+
+            if(!RP_script_path) //doing this multiple times in rpserver.so
+                RP_script_path=strdup(s);
+
+            duk_push_string(ctx,s);
+            duk_put_prop_string(ctx,-2,"scriptPath");
+        }
+
+    }
 
     duk_put_prop_string(ctx,-2,"process");
     duk_pop(ctx);
@@ -2526,7 +2587,7 @@ void duk_rampart_init(duk_context *ctx)
 void duk_misc_init(duk_context *ctx)
 {
     duk_rampart_init(ctx);
-    duk_process_init(ctx);
+    //duk_process_init(ctx);
 }
 
 #include "printf.c"
