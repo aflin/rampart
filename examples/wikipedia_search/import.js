@@ -28,7 +28,7 @@ if(ret.results.length==0) {
 /* import using re2 */
 function procfile2(file){
   //                           
-  return re2file( /<doc id="(\d+).*title="([^"]+)[^>]+>([^<]+)/,
+  return re2File( /<doc id="(\d+).*title="([^"]+)[^>]+>([^<]+)/,
            file,
            function(match,matchinfo,i){
              var sm=matchinfo.submatches;
@@ -42,7 +42,7 @@ function procfile2(file){
 /* import using rex */
 function procfilex(file){
   //                           0      1      2        3    4    5 6        7
-  return rexfile( />><doc id\="=\digit+!title*title\="=[^"]+[^>]+>=!<\/doc>*/,
+  return rexFile( />><doc id\="=\digit+!title*title\="=[^"]+[^>]+>=!<\/doc>*/,
            file,
            function(match,matchinfo,i){
              var sm=matchinfo.submatches;

@@ -13,21 +13,21 @@ var rex=Sql.rex;
 var re2=Sql.re2;
 var sandr=Sql.sandr;
 var sandr2=Sql.sandr2;
-var rexfile=Sql.rexfile;
-var re2file=Sql.re2file;
+var rexFile=Sql.rexFile;
+var re2File=Sql.re2File;
 var abstract=Sql.abstract;
-var stringformat=Sql.stringformat;
+var stringFormat=Sql.stringFormat;
 */
 rampart.globalize(Sql);
 
 /* ************************************************
     Test of added functions from rpsql 
 *************************************************** */
-/* stringformat at https://docs.thunderstone.com/site/vortexman/fmt_strfmt.html */
+/* stringFormat at https://docs.thunderstone.com/site/vortexman/fmt_strfmt.html */
 printf("TEST OF DB FUNCS:\n");
-printf("query markup:\n\t%s\n",stringformat('%mbH','@0 hello there',"a sentence with hello there in it. Hello there!"));
-printf("time format:\n\t%s\n",stringformat('%at','%c','now'));
-printf("html escape:\n\t%s\n",stringformat('"%H" = htmlesc("%!H")','<div>','&lt;div&gt;' ));
+printf("query markup:\n\t%s\n",stringFormat('%mbH','@0 hello there',"a sentence with hello there in it. Hello there!"));
+printf("time format:\n\t%s\n",stringFormat('%at','%c','now'));
+printf("html escape:\n\t%s\n",stringFormat('"%H" = htmlesc("%!H")','<div>','&lt;div&gt;' ));
 var txt="The abstract will be less than maxsize characters long, and will attempt to end at a word boundary. "+
         "If maxsize is not specified (or is less than or equal to 0) then a default size of 230 characters is used.\n"+
         "The style argument is a string or integer, and allows a choice between several different ways of creating the "+
@@ -129,9 +129,9 @@ printf("nhits=%d\n",nhits);
 
 
 
-/***************************** rexfile ******************************/
+/***************************** rexFile ******************************/
 
-  /* rexfile|re2file( 
+  /* rexFile|re2File( 
           expression,                     //string or array of strings 
           filename,                       //file with text to be searched
           callback,                       // optional callback function
@@ -160,23 +160,23 @@ printf("nhits=%d\n",nhits);
    If callback is specified, return value is number of matches.
   */
 
-console.log(rexfile(">>function=[^\n]+","server.js"));
+console.log(rexFile(">>function=[^\n]+","server.js"));
 
-printf('var nhits=rexfile(">><doc=[^>]+>=","wiki_00",function(match,i){\n\tprintf("match="%%J", matchno=%%d\\n",match,i);\n},{submatches:false});\nprintf("nhits=%%d\\n",nhits);\n');
+printf('var nhits=rexFile(">><doc=[^>]+>=","wiki_00",function(match,i){\n\tprintf("match="%%J", matchno=%%d\\n",match,i);\n},{submatches:false});\nprintf("nhits=%%d\\n",nhits);\n');
 
-var nhits=rexfile(">><doc=[^>]+>=","wiki_00",function(match,i){
+var nhits=rexFile(">><doc=[^>]+>=","wiki_00",function(match,i){
     printf("match='%J', matchno=%d\n",match,i);
 },{submatches:false});
 printf("nhits=%d\n",nhits);
 
-printf('var ret=rexfile(">><doc=[^>]+>=","wiki_00",{submatches:true});\n');
-var ret=rexfile(">><doc=[^>]+>=","wiki_00",{submatches:true});
+printf('var ret=rexFile(">><doc=[^>]+>=","wiki_00",{submatches:true});\n');
+var ret=rexFile(">><doc=[^>]+>=","wiki_00",{submatches:true});
 ret=sprintf('%J',ret);
 ret=sandr('>>\\},\\{=','\\},\\\n\\{',ret);
 console.log("ret=",ret);
 
-printf('ret=re2file("<doc[^>]+>","wiki_00",{submatches:true});\n');
-ret=re2file("(<doc)([^>]+)(>)","wiki_00",{submatches:true});
+printf('ret=re2File("<doc[^>]+>","wiki_00",{submatches:true});\n');
+ret=re2File("(<doc)([^>]+)(>)","wiki_00",{submatches:true});
 ret=sprintf('%J',ret);
 ret=sandr('>>\\},\\{=','\\},\\\n\\{',ret);
 console.log("ret=",ret);
@@ -189,8 +189,8 @@ console.log(sandr2(/fun/,"funtimes","we are having fun"));
 
 //this takes waaaay too long.  Why?  if the doc match ( ([^<]+) ) is not included, it runs much faster. 
 //Perhaps they have buffer crossing problems? or it checks conditions for a longer match with every char?
-printf("re2file of wiki_00 (slow)\n");
-ret=re2file( /<doc id="(\d+)[^>]*?title="([^"]+)[^>]+>([^<]+)/,"wiki_00",{submatches:true},function(match,info,i){
+printf("re2File of wiki_00 (slow)\n");
+ret=re2File( /<doc id="(\d+)[^>]*?title="([^"]+)[^>]+>([^<]+)/,"wiki_00",{submatches:true},function(match,info,i){
   var rep=sprintf("<Doc of %d length>",info.submatches[info.submatches.length-1].length);
   info.submatches[info.submatches.length-1]=rep;
   console.log(info);
@@ -198,8 +198,8 @@ ret=re2file( /<doc id="(\d+)[^>]*?title="([^"]+)[^>]+>([^<]+)/,"wiki_00",{submat
 
 
 //but this is very fast
-printf("rexfile of wiki_00 (fast)\n");
-ret=rexfile ( />><doc id\="=\digit+!title*title\="=[^"]+[^>]+>=!<\/doc>*/, "wiki_00",{submatches:true},function(match,info,i){
+printf("rexFile of wiki_00 (fast)\n");
+ret=rexFile ( />><doc id\="=\digit+!title*title\="=[^"]+[^>]+>=!<\/doc>*/, "wiki_00",{submatches:true},function(match,info,i){
   var rep=sprintf("<Doc of %d length>",info.submatches[info.submatches.length-1].length);
   info.submatches[info.submatches.length-1]=rep;
   console.log(info);

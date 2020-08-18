@@ -12,7 +12,7 @@ var Sql=require("rpsql");
      than repeatedly in a callback
 */
 
-var sql= new Sql.init("./testdb",true); /* true means create the database if it doesn't exist */
+var sql= new Sql.init(process.scriptPath+"/testdb",true); /* true means create the database if it doesn't exist */
 
 /* ******************************************************
     Setup of tables for server callback function tests 

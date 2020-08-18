@@ -30,10 +30,7 @@ static duk_ret_t load_js_module(duk_context *ctx)
     duk_idx_t module_idx = duk_normalize_index(ctx, -1);
     struct stat sb;
     if (stat(id, &sb))
-    {
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not open %s: %s\n", id, strerror(errno));
-        return duk_throw(ctx);
-    }
+        RP_THROW(ctx, "Could not open %s: %s\n", id, strerror(errno));
 
     duk_push_number(ctx, sb.st_mtime);
     duk_put_prop_string(ctx, module_idx, "mtime");
@@ -42,17 +39,13 @@ static duk_ret_t load_js_module(duk_context *ctx)
 
     FILE *f = fopen(id, "r");
     if (!f)
-    {
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not open %s: %s\n", id, strerror(errno));
-        return duk_throw(ctx);
-    }
+        RP_THROW(ctx, "Could not open %s: %s\n", id, strerror(errno));
+
     char *buffer = malloc(sb.st_size + 1);
     size_t len = fread(buffer, 1, sb.st_size, f);
     if (sb.st_size != len)
-    {
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "Error loading file %s: %s\n", id, strerror(errno));
-        return duk_throw(ctx);
-    }
+        RP_THROW(ctx, "Error loading file %s: %s\n", id, strerror(errno));
+
     buffer[sb.st_size]='\0';
 
     duk_push_string(ctx, "function (module, exports) { ");
@@ -91,9 +84,8 @@ static duk_ret_t load_so_module(duk_context *ctx)
     if (lib == NULL)
     {
         const char *dl_err = dlerror();
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "Error loading: %s", dl_err);
         pthread_mutex_unlock(&modlock);
-        return duk_throw(ctx);
+        RP_THROW(ctx, "Error loading: %s", dl_err);
     }
     duk_c_function init = (duk_c_function)dlsym(lib, "duk_open_module");
     pthread_mutex_unlock(&modlock);
@@ -174,10 +166,7 @@ duk_ret_t duk_resolve(duk_context *ctx)
     resolve_id(ctx, duk_get_string(ctx,0));
 
     if (duk_is_null(ctx, -1))
-    {
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not resolve module id %s: %s\n", duk_get_string(ctx, 0), strerror(errno));
-        return duk_throw(ctx);
-    }
+        RP_THROW(ctx, "Could not resolve module id %s: %s\n", duk_get_string(ctx, 0), strerror(errno));
 
     duk_get_prop_string(ctx, -1, "module_loader_idx");
     module_loader_idx = duk_get_int(ctx, -1);

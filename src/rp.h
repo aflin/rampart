@@ -17,6 +17,65 @@ extern "C"
 extern char **rampart_argv;
 extern int   rampart_argc;
 
+#define RP_THROW(ctx,...) do {\
+    duk_push_error_object(ctx, DUK_ERR_ERROR, __VA_ARGS__);\
+    (void) duk_throw(ctx);\
+} while(0)
+
+#define REQUIRE_STRING(ctx,idx,...) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_string((ctx),i)) {\
+        RP_THROW(ctx, __VA_ARGS__ );\
+    }\
+    const char *r=duk_get_string((ctx),i);\
+    r;\
+})
+
+#define REQUIRE_LSTRING(ctx,idx,len,...) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_string((ctx),i)) {\
+        RP_THROW(ctx, __VA_ARGS__ );\
+    }\
+    const char *r=duk_get_lstring((ctx),i,(len));\
+    r;\
+})
+
+#define REQUIRE_INT(ctx,idx,...) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_number((ctx),i)) {\
+        RP_THROW(ctx, __VA_ARGS__ );\
+    }\
+    int r=duk_get_int((ctx),i);\
+    r;\
+})
+
+#define REQUIRE_BOOL(ctx,idx,...) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_boolean((ctx),i)) {\
+        RP_THROW(ctx, __VA_ARGS__ );\
+    }\
+    int r=duk_get_boolean((ctx),i);\
+    r;\
+})
+
+#define REQUIRE_NUMBER(ctx,idx,...) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_number((ctx),i)) {\
+        RP_THROW(ctx, __VA_ARGS__ );\
+    }\
+    double r=duk_get_number((ctx),i);\
+    r;\
+})
+
+#define REQUIRE_BUFFER_DATA(ctx,idx,sz,...) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_buffer_data((ctx),i)) {\
+        RP_THROW(ctx, __VA_ARGS__ );\
+    }\
+    void *r=duk_get_buffer_data((ctx),i,(sz));\
+    r;\
+})
+
 
 /* settings */
 #define nthreads 0        /* number of threads for evhtp, set to 0 to use num of cpu cores */

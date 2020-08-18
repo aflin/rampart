@@ -1,6 +1,6 @@
 
 var Sql=require("rpsql");
-Sql.single_user(true); /* no locks, read only db */
+Sql.singleUser(true); /* no locks, read only db */
 
 var db=process.scriptPath + '/wikidb';
 

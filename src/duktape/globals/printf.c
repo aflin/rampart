@@ -561,57 +561,52 @@ static size_t _etoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
     return idx;
 }
 
-#define REQUIRE_STRING(ctx,idx) ({\
+#define PF_REQUIRE_STRING(ctx,idx) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_string((ctx),i)) {\
         pthread_mutex_unlock(&pflock);\
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "string required in format string argument %d",i);\
-        return duk_throw(ctx);\
+        RP_THROW(ctx, "string required in format string argument %d",i);\
     }\
     const char *r=duk_get_string((ctx),i);\
     r;\
 })
 
-#define REQUIRE_LSTRING(ctx,idx,len) ({\
+#define PF_REQUIRE_LSTRING(ctx,idx,len) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_string((ctx),i)) {\
         pthread_mutex_unlock(&pflock);\
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "string required in format string argument %d",i);\
-        return duk_throw(ctx);\
+        RP_THROW(ctx, "string required in format string argument %d",i);\
     }\
     const char *r=duk_get_lstring((ctx),i,(len));\
     r;\
 })
 
-#define REQUIRE_INT(ctx,idx) ({\
+#define PF_REQUIRE_INT(ctx,idx) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_number((ctx),i)) {\
         pthread_mutex_unlock(&pflock);\
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "number required in format string argument %d",i);\
-        return duk_throw(ctx);\
+        RP_THROW(ctx, "number required in format string argument %d",i);\
     }\
     int r=duk_get_int((ctx),i);\
     r;\
 })
 
 
-#define REQUIRE_NUMBER(ctx,idx) ({\
+#define PF_REQUIRE_NUMBER(ctx,idx) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_number((ctx),i)) {\
         pthread_mutex_unlock(&pflock);\
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "number required in format string argument %d",i);\
-        return duk_throw(ctx);\
+        RP_THROW(ctx, "number required in format string argument %d",i);\
     }\
     double r=duk_get_number((ctx),i);\
     r;\
 })
 
-#define REQUIRE_BUFFER_DATA(ctx,idx,sz) ({\
+#define PF_REQUIRE_BUFFER_DATA(ctx,idx,sz) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_buffer_data((ctx),i)) {\
         pthread_mutex_unlock(&pflock);\
-        duk_push_error_object(ctx, DUK_ERR_ERROR, "buffer required in format string argument %d",i);\
-        return duk_throw(ctx);\
+        RP_THROW(ctx, "buffer required in format string argument %d",i);\
     }\
     void *r=duk_get_buffer_data((ctx),i,(sz));\
     r;\
@@ -623,7 +618,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
     unsigned int flags, width, precision, n;
     size_t idx = 0U;
     int preserveUfmt = 0;
-    const char *format = REQUIRE_STRING(ctx, fidx++);
+    const char *format = PF_REQUIRE_STRING(ctx, fidx++);
     if (!buffer)
     {
         // use null output function
@@ -693,7 +688,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
         }
         else if (*format == '*')
         {
-            const int w = REQUIRE_INT(ctx, fidx++);
+            const int w = PF_REQUIRE_INT(ctx, fidx++);
             if (w < 0)
             {
                 flags |= FLAGS_LEFT; // reverse padding
@@ -717,7 +712,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             }
             else if (*format == '*')
             {
-                const int prec = REQUIRE_INT(ctx, fidx++);
+                const int prec = PF_REQUIRE_INT(ctx, fidx++);
                 precision = prec > 0 ? (unsigned int)prec : 0U;
                 format++;
             }
@@ -805,17 +800,17 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                 // signed
                 if (flags & FLAGS_LONG_LONG)
                 {
-                    const long long value = (long long)REQUIRE_NUMBER(ctx, fidx++);
+                    const long long value = (long long)PF_REQUIRE_NUMBER(ctx, fidx++);
                     idx = _ntoa_long_long(out, buffer, idx, maxlen, (unsigned long long)(value > 0 ? value : 0 - value), value < 0, base, precision, width, flags);
                 }
                 else if (flags & FLAGS_LONG)
                 {
-                    const long value = (long)REQUIRE_NUMBER(ctx, fidx++);
+                    const long value = (long)PF_REQUIRE_NUMBER(ctx, fidx++);
                     idx = _ntoa_long(out, buffer, idx, maxlen, (unsigned long)(value > 0 ? value : 0 - value), value < 0, base, precision, width, flags);
                 }
                 else
                 {
-                    const int value = (flags & FLAGS_CHAR) ? (char)REQUIRE_INT(ctx, fidx++) : (flags & FLAGS_SHORT) ? (short int)REQUIRE_INT(ctx, fidx++) : REQUIRE_INT(ctx, fidx++);
+                    const int value = (flags & FLAGS_CHAR) ? (char)PF_REQUIRE_INT(ctx, fidx++) : (flags & FLAGS_SHORT) ? (short int)PF_REQUIRE_INT(ctx, fidx++) : PF_REQUIRE_INT(ctx, fidx++);
                     idx = _ntoa_long(out, buffer, idx, maxlen, (unsigned int)(value > 0 ? value : 0 - value), value < 0, base, precision, width, flags);
                 }
             }
@@ -824,15 +819,15 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                 // unsigned
                 if (flags & FLAGS_LONG_LONG)
                 {
-                    idx = _ntoa_long_long(out, buffer, idx, maxlen, (unsigned long long)REQUIRE_NUMBER(ctx, fidx++), false, base, precision, width, flags);
+                    idx = _ntoa_long_long(out, buffer, idx, maxlen, (unsigned long long)PF_REQUIRE_NUMBER(ctx, fidx++), false, base, precision, width, flags);
                 }
                 else if (flags & FLAGS_LONG)
                 {
-                    idx = _ntoa_long(out, buffer, idx, maxlen, (unsigned long)REQUIRE_NUMBER(ctx, fidx++), false, base, precision, width, flags);
+                    idx = _ntoa_long(out, buffer, idx, maxlen, (unsigned long)PF_REQUIRE_NUMBER(ctx, fidx++), false, base, precision, width, flags);
                 }
                 else
                 {
-                    const unsigned int value = (flags & FLAGS_CHAR) ? (unsigned char)REQUIRE_NUMBER(ctx, fidx++) : (flags & FLAGS_SHORT) ? (unsigned short int)REQUIRE_NUMBER(ctx, fidx++) : (unsigned int)REQUIRE_NUMBER(ctx, fidx++);
+                    const unsigned int value = (flags & FLAGS_CHAR) ? (unsigned char)PF_REQUIRE_NUMBER(ctx, fidx++) : (flags & FLAGS_SHORT) ? (unsigned short int)PF_REQUIRE_NUMBER(ctx, fidx++) : (unsigned int)PF_REQUIRE_NUMBER(ctx, fidx++);
                     idx = _ntoa_long(out, buffer, idx, maxlen, value, false, base, precision, width, flags);
                 }
             }
@@ -843,7 +838,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
         case 'F':
             if (*format == 'F')
                 flags |= FLAGS_UPPERCASE;
-            idx = _ftoa(out, buffer, idx, maxlen, REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
+            idx = _ftoa(out, buffer, idx, maxlen, PF_REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
             format++;
             break;
         case 'e':
@@ -854,13 +849,13 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                 flags |= FLAGS_ADAPT_EXP;
             if ((*format == 'E') || (*format == 'G'))
                 flags |= FLAGS_UPPERCASE;
-            idx = _etoa(out, buffer, idx, maxlen, REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
+            idx = _etoa(out, buffer, idx, maxlen, PF_REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
             format++;
             break;
         case 'c':
         {
             unsigned int l = 1U;
-            const char *c = REQUIRE_STRING(ctx, fidx++);
+            const char *c = PF_REQUIRE_STRING(ctx, fidx++);
             // pre padding
             if (!(flags & FLAGS_LEFT))
             {
@@ -886,7 +881,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
         case 'B':
         {
             duk_size_t sz;
-            char *b=(char *)REQUIRE_BUFFER_DATA(ctx,fidx++,&sz);
+            char *b=(char *)PF_REQUIRE_BUFFER_DATA(ctx,fidx++,&sz);
             int i=0,isz=(int)sz;
             for (;i<isz;i++)
             {
@@ -898,7 +893,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
         case 'U':
         {
             duk_size_t sz;
-            const char *s = REQUIRE_LSTRING(ctx, fidx, &sz);
+            const char *s = PF_REQUIRE_LSTRING(ctx, fidx, &sz);
             char *u;
             if (flags & FLAGS_BANG)
                 u = duk_rp_url_decode((char *)s, (int)sz);
@@ -931,7 +926,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
         case 's':
         string:
         {
-            const char *p = REQUIRE_STRING(ctx, fidx++);
+            const char *p = PF_REQUIRE_STRING(ctx, fidx++);
             unsigned int l = _strnlen_s(p, precision ? precision : (size_t)-1);
             // pre padding
             if (flags & FLAGS_PRECISION)

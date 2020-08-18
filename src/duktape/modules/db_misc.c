@@ -197,7 +197,7 @@ RPstringformatArgCb(HTPFT type, HTPFW what, void *data, char **fmterr,
     {
       if (info->numArgsUsed == info->numArgs)   /* first time */
         txpmbuf_putmsg(info->pmbuf, MWARN + UGE, fn,
-                       "Too few arguments for stringformat() format");
+                       "Too few arguments for stringFormat() format");
       ret = NULL;                               /* print nothing */
       goto done;
     }
@@ -581,8 +581,7 @@ FLD *rp_add_arg(duk_context *ctx, duk_idx_t idx)
 
 
   err:
-    duk_push_string(ctx,"stringformat: error assigning value to field");
-    (void)duk_throw(ctx);
+    RP_THROW(ctx,"stringFormat: error assigning value to field");
 
   done:
   return ret;
@@ -607,10 +606,7 @@ RPfunc_stringformat(duk_context *ctx)
 
 
   if (duk_get_top(ctx)==0)
-  {
-    duk_push_string(ctx,"stringformat: arguments required");
-    (void)duk_throw(ctx);
-  }
+    RP_THROW(ctx,"stringFormat: arguments required");
 
   memset(&info, 0, sizeof(RPSFD));
   memset(&dupData,0,argn*sizeof(void *));
@@ -620,7 +616,7 @@ RPfunc_stringformat(duk_context *ctx)
   info.cvtData=cvtData;
   info.dupData=dupData;  
 
-  fmt=(char *)duk_require_lstring(ctx,0,&duk_sz);
+  fmt=(char *)REQUIRE_LSTRING(ctx,0,&duk_sz,"stringFormat: String required at argument 0");
   fmtLen=(size_t)duk_sz;
   fmtData = TXcesc2str(fmt, fmtLen, &fmtLen);
 
@@ -644,7 +640,7 @@ RPfunc_stringformat(duk_context *ctx)
     goto err;
   if (info.numArgsUsed < info.numArgs)
     txpmbuf_putmsg(pmbuf, MWARN + UGE, fn,
-                   "Too many arguments for stringformat() format");
+                   "Too many arguments for stringFormat() format");
 
   /* Copy the output to the field: - - - - - - - - - - - - - - - - - - - - */
   if (!htbuf_write(outBuf, "", 0)) goto noMem;  /* ensure non-NULL outData */
@@ -665,12 +661,11 @@ RPfunc_stringformat(duk_context *ctx)
     for (i=0;i<info.numArgs;i++)
       closefld(info.args[i]);
 
-    duk_push_string(ctx,"stringformat failed");
-    (void)duk_throw(ctx);
+    RP_THROW(ctx,"stringFormat failed");
 
   noMem:
-    duk_push_string(ctx,"out of memeory in stringformat");
-    (void)duk_throw(ctx);
+    RP_THROW(ctx,"out of memeory in stringFormat");
+
   return 0;
 }
 
@@ -691,33 +686,30 @@ RPsqlFuncs_abstract(duk_context *ctx)
 	    text=(ft_char *)duk_get_string(ctx,idx);
 	}
 	else
-	{
-	    duk_push_string(ctx,"abstract: no text provided");
-	    (void)duk_throw(ctx);
-	}
+	    RP_THROW(ctx,"abstract: no text provided");
 
 	idx=!idx;
 	
 	if( duk_is_object(ctx,idx) )
 	{
 	    if(duk_get_prop_string(ctx,idx,"max"))
-	        maxsz=(ft_long)duk_require_number(ctx,-1);
+	        maxsz=(ft_long)REQUIRE_NUMBER(ctx,-1,"abstract: parameter \"max\" requires a number");
             duk_pop(ctx);
 
 	    if(duk_get_prop_string(ctx,idx,"maxsize"))
-	        maxsz=(ft_long)duk_require_number(ctx,-1);
-            duk_pop(ctx);
-
-            if(duk_get_prop_string(ctx,idx,"query"))
-                query=(ft_char *)strdup(duk_require_string(ctx,-1));
+	        maxsz=(ft_long)REQUIRE_NUMBER(ctx,-1,"abstract: parameter \"maxsize\" requires a number");
             duk_pop(ctx);
 
             if(duk_get_prop_string(ctx,idx,"q"))
-                query=(ft_char *)strdup(duk_require_string(ctx,-1));
+                query=(ft_char *)strdup(REQUIRE_STRING(ctx,-1,"abstract: parameter \"query\" requires a string"));
+            duk_pop(ctx);
+
+            if(duk_get_prop_string(ctx,idx,"query"))
+                query=(ft_char *)strdup(REQUIRE_STRING(ctx,-1,"abstract: parameter \"query\" requires a string"));
             duk_pop(ctx);
 
             if(duk_get_prop_string(ctx,idx,"style"))
-                style= TXstrToAbs((char *)duk_require_string(ctx,-1));
+                style= TXstrToAbs((char *)REQUIRE_STRING(ctx,-1,"abstract: parameter \"style\" requires a string (dumb|smart|querysingle|querymultiple|querybest)"));
             duk_pop(ctx);
 
 	}
@@ -751,40 +743,28 @@ static void sandr(duk_context *ctx, int re2)
 {
         int ns=0, nr=0, nt=0; //length of search, replace and text arrays. 0 if string
         if(duk_get_top(ctx) != 3)
-        {
-            duk_push_string(ctx,"sandr: exactly three arguments required: search, replace, text_to_search\n");
-            (void)duk_throw(ctx);
-        }
+            RP_THROW(ctx,"sandr: exactly three arguments required: search, replace, text_to_search\n");
 
         if(duk_is_array(ctx,0))
             ns=(int)duk_get_length(ctx,0);
         else if (!duk_is_string(ctx,0) && !duk_is_object(ctx,0))
-        {
-            duk_push_string(ctx,"sandr: search (arg 1) must be a string/pattern or array of strings/patterns");
-            (void)duk_throw(ctx);
-        }
+            RP_THROW(ctx,"sandr: search (arg 1) must be a string/pattern or array of strings/patterns");
 
         if(duk_is_array(ctx,1))
             nr=(int)duk_get_length(ctx,1);
         else if (!duk_is_string(ctx,1))
-        {
-            duk_push_string(ctx,"sandr: replace (arg 2) must be a string or array of strings");
-            (void)duk_throw(ctx);
-        }
+            RP_THROW(ctx,"sandr: replace (arg 2) must be a string or array of strings");
 
         if(duk_is_array(ctx,2))
             nt=(int)duk_get_length(ctx,2);
         else if (!duk_is_string(ctx,2))
-        {
-            duk_push_string(ctx,"sandr: text (arg 3) must be a string or array of strings");
-            (void)duk_throw(ctx);
-        }
+            RP_THROW(ctx,"sandr: text (arg 3) must be a string or array of strings");
 
 #define getstrings(s,idx,arg,argn) do{\
         int i=0;\
         duk_enum(ctx,idx,DUK_ENUM_ARRAY_INDICES_ONLY);\
         while (duk_next(ctx, -1, 1)) { \
-            if(!duk_is_string(ctx,-1)) {duk_push_sprintf(ctx,"sandr: %s (arg %d) array must contain only strings",arg,argn);(void)duk_throw(ctx);}\
+            if(!duk_is_string(ctx,-1)) {RP_THROW(ctx,"sandr: %s (arg %d) array must contain only strings",arg,argn);}\
             s[i]=(char*)duk_get_string(ctx,-1);\
             /*printf("%s[%d]=%s\n",arg,i,s[i]);*/\
             i++;\
@@ -814,10 +794,8 @@ static void sandr(duk_context *ctx, int re2)
                 {
                     const char *exp=get_exp(ctx,-1);
                     if(!exp)
-                    {
-                        duk_push_string(ctx,"sandr: search (arg 1) array must contain only strings/patterns");
-                        (void)duk_throw(ctx);
-                    }
+                        RP_THROW(ctx,"sandr: search (arg 1) array must contain only strings/patterns");
+
                     if (re2)
                     {
                         char s[strlen(exp)+8];
@@ -837,10 +815,8 @@ static void sandr(duk_context *ctx, int re2)
             {
                 const char *exp=get_exp(ctx,0);
                 if(!exp)
-                {
-                    duk_push_string(ctx,"sandr: search (arg 1) array must contain only strings/patterns");
-                    (void)duk_throw(ctx);
-                }
+                    RP_THROW(ctx,"sandr: search (arg 1) array must contain only strings/patterns");
+
                 if (re2)
                 {
                     char s[strlen(exp)+8];
@@ -933,21 +909,22 @@ static int rex (
         /* get options: exclude */
         if( duk_get_prop_string(ctx,opt_idx,"exclude") )
         {
-            const char *s=duk_require_string(ctx,-1); 
+            const char *s=REQUIRE_STRING(ctx,-1,"re%c: parameter \"exclude\" requires a string (none|overlap|duplicate)", ((type==TXrexSyntax_Re2)?'2':'x') ); 
             if(!strcmp("none",s))
                 rem=0;
             else if (!strncmp("overlap",s,7))
                 rem=1;
             else if(!strncmp("duplicate",s,9))
                 rem=2;
+            else
+                RP_THROW(ctx,"re%c: parameter \"exclude\" requires a string (none|overlap|duplicate)", ((type==TXrexSyntax_Re2)?'2':'x') );
         }
         duk_pop(ctx);
 
         /* get options: submatches */
         if( duk_get_prop_string(ctx,opt_idx,"submatches") )
         {
-            if(duk_is_boolean(ctx,-1))
-                ret_subs=(int)duk_get_boolean(ctx,-1);
+            ret_subs=REQUIRE_BOOL(ctx,-1,"re%c: parameter \"submatches\" requires a boolean (true|false)", ((type==TXrexSyntax_Re2)?'2':'x'));
         }
         duk_pop(ctx);
     }
@@ -959,17 +936,11 @@ static int rex (
         nexp=(int)duk_get_length(ctx,0);    
     }
     else if (! (exp=get_exp(ctx,0)) )
-    {
-        duk_push_string(ctx,"rex: expression (arg 1), must be a string or pattern, or array of strings/patterns");
-        (void)duk_throw(ctx);
-    }
+        RP_THROW(ctx,"re%c: expression (arg 1), must be a string or pattern, or array of strings/patterns", ((type==TXrexSyntax_Re2)?'2':'x'));
 
     /* open lexer */
     if ((rl=openrlexadd(nexp)) == RLEXPN)
-    {
-        duk_push_string(ctx,"rex: error opening lexer");
-        (void)duk_throw(ctx);
-    }
+        RP_THROW(ctx,"re%c: error opening lexer", ((type==TXrexSyntax_Re2)?'2':'x'));
 
     /* add expression */
     if (nexp==1)
@@ -977,8 +948,7 @@ static int rex (
         if(!rlex_addexp(rl, 0, exp, type))
         {
             closerlex(rl);
-            duk_push_sprintf(ctx,"rex: error in expression '%s'",exp);
-            (void)duk_throw(ctx);
+            RP_THROW(ctx,"re%c: error in expression '%s'", ((type==TXrexSyntax_Re2)?'2':'x'), exp);
         }
     }
     else
@@ -987,19 +957,21 @@ static int rex (
         int eno=0;
         duk_enum(ctx,0,DUK_ENUM_ARRAY_INDICES_ONLY);
         while (duk_next(ctx, -1, 1)) {
+
             exp=get_exp(ctx,-1);
+
             if(!exp)
             {
                 closerlex(rl);
-                duk_push_string(ctx,"rex: expression array (arg 1) contains something not a string or pattern");
-                (void)duk_throw(ctx);
+                RP_THROW(ctx,"re%c: expression array (arg 1) contains something not a string or pattern", ((type==TXrexSyntax_Re2)?'2':'x'));
             }
+
             if(!rlex_addexp(rl, eno, exp, type))
             {
                 closerlex(rl);
-                duk_push_sprintf(ctx,"rex: error in expression '%s'",exp);
-                (void)duk_throw(ctx);
+                RP_THROW(ctx,"re%c: error in expression '%s'", ((type==TXrexSyntax_Re2)?'2':'x'), exp);
             }
+
             duk_pop_2(ctx);
             eno++;
         }
@@ -1189,10 +1161,8 @@ static int rex (
     if( func_idx != 3 && duk_is_object(ctx,3))\
         opt_idx=3;\
     else if(func_idx != 2 && duk_is_object(ctx,2))\
-        opt_idx=2; }while(0)
-
-
-
+        opt_idx=2;\
+}while(0)
 
 
 static duk_ret_t 
@@ -1209,10 +1179,9 @@ rex_re2(duk_context *ctx, TXrexSyntax type)
     else if (duk_is_buffer_data(ctx,1))
         str=(byte*)duk_get_buffer_data(ctx,1,&sz);
     else
-    {
-        duk_push_string(ctx,"rex: item to be matched (arg 2), must be a string or buffer");
-        (void)duk_throw(ctx);
-    }
+        RP_THROW(ctx,"re%c: item to be matched (arg 2), must be a string or buffer",
+            ((type==TXrexSyntax_Re2)?'2':'x'));
+
     end = str+sz;
     
     rex(ctx,str,end,opt_idx,func_idx,type,0);
@@ -1236,10 +1205,8 @@ FFS  *ex;
  errno = 0;
  nactr=fread((char *)buf,sizeof(byte),len,fh);           /* do a read */
  if(nactr<0)
-    {
-     duk_push_sprintf(ctx,"Can't read file: %s", strerror(errno));
-     (void)duk_throw(ctx);
-    }
+        RP_THROW(ctx,"Can't read file: %s", strerror(errno));
+
  nread=nactr;                                          /* end of buffer */
  if(nread && nread==len)               /* read ok && as big as possible */
     {
@@ -1289,7 +1256,7 @@ rex_re2_file(duk_context *ctx, TXrexSyntax type)
     {
         if (duk_get_prop_string(ctx,opt_idx,"delimiter") )
         {
-            const char *s=duk_require_string(ctx,-1); 
+            const char *s=REQUIRE_STRING(ctx,-1,"re%cFile: string required for parameter \"delemiter\"", ((type==TXrexSyntax_Re2)?'2':'x')); 
             endex=openrex((byte *)s, TXrexSyntax_Rex);
         }
         else
@@ -1307,17 +1274,11 @@ rex_re2_file(duk_context *ctx, TXrexSyntax type)
     if(duk_is_string(ctx,1))
         fname=duk_get_string(ctx,1);
     else
-    {
-        duk_push_string(ctx,"rexfile: item to be matched (arg 2), must be a string (filename)");
-        (void)duk_throw(ctx);
-    }
+        RP_THROW(ctx,"re%cFile: item to be matched (arg 2), must be a string (filename)", ((type==TXrexSyntax_Re2)?'2':'x'));
 
     ipfh=fopen((char *)fname,"r");
     if(ipfh==(FILE *)NULL)
-    {
-        duk_push_sprintf(ctx,"rexfile: error opening file '%s'",fname);
-        (void)duk_throw(ctx);
-    }
+        RP_THROW(ctx,"re%cFile: error opening file '%s'", ((type==TXrexSyntax_Re2)?'2':'x'), fname);
 
     while((nread=rpfreadex(ctx,ipfh,str,strsz,endex))>0)
     {

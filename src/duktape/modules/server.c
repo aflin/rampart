@@ -946,7 +946,7 @@ static void sendbuf(DHS *dhs)
     duk_context *ctx = dhs->ctx;
 
     REMALLOC(freeme, sizeof(CTXFREER));
-    s = duk_get_string_default(ctx, -1, "  ");
+    s = duk_get_string_default(ctx, -1, " ");
     if (*s == '\\' && *(s + 1) == '@')
     {
         s++;
@@ -954,15 +954,21 @@ static void sendbuf(DHS *dhs)
         duk_replace(ctx, -2);
     }
 
-    /* turn whatever the return val is into a buffer, 
+    /* turn whatever the return val is a buffer, 
        then steal the allocation and pass it to evbuffer
        without copying.  duktape will not free it
        when we duk_pop().
+
+       if it is a string, it is copied in duktape to a buffer,
+       but that is unavoidable and would be done anyway even without
+       duk_steal_buffer/evbuffer_add_reference.
     */
-    duk_to_dynamic_buffer(ctx, -1, NULL);
+    duk_to_dynamic_buffer(ctx, -1, &sz);
     s = duk_steal_buffer(ctx, -1, &sz);
+
     /* add buffer to response, and specify callback to free s when done */
-    /* note that dhs and ctx might not exist by the time the callback is executed */
+    /* note that dhs and ctx might not exist by the time the callback is executed
+       in case of a timeout */
     freeme->ctx = ctx;
     freeme->threadno = dhs->threadno;
     evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, refcb, freeme);
@@ -986,15 +992,29 @@ static evhtp_res sendobj(DHS *dhs)
     {
         if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1))
         {
-            duk_enum(ctx, -1, DUK_ENUM_SORT_ARRAY_INDICES);
+            duk_enum(ctx, -1, 0);
             while (duk_next(ctx, -1, 1))
             {
-                const char *key = duk_require_string(ctx, -2);
-                evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new(key, duk_to_string(ctx, -1), 1, 1));
+                const char *key, *val;
+                
+                if( duk_is_string(ctx, -2) )
+                    key=duk_get_string(ctx, -2);
+                else
+                    key=duk_json_encode(ctx, -2);
+
+                if( duk_is_string(ctx, -1) )
+                    val=duk_get_string(ctx, -1);
+                else
+                    val=duk_json_encode(ctx, -1);
+
+                evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new(key, val, 1, 1));
+
                 if (!strcasecmp(key, "content-type"))
                     gotct = 1;
+
                 duk_pop_2(ctx);
             }
+
             duk_pop(ctx); /* pop enum and headers obj */
             duk_del_prop_string(ctx, -2, "headers");
         }
@@ -1002,15 +1022,14 @@ static evhtp_res sendobj(DHS *dhs)
         {
             duk_pop(ctx); /* get rid of 'headers' non object */
             duk_del_prop_string(ctx, -1, "headers");
-            duk_push_string(ctx, "headers option in return value must be set to an object (headers:{...})");
-            (void)duk_throw(ctx);
+            RP_THROW(ctx, "rpserver.start: callback -- \"headers\" parameter in return value must be set to an object (headers:{...})");
         }
     }
     duk_pop(ctx);
 
     if (duk_get_prop_string(ctx, -1, "status"))
     {
-        res = (evhtp_res)duk_require_number(ctx, -1);
+        res = (evhtp_res)duk_rp_get_int_default(ctx, -1,200);
         if (res < 100)
             res = 200;
         duk_del_prop_string(ctx, -2, "status");
@@ -1028,7 +1047,9 @@ static evhtp_res sendobj(DHS *dhs)
         if (mres)
         {
             const char *d;
+
             gotdata = 1;
+
             if (!gotct)
                 evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new("Content-Type", mres->mime, 0, 0));
 
@@ -1040,7 +1061,6 @@ static evhtp_res sendobj(DHS *dhs)
                 const char *fn = d + 1;
                 if (stat(fn, &sb) == -1)
                 {
-                    /* 404 goes here */
                     send404(dhs->req);
                     return (0);
                 }
@@ -1153,7 +1173,7 @@ static void copy_cb_func(DHS *dhs, int nt)
     /* if function is not global (i.e. map:{"/":function(req){...} } */
     duk_dup(ctx, fidx);
     duk_dump_function(ctx);
-    bc_ptr = duk_require_buffer_data(ctx, -1, &bc_len);
+    bc_ptr = duk_get_buffer_data(ctx, -1, &bc_len);
     duk_dup(ctx, fidx); /* on top of stack for copy_obj */
     /* load function into each of the thread contexts at same position */
     for (i = 0; i < nt; i++)
@@ -1205,7 +1225,7 @@ static void copy_bc_func(duk_context *ctx, duk_context *tctx)
     const char *name = duk_get_string(ctx, -2);
     duk_dup_top(ctx);
     duk_dump_function(ctx);                             //dump function to bytecode
-    bc_ptr = duk_require_buffer_data(ctx, -1, &bc_len); //get pointer to bytecode
+    bc_ptr = duk_get_buffer_data(ctx, -1, &bc_len); //get pointer to bytecode
     buf = duk_push_fixed_buffer(tctx, bc_len);          //make a buffer in thread ctx
     memcpy(buf, (const void *)bc_ptr, bc_len);          //copy bytecode to new buffer
     duk_pop(ctx);                                       //pop bytecode from ctx
@@ -1624,8 +1644,7 @@ static void *http_dothread(void *arg)
     /* don't accept functions or arrays */
     if (duk_is_function(ctx, -1) || duk_is_array(ctx, -1))
     {
-        duk_push_string(ctx, "Return value cannot be an array or a function");
-        (void)duk_throw(ctx);
+        RP_THROW(ctx, "Return value cannot be an array or a function");
     }
     /* object has reply data and options in it */
     if (duk_is_object(ctx, -1))
@@ -1709,7 +1728,7 @@ static duk_context *redo_ctx(int thrno)
 
         /* copy the function */
         duk_dump_function(main_ctx);
-        bc_ptr = duk_require_buffer_data(main_ctx, -1, &bc_len);
+        bc_ptr = duk_get_buffer_data(main_ctx, -1, &bc_len);
         buf = duk_push_fixed_buffer(thr_ctx, bc_len);
         memcpy(buf, (const void *)bc_ptr, bc_len);
         duk_load_function(thr_ctx);
@@ -2307,7 +2326,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
     /* don't accept arrays */
     if (duk_is_array(ctx, -1))
     {
-        duk_push_string(ctx, "Return value cannot be an array");
+        RP_THROW(ctx, "Return value cannot be an array");
         (void)duk_throw(ctx);
     }
 
@@ -2668,15 +2687,11 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     if(unprivu && !gl_threadno)
     {
         if (setgid(unprivg) == -1) 
-        {
-            duk_push_string(main_ctx,"error setting group, setgid() failed");
-            (void)duk_throw(main_ctx);
-        }
+            RP_THROW(main_ctx, "error setting group, setgid() failed");
+
         if (setuid(unprivu) == -1) 
-        {
-            duk_push_string(main_ctx,"error setting user, setuid() failed");
-            (void)duk_throw(main_ctx);
-        }
+            RP_THROW(main_ctx, "error setting user, setuid() failed");
+
     }
 
     *thrno = gl_threadno++;
@@ -2691,17 +2706,17 @@ static void get_secure(duk_context *ctx, duk_idx_t ob_idx, evhtp_ssl_cfg_t *ssl_
     ssl_config->ssl_opts = 0;
     if (duk_get_prop_string(ctx, ob_idx, "sslkeyfile"))
     {
-        ssl_config->privfile = strdup(duk_require_string(ctx, -1));
+        ssl_config->privfile = strdup(REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"sslkeyfile\" requires a string (filename)"));
     }
     duk_pop(ctx);
     if (duk_get_prop_string(ctx, ob_idx, "sslcafile"))
     {
-        ssl_config->cafile = strdup(duk_require_string(ctx, -1));
+        ssl_config->cafile = strdup(REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"sslcafile\" requires a string (filename)"));
     }
     duk_pop(ctx);
     if (duk_get_prop_string(ctx, ob_idx, "sslcertfile"))
     {
-        ssl_config->pemfile = strdup(duk_require_string(ctx, -1));
+        ssl_config->pemfile = strdup(REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"sslcertfile\" requires a string (filename)"));
     }
     duk_pop(ctx);
 }
@@ -2732,13 +2747,10 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
     {
         if(duk_get_prop_string(ctx, ob_idx, "accessLog") )
         {
-            const char *fn=duk_require_string(ctx,-1);
+            const char *fn=REQUIRE_STRING(ctx,-1,  "rpserver.start: parameter \"accessLog\" requires a string (filename)");
             access_fh=fopen(fn,"a");
             if(access_fh==NULL)
-            {
-                duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening file '%s': %s", fn, strerror(errno));
-                (void) duk_throw(ctx);
-            }
+                RP_THROW(ctx, "rpserver.start: error opening accessLog file '%s': %s", fn, strerror(errno));
         }
         else
         {
@@ -2747,13 +2759,10 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
 
         if(duk_get_prop_string(ctx, ob_idx, "errorLog") )
         {
-            const char *fn=duk_require_string(ctx,-1);
+            const char *fn=REQUIRE_STRING(ctx,-1, "rpserver.start: parameter \"errorLog\" requires a string (filename)");
             error_fh=fopen(fn,"a");
             if(error_fh==NULL)
-            {
-                duk_push_error_object(ctx, DUK_ERR_ERROR, "error opening file '%s': %s", fn, strerror(errno));
-                (void) duk_throw(ctx);
-            }
+                RP_THROW(ctx, "rpserver.start: error opening errorLog file '%s': %s", fn, strerror(errno));
         }
         else
         {
@@ -2802,7 +2811,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
     */
     duk_push_array(ctx);
     duk_insert(ctx,0);    
-
     i = 1;
     if (
         (duk_is_object(ctx, i) && !duk_is_array(ctx, i) && !duk_is_function(ctx, i)) ||
@@ -2821,7 +2829,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         /* daemon */
         if (duk_get_prop_string(ctx, ob_idx, "daemon"))
         {
-            daemon = duk_require_boolean(ctx, -1);
+            daemon = REQUIRE_BOOL(ctx, -1, "rpserver.start: parameter \"daemon\" requires a boolean (true|false)");
         }
         duk_pop(ctx);
     }
@@ -2832,7 +2840,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         dpid=fork();
         if(dpid==-1)
         {
-            fprintf(stderr,"fork failed\n");
+            fprintf(stderr,"rpserver.start: fork failed\n");
             exit(1);
         }
         else if(!dpid)
@@ -2843,14 +2851,16 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
             logging(ctx,ob_idx);
             if (setsid()==-1) {
-                fprintf(error_fh,"failed to become a session leader while daemonising: %s",strerror(errno));
+                fprintf(error_fh,"rpserver.start: failed to become a session leader while daemonising: %s",strerror(errno));
                 exit(1);
             }
 
             /* port */
             if (duk_get_prop_string(ctx, ob_idx, "port"))
             {
-                port = duk_require_int(ctx, -1);
+                port = duk_rp_get_int_default(ctx, -1, -1);
+                if (port ==-1)
+                    fprintf(error_fh, "rpserver.start: parameter \"port\" invalid");
             }
             duk_pop(ctx);
 
@@ -2878,17 +2888,17 @@ duk_ret_t duk_server_start(duk_context *ctx)
             close(STDIN_FILENO);
             close(STDOUT_FILENO);
             if (open("/dev/null",O_RDONLY) == -1) {
-                fprintf(error_fh,"failed to reopen stdin while daemonising (errno=%d)",errno);
+                fprintf(error_fh,"rpserver.start: failed to reopen stdin while daemonising (errno=%d)",errno);
                 exit(1);
             }
             if (open("/dev/null",O_WRONLY) == -1) {
-                fprintf(error_fh,"failed to reopen stdout while daemonising (errno=%d)",errno);
+                fprintf(error_fh,"rpserver.start: failed to reopen stdout while daemonising (errno=%d)",errno);
                 exit(1);
             }
             close(STDERR_FILENO);
             if (open("/dev/null",O_RDWR) == -1) {
                 /* FIXME: what to do when error_fh=stderr? */
-                fprintf(error_fh,"failed to reopen stderr while daemonising (errno=%d)",errno);
+                fprintf(error_fh,"rpserver.start: failed to reopen stderr while daemonising (errno=%d)",errno);
                 exit(1);
             }
             stderr=error_fh;
@@ -2918,7 +2928,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
             /* port */
             if (duk_get_prop_string(ctx, ob_idx, "port"))
             {
-                port = duk_require_int(ctx, -1);
+                port = duk_rp_get_int_default(ctx, -1, -1);
+                if(port==-1) 
+                    fprintf(error_fh, "rpserver.start: parameter \"port\" invalid");
             }
             duk_pop(ctx);
 
@@ -2929,14 +2941,12 @@ duk_ret_t duk_server_start(duk_context *ctx)
         {
             if (duk_get_prop_string(ctx, ob_idx, "user"))
             {
-                const char *user=duk_require_string(ctx, -1);
+                const char *user=REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"user\" requires a string (username)");
                 struct passwd  *pwd;
                 
                 if(! (pwd = getpwnam(user)) )
-                {
-                    duk_push_sprintf(ctx,"error getting user '%s' in start()\n",user);
-                    (void)duk_throw(ctx);
-                }
+                    RP_THROW(ctx, "rpserver.start: error getting user '%s' in start()\n",user);
+
                 if( !strcmp("root",user) )
                     printf("\n******* WARNING: YOU ARE RUNNING SERVER AS ROOT. NOT A GOOD IDEA. YOU'VE BEEN WARNED!!!! ********\n\n");
                 else
@@ -2945,17 +2955,15 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 unprivg=pwd->pw_gid;
             }
             else
-            {
-                duk_push_string(ctx,"starting as root requires you name a {user:'unpriv_user_name'} in start()");
-                (void)duk_throw(ctx);
-            }
+                RP_THROW(ctx, "rpserver.start: starting as root requires you name a {user:'unpriv_user_name'} in start()");
+
             duk_pop(ctx);
         }
 
         /* ip addr */
         if (duk_get_prop_string(ctx, ob_idx, "ip"))
         {
-            s = duk_require_string(ctx, -1);
+            s = REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"ip\" requires a string (\"ip address\")");
             strcpy(ipv4, s);
         }
         duk_pop(ctx);
@@ -2963,7 +2971,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         /* ipv6 addr */
         if (duk_get_prop_string(ctx, ob_idx, "ipv6"))
         {
-            s = duk_require_string(ctx, -1);
+            s = REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"ipv6\" requires a string (\"ip address\")");
             strcpy(&ipv6[5], s);
         }
         duk_pop(ctx);
@@ -2971,36 +2979,41 @@ duk_ret_t duk_server_start(duk_context *ctx)
         /* threads */
         if (duk_get_prop_string(ctx, ob_idx, "threads"))
         {
-            confThreads = duk_require_int(ctx, -1);
+            confThreads = duk_rp_get_int_default(ctx, -1, -1);
+            if(confThreads == -1)
+                RP_THROW(ctx,"rpserver.start: parameter \"threads\" invalid");
         }
         duk_pop(ctx);
 
         /* multithreaded */
         if (duk_get_prop_string(ctx, ob_idx, "usethreads"))
         {
-            mthread = duk_require_boolean(ctx, -1);
+            mthread = REQUIRE_BOOL(ctx, -1, "rpserver.start: parameter \"threads\" requires a boolean (true|false)");
             gl_singlethreaded = !mthread;
         }
         duk_pop(ctx);
         if (duk_get_prop_string(ctx, ob_idx, "useThreads"))
         {
-            mthread = duk_require_boolean(ctx, -1);
+            mthread = REQUIRE_BOOL(ctx, -1, "rpserver.start: parameter \"threads\" requires a boolean (true|false)");
             gl_singlethreaded = !mthread;
         }
         duk_pop(ctx);
 
-        /* port */
-        if (!daemon && duk_get_prop_string(ctx, ob_idx, "port"))
-        {
-            port = duk_require_int(ctx, -1);
-        }
-        duk_pop(ctx);
-
-
         /* port ipv6*/
         if (duk_get_prop_string(ctx, ob_idx, "ipv6port"))
         {
-            ipv6port = (uint16_t)duk_require_int(ctx, -1);
+            port = duk_rp_get_int_default(ctx, -1, -1);
+            if(port==-1) 
+                fprintf(error_fh, "rpserver.start: parameter \"ipv6port\" invalid");
+        }
+        else
+            ipv6port = port;
+        duk_pop(ctx);
+        if (duk_get_prop_string(ctx, ob_idx, "ipv6Port"))
+        {
+            port = duk_rp_get_int_default(ctx, -1, -1);
+            if(port==-1) 
+                fprintf(error_fh, "rpserver.start: parameter \"ipv6port\" invalid");
         }
         else
             ipv6port = port;
@@ -3009,31 +3022,31 @@ duk_ret_t duk_server_start(duk_context *ctx)
         /* use ipv6*/
         if (duk_get_prop_string(ctx, ob_idx, "useipv6"))
         {
-            usev6 = duk_require_boolean(ctx, -1);
+            usev6 = REQUIRE_BOOL(ctx, -1,  "rpserver.start: parameter \"useipv6\" requires a boolean (true|false)");
         }
         duk_pop(ctx);
         if (duk_get_prop_string(ctx, ob_idx, "useIpv6"))
         {
-            usev6 = duk_require_boolean(ctx, -1);
+            usev6 = REQUIRE_BOOL(ctx, -1,  "rpserver.start: parameter \"useIpv6\" requires a boolean (true|false)");
         }
         duk_pop(ctx);
 
         /* use ipv4*/
         if (duk_get_prop_string(ctx, ob_idx, "useipv4"))
         {
-            usev4 = duk_require_boolean(ctx, -1);
+            usev4 = REQUIRE_BOOL(ctx, -1,  "rpserver.start: parameter \"useipv4\" requires a boolean (true|false)");
         }
         duk_pop(ctx);
         if (duk_get_prop_string(ctx, ob_idx, "useIpv4"))
         {
-            usev4 = duk_require_boolean(ctx, -1);
+            usev4 = REQUIRE_BOOL(ctx, -1,  "rpserver.start: parameter \"useIpv4\" requires a boolean (true|false)");
         }
         duk_pop(ctx);
         
         /* timeout */
         if (duk_get_prop_string(ctx, ob_idx, "connectTimeout"))
         {
-            double to = duk_require_number(ctx, -1);
+            double to = REQUIRE_NUMBER(ctx, -1,  "rpserver.start: parameter \"connectTimeout\" requires a number (float)");
             ctimeout.tv_sec = (time_t)to;
             ctimeout.tv_usec = (suseconds_t)1000000.0 * (to - (double)ctimeout.tv_sec);
             printf("set connection timeout to %d sec and %d microseconds\n", (int)ctimeout.tv_sec, (int)ctimeout.tv_usec);
@@ -3042,7 +3055,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
         if (duk_get_prop_string(ctx, ob_idx, "scriptTimeout"))
         {
-            double to = duk_require_number(ctx, -1);
+            double to = REQUIRE_NUMBER(ctx, -1, "rpserver.start: parameter \"scriptTimeout\" requires a number (float)");
             dhs->timeout.tv_sec = (time_t)to;
             dhs->timeout.tv_usec = (suseconds_t)1000000.0 * (to - (double)dhs->timeout.tv_sec);
             printf("set script timeout to %d sec and %d microseconds\n", (int)dhs->timeout.tv_sec, (int)dhs->timeout.tv_usec);
@@ -3052,7 +3065,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         /* ssl opts*/
         if (duk_get_prop_string(ctx, ob_idx, "secure"))
         {
-            secure = duk_require_boolean(ctx, -1);
+            secure = REQUIRE_BOOL(ctx, -1, "rpserver.start: parameter \"secure\" requires a boolean (true|false)");
         }
         duk_pop(ctx);
 
@@ -3066,10 +3079,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     if (mthread)
     {
         if (usev6 + usev4 == 0)
-        {
-            duk_push_string(ctx, "useipv6 and useipv4 cannot both be set to false");
-            (void)duk_throw(ctx);
-        }
+            RP_THROW(ctx, "rpserver.start: useipv6 and useipv4 cannot both be set to false");
 
         /* use specified number of threads */
         if (confThreads > 0)
@@ -3191,10 +3201,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     mod=MODULE_FILE;
                 }
                 else
-                {
-                    duk_push_string(ctx,"Option for notFoundFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
-                    (void)duk_throw(ctx);
-                }
+                    RP_THROW(ctx, "rpserver.start: Option for notFoundFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
+
                 /* copy function into array at pos 0 in stack and into index fpos in array */
                 duk_put_prop_index(ctx, 0, fpos);
 
@@ -3215,10 +3223,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 fpos++;
             }
             else
-            {
-                duk_push_string(ctx,"Option for notFoundFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
-                (void)duk_throw(ctx);
-            }
+                RP_THROW(ctx, "rpserver.start: Option for notFoundFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
+
         }
         duk_pop(ctx);
 
@@ -3227,6 +3233,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             if (duk_is_object(ctx, -1) && !duk_is_function(ctx, -1) && !duk_is_array(ctx, -1))
             {
                 int mlen=0,j=0,pathlen=0;
+                /* longer == more specific/match first */
                 duk_push_string(ctx,"function(map) { return Object.keys(map).sort(function(a, b){  return b.length - a.length; }); }"); 
                 duk_push_string(ctx,"mapsort");
                 duk_compile(ctx,DUK_COMPILE_FUNCTION);
@@ -3278,10 +3285,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             if (duk_get_prop_string(ctx,-1, "modulePath") )
                             {
                                 if( *( s + strlen(s) -1) == '*' || *s=='*')
-                                {
-                                    duk_push_sprintf(ctx,"glob not allowed in module path %s",s);
-                                    return duk_throw(ctx);
-                                }
+                                    RP_THROW(ctx, "rpserver.start: parameter \"map:modulePath\" -- glob not allowed in module path %s",s);
+
                                 fname = duk_get_string(ctx, -1);
                                 printf("mapping folder     %-20s ->    module path:%s\n", s, fname);
                                 mod=MODULE_PATH;
@@ -3292,7 +3297,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             duk_pop(ctx);                            
                         }
                         
-                        duk_push_sprintf(ctx,"Option for path %s must be a function or an object to load a module (e.g. {module:'mymodule'}",s);
+                        duk_push_error_object(ctx, DUK_ERR_ERROR, "rpserver.start: parameter \"map\" -- Option for path %s must be a function or an object to load a module (e.g. {module:'mymodule'}",s);
                         free(s);
                         (void)duk_throw(ctx);
                         
@@ -3354,6 +3359,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             for each mapped http path                   */
                     { /* map to filesystem */
                         DHMAP *map = NULL;
+                        RPPATH foundpath;
 
                         DUKREMALLOC(ctx, map, sizeof(DHMAP));
 
@@ -3375,6 +3381,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         map->dhs = dhs;
 
                         fspath = (char *)duk_to_string(ctx, -1);
+                        foundpath=rp_find_path(fspath,"");
+                        if(!strlen(foundpath.path))
+                            RP_THROW(ctx, "rpserver.start: parameter \"map\" -- Couldn't find fileserver path '%s'",fspath);
+
+                        fspath=foundpath.path;
                         DUKREMALLOC(ctx, fs, strlen(fspath) + 2)
 
                         if (*(fspath + strlen(fspath) - 1) != '/')
@@ -3383,6 +3394,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         }
                         else
                             sprintf(fs, "%s", fspath);
+
                         printf("mapping folder     %-20s ->    %s\n", s, fs);
                         map->val = fs;
                         if (usev4)
@@ -3394,10 +3406,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 }
             }
             else
-            {
-                duk_push_string(ctx, "value of 'map' must be an object");
-                (void)duk_throw(ctx);
-            }
+                RP_THROW(ctx, "rpserver.start: value of parameter \"map\" must be an object");
         }
         duk_pop_3(ctx);
     }
@@ -3410,53 +3419,36 @@ duk_ret_t duk_server_start(duk_context *ctx)
         {
             filecount++;
             if (stat(ssl_config->pemfile, &f_stat) != 0)
-            {
-                duk_push_sprintf(ctx, "Cannot load SSL cert '%s' (%s)", ssl_config->pemfile, strerror(errno));
-                (void)duk_throw(ctx);
-            }
+                RP_THROW(ctx, "rpserver.start: Cannot load SSL cert '%s' (%s)", ssl_config->pemfile, strerror(errno));
         }
 
         if (ssl_config->privfile)
         {
             filecount++;
             if (stat(ssl_config->privfile, &f_stat) != 0)
-            {
-                duk_push_sprintf(ctx, "Cannot load SSL key '%s' (%s)", ssl_config->privfile, strerror(errno));
-                (void)duk_throw(ctx);
-            }
+                RP_THROW(ctx, "rpserver.start: Cannot load SSL key '%s' (%s)", ssl_config->privfile, strerror(errno));
         }
 
         if (ssl_config->cafile)
         {
             if (stat(ssl_config->cafile, &f_stat) != 0)
-            {
-                duk_push_sprintf(ctx, "Cannot find SSL CA File '%s' (%s)", ssl_config->cafile, strerror(errno));
-                (void)duk_throw(ctx);
-            }
+                RP_THROW(ctx, "rpserver.start: Cannot load SSL CA File '%s' (%s)", ssl_config->cafile, strerror(errno));
         }
         if (filecount < 2)
-        {
-            duk_push_sprintf(ctx, "Minimally ssl must be configured with, e.g. -\n"
+            RP_THROW(ctx, "rpserver.start: Minimally ssl must be configured with, e.g. -\n"
                                   "{\n\t\"secure\":true,\n\t\"sslkeyfile\": \"/path/to/privkey.pem\","
                                   "\n\t\"sslcertfile\":\"/path/to/fullchain.pem\"\n}");
-            (void)duk_throw(ctx);
-        }
+
         printf("Initing ssl/tls\n");
         if (usev4)
         {
             if (evhtp_ssl_init(htp4, ssl_config) == -1)
-            {
-                duk_push_string(ctx, "error setting up ssl/tls server");
-                (void)duk_throw(ctx);
-            }
+                RP_THROW(ctx, "rpserver.start: error setting up ssl/tls server");
         }
         if (usev6)
         {
             if (evhtp_ssl_init(htp6, ssl_config) == -1)
-            {
-                duk_push_string(ctx, "error setting up ssl/tls server");
-                (void)duk_throw(ctx);
-            }
+                RP_THROW(ctx, "rpserver.start: error setting up ssl/tls server");
         }
         scheme="https://";
     } 
@@ -3478,19 +3470,13 @@ duk_ret_t duk_server_start(duk_context *ctx)
     if (usev4)
     {
         if (!(ipv4_addr = bind_sock_port(htp4, ipv4, port, 2048)))
-        {
-            duk_push_sprintf(ctx, "could not bind to %s port %d", ipv4, port);
-            (void)duk_throw(ctx);
-        }
+            RP_THROW(ctx, "rpserver.start: could not bind to %s port %d", ipv4, port);
     }
 
     if (usev6)
     {
         if (!(ipv6_addr = bind_sock_port(htp6, ipv6, ipv6port, 2048)))
-        {
-            duk_push_sprintf(ctx, "could not bind to %s, %d", ipv6, ipv6port);
-            (void)duk_throw(ctx);
-        }
+            RP_THROW(ctx, "rpserver.start: could not bind to %s, %d", ipv6, ipv6port);
     }
 
     for (i = 0; i <= totnthreads; i++)
@@ -3551,12 +3537,12 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     if (pthread_mutex_init(&errlock, NULL) == EINVAL)
     {
-        fprintf(stderr, "could not initialize errlog lock\n");
+        fprintf(stderr, "rpserver.start: could not initialize errorLog lock\n");
         exit(1);
     }
     if (pthread_mutex_init(&ctxlock, NULL) == EINVAL)
     {
-        fprintf(stderr, "could not initialize context lock\n");
+        fprintf(stderr, "rpserver.start: could not initialize context lock\n");
         exit(1);
     }
 

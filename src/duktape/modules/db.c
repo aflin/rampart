@@ -337,16 +337,14 @@ duk_ret_t duk_rp_sql_close(duk_context *ctx)
 #define throw_tx_error(ctx,pref) do{\
     char pbuf[msgbufsz];\
     duk_rp_log_tx_error(ctx,pbuf);\
-    duk_push_sprintf(ctx, "%s error: %s",pref,pbuf);\
-    (void)duk_throw(ctx);\
+    RP_THROW(ctx, "%s error: %s",pref,pbuf);\
 }while(0)
 #else
 #define throw_tx_error(ctx,pref) do{\
     char pbuf[msgbufsz];\
-    duk_rp_log_tx_error(ctx,pbuf);\
-    duk_push_sprintf(ctx, "%s error: %s",pref,pbuf);\
     if(tx) tx = TEXIS_CLOSE(tx);\
-    (void)duk_throw(ctx);\
+    duk_rp_log_tx_error(ctx,pbuf);\
+    RP_THROW(ctx, "%s error: %s",pref,pbuf);\
 }while(0)
 #endif
 
@@ -1025,11 +1023,10 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 
     /* clear the sql.lastErr string */
     duk_del_prop_string(ctx,-1,"lastErr");
+
     if (!duk_get_prop_string(ctx, -1, "db"))
-    {
-        duk_push_string(ctx, "no database has been opened");
-        (void)duk_throw(ctx);
-    }
+        RP_THROW(ctx, "no database has been opened");
+
     db = duk_get_string(ctx, -1);
     duk_pop_2(ctx);
 
@@ -1159,10 +1156,8 @@ duk_ret_t duk_texis_set(duk_context *ctx)
     duk_push_this(ctx);
 
     if (!duk_get_prop_string(ctx, -1, "db"))
-    {
-        duk_push_string(ctx, "no database is open");
-        (void)duk_throw(ctx);
-    }
+        RP_THROW(ctx, "no database is open");
+
     db = duk_get_string(ctx, -1);
     duk_pop_2(ctx);
 
@@ -1185,8 +1180,7 @@ duk_ret_t duk_texis_set(duk_context *ctx)
         throw_tx_error(ctx,"open sql");
 
 #define throwinvalidprop(s) do{\
-    duk_push_sprintf(ctx,"invalid option '%s'",(s));\
-    (void)duk_throw(ctx);\
+    RP_THROW(ctx,"invalid option '%s'",(s));\
 } while(0)
 
     duk_enum(ctx, -1, 0);
@@ -1269,8 +1263,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
             if (!createdb(db))
             {
                 duk_rp_log_tx_error(ctx,pbuf);
-                duk_push_sprintf(ctx, "cannot create database at '%s' (root path not found, lacking permission or other error\n)", db, pbuf);
-                (void)duk_throw(ctx);
+                RP_THROW(ctx, "cannot create database at '%s' (root path not found, lacking permission or other error\n)", db, pbuf);
             }
         }
         else
@@ -1361,10 +1354,10 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     /* for single_user */
     duk_push_c_function(ctx, duk_rp_sql_singleuser, 1 /*nargs*/);
-    duk_put_prop_string(ctx, -2, "single_user");
+    duk_put_prop_string(ctx, -2, "singleUser");
 
     duk_push_c_function(ctx, RPfunc_stringformat, DUK_VARARGS);
-    duk_put_prop_string(ctx, -2, "stringformat");
+    duk_put_prop_string(ctx, -2, "stringFormat");
 
     duk_push_c_function(ctx, RPsqlFuncs_abstract, 2);
     duk_put_prop_string(ctx, -2, "abstract");
@@ -1435,9 +1428,9 @@ duk_ret_t duk_open_module(duk_context *ctx)
    If callback is specified, return value is number of matches.
   */
     duk_push_c_function(ctx, RPdbFunc_rexfile, 4);
-    duk_put_prop_string(ctx, -2, "rexfile");
+    duk_put_prop_string(ctx, -2, "rexFile");
 
     duk_push_c_function(ctx, RPdbFunc_re2file, 4);
-    duk_put_prop_string(ctx, -2, "re2file");
+    duk_put_prop_string(ctx, -2, "re2File");
     return 1;
 }
