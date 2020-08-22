@@ -46,8 +46,8 @@
 #define DELAYTIME	5
 #define DELAYSB4EXIT	10
 #define ACCEXIT 	DELAYSB4EXIT
-static char eqps[5]="az09"; /* replace with "ovrd" to turn off eqprep() */
-
+//static char eqps[5]="az09"; /* replace with "ovrd" to turn off eqprep() */
+static char eqps[5]="ovrd";
 /**********************************************************************/
 void
 eqprepstr(s)
@@ -67,6 +67,7 @@ int i;
 int
 eqprep()
 {
+ return(0);
  static time_t ltime=0L;
  static int    accnt=0;
  static int    delays=0;
