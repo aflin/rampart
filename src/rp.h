@@ -201,7 +201,8 @@ extern int   rampart_argc;
         }                                                                                \
     } while (0)
 
-/* func from misc.c */
+/* func from rampart-utils.c */
+extern void duk_misc_init(duk_context *ctx);
 char *duk_rp_object2querystring(duk_context *ctx, duk_idx_t qsidx);
 void  duk_rp_querystring2object(duk_context *ctx, char *q);
 duk_ret_t duk_rp_object2q(duk_context *ctx);
@@ -224,7 +225,11 @@ RPPATH rp_get_home_path(char *file, char *subdir);
 /* babelize in cmdline.c */
 const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime);
 
-
+extern pthread_mutex_t loglock;
+extern pthread_mutex_t errlock;
+extern FILE *access_fh;
+extern FILE *error_fh;
+extern int duk_rp_server_logging;
 
 
 #if defined(__cplusplus)

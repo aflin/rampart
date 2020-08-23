@@ -9,11 +9,22 @@
 #include <pwd.h>
 #include <grp.h>
 #include <signal.h>
-#include "misc.h"
 #include "../core/duktape.h"
 #include "../../rp.h"
 extern char **environ;
 extern char *RP_script_path;
+
+/* 
+    defined in main program here 
+    used here and in server module
+*/
+
+pthread_mutex_t loglock;
+pthread_mutex_t errlock;
+FILE *access_fh;
+FILE *error_fh;
+int duk_rp_server_logging=0;
+
 
 /* utility function for global object:
       var buf=toBuffer(val); //fixed if string, same type if already buffer
@@ -2488,18 +2499,74 @@ void duk_misc_init(duk_context *ctx)
     //duk_process_init(ctx);
 }
 
+/************  PRINT/READ/WRITE FUNCTIONS ***************/
+
+#define PF_REQUIRE_STRING(ctx,idx) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_string((ctx),i)) {\
+        if(lock_p) pthread_mutex_unlock(lock_p);\
+        RP_THROW(ctx, "string required in format string argument %d",i);\
+    }\
+    const char *r=duk_get_string((ctx),i);\
+    r;\
+})
+
+#define PF_REQUIRE_LSTRING(ctx,idx,len) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_string((ctx),i)) {\
+        if(lock_p) pthread_mutex_unlock(lock_p);\
+        RP_THROW(ctx, "string required in format string argument %d",i);\
+    }\
+    const char *r=duk_get_lstring((ctx),i,(len));\
+    r;\
+})
+
+#define PF_REQUIRE_INT(ctx,idx) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_number((ctx),i)) {\
+        if(lock_p) pthread_mutex_unlock(lock_p);\
+        RP_THROW(ctx, "number required in format string argument %d",i);\
+    }\
+    int r=duk_get_int((ctx),i);\
+    r;\
+})
+
+
+#define PF_REQUIRE_NUMBER(ctx,idx) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_number((ctx),i)) {\
+        if(lock_p) pthread_mutex_unlock(lock_p);\
+        RP_THROW(ctx, "number required in format string argument %d",i);\
+    }\
+    double r=duk_get_number((ctx),i);\
+    r;\
+})
+
+#define PF_REQUIRE_BUFFER_DATA(ctx,idx,sz) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_buffer_data((ctx),i)) {\
+        if(lock_p) pthread_mutex_unlock(lock_p);\
+        RP_THROW(ctx, "buffer required in format string argument %d",i);\
+    }\
+    void *r=duk_get_buffer_data((ctx),i,(sz));\
+    r;\
+})
+
+pthread_mutex_t pflock;
+pthread_mutex_t pflock_err;
+
 #include "printf.c"
+
+/* TODO: make locking per file.  Add locking to fwrite */
 
 duk_ret_t duk_printf(duk_context *ctx)
 {
     char buffer[1];
     int ret;
     if (pthread_mutex_lock(&pflock) == EINVAL)
-    {
-        fprintf(stderr, "could not obtain print lock\n");
-        exit(1);
-    }
-    ret = _printf(_out_char, buffer, (size_t)-1, ctx,0);
+        RP_THROW(ctx, "printf(): error - could not obtain lock\n");
+
+    ret = _printf(_out_char, buffer, (size_t)-1, ctx,0,&pflock);
     pthread_mutex_unlock(&pflock);
     duk_push_int(ctx, ret);
     return 1;
@@ -2522,6 +2589,7 @@ duk_ret_t duk_printf(duk_context *ctx)
         RP_THROW(ctx,"error %s: file handle was previously closed",func);\
     f;\
 })
+
 duk_ret_t duk_fseek(duk_context *ctx)
 {
     FILE *f = getfh_nonull(ctx,0,"fseek()");
@@ -2588,6 +2656,8 @@ duk_ret_t duk_fwrite(duk_context *ctx)
     void *buf;
     size_t wrote, sz=(size_t)duk_get_number_default(ctx,2,-1);
     duk_size_t bsz;
+    pthread_mutex_t *lock_p=NULL;
+
     duk_to_buffer(ctx,1,&bsz);
     buf=duk_get_buffer_data(ctx, 1, &bsz);
     if(sz !=-1)
@@ -2597,7 +2667,16 @@ duk_ret_t duk_fwrite(duk_context *ctx)
     }
     else sz=(size_t)bsz;
 
+    if ( duk_get_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filelock")) )
+        lock_p=duk_get_pointer(ctx,-1);
+    else
+        RP_THROW(ctx, "error fwrite(): no mutex lock found (this should never happen)");
+
+    if (pthread_mutex_lock(lock_p) == EINVAL)
+        RP_THROW(ctx, "fwrite(): error - could not obtain lock\n");
     wrote=fwrite(buf,1,sz,f);
+    pthread_mutex_unlock(lock_p);
+    
     if(wrote != sz)
         RP_THROW(ctx, "error fwrite(): error writing file");
 
@@ -2605,9 +2684,35 @@ duk_ret_t duk_fwrite(duk_context *ctx)
     return(1);
 }
 
+duk_ret_t duk_fclose(duk_context *ctx)
+{
+    FILE *f = getfh(ctx,0,"fclose()");
+    pthread_mutex_t *lock;
+    
+    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("filelock") );
+    lock=duk_get_pointer(ctx, -1);
+    if (lock)
+    {
+        free(lock);
+        duk_pop(ctx);
+        duk_push_pointer(ctx,NULL);
+        duk_put_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filelock") );
+    } 
+
+    if(f)
+    {
+        fclose(f);
+        duk_push_pointer(ctx,NULL);
+        duk_put_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filehandle") );
+    }
+
+    return 0;
+}
+
 duk_ret_t duk_fopen(duk_context *ctx)
 {
     FILE *f;
+    pthread_mutex_t *newlock=NULL;
     const char *fn=duk_require_string(ctx,0);
     const char *mode=duk_require_string(ctx,1);
 
@@ -2617,22 +2722,23 @@ duk_ret_t duk_fopen(duk_context *ctx)
     duk_push_object(ctx);
     duk_push_pointer(ctx,(void *)f);
     duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("filehandle") );
+
+    DUKREMALLOC(ctx, newlock, sizeof(pthread_mutex_t) );
+
+    if (pthread_mutex_init(newlock, NULL) == EINVAL)
+        RP_THROW(ctx,"could not initialize file handle lock");
+
+    duk_push_pointer(ctx,(void *)newlock);
+    duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("filelock") );
+
+    duk_push_c_function(ctx, duk_fclose, 2);
+    duk_set_finalizer(ctx, -2);
+
     return 1;
 
     err:
     RP_THROW(ctx, "error opening file '%s': %s", fn, strerror(errno));
     return 0;
-}
-
-duk_ret_t duk_fclose(duk_context *ctx)
-{
-    FILE *f = getfh(ctx,0,"fclose()");
-
-    fclose(f);
-    duk_push_pointer(ctx,NULL);
-    duk_put_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filehandle") );
-
-    return 1;
 }
 
 duk_ret_t duk_fprintf(duk_context *ctx)
@@ -2642,9 +2748,11 @@ duk_ret_t duk_fprintf(duk_context *ctx)
     FILE *out=NULL;
     int append=0;
     int closefh=1;
+    pthread_mutex_t *lock_p=&pflock;
 
     if(duk_is_object(ctx,0))
     {
+        /* special named file handles */
         if(duk_get_prop_string(ctx,0,"stream"))
         {
             const char *s=duk_require_string(ctx,-1);
@@ -2655,16 +2763,27 @@ duk_ret_t duk_fprintf(duk_context *ctx)
             else if (!strcmp(s,"stderr"))
             {
                 out=stderr;
+                lock_p=&pflock_err;
+            }
+            else if (!strcmp(s,"accessLog"))
+            {
+                out=access_fh;
+                lock_p=&loglock;
+            }
+            else if (!strcmp(s,"errorLog"))
+            {
+                out=error_fh;
+                lock_p=&errlock;
             }
             else
-                RP_THROW(ctx,"error: fprintf({stream:""},...): stream must be stdout or stderr");
+                RP_THROW(ctx,"error: fprintf({stream:\"streamName\"},...): streamName must be stdout, stderr, accessLog or errorLog");
 
             closefh=0;
             duk_pop(ctx);
             goto startprint;
         }
         duk_pop(ctx);
-
+        /* file handles opened with javascript:fopen() */
         if ( duk_get_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filehandle")) )
         {
             out=duk_get_pointer(ctx,-1);
@@ -2673,6 +2792,11 @@ duk_ret_t duk_fprintf(duk_context *ctx)
             if(out==NULL)
                 RP_THROW(ctx,"error: fprintf(handle,...): handle was previously closed");
 
+            if ( duk_get_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filelock")) )
+            {
+                lock_p=duk_get_pointer(ctx,-1);
+            }
+            duk_pop(ctx);
             goto startprint;
         }
         duk_pop(ctx);
@@ -2692,7 +2816,8 @@ duk_ret_t duk_fprintf(duk_context *ctx)
         {
             if( (out=fopen(fn,"a")) == NULL )
             {
-                if( (out=fopen(fn,"w")) == NULL )
+                //if( (out=fopen(fn,"w")) == NULL )
+                //why would I do such a thing?
                     goto err;
             }
         }
@@ -2703,15 +2828,14 @@ duk_ret_t duk_fprintf(duk_context *ctx)
         }
     }
     startprint:
-    ret = _printf(_fout_char, (void*)out, (size_t)-1, ctx,1);
-    if (pthread_mutex_lock(&pflock) == EINVAL)
-    {
-        fprintf(stderr, "error: could not obtain lock in fprintf\n");
-        exit(1);
-    }
+    if (pthread_mutex_lock(lock_p) == EINVAL)
+        RP_THROW(ctx, "fprintf(): error - could not obtain lock\n");
+
+    ret = _printf(_fout_char, (void*)out, (size_t)-1, ctx, 1, lock_p);
+    fflush(out);
     if(closefh)
         fclose(out);
-    pthread_mutex_unlock(&pflock);
+    pthread_mutex_unlock(lock_p);
     duk_push_int(ctx, ret);
     return 1;
 
@@ -2723,12 +2847,12 @@ duk_ret_t duk_fprintf(duk_context *ctx)
 duk_ret_t duk_sprintf(duk_context *ctx)
 {
     char *buffer;
-    int size = _printf(_out_null, NULL, (size_t)-1, ctx,0);
+    int size = _printf(_out_null, NULL, (size_t)-1, ctx, 0, NULL);
     buffer = malloc((size_t)size + 1);
     if (!buffer)
         RP_THROW(ctx, "malloc error in sprintf");
 
-    (void)_printf(_out_buffer, buffer, (size_t)-1, ctx,0);
+    (void)_printf(_out_buffer, buffer, (size_t)-1, ctx, 0, NULL);
     duk_push_lstring(ctx, buffer,(duk_size_t)size);
     free(buffer);
     return 1;
@@ -2737,9 +2861,9 @@ duk_ret_t duk_sprintf(duk_context *ctx)
 duk_ret_t duk_bprintf(duk_context *ctx)
 {
     char *buffer;
-    int size = _printf(_out_null, NULL, (size_t)-1, ctx,0);
+    int size = _printf(_out_null, NULL, (size_t)-1, ctx, 0, NULL);
     buffer = (char *) duk_push_fixed_buffer(ctx, (duk_size_t)size);
-    (void)_printf(_out_buffer, buffer, (size_t)-1, ctx,0);
+    (void)_printf(_out_buffer, buffer, (size_t)-1, ctx, 0, NULL);
     return 1;
 }
 
@@ -2757,39 +2881,78 @@ void duk_printf_init(duk_context *ctx)
     }
     duk_push_c_function(ctx, duk_printf, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "printf");
+
     duk_push_c_function(ctx, duk_sprintf, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "sprintf");
+
     duk_push_c_function(ctx, duk_fprintf, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "fprintf");
+
     duk_push_c_function(ctx, duk_bprintf, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "bprintf");
+
     duk_push_c_function(ctx, duk_fopen, 2);
     duk_put_prop_string(ctx, -2, "fopen");
+
     duk_push_c_function(ctx, duk_fclose, 1);
     duk_put_prop_string(ctx, -2, "fclose");
+
     duk_push_c_function(ctx, duk_fseek, 3);
     duk_put_prop_string(ctx, -2, "fseek");
+
     duk_push_c_function(ctx, duk_ftell, 1);
     duk_put_prop_string(ctx, -2, "ftell");
+
     duk_push_c_function(ctx, duk_rewind, 1);
     duk_put_prop_string(ctx, -2, "rewind");
+
     duk_push_c_function(ctx, duk_fread, 2);
     duk_put_prop_string(ctx, -2, "fread");
+
     duk_push_c_function(ctx, duk_fwrite, 3);
     duk_put_prop_string(ctx, -2, "fwrite");
+
+    duk_push_object(ctx);
+    duk_push_string(ctx,"accessLog");
+    duk_put_prop_string(ctx,-2,"stream");
+    duk_put_prop_string(ctx, -2,"accessLog");
+
+    duk_push_object(ctx);
+    duk_push_string(ctx,"errorLog");
+    duk_put_prop_string(ctx,-2,"stream");
+    duk_put_prop_string(ctx, -2,"errorLog");
+
     duk_push_object(ctx);
     duk_push_string(ctx,"stdout");
     duk_put_prop_string(ctx,-2,"stream");
     duk_put_prop_string(ctx, -2,"stdout");
+
     duk_push_object(ctx);
     duk_push_string(ctx,"stderr");
     duk_put_prop_string(ctx,-2,"stream");
     duk_put_prop_string(ctx, -2,"stderr");
+
     duk_put_prop_string(ctx, -2,"utils");
     duk_put_global_string(ctx,"rampart");
+
     if (pthread_mutex_init(&pflock, NULL) == EINVAL)
     {
-        fprintf(stderr, "could not initialize context lock\n");
+        fprintf(stderr, "could not initialize stdout print lock\n");
+        exit(1);
+    }
+    if (pthread_mutex_init(&pflock_err, NULL) == EINVAL)
+    {
+        fprintf(stderr, "could not initialize stderr print lock\n");
+        exit(1);
+    }
+    if (pthread_mutex_init(&loglock, NULL) == EINVAL)
+    {
+        fprintf(stderr, "could not initialize accessLog lock\n");
+        exit(1);
+    }
+    if (pthread_mutex_init(&errlock, NULL) == EINVAL)
+    {
+        fprintf(stderr, "could not initialize errorLog lock\n");
         exit(1);
     }
 }

@@ -1,9 +1,9 @@
 #include "register.h"
 #include "core/duk_console.h"
 #include "core/module.h"
-#include "globals/misc.h"
 #include "globals/printf.h"
 #include "globals/ramis.h"
+#include "../rp.h"
 
 void duk_init_context(duk_context *ctx)
 {

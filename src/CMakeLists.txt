@@ -32,7 +32,7 @@ add_executable(rampart
 	duktape/core/duktape.c
 	duktape/core/duk_console.c
 	duktape/core/module.c
-	duktape/globals/misc.c
+	duktape/globals/rampart-utils.c
 #	duktape/globals/printf.c
 	duktape/globals/ramis.c
 

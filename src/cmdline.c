@@ -521,8 +521,12 @@ int main(int argc, char *argv[])
     struct rlimit rlp;
     int filelimit = 16384, lflimit = filelimit, isstdin=0;
 
+    /* for later use */
     rampart_argv=argv;
     rampart_argc=argc;
+    access_fh=stdout;
+    error_fh=stderr;
+
     /* set rlimit to filelimit, or highest allowed value below that */
     getrlimit(RLIMIT_NOFILE, &rlp);
     rlp.rlim_cur = filelimit;

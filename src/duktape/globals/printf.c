@@ -29,18 +29,16 @@
 //        malloc for printf (and may not be thread safe).
 //
 ///////////////////////////////////////////////////////////////////////////////
-// FROM: https://github.com/mpaland/printf
+// FROM: https://github.com/mpaland/printf - with gratitude!
 // MODIFIED BY Aaron Flin for use in duktape
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "../../rp.h"
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <errno.h>
 #include "printf.h"
-pthread_mutex_t pflock;
 // 'ntoa' conversion buffer size, this must be big enough to hold one converted
 // numeric number including padded zeros (dynamically created on stack)
 // default: 32 byte
@@ -561,59 +559,7 @@ static size_t _etoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
     return idx;
 }
 
-#define PF_REQUIRE_STRING(ctx,idx) ({\
-    duk_idx_t i=(idx);\
-    if(!duk_is_string((ctx),i)) {\
-        pthread_mutex_unlock(&pflock);\
-        RP_THROW(ctx, "string required in format string argument %d",i);\
-    }\
-    const char *r=duk_get_string((ctx),i);\
-    r;\
-})
-
-#define PF_REQUIRE_LSTRING(ctx,idx,len) ({\
-    duk_idx_t i=(idx);\
-    if(!duk_is_string((ctx),i)) {\
-        pthread_mutex_unlock(&pflock);\
-        RP_THROW(ctx, "string required in format string argument %d",i);\
-    }\
-    const char *r=duk_get_lstring((ctx),i,(len));\
-    r;\
-})
-
-#define PF_REQUIRE_INT(ctx,idx) ({\
-    duk_idx_t i=(idx);\
-    if(!duk_is_number((ctx),i)) {\
-        pthread_mutex_unlock(&pflock);\
-        RP_THROW(ctx, "number required in format string argument %d",i);\
-    }\
-    int r=duk_get_int((ctx),i);\
-    r;\
-})
-
-
-#define PF_REQUIRE_NUMBER(ctx,idx) ({\
-    duk_idx_t i=(idx);\
-    if(!duk_is_number((ctx),i)) {\
-        pthread_mutex_unlock(&pflock);\
-        RP_THROW(ctx, "number required in format string argument %d",i);\
-    }\
-    double r=duk_get_number((ctx),i);\
-    r;\
-})
-
-#define PF_REQUIRE_BUFFER_DATA(ctx,idx,sz) ({\
-    duk_idx_t i=(idx);\
-    if(!duk_is_buffer_data((ctx),i)) {\
-        pthread_mutex_unlock(&pflock);\
-        RP_THROW(ctx, "buffer required in format string argument %d",i);\
-    }\
-    void *r=duk_get_buffer_data((ctx),i,(sz));\
-    r;\
-})
-
-
-static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *ctx, duk_idx_t fidx)
+static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *ctx, duk_idx_t fidx, pthread_mutex_t *lock_p)
 {
     unsigned int flags, width, precision, n;
     size_t idx = 0U;

@@ -27,6 +27,7 @@
 //#define RP_TIMEO_DEBUG
 
 extern int RP_TX_isforked;
+
 uid_t unprivu=0;
 gid_t unprivg=0;
 
@@ -37,15 +38,10 @@ gid_t unprivg=0;
 #endif
 
 pthread_mutex_t ctxlock;
-pthread_mutex_t loglock;
-pthread_mutex_t errlock;
 
-FILE *access_fh;
-FILE *error_fh;
-int duk_rp_server_logging=0;
 
-static int gl_threadno = 0;
-static int gl_singlethreaded = 1;
+int gl_threadno = 0;
+int gl_singlethreaded = 1;
 
 duk_context **thread_ctx = NULL, *main_ctx;
 
@@ -2607,7 +2603,7 @@ char *bind_sock_port(evhtp_t *htp, const char *ip, uint16_t port, int backlog)
             if (strcmp(ip, addr) != 0)
                 return NULL;
         }
-        printf("binding to %s port %d\n", addr, port);
+        fprintf(access_fh, "binding to %s port %d\n", addr, port);
         return strdup(addr);
     }
 
@@ -2768,11 +2764,6 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
         {
             printf("no errorLog specified, logging to stderr\n");
         }
-        if (pthread_mutex_init(&loglock, NULL) == EINVAL)
-        {
-            printerr( "could not initialize log lock\n");
-            exit(1);
-        }
     }
 }
 
@@ -2802,8 +2793,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
     ctimeout.tv_sec = RP_TIME_T_FOREVER;
     ctimeout.tv_usec = 0;
     main_ctx = ctx;
-    access_fh=stdout;
-    error_fh=stderr;
 
     /*  an array at stack index 0 to hold all the callback function 
         This gets it off of an otherwise growing and shrink stack and makes
@@ -2922,8 +2911,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
         if(!daemon) 
         {
             logging(ctx, ob_idx);
-            stderr=error_fh;
-            stdout=access_fh;            
+            //stderr=error_fh;
+            //stdout=access_fh;            
 
             /* port */
             if (duk_get_prop_string(ctx, ob_idx, "port"))
@@ -2948,9 +2937,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     RP_THROW(ctx, "rpserver.start: error getting user '%s' in start()\n",user);
 
                 if( !strcmp("root",user) )
-                    printf("\n******* WARNING: YOU ARE RUNNING SERVER AS ROOT. NOT A GOOD IDEA. YOU'VE BEEN WARNED!!!! ********\n\n");
+                    fprintf(stderr,"\n******* WARNING: YOU ARE RUNNING SERVER AS ROOT. NOT A GOOD IDEA. YOU'VE BEEN WARNED!!!! ********\n\n");
                 else
-                    printf("setting unprivileged user '%s'\n",user);
+                    fprintf(access_fh,"setting unprivileged user '%s'\n",user);
                 unprivu=pwd->pw_uid;
                 unprivg=pwd->pw_gid;
             }
@@ -3049,7 +3038,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             double to = REQUIRE_NUMBER(ctx, -1,  "rpserver.start: parameter \"connectTimeout\" requires a number (float)");
             ctimeout.tv_sec = (time_t)to;
             ctimeout.tv_usec = (suseconds_t)1000000.0 * (to - (double)ctimeout.tv_sec);
-            printf("set connection timeout to %d sec and %d microseconds\n", (int)ctimeout.tv_sec, (int)ctimeout.tv_usec);
+            fprintf(access_fh, "set connection timeout to %d sec and %d microseconds\n", (int)ctimeout.tv_sec, (int)ctimeout.tv_usec);
         }
         duk_pop(ctx);
 
@@ -3058,7 +3047,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             double to = REQUIRE_NUMBER(ctx, -1, "rpserver.start: parameter \"scriptTimeout\" requires a number (float)");
             dhs->timeout.tv_sec = (time_t)to;
             dhs->timeout.tv_usec = (suseconds_t)1000000.0 * (to - (double)dhs->timeout.tv_sec);
-            printf("set script timeout to %d sec and %d microseconds\n", (int)dhs->timeout.tv_sec, (int)dhs->timeout.tv_usec);
+            fprintf(access_fh, "set script timeout to %d sec and %d microseconds\n", (int)dhs->timeout.tv_sec, (int)dhs->timeout.tv_usec);
         }
         duk_pop(ctx);
 
@@ -3094,7 +3083,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
         totnthreads = nthr * (usev6 + usev4);
 
-        printf("HTTP server for %s%s%s - initializing with %d threads per server, %d total\n",
+        fprintf(access_fh, "HTTP server for %s%s%s - initializing with %d threads per server, %d total\n",
                ((usev4) ? "ipv4" : ""),
                ((usev4 && usev6) ? " and " : ""),
                ((usev6) ? "ipv6" : ""),
@@ -3105,10 +3094,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
     {
         if (confThreads > 1)
         {
-            printf("threads>1 -- usethreads==false, so using only one thread\n");
+            fprintf(access_fh, "threads>1 -- usethreads==false, so using only one thread\n");
         }
         totnthreads = 1;
-        printf("HTTP server for %s%s%s - initializing single threaded\n",
+        fprintf(access_fh, "HTTP server for %s%s%s - initializing single threaded\n",
                ((usev4) ? "ipv4" : ""),
                ((usev4 && usev6) ? " and " : ""),
                ((usev6) ? "ipv6" : ""));
@@ -3191,13 +3180,13 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     duk_get_prop_string(ctx, -1, "name");
                     fname = duk_get_string(ctx, -1);
                     duk_pop(ctx);
-                    printf("mapping function   %-20s ->    function %s()\n", "404", fname);
+                    fprintf(access_fh, "mapping function   %-20s ->    function %s()\n", "404", fname);
                 }
                 else if (duk_get_prop_string(ctx,-1, "module") )
                 {
                     fname = duk_get_string(ctx, -1);
                     duk_pop(ctx);
-                    printf("mapping function   %-20s ->    module:%s\n", "404", fname);
+                    fprintf(access_fh, "mapping function   %-20s ->    module:%s\n", "404", fname);
                     mod=MODULE_FILE;
                 }
                 else
@@ -3268,7 +3257,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             duk_get_prop_string(ctx, -1, "name");
                             fname = duk_get_string(ctx, -1);
                             duk_pop(ctx);
-                            printf("mapping function   %-20s ->    function %s()\n", s, fname);
+                            fprintf(access_fh, "mapping function   %-20s ->    function %s()\n", s, fname);
                             goto copyfunction;
                         }
                         else 
@@ -3276,7 +3265,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             if (duk_get_prop_string(ctx,-1, "module") )
                             {
                                 fname = duk_get_string(ctx, -1);
-                                printf("mapping function   %-20s ->    module:%s\n", s, fname);
+                                fprintf(access_fh, "mapping function   %-20s ->    module:%s\n", s, fname);
                                 mod=MODULE_FILE;
                                 duk_pop(ctx);
                                 goto copyfunction;
@@ -3288,7 +3277,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                     RP_THROW(ctx, "rpserver.start: parameter \"map:modulePath\" -- glob not allowed in module path %s",s);
 
                                 fname = duk_get_string(ctx, -1);
-                                printf("mapping folder     %-20s ->    module path:%s\n", s, fname);
+                                fprintf(access_fh, "mapping folder     %-20s ->    module path:%s\n", s, fname);
                                 mod=MODULE_PATH;
                                 duk_pop(ctx);
                                 pathlen=strlen(s);
@@ -3395,7 +3384,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         else
                             sprintf(fs, "%s", fspath);
 
-                        printf("mapping folder     %-20s ->    %s\n", s, fs);
+                        fprintf(access_fh, "mapping folder     %-20s ->    %s\n", s, fs);
                         map->val = fs;
                         if (usev4)
                             evhtp_set_glob_cb(htp4, s, fileserver, map);
@@ -3439,7 +3428,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                   "{\n\t\"secure\":true,\n\t\"sslkeyfile\": \"/path/to/privkey.pem\","
                                   "\n\t\"sslcertfile\":\"/path/to/fullchain.pem\"\n}");
 
-        printf("Initing ssl/tls\n");
+        fprintf(access_fh, "Initing ssl/tls\n");
         if (usev4)
         {
             if (evhtp_ssl_init(htp4, ssl_config) == -1)
@@ -3532,20 +3521,16 @@ duk_ret_t duk_server_start(duk_context *ctx)
     }
     else
     {
-        printf("in single threaded mode\n");
+        fprintf(access_fh, "in single threaded mode\n");
     }
 
-    if (pthread_mutex_init(&errlock, NULL) == EINVAL)
-    {
-        fprintf(stderr, "rpserver.start: could not initialize errorLog lock\n");
-        exit(1);
-    }
     if (pthread_mutex_init(&ctxlock, NULL) == EINVAL)
     {
         fprintf(stderr, "rpserver.start: could not initialize context lock\n");
         exit(1);
     }
-
+    fflush(access_fh);
+    fflush(error_fh);
     event_base_loop(evbase, 0);
     return 0;
 }
