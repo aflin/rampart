@@ -2847,9 +2847,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
             /* port */
             if (duk_get_prop_string(ctx, ob_idx, "port"))
             {
-                port = duk_rp_get_int_default(ctx, -1, -1);
-                if (port ==-1)
-                    fprintf(error_fh, "rpserver.start: parameter \"port\" invalid");
+                int signed_port = duk_rp_get_int_default(ctx, -1, -1);
+                if (signed_port < 1)
+                    RP_THROW(ctx, "rpserver.start: parameter \"port\" invalid");
+                port=(uint16_t) signed_port;
             }
             duk_pop(ctx);
 
@@ -2917,9 +2918,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
             /* port */
             if (duk_get_prop_string(ctx, ob_idx, "port"))
             {
-                port = duk_rp_get_int_default(ctx, -1, -1);
-                if(port==-1) 
-                    fprintf(error_fh, "rpserver.start: parameter \"port\" invalid");
+                int signed_port = duk_rp_get_int_default(ctx, -1, -1);
+                if (signed_port < 1)
+                    RP_THROW(ctx, "rpserver.start: parameter \"port\" invalid");
+                port=(uint16_t) signed_port;
             }
             duk_pop(ctx);
 
@@ -2991,18 +2993,21 @@ duk_ret_t duk_server_start(duk_context *ctx)
         /* port ipv6*/
         if (duk_get_prop_string(ctx, ob_idx, "ipv6port"))
         {
-            port = duk_rp_get_int_default(ctx, -1, -1);
-            if(port==-1) 
-                fprintf(error_fh, "rpserver.start: parameter \"ipv6port\" invalid");
+            int signed_port = duk_rp_get_int_default(ctx, -1, -1);
+            if (signed_port < 1)
+                RP_THROW(ctx,"rpserver.start: parameter \"ipv6port\" invalid");
+            ipv6port=(uint16_t) signed_port;
         }
         else
             ipv6port = port;
         duk_pop(ctx);
+
         if (duk_get_prop_string(ctx, ob_idx, "ipv6Port"))
         {
-            port = duk_rp_get_int_default(ctx, -1, -1);
-            if(port==-1) 
-                fprintf(error_fh, "rpserver.start: parameter \"ipv6port\" invalid");
+            int signed_port = duk_rp_get_int_default(ctx, -1, -1);
+            if (signed_port < 1)
+                RP_THROW(ctx, "rpserver.start: parameter \"ipv6Port\" invalid");
+            ipv6port=(uint16_t) signed_port;
         }
         else
             ipv6port = port;
