@@ -236,6 +236,13 @@ install(CODE "execute_process( \
     )"
 )
 
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy_directory \
+    \"${PROJECT_BINARY_DIR}/src/metasearch\" \
+    \"${CMAKE_INSTALL_PREFIX}/examples/metasearch\"   \
+    )"
+)
+
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpserver.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpcrypto.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpcurl.so\")")

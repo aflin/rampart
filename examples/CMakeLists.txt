@@ -5,6 +5,7 @@ set(EXAMPLE_FILES
 	"tetris-tutorial"
 	"servermods"
 	"wikipedia_search"
+	"metasearch"
 )
 
 # Copying to the src dir is temporary. In the future
