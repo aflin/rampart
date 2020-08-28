@@ -2190,8 +2190,10 @@ check_proto:
 
     if (evbuffer_get_length(request->buffer_out)) {
         evbuffer_add_buffer(buf, request->buffer_out);
-    }
 
+        if (request->conn->htp->ssl_ctx != NULL)
+            evbuffer_pullup(buf,-1);
+    }
     return buf;
 }     /* htp__create_reply_ */
 

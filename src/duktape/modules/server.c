@@ -928,7 +928,7 @@ static void refcb(const void *data, size_t datalen, void *val)
     duk_context *ctx = fp->ctx;
     int threadno = (int)fp->threadno;
 
-    /* check if the entire stack was already freed and replaced in redo_ctx */
+    // check if the entire stack was already freed and replaced in redo_ctx
     if (ctx == thread_ctx[threadno])
         duk_free(ctx, (void *)data);
     free(fp);
@@ -938,41 +938,27 @@ static void sendbuf(DHS *dhs)
 {
     duk_size_t sz;
     const char *s;
-    CTXFREER *freeme = NULL;
     duk_context *ctx = dhs->ctx;
 
-    REMALLOC(freeme, sizeof(CTXFREER));
-    s = duk_get_string_default(ctx, -1, " ");
-    if (*s == '\\' && *(s + 1) == '@')
+    if ( duk_is_buffer_data(ctx, -1) )
     {
-        s++;
-        duk_push_string(ctx, s);
-        duk_replace(ctx, -2);
+        CTXFREER *freeme = NULL;
+        REMALLOC(freeme, sizeof(CTXFREER));
+
+        duk_to_dynamic_buffer(ctx, -1, &sz);
+        s = duk_steal_buffer(ctx, -1, &sz);
+        freeme->ctx = ctx;
+        freeme->threadno = dhs->threadno;
+        evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, refcb, freeme);
     }
-
-    /* turn whatever the return val is a buffer, 
-       then steal the allocation and pass it to evbuffer
-       without copying.  duktape will not free it
-       when we duk_pop().
-
-       if it is a string, it is copied in duktape to a buffer,
-       but that is unavoidable and would be done anyway even without
-       duk_steal_buffer/evbuffer_add_reference.
-    */
-    duk_to_dynamic_buffer(ctx, -1, &sz);
-    s = duk_steal_buffer(ctx, -1, &sz);
-
-    /* add buffer to response, and specify callback to free s when done */
-    /* note that dhs and ctx might not exist by the time the callback is executed
-       in case of a timeout */
-    freeme->ctx = ctx;
-    freeme->threadno = dhs->threadno;
-    evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, refcb, freeme);
-
-    /* with copy - this version needs a check for databuffer
-    s=duk_get_lstring(dhs->ctx,1,&sz);
-    evbuffer_add(dhs->req->buffer_out,s,(size_t)sz);
-    */
+    else
+    /* duk_to_buffer does a copy on a string, so we'll just skip that and copy directly */
+    {
+        s= duk_get_lstring(ctx, -1, &sz);
+        if (*s == '\\' && *(s + 1) == '@')
+            s++;
+        evbuffer_add(dhs->req->buffer_out,s,(size_t)sz);
+    }
 }
 
 
@@ -2295,24 +2281,26 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         /* if we don't already have it, set the threadsafe info on the function */
         if (!have_threadsafe_val)
         {
-            duk_get_prop_index(ctx, 0, (duk_uarridx_t)dhs->func_idx);
+            getfunction(dhs);
             duk_push_boolean(ctx, (duk_bool_t)is_threadsafe);
             duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("threadsafe"));
             duk_pop(ctx);
-            if (pthread_mutex_lock(&ctxlock) == EINVAL)
-            {
-                printerr( "could not obtain lock in http_callback\n");
-                exit(1);
-            }
             /* mark it as thread safe on main_ctx as well (for timeout/redo_ctx, but not if module) */
             if(!dhs->module)
             {
+                if (pthread_mutex_lock(&ctxlock) == EINVAL)
+                {
+                    printerr( "could not obtain lock in http_callback\n");
+                    exit(1);
+                }
+
                 duk_get_prop_index(main_ctx, 0, (duk_uarridx_t)dhs->func_idx);
                 duk_push_boolean(main_ctx, (duk_bool_t)is_threadsafe);
                 duk_put_prop_string(main_ctx, -2, DUK_HIDDEN_SYMBOL("threadsafe"));
                 duk_pop(main_ctx);
+
+                pthread_mutex_unlock(&ctxlock);
             }
-            pthread_mutex_unlock(&ctxlock);
         }
     }
     /* stack now has return value from duk function call */
@@ -2550,7 +2538,6 @@ static void http_callback(evhtp_request_t *req, void *arg)
         have_threadsafe_val = 1;
     }
     duk_pop_2(dhs->ctx);
-
     if (dofork)
         http_fork_callback(req, dhs, have_threadsafe_val);
     else
@@ -2622,7 +2609,8 @@ void testcb(evhtp_request_t *req, void *arg)
     printf("%d\n",(int)pthread_self());
     fflush(stdout);*/
     evbuffer_add_printf(req->buffer_out, "%s", rep);
-    sendresp(req, EVHTP_RES_OK);
+//    sendresp(req, EVHTP_RES_OK);
+    evhtp_send_reply(req, EVHTP_RES_OK); // for pure speed in testing - no logs
 }
 
 void exitcb(evhtp_request_t *req, void *arg)
@@ -2700,6 +2688,7 @@ static void get_secure(duk_context *ctx, duk_idx_t ob_idx, evhtp_ssl_cfg_t *ssl_
 {
     /* all protocols for testing */
     ssl_config->ssl_opts = 0;
+//    ssl_config->ssl_opts = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1;
     if (duk_get_prop_string(ctx, ob_idx, "sslkeyfile"))
     {
         ssl_config->privfile = strdup(REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"sslkeyfile\" requires a string (filename)"));
