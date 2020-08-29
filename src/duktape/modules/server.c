@@ -46,7 +46,7 @@ int gl_singlethreaded = 1;
 duk_context **thread_ctx = NULL, *main_ctx;
 
 int totnthreads = 0;
-
+int rp_using_ssl = 0;
 static char *scheme="http://";
 
 /* DEBUGGING MACROS */
@@ -754,51 +754,140 @@ static void dirlist(evhtp_request_t *req, char *fn)
     send403(req);
 }
 
-static int getrange(evhtp_kv_t *kv, void *arg)
+#define CTXFREER struct ctx_free_buffer_data_str
+
+CTXFREER
 {
-    char **range = arg;
+    duk_context *ctx;
+    int threadno;
+};
 
-    if (!strncasecmp("range", kv->key, (int)kv->klen))
-        *range = strndup(kv->val, kv->vlen);
+/* free the data after evbuffer is done with it, but check that it hasn't 
+   been freed already */
+static void refcb(const void *data, size_t datalen, void *val)
+{
+    CTXFREER *fp = val;
+    duk_context *ctx = fp->ctx;
+    int threadno = (int)fp->threadno;
 
+    // check if the entire stack was already freed and replaced in redo_ctx
+    if (ctx == thread_ctx[threadno])
+        duk_free(ctx, (void *)data);
+    free(fp);
+}
+
+/* free the data after evbuffer is done with it */
+static void frefcb(const void *data, size_t datalen, void *val)
+{
+    free((void *)data);
+}
+
+/*
+   Because of this: https://github.com/criticalstack/libevhtp/issues/160 
+   when ssl, we can't use evbuffer_add_file() since evbuffer_pullup()
+   was added to libevhtp 
+*/
+
+static int rp_evbuffer_add_file(struct evbuffer *outbuf, int fd, ev_off_t offset, ev_off_t length)
+{
+    if(!rp_using_ssl)
+        return evbuffer_add_file(outbuf, fd, offset, length);
+
+    {
+        size_t off=0;
+        ssize_t nbytes=0;
+        char *buf=NULL;
+        if(offset)
+        {
+            if (lseek(fd, offset, SEEK_SET)==-1)
+            {
+                close(fd);
+                return -1;
+            }
+        }
+
+        REMALLOC(buf,length);
+
+        while ((nbytes = read(fd, buf + off, length - off)) != 0)
+        {
+            off += nbytes;
+        }
+        close(fd);
+        if (nbytes==-1)
+            return -1;
+
+        evbuffer_add_reference(outbuf, buf, (size_t)length, frefcb, NULL);
+    }
     return 0;
 }
 
-static void ht_sendfile(evhtp_request_t *req, char *fn, size_t filesize)
+/*
+    Send a file, whole or partial with range if requested
+      haveCT - non-zero if content-type is already set
+      filestat - if already called stat, include here, otherwise set to NULL
+*/
+static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat *filestat)
 {
-    RP_MTYPES m;
-    RP_MTYPES *mres, *m_p = &m;
-    char *ext, *range = NULL;
     int fd = -1;
     ev_off_t beg = 0, len = -1;
+    ev_off_t filesize;
     evhtp_res rescode = EVHTP_RES_OK;
+    struct stat newstat, *sb=&newstat;
+    const char *range = NULL;
+    mode_t mode;
 
-    if ((fd = open(fn, O_RDONLY)) == -1)
+    if (filestat)
+    {
+        sb=filestat;
+    }
+    else if (stat(fn, sb) == -1)
     {
         send404(req);
         return;
     }
 
-    ext = strrchr(fn, '.');
-
-    if (!ext) /* || strchr(ext, '/')) shouldn't happen */
-        evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "application/octet-stream", 0, 0));
+    mode = sb->st_mode & S_IFMT;
+    if (mode == S_IFREG)
+    {
+        if ((fd = open(fn, O_RDONLY)) == -1)
+        {
+            send404(req);
+            return;
+        }
+    }
     else
     {
-        m.ext = ext + 1;
-        /* look for proper mime type listed in mime.h */
-        mres = bsearch(m_p, rp_mimetypes, nRpMtypes, sizeof(RP_MTYPES), compare_mtypes);
-        if (mres)
-            evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", mres->mime, 0, 0));
-        else
+        send404(req);
+        return;
+    }
+
+    filesize=(ev_off_t) sb->st_size; 
+
+    if (!haveCT)
+    {
+        RP_MTYPES m;
+        RP_MTYPES *mres, *m_p = &m;
+        char *ext;
+
+        ext = strrchr(fn, '.');
+
+        if (!ext) /* || strchr(ext, '/')) shouldn't happen */
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "application/octet-stream", 0, 0));
+        else
+        {
+            m.ext = ext + 1;
+            /* look for proper mime type listed in mime.h */
+            mres = bsearch(m_p, rp_mimetypes, nRpMtypes, sizeof(RP_MTYPES), compare_mtypes);
+            if (mres)
+                evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", mres->mime, 0, 0));
+            else
+                evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "application/octet-stream", 0, 0));
+        }
     }
 
     /* http range - give back partial file, set 206 */
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Accept-Ranges", "bytes", 0, 0));
-    /* Content-Range: bytes 12812288-70692914/70692915 */
-
-    evhtp_headers_for_each(req->headers_in, getrange, &range);
+    range=evhtp_kv_find(req->headers_in,"Range");
     if (range && !strncasecmp("bytes=", range, 6))
     {
         char *eptr;
@@ -817,17 +906,19 @@ static void ht_sendfile(evhtp_request_t *req, char *fn, size_t filesize)
                     len = endval - beg;
             }
             rescode = 206;
+            /* Content-Range: bytes 12812288-70692914/70692915 */
             snprintf(reprange, 128, "bytes %d-%d/%d",
                      (int)beg,
                      (int)((len == -1) ? (filesize - 1) : endval),
                      (int)filesize);
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Range", reprange, 0, 1));
         }
+        //free(range); /* chicken 🐣 */
     }
+    else 
+        len=filesize;
 
-    free(range); /* chicken 🐣 */
-
-    evbuffer_add_file(req->buffer_out, fd, beg, len);
+    rp_evbuffer_add_file(req->buffer_out, fd, beg, len);
     sendresp(req, rescode);
 }
 
@@ -879,7 +970,7 @@ fileserver(evhtp_request_t *req, void *arg)
     mode = sb.st_mode & S_IFMT;
 
     if (mode == S_IFREG)
-        ht_sendfile(req, fn, sb.st_size);
+        rp_sendfile(req, fn, 0, &sb);
     else if (mode == S_IFDIR)
     {
         /* add 11 for 'index.html\0' */
@@ -904,35 +995,15 @@ fileserver(evhtp_request_t *req, void *arg)
             if (stat(fnindex, &sb) == -1)
                 dirlist(req, fn);
             else
-                ht_sendfile(req, fnindex, sb.st_size);
+                rp_sendfile(req, fnindex, 0, &sb);
         }
         else
-            ht_sendfile(req, fnindex, sb.st_size);
+            rp_sendfile(req, fnindex, 0, &sb);
     }
     else
         send404(req);
 }
 
-#define CTXFREER struct ctx_free_buffer_data_str
-
-CTXFREER
-{
-    duk_context *ctx;
-    int threadno;
-};
-
-/* free the stolen duk buffer after evbuffer is done with it */
-static void refcb(const void *data, size_t datalen, void *val)
-{
-    CTXFREER *fp = val;
-    duk_context *ctx = fp->ctx;
-    int threadno = (int)fp->threadno;
-
-    // check if the entire stack was already freed and replaced in redo_ctx
-    if (ctx == thread_ctx[threadno])
-        duk_free(ctx, (void *)data);
-    free(fp);
-}
 
 static void sendbuf(DHS *dhs)
 {
@@ -1038,31 +1109,8 @@ static evhtp_res sendobj(DHS *dhs)
             /* if data is a string and starts with '@', its a filename */
             if (duk_is_string(ctx, -1) && ((d = duk_get_string(ctx, -1)) || 1) && *d == '@')
             {
-                mode_t mode;
-                struct stat sb;
-                const char *fn = d + 1;
-                if (stat(fn, &sb) == -1)
-                {
-                    send404(dhs->req);
-                    return (0);
-                }
-                mode = sb.st_mode & S_IFMT;
-                if (mode == S_IFREG)
-                {
-                    int fd = -1;
-
-                    if ((fd = open(fn, O_RDONLY)) == -1)
-                    {
-                        send404(dhs->req);
-                        return (0);
-                    }
-                    evbuffer_add_file(dhs->req->buffer_out, fd, 0, -1);
-                }
-                else
-                {
-                    send404(dhs->req);
-                    return (0);
-                }
+                rp_sendfile(dhs->req, (char *)d+1, 1, NULL);
+                return (0);
             }
             else
                 sendbuf(dhs); /* send buffer or string contents at idx=-1 */
@@ -2772,7 +2820,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     evhtp_t *htp6 = NULL;
     struct event_base *evbase;
     evhtp_ssl_cfg_t *ssl_config = calloc(1, sizeof(evhtp_ssl_cfg_t));
-    int secure = 0, usev6 = 1, usev4 = 1, confThreads = -1, mthread = 0, daemon=0;
+    int usev6 = 1, usev4 = 1, confThreads = -1, mthread = 0, daemon=0;
     struct stat f_stat;
     struct timeval ctimeout;
 //    duk_idx_t fpos = 0;
@@ -3048,11 +3096,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
         /* ssl opts*/
         if (duk_get_prop_string(ctx, ob_idx, "secure"))
         {
-            secure = REQUIRE_BOOL(ctx, -1, "rpserver.start: parameter \"secure\" requires a boolean (true|false)");
+            rp_using_ssl = REQUIRE_BOOL(ctx, -1, "rpserver.start: parameter \"secure\" requires a boolean (true|false)");
         }
         duk_pop(ctx);
 
-        if (secure)
+        if (rp_using_ssl)
             get_secure(ctx, ob_idx, ssl_config);
 
 
@@ -3394,7 +3442,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         duk_pop_3(ctx);
     }
 
-    if (secure)
+    if (rp_using_ssl)
     {
         int filecount = 0;
 
@@ -3403,13 +3451,45 @@ duk_ret_t duk_server_start(duk_context *ctx)
             filecount++;
             if (stat(ssl_config->pemfile, &f_stat) != 0)
                 RP_THROW(ctx, "rpserver.start: Cannot load SSL cert '%s' (%s)", ssl_config->pemfile, strerror(errno));
+            else
+            {
+                FILE* file = fopen(ssl_config->pemfile,"r");
+                X509* x509 = PEM_read_X509(file, NULL, NULL, NULL);
+                unsigned long err = ERR_get_error();
+
+                if(x509)
+                    X509_free(x509);
+                if(err)
+                {
+                    char tbuf[256];
+                    ERR_error_string(err,tbuf);
+                    RP_THROW(ctx,"Invalid sslcertfile: %s",tbuf);
+                }
+            }
         }
 
         if (ssl_config->privfile)
         {
+
+
             filecount++;
             if (stat(ssl_config->privfile, &f_stat) != 0)
                 RP_THROW(ctx, "rpserver.start: Cannot load SSL key '%s' (%s)", ssl_config->privfile, strerror(errno));
+            else
+            {
+                FILE* file = fopen(ssl_config->privfile,"r");
+                EVP_PKEY* pkey = PEM_read_PrivateKey(file, NULL, NULL, NULL);
+                unsigned long err = ERR_get_error();
+
+                if(pkey)
+                    EVP_PKEY_free(pkey);
+                if(err)
+                {
+                    char tbuf[256];
+                    ERR_error_string(err,tbuf);
+                    RP_THROW(ctx, "Invalid sslkeyfile: %s", tbuf);
+                }
+            }
         }
 
         if (ssl_config->cafile)
@@ -3422,7 +3502,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                   "{\n\t\"secure\":true,\n\t\"sslkeyfile\": \"/path/to/privkey.pem\","
                                   "\n\t\"sslcertfile\":\"/path/to/fullchain.pem\"\n}");
 
-        fprintf(access_fh, "Initing ssl/tls\n");
+        fprintf(access_fh, "Initializing ssl/tls\n");
         if (usev4)
         {
             if (evhtp_ssl_init(htp4, ssl_config) == -1)
@@ -3430,9 +3510,18 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         if (usev6)
         {
+            unsigned long err=0;
             if (evhtp_ssl_init(htp6, ssl_config) == -1)
                 RP_THROW(ctx, "rpserver.start: error setting up ssl/tls server");
+            err = ERR_get_error();
+            if(err)
+            {
+                char tbuf[256];
+                ERR_error_string(err,tbuf);
+                RP_THROW(ctx, "Ssl failed. Error message: %s\n",tbuf);
+            }
         }
+
         scheme="https://";
     } 
     else
