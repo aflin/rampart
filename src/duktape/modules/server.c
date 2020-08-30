@@ -2601,7 +2601,6 @@ char *bind_sock_port(evhtp_t *htp, const char *ip, uint16_t port, int backlog)
 {
     struct sockaddr_storage sin;
     socklen_t len = sizeof(struct sockaddr_storage);
-
     if (evhtp_bind_socket(htp, ip, port, backlog) != 0)
         return NULL;
 
@@ -2732,22 +2731,65 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
 
 }
 
-static void get_secure(duk_context *ctx, duk_idx_t ob_idx, evhtp_ssl_cfg_t *ssl_config)
+static int duk_rp_GPS_icase(duk_context *ctx, duk_idx_t idx, const char * prop)
 {
-    /* all protocols for testing */
-    ssl_config->ssl_opts = 0;
-//    ssl_config->ssl_opts = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1;
-    if (duk_get_prop_string(ctx, ob_idx, "sslkeyfile"))
+    const char *realprop=NULL, *compprop=NULL;
+    
+    duk_enum(ctx, idx, 0);
+    while (duk_next(ctx, -1 , 0 ))
+    {
+        compprop=duk_get_string(ctx, -1);
+        if ( !strcasecmp( compprop, prop) )
+        {
+            realprop=compprop;
+            duk_pop(ctx);
+            break;
+        }
+        duk_pop(ctx);
+    }
+    duk_pop(ctx);
+    if(realprop)
+    {
+        duk_get_prop_string(ctx, idx, realprop);
+        return 1;
+    }
+    duk_push_undefined(ctx);
+    return 0;
+}
+
+/*
+#define sslallowconf(opt,flag,defaulton) do {\
+    if ( duk_rp_GPS_icase(ctx, ob_idx, opt) ){\
+       if(!REQUIRE_BOOL(ctx, -1, "rpserver.start: parameter \"%s\" requires a boolean (true|false)",opt))\
+           ssl_config->ssl_opts |= flag;\
+    } else if (!defaulton)\
+        {printf("'%s'==false\n",opt);ssl_config->ssl_opts |= flag;}\
+    duk_pop(ctx);\
+} while(0)
+*/
+static void get_secure(duk_context *ctx, duk_idx_t ob_idx, evhtp_ssl_cfg_t *ssl_config )
+{
+
+    ssl_config->ssl_opts = SSL_OP_ALL;
+/*
+    sslallowconf("allowSSLv2"  ,SSL_OP_NO_SSLv2,0);
+    sslallowconf("allowSSLv3"  ,SSL_OP_NO_SSLv3,0);
+    sslallowconf("allowTLSv1"  ,SSL_OP_NO_TLSv1,0);
+    sslallowconf("allowTLSv1.1",SSL_OP_NO_TLSv1_1,0);
+    sslallowconf("allowTLSv1.2",SSL_OP_NO_TLSv1_2,1);
+    sslallowconf("allowTLSv1.3",SSL_OP_NO_TLSv1_3,1);
+    ssl_config->ssl_opts = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1;
+*/
+
+
+
+    if (duk_rp_GPS_icase(ctx, ob_idx, "sslkeyfile"))
     {
         ssl_config->privfile = strdup(REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"sslkeyfile\" requires a string (filename)"));
     }
     duk_pop(ctx);
-    if (duk_get_prop_string(ctx, ob_idx, "sslcafile"))
-    {
-        ssl_config->cafile = strdup(REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"sslcafile\" requires a string (filename)"));
-    }
-    duk_pop(ctx);
-    if (duk_get_prop_string(ctx, ob_idx, "sslcertfile"))
+
+    if (duk_rp_GPS_icase(ctx, ob_idx, "sslcertfile"))
     {
         ssl_config->pemfile = strdup(REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"sslcertfile\" requires a string (filename)"));
     }
@@ -2770,7 +2812,7 @@ evhtp_res pre_accept_callback(evhtp_connection_t *conn, void *arg)
 static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
 {
     /* logging in daemon */
-    if (duk_get_prop_string(ctx, ob_idx, "log") && duk_get_boolean_default(ctx,-1,0) )
+    if (duk_rp_GPS_icase(ctx, ob_idx, "log") && duk_get_boolean_default(ctx,-1,0) )
     {
         duk_rp_server_logging=1;
     }
@@ -2778,7 +2820,7 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
 
     if(duk_rp_server_logging)
     {
-        if(duk_get_prop_string(ctx, ob_idx, "accessLog") )
+        if(duk_rp_GPS_icase(ctx, ob_idx, "accessLog") )
         {
             const char *fn=REQUIRE_STRING(ctx,-1,  "rpserver.start: parameter \"accessLog\" requires a string (filename)");
             access_fh=fopen(fn,"a");
@@ -2790,7 +2832,7 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
             printf("no accessLog specified, logging to stdout\n");
         }
 
-        if(duk_get_prop_string(ctx, ob_idx, "errorLog") )
+        if(duk_rp_GPS_icase(ctx, ob_idx, "errorLog") )
         {
             const char *fn=REQUIRE_STRING(ctx,-1, "rpserver.start: parameter \"errorLog\" requires a string (filename)");
             error_fh=fopen(fn,"a");
@@ -2804,26 +2846,61 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
     }
 }
 
+#define getipport(sfn) do {\
+     char *p, *e;\
+     char ibuf[INET6_ADDRSTRLEN]={0};\
+     char *s=(char*)(sfn);\
+     p=ibuf;\
+     while(*s) {\
+         if(!isspace(*s)) {*p=*s;p++;}\
+         s++;\
+     }\
+     s=ibuf;\
+     if(*s == '['){\
+         s++;\
+         strcpy(ipany,"ipv6:");\
+         e=p=strchr(s,']');\
+         if(!p)\
+             RP_THROW(ctx,"server.start() - invalid ipv6 address for option bind. Brackets required.");\
+         strncpy(&ipany[5], s, e-s );\
+         *(ipany + 6 + ( e - s ))='\0';\
+         p++;\
+         if(*p != ':')\
+             RP_THROW(ctx,"server.start() - option bind value must be in format \"ip:port\"");\
+         p++;\
+         if(!isdigit(*p))\
+             RP_THROW(ctx,"server.start() - option bind value must be in format \"ip:port\"");\
+         port=(uint16_t)strtol(p, NULL, 10);\
+     } else {\
+         e=p=strrchr(s,':');\
+         if(!p)\
+             RP_THROW(ctx,"server.start() - option bind value must be in format \"ip:port\"");\
+         strncpy(ipany, s, e-s );\
+         *(ipany + ( e - s ))='\0';\
+         p++;\
+         if(!isdigit(*s))\
+             RP_THROW(ctx,"server.start() - option bind value must be in format \"ip:port\"");\
+         port=(uint16_t)strtol(p, NULL, 10);\
+     }\
+} while(0)
 
 duk_ret_t duk_server_start(duk_context *ctx)
 {
-    /* TODO: make it so it can bind to any number of arbitary ipv4 or ipv6 addresses */
     int i = 0;
     DHS *dhs = new_dhs(ctx, -1);
     duk_idx_t ob_idx = -1;
-    char ipv6[INET6_ADDRSTRLEN + 5] = "ipv6:::1";
-    char ipv4[INET_ADDRSTRLEN] = "127.0.0.1";
-    char *ipv4_addr = NULL, *ipv6_addr = NULL;
-    uint16_t port = 8080, ipv6port = 8080;
+    char *ipv6 = "ipv6:::1";
+    char *ipv4 = "127.0.0.1";
+    char ipany[INET6_ADDRSTRLEN + 5]={0};
+    char *ip_addr = NULL;
+    uint16_t port = 8088;
     int nthr=0;
-    evhtp_t *htp4 = NULL;
-    evhtp_t *htp6 = NULL;
+    evhtp_t *htp = NULL;
     struct event_base *evbase;
     evhtp_ssl_cfg_t *ssl_config = calloc(1, sizeof(evhtp_ssl_cfg_t));
-    int usev6 = 1, usev4 = 1, confThreads = -1, mthread = 0, daemon=0;
+    int confThreads = -1, mthread = 0, daemon=0;
     struct stat f_stat;
     struct timeval ctimeout;
-//    duk_idx_t fpos = 0;
     duk_uarridx_t fpos =0;
     pid_t dpid=0;
 
@@ -2853,7 +2930,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     if (ob_idx != -1)
     {
         /* daemon */
-        if (duk_get_prop_string(ctx, ob_idx, "daemon"))
+        if (duk_rp_GPS_icase(ctx, ob_idx, "daemon"))
         {
             daemon = REQUIRE_BOOL(ctx, -1, "rpserver.start: parameter \"daemon\" requires a boolean (true|false)");
         }
@@ -2862,78 +2939,96 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     if (daemon)
     {
+        int child2par[2]={0};
+
+        if (pipe(child2par) == -1)
+        {
+            fprintf(error_fh, "child2par pipe failed\n");
+            exit (1);
+        }
+        
         signal(SIGHUP,SIG_IGN);
         dpid=fork();
         if(dpid==-1)
         {
-            fprintf(stderr,"rpserver.start: fork failed\n");
+            fprintf(stderr, "rpserver.start: fork failed\n");
             exit(1);
         }
         else if(!dpid)
-        {
+        {   /* child */
             char *pname=NULL;
             char portbuf[8];
             int i=1;
+            pid_t dpid2;
 
+            close(child2par[0]);
             logging(ctx,ob_idx);
             if (setsid()==-1) {
-                fprintf(error_fh,"rpserver.start: failed to become a session leader while daemonising: %s",strerror(errno));
+                fprintf(error_fh, "rpserver.start: failed to become a session leader while daemonising: %s",strerror(errno));
                 exit(1);
             }
-
-            /* port */
-            if (duk_get_prop_string(ctx, ob_idx, "port"))
+            /* need to double fork, and need to write back the pid of grandchild to parent. */
+            dpid2=fork();
+            
+            if(dpid==-1)
             {
-                int signed_port = duk_rp_get_int_default(ctx, -1, -1);
-                if (signed_port < 1)
-                    RP_THROW(ctx, "rpserver.start: parameter \"port\" invalid");
-                port=(uint16_t) signed_port;
+                fprintf(stderr, "rpserver.start: fork failed\n");
+                exit(1);
+            }
+            else if(dpid2)
+            {	/* still child */
+                if(-1 == write(child2par[1], &dpid2, sizeof(pid_t)) )
+                {
+                    fprintf(error_fh, "rpserver.start: failed to send pid to parent\n");
+                }
+                close(child2par[1]);
+                exit(0);
+            }
+            /* else grandchild */
+
+            /* get first port used */
+            if (duk_rp_GPS_icase(ctx, ob_idx, "bind"))
+            {
+                if ( duk_is_string(ctx, -1) )
+                {
+                    getipport(duk_get_string(ctx,-1));
+                }
+                else if ( duk_is_array(ctx, -1) )
+                {
+                    if(duk_get_prop_index(ctx, -1, 0))
+                    {
+                        getipport(duk_get_string(ctx, -1));
+                    }
+                    duk_pop(ctx);
+                }
             }
             duk_pop(ctx);
 
             pname=strdup("rampart-server:");
             snprintf(portbuf,8,"%d",port);
             pname=strcatdup(pname,portbuf);
-            for (;i<rampart_argc;i++)
+            for (i=1;i<rampart_argc;i++)
             {
                 pname=strcatdup(pname," ");
                 pname=strcatdup(pname,rampart_argv[i]);
             }
             strcpy(rampart_argv[0], pname);
             free(pname);
-            /*
-            pid_t dpid2=fork();
-            
-            if(dpid2==-1)
-            {
-                fprintf(stderr,"fork failed\n");
-                exit(1);
-            }
-            else if (dpid2)
-                exit(0);
-            */
-            close(STDIN_FILENO);
-            close(STDOUT_FILENO);
-            if (open("/dev/null",O_RDONLY) == -1) {
-                fprintf(error_fh,"rpserver.start: failed to reopen stdin while daemonising (errno=%d)",errno);
-                exit(1);
-            }
-            if (open("/dev/null",O_WRONLY) == -1) {
-                fprintf(error_fh,"rpserver.start: failed to reopen stdout while daemonising (errno=%d)",errno);
-                exit(1);
-            }
-            close(STDERR_FILENO);
-            if (open("/dev/null",O_RDWR) == -1) {
-                /* FIXME: what to do when error_fh=stderr? */
-                fprintf(error_fh,"rpserver.start: failed to reopen stderr while daemonising (errno=%d)",errno);
-                exit(1);
-            }
-            stderr=error_fh;
-            stdout=access_fh;            
+
         }
         else
         {
-            duk_push_int(ctx,(int)dpid);
+            pid_t dpid2=0;
+            int pstatus;
+
+            close(child2par[1]);
+            waitpid(dpid,&pstatus,0);
+            if(-1 == read(child2par[0], &dpid2, sizeof(pid_t)) )
+            {
+                fprintf(error_fh, "rpserver.start: failed to get pid from child\n");
+            }
+            close(child2par[0]);
+            duk_push_int(ctx,(int)dpid2);
             return 1;
         }
     }
@@ -2943,7 +3038,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     /* options from server({options},...) */
     if (ob_idx != -1)
     {
-        const char *s;
+        //const char *s;
 
         /* logging */
         if(!daemon) 
@@ -2953,7 +3048,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             //stdout=access_fh;            
 
             /* port */
-            if (duk_get_prop_string(ctx, ob_idx, "port"))
+            if (duk_rp_GPS_icase(ctx, ob_idx, "port"))
             {
                 int signed_port = duk_rp_get_int_default(ctx, -1, -1);
                 if (signed_port < 1)
@@ -2967,7 +3062,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         /* unprivileged user if we are root */
         if (geteuid() == 0)
         {
-            if (duk_get_prop_string(ctx, ob_idx, "user"))
+            if(duk_rp_GPS_icase(ctx, ob_idx, "user"))
             {
                 const char *user=REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"user\" requires a string (username)");
                 struct passwd  *pwd;
@@ -2988,24 +3083,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
             duk_pop(ctx);
         }
 
-        /* ip addr */
-        if (duk_get_prop_string(ctx, ob_idx, "ip"))
-        {
-            s = REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"ip\" requires a string (\"ip address\")");
-            strcpy(ipv4, s);
-        }
-        duk_pop(ctx);
-
-        /* ipv6 addr */
-        if (duk_get_prop_string(ctx, ob_idx, "ipv6"))
-        {
-            s = REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"ipv6\" requires a string (\"ip address\")");
-            strcpy(&ipv6[5], s);
-        }
-        duk_pop(ctx);
-
         /* threads */
-        if (duk_get_prop_string(ctx, ob_idx, "threads"))
+        if (duk_rp_GPS_icase(ctx, ob_idx, "threads"))
         {
             confThreads = duk_rp_get_int_default(ctx, -1, -1);
             if(confThreads == -1)
@@ -3014,68 +3093,15 @@ duk_ret_t duk_server_start(duk_context *ctx)
         duk_pop(ctx);
 
         /* multithreaded */
-        if (duk_get_prop_string(ctx, ob_idx, "usethreads"))
-        {
-            mthread = REQUIRE_BOOL(ctx, -1, "rpserver.start: parameter \"threads\" requires a boolean (true|false)");
-            gl_singlethreaded = !mthread;
-        }
-        duk_pop(ctx);
-        if (duk_get_prop_string(ctx, ob_idx, "useThreads"))
+        if (duk_rp_GPS_icase(ctx, ob_idx, "usethreads"))
         {
             mthread = REQUIRE_BOOL(ctx, -1, "rpserver.start: parameter \"threads\" requires a boolean (true|false)");
             gl_singlethreaded = !mthread;
         }
         duk_pop(ctx);
 
-        /* port ipv6*/
-        if (duk_get_prop_string(ctx, ob_idx, "ipv6port"))
-        {
-            int signed_port = duk_rp_get_int_default(ctx, -1, -1);
-            if (signed_port < 1)
-                RP_THROW(ctx,"rpserver.start: parameter \"ipv6port\" invalid");
-            ipv6port=(uint16_t) signed_port;
-        }
-        else
-            ipv6port = port;
-        duk_pop(ctx);
-
-        if (duk_get_prop_string(ctx, ob_idx, "ipv6Port"))
-        {
-            int signed_port = duk_rp_get_int_default(ctx, -1, -1);
-            if (signed_port < 1)
-                RP_THROW(ctx, "rpserver.start: parameter \"ipv6Port\" invalid");
-            ipv6port=(uint16_t) signed_port;
-        }
-        else
-            ipv6port = port;
-        duk_pop(ctx);
-
-        /* use ipv6*/
-        if (duk_get_prop_string(ctx, ob_idx, "useipv6"))
-        {
-            usev6 = REQUIRE_BOOL(ctx, -1,  "rpserver.start: parameter \"useipv6\" requires a boolean (true|false)");
-        }
-        duk_pop(ctx);
-        if (duk_get_prop_string(ctx, ob_idx, "useIpv6"))
-        {
-            usev6 = REQUIRE_BOOL(ctx, -1,  "rpserver.start: parameter \"useIpv6\" requires a boolean (true|false)");
-        }
-        duk_pop(ctx);
-
-        /* use ipv4*/
-        if (duk_get_prop_string(ctx, ob_idx, "useipv4"))
-        {
-            usev4 = REQUIRE_BOOL(ctx, -1,  "rpserver.start: parameter \"useipv4\" requires a boolean (true|false)");
-        }
-        duk_pop(ctx);
-        if (duk_get_prop_string(ctx, ob_idx, "useIpv4"))
-        {
-            usev4 = REQUIRE_BOOL(ctx, -1,  "rpserver.start: parameter \"useIpv4\" requires a boolean (true|false)");
-        }
-        duk_pop(ctx);
-        
-        /* timeout */
-        if (duk_get_prop_string(ctx, ob_idx, "connectTimeout"))
+         /* connect timeout */
+        if (duk_rp_GPS_icase(ctx, ob_idx, "connectTimeout"))
         {
             double to = REQUIRE_NUMBER(ctx, -1,  "rpserver.start: parameter \"connectTimeout\" requires a number (float)");
             ctimeout.tv_sec = (time_t)to;
@@ -3084,7 +3110,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         duk_pop(ctx);
 
-        if (duk_get_prop_string(ctx, ob_idx, "scriptTimeout"))
+        /* script timeout */
+        if (duk_rp_GPS_icase(ctx, ob_idx, "scriptTimeout"))
         {
             double to = REQUIRE_NUMBER(ctx, -1, "rpserver.start: parameter \"scriptTimeout\" requires a number (float)");
             dhs->timeout.tv_sec = (time_t)to;
@@ -3094,24 +3121,21 @@ duk_ret_t duk_server_start(duk_context *ctx)
         duk_pop(ctx);
 
         /* ssl opts*/
-        if (duk_get_prop_string(ctx, ob_idx, "secure"))
+        if (duk_rp_GPS_icase(ctx, ob_idx, "secure"))
         {
             rp_using_ssl = REQUIRE_BOOL(ctx, -1, "rpserver.start: parameter \"secure\" requires a boolean (true|false)");
         }
         duk_pop(ctx);
 
         if (rp_using_ssl)
+        {
             get_secure(ctx, ob_idx, ssl_config);
-
-
+        }
     }
 
     /*  got the essential config options, now do some setup before mapping urls */
     if (mthread)
     {
-        if (usev6 + usev4 == 0)
-            RP_THROW(ctx, "rpserver.start: useipv6 and useipv4 cannot both be set to false");
-
         /* use specified number of threads */
         if (confThreads > 0)
         {
@@ -3123,13 +3147,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
             nthr = sysconf(_SC_NPROCESSORS_ONLN);
         }
 
-        totnthreads = nthr * (usev6 + usev4);
+        totnthreads = nthr;
 
-        fprintf(access_fh, "HTTP server for %s%s%s - initializing with %d threads per server, %d total\n",
-               ((usev4) ? "ipv4" : ""),
-               ((usev4 && usev6) ? " and " : ""),
-               ((usev6) ? "ipv6" : ""),
-               nthr,
+        fprintf(access_fh, "HTTP server - initializing with %d threads\n",
                totnthreads);
     }
     else
@@ -3139,10 +3159,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             fprintf(access_fh, "threads>1 -- usethreads==false, so using only one thread\n");
         }
         totnthreads = 1;
-        fprintf(access_fh, "HTTP server for %s%s%s - initializing single threaded\n",
-               ((usev4) ? "ipv4" : ""),
-               ((usev4 && usev6) ? " and " : ""),
-               ((usev6) ? "ipv6" : ""));
+        fprintf(access_fh, "HTTP server - initializing single threaded\n");
     }
 
     /* set up info structs for forking in threads for thread-unsafe duk_c functions */
@@ -3189,27 +3206,19 @@ duk_ret_t duk_server_start(duk_context *ctx)
         duk_put_global_string(tctx, "rampart");
     }
 
-    if (usev4)
-        htp4 = evhtp_new(evbase, NULL);
-    if (usev6)
-        htp6 = evhtp_new(evbase, NULL);
+    htp = evhtp_new(evbase, NULL);
 
     /* testing for pure c benchmarking*/
-    if (usev4)
-        evhtp_set_cb(htp4, "/test", testcb, NULL);
-    if (usev6)
-        evhtp_set_cb(htp6, "/test", testcb, NULL);
+    evhtp_set_cb(htp, "/test", testcb, NULL);
+
     /* testing, quick semi clean exit */
-    if (usev4)
-        evhtp_set_cb(htp4, "/exit", exitcb, ctx);
-    if (usev6)
-        evhtp_set_cb(htp6, "/exit", exitcb, ctx);
+    evhtp_set_cb(htp, "/exit", exitcb, ctx);
 
     /* file system and function mapping */
     if (ob_idx != -1)
     {
         /* custom 404 page/function */
-        if (duk_get_prop_string(ctx, ob_idx, "notFoundFunc"))
+        if (duk_rp_GPS_icase(ctx, ob_idx, "notFoundFunc"))
         {
             if ( duk_is_object(ctx,-1) )
             {   /* map to function or module */
@@ -3259,7 +3268,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         duk_pop(ctx);
 
-        if (duk_get_prop_string(ctx, ob_idx, "map"))
+        if (duk_rp_GPS_icase(ctx, ob_idx, "map"))
         {
             if (duk_is_object(ctx, -1) && !duk_is_function(ctx, -1) && !duk_is_array(ctx, -1))
             {
@@ -3354,33 +3363,15 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         /* register callback with evhtp using the callback dhs struct */
                         if (*s == '*' || *(s + strlen(s) - 1) == '*')
                         {
-                            if (usev4)
-                            {
-                                //evhtp_callback_t  *req_callback =
-                                evhtp_set_glob_cb(htp4, s, http_callback, cb_dhs);
-                                //evhtp_callback_set_hook(req_callback,evhtp_hook_on_request_fini,req_on_finish, NULL);
-                            }
-                            if (usev6)
-                            {
-                                //evhtp_callback_t  *req_callback =
-                                evhtp_set_glob_cb(htp6, s, http_callback, cb_dhs);
-                                //evhtp_callback_set_hook(req_callback,evhtp_hook_on_request_fini,req_on_finish, NULL);
-                            }
+                            //evhtp_callback_t  *req_callback =
+                            evhtp_set_glob_cb(htp, s, http_callback, cb_dhs);
+                            //evhtp_callback_set_hook(req_callback,evhtp_hook_on_request_fini,req_on_finish, NULL);
                         }
                         else
                         {
-                            if (usev4)
-                            {
-                                //evhtp_callback_t  *req_callback =
-                                evhtp_set_cb(htp4, s, http_callback, cb_dhs);
-                                //evhtp_callback_set_hook(req_callback,evhtp_hook_on_request_fini,req_on_finish, NULL);
-                            }
-                            if (usev6)
-                            {
-                                //evhtp_callback_t  *req_callback =
-                                evhtp_set_cb(htp6, s, http_callback, cb_dhs);
-                                //evhtp_callback_set_hook(req_callback,evhtp_hook_on_request_fini,req_on_finish, NULL);
-                            }
+                            //evhtp_callback_t  *req_callback =
+                            evhtp_set_cb(htp, s, http_callback, cb_dhs);
+                            //evhtp_callback_set_hook(req_callback,evhtp_hook_on_request_fini,req_on_finish, NULL);
                         }
                         free(s);
                         duk_pop(ctx);
@@ -3428,10 +3419,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
                         fprintf(access_fh, "mapping folder     %-20s ->    %s\n", s, fs);
                         map->val = fs;
-                        if (usev4)
-                            evhtp_set_glob_cb(htp4, s, fileserver, map);
-                        if (usev6)
-                            evhtp_set_glob_cb(htp6, s, fileserver, map);
+                        evhtp_set_glob_cb(htp, s, fileserver, map);
+
                         duk_pop_2(ctx);
                     }
                 }
@@ -3439,8 +3428,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
             else
                 RP_THROW(ctx, "rpserver.start: value of parameter \"map\" must be an object");
         }
-        duk_pop_3(ctx);
+        duk_pop(ctx);
     }
+    duk_pop(ctx);
 
     if (rp_using_ssl)
     {
@@ -3501,17 +3491,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
             RP_THROW(ctx, "rpserver.start: Minimally ssl must be configured with, e.g. -\n"
                                   "{\n\t\"secure\":true,\n\t\"sslkeyfile\": \"/path/to/privkey.pem\","
                                   "\n\t\"sslcertfile\":\"/path/to/fullchain.pem\"\n}");
-
         fprintf(access_fh, "Initializing ssl/tls\n");
-        if (usev4)
-        {
-            if (evhtp_ssl_init(htp4, ssl_config) == -1)
-                RP_THROW(ctx, "rpserver.start: error setting up ssl/tls server");
-        }
-        if (usev6)
         {
             unsigned long err=0;
-            if (evhtp_ssl_init(htp6, ssl_config) == -1)
+            if (evhtp_ssl_init(htp, ssl_config) == -1)
                 RP_THROW(ctx, "rpserver.start: error setting up ssl/tls server");
             err = ERR_get_error();
             if(err)
@@ -3521,6 +3504,25 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 RP_THROW(ctx, "Ssl failed. Error message: %s\n",tbuf);
             }
         }
+        if (duk_rp_GPS_icase(ctx, ob_idx, "sslMinVersion"))
+        {
+            const char *sslver=REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"sslMaxVer\" requires a string (ssl3|tls1|tls1.1|tls1.2)");
+            if (!strcmp("tls1.2",sslver))
+                SSL_CTX_set_min_proto_version(htp->ssl_ctx, TLS1_2_VERSION);
+            else if (!strcmp("tls1.1",sslver))
+                SSL_CTX_set_min_proto_version(htp->ssl_ctx, TLS1_1_VERSION);
+            else if (!strcmp("tls1.0",sslver))
+                SSL_CTX_set_min_proto_version(htp->ssl_ctx, TLS1_VERSION);
+            else if (!strcmp("tls1",sslver))
+                SSL_CTX_set_min_proto_version(htp->ssl_ctx, TLS1_VERSION);
+            else if (!strcmp("ssl3",sslver))
+                SSL_CTX_set_min_proto_version(htp->ssl_ctx, SSL3_VERSION);
+            else
+                RP_THROW(ctx, "rpserver.start: parameter \"sslMaxVer\" must be ssl3, tls1, tls1.1 or tls1.2");
+        }
+        else
+            SSL_CTX_set_min_proto_version(htp->ssl_ctx, TLS1_2_VERSION);
+        duk_pop(ctx);
 
         scheme="https://";
     } 
@@ -3533,23 +3535,78 @@ duk_ret_t duk_server_start(duk_context *ctx)
         duk_put_prop_index(ctx, 0, fpos);
         dhs->func_idx = fpos;
         copy_cb_func(dhs, totnthreads);
-        if (usev4)
-            evhtp_set_gencb(htp4, http_callback, dhs);
-        if (usev6)
-            evhtp_set_gencb(htp6, http_callback, dhs);
+        evhtp_set_gencb(htp, http_callback, dhs);
     }
 
-    if (usev4)
+    if(ob_idx != -1)
     {
-        if (!(ipv4_addr = bind_sock_port(htp4, ipv4, port, 2048)))
+        if (duk_rp_GPS_icase(ctx, ob_idx, "bind"))
+        {
+            if ( duk_is_string(ctx, -1) )
+            {
+                getipport(duk_get_string(ctx,-1));
+                if (!(ip_addr = bind_sock_port(htp, ipany, port, 2048)))
+                {
+                    if (!strncmp("ipv6:",ipany,5))
+                    {
+                        RP_THROW(ctx, "rpserver.start: could not bind to [%s] port %d", ipany+5, port);
+                    }
+                    else
+                    {
+                        RP_THROW(ctx, "rpserver.start: could not bind to %s port %d", ipany, port);
+                    }
+                }
+                free(ip_addr);
+                ip_addr=NULL;
+            }
+            else if ( duk_is_array(ctx, -1) )
+            {
+                int n=duk_get_length(ctx, -1);
+                for (i=0;i<n;i++)
+                {
+                    if(duk_get_prop_index(ctx,-1,(duk_uarridx_t)i))
+                    {
+                        getipport(duk_get_string(ctx,-1));
+                        if (!(ip_addr = bind_sock_port(htp, ipany, port, 2048)))
+                        {
+                            if (!strncmp("ipv6:",ipany,5))
+                            {
+                                RP_THROW(ctx, "rpserver.start: could not bind to [%s] port %d", ipany+5, port);
+                            }
+                            else
+                            {
+                                RP_THROW(ctx, "rpserver.start: could not bind to %s port %d", ipany, port);
+                            }
+                        }
+                        free(ip_addr);
+                        ip_addr=NULL;
+                    }
+                    duk_pop(ctx);
+                }
+            }
+            else
+                RP_THROW(ctx,"server.start() - option bind requires a string or array of strings");
+        }
+        else
+        {
+            if (!(ip_addr = bind_sock_port(htp, ipv4, port, 2048)))
+                RP_THROW(ctx, "rpserver.start: could not bind to %s port %d", ipv4, port);
+            if (!(ip_addr = bind_sock_port(htp, ipv6, port, 2048)))
+                RP_THROW(ctx, "rpserver.start: could not bind to %s, %d", ipv6, port);
+        }
+        duk_pop(ctx);
+    }
+    else
+    {
+        /* default ip and port */
+        if (!(ip_addr = bind_sock_port(htp, ipv4, port, 2048)))
             RP_THROW(ctx, "rpserver.start: could not bind to %s port %d", ipv4, port);
+        if (!(ip_addr = bind_sock_port(htp, ipv6, port, 2048)))
+            RP_THROW(ctx, "rpserver.start: could not bind to %s, %d", ipv6, port);
     }
 
-    if (usev6)
-    {
-        if (!(ipv6_addr = bind_sock_port(htp6, ipv6, ipv6port, 2048)))
-            RP_THROW(ctx, "rpserver.start: could not bind to %s, %d", ipv6, ipv6port);
-    }
+    //done with options, get rid of ob_idx
+    duk_remove(ctx, ob_idx);
 
     for (i = 0; i <= totnthreads; i++)
     {
@@ -3565,8 +3622,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
             duk_pop(tctx);
             duk_push_object(tctx);
         }
-
+/*
         duk_push_object(tctx);
+
         if (usev4)
         {
             duk_push_string(tctx, ipv4_addr);
@@ -3582,25 +3640,17 @@ duk_ret_t duk_server_start(duk_context *ctx)
             duk_put_prop_string(tctx, -2, "ipv6_port");
         }
         duk_put_prop_string(tctx, -2, "server");
+*/
         duk_put_global_string(tctx, "rampart");
     }
 
-    if (usev4)
-        evhtp_set_timeouts(htp4, &ctimeout, &ctimeout);
-    if (usev6)
-        evhtp_set_timeouts(htp6, &ctimeout, &ctimeout);
+    evhtp_set_timeouts(htp, &ctimeout, &ctimeout);
 
-    if (usev4)
-        evhtp_set_pre_accept_cb(htp4, pre_accept_callback, NULL);
-    if (usev6)
-        evhtp_set_pre_accept_cb(htp6, pre_accept_callback, NULL);
+    evhtp_set_pre_accept_cb(htp, pre_accept_callback, NULL);
 
     if (mthread)
     {
-        if (usev4)
-            evhtp_use_threads_wexit(htp4, initThread, NULL, nthr, NULL);
-        if (usev6)
-            evhtp_use_threads_wexit(htp6, initThread, NULL, nthr, NULL);
+        evhtp_use_threads_wexit(htp, initThread, NULL, nthr, NULL);
     }
     else
     {
@@ -3614,6 +3664,30 @@ duk_ret_t duk_server_start(duk_context *ctx)
     }
     fflush(access_fh);
     fflush(error_fh);
+
+    if (daemon)
+    {
+        close(STDIN_FILENO);
+        close(STDOUT_FILENO);
+        if (open("/dev/null",O_RDONLY) == -1) {
+            fprintf(error_fh,"rpserver.start: failed to reopen stdin while daemonising (errno=%d)",errno);
+            exit(1);
+        }
+        if (open("/dev/null",O_WRONLY) == -1) {
+            fprintf(error_fh,"rpserver.start: failed to reopen stdout while daemonising (errno=%d)",errno);
+            exit(1);
+        }
+        close(STDERR_FILENO);
+        if (open("/dev/null",O_RDWR) == -1) {
+            /* FIXME: what to do when error_fh=stderr? */
+            fprintf(error_fh,"rpserver.start: failed to reopen stderr while daemonising (errno=%d)",errno);
+            exit(1);
+        }
+        stderr=error_fh;
+        stdout=access_fh;            
+
+    }
+
     event_base_loop(evbase, 0);
     return 0;
 }

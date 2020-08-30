@@ -26,10 +26,7 @@ function index(req) {
 
 server.start(
 {
-//    ip:"0.0.0.0",  //this binds to all. Default is 127.0.0.1
-//    ipv6:"::",     //this binds to all. Default is ::1
-    port:8090,     //default is 8080
-    ipv6port:8090, //defaults to 'port' above if not set
+    bind: [ "[::]:8088", "0.0.0.0:8088" ], /* bind to all */
     scriptTimeout: 10.0,
     connectTimeout:20.0,
     useThreads: true, //make server multithreaded

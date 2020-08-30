@@ -1779,12 +1779,17 @@ duk_ret_t duk_rp_shell(duk_context *ctx)
 duk_ret_t duk_rp_kill(duk_context *ctx)
 {
     pid_t pid = duk_require_int(ctx, 0);
-    int signal = SIGTERM;
+    int ret, signal = SIGTERM;
     
     if(duk_is_number(ctx,1))
         signal=duk_get_int(ctx, 1);
 
-    if (kill(pid, signal))
+    errno=0;
+    ret= kill(pid, signal);
+
+    //printf("kill (%d, %d), ret=%d err='%s'\n",(int)pid, signal, ret, strerror(errno));
+
+    if (ret || errno)
         duk_push_int(ctx,0);
     else
         duk_push_int(ctx,1);
@@ -2410,6 +2415,17 @@ duk_ret_t duk_rp_chown(duk_context *ctx)
     return 0;
 }
 
+duk_ret_t duk_rp_nsleep(duk_context *ctx)
+{
+    double secs = REQUIRE_NUMBER(ctx, -1,  "rampart.sleep requires a number (float)");
+    struct timespec stime;
+    
+    stime.tv_sec=(time_t)secs;
+    stime.tv_nsec=(long)( 1000000000.0 * (secs - (double)stime.tv_sec) );
+    nanosleep(&stime,NULL);
+    return 0;
+}
+
 void duk_rampart_init(duk_context *ctx)
 {
     if (!duk_get_global_string(ctx, "rampart"))
@@ -2479,6 +2495,8 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "rename");
     duk_push_c_function(ctx, duk_rp_chown, 4);
     duk_put_prop_string(ctx, -2, "chown");
+    duk_push_c_function(ctx, duk_rp_nsleep, 1);
+    duk_put_prop_string(ctx, -2, "sleep");
 
     /* all above are rampart.utils.xyz() functions*/
     duk_put_prop_string(ctx, -2, "utils");

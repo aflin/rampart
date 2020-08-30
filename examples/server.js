@@ -284,46 +284,46 @@ printf("or see a sample website at http://127.0.0.1:8088/\n\nSTARTING SERVER:\n"
 
 var pid=server.start(
 {
-    ip:"0.0.0.0",  //this binds to all. Default is 127.0.0.1
-    ipv6:"::",     //this binds to all. Default is ::1
-    port:8088,     //This is the default.  If set to <1024 (i.e. 80), you must be root and set user below
-    ipv6port:8088, //defaults to port above if not set
-    // if you run as root, you must set user.  If not root, user is ignored.
+    /* bind: string|[array,of,strings]
+       default: [ "[::1]:8088", "127.0.0.1:8088" ] 
+        ipv6 format: [2001:db8::1111:2222]:80
+        ipv4 format: 127.0.0.1:80
+        spaces are ignored (i.e. " [ 2001:db8::1111:2222 ] : 80" is ok)
+    */
+    bind: [ "[::]:8088", "0.0.0.0:8088" ], /* bind to all */
+
+    /* if started as root, you must set user.  
+       If not root, option "user" is ignored. */
     //user: "nobody",
+
     scriptTimeout: 10.0, /* max time to spend in JS */
     connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
-    useThreads: true, /* make server multi-threaded. */
 
-    //user:"unpriv_user", /* if binding to, e.g. port 80, start as root and drop privileges as the user named here */
+    useThreads: true, /* make server multi-threaded. */
 
     /*** logging ***/
     log: true,           //turn logging on, by default goes to stdout/stderr
     //accessLog: "./access.log",    //access log location, instead of stdout
     //errorLog: "./error.log",     //error log location, instead of stderr
     
+    /*  fork and continue after server start (see end of the script) */
     //daemon: true, // fork and run in background.    
 
     /*  By default, number of threads is set to cpu core count.
-        ipv6 and ipv4 are separate servers and each get this number of threads.
         This has no effect unless useThreads is set true.
         The number can be changed here:
     */
     //threads: 8, /* for a 4 core, 8 virtual core hyper-threaded processor. */
 
-    /* for experimental https support, this is the minimum and maximum number of options needed:
-       WARNING: ssl layer dropped silently if key or cert file are invalid
+    /* 
+        for https support, this is the minimum number of options needed:
     */
-    /*
     secure:true,
-    sslkeyfile:  "/etc/letsencrypt/live/mydom.com/privkey.pem",
-    sslcertfile: "/etc/letsencrypt/live/mydom.com/fullchain.pem",
-    // if files above are invalid, it will silently revert to http
-    */
-    
-    /*  By default server binds to both ipv4 and ipv6.
-        To turn off ipv6 or ipv4, set one of these to false */
-    // useIpv6: false,
-    // useIpv4: false,
+    sslKeyFile:  "/etc/letsencrypt/live/mydom.com/privkey.pem",
+    sslCertFile: "/etc/letsencrypt/live/mydom.com/fullchain.pem",
+
+    /* sslMinVersion (ssl3|tls1|tls1.1|tls1.2). "tls1.2" is default*/
+    // sslMinVersion: "tls1.2",
 
     /* a custom 404 page */
     notFoundFunc: function(req){
@@ -341,35 +341,42 @@ var pid=server.start(
        except a more specific ('/something.html') path
        ********************************************************** */
     map:
-      {
-        //  filesystem mappings are always folders.  
-        //   "/tetris"    becomes  "/tetris/
-        //   "./mPurpose" becomes  "./mPurpose/"
+    {
+        /*
+            filesystem mappings are always folders.  
+             "/tetris"    becomes  "/tetris/
+             "./mPurpose" becomes  "./mPurpose/"
+        */
         "/":                  "./mPurpose",
         "/tetris":            "./tetris-tutorial/",
+
         /* url to function mappings */
         "/dbtest.html":       inserttest_callback,
         "/simpledbtest.html": simple_callback,
         "/globalref.html":    globalRef_callback,
         "/ramistest" :        ramistest,
-        /* matching a glob to a function */
-        /* use function from module "servermod.js" */
-        "/showreq*":          {module:"servermod"},
-        "/modtest/":	      {modulePath:"./servermods/"}
 
-      }
-}
-     /* 
-        including a function here will match everything not matched above
-        matching "/" if "/" : "./mPurpose/" was not present
-     */
-     /*
-     ,function(req) {
-         return {text:"my default response"}
-     }
-     */
-);
+        /* matching a glob to a function */
+        /* 
+            use function from module "servermod.js" 
+            changes to servermod.js do not require a server restart.
+        */
+        "/showreq*":          {module:"servermod"},
+
+        /* load modules dynamically from a path */
+        "/modtest/":	      {modulePath:"./servermods/"}
+    }
+});
 
 // if daemon==true then we get the pid of the detached process
-// otherwise server.start never returns
-console.log("pid of rampart-server: " + pid);
+// otherwise server.start() never returns
+
+/* give the forked server a chance to print its info*/
+rampart.utils.sleep(0.2);
+console.log(rampart.utils.shell("ps aux | grep "+pid).stdout);
+
+/* check that it is running */
+if(rampart.utils.kill(pid,0))
+    console.log("pid of rampart-server: " + pid);
+else
+    console.log("server start failed, pid = "+pid);

@@ -35,10 +35,8 @@ printf("\ntry a url like http://127.0.0.1:8088/search?q=paris\n");
 
 var pid=server.start(
 {
-    ip:"0.0.0.0",  //this binds to all. Default is 127.0.0.1
-    ipv6:"::",     //this binds to all. Default is ::1
-    port:8089,     //This is the default.  If set to <1024 (i.e. 80), you must be root and set user below
-    ipv6port:8089, //defaults to port above if not set
+    bind: [ "[::]:8088", "0.0.0.0:8088" ], /* bind to all */
+
     scriptTimeout: 20.0, /* max time to spend in JS */
     connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
     useThreads: true, /* make server multi-threaded. */
@@ -52,14 +50,8 @@ var pid=server.start(
     secure:true,
     sslkeyfile:  "/etc/letsencrypt/live/mydom.com/privkey.pem",
     sslcertfile: "/etc/letsencrypt/live/mydom.com/fullchain.pem",
-    // if files above are invalid, it will silently revert to http
     */
     
-    /*  By default server binds to both ipv4 and ipv6.
-        To turn off ipv6 or ipv4, set one of these to false */
-    // useIpv6: false,
-    // useIpv4: false,
-
     /* **********************************************************
        map urls to functions or paths on the filesystem 
        If it ends in a '/' then matches everything in that path
