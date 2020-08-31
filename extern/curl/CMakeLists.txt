@@ -78,20 +78,30 @@ include_directories(${CURL_SOURCE_DIR}/include)
 option(CURL_WERROR "Turn compiler warnings into errors" OFF)
 option(PICKY_COMPILER "Enable picky compiler options" ON)
 option(BUILD_CURL_EXE "Set to ON to build curl executable." ON)
-#set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared libraries" FORCE)
+#option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 option(ENABLE_ARES "Set to ON to enable c-ares support" OFF)
 if(WIN32)
   option(CURL_STATIC_CRT "Set to ON to build libcurl with static CRT on Windows (/MT)." OFF)
   option(ENABLE_INET_PTON "Set to OFF to prevent usage of inet_pton when building against modern SDKs while still requiring compatibility with older Windows versions, such as Windows XP, Windows Server 2003 etc." ON)
+  option(ENABLE_UNICODE "Set to ON to use the Unicode version of the Windows API functions" OFF)
   set(CURL_TARGET_WINDOWS_VERSION "" CACHE STRING "Minimum target Windows version as hex string")
   if(CURL_TARGET_WINDOWS_VERSION)
     add_definitions(-D_WIN32_WINNT=${CURL_TARGET_WINDOWS_VERSION})
+    set(CMAKE_REQUIRED_DEFINITIONS "${CMAKE_REQUIRED_DEFINITIONS} -D_WIN32_WINNT=${CURL_TARGET_WINDOWS_VERSION}")
   elseif(ENABLE_INET_PTON)
     # _WIN32_WINNT_VISTA (0x0600)
     add_definitions(-D_WIN32_WINNT=0x0600)
+    set(CMAKE_REQUIRED_DEFINITIONS "${CMAKE_REQUIRED_DEFINITIONS} -D_WIN32_WINNT=0x0600")
   else()
     # _WIN32_WINNT_WINXP (0x0501)
     add_definitions(-D_WIN32_WINNT=0x0501)
+    set(CMAKE_REQUIRED_DEFINITIONS "${CMAKE_REQUIRED_DEFINITIONS} -D_WIN32_WINNT=0x0501")
+  endif()
+  if(ENABLE_UNICODE)
+    add_definitions(-DUNICODE -D_UNICODE)
+    if(MINGW)
+      add_compile_options(-municode)
+    endif()
   endif()
 endif()
 option(CURL_LTO "Turn on compiler Link Time Optimizations" OFF)
@@ -105,13 +115,22 @@ option(ENABLE_CURLDEBUG "Set to ON to build with TrackMemory feature enabled" OF
 
 if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_CLANG)
   if(PICKY_COMPILER)
-    foreach(_CCOPT -pedantic -Wall -W -Wpointer-arith -Wwrite-strings -Wunused -Wshadow -Winline -Wnested-externs -Wmissing-declarations -Wmissing-prototypes -Wno-long-long -Wfloat-equal -Wno-multichar -Wsign-compare -Wundef -Wno-format-nonliteral -Wendif-labels -Wstrict-prototypes -Wdeclaration-after-statement -Wstrict-aliasing=3 -Wcast-align -Wtype-limits -Wold-style-declaration -Wmissing-parameter-type -Wempty-body -Wclobbered -Wignored-qualifiers -Wconversion -Wno-sign-conversion -Wvla -Wdouble-promotion -Wno-system-headers -Wno-pedantic-ms-format)
+    foreach(_CCOPT -pedantic -Wall -W -Wpointer-arith -Wwrite-strings -Wunused -Wshadow -Winline -Wnested-externs -Wmissing-declarations -Wmissing-prototypes -Wfloat-equal -Wsign-compare -Wundef -Wendif-labels -Wstrict-prototypes -Wdeclaration-after-statement -Wstrict-aliasing=3 -Wcast-align -Wtype-limits -Wold-style-declaration -Wmissing-parameter-type -Wempty-body -Wclobbered -Wignored-qualifiers -Wconversion -Wvla -Wdouble-promotion)
       # surprisingly, CHECK_C_COMPILER_FLAG needs a new variable to store each new
       # test result in.
       string(MAKE_C_IDENTIFIER "OPT${_CCOPT}" _optvarname)
       check_c_compiler_flag(${_CCOPT} ${_optvarname})
       if(${_optvarname})
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_CCOPT}")
+      endif()
+    endforeach()
+    foreach(_CCOPT long-long multichar format-nonliteral sign-conversion system-headers pedantic-ms-format)
+      # GCC only warns about unknown -Wno- options if there are also other diagnostic messages,
+      # so test for the positive form instead
+      string(MAKE_C_IDENTIFIER "OPT${_CCOPT}" _optvarname)
+      check_c_compiler_flag("-W${_CCOPT}" ${_optvarname})
+      if(${_optvarname})
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-${_CCOPT}")
       endif()
     endforeach()
   endif()
@@ -128,9 +147,9 @@ if(ENABLE_CURLDEBUG)
 endif()
 
 # For debug libs and exes, add "-d" postfix
-# if(NOT DEFINED CMAKE_DEBUG_POSTFIX)
-#   set(CMAKE_DEBUG_POSTFIX "-d")
-# endif()
+#if(NOT DEFINED CMAKE_DEBUG_POSTFIX)
+#  set(CMAKE_DEBUG_POSTFIX "-d")
+#endif()
 
 # initialize CURL_LIBS
 set(CURL_LIBS "")
@@ -175,8 +194,8 @@ option(CURL_DISABLE_SMTP "to disable SMTP" OFF)
 mark_as_advanced(CURL_DISABLE_SMTP)
 option(CURL_DISABLE_GOPHER "to disable Gopher" OFF)
 mark_as_advanced(CURL_DISABLE_GOPHER)
-option(CURL_ENABLE_MQTT "to enable MQTT" OFF)
-mark_as_advanced(CURL_ENABLE_MQTT)
+option(CURL_DISABLE_MQTT "to disable MQTT" OFF)
+mark_as_advanced(CURL_DISABLE_MQTT)
 
 if(HTTP_ONLY)
   set(CURL_DISABLE_FTP ON)
@@ -217,7 +236,10 @@ if(ENABLE_IPV6 AND NOT WIN32)
   endif()
 endif()
 
-curl_nroff_check()
+if(USE_MANUAL)
+    #nroff is currently only used when USE_MANUAL is set, so we can prevent the warning of no *NROFF if USE_MANUAL is OFF (or not defined), by not even looking for NROFF..
+    curl_nroff_check()
+endif()
 find_package(Perl)
 
 cmake_dependent_option(ENABLE_MANUAL "to provide the built-in manual"
@@ -301,14 +323,17 @@ endif()
 
 # check SSL libraries
 # TODO support GnuTLS
+if(CMAKE_USE_WINSSL)
+  message(FATAL_ERROR "The cmake option CMAKE_USE_WINSSL was renamed to CMAKE_USE_SCHANNEL.")
+endif()
 
 if(APPLE)
   option(CMAKE_USE_SECTRANSP "enable Apple OS native SSL/TLS" OFF)
 endif()
 if(WIN32)
-  option(CMAKE_USE_WINSSL "enable Windows native SSL/TLS" OFF)
+  option(CMAKE_USE_SCHANNEL "enable Windows native SSL/TLS" OFF)
   cmake_dependent_option(CURL_WINDOWS_SSPI "Use windows libraries to allow NTLM authentication without openssl" ON
-    CMAKE_USE_WINSSL OFF)
+    CMAKE_USE_SCHANNEL OFF)
 endif()
 option(CMAKE_USE_MBEDTLS "Enable mbedTLS for SSL/TLS" OFF)
 option(CMAKE_USE_BEARSSL "Enable BearSSL for SSL/TLS" OFF)
@@ -316,13 +341,13 @@ option(CMAKE_USE_NSS "Enable NSS for SSL/TLS" OFF)
 option(CMAKE_USE_WOLFSSL "enable wolfSSL for SSL/TLS" OFF)
 
 set(openssl_default ON)
-if(WIN32 OR CMAKE_USE_SECTRANSP OR CMAKE_USE_WINSSL OR CMAKE_USE_MBEDTLS OR CMAKE_USE_NSS OR CMAKE_USE_WOLFSSL)
+if(WIN32 OR CMAKE_USE_SECTRANSP OR CMAKE_USE_SCHANNEL OR CMAKE_USE_MBEDTLS OR CMAKE_USE_NSS OR CMAKE_USE_WOLFSSL)
   set(openssl_default OFF)
 endif()
 option(CMAKE_USE_OPENSSL "Use OpenSSL code. Experimental" ${openssl_default})
 
 count_true(enabled_ssl_options_count
-  CMAKE_USE_WINSSL
+  CMAKE_USE_SCHANNEL
   CMAKE_USE_SECTRANSP
   CMAKE_USE_OPENSSL
   CMAKE_USE_MBEDTLS
@@ -334,10 +359,10 @@ if(enabled_ssl_options_count GREATER "1")
   set(CURL_WITH_MULTI_SSL ON)
 endif()
 
-if(CMAKE_USE_WINSSL)
+if(CMAKE_USE_SCHANNEL)
   set(SSL_ENABLED ON)
   set(USE_SCHANNEL ON) # Windows native SSL/TLS support
-  set(USE_WINDOWS_SSPI ON) # CMAKE_USE_WINSSL implies CURL_WINDOWS_SSPI
+  set(USE_WINDOWS_SSPI ON) # CMAKE_USE_SCHANNEL implies CURL_WINDOWS_SSPI
   list(APPEND CURL_LIBS "crypt32")
 endif()
 if(CURL_WINDOWS_SSPI)
@@ -645,39 +670,55 @@ if(CURL_BROTLI)
   endif()
 endif()
 
-#libSSH2
-option(CMAKE_USE_LIBSSH2 "Use libSSH2" ON)
-mark_as_advanced(CMAKE_USE_LIBSSH2)
-set(USE_LIBSSH2 OFF)
-set(HAVE_LIBSSH2 OFF)
-set(HAVE_LIBSSH2_H OFF)
-
-if(CMAKE_USE_LIBSSH2)
-  find_package(LibSSH2)
-  if(LIBSSH2_FOUND)
-    list(APPEND CURL_LIBS ${LIBSSH2_LIBRARY})
-    set(CMAKE_REQUIRED_LIBRARIES ${LIBSSH2_LIBRARY})
-    list(APPEND CMAKE_REQUIRED_INCLUDES "${LIBSSH2_INCLUDE_DIR}")
-    include_directories("${LIBSSH2_INCLUDE_DIR}")
-    set(HAVE_LIBSSH2 ON)
-    set(USE_LIBSSH2 ON)
-
-    # find_package has already found the headers
-    set(HAVE_LIBSSH2_H ON)
-    set(CURL_INCLUDES ${CURL_INCLUDES} "${LIBSSH2_INCLUDE_DIR}/libssh2.h")
-    set(CURL_TEST_DEFINES "${CURL_TEST_DEFINES} -DHAVE_LIBSSH2_H")
-
-    # now check for specific libssh2 symbols as they were added in different versions
-    set(CMAKE_EXTRA_INCLUDE_FILES "libssh2.h")
-    check_function_exists(libssh2_version           HAVE_LIBSSH2_VERSION)
-    check_function_exists(libssh2_init              HAVE_LIBSSH2_INIT)
-    check_function_exists(libssh2_exit              HAVE_LIBSSH2_EXIT)
-    check_function_exists(libssh2_scp_send64        HAVE_LIBSSH2_SCP_SEND64)
-    check_function_exists(libssh2_session_handshake HAVE_LIBSSH2_SESSION_HANDSHAKE)
-    set(CMAKE_EXTRA_INCLUDE_FILES "")
-    unset(CMAKE_REQUIRED_LIBRARIES)
+option(CURL_ZSTD "Set to ON to enable building curl with zstd support." OFF)
+set(HAVE_ZSTD OFF)
+if(CURL_ZSTD)
+  find_package(Zstd REQUIRED)
+  cmake_push_check_state()
+  set(CMAKE_REQUIRED_INCLUDES ${Zstd_INCLUDE_DIRS})
+  set(CMAKE_REQUIRED_LIBRARIES ${Zstd_LIBRARIES})
+  check_symbol_exists(ZSTD_createDStream "zstd.h" HAVE_ZSTD_CREATEDSTREAM)
+  cmake_pop_check_state()
+  if(Zstd_FOUND AND HAVE_ZSTD_CREATEDSTREAM)
+    set(HAVE_ZSTD ON)
+    list(APPEND CURL_LIBS ${Zstd_LIBRARIES})
+    include_directories(${Zstd_INCLUDE_DIRS})
   endif()
 endif()
+
+#libSSH2
+#option(CMAKE_USE_LIBSSH2 "Use libSSH2" OFF)
+#mark_as_advanced(CMAKE_USE_LIBSSH2)
+#set(USE_LIBSSH2 OFF)
+#set(HAVE_LIBSSH2 OFF)
+#set(HAVE_LIBSSH2_H OFF)
+#
+#if(CMAKE_USE_LIBSSH2)
+#  find_package(LibSSH2)
+#  if(LIBSSH2_FOUND)
+#    list(APPEND CURL_LIBS ${LIBSSH2_LIBRARY})
+#    set(CMAKE_REQUIRED_LIBRARIES ${LIBSSH2_LIBRARY})
+#    list(APPEND CMAKE_REQUIRED_INCLUDES "${LIBSSH2_INCLUDE_DIR}")
+#    include_directories("${LIBSSH2_INCLUDE_DIR}")
+#    set(HAVE_LIBSSH2 ON)
+#    set(USE_LIBSSH2 ON)
+#
+#    # find_package has already found the headers
+#    set(HAVE_LIBSSH2_H ON)
+#    set(CURL_INCLUDES ${CURL_INCLUDES} "${LIBSSH2_INCLUDE_DIR}/libssh2.h")
+#    set(CURL_TEST_DEFINES "${CURL_TEST_DEFINES} -DHAVE_LIBSSH2_H")
+#
+#    # now check for specific libssh2 symbols as they were added in different versions
+#    set(CMAKE_EXTRA_INCLUDE_FILES "libssh2.h")
+#    check_function_exists(libssh2_version           HAVE_LIBSSH2_VERSION)
+#    check_function_exists(libssh2_init              HAVE_LIBSSH2_INIT)
+#    check_function_exists(libssh2_exit              HAVE_LIBSSH2_EXIT)
+#    check_function_exists(libssh2_scp_send64        HAVE_LIBSSH2_SCP_SEND64)
+#    check_function_exists(libssh2_session_handshake HAVE_LIBSSH2_SESSION_HANDSHAKE)
+#    set(CMAKE_EXTRA_INCLUDE_FILES "")
+#    unset(CMAKE_REQUIRED_LIBRARIES)
+#  endif()
+#endif()
 
 # libssh
 option(CMAKE_USE_LIBSSH "Use libSSH" OFF)
@@ -798,6 +839,10 @@ else()
   set(CURL_CA_PATH_SET TRUE)
 endif()
 
+set(CURL_CA_BUNDLE_AUTODETECT TRUE)
+set(CURL_CA_PATH_AUTODETECT FALSE)
+set(CURL_CA_PATH_SET FALSE)
+message("---------########----------###########----------#########")
 if(CURL_CA_BUNDLE_SET AND CURL_CA_PATH_AUTODETECT)
   # Skip autodetection of unset CA path because CA bundle is set explicitly
 elseif(CURL_CA_PATH_SET AND CURL_CA_BUNDLE_AUTODETECT)
@@ -822,7 +867,7 @@ elseif(CURL_CA_PATH_AUTODETECT OR CURL_CA_BUNDLE_AUTODETECT)
       endif()
     endforeach()
   endif()
-
+message("found cert at ${CURL_CA_BUNDLE}")
   if(CURL_CA_PATH_AUTODETECT AND (NOT CURL_CA_PATH_SET))
     if(EXISTS "/etc/ssl/certs")
       set(CURL_CA_PATH "/etc/ssl/certs")
@@ -1305,7 +1350,7 @@ endif()
 
 # NTLM support requires crypto function adaptions from various SSL libs
 # TODO alternative SSL libs tests for SSP1, GNUTLS, NSS
-if(NOT CURL_DISABLE_CRYPTO_AUTH AND (USE_OPENSSL OR USE_WINDOWS_SSPI OR USE_DARWINSSL OR USE_MBEDTLS OR USE_WIN32_CRYPTO))
+if(NOT CURL_DISABLE_CRYPTO_AUTH AND (USE_OPENSSL OR USE_DARWINSSL OR USE_MBEDTLS OR USE_WIN32_CRYPTO))
   set(use_ntlm ON)
 else()
   set(use_ntlm OFF)
@@ -1326,11 +1371,13 @@ _add_if("SSL"           SSL_ENABLED)
 _add_if("IPv6"          ENABLE_IPV6)
 _add_if("unix-sockets"  USE_UNIX_SOCKETS)
 _add_if("libz"          HAVE_LIBZ)
+_add_if("brotli"        HAVE_BROTLI)
+_add_if("zstd"          HAVE_ZSTD)
 _add_if("AsynchDNS"     USE_ARES OR USE_THREADS_POSIX OR USE_THREADS_WIN32)
 _add_if("IDN"           HAVE_LIBIDN2)
 _add_if("Largefile"     (CURL_SIZEOF_CURL_OFF_T GREATER 4) AND
                         ((SIZEOF_OFF_T GREATER 4) OR USE_WIN32_LARGE_FILES))
-# TODO SSP1 (WinSSL) check is missing
+# TODO SSP1 (Schannel) check is missing
 _add_if("SSPI"          USE_WINDOWS_SSPI)
 _add_if("GSS-API"       HAVE_GSSAPI)
 _add_if("alt-svc"       ENABLE_ALT_SVC)
@@ -1341,7 +1388,7 @@ _add_if("Kerberos"      NOT CURL_DISABLE_CRYPTO_AUTH AND
                         (HAVE_GSSAPI OR USE_WINDOWS_SSPI))
 # NTLM support requires crypto function adaptions from various SSL libs
 # TODO alternative SSL libs tests for SSP1, GNUTLS, NSS
-_add_if("NTLM"        use_ntlm)
+_add_if("NTLM"        use_ntlm OR USE_WINDOWS_SSPI)
 # TODO missing option (autoconf: --enable-ntlm-wb)
 _add_if("NTLM_WB"     use_ntlm AND NOT CURL_DISABLE_HTTP AND NTLM_WB_ENABLED)
 # TODO missing option (--enable-tls-srp), depends on GNUTLS_SRP/OPENSSL_SRP
@@ -1382,8 +1429,8 @@ _add_if("SMTPS"         NOT CURL_DISABLE_SMTP AND SSL_ENABLED)
 _add_if("SCP"           USE_LIBSSH2 OR USE_LIBSSH)
 _add_if("SFTP"          USE_LIBSSH2 OR USE_LIBSSH)
 _add_if("RTSP"          NOT CURL_DISABLE_RTSP)
-_add_if("RTMP"          OFF)
-_add_if("MQTT"          CURL_ENABLE_MQTT)
+_add_if("RTMP"          USE_LIBRTMP)
+_add_if("MQTT"          NOT CURL_DISABLE_MQTT)
 if(_items)
   list(SORT _items)
 endif()
@@ -1392,7 +1439,7 @@ message(STATUS "Enabled protocols: ${SUPPORT_PROTOCOLS}")
 
 # Clear list and collect SSL backends
 set(_items)
-_add_if("WinSSL"           SSL_ENABLED AND USE_WINDOWS_SSPI)
+_add_if("Schannel"         SSL_ENABLED AND USE_WINDOWS_SSPI)
 _add_if("OpenSSL"          SSL_ENABLED AND USE_OPENSSL)
 _add_if("Secure Transport" SSL_ENABLED AND USE_SECTRANSP)
 _add_if("mbedTLS"          SSL_ENABLED AND USE_MBEDTLS)
@@ -1420,7 +1467,15 @@ set(libdir                  "${CMAKE_INSTALL_PREFIX}/lib")
 foreach(_lib ${CMAKE_C_IMPLICIT_LINK_LIBRARIES} ${CURL_LIBS})
   if(TARGET "${_lib}")
     set(_libname "${_lib}")
-    get_target_property(_lib "${_lib}" LOCATION)
+    get_target_property(_libtype "${_libname}" TYPE)
+    if(_libtype STREQUAL INTERFACE_LIBRARY)
+      # Interface libraries can occur when an external project embeds curl and
+      # defined targets such as ZLIB::ZLIB by themselves. Ignore these as
+      # reading the LOCATION property will error out. Assume the user won't need
+      # this information in the .pc file.
+      continue()
+    endif()
+    get_target_property(_lib "${_libname}" LOCATION)
     if(NOT _lib)
       message(WARNING "Bad lib in library list: ${_libname}")
       continue()

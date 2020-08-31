@@ -32,6 +32,8 @@
 static const struct writeoutvar variables[] = {
   {"url_effective", VAR_EFFECTIVE_URL, 0,
    CURLINFO_EFFECTIVE_URL, JSON_STRING},
+  {"method", VAR_EFFECTIVE_METHOD, 0,
+   CURLINFO_EFFECTIVE_METHOD, JSON_STRING},
   {"http_code", VAR_HTTP_CODE, 0,
    CURLINFO_RESPONSE_CODE, JSON_LONG},
   {"response_code", VAR_HTTP_CODE, 0,
@@ -131,7 +133,7 @@ void ourWriteOut(CURL *curl, struct OutStruct *outs, const char *writeinfo)
             continue;
           }
           keepit = *end;
-          *end = 0; /* zero terminate */
+          *end = 0; /* null-terminate */
           for(i = 0; variables[i].name; i++) {
             if(curl_strequal(ptr, variables[i].name)) {
               match = TRUE;
@@ -139,6 +141,13 @@ void ourWriteOut(CURL *curl, struct OutStruct *outs, const char *writeinfo)
               case VAR_EFFECTIVE_URL:
                 if((CURLE_OK ==
                     curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &stringp))
+                   && stringp)
+                  fputs(stringp, stream);
+                break;
+              case VAR_EFFECTIVE_METHOD:
+                if((CURLE_OK == curl_easy_getinfo(curl,
+                                                  CURLINFO_EFFECTIVE_METHOD,
+                                                  &stringp))
                    && stringp)
                   fputs(stringp, stream);
                 break;

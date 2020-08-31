@@ -335,8 +335,10 @@
 #  define struct_stat                struct _stati64
 #  define LSEEK_ERROR                (__int64)-1
 #  define fopen(fname,mode)          curlx_win32_fopen(fname, mode)
+#  define access(fname,mode)         curlx_win32_access(fname, mode)
    int curlx_win32_stat(const char *path, struct_stat *buffer);
    FILE *curlx_win32_fopen(const char *filename, const char *mode);
+   int curlx_win32_access(const char *path, int mode);
 #endif
 
 /*
@@ -354,8 +356,10 @@
 #    define stat(fname,stp)            curlx_win32_stat(fname, stp)
 #    define struct_stat                struct _stat
 #    define fopen(fname,mode)          curlx_win32_fopen(fname, mode)
+#    define access(fname,mode)         curlx_win32_access(fname, mode)
      int curlx_win32_stat(const char *path, struct_stat *buffer);
      FILE *curlx_win32_fopen(const char *filename, const char *mode);
+     int curlx_win32_access(const char *path, int mode);
 #  endif
 #  define LSEEK_ERROR                (long)-1
 #endif
@@ -633,18 +637,22 @@ int netware_init(void);
 
 /* Single point where USE_NTLM definition might be defined */
 #if !defined(CURL_DISABLE_NTLM) && !defined(CURL_DISABLE_CRYPTO_AUTH)
-#if defined(USE_OPENSSL) || defined(USE_WINDOWS_SSPI) || \
-    defined(USE_GNUTLS) || defined(USE_NSS) || defined(USE_SECTRANSP) || \
-    defined(USE_OS400CRYPTO) || defined(USE_WIN32_CRYPTO) || \
-    defined(USE_MBEDTLS)
+#if defined(USE_OPENSSL) || defined(USE_MBEDTLS) ||                     \
+  defined(USE_GNUTLS) || defined(USE_NSS) || defined(USE_SECTRANSP) ||  \
+  defined(USE_OS400CRYPTO) || defined(USE_WIN32_CRYPTO) ||              \
+  (defined(USE_WOLFSSL) && defined(HAVE_WOLFSSL_DES_ECB_ENCRYPT))
 
-#define USE_NTLM
+#define USE_CURL_NTLM_CORE
 
 #  if defined(USE_MBEDTLS)
 /* Get definition of MBEDTLS_MD4_C */
 #  include <mbedtls/md4.h>
 #  endif
 
+#endif
+
+#if defined(USE_CURL_NTLM_CORE) || defined(USE_WINDOWS_SSPI)
+#define USE_NTLM
 #endif
 #endif
 

@@ -31,6 +31,18 @@
 
 #include <limits.h>
 
+/* Wincrypt must be included before anything that could include OpenSSL. */
+#if defined(USE_WIN32_CRYPTO)
+#include <wincrypt.h>
+/* Undefine wincrypt conflicting symbols for BoringSSL. */
+#undef X509_NAME
+#undef X509_EXTENSIONS
+#undef PKCS7_ISSUER_AND_SERIAL
+#undef PKCS7_SIGNER_INFO
+#undef OCSP_REQUEST
+#undef OCSP_RESPONSE
+#endif
+
 #include "urldata.h"
 #include "sendf.h"
 #include "formdata.h" /* for the boundary function */
@@ -47,10 +59,6 @@
 #include "multiif.h"
 #include "strerror.h"
 #include "curl_printf.h"
-
-#if defined(USE_WIN32_CRYPTO)
-#include <wincrypt.h>
-#endif
 
 #include <openssl/ssl.h>
 #include <openssl/rand.h>
@@ -192,6 +200,10 @@
      !defined(OPENSSL_IS_BORINGSSL))
 #define HAVE_SSL_CTX_SET_CIPHERSUITES
 #define HAVE_SSL_CTX_SET_POST_HANDSHAKE_AUTH
+/* SET_EC_CURVES available under the same preconditions: see
+ * https://www.openssl.org/docs/manmaster/man3/SSL_CTX_set1_groups.html
+ */
+#define HAVE_SSL_CTX_SET_EC_CURVES
 #endif
 
 #if defined(LIBRESSL_VERSION_NUMBER)
@@ -618,7 +630,9 @@ SSL_CTX_use_certificate_chain_bio(SSL_CTX *ctx, BIO* in,
                                   const char *key_passwd)
 {
 /* SSL_CTX_add1_chain_cert introduced in OpenSSL 1.0.2 */
-#if (OPENSSL_VERSION_NUMBER >= 0x1000200fL) /* 1.0.2 or later */
+#if (OPENSSL_VERSION_NUMBER >= 0x1000200fL) && /* OpenSSL 1.0.2 or later */ \
+    !(defined(LIBRESSL_VERSION_NUMBER) && \
+      (LIBRESSL_VERSION_NUMBER < 0x2090100fL)) /* LibreSSL 2.9.1 or later */
   int ret = 0;
   X509 *x = NULL;
   void *passwd_callback_userdata = (void *)key_passwd;
@@ -1635,7 +1649,7 @@ static CURLcode verifyhost(struct connectdata *conn, X509 *server_cert)
              type itself: for example for an IA5String the data will be ASCII"
 
              It has been however verified that in 0.9.6 and 0.9.7, IA5String
-             is always zero-terminated.
+             is always null-terminated.
           */
           if((altlen == strlen(altptr)) &&
              /* if this isn't true, there was an embedded zero in the name
@@ -2476,7 +2490,7 @@ static CURLcode ossl_connect_step1(struct connectdata *conn, int sockindex)
   long * const certverifyresult = &data->set.ssl.certverifyresult;
 #endif
   const long int ssl_version = SSL_CONN_CONFIG(version);
-#ifdef USE_TLS_SRP
+#ifdef HAVE_OPENSSL_SRP
   const enum CURL_TLSAUTH ssl_authtype = SSL_SET_OPTION(authtype);
 #endif
   char * const ssl_cert = SSL_SET_OPTION(cert);
@@ -2488,6 +2502,7 @@ static CURLcode ossl_connect_step1(struct connectdata *conn, int sockindex)
   const char * const ssl_crlfile = SSL_SET_OPTION(CRLfile);
   char error_buffer[256];
   struct ssl_backend_data *backend = connssl->backend;
+  bool imported_native_ca = false;
 
   DEBUGASSERT(ssl_connect_1 == connssl->connecting_state);
 
@@ -2520,7 +2535,7 @@ static CURLcode ossl_connect_step1(struct connectdata *conn, int sockindex)
     failf(data, OSSL_PACKAGE " was built without SSLv2 support");
     return CURLE_NOT_BUILT_IN;
 #else
-#ifdef USE_TLS_SRP
+#ifdef HAVE_OPENSSL_SRP
     if(ssl_authtype == CURL_TLSAUTH_SRP)
       return CURLE_SSL_CONNECT_ERROR;
 #endif
@@ -2533,7 +2548,7 @@ static CURLcode ossl_connect_step1(struct connectdata *conn, int sockindex)
     failf(data, OSSL_PACKAGE " was built without SSLv3 support");
     return CURLE_NOT_BUILT_IN;
 #else
-#ifdef USE_TLS_SRP
+#ifdef HAVE_OPENSSL_SRP
     if(ssl_authtype == CURL_TLSAUTH_SRP)
       return CURLE_SSL_CONNECT_ERROR;
 #endif
@@ -2789,7 +2804,19 @@ static CURLcode ossl_connect_step1(struct connectdata *conn, int sockindex)
   SSL_CTX_set_post_handshake_auth(backend->ctx, 1);
 #endif
 
-#ifdef USE_TLS_SRP
+#ifdef HAVE_SSL_CTX_SET_EC_CURVES
+  {
+    char *curves = SSL_CONN_CONFIG(curves);
+    if(curves) {
+      if(!SSL_CTX_set1_curves_list(backend->ctx, curves)) {
+        failf(data, "failed setting curves list: '%s'", curves);
+        return CURLE_SSL_CIPHER;
+      }
+    }
+  }
+#endif
+
+#ifdef HAVE_OPENSSL_SRP
   if(ssl_authtype == CURL_TLSAUTH_SRP) {
     char * const ssl_username = SSL_SET_OPTION(username);
 
@@ -2823,7 +2850,8 @@ static CURLcode ossl_connect_step1(struct connectdata *conn, int sockindex)
   if((SSL_CONN_CONFIG(verifypeer) || SSL_CONN_CONFIG(verifyhost)) &&
      (SSL_SET_OPTION(native_ca_store))) {
     X509_STORE *store = SSL_CTX_get_cert_store(backend->ctx);
-    HCERTSTORE hStore = CertOpenSystemStoreA((HCRYPTPROV_LEGACY)NULL, "ROOT");
+    HCERTSTORE hStore = CertOpenSystemStore((HCRYPTPROV_LEGACY)NULL,
+                                            TEXT("ROOT"));
 
     if(hStore) {
       PCCERT_CONTEXT pContext = NULL;
@@ -2940,9 +2968,8 @@ static CURLcode ossl_connect_step1(struct connectdata *conn, int sockindex)
         if(X509_STORE_add_cert(store, x509) == 1) {
 #if defined(DEBUGBUILD) && !defined(CURL_DISABLE_VERBOSE_STRINGS)
           infof(data, "SSL: Imported cert \"%s\"\n", cert_name);
-#else
-          do {} while(0);
 #endif
+          imported_native_ca = true;
         }
         X509_free(x509);
       }
@@ -2953,16 +2980,12 @@ static CURLcode ossl_connect_step1(struct connectdata *conn, int sockindex)
 
       if(result)
         return result;
-
-      infof(data, "successfully set certificate verify locations "
-            "to windows ca store\n");
     }
-    else {
-      infof(data, "error setting certificate verify locations "
-            "to windows ca store, continuing anyway\n");
-    }
+    if(imported_native_ca)
+      infof(data, "successfully imported windows ca store\n");
+    else
+      infof(data, "error importing windows ca store, continuing anyway\n");
   }
-  else
 #endif
 
 #if defined(OPENSSL_VERSION_MAJOR) && (OPENSSL_VERSION_MAJOR >= 3)
@@ -2978,7 +3001,7 @@ static CURLcode ossl_connect_step1(struct connectdata *conn, int sockindex)
         /* Continue with a warning if no certificate verif is required. */
         infof(data, "error setting certificate file, continuing anyway\n");
       }
-      infof(data, "  CAfile: %s\n", ssl_cafile);
+      infof(data, " CAfile: %s\n", ssl_cafile);
     }
     if(ssl_capath) {
       if(!SSL_CTX_load_verify_dir(backend->ctx, ssl_capath)) {
@@ -2990,7 +3013,7 @@ static CURLcode ossl_connect_step1(struct connectdata *conn, int sockindex)
         /* Continue with a warning if no certificate verif is required. */
         infof(data, "error setting certificate path, continuing anyway\n");
       }
-      infof(data, "  CApath: %s\n", ssl_capath);
+      infof(data, " CApath: %s\n", ssl_capath);
     }
   }
 #else
@@ -2998,15 +3021,15 @@ static CURLcode ossl_connect_step1(struct connectdata *conn, int sockindex)
     /* tell SSL where to find CA certificates that are used to verify
        the servers certificate. */
     if(!SSL_CTX_load_verify_locations(backend->ctx, ssl_cafile, ssl_capath)) {
-      if(verifypeer) {
+      if(verifypeer && !imported_native_ca) {
         /* Fail if we insist on successfully verifying the server. */
-        failf(data, "error setting certificate verify locations:\n"
-              "  CAfile: %s\n  CApath: %s",
+        failf(data, "error setting certificate verify locations:"
+              "  CAfile: %s CApath: %s",
               ssl_cafile ? ssl_cafile : "none",
               ssl_capath ? ssl_capath : "none");
         return CURLE_SSL_CACERT_BADFILE;
       }
-      /* Just continue with a warning if no strict  certificate verification
+      /* Just continue with a warning if no strict certificate verification
          is required. */
       infof(data, "error setting certificate verify locations,"
             " continuing anyway:\n");
@@ -3015,16 +3038,13 @@ static CURLcode ossl_connect_step1(struct connectdata *conn, int sockindex)
       /* Everything is fine. */
       infof(data, "successfully set certificate verify locations:\n");
     }
-    infof(data,
-          "  CAfile: %s\n"
-          "  CApath: %s\n",
-          ssl_cafile ? ssl_cafile : "none",
-          ssl_capath ? ssl_capath : "none");
+    infof(data, " CAfile: %s\n", ssl_cafile ? ssl_cafile : "none");
+    infof(data, " CApath: %s\n", ssl_capath ? ssl_capath : "none");
   }
 #endif
 
 #ifdef CURL_CA_FALLBACK
-  else if(verifypeer) {
+  if(verifypeer && !ssl_cafile && !ssl_capath && !imported_native_ca) {
     /* verifying the peer without any CA certificates won't
        work so use openssl's built in default as fallback */
     SSL_CTX_set_default_verify_paths(backend->ctx);

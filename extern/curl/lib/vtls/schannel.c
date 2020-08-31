@@ -50,7 +50,7 @@
 #include "x509asn1.h"
 #include "curl_printf.h"
 #include "multiif.h"
-#include "system_win32.h"
+#include "version_win32.h"
 
 /* The last #include file should be: */
 #include "curl_memory.h"
@@ -346,6 +346,8 @@ set_ssl_ciphers(SCHANNEL_CRED *schannel_cred, char *ciphers)
 }
 
 #ifdef HAS_CLIENT_CERT_PATH
+
+/* Function allocates memory for store_path only if CURLE_OK is returned */
 static CURLcode
 get_cert_location(TCHAR *path, DWORD *store_name, TCHAR **store_path,
                   TCHAR **thumbprint)
@@ -388,15 +390,15 @@ get_cert_location(TCHAR *path, DWORD *store_name, TCHAR **store_path,
   if(sep == NULL)
     return CURLE_SSL_CERTPROBLEM;
 
+  *thumbprint = sep + 1;
+  if(_tcslen(*thumbprint) != CERT_THUMBPRINT_STR_LEN)
+    return CURLE_SSL_CERTPROBLEM;
+
   *sep = TEXT('\0');
   *store_path = _tcsdup(store_path_start);
   *sep = TEXT('\\');
   if(*store_path == NULL)
     return CURLE_OUT_OF_MEMORY;
-
-  *thumbprint = sep + 1;
-  if(_tcslen(*thumbprint) != CERT_THUMBPRINT_STR_LEN)
-    return CURLE_SSL_CERTPROBLEM;
 
   return CURLE_OK;
 }
@@ -436,8 +438,8 @@ schannel_connect_step1(struct connectdata *conn, int sockindex)
                "schannel: SSL/TLS connection with %s port %hu (step 1/3)\n",
                hostname, conn->remote_port));
 
-  if(Curl_verify_windows_version(5, 1, PLATFORM_WINNT,
-                                 VERSION_LESS_THAN_EQUAL)) {
+  if(curlx_verify_windows_version(5, 1, PLATFORM_WINNT,
+                                  VERSION_LESS_THAN_EQUAL)) {
     /* Schannel in Windows XP (OS version 5.1) uses legacy handshakes and
        algorithms that may not be supported by all servers. */
     infof(data, "schannel: Windows version is old and may not be able to "
@@ -448,10 +450,10 @@ schannel_connect_step1(struct connectdata *conn, int sockindex)
   /* ALPN is only supported on Windows 8.1 / Server 2012 R2 and above.
      Also it doesn't seem to be supported for Wine, see curl bug #983. */
   BACKEND->use_alpn = conn->bits.tls_enable_alpn &&
-    !GetProcAddress(GetModuleHandleA("ntdll"),
+    !GetProcAddress(GetModuleHandle(TEXT("ntdll")),
                     "wine_get_version") &&
-    Curl_verify_windows_version(6, 3, PLATFORM_WINNT,
-                                VERSION_GREATER_THAN_EQUAL);
+    curlx_verify_windows_version(6, 3, PLATFORM_WINNT,
+                                 VERSION_GREATER_THAN_EQUAL);
 #else
   BACKEND->use_alpn = false;
 #endif
@@ -467,8 +469,8 @@ schannel_connect_step1(struct connectdata *conn, int sockindex)
 #else
 #ifdef HAS_MANUAL_VERIFY_API
   if(SSL_CONN_CONFIG(CAfile)) {
-    if(Curl_verify_windows_version(6, 1, PLATFORM_WINNT,
-                                   VERSION_GREATER_THAN_EQUAL)) {
+    if(curlx_verify_windows_version(6, 1, PLATFORM_WINNT,
+                                    VERSION_GREATER_THAN_EQUAL)) {
       BACKEND->use_manual_cred_validation = true;
     }
     else {
@@ -2015,8 +2017,8 @@ schannel_recv(struct connectdata *conn, int sockindex,
   */
   if(len && !BACKEND->decdata_offset && BACKEND->recv_connection_closed &&
      !BACKEND->recv_sspi_close_notify) {
-    bool isWin2k = Curl_verify_windows_version(5, 0, PLATFORM_WINNT,
-                                               VERSION_EQUAL);
+    bool isWin2k = curlx_verify_windows_version(5, 0, PLATFORM_WINNT,
+                                                VERSION_EQUAL);
 
     if(isWin2k && sspi_status == SEC_E_OK)
       BACKEND->recv_sspi_close_notify = true;

@@ -320,6 +320,9 @@ curl_easy_strerror(CURLcode error)
   case CURLE_QUIC_CONNECT_ERROR:
     return "QUIC connection error";
 
+ case CURLE_PROXY:
+    return "proxy handshake error";
+
     /* error codes not used by current libcurl */
   case CURLE_OBSOLETE20:
   case CURLE_OBSOLETE24:
@@ -795,7 +798,7 @@ const char *Curl_strerror(int err, char *buf, size_t buflen)
 
 #endif /* end of not Windows */
 
-  buf[max] = '\0'; /* make sure the string is zero terminated */
+  buf[max] = '\0'; /* make sure the string is null-terminated */
 
   /* strip trailing '\r\n' or '\n'. */
   p = strrchr(buf, '\n');

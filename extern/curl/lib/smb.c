@@ -6,7 +6,7 @@
  *                             \___|\___/|_| \_\_____|
  *
  * Copyright (C) 2014, Bill Nagel <wnagel@tycoint.com>, Exacq Technologies
- * Copyright (C) 2016-2019, Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) 2016-2020, Daniel Stenberg, <daniel@haxx.se>, et al.
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
@@ -23,10 +23,8 @@
 
 #include "curl_setup.h"
 
-#if !defined(CURL_DISABLE_SMB) && defined(USE_NTLM) &&  \
+#if !defined(CURL_DISABLE_SMB) && defined(USE_CURL_NTLM_CORE) &&  \
   (CURL_SIZEOF_CURL_OFF_T > 4)
-
-#if !defined(USE_WINDOWS_SSPI) || defined(USE_WIN32_CRYPTO)
 
 #define BUILDING_CURL_SMB_C
 
@@ -964,7 +962,7 @@ static CURLcode smb_parse_url_path(struct connectdata *conn)
 
   /* URL decode the path */
   CURLcode result = Curl_urldecode(data, data->state.up.path, 0, &path, NULL,
-                                   TRUE);
+                                   REJECT_CTRL);
   if(result)
     return result;
 
@@ -996,6 +994,5 @@ static CURLcode smb_parse_url_path(struct connectdata *conn)
   return CURLE_OK;
 }
 
-#endif /* !USE_WINDOWS_SSPI || USE_WIN32_CRYPTO */
-
-#endif /* CURL_DISABLE_SMB && USE_NTLM && CURL_SIZEOF_CURL_OFF_T > 4 */
+#endif /* CURL_DISABLE_SMB && USE_CURL_NTLM_CORE &&
+          CURL_SIZEOF_CURL_OFF_T > 4 */

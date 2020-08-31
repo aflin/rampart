@@ -33,7 +33,7 @@ in the master branch using pull-requests, just like ordinary changes.
 
 Build (patched) OpenSSL
 
-     % git clone --depth 1 -b OpenSSL_1_1_1d-quic-draft-27 https://github.com/tatsuhiro-t/openssl
+     % git clone --depth 1 -b OpenSSL_1_1_1g-quic-draft-29 https://github.com/tatsuhiro-t/openssl
      % cd openssl
      % ./config enable-tls1_3 --prefix=<somewhere1>
      % make
@@ -117,8 +117,8 @@ Build quiche and BoringSSL:
      % git clone --recursive https://github.com/cloudflare/quiche
      % cd quiche
      % cargo build --release --features pkg-config-meta,qlog
-     % mkdir deps/boringssl/lib
-     % ln -vnf $(find target/release -name libcrypto.a -o -name libssl.a) deps/boringssl/lib/
+     % mkdir deps/boringssl/src/lib
+     % ln -vnf $(find target/release -name libcrypto.a -o -name libssl.a) deps/boringssl/src/lib/
 
 Build curl:
 
@@ -126,7 +126,7 @@ Build curl:
      % git clone https://github.com/curl/curl
      % cd curl
      % ./buildconf
-     % ./configure LDFLAGS="-Wl,-rpath,$PWD/../quiche/target/release" --with-ssl=$PWD/../quiche/deps/boringssl --with-quiche=$PWD/../quiche/target/release --enable-alt-svc
+     % ./configure LDFLAGS="-Wl,-rpath,$PWD/../quiche/target/release" --with-ssl=$PWD/../quiche/deps/boringssl/src --with-quiche=$PWD/../quiche/target/release --enable-alt-svc
      % make
 
 ## Run

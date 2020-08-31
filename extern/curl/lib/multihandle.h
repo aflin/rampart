@@ -67,10 +67,10 @@ typedef enum {
 
 #define CURLPIPE_ANY (CURLPIPE_MULTIPLEX)
 
-#if defined(USE_SOCKETPAIR) && !defined(USE_BLOCKING_SOCKETS)
+#if defined(USE_SOCKETPAIR) && !defined(USE_BLOCKING_SOCKETS) &&        \
+  !defined(CURL_DISABLE_SOCKETPAIR)
 #define ENABLE_WAKEUP
 #endif
-
 
 /* value for MAXIMUM CONCURRENT STREAMS upper limit */
 #define INITIAL_MAX_CONCURRENT_STREAMS ((1U << 31) - 1)
@@ -81,7 +81,7 @@ struct Curl_multi {
      this multi handle with an easy handle. Set this to CURL_MULTI_HANDLE. */
   long type;
 
-  /* We have a doubly-linked circular list with easy handles */
+  /* We have a doubly-linked list with easy handles */
   struct Curl_easy *easyp;
   struct Curl_easy *easylp; /* last node */
 
@@ -138,9 +138,13 @@ struct Curl_multi {
                                     previous callback */
   unsigned int max_concurrent_streams;
 
+#ifdef USE_WINSOCK
+  WSAEVENT wsa_event; /* winsock event used for waits */
+#else
 #ifdef ENABLE_WAKEUP
   curl_socket_t wakeup_pair[2]; /* socketpair() used for wakeup
                                    0 is used for read, 1 is used for write */
+#endif
 #endif
   /* multiplexing wanted */
   bool multiplexing;

@@ -43,7 +43,7 @@ if [ "$NGTCP2" = yes ]; then
     make install
   else
     cd $HOME
-    git clone --depth 1 -b OpenSSL_1_1_1d-quic-draft-27 https://github.com/tatsuhiro-t/openssl possl
+    git clone --depth 1 -b OpenSSL_1_1_1g-quic-draft-29 https://github.com/tatsuhiro-t/openssl possl
     cd possl
     ./config enable-tls1_3 --prefix=$HOME/ngbuild
     make
@@ -96,8 +96,8 @@ if [ "$TRAVIS_OS_NAME" = linux -a "$QUICHE" ]; then
   source $HOME/.cargo/env
   cd $HOME/quiche
   cargo build -v --release --features pkg-config-meta,qlog
-  mkdir -v deps/boringssl/lib
-  ln -vnf $(find target/release -name libcrypto.a -o -name libssl.a) deps/boringssl/lib/
+  mkdir -v deps/boringssl/src/lib
+  ln -vnf $(find target/release -name libcrypto.a -o -name libssl.a) deps/boringssl/src/lib/
 fi
 
 # Install common libraries.
@@ -119,20 +119,22 @@ if [ $TRAVIS_OS_NAME = linux ]; then
   cd $HOME/wolfssl-4.4.0-stable
   sudo make install
 
-  if [ ! -e $HOME/mesalink-1.0.0/Makefile ]; then
-    cd $HOME
-    curl https://sh.rustup.rs -sSf | sh -s -- -y
-    source $HOME/.cargo/env
-    curl -LO https://github.com/mesalock-linux/mesalink/archive/v1.0.0.tar.gz
-    tar -xzf v1.0.0.tar.gz
-    cd mesalink-1.0.0
-    ./autogen.sh
-    ./configure --enable-tls13
-    make
-  fi
+  if [ "$MESALINK" = "yes" ]; then
+    if [ ! -e $HOME/mesalink-1.0.0/Makefile ]; then
+      cd $HOME
+      curl https://sh.rustup.rs -sSf | sh -s -- -y
+      source $HOME/.cargo/env
+      curl -LO https://github.com/mesalock-linux/mesalink/archive/v1.0.0.tar.gz
+      tar -xzf v1.0.0.tar.gz
+      cd mesalink-1.0.0
+      ./autogen.sh
+      ./configure --enable-tls13
+      make
+    fi
+    cd $HOME/mesalink-1.0.0
+    sudo make install
 
-  cd $HOME/mesalink-1.0.0
-  sudo make install
+  fi
 
   if [ ! -e $HOME/nghttp2-1.39.2/Makefile ]; then
     cd $HOME

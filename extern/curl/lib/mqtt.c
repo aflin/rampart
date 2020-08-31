@@ -23,7 +23,7 @@
 
 #include "curl_setup.h"
 
-#ifdef CURL_ENABLE_MQTT
+#ifndef CURL_DISABLE_MQTT
 
 #include "urldata.h"
 #include <curl/curl.h>
@@ -211,7 +211,8 @@ static CURLcode mqtt_get_topic(struct connectdata *conn,
   char *path = conn->data->state.up.path;
 
   if(strlen(path) > 1) {
-    result = Curl_urldecode(conn->data, path + 1, 0, topic, topiclen, FALSE);
+    result = Curl_urldecode(conn->data, path + 1, 0, topic, topiclen,
+                            REJECT_NADA);
   }
   else {
     failf(conn->data, "Error: No topic specified.");
@@ -624,4 +625,4 @@ static CURLcode mqtt_doing(struct connectdata *conn, bool *done)
   return result;
 }
 
-#endif /* CURL_ENABLE_MQTT */
+#endif /* CURL_DISABLE_MQTT */

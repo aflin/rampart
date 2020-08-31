@@ -63,8 +63,8 @@
 /* to disable LDAPS */
 #cmakedefine CURL_DISABLE_LDAPS 1
 
-/* to enable MQTT */
-#undef CURL_ENABLE_MQTT
+/* to disable MQTT */
+#cmakedefine CURL_DISABLE_MQTT 1
 
 /* to disable POP3 */
 #cmakedefine CURL_DISABLE_POP3 1
@@ -436,6 +436,9 @@
 
 /* if brotli is available */
 #cmakedefine HAVE_BROTLI 1
+
+/* if zstd is available */
+#cmakedefine HAVE_ZSTD 1
 
 /* if your compiler supports LL */
 #cmakedefine HAVE_LL 1

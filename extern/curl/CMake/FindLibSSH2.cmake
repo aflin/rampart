@@ -26,9 +26,30 @@
 # LIBSSH2_INCLUDE_DIR - the libssh2 include directory
 # LIBSSH2_LIBRARY - the libssh2 library name
 
-find_path(LIBSSH2_INCLUDE_DIR libssh2.h)
+function(find_static_library LIB_NAME OUT)
 
-find_library(LIBSSH2_LIBRARY NAMES ssh2 libssh2)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+
+    find_library(
+        FOUND_${LIB_NAME}_STATIC
+        ${LIB_NAME}
+        )
+
+    if (FOUND_${LIB_NAME}_STATIC)
+        get_filename_component(ABS_FILE ${FOUND_${LIB_NAME}_STATIC} ABSOLUTE)
+    else()
+        message(SEND_ERROR "Unable to find library ${LIB_NAME}")
+    endif()
+
+    set(${OUT} ${ABS_FILE} PARENT_SCOPE)
+
+endfunction()
+
+#turns out libssh2 is not compatible with openssh 1.1
+
+#find_path(LIBSSH2_INCLUDE_DIR libssh2.h)
+
+#find_static_library(libssh2.a LIBSSH2_LIBRARY)
 
 if(LIBSSH2_INCLUDE_DIR)
   file(STRINGS "${LIBSSH2_INCLUDE_DIR}/libssh2.h" libssh2_version_str REGEX "^#define[\t ]+LIBSSH2_VERSION[\t ]+\"(.*)\"")

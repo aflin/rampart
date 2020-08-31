@@ -95,8 +95,14 @@ static CURLcode qs_disconnect(struct quicsocket *qs)
     quiche_h3_config_free(qs->h3config);
   if(qs->h3c)
     quiche_h3_conn_free(qs->h3c);
-  quiche_config_free(qs->cfg);
-  quiche_conn_free(qs->conn);
+  if(qs->cfg) {
+    quiche_config_free(qs->cfg);
+    qs->cfg = NULL;
+  }
+  if(qs->conn) {
+    quiche_conn_free(qs->conn);
+    qs->conn = NULL;
+  }
   return CURLE_OK;
 }
 
@@ -107,6 +113,14 @@ static CURLcode quiche_disconnect(struct connectdata *conn,
   (void)dead_connection;
   return qs_disconnect(qs);
 }
+
+void Curl_quic_disconnect(struct connectdata *conn,
+                          int tempindex)
+{
+  if(conn->transport == TRNSPRT_QUIC)
+    qs_disconnect(&conn->hequic[tempindex]);
+}
+
 static unsigned int quiche_conncheck(struct connectdata *conn,
                                      unsigned int checks_to_perform)
 {

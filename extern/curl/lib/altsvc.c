@@ -51,9 +51,9 @@
 #define MAX_ALTSVC_ALPNLEN 10
 
 #if defined(USE_QUICHE) && !defined(UNITTESTS)
-#define H3VERSION "h3-28"
+#define H3VERSION "h3-29"
 #elif defined(USE_NGTCP2) && !defined(UNITTESTS)
-#define H3VERSION "h3-28"
+#define H3VERSION "h3-29"
 #else
 #define H3VERSION "h3"
 #endif
@@ -169,7 +169,6 @@ static CURLcode altsvc_add(struct altsvcinfo *asi, char *line)
       as->prio = prio;
       as->persist = persist ? 1 : 0;
       Curl_llist_insert_next(&asi->list, asi->list.tail, as, &as->node);
-      asi->num++; /* one more entry */
     }
   }
 
@@ -410,7 +409,6 @@ static void altsvc_flush(struct altsvcinfo *asi, enum alpnid srcalpnid,
        strcasecompare(srchost, as->src.host)) {
       Curl_llist_remove(&asi->list, e, NULL);
       altsvc_free(as);
-      asi->num--;
     }
   }
 }
@@ -577,7 +575,6 @@ CURLcode Curl_altsvc_parse(struct Curl_easy *data,
             as->expires = maxage + time(NULL);
             as->persist = persist;
             Curl_llist_insert_next(&asi->list, asi->list.tail, as, &as->node);
-            asi->num++; /* one more entry */
             infof(data, "Added alt-svc: %s:%d over %s\n", dsthost, dstport,
                   Curl_alpnid2str(dstalpnid));
           }

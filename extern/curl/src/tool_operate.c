@@ -922,7 +922,7 @@ static CURLcode single_transfer(struct GlobalConfig *global,
 
           if((PARAM_OK == file2string(&etag_from_file, file)) &&
              etag_from_file) {
-            header = aprintf("If-None-Match: \"%s\"", etag_from_file);
+            header = aprintf("If-None-Match: %s", etag_from_file);
             Curl_safefree(etag_from_file);
           }
           else
@@ -1050,6 +1050,15 @@ static CURLcode single_transfer(struct GlobalConfig *global,
             }
           }
 
+          if(config->output_dir) {
+            char *d = aprintf("%s/%s", config->output_dir, per->outfile);
+            if(!d) {
+              result = CURLE_WRITE_ERROR;
+              break;
+            }
+            free(per->outfile);
+            per->outfile = d;
+          }
           /* Create the directory hierarchy, if not pre-existent to a multiple
              file output call */
 
@@ -1511,6 +1520,9 @@ static CURLcode single_transfer(struct GlobalConfig *global,
         if(config->pinnedpubkey)
           my_setopt_str(curl, CURLOPT_PINNEDPUBLICKEY, config->pinnedpubkey);
 
+        if(config->ssl_ec_curves)
+          my_setopt_str(curl, CURLOPT_SSL_EC_CURVES, config->ssl_ec_curves);
+
         if(curlinfo->features & CURL_VERSION_SSL) {
           /* Check if config->cert is a PKCS#11 URI and set the
            * config->cert_type if necessary */
@@ -1696,7 +1708,7 @@ static CURLcode single_transfer(struct GlobalConfig *global,
             char *home;
             char *file;
             result = CURLE_FAILED_INIT;
-            home = homedir();
+            home = homedir(NULL);
             if(home) {
               file = aprintf("%s/.ssh/known_hosts", home);
               if(file) {
@@ -2415,15 +2427,7 @@ static CURLcode transfer_per_config(struct GlobalConfig *global,
 #ifdef WIN32
       else {
         result = FindWin32CACert(config, tls_backend_info->backend,
-                                 "curl-ca-bundle.crt");
-#if defined(USE_WIN32_CRYPTO)
-        if(!config->cacert && !config->capath) {
-          /* user, and environment did not specify any ca file or path
-             and there is no "curl-ca-bundle.crt" file in standard path
-             so the only possible solution is using the windows ca store */
-          config->native_ca_store = TRUE;
-        }
-#endif
+                                 TEXT("curl-ca-bundle.crt"));
       }
 #endif
     }

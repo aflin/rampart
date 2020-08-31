@@ -272,6 +272,7 @@ static const struct LongShort aliases[]= {
   {"EB", "socks5-gssapi",            ARG_BOOL},
   {"EC", "etag-save",                ARG_FILENAME},
   {"ED", "etag-compare",             ARG_FILENAME},
+  {"EE", "curves",                   ARG_STRING},
   {"f",  "fail",                     ARG_BOOL},
   {"fa", "fail-early",               ARG_BOOL},
   {"fb", "styled-output",            ARG_BOOL},
@@ -303,6 +304,7 @@ static const struct LongShort aliases[]= {
   {"o",  "output",                   ARG_FILENAME},
   {"O",  "remote-name",              ARG_NONE},
   {"Oa", "remote-name-all",          ARG_BOOL},
+  {"Ob", "output-dir",               ARG_STRING},
   {"p",  "proxytunnel",              ARG_BOOL},
   {"P",  "ftp-port",                 ARG_STRING},
   {"q",  "disable",                  ARG_BOOL},
@@ -695,7 +697,8 @@ ParameterError getparameter(const char *flag, /* f or -long-flag */
 
       case 'j': /* --compressed */
         if(toggle &&
-           !(curlinfo->features & (CURL_VERSION_LIBZ | CURL_VERSION_BROTLI)))
+           !(curlinfo->features & (CURL_VERSION_LIBZ |
+                                   CURL_VERSION_BROTLI | CURL_VERSION_ZSTD)))
           return PARAM_LIBCURL_DOESNT_SUPPORT;
         config->encoding = toggle;
         break;
@@ -813,7 +816,7 @@ ParameterError getparameter(const char *flag, /* f or -long-flag */
         break;
       case 'x': /* --krb */
         /* kerberos level string */
-        if(curlinfo->features & CURL_VERSION_KERBEROS4)
+        if(curlinfo->features & CURL_VERSION_SPNEGO)
           GetStr(&config->krblevel, nextarg);
         else
           return PARAM_LIBCURL_DOESNT_SUPPORT;
@@ -966,7 +969,7 @@ ParameterError getparameter(const char *flag, /* f or -long-flag */
         if(*p) {
           /* if there's anything more than a plain decimal number */
           rc = sscanf(p, " - %6s", lrange);
-          *p = 0; /* zero terminate to make str2unum() work below */
+          *p = 0; /* null-terminate to make str2unum() work below */
         }
         else
           rc = 0;
@@ -1517,7 +1520,7 @@ ParameterError getparameter(const char *flag, /* f or -long-flag */
         /* Automatic referer requested, this may be combined with a
            set initial one */
         config->autoreferer = TRUE;
-        *ptr = 0; /* zero terminate here */
+        *ptr = 0; /* null-terminate here */
       }
       else
         config->autoreferer = FALSE;
@@ -1724,6 +1727,10 @@ ParameterError getparameter(const char *flag, /* f or -long-flag */
         GetStr(&config->etag_compare_file, nextarg);
         break;
 
+      case 'E':
+        GetStr(&config->ssl_ec_curves, nextarg);
+        break;
+
       default: /* unknown flag */
         return PARAM_OPTION_UNKNOWN;
       }
@@ -1817,6 +1824,11 @@ ParameterError getparameter(const char *flag, /* f or -long-flag */
       }
       break;
     case 'i':
+      if(config->content_disposition) {
+        warnf(global,
+              "--include and --remote-header-name cannot be combined.\n");
+        return PARAM_BAD_USE;
+      }
       config->show_headers = toggle; /* show the headers as well in the
                                         general output stream */
       break;
@@ -1903,6 +1915,10 @@ ParameterError getparameter(const char *flag, /* f or -long-flag */
     case 'O': /* --remote-name */
       if(subletter == 'a') { /* --remote-name-all */
         config->default_node_flags = toggle?GETOUT_USEREMOTE:0;
+        break;
+      }
+      else if(subletter == 'b') { /* --output-dir */
+        GetStr(&config->output_dir, nextarg);
         break;
       }
       /* FALLTHROUGH */
@@ -2302,6 +2318,9 @@ ParameterError parse_args(struct GlobalConfig *global, int argc,
       result = getparameter("--url", orig_opt, &used, global,
                             config);
     }
+
+    if(!result)
+      curlx_unicodefree(orig_opt);
   }
 
   if(result && result != PARAM_HELP_REQUESTED &&

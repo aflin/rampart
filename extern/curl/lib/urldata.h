@@ -229,6 +229,8 @@ struct ssl_primary_config {
   char *cipher_list;     /* list of ciphers to use */
   char *cipher_list13;   /* list of TLS 1.3 cipher suites to use */
   char *pinned_key;
+  struct curl_blob *cert_blob;
+  char *curves;          /* list of curves to use */
   BIT(verifypeer);       /* set TRUE if this is desired */
   BIT(verifyhost);       /* set TRUE if CN/SAN must match hostname */
   BIT(verifystatus);     /* set TRUE if certificate status must be checked */
@@ -766,6 +768,8 @@ struct Curl_handler {
                                          HTTP proxy as HTTP proxies may know
                                          this protocol and act as a gateway */
 #define PROTOPT_WILDCARD (1<<12) /* protocol supports wildcard matching */
+#define PROTOPT_USERPWDCTRL (1<<13) /* Allow "control bytes" (< 32 ascii) in
+                                       user name and password */
 
 #define CONNCHECK_NONE 0                 /* No checks */
 #define CONNCHECK_ISDEAD (1<<0)          /* Check if the connection is dead. */
@@ -981,8 +985,10 @@ struct connectdata {
   struct curltime connecttime;
   /* The two fields below get set in Curl_connecthost */
   int num_addr; /* number of addresses to try to connect to */
-  timediff_t timeoutms_per_addr; /* how long time in milliseconds to spend on
-                                    trying to connect to each IP address */
+
+  /* how long time in milliseconds to spend on trying to connect to each IP
+     address, per family */
+  timediff_t timeoutms_per_addr[2];
 
   const struct Curl_handler *handler; /* Connection's protocol handler */
   const struct Curl_handler *given;   /* The protocol first given */
@@ -1002,21 +1008,6 @@ struct connectdata {
   curl_socket_t writesockfd; /* socket to write to, it may very
                                 well be the same we read from.
                                 CURL_SOCKET_BAD disables */
-
-  /** Dynamically allocated strings, MUST be freed before this **/
-  /** struct is killed.                                      **/
-  struct dynamically_allocated_data {
-    char *proxyuserpwd;
-    char *uagent;
-    char *accept_encoding;
-    char *userpwd;
-    char *rangeline;
-    char *ref;
-    char *host;
-    char *cookiehost;
-    char *rtsp_transport;
-    char *te; /* TE: request header */
-  } allocptr;
 
 #ifdef HAVE_GSSAPI
   BIT(sec_complete); /* if Kerberos is enabled for this connection */
@@ -1100,7 +1091,6 @@ struct connectdata {
   struct http_connect_state *connect_state; /* for HTTP CONNECT */
   struct connectbundle *bundle; /* The bundle we are member of */
   int negnpn; /* APLN or NPN TLS negotiated protocol, CURL_HTTP_VERSION* */
-  int retrycount; /* number of retries on a new connection */
 #ifdef USE_UNIX_SOCKETS
   char *unix_domain_socket;
 #endif
@@ -1145,6 +1135,7 @@ struct PureInfo {
                                  OpenSSL, GnuTLS, Schannel, NSS and GSKit
                                  builds. Asked for with CURLOPT_CERTINFO
                                  / CURLINFO_CERTINFO */
+  CURLproxycode pxcode;
   BIT(timecond);  /* set to TRUE if the time condition didn't match, which
                      thus made the document NOT get fetched */
 };
@@ -1205,7 +1196,6 @@ typedef enum {
   HTTPREQ_POST_MIME, /* we make a difference internally */
   HTTPREQ_PUT,
   HTTPREQ_HEAD,
-  HTTPREQ_OPTIONS,
   HTTPREQ_LAST /* last in list */
 } Curl_HttpReq;
 
@@ -1260,7 +1250,8 @@ typedef enum {
   EXPIRE_100_TIMEOUT,
   EXPIRE_ASYNC_NAME,
   EXPIRE_CONNECTTIMEOUT,
-  EXPIRE_DNS_PER_NAME,
+  EXPIRE_DNS_PER_NAME, /* family1 */
+  EXPIRE_DNS_PER_NAME2, /* family2 */
   EXPIRE_HAPPY_EYEBALLS_DNS, /* See asyn-ares.c */
   EXPIRE_HAPPY_EYEBALLS,
   EXPIRE_MULTI_PENDING,
@@ -1306,10 +1297,12 @@ struct UrlState {
   /* Points to the connection cache */
   struct conncache *conn_cache;
 
+  int retrycount; /* number of retries on a new connection */
+
   /* buffers to store authentication data in, as parsed from input options */
   struct curltime keeps_speed; /* for the progress meter really */
 
-  struct connectdata *lastconnect; /* The last connection, NULL if undefined */
+  long lastconnect_id; /* The last connection, -1 if undefined */
   struct dynbuf headerb; /* buffer to store headers in */
 
   char *buffer; /* download buffer */
@@ -1396,6 +1389,22 @@ struct UrlState {
 #endif
   trailers_state trailers_state; /* whether we are sending trailers
                                        and what stage are we at */
+
+  /* Dynamically allocated strings, MUST be freed before this struct is
+     killed. */
+  struct dynamically_allocated_data {
+    char *proxyuserpwd;
+    char *uagent;
+    char *accept_encoding;
+    char *userpwd;
+    char *rangeline;
+    char *ref;
+    char *host;
+    char *cookiehost;
+    char *rtsp_transport;
+    char *te; /* TE: request header */
+  } aptr;
+
 #ifdef CURLDEBUG
   BIT(conncache_lock);
 #endif
@@ -1557,8 +1566,9 @@ enum dupstring {
   STRING_DNS_INTERFACE,
   STRING_DNS_LOCAL_IP4,
   STRING_DNS_LOCAL_IP6,
+  STRING_SSL_EC_CURVES,
 
-  /* -- end of zero-terminated strings -- */
+  /* -- end of null-terminated strings -- */
 
   STRING_LASTZEROTERMINATED,
 
