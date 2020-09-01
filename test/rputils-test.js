@@ -164,10 +164,10 @@ testFeature("hard link/delete",function(){
         target:"test1.js"
     });
     var stat1=stat("test1.js",true);
-    var test=shell("if [ test1.js -ef "+thisfile+" ]; then echo -n yes; fi");
+    var test=shell("if [ test1.js -ef "+thisfile+" ]; then echo yes; fi");
     rmFile("test1.js");
     var stat2=stat("test1.js",true);
-    return stat1.mode && !stat2 && test.stdout == "yes";
+    return stat1.mode && !stat2 && test.stdout == "yes\n";
 });
 
 testFeature("copy over hard/sym link throw",function(){
