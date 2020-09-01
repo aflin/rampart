@@ -9,6 +9,6 @@ module.exports = function simple_callback(req){
         {max:1}
     );
     /* default mime type is text/plain, if just given a string */
-    return("results: "+JSON.stringify(arr));
+    return(JSON.stringify(arr));
 }
 

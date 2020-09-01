@@ -2069,7 +2069,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                 if (duk_is_error(ctx, -1) || duk_is_string(ctx, -1))
                 {
 
-                    char msg[] = "{\"headers\":{\"status\":500},\"html\":\"<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>\\n%s</pre></p></body></html>\"}";
+                    char msg[] = "{\"status\":500,\"html\":\"<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>\\n%s</pre></p></body></html>\"}";
                     char *err;
                     if (duk_is_error(ctx, -1))
                     {
