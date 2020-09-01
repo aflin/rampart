@@ -1486,42 +1486,42 @@ endif()
 # Installation preparation.
 #
 
-set(EVENT_INSTALL_CMAKE_DIR
-    "${CMAKE_INSTALL_PREFIX}/lib/cmake/libevent")
-
-export(PACKAGE libevent)
-
-function(gen_package_config forinstall)
-    if(${forinstall})
-        set(CONFIG_FOR_INSTALL_TREE 1)
-        set(dir "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}")
-    else()
-        set(CONFIG_FOR_INSTALL_TREE 0)
-        set(dir "${PROJECT_BINARY_DIR}")
-    endif()
-    configure_file(${PROJECT_SOURCE_DIR}/cmake/LibeventConfig.cmake.in
-                "${dir}/LibeventConfig.cmake"
-                @ONLY)
-endfunction()
-
-# Generate the config file for the build-tree.
-set(EVENT__INCLUDE_DIRS
-    "${PROJECT_SOURCE_DIR}/include"
-    "${PROJECT_BINARY_DIR}/include")
-
-set(LIBEVENT_INCLUDE_DIRS
-    ${EVENT__INCLUDE_DIRS}
-    CACHE PATH "Libevent include directories")
-
-gen_package_config(0)
-
-# Generate the config file for the installation tree.
-gen_package_config(1)
-
-# Generate version info for both build-tree and install-tree.
-configure_file(${PROJECT_SOURCE_DIR}/cmake/LibeventConfigVersion.cmake.in
-               ${PROJECT_BINARY_DIR}/LibeventConfigVersion.cmake
-               @ONLY)
+#set(EVENT_INSTALL_CMAKE_DIR
+#    "${CMAKE_INSTALL_PREFIX}/lib/cmake/libevent")
+#
+#export(PACKAGE libevent)
+#
+#function(gen_package_config forinstall)
+#    if(${forinstall})
+#        set(CONFIG_FOR_INSTALL_TREE 1)
+#        set(dir "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}")
+#    else()
+#        set(CONFIG_FOR_INSTALL_TREE 0)
+#        set(dir "${PROJECT_BINARY_DIR}")
+#    endif()
+#    configure_file(${PROJECT_SOURCE_DIR}/cmake/LibeventConfig.cmake.in
+#                "${dir}/LibeventConfig.cmake"
+#                @ONLY)
+#endfunction()
+#
+## Generate the config file for the build-tree.
+#set(EVENT__INCLUDE_DIRS
+#    "${PROJECT_SOURCE_DIR}/include"
+#    "${PROJECT_BINARY_DIR}/include")
+#
+#set(LIBEVENT_INCLUDE_DIRS
+#    ${EVENT__INCLUDE_DIRS}
+#    CACHE PATH "Libevent include directories")
+#
+#gen_package_config(0)
+#
+## Generate the config file for the installation tree.
+#gen_package_config(1)
+#
+## Generate version info for both build-tree and install-tree.
+#configure_file(${PROJECT_SOURCE_DIR}/cmake/LibeventConfigVersion.cmake.in
+#               ${PROJECT_BINARY_DIR}/LibeventConfigVersion.cmake
+#               @ONLY)
 
 ## Install compat headers
 #install(FILES ${HDR_COMPAT}
