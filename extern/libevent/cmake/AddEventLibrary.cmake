@@ -29,22 +29,22 @@ macro(generate_pkgconfig LIB_NAME)
     endforeach()
 
     configure_file("lib${LIB_NAME}.pc.in" "lib${LIB_NAME}.pc" @ONLY)
-    install(
-        FILES "${CMAKE_CURRENT_BINARY_DIR}/lib${LIB_NAME}.pc"
-        DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig"
-    )
+#    install(
+#        FILES "${CMAKE_CURRENT_BINARY_DIR}/lib${LIB_NAME}.pc"
+#        DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/pkgconfig"
+#    )
 endmacro()
 
 # LIB_NAME maybe event_core, event_extra, event_openssl, event_pthreads or event.
 # Targets whose LIB_NAME is not 'event' should be exported and installed.
 macro(export_install_target TYPE LIB_NAME OUTER_INCLUDES)
     if("${LIB_NAME}" STREQUAL "event")
-        install(TARGETS "${LIB_NAME}_${TYPE}"
-            LIBRARY DESTINATION "lib" COMPONENT lib
-            ARCHIVE DESTINATION "lib" COMPONENT lib
-            RUNTIME DESTINATION "lib" COMPONENT lib
-            COMPONENT dev
-        )
+#        install(TARGETS "${LIB_NAME}_${TYPE}"
+#            LIBRARY DESTINATION "lib" COMPONENT lib
+#            ARCHIVE DESTINATION "lib" COMPONENT lib
+#            RUNTIME DESTINATION "lib" COMPONENT lib
+#            COMPONENT dev
+#        )
     else()
         string(REPLACE "event_" "" PURE_NAME ${LIB_NAME})
         string(TOUPPER ${TYPE} UPPER_TYPE)
@@ -65,13 +65,13 @@ macro(export_install_target TYPE LIB_NAME OUTER_INCLUDES)
             FILE "${PROJECT_BINARY_DIR}/LibeventTargets-${TYPE}.cmake"
             APPEND
         )
-        install(TARGETS "${LIB_NAME}_${TYPE}"
-            EXPORT LibeventTargets-${TYPE}
-            LIBRARY DESTINATION "lib" COMPONENT lib
-            ARCHIVE DESTINATION "lib" COMPONENT lib
-            RUNTIME DESTINATION "lib" COMPONENT lib
-            COMPONENT dev
-        )
+#        install(TARGETS "${LIB_NAME}_${TYPE}"
+#            EXPORT LibeventTargets-${TYPE}
+#            LIBRARY DESTINATION "lib" COMPONENT lib
+#            ARCHIVE DESTINATION "lib" COMPONENT lib
+#            RUNTIME DESTINATION "lib" COMPONENT lib
+#            COMPONENT dev
+#        )
     endif()
 endmacro()
 
@@ -179,12 +179,12 @@ macro(add_event_library LIB_NAME)
 
         set(ADD_EVENT_LIBRARY_INTERFACE "${LIB_NAME}_shared")
 
-        if (NOT WIN32)
-            install(FILES
-                "$<TARGET_FILE_DIR:${LIB_NAME}_shared>/${LIB_LINK_NAME}"
-                DESTINATION "lib"
-                COMPONENT lib)
-        endif()
+        #if (NOT WIN32)
+        #    install(FILES
+        #        "$<TARGET_FILE_DIR:${LIB_NAME}_shared>/${LIB_LINK_NAME}"
+        #        DESTINATION "lib"
+        #        COMPONENT lib)
+        #endif()
     endif()
 
     add_library(${LIB_NAME} INTERFACE)

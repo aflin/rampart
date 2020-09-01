@@ -56,10 +56,10 @@ add_executable( openssl ${E_SRC} )
 
 target_link_libraries( openssl crypto ssl )
 
-install( TARGETS openssl
-    RUNTIME DESTINATION bin )
+#install( TARGETS openssl
+#    RUNTIME DESTINATION bin )
 
-install( FILES
-  ${CMAKE_CURRENT_BINARY_DIR}/CA.pl
-  ${CMAKE_CURRENT_BINARY_DIR}/tsget
-  DESTINATION share/openssl )
+#install( FILES
+#  ${CMAKE_CURRENT_BINARY_DIR}/CA.pl
+#  ${CMAKE_CURRENT_BINARY_DIR}/tsget
+#  DESTINATION share/openssl )

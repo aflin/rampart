@@ -171,14 +171,14 @@ set_target_properties(rpcurl rpserver rpsql rpcrypto #example_name
 )
 endif()
 
-install(TARGETS rampart DESTINATION bin)
+install(TARGETS rampart DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
 install(TARGETS
 	rpserver
 	rpcrypto
 	rpcurl
 	rpsql
 	
-	DESTINATION modules
+	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
 
 install(CODE "execute_process( \
