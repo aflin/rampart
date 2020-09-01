@@ -1523,63 +1523,63 @@ configure_file(${PROJECT_SOURCE_DIR}/cmake/LibeventConfigVersion.cmake.in
                ${PROJECT_BINARY_DIR}/LibeventConfigVersion.cmake
                @ONLY)
 
-# Install compat headers
-install(FILES ${HDR_COMPAT}
-        DESTINATION "include"
-        COMPONENT dev)
-
-# Install public headers
-install(FILES ${HDR_PUBLIC}
-        DESTINATION "include/event2"
-        COMPONENT dev)
-
-# Install the configs.
-install(FILES
-        ${PROJECT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/LibeventConfig.cmake
-        ${PROJECT_BINARY_DIR}/LibeventConfigVersion.cmake
-        DESTINATION "${EVENT_INSTALL_CMAKE_DIR}"
-        COMPONENT dev)
-
-# Install exports for the install-tree.
-macro(install_export type)
-    install(EXPORT LibeventTargets-${type}
-        NAMESPACE ${PROJECT_NAME}::
-        DESTINATION "${EVENT_INSTALL_CMAKE_DIR}"
-        COMPONENT dev)
-endmacro()
-
-if (${EVENT_LIBRARY_STATIC})
-    install_export(static)
-endif()
-if (${EVENT_LIBRARY_SHARED})
-    install_export(shared)
-endif()
-
-# Install the scripts.
-install(PROGRAMS
-       ${CMAKE_CURRENT_SOURCE_DIR}/event_rpcgen.py
-       DESTINATION "bin"
-       COMPONENT runtime)
-
-# Create documents with doxygen.
-option(EVENT__DOXYGEN
-    "Enables doxygen documentation" OFF)
-if (EVENT__DOXYGEN)
-    include(UseDoxygen)
-    UseDoxygen()
-endif()
-
-
-if (NOT TARGET uninstall)
-	# Create the uninstall target.
-	# https://gitlab.kitware.com/cmake/community/wikis/FAQ#can-i-do-make-uninstall-with-cmake
-	configure_file(${PROJECT_SOURCE_DIR}/cmake/Uninstall.cmake.in
-				   ${PROJECT_BINARY_DIR}/Uninstall.cmake
-				   @ONLY)
-
-	add_custom_target(uninstall
-					  COMMAND ${CMAKE_COMMAND} -P ${PROJECT_BINARY_DIR}/Uninstall.cmake)
-endif()
+## Install compat headers
+#install(FILES ${HDR_COMPAT}
+#        DESTINATION "include"
+#        COMPONENT dev)
+#
+## Install public headers
+#install(FILES ${HDR_PUBLIC}
+#        DESTINATION "include/event2"
+#        COMPONENT dev)
+#
+## Install the configs.
+#install(FILES
+#        ${PROJECT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/LibeventConfig.cmake
+#        ${PROJECT_BINARY_DIR}/LibeventConfigVersion.cmake
+#        DESTINATION "${EVENT_INSTALL_CMAKE_DIR}"
+#        COMPONENT dev)
+#
+## Install exports for the install-tree.
+#macro(install_export type)
+#    install(EXPORT LibeventTargets-${type}
+#        NAMESPACE ${PROJECT_NAME}::
+#        DESTINATION "${EVENT_INSTALL_CMAKE_DIR}"
+#        COMPONENT dev)
+#endmacro()
+#
+#if (${EVENT_LIBRARY_STATIC})
+#    install_export(static)
+#endif()
+#if (${EVENT_LIBRARY_SHARED})
+#    install_export(shared)
+#endif()
+#
+## Install the scripts.
+#install(PROGRAMS
+#       ${CMAKE_CURRENT_SOURCE_DIR}/event_rpcgen.py
+#       DESTINATION "bin"
+#       COMPONENT runtime)
+#
+## Create documents with doxygen.
+#option(EVENT__DOXYGEN
+#    "Enables doxygen documentation" OFF)
+#if (EVENT__DOXYGEN)
+#    include(UseDoxygen)
+#    UseDoxygen()
+#endif()
+#
+#
+#if (NOT TARGET uninstall)
+#	# Create the uninstall target.
+#	# https://gitlab.kitware.com/cmake/community/wikis/FAQ#can-i-do-make-uninstall-with-cmake
+#	configure_file(${PROJECT_SOURCE_DIR}/cmake/Uninstall.cmake.in
+#				   ${PROJECT_BINARY_DIR}/Uninstall.cmake
+#				   @ONLY)
+#
+#	add_custom_target(uninstall
+#					  COMMAND ${CMAKE_COMMAND} -P ${PROJECT_BINARY_DIR}/Uninstall.cmake)
+#endif()
 
 message(STATUS "")
 message(STATUS "        ---( Libevent " ${EVENT_VERSION} " )---")

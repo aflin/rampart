@@ -1509,68 +1509,68 @@ set(VERSIONNUM              "${CURL_VERSION_NUM}")
 # Use:
 # * ENABLE_SHARED
 # * ENABLE_STATIC
-configure_file("${CURL_SOURCE_DIR}/curl-config.in"
-               "${CURL_BINARY_DIR}/curl-config" @ONLY)
-install(FILES "${CURL_BINARY_DIR}/curl-config"
-        DESTINATION ${CMAKE_INSTALL_BINDIR}
-        PERMISSIONS
-          OWNER_READ OWNER_WRITE OWNER_EXECUTE
-          GROUP_READ GROUP_EXECUTE
-          WORLD_READ WORLD_EXECUTE)
-
-# Finally generate a pkg-config file matching this config
-configure_file("${CURL_SOURCE_DIR}/libcurl.pc.in"
-               "${CURL_BINARY_DIR}/libcurl.pc" @ONLY)
-install(FILES "${CURL_BINARY_DIR}/libcurl.pc"
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
-
-# install headers
-install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/curl"
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    FILES_MATCHING PATTERN "*.h")
-
-include(CMakePackageConfigHelpers)
-write_basic_package_version_file(
-    "${version_config}"
-    VERSION ${CURL_VERSION}
-    COMPATIBILITY SameMajorVersion
-)
-
-# Use:
-# * TARGETS_EXPORT_NAME
-# * PROJECT_NAME
-configure_package_config_file(CMake/curl-config.cmake.in
-        "${project_config}"
-        INSTALL_DESTINATION ${CURL_INSTALL_CMAKE_DIR}
-)
-
-install(
-        EXPORT "${TARGETS_EXPORT_NAME}"
-        NAMESPACE "${PROJECT_NAME}::"
-        DESTINATION ${CURL_INSTALL_CMAKE_DIR}
-)
-
-install(
-        FILES ${version_config} ${project_config}
-        DESTINATION ${CURL_INSTALL_CMAKE_DIR}
-)
-
-# Workaround for MSVS10 to avoid the Dialog Hell
-# FIXME: This could be removed with future version of CMake.
-if(MSVC_VERSION EQUAL 1600)
-  set(CURL_SLN_FILENAME "${CMAKE_CURRENT_BINARY_DIR}/CURL.sln")
-  if(EXISTS "${CURL_SLN_FILENAME}")
-    file(APPEND "${CURL_SLN_FILENAME}" "\n# This should be regenerated!\n")
-  endif()
-endif()
-
-if(NOT TARGET uninstall)
-  configure_file(
-      ${CMAKE_CURRENT_SOURCE_DIR}/CMake/cmake_uninstall.cmake.in
-      ${CMAKE_CURRENT_BINARY_DIR}/CMake/cmake_uninstall.cmake
-      IMMEDIATE @ONLY)
-
-  add_custom_target(uninstall
-      COMMAND ${CMAKE_COMMAND} -P
-      ${CMAKE_CURRENT_BINARY_DIR}/CMake/cmake_uninstall.cmake)
-endif()
+#configure_file("${CURL_SOURCE_DIR}/curl-config.in"
+#               "${CURL_BINARY_DIR}/curl-config" @ONLY)
+#install(FILES "${CURL_BINARY_DIR}/curl-config"
+#        DESTINATION ${CMAKE_INSTALL_BINDIR}
+#        PERMISSIONS
+#          OWNER_READ OWNER_WRITE OWNER_EXECUTE
+#          GROUP_READ GROUP_EXECUTE
+#          WORLD_READ WORLD_EXECUTE)
+#
+## Finally generate a pkg-config file matching this config
+#configure_file("${CURL_SOURCE_DIR}/libcurl.pc.in"
+#               "${CURL_BINARY_DIR}/libcurl.pc" @ONLY)
+#install(FILES "${CURL_BINARY_DIR}/libcurl.pc"
+#        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+#
+## install headers
+#install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/curl"
+#    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+#    FILES_MATCHING PATTERN "*.h")
+#
+#include(CMakePackageConfigHelpers)
+#write_basic_package_version_file(
+#    "${version_config}"
+#    VERSION ${CURL_VERSION}
+#    COMPATIBILITY SameMajorVersion
+#)
+#
+## Use:
+## * TARGETS_EXPORT_NAME
+## * PROJECT_NAME
+#configure_package_config_file(CMake/curl-config.cmake.in
+#        "${project_config}"
+#        INSTALL_DESTINATION ${CURL_INSTALL_CMAKE_DIR}
+#)
+#
+#install(
+#        EXPORT "${TARGETS_EXPORT_NAME}"
+#        NAMESPACE "${PROJECT_NAME}::"
+#        DESTINATION ${CURL_INSTALL_CMAKE_DIR}
+#)
+#
+#install(
+#        FILES ${version_config} ${project_config}
+#        DESTINATION ${CURL_INSTALL_CMAKE_DIR}
+#)
+#
+## Workaround for MSVS10 to avoid the Dialog Hell
+## FIXME: This could be removed with future version of CMake.
+#if(MSVC_VERSION EQUAL 1600)
+#  set(CURL_SLN_FILENAME "${CMAKE_CURRENT_BINARY_DIR}/CURL.sln")
+#  if(EXISTS "${CURL_SLN_FILENAME}")
+#    file(APPEND "${CURL_SLN_FILENAME}" "\n# This should be regenerated!\n")
+#  endif()
+#endif()
+#
+#if(NOT TARGET uninstall)
+#  configure_file(
+#      ${CMAKE_CURRENT_SOURCE_DIR}/CMake/cmake_uninstall.cmake.in
+#      ${CMAKE_CURRENT_BINARY_DIR}/CMake/cmake_uninstall.cmake
+#      IMMEDIATE @ONLY)
+#
+#  add_custom_target(uninstall
+#      COMMAND ${CMAKE_COMMAND} -P
+#      ${CMAKE_CURRENT_BINARY_DIR}/CMake/cmake_uninstall.cmake)
+#endif()

@@ -13,7 +13,7 @@ add_test(NAME simple COMMAND simple_test)
 #add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/duktape/modules/utils)
 #add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/duktape/core/module)
 
-file(GLOB TEST_FILES "*.js" "wiki_00")
+file(GLOB TEST_FILES "*.js" "wiki_00" "sample-cert.conf")
 
 # Copying to the src dir is temporary. In the future
 # a new directory under build called 'test' will be created.

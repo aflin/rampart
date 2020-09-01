@@ -160,59 +160,59 @@ write_basic_package_version_file(
 # Use variables:
 #   * TARGETS_EXPORT_NAME
 #   * PROJECT_NAME
-configure_package_config_file(
-    "cmake/Config.cmake.in"
-    "${project_config}"
-    INSTALL_DESTINATION "${config_install_dir}"
-)
-
-# Targets:
-#   * <prefix>/lib/libonig.a
-#   * header location after install: <prefix>/include/
-#   * headers can be included by C code `#include <oniguruma.h>`
-install(
-    TARGETS onig
-    EXPORT "${TARGETS_EXPORT_NAME}"
-    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-    INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
-)
-
-# Headers:
-#   * src/oniguruma.h -> <prefix>/include/oniguruma
-install(
-    FILES ${_INST_HEADERS}
-    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
-)
-
-# Config
-#   * <prefix>/lib/cmake/oniguruma/onigurumaConfig.cmake
-#   * <prefix>/lib/cmake/oniguruma/onigurumaConfigVersion.cmake
-install(
-    FILES "${project_config}" "${version_config}"
-    DESTINATION "${config_install_dir}"
-)
-
-# Config
-#   * <prefix>/lib/cmake/oniguruma/onigurumaTargets.cmake
-install(
-    EXPORT "${TARGETS_EXPORT_NAME}"
-    NAMESPACE "${namespace}"
-    DESTINATION "${config_install_dir}"
-)
-
-# Documentation (uses onig not oniguruma for directory)
-install(FILES doc/API doc/API.ja doc/RE doc/RE.ja doc/FAQ doc/FAQ.ja
-              doc/CALLOUTS.BUILTIN doc/CALLOUTS.BUILTIN.ja
-              doc/CALLOUTS.API doc/CALLOUTS.API.ja
-              doc/UNICODE_PROPERTIES
-        DESTINATION "${CMAKE_INSTALL_DATADIR}/${PACKAGE}")
-
-# Other files (uses onig not oniguruma for directory)
-install(FILES AUTHORS COPYING HISTORY README.md
-        DESTINATION "${CMAKE_INSTALL_DATADIR}/${PACKAGE}")
-
-# pkg-config
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/oniguruma.pc
-        DESTINATION lib/pkgconfig)
+#configure_package_config_file(
+#    "cmake/Config.cmake.in"
+#    "${project_config}"
+#    INSTALL_DESTINATION "${config_install_dir}"
+#)
+#
+## Targets:
+##   * <prefix>/lib/libonig.a
+##   * header location after install: <prefix>/include/
+##   * headers can be included by C code `#include <oniguruma.h>`
+#install(
+#    TARGETS onig
+#    EXPORT "${TARGETS_EXPORT_NAME}"
+#    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+#    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+#    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+#    INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+#)
+#
+## Headers:
+##   * src/oniguruma.h -> <prefix>/include/oniguruma
+#install(
+#    FILES ${_INST_HEADERS}
+#    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+#)
+#
+## Config
+##   * <prefix>/lib/cmake/oniguruma/onigurumaConfig.cmake
+##   * <prefix>/lib/cmake/oniguruma/onigurumaConfigVersion.cmake
+#install(
+#    FILES "${project_config}" "${version_config}"
+#    DESTINATION "${config_install_dir}"
+#)
+#
+## Config
+##   * <prefix>/lib/cmake/oniguruma/onigurumaTargets.cmake
+#install(
+#    EXPORT "${TARGETS_EXPORT_NAME}"
+#    NAMESPACE "${namespace}"
+#    DESTINATION "${config_install_dir}"
+#)
+#
+## Documentation (uses onig not oniguruma for directory)
+#install(FILES doc/API doc/API.ja doc/RE doc/RE.ja doc/FAQ doc/FAQ.ja
+#              doc/CALLOUTS.BUILTIN doc/CALLOUTS.BUILTIN.ja
+#              doc/CALLOUTS.API doc/CALLOUTS.API.ja
+#              doc/UNICODE_PROPERTIES
+#        DESTINATION "${CMAKE_INSTALL_DATADIR}/${PACKAGE}")
+#
+## Other files (uses onig not oniguruma for directory)
+#install(FILES AUTHORS COPYING HISTORY README.md
+#        DESTINATION "${CMAKE_INSTALL_DATADIR}/${PACKAGE}")
+#
+## pkg-config
+#install(FILES ${CMAKE_CURRENT_BINARY_DIR}/oniguruma.pc
+#        DESTINATION lib/pkgconfig)

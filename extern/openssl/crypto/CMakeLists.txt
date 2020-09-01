@@ -310,7 +310,7 @@ if( MSVC )
   endif()
 endif()
 
-install( TARGETS crypto
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib )
+#install( TARGETS crypto
+#    RUNTIME DESTINATION bin
+#    LIBRARY DESTINATION lib
+#    ARCHIVE DESTINATION lib )
