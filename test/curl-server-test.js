@@ -95,7 +95,11 @@ var pid=server.start(
         */
         "/":                "./mPurpose",
         "/sample":          function(req){return "test";},
-        "/modtest/":	    {modulePath:"./servermods/"}
+        "/modtest/":	    {modulePath:"./servermods/"},
+        "/timeout":         function(){
+                                for (var i=0;i<1000000000;i++);
+                                return("done");
+                            }
     }
 });
 
@@ -130,9 +134,9 @@ testFeature("curl parallel fetch", function() {
     var aa=[a,a,a,a,a,a,a,a,a,a];
     var n=0;
     curl.fetch({insecure:true},aa,function(res){
-        if(res.txt=='test') n++;
+        if(res.text=='test') n++;
     });
-    return n=10;
+    return n == 10;
 });
 
 testFeature("server modpath", function (){
@@ -144,6 +148,11 @@ testFeature("server modpath", function (){
 testFeature("server custom not found", function (){
     var res=curl.fetch({insecure:true},"https://localhost:8087/nowhere");
     return res.status == 404 && res.text == "notfound";
+});
+
+testFeature("server script timeout", function (){
+    var res=curl.fetch({insecure:true},"https://localhost:8087/timeout");
+    return res.status == 500;
 });
 
 kill(pid,15);
