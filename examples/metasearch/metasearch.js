@@ -30,22 +30,22 @@ function index(req) {
 }
 
 
-printf("\ntry a url like http://127.0.0.1:8088/search?q=paris\n");
+printf("\ntry a url like http://127.0.0.1:8090/search?q=paris\n");
 //printf("or see a sample website at http://127.0.0.1:8088/\n\nSTARTING SERVER:\n");
 
 var pid=server.start(
 {
-    bind: [ "[::]:8088", "0.0.0.0:8088" ], /* bind to all */
+    bind: [ "[::]:8090", "0.0.0.0:8090" ], /* bind to all */
 
     scriptTimeout: 20.0, /* max time to spend in JS */
     connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
     useThreads: true, /* make server multi-threaded. */
-    //user: "unpriv-user",
+    user: "unpriv-user",
     //log: true,           //turn logging on, by default goes to stdout/stderr
     //accessLog: "./access.log",    //access log location, instead of stdout
     //errorLog: "./error.log",     //error log location, instead of stderr
     
-    //daemon: true, // fork and run in background.    
+    daemon: true, // fork and run in background.    
     /*
     secure:true,
     sslkeyfile:  "/etc/letsencrypt/live/mydom.com/privkey.pem",

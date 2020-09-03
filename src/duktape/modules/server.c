@@ -785,14 +785,22 @@ static void frefcb(const void *data, size_t datalen, void *val)
 /*
    Because of this: https://github.com/criticalstack/libevhtp/issues/160 
    when ssl, we can't use evbuffer_add_file() since evbuffer_pullup()
-   was added to libevhtp 
+   was added to libevhtp.
+   At some point (>5M??; need better benchmarking tools - wrk and ab both
+   have their problems) the advantanges of loading the file here will
+   be outweighted by the cost of not letting evbuffer_add_file() do its
+   memmap thing.
 */
-
+extern int rp_evhtp_do_pullup;
 static int rp_evbuffer_add_file(struct evbuffer *outbuf, int fd, ev_off_t offset, ev_off_t length)
 {
-    if(!rp_using_ssl)
+    /* if not ssl, or if size of file is "big", use evbuffer_add_file */
+    if( !rp_using_ssl || length-offset > 5*1024*1024 )
+    {
+        rp_evhtp_do_pullup=0;
         return evbuffer_add_file(outbuf, fd, offset, length);
-
+    }
+    
     {
         size_t off=0;
         ssize_t nbytes=0;
@@ -815,7 +823,7 @@ static int rp_evbuffer_add_file(struct evbuffer *outbuf, int fd, ev_off_t offset
         close(fd);
         if (nbytes==-1)
             return -1;
-
+        rp_evhtp_do_pullup=1;
         evbuffer_add_reference(outbuf, buf, (size_t)length, frefcb, NULL);
     }
     return 0;

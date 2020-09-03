@@ -299,16 +299,16 @@ var pid=server.start(
     scriptTimeout: 10.0, /* max time to spend in JS */
     connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
 
-    useThreads: true, /* make server multi-threaded. */
-
     /*** logging ***/
     log: true,           //turn logging on, by default goes to stdout/stderr
-    //accessLog: "./access.log",    //access log location, instead of stdout
-    //errorLog: "./error.log",     //error log location, instead of stderr
+    //accessLog: "./access.log",    //access log location, instead of stdout. Must be set if daemon==true
+    //errorLog: "./error.log",     //error log location, instead of stderr. Must be set if daemon==true
     
     /*  fork and continue after server start (see end of the script) */
-    //daemon: true, // fork and run in background.    
+    //daemon: true, // fork and run in background. stdin and stderr are closed, so logging must go to a file.
 
+    /* make server multi-threaded. */
+    useThreads: true,
     /*  By default, number of threads is set to cpu core count.
         This has no effect unless useThreads is set true.
         The number can be changed here:
@@ -318,7 +318,7 @@ var pid=server.start(
     /* 
         for https support, this is the minimum number of options needed:
     */
-    secure:true,
+//    secure:true,
     sslKeyFile:  "/etc/letsencrypt/live/mydom.com/privkey.pem",
     sslCertFile: "/etc/letsencrypt/live/mydom.com/fullchain.pem",
 
@@ -363,7 +363,10 @@ var pid=server.start(
         */
         "/showreq*":          {module:"servermod"},
 
-        /* load modules dynamically from a path */
+        /* 
+            load modules dynamically from a path 
+            file additions or changes do not require a server restart.
+        */
         "/modtest/":	      {modulePath:"./servermods/"}
     }
 });
