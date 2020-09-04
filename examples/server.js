@@ -376,7 +376,6 @@ var pid=server.start(
 
 /* give the forked server a chance to print its info*/
 rampart.utils.sleep(0.2);
-console.log(rampart.utils.shell("ps aux | grep "+pid).stdout);
 
 /* check that it is running */
 if(rampart.utils.kill(pid,0))

@@ -2065,8 +2065,6 @@ htp__create_headers_(evhtp_header_t * header, void * arg)
     return 0;
 }
 
-int rp_evhtp_do_pullup=0;
-
 static struct evbuffer *
 htp__create_reply_(evhtp_request_t * request, evhtp_res code)
 {
@@ -2190,11 +2188,14 @@ check_proto:
     evhtp_headers_for_each(request->headers_out, htp__create_headers_, buf);
     evbuffer_add(buf, "\r\n", 2);
 
-    if (evbuffer_get_length(request->buffer_out)) {
-        evbuffer_add_buffer(buf, request->buffer_out);
+    {
+        size_t len=evbuffer_get_length(request->buffer_out);
+        if (len) {
+            evbuffer_add_buffer(buf, request->buffer_out);
 
-        if (rp_evhtp_do_pullup)
-            evbuffer_pullup(buf,-1);
+            if (request->conn->htp->ssl_ctx != NULL && len <= 5242880)
+                evbuffer_pullup(buf,-1);
+        }
     }
     return buf;
 }     /* htp__create_reply_ */
