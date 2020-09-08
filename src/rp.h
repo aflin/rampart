@@ -67,6 +67,14 @@ extern int   rampart_argc;
     r;\
 })
 
+#define REQUIRE_FUNCTION(ctx,idx,...) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_function((ctx),i)) {\
+        RP_THROW(ctx, __VA_ARGS__ );\
+    }\
+    duk_require_function((ctx),i);\
+})
+
 #define REQUIRE_BUFFER_DATA(ctx,idx,sz,...) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_buffer_data((ctx),i)) {\

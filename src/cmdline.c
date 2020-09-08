@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include "rp.h"
+#include "../extern/libevent/include/event.h"
 
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 char *RP_script_path=NULL;
@@ -514,6 +515,114 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     return (const char*) (strlen(babelsrc)) ? strdup(babelsrc): strdup(fn);
 }
 
+struct event_base *elbase;
+
+#define EVARGS struct ev_args
+EVARGS {
+    duk_context *ctx;
+    struct event *e;
+    duk_uarridx_t idx;
+    int repeat;
+};
+
+
+static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
+{
+    EVARGS *evargs = (EVARGS *) arg;
+    duk_context *ctx= evargs->ctx;
+
+    duk_push_global_stash(ctx);
+
+    if( !duk_get_prop_string(ctx,-1, DUK_HIDDEN_SYMBOL("cb_array")) )
+    {
+        RP_THROW(ctx, "internal error in rp_el_doevent()");
+    }
+    
+    duk_get_prop_index(ctx, -1, evargs->idx);
+
+    if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
+    {
+        RP_THROW(ctx,"error in callback");
+    }
+
+    if(!evargs->repeat)
+    {
+        event_del(evargs->e);
+        free(evargs);
+    }
+}
+
+duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat)
+{
+    REQUIRE_FUNCTION(ctx,0,"setTimeout(): Callback must be a function");
+    double to = duk_get_number_default(ctx,1, 0) / 1000.0;
+    struct timeval timeout;
+    EVARGS *evargs=NULL;
+
+    /* set up struct to be passed to callback */
+    DUKREMALLOC(ctx,evargs,sizeof(EVARGS));
+    evargs->idx=0;
+    evargs->ctx=ctx;
+    evargs->repeat=repeat;
+
+    /* get the timeout */
+    timeout.tv_sec=(time_t)to;
+    timeout.tv_usec=(suseconds_t)1000000.0 * (to - (double)timeout.tv_sec); 
+
+    /* get array of callback functions from global stash */
+    duk_push_global_stash(ctx);
+    if( !duk_get_prop_string(ctx,-1, DUK_HIDDEN_SYMBOL("cb_array")) )
+    {
+        duk_pop(ctx);//undefined
+        duk_push_array(ctx);//new array
+    }
+    else
+        evargs->idx=(duk_uarridx_t)duk_get_length(ctx,-1);
+
+    /* push current callback to array */
+    duk_dup(ctx,0);
+    duk_put_prop_index(ctx, -2, evargs->idx);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("cb_array"));
+
+    /* create a new event for js callback and specify the c callback to handle it*/
+    evargs->e = event_new(elbase, -1, EV_PERSIST, rp_el_doevent, evargs);
+
+    /* add event */
+    event_add(evargs->e, &timeout);
+
+    duk_push_object(ctx);
+    duk_push_pointer(ctx,(void*)evargs->e);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("event") );
+    return 1;
+}
+
+duk_ret_t duk_rp_set_timeout(duk_context *ctx)
+{
+    return duk_rp_set_to(ctx, 0);
+}
+
+duk_ret_t duk_rp_set_interval(duk_context *ctx)
+{
+    return duk_rp_set_to(ctx, 1);
+}
+
+duk_ret_t duk_rp_clear_either(duk_context *ctx)
+{
+    struct event *e;
+    if(!duk_is_object(ctx,0))
+        RP_THROW(ctx, "clearTimeout()/clearInteral() requires variable returned from setTimeout()/setInterval()");
+
+    if( !duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("event") ) )
+        RP_THROW(ctx, "clearTimeout()/clearInteral() requires variable returned from setTimeout()/setInterval()");
+
+    e=(struct event *)duk_get_pointer(ctx, 1);
+
+    event_del(e);
+
+    return 0;
+}
+
+
 char **rampart_argv;
 int   rampart_argc;
 int main(int argc, char *argv[])
@@ -673,6 +782,17 @@ int main(int argc, char *argv[])
                 file_src=s;
             }
 
+            /* set up event loop */
+            duk_push_c_function(ctx,duk_rp_set_timeout,2);
+            duk_put_global_string(ctx,"setTimeout");
+            duk_push_c_function(ctx, duk_rp_clear_either, 1);
+            duk_put_global_string(ctx,"clearTimeout");
+            duk_push_c_function(ctx,duk_rp_set_interval,2);
+            duk_put_global_string(ctx,"setInterval");
+            duk_push_c_function(ctx, duk_rp_clear_either, 1);
+            duk_put_global_string(ctx,"clearInterval");
+            elbase = event_base_new();
+
             /* push babelized source to stack if available */
             if (! (bfn=duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime)) )
             {
@@ -689,6 +809,7 @@ int main(int argc, char *argv[])
             }
 
             free(free_file_src);
+            /* run the script */
             if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
             {
                 fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
@@ -702,6 +823,14 @@ int main(int argc, char *argv[])
                 duk_destroy_heap(ctx);
                 return 1;
             }
+            if (!elbase)
+            {
+                fprintf(stderr,"Eventloop error: could not initialize event base\n");
+                exit(1);
+            }
+
+            /* start event loop */
+            event_base_dispatch(elbase);
         }
     }
     duk_destroy_heap(ctx);

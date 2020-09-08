@@ -1408,6 +1408,7 @@ enum_object:
     duk_enum(ctx, -1, DUK_ENUM_INCLUDE_HIDDEN);
     while (duk_next(ctx, -1, 1))
     {
+printf("var %s\n", s);
         s = duk_get_string(ctx, -2);
         if (duk_is_ecmascript_function(ctx, -1))
         {
@@ -1465,6 +1466,15 @@ enum_object:
                    and a new empty object for tctx (pushed to idx:-1)              */
                 duk_push_object(tctx);
                 objid = copy_obj(ctx, tctx, objid);
+if(!strcmp(s,"_rampart_save_proxy_handler"))
+{
+
+//    printf("var %s\n",s);
+//    printenum(tctx,-1);
+//    printenum(tctx,-2);
+    duk_push_proxy(tctx, 0);
+}
+else
                 duk_put_prop_string(tctx, -2, duk_get_string(ctx, -2));
             }
         }

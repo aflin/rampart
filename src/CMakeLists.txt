@@ -7,6 +7,18 @@ else()
 	message("setting install = ${CMAKE_INSTALL_PREFIX}")
 endif()
 
+file(GLOB JSMOD_FILES "${PROJECT_SOURCE_DIR}/src/duktape/js_modules/*.js")
+
+foreach(JSMOD_FILE ${JSMOD_FILES})
+file(COPY ${JSMOD_FILE} DESTINATION ${CMAKE_BINARY_DIR}/src)
+endforeach()
+
+set(LIBEVENT_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevent)
+set(OPENSSL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/openssl)
+set(ONIGURUMA_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/oniguruma)
+set(CURL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/curl)
+set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp)
+
 add_definitions(
 	-DRP_USING_DUKTAPE 
 	-DDUK_CMDLINE_CONSOLE_SUPPORT 
@@ -34,10 +46,6 @@ add_executable(rampart
 	duktape/core/module.c
 	duktape/globals/rampart-utils.c
 #	duktape/globals/printf.c
-	duktape/globals/ramis.c
-
-	ramis/resp_client.c
-	ramis/resp_protocol.c
 
 	cmdline.c
 )
@@ -47,6 +55,9 @@ set_target_properties(rampart PROPERTIES
 )
 
 target_link_libraries(rampart LINK_PUBLIC 
+	-Wl,--whole-archive
+	${LIBEVENT_TARGET_DIR}/lib/libevent_core.a
+	-Wl,--no-whole-archive
 	m dl pthread
 )
 
@@ -58,11 +69,6 @@ include_directories(
 #this is good for later. Right now it interrupts work flow
 #set (CMAKE_CURRENT_BINARY_DIR ${PROJECT_BINARY_DIR}/bin )
 
-set(LIBEVENT_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevent)
-set(OPENSSL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/openssl)
-set(ONIGURUMA_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/oniguruma)
-set(CURL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/curl)
-set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp)
 
 ########### ADD MODULES HERE ###############
 
@@ -88,38 +94,27 @@ target_link_libraries(rpsql
 # libre2 needs to be linked by c++
 set_target_properties(rpsql PROPERTIES LINKER_LANGUAGE CXX )
 
-###CURL###
-add_library(rpcurl SHARED
- duktape/modules/curl.c
-)
-target_link_libraries(rpcurl PRIVATE
-	${CURL_TARGET_DIR}/lib/libcurl.a
-#	${OPENSSL_TARGET_DIR}/ssl/libssl.a
-#	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
-	rpcrypto
-	z
-)
-target_include_directories(rpcurl PRIVATE
-	${PROJECT_SOURCE_DIR}/extern/curl/include/
-	${PROJECT_BINARY_DIR}/extern/openssl/include/
+###RAMIS###
+add_library(rpramis SHARED
+	duktape/modules/ramis.c
+	ramis/resp_client.c
+	ramis/resp_protocol.c
 )
 
 ##CRYPTO##
 add_library(rpcrypto SHARED 
   duktape/modules/crypto.c  
 )
-target_link_libraries(rpcrypto PUBLIC 
+target_link_libraries(rpcrypto PRIVATE
+	-Wl,--whole-archive
 	${OPENSSL_TARGET_DIR}/ssl/libssl.a 
 	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
+	-Wl,--no-whole-archive
 )
+
 target_include_directories(rpcrypto PRIVATE
   ${PROJECT_BINARY_DIR}/extern/openssl/include/
 )
-
-###UTILS###
-#add_library(rputils SHARED
-# duktape/modules/utils.c
-#)
 
 ###SERVER###
 add_library(rpserver SHARED
@@ -127,18 +122,34 @@ add_library(rpserver SHARED
 )
 target_link_libraries(rpserver 
 	${LIBEVHTP_TARGET_DIR}/libevhtp.a
-	${LIBEVENT_TARGET_DIR}/lib/libevent.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
-  rpcrypto
+  	rpcrypto
 	${ONIGURUMA_TARGET_DIR}/libonig.a
 ) 
+
+set_property(TARGET rpserver PROPERTY IMPORTED_LOCATION "./rpcrypto.so") 
+
 target_include_directories(rpserver PRIVATE
 	${PROJECT_BINARY_DIR}/extern/openssl/include/
 	${PROJECT_SOURCE_DIR}/extern/libevent/include/
 	${PROJECT_BINARY_DIR}/extern/libevent/include/
 	${PROJECT_SOURCE_DIR}/extern/libevhtp/include/
 	${PROJECT_BINARY_DIR}/extern/libevhtp/include/
+)
+
+###CURL###
+add_library(rpcurl SHARED
+ duktape/modules/curl.c
+)
+target_link_libraries(rpcurl PRIVATE
+	${CURL_TARGET_DIR}/lib/libcurl.a
+	rpcrypto
+	z
+)
+target_include_directories(rpcurl PRIVATE
+	${PROJECT_SOURCE_DIR}/extern/curl/include/
+	${PROJECT_BINARY_DIR}/extern/openssl/include/
 )
 
 
@@ -157,14 +168,14 @@ target_include_directories(rpserver PRIVATE
 ##############  ADD MODULE NAMES HERE  ##############
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-set_target_properties(rpcurl rpserver rpsql rpcrypto #example_name
+set_target_properties(rpcurl rpserver rpsql rpramis rpcrypto #example_name
 	PROPERTIES 
 	LINK_FLAGS   "-undefined dynamic_lookup" 
 	SUFFIX       ".so"
 	PREFIX ""
 )
 else()
-set_target_properties(rpcurl rpserver rpsql rpcrypto #example_name
+set_target_properties(rpcurl rpserver rpsql rpramis rpcrypto #example_name
 	PROPERTIES 
 	SUFFIX       ".so"
 	PREFIX ""
@@ -177,7 +188,7 @@ install(TARGETS
 	rpcrypto
 	rpcurl
 	rpsql
-	
+	rpramis
 	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
 
@@ -198,6 +209,7 @@ install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
     \"${PROJECT_BINARY_DIR}/src/babel.js\" \
     \"${PROJECT_BINARY_DIR}/src/babel-polyfill.js\" \
+    \"${PROJECT_BINARY_DIR}/src/ramis.js\" \
     \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
     )"
 )
@@ -247,6 +259,7 @@ install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpcrypto.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpcurl.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpsql.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpramis.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
 
 

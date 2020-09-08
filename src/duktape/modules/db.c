@@ -1297,7 +1297,7 @@ duk_ret_t duk_rp_sql_singleuser(duk_context *ctx)
 }
 
 /* **************************************************
-   Initialize Sql into global object. 
+   Initialize Sql module 
    ************************************************** */
 duk_ret_t duk_open_module(duk_context *ctx)
 {

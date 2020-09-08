@@ -545,7 +545,7 @@ void duk_process_init(duk_context *ctx)
         duk_push_string(ctx,rampart_argv[0]);
         duk_put_prop_string(ctx,-2,"argv0");
 
-        if(rampart_argc>0)
+        if(rampart_argc>1)
         {
             char p[PATH_MAX], *s;
             
@@ -2426,6 +2426,79 @@ duk_ret_t duk_rp_nsleep(duk_context *ctx)
     return 0;
 }
 
+duk_ret_t duk_rp_mlock_constructor(duk_context *ctx)
+{
+    pthread_mutex_t *newlock=NULL;
+
+    if (!duk_is_constructor_call(ctx))
+    {
+        return DUK_RET_TYPE_ERROR;
+    }
+
+    DUKREMALLOC(ctx, newlock, sizeof(pthread_mutex_t) );
+
+    if (pthread_mutex_init(newlock, NULL) == EINVAL)
+        RP_THROW(ctx,"mlock(): error - could not initialize file handle lock");
+
+
+    duk_push_this(ctx);
+    duk_push_pointer(ctx, (void *)newlock);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("mlock"));
+    return 0;
+}
+
+duk_ret_t duk_rp_mlock_lock (duk_context *ctx)
+{
+    pthread_mutex_t *lock;
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("mlock"));
+    lock=(pthread_mutex_t *)duk_get_pointer(ctx, -1);
+    if(!lock)
+        RP_THROW(ctx, "mlock(): error - lock already destroyed\n");
+    if (pthread_mutex_lock(lock) == EINVAL)
+        RP_THROW(ctx, "mlock(): error - could not obtain lock\n");
+    return 0;
+}
+
+duk_ret_t duk_rp_mlock_unlock (duk_context *ctx)
+{
+    pthread_mutex_t *lock;
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("mlock"));
+    lock=(pthread_mutex_t *)duk_get_pointer(ctx, -1);
+    if(!lock)
+        RP_THROW(ctx, "mlock(): error - lock already destroyed\n");
+    if (pthread_mutex_unlock(lock) == EINVAL)
+        RP_THROW(ctx, "mlock(): error - could not obtain lock\n");
+    return 0;
+}
+
+duk_ret_t duk_rp_mlock_destroy (duk_context *ctx)
+{
+    pthread_mutex_t *lock;
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("mlock"));
+    lock=(pthread_mutex_t *)duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+    free(lock);
+    duk_push_pointer(ctx, (void *) NULL);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("mlock"));
+    return 0;
+}
+
+duk_ret_t duk_rp_mlock(duk_context *ctx)
+{
+//    duk_push_object(ctx);
+
+    /* Push constructor function */
+
+//    duk_put_prop_string(ctx, -2, "init");
+
+    return 1;
+}
+
+
+
 void duk_rampart_init(duk_context *ctx)
 {
     if (!duk_get_global_string(ctx, "rampart"))
@@ -2441,6 +2514,20 @@ void duk_rampart_init(duk_context *ctx)
     }
 
     /* populate utils object with functions */
+
+    //mlock
+    duk_push_c_function(ctx, duk_rp_mlock_constructor, 0);
+    duk_push_object(ctx);
+    duk_push_c_function(ctx, duk_rp_mlock_lock, 0);
+    duk_put_prop_string(ctx, -2, "lock");
+    duk_push_c_function(ctx, duk_rp_mlock_unlock, 0);
+    duk_put_prop_string(ctx, -2, "unlock");
+    duk_push_c_function(ctx, duk_rp_mlock_destroy, 0);
+    duk_put_prop_string(ctx, -2, "destroy");
+    duk_put_prop_string(ctx, -2, "prototype");
+    duk_put_prop_string(ctx, -2, "mlock");
+    //end mlock
+
     duk_push_c_function(ctx, duk_rp_hexify, 2);
     duk_put_prop_string(ctx, -2, "hexify");
     duk_push_c_function(ctx, duk_rp_dehexify, 2);
