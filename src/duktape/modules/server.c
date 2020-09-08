@@ -1408,7 +1408,6 @@ enum_object:
     duk_enum(ctx, -1, DUK_ENUM_INCLUDE_HIDDEN);
     while (duk_next(ctx, -1, 1))
     {
-printf("var %s\n", s);
         s = duk_get_string(ctx, -2);
         if (duk_is_ecmascript_function(ctx, -1))
         {

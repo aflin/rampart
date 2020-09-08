@@ -53,6 +53,16 @@ add_executable(rampart
 set_target_properties(rampart PROPERTIES
   ENABLE_EXPORTS 1
 )
+if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+
+target_link_libraries(rampart LINK_PUBLIC 
+	-Wl,-all_load 
+	${LIBEVENT_TARGET_DIR}/lib/libevent_core.a
+	-Wl,-noall_load 
+	m dl pthread
+)
+
+else()
 
 target_link_libraries(rampart LINK_PUBLIC 
 	-Wl,--whole-archive
@@ -61,11 +71,14 @@ target_link_libraries(rampart LINK_PUBLIC
 	m dl pthread
 )
 
+endif()
+
 include_directories(
 	${PROJECT_BINARY_DIR}/texis/texisapi 
 	${PROJECT_BINARY_DIR}/texis 
 	${PROJECT_SOURCE_DIR}/texis/include 
 )
+
 #this is good for later. Right now it interrupts work flow
 #set (CMAKE_CURRENT_BINARY_DIR ${PROJECT_BINARY_DIR}/bin )
 
@@ -105,12 +118,25 @@ add_library(rpramis SHARED
 add_library(rpcrypto SHARED 
   duktape/modules/crypto.c  
 )
+if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+
+target_link_libraries(rpcrypto PRIVATE
+	-Wl,-all_load
+	${OPENSSL_TARGET_DIR}/ssl/libssl.a 
+	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
+	-Wl,-noall_load
+)
+
+else()
+
 target_link_libraries(rpcrypto PRIVATE
 	-Wl,--whole-archive
 	${OPENSSL_TARGET_DIR}/ssl/libssl.a 
 	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
 	-Wl,--no-whole-archive
 )
+
+endif()
 
 target_include_directories(rpcrypto PRIVATE
   ${PROJECT_BINARY_DIR}/extern/openssl/include/
