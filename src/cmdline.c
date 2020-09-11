@@ -12,7 +12,7 @@
 #include <errno.h>
 #include "rp.h"
 #include "../extern/libevent/include/event.h"
-
+#include "../extern/libevent/include/event2/thread.h"
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 char *RP_script_path=NULL;
 
@@ -521,7 +521,7 @@ struct event_base *elbase;
 EVARGS {
     duk_context *ctx;
     struct event *e;
-    duk_uarridx_t idx;
+    double key;
     int repeat;
 };
 
@@ -530,38 +530,66 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
 {
     EVARGS *evargs = (EVARGS *) arg;
     duk_context *ctx= evargs->ctx;
+    double key= evargs->key;
 
     duk_push_global_stash(ctx);
-
-    if( !duk_get_prop_string(ctx,-1, DUK_HIDDEN_SYMBOL("cb_array")) )
+    if( !duk_get_prop_string(ctx,-1, "ev_callback_object") )
     {
         RP_THROW(ctx, "internal error in rp_el_doevent()");
     }
-    
-    duk_get_prop_index(ctx, -1, evargs->idx);
 
-    if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
+    duk_push_number(ctx, evargs->key);
+    duk_get_prop(ctx, -2);
+
+    duk_call(ctx, 0);
+    //discard return
+    duk_pop(ctx);
+
+    /* evargs may have been freed if clearInterval was called from within the function */
+    /* if so, function stored in ev_callback_object[key] will have been deleted */
+    duk_push_number(ctx, key);
+    if(!duk_has_prop(ctx, -2) )
     {
-        RP_THROW(ctx,"error in callback");
+        duk_pop_2(ctx);
+        return;
     }
 
     if(!evargs->repeat)
     {
         event_del(evargs->e);
+        event_free(evargs->e);
+        duk_push_number(ctx, key);
+        duk_del_prop(ctx, -2);
         free(evargs);
     }
+
+    duk_pop_2(ctx);
 }
+/* It is not terribly important that this is thread safe (I hope).
+   If we are threading, it just needs to be unique on each thread (until it loops).
+   The id will be used on separate duk stacks for each thread */
+volatile uint32_t ev_id=0;
 
 duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat)
 {
     REQUIRE_FUNCTION(ctx,0,"setTimeout(): Callback must be a function");
     double to = duk_get_number_default(ctx,1, 0) / 1000.0;
     struct timeval timeout;
+    struct event_base *base=NULL;
     EVARGS *evargs=NULL;
+
+    /* if we are threaded, base will not be global struct event_base *elbase */
+    duk_push_global_stash(ctx);
+    if( duk_get_prop_string(ctx, -1, "elbase") )
+        base=duk_get_pointer(ctx, -1);
+    duk_pop_2(ctx);
+    
+    if(!base)
+        RP_THROW(ctx, "event base not fount in global stash");    
 
     /* set up struct to be passed to callback */
     DUKREMALLOC(ctx,evargs,sizeof(EVARGS));
-    evargs->idx=0;
+    evargs->key = (double)ev_id++;
     evargs->ctx=ctx;
     evargs->repeat=repeat;
 
@@ -571,28 +599,35 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat)
 
     /* get array of callback functions from global stash */
     duk_push_global_stash(ctx);
-    if( !duk_get_prop_string(ctx,-1, DUK_HIDDEN_SYMBOL("cb_array")) )
+    if( !duk_get_prop_string(ctx,-1, "ev_callback_object") )
     {
+        /* if in threads, we need to set this up on new duk_context stack */
         duk_pop(ctx);//undefined
-        duk_push_array(ctx);//new array
+        duk_push_object(ctx);//new object
+        duk_push_number(ctx, evargs->key);
+        duk_dup(ctx,0);
+        duk_put_prop(ctx, -3);
+        duk_put_prop_string(ctx, -2, "ev_callback_object");
     }
     else
-        evargs->idx=(duk_uarridx_t)duk_get_length(ctx,-1);
-
-    /* push current callback to array */
-    duk_dup(ctx,0);
-    duk_put_prop_index(ctx, -2, evargs->idx);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("cb_array"));
+    {
+        duk_push_number(ctx, evargs->key);
+        duk_dup(ctx,0);
+        duk_put_prop(ctx, -3);
+    }
+    duk_pop(ctx); //global stash
 
     /* create a new event for js callback and specify the c callback to handle it*/
-    evargs->e = event_new(elbase, -1, EV_PERSIST, rp_el_doevent, evargs);
+    evargs->e = event_new(base, -1, EV_PERSIST, rp_el_doevent, evargs);
 
     /* add event */
     event_add(evargs->e, &timeout);
-
+//printf("added event\n");
     duk_push_object(ctx);
-    duk_push_pointer(ctx,(void*)evargs->e);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("event") );
+    duk_push_pointer(ctx,(void*)evargs);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("eventargs") );
+    duk_push_number(ctx,evargs->key);
+    duk_put_prop_string(ctx, -2, "eventId");
     return 1;
 }
 
@@ -608,17 +643,29 @@ duk_ret_t duk_rp_set_interval(duk_context *ctx)
 
 duk_ret_t duk_rp_clear_either(duk_context *ctx)
 {
-    struct event *e;
+    EVARGS *evargs=NULL;
+
     if(!duk_is_object(ctx,0))
         RP_THROW(ctx, "clearTimeout()/clearInteral() requires variable returned from setTimeout()/setInterval()");
 
-    if( !duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("event") ) )
+    if( !duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("eventargs") ) )
         RP_THROW(ctx, "clearTimeout()/clearInteral() requires variable returned from setTimeout()/setInterval()");
 
-    e=(struct event *)duk_get_pointer(ctx, 1);
+    evargs=(EVARGS *)duk_get_pointer(ctx, 1);
 
-    event_del(e);
+    event_del(evargs->e);
+    event_free(evargs->e);
+    free(evargs);
 
+    duk_push_global_stash(ctx);
+    if( !duk_get_prop_string(ctx,-1, "ev_callback_object") )
+        RP_THROW(ctx, "internal error in rp_el_doevent()");
+
+    if( !duk_get_prop_string(ctx, 0, "eventId" ) )
+        RP_THROW(ctx, "clearTimeout()/clearInteral() requires variable returned from setTimeout()/setInterval()");
+
+    duk_del_prop(ctx, -2);
+    
     return 0;
 }
 
@@ -791,6 +838,15 @@ int main(int argc, char *argv[])
             duk_put_global_string(ctx,"setInterval");
             duk_push_c_function(ctx, duk_rp_clear_either, 1);
             duk_put_global_string(ctx,"clearInterval");
+
+            /* set up object to hold timeout callback function */
+            duk_push_global_stash(ctx);
+            duk_push_object(ctx);//new object
+            duk_put_prop_string(ctx, -2, "ev_callback_object");
+            duk_pop(ctx);//global stash
+            
+            /* set up event base */
+            evthread_use_pthreads();
             elbase = event_base_new();
 
             /* push babelized source to stack if available */
@@ -809,6 +865,13 @@ int main(int argc, char *argv[])
             }
 
             free(free_file_src);
+
+            /* stash our event base for this ctx */
+            duk_push_global_stash(ctx);
+            duk_push_pointer(ctx, (void*)elbase);
+            duk_put_prop_string(ctx, -2, "elbase");
+            duk_pop(ctx);
+
             /* run the script */
             if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
             {
@@ -830,7 +893,7 @@ int main(int argc, char *argv[])
             }
 
             /* start event loop */
-            event_base_dispatch(elbase);
+            event_base_loop(elbase, 0);
         }
     }
     duk_destroy_heap(ctx);

@@ -58,6 +58,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 target_link_libraries(rampart LINK_PUBLIC 
 	-Wl,-all_load 
 	${LIBEVENT_TARGET_DIR}/lib/libevent_core.a
+	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
 	-Wl,-noall_load 
 	m dl pthread
 )
@@ -67,6 +68,7 @@ else()
 target_link_libraries(rampart LINK_PUBLIC 
 	-Wl,--whole-archive
 	${LIBEVENT_TARGET_DIR}/lib/libevent_core.a
+	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
 	-Wl,--no-whole-archive
 	m dl pthread
 )
@@ -149,7 +151,6 @@ add_library(rpserver SHARED
 target_link_libraries(rpserver 
 	${LIBEVHTP_TARGET_DIR}/libevhtp.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a
-	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
   	rpcrypto
 	${ONIGURUMA_TARGET_DIR}/libonig.a
 ) 

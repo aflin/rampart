@@ -25,6 +25,7 @@
 #include "../register.h"
 //#define RP_TO_DEBUG
 //#define RP_TIMEO_DEBUG
+#define COMBINE_EVLOOPS 1
 
 extern int RP_TX_isforked;
 
@@ -40,7 +41,7 @@ gid_t unprivg=0;
 pthread_mutex_t ctxlock;
 
 
-int gl_threadno = 0;
+volatile int gl_threadno = 0;
 int gl_singlethreaded = 1;
 
 duk_context **thread_ctx = NULL, *main_ctx;
@@ -1341,6 +1342,13 @@ typedef duk_ret_t (*duk_func)(duk_context *);
 static int copy_obj(duk_context *ctx, duk_context *tctx, int objid)
 {
     const char *s;
+
+    /* for debugging */
+    //const char *lastvar="global";
+    //if(duk_is_string(ctx, -2) )
+    //    lastvar=duk_get_string(ctx, -2);
+    /* end for debugging */
+
     objid++;
     const char *prev = duk_get_string(ctx, -2);
 
@@ -1362,15 +1370,24 @@ static int copy_obj(duk_context *ctx, duk_context *tctx, int objid)
         duk_push_global_stash(tctx);                   // [ [par obj], [global stash] ]
         if (!duk_get_prop_string(tctx, -1, "objById")) // [ [par obj], [global stash], [object|undef] ]
         {
-            cprintf("big time error: this should never happen\n");
+            printf("big time error: this should never happen\n");
             duk_pop_2(tctx); // [ [par obj] ]
             return (objid);  // leave empty object there
         }
         duk_push_sprintf(tctx, "%d", ref_objid); //[ [par obj], [global stash], [stash_obj], [objid] ]
-        duk_get_prop(tctx, -2);                  //[ [par obj], [global stash], [stash_obj], [obj_ref] ]
+        if( !duk_get_prop(tctx, -2) )                  //[ [par obj], [global stash], [stash_obj], [obj_ref] ]
+        {
+            duk_pop_3(tctx);
+            goto enum_object;
+        }
         //printenum(tctx,-1);
         duk_insert(tctx, -4); //[ [obj_ref], [par obj], [global stash], [stash_obj] ]
         duk_pop_3(tctx);      //[ [obj_ref] ]
+//if( !strcmp(lastvar,"\xffproxy_obj") ){
+//    printf("########start##########\n");
+//    printenum(tctx,-1);
+//    printf("########end############\n");
+//}
         cprintf("copied ref\n");
         return (objid); // stop recursion here.
     }
@@ -1405,10 +1422,20 @@ enum_object:
 
     /*  get keys,vals inside ctx object on top of the stack 
         and copy to the tctx object on top of the stack     */
-    duk_enum(ctx, -1, DUK_ENUM_INCLUDE_HIDDEN);
+    
+
+    duk_enum(ctx, -1, DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS);
     while (duk_next(ctx, -1, 1))
     {
         s = duk_get_string(ctx, -2);
+
+        /* these are internal flags and should not be copied to threads */
+        if(!strcmp(s, "\xffobjRefId") || !strcmp(s,"\xffthreadsafe") )
+        {
+            duk_pop_2(ctx);
+            continue;
+        }
+
         if (duk_is_ecmascript_function(ctx, -1))
         {
             /* turn ecmascript into bytecode and copy */
@@ -1465,17 +1492,13 @@ enum_object:
                    and a new empty object for tctx (pushed to idx:-1)              */
                 duk_push_object(tctx);
                 objid = copy_obj(ctx, tctx, objid);
-if(!strcmp(s,"_rampart_save_proxy_handler"))
-{
-
-//    printf("var %s\n",s);
-//    printenum(tctx,-1);
-//    printenum(tctx,-2);
-    duk_push_proxy(tctx, 0);
-}
-else
                 duk_put_prop_string(tctx, -2, duk_get_string(ctx, -2));
             }
+        }
+        else if (duk_is_pointer(ctx, -1) )
+        {
+            duk_push_pointer(tctx, duk_get_pointer(ctx, -1) );
+            duk_put_prop_string(tctx, -2, s);
         }
 
         /* remove key and val from stack and repeat */
@@ -1484,6 +1507,19 @@ else
 
     /* remove enum from stack */
     duk_pop(ctx);
+
+    // flag object as copied, in case needed by some function
+    duk_push_true(tctx);
+    duk_put_prop_string(tctx, -2, DUK_HIDDEN_SYMBOL("thread_copied"));
+
+    if (duk_has_prop_string(tctx, -1, DUK_HIDDEN_SYMBOL("proxy_obj")) )
+    {
+        //printenum(tctx, -1);
+        duk_get_prop_string(tctx, -1, DUK_HIDDEN_SYMBOL("proxy_obj"));
+        duk_push_proxy(tctx, -1);
+        //printf("--------------------------------------------\n");
+        //printenum(tctx, -1);
+    }
 
     /* keep count */
     return objid;
@@ -1726,6 +1762,17 @@ static duk_context *redo_ctx(int thrno)
         exit(1);
     }
 
+#ifdef COMBINE_EVLOOPS
+    /* 
+        in this case server.start() has returned 
+        deleting the stack which would have our functions
+        and our array of functions have instead been stashed
+    */
+    duk_push_global_stash(main_ctx);
+    duk_get_prop_string(main_ctx, -1, "funcstash");
+    duk_insert(main_ctx, 0);
+    duk_pop(main_ctx);
+#endif
     copy_all(main_ctx, thr_ctx);
         
     duk_get_prop_index(main_ctx,0,fno);
@@ -1794,6 +1841,10 @@ static duk_context *redo_ctx(int thrno)
     duk_push_int(thr_ctx, thrno);
     duk_put_prop_string(thr_ctx, -2, "thread_id");
     duk_put_global_string(thr_ctx, "rampart");
+
+#ifdef COMBINE_EVLOOPS
+    duk_remove(main_ctx,0);
+#endif
 
     pthread_mutex_unlock(&ctxlock);
 
@@ -1957,12 +2008,191 @@ void rp_exit(int sig)
  finfo->par2child = -1;\
 } while(0)
 
+#define EVFDATA struct event_fork_data_s
+EVFDATA {
+    DHS *dhs;
+    evhtp_connection_t *conn;
+    int par2child;
+    int child2par;
+    int have_threadsafe_val;
+};
+#define childwrite(a,b,c) do{\
+    if(write((a),(b),(c))==-1) {\
+        printerr("child->parent write failed: '%s' -- exiting\n",strerror(errno));\
+        exit(1);\
+    };\
+} while(0)
+#define childread(a,b,c) do{\
+    if(read((a),(b),(c))==-1) {\
+        printerr("child<-parent read failed: '%s' -- exiting\n",strerror(errno));\
+        exit(1);\
+    };\
+} while(0)
+
+extern struct event_base *elbase;
+
+//#define FORK_NO_EVENTLOOP
+#ifndef FORK_NO_EVENTLOOP
+struct timeval evtimeout={0,0};
+#endif
+
+static void fork_exec_js(evutil_socket_t fd_ignored, short flags, void *arg)
+{
+    EVFDATA *data= (EVFDATA *) arg;
+    DHS *dhs= data->dhs;
+    duk_context *ctx = dhs->ctx;
+    int child2par = data->child2par;
+    int eno=0;
+    char *cbor=NULL;
+    duk_size_t bufsz;
+    uint32_t msgOutSz = 0;
+
+    tprintf("doing fork callback\n");
+    if ((eno = duk_pcall(ctx, 1)))
+    {
+        if (duk_is_error(ctx, -1) || duk_is_string(ctx, -1))
+        {
+
+            char msg[] = "{\"status\":500,\"html\":\"<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>\\n%s</pre></p></body></html>\"}";
+            char *err;
+            if (duk_is_error(ctx, -1))
+            {
+                duk_get_prop_string(ctx, -1, "stack");
+                duk_remove(ctx,-2);
+            }
+            printf("error in callback: %s\n",duk_get_string(ctx,-1));
+            err = (char *)duk_json_encode(ctx, -1);
+            //get rid of quotes
+            err[strlen(err) - 1] = '\0';
+            err++;
+            duk_push_sprintf(ctx, msg, err);
+        }
+        else
+        {
+            duk_push_string(ctx, "{\"headers\":{\"status\":500},\"html\":\"<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>unknown javascript error</pre></p></body></html>\"}");
+        }
+        duk_json_decode(ctx, -1);
+    }
+    /* encode the result of duk_pcall (or the error message) */
+    duk_cbor_encode(ctx, -1, 0);
+    cbor = duk_get_buffer_data(ctx, -1, &bufsz);
+    msgOutSz = (uint32_t)bufsz;
+
+    if(data->conn)
+    {
+        /* on first loop, safe to close and free here */
+        evutil_closesocket(data->conn->sock);
+        evhtp_connection_free(data->conn);
+        data->conn=NULL;
+    }
+
+    /* first: write the size of the message to parent */
+    childwrite(child2par, &msgOutSz, sizeof(uint32_t));
+
+    /* second: a single char for thread_safe info */
+    if (!data->have_threadsafe_val)
+    {
+        if (
+            duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("threadsafe")) &&
+            duk_is_boolean(ctx, -1) &&
+            duk_get_boolean(ctx, -1) == 0)
+            childwrite(child2par, "F", 1); //message that thread safe==false
+        else
+            childwrite(child2par, "X", 1); //message that thread safe is not to be set one way or another
+
+        duk_push_global_object(ctx);
+        duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("threadsafe"));
+        duk_pop_2(ctx);
+        data->have_threadsafe_val = 1;
+    }
+    else
+    {
+        childwrite(child2par, "X", 1); //message that thread safe is not to be set one way or another
+    }
+
+    /* third: write the encoded message */
+    tprintf("child sending cbor message %d long on %d:\n", (int)msgOutSz, child2par);
+    childwrite(child2par, cbor, msgOutSz);
+
+    tprintf("child sent message %d long. Waiting for input\n", (int)msgOutSz);
+
+    duk_pop(ctx); //buffer
+} 
+
+static void fork_read_request(evutil_socket_t fd_ignored, short flags, void *arg)
+{
+    EVFDATA *data= (EVFDATA *) arg;
+    DHS *dhs= data->dhs;
+    duk_context *ctx = dhs->ctx;
+    int par2child = data->par2child;
+    uint32_t msgOutSz = 0;
+#ifndef FORK_NO_EVENTLOOP
+    fcntl(par2child, F_SETFL, 0);
+#endif
+
+    /* wait here for the next request and get it's size */
+    childread(par2child, &msgOutSz, sizeof(uint32_t));
+    tprintf("child to receive message %d long on %d\n", (int)msgOutSz, par2child);
+
+    /* whether we already know the thread-safe status */ 
+    childread(par2child, &data->have_threadsafe_val, sizeof(int));
+
+    /* the index of the function we will use for javascript callback */
+    childread(par2child, &(dhs->func_idx), sizeof(duk_idx_t)); 
+    /* now get the cbor message from parent */
+    {
+        char *jbuf=NULL, *p;
+        
+        /* buffer to hold cbor data, sized appropriately */
+        REMALLOC(jbuf,(size_t)msgOutSz);
+        p=jbuf;
+        size_t toread = (size_t)msgOutSz;
+        ssize_t TOTread = 0;
+
+        /* read the cbor message from parent */
+        TOTread = read(par2child, p, toread);
+        while (TOTread > 0)
+        {
+            toread -= (size_t)TOTread;
+            tprintf("read %d bytes, %d bytes left\n",(int)TOTread,(int)toread);
+            p += TOTread;
+            TOTread = read(par2child, p, toread);
+        }
+        memcpy(duk_push_fixed_buffer(ctx, (duk_size_t)msgOutSz), jbuf, (size_t)msgOutSz);
+        free(jbuf);
+    }
+    /* decode cbor message */
+    duk_cbor_decode(ctx, -1, 0);
+
+    /* get the module name, if any */
+    if( duk_get_prop_string(ctx, -1, "rp_module_name" ) )
+    {
+        dhs->module_name=(char *) duk_get_string(ctx,-1);
+        duk_del_prop_string(ctx, -2, "rp_module_name");
+    }
+    else
+        dhs->module_name=NULL;
+    duk_pop(ctx);
+    
+    /* pull function out of stash and prepare to call it with parameters from cbor decoded message */
+    getfunction(dhs);
+    /* move message/object to top */
+    duk_pull(ctx,-2);
+#ifndef FORK_NO_EVENTLOOP
+    {
+    fork_exec_js(-1,0,data);
+//        struct event *ev=event_new(elbase, -1, EV_WRITE, fork_exec_js, data);
+//        event_add(ev, &evtimeout);
+    }
+    fcntl(par2child, F_SETFL, O_NONBLOCK);
+#endif
+}
 
 static void
 http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 {
     evhtp_res res = 200;
-    int preforked = 0, child2par[2], par2child[2], eno, pidstatus;
+    int preforked = 0, child2par[2], par2child[2], pidstatus;
     double cstart, celapsed;
     FORKINFO *finfo = forkinfo[dhs->threadno];
     char *cbor;
@@ -2032,14 +2262,15 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         }
     }
 
+    /* *************** CHILD PROCESS ************* */ 
     if (!preforked && finfo->childpid == 0)
     { /* child is forked once then talks over pipes. 
            and is killed if timed out                  */
 
         RP_TX_isforked=1; /* mutex locking not necessary in fork */
-        duk_size_t bufsz;
         struct sigaction sa;
         evhtp_connection_t *conn = evhtp_request_get_connection(req);
+        EVFDATA data_s={0}, *data=&data_s;
 
         memset(&sa, 0, sizeof(struct sigaction));
         sa.sa_flags = 0;
@@ -2061,139 +2292,70 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         /* populate object with details from client (requires conn) */
         push_req_vars(dhs);
 
-#define childwrite(a,b,c) do{\
-    if(write((a),(b),(c))==-1) {\
-        printerr("child->parent write failed: '%s' -- exiting\n",strerror(errno));\
-        exit(1);\
-    };\
-} while(0)
-#define childread(a,b,c) do{\
-    if(read((a),(b),(c))==-1) {\
-        printerr("child<-parent read failed: '%s' -- exiting\n",strerror(errno));\
-        exit(1);\
-    };\
-} while(0)
-
+        data->dhs=dhs;
+        data->par2child=par2child[0];
+        data->child2par=child2par[1];
+        data->have_threadsafe_val=have_threadsafe_val;
+        data->conn=conn;
+        event_reinit(elbase);
+#ifdef FORK_NO_EVENTLOOP
+        event_base_loopbreak(elbase); //stop event loop in the child
+        event_base_free(elbase); // free it
+        elbase = event_base_new(); // redo it
+        duk_push_global_stash(ctx);
+        duk_push_pointer(ctx, (void*)elbase);
+        duk_put_prop_string(ctx, -2, "elbase");
+        duk_pop(ctx);
         do
         {
-            /* In first loop, req info is on the stack since we just forked.
-               In subsequent loops, req info is piped in  */
-            tprintf("doing callback\n");
-            if ((eno = duk_pcall(ctx, 1)))
-            {
-                if (duk_is_error(ctx, -1) || duk_is_string(ctx, -1))
-                {
+            /* 
+                In first loop, req info is on the stack since we just forked.
+                In subsequent loops, req info is piped in and will be on top of stack
+                  in the same position (as set at bottom of this do/while loop.
+            */
 
-                    char msg[] = "{\"status\":500,\"html\":\"<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>\\n%s</pre></p></body></html>\"}";
-                    char *err;
-                    if (duk_is_error(ctx, -1))
-                    {
-                        duk_get_prop_string(ctx, -1, "stack");
-                        duk_remove(ctx,-2);
-                    }
-                    printerr("error in callback: %s\n",duk_get_string(ctx,-1));
-                    err = (char *)duk_json_encode(ctx, -1);
-                    //get rid of quotes
-                    err[strlen(err) - 1] = '\0';
-                    err++;
-                    duk_push_sprintf(ctx, msg, err);
-                }
-                else
-                {
-                    duk_push_string(ctx, "{\"headers\":{\"status\":500},\"html\":\"<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>unknown javascript error</pre></p></body></html>\"}");
-                }
-                duk_json_decode(ctx, -1);
-            }
-            /* encode the result of duk_pcall or the error message if fails */
-            duk_cbor_encode(ctx, -1, 0);
-            cbor = duk_get_buffer_data(ctx, -1, &bufsz);
-            msgOutSz = (uint32_t)bufsz;
-            if(conn)
-            {
-                /* safe to close and free here */
-                evutil_closesocket(conn->sock);
-                evhtp_connection_free(conn);
-                conn=NULL;
-            }
-            /* first: write the size of the message to parent */
-            childwrite(child2par[1], &msgOutSz, sizeof(uint32_t));
+            fork_exec_js(0,0,(void*)data);
 
-            /* second: a single char for thread_safe info */
-            if (!have_threadsafe_val)
-            {
-                if (
-                    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("threadsafe")) &&
-                    duk_is_boolean(ctx, -1) &&
-                    duk_get_boolean(ctx, -1) == 0)
-                    childwrite(child2par[1], "F", 1); //message that thread safe==false
-                else
-                    childwrite(child2par[1], "X", 1); //message that thread safe is not to be set one way or another
+            /* run whatever is in the loop now and exit loop 
+               major drawback is that if event is scheduled for 
+               later, there's no guarantee it will run, let alone run on time
+             */
+            event_base_loop(elbase, EVLOOP_NONBLOCK);
 
-                duk_push_global_object(ctx);
-                duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("threadsafe"));
-                duk_pop_2(ctx);
-                have_threadsafe_val = 1;
-            }
-            else
-            {
-                childwrite(child2par[1], "X", 1); //message that thread safe is not to be set one way or another
-            }
-
-            /* third: write the encoded message */
-            tprintf("child sending cbor message %d long on %d:\n", (int)msgOutSz, child2par[1]);
-            childwrite(child2par[1], cbor, msgOutSz);
-
-            tprintf("child sent message %d long. Waiting for input\n", (int)msgOutSz);
-
-            duk_pop(ctx); //buffer
-            /* wait here for the next request and get it's size */
-            childread(par2child[0], &msgOutSz, sizeof(uint32_t));
-            tprintf("child to receive message %d long on %d\n", (int)msgOutSz, par2child[0]);
-
-            childread(par2child[0], &have_threadsafe_val, sizeof(int));
-
-            childread(par2child[0], &(dhs->func_idx), sizeof(duk_idx_t));
-            /* now get the cbor message from parent */
-            {
-                char *jbuf=NULL, *p;
-                
-                REMALLOC(jbuf,(size_t)msgOutSz);
-                p=jbuf;
-                size_t toread = (size_t)msgOutSz;
-                ssize_t TOTread = 0;
-                TOTread = read(par2child[0], p, toread);
-                while (TOTread > 0)
-                {
-                    toread -= (size_t)TOTread;
-                    tprintf("read %d bytes, %d bytes left\n",(int)TOTread,(int)toread);
-                    p += TOTread;
-                    TOTread = read(par2child[0], p, toread);
-                }
-                memcpy(duk_push_fixed_buffer(ctx, (duk_size_t)msgOutSz), jbuf, (size_t)msgOutSz);
-                free(jbuf);
-            }
-            duk_cbor_decode(ctx, -1, 0);
-
-            /* get the module name, if any */
-            if( duk_get_prop_string(ctx, -1, "rp_module_name" ) )
-            {
-                dhs->module_name=(char *) duk_get_string(ctx,-1);
-                duk_del_prop_string(ctx, -2, "rp_module_name");
-            }
-            else
-                dhs->module_name=NULL;
-            duk_pop(ctx);
-            
-            getfunction(dhs);
-            /* move object to top */
-            duk_pull(ctx,-2);
-
+            /*  NEW TRANSACTION STARTS HERE */
+            fork_read_request(0,0,(void*)data);
+            /* loop to top to execute function */
         } while (1);
+#else
+        {
+            struct event *ev;
 
+            event_base_loopbreak(elbase); //stop event loop in the child
+            event_base_free(elbase); // free it
+            elbase = event_base_new(); // redo it
+
+            duk_push_global_stash(ctx);
+            duk_push_pointer(ctx, (void*)elbase);
+            duk_put_prop_string(ctx, -2, "elbase");
+            duk_pop(ctx);
+
+            //do the first js exec once here
+            ev=event_new(elbase, -1, 0,  fork_exec_js, data);
+            event_add(ev, &evtimeout);
+            /* make pipe non-blocking */
+            fcntl(data->par2child, F_SETFL, O_NONBLOCK);
+            ev=event_new(elbase, data->par2child, EV_PERSIST|EV_READ,  fork_read_request, data);
+            event_add(ev, NULL);
+            
+            /* start new event loop here */
+            event_base_loop(elbase, 0);
+        }
+#endif
         close(child2par[1]);
         exit(0);
     }
     else
+
 #define parentabort do{\
     printerr( "server.c line %d: '%s'\n", __LINE__, strerror(errno));\
     send500(req, "Error in Child Process");\
@@ -2214,8 +2376,8 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
     }\
 } while(0)
 
-
-    { /* parent */
+    /* ********************* PARENT ******************** */
+    {
         int totread = 0, is_threadsafe = 1;
         uint32_t bsize;
         duk_size_t bufsz;
@@ -2357,11 +2519,21 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                     exit(1);
                 }
 
+#ifdef COMBINE_EVLOOPS
+                duk_push_global_stash(main_ctx);
+                duk_get_prop_string(main_ctx, -1, "funcstash");
+                duk_insert(main_ctx, 0);
+                duk_pop(main_ctx);
+#endif
+
                 duk_get_prop_index(main_ctx, 0, (duk_uarridx_t)dhs->func_idx);
                 duk_push_boolean(main_ctx, (duk_bool_t)is_threadsafe);
                 duk_put_prop_string(main_ctx, -2, DUK_HIDDEN_SYMBOL("threadsafe"));
                 duk_pop(main_ctx);
 
+#ifdef COMBINE_EVLOOPS
+                duk_remove(main_ctx,0);
+#endif
                 pthread_mutex_unlock(&ctxlock);
             }
         }
@@ -2726,6 +2898,14 @@ static DHS *new_dhs(duk_context *ctx, int idx)
 void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
 {
     int *thrno = NULL;
+    duk_context *ctx;
+    struct event_base *base = evthr_get_base(thr);
+
+    if (pthread_mutex_lock(&ctxlock) == EINVAL)
+    {
+        printerr( "could not obtain lock in http_callback\n");
+        exit(1);
+    }
 
     DUKREMALLOC(main_ctx, thrno, sizeof(int));
 
@@ -2741,9 +2921,17 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     }
 
     *thrno = gl_threadno++;
-
     evthr_set_aux(thr, thrno);
+    ctx=thread_ctx[*thrno];
 
+    duk_push_global_stash(ctx);
+    duk_push_pointer(ctx, (void*)base);
+    duk_put_prop_string(ctx, -2, "elbase");
+    duk_pop(ctx);
+    pthread_mutex_unlock(&ctxlock);
+/*
+    printf("threadno = %d, base = %p\n", *thrno, base);
+*/
 }
 
 static int duk_rp_GPS_icase(duk_context *ctx, duk_idx_t idx, const char * prop)
@@ -2899,6 +3087,10 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
      }\
 } while(0)
 
+
+#ifdef COMBINE_EVLOOPS
+extern struct event_base *elbase;
+#endif
 duk_ret_t duk_server_start(duk_context *ctx)
 {
     int i = 0;
@@ -2911,7 +3103,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
     uint16_t port = 8088;
     int nthr=0;
     evhtp_t *htp = NULL;
+#ifndef COMBINE_EVLOOPS
     struct event_base *evbase;
+#endif
     evhtp_ssl_cfg_t *ssl_config = calloc(1, sizeof(evhtp_ssl_cfg_t));
     int confThreads = -1, mthread = 0, daemon=0;
     struct stat f_stat;
@@ -3047,9 +3241,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
             return 1;
         }
     }
-
+#ifndef COMBINE_EVLOOPS
     evbase = event_base_new();
-
+#endif
     /* options from server({options},...) */
     if (ob_idx != -1)
     {
@@ -3220,9 +3414,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
         duk_put_global_string(tctx, "rampart");
     }
-
+#ifdef COMBINE_EVLOOPS
+    htp = evhtp_new(elbase, NULL);
+#else
     htp = evhtp_new(evbase, NULL);
-
+#endif
     /* testing for pure c benchmarking*/
     evhtp_set_cb(htp, "/test", testcb, NULL);
 
@@ -3700,11 +3896,23 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         stderr=error_fh;
         stdout=access_fh;            
-
+#ifdef COMBINE_EVLOOPS
+        // if forking, run loop here in child and don't continue with rest of script
+        // script will continue in parent process
+        event_base_loop(elbase, 0);
+#endif
     }
-
+#ifdef COMBINE_EVLOOPS
+//    printstack(ctx);
+    duk_push_global_stash(ctx);
+    duk_pull(ctx,0);
+    duk_put_prop_string(ctx, -2, "funcstash");
+#else
+    //never return
     event_base_loop(evbase, 0);
-    return 0;
+#endif
+    duk_push_int(ctx, (int) getpid() );    
+    return 1;
 }
 
 static const duk_function_list_entry utils_funcs[] = {

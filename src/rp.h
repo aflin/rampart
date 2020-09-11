@@ -166,7 +166,7 @@ extern int   rampart_argc;
 #define printenum(ctx, idx)                                                                                          \
     do                                                                                                               \
     {                                                                                                                \
-        duk_enum((ctx), (idx), DUK_ENUM_INCLUDE_NONENUMERABLE | DUK_ENUM_INCLUDE_HIDDEN | DUK_ENUM_INCLUDE_SYMBOLS); \
+        duk_enum((ctx), (idx), DUK_ENUM_NO_PROXY_BEHAVIOR | DUK_ENUM_INCLUDE_NONENUMERABLE | DUK_ENUM_INCLUDE_HIDDEN | DUK_ENUM_INCLUDE_SYMBOLS); \
         while (duk_next((ctx), -1, 1))                                                                               \
         {                                                                                                            \
             printf("%s -> %s\n", duk_get_string((ctx), -2), duk_safe_to_string((ctx), -1));                          \

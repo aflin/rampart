@@ -184,7 +184,7 @@ void ra_push_response(duk_context *ctx, RESPROTO *response)
   }
   //TODO: else NULL response == Error, push something useful or throw
 }
-
+/* send command for init()/exec() */
 duk_ret_t duk_rp_ra_send(duk_context *ctx)
 {
   RESPCLIENT *rcp;
@@ -200,10 +200,67 @@ duk_ret_t duk_rp_ra_send(duk_context *ctx)
 
   return 1;
 }
+/* **********************************************************
+
+   SQL and RAMIS constructor functions &
+   SQL and RAMIS init function
+
+   ********************************************************** */
+
+/* **************************************************
+   Ramis(host,port) constructor
+   var Ramis = require("rpramis");
+   var ra=new Ramis.init("127.0.0.1",6379);
+
+   ************************************************** */
+duk_ret_t duk_rp_ra_constructor(duk_context *ctx)
+{
+  const char *ip = duk_get_string_default(ctx, 0, "127.0.0.1");
+  int port = (int)duk_get_int_default(ctx, 1, 6379);
+  RESPCLIENT *respClient = NULL;
+
+  if (!duk_is_constructor_call(ctx))
+  {
+    return DUK_RET_TYPE_ERROR;
+  }
+
+  respClient = connectRespServer((char *)ip, port);
+  if (!respClient)
+  {
+    duk_push_sprintf(ctx, "respClient: Failed to connect to %s:%d\n", ip, port);
+    (void)duk_throw(ctx);
+  }
+  // TODO: ask what this should be set to
+  respClient->waitForever = 1;
+  //  respClientWaitForever(respClient,1);
+  duk_push_this(ctx);
+  duk_push_pointer(ctx, (void *)respClient);
+  duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("respclient"));
+  return 0;
+}
+
+/*************** FUNCTION FOR createClient ****************************** */
+#define checkresp do {\
+  /*printenum(ctx,-1);*/\
+  if(duk_has_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("thread_copied") ) ){\
+    int port; const char *ip;\
+    duk_get_prop_string(ctx, -1, "ip");\
+    ip=duk_get_string(ctx, -1);\
+    duk_pop(ctx);\
+    duk_get_prop_string(ctx, -1, "port");\
+    port=duk_get_int(ctx, -1);\
+    duk_pop(ctx);\
+    duk_del_prop_string( ctx, -1, DUK_HIDDEN_SYMBOL("thread_copied") );\
+    rcp= connectRespServer((char *)ip, port);\
+    if(!rcp) RP_THROW(ctx,"could not reconnect to resp server");\
+    duk_push_pointer(ctx, (void *) rcp);\
+    duk_put_prop_string(ctx, -2, "client_p");\
+  }\
+} while(0)
 
 duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
 {
-  RESPCLIENT *rcp;
+  RESPCLIENT *rcp=NULL;
   RESPROTO *response;
   char fmt[1024]={0};
   duk_idx_t top=0, i=0;
@@ -211,9 +268,16 @@ duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
 
   /* get the client */
   duk_push_this(ctx);
-  duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("respclient"));
-  rcp = (RESPCLIENT *)duk_get_pointer(ctx, -1);
+  if( duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("respclient")) ) {
+    checkresp;
+    duk_get_prop_string(ctx, -1, "client_p");
+    rcp = (RESPCLIENT *)duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+  }
   duk_pop_2(ctx);
+
+  if( rcp == NULL )
+    RP_THROW(ctx, "error: ramis - client not connected");
 
   duk_push_current_function(ctx);
   duk_get_prop_string(ctx, -1, "command");
@@ -271,87 +335,101 @@ duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
   return 1;
 }
 
-/* **********************************************************
 
-   SQL and RAMIS constructor functions &
-   SQL and RAMIS init function
+duk_ret_t duk_rp_ramvar_destroy(duk_context *ctx);
+void duk_rp_ramvar_makeproxy(duk_context *ctx);
 
-   ********************************************************** */
+/* normally pointer is in this.  When copied in server.c, 
+   the only place we can copy respclient to is targ */
 
-/* **************************************************
-   Ramis(host,port) constructor
-   var Ramis = require("rpramis");
-   var ra=new Ramis.init("127.0.0.1",6379);
 
-   ************************************************** */
-duk_ret_t duk_rp_ra_constructor(duk_context *ctx)
-{
-  const char *ip = duk_get_string_default(ctx, 0, "127.0.0.1");
-  int port = (int)duk_get_int_default(ctx, 1, 6379);
-  RESPCLIENT *respClient = NULL;
-  char stashvar[32];
+#define getresp(rcp,this_idx,targ_idx) do{\
+  duk_idx_t tidx = duk_normalize_index(ctx, (this_idx) );\
+  if( duk_get_prop_string(ctx, tidx, DUK_HIDDEN_SYMBOL("respclient")) ) {\
+    checkresp;\
+    duk_get_prop_string(ctx, -1, "client_p");\
+    rcp = (RESPCLIENT *)duk_get_pointer(ctx, -1);\
+    duk_pop(ctx);\
+  }\
+  duk_pop(ctx); \
+  if(!rcp){\
+    if( duk_get_prop_string(ctx, (targ_idx), DUK_HIDDEN_SYMBOL("respclient")) ){\
+      checkresp;\
+      duk_get_prop_string(ctx, -1, "client_p");\
+      rcp = (RESPCLIENT *)duk_get_pointer(ctx, -1);\
+      duk_pop(ctx);\
+      duk_put_prop_string(ctx, tidx, DUK_HIDDEN_SYMBOL("respclient"));\
+    }\
+    else duk_pop(ctx);\
+  }\
+} while (0)
 
-  if (!duk_is_constructor_call(ctx))
-  {
-    return DUK_RET_TYPE_ERROR;
-  }
+#define gethname do {\
+  if( duk_get_prop_string(ctx, 0, "_hname") )\
+    hname=duk_get_string(ctx, -1);\
+  duk_pop(ctx);\
+  if(!hname){\
+    if( duk_get_prop_string(ctx, -1, "_hname") ){\
+      hname=duk_get_string(ctx, -1);\
+      duk_put_prop_string(ctx, 0, "_hname");\
+    }\
+    else RP_THROW(ctx, "ramvar: internal error");\
+  }\
+} while(0);
 
-  snprintf(stashvar, 32, "%s:%d", ip, port);
+  /* this does not get carried over and for some reason cannot be
+     added to properties of the proxy object at the bottom of duk_rp_ramvar()
+     constructor function.
+  */
+#define copytotarg do{\
+  if(!duk_has_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("respclient"))\
+    ||\
+    !duk_has_prop_string(ctx, 0, "_destroy") )\
+  {\
+    duk_push_c_function(ctx, duk_rp_ramvar_destroy, 0);\
+    duk_put_prop_string(ctx, 0, "_destroy");\
+\
+    duk_push_string(ctx, hname);\
+    duk_put_prop_string(ctx, 0, "_hname");\
+\
+    if ( duk_get_prop_string(ctx, -1,  DUK_HIDDEN_SYMBOL("respclient")) )\
+    {\
+      if(duk_is_object(ctx, -1) )\
+        duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("respclient"));\
+      else\
+        duk_pop(ctx);\
+    } else duk_pop(ctx);\
+\
+    duk_rp_ramvar_makeproxy(ctx);\
+    duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("proxy_obj"));\
+  }\
+} while(0)
 
-  duk_push_heap_stash(ctx);
-  if (duk_get_prop_string(ctx, -1, stashvar))
-  {
-    respClient = (RESPCLIENT *)duk_get_pointer(ctx, -1);
-  }
-  else
-  {
-    respClient = connectRespServer((char *)ip, port);
-    if (respClient)
-    {
-      duk_push_pointer(ctx, respClient);
-      duk_put_prop_string(ctx, -3, stashvar); /* stack -> [ stash , undefined, pointer ] */
-    }
-  }
-
-  if (!respClient)
-  {
-    duk_push_sprintf(ctx, "respClient: Failed to connect to %s:%d\n", ip, port);
-    (void)duk_throw(ctx);
-  }
-  // TODO: ask what this should be set to
-  respClient->waitForever = 1;
-  //  respClientWaitForever(respClient,1);
-  duk_push_this(ctx);
-  duk_push_pointer(ctx, (void *)respClient);
-  duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("respclient"));
-  return 0;
-}
+/************
+ proxy get
+************* */
 
 duk_ret_t duk_rp_ramvar_get(duk_context *ctx)
 {
-  RESPCLIENT *rcp;
+  RESPCLIENT *rcp=NULL;
   RESPROTO *response;
-  const char *key, *hname;
+  const char *key, *hname=NULL;
   duk_size_t sz;
 
-  /* get the client & hname */
-  duk_push_this(ctx);
-  duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("respclient"));
-  rcp = (RESPCLIENT *)duk_get_pointer(ctx, -1);
-  duk_pop(ctx); // pointer;
-  duk_get_prop_string(ctx, -1, "_hname");
-  hname=duk_get_string(ctx, -1);
-  duk_pop(ctx);
-  
-  
   key=duk_get_string(ctx,1);
   
   /* keys starting with '_' are local only */
-  if(*key == '_' )
+  if(*key == '_'  || *key == '\xff')
   {
     duk_get_prop_string(ctx, 0, key);
     return 1;
   }
+
+  /* get the client & hname */
+  duk_push_this(ctx);
+  getresp(rcp,-1,0);
+  gethname;
+  copytotarg;
 
   if( rcp == NULL )
     RP_THROW(ctx, "error: ramis.ramvar(): container object has been destroyed");    
@@ -370,37 +448,44 @@ duk_ret_t duk_rp_ramvar_get(duk_context *ctx)
   }
   duk_to_buffer(ctx, -1, &sz);
   duk_cbor_decode(ctx, -1, 0);
+//printstack(ctx);
   return 1;  
 }
 
+/************
+ proxy set
+************* */
+
 duk_ret_t duk_rp_ramvar_set(duk_context *ctx)
 {
-  RESPCLIENT *rcp;
+  RESPCLIENT *rcp=NULL;
   RESPROTO *response;
-  const char *key, *hname;
+  const char *key, *hname=NULL;
 
   /* get the client & hname */
   duk_push_this(ctx);
-  duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("respclient"));
-  rcp = (RESPCLIENT *)duk_get_pointer(ctx, -1);
-  duk_pop(ctx); // pointer;
-  duk_get_prop_string(ctx, -1, "_hname");
-  hname=duk_get_string(ctx, -1);
-  duk_pop(ctx);
-  
-  
+  getresp(rcp,-1,0);
+  gethname;
+  copytotarg;
+  /*
+  printf("------------THIS----------\n");
+  printenum(ctx,-1);
+  printf("------------TARG----------\n");
+  printenum(ctx,0);
+  */
+
   key=duk_get_string(ctx,1);
-  
+
   /* keys starting with '_' are local only */
-  if(*key == '_' )
+  if(*key == '_'  || *key == '\xff')
   {
     duk_pull(ctx,2);
-    duk_put_prop_string(ctx, 0, key);
+    duk_put_prop_string(ctx, 3, key);
     return 0;
   }
-
-  if( rcp == NULL )
-    RP_THROW(ctx, "error: ramis.ramvar(): container object has been destroyed");    
+  
+  if( rcp == NULL ) return 0;
+//    RP_THROW(ctx, "error: ramis.ramvar(): container object has been destroyed");    
   
   /* add local copy as null */
   duk_push_null(ctx);
@@ -410,8 +495,8 @@ duk_ret_t duk_rp_ramvar_set(duk_context *ctx)
   duk_remove(ctx, 0);// target;
   duk_remove(ctx, 0);// key
   
-  
-  // idx(0)==val;
+  // now stack[0]==val;
+//printstack(ctx);
   duk_cbor_encode(ctx, 0, 0);
 
   duk_push_sprintf(ctx, "HSET %s %s %%b", hname, key);
@@ -422,25 +507,28 @@ duk_ret_t duk_rp_ramvar_set(duk_context *ctx)
   duk_get_prop_index(ctx, -1, 0);
   return 0;
 }
-
+/************
+ proxy del
+************* */
 
 duk_ret_t duk_rp_ramvar_del(duk_context *ctx)
 {
-  RESPCLIENT *rcp;
+  RESPCLIENT *rcp=NULL;
   RESPROTO *response;
-  const char *key, *hname;
+  const char *key, *hname=NULL;
 
   /* get the client & hname */
   duk_push_this(ctx);
+  getresp(rcp,-1,0);
+  gethname;
+  copytotarg;
+  /*
   duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("respclient"));
   rcp = (RESPCLIENT *)duk_get_pointer(ctx, -1);
+  */
   duk_pop(ctx); // pointer;
-  duk_get_prop_string(ctx, -1, "_hname");
-  hname=duk_get_string(ctx, -1);
-  duk_pop(ctx);
-  
+
   key=duk_get_string(ctx,1);
-  
   duk_del_prop_string(ctx, 0, key);
 
   /* keys starting with '_' are local only */
@@ -450,7 +538,7 @@ duk_ret_t duk_rp_ramvar_del(duk_context *ctx)
   if( rcp == NULL )
     RP_THROW(ctx, "error: ramis.ramvar(): container object has been destroyed");    
   
-  duk_pop_3(ctx);// targ, key, this
+  duk_pop_2(ctx);// targ, key, this
 
   duk_push_sprintf(ctx, "HDEL %s %s", hname, key);
   response = rc_send(ctx, rcp);
@@ -459,12 +547,133 @@ duk_ret_t duk_rp_ramvar_del(duk_context *ctx)
   return 0;
 }
 
+/************
+ destroy proxy
+************* */
+duk_ret_t duk_rp_ramvar_destroy(duk_context *ctx)
+{
+  RESPCLIENT *rcp=NULL;
+  RESPROTO *response;
+  char *hname=NULL;
 
+  /* get the client & hname */
+  duk_push_this(ctx);
+  if( duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("respclient")) )
+  {
+    duk_get_prop_string(ctx, -1, "client_p");
+    rcp = (RESPCLIENT *)duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+  }
+  duk_pop(ctx);
+
+  duk_get_prop_string(ctx, -1, "_hname");
+  hname=strdup( duk_get_string(ctx, -1) );
+  duk_pop(ctx);
+  
+  duk_enum(ctx, -1, DUK_ENUM_NO_PROXY_BEHAVIOR|DUK_ENUM_INCLUDE_HIDDEN);
+  while (duk_next(ctx, -1, 0)) 
+  {
+    printf("deleting %s from this\n", duk_get_string(ctx, -1));
+    duk_del_prop_string(ctx, -3, duk_get_string(ctx, -1));
+    duk_pop(ctx);
+  }
+  duk_pop(ctx);//enum
+
+  if( rcp == NULL )
+    RP_THROW(ctx, "error: ramis.ramvar(): container object has been destroyed");    
+  
+  duk_pop(ctx);// this
+
+  duk_push_sprintf(ctx, "DEL %s", hname);
+  response = rc_send(ctx, rcp);
+  ra_push_response(ctx, response);
+  duk_get_prop_index(ctx, -1, 0);
+  free(hname);
+  return 0;
+}
+
+/************
+ proxy ownKeys
+************* */
+duk_ret_t duk_rp_ramvar_ownkeys(duk_context *ctx)
+{
+  RESPCLIENT *rcp=NULL;
+  RESPROTO *response;
+  const char *hname=NULL;
+
+  /* get the client & hname */
+  duk_push_this(ctx);
+/*
+  printf("------------THIS----------\n");
+  printenum(ctx,-1);
+  printf("------------TARG----------\n");
+  printenum(ctx,0);
+*/
+  getresp(rcp,-1,0);
+  gethname;
+  copytotarg;
+
+  duk_pull(ctx,0);
+  duk_put_prop_string(ctx, -2, "_targ");//get target out of way for now
+  duk_pop(ctx);
+  
+  if( rcp == NULL )
+    RP_THROW(ctx, "error: ramis.ramvar(): container object has been destroyed");    
+  
+  duk_push_sprintf(ctx, "HKEYS %s", hname);
+  response = rc_send(ctx, rcp);
+  ra_push_response(ctx, response);
+  duk_get_prop_index(ctx, -1, 0);
+
+  duk_push_this(ctx);
+  duk_get_prop_string(ctx, -1, "_targ");
+  duk_insert(ctx,0); //put target back at 0
+  duk_del_prop_string(ctx, -1, "_targ");
+  duk_pop(ctx);//this
+
+  duk_enum(ctx, -1, DUK_ENUM_ARRAY_INDICES_ONLY);
+  while (duk_next(ctx, -1, 1))
+  {
+    duk_push_null(ctx);
+    duk_put_prop_string(ctx, 0, duk_get_string(ctx, -2) );
+    duk_pop_2(ctx);
+  }
+  duk_pop(ctx);
+
+  duk_push_string(ctx, "_destroy");
+  duk_put_prop_index(ctx, -2, duk_get_length(ctx, -2) );
+  duk_push_string(ctx, DUK_HIDDEN_SYMBOL("respclient"));
+  duk_put_prop_index(ctx, -2, duk_get_length(ctx, -2) );
+  duk_push_string(ctx, DUK_HIDDEN_SYMBOL("proxy_obj"));
+  duk_put_prop_index(ctx, -2, duk_get_length(ctx, -2) );
+  duk_push_string(ctx, "_hname");
+  duk_put_prop_index(ctx, -2, duk_get_length(ctx, -2) );
+  return 1;
+}
+
+/*******************
+ make the proxy obj
+******************** */
+
+void duk_rp_ramvar_makeproxy(duk_context *ctx)
+{
+  duk_push_object(ctx); //handler
+  duk_push_c_function(ctx, duk_rp_ramvar_ownkeys, 1);
+  duk_put_prop_string(ctx, -2, "ownKeys");
+  duk_push_c_function(ctx, duk_rp_ramvar_get, 2);
+  duk_put_prop_string(ctx, -2, "get");
+  duk_push_c_function(ctx, duk_rp_ramvar_del, 2);
+  duk_put_prop_string(ctx, -2, "deleteProperty");
+  duk_push_c_function(ctx, duk_rp_ramvar_set, 4);
+  duk_put_prop_string(ctx, -2, "set");
+}
+
+/*******************
+ ramvar constructor
+******************** */
 
 duk_ret_t duk_rp_ramvar(duk_context *ctx)
 {
-  void *rcli=NULL;
-
   if (!duk_is_constructor_call(ctx))
     return DUK_RET_TYPE_ERROR;
   
@@ -474,22 +683,17 @@ duk_ret_t duk_rp_ramvar(duk_context *ctx)
   /* copy over the client pointer */
   duk_push_current_function(ctx);
   duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("respclient"));
-  rcli=duk_get_pointer(ctx, -1);  
-  duk_pop_2(ctx);//current_func, pointer
-
-  duk_push_object(ctx); //handler
-  duk_push_c_function(ctx, duk_rp_ramvar_get, 2);
-  duk_put_prop_string(ctx, -2, "get");
-  duk_push_c_function(ctx, duk_rp_ramvar_del, 2);
-  duk_put_prop_string(ctx, -2, "deleteProperty");
-  duk_push_c_function(ctx, duk_rp_ramvar_set, 4);
-  duk_put_prop_string(ctx, -2, "set");
-  duk_push_pointer(ctx, rcli);
+  duk_remove(ctx, -2);
   duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("respclient"));
   duk_pull(ctx, 0);
   duk_put_prop_string(ctx, -2, "_hname");
+  duk_rp_ramvar_makeproxy(ctx);
+  
+  duk_dup(ctx, -1);
+  duk_put_prop_string( ctx, 0, DUK_HIDDEN_SYMBOL("proxy_obj")); 
 
   duk_push_proxy(ctx, 0);  /* new Proxy(this, handler) */
+  
   return 1;
 }
 
@@ -505,46 +709,35 @@ duk_ret_t duk_rp_cc_constructor(duk_context *ctx)
   int port = (int)duk_get_int_default(ctx, 0, 6379);
   const char *ip = duk_get_string_default(ctx, 1, "127.0.0.1");
   RESPCLIENT *respClient = NULL;
-  char stashvar[32];
 
   if (!duk_is_constructor_call(ctx))
   {
     return DUK_RET_TYPE_ERROR;
   }
 
-  snprintf(stashvar, 32, "%s:%d", ip, port);
-
-  duk_push_heap_stash(ctx);
-  if (duk_get_prop_string(ctx, -1, stashvar))
-  {
-    respClient = (RESPCLIENT *)duk_get_pointer(ctx, -1);
-  }
-  else
-  {
-    respClient = connectRespServer((char *)ip, port);
-    if (respClient)
-    {
-      duk_push_pointer(ctx, respClient);
-      duk_put_prop_string(ctx, -3, stashvar); /* stack -> [ stash , undefined, pointer ] */
-    }
-  }
-
+  respClient = connectRespServer((char *)ip, port);
   if (!respClient)
   {
     duk_push_sprintf(ctx, "respClient: Failed to connect to %s:%d\n", ip, port);
     (void)duk_throw(ctx);
   }
+
   // TODO: ask what this should be set to
   respClient->waitForever = 1;
   //  respClientWaitForever(respClient,1);
   duk_push_this(ctx);
-  duk_push_pointer(ctx, (void *)respClient);
-  duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("respclient"));
-
   duk_push_c_function(ctx, duk_rp_ramvar, 1);
 
+  duk_push_object(ctx); //put it in an object so there is only copy with multiple references
   duk_push_pointer(ctx, (void *)respClient);
-  duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("respclient")); // pointer into c_function 
+  duk_put_prop_string(ctx, -2, "client_p");
+  duk_push_string(ctx, ip);
+  duk_put_prop_string(ctx, -2, "ip");
+  duk_push_int(ctx,port);
+  duk_put_prop_string(ctx, -2, "port");
+  duk_dup(ctx, -1);
+  duk_put_prop_string(ctx, -4, DUK_HIDDEN_SYMBOL("respclient")); /* copy on this */
+  duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("respclient")); /* copy on duk_rp_ramvar */
 
   duk_put_prop_string(ctx, -2, "ramvar"); // c_function into this
 
