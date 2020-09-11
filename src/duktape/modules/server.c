@@ -2046,7 +2046,6 @@ static void fork_exec_js(evutil_socket_t fd_ignored, short flags, void *arg)
     char *cbor=NULL;
     duk_size_t bufsz;
     uint32_t msgOutSz = 0;
-
     tprintf("doing fork callback\n");
     if ((eno = duk_pcall(ctx, 1)))
     {
@@ -3194,7 +3193,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 exit(0);
             }
             /* else grandchild */
-
+            event_reinit(elbase);
             /* get first port used */
             if (duk_rp_GPS_icase(ctx, ob_idx, "bind"))
             {
@@ -3898,6 +3897,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
         stderr=error_fh;
         stdout=access_fh;            
 #ifdef COMBINE_EVLOOPS
+        duk_push_global_stash(ctx);
+        duk_pull(ctx,0);
+        duk_put_prop_string(ctx, -2, "funcstash");
         // if forking, run loop here in child and don't continue with rest of script
         // script will continue in parent process
         event_base_loop(elbase, 0);
