@@ -79,6 +79,8 @@ include_directories(
 	${PROJECT_BINARY_DIR}/texis/texisapi 
 	${PROJECT_BINARY_DIR}/texis 
 	${PROJECT_SOURCE_DIR}/texis/include 
+	${LIBEVENT_TARGET_DIR}/include
+	${PROJECT_SOURCE_DIR}/extern/libevent/include
 )
 
 #this is good for later. Right now it interrupts work flow

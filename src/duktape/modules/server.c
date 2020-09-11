@@ -3859,6 +3859,12 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     evhtp_set_pre_accept_cb(htp, pre_accept_callback, NULL);
 
+    if (pthread_mutex_init(&ctxlock, NULL) == EINVAL)
+    {
+        fprintf(stderr, "rpserver.start: could not initialize context lock\n");
+        exit(1);
+    }
+
     if (mthread)
     {
         evhtp_use_threads_wexit(htp, initThread, NULL, nthr, NULL);
@@ -3868,11 +3874,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
         fprintf(access_fh, "in single threaded mode\n");
     }
 
-    if (pthread_mutex_init(&ctxlock, NULL) == EINVAL)
-    {
-        fprintf(stderr, "rpserver.start: could not initialize context lock\n");
-        exit(1);
-    }
     fflush(access_fh);
     fflush(error_fh);
 

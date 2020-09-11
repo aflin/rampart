@@ -11,8 +11,8 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include "rp.h"
-#include "../extern/libevent/include/event.h"
-#include "../extern/libevent/include/event2/thread.h"
+#include "event.h"
+#include "event2/thread.h"
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 char *RP_script_path=NULL;
 
