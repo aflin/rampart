@@ -183,6 +183,7 @@ function gparse(txt,obj)
         var subs=rres[i].submatches;
 
         var url=rex(">>=[^&]+",subs[1])[0];
+        url=sprintf("%!U", url); //un-urlencode the url
         if (!url || !url.length || !/http/.test(url) )
             continue;
 
