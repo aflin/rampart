@@ -27,6 +27,7 @@ char *RP_script_path=NULL;
     "RAMPART__powered_by_Duktape_" DUK_GIT_DESCRIBE
 
 #define RP_REPL_PREFIX "rampart> "
+#define RP_REPL_PREFIX_CONT "... "
 #define RP_REPL_MAX_LINE_SIZE 32768
 #define RP_REPL_HISTORY_LENGTH 256
 struct repl_history
@@ -35,12 +36,15 @@ struct repl_history
     int size;
 };
 
-static void handle_input(struct repl_history *history)
+static void handle_input(struct repl_history *history, char *prefix)
 {
     int cursor_pos = 0;
     int buffer_end = 0;
     int cur_char;
+    int pref_len=strlen(prefix);
     int cur_history_idx = history->size - 1;
+    int history_idx=cur_history_idx;
+    char *curline = calloc(RP_REPL_MAX_LINE_SIZE, 1);
 
     while ((cur_char = getchar()) != '\n')
     {
@@ -48,113 +52,128 @@ static void handle_input(struct repl_history *history)
         {
             getchar();
             int esc_char = getchar();
+
             switch (esc_char)
             {
             case 'A':
             {
-                // arrow down
-                if (cur_history_idx > 0)
+                // arrow up
+                if (history_idx > 0)
                 {
-                    cur_history_idx--;
-                    buffer_end = strlen(history->buffer[cur_history_idx]);
+                    if(history_idx == cur_history_idx)
+                        strcpy(history->buffer[cur_history_idx], curline);
+
+                    history_idx--;
+                    strcpy(curline, history->buffer[history_idx]);
+                    buffer_end = strlen(curline);
                     // clear line, move to col 1, print repl prefix
-                    printf("%s%s%s", "\033[2K", "\033[1G", RP_REPL_PREFIX);
+                    printf("%s%s%s", "\033[2K", "\033[1G", prefix);
                     // print out buffer from history
-                    printf("%s", history->buffer[cur_history_idx]);
+                    printf("%s", curline);
                     // move to correct position and update cursor pos
-                    cursor_pos = cursor_pos > buffer_end ? buffer_end : cursor_pos;
-                    printf("\033[%luG", strlen(RP_REPL_PREFIX) + cursor_pos + 1);
+                    cursor_pos=buffer_end;
+                    printf("\033[1G\033[%dC", pref_len + cursor_pos);
                 }
                 break;
             }
             case 'B':
-                // arrow up
-                if (cur_history_idx + 1 < history->size)
+                // arrow down
+                if (history_idx < cur_history_idx)
                 {
-                    cur_history_idx++;
-                    buffer_end = strlen(history->buffer[cur_history_idx]);
+                    history_idx++;
+                    strcpy(curline, history->buffer[history_idx]);
+                    buffer_end = strlen(curline);
                     // clear line, move to col 1, print repl prefix
-                    printf("%s%s%s", "\033[2K", "\033[1G", RP_REPL_PREFIX);
+                    printf("%s%s%s", "\033[2K", "\033[1G", prefix);
                     // print out buffer from history
-                    printf("%s", history->buffer[cur_history_idx]);
+                    printf("%s", curline);
                     // move to correct position and update cursor pos
-                    cursor_pos = cursor_pos > buffer_end ? buffer_end : cursor_pos;
-                    printf("\033[%luG", strlen(RP_REPL_PREFIX) + cursor_pos + 1);
+                    cursor_pos=buffer_end;
+                    printf("\033[1G\033[%dC", pref_len + cursor_pos);
                 }
                 break;
             case 'C':
+                // arrow right
                 if (cursor_pos < buffer_end)
                 {
                     printf("%s", "\033[1C");
                     cursor_pos++;
                 }
-                // code for arrow right
                 break;
             case 'D':
+                // arrow left
                 if (cursor_pos > 0)
                 {
                     printf("%s", "\033[1D");
                     cursor_pos--;
                 }
-                // code for arrow left
                 break;
             }
         }
         else
         {
-            char *line_buffer = history->buffer[cur_history_idx];
-            line_buffer[buffer_end] = cur_char;
+            curline[buffer_end] = cur_char;
             if (cur_char == '\177')
             {
                 // delete character
                 if (cursor_pos <= 0)
                     continue;
-                printf("%s%s%s", "\033[2K", "\033[1G", RP_REPL_PREFIX);
-                memmove(line_buffer + cursor_pos - 1, line_buffer + cursor_pos,
+                printf("%s%s%s", "\033[2K", "\033[1G", prefix);
+                memmove(curline + cursor_pos - 1, curline + cursor_pos,
                         buffer_end - cursor_pos + 1);
-                line_buffer[buffer_end] = '\0';
+                curline[buffer_end] = '\0';
                 buffer_end--;
-                printf("%.*s", buffer_end, line_buffer);
+                printf("%.*s", buffer_end, curline);
                 cursor_pos--;
-                printf("\033[%luG", strlen(RP_REPL_PREFIX) + cursor_pos + 1);
+                printf("\033[%dG", pref_len + cursor_pos + 1);
             }
             else
             {
-                if (cursor_pos >= RP_REPL_MAX_LINE_SIZE)
+                if (cursor_pos >= RP_REPL_MAX_LINE_SIZE-1)
                     continue;
 
-                printf("%s%s%s", "\033[2K", "\033[1G", RP_REPL_PREFIX);
-                memmove(line_buffer + cursor_pos + 1, line_buffer + cursor_pos,
+                printf("%s%s%s", "\033[2K", "\033[1G", prefix);
+                memmove(curline + cursor_pos + 1, curline + cursor_pos,
                         buffer_end - cursor_pos);
-                line_buffer[cursor_pos] = cur_char;
+                curline[cursor_pos] = cur_char;
                 buffer_end++;
-                printf("%.*s", buffer_end, line_buffer);
+                printf("%.*s", buffer_end, curline);
                 cursor_pos++;
-                printf("\033[%luG", strlen(RP_REPL_PREFIX) + cursor_pos + 1);
+                printf("\033[%dG", pref_len + cursor_pos + 1);
             }
         }
     }
-    history->buffer[cur_history_idx][buffer_end] = '\0';
+//    curline[buffer_end++] = '\n';
+    curline[buffer_end] = '\0';
+    
     printf("\n");
     // copy any changed history into current line
 //printf("Line IS '%s'\n",history->buffer[cur_history_idx]);
-    memcpy(history->buffer[history->size - 1], history->buffer[cur_history_idx],
-           strlen(history->buffer[cur_history_idx]));
+    strcpy(history->buffer[cur_history_idx], curline);
+    free(curline);
 }
 
 static int repl(duk_context *ctx)
 {
     struct repl_history history;
     history.size = 0;
+    char *prefix=RP_REPL_PREFIX;
+    size_t line_len=0;
+    int multiline=0;
 
     printf("%s", RP_REPL_GREETING);
     putchar('\n');
 
     while (1)
     {
-        printf("%s", RP_REPL_PREFIX);
+        if(multiline)
+            prefix=RP_REPL_PREFIX_CONT;
+        else
+            prefix=RP_REPL_PREFIX;
 
-        char *line = malloc(RP_REPL_MAX_LINE_SIZE);
+        printf("%s", prefix);
+
+        char *line = calloc(RP_REPL_MAX_LINE_SIZE, 1);
         if (history.size < RP_REPL_HISTORY_LENGTH)
         {
             history.buffer[history.size] = line;
@@ -172,33 +191,52 @@ static int repl(duk_context *ctx)
             history.buffer[RP_REPL_HISTORY_LENGTH - 1] = line;
         }
 
-        handle_input(&history);
+        handle_input(&history, prefix);
 
         // ignore empty input
-        while (strlen(line) == 0)
+        while ((line_len=strlen(line)) == 0)
         {
-            printf("%s", RP_REPL_PREFIX);
-            handle_input(&history);
+            printf("%s", prefix);
+            handle_input(&history, prefix);
         }
 
-        // line too long
+/*        // line too long
         if (line[RP_REPL_MAX_LINE_SIZE - 1] == '\n')
         {
             printf("Line too long. The max line size is %d", RP_REPL_MAX_LINE_SIZE);
             continue;
         }
+*/
+        // add line with nl.  remove it later to preserve single line history entry.
+        line[line_len]= '\n';
+        duk_push_lstring(ctx, line, line_len+1);
+
+        if(multiline) duk_concat(ctx,2);  //combine with last line if last loop set multiline=1
+
+        duk_dup(ctx, -1);// duplicate in case multiline
+        multiline=0;
 
         // evaluate input
-        duk_push_string(ctx, line);
-        if (duk_peval(ctx) != 0)
+       if (duk_peval(ctx) != 0)
         {
-            printf("%s\n", duk_safe_to_string(ctx, -1));
+            const char *err=duk_safe_to_string(ctx, -1);
+            if(strstr(err, "end of input")) //command likely spans multiple lines
+            {
+                multiline=1;
+            }
+            else
+                printf("ERR: %s\n", err);
         }
         else
         {
             printf("%s\n", duk_safe_to_stacktrace(ctx, -1));
         }
-        duk_pop(ctx);
+        line[line_len]= '\0';
+
+        duk_pop(ctx); //the results
+
+        //if not multiline, get rid of extra copy of last line
+        if(!multiline) duk_pop(ctx);
     }
     return 0;
 }
