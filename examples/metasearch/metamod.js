@@ -103,13 +103,16 @@ function add_res(obj,url,eng,title,desc,pos)
     if(undefined == obj[url])
         obj[url]={lowestpos:999999999};
 
-    obj[url][eng]={
+    if(!obj[url][eng])
+    {
+      obj[url][eng]={
         title:title,
         desc:desc,
         pos:pos,
-    }
-    if(pos < obj[url].lowestpos)
+      }
+      if(pos < obj[url].lowestpos)
         obj[url].lowestpos=pos;
+    }
 }
 
 
@@ -183,7 +186,7 @@ function gparse(txt,obj)
         var subs=rres[i].submatches;
 
         var url=rex(">>=[^&]+",subs[1])[0];
-        url=sprintf("%!U", url); //un-urlencode the url
+        url=sprintf("%!U", url);
         if (!url || !url.length || !/http/.test(url) )
             continue;
 

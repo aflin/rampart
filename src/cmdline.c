@@ -764,7 +764,7 @@ int main(int argc, char *argv[])
 
     {
         char *file_src=NULL, *free_file_src=NULL, *fn=NULL, *s;
-        const char *bfn;
+        const char *babel_source_filename;
         FILE *entry_file;
         struct stat entry_file_stat;
         size_t src_sz=0;
@@ -856,7 +856,7 @@ int main(int argc, char *argv[])
                 s=strchr(file_src,'\n');
 
                 /* leave '\n' to preserve line numbering */
-                if(!s || !*s)
+                if(!s)
                 {
                     duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read beyond first line in entry file '%s'\n", fn);
                     fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
@@ -888,7 +888,7 @@ int main(int argc, char *argv[])
             elbase = event_base_new();
 
             /* push babelized source to stack if available */
-            if (! (bfn=duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime)) )
+            if (! (babel_source_filename=duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime)) )
             {
                 /* No babel, normal compile */
                 duk_push_string(ctx, file_src);
@@ -898,8 +898,8 @@ int main(int argc, char *argv[])
             else
             {
                 /* babel src on stack, push babel filename */
-                duk_push_string(ctx, bfn);
-                free((char*)bfn);
+                duk_push_string(ctx, babel_source_filename);
+                free((char*)babel_source_filename);
             }
 
             free(free_file_src);

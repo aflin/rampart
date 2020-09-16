@@ -40,7 +40,7 @@ var pid=server.start(
     scriptTimeout: 20.0, /* max time to spend in JS */
     connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
     useThreads: true, /* make server multi-threaded. */
-    user: "unpriv-user",
+    user: "nobody",
     //log: true,           //turn logging on, by default goes to stdout/stderr
     //accessLog: "./access.log",    //access log location, instead of stdout
     //errorLog: "./error.log",     //error log location, instead of stderr
