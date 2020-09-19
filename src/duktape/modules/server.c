@@ -1700,6 +1700,7 @@ static void *http_dothread(void *arg)
     }
     /* a function might conditionally run a c function that sets "threadsafe" false
        check again if this has changed */
+
     duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("threadsafe"));
     if (duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx,-1) )
     {
@@ -2031,10 +2032,7 @@ EVFDATA {
 
 extern struct event_base *elbase;
 
-//#define FORK_NO_EVENTLOOP
-#ifndef FORK_NO_EVENTLOOP
-struct timeval evtimeout={0,0};
-#endif
+struct timeval evimmediate={0,0};
 
 static void fork_exec_js(evutil_socket_t fd_ignored, short flags, void *arg)
 {
@@ -2125,9 +2123,7 @@ static void fork_read_request(evutil_socket_t fd_ignored, short flags, void *arg
     duk_context *ctx = dhs->ctx;
     int par2child = data->par2child;
     uint32_t msgOutSz = 0;
-#ifndef FORK_NO_EVENTLOOP
     fcntl(par2child, F_SETFL, 0);
-#endif
 
     /* wait here for the next request and get it's size */
     childread(par2child, &msgOutSz, sizeof(uint32_t));
@@ -2177,14 +2173,9 @@ static void fork_read_request(evutil_socket_t fd_ignored, short flags, void *arg
     getfunction(dhs);
     /* move message/object to top */
     duk_pull(ctx,-2);
-#ifndef FORK_NO_EVENTLOOP
-    {
+
     fork_exec_js(-1,0,data);
-//        struct event *ev=event_new(elbase, -1, EV_WRITE, fork_exec_js, data);
-//        event_add(ev, &evtimeout);
-    }
     fcntl(par2child, F_SETFL, O_NONBLOCK);
-#endif
 }
 
 static void
@@ -2269,6 +2260,8 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         RP_TX_isforked=1; /* mutex locking not necessary in fork */
         struct sigaction sa;
         evhtp_connection_t *conn = evhtp_request_get_connection(req);
+        struct event *ev;
+
         EVFDATA data_s={0}, *data=&data_s;
 
         memset(&sa, 0, sizeof(struct sigaction));
@@ -2296,60 +2289,28 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         data->child2par=child2par[1];
         data->have_threadsafe_val=have_threadsafe_val;
         data->conn=conn;
+        /* TODO: find why this causes delay/hang
         event_reinit(elbase);
-#ifdef FORK_NO_EVENTLOOP
         event_base_loopbreak(elbase); //stop event loop in the child
         event_base_free(elbase); // free it
+        */
         elbase = event_base_new(); // redo it
+
         duk_push_global_stash(ctx);
         duk_push_pointer(ctx, (void*)elbase);
         duk_put_prop_string(ctx, -2, "elbase");
         duk_pop(ctx);
-        do
-        {
-            /* 
-                In first loop, req info is on the stack since we just forked.
-                In subsequent loops, req info is piped in and will be on top of stack
-                  in the same position (as set at bottom of this do/while loop.
-            */
 
-            fork_exec_js(0,0,(void*)data);
+        //do the first js exec once here
+        ev=event_new(elbase, -1, 0,  fork_exec_js, data);
+        event_add(ev, &evimmediate);
+        /* make pipe non-blocking */
+        fcntl(data->par2child, F_SETFL, O_NONBLOCK);
+        ev=event_new(elbase, data->par2child, EV_PERSIST|EV_READ,  fork_read_request, data);
+        event_add(ev, NULL);
+        /* start new event loop here */
+        event_base_loop(elbase, 0);
 
-            /* run whatever is in the loop now and exit loop 
-               major drawback is that if event is scheduled for 
-               later, there's no guarantee it will run, let alone run on time
-             */
-            event_base_loop(elbase, EVLOOP_NONBLOCK);
-
-            /*  NEW TRANSACTION STARTS HERE */
-            fork_read_request(0,0,(void*)data);
-            /* loop to top to execute function */
-        } while (1);
-#else
-        {
-            struct event *ev;
-
-            event_base_loopbreak(elbase); //stop event loop in the child
-            event_base_free(elbase); // free it
-            elbase = event_base_new(); // redo it
-
-            duk_push_global_stash(ctx);
-            duk_push_pointer(ctx, (void*)elbase);
-            duk_put_prop_string(ctx, -2, "elbase");
-            duk_pop(ctx);
-
-            //do the first js exec once here
-            ev=event_new(elbase, -1, 0,  fork_exec_js, data);
-            event_add(ev, &evtimeout);
-            /* make pipe non-blocking */
-            fcntl(data->par2child, F_SETFL, O_NONBLOCK);
-            ev=event_new(elbase, data->par2child, EV_PERSIST|EV_READ,  fork_read_request, data);
-            event_add(ev, NULL);
-            
-            /* start new event loop here */
-            event_base_loop(elbase, 0);
-        }
-#endif
         close(child2par[1]);
         exit(0);
     }

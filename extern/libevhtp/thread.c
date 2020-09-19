@@ -37,26 +37,6 @@ struct evthr_pool {
     evthr_pool_slist_t threads;
 };
 
-struct evthr {
-    int             rdr;
-    int             wdr;
-    char            err;
-    ev_t          * event;
-    evbase_t      * evbase;
-    pthread_mutex_t lock;
-    pthread_t     * thr;
-    evthr_init_cb   init_cb;
-    evthr_exit_cb   exit_cb;
-    void          * arg;
-    void          * aux;
-
-#ifdef EVTHR_SHARED_PIPE
-    int            pool_rdr;
-    struct event * shared_pool_ev;
-#endif
-    TAILQ_ENTRY(evthr) next;
-};
-
 #define _evthr_read(thr, cmd, sock) \
     (recv(sock, cmd, sizeof(evthr_cmd_t), 0) == sizeof(evthr_cmd_t)) ? 1 : 0
 
@@ -238,6 +218,8 @@ _evthr_new(evthr_init_cb init_cb, evthr_exit_cb exit_cb, void * args)
     thread->rdr     = fds[0];
     thread->wdr     = fds[1];
 
+    thread->busy    = 0;
+
     thread->init_cb = init_cb;
     thread->exit_cb = exit_cb;
 
@@ -354,8 +336,9 @@ get_backlog_(evthr_t * thread)
     int backlog = 0;
 
     ioctl(thread->rdr, FIONREAD, &backlog);
-
-    return (int)(backlog / sizeof(evthr_cmd_t));
+    /* added thread->busy. If still in callback, don't return 0.
+         Instead, we should use another thread that isn't busy --ajf */
+    return (int)(backlog / sizeof(evthr_cmd_t) + thread->busy);
 }
 
 evthr_res

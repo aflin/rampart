@@ -2005,7 +2005,16 @@ htp__request_parse_fini_(htparser * p)
      *
      */
     if (c->request && c->request->cb) {
-        (c->request->cb)(c->request, c->request->cbarg);
+        if (c->thread)
+        {
+            /* flag that we are in the callback to facilitate
+                a wise choice of threads for next request --ajf */
+            c->thread->busy=1;
+            (c->request->cb)(c->request, c->request->cbarg);
+            c->thread->busy=0;
+        }
+        else
+            (c->request->cb)(c->request, c->request->cbarg);
     }
 
     if (c->flags & EVHTP_CONN_FLAG_PAUSED) {
@@ -2192,7 +2201,11 @@ check_proto:
         size_t len=evbuffer_get_length(request->buffer_out);
         if (len) {
             evbuffer_add_buffer(buf, request->buffer_out);
-
+            /* a compromise for whatever bug causes the major slowdown if
+                we are using ssl and the buffer is not contiguous 
+                https://github.com/criticalstack/libevhtp/issues/160
+                --ajf
+            */
             if (request->conn->htp->ssl_ctx != NULL && len <= 5242880)
                 evbuffer_pullup(buf,-1);
         }

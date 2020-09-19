@@ -5,6 +5,10 @@
 #ifndef __EVTHR_H__
 #define __EVTHR_H__
 
+#ifndef WIN32
+#include <sys/queue.h>
+#endif
+
 #include <pthread.h>
 #include <event2/event.h>
 #include <evhtp/config.h>
@@ -56,6 +60,27 @@ EVHTP_EXPORT void           evthr_pool_free(evthr_pool_t * pool);
 
 EVHTP_EXPORT evthr_t      * evthr_wexit_new(evthr_init_cb, evthr_exit_cb, void * shared);
 EVHTP_EXPORT evthr_pool_t * evthr_pool_wexit_new(int nthreads, evthr_init_cb, evthr_exit_cb, void *);
+
+struct evthr {
+    int             rdr;
+    int             wdr;
+    int             busy;
+    char            err;
+    ev_t          * event;
+    evbase_t      * evbase;
+    pthread_mutex_t lock;
+    pthread_t     * thr;
+    evthr_init_cb   init_cb;
+    evthr_exit_cb   exit_cb;
+    void          * arg;
+    void          * aux;
+
+#ifdef EVTHR_SHARED_PIPE
+    int            pool_rdr;
+    struct event * shared_pool_ev;
+#endif
+    TAILQ_ENTRY(evthr) next;
+};
 
 #ifdef __cplusplus
 }
