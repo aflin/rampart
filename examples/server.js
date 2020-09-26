@@ -1,13 +1,35 @@
-/* make printf et. al. global */
+/* *******************************************************************
+     This example demonstrates most of the functionality of the http server
+     as well as some from the sql module.
+
+     The first part sets up a test database for use by the http server.
+
+     The second part defines functions used as callbacks for the http server
+
+     The third part sets up and runs the http server.
+
+   ******************************************************************* */
+
+
+/* 
+    Put printf et. al. into the global namespace
+    For convenience so that one can use
+        printf("...")
+    in place of
+        rampart.utils.printf("...");
+*/
 rampart.globalize(rampart.utils);
 
 /* load the http server module */
 var server=require("rpserver");
 
+/* ***********  PART I - sql db setup ************* */
+
 /* load sql database module */
 var Sql=require("rpsql");
 
-/* sql module can be loaded here (better) or in callback functions (minor check overhead).
+/* 
+   sql module can be loaded here (better) or in callback functions (minor check overhead).
      If used to create database, the overhead is not minor, and should be done here rather
      than repeatedly in a callback
 */
@@ -46,11 +68,10 @@ if(res.results.length==0) {
     console.log(res);
 }
 
-
 /* *******************************************************************************
-sample calls to sql with/without callback
-with callback returns one row at a time, and can be cancelled by returning false
-without callback returns an array of rows.
+sample calls to sql with/without callback for illustration purposes.
+With callback returns one row at a time, and can be cancelled by returning false
+Without callback returns an array of rows.
 Rows are returned as one of 4 different return types:
     default -- object or array of objects {col1name:val1,col2name:val2...
     array   -- [val1, val2, ..]
@@ -106,15 +127,13 @@ res=sql.exec("select * from inserttest",
 console.log(res);
 */
 
+/* ***********  PART II - Callback functions for http server ************* */
 
-/* ******************************************************
-   Callbacks for server test
-   ****************************************************** */
 
 /* 
    Since the http server is multithreaded, and the javascript interpreter
-   is not, each thread must have its own javascript heap where the callback
-   will be copied.
+   is not, each thread has its own javascript stack/heap and all callback
+   will be copied to each thread/stack/heap.
    Globally declared functions and server callback functions
    below will be copied to each thread's stack.  Scoped variables that are 
    not global will not be copied.
@@ -122,6 +141,8 @@ console.log(res);
    as variables copied to each stack will only be local to that thread.
 */
 
+
+/* randomly insert and update a table 10 times*/
 function inserttest_callback(req,allinserts){
     /* randpic function is naturally accessible to 
        inserttest_callback()
@@ -148,7 +169,6 @@ function inserttest_callback(req,allinserts){
 
     if (rp<insertmax)
     {
-//        console.log("insert");
         for (var i=0;i<10;i++)
         {
           res=sql.exec(
@@ -159,10 +179,9 @@ function inserttest_callback(req,allinserts){
     }
     else if (rp<50)
     {
-//        console.log("delete")
           res=sql.exec(
             "delete from inserttest",
-            /* Won't fix: skipped rows are deleted too 
+            /* WARNING: skipped rows are deleted too 
             {skip:10,max:10,returnType:"novars"} -> 20 rows deleted
             */
             /* 
@@ -172,11 +191,9 @@ function inserttest_callback(req,allinserts){
             */
             {max:10,returnType:"novars"}
           );
-        //console.log(res);
     }
     else
     {
-//        console.log("select");
         res=sql.exec(
             "select * from inserttest where I > ?",
             [5],
@@ -201,36 +218,39 @@ function inserttest_callback(req,allinserts){
 }
 
 function simple_callback(req){
-//    var Sql=require("rpsql");
-//    var sql=new Sql.init('./testdb');
+    /* since Sql and sql vars are global, they copied to each thread
+        and it is not necessary to re-require() or re-init() on
+        each invocation of this callback
+    */
+    //var Sql=require("rpsql");
+    //var sql=new Sql.init('./testdb');
     var arr=sql.exec(
         'select * from quicktest',
         {max:1}
     );
-    /* default mime type is text/plain, if just given a string */
+    /* default mime type is text/plain in the case where 
+        a string is returned instead of an object */
     return(JSON.stringify(arr));
 }
-
-/* print out some info about the request */
-
 
 /* this works as expected since x.func is global
  
    If this entire script was wrapped in a function and that function was called,
    this would produce an error since x.func would no longer be global.
-   Best practice currently is to put functions you need inside the callback
-   function and treat each callback as if it were its own script, and
-   as if it is being executed and exits after each webpage is served.
+   Best practice for functions in the main script is to put functions 
+   you need inside the callback function and treat each callback as if 
+   it were its own script, and as if it is being executed and exits after 
+   each webpage is served.
 */ 
 
 var x={msg:"HELLO WORLD",func:simple_callback};
-
 
 function globalRef_callback(req){
     return ( x.func(req) );
 }
 
-/* currently a redis server must be running */
+
+/* a redis server must be running on its default port*/
 function ramistest(req) {
     var ra=new Ramis();
     var insertvar="0123456789abcdef";
@@ -263,14 +283,53 @@ function ramistest(req) {
     return("OK");
 }
 
+/* this is a sample function to return a webpage listing the contents of a directory.
+   see directoryFunc in server.start() below.  This function is the same as the
+   built in server.defaultDirList() function.
+*/
+
+function dirlist(req) {
+    var html="<html><head><title>Index of " + 
+        req.path.path+ 
+        "</title><style>td{padding-right:22px;}</style></head><body><h1>"+
+        req.path.path+
+        '</h1><hr><table>';
+
+    function hsize(size) {
+        var ret=sprintf("%d",size);
+        if(size >= 1073741824)
+            ret=sprintf("%.1fG", size/1073741824);
+        else if (size >= 1048576)
+            ret=sprintf("%.1fM", size/1048576);
+        else if (size >=1024)
+            ret=sprintf("%.1fk", size/1024); 
+        return ret;
+    }
+
+    if(req.path.path != '/')
+        html+= '<tr><td><a href="../">Parent Directory</a></td><td></td><td>-</td></tr>';
+    readdir(req.fsPath).sort().forEach(function(d){
+        var st=stat(req.fsPath+'/'+d);
+        if (st.isDirectory())
+            d+='/';
+        html=sprintf('%s<tr><td><a href="%s">%s</a></td><td>%s</td><td>%s</td></tr>',
+            html, d, d, st.mtime.toLocaleString() ,hsize(st.size));
+    });
+    
+    html+="</table></body></html>";
+    return {html:html};
+}
+
+
 printf("\ntry a url like http://127.0.0.1:8088/showreq.html?var1=val1&color=red&size=15\n");
 printf("or see a sample website at http://127.0.0.1:8088/\n\nSTARTING SERVER:\n");
 
-/* 
+/* ****************************   PART III ***************************************** 
     Configuration and Start of Webserver:
-    server.start() never returns and no code after this will be run
 
-    It will be started with one thread per cpu core, or with the number configured 
+    By default, the server is run in a single thread.  If useThreads is set to true,
+    the server will start with one thread per cpu core, or with the number configured 
+
     Each thread has its own JS interpreter/stack/heap.
     Global variables and ECMA functions from the main thread will be copied
     to all of the server threads.  Modules loaded before server starts
@@ -280,6 +339,11 @@ printf("or see a sample website at http://127.0.0.1:8088/\n\nSTARTING SERVER:\n"
     Functions are copied as compiled bytecode. Not all functionality will 
     transfer.  See the Bytecode limitations section here: 
     https://github.com/svaarala/duktape/blob/master/doc/bytecode.rst
+
+    Best practice for full and expected functionality and flexibility is to 
+    define callbacks using {module: function} or {modulePath: path}
+
+    All limitations apply regardless of whether the server is single or multi-threaded.
 */
 
 var pid=server.start(
@@ -310,17 +374,17 @@ var pid=server.start(
     /* make server multi-threaded. */
     useThreads: true,
     /*  By default, number of threads is set to cpu core count.
-        This has no effect unless useThreads is set true.
+        "threads" has no effect unless useThreads is set true.
         The number can be changed here:
     */
     //threads: 8, /* for a 4 core, 8 virtual core hyper-threaded processor. */
 
     /* 
-        for https support, this is the minimum number of options needed:
+        for https support, these three are the minimum number of options needed:
     */
 //    secure:true,
-    sslKeyFile:  "/etc/letsencrypt/live/mydom.com/privkey.pem",
-    sslCertFile: "/etc/letsencrypt/live/mydom.com/fullchain.pem",
+//    sslKeyFile:  "/etc/letsencrypt/live/mydom.com/privkey.pem",
+//    sslCertFile: "/etc/letsencrypt/live/mydom.com/fullchain.pem",
 
     /* sslMinVersion (ssl3|tls1|tls1.1|tls1.2). "tls1.2" is default*/
     // sslMinVersion: "tls1.2",
@@ -335,6 +399,19 @@ var pid=server.start(
         }
     },    
 
+    /* if a function is given, directoryFunc will be called each time a url
+        which corresponds to a directory is called if there is no index.htm(l)
+        present in the directory.  Added to the normal request object
+        will be the property (string) "fsPath" (req.fsPath), which can be used
+        to create a directory listing.  See function dirlist() above.
+        It is substantially equivelant to the built-in server.defaultDirList function.
+
+        If directoryFunc is not set, a url pointing to a directory without an index.htm(l)
+        will return a 403 Forbidden error.
+    */
+    //directoryFunc: dirlist,
+    directoryFunc: server.defaultDirList,
+
     /* **********************************************************
        map urls to functions or paths on the filesystem 
        If it ends in a '/' then matches everything in that path
@@ -343,9 +420,9 @@ var pid=server.start(
     map:
     {
         /*
-            filesystem mappings are always folders.  
-             "/tetris"    becomes  "/tetris/
-             "./mPurpose" becomes  "./mPurpose/"
+            filesystem mappings are always folders. Thus:
+               "/tetris"    becomes  "/tetris/
+               "./mPurpose" becomes  "./mPurpose/"
         */
         "/":                  "./mPurpose",
         "/tetris":            "./tetris-tutorial/",
@@ -356,28 +433,50 @@ var pid=server.start(
         "/globalref.html":    globalRef_callback,
         "/ramistest" :        ramistest,
 
-        /* matching a glob to a function */
         /* 
-            use function from module "servermod.js" 
-            changes to servermod.js do not require a server restart.
+            matching a glob to a function:
+              http://localhost:8088/showreq/ and
+              http://localhost:8088/showreq/show.html and
+              http://localhost:8088/showreq.html 
+            all match this function
+        
+        */
+        /* 
+            This example also uses the function from 
+             the module "servermod.js". Changes to a 
+             {module: function} or files in {modulePath: path}
+             while the server is running do not require a 
+             server restart, and thus should be the preferred
+             method of url-to-function mapping.
         */
         "/showreq*":          {module:"servermod"},
 
+        /* this also works. However you lose the ability to update 
+            the module while the server is running              */
+        //"/showreq*":          require("servermod.js"),
+
         /* 
-            load modules dynamically from a path 
-            file additions or changes do not require a server restart.
+            Load modules dynamically from a path.
+            File additions, deletions and changes do not 
+             require a server restart.
         */
         "/modtest/":	      {modulePath:"./servermods/"}
     }
 });
 
-// if daemon==true then we get the pid of the detached process
-// otherwise server.start() never returns
+/* 
+    If daemon==true then server.start() returns the pid of the detached 
+    process and begins immediately. 
 
-/* give the forked server a chance to print its info*/
-rampart.utils.sleep(0.2);
+    Otherwise server.start() returns the pid of the current process and 
+    the server functions are processed from within the duktape main 
+    event loop.  The main event loop starts at the end of the script.
+*/
 
-/* check that it is running */
+/* if daemon==true/forking, give the forked server a chance to print its info*/
+//rampart.utils.sleep(0.2);
+
+/* if daemon==true  - check that forked daemon is running */
 if(rampart.utils.kill(pid,0))
     console.log("pid of rampart-server: " + pid);
 else

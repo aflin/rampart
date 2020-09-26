@@ -101,13 +101,15 @@ DHS
     duk_context *ctx;       // duk context for this thread (updated in thread)
     evhtp_request_t *req;   // the evhtp request struct for the current request (updated in thread, upon each request)
     struct timeval timeout; // timeout for the duk script
-    int threadno;           // our current thread number
-    int module;             // is normal fuction if 0, 1 is js module, 2 js module needs reload.
-    int pathlen;            // length of the url path if module==MODULE_PATH
+    uint16_t threadno;      // our current thread number
+    uint16_t pathlen;       // length of the url path if module==MODULE_PATH
     char *module_name;      // name of the module 
+    void *aux;              // generic pointer - currently used for dirlist()
+    char module;            // is normal fuction if 0, 1 is js module, 2 js module needs reload.
 };
 
 DHS *dhs404 = NULL;
+DHS *dhs_dirlist = NULL;
 
 /* mapping for url to filesystem */
 #define DHMAP struct fsmap_s
@@ -531,6 +533,12 @@ void push_req_vars(DHS *dhs)
     duk_size_t bsz;
     void *buf=NULL;
 
+    /* aux is the local filesystem path for directory listing */
+    if(dhs->aux)
+    {
+        putval("fsPath",(const char *) dhs->aux);
+    }
+
     /* get ip address */
     sa_to_string(sa, address, sizeof(address));
     putval("ip", address);
@@ -752,7 +760,20 @@ static void send403(evhtp_request_t *req)
 
 static void dirlist(evhtp_request_t *req, char *fn)
 {
-    send403(req);
+    if (!dhs_dirlist)
+    {
+        send403(req);
+        return;
+    }
+    
+    DHS newdhs;
+
+    newdhs.func_idx = dhs_dirlist->func_idx;
+    newdhs.timeout  = dhs_dirlist->timeout;
+    newdhs.pathlen  = dhs_dirlist->pathlen;
+    newdhs.module   = dhs_dirlist->module;
+    newdhs.aux = (void *)fn;
+    http_callback(req, (void *) &newdhs);
 }
 
 #define CTXFREER struct ctx_free_buffer_data_str
@@ -960,14 +981,17 @@ fileserver(evhtp_request_t *req, void *arg)
     evhtp_path_t *path = req->uri->path;
     struct stat sb;
     /* take 2 off of key for the slash and * and add 1 for '\0' and one more for a potential '/' */
-    char fn[strlen(map->val) + strlen(path->full) + 4 - strlen(map->key)];
+    char *s, fn[strlen(map->val) + strlen(path->full) + 4 - strlen(map->key)];
     mode_t mode;
     int i = 0;
 
     dhs->req = req;
 
     strcpy(fn, map->val);
-    strcpy(&fn[strlen(map->val)], path->full + strlen(map->key) - 1);
+    s=duk_rp_url_decode( path->full, strlen(path->full) );
+    strcpy(&fn[strlen(map->val)], s + strlen(map->key) - 1);
+    free(s);
+
     if (stat(fn, &sb) == -1)
     {
         /* 404 goes here */
@@ -1026,16 +1050,19 @@ static void sendbuf(DHS *dhs)
         duk_to_dynamic_buffer(ctx, -1, &sz);
         s = duk_steal_buffer(ctx, -1, &sz);
         freeme->ctx = ctx;
-        freeme->threadno = dhs->threadno;
+        freeme->threadno = (int)dhs->threadno;
         evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, refcb, freeme);
     }
     else
     /* duk_to_buffer does a copy on a string, so we'll just skip that and copy directly */
     {
         s= duk_get_lstring(ctx, -1, &sz);
-        if (*s == '\\' && *(s + 1) == '@')
-            s++;
-        evbuffer_add(dhs->req->buffer_out,s,(size_t)sz);
+        if(s)
+        {
+            if (*s == '\\' && *(s + 1) == '@')
+                s++;
+            evbuffer_add(dhs->req->buffer_out,s,(size_t)sz);
+        }
     }
 }
 
@@ -2197,7 +2224,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
     /* use waitpid to eliminate the possibility of getting a process that isn't our child */
     if (finfo->childpid && !waitpid(finfo->childpid, &pidstatus, WNOHANG))
     {
-        tprintf("module=%d\n",dhs->module);
+        tprintf("module=%d\n",(int)dhs->module);
         /* module changed, so must refork */
         if(dhs->module==MODULE_FILE_RELOAD)
             killfork;
@@ -2671,10 +2698,11 @@ static void http_callback(evhtp_request_t *req, void *arg)
     newdhs.req = req;
     newdhs.func_idx = dhs->func_idx;
     newdhs.timeout = dhs->timeout;
-    newdhs.threadno = thrno;
+    newdhs.threadno = (uint16_t)thrno;
     newdhs.pathlen = dhs->pathlen;
     newdhs.module=dhs->module;
     newdhs.module_name=NULL;
+    newdhs.aux=dhs->aux;
     dhs = &newdhs;
     if(dhs->module==MODULE_FILE)
     {
@@ -2826,6 +2854,7 @@ void exitcb(evhtp_request_t *req, void *arg)
     exit(0);
 }
 
+/* TODO: revisit whether DHSA is necessary */
 #define DHSA struct dhs_array
 DHSA
 {
@@ -2844,6 +2873,7 @@ static DHS *new_dhs(duk_context *ctx, int idx)
     dhs->module_name=NULL;
     dhs->ctx = ctx;
     dhs->req = NULL;
+    dhs->aux = NULL;
     dhs->pathlen=0;
     /* afaik there is no TIME_T_MAX */
     dhs->timeout.tv_sec = RP_TIME_T_FOREVER;
@@ -3395,7 +3425,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             {   /* map to function or module */
                 /* copy the function to array at stack pos 0 */
                 const char *fname;
-                int mod=MODULE_NONE;
+                char mod=MODULE_NONE;
 
                 if (duk_is_function(ctx, -1))
                 {
@@ -3439,6 +3469,57 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         duk_pop(ctx);
 
+        /* directory listing page/function */
+        if (duk_rp_GPS_icase(ctx, ob_idx, "directoryFunc"))
+        {
+            if ( duk_is_object(ctx,-1) )
+            {   /* map to function or module */
+                /* copy the function to array at stack pos 0 */
+                const char *fname;
+                char mod=MODULE_NONE;
+
+                if (duk_is_function(ctx, -1))
+                {
+                    duk_get_prop_string(ctx, -1, "name");
+                    fname = duk_get_string(ctx, -1);
+                    duk_pop(ctx);
+                    fprintf(access_fh, "mapping function   %-20s ->    function %s()\n", "Directory List", fname);
+                }
+                else if (duk_get_prop_string(ctx,-1, "module") )
+                {
+                    fname = duk_get_string(ctx, -1);
+                    duk_pop(ctx);
+                    fprintf(access_fh, "mapping function   %-20s ->    module:%s\n", "Directory List", fname);
+                    mod=MODULE_FILE;
+                }
+                else
+                    RP_THROW(ctx, "rpserver.start: Option for directoryFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
+
+                /* copy function into array at pos 0 in stack and into index fpos in array */
+                duk_put_prop_index(ctx, 0, fpos);
+
+                dhs_dirlist = new_dhs(ctx, fpos);
+                dhs_dirlist->module=mod;
+
+                dhs_dirlist->timeout.tv_sec = dhs->timeout.tv_sec;
+                dhs_dirlist->timeout.tv_usec = dhs->timeout.tv_usec;
+                /* copy function to all the heaps/ctxs */
+                if(mod)
+                {
+                    for (i=0;i<totnthreads;i++)
+                        copy_mod_func(ctx, thread_ctx[i], fpos);
+                }
+                else
+                    copy_cb_func(dhs_dirlist, totnthreads);
+
+                fpos++;
+            }
+            else
+                RP_THROW(ctx, "rpserver.start: Option for directoryFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
+
+        }
+        duk_pop(ctx);
+
         if (duk_rp_GPS_icase(ctx, ob_idx, "map"))
         {
             if (duk_is_object(ctx, -1) && !duk_is_function(ctx, -1) && !duk_is_array(ctx, -1))
@@ -3464,7 +3545,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         /* copy the function to array at stack pos 0 */
                         DHS *cb_dhs;
                         const char *fname;
-                        int mod=MODULE_NONE;
+                        char mod=MODULE_NONE;
 
                         path = (char *)duk_to_string(ctx, -2);
                         DUKREMALLOC(ctx, s, strlen(path) + 2);
@@ -3879,6 +3960,39 @@ duk_ret_t duk_server_start(duk_context *ctx)
     return 1;
 }
 
+#define DIRLISTFUNC \
+"    function (req) {\n"\
+"        var html=\"<html><head><title>Index of \" + \n"\
+"            req.path.path+ \n"\
+"            \"</title><style>td{padding-right:22px;}</style></head><body><h1>\"+\n"\
+"            req.path.path+\n"\
+"            '</h1><hr><table>';\n"\
+"\n"\
+"        function hsize(size) {\n"\
+"            var ret=rampart.utils.sprintf(\"%d\",size);\n"\
+"            if(size >= 1073741824)\n"\
+"                ret=rampart.utils.sprintf(\"%.1fG\", size/1073741824);\n"\
+"            else if (size >= 1048576)\n"\
+"                ret=rampart.utils.sprintf(\"%.1fM\", size/1048576);\n"\
+"            else if (size >=1024)\n"\
+"                ret=rampart.utils.sprintf(\"%.1fk\", size/1024); \n"\
+"            return ret;\n"\
+"        }\n"\
+"\n"\
+"        if(req.path.path != '/')\n"\
+"            html+= '<tr><td><a href=\"../\">Parent Directory</a></td><td></td><td>-</td></tr>';\n"\
+"        rampart.utils.readdir(req.fsPath).sort().forEach(function(d){\n"\
+"            var st=rampart.utils.stat(req.fsPath+'/'+d);\n"\
+"            if (st.isDirectory())\n"\
+"                d+='/';\n"\
+"            html=rampart.utils.sprintf('%s<tr><td><a href=\"%s\">%s</a></td><td>%s</td><td>%s</td></tr>',\n"\
+"                html, d, d, st.mtime.toLocaleString() ,hsize(st.size));\n"\
+"        });\n"\
+"        \n"\
+"        html+=\"</table></body></html>\";\n"\
+"        return {html:html};\n"\
+"    }\n"
+
 static const duk_function_list_entry utils_funcs[] = {
     {"start", duk_server_start, 2 /*nargs*/},
     {NULL, NULL, 0}};
@@ -3891,6 +4005,9 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_object(ctx);
     duk_put_function_list(ctx, -1, utils_funcs);
     duk_put_number_list(ctx, -1, utils_consts);
+
+    duk_compile_string(ctx, DUK_COMPILE_FUNCTION, DIRLISTFUNC);
+    duk_put_prop_string(ctx, -2, "defaultDirList");
 
     return 1;
 }

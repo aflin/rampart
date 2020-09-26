@@ -126,11 +126,12 @@ RPPATH rp_find_path(char *file, char *subdir)
     char homedir[strlen(home)+strlen(homesubdir)+1];
     char *loc="./";
     char *sd= (subdir)?subdir:"";
-    RPPATH ret;
+    RPPATH ret={0};
     char path[PATH_MAX];
     int i=0;
     struct stat sb;
 
+    if(!file) return ret;
     /* look for it as given before searching paths */
     if (stat(file, &sb) != -1)
     {
