@@ -3962,7 +3962,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
 #define DIRLISTFUNC \
 "    function (req) {\n"\
-"        var html=\"<html><head><title>Index of \" + \n"\
+"        var html=\"<!DOCTYPE html>\\n\"+\n"\
+"        '<html><head><meta charset=\"UTF-8\"><title>Index of ' + \n"\
 "            req.path.path+ \n"\
 "            \"</title><style>td{padding-right:22px;}</style></head><body><h1>\"+\n"\
 "            req.path.path+\n"\

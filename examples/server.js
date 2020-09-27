@@ -289,7 +289,8 @@ function ramistest(req) {
 */
 
 function dirlist(req) {
-    var html="<html><head><title>Index of " + 
+    var html="<!DOCTYPE html>\n"+
+        '<html><head><meta charset="UTF-8"><title>Index of ' + 
         req.path.path+ 
         "</title><style>td{padding-right:22px;}</style></head><body><h1>"+
         req.path.path+
