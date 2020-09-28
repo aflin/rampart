@@ -108,6 +108,8 @@ target_link_libraries(rpsql
 	m
 	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
 ) 
+add_dependencies(rpsql texis)
+
 # libre2 needs to be linked by c++
 set_target_properties(rpsql PROPERTIES LINKER_LANGUAGE CXX )
 
