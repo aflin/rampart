@@ -5,60 +5,92 @@ var crypto = require("rpcrypto");
 
 testmodes();
 
-console.log(
-  "sha256 hash of 'hello world'\n",
-  crypto.sha256("hello world")
-);
+function testFeature(name,test)
+{
+    var error=false;
+    if (typeof test =='function'){
+        try {
+            test=test();
+        } catch(e) {
+            error=e;
+            test=false;
+        }
+    }
+    rampart.utils.printf("testing %-40s - ", name);
+    if(test)
+        rampart.utils.printf("passed\n")
+    else
+        rampart.utils.printf(">>>>> FAILED <<<<<\n");
+    if(error) console.log(error);
+}
 
-console.log("hexify of crypto.rand(32):\n",hexify(crypto.rand(32)));
-
-var encBuffer = crypto.encrypt({
-  key: "01234567890123456789012345678901",
-  iv: "0123456789012345",
-  cipher: "aes-256-cbc",
-  data: "encrypt and decrypt of a string with key,iv and aes-256-cbc"
+testFeature( "sha256 hash of 'hello world'", function(){
+  var res=crypto.sha256("hello world");
+  return res=='b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9';
 });
 
-var decBuffer = crypto.decrypt({
-  key: "01234567890123456789012345678901",
-  iv: "0123456789012345",
-  cipher: "aes-256-cbc",
-  data: encBuffer,
+
+testFeature("hexify of crypto.rand(32):",function(){
+  var res=hexify(crypto.rand(32));
+  return res.length==64;
 });
 
-console.log("Crypto (k/iv): ", bufferToString(decBuffer));
 
-encBuffer= crypto.encrypt("mypassword","encrypt and decrypt of a string with password and aes-256-cbc");
+testFeature("en/decrypt with key,iv and aes-256-cbc",function(){
+  var encBuffer = crypto.encrypt({
+    key: "01234567890123456789012345678901",
+    iv: "0123456789012345",
+    cipher: "aes-256-cbc",
+    data: "encrypt and decrypt of a string with key,iv and aes-256-cbc"
+  });
 
-decBuffer = crypto.decrypt("mypassword",encBuffer);
-
-
-console.log("Crypto (pass): ", bufferToString(decBuffer));
-
-
-var file=readFile("crypto.js");
-
-var hash=crypto.sha512(file);
-
-encBuffer = crypto.encrypt({
-  pass: "whodathunk",
-  iter: 50000,
-  cipher: "aes-256-cbc",
-  data: file
+  var decBuffer = crypto.decrypt({
+    key: "01234567890123456789012345678901",
+    iv: "0123456789012345",
+    cipher: "aes-256-cbc",
+    data: encBuffer,
+  });
+  return "encrypt and decrypt of a string with key,iv and aes-256-cbc" == bufferToString(decBuffer); 
 });
 
-decBuffer = crypto.decrypt({
-  pass: "whodathunk",
-  iter: 50000,
-  cipher: "aes-256-cbc",
-  data: encBuffer,
+testFeature("en/decrypt with password, no options", function(){
+  var encBuffer = crypto.encrypt("mypassword","encrypt and decrypt of a string with password and aes-256-cbc");
+  var decBuffer = crypto.decrypt("mypassword",encBuffer);
+
+  return "encrypt and decrypt of a string with password and aes-256-cbc" == bufferToString(decBuffer);
 });
 
-var comphash= crypto.sha512(decBuffer);
+testFeature("en/decrypt with password, with options", function(){
+
+  var file=readFile("crypto-test.js");
+
+  var hash=crypto.sha512(file);
+
+  encBuffer = crypto.encrypt({
+    pass: "whodathunk",
+    iter: 50000,
+    cipher: "aes-256-cbc",
+    data: file
+  });
+
+  decBuffer = crypto.decrypt({
+    pass: "whodathunk",
+    iter: 50000,
+    cipher: "aes-256-cbc",
+    data: encBuffer,
+  });
+
+  var comphash= crypto.sha512(decBuffer);
+  return comphash==hash;
+});
+
+
+/*
 printf("\ncrypt of this file with aes-256-cbc (sha512 hashes before and after):\n%s\n%s\n",hash,comphash);
 fprintf("crypto-copy.js.enc","%B",encBuffer);
 printf("using openssl 1.1, you can decode the written file with this:\n%s\n",
         '    openssl aes-256-cbc -d -in crypto-copy.js.enc -out crypto-copy.js -p -pbkdf2 -iter 50000 -k "whodathunk"');
+*/
 
 function testmodes()
 {
@@ -134,7 +166,7 @@ function testmodes()
   var pass=";lkjhgfdsaqwer";
   for (i=0;i<mcodes.length;i++)
   {
-    printf("test %s:\n",modes[mcodes[i]]);
+    printf("testing %-40s - ",modes[mcodes[i]]);
     try{
       encBuffer = crypto.encrypt({
         pass: pass,
@@ -148,13 +180,13 @@ function testmodes()
         data: encBuffer,
       });
     } catch(e) {
-      printf("%s - >>>>> UNSUPPORTED <<<<<\n",mcodes[i]);
+      printf(">>>>> UNSUPPORTED <<<<<\n");
       continue;
     }
       
     if(plaintext==bufferToString(decBuffer))
-      printf("%s - ok\n",mcodes[i]);
+      printf("passed\n");
     else
-      printf("%s - >>>>> FAILED <<<<<\n",mcodes[i]);
+      printf(">>>>> FAILED <<<<<\n");
   }
 }

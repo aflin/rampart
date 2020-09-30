@@ -563,14 +563,16 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
 {
     unsigned int flags, width, precision, n;
     size_t idx = 0U;
+    duk_size_t len=0;
     int preserveUfmt = 0;
-    const char *format = PF_REQUIRE_STRING(ctx, fidx++);
+    const char	*format = PF_REQUIRE_LSTRING(ctx, fidx++, &len),
+                *format_end=format+len;
     if (!buffer)
     {
         // use null output function
         out = _out_null;
     }
-    while (*format)
+    while (format<format_end)
     {
         // format specifier?  %[flags][width][.precision][length]
         if (*format != '%')
@@ -869,7 +871,8 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             }
             //no ++
             //no break
-        case 's':
+        /* NO COERSION for upper case 'S' */
+        case 'S':
         string:
         {
             const char *p = PF_REQUIRE_STRING(ctx, fidx++);
@@ -904,6 +907,39 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             {
                 duk_replace(ctx, fidx - 1);
                 preserveUfmt = 0;
+            }
+            format++;
+            break;
+        }
+        /* 's' == with coersion */
+        case 's':
+        {
+            const char *p = duk_safe_to_string(ctx, fidx++);
+            unsigned int l = _strnlen_s(p, precision ? precision : (size_t)-1);
+            // pre padding
+            if (flags & FLAGS_PRECISION)
+            {
+                l = (l < precision ? l : precision);
+            }
+            if (!(flags & FLAGS_LEFT))
+            {
+                while (l++ < width)
+                {
+                    out(' ', buffer, idx++, maxlen);
+                }
+            }
+            // string output
+            while ((*p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
+            {
+                out(*(p++), buffer, idx++, maxlen);
+            }
+            // post padding
+            if (flags & FLAGS_LEFT)
+            {
+                while (l++ < width)
+                {
+                    out(' ', buffer, idx++, maxlen);
+                }
             }
             format++;
             break;
