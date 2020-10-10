@@ -121,7 +121,7 @@ RPPATH rp_find_path(char *file, char *subdir)
     int nlocs=2;
     /* look in these locations and in ./ */
     char *locs[nlocs];
-    char *home=getenv("HOME");
+    char *home=( getenv("HOME") ? getenv("HOME") : "/tmp" );
     char *rampart_path=getenv("RAMPART_PATH");
     char homedir[strlen(home)+strlen(homesubdir)+1];
     char *loc="./";
@@ -154,8 +154,12 @@ RPPATH rp_find_path(char *file, char *subdir)
     }
 
 //printf("looking for file %s%s\n",subdir,file);
-    if(!home || access(home, R_OK)==-1) home="/tmp";
-
+    //if(!home || access(home, R_OK)==-1) home="/tmp";
+    if ( access(home, R_OK)==-1 )
+    {
+        fprintf(stderr, "cannot access %s\nEither your home directory or \"/tmp\"\" must exist and be accessible.\n", home);
+        exit(1);
+    }
     strcpy(homedir,home);
     strcat(homedir,homesubdir);
     locs[0]=homedir;

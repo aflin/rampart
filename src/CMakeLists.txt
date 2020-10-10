@@ -240,7 +240,6 @@ install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
     \"${PROJECT_BINARY_DIR}/src/babel.js\" \
     \"${PROJECT_BINARY_DIR}/src/babel-polyfill.js\" \
-    \"${PROJECT_BINARY_DIR}/src/ramis.js\" \
     \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
     )"
 )

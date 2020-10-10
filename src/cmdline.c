@@ -143,12 +143,10 @@ static void handle_input(struct repl_history *history, char *prefix)
             }
         }
     }
-//    curline[buffer_end++] = '\n';
     curline[buffer_end] = '\0';
     
     printf("\n");
     // copy any changed history into current line
-//printf("Line IS '%s'\n",history->buffer[cur_history_idx]);
     strcpy(history->buffer[cur_history_idx], curline);
     free(curline);
 }
@@ -347,7 +345,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     opt=checkbabel(src);
     if(!opt) return NULL;
 
-    /* check if polyfill already loaded */
+    /* check if polyfill is already loaded */
     duk_eval_string(ctx,"global._babelPolyfill");
     if(duk_get_boolean_default(ctx,-1,0))
     {
@@ -491,13 +489,13 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
                 }
                 else
                 {
-                    read=fread(babelcode,1,babstat.st_size,f);
+                    read=fread(babelcode, 1, babstat.st_size, f);
 
                     if(read != babstat.st_size)
                     {
-                        fprintf(stderr,"error fread(): error reading file '%s'\n",babelsrc);
+                        fprintf(stderr,"error fread(): error reading file '%s'\n", babelsrc);
                     }
-                    duk_push_lstring(ctx,babelcode,(duk_size_t)babstat.st_size);
+                    duk_push_lstring(ctx, babelcode, (duk_size_t)babstat.st_size);
                     free(babelcode);
                     babelcode=(char *)duk_get_string(ctx,-1);
                     fclose(f);
@@ -621,7 +619,7 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat)
     if( duk_get_prop_string(ctx, -1, "elbase") )
         base=duk_get_pointer(ctx, -1);
     duk_pop_2(ctx);
-    
+
     if(!base)
         RP_THROW(ctx, "event base not fount in global stash");    
 
@@ -658,14 +656,14 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat)
     /* create a new event for js callback and specify the c callback to handle it*/
     evargs->e = event_new(base, -1, EV_PERSIST, rp_el_doevent, evargs);
 
-    /* add event */
+    /* add event; return object { hidden(eventargs): evargs_pointer, eventId: evargs->key} */
     event_add(evargs->e, &timeout);
-//printf("added event\n");
     duk_push_object(ctx);
     duk_push_pointer(ctx,(void*)evargs);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("eventargs") );
     duk_push_number(ctx,evargs->key);
     duk_put_prop_string(ctx, -2, "eventId");
+
     return 1;
 }
 
@@ -714,6 +712,7 @@ int main(int argc, char *argv[])
 {
     struct rlimit rlp;
     int filelimit = 16384, lflimit = filelimit, isstdin=0;
+    struct stat entry_file_stat;
 
     /* for later use */
     rampart_argv=argv;
@@ -755,18 +754,20 @@ int main(int argc, char *argv[])
     argc--;
     argv++;
 
-    /* skip to filename, if any */
-    while( argc > 1)
+    /* check if filename is first, for #! script */
+    if(argc>0 && (stat(argv[0], &entry_file_stat)))
     {
-        argc--;
-        argv++;
+        /* skip to filename, if any, which should be last */
+        while( argc > 1)
+        {
+            argc--;
+            argv++;
+        }
     }
-
     {
         char *file_src=NULL, *free_file_src=NULL, *fn=NULL, *s;
         const char *babel_source_filename;
         FILE *entry_file;
-        struct stat entry_file_stat;
         size_t src_sz=0;
         
         if (argc == 0)
@@ -867,7 +868,9 @@ int main(int argc, char *argv[])
                 file_src=s;
             }
 
-            /* set up event loop */
+            /* ********** set up event loop *************** */
+
+            /* setTimeout and related functions */
             duk_push_c_function(ctx,duk_rp_set_timeout,2);
             duk_put_global_string(ctx,"setTimeout");
             duk_push_c_function(ctx, duk_rp_clear_either, 1);
@@ -887,6 +890,12 @@ int main(int argc, char *argv[])
             evthread_use_pthreads();
             elbase = event_base_new();
 
+            /* stash our event base for this ctx */
+            duk_push_global_stash(ctx);
+            duk_push_pointer(ctx, (void*)elbase);
+            duk_put_prop_string(ctx, -2, "elbase");
+            duk_pop(ctx);
+
             /* push babelized source to stack if available */
             if (! (babel_source_filename=duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime)) )
             {
@@ -904,11 +913,6 @@ int main(int argc, char *argv[])
 
             free(free_file_src);
 
-            /* stash our event base for this ctx */
-            duk_push_global_stash(ctx);
-            duk_push_pointer(ctx, (void*)elbase);
-            duk_put_prop_string(ctx, -2, "elbase");
-            duk_pop(ctx);
 
             /* run the script */
             if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)

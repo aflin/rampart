@@ -32,12 +32,6 @@ testFeature("polyfill loaded",
     global._babelPolyfill
 );
 
-/* Babel bug? no chrome fails on this as well. 
-testFeature("parse return on separate line", function(){ return
-    true;
-});
-*/
-
 /* from http://es6-features.org/ */
 /*
     Copyright © 2015-2017 Ralf S. Engelschall    @engelschall
@@ -624,7 +618,42 @@ testFeature("2018 - tagged literal replacement",function(){
     return greetings == "Hello  Raja! Good Day!";
 });
 
+try {
+  function msgAfterTimeout (msg, msg2, timeout) {
+      return new Promise((resolve, reject) => {
+          setTimeout(() => resolve(`${msg}${msg2}`), timeout)
+      })
+  }
+  msgAfterTimeout("Foo", "", 10).then(
+    (msg) => msgAfterTimeout(msg, "Bar", 10)
+  ).then((msg) => {
+      testFeature("Async - Promises/setTimeout", msg=="FooBar");
+  });
+} catch (e) {
+  testFeature("Async - Promises/setTimeout", false);
+}
+
+try {
+  function resolveAfter2ms() {
+    return new Promise(resolve => {
+      setTimeout(() => {
+        resolve('resolved');
+      }, 2);
+    });
+  }
+
+  async function asyncCall() {
+    const result = await resolveAfter2ms();
+    testFeature("Async - Promises/async function", result=="resolved");
+  }
+
+  asyncCall();
+
+} catch (e) {
+  testFeature("Async - Promises/async function", false);
+}
 
 //TODO: finish 2018
-
-printf("NOT TESTED:  RE sticky flag, Internationalization and all polyfills that require setTimeout (async await etc).\n");
+setTimeout(function(){
+  printf("NOT TESTED:  RE sticky flag and Internationalization\n");
+},100);
