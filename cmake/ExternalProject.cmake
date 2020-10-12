@@ -16,9 +16,7 @@ External Project Definition
 
   The ``ExternalProject_Add()`` function creates a custom target to drive
   download, update/patch, configure, build, install and test steps of an
-  external project:
-
-  .. code-block:: cmake
+  external project::
 
     ExternalProject_Add(<name> [<option>...])
 
@@ -49,11 +47,7 @@ External Project Definition
 
     ``STAMP_DIR <dir>``
       Directory in which to store the timestamps of each step. Log files from
-      individual steps are also created in here unless overridden by LOG_DIR
-      (see *Logging Options* below).
-
-    ``LOG_DIR <dir>``
-      Directory in which to store the logs of each step.
+      individual steps are also created in here (see *Logging Options* below).
 
     ``DOWNLOAD_DIR <dir>``
       Directory in which to store downloaded files before unpacking them. This
@@ -96,7 +90,6 @@ External Project Definition
       SOURCE_DIR   = <prefix>/src/<name>
       BINARY_DIR   = <prefix>/src/<name>-build
       INSTALL_DIR  = <prefix>
-      LOG_DIR      = <STAMP_DIR>
 
     Otherwise, if the ``EP_BASE`` directory property is set then components
     of an external project are stored under the specified base::
@@ -107,7 +100,6 @@ External Project Definition
       SOURCE_DIR   = <base>/Source/<name>
       BINARY_DIR   = <base>/Build/<name>
       INSTALL_DIR  = <base>/Install/<name>
-      LOG_DIR      = <STAMP_DIR>
 
     If no ``PREFIX``, ``EP_PREFIX``, or ``EP_BASE`` is specified, then the
     default is to set ``PREFIX`` to ``<name>-prefix``. Relative paths are
@@ -202,24 +194,23 @@ External Project Definition
         :command:`file(DOWNLOAD)`)
 
       ``NETRC <level>``
-        Specify whether the ``.netrc`` file is to be used for operation.
-        If this option is not specified, the value of the ``CMAKE_NETRC``
-        variable will be used instead (see :command:`file(DOWNLOAD)`)
+        Specify whether the .netrc file is to be used for operation. If this
+        option is not specified, the value of the ``CMAKE_NETRC`` variable
+        will be used instead (see :command:`file(DOWNLOAD)`)
         Valid levels are:
 
         ``IGNORED``
-          The ``.netrc`` file is ignored.
+          The .netrc file is ignored.
           This is the default.
         ``OPTIONAL``
-          The ``.netrc`` file is optional, and information in the URL
-          is preferred.  The file will be scanned to find which ever
-          information is not specified in the URL.
+          The .netrc file is optional, and information in the URL is preferred.
+          The file will be scanned to find which ever information is not specified
+          in the URL.
         ``REQUIRED``
-          The ``.netrc`` file is required, and information in the URL
-          is ignored.
+          The .netrc file is required, and information in the URL is ignored.
 
       ``NETRC_FILE <file>``
-        Specify an alternative ``.netrc`` file to the one in your home directory
+        Specify an alternative .netrc file to the one in your home directory
         if the ``NETRC`` level is ``OPTIONAL`` or ``REQUIRED``. If this option
         is not specified, the value of the ``CMAKE_NETRC_FILE`` variable will
         be used instead (see :command:`file(DOWNLOAD)`)
@@ -252,23 +243,13 @@ External Project Definition
           The lack of such deterministic behavior makes the main project lose
           traceability and repeatability.
 
-        If ``GIT_SHALLOW`` is enabled then ``GIT_TAG`` works only with
-        branch names and tags.  A commit hash is not allowed.
-
       ``GIT_REMOTE_NAME <name>``
         The optional name of the remote. If this option is not specified, it
         defaults to ``origin``.
 
       ``GIT_SUBMODULES <module>...``
         Specific git submodules that should also be updated. If this option is
-        not provided, all git submodules will be updated. When :policy:`CMP0097`
-        is set to ``NEW`` if this value is set to an empty string then no submodules
-        are initialized or updated.
-
-      ``GIT_SUBMODULES_RECURSE <bool>``
-        Specify whether git submodules (if any) should update recursively by
-        passing the ``--recursive`` flag to ``git submodule update``.
-        If not specified, the default is on.
+        not provided, all git submodules will be updated.
 
       ``GIT_SHALLOW <bool>``
         When this option is enabled, the ``git clone`` operation will be given
@@ -429,10 +410,6 @@ External Project Definition
       different behavior depending on whether the build starts from a fresh
       build directory or re-uses previous build contents.
 
-      If the CMake generator is the ``Green Hills MULTI`` and not overridden then
-      the original project's settings for the GHS toolset and target system
-      customization cache variables are propagated into the external project.
-
     ``SOURCE_SUBDIR <dir>``
       When no ``CONFIGURE_COMMAND`` option is specified, the configure step
       assumes the external project has a ``CMakeLists.txt`` file at the top of
@@ -440,9 +417,7 @@ External Project Definition
       can be used to point to an alternative directory within the source tree
       to use as the top of the CMake source tree instead. This must be a
       relative path and it will be interpreted as being relative to
-      ``SOURCE_DIR``.  When ``BUILD_IN_SOURCE 1`` is specified, the
-      ``BUILD_COMMAND`` is used to point to an alternative directory within the
-      source tree.
+      ``SOURCE_DIR``.
 
   **Build Step Options:**
     If the configure step assumed the external project uses CMake as its build
@@ -540,17 +515,13 @@ External Project Definition
   **Output Logging Options:**
     Each of the following ``LOG_...`` options can be used to wrap the relevant
     step in a script to capture its output to files. The log files will be
-    created in ``LOG_DIR`` if supplied or otherwise the ``STAMP_DIR``
-    directory with step-specific file names.
+    created in the ``STAMP_DIR`` directory with step-specific file names.
 
     ``LOG_DOWNLOAD <bool>``
       When enabled, the output of the download step is logged to files.
 
     ``LOG_UPDATE <bool>``
       When enabled, the output of the update step is logged to files.
-
-    ``LOG_PATCH <bool>``
-      When enabled, the output of the patch step is logged to files.
 
     ``LOG_CONFIGURE <bool>``
       When enabled, the output of the configure step is logged to files.
@@ -563,18 +534,6 @@ External Project Definition
 
     ``LOG_TEST <bool>``
       When enabled, the output of the test step is logged to files.
-
-    ``LOG_MERGED_STDOUTERR <bool>``
-      When enabled, stdout and stderr will be merged for any step whose
-      output is being logged to files.
-
-    ``LOG_OUTPUT_ON_FAILURE <bool>``
-      This option only has an effect if at least one of the other ``LOG_<step>``
-      options is enabled.  If an error occurs for a step which has logging to
-      file enabled, that step's output will be printed to the console if
-      ``LOG_OUTPUT_ON_FAILURE`` is set to true.  For cases where a large amount
-      of output is recorded, just the end of that output may be printed to the
-      console.
 
   **Terminal Access Options:**
     Steps can be given direct access to the terminal in some cases. Giving a
@@ -649,9 +608,7 @@ External Project Definition
       appended to them by following them with as many ``COMMAND ...`` options
       as needed
       (:manual:`generator expressions <cmake-generator-expressions(7)>` are
-      supported). For example:
-
-      .. code-block:: cmake
+      supported). For example::
 
         ExternalProject_Add(example
           ... # Download options, etc.
@@ -670,9 +627,7 @@ Obtaining Project Properties
 .. command:: ExternalProject_Get_Property
 
   The ``ExternalProject_Get_Property()`` function retrieves external project
-  target properties:
-
-  .. code-block:: cmake
+  target properties::
 
     ExternalProject_Get_Property(<name> <prop1> [<prop2>...])
 
@@ -700,9 +655,7 @@ control needed to implement such step-level capabilities.
 
   The ``ExternalProject_Add_Step()`` function specifies an additional custom
   step for an external project defined by an earlier call to
-  :command:`ExternalProject_Add`:
-
-  .. code-block:: cmake
+  :command:`ExternalProject_Add`::
 
     ExternalProject_Add_Step(<name> <step> [<option>...])
 
@@ -752,7 +705,7 @@ control needed to implement such step-level capabilities.
 
   ``LOG <bool>``
     If set, this causes the output from the custom step to be captured to files
-    in the external project's ``LOG_DIR`` if supplied or ``STAMP_DIR``.
+    in the external project's ``STAMP_DIR``.
 
   ``USES_TERMINAL <bool>``
     If enabled, this gives the custom step direct access to the terminal if
@@ -769,9 +722,7 @@ control needed to implement such step-level capabilities.
 
   The ``ExternalProject_Add_StepTargets()`` function generates targets for the
   steps listed. The name of each created target will be of the form
-  ``<name>-<step>``:
-
-  .. code-block:: cmake
+  ``<name>-<step>``::
 
     ExternalProject_Add_StepTargets(<name> [NO_DEPENDS] <step1> [<step2>...])
 
@@ -822,9 +773,7 @@ control needed to implement such step-level capabilities.
   The ``ExternalProject_Add_StepDependencies()`` function can be used to add
   dependencies to a step. The dependencies added must be targets CMake already
   knows about (these can be ordinary executable or library targets, custom
-  targets or even step targets of another external project):
-
-  .. code-block:: cmake
+  targets or even step targets of another external project)::
 
     ExternalProject_Add_StepDependencies(<name> <step> <target1> [<target2>...])
 
@@ -1023,9 +972,6 @@ function(_ep_parse_arguments f name ns args)
       endif()
     else()
       set(key "${arg}")
-      if(key MATCHES GIT)
-       get_property(have_key TARGET ${name} PROPERTY ${ns}${key} SET)
-      endif()
     endif()
   endforeach()
 endfunction()
@@ -1070,7 +1016,12 @@ define_property(DIRECTORY PROPERTY "EP_UPDATE_DISCONNECTED" INHERITED
   "ExternalProject module."
   )
 
-function(_ep_write_gitclone_script script_filename source_dir git_EXECUTABLE git_repository git_tag git_remote_name init_submodules git_submodules_recurse git_submodules git_shallow git_progress git_config src_name work_dir gitclone_infofile gitclone_stampfile tls_verify)
+function(_ep_write_gitclone_script script_filename source_dir git_EXECUTABLE git_repository git_tag git_remote_name git_submodules git_shallow git_progress git_config src_name work_dir gitclone_infofile gitclone_stampfile tls_verify)
+  if(NOT GIT_VERSION_STRING VERSION_LESS 1.7.10)
+    set(git_clone_shallow_options "--depth 1 --no-single-branch")
+  else()
+    set(git_clone_shallow_options "--depth 1")
+  endif()
   if(NOT GIT_VERSION_STRING VERSION_LESS 1.8.5)
     # Use `git checkout <tree-ish> --` to avoid ambiguity with a local path.
     set(git_checkout_explicit-- "--")
@@ -1080,59 +1031,62 @@ function(_ep_write_gitclone_script script_filename source_dir git_EXECUTABLE git
     # because that will not search for remote branch names, a common use case.
     set(git_checkout_explicit-- "")
   endif()
-  if("${git_tag}" STREQUAL "")
-    message(FATAL_ERROR "Tag for git checkout should not be empty.")
-  endif()
-
-  set(git_clone_options "--no-checkout")
-  if(git_shallow)
-    if(NOT GIT_VERSION_STRING VERSION_LESS 1.7.10)
-      list(APPEND git_clone_options "--depth 1 --no-single-branch")
-    else()
-      list(APPEND git_clone_options "--depth 1")
-    endif()
-  endif()
-  if(git_progress)
-    list(APPEND git_clone_options --progress)
-  endif()
-  foreach(config IN LISTS git_config)
-    list(APPEND git_clone_options --config \"${config}\")
-  endforeach()
-  if(NOT ${git_remote_name} STREQUAL "origin")
-    list(APPEND git_clone_options --origin \"${git_remote_name}\")
-  endif()
-
-  string (REPLACE ";" " " git_clone_options "${git_clone_options}")
-
-  set(git_options)
-  # disable cert checking if explicitly told not to do it
-  if(NOT "x${tls_verify}" STREQUAL "x" AND NOT tls_verify)
-    set(git_options
-      -c http.sslVerify=false)
-  endif()
-  string (REPLACE ";" " " git_options "${git_options}")
-
   file(WRITE ${script_filename}
-"
-if(NOT \"${gitclone_infofile}\" IS_NEWER_THAN \"${gitclone_stampfile}\")
+"if(\"${git_tag}\" STREQUAL \"\")
+  message(FATAL_ERROR \"Tag for git checkout should not be empty.\")
+endif()
+
+set(run 0)
+
+if(\"${gitclone_infofile}\" IS_NEWER_THAN \"${gitclone_stampfile}\")
+  set(run 1)
+endif()
+
+if(NOT run)
   message(STATUS \"Avoiding repeated git clone, stamp file is up to date: '${gitclone_stampfile}'\")
   return()
 endif()
 
 execute_process(
-  COMMAND \${CMAKE_COMMAND} -E rm -rf \"${source_dir}\"
+  COMMAND \${CMAKE_COMMAND} -E remove_directory \"${source_dir}\"
   RESULT_VARIABLE error_code
   )
 if(error_code)
   message(FATAL_ERROR \"Failed to remove directory: '${source_dir}'\")
 endif()
 
+set(git_options)
+
+# disable cert checking if explicitly told not to do it
+set(tls_verify \"${tls_verify}\")
+if(NOT \"x${tls_verify}\" STREQUAL \"x\" AND NOT tls_verify)
+  list(APPEND git_options
+    -c http.sslVerify=false)
+endif()
+
+set(git_clone_options)
+
+set(git_shallow \"${git_shallow}\")
+if(git_shallow)
+  list(APPEND git_clone_options ${git_clone_shallow_options})
+endif()
+
+set(git_progress \"${git_progress}\")
+if(git_progress)
+  list(APPEND git_clone_options --progress)
+endif()
+
+set(git_config \"${git_config}\")
+foreach(config IN LISTS git_config)
+  list(APPEND git_clone_options --config \${config})
+endforeach()
+
 # try the clone 3 times in case there is an odd git clone issue
 set(error_code 1)
 set(number_of_tries 0)
 while(error_code AND number_of_tries LESS 3)
   execute_process(
-    COMMAND \"${git_EXECUTABLE}\" ${git_options} clone ${git_clone_options} \"${git_repository}\" \"${src_name}\"
+    COMMAND \"${git_EXECUTABLE}\" \${git_options} clone \${git_clone_options} --origin \"${git_remote_name}\" \"${git_repository}\" \"${src_name}\"
     WORKING_DIRECTORY \"${work_dir}\"
     RESULT_VARIABLE error_code
     )
@@ -1147,7 +1101,7 @@ if(error_code)
 endif()
 
 execute_process(
-  COMMAND \"${git_EXECUTABLE}\" ${git_options} checkout ${git_tag} ${git_checkout_explicit--}
+  COMMAND \"${git_EXECUTABLE}\" \${git_options} checkout ${git_tag} ${git_checkout_explicit--}
   WORKING_DIRECTORY \"${work_dir}/${src_name}\"
   RESULT_VARIABLE error_code
   )
@@ -1155,14 +1109,20 @@ if(error_code)
   message(FATAL_ERROR \"Failed to checkout tag: '${git_tag}'\")
 endif()
 
-set(init_submodules ${init_submodules})
-if(init_submodules)
-  execute_process(
-    COMMAND \"${git_EXECUTABLE}\" ${git_options} submodule update ${git_submodules_recurse} --init ${git_submodules}
-    WORKING_DIRECTORY \"${work_dir}/${src_name}\"
-    RESULT_VARIABLE error_code
-    )
+execute_process(
+  COMMAND \"${git_EXECUTABLE}\" \${git_options} submodule init ${git_submodules}
+  WORKING_DIRECTORY \"${work_dir}/${src_name}\"
+  RESULT_VARIABLE error_code
+  )
+if(error_code)
+  message(FATAL_ERROR \"Failed to init submodules in: '${work_dir}/${src_name}'\")
 endif()
+
+execute_process(
+  COMMAND \"${git_EXECUTABLE}\" \${git_options} submodule update --recursive --init ${git_submodules}
+  WORKING_DIRECTORY \"${work_dir}/${src_name}\"
+  RESULT_VARIABLE error_code
+  )
 if(error_code)
   message(FATAL_ERROR \"Failed to update submodules in: '${work_dir}/${src_name}'\")
 endif()
@@ -1173,6 +1133,7 @@ execute_process(
   COMMAND \${CMAKE_COMMAND} -E copy
     \"${gitclone_infofile}\"
     \"${gitclone_stampfile}\"
+  WORKING_DIRECTORY \"${work_dir}/${src_name}\"
   RESULT_VARIABLE error_code
   )
 if(error_code)
@@ -1185,18 +1146,24 @@ endif()
 endfunction()
 
 function(_ep_write_hgclone_script script_filename source_dir hg_EXECUTABLE hg_repository hg_tag src_name work_dir hgclone_infofile hgclone_stampfile)
-  if("${hg_tag}" STREQUAL "")
-    message(FATAL_ERROR "Tag for hg checkout should not be empty.")
-  endif()
   file(WRITE ${script_filename}
-"
-if(NOT \"${hgclone_infofile}\" IS_NEWER_THAN \"${hgclone_stampfile}\")
+"if(\"${hg_tag}\" STREQUAL \"\")
+  message(FATAL_ERROR \"Tag for hg checkout should not be empty.\")
+endif()
+
+set(run 0)
+
+if(\"${hgclone_infofile}\" IS_NEWER_THAN \"${hgclone_stampfile}\")
+  set(run 1)
+endif()
+
+if(NOT run)
   message(STATUS \"Avoiding repeated hg clone, stamp file is up to date: '${hgclone_stampfile}'\")
   return()
 endif()
 
 execute_process(
-  COMMAND \${CMAKE_COMMAND} -E rm -rf \"${source_dir}\"
+  COMMAND \${CMAKE_COMMAND} -E remove_directory \"${source_dir}\"
   RESULT_VARIABLE error_code
   )
 if(error_code)
@@ -1227,6 +1194,7 @@ execute_process(
   COMMAND \${CMAKE_COMMAND} -E copy
     \"${hgclone_infofile}\"
     \"${hgclone_stampfile}\"
+  WORKING_DIRECTORY \"${work_dir}/${src_name}\"
   RESULT_VARIABLE error_code
   )
 if(error_code)
@@ -1239,17 +1207,17 @@ endif()
 endfunction()
 
 
-function(_ep_write_gitupdate_script script_filename git_EXECUTABLE git_tag git_remote_name init_submodules git_submodules_recurse git_submodules git_repository work_dir)
-  if("${git_tag}" STREQUAL "")
-    message(FATAL_ERROR "Tag for git checkout should not be empty.")
-  endif()
+function(_ep_write_gitupdate_script script_filename git_EXECUTABLE git_tag git_remote_name git_submodules git_repository work_dir)
   if(NOT GIT_VERSION_STRING VERSION_LESS 1.7.6)
     set(git_stash_save_options --all --quiet)
   else()
     set(git_stash_save_options --quiet)
   endif()
   file(WRITE ${script_filename}
-"
+"if(\"${git_tag}\" STREQUAL \"\")
+  message(FATAL_ERROR \"Tag for git checkout should not be empty.\")
+endif()
+
 execute_process(
   COMMAND \"${git_EXECUTABLE}\" rev-list --max-count=1 HEAD
   WORKING_DIRECTORY \"${work_dir}\"
@@ -1396,14 +1364,11 @@ if(error_code OR is_remote_ref OR NOT (\"\${tag_sha}\" STREQUAL \"\${head_sha}\"
     endif()
   endif()
 
-  set(init_submodules ${init_submodules})
-  if(init_submodules)
-    execute_process(
-      COMMAND \"${git_EXECUTABLE}\" submodule update ${git_submodules_recurse} --init ${git_submodules}
-      WORKING_DIRECTORY \"${work_dir}/${src_name}\"
-      RESULT_VARIABLE error_code
-      )
-  endif()
+  execute_process(
+    COMMAND \"${git_EXECUTABLE}\" submodule update --recursive --init ${git_submodules}
+    WORKING_DIRECTORY \"${work_dir}/${src_name}\"
+    RESULT_VARIABLE error_code
+    )
   if(error_code)
     message(FATAL_ERROR \"Failed to update submodules in: '${work_dir}/${src_name}'\")
   endif()
@@ -1652,8 +1617,6 @@ function(_ep_set_directories name)
     endif()
   endif()
   set(top "${CMAKE_CURRENT_BINARY_DIR}")
-
-  # Apply defaults and convert to absolute paths.
   set(places stamp download source binary install tmp)
   foreach(var ${places})
     string(TOUPPER "${var}" VAR)
@@ -1666,17 +1629,6 @@ function(_ep_set_directories name)
     endif()
     set_property(TARGET ${name} PROPERTY _EP_${VAR}_DIR "${${var}_dir}")
   endforeach()
-
-  # Special case for default log directory based on stamp directory.
-  get_property(log_dir TARGET ${name} PROPERTY _EP_LOG_DIR)
-  if(NOT log_dir)
-    get_property(log_dir TARGET ${name} PROPERTY _EP_STAMP_DIR)
-  endif()
-  if(NOT IS_ABSOLUTE "${log_dir}")
-    get_filename_component(log_dir "${top}/${log_dir}" ABSOLUTE)
-  endif()
-  set_property(TARGET ${name} PROPERTY _EP_LOG_DIR "${log_dir}")
-
   get_property(source_subdir TARGET ${name} PROPERTY _EP_SOURCE_SUBDIR)
   if(NOT source_subdir)
     set_property(TARGET ${name} PROPERTY _EP_SOURCE_SUBDIR "")
@@ -1690,11 +1642,7 @@ function(_ep_set_directories name)
   endif()
   if(build_in_source)
     get_property(source_dir TARGET ${name} PROPERTY _EP_SOURCE_DIR)
-    if(source_subdir)
-      set_property(TARGET ${name} PROPERTY _EP_BINARY_DIR "${source_dir}/${source_subdir}")
-    else()
-      set_property(TARGET ${name} PROPERTY _EP_BINARY_DIR "${source_dir}")
-    endif()
+    set_property(TARGET ${name} PROPERTY _EP_BINARY_DIR "${source_dir}")
   endif()
 
   # Make the directories at CMake configure time *and* add a custom command
@@ -1723,7 +1671,7 @@ macro(_ep_replace_location_tags target_name)
   set(vars ${ARGN})
   foreach(var ${vars})
     if(${var})
-      foreach(dir SOURCE_DIR SOURCE_SUBDIR BINARY_DIR INSTALL_DIR TMP_DIR DOWNLOAD_DIR DOWNLOADED_FILE LOG_DIR)
+      foreach(dir SOURCE_DIR SOURCE_SUBDIR BINARY_DIR INSTALL_DIR TMP_DIR DOWNLOAD_DIR DOWNLOADED_FILE)
         get_property(val TARGET ${target_name} PROPERTY _EP_${dir})
         string(REPLACE "<${dir}>" "${val}" ${var} "${${var}}")
       endforeach()
@@ -1777,11 +1725,6 @@ function(_ep_write_initial_cache target_name script_filename script_initial_cach
   # Replace location tags.
   _ep_replace_location_tags(${target_name} script_initial_cache)
   _ep_replace_location_tags(${target_name} script_filename)
-  # Replace list separators.
-  get_property(sep TARGET ${target_name} PROPERTY _EP_LIST_SEPARATOR)
-  if(sep AND script_initial_cache)
-    string(REPLACE "${sep}" ";" script_initial_cache "${script_initial_cache}")
-  endif()
   # Write out the initial cache file to the location specified.
   file(GENERATE OUTPUT "${script_filename}" CONTENT "${script_initial_cache}")
 endfunction()
@@ -1910,7 +1853,6 @@ function(_ep_get_build_command name step cmd_var)
 endfunction()
 
 function(_ep_write_log_script name step cmd_var)
-  ExternalProject_Get_Property(${name} log_dir)
   ExternalProject_Get_Property(${name} stamp_dir)
   set(command "${${cmd_var}}")
 
@@ -1982,66 +1924,23 @@ endif()
 
   # Wrap the command in a script to log output to files.
   set(script ${stamp_dir}/${name}-${step}-$<CONFIG>.cmake)
-  set(logbase ${log_dir}/${name}-${step})
-  get_property(log_merged TARGET ${name} PROPERTY _EP_LOG_MERGED_STDOUTERR)
-  get_property(log_output_on_failure TARGET ${name} PROPERTY _EP_LOG_OUTPUT_ON_FAILURE)
-  if (log_merged)
-    set(stdout_log "${logbase}.log")
-    set(stderr_log "${logbase}.log")
-  else()
-    set(stdout_log "${logbase}-out.log")
-    set(stderr_log "${logbase}-err.log")
-  endif()
+  set(logbase ${stamp_dir}/${name}-${step})
   set(code "
-cmake_minimum_required(VERSION 3.15)
 ${code_cygpath_make}
 set(command \"${command}\")
-set(log_merged \"${log_merged}\")
-set(log_output_on_failure \"${log_output_on_failure}\")
-set(stdout_log \"${stdout_log}\")
-set(stderr_log \"${stderr_log}\")
 execute_process(
   COMMAND \${command}
   RESULT_VARIABLE result
-  OUTPUT_FILE \"\${stdout_log}\"
-  ERROR_FILE \"\${stderr_log}\"
+  OUTPUT_FILE \"${logbase}-out.log\"
+  ERROR_FILE \"${logbase}-err.log\"
   )
-macro(read_up_to_max_size log_file output_var)
-  file(SIZE \${log_file} determined_size)
-  set(max_size 10240)
-  if (determined_size GREATER max_size)
-    math(EXPR seek_position \"\${determined_size} - \${max_size}\")
-    file(READ \${log_file} \${output_var} OFFSET \${seek_position})
-    set(\${output_var} \"...skipping to end...\\n\${\${output_var}}\")
-  else()
-    file(READ \${log_file} \${output_var})
-  endif()
-endmacro()
 if(result)
   set(msg \"Command failed: \${result}\\n\")
   foreach(arg IN LISTS command)
     set(msg \"\${msg} '\${arg}'\")
   endforeach()
-  if (\${log_merged})
-    set(msg \"\${msg}\\nSee also\\n  \${stderr_log}\")
-  else()
-    set(msg \"\${msg}\\nSee also\\n  ${logbase}-*.log\")
-  endif()
-  if (\${log_output_on_failure})
-    message(SEND_ERROR \"\${msg}\")
-    if (\${log_merged})
-      read_up_to_max_size(\"\${stderr_log}\" error_log_contents)
-      message(STATUS \"Log output is:\\n\${error_log_contents}\")
-    else()
-      read_up_to_max_size(\"\${stdout_log}\" out_log_contents)
-      read_up_to_max_size(\"\${stderr_log}\" err_log_contents)
-      message(STATUS \"stdout output is:\\n\${out_log_contents}\")
-      message(STATUS \"stderr output is:\\n\${err_log_contents}\")
-    endif()
-    message(FATAL_ERROR \"Stopping after outputting logs.\")
-  else()
-    message(FATAL_ERROR \"\${msg}\")
-  endif()
+  set(msg \"\${msg}\\nSee also\\n  ${logbase}-*.log\")
+  message(FATAL_ERROR \"\${msg}\")
 else()
   set(msg \"${name} ${step} command succeeded.  See also ${logbase}-*.log\")
   message(STATUS \"\${msg}\")
@@ -2313,7 +2212,7 @@ endfunction()
 
 function(_ep_add_mkdir_command name)
   ExternalProject_Get_Property(${name}
-    source_dir binary_dir install_dir stamp_dir download_dir tmp_dir log_dir)
+    source_dir binary_dir install_dir stamp_dir download_dir tmp_dir)
 
   _ep_get_configuration_subdir_suffix(cfgdir)
 
@@ -2325,7 +2224,6 @@ function(_ep_add_mkdir_command name)
     COMMAND ${CMAKE_COMMAND} -E make_directory ${tmp_dir}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${stamp_dir}${cfgdir}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${download_dir}
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${log_dir}
     )
 endfunction()
 
@@ -2336,29 +2234,6 @@ function(_ep_is_dir_empty dir empty_var)
     set(${empty_var} 1 PARENT_SCOPE)
   else()
     set(${empty_var} 0 PARENT_SCOPE)
-  endif()
-endfunction()
-
-function(_ep_get_git_submodules_recurse git_submodules_recurse)
-  # Checks for GIT_SUBMODULES_RECURSE property
-  # Default is ON, which sets git_submodules_recurse output variable to "--recursive"
-  # Otherwise, the output variable is set to an empty value ""
-  get_property(git_submodules_recurse_set TARGET ${name} PROPERTY _EP_GIT_SUBMODULES_RECURSE SET)
-  if(NOT git_submodules_recurse_set)
-    set(recurseFlag "--recursive")
-  else()
-    get_property(git_submodules_recurse_value TARGET ${name} PROPERTY _EP_GIT_SUBMODULES_RECURSE)
-    if(git_submodules_recurse_value)
-      set(recurseFlag "--recursive")
-    else()
-      set(recurseFlag "")
-    endif()
-  endif()
-  set(${git_submodules_recurse} "${recurseFlag}" PARENT_SCOPE)
-
-  # The git submodule update '--recursive' flag requires git >= v1.6.5
-  if(recurseFlag AND GIT_VERSION_STRING VERSION_LESS 1.6.5)
-    message(FATAL_ERROR "error: git version 1.6.5 or later required for --recursive flag with 'git submodule ...': GIT_VERSION_STRING='${GIT_VERSION_STRING}'")
   endif()
 endfunction()
 
@@ -2454,21 +2329,17 @@ function(_ep_add_download_command name)
       message(FATAL_ERROR "error: could not find git for clone of ${name}")
     endif()
 
-    _ep_get_git_submodules_recurse(git_submodules_recurse)
+    # The git submodule update '--recursive' flag requires git >= v1.6.5
+    #
+    if(GIT_VERSION_STRING VERSION_LESS 1.6.5)
+      message(FATAL_ERROR "error: git version 1.6.5 or later required for 'git submodule update --recursive': GIT_VERSION_STRING='${GIT_VERSION_STRING}'")
+    endif()
 
     get_property(git_tag TARGET ${name} PROPERTY _EP_GIT_TAG)
     if(NOT git_tag)
       set(git_tag "master")
     endif()
-
-    set(git_init_submodules TRUE)
-    get_property(git_submodules_set TARGET ${name} PROPERTY _EP_GIT_SUBMODULES SET)
-    if(git_submodules_set)
-      get_property(git_submodules TARGET ${name} PROPERTY _EP_GIT_SUBMODULES)
-      if(git_submodules  STREQUAL "" AND _EP_CMP0097 STREQUAL "NEW")
-        set(git_init_submodules FALSE)
-      endif()
-    endif()
+    get_property(git_submodules TARGET ${name} PROPERTY _EP_GIT_SUBMODULES)
 
     get_property(git_remote_name TARGET ${name} PROPERTY _EP_GIT_REMOTE_NAME)
     if(NOT git_remote_name)
@@ -2491,7 +2362,7 @@ function(_ep_add_download_command name)
     #
     set(repository ${git_repository})
     set(module)
-    set(tag ${git_remote_name})
+    set(tag)
     configure_file(
       "${CMAKE_ROOT}/Modules/RepositoryInfo.txt.in"
       "${stamp_dir}/${name}-gitinfo.txt"
@@ -2506,7 +2377,7 @@ function(_ep_add_download_command name)
     # The script will delete the source directory and then call git clone.
     #
     _ep_write_gitclone_script(${tmp_dir}/${name}-gitclone.cmake ${source_dir}
-      ${GIT_EXECUTABLE} ${git_repository} ${git_tag} ${git_remote_name} ${git_init_submodules} "${git_submodules_recurse}" "${git_submodules}" "${git_shallow}" "${git_progress}" "${git_config}" ${src_name} ${work_dir}
+      ${GIT_EXECUTABLE} ${git_repository} ${git_tag} ${git_remote_name} "${git_submodules}" "${git_shallow}" "${git_progress}" "${git_config}" ${src_name} ${work_dir}
       ${stamp_dir}/${name}-gitinfo.txt ${stamp_dir}/${name}-gitclone-lastrun.txt "${tls_verify}"
       )
     set(comment "Performing download step (git clone) for '${name}'")
@@ -2592,10 +2463,10 @@ function(_ep_add_download_command name)
     if(IS_DIRECTORY "${url}")
       get_filename_component(abs_dir "${url}" ABSOLUTE)
       set(comment "Performing download step (DIR copy) for '${name}'")
-      set(cmd   ${CMAKE_COMMAND} -E rm -rf ${source_dir}
+      set(cmd   ${CMAKE_COMMAND} -E remove_directory ${source_dir}
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${abs_dir} ${source_dir})
     else()
-      get_property(no_extract TARGET "${name}" PROPERTY _EP_DOWNLOAD_NO_EXTRACT)
+      get_property(no_extract TARGET "${name}" PROPERTY _EP_DOWNLOAD_NO_EXTRACT SET)
       if("${url}" MATCHES "^[a-z]+://")
         # TODO: Should download and extraction be different steps?
         if("x${fname}" STREQUAL "x")
@@ -2771,20 +2642,9 @@ function(_ep_add_update_command name)
     if(NOT git_remote_name)
       set(git_remote_name "origin")
     endif()
-
-    set(git_init_submodules TRUE)
-    get_property(git_submodules_set TARGET ${name} PROPERTY _EP_GIT_SUBMODULES SET)
-    if(git_submodules_set)
-      get_property(git_submodules TARGET ${name} PROPERTY _EP_GIT_SUBMODULES)
-      if(git_submodules  STREQUAL "" AND _EP_CMP0097 STREQUAL "NEW")
-        set(git_init_submodules FALSE)
-      endif()
-    endif()
-
-    _ep_get_git_submodules_recurse(git_submodules_recurse)
-
+    get_property(git_submodules TARGET ${name} PROPERTY _EP_GIT_SUBMODULES)
     _ep_write_gitupdate_script(${tmp_dir}/${name}-gitupdate.cmake
-      ${GIT_EXECUTABLE} ${git_tag} ${git_remote_name} ${git_init_submodules} "${git_submodules_recurse}" "${git_submodules}" ${git_repository} ${work_dir}
+      ${GIT_EXECUTABLE} ${git_tag} ${git_remote_name} "${git_submodules}" ${git_repository} ${work_dir}
       )
     set(cmd ${CMAKE_COMMAND} -P ${tmp_dir}/${name}-gitupdate.cmake)
     set(always 1)
@@ -2867,18 +2727,10 @@ function(_ep_add_patch_command name)
     set(work_dir ${source_dir})
   endif()
 
-  get_property(log TARGET ${name} PROPERTY _EP_LOG_PATCH)
-  if(log)
-    set(log LOG 1)
-  else()
-    set(log "")
-  endif()
-
   ExternalProject_Add_Step(${name} patch
     COMMAND ${cmd}
     WORKING_DIRECTORY ${work_dir}
     DEPENDEES download
-    ${log}
     )
 endfunction()
 
@@ -2913,6 +2765,18 @@ function(_ep_extract_configure_command var name)
       set(has_cmake_cache_default_args 1)
     endif()
 
+    if(has_cmake_cache_args OR has_cmake_cache_default_args)
+      set(_ep_cache_args_script "<TMP_DIR>/${name}-cache-$<CONFIG>.cmake")
+      if(has_cmake_cache_args)
+        _ep_command_line_to_initial_cache(script_initial_cache_force "${cmake_cache_args}" 1)
+      endif()
+      if(has_cmake_cache_default_args)
+        _ep_command_line_to_initial_cache(script_initial_cache_default "${cmake_cache_default_args}" 0)
+      endif()
+      _ep_write_initial_cache(${name} "${_ep_cache_args_script}" "${script_initial_cache_force}${script_initial_cache_default}")
+      list(APPEND cmd "-C${_ep_cache_args_script}")
+    endif()
+
     get_target_property(cmake_generator ${name} _EP_CMAKE_GENERATOR)
     get_target_property(cmake_generator_instance ${name} _EP_CMAKE_GENERATOR_INSTANCE)
     get_target_property(cmake_generator_platform ${name} _EP_CMAKE_GENERATOR_PLATFORM)
@@ -2933,16 +2797,6 @@ function(_ep_extract_configure_command var name)
         list(APPEND cmd "-G${CMAKE_EXTRA_GENERATOR} - ${CMAKE_GENERATOR}")
       else()
         list(APPEND cmd "-G${CMAKE_GENERATOR}")
-        if("${CMAKE_GENERATOR}" MATCHES "Green Hills MULTI")
-          set(has_cmake_cache_default_args 1)
-          set(cmake_cache_default_args ${cmake_cache_default_args}
-            "-DGHS_TARGET_PLATFORM:STRING=${GHS_TARGET_PLATFORM}"
-            "-DGHS_PRIMARY_TARGET:STRING=${GHS_PRIMARY_TARGET}"
-            "-DGHS_TOOLSET_ROOT:STRING=${GHS_TOOLSET_ROOT}"
-            "-DGHS_OS_ROOT:STRING=${GHS_OS_ROOT}"
-            "-DGHS_OS_DIR:STRING=${GHS_OS_DIR}"
-            "-DGHS_BSP_NAME:STRING=${GHS_BSP_NAME}")
-        endif()
       endif()
       if(cmake_generator_platform)
         message(FATAL_ERROR "Option CMAKE_GENERATOR_PLATFORM not allowed without CMAKE_GENERATOR.")
@@ -2962,18 +2816,6 @@ function(_ep_extract_configure_command var name)
       if(CMAKE_GENERATOR_INSTANCE)
         list(APPEND cmd "-DCMAKE_GENERATOR_INSTANCE:INTERNAL=${CMAKE_GENERATOR_INSTANCE}")
       endif()
-    endif()
-
-    if(has_cmake_cache_args OR has_cmake_cache_default_args)
-      set(_ep_cache_args_script "<TMP_DIR>/${name}-cache-$<CONFIG>.cmake")
-      if(has_cmake_cache_args)
-        _ep_command_line_to_initial_cache(script_initial_cache_force "${cmake_cache_args}" 1)
-      endif()
-      if(has_cmake_cache_default_args)
-        _ep_command_line_to_initial_cache(script_initial_cache_default "${cmake_cache_default_args}" 0)
-      endif()
-      _ep_write_initial_cache(${name} "${_ep_cache_args_script}" "${script_initial_cache_force}${script_initial_cache_default}")
-      list(APPEND cmd "-C${_ep_cache_args_script}")
     endif()
 
     list(APPEND cmd "<SOURCE_DIR><SOURCE_SUBDIR>")
@@ -3197,10 +3039,6 @@ endfunction()
 
 
 function(ExternalProject_Add name)
-  cmake_policy(GET CMP0097 _EP_CMP0097
-    PARENT_SCOPE # undocumented, do not use outside of CMake
-    )
-
   _ep_get_configuration_subdir_suffix(cfgdir)
 
   # Add a custom target for the external project.
