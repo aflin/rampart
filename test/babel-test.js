@@ -1,7 +1,7 @@
 #!./rp
-/* use "babel" must be on the first line after comments and  any optional #! above, with no spaces or tabs preceeding it */
-/* "use babel" == ""use babel:{ presets: ['env'],retainLines:true }" */ 
-"use babel:{ presets: ['env'],retainLines:true }";
+/* "use babel" must be on the first line after comments and  any optional #! above, with no spaces or tabs preceeding it */
+/* "use babel" == "use babel:{ presets: ['env'],retainLines:true }" */ 
+"use babel:{ presets: ['env'],retainLines:true }"
 
 import * as math from "math";
 

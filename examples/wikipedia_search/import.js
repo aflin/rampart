@@ -1,4 +1,4 @@
-var Sql=require("rpsql");
+var Sql=require("rampart-sql");
 var rexfile=Sql.rexfile;
 var re2file=Sql.re2file;
 var rex=Sql.rex;

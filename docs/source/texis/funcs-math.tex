@@ -1,0 +1,26 @@
+\subsection{Math functions}
+
+The following basic math functions are available in Texis:
+\verb`acos`, \verb`asin`, \verb`atan`, \verb`atan2`, \verb`ceil`, \verb`cos`,
+\verb`cosh`, \verb`exp`, \verb`fabs`, \verb`floor`, \verb`fmod`,
+\verb`log`, \verb`log10`, \verb`pow`, \verb`sin`, \verb`sinh`, \verb`sqrt`,
+\verb`tan`, \verb`tanh`.
+
+All of the above functions call the ANSI C math library function
+of the same name, and return a result of type \verb`double`.
+\verb`pow`, \verb`atan2` and \verb`fmod` take two double arguments,
+the remainder take one double argument.  Added in version:
+2.6.931790000
+
+In addition, the following math-related functions are available:
+
+\begin{itemize}
+  \item \verb`isNaN(x)` \\
+    Returns 1 if \verb`x` is a float or double NaN (Not a Number) value,
+    0 if not.  This function should be used to test for NaN, rather than
+    using the equality operator (e.g. \verb`x = 'NaN'`), because the
+    IEEE standard defines \verb`NaN == NaN` to be false, not true as
+    might be expected.  Added in version 5.01.1193955406 20071101.
+\end{itemize}
+
+% ----------------------------------------------------------------------------

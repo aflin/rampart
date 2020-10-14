@@ -1,0 +1,1740 @@
+\chapter{Queries Involving Calculated Values}{\label{chp:CalcQuer}}
+
+While Texis focuses on manipulation of textual information, data can
+also be operated on numerically.  Queries can be constructed which
+combine calculated values with text search.
+
+To illustrate the material in this chapter, we'll use an employee
+table which the Personnel Department keeps to manage salaries and
+benefits.  A sampling of the data stored in this table follows:
+
+%\begin{screen}
+\begin{verbatim}
+  EID  ENAME               DEPT   SALARY   BENEFITS
+  101  Aster, John A.      MKT    32000    FULL
+  102  Barrington, Kyle    MGT    45000    FULL
+  103  Chapman, Margaret   LIB    22000    PART
+  104  Jackson, Herbert    RND    30000    FULL
+  105  Price, Stella       FIN    42000    FULL
+  106  Sanchez, Carla      MKT    35000    FULL
+  107  Smith, Roberta      RND    25000    PART
+\end{verbatim}
+%\end{screen}
+
+\section{Arithmetic Calculations}
+
+This section covers the computational features of Texis.  They are
+adequate to allow the user to perform computations on the data and/or
+retrieve rows based on conditions involving computations.  For
+example, you can adjust salaries for a 5 percent across-the-board
+increase, or you can compute weekly salaries (i.e., salary divided by
+52).
+
+Arithmetic calculations are performed on fields, or columns, in the
+database.  An {\em arithmetic expression} is used to describe the
+desired computation.  The expression consists of column names and
+numeric constants connected by parentheses and arithmetic operators.
+Table~\ref{tab:ArithOp} shows the arithmetic operators used in Texis.
+
+\begin{table}
+\caption{Arithmetic Operators Supported in Texis}{\label{tab:ArithOp}}
+\begin{center}
+\begin{tabular}{|l|l|l|} \hline
+Arithmetic Operation  & Texis Operator & Example              \\ \hline\hline
+Addition              &  \verb`+`      & \verb`SALARY + 2000` \\
+Subtraction           &  \verb`-`      & \verb`SALARY - 1000` \\
+Multiplication        &  \verb`*`      & \verb`SALARY * 1.05` \\
+Division              &  \verb`/`      & \verb`SALARY / 26`   \\ \hline
+\end{tabular}
+\end{center}
+\end{table}
+
+Typically, the arithmetic expression is used in the \verb`SELECT` clause to
+perform calculations on data stored in the table.
+
+{\bf Example:}
+Next year every employee will receive a 5 percent salary increase.
+List the names of each employee, his or her current salary, and next
+year's salary.
+
+Enter this statement:
+\begin{verbatim}
+     SELECT  ENAME, SALARY, SALARY * 1.05
+     FROM    EMPLOYEE ;
+\end{verbatim}
+Where ``\verb`SALARY * 1.05`'' is the arithmetic expression.
+
+The results are:
+
+%\begin{screen}
+\begin{verbatim}
+  ENAME               SALARY     SALARY * 1.05
+  Aster, John A.      32000      33600
+  Barrington, Kyle    45000      47250
+  Chapman, Margaret   22000      23100
+  Jackson, Herbert    30000      31500
+  Price, Stella       42000      44100
+  Sanchez, Carla      35000      36750
+  Smith, Roberta      25000      26250
+\end{verbatim}
+%\end{screen}
+
+The expression ``\verb`SALARY * 1.05`'' results in each value in the
+salary column being multiplied by 1.05.  The results are then
+displayed in a new column that is labeled \verb`SALARY * 1.05`.
+
+If more than one arithmetic operator is used in an arithmetic
+expression, parentheses can be used to control the order in which the
+arithmetic calculations are performed.  The operations enclosed in
+parentheses are computed before operations that are not enclosed in
+parentheses.  For example, the expression:
+\begin{verbatim}
+     12 * (SALARY + BONUS)
+\end{verbatim}
+means bonus is added to salary, and then this result is multiplied by
+12.
+
+If parentheses are omitted or if several operations are included
+within the parentheses, the order in which calculations are performed
+is as follows:
+
+\begin{enumerate}
+\item First, all multiplication, division and modulo\footnote{The
+  modulo operator ({\tt \%}) was added in Texis version 8; it is
+  supported for integral types.} operations are performed.
+\item Then, all addition and subtraction operations are performed.
+\end{enumerate}
+
+For example, in the expression:
+\begin{verbatim}
+     SALARY + SALARY * .05
+\end{verbatim}
+the value in the SALARY column is multiplied by .05, and then the
+salary value is added to this intermediate result.
+
+When two or more computations in an expression are at the same level
+(e.g., multiplication and division), the operations are executed from
+left to right.  For example, in the expression:
+\begin{verbatim}
+     SALARY / 12 * 1.05
+\end{verbatim}
+the salary value is first divided by 12, and then this result is
+multiplied by 1.05.
+
+Arithmetic calculation can also be used in a \verb`WHERE` clause to select
+rows based on a calculated condition.  In addition, arithmetic
+expressions can be used in the {\tt HAVING} and {\tt ORDER BY} clauses, which will
+be discussed in later sections of this chapter.
+
+{\bf Example:}
+List the names of all employees earning a monthly salary above \$3000.
+
+This query:
+\begin{verbatim}
+     SELECT  ENAME
+     FROM    EMPLOYEE
+     WHERE   (SALARY/12) > 3000 ;
+\end{verbatim}
+results in:
+
+%\begin{screen}
+\begin{verbatim}
+  ENAME
+  Barrington, Kyle
+  Price, Stella
+\end{verbatim}
+%\end{screen}
+
+The rows in the \verb`EMPLOYEE` table are retrieved if the condition ``salary
+divided by 12'' is greater than \$3000.  This was true only for
+Barrington and for Price, whose annual salaries (respectively \$45,000
+and \$42,000) are greater than \$3000 when divided by 12 months.
+
+\section{Manipulating Information By Date}
+
+In Texis dates are stored as integers representing an absolute number
+of seconds from January 1, 1970, Greenwich Mean Time.  This is done
+for efficiency, and to avoid confusions stemming from differences in
+relative times assigned to files from different time zones.
+The allowable range of years is 1970 through 2037. Years between 1902 and
+1970 may be stored and compared for equality (\verb`=`) but will not compare
+correctly using less than (\verb`<`) and greater than (\verb`>`).
+
+Counters may also be treated as dates for comparison purposes. They
+may be compared to date fields or date strings. When compared with
+dates only the date portion of the counter is considered and the
+sequence number is ignored.
+
+% MAW 09-18-94 - rewrote in terms of parsetim(), add above para for counter
+%To obtain dates in English in the manner one is used to seeing them, a
+%{\em date function} is used to calculate a relative value derived from
+%the absolute value stored.  This can be used on any table columns
+%which store time or date information with the
+%{\em date}
+%data type, as defined in Chapter~\ref{chp:TabDef}.
+%%{\em time} or
+
+The comparison operators as given in Table~\ref{tab:CompOp} are used
+to compare date values, so that dates may be used as qualifying
+statements in the \verb`WHERE` clause.
+
+{\bf Example:}
+The Strategic Planning and Intelligence Department is responsible for
+polling online news information on a daily basis, looking for
+information relevant to Acme's ongoing business.  Articles of interest
+are stored in an archived \verb`NEWS` table which retains the full text of
+the article along with its subject, byline, source, and date.  The
+date column is named NDATE, for ``News Date'', as ``date'' is a
+special reserved SQL name and can't be used for column names.
+
+A Date field may be compared to a number representing the number of
+seconds since 1/1/70 0:0:0 GMT (e.g.:  778876248).  It may also be
+compared to a string representing a human readable date in the format
+\verb`'YYYY-MM-DD [HH:MM[:SS] [AM|PM]]'` (e.g.:  \verb`'1994-03-05 06:30
+pm'` or \verb`'1994-07-04'`).  The date string may also be preceded by
+``\verb`begin of`'' or ``\verb`end of`'' meaning the first or last second
+of a day, respectively.
+
+Enter this query:
+\begin{verbatim}
+     SELECT   NDATE, SUBJECT
+     FROM     NEWS
+     WHERE    NDATE BETWEEN 'begin of 1993-07-30'
+                        AND 'end of 1993-07-30' ;
+\end{verbatim}
+
+Although the date column is stored with an absolute value, it is
+converted to the correct relative value when displayed.  However, a
+date assigned to a file is to the second, and to match that time, you
+must match the same number of seconds.  Stating the date as
+\verb`1993-07-30` refers to a particular second of that day.  An
+article which came in at 2 p.m. would not match in seconds.  Thus you
+state the range of seconds that span the 24 hour period called
+``\verb`'1993-07-30'`'' by specifying a range between the first to last
+moment of the day.
+
+In this example, all the articles which were saved from July 30, 1993
+are displayed with their subject lines.  The date as formatted by
+Texis when displaying the date column is the format used inside the
+single quotes.  It is put in quotes because it is a text string rather
+than an absolute value.
+
+Dates are usually used to limit the amount of text retrieved based on
+some other search requirement, and would be so used along with other
+qualifying statements in the \verb`WHERE` clause.  The next query is
+identical to the last, but it adds another requirement.
+
+\begin{verbatim}
+     SELECT   NDATE, SUBJECT
+     FROM     NEWS
+     WHERE    NDATE BETWEEN 'begin of 1993-07-30'
+                        AND 'end of 1993-07-30'
+     AND      BODY LIKE 'bill gates' ;
+\end{verbatim}
+
+Now we can retrieve articles from July 30, 1993, but only a list of
+those articles whose text body mentions Bill Gates.  A listing of Date
+and Subject of the article will be displayed, as dictated in \verb`SELECT`.
+Now we know which articles are available and can pick any we would
+want to read in full.
+
+This example uses a text query to find sentences in the body of the
+information with reference to ``Bill Gates''.  Use of this type of
+query in the \verb`LIKE` clause is explained in Chapter~\ref{Chp:MMLike}.
+The following articles are retrieved:
+
+%\begin{screen}
+\begin{verbatim}
+  NDATE                SUBJECT
+  1993-30-07 04:46:04  High-Technology R&D Has Lost Its Cost-Effect...
+  1993-30-07 13:10:08  Heavy R&D Spending No Longer the Magic Route...
+\end{verbatim}
+%\end{screen}
+
+Date fields can use any of the comparison operators as shown in
+Table~\ref{tab:CompOp} to manipulate information.  We could
+broaden the date range of this search by increasing the {\tt BETWEEN}
+range, or we could do it as follows:
+
+\begin{verbatim}
+     SELECT   NDATE, SUBJECT
+     FROM     NEWS
+     WHERE    BODY LIKE 'bill gates'
+     AND      NDATE > 'begin of 1993-07-30'
+     AND      NDATE < 'end of 1993-08-01' ;
+\end{verbatim}
+
+Remember that the actual value of the date is in a number of seconds.
+Therefore, greater than (\verb`>`) translates to ``a greater number of
+seconds than the stated value'', and therefore means ``newer than'', while
+lesser than (\verb`<`) translates to ``a fewer number of seconds than the
+stated value'', and therefore means ``older than''.
+
+This would increase the output list to include dates in the specified
+range; that is, between July 30th and August 1st 1993.
+
+%\begin{screen}
+\begin{verbatim}
+  NDATE       SUBJECT
+  1993-07-30 04:46:04  High-Technology R&D Has Lost Its Cost-Effect...
+  1993-07-30 13:10:08  Heavy R&D Spending No Longer the Magic Route...
+  1993-07-31 07:56:44  Microsoft-Novell battle out in the open
+  1993-07-31 16:40:28  Microsoft to Undergo Justice Department Scrutiny
+  1993-08-01 09:50:24  Justice Dept. Reportedly to Study Complaints ...
+\end{verbatim}
+%\end{screen}
+
+Date strings have some additional operators, ``today'' and ``now''.  When used
+following DATE they are converted to today's date and time in seconds
+for both ``today'' and ``now''.  A time period of seconds, minutes, hours,
+days, weeks, or months, can also be specified. A leading plus (\verb`+`)
+or minus (\verb`-`) may also be specified to indicate past or
+future.
+Using our example from the \verb`NEWS` table, the form of the command would
+be:
+
+\begin{verbatim}
+     SELECT   NDATE, SUBJECT
+     FROM     NEWS
+     WHERE    NDATE > '-7 days' ;
+\end{verbatim}
+
+This query requests all articles less than seven days old and would
+produce a list of their subjects and date.
+
+\begin{verbatim}
+     SELECT   NDATE, SUBJECT
+     FROM     NEWS
+     WHERE    NDATE < '-1 minute'
+       AND    NDATE > '-1 hour' ;
+\end{verbatim}
+
+This query would produce a list of articles which came in over the
+last hour.
+The date must be older than 1 minute ago, but
+newer than 1 hour ago.
+
+\section{Summarizing Values:
+{\tt GROUP BY} Clause and
+Aggregate Functions}
+
+So far, the examples presented have shown how to retrieve and
+manipulate values from individual rows in a table.  In this section,
+we will illustrate how summary information can be obtained from groups
+of rows in a table.
+
+Often we find it useful to group data by some characteristic of the
+group, such as department or division, or benefit level, so that
+summary statistics about the group (totals, averages, etc.) can be
+calculated.  For example, to calculate average departmental salaries,
+the user could group the salaries of all employees by department.  In
+Texis, the {\tt GROUP BY} clause is used to divide the rows of a table into
+groups that have matching values in one or more columns.  The form of
+this clause is:
+\begin{verbatim}
+     GROUP BY   column-name1 [,column-name2] ...
+\end{verbatim}
+and it fits into the \verb`SELECT` expression in the following manner.
+\begin{verbatim}
+     SELECT     column-name1 [,column-name2] ...
+     FROM       table-name
+     [WHERE     search-condition]
+     [GROUP BY  column-name1 [,column-name2] ... ]
+     [ORDER BY  column-name1 [DESC] [,column-name2] [DESC] ] ... ;
+\end{verbatim}
+
+The column(s) listed in the {\tt GROUP BY} clause are used to form groups.
+The grouping is based on rows with the same value in the specified
+column or columns being placed in the same group.  It is important to
+note that grouping is conceptual; the table is not physically
+rearranged.
+
+As an extension Texis also allows the {\tt GROUP BY} clause to consist of
+expressions instead of just column names.  This should be used with
+caution, and the same expression should be used in the \verb`SELECT` as
+in the {\tt GROUP BY} clause.  This is especially true if the expression
+will fold multiple values together, such as dividing a number by
+1000 to group quantities together if they are in the same 1000.  If
+you select SALARY, and {\tt GROUP BY SALARY/1000} you will see one sample
+salary from the matching group.
+
+The {\tt GROUP BY} clause is normally used along with five built-in, or
+``aggregate'' functions.  These functions perform special operations
+on an entire table or on a set, or group, of rows rather than on each
+row and then return one row of values for each group.
+
+Table~\ref{tab:AggFunc} lists the aggregate functions available with
+Texis.
+
+\begin{table}
+\caption{Texis Aggregate Function Names}{\label{tab:AggFunc}}
+\begin{center}
+\begin{tabular}{|l|l|l|} \hline
+Function Name     & Meaning                                 & Example            \\ \hline\hline
+SUM(column name)  & Total of the values in a numeric column & \verb`SUM(SALARY)` \\
+AVG(column name)  & Average of the values in a column       & \verb`AVG(SALARY)` \\
+MAX(column name)  & Largest value in a column               & \verb`MAX(SALARY)` \\
+MIN(column name)  & Smallest value in a column              & \verb`MIN(SALARY)` \\
+COUNT(*)          & Count of the number of rows selected    & \verb`COUNT(*)`    \\ \hline
+\end{tabular}
+\end{center}
+\end{table}
+
+Aggregate functions are used in place of column names in the \verb`SELECT`
+statement.  The form of the function is:
+\begin{verbatim}
+     Function name ([DISTINCT] argument)
+\end{verbatim}
+
+In all situations the argument represents the column name to which the
+function applies.  For example, if the sum of all salaries is needed,
+then the function SUM is used and the argument is the column SALARY.
+When COUNT is used an asterisk (*) can be placed within the parentheses
+instead of a column name to count all the rows without regard to
+field.
+
+If the DISTINCT keyword is used then only the unique values are processed.
+This is most useful with COUNT to find the number of unique values.  If
+you use DISTINCT then you must supply a column name.  DISTINCT will work
+with the other aggregate functions, although there is typically very little
+need for them.  The DISTINCT feature was added in version 4.00.1002000000
+
+{\bf Example:}
+What is the average salary paid in each department?
+
+Enter this statement:
+\begin{verbatim}
+     SELECT     DEPT, AVG(SALARY)
+     FROM       EMPLOYEE
+     GROUP BY   DEPT ;
+\end{verbatim}
+{\bf Syntax Notes:}
+\begin{itemize}
+\item \verb`AVG` is the aggregate function name.
+\item \verb`(SALARY)` is the column on which the average is computed.
+\item\verb`DEPT` is the column by which the rows will be grouped.
+\end{itemize}
+
+The above statement will produce the following results:
+
+%\begin{screen}
+\begin{verbatim}
+  DEPT      AVG(SALARY)
+
+  MKT       33500
+  MGT       45000
+  LIB       22000
+  RND       27500
+  FIN       42000
+\end{verbatim}
+%\end{screen}
+
+In this query, all rows in the \verb`EMPLOYEE` table that have the same
+department codes are grouped together.  The aggregate function AVG is
+calculated for the salary column in each group.  The department code
+and the average departmental salary are displayed for each department.
+
+A \verb`SELECT` clause that contains an aggregate function cannot contain any
+column name that does not apply to a group; for example:
+
+The statement:
+\begin{verbatim}
+     SELECT     ENAME, AVG(SALARY)
+     FROM       EMPLOYEE
+     GROUP BY   DEPT ;
+\end{verbatim}
+results in the message
+\begin{verbatim}
+     Error at Line 1: Not a GROUP BY Expression
+\end{verbatim}
+
+It is not permissible to include column names in a \verb`SELECT` clause that
+are not referenced in the {\tt GROUP BY} clause.  The only column names that
+can be displayed, along with aggregate functions, must be listed in
+the {\tt GROUP BY} clause.  Since \verb`ENAME` is not included in the {\tt GROUP BY}
+clause, an error message results.
+
+{\bf Example:}
+The chair of the Marketing Department plans to participate in a
+national salary survey for employees in Marketing Departments.
+Determine the average salary paid to the Marketing Department
+employees.
+
+This statement:
+\begin{verbatim}
+     SELECT     COUNT(*), AVG(SALARY)
+     FROM       EMPLOYEE
+     WHERE      DEPT = 'MKT'
+\end{verbatim}
+Results in:
+
+%\begin{screen}
+\begin{verbatim}
+  COUNT(*)   AVG(SALARY)
+
+  2          33500
+\end{verbatim}
+%\end{screen}
+
+In this example, the aggregate function AVG is used in a \verb`SELECT`
+statement that has a \verb`WHERE` clause.  Texis selects the rows that
+represent Marketing Department employees and then applies the
+aggregate function to these rows.
+
+You can divide the rows of a table into groups based on values in more
+than one column.  For example, you might want to compute total salary
+by department and then, within a department, want subtotals by
+benefits classification.
+
+{\bf Example:}
+What is the total salary paid by benefits classification in each
+department?
+
+Enter this statement:
+\begin{verbatim}
+     SELECT     DEPT, BENEFITS, SUM(SALARY)
+     FROM       EMPLOYEE
+     GROUP BY   DEPT, BENEFITS ;
+\end{verbatim}
+In this example, we are grouping by department, and within department,
+by benefits classification.
+
+We'll get the following results:
+
+%\begin{screen}
+\begin{verbatim}
+  DEPT      BENEFITS    SUM(SALARY)
+
+  FIN       FULL        42000
+  LIB       PART        22000
+  MGT       FULL        45000
+  MKT       FULL        67000
+  RND       FULL        30000
+  RND       PART        25000
+\end{verbatim}
+%\end{screen}
+
+In this query, the rows are grouped by department and, within each
+department, employees with the same benefits are grouped so that
+totals can be computed.  Notice that the columns DEPT and BENEFITS can
+appear in the \verb`SELECT` statement since both columns appear in the GROUP
+BY clause.
+
+If the {\tt GROUP BY} clause is omitted when an aggregate function is used,
+then the entire table is considered as one group, and the group
+function displays a single value for the entire table.
+
+{\bf Example:}
+What is the total salary paid to all employees?
+
+The statement:
+\begin{verbatim}
+     SELECT     SUM(SALARY)
+     FROM       EMPLOYEE ;
+\end{verbatim}
+results in:
+
+%\begin{screen}
+\begin{verbatim}
+  SUM(SALARY)
+
+  231000
+\end{verbatim}
+%\end{screen}
+
+\section{Groups With Conditions: {\tt HAVING} Clause}
+
+Sometimes you may want to specify a condition that applies to groups
+rather than to individual rows.  For example, you might want a list of
+departments where the average departmental salary is above \$30,000.
+To express such a query, the {\tt HAVING} clause is used.  This clause
+specifies which groups should be selected and is used in combination
+with the {\tt GROUP BY} clause.  The form of this clause is as follows:
+\begin{verbatim}
+     [GROUP BY  column-name1 [,column-name2] ...
+     [HAVING    search-condition ]
+\end{verbatim}
+
+Conditions in the {\tt HAVING} clause are applied after groups are formed.
+The search condition of the {\tt HAVING} clause examines the grouped rows
+and produces a row for each group where the search condition in the
+{\tt HAVING} clause is true.  The clause is similar to the \verb`WHERE` clause,
+except the {\tt HAVING} clause applies to groups.
+
+{\bf Example:}
+Which departments have an average salary above \$30,000? Order the
+results by average salary, with highest average salary appearing
+first.
+
+The statement:
+\begin{verbatim}
+     SELECT     DEPT, AVG(SALARY) AS AVG_SALARY
+     FROM       EMPLOYEE
+     GROUP BY   DEPT
+     HAVING     AVG_SALARY > 30000
+     ORDER BY   AVG_SALARY DESC ;
+\end{verbatim}
+
+{\bf Syntax Notes:}
+\begin{itemize}
+\item When {\tt HAVING} is used, it always follows a {\tt GROUP BY} clause.
+\item When referring to aggregate values in the {\tt HAVING} and {\tt ORDER BY} clauses
+of a {\tt GROUP BY} you must assign an alternative name to the field, and use
+that in the {\tt HAVING} and {\tt ORDER BY} clauses.
+%\item The `\verb`2`' in the {\tt ORDER BY} clause refers to the second item
+%listed in the \verb`SELECT` clause.  Therefore the basis of the sort is the
+%computed value ``\verb`AVG(SALARY)`''.
+\end{itemize}
+
+The results are:
+
+%\begin{screen}
+\begin{verbatim}
+  DEPT      AVG_SALARY
+
+  MGT       45000
+  FIN       42000
+  MKT       33500
+\end{verbatim}
+%\end{screen}
+
+In this query, the average salary for all departments is computed, but
+only the names of those departments having an average salary above
+\$30,000 are displayed.  Notice that Research and Development's
+average of \$27,500 is not displayed, nor is the Library's average of
+\$22,000.
+
+The {\tt GROUP BY} clause does not sort the results, thus the need for the
+{\tt ORDER BY} clause.  Finally, note that the {\tt ORDER BY} clause must be
+placed after the {\tt GROUP BY} and {\tt HAVING} clauses.
+
+This chapter has covered the computational capabilities of Texis.  In
+the next chapter, you will learn how to develop more complex queries by
+using the join operation and the nesting of queries.
+
+\input{function}
+
+\chapter{Advanced Queries}{\label{Chp:AdvQuer}}
+
+This chapter is divided into three sections.  The first one focuses on
+using the join operation to retrieve data from multiple tables.  The
+second section covers nesting of queries, also known as subqueries.
+The final section introduces several advanced query techniques,
+including self-joins, correlated subqueries, subqueries using the
+EXISTS operator.
+%EXISTS operator, and combining query results using the UNION operator.
+
+\section{Retrieving Data From Multiple Tables}
+
+All the queries looked at so far have been answered by accessing data
+from one table.  Sometimes, however, answers to a query may require
+data from two or more tables.
+
+For example, for the Corporate Librarian to display a list of
+contributing authors with their long form department name requires
+data from the \verb`REPORT` table (author) and data from the \verb`DEPARTMENT` table
+(department name).  Obtaining the data you need requires the ability
+to combine two or more tables.  This process is commonly referred to
+as ``{\em joining the tables}''.
+
+Two or more tables can be combined to form a single table by using the
+{\em join operation}.  The join operation is based on the premise that
+there is a logical association between two tables based on a common
+attribute that links the tables.  Therefore, there must be a common
+column in each table for a join operation to be executed.  For
+example, both the \verb`REPORT` table and the \verb`DEPARTMENT` table have the
+department identification code in common.  Thus, they can be joined.
+
+Joining two tables in Texis is accomplished by using a \verb`SELECT`
+statement.  The general form of the \verb`SELECT` statement when a join
+operation is involved is:
+\begin{verbatim}
+     SELECT   column-name1 [,column-name2] ...
+     FROM     table-name1, table-name2
+     WHERE    table-name1.column-name = table-name2.column-name ;
+\end{verbatim}
+The combination of table name with column name as stated in the \verb`WHERE`
+clause describes the Join condition.
+
+\subsubsection{Command Discussion}
+
+\begin{enumerate}
+\item A join operation pulls data from two or more tables listed in
+the \verb`FROM` clause.  These tables represent the source of the data to be
+joined.
+
+\item The \verb`WHERE` clause specifies the relationship between the tables
+to be joined.  This relationship represents the {\em join condition}.
+Typically, the join condition expresses a relationship between rows
+from each table that match on a common attribute.
+
+\item When the tables to be joined have the same column name, the
+column name is prefixed with a table name in order for Texis to know
+from which table the column comes.  Texis uses the notation:
+\begin{verbatim}
+     table-name.column-name
+\end{verbatim}
+The table name in front of the column name is referred to as a {\em
+qualifier}.
+
+\item The common attributes in the join condition need not have the
+same column name, but they should represent the same kind of
+information.  For example, where the attribute representing names of
+people submitting resumes was named \verb`RNAME` in table 1, and the
+attribute for names of employees was named \verb`ENAME` in table 2, you could
+still join the tables on the common character field by specifying:
+
+\begin{verbatim}
+     WHERE table-name1.RNAME = table-name2.ENAME
+\end{verbatim}
+
+While the above is true, it is still a good rule of thumb in database
+design to give the same name to all columns referring to data of the
+same type and meaning.  Columns which are designed to be a key, and
+intended as the basis for joining tables would normally be given the
+same name.
+
+\item If a row from one of the tables never satisfies the join
+condition, that row will not appear in the joined table.
+
+\item The tables are joined together, and then Texis extracts the
+data, or columns, listed in the \verb`SELECT` clause.
+
+\item Although tables can be combined if you omit the \verb`WHERE` clause,
+this would result in a table of all possible combinations of rows from
+the tables in the \verb`FROM` clause.  This output is usually not intended,
+nor meaningful, and can waste much computer processing time.
+Therefore, be careful in forming queries that involve multiple tables.
+\end{enumerate}
+
+{\bf Example:}
+The corporate librarian wants to distribute a list of authors who have
+contributed reports to the corporate library, along with the name of
+that author's department.  To fulfill this request, data from both the
+\verb`REPORT` table (author) and the \verb`DEPARTMENT` table (department name) are
+needed.
+
+You would enter this statement:
+\begin{verbatim}
+     SELECT   AUTHOR, DNAME
+     FROM     REPORT, DEPARTMENT
+     WHERE    REPORT.DEPT = DEPARTMENT.DEPT ;
+\end{verbatim}
+
+{\bf Syntax Notes:}
+\begin{itemize}
+\item REPORT and DEPARTMENT indicate the tables to be joined.
+
+\item The \verb`WHERE` clause statement defines the condition for the join.
+
+\item The notation ``\verb`REPORT.`'' in ``\verb`REPORT.DEPT`'', and
+``\verb`DEPARTMENT.`'' in ``\verb`DEPARTMENT.DEPT`'' are the
+qualifiers which indicate from which table to find the column.
+\end{itemize}
+
+This statement will result in the following joined table:
+
+%\begin{screen}
+\begin{verbatim}
+  AUTHOR                   DNAME
+  Jackson, Herbert         Research and Development
+  Sanchez, Carla           Product Marketing and Sales
+  Price, Stella            Finance and Accounting
+  Smith, Roberta           Research and Development
+  Aster, John A.           Product Marketing and Sales
+  Jackson, Herbert         Research and Development
+  Barrington, Kyle         Management and Administration
+\end{verbatim}
+%\end{screen}
+
+In this query, we are joining data from the REPORT and the DEPARTMENT
+tables.  The common attribute in these two tables is the department
+code.  The conditional expression:
+\begin{verbatim}
+     REPORT.DEPT = DEPARTMENT.DEPT
+\end{verbatim}
+is used to describe how the rows in the two tables are to be matched.
+Each row of the joined table is the result of combining a row from the
+\verb`REPORT` table and a row from the \verb`DEPARTMENT` table for each comparison
+with matching codes.
+
+To further illustrate how the join works, look at the rows in the
+\verb`REPORT` table below where DEPT is ``MKT'':
+
+%\begin{screen}
+\begin{verbatim}
+  TITLE                    AUTHOR           DEPT FILENAME
+  Disappearing Ink         Jackson, Herbert RND  /data/rnd/ink.txt
+> INK PROMOTIONAL CAMPAIGN SANCHEZ, CARLA   MKT  /data/MKT/PROMO.RPT
+  Budget for 4Q 92         Price, Stella    FIN  /data/ad/4q.rpt
+  Round Widgets            Smith, Roberta   RND  /data/rnd/widge.txt
+> PAPERCLIPS               ASTER, JOHN A.   MKT  /data/MKT/CLIP.RPT
+  Color Panorama           Jackson, Herbert RND  /data/rnd/color.txt
+  Meeting Schedule         Barrington, Kyle MGT  /data/mgt/when.rpt
+\end{verbatim}
+%\end{screen}
+
+Now look at the rows in the \verb`DEPARTMENT` table below where DEPT is
+``MKT''.  These are matching rows since the department code (``MKT'')
+is the same.
+
+%\begin{screen}
+\begin{verbatim}
+  DEPT DNAME                               DHEAD      DIV  BUDGET
+  MGT  Management and Administration       Barrington CORP 22000
+  FIN  Finance and Accounting              Price      CORP 26000
+  LEG  Corporate Legal Support             Thomas     CORP 28000
+  SUP  Supplies and Procurement            Sweet      CORP 10500
+  REC  Recruitment and Personnel           Harris     CORP 15000
+  RND  Research and Development            Jones      PROD 27500
+  MFG  Manufacturing                       Washington PROD 32000
+  CSS  Customer Support and Service        Ferrer     PROD 11000
+> MKT  PRODUCT MARKETING AND SALES         BROWN      PROD 25000
+  ISM  Information Systems Management      Dedrich    INFO 22500
+  LIB  Corporate Library                   Krinski    INFO 18500
+  SPI  Strategic Planning and Intelligence Peters     INFO 28500
+\end{verbatim}
+%\end{screen}
+
+The matching rows can be conceptualized as combining a row from the
+\verb`REPORT` table with a matching row from the \verb`DEPARTMENT` table.  Below is
+a sample of rows from both tables, matched on the department code
+``MKT'':
+
+%\begin{screen}
+\begin{verbatim}
+DEPT DNAME     DHEAD DIV  BUDGET TITLE      AUTHOR  FILENAME
+MKT  Marketing Brown PROD 25000  Ink        Sanchez /data/mkt/promo.rpt
+MKT  Marketing Brown PROD 25000  Paperclips Aster   /data/mkt/clip.rpt
+\end{verbatim}
+%\end{screen}
+
+This operation is carried out for all matching rows; i.e., each row in
+the \verb`REPORT` table is combined, or matched, with a row having the same
+department code in the \verb`DEPARTMENT` table:
+
+%\begin{screen}
+\begin{verbatim}
+DEPT DNAME      DHEAD DIV  BUDGET TITLE      AUTHOR  FILENAME
+RND  Research   Jones PROD 27500  Ink        Jackson /data/rnd/ink.txt
+MKT  Marketing  Brown PROD 25000  Ink Promo  Sanchez /data/mkt/promo.rpt
+FIN  Finance    Price CORP 26000  Budget     Price   /data/ad/4q.rpt
+RND  Research   Jones PROD 27500  Widgets    Smith   /data/rnd/widge.txt
+MKT  Marketing  Brown PROD 25000  Paperclips Aster   /data/mkt/clip.rpt
+RND  Research   Jones PROD 27500  Panorama   Jackson /data/rnd/color.txt
+MGT  Management Barri CORP 22000  Schedule   Barring /data/mgt/when.rpt
+\end{verbatim}
+%\end{screen}
+
+The columns requested in the \verb`SELECT` statement determine the final
+output for the joined table:
+
+%\begin{screen}
+\begin{verbatim}
+  AUTHOR                   DNAME
+  Jackson, Herbert         Research and Development
+  Sanchez, Carla           Product Marketing and Sales
+  Price, Stella            Finance and Accounting
+  Smith, Roberta           Research and Development
+  Aster, John A.           Product Marketing and Sales
+  Jackson, Herbert         Research and Development
+  Barrington, Kyle         Management and Administration
+\end{verbatim}
+%\end{screen}
+
+Observe that the joined table does not include any data on several
+departments from the \verb`DEPARTMENT` table, where that department did not
+produce any contributing authors as listed in the \verb`REPORT` table.  The
+joined table includes only rows where a match has occurred between
+rows in both tables.  If a row in either table does not match any row
+in the other table, the row is not included in the joined table.
+
+In addition, notice that the DEPT column is not included in the final
+joined table.  Only two columns are included in the joined table since
+just two columns are listed in the \verb`SELECT` clause, and DEPT is not one
+of them.
+
+The next example illustrates that conditions other than the join
+condition can be used in the \verb`WHERE` clause.  It also shows that even
+though the results come from a single table, the solution may require
+that data from two or more tables be joined in the \verb`WHERE` clause.
+
+{\bf Example:}
+Assume that you cannot remember the department code for Research and
+Development, but you want to know the titles of all reports submitted
+from that department.
+
+Enter this statement:
+\begin{verbatim}
+     SELECT   TITLE
+     FROM     DEPARTMENT, REPORT
+     WHERE    DNAME = 'RESEARCH AND DEVELOPMENT'
+       AND    REPORT.DEPT = DEPARTMENT.DEPT ;
+\end{verbatim}
+
+{\bf Syntax Notes:}
+\begin{itemize}
+\item The tables to be joined are listed after \verb`FROM`.
+\item The condition for the join operation is specified after {\tt AND} (as
+part of \verb`WHERE`).
+\end{itemize}
+
+The results follow:
+
+%\begin{screen}
+\begin{verbatim}
+  TITLE
+  Innovations in Disappearing Ink
+  Improvements in Round Widgets
+  Ink Color Panorama
+\end{verbatim}
+%\end{screen}
+
+Since you don't know Research and Development's department code, you
+use the department name found in the \verb`DEPARTMENT` table in order to find
+the row that stores Research and Development's code, which is `RND'.
+Conceptually, visualize the join operation to occur as follows:
+
+\begin{enumerate}
+\item The conditional expression {\tt DNAME = 'RESEARCH AND DEVELOPMENT'}
+references one row from the \verb`DEPARTMENT` table; i.e., the `RND' row.
+
+\item Now that the RND code is known, this row in the \verb`DEPARTMENT` table
+is joined with the rows in the \verb`REPORT` table that have DEPT = RND.
+The joined table represents the titles of the reports submitted by
+authors from the Research and Development department.
+\end{enumerate}
+
+As the next example illustrates, more than two tables can be joined
+together.
+
+{\bf Example:}
+Provide a list of salaries paid to those people in the Product
+Division who contributed reports to the Corporate Library.  The report
+should include the author's name, department name, and annual salary.
+
+You would enter this statement:
+\begin{verbatim}
+     SELECT   AUTHOR, DNAME, SALARY
+     FROM     REPORT, DEPARTMENT, EMPLOYEE
+     WHERE    DEPARTMENT.DIV = 'PROD'
+       AND    REPORT.DEPT = DEPARTMENT.DEPT
+       AND    REPORT.DEPT = EMPLOYEE.DEPT ;
+\end{verbatim}
+
+{\bf Syntax Notes:}
+\begin{itemize}
+\item The order of the joins in the \verb`WHERE` clause is not important.
+
+\item The three tables to be joined are listed after \verb`FROM`.
+
+\item The first {\tt AND} statement (in \verb`WHERE` clause) is the condition for
+joining the REPORT and \verb`DEPARTMENT` tables.
+
+\item The second {\tt AND} statement (in \verb`WHERE` clause) is the condition for
+joining the REPORT and \verb`EMPLOYEE` tables.
+
+\item While department code happens to be a column which all three
+tables have in common, it would be possible to join two tables with a
+common column, and the other two tables with a different common
+column, such as \verb`ENAME` in the \verb`EMPLOYEE` table and AUTHOR in the REPORT
+table.  (The latter would not be as efficient, nor as reliable, so
+department name was chosen instead.)
+\end{itemize}
+
+The results would be:
+
+%\begin{screen}
+\begin{verbatim}
+  AUTHOR               DNAME                           SALARY
+  Jackson, Herbert     Research and Development        30000
+  Sanchez, Carla       Product Marketing and Sales     35000
+  Smith, Roberta       Research and Development        25000
+  Aster, John A.       Product Marketing and Sales     32000
+\end{verbatim}
+%\end{screen}
+
+In this example, data from three tables (REPORT, DEPARTMENT, \verb`EMPLOYEE`)
+are joined together.
+
+Conceptually, the \verb`DEPARTMENT` table references the rows that contain
+PROD; this gives us the departments in the Product Division.  The
+departments in the Product Division (RND, MFG, CSS, MKT) are matched
+against the departments in the DEPT column of the \verb`REPORT` table.  The
+tables are joined for the Research and Development (RND) and Product
+Marketing and Sales (MKT) departments.  This yields an intermediate
+table containing all the columns from both the DEPARTMENT and REPORT
+tables for RND and MKT rows.
+
+This intermediate table is joined with the \verb`EMPLOYEE` table, based on
+the second join condition {\tt REPORT.DEPT = EMPLOYEE.DEPT} to form
+a combination of columns from all 3 tables, for the matching rows.
+
+Finally, the \verb`SELECT` clause indicates which columns in the intermediate
+joined table that you want displayed.  Thus the author, department
+name, and annual salary are shown as in the above example.
+
+As a final point, the order in which you place the conditions in the
+\verb`WHERE` clause does not affect the way Texis accesses the data.  Texis
+contains an ``{\em optimizer}'' in its underlying software, which
+chooses the best access path to the data based on factors such as
+index availability, size of tables involved, number of unique values
+in an indexed column, and other statistical information.  Thus, the
+results would not be affected by writing the same query in the
+following order:
+\begin{verbatim}
+     SELECT   AUTHOR, DNAME, SALARY
+     FROM     REPORT, DEPARTMENT, EMPLOYEE
+     WHERE    REPORT.DEPT = EMPLOYEE.DEPT
+       AND    REPORT.DEPT = DEPARTMENT.DEPT
+       AND    DEPARTMENT.DIV = 'PROD' ;
+\end{verbatim}
+
+\section{Nesting Queries}
+
+At times you may wish to retrieve rows in one table based on
+conditions in a related table.  For example, suppose Personnel needed
+to call in any employees in the Information Division receiving only
+partial benefits, to discuss options for upgrading to the full benefit
+program.  To answer this query, you have to retrieve the names of all
+departments in the Information Division, found in the DEPARTMENT
+table, and then the employees with partial benefits in the Information
+Division departments, found in the \verb`EMPLOYEE` table.
+
+In other situations, you may want to formulate a query from one table
+that required you to make two passes through the table in order to
+obtain the desired results.  For example, you may want to retrieve a
+list of staff members earning a salary higher than Jackson, but you
+don't know Jackson's salary.  To answer this query, you first find
+Jackson's salary; then you compare the salary of each staff member to
+his.
+
+One approach is to develop a {\em subquery}, which involves embedding
+a query (\verb`SELECT`-\verb`\verb`FROM``-\verb`WHERE` block) within the \verb`WHERE` clause of another
+query.  This is sometimes referred to as a ``{\em nested query}''.
+
+The format of a nested query is:
+\begin{verbatim}
+     SELECT   column-name1 [,column-name2]
+     FROM     table-name
+     WHERE    column-name IN
+       (SELECT   column-name
+        FROM     table-name
+        WHERE    search-condition) ;
+\end{verbatim}
+
+{\bf Syntax Notes:}
+\begin{itemize}
+\item The first \verb`SELECT`-\verb`\verb`FROM``-\verb`WHERE` block is the outer query.
+\item The second \verb`SELECT`-\verb`\verb`FROM``-\verb`WHERE` block in parentheses is the
+subquery.
+\item The {\tt IN} operator is normally used if the inner query returns many
+rows and one column.
+\end{itemize}
+
+\subsubsection{Command Discussion}
+
+Here are some points concerning the use of nested queries:
+
+\begin{enumerate}
+\item The above statement contains two \verb`SELECT`-\verb`FROM`-\verb`WHERE` blocks.  The
+portion in parentheses is called the subquery.  The subquery is
+evaluated first; then the outer query is evaluated based on the result
+of the subquery.  In effect, the nested query can be looked at as
+being equivalent to:
+\begin{verbatim}
+     SELECT   column-name1 [,column-name2] ...
+     FROM     table-name
+     WHERE    column-name IN (set of values from the subquery) ;
+\end{verbatim}
+where the set of values is determined from the inner \verb`SELECT`-\verb`FROM`-\verb`WHERE`
+block.
+
+\item The {\tt IN} operator is used to link the outer query to the subquery
+when the subquery returns a set of values (one or more).  Other
+comparison operators, such as \verb`<`, \verb`>`, \verb`=`, etc., can
+be used to link an outer query to a subquery when the subquery returns
+a single value.
+
+\item The subquery must have only a single column or expression in the
+\verb`SELECT` clause, so that the resulting set of values can be passed back
+to the next outer query for evaluation.
+
+\item You are not limited to one subquery.  Though it isn't advised,
+there could be as many as 16 levels of subqueries, with no fixed
+limitation except limits of memory and disk-space on the machine in
+use.  Any of the operators (\verb`IN`, \verb`=`, \verb`<`, \verb`>`,
+etc.) can be used to link the subquery to the next higher level.
+
+%\item You can use a subquery only if the values in the outer, or main,
+%query come from a single table.  If the desired output comes from more than
+%one table, a join operation is required.
+\end{enumerate}
+
+{\bf Example:}
+List the names of all personnel in the Information Division by entering
+this statement:
+
+\begin{verbatim}
+     SELECT   ENAME
+     FROM     EMPLOYEE
+     WHERE    DEPT IN
+       (SELECT   DEPT
+        FROM     DEPARTMENT
+        WHERE    DIV = 'INFO') ;
+\end{verbatim}
+Parentheses are placed around the subquery, as shown below the outer
+\verb`WHERE` clause.
+
+The results are:
+
+%\begin{screen}
+\begin{verbatim}
+  ENAME
+  Chapman, Margaret
+  Dedrich, Franz
+  Krinski, Wanda
+  Peters, Robert
+\end{verbatim}
+%\end{screen}
+
+To understand how this expression retrieves its results, work from the
+bottom up in evaluating the \verb`SELECT` statement.  In other words, the
+subquery is evaluated first.  This results in a set of values that can
+be used as the basis for the outer query.  The innermost \verb`SELECT` block
+retrieves the following set of department codes, as departments
+in the Information (`INFO') Division: ISM, LIB, SPI.
+
+In the outermost \verb`SELECT` block, the {\tt IN} operator tests whether any
+department code in the \verb`EMPLOYEE` table is contained in the set of
+department codes values retrieved from the inner \verb`SELECT` block; i.e.,
+ISM, LIB, or SPI.
+
+In effect, the outer \verb`SELECT` block is equivalent to:
+\begin{verbatim}
+     SELECT   ENAME
+     FROM     EMPLOYEE
+     WHERE    DEPT IN ('ISM', 'LIB', 'SPI') ;
+\end{verbatim}
+where the values in parentheses are values from the subquery.
+
+Thus, the employee names Chapman, Dedrich, Krinski and Peters are
+retrieved.
+
+Subqueries can be nested several levels deep within a query, as the
+next example illustrates.
+
+{\bf Example:}
+Acme Industrial's ink sales are up, and management wishes to reward
+everyone in the division(s) most responsible.  List the names of all
+employees in any division whose personnel have contributed reports on
+ink to the corporate library, along with their department and benefit
+level.
+
+Use this statement:
+\begin{verbatim}
+     SELECT   ENAME, DEPT, BENEFITS
+     FROM     EMPLOYEE
+     WHERE    DEPT IN
+       (SELECT   DEPT
+        FROM     DEPARTMENT
+        WHERE    DIV IN
+          (SELECT   DIV
+           FROM     DEPARTMENT
+           WHERE    DEPT IN
+             (SELECT   DEPT
+              FROM     REPORT
+              WHERE    TITLE  LIKE 'ink') ) ) ;
+\end{verbatim}
+{\tt IN} is used for each subquery since in each case it is possible to
+retrieve several values.  You could use `\verb`=`' instead where you
+knew only one value would be retrieved; e.g. where you wanted only the
+division with the greatest number of reports rather than all divisions
+contributing reports.
+
+Results of the above nested query are:
+
+%\begin{screen}
+\begin{verbatim}
+  ENAME                DEPT   BENEFITS
+  Aster, John A.       MKT    FULL
+  Jackson, Herbert     RND    FULL
+  Sanchez, Carla       MKT    FULL
+  Smith, Roberta       MKT    PART
+  Jones, David         RND    FULL
+  Washington, G.       MFG    FULL
+  Ferrer, Miguel       CSS    FULL
+  Brown, Penelope      MKT    FULL
+\end{verbatim}
+%\end{screen}
+
+Again, remember that a nested query is evaluated from the bottom up;
+i.e., from the innermost query to the outermost query.  First, a
+text search is done ({\tt TITLE LIKE 'INK'}) of report titles from the
+\verb`REPORT` table.  Two such titles are located: ``Disappearing Ink'' by
+Herbert Jackson from Research and Development (RND), and ``Ink
+Promotional Campaign'' by Carla Sanchez from Product Marketing and
+Sales (MKT).  Thus the results of the innermost query produces a list
+of two department codes: RND and MKT.
+
+Once the departments are known, a search is done of the DEPARTMENT
+table, to locate the division or divisions to which these departments
+belong.  Both departments belong to the Product Division (PROD); thus
+the results of the next subquery produces one item: PROD.
+
+A second pass is made through the same table, DEPARTMENT, to find all
+departments which belong to the Product Division.  This search
+produces a list of four Product Division departments: MKT, RND, MFG,
+and CSS, adding Manufacturing as well as Customer Support and Service
+to the list.
+
+This list is passed to the outermost query so that the \verb`EMPLOYEE` table
+may be searched for all employees in those departments.  The final
+listing is retrieved, as above.
+
+Here is another example specifically designed to illustrate the use of
+a subquery making two passes through the same table to find the
+desired results.
+
+{\bf Example:}
+List the names of employees who have salaries greater than that of
+Herbert Jackson.  Assume you do not know Jackson's salary.
+
+Enter this statement:
+\begin{verbatim}
+     SELECT   ENAME, SALARY
+     FROM     EMPLOYEE
+     WHERE    SALARY >
+       (SELECT   SALARY
+        FROM     EMPLOYEE
+        WHERE    ENAME = 'Jackson, Herbert') ;
+\end{verbatim}
+The compare operator \verb`>` can be used (as could \verb`=` and other
+compare operators) where a single value only will be returned from the
+subquery.
+
+Using the sample information in our \verb`EMPLOYEE` table, the results are as
+follows:
+
+%\begin{screen}
+\begin{verbatim}
+  ENAME              SALARY
+  Aster, John A.     32000
+  Barrington, Kyle   45000
+  Price Stella       42000
+  Sanchez, Carla     35000
+\end{verbatim}
+%\end{screen}
+
+The subquery searches the \verb`EMPLOYEE` table and returns the value
+\verb`30000`, the salary listed for Herbert Jackson.  Then the outer
+\verb`SELECT` block searches the \verb`EMPLOYEE` table again to retrieve all
+employees with \verb`SALARY > 30000`.  Thus the above employees with
+higher salaries are retrieved.
+
+\section{Forming Complex Queries}
+
+The situations covered in this section are more technical than most
+end users have need to conceptualize.  However, a system administrator
+may require such complex query structures to efficiently obtain the
+desired results.
+
+\subsection{Joining a Table to Itself}
+
+In some situations, you may find it necessary to join a table to
+itself, as though you were joining two separate tables.  This is
+referred to as a {\em self join}.  In the self join, the combined
+result consists of two rows from the same table.
+
+For example, suppose that within the \verb`EMPLOYEE` table, personnel are
+assigned a RANK of ``STAFF'', ``DHEAD'', and so on.  To obtain a list
+of employees that includes employee name and the name of his or her
+department head requires the use of a self join.
+
+To join a table to itself, the table name appears twice in the \verb`FROM`
+clause.  To distinguish between the appearance of the same table name,
+a temporary name, called an {\em alias} or a {\em correlation name},
+is assigned to each mention of the table name in the \verb`FROM` clause.  The
+form of the \verb`FROM` clause with an alias is:
+\begin{verbatim}
+     FROM   table-name [alias1] [,table-name [alias2] ] ...
+\end{verbatim}
+
+To help clarify the meaning of the query, the alias can be used as a
+qualifier, in the same way that the table name serves as a qualifier,
+in \verb`SELECT` and \verb`WHERE` clauses.
+
+{\bf Example:}
+As part of an analysis of Acme's salary structure, you want to
+identify the names of any regular staff who are earning more than a
+department head.
+
+Enter this query:
+\begin{verbatim}
+     SELECT   STAFF.ENAME, STAFF.SALARY
+     FROM     EMPLOYEE DHEAD, EMPLOYEE STAFF
+     WHERE    DHEAD.RANK = 'DHEAD' AND STAFF.RANK = 'STAFF'
+       AND    STAFF.SALARY > DHEAD.SALARY ;
+\end{verbatim}
+Using a sampling of information from the \verb`EMPLOYEE` table, we would
+get these results:
+
+%\begin{screen}
+\begin{verbatim}
+  ENAME               SALARY
+
+  Sanchez, Carla      35000
+\end{verbatim}
+%\end{screen}
+
+In this query, the \verb`EMPLOYEE` table, using the alias feature, is treated
+as two separate tables named \verb`DHEAD` and \verb`STAFF`, as shown here (in
+shortened form):
+
+%\begin{screen}
+\begin{verbatim}
+  DHEAD Table                         STAFF Table
+  EID ENAME   DEPT RANK  BEN  SALARY  EID ENAME   DEPT RANK  BEN  SALARY
+  101 Aster   MKT  STAFF FULL 32000   101 Aster   MKT  STAFF FULL 32000
+  109 Brown   MKT  DHEAD FULL 37500   109 Brown   MKT  DHEAD FULL 37500
+  103 Chapman LIB  STAFF PART 22000   103 Chapman LIB  STAFF PART 22000
+  110 Krinski LIB  DHEAD FULL 32500   110 Krinski LIB  DHEAD FULL 32500
+  106 Sanchez MKT  STAFF FULL 35000   106 Sanchez MKT  STAFF FULL 35000
+\end{verbatim}
+%\end{screen}
+
+Now the join operation can be made use of, as if there were two
+separate tables, evaluated as follows.
+
+First, using the following compound condition:
+\begin{verbatim}
+     DHEAD.RANK = 'DHEAD' AND STAFF.RANK = 'STAFF'
+\end{verbatim}
+each department head record (Brown, Krinski) in the \verb`DHEAD` table is
+joined with each staff record (Aster, Chapman, Sanchez) from the \verb`STAFF`
+table to form the following intermediate result:
+
+%\begin{screen}
+\begin{verbatim}
+  DHEAD Table                         STAFF Table
+  EID ENAME   DEPT RANK  BEN  SALARY  EID ENAME   DEPT RANK  BEN  SALARY
+  109 Brown   MKT  DHEAD FULL 37500   101 Aster   MKT  STAFF FULL 32000
+  109 Brown   MKT  DHEAD FULL 37500   103 Chapman LIB  STAFF PART 22000
+  109 Brown   MKT  DHEAD FULL 37500   106 Sanchez MKT  STAFF FULL 35000
+  110 Krinski LIB  DHEAD FULL 32500   101 Aster   MKT  STAFF FULL 32000
+  110 Krinski LIB  DHEAD FULL 32500   103 Chapman LIB  STAFF PART 22000
+  110 Krinski LIB  DHEAD FULL 32500   106 Sanchez MKT  STAFF FULL 35000
+\end{verbatim}
+%\end{screen}
+
+Notice that every department head row is combined with each staff
+record.
+
+Next, using the condition:
+\begin{verbatim}
+       STAFF.SALARY > DHEAD.SALARY
+\end{verbatim}
+for each row of the joined table, the salary value from the \verb`STAFF`
+portion is compared with the corresponding salary value from the \verb`DHEAD`
+portion.  If \verb`STAFF.SALARY` is greater than \verb`DHEAD.SALARY`, then
+\verb`STAFF.ENAME` and \verb`STAFF.SALARY` are retrieved in the final table.
+
+The only row in the joined table satisfying this condition of staff
+salary being greater than department head salary is the last one,
+where Carla Sanchez from Marketing, at a salary of \$35,000, is
+earning more than Wanda Krinski, as department head for the Corporate
+Library, at a salary of \$32,500.
+
+\subsection{Correlated Subqueries}
+
+All the previous examples of subqueries evaluated the innermost query
+completely before moving to the next level of the query. Some queries,
+however, cannot be completely evaluated before the outer, or main,
+query is evaluated.  Instead, the search condition of a subquery
+depends on a value in each row of the table named in the outer query.
+Therefore, the subquery is evaluated repeatedly, once for each row
+selected from the outer table.  This type of subquery is referred to
+as a {\em correlated subquery}.
+
+{\bf Example:}
+Retrieve the name, department, and salary, of any employee whose
+salary is above average for his or her department.
+
+Enter this query:
+\begin{verbatim}
+     SELECT   POSSIBLE.ENAME, POSSIBLE.DEPT, POSSIBLE.SALARY
+     FROM     EMPLOYEE POSSIBLE
+     WHERE    SALARY >
+       (SELECT   AVG (SALARY)
+        FROM     EMPLOYEE AVERAGE
+        WHERE    POSSIBLE.DEPT = AVERAGE.DEPT) ;
+\end{verbatim}
+
+{\bf Syntax Notes:}
+\begin{itemize}
+\item The outer \verb`SELECT`-\verb`FROM`-\verb`WHERE` block is the main query.
+
+\item The inner \verb`SELECT`-\verb`FROM`-\verb`WHERE` block in parentheses is the
+subquery.
+
+\item POSSIBLE (following \verb`EMPLOYEE` in the outer query) and AVERAGE
+(following \verb`EMPLOYEE` in the subquery) are alias table names for the
+\verb`EMPLOYEE` table, so that the information may evaluated as though it
+comes from two different tables.
+\end{itemize}
+
+It results in:
+
+%\begin{screen}
+\begin{verbatim}
+  ENAME               DEPT   SALARY
+  Krinski, Wanda      LIB    32500
+  Brown, Penelope     MKT    37500
+  Sanchez, Carla      MKT    35000
+  Jones, David        RND    37500
+\end{verbatim}
+%\end{screen}
+
+The column AVERAGE.DEPT correlates with POSSIBLE.DEPT in the main, or
+outer, query.  In other words, the average salary for a department is
+calculated in the subquery using the department of each employee from
+the table in the main query (POSSIBLE).  The subquery computes the
+average salary for this department and then compares it with a row in
+the \verb`POSSIBLE` table.  If the salary in the \verb`POSSIBLE` table is greater
+than the average salary for the department, then that employee's name,
+department, and salary are displayed.
+
+The process of the correlated subquery works in the following manner.
+The department of the first row in POSSIBLE is used in the subquery to
+compute an average salary.  Let's take Krinksi's row, whose department
+is the corporate library (LIB).  In effect, the subquery is:
+\begin{verbatim}
+     SELECT   AVG (SALARY)
+     FROM     EMPLOYEE AVERAGE
+     WHERE    'LIB' = AVERAGE.DEPT ;
+\end{verbatim}
+
+LIB is the value from the first row in POSSIBLE, as alias for
+\verb`EMPLOYEE`.
+
+This pass through the subquery results in a value of \$27,250, the
+average salary for the LIB dept.  In the outer query, Krinski's salary
+of \$32,500 is compared with the average salary for LIB; since it is
+greater, Krinski's name is displayed.
+
+This process continues; next, Aster's row in POSSIBLE is evaluated,
+where MKT is the department.  This time the subquery is evaluated as
+follows:
+\begin{verbatim}
+     SELECT   AVG (SALARY)
+     FROM     EMPLOYEE AVERAGE
+     WHERE    'MKT' = AVERAGE.DEPT ;
+\end{verbatim}
+
+The results of this pass through the subquery is an average salary of
+\$34,833 for MKT, the Product Marketing and Sales Department.  Since
+Aster has a salary of \$32,000, a figure lower than the average, this
+record is not displayed.
+
+Every department in POSSIBLE is examined in a similar manner before
+this subquery is completed.
+
+\subsection{Subquery Using EXISTS}
+
+There may be situations in which you are interested in retrieving
+records where there exists at least one row that satisfies a
+particular condition.  For example, the resume records stored in the
+\verb`RESUME` table may include some individuals who are already employed at
+Acme Industrial and so are entered in the \verb`EMPLOYEE` table.  If you
+wanted to know which employees were seeking new jobs at the present
+time, an existence test using the keyword \verb`EXISTS` can be used to answer
+such a query.
+
+This type of query is developed with a subquery.  The \verb`WHERE` clause of
+the outer query is used to test the existence of rows that result from
+a subquery.  The form of the \verb`WHERE` clause that is linked to the
+subquery is:
+\begin{verbatim}
+     WHERE [NOT] EXISTS (subquery)
+\end{verbatim}
+
+This clause is satisfied if there is at least one row that would be
+returned by the subquery.  If so, the subquery does not return any
+values; it just sets an indicator value to true.  On the other hand,
+if no elements satisfy the condition, or the set is empty, the
+indicator value is false.
+
+The subquery should return a single column only.
+
+{\bf Example:}
+Retrieve a list of Acme employees who have submitted resumes to
+personnel for a different job placement.
+
+Enter this query:
+\begin{verbatim}
+     SELECT   EID, ENAME
+     FROM     EMPLOYEE
+     WHERE    EXISTS
+       (SELECT RNAME
+        FROM   RESUME
+        WHERE  EMPLOYEE.ENAME = RESUME.RNAME) ;
+\end{verbatim}
+
+The results are:
+
+%\begin{screen}
+\begin{verbatim}
+  EID  ENAME
+  107  Smith, Roberta
+  113  Ferrer, Miguel
+\end{verbatim}
+%\end{screen}
+
+In this query, the subquery cannot be evaluated completely before the
+outer query is evaluated.  Instead, we have a correlated subquery.
+For each row in \verb`EMPLOYEE`, a join of \verb`EMPLOYEE` and \verb`RESUME` tables is
+performed (even though \verb`RESUME` is the only table that appears in the
+subquery's \verb`FROM` clause) to determine if there is a resume name in
+\verb`RESUME` that matches a name in \verb`EMPLOYEE`.
+
+For example, for the first row in the \verb`EMPLOYEE` table ({\tt ENAME = 'Smith, Roberta'}) the subquery evaluates as ``true'' if at least one row in
+the \verb`RESUME` table has {\tt RNAME = 'Smith, Roberta'}; otherwise, the
+expression evaluates as ``false''.  Since there is a row in \verb`RESUME`
+with {\tt RNAME = 'Smith, Roberta'}, the expression is true and Roberta
+Smith's row is displayed.  Each row in \verb`EMPLOYEE` is evaluated in a
+similar manner.
+
+The following is an example of the interim join (in shortened form)
+between the \verb`EMPLOYEE` and \verb`RESUME` Tables, for the above names which
+satisfied the search requirement by appearing in both tables:
+
+%\begin{screen}
+\begin{verbatim}
+  EMPLOYEE Table            RESUME Table
+  EID ENAME          DEPT   RES_ID  RNAME           JOB       EXISTS
+                                                              (subquery)
+  107 Smith, Roberta RND    R406    Smith, Roberta  Engineer  TRUE
+  113 Ferrer, Miguel CSS    R425    Ferrer, Miguel  Analyst   TRUE
+\end{verbatim}
+%\end{screen}
+
+%% would this be possible? look down to next %%
+%% John says this may be supported in future ... %%
+%% exact syntax? might need string concatenation with + to work %%
+
+Note in this example that there is no key ID field connecting the two
+tables; therefore the character field for name is being used to join
+the two tables, which might have been entered differently and
+therefore is not an altogether reliable join.  This indicates that
+such a search is an unusual rather than a usual action.
+
+Such a search would be a good opportunity to use a Metamorph \verb`LIKE`
+qualifier rather than a straight join on a column as above, where
+\verb`ENAME` must match exactly \verb`RNAME`. A slightly more thorough way of
+searching for names appearing in both tables which were not
+necessarily intended to be matched exactly would use Metamorph's
+approximate pattern matcher, indicated by a percent sign \verb`%`
+preceding the name.  For example:
+
+\begin{verbatim}
+     SELECT   EID, ENAME
+     FROM     EMPLOYEE
+     WHERE    EXISTS
+       (SELECT *
+        FROM   RESUME
+        WHERE  EMPLOYEE.ENAME LIKE '%' + RESUME.RNAME) ;
+\end{verbatim}
+
+In this example a name approximately like each \verb`RNAME` in the \verb`RESUME`
+table would be compared to each \verb`ENAME` in the \verb`EMPLOYEE` table,
+increasing the likelihood of a match. (String concatenation is used to
+append the name found in the resume table to the percent sign
+(\verb`%`) which signals the approximate pattern matcher XPM.)
+
+%% wouldn't it be cool to do something like this? (above) %%
+%% we can leave it in, no harm if doesn't work right away %%
+%% shows off the potential for what could be done %%
+
+Often, a query is formed to test if no rows are returned in a
+subquery.  In this case, the following form of the existence test is
+used:
+
+\begin{verbatim}
+     WHERE   NOT EXISTS (subquery)
+\end{verbatim}
+
+{\bf Example:}
+List any authors of reports submitted to the online corporate library
+who are not current employees of Acme Industrial.  To find this out we
+would need to know which authors listed in the \verb`REPORT` table are not
+entered as employees in the \verb`EMPLOYEE` table.
+
+Use this query:
+\begin{verbatim}
+     SELECT   AUTHOR
+     FROM     REPORT
+     WHERE    NOT EXISTS
+       (SELECT *
+        FROM   EMPLOYEE
+        WHERE  EMPLOYEE.ENAME = REPORT.AUTHOR) ;
+\end{verbatim}
+which would likely result in a list of former employees such as:
+
+%\begin{screen}
+\begin{verbatim}
+  AUTHOR
+  Acme, John Jacob Snr.
+  Barrington, Cedrick II.
+  Rockefeller, George G.
+\end{verbatim}
+%\end{screen}
+
+Again, we have an example of a correlated subquery.  Below is
+illustrated (in shortened form) how each row which satisfied the
+search requirement above in REPORT is evaluated with the records in
+\verb`EMPLOYEE` to determine which authors are not (or are no longer) Acme
+employees.
+
+%\begin{screen}
+\begin{verbatim}
+  REPORT Table                               EMPLOYEE Table  EXISTS
+  TITLE              AUTHOR
+  Company Origin     Acme, John Jacob Snr.                   FALSE
+  Management Art     Barrington, Cedrick II.                 FALSE
+  Financial Control  Rockefeller, George G.                  FALSE
+\end{verbatim}
+%\end{screen}
+
+In this example each of the above authors from the REPORT Table are
+tested for existence in the \verb`EMPLOYEE` Table.  When they are not found
+to exist there it returns a value of FALSE.  Since the query condition
+in the \verb`WHERE` clause is that it {\tt NOT EXISTS}, this changes the false
+value to true, and these rows are displayed.
+
+For each of the queries shown in this section, there are probably
+several ways to obtain the same kind of result.  Some correlated
+subqueries can also be expressed as joins.  These examples are given
+not so much as the only definitive way to state these search requests,
+but more so as to give a model for what kinds of things are possible.
+%
+%\subsection{Combining Query Results Using the UNION Operator}
+%
+%The UNION operator is used to merge the results of two or more queries
+%into a single result.  Each query is connected by a UNION operator to
+%produce the result.  In the process of merging the queries, duplicate
+%rows are removed from the answer.  The general form of the operator
+%is:
+%\begin{verbatim}
+%     SELECT   statement
+%     UNION
+%     SELECT   statement
+%
+%     [UNION           ]
+%     [SELECT STATEMENT]
+%     ...
+%
+%     [ORDER BY  integer [DESC] ] ;
+%\end{verbatim}
+%
+%\subsubsection{Command Discussion}
+%
+%\begin{enumerate}
+%\item The system first executes each query separately; the results
+%from each query are merged with the results of the next query, until
+%all the queries have been merged.  Any duplicate rows that occur are
+%removed from the results.
+%
+%\item In order for queries to be merged, they must be {\em union
+%compatible}; i.e., the data types and lengths of the corresponding
+%items in each \verb`SELECT` clause must be identical.
+%
+%\item If ordering of the final, or merged, output is desired, the
+%{\tt ORDER BY} clause is placed after the last query only and applies to the
+%entire result.  Since the column name in each query may vary, the sort
+%key must be specified as a number, not a column name.  (Refer {\em
+%Sorting Your Results} in Chapter~\ref{chp:Quer}).
+%\end{enumerate}
+%
+%{\bf Example:}
+%Research and Development is hosting a Future Technology day.  The
+%department head decides to invite all R\&D personnel as well as anyone
+%who has submitted technology related reports to the online library.
+%To create the list he must create a list of all staff in the R\&D
+%department from the \verb`EMPLOYEE` table, and combine it with a list of
+%technology related authors from the \verb`REPORT` table.
+%
+%This statement will create such a list:
+%\begin{verbatim}
+%     SELECT     ENAME
+%     FROM       EMPLOYEE
+%     WHERE      DEPT = 'RND'
+%
+%     UNION
+%
+%     SELECT     DISTINCT AUTHOR
+%     FROM       REPORT
+%     WHERE      TITLE LIKE '~technology'
+%
+%     ORDER BY   1 ;
+%\end{verbatim}
+%
+%{\bf Syntax Notes:}
+%\begin{itemize}
+%\item The first \verb`SELECT`-\verb`FROM`-\verb`WHERE` statement is a query to find
+%personnel who are in the RND (Research and Development) department.
+%
+%\item The second \verb`SELECT`-\verb`FROM`-\verb`WHERE` statement is a query to find titles
+%of reports which contain words conceptually similar to the word
+%technology.  The tilde `\verb`~`' preceding ``technology'' expands the
+%\verb`LIKE` specification to include a set of words similar to
+%``technology'', referred to as a concept set.  Metamorph query
+%language is being used, as is covered in detail in
+%Chapter~\ref{Chp:MMLike}.
+%
+%\item Authors are selected for matching titles.
+%
+%\item As author and employee names are both character fields entered
+%last name first, they are {\em union compatible} and can be merged
+%into a list.
+%
+%\item The `\verb`1`' following {\tt ORDER BY} indicates the output is
+%ordered by the first item in the \verb`SELECT` clause.
+%\end{itemize}
+%
+%Results of the query are:
+%
+%%\begin{screen}
+%\begin{verbatim}
+%  ENAME
+%  Barrington, Kyle
+%  Jackson, Herbert
+%  Jones, David
+%  Sanchez, Carla
+%  Smith, Roberta
+%\end{verbatim}
+%%\end{screen}
+%
+%Texis executes the top query and finds the RND personnel in the
+%\verb`EMPLOYEE` table.  Separately, authors are located who wrote technology
+%related reports in the \verb`REPORT` table.  The results are merged, and any
+%duplicates are removed.  Thus the above 5 names are the final output.
+%
+%For example, Carla Sanchez was located because she wrote two reports
+%entitled, ``Marketing Mechanical Objects'' and ``Industrial Sales
+%Techniques''.  These were a conceptual match on ``technology''.  The
+%DISTINCT operator in the second \verb`SELECT` clause removes the duplications
+%of this report, producing Carla's name only once in that list.
+%
+%When the author list is merged with the R\&D list, there may be
+%additional duplications for selected authors who are also R\&D
+%personnel.  The UNION operator removes any duplications between the
+%two lists produced by the two select statements.
+
+\input{vfield}
+\input{calias}
+
+This chapter has illustrated various complex query constructions
+possible with Texis, and has touched on the use of Metamorph in
+conjunction with standard SQL queries.  The next chapter will explain
+Metamorph query language in depth and give examples of its use in
+locating relevant narrative text.

@@ -1,0 +1,1673 @@
+
+% $Id$
+%
+%  Use:        For:               PDF render:   Online render:
+%  ----        ----               ----------    --------------
+%  \verb`...`  Keywords           Fixed-font    <code> fixed-font red-on-pink
+%  {\tt ... }  User input         Fixed-font    <tt> fixed-font
+%  {\bf ...}   Settings/sections  Bold          <b> bold
+
+% ============================================================================
+\section{Server Properties}
+\label{ServerProperties}
+
+  There are a number of properties that are settable in the SQL
+Engine.  They do not need to be changed unless the behavior of the
+system must be modified.  The properties are set using the following
+SQL syntax:
+
+\begin{verbatim}
+    SET property = value;
+\end{verbatim}
+
+The \verb`value` can be one of three types depending on the property:
+numeric, boolean or string.  A boolean value is either an integer--0
+is false, anything else is true--or one of the following strings:
+``\verb`on`'', ``\verb`off`'', ``\verb`true`'', ``\verb`false`'',
+``\verb`yes`'' or ``\verb`no`''.
+
+The settings are grouped as follows:
+
+% WTF properties:
+% alequivs
+% alintersects
+% allinear
+% allowramtableblob
+% alnot
+% alphrase
+% alpostproc
+% alwild
+% alwithin
+% btreeoptimizeoff
+% btreeoptimizeon
+% dedupmultiitemresults
+% defsuffrm
+% denymode
+% eastpositive
+% enablesubsetintersect
+% eqprefix
+% exactphrase
+% findselloopcheck
+% fldmathverbosemaxvaluesize
+% inc_edexp
+% inc_sdexp
+% indexmmapbufsize
+% indexreadbufsize
+% indexwritebufsize
+% kdbfoptimizeoff
+% kdbfoptimizeon
+% kdbfverify
+% keepeqvs
+% likerpercent
+% listindextmp
+% locksleepdecrement
+% locksleepincrement
+% max_index_text
+% maxrows
+% max_rows
+% nolocking
+% olddelim
+% qmaxsets
+% qmaxsetwords
+% qmaxterms
+% qmaxwords
+% qminprelen
+% qminwordlen
+% querysettings
+% reqedelim
+% reqsdelim
+% showplan
+% strlstrelopvarcharpromoteviacreate
+% tablereadbufsize
+% traceddcache
+% traceddcachetablename
+% traceidx
+% traceindex
+% tracelocksdatabase
+% tracelockstable
+% tracerppm
+% ueqprefix
+% usestringcomparemodeforstrlst
+% varchar2strlstsep
+% verbose
+% verifysingle
+
+% WTF optimize settings:
+% sortedvarfls
+% pointersintostrlst
+% linearrankindexexps
+% likeandnoinv
+% likeand
+% indexdatagroupby
+% fastmmindexupdate
+% indexonly
+% auxdatalen
+% copy
+
+% ----------------------------------------------------------------------------
+\subsection{Search and optimization parameters}
+
+These settings affect the way that Texis will process the search.  They
+include settings which change the meaning of the search, as well as how
+the search is performed.
+
+\begin{description}
+\item[defaultlike]
+
+  Defines which sort of search should occur when a \verb`like` or
+\verb`contains` operator is in the query.  The default setting of
+``\verb`like`'' behaves in the normal manner.  Other settings that can
+be set are ``\verb`like3`'', ``\verb`likep`'', ``\verb`liker`'' and
+``\verb`matches`''.  In each case the \verb`like` operator will act as
+if the specified operator had been used instead.
+
+\item[matchmode]
+  Changes the behavior of the \verb`matches` clause.  The default
+behavior is to use underscore and percent as the single and
+multi-character character wildcards.  Setting \verb`matchmode` to 1 will
+change the wildcards to question-mark and asterisk.
+
+\item[predopttype]
+  The Texis engine can reorder the \verb`where` clause in an attempt
+to make it faster to evaluate.  There are a number of ways this can be
+done; the \verb`predopttpye` property controls the way it reorders.
+The values are 0 to not reorder, 1 to evaluate \verb`and` first, 2 to
+evaluate \verb`or` first.  The default is 0.
+
+\item[ignorecase]
+{\bf Note: } Deprecated; see \verb`stringcomparemode` setting which
+supercedes this.
+Setting \verb`ignorecase` to true will cause string comparisons
+(equals, sorting, etc.) in the SQL engine to ignore case,
+e.g. ``\verb`A`'' will compare identical to ``\verb`a`''.  (This is
+distinct from {\em text} comparisons, e.g.  the \verb`LIKE` operator,
+which ignore case by default and are unaffected by \verb`ignorecase`.)
+{\bf Note:} This setting will also affect any indices that are built;
+the value set at index creation will be saved with the index and used
+whenever that index is used.  {\bf Note:} In versions prior to version
+5.01.1208300000 20080415, the value of \verb`ignorecase` {\em must} be
+explicitly set the same when an index is created, when it or its table
+is updated and when it is used in a search, or incorrect results
+and/or corrupt indexes may occur.  In later versions, this is not
+necessary; the saved-at-index-creation value will automatically be
+used.
+In version 6 and later, this setting toggles the \verb`ignorecase`
+flag of the \verb`stringcomparemode` setting, which supercedes it.
+
+\item[textsearchmode]
+  Sets the APICP \verb`textsearchmode` property; see Vortex manual
+for details and important caveats.  Added in version 6.
+
+\item[stringcomparemode]
+  Sets the APICP \verb`stringcomparemode` property; see Vortex manual
+for details and important caveats.  Added in version 6.
+
+\item[tracemetamorph]
+  Sets the \verb`tracemetamorph` debug property; see Vortex manual
+for details.  Added in version 7.00.1375225000 20130730.
+
+\item[tracerowfields]
+  Sets the \verb`tracerowfields` debug property; see Vortex manual
+for details.  Added in version 7.02.1406754000 20140730.
+
+\item[tracekdbf]
+  Sets the \verb`tracekdbf` debug property; see Vortex manual for details.
+
+\item[tracekdbffile]
+  Sets the \verb`tracekdbffile` debug property; see Vortex manual for details.
+
+\item[kdbfiostats]
+  Sets the \verb`kdbfiostats` debug property; see Vortex manual for details.
+
+\item[btreecachesize]
+  Index pages are cached in memory while the index is used.  The size
+of the memory cache can be adjusted to improve performance.  The
+default is 20, which means that 20 index pages can be cached.  This
+can be increased to allow more pages to be cached in memory.  This
+will only help performance if the pages will be accessed in random
+order, more than 20 will be accessed, and the same page is likely to
+be accessed at different times.  This is most likely to occur in a
+join, when a large number of keys are looked up in the index.
+Increasing the size of the cache when not needed is likely to hurt
+performance, due to the extra overhead of managing a larger cache.
+The cache size should not be decreased below the default of 20, to
+allow room for all pages which might need to be accessed at the same
+time.
+
+\item[ramrows]
+  When ordering large result sets, the data is initially ordered in
+memory, but if more than \verb`ramrows` records are being ordered the
+disk will be used to conserve memory.  This does slow down performance
+however.  The default is 10000 rows.  Setting \verb`ramrows` to 0 will
+keep the data in memory.
+
+\item[ramlimit] \verb`ramlimit` is an alternative to \verb`ramrows`.
+Instead of limiting the number of records, the number of bytes of data
+in memory is capped.  By default it is 0, which is unlimited.  If both
+\verb`ramlimit` and \verb`ramrows` are set then the first limit to be
+met will trigger the use of disk.
+
+\item[bubble] Normally Texis will bubble results up from the index to
+the user.  That is a matching record will be found in the index, returned
+to the user, then the next record found in the index, and so forth till
+the end of the query.  This normally generates the first results as quickly
+as possible.  By setting \verb`bubble` to 0 the entire set of matching
+record handles will be read from the index first, and then each record
+processed from this list.
+
+\item[optimize,nooptimize] Enable or disable optimizations.  The argument
+should be a comma separated list of optimizations that you want to enable
+or disable.  The available optimizations are:
+\begin{description}
+\item[join]  Optimize join table order.  The default is enabled.
+When enabled Texis will arrange the order of the tables in the \verb`FROM`
+clause to improve the performance of the join.  This can be disabled if
+you believe that Texis is optimizing incorrectly.  If it is disabled then
+Texis will process the tables in the left to right order, with the first
+table specified being the driving table.  Added in version 02.06.927235551.
+\item[compoundindex]  Allow the use of compound indexes to resolve searches.
+For example if you create an index on table (field1, field2), and then
+search where field1 = value and field2 = value, it will use the index to
+resolve both portions of this.  When disabled it would only look for field1
+in the index.
+Added in version 02.06.929026214.
+\item[countstar]  Use any regular index to determine the number of records
+in the table.  If disabled Texis will read each record in the table to
+count them.
+Added in version 02.06.929026214.
+\item[minimallocking]  Controls whether the table will be locked when doing
+reads of records pointed to by the index used for the query.  This is enabled
+by default, which means that read locks will not be used.  This is the optimal
+setting for databases which are mostly read, with few writes and small records.
+Added in version 03.00
+\item[groupby]  This setting is enabled by default and will cause the data
+to be read only once to perform a group by operation.  The query should
+produce indentical results whether this is enabled or disabled, with the
+performance being the only difference.
+Added in version 03.00
+\item[faststats]  When enabled, which is the default, and when the
+appopriate indexes exist Texis will try and resolve aggregate functions
+directly from the index that was used to perform the \verb`WHERE` clause.    
+Added in version 03.00
+\item[readlock]  When enabled, which is the default, Texis will use readlocks
+more efficiently if there are records that are scanned, but don't match the
+query.  Texis will hold the read lock until a matching record is found,
+rather than getting and releasing a read lock for every record read.  If you
+are suffering from lock contention problems, with writes waiting, then this
+can be disabled, which will allow more opportunity for the write locks to
+be granted.  This is not normally suggested, as the work required to grant
+and release the locks would typically  negate the benefit.
+Added in version 03.00
+\item[analyze]  When enabled, which is the default, Texis will analyze the
+query for which fields are needed.  This can allow for more efficient query
+processing in most cases.  If you are executing a lot of different SQL
+statements that are not helped by the analysis you can disable this.
+Added in version 03.00
+\item[skipahead]  When enabled, which is the default, Texis will skipahead
+as efficiently as possible, typically used with the SKIP parameter in
+Vortex.  If disabled Texis will perform full processing on each skipped
+record, and discard the record.
+Added in version 03.00
+\item[likewithnots]  When enabled (default), \verb`LIKE`/\verb`LIKEP`-type
+searches with NOT sets (negated terms) are optimized for speed.
+Added in version 4.02.1041535107 Jan  2 2003.
+
+\item[shortcuts] When enabled (default), a fully-indexed
+  \verb`LIKE`/\verb`LIKEIN` clause \verb`OR`ed with another
+  fully-indexed \verb`LIKE`/\verb`LIKEIN` should not cause an
+  unnecessary post-process for the \verb`LIKE`s (and entire query).
+  Added in version 4.03.1061229000 20030818 as \verb`optimization18`;
+  in version 7.06.1475000000 20160927, alias \verb`shortcuts` added.
+
+\item[likehandled] When enabled (default), a fully-indexed
+  \verb`LIKE`/\verb`LIKEIN` clause \verb`OR`ed with another
+  fully-indexed non-\verb`LIKE`/\verb`LIKEIN` clause should not cause
+  an unnecessary post-process for the \verb`LIKE` (and entire query).
+
+  Also, linear and post-process \verb`LIKE`/\verb`LIKEIN` operations
+  caused not by the Metamorph query itself, but by the presence of
+  another \verb`OR`ed/\verb`AND`ed clause, do not check
+  \verb`allinear` nor \verb`alpostproc` when this optimization is
+  disabled (i.e. they will perform the linear or post-process
+  regardless of settings, silently).  E.g. fully-indexed \verb`LIKE`
+  \verb`OR`ed with linear clause, or two fully-indexed \verb`LIKE`s
+  \verb`AND`ed (where the first's results are under
+  \verb`maxlinearrows`), could cause linear search or post-processing,
+  respectively, of an otherwise fully-indexable Metamorph query.
+
+  Added in version 7.06.1475014000 20160927.
+
+\item[indexbatchbuild] When enabled, indexes are built as a batch,
+i.e. the table is read-locked continuously.  When disabled (the
+default), the table is read-locked intermittently if possible
+(e.g. Metamorph index), allowing table modifications to proceed even
+during index creation.  A continuous read lock allows greater read
+buffering of the table, possibly increasing index build speed
+(especially on platforms with slow large-file \verb`lseek` behavior),
+at the expense of delaying table updates until after the index is
+nearly built, which may be quite some time.  Note that non-Metamorph
+indexes are {\em always} built with a continuous read lock --
+regardless of this setting -- due to the nature of the index.  Added
+in version 5.01.1177455498 20070424.
+
+\item[indexdataonlycheckpredicates] When enabled (the default), allows
+  the index-data-only optimization\footnote{The index-data-only
+    optimization allows Texis to not only use the index to resolve the
+    {\tt WHERE} clause, but also the {\tt SELECT} clause in certain
+    circumstances, potentially avoiding a read of the table altogether
+    and speeding up results.  One of the prerequisites for this
+    optimization is that the {\tt SELECT} clause only refer to columns
+    available in the index.} to proceed even if the {\tt SELECT}
+  columns are renamed or altered in expressions.  Previously, the
+  columns had to be selected as-is with no renaming or expressions.
+  Added in version 7.00.1369437000 20130524.
+
+\item[indexvirtualfields] When enabled (the default), attempts to
+  reduce memory usage when indexing virtual fields (especially with
+  large rows) by freeing certain buffers when no longer needed.
+  Currently only applies to Metamorph and Metamorph inverted indexes.
+  Added in version 6.00.1322890000 20111203.
+
+\end{description}
+Example:  \verb`set nooptimize='minimallocking'`
+
+\item[options,nooptions] Enable or disable certain options.  The
+  argument should be a comma separated list of options to enable or
+  disable.  All options are off by default.  The available options are:
+
+  \begin{description}
+    \item[triggers] When on, {\em disable} the creation of triggers.
+    \item[indexcache] Cache certain Metamorph index search results, so
+      that an immediately following Metamorph query with the same
+      \verb`WHERE` clause might be able to re-use the index results
+      without re-searching the index.  E.g. may speed up a
+      \verb`SELECT field1, field2, ...` Metamorph query that follows
+      a \verb`SELECT count(*)` query with the same \verb`WHERE` clause.
+    \item[ignoremissingfields] Ignore missing fields during an
+      \verb`INSERT` or \verb`UPDATE`, i.e. do not issue a message and
+      fail the query if attempting to insert a non-existent field.
+      This may be useful if a SQL \verb`INSERT` statement is to be
+      used against a table where some fields are optional and may not
+      exist.
+  \end{description}
+
+Example:  \verb`set options='indexcache'`
+
+\item[ignorenewlist] When processing a Metamorph query you can instruct
+Texis to ignore the unoptimized portion of a Metamorph index by issuing
+the SQL \verb`set ignorenewlist = 1;`.  If you have a continually
+changing dataset, and the index is frequently updated then the default
+of processing the unoptimized portion is probably correct.  If the data
+tends to change in large batches, followed by a reoptimization of the
+index then the large batch can cause significant processing overhead.
+In that case it may be wise to enable the \verb'ignorenewlist' option.
+If the option is enable then records that have been updated in the batch
+will not be found with Metamorph queries until the index has been optimized.
+Added in version 02.06.934400000.
+
+\item[indexwithin] How to use the Metamorph index when processing
+  ``within $N$'' ({\tt w/$N$}) \verb`LIKE`-type queries.  It is an
+  integer combination of bit flags:
+  \begin{description}
+    \item[0x01]: Use index for {\tt w/$N$} searches
+                  when \verb`withinmode` is ``\verb`char [span]`''
+    \item[0x02]: Use index for {\tt w/$N$} searches
+                  when \verb`withinmode` is ``\verb`word [span]`''
+    \item[0x04]: Optimize within-chars window down
+    \item[0x08]: Do not scale up intervening (non-query) words part of
+      window to account for words matching multiple index expressions,
+      which rarely occur; this reduces false (too wide) hits from the
+      index.  Also do not require post-processing if multiple index
+      expressions.  In rare cases valid hits may be missed if an
+      intervening word does index-match multiply; the {\tt $N$} value
+      can simply be increased in the query to return these.
+  \end{description}
+  The default is 0xf in version 7.06.1525203000 20180501 and later,
+  when support for 0x8 was also added.  In version 5.01.1153865548
+  20060725 up to then, the default was 0x7.  The setting was added in
+  version 4.04.1075255999 20040127 with a default of 0.
+
+\item[wildoneword] 
+  Whether wildcard expressions in Metamorph queries span a single word
+  only, i.e. for multi-substring wildcards.  If 0 (false), the query
+  ``\verb`st*ion`'' matches ``\verb`stallion`'' as well as
+  ``{\tt stuff an onion}''.  If 1 (true), then ``\verb`st*ion`'' only matches
+  ``\verb`stallion`'', and linear-dictionary index searches are
+  possible (if enabled), because there are no multi-word matches to
+  (erroneously) miss.  {\bf Note:} prior to version 5.01.1208472000
+  20080417, this setting did not apply to linear searches; linear or
+  post-process searches may have experienced different behavior.
+  The default is 1 in version 6 and later, 0 in version 5 and earlier.
+  Added in version 4.03.1058230349 20030714.
+
+\item[wildsufmatch]
+  Whether wildcard expressions in Metamorph queries suffix-match their
+  trailing substrings to the end of words.  If 0 (false), the query
+  ``\verb`*so`'' matches ``\verb`also`'' as well as
+  ``\verb`absolute`''.  If 1 (true), then ``\verb`*so`'' only matches
+  ``\verb`also`''.  Affects what terms are matched during
+  linear-dictionary index searches.  {\bf Note:} prior to version
+  5.01.1208472000 20080417, this setting did not apply to linear
+  searches; linear or post-process searches may have experienced
+  different behavior.  The default is 1 in version 6 and later, 0 in
+  version 5 and earlier.  Added in version 4.03.1058230349 20030714.
+
+\item[wildsingle]
+  An alias for setting \verb`wildoneword` and \verb`wildsufmatch`
+  together, which is usually desired.  Added in version 4.03.1058230349
+  20030714.
+
+\item[allineardict]
+  Whether to allow linear-dictionary Metamorph index searches.
+  Normally a Metamorph query term is either binary-index searchable
+  (fastest), or else must be linear-table searched (slowest).
+  However, certain terms, while not binary-index searchable, can be
+  linear-dictionary searched in the index, which is slower than
+  binary-index, yet faster than linear-table search.  Examples include
+  leading-prefix wildcards such as ``\verb`*tion`''.  The default is 0
+  (false), since query protection is enabled by default.  Note that
+  \verb`wildsingle` should typically be set true so that wildcard
+  syntax is more likely to be linear-dictionary searchable.  Added in
+  version 4.03.1058230349 20030714.
+
+\item[indexminsublen]
+  The minimum number of characters that a Metamorph index word expression
+  must match in a query term, in order for the term to utilize the index.
+  A term with fewer than \verb`indexminsublen` indexable characters
+  is assumed to potentially match too many words in the index for
+  an index search to be more worthwhile/faster than a linear-table search.
+
+  For binary-index searchable terms, \verb`indexminsublen` is tested
+  against the minimum prefix length; e.g. for query ``\verb`test.#@`''
+  the length tested is 4 (assuming default index word expression of
+  ``\verb`\alnum{2,99}`'').  For linear-dictionary index searches, the
+  length tested is the total of all non-wildcard characters; e.g. for
+  query ``\verb`ab*cd*ef`'' the length tested is 6.
+
+  The default for \verb`indexminsublen` is 2.  Added in version
+  4.03.1058230349 20030714.  Note that the query -- regardless of
+  index or linear search -- must also pass the \verb`qminprelen`
+  setting.
+
+\item[dropwordmode]
+  How to remove words from a query set when too many are present
+  (\verb`qmaxsetwords` or \verb`qmaxwords` exceeded) in an index
+  search, e.g. for a wildcard term.  The possible values are 0 to
+  retain suffixes and most common words up to the word limit, or 1 to
+  drop the entire term.  The default is 0.
+  Added in version 3.00.947633136 20000111.
+
+\item[metamorphstrlstmode]
+\label{`metamorphstrlstmode'}
+  How to convert a \verb`strlst` Metamorph query (perhaps generated by
+  Vortex \verb`arrayconvert`) to a regular string Metamorph query.
+  For example, for the \verb`strlst` query composed of the 3 strings
+  ``\verb`one`'', ``\verb`two`'', and ``\verb`bear arms`'', the
+  various modes would convert as follows:
+
+  \begin{itemize}
+    \item \verb`allwords` \\
+      Space-separate each string, e.g. ``{\tt one two bear arms}''.
+    \item \verb`anywords` \\
+      Space-separate each string and append ``\verb`@0''', e.g.
+       ``{\tt one two bear arms @0}''.
+    \item \verb`allphrases` \\
+      Space-separate and double-quote each string, e.g.
+      ``{\tt "one" "two" "bear arms"}''.
+    \item \verb`anywords` \\
+      Space-separate and double-quote each string, and append ``\verb`@0''',
+      e.g. ``{\tt "one" "two" "bear arms" @0}''.
+    \item \verb`equivlist` \\
+      Make the string list into a parenthetical comma-separated list,
+      e.g. ``{\tt (one,two,bear arms)}''.
+  \end{itemize}
+
+  The default is \verb`equivlist`.  Added in version 5.01.1225240000
+  20081028.  See also the \verb`varchartostrlstsep` setting
+  (p.~\pageref{`varchartostrlstsep'}), which affects conversion of
+  \verb`varchar` to \verb`strlst` in other contexts.
+
+\item[compatibilityversion]
+\label{SqlPropertyCompatibilityVersion}
+
+  Sets the Texis compatibility version -- the version to attempt to
+  behave as -- to the given string, which is a Texis version of the
+  form ``$major$[.$minor$[.$release$]]'', where $major$ is a major
+  version integer, $minor$ is a minor version integer, and $release$
+  is a release integer.  Added in version 7.  See the
+  \verb`<vxcp compatibilityversion>` setting in Vortex for details.
+  See also the {\tt [Texis] Compatibility Version} setting
+  (p.~\pageref{TexisIniTexisCompatibilityVersion}) in {\tt texis.ini},
+  which the \verb`compatibilityversion` setting defaults to.
+
+\item[failifincompatible]
+
+  Whenever set nonzero/true, and the most recent
+  \verb`compatibilityversion` setting attempt failed, then all future
+  SQL statements will fail with an error message.  Since there is no
+  conditional (``if'') statement in SQL, this allows a SQL script to
+  essentially abort if it tries to set a Texis compatibility version
+  that is unsupported, rather than continue with possibly undesired
+  side effects.  Added in version 7.  See also
+  \verb`<vxcp compatibilityversion>` in Vortex, which obviates the
+  need for this setting, as it has a checkable error return.
+
+\item[groupbymem]
+
+  When set nonzero/true (the default), try to minimize memory usage
+  during \verb`GROUP BY`/\verb`DISTINCT` operations (e.g. when using an
+  index and sorting is not needed).  Added in version 7.00.1370039228
+  20130531.
+
+\item[legacyversion7orderbyrank]
+\label{SqlPropertyLegacyVersion7OrderByRank}
+
+  If on, an {\tt ORDER BY \$rank} (or {\tt \$rank}-containing
+  expression) uses legacy version 7 behavior, i.e. typically orders in
+  numerically descending order, but may change to ascending (and have
+  other idiosyncrasies) depending on index, expression and \verb`DESC`
+  flag use.  If disabled, such {\tt ORDER BY}s are consistent with
+  others: numerically ascending unless \verb`DESC` flag given (which
+  would typically be given, to maintain descending-numerical-rank
+  order).
+
+  The default is the value of the {\tt [Texis] Legacy Version 7 Order
+    By Rank} setting (p.~\pageref{TexisIniLegacyVersion7OrderByRank})
+  in {\tt conf/texis.ini}, which is off by default with
+  \verb`compatibilityversion` 8 and later, on in earlier
+  versions (\verb`compatibilityversion` defaults to Texis Version).
+  Added in version 7.06.1508871000 20171024.
+
+  Note that this setting may be removed in a future release, as its
+  enabled behavior is deprecated.  Its existence is only to ease
+  transition of old code when upgrading to Texis version 8, and thus
+  should only be used temporarily.  Old code should be updated to
+  reflect version 8 default behavior -- and this setting removed --
+  soon after upgrading.
+  
+\end{description}
+
+% ----------------------------------------------------------------------------
+\subsection{Metamorph parameters}
+
+These settings affect the way that text searches are performed.  They are
+equivalent to changing the corresponding parameter in the profile, or by
+calling the Metamorph API function to set them (if there is an equivalent).
+They are:
+
+\begin{description}
+\item[minwordlen] The smallest a word can get due to suffix and prefix
+removal.  Removal of trailing vowel or double consonant can make it a
+letter shorter than this.  Default 255.
+
+\item[keepnoise] Whether noise words should be stripped from the query
+and index.  Default off.
+
+\item[suffixproc] Whether suffixes should be stripped from the words to
+find a match.  Default on.
+
+\item[prefixproc] Whether prefixes should be stripped from the words to
+find a match.  Turning this on is not suggested when using a Metamorph
+index.  Default off.
+
+
+\item[rebuild] Make sure that the word found can be built from the root
+and appropriate suffixes and prefixes.  This increases the accuracy of
+the search.  Default on.
+
+\item[useequiv] Perform thesaurus lookup.  If this is on then the word
+and all equivalences will be searched for.  If it is off then only the
+query word is searched for.  Default off.  Aka {\bf keepeqvs}
+in version 5.01.1171414736 20070213 and later.
+
+\item[inc\_sdexp]
+  Include the start delimiter as part of the hit.  This is not
+generally useful in Texis unless hit offset information is being
+retrieved.  Default off.
+
+\item[inc\_edexp]
+  Include the end delimiter as part of the hit.  This is not
+generally useful in Texis unless hit offset information is being
+retrieved.  Default on.
+
+\item[sdexp]  Start delimiter to use: a regular expression to match
+the start of a hit.  The default is no delimiter.
+
+\item[edexp]  End delimiter to use: a regular expression to match
+the start of a hit.  The default is no delimiter.
+
+\item[intersects] Default number of intersections in Metamorph
+  queries; overridden by the \verb`@` operator.  Added in version
+  7.06.1530212000 20180628.
+
+\item[hyphenphrase]  Controls whether a hyphen between words searches
+for the phrase of the two words next to each other, or searches for
+the hyphen literally.  The default value of 1 will search for the two
+words as a phrase.  Setting it to 0 will search for a single term
+including the hyphen.  If you anticipate setting hyphenphrase to 0 then
+you should modify the index word expression to include hyphens.
+
+\item[wordc] For language or wildcard query terms during linear
+  (non-index) searches, this defines which characters in the document
+  consitute a word.  When a match is found for language/wildcard
+  terms, the hit is expanded to include all surrounding word
+  characters, as defined by this setting.  The resulting expansion
+  must then match the query term for the hit to be valid.  (This
+  prevents the query ``\verb`pond`'' from inadvertently matching the
+  text ``\verb`correspondence`'', for example.)  The value is
+  specified as a REX character set.  The default setting is
+  \verb|[\alpha\']| which corresponds to all letters and apostrophe.
+  For example, to exclude apostrophe and include digits use:
+  \verb|set wordc='[\alnum]'| Added in version 3.00.942260000.  Note
+  that this setting is for linear searches: what constitutes a word
+  for Metamorph {\em index} searches is controlled by the index
+  expressions ({\bf addexp} property, p.~\pageref{addexpSqlProperty}).
+  Also note that non-language, non-wildcard query terms (e.g.
+  \verb`123` with default settings) are not word-expanded.
+
+\item[langc] Defines which characters make a query term a language
+  term.  A language term will have prefix/suffix processing applied
+  (if enabled), as well as force the use of {\bf wordc} to qualify the
+  hit (during linear searches).  Normally {\bf langc} should be set
+  the same as {\bf wordc} with the addition of the phrase characters
+  space and hyphen.  The default is \verb|[\alpha\' \-]| Added in
+  version 3.00.942260000.
+
+\item[withinmode]
+    A space- or comma-separated unit and optional type for the
+    ``within-$N$'' operator (e.g. \verb`w/5`).  The unit is one of:
+    \begin{itemize}
+      \item \verb`char` for within-$N$ characters
+      \item \verb`word` for within-$N$ words
+    \end{itemize}
+    The optional type determines what distance the operator measures.
+    It is one of the following:
+    \begin{itemize}
+      \item \verb`radius` (the default if no type is specified when
+        set) indicates all sets must be within a radius $N$ of an
+        ``anchor'' set, i.e. there is a set in the match such that all
+        other sets are within $N$ units right of its right edge or $N$
+        units left of its left edge.
+      \item \verb`span` indicates all sets must be within an $N$-unit
+        span
+    \end{itemize}
+    Added in version 4.04.1077930936 20040227.  The optional type was
+    added in version 5.01.1258712000 20091120; previously the only
+    type was implicitly \verb`radius`.  In version 5 and earlier the
+    default setting was \verb`char` (i.e. {\tt char radius}); in
+    version 6 and later the default is {\tt word span}.
+
+\item[phrasewordproc]
+    Which words of a phrase to do suffix/wildcard processing on.  The
+    possible values are \verb`mono` to treat the phrase as a
+    monolithic word (i.e. only last word processed, but entire phrase
+    counts towards {\bf minwordlen}); \verb`none` for no
+    suffix/wildcard processing on phrases; or \verb`last` to process just
+    the last word.
+%    ; or \verb`all` to process all words.
+%
+%    For example, changing the mode to \verb`all` would allow the phrase
+%    query \verb`"bear arms"` to match ``\verb`bearing arm` (with suffix
+%    processing on and \verb`minwordlen` 3).  With the default mode,
+%    it would match ``\verb`bear arm`'' but not ``\verb`bearing arm`''.
+    Note that a phrase is multi-word, i.e. a single word in double-quotes
+    is not considered a phrase, and thus {\bf phrasewordproc} does not apply.
+    Added in version 4.03.1082000000 20040414.  Mode \verb`none`
+    supported in version 5.01.1127760000 20050926.
+
+\item[mdparmodifyterms]
+  If nonzero, allows the Metamorph query parser to modify search terms
+by compression of whitespace and quoting/unquoting.  This is for
+back-compatibility with earlier versions; enabling it will break the
+information from bit 4 of \verb`mminfo()` (query offset/lengths of
+sets).  Added in version 5.01.1220640000 20080905.
+
+\end{description}
+
+% -----------------------------------------------------------------------------
+\subsection{Rank knobs}
+\label{rankknobs}
+
+  The following properties affect the document ranks from \verb`likep`
+and \verb`like` queries, and hence the order of returned documents for
+\verb`likep`.  Each property controls a factor used in the rank.  The
+property's value is the relative importance of that factor in
+computing the rank.  The properties are settable from 0 (factor has no
+effect at all) to 1000 (factor has maximum relative importance).
+
+  It is important to note that these property weights are relative to
+the sum of all weights.  For example, if \verb`likepleadbias` is
+set to 1000 and the remaining properties to 0, then a hit's rank will
+be based solely on lead bias.  If \verb`likepproximity` is then set to
+1000 as well, then lead bias and proximity each determine 50\% of the
+rank.
+
+\begin{description}
+\item[likepproximity]
+  Controls how important proximity of terms is.  The closer the hit's
+terms are grouped together, the better the rank.  The default weight
+is 500.
+
+\item[likepleadbias]
+  Controls how important closeness to document start is.  Hits closer
+to the top of the document are considered better.  The default weight
+is 500.
+
+\item[likeporder]
+  Controls how important word order is: hits with terms in the same
+order as the query are considered better.  For example, if searching
+for ``{\tt bear arms}'', then the hit ``{\tt arm bears}'', while
+matching both terms, is probably not as good as an in-order match.
+The default weight is 500.
+
+\item[likepdocfreq]
+  Controls how important frequency in document is.  The more
+occurrences of a term in a document, the better its rank, up to a point.
+The default weight is 500.
+
+\item[likeptblfreq]
+  Controls how important frequency in the table is.  The more a term
+occurs in the table being searched, the {\em worse} its rank.  Terms
+that occur in many documents are usually less relevant than rare
+terms.  For example, in a web-walk database the word ``\verb`HTML`''
+is likely to occur in most documents: it thus has little use in
+finding a specific document.  The default weight is 500.
+
+\end{description}
+
+% -----------------------------------------------------------------------------
+\subsection{Other ranking properties}
+\label{otherrank}
+
+  These properties affect how \verb`LIKEP` and some \verb`LIKE`
+queries are processed.
+
+\begin{description}
+\item[likeprows] Only the top \verb`likeprows` relevant documents are
+  returned by a \verb`LIKEP` query (default 100).  This is an
+  arbitrary cut-off beyond which most results would be increasingly
+  useless.  It also speeds up the query process, because fewer rows
+  need to be sorted during ranking.  By altering \verb`likeprows` this
+  threshold can be changed, e.g. to return more results to the user
+  (at the potential cost of more search time).  Setting this to 0 will
+  return all relevant documents (no limit).
+
+Note that in some circumstances, a \verb`LIKEP` query might return
+more than \verb`likeprows` results, if for example later processing
+requires examination of all \verb`LIKEP`-matching rows (e.g. certain
+\verb`AND` queries).  Thus a SQL statement containing \verb`LIKEP` may
+or may not be limited to \verb`likeprows` results, depending on other
+clauses, indexes, etc.
+
+% wtf not implemented by new MM index:
+%\item[likeptime]
+%  This is the amount of time in seconds to be dedicated to the ranking
+%portion of a \verb`LIKEP` query.  The default (0) is to take as much
+%time as needed to yield the number of rows indicated by
+%\verb`likeprows`.  The time is checked after each record is processed,
+%so the actual time taken may be slightly longer than the set time.
+%Also at least one row is always returned.
+
+\item[likepmode]
+  Sets the mode for \verb`LIKEP` queries.  This can be either 0, for
+early, or 1 for late.  The default is 1, which is the correct setting
+for almost all cases.  Does not apply to most Metamorph index searches.
+
+\item[likepallmatch] Setting this to 1 forces \verb`LIKEP` to only
+  consider those documents containing {\em all} (non-negated) query
+  terms as matches (i.e. just as \verb`LIKE` does).  By default, since
+  \verb`LIKEP` is a ranking operator it returns the best results even
+  if only some of the set-logic terms (non-\verb`+` or \verb`-`
+  prefix) can be found.  (Note that required terms -- prefixed with a
+  \verb`+` -- are always required in a hit regardless of this setting.
+  Also note that if {\tt likepobeyintersects} is true, an {\tt @}
+  operator value in the query will override this setting.)
+
+\item[likepobeyintersects] Setting this to 1 forces \verb`LIKEP` to
+  obey the intersects operator ({\tt @}) in queries (even when {\tt
+    likepallmatch} is true).  By default \verb`LIKEP` does not use it,
+  because it is a ranking operator.  Setting both \verb`likepallmatch`
+  and \verb`likepobeyintersects` to 1 will make \verb`LIKEP` respect
+  queries the same as \verb`LIKE`. (Note: \verb`apicp`
+  \verb`alintersects` may have to be enabled in Vortex as well.)
+
+\item[likepinfthresh] This controls the ``infinity'' threshold in
+  \verb`LIKE` and \verb`LIKEP` queries: if the estimated number of
+  matching rows for a set is greater than this, the set is considered
+  infinitely-occurring.  If all the search terms found in a given
+  document are such infinite sets, the document is given an estimated
+  rank.  This saves time ranking irrelevant but often-occurring
+  matches, at the possible expense of rank position.  The default is
+  0, which means infinite (no infinite sets; rank all documents).
+
+\item[likepindexthresh]
+  Controls the maximum number of matching documents to examine
+(default infinite) for \verb`LIKEP` and \verb`LIKE`.  After this many
+matches have been found, stop and return the results obtained so far,
+even if more hits exist.  Typically this would be set to a high
+threshold (e.g. 100000): a query that returns more than that many hits
+is probably not specific enough to produce useful results, so save
+time and don't process the remaining hits.  (It's also a good bet that
+something useful was already found in the initial results.)  This
+helps keep such noisy queries from loading a server, by stopping
+processing on them early.  A more specific query that returns fewer
+hits will fall under this threshold, so all matches will be considered
+for ranking.
+
+  Note that setting \verb`likepindexthresh` is a tradeoff between
+speed and accuracy: the lower the setting, the faster queries can be
+processed, but the more queries may be dropping potentially
+high-ranking hits.
+\end{description}
+
+% -----------------------------------------------------------------------------
+\subsection{Indexing properties}
+\label{sec:indexprop}
+
+\begin{description}
+
+\item[indexspace]
+\label{indexspace}
+A directory in which to store the index files.  The
+default is the empty string, which means use the database directory.
+This can be used to put the indexes onto another disk to balance load
+or for space reasons.  If \verb`indexspace` is set to a non-default
+value when a Metamorph index is being updated, the new index will be
+stored in the new location.
+
+\item[indexblock] When a Metamorph index is created on an indirect field,
+the indirect files are read in blocks.  This property allows the size
+of the block used to be redefined.
+
+\item[indexmem]
+\label{indexmem}
+  When indexes are created Texis will use memory to speed up the
+process.  This setting allows the amount of memory used to be
+adjusted.  The default is to use 40\% of physical memory, if it
+can be determined, and to use 16MB if not.  If the value set is less
+than 100 then it is treated as a percentage of physical memory.  It
+the number is greater than 100 then it is treated as the number of
+bytes of memory to use.  Setting this value too high can cause
+excessive swapping, while setting it too low causes unneeded extra
+merges to disk.
+
+\item[indexmeter]
+\label{indexmeter}
+  Whether to print a progress meter during index creation/update.
+The default is 0 or \verb`'none'`, which suppresses the meter.
+A value of 1 or \verb`'simple'` prints a simple hash-mark meter
+(with no tty control codes; suitable for redirection to a file and
+reading by other processes).  A value of 2 or \verb`'percent'` or
+\verb`'pct'` prints a hash-mark meter with a more detailed percentage
+value (suitable for large indexes).  Added in
+version 4.00.998688241 Aug 24 2001.
+
+\item[meter]
+
+  A semicolon-separated list of processes to print a progress meter
+for.  Syntax:
+
+\verb`     `{\tt \{$process$[=$type$]\}|$type$ [; ...]}
+
+A $process$ is one of \verb`index`, \verb`compact`, or the catch-all
+alias \verb`all`.  A $type$ is a progress meter type, one of
+\verb`none`, \verb`simple`, \verb`percent`, \verb`on` (same as
+\verb`simple`) or \verb`off` (same as \verb`none`).  The default
+$type$ if not given is \verb`on`.  E.g. to show a progress meter for
+all meterable processes, simply set \verb`meter` to \verb`on`.
+Added in version 6.00.1290500000 20101123.
+
+\item[addexp] An additional REX expression to match words to be
+\label{addexpSqlProperty}
+  indexed in a Metamorph index.  This is useful if there are
+  non-English words to be searched for, such as part numbers.  When an
+  index is first created, the expressions used are stored with it so
+  they will be updated properly.  The default expression is
+  \verb`\alnum{2,99}`.  {\bf Note:} Only the expressions set when the
+  index is initially created (i.e. the first {\tt CREATE METAMORPH
+  ...} statement -- later statements are index updates) are saved.
+  Expressions set during an update (issuance of ``{\tt create
+  metamorph [inverted] index}'' on an existent index) will {\em not}
+  be added.
+
+\item[delexp] This removes an index word expression from the list.
+Expressions can be removed either by number (starting with 0) or by
+expression.
+
+\item[lstexp] Lists the current index word expressions.  The
+value specified is ignored (but required syntactically).
+
+\item[addindextmp] Add a directory to the list of directories to use
+for temporary files while creating the index.  If temporary files are
+needed while creating a Metamorph index they will be created in one of
+these directories, the one with the most space at the time of
+creation.  If no \verb|addindextmp| dirs are specified, the default
+list is the index's destination dir (e.g. database or \verb|indexspace|),
+and the environment variables \verb|TMP| and \verb|TMPDIR|.
+
+\item[delindextmp]  Remove a directory from the list of directories to
+use for temporary files while creating a Metamorph index.
+
+\item[lstindextmp]  List the directories used for temporary files while
+creating Metamorph indices.  Aka \verb`listindextmp`.
+
+% wtf not used by new MM index?
+%\item[infthresh]  This sets a threshold for Metamorph indexes.  If more
+%than this number of documents match a given term then that term is deemed
+%to be omnipresent, and further processing on that term is stopped.  This
+%can be overridden by \verb`infpercent`.  Default -1 (disabled).
+
+% wtf not used by new MM index?
+%\item[infpercent] Similar to \verb`infthresh`, except the number of
+%documents is specified as a percentage of the total, as opposed to an
+%absolute number.  Default -1 (disabled).
+
+\item[indexvalues]
+\label{indexvalues}
+  Controls how a regular (B-tree) index stores table values.  If set
+  to {\tt splitstrlst} (the default), then \verb`strlst`-type fields
+  are split, i.e. a separate (item,recid) tuple is stored for {\em
+  each} (\verb`varchar`) item in the \verb`strlst`, rather than just
+  one for the whole (strlst,recid) tuple.  This allows the index to be
+  used for some set-like operators that look at individual items in a
+  \verb`strlst`, such as most \verb`IN`, \verb`SUBSET`
+  (p.~\pageref{SubsetOperator}) and \verb`INTERSECT`
+  (p.~\pageref{IntersectOperator}) queries.
+
+  If \verb`indexvalues` is set to \verb`all` -- or the index is not on
+  a \verb`strlst` field, or is on multiple fields -- such splitting
+  does not occur, and the index can generally not be used for set-like
+  queries (with some exceptions; see p.~\pageref{SubsetIndexUsage} for
+  details).
+
+  Note that if index values are split (i.e. \verb`splitstrlst` set and
+  index is one field which is \verb`strlst`), table rows with an empty
+  (zero-items) \verb`strlst` value will not be stored in the index.
+  This means that queries that require searching for or listing
+  empty-\verb`strlst` table values cannot use such an index.  For
+  example, a subset query with a non-empty parameter on the right side
+  and a \verb`strlst` table column on the left side will not be able
+  to return empty-\verb`strlst` rows when using an index, even though
+  they match.  Also, subset queries with an empty-\verb`strlst` or
+  empty-\verb`varchar` parameter (left or right side) must use an
+  \verb`indexvalues=all` index instead.  Thus if empty-\verb`strlst`
+  subset query parameters are a possibility, both types of index
+  (\verb`splitstrlst` and \verb`all`) should be created.
+
+  As with \verb`stringcomparemode`, only the creation-time
+  \verb`indexvalues` value is ever used by an index, not the current
+  value, and the optimizer will attempt to choose the best index at
+  search time.  The \verb`indexvalues` setting was added in Texis
+  version 7; previous versions effectively had \verb`indexvalues` set
+  to \verb`splitstrlst`.  {\bf Caveat:} A version 6 Texis will issue
+  an error when encountering an {\tt indexvalues=all} index (as it is
+  unimplemented in version 6), and will refuse to modify the index or
+  the table it is on.  {\bf A version 5 or earlier Texis, however, may
+  silently corrupt an {\tt indexvalues=all} index during table
+  modifications.}
+
+\item[btreethreshold] This sets a limit as to how much of an index should
+be used.  If a particular portion of the query matches more than the given
+percent of the rows the index will not be used.  It is often more efficient
+to try and find another index rather than use an index for a very frequent
+term.  The default is set to 50, so if more than half the records match,
+the index will not be used.  This only applies to ordinary indices.
+% infthresh/infpercent for old Metamorph:
+% See \verb`infthresh` and \verb`infpercent` for control of Metamorph indices.
+
+\item[btreelog] Whether to log operations on a particular B-tree, for
+  debugging.  Generally enabled only at the request of tech support.
+  The value syntax is:
+\begin{quote}
+$[$\verb`on=`$|$\verb`off=`$][$\verb`/dir/`$]$\verb`file`$[$\verb`.btr`$]$
+\end{quote}
+Prefixing \verb`on=` or \verb`off=` turns logging on or off,
+respectively; the default (if no prefix) is on.  Logging applies to
+the named B-tree file; if a relative path is given, logging applies to
+the named B-tree in any database accessed.
+
+  The logging status is also saved in the B-tree file itself, if the
+index is opened for writing (e.g. at create or update).  This means
+that once logging is enabled and saved, {\em every} process that
+accesses the B-tree will log operations, not just ones that have
+\verb`btreelog` explicitly set.  This is critical for debugging, as
+every operation must be logged.  Thus, \verb`btreelog` can just be set
+once (e.g. at index create), without having to modify (and track down)
+every script that might use the B-tree.  Logging can be disabled
+later, by setting ``\verb`off=file`'' and accessing the index for an
+update.
+
+  Operations are logged to a text file with the same name as the
+B-tree, but ending in ``\verb`.log`'' instead of ``\verb`.btr`''.
+The columns in the log file are as follows; most are for tech
+support analysis, and note that they may change in a future Texis release:
+\begin{itemize}
+  \item {\bf Date} Date
+  \item {\bf Time} Time (including microseconds)
+  \item {\bf Script and line} Vortex script and line number, if known
+  \item {\bf PID} Process ID
+  \item {\bf DBTBL handle} \verb`DBTBL` handle
+  \item {\bf Read locks} Number of read locks (\verb`DBTBL.nireadl`)
+  \item {\bf Write locks} Number of write locks (\verb`DBTBL.niwrite`)
+  \item {\bf B-tree handle} \verb`BTREE` handle
+  \item {\bf Action} What action was taken:
+    \begin{itemize}
+      \item \verb`open` B-tree open: {\bf Recid} is root page offset
+      \item \verb`create` B-tree create
+      \item \verb`close` B-tree close
+      \item \verb`RDroot` Read root page
+      \item \verb`dump` B-tree dump
+      \item \verb`WRhdr` Write B-tree header: {\bf Recid} is root page offset
+      \item \verb`WRdd` Write data dictionary: {\bf Recid} is \verb`DD` offset.
+                       (Read \verb`DD` at open is not logged.)
+      \item \verb`delete` Delete key: {\bf Recid} is for the key
+      \item \verb`append` Append key
+      \item \verb`insert` Insert key
+      \item \verb`search` Search for key
+      \item \verb`RDpage` Read page: {\bf Recid} is for the page
+      \item \verb`WRpage` Write page
+      \item \verb`CRpage` Create page
+      \item \verb`FRpage` Free page
+      \item \verb`FRdbf` Free DBF block
+    \end{itemize}
+  \item {\bf Result} Result of action:
+    \begin{itemize}
+      \item \verb`ok` Success
+      \item \verb`fail` Failure
+      \item \verb`dup` Duplicate (e.g. duplicate insert into unique B-tree)
+      \item \verb`hit` Search found the key
+      \item \verb`miss` Search did not find the key
+    \end{itemize}
+  \item {\bf Search mode} Search mode:
+    \begin{itemize}
+      \item \verb`B` Find before
+      \item \verb`F` Find
+      \item \verb`A` Find after
+    \end{itemize}
+  \item {\bf Index guarantee} \verb`DBTBL.indguar` flag (\verb`1` if no
+    post-process needed)
+  \item {\bf Index type} Index type:
+    \begin{itemize}
+      \item \verb`N` \verb`DBIDX_NATIVE` (bubble-up)
+      \item \verb`M` \verb`DBIDX_MEMORY` (RAM B-tree)
+      \item \verb`C` \verb`DBIDX_CACHE` (RAM cache)
+    \end{itemize}
+  \item {\bf Recid} Record id; see notes for {\bf Action} column
+  \item {\bf Key size} Key size (in bytes)
+  \item {\bf Key flags} Flags for each key value, separated by commas:
+    \begin{itemize}
+      \item \verb`D` \verb`OF_DESCENDING`
+      \item \verb`I` \verb`OF_IGN_CASE`
+      \item \verb`X` \verb`OF_DONT_CARE`
+      \item \verb`E` \verb`OF_PREFER_END`
+      \item \verb`S` \verb`OF_PREFER_START`
+    \end{itemize}
+  \item {\bf Key} Key, i.e. value being inserted, deleted etc.;
+    multiple values separated with commas
+\end{itemize}
+
+Unavailable or not-applicable fields are logged with a dash.  Note
+that enabling logging can produce a large log file quickly; free disk
+space should be monitored.  The \verb`btreelog` setting was added in
+version 5.01.1134028000 20051208.
+
+\item[btreedump] Dump B-tree indexes, for debugging.  Generally enabled
+only at the request of tech support.  The value is an integer whose
+bits are defined as follows:
+
+  Bits 0-15 define what to dump.  Files are created that are named after
+the B-tree, with a different extension:
+\begin{itemize}
+  \item[Bit] 0: Issue a \verb`putmsg` about where dump file(s) are
+  \item[Bit] 1: \verb`.btree` file: Copy of in-mem \verb`BTREE` struct
+  \item[Bit] 2: \verb`.btrcopy` file: Copy of \verb`.btr` file
+  \item[Bit] 3: \verb`.cache` file: Page cache from \verb`BCACHE`, \verb`BPAGE`
+  \item[Bit] 4: \verb`.his` file: History from \verb`BTRL`
+  \item[Bit] 5: \verb`.core` file: \verb`fork()` and dump core
+\end{itemize}
+
+Bits 16+ define when to dump:
+\begin{itemize}
+  \item[Bit] 16: At ``{\tt Cannot insert value}'' messages
+  \item[Bit] 17: At ``{\tt Cannot delete value}'' messages
+  \item[Bit] 18: At ``{\tt Trying to insert duplicate value}'' messages
+\end{itemize}
+
+The files are for tech support analysis.  Formats and bits subject to
+change in future Texis releases.  The \verb`btreedump` setting was added
+in version 5.01.1131587000 20051109.
+
+\item[maxlinearrows] This set the maximum number of records that should
+be searched linearly.  If using the indices to date yield a result set
+larger than \verb`maxlinearrows` then the program will try to find more
+indices to use.  Once the result set is smaller than \verb`maxlinearrows`,
+or all possible indices are exhausted, the records will be processed.  The
+default is 1000.
+
+\item[likerrows] How many rows a single term can appear in, and still be
+returned by \verb`liker`.  When searching for multiple terms with \verb`liker`
+and \verb`likep` one does not always want documents only containing a
+very frequent term to be displayed.  This sets the limit of what is
+considered frequent.  The default is 1000.
+
+\item[indexaccess] If this option is turned on then data from an index
+can be selected as if it were a table.  When selecting from an
+ordinary (B-tree) index, the fields that the index was created on will
+be listed.  When selecting from a Metamorph index a list of words
+(\verb`Word` column`), count of rows containing each word
+(\verb`RowCount`), and -- for Metamorph inverted indexes -- count of
+all hits in all rows (\verb`OccurrenceCount`) for each word will be
+returned.
+
+\item[indexchunk] In versions of Texis after October 1998, the
+\verb`indexchunk` setting is deprecated and unused.  In prior releases,
+when creating a Metamorph index temporary files are
+used which in the worst case can grow to twice the size of the data
+being indexed.  This process can be broken into stages, such that
+after indexing a certain amount of data the temporary files are
+processed, to generate a partial index, and then the process repeats
+for the rest of the data.  By default the amount of free disk space is
+checked on startup, and used to calculate when it will need to perform
+the processing step.  If the system does not report free disk space
+accurately, or to free more disk space, this value can be changed.
+The default is 0, which automatically calculates a value.  Otherwise
+it is set to the number of bytes of data to index before processing
+the temporary files.  Lower values conserve disk space, at the expense
+of more time to process intermediate files.
+
+\item[cleanupwait] {\em Windows/NT specific} After updating a
+Metamorph index the database will wait this long before trying to
+remove the old copy of the index.  This is to allow any other process
+currently using the index time to stop using the index, so it can be
+removed.  The default is twenty seconds.  If a whole batch of
+Metamorph indices are being updated right after another, it may be
+useful to set this to 0 for all but the last index, as an attempt will
+be made to remove all old indices after every index update.
+
+\item[dbcleanupverbose] Integer whose bit flags control some tracing
+messages about database cleanup housekeeping (e.g. removal of unneeded
+temporary or deleted indexes and tables).  A bit-wise OR of the
+following values:
+
+\begin{itemize}
+  \item \verb`0x01`: Report successful removal of temporary/deleted
+    indexes/tables.
+  \item \verb`0x02`: Report failed removal of such indexes/tables.
+  \item \verb`0x04`: Report on in-use checks of temporary indexes/tables.
+\end{itemize}
+
+The default is 0 (i.e. no messages).  Note that these cleanup actions
+may also be handled by the Database Monitor; see also the {\tt
+[Monitor] DB Cleanup Verbose} setting in {\tt conf/texis.ini}.  Added
+in version 6.00.1339712000 20120614.
+
+\item[indextrace] For debugging: trace index usage, especially during
+searches, issuing informational \verb`putmsg`s.  Greater values
+produce more messages.  Note that the meaning of values, as well as
+the messages printed, are subject to change without notice.
+Aka \verb`traceindex`, \verb`traceidx`.  Added
+in version 3.00.942186316 19991109.
+
+\item[tracerecid] For debugging: trace index usage for this particular
+recid.  Added in version 3.01.945660772 19991219.
+
+\item[indexdump] For debugging: dump index recids during search/usage.
+Value is a bitwise OR of the following flags:
+\begin{description}
+\item[Bit 0] for new list
+\item[Bit 1] for delete list
+\item[Bit 2] for token file
+\item[Bit 3] for overall counts too
+\end{description}
+The default is 0.
+
+\item[indexmmap] Whether to use memory-mapping to access Metamorph
+index files, instead of \verb`read()`.  The value is a bitwise OR
+of the following flags:
+\begin{description}
+\item[Bit 0] for token file
+\item[Bit 1] for \verb`.dat` file
+\end{description}
+The default is 1 (i.e. for token file only).  Note that memory-mapping
+may not be supported on all platforms.
+
+\item[indexreadbufsz] Read buffer size, when reading (not
+memory-mapping) Metamorh index \verb`.tok` and \verb`.dat` files.  The
+default is 64KB; suffixes like ``\verb`KB`'' are respected.  During
+search, actual read block size could be less (if predicted) or more
+(if blocks merged).  Also used during index create/update.  Decreasing
+this size when creating large indexes can save memory (due to the
+large number of intermediate files), at the potential expense of time.
+Aka \verb`indexreadbufsize`.  Added in version 4.00.1006398833
+20011121.
+
+\item[indexwritebufsz] Write buffer size for creating Metamorph
+indexes.  The default is 128KB; suffixes like ``\verb`KB`'' are
+respected.  Aka \verb`indexwritebufsize`.  Added in version
+4.00.1007509154 20011204.
+
+\item[indexmmapbufsz] Memory-map buffer size for Metamorph indexes.
+During search, it is used for the \verb`.dat` file, if it is
+memory-mapped (see \verb`indexmmap`); it is ignored for the
+\verb`.tok` file since the latter is heavily used and thus fully
+mapped (if \verb`indexmmap` permits it).  During index update,
+\verb`indexmmapbufsz` is used for the \verb`.dat` file, if it is
+memory-mapped; the \verb`.tok` file will be entirely memory-mapped if
+it is smaller than this size, else it is read.  Aka
+\verb`indexmmapbufsize`.  The default is 0, which uses 25\% of RAM.
+Added in version 3.01.959984092 20000602.  In version 4.00.1007509154
+20011204 and later, ``\verb`KB`'' etc. suffixes are allowed.
+
+\item[indexslurp] Whether to enable index ``slurp'' optimization
+during Metamorph index create/update, where possible.  Optimization is
+always possible for index create; during index update, it is possible
+if the new insert/update recids all occur after the original recids
+(e.g. the table is insert-only, or all updates created a new block).
+Optimization saves about 20\% of index create/update time by merging
+piles an entire word at a time, instead of word/token at a time.  The
+default is 1 (enabled); set to 0 to disable.  Added in version
+4.00.1004391616 20011029.
+
+\item[indexappend] Whether to enable index ``append'' optimization
+during Metamorph index update, where possible.  Optimization is
+possible if the new insert recids all occur after the original recids,
+and there were no deletes/updates (e.g. the table is insert-only); it
+is irrelevant during index create.  Optimization saves index build
+time by avoiding original token translation if not needed.  The
+default is 1 (enabled); set to 0 to disable.  Added in version
+4.00.1006312820 20011120.
+
+\item[indexwritesplit] Whether to enable index ``write-split''
+optimization during Metamorph index create/update.  Optimization saves
+memory by splitting the writes for (potentially large) \verb`.dat`
+blocks into multiple calls, thus needing less buffer space.  The
+default is 1 (enabled); set to 0 to disable.  Added in version
+4.00.1015532186 20020307.
+
+\item[indexbtreeexclusive] Whether to optimize access to certain
+index B-trees during exclusive access.  The optimization may reduce
+seeks and reads, which may lead to increased index creation speed on
+platforms with slow large-file \verb`lseek` behavior.  The default is
+1 (enabled); set to 0 to disable.  Added in version 5.01.1177548533
+20070425.
+
+\item[mergeflush] Whether to enable index ``merge-flush'' optimization
+during Metamorph index create/update.  Optimization saves time by
+flushing in-memory index piles to disk just before final merge;
+generally saves time where \verb`indexslurp` is not possible.  The
+default is 1 (enabled); set to 0 to disable.  Added in version
+4.00.1011143988 20020115.
+
+\item[indexversion]
+\item{indexversion}
+Which version of Metamorph index to produce or
+update, when creating or updating Metamorph indexes.  The supported
+values are 0 through 3; the default is 2.  Setting version 0 sets the
+default index version for that Texis release.  Note that old versions
+of Texis may not support version 3 indexes.  Version 3 indexes may use
+less disk space than version 2, but are considered experimental.
+Added in version 3.00.954374722 20000329.
+
+\item[indexmaxsingle]
+\label{indexmaxsingle}
+For Metamorph indexes; the maximum number of
+locations that a single-recid dictionary word may have and still be
+stored solely in the \verb`.btr` B-tree file (without needing a
+\verb`.dat` entry).  Single-recid-occurence words usually have their
+data stored solely in the B-tree to save a \verb`.dat` access at
+search time.  However, if the word occurs many times in that single
+recid, the data (for a Metamorph inverted index) may be large enough
+to bloat the B-tree and thus negate the savings, so if the
+single-recid word occurs more than \verb`indexmaxsingle` times, it is
+stored in the \verb`.dat`.  The default is 8.
+
+\item[uniqnewlist] Whether/how to unique the new list during
+Metamorph index searches.  Works around a potential bug in old
+versions of Texis; not generally set.  The possible values are:
+\begin{description}
+  \item[0]:  do not unique at all
+  \item[1]:  unique auxillary/compound index new list only
+  \item[2]:  unique all new lists
+  \item[3]:  unique all new lists and report first few duplicates
+\end{description}
+The default is 0.
+
+\item[tablereadbufsz] Size of read buffer for tables, used when it is
+possible to buffer table reads (e.g. during some index creations).  The
+default is 16KB.  When setting, suffixes such as ``\verb`KB`'' etc.
+are supported.  Set to 0 to disable read buffering.  Added in version
+5.01.1177700467 20070427.  Aka \verb`tablereadbufsize`.
+
+\end{description}
+
+% -----------------------------------------------------------------------------
+\subsection{Locking properties}
+
+These properties affect the way that locking occurs in the database engine.
+Setting these properties without understanding the consequences can lead
+to inaccurate results, and even corrupt tables.
+
+\begin{description}
+\item[singleuser] This will turn off locking completely.  {\em This should
+be used with extreme caution}.  The times when it is safe to use this
+option are if the database is read-only, or if there is only one
+connection to the database.  Default off.  This replaces the prior
+setting of \verb`nolocking`.
+
+\item[lockmode] This can be set to either manual or automatic.  In
+manual mode the person writing the program is responsible for getting
+and releasing locks.  In automatic mode Texis will do this itself.
+Manual mode can reduce the number of locks required, or implement
+specific application logic.  In manual mode care must be taken that
+reads and writes can not occur at the same time.  The two modes can
+co-exist, in that one process can have manual mode, and the other
+automatic.  Default automatic.
+
+\item[locksleepmethod] Determines whether to use a portable or OS
+specific method of sleeping while waiting for a lock.  By default the
+OS specific method is used.  This should not need to be changed.
+
+\item[locksleeptime] How long to wait between attempts to check the
+lock.  If this value is too small locks will be checked too often,
+wasting CPU time.  If it is too high then the process might be
+sleeping when there is no lock, delaying database access.  Generally
+the busier the system the higher this setting should be.  It is
+measured in thousandths of a second.  The default is 20.
+
+\item[locksleepmaxtime] 
+The lock sleep time automatically increments the if unable to get a
+lock to allow other processes an opportunity to get the CPU.  This
+sets a limit on how lock to sleep.
+It is measured in thousandths of a second.  The default is 100.
+Added in version 4.00.1016570000.
+
+\item[fairlock] Whether to be fair or not.  A process which is running
+in fair mode will not obtain a lock if the lock which has been waiting
+longest would conflict.  A process which is not in fair mode will
+obtain the lock as soon as it can.  This can cause a process to wait
+forever for a lock.  This typically happens if there are lots of
+processes reading the table, and one trying to write.  Setting
+\verb`fairlock` to true will guarantee that the writer can obtain the
+lock as long as the readers are getting and releasing locks.  Without
+\verb`fairlock` there is no such guarantee, however the readers will
+see better performance as they will rarely if ever wait for the
+writer.  This flag only affects the process which sets the flag.  It
+is not possible to force another process to be fair.  The default is
+that it operates in fair mode.
+
+\item[lockverbose] How verbose the lock code should be.  The default
+minimum level of 0 will report all serious problems in the lock
+manager, as they are detected and corrected.  A verbosity level of 1
+will also display messages about less serious problems, such as
+processes that have exited without closing the lock structure.  Level
+2 will also show when a lock can not be immediately obtained.  Level 3
+will show every lock as it is released.  In version 5.01.1160010000 20061004
+and later, the level can be bitwise OR'd with 0x10 and/or 0x20
+to report system calls before and after (respectively).  Levels 1 and
+above should generally only be used for debugging.
+In version 7.07.1565800000 20190814 and later, 0x40 and 0x80 may be
+set to report before and after semaphore locking/unlocking.
+
+\item[debugbreak] Stop in debugger when set.  Internal/debug use available
+in some versions.  Added in version 4.02.1045505248 Feb 17 2003.
+
+\item[debugmalloc] Integer; controls debug malloc library.  Internal/debug
+use in some versions.  Added in version 4.03.1050682062 Apr 18 2003.
+
+\end{description}
+
+% -----------------------------------------------------------------------------
+\subsection{Miscellaneous Properties}
+
+These properties do not fit nicely into a group, and are presented here.
+
+\begin{description}
+\item[tablespace] Similar to \verb`indexspace` above.  Sets a
+directory into which tables created will be placed.  This property
+does not stay set across invocations.  Default is empty string, which
+means the database directory.
+
+\item[datefmt] This is a \verb`strftime` format used to format dates
+for conversion to character format.  This will affect \verb`tsql`, as
+well as attempts to retrieve dates in ASCII format.  Although the
+features supported by different operating systems will vary, some of
+the more common format codes are:
+
+\begin{itemize}
+\item[\verb`\%\%`] Output \verb`%`
+\item[\verb`\%a`] abbreviated weekday name
+\item[\verb`\%A`] full weekday name
+\item[\verb`\%b`] abbreviated month name
+\item[\verb`\%B`] full month name
+\item[\verb`\%c`] local date and time representation
+\item[\verb`\%d`] day of month (01 - 31)
+\item[\verb`\%D`] date as \verb`%m/%d/%y`
+\item[\verb`\%e`] day of month ( 1 - 31)
+\item[\verb`\%H`] Hour (00 - 23)
+\item[\verb`\%I`] Hour (01 - 12)
+\item[\verb`\%j`] day of year (001 - 366)
+\item[\verb`\%m`] month (01 - 12)
+\item[\verb`\%M`] Minute (00 - 59)
+\item[\verb`\%p`] AM/PM
+\item[\verb`\%S`] Seconds (00 - 59)
+\item[\verb`\%U`] Week number (beginning Sunday) (00-53)
+\item[\verb`\%w`] Week day (0-6) (0 is Sunday)
+\item[\verb`\%W`] Week number (beginning Monday) (00-53)
+\item[\verb`\%x`] local date representation
+\item[\verb`\%X`] local time representation
+\item[\verb`\%y`] two digit year (00 - 99)
+\item[\verb`\%Y`] Year with century
+\item[\verb`\%Z`] Time zone name
+\end{itemize}
+Default \verb`%Y-%m-%d %H:%M:%S`, which can be
+restored by setting datefmt to an empty string.
+Note that in version 6.00.1300386000 20110317 and later, the
+\verb`stringformat()` SQL function can be used to format dates
+(and other values) without needing to set a global property.
+
+\item[timezone] Change the default timezone that Texis will use.  This
+should be formatted as for the TZ environment variable.  For example for
+US Eastern time you should set timezone to \verb`EST5EDT`.  Some systems
+may allow alternate representations, such as \verb`US/Eastern`, and if
+your operating system accepts them, so will Texis.
+
+\item[locale] Can be used to change the locale that Texis uses.  This
+  will impact the display of dates if using names, as well as the
+  meaning of the character classes in REX expressions, so
+  \verb`\alpha` will be correct.  Also with the correct locale set
+  (and OS support), Metamorph will work case insensitively correctly
+  (with mono-byte character sets and Texis version 5 or earlier; see
+  \verb`textsearchmode` for UTF-8/Unicode and version 6 or later
+  support).
+
+\item[indirectcompat]  Setting this to 1 sets compatibility with early
+versions of Texis as far as display of indirects go.  If set to 1 a
+trailing \verb`@` is added to the end of the filename.  Default 0.
+
+\item[indirectspace]  Controls where indirects are created.  The default
+location is a directory called indirects in the database directory.  Texis
+will automatically create a directory structure under that directory to
+allow for efficient indirect access.  At the top level there will be 16
+directories, 0 through 9 and a through f.  When you create the directory
+for indirects you can precreate these directories, or use them as mount
+points.  You should make sure that the Texis user has permissions to the
+directories.
+Added in version 03.00.940520000
+
+\item[triggermode] This setting changes the way that the command is treated
+when creating a trigger.  The default behavior is that the command will be
+executed with an extra arg, which is the filename of the table containing
+the records.  If \verb`triggermode` is set to 1 then the strings \verb`$db`
+and \verb`$table` are replaced by the database and table in that database
+containing the records.  This allows any program which can access the
+database to retrieve the values in the table without custom coding.
+
+\item[paramchk] Enables or disables the checking of parameters in the
+SQL statement.  By default it is enabled, which will cause any unset
+parameters to cause an error.  If paramchk is set to 0 then unset
+parameters will not cause an error, and will be ignored.  This lets a
+single complex query be given, yet parameter values need only be
+supplied for those clauses that should take effect on the query.
+
+\item[message,nomessage] Enable or disable messages from the SQL engine.
+The argument should be a comma separated list of messages that you want to
+enable or disable.  The known messages are:
+\begin{description}
+\item[duplicate]  Message {\tt Trying to insert duplicate value () in index}
+when an attempt is made to insert a record which has a duplicate value and
+a unique index exists.  The default is enabled.
+\end{description}
+
+\item[varchartostrlstsep]
+\label{`varchartostrlstsep'}
+  The separator character or mode to use when converting a
+  \verb`varchar` string into a \verb`strlst` list of strings in Texis.
+  The default is set by the \verb`conf/texis.ini` setting {\tt [Texis]
+    Varchar To Strlst Sep} (p.~\pageref{tcVarcharToStrlstSep}); if
+  that is not set, the ``factory'' built-in default is \verb`create`
+  in version 7 (or \verb`compatibilityversion` 7) and later, or
+  \verb`lastchar` in version 6 (or \verb`compatibilityversion` 6) and
+  earlier.
+
+  A value of \verb`create` indicates that the separator is to be
+  created: the entire string is taken intact as the sole item for the
+  resulting \verb`strlst`,\footnote{In version 7 (or
+    \verb`compatibilityversion` 7) and later, note that in {\tt
+      create} mode, an empty source string will result in an empty
+    (zero-items) {\tt strlst}: this helps maintain consistency of
+    empty-string meaning empty-set for {\tt strlst}, as is true in
+    other contexts.  In version 6 and earlier an empty source string
+    produced a one-empty-string-item {\tt strlst} in {\tt create}
+    mode.} and a separator is created that is not present in the
+  string (to aid re-conversion to \verb`varchar`).  This can be used
+  in conjunction with Vortex's {\tt <sqlcp arrayconvert>} setting to
+  ensure that single-value as well as multi-value Vortex variables are
+  converted consistently when inserted into a \verb`strlst` column:
+  single-value vars by \verb`varchartostrlstsep`, multi-value by
+  \verb`arrayconvert`.
+
+  The value \verb`lastchar` indicates that the last character in the
+  source string should be the separator; e.g. ``{\tt a,b,c,}'' would
+  be split on the comma and result in a \verb`strlst` of 3 values:
+  ``{\tt a}'', ``{\tt b}'' and ``{\tt c}''.
+
+  \verb`varchartostrlstsep` may also be a single byte character, in
+  which case that character is used as the separator.  This is useful
+  for converting CSV-type strings e.g. ``{\tt a,b,c}'' without having to
+  modify the string and append the separator character first (i.e. for
+  {\tt lastchar} mode).
+
+  \verb`varchartostrlstsep` may also be set to \verb`default` to
+  restore the default (\verb`conf/texis.ini`) setting.  It may also be
+  set to \verb`builtindefault` to restore the ``factory'' built-in
+  default (which changes under \verb`compatibilityversion`, see
+  above); these values were added in version 5.01.1231553000 20090109.
+  If no \verb`conf/texis.ini` value is set, \verb`default` is the same
+  as \verb`builtindefault`.
+
+  \verb`varchartostrlstsep` was added in version 5.01.1226978000
+  20081117.  See also the \verb`metamorphstrlstmode` setting
+  (p.~\pageref{`metamorphstrlstmode'}), which affects conversion of
+  \verb`strlst` values into Metamorph queries; and the \verb`convert`
+  SQL function (p.~\pageref{convertSqlFunction}), which in Texis
+  version 7 and later can take a \verb`varchartostrlstsep` mode
+  argument.  The \verb`compatibilityversion` property
+  (p.~\pageref{SqlPropertyCompatibilityVersion}), when set, affects
+  \verb`varchartostrlstsep` as well.
+
+\item[multivaluetomultirow]
+\label{multivaluetomultirow}
+  Whether to split multi-value fields (e.g. \verb`strlst`) into
+  multiple rows (e.g. of \verb`varchar`) when appropriate, i.e. during
+  {\tt GROUP BY} or {\tt DISTINCT} on such a field.  If nonzero/true,
+  a {\tt GROUP BY} or {\tt DISTINCT} on a \verb`strlst` field will
+  split the field into its \verb`varchar` members for processing.  For
+  example, consider the following table:
+  \begin{verbatim}
+    create table test(Colors strlst);
+    insert into test(Colors)
+      values(convert('red,green,blue,', 'strlst', 'lastchar'));
+    insert into test(Colors)
+      values(convert('blue,orange,green,', 'strlst', 'lastchar'));
+  \end{verbatim}
+  With \verb`multivaluetomultirow` set true, the statement:
+  \begin{verbatim}
+    select count(Colors) Count, Colors from test group by Colors;
+  \end{verbatim}
+  generates the following output:
+  \begin{verbatim}
+          Count       Colors
+    ------------+------------+
+               2 blue
+               2 green
+               1 orange
+               1 red
+  \end{verbatim}
+  Note that the \verb`strlst` values have been split, allowing the two
+  \verb`blue` and \verb`green` values to be counted individually.
+  This also results in the returned \verb`Colors` type being
+  \verb`varchar` instead of its declared \verb`strlst`, and the sum of
+  \verb`Count` values being greater than the number of rows in the
+  table.  Note also that merely \verb`SELECT`ing a \verb`strlst` will
+  not cause it to be split: it must be specified in the {\tt GROUP BY}
+  or {\tt DISTINCT} clause.
+
+  The \verb`multivaluetomultirow` was added in version 5.01.1243980000
+  20090602.  It currently only applies to \verb`strlst` values and
+  only to single-column {\tt GROUP BY} or {\tt DISTINCT} clauses.  A
+  system-wide default for this SQL setting can be set in {\tt
+    conf/texis.ini} with the {\tt [Texis] Multi Value To Multi Row}
+  setting.  If unset, it defaults to true through version 6 (or
+  \verb`compatibilityversion` 6), and false in version 7 and later
+  (because in general {\tt GROUP BY}/{\tt DISTINCT} are expected to
+  return true table rows for results).  The
+  \verb`compatibilityversion` property
+  (p.~\pageref{SqlPropertyCompatibilityVersion}), when set, affects
+  this property as well.
+
+\item[inmode]
+\label{InmodeProperty}
+  How the {\tt IN} operator should behave.  If set to \verb`subset`,
+  {\tt IN} behaves like the {\tt SUBSET} operator
+  (p.~\pageref{SubsetOperator}).  If set to \verb`intersect`, {\tt IN}
+  behaves like the {\tt INTERSECT} operator
+  (p.~\pageref{IntersectOperator}).  Added in version 7, where the
+  default is \verb`subset`.  Note that in version 6 (or
+  \verb`compatibilityversion` 6) and earlier, {\tt IN} always behaved
+  in an {\tt INTERSECT}-like manner.  The \verb`compatibilityversion`
+  property (p.~\pageref{SqlPropertyCompatibilityVersion}), when set,
+  affects this property as well.
+
+\item[hexifybytes]
+\label{hexifybytesProperty}
+
+  Whether conversion of \verb`byte` to \verb`char` (or vice-versa)
+  should encode to (or decode from) hexadecimal.  In Texis version 6
+  (or \verb`compatibilityversion` 6) and earlier, this always
+  occurred.  In Texis version 7 (or \verb`compatibilityversion` 7) and
+  later, it is controllable with the \verb`hexifybytes` SQL property:
+  0 for off/as-is, 1 for hexadecimal conversion.  This property is on
+  by default in \verb`tsql` (i.e. hex conversion ala version 6 and
+  earlier), so that \verb`SELECT`ing from certain system tables that
+  contain \verb`byte` columns will still be readable from the command
+  line.  However, the property is off by default in version 7 and
+  later non-\verb`tsql` programs (such as Vortex), to avoid the hassle
+  of hex conversion when raw binary data is needed (e.g. images), and
+  because Vortex etc. have more tools for dealing with binary data,
+  obviating the need for hex conversion.  (The \verb`hextobin()` and
+  \verb`bintohex()` SQL functions may also be useful,
+  p.~\pageref{bintohexSqlFunction}.)  The \verb`hexifybytes` property
+  was added in version 7.  It is also settable in the
+  \verb`conf/texis.ini` config file (p.~\pageref{tcHexifyBytes}).  The
+  \verb`compatibilityversion` property
+  (p.~\pageref{SqlPropertyCompatibilityVersion}), when set, affects
+  this property as well.
+
+\item[unalignedbufferwarning]
+
+  Whether to issue ``{\tt Unaligned buffer}'' warning messages when
+  unaligned buffers are encountered in certain situations.  Messages
+  are issued if this setting is true/nonzero (the default).  Added in
+  version 7.00.1366400000 20130419.
+
+\item[unneededrexescapewarning]
+\label{UnneededRexEscapeWarningSqlProperty}
+
+  Whether to issue ``{\tt REX: Unneeded escape sequence ...}''
+  warnings when a REX expression uses certain unneeded escapes.  An
+  unneeded escape is when a character is escaped that has no special
+  meaning in the current context in REX, either alone or escaped.
+  Such escapes are interpreted as just the literal character alone
+  (respect-case); e.g ``\verb`\w`'' has no special meaning in REX, and
+  is taken as ``\verb`w`''.
+
+  While such escapes have no meaning currently, some may take on a
+  specific new meaning in a future Texis release, if REX syntax is
+  expanded.  Thus using them in an expression now may unexpectedly
+  (and silently) result in their behavior changing after a Texis
+  update; hence the warning message.  Expressions using such escapes
+  should thus have them changed to the unescaped literal character.
+
+  If updating the code is not feasible, the warning may be silenced by
+  setting \verb`unneededrexescapewarning` to 0 -- at the risk of
+  silent behavior change at an upgrade.  Added in version
+  7.06.1465574000 20160610.  Overrides {\tt [Texis] Unneeded REX
+    Escape Warning} setting
+  (p.~\pageref{TexisIniUnneededREXEscapeWarning}) in {\tt
+    conf/texis.ini}.
+
+\item[nulloutputstring]
+
+  The string value to output for SQL NULL values.  The default
+  is ``\verb`NULL`''.  Note that this is different than the output
+  string for zero-integer \verb`date` values, which are also shown
+  as ``\verb`NULL`''.  Added in version 7.02.1405382000 20140714.
+
+\item[validatebtrees]
+
+  Bit flags for additional consistency checks on B-trees.  Added in
+  version 7.04.1449078000 20151202.  Overrides
+  {\tt [Texis] Validate Btrees} setting
+  (p.~\pageref{TexisIniTexisValidateBtrees}) in \verb`conf/texis.ini`.
+
+\end{description}

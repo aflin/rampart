@@ -1,5 +1,5 @@
 /* load the http server module */
-var server=require("rpserver");
+var server=require("rampart-server");
 
 function index(req) {
 //printf("%J\n",req);

@@ -128,7 +128,7 @@ RPPATH rp_find_path(char *file, char *subdir)
     char *sd= (subdir)?subdir:"";
     RPPATH ret={0};
     char path[PATH_MAX];
-    int i=0;
+    int i=0, skiphome=0;
     struct stat sb;
 
     if(!file) return ret;
@@ -153,18 +153,35 @@ RPPATH rp_find_path(char *file, char *subdir)
         return ret;
     }
 
-//printf("looking for file %s%s\n",subdir,file);
+    //printf("looking for file %s%s\n",subdir,file);
     //if(!home || access(home, R_OK)==-1) home="/tmp";
     if ( access(home, R_OK)==-1 )
     {
-        fprintf(stderr, "cannot access %s\nEither your home directory or \"/tmp\"\" must exist and be accessible.\n", home);
-        exit(1);
+        if (strcmp( home, "/tmp") != 0){
+            home="/tmp";
+            if ( access(home, R_OK)!=-1 )
+                goto home_accessok;
+        }        
+        fprintf(stderr, "cannot access %s\nEither your home directory or \"/tmp\"\" should exist and be accessible.\n", home);
+        skiphome=1;
+        //exit(1);
     }
+    
+    home_accessok:
     strcpy(homedir,home);
     strcat(homedir,homesubdir);
-    locs[0]=homedir;
-    locs[1]=(rampart_path)?rampart_path:RP_INST_PATH;
 
+    /* this should only happen if /tmp is not writable */
+    if(skiphome)
+    {
+        locs[0]=(rampart_path)?rampart_path:RP_INST_PATH;
+        nlocs=1;
+    }
+    else
+    {
+        locs[0]=homedir;
+        locs[1]=(rampart_path)?rampart_path:RP_INST_PATH;
+    }
     /* start with cur dir "./" */
     strcpy(path,loc);
     strcat(path,file);
@@ -982,14 +999,15 @@ duk_ret_t duk_rp_globalize(duk_context *ctx)
        retString: true         //default false. Normally returns a buffer. String may be truncated if file contains nulls.
    });
     ALSO may be called as:
-    rampart.utils.readFile("./filename",-20,50,true);
+    rampart.utils.readFile("./filename",-20,50,true,{object_of_params});
+    items in object_of_params override primitive parameters
 */
 duk_ret_t duk_rp_read_file(duk_context *ctx)
 {
     const char *filename=NULL;
     int64_t offset=0;
     int64_t length=0;
-    duk_idx_t obj_idx=0, top=duk_get_top(ctx);
+    duk_idx_t obj_idx=-1;
     int retstring=0;
     FILE *fp;
     void *buf;
@@ -997,33 +1015,37 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
     size_t off;
     size_t nbytes;
 
-    /* get options as separate parameters: readfile("filename",0,0,true); */
-    if(duk_is_string(ctx,0))
+    /* get options in any order*/
     {
-        filename = duk_get_string(ctx, 0); 
+        int gotoffset=0;
+        duk_idx_t i=0;
 
-        if (duk_is_number(ctx,1))
+        while(i<5)
         {
-            offset=(int64_t) duk_get_number(ctx,1);
-            obj_idx++;
-        }
 
-        if (duk_is_number(ctx,2))
-        {
-            length=(int64_t) duk_get_number(ctx,2);
-            obj_idx++;
+            if (duk_is_string(ctx,i) )
+                filename = duk_get_string(ctx, i);
+            else if (duk_is_number(ctx,i) )
+            {
+                if (gotoffset)
+                    length=(int64_t) duk_get_number(ctx, i);
+                else
+                {
+                    offset=(int64_t) duk_get_number(ctx, i);
+                    gotoffset=1;
+                }
+            } 
+            else if (duk_is_boolean(ctx, i))
+                retstring=duk_get_boolean(ctx, i);
+            else if (duk_is_object(ctx, i))
+                obj_idx=i;
+            else
+                break;
+            i++;
         }
-        retstring=duk_get_boolean_default(ctx,3,0); 
     }
     
-    while (obj_idx < top)
-    {
-        if( duk_is_object(ctx,obj_idx))
-            break;
-        obj_idx++;
-    }
-    
-    if ( obj_idx != top ) 
+    if ( obj_idx != -1) 
     {   
 
         if(duk_get_prop_string(ctx, obj_idx, "file"))

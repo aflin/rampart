@@ -1,5 +1,5 @@
 
-var Sql=require("rpsql");
+var Sql=require("rampart-sql");
 var sql=new Sql.init('./testdb'); // relative to the location of the main script
 
 

@@ -89,17 +89,17 @@ include_directories(
 
 ########### ADD MODULES HERE ###############
 
-## allow linked rpcrypto.so to be loaded from rpserver.so in the same dir
+## allow linked rampart-crypto.so to be loaded from rampart-server.so in the same dir
 SET(CMAKE_SKIP_BUILD_RPATH FALSE)
 SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 SET(CMAKE_INSTALL_RPATH "./;${CMAKE_INSTALL_PREFIX}/modules/")
 
 
 ###SQL###
-add_library(rpsql SHARED
+add_library(rampart-sql SHARED
  duktape/modules/db.c
 )
-target_link_libraries(rpsql
+target_link_libraries(rampart-sql
 	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
 	${PROJECT_BINARY_DIR}/texis/mmapi/libmmapi3.a
 	z
@@ -108,25 +108,25 @@ target_link_libraries(rpsql
 	m
 	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
 ) 
-add_dependencies(rpsql texis)
+add_dependencies(rampart-sql texis)
 
 # libre2 needs to be linked by c++
-set_target_properties(rpsql PROPERTIES LINKER_LANGUAGE CXX )
+set_target_properties(rampart-sql PROPERTIES LINKER_LANGUAGE CXX )
 
 ###RAMIS###
-add_library(rpramis SHARED
-	duktape/modules/ramis.c
-	ramis/resp_client.c
-	ramis/resp_protocol.c
+add_library(rampart-redis SHARED
+	duktape/modules/rampart-redis.c
+	redis/resp_client.c
+	redis/resp_protocol.c
 )
 
 ##CRYPTO##
-add_library(rpcrypto SHARED 
+add_library(rampart-crypto SHARED 
   duktape/modules/crypto.c  
 )
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
-target_link_libraries(rpcrypto PRIVATE
+target_link_libraries(rampart-crypto PRIVATE
 	-Wl,-all_load
 	${OPENSSL_TARGET_DIR}/ssl/libssl.a 
 	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
@@ -135,7 +135,7 @@ target_link_libraries(rpcrypto PRIVATE
 
 else()
 
-target_link_libraries(rpcrypto PRIVATE
+target_link_libraries(rampart-crypto PRIVATE
 	-Wl,--whole-archive
 	${OPENSSL_TARGET_DIR}/ssl/libssl.a 
 	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
@@ -144,24 +144,24 @@ target_link_libraries(rpcrypto PRIVATE
 
 endif()
 
-target_include_directories(rpcrypto PRIVATE
+target_include_directories(rampart-crypto PRIVATE
   ${PROJECT_BINARY_DIR}/extern/openssl/include/
 )
 
 ###SERVER###
-add_library(rpserver SHARED
+add_library(rampart-server SHARED
  duktape/modules/server.c
 )
-target_link_libraries(rpserver 
+target_link_libraries(rampart-server 
 	${LIBEVHTP_TARGET_DIR}/libevhtp.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a
-  	rpcrypto
+  	rampart-crypto
 	${ONIGURUMA_TARGET_DIR}/libonig.a
 ) 
 
-set_property(TARGET rpserver PROPERTY IMPORTED_LOCATION "./rpcrypto.so") 
+set_property(TARGET rampart-server PROPERTY IMPORTED_LOCATION "./rampart-crypto.so") 
 
-target_include_directories(rpserver PRIVATE
+target_include_directories(rampart-server PRIVATE
 	${PROJECT_BINARY_DIR}/extern/openssl/include/
 	${PROJECT_SOURCE_DIR}/extern/libevent/include/
 	${PROJECT_BINARY_DIR}/extern/libevent/include/
@@ -170,15 +170,15 @@ target_include_directories(rpserver PRIVATE
 )
 
 ###CURL###
-add_library(rpcurl SHARED
+add_library(rampart-curl SHARED
  duktape/modules/curl.c
 )
-target_link_libraries(rpcurl PRIVATE
+target_link_libraries(rampart-curl PRIVATE
 	${CURL_TARGET_DIR}/lib/libcurl.a
-	rpcrypto
+	rampart-crypto
 	z
 )
-target_include_directories(rpcurl PRIVATE
+target_include_directories(rampart-curl PRIVATE
 	${PROJECT_SOURCE_DIR}/extern/curl/include/
 	${PROJECT_BINARY_DIR}/extern/openssl/include/
 )
@@ -199,14 +199,14 @@ target_include_directories(rpcurl PRIVATE
 ##############  ADD MODULE NAMES HERE  ##############
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-set_target_properties(rpcurl rpserver rpsql rpramis rpcrypto #example_name
+set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto #example_name
 	PROPERTIES 
 	LINK_FLAGS   "-undefined dynamic_lookup" 
 	SUFFIX       ".so"
 	PREFIX ""
 )
 else()
-set_target_properties(rpcurl rpserver rpsql rpramis rpcrypto #example_name
+set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto #example_name
 	PROPERTIES 
 	SUFFIX       ".so"
 	PREFIX ""
@@ -215,11 +215,11 @@ endif()
 
 install(TARGETS rampart DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
 install(TARGETS
-	rpserver
-	rpcrypto
-	rpcurl
-	rpsql
-	rpramis
+	rampart-server
+	rampart-crypto
+	rampart-curl
+	rampart-sql
+	rampart-redis
 	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
 
@@ -285,16 +285,16 @@ install(CODE "execute_process( \
     )"
 )
 
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpserver.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpcrypto.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpcurl.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpsql.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rpramis.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-server.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-crypto.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-curl.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-sql.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-redis.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
 
 
 #this is good for later. Right now it interrupts work flow
-#set_target_properties(rpcurl rputils rpserver rp
+#set_target_properties(rampart-curl rampart-utils rampart-server rp
 #	PROPERTIES
 #	ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 #	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"

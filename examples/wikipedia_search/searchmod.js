@@ -1,5 +1,5 @@
 
-var Sql=require("rpsql");
+var Sql=require("rampart-sql");
 Sql.singleUser(true); /* no locks, read only db */
 
 var db=process.scriptPath + '/wikidb';

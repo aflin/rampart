@@ -1,4 +1,4 @@
-var Sql=require("rpsql");
+var Sql=require("rampart-sql");
 var sql=new Sql.init("./wikidb",true); /* true means make db if it doesn't exist */
 
 /*

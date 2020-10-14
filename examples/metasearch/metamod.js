@@ -1,5 +1,5 @@
-var curl=require("rpcurl");
-var Sql=require("rpsql");
+var curl=require("rampart-curl");
+var Sql=require("rampart-sql");
 rampart.globalize(Sql,["rex","sandr","stringFormat"]);
 var fetch=curl.fetch;
 rampart.globalize(rampart.utils);

@@ -1,0 +1,858 @@
+%% MAW 09-18-94 removed blob refs, brought rest up to date
+%**********************************************************************/
+
+%\documentstyle[epiman,12pt]{book}
+%\begin{document}           % End of preamble and beginning of text.
+
+%\title{Network Texis API Documentation}
+%\tableofcontents
+%\PART{The Texis API}
+%\chapter{EMBEDDING Texis}
+\chapter{The Texis Client API}{\label{Part:V:Chp:tcapi}}{\label{Part:V:Chp:Embed}}
+\section{Overview}
+This chapter provides a reference to the functions that you will need to
+use to write your own custom application that talks to Texis.
+
+\NAME{Texis Client Functions}
+\SYNOPSIS
+
+{\bf SQL interface}
+\begin{verbatim}
+TEXIS *texis_open(char *database, char *user, char *password);
+TEXIS *texis_open_options(void *, void *, void *, char *database, char *user,
+                          char *group, char *password);
+int texis_set(TEXIS *, char *, char *);
+int texis_prepare(TEXIS *, char *sqlQuery);
+int texis_execute(TEXIS *);
+int texis_param(TEXIS *, int paramNum, void *data, long *dataLen,
+                int cType, int sqlType);
+int texis_resetparams(TEXIS *);
+int texis_cancel(TEXIS *);
+FLDLST *texis_fetch(TEXIS *, int stringsFrom);
+int texis_flush(TEXIS *tx);
+int texis_flush_scroll(TEXIS *tx, int nrows);
+
+char **texis_getresultnames(TEXIS *tx);
+int *texis_getresultsizes(TEXIS *tx);
+int texis_getrowcount(TEXIS *tx);
+int texis_getCountInfo(TEXIS *tx, TXCOUNTINFO *countInfo);
+TEXIS *texis_close(TEXIS *);
+FLDLST *freefldlst(FLDLST *fl);
+
+\end{verbatim}
+
+\DESCRIPTION
+
+The Texis API provides the client program with an easy to use interface to
+any Texis server.
+
+The programmer is {\em strongly} encouraged to play with the example
+programs provided with the package before attempting their own
+implementation.
+
+\begin{description}
+\item[SQL interface]
+
+    This group of operations is for passing a user's query to the
+    database for processing and subsequently obtaining the results.
+
+\end{description}
+
+
+%**********************************************************************/
+\NAME{FLDLST - Struct containing results}
+
+\SYNOPSIS
+\begin{verbatim}
+  typedef struct FLDLST
+  {
+     int      n;                 /* number of items in arrays */
+     int      type [FLDLSTMAX];  /* data type */
+     void    *data [FLDLSTMAX];  /* pointer to data */
+     int      ndata[FLDLSTMAX];  /* number of els in data */
+     char    *name [FLDLSTMAX];  /* name of field */
+     int      ondata[FLDLSTMAX]; /* 2002-07-05 number of els in schema */
+  } FLDLST;
+\end{verbatim}
+
+A \verb`FLDLST` is a structure containing parallel arrays of information
+about the selected fields and a count of those fields. \verb`FLDLST` members:
+
+\verb`int n` --- The number of fields in the following lists.
+
+\verb`int *type` --- An array of types of the fields.  Each element will
+be one of the \verb`FTN_xxxx` macros.
+
+\verb`void **data` --- An array of data pointers.  Each element will
+point to the data for the field. The data for a field is an
+array of \verb`type`s.
+
+\verb`int *ndata` ---  An array of data counts. Each element says how
+many elements are in the \verb`data` array for this field.
+
+\verb`char **name` --- An array of strings containing the names of the
+fields.
+
+\verb`SRCHLST *sl` --- An array of SRCHLSTs containing information
+Metamorph searches, if any. Filled in, on request only,
+by \verb`n_fillsrchlst()`.
+
+\verb`MMOFFS mmoff` --- An array of Metamorph subhit offsets and lengths
+from Metamorph searches, if any. Filled in, on request only,
+by \verb`n_fillsrchlst()`.
+
+Possible types in \verb`FLDLST->type` array:
+
+\verb`FTN_BYTE` --- An 8 bit \verb`byte`.
+
+\verb`FTN_CHAR` --- A \verb`char`.
+
+\verb`FTN_DOUBLE` --- A \verb`double`.
+
+\verb`FTN_DATE` --- A \verb`long` in the same form as that from the
+\verb`time()` system call.
+
+\verb`FTN_DWORD` --- A 32 bit \verb`dword`.
+
+\verb`FTN_FLOAT` --- A \verb`float`.
+
+\verb`FTN_INT` --- An \verb`int`.
+
+\verb`FTN_INTEGER` --- An \verb`int`.
+
+\verb`FTN_LONG` --- A \verb`long`.
+
+\verb`FTN_INT64` --- An \verb`int64`.
+
+\verb`FTN_UINT64` --- A \verb`uint64`.
+
+\verb`FTN_SHORT` --- A \verb`short`.
+
+\verb`FTN_SMALLINT` --- A \verb`short`.
+
+\verb`FTN_WORD` --- A 16 bit \verb`word`.
+
+\verb`FTN_INDIRECT` --- A \verb`char` string URL indicating the file that
+the data for this field is stored in.
+
+\verb`FTN_COUNTER` --- A \verb`ft_counter` structure containing a unique serial
+number.
+
+\verb`FTN_STRLST` --- A delimited list of strings.
+
+The \verb`type` may also be \verb`|`ed with \verb`FTN_NotNullableFlag`
+(formerly \verb`DDNULLBIT`) and/or \verb`DDVARBIT`.
+If \verb`FTN_NotNullableFlag` is set, it indicates that the field is not
+allowed to be NULL. \verb`DDVARBIT` indicated that the field is
+variable length instead of fixed length. When handling result rows
+these bits can generally be ignored.
+
+%**********************************************************************/
+
+\NAME{TXCOUNTINFO - Struct containing idnex count info}
+
+\SYNOPSIS
+\begin{verbatim}
+  typedef struct TXCOUNTINFO
+  {
+    EPI_HUGEINT	rowsMatchedMin;
+    EPI_HUGEINT	rowsMatchedMax;
+    EPI_HUGEINT	rowsReturnedMin;
+    EPI_HUGEINT	rowsReturnedMax;
+    EPI_HUGEINT	indexCount;
+  } TXCOUNTINFO;
+\end{verbatim}
+
+\DESCRIPTION
+The \verb`TXCOUNTINFO` struct contains information about the min/max
+number of table rows matching the query.
+%
+The \verb`rowsMatchedMin`
+and \verb`rowsMatchedMax` members are before
+\begin{itemize}
+  \item GROUP BY
+  \item likeprows
+  \item aggregates (count(*))
+  \item multivaluetomultirow
+\end{itemize}
+
+If the number is unknown the result will be less than 0.  If
+\verb`rowsMatchedMin` and \verb`rowsMatchedMax` are different then
+the exact count is unknown.
+
+The \verb`rowsReturnedMin`
+and \verb`rowsReturnedMax` members indicate the number of rows that
+would be returned by \verb`texis_fetch` and are after
+\begin{itemize}
+  \item GROUP BY
+  \item likeprows
+  \item aggregates (count(*))
+  \item multivaluetomultirow
+\end{itemize}
+
+If the number is unknown the result will be less than 0.  If
+\verb`rowsReturnedMin` and \verb`rowsReturnedMax` are different then
+the exact count is unknown.
+
+
+%**********************************************************************/
+
+\NAME{texis\_getCountInfo() - Hit count information}
+
+\SYNOPSIS
+\begin{verbatim}
+#include "texisapi.h"
+int texis_getCountInfo(TEXIS *tx, TXCOUNTINFO *countinfo);
+\end{verbatim}
+
+\DESCRIPTION
+
+This function will return the count of rows to be read from the index
+for the prepared statement, if available.
+
+\CAVEATS
+
+This function populates a \verb`TXCOUNTINFO` structure with information
+about the number of rows expected to be returned.  A range of rows may be
+provided if rows may be filtered as rows are returned, for example a
+combination of indexed and unindexed clauses.
+
+The lower and upper bounds of the array will be updated as rows are returned
+and they may converge to the same number.
+
+If the bound is negative that means it is unknown, for example if no index
+is being used.
+
+%**********************************************************************/
+
+\NAME{texis\_open(), texis\_dup(), texis\_close() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+TEXIS *texis_open(char *database, char *user, char *password);
+TEXIS *texis_dup(TEXIS *tx);
+TEXIS *texis_close(TEXIS *tx);
+\end{verbatim}
+
+\DESCRIPTION
+
+\verb`texis_open()` opens the database. It returns a valid TEXIS pointer
+on success or \verb`TEXISPN` on failure. \verb`TEXISPN` is an alias for
+\verb`(TEXIS *)NULL`.
+
+\verb`texis_dup()` creates a new TEXIS pointer to the same database as a
+currently valid handle.  This saves much of the overhead of opening
+a new connection to the database.  The returned handle is a clean
+TEXIS handle, and will not have a copy of the SQL statement from the
+copied handle.
+It returns a valid TEXIS pointer on success or
+\verb`TEXISPN` on failure. \verb`TEXISPN` is an alias for \verb`(TEXIS *)NULL`.
+
+\verb`texis_close()` closes the previously opened database.  It always
+returns \verb`TEXISPN`.
+
+SQL statements are setup and executed with \verb`texis_prepare()`,
+\verb`texis_execute()`, and \verb`texis_fetch()`.
+
+\SEE
+\begin{verbatim}
+texis_prepare(), texis_execute(), and texis_fetch()
+\end{verbatim}
+
+%**********************************************************************/
+
+\NAME{texis\_set() - Set properties}
+\SYNOPSIS
+\begin{verbatim}
+int texis_set(TEXIS *, char *property, char *value);
+\end{verbatim}
+
+\DESCRIPTION
+
+Equivalent to the the SQL {\tt SET} statement for setting server properties
+(p.~\pageref{ServerProperties})
+
+%**********************************************************************/
+
+\NAME{texis\_prepare(), texis\_execute(), texis\_prepexec() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+int texis_prepare(TEXIS *, char *sqlQuery);
+int texis_prepexec(TEXIS *, char *sqlQuery);
+int texis_execute(TEXIS *);
+\end{verbatim}
+
+\DESCRIPTION
+
+These functions perform SQL statement setup and execution for databases
+opened with \verb`texis_open()`. \verb`texis_prepare()` takes a \verb`TEXIS`
+pointer from \verb`texis_open()` and a SQL statement.
+
+These functions provide an efficient way to perform the same
+SQL statement multiple times with varying parameter data.
+\verb`texis_prepare()` will return 1 on success, 0 on failure.
+
+\verb`texis_execute()` and \verb`texis_fetch()` or \verb`texis_flush()` would
+then be called to handle the results of the statement as with \verb`texis_prepare()`.
+
+Once a SQL statement is prepared with \verb`texis_prepare()` it may be
+executed multiple times with \verb`texis_execute()`. Typically the parameter
+data is changed between executions using the \verb`texis_param()` function.
+
+\verb`texis_execute()` will start to execute the statement prepared with
+\verb`texis_prepare()`.  \verb`texis_execute()` will return 1
+on success, 0 on failure.
+
+Parameters should be set between \verb`texis_prepare()` and
+\verb`texis_execute()`.  If there are no parameters you can also use
+\verb`texis_prepexec()`, which will call \verb`texis_prepare()` and
+\verb`texis_execute()` in one call.
+
+\EXAMPLE
+\begin{verbatim}
+SERVER *se;
+TEXIS     *tx;
+long    date;
+char   *title;
+char   *article;
+int     tlen, alen, dlen;
+
+   ...
+   if(!texis_prepare(tx,"insert into docs values(counter,?,?,?);"))
+      { puts("texis_prepare Failed"); return(0); }
+   for( each record to insert )
+   {
+      ...
+      date=...
+      dlen=sizeof(date);
+      title=...
+      tlen=strlen(title);
+      article=...
+      alen=strlen(article);
+      if(!texis_param(tx,1,&date  ,&dlen,SQL_C_LONG,SQL_DATE       ) ||
+         !texis_param(tx,2,title  ,&tlen,SQL_C_CHAR,SQL_LONGVARCHAR) ||
+         !texis_param(tx,3,article,&alen,SQL_C_CHAR,SQL_LONGVARCHAR));
+         { puts("texis_param Failed"); return(0); }
+      if(!texis_execute(tx))
+         { puts("texis_execute Failed"); return(0); }
+      texis_flush(tx);
+   }
+   ...
+\end{verbatim}
+
+\EXAMPLE
+\begin{verbatim}
+TEXIS     *tx;
+char   *query;
+int     qlen;
+FLDLST *fl;
+
+   ...
+   if(!texis_prepare(tx,
+         "select id,Title from docs where Article like ?;"))
+      { puts("texis_prepare Failed"); return(0); }
+   for( each Article query to execute )
+   {
+      query=...
+      qlen=strlen(query);
+      if(!texis_param(tx,1,query,&qlen,SQL_C_CHAR,SQL_LONGVARCHAR))
+         { puts("texis_param Failed"); return(0); }
+      if(!texis_execute(tx))
+         { puts("texis_execute Failed"); return(0); }
+      while((fl=texis_fetch(tx,-1))!=FLDLSTPN)
+      {
+         ...
+      }
+   }
+   ...
+\end{verbatim}
+
+\SEE
+\begin{verbatim}
+texis_open(), texis_fetch()
+\end{verbatim}
+
+%**********************************************************************/
+
+\NAME{texis\_fetch() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+FLDLST *texis_fetch(TEXIS *tx, int stringsFrom);
+\end{verbatim}
+
+\DESCRIPTION
+
+\verb`texis_fetch()` returns a \verb`FLDLST` pointer to the result
+set.  The \verb`stringsFrom` paramter lets you control if results are
+automatically converted to text.  An argument value of -1 will not
+convert any result, other numbers will start converting from that result
+column, so passing 0 will cause all fields to be converted.
+
+Continue calling \verb`texis_fetch()` to get subsequent result rows.
+\verb`texis_fetch()` will return \verb`FLDLSTPN` when there are no more
+result rows.
+
+\EXAMPLE
+\begin{verbatim}
+TEXIS     *tx;
+FLDLST *fl;
+
+   ...
+   if((tx=texis_open())!=TEXISPN)      /* initialize database connection */
+   {
+      ...
+                                                     /* setup query */
+      if(texis_prepare(tx,
+                 "select NAME from SYSTABLES where CREATOR!='texis';"
+                )!=TEXISPN)
+         while((fl=texis_fetch(tx))!=FLDLSTPN)/* get next result row */
+         {
+            dispfields(fl);            /* display all of the fields */
+         }
+      ...
+      texis_close(tx);                   /* close database connection */
+   }
+   ...
+\end{verbatim}
+
+\SEE
+\begin{verbatim}
+texis_prepare(), texis_execute()
+\end{verbatim}
+
+%**********************************************************************/
+
+\NAME{texis\_param(), texis\_resetparams() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+int texis_param(tx, ipar, buf, len, ctype, sqltype)
+TEXIS   *tx;
+int     ipar;
+void    *buf;
+int     *len;
+int     ctype;
+int     sqltype;
+
+int texis_resetparams(tx)
+TEXIS	*tx;
+\end{verbatim}
+
+\DESCRIPTION
+
+These functions allow you to pass arbitrarily large or complex data into
+a SQL statement. Sometimes there is data that won't work in the confines
+of the simple C string that comprises an SQL statement. Large text fields
+or binary data for example.
+
+Call \verb`texis_param()` to setup parameters after \verb`texis_prepare()` and
+before \verb`texis_execute()`.  If you have a statement you have already
+executed once, and you want to execute again with different data, which
+may have parameters unset which were previously set you can call
+\verb`texis_resetparams()`.  This is not neccessary if you will explicitly
+set all the parameters.
+Place a question mark (\verb`?`) in the SQL statement where you would
+otherwise place the data.
+
+These are the parameters:
+\begin{description}
+\item[TEXIS     *tx]      The prepared SQL statement.
+\item[int     ipar]    The number of the parameter, starting at 1.
+\item[void   *buf]     A pointer to the data to be transmitted.
+\item[int    *len]     A pointer to the length of the data.  This can be
+                       \verb`(int *)NULL` to use the default length, which
+                       assumes a \verb`'\0'` terminated string for
+                       character data.
+\item[int     ctype]   The type of the data.  For text use SQL\_C\_CHAR.
+\item[int     sqltype] The type of the field being inserted into.  For
+                       varchar use SQL\_LONGVARCHAR.
+\end{description}
+
+\begin{tabular}{|l|l|l|l|}\hline
+Field type & sqltype          & ctype           & C type     \\ \hline
+varchar    & SQL\_LONGVARCHAR & SQL\_C\_CHAR    & char       \\
+varbyte    & SQL\_BINARY      & SQL\_C\_BINARY  & byte       \\
+date       & SQL\_DATE        & SQL\_C\_LONG    & long       \\
+integer    & SQL\_INTEGER     & SQL\_C\_INTEGER & long       \\
+smallint   & SQL\_SMALLINT    & SQL\_C\_SHORT   & short      \\
+float      & SQL\_FLOAT       & SQL\_C\_FLOAT   & float      \\
+double     & SQL\_DOUBLE      & SQL\_C\_DOUBLE  & double     \\
+varind     & SQL\_LONGVARCHAR & SQL\_C\_CHAR    & char       \\
+counter    & SQL\_COUNTER     & SQL\_C\_COUNTER & ft\_counter \\
+\hline
+\end{tabular}
+
+
+\EXAMPLE
+\begin{verbatim}
+TEXIS  *tx;
+char   *description;
+char   *article;
+int     lend, lena;
+
+   if(!texis_prepare(tx,"insert into docs values(?,?);"))
+      { puts("texis_prepare Failed"); return(0); }
+   ...
+   description="a really large article";
+   lend=strlen(description);
+   article=...
+   lena=strlen(article);
+   if(!texis_param(tx,1,description,&lend,SQL_C_CHAR,SQL_LONGVARCHAR)||
+      !texis_param(tx,2,article    ,&lena,SQL_C_CHAR,SQL_LONGVARCHAR));
+      { puts("texis_param Failed"); return(0); }
+   if(!texis_execute(tx))
+      { puts("texis_execute Failed"); return(0); }
+   ...
+\end{verbatim}
+
+%**********************************************************************/
+
+\NAME{texis\_cancel() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+int texis_cancel(tx);
+TEXIS      *tx;
+\end{verbatim}
+
+\DESCRIPTION
+
+This function is used to cancel a TEXIS statement.  It can be called in a
+signal handler or thread to flag that the currently executing call on the
+TEXIS handle should terminate at the next possible opportunity.
+
+Once the thread has returned the TEXIS handle should be closed.
+
+%**********************************************************************/
+
+\NAME{texis\_flush() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+int texis_flush(tx);
+TEXIS      *tx;
+\end{verbatim}
+
+\DESCRIPTION
+
+This function flushes any remaining results from the current SQL
+statement. Execution of the statement is finished however. This
+is useful for ignoring the output of \verb`INSERT` and \verb`DELETE` statements.
+
+\EXAMPLE
+\begin{verbatim}
+SERVER *se;
+
+   ...
+                                                     /* setup query */
+   if(texis_prepare(tx,
+              "delete from customer where lastorder<'1990-01-01';"
+             )!=TEXISPN)
+      texis_flush(tx);                        /* ignore result set */
+   ...
+\end{verbatim}
+
+
+%**********************************************************************/
+
+\NAME{texis\_flush\_scroll() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+int texis_flush_scroll(tx,nrows);
+TEXIS      *tx;
+int     nrows;
+\end{verbatim}
+
+\DESCRIPTION
+
+This function flushes up to nrows results from the specified SQL
+statement. This is useful for skipping a number of records from
+a \verb`SELECT`.
+
+The return will be the number of records actually flushed if
+successful, or if an error occurred then the return will be a
+negative number of (-1 - rowsflushed).  Reaching the end of the
+results is not considered an error, and will result in a return
+less than nrows.
+
+\EXAMPLE
+\begin{verbatim}
+SERVER *se;
+
+   ...
+                                                     /* setup query */
+   if(texis_prepare(tx,
+              "select name from customer where lastorder<'1990-01-01';"
+             )!=TEXISPN)
+      texis_flush_scroll(tx,10);           /* ignore first 10 results */
+   ...
+\end{verbatim}
+
+
+%**********************************************************************/
+
+\newpage\section{Modifying the server}
+% MAW 09-19-94 wtf try modify server/tsql then check doc
+
+\NAME{adduserfuncs - Adding to the server}
+
+\SYNOPSIS
+\begin{verbatim}
+#include <sys/types.h>
+#include "dbquery.h"
+
+void adduserfuncs(fo)
+FLDOP *fo;
+\end{verbatim}
+
+\DESCRIPTION
+
+This section describes how to add user defined types and functions to the
+texis server. The file {\tt aufex.c} in the api directory provides an
+outline of how to do this.  The server calls the function {\tt
+adduserfuncs} which gives you the opportunity to add data types, operators
+and functions to the server.  There are three functions that are used for
+adding to the server. They are {\tt dbaddtype, foaddfuncs} and {\tt
+fosetop.}
+
+Once you have created your own version of {\tt aufex.c} you need to
+compile and link this file with the rest of the daemon objects.  You must
+make sure that this file is linked before the libraries to make sure your
+function gets called.  An example makefile is also included in the api
+directory which shows the needed objects and include paths to make a new
+daemon.  After a new daemon has been created, make sure that it is running
+and not the standard daemon.  See the documentation on {\tt texisd} to see
+how to invoke it.
+
+\NAME{dbaddtype - Add a datatype}
+
+\SYNOPSIS
+\begin{verbatim}
+int dbaddtype(name, type, size)
+char *name;
+int type;
+int size;
+\end{verbatim}
+
+\DESCRIPTION
+{\bf Parameters}
+\begin{description}
+\item[name] the new name for the type.  It should not start with the
+string ``var'', as that is reserved for declaring the variable size
+form of the datatype.
+\item[type] an integer which is used to refer to the type in functions
+etc.  For a user added type this number should be between 32 and 63
+inclusive.  This number should be unique.
+\item[size] the size of one element of the datatype.  When one item of
+this type is written to the database, at least size bytes will be
+transferred.
+\end{description}
+
+The function will return 0 if successful, and -1 if there is no room
+for more datatypes, or if a type with a different name already exists
+with the same type number.
+
+
+\EXAMPLE
+\begin{verbatim}
+typedef struct tagTIMESTAMP
+{
+   short           year;
+   unsigned short  month;
+   unsigned short  day;
+   unsigned short  hour;
+   unsigned short  minute;
+   unsigned short  second;
+   unsigned long   fraction;
+} TIMESTAMP;
+
+dbaddtype("timestamp", 32, sizeof(TIMESTAMP);
+\end{verbatim}
+
+\NAME{foaddfuncs - Add functions}
+
+\SYNOPSIS
+\begin{verbatim}
+#include <sys/types.h>
+#include "dbquery.h"
+
+int foaddfuncs(fo, ff, n)
+FLDOP *fo;
+FLDFUNC *ff;
+int n;
+\end{verbatim}
+
+\DESCRIPTION
+
+{\tt Foaddfuncs} adds a function to the math unit of Texis.  The function
+can take up to five arguments, and returns a single argument.  The function
+will be called with pointers to {\tt FLD} structures.  The return values
+should be stuffed into the pointer to the first argument.
+
+The math unit takes care of all the required stack manipulation, so no
+stack manipulation is required in the function. The math unit will
+always pass the maximum number of arguments to the function.
+
+{\tt Foaddfuncs} takes an array of function descriptions as one of its
+arguments.  The functions description function looks like
+\begin{verbatim}
+struct {
+   char *name;                                  /* name of function */
+   int (*func)();                                        /* handler */
+   int   minargs;                 /* minimum # of arguments allowed */
+   int   maxargs;                 /* maximum # of arguments allowed */
+   int   rettype;                                    /* return type */
+   int   types[MAXFLDARGS];   /* argument types, 0 means don't care */
+} FLDFUNC;
+\end{verbatim}
+
+{\bf Parameters}
+\begin{description}
+\item[fo] The math unit to add to.
+\item[ff] Array of function descriptions to be added.
+\item[n] The number of functions being added.
+\end{description}
+
+\EXAMPLE
+\begin{verbatim}
+int
+fsqr(f)
+FLD *f;
+{
+   int     x;
+   size_t  sz;
+
+   x = *(ft_int *)getfld(f, &sz);      /* Get the number */
+   x = x * x ;                              /* Square it */
+   putfld(f, x, 1);                    /* Put the result */
+   return 0;
+}
+
+static FLDFUNC  dbfldfuncs[]=
+{
+   {"sqr",   fsqr, 1, 1, FTN_INT, FTN_INT, 0, 0, 0, 0 },
+};
+#define NFLDFUNCS (sizeof(dbfldfuncs)/sizeof(dbfldfuncs[0]))
+
+foaddfuncs(fo, dbfldfuncs, NFLDFUNCS);
+\end{verbatim}
+
+This will add a function to square an integer.
+
+\NAME{fosetop - Add an operator}
+
+\SYNOPSIS
+\begin{verbatim}
+#include <sys/types.h>
+#include "dbquery.h"
+
+int fosetop(fo, type1, type2, func, ofunc)
+FLDOP *fo;
+int type1;
+int type2;
+fop_type func;
+fop_type *ofunc;
+\end{verbatim}
+
+\DESCRIPTION
+
+{\tt Fosetop} changes a binary operator in the math unit of Texis.  The
+function {\tt func} will be called for all operations on (type1, type2). If
+the function does not know how to handle the specific operation, and ofunc
+is not NULL, ofunc can be called to hande the operation.
+
+The function being called should look like
+\begin{verbatim}
+int
+func(f1, f2, f3, op)
+FLD *f1;
+FLD *f2;
+FLD *f3;
+int op;
+{
+}
+\end{verbatim}
+
+{\bf Parameters}
+\begin{description}
+\item[fo] The math unit to change.
+\item[type1] The type of the first operand.
+\item[type2] The type of the second operand.
+\item[func] Pointer to the function to perform the operation.
+\item[ofunc] Pointer to pointer to function.  The pointer to function will
+be stuffed with the old function to perform the operation.  This can be
+used to add some cases, and keep the old functionality in others.  The
+return value should be 0 for success.  The result of the operation should
+be put in f3.
+
+\end{description}
+
+\EXAMPLE
+\begin{verbatim}
+#include <sys/types.h>
+#include "dbquery.h"
+
+fop_type o_ftich;          /* the pointer to the previous handler */
+
+int
+n_ftich(f1, f2, f3, op)
+FLD     *f1;
+FLD     *f2;
+FLD     *f2;
+int     op;
+{
+        TIMESTAMP       *ts;
+        double          d;
+        int             n;
+
+        if (op != FOP_ASN)      /* We only know about assignment. */
+                if (o_ftich)
+                        return ((*o_ftich)(f1, f2, f3, op));
+                else
+                        return FOP_EINVAL;
+
+        /* Set up the return field. */
+        f3->type = FTN_TIMESTAMP;
+        f3->elsz = sizeof(TIMESTAMP);
+        f3->size = sizeof(TIMESTAMP);
+        f3->n = 1;
+        if(sizeof(TIMESTAMP) > f3->alloced)
+        {
+                void *v;
+
+                v = malloc(sizeof(TIMESTAMP));
+                setfld(f2, v, sizeof(TIMESTAMP));
+                f3->alloced = sizeof(TIMESTAMP);
+        }
+
+/* First 0 out all the elements */
+        ts = getfld(f1, NULL);
+        ts->year = 0;
+        ts->month = 0;
+        ts->day = 0;
+        ts->hour = 0;
+        ts->minute = 0;
+        ts->second = 0;
+        ts->fraction = 0;
+
+/* Now read in the values */
+        n = sscanf(getfld(f2, NULL), "%hu/%hu/%hd %hu:%hu:%hu%lf",
+                &ts->month, &ts->day, &ts->year,
+                &ts->hour, &ts->minute, &ts->second, &d);
+
+/* Convert any fractional seconds into the appropriate number
+   of billionths of a second.
+*/
+        if (n == 7)
+                ts->fraction = d * 1000000000 ;
+}
+
+ .
+ .
+ .
+        fosetop(fo, FTN_TIMESTAMP, FTN_CHAR, n_ftich, &o_ftich);
+ .
+ .
+ .
+\end{verbatim}
+
+This example adds an operator to allow the assignment of a TIMESTAMP
+field from a character string.  See {\tt dbaddtype} for the definition
+of TIMESTAMP.
+%\end{document}             % End of document.

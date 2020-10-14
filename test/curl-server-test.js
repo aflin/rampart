@@ -2,17 +2,17 @@
 rampart.globalize(rampart.utils);
 
 /* load the http server module */
-var server=require("rpserver");
+var server=require("rampart-server");
 
 /* load curl module */
-var curl=require("rpcurl");
+var curl=require("rampart-curl");
 
 
 /* sql module can be loaded here (better) or in callback functions (minor check overhead).
      If used to create database, the overhead is not minor, and should be done here rather
      than repeatedly in a callback
 */
-var Sql=require("rpsql");
+var Sql=require("rampart-sql");
 
 var sql= new Sql.init(process.scriptPath+"/testdb",true); /* true means create the database if it doesn't exist *
 

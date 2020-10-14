@@ -2,10 +2,10 @@
 rampart.globalize(rampart.utils);
 
 /* load the http server module */
-var server=require("rpserver");
+var server=require("rampart-server");
 
 /* load sql database module */
-var Sql=require("rpsql");
+var Sql=require("rampart-sql");
 
 //console.log(process.scriptPath);
 //var sql= new Sql.init(process.scriptPath+"/testdb",true); /* true means create the database if it doesn't exist */

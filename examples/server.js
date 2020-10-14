@@ -21,12 +21,12 @@
 rampart.globalize(rampart.utils);
 
 /* load the http server module */
-var server=require("rpserver");
+var server=require("rampart-server");
 
 /* ***********  PART I - sql db setup ************* */
 
 /* load sql database module */
-var Sql=require("rpsql");
+var Sql=require("rampart-sql");
 
 /* 
    sql module can be loaded here (better) or in callback functions (minor check overhead).
@@ -222,7 +222,7 @@ function simple_callback(req){
         and it is not necessary to re-require() or re-init() on
         each invocation of this callback
     */
-    //var Sql=require("rpsql");
+    //var Sql=require("rampart-sql");
     //var sql=new Sql.init('./testdb');
     var arr=sql.exec(
         'select * from quicktest',

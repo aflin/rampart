@@ -1,7 +1,7 @@
 /* make printf et. al. global */
 rampart.globalize(rampart.utils);
 
-var crypto = require("rpcrypto");
+var crypto = require("rampart-crypto");
 
 testmodes();
 

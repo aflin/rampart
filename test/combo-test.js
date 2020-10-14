@@ -1,8 +1,8 @@
 /* make printf et. al. global */
 rampart.globalize(rampart.utils);
 
-var crypto=require("rpcrypto");
-var Sql=require("rpsql");
+var crypto=require("rampart-crypto");
+var Sql=require("rampart-sql");
 var sql=new Sql.init("./testdb",true);//create if doesn't exist
 
 var sha256=crypto.sha256;

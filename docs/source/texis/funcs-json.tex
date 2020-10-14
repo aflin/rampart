@@ -1,0 +1,260 @@
+\subsection{JSON functions}
+
+The JSON functions allow for the manipulation of \verb`varchar` fields
+and literals as JSON objects.
+
+\subsubsection{JSON Path Syntax}
+The JSON Path syntax is standard Javascript object access, using \verb`$` to
+represent the entire document.  If the document is an object the path must
+start \verb`$.`, and if an array \verb`$[`.
+
+\subsubsection{JSON Field Syntax}
+\label{jsoncomputedfield}
+In addition to using the JSON functions it is possible to access elements
+in a \verb`varchar` field that holds JSON as if it was a field itself.
+This allows for creation of indexes, searching and sorting efficiently.
+Arrays can also be fetched as \verb`strlst` to make use of those features,
+e.g. \verb`SELECT Json.$.name FROM tablename WHERE 'SQL' IN Json.$.skills[*];`
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{isjson}
+
+\begin{verbatim}
+  isjson(JsonDocument)
+\end{verbatim}
+
+The \verb`isjson` function returns 1 if the document is valid JSON,
+0 otherwise.
+
+\begin{verbatim}
+isjson('{ "type" : 1 }'): 1
+isjson('{}'): 1
+isjson('json this is not'): 0
+\end{verbatim}
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{json\_format}
+
+\begin{verbatim}
+  json_format(JsonDocument, FormatOptions)
+\end{verbatim}
+
+The \verb`json_format` formats the \verb`JsonDocument` according to
+\verb`FormatOptions`.  Multiple options can be provided either space
+or comma separated.
+
+Valid \verb`FormatOptions` are:
+\begin{itemize}
+\item COMPACT - remove all unnecessary whitespace
+\item INDENT(N) - print the JSON with each object or array member on a new line,
+indented by N spaces to show structure
+\item SORT-KEYS - sort the keys in the object.  By default the order is preserved
+\item EMBED - omit the enclosing \verb`{}` or \verb`[]` is using the snippet in another object
+\item ENSURE\_ASCII - encode all Unicode characters outside the ASCII range
+\item ENCODE\_ANY - if not a valid JSON document then encode into a JSON literal, e.g. to encode a string.
+\item ESCAPE\_SLASH - escape forward slash \verb`/` as \verb`\/`
+\end{itemize}
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{json\_type}
+
+\begin{verbatim}
+  json_type(JsonDocument)
+\end{verbatim}
+
+The \verb`json_type` function returns the type of the JSON object or element.
+Valid responses are:
+\begin{itemize}
+\item OBJECT
+\item ARRAY
+\item STRING
+\item INTEGER
+\item DOUBLE
+\item NULL
+\item BOOLEAN
+\end{itemize}
+
+Assuming a field \verb`Json` containing:
+{
+  "items" : [
+    {
+      "Num" : 1,
+      "Text" : "The Name",
+      "First" : true
+    },
+    {
+      "Num" : 2.0,
+      "Text" : "The second one",
+      "First" : false
+    }
+    ,
+    null
+  ]
+}
+\begin{verbatim}
+json_type(Json): OBJECT
+json_type(Json.$.items[0]): OBJECT
+json_type(Json.$.items): ARRAY
+json_type(Json.$.items[0].Num): INTEGER
+json_type(Json.$.items[1].Num): DOUBLE
+json_type(Json.$.items[0].Text): STRING
+json_type(Json.$.items[0].First): BOOLEAN
+json_type(Json.$.items[2]): NULL
+\end{verbatim}
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{json\_value}
+
+\begin{verbatim}
+  json_value(JsonDocument, Path)
+\end{verbatim}
+
+The \verb`json_value` extracts the value identified by \verb`Path` from
+\verb`JsonDocument`.  \verb`Path` is a varchar in the JSON Path Syntax.
+This will return a scalar value.  If \verb`Path` refers to an array,
+object, or invalid path no value is returned.
+
+Assuming the same Json field from the previous examples:
+\begin{verbatim}
+json_value(Json, '$'):
+json_value(Json, '$.items[0]'):
+json_value(Json, '$.items'):
+json_value(Json, '$.items[0].Num'): 1
+json_value(Json, '$.items[1].Num'): 2.0
+json_value(Json, '$.items[0].Text'): The Name
+json_value(Json, '$.items[0].First'): true
+json_value(Json, '$.items[2]'):
+\end{verbatim}
+
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{json\_query}
+
+\begin{verbatim}
+  json_query(JsonDocument, Path)
+\end{verbatim}
+
+The \verb`json_query` extracts the object or array identified by \verb`Path`
+from \verb`JsonDocument`.  \verb`Path` is a varchar in the JSON Path Syntax.
+This will return either an object or an array value.  If \verb`Path` refers
+to a scalar no value is returned.
+
+Assuming the same Json field from the previous examples:
+
+\verb`json_query(Json, '$')`\\
+\verb`---------------------`\\
+\verb`{"items":[{"Num":1,"Text":"The Name","First":true},`\split
+\verb`{"Num":2.0,"Text":"The second one","First":false},null]}`
+
+\verb`json_query(Json, '$.items[0]')`\\
+\verb`------------------------------`\\
+\verb`{"Num":1,"Text":"The Name","First":true}`
+
+\verb`json_query(Json, '$.items')`\\
+\verb`---------------------------`\\
+\verb`[{"Num":1,"Text":"The Name","First":true},`\split
+\verb`{"Num":2.0,"Text":"The second one","First":false},null]`
+
+The following will return an empty string as they refer to scalars
+or non-existent keys.
+\begin{verbatim}
+json_query(Json, '$.items[0].Num')
+json_query(Json, '$.items[1].Num')
+json_query(Json, '$.items[0].Text')
+json_query(Json, '$.items[0].First')
+json_query(Json, '$.items[2]')
+\end{verbatim}
+
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{json\_modify}
+
+\begin{verbatim}
+  json_modify(JsonDocument, Path, NewValue)
+\end{verbatim}
+
+The \verb`json_modify` function returns a modified version of JsonDocument
+with the key at Path replaced by NewValue.
+
+If \verb`Path` starts with {\tt append\textvisiblespace } then the NewValue is appended to the
+array referenced by {\tt Path}.  It is an error it {\tt Path} refers to anything
+other than an array.
+
+\begin{verbatim}
+json_modify('{}', '$.foo', 'Some "quote"')
+------------------------------------------
+{"foo":"Some \"quote\""}
+
+json_modify('{ "foo" : { "bar": [40, 42] } }', 'append $.foo.bar', 99)
+----------------------------------------------------------------------
+{"foo":{"bar":[40,42,99]}}
+
+json_modify('{ "foo" : { "bar": [40, 42] } }', '$.foo.bar', 99)
+---------------------------------------------------------------
+{"foo":{"bar":99}}
+\end{verbatim}
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{json\_merge\_patch}
+
+\begin{verbatim}
+  json_merge_patch(JsonDocument, Patch)
+\end{verbatim}
+
+The \verb`json_merge_patch` function provides a way to patch a target JSON
+document with another JSON document.  The patch function conforms to
+(href=https://tools.ietf.org/html/rfc7386) RFC 7386
+
+Keys in \verb`JsonDocument` are replaced if found in \verb`Patch`.  If the
+value in \verb`Patch` is \verb`null` then the key will be removed in the
+target document.
+
+\begin{verbatim}
+json_merge_patch('{"a":"b"}',          '{"a":"c"}'
+--------------------------------------------------
+{"a":"c"}
+
+json_merge_patch('{"a": [{"b":"c"}]}', '{"a": [1]}'
+---------------------------------------------------
+{"a":[1]}
+
+json_merge_patch('[1,2]',              '{"a":"b", "c":null}'
+------------------------------------------------------------
+{"a":"b"}
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{json\_merge\_preserve}
+
+\begin{verbatim}
+  json_merge_preserve(JsonDocument, Patch)
+\end{verbatim}
+
+The \verb`json_merge_preserve` function provides a way to patch a target JSON
+document with another JSON document while preserving the content that exists
+in the target document.
+
+Keys in \verb`JsonDocument` are merged if found in \verb`Patch`.  If the same
+key exists in both the target and patch file the result will be an array with
+the values from both target and patch.
+
+If the
+value in \verb`Patch` is \verb`null` then the key will be removed in the
+target document.
+
+\begin{verbatim}
+json_merge_preserve('{"a":"b"}',          '{"a":"c"}'
+-----------------------------------------------------
+{"a":["b","c"]}
+
+json_merge_preserve('{"a": [{"b":"c"}]}', '{"a": [1]}'
+------------------------------------------------------
+{"a":[{"b":"c"},1]}
+
+json_merge_preserve('[1,2]',              '{"a":"b", "c":null}'
+---------------------------------------------------------------
+[1,2,{"a":"b","c":null}]
+
+\end{verbatim}
+
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+% ----------------------------------------------------------------------------

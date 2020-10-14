@@ -1,7 +1,7 @@
 /* make printf et. al. global */
 rampart.globalize(rampart.utils);
 
-var Sql=require("rpsql");
+var Sql=require("rampart-sql");
 rampart.globalize(Sql,["sandr"]);
 
 

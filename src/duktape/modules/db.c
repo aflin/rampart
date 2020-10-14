@@ -419,13 +419,13 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
         char *s = p->buf;
         size_t l = strlen(s);
         char *end = s + (p->nb);
-        int i = 0;
+        int j = 0;
 
         duk_push_array(ctx);
         while (s < end)
         {
             duk_push_string(ctx, s);
-            duk_put_prop_index(ctx, -2, i++);
+            duk_put_prop_index(ctx, -2, j++);
             s += l;
             while (s < end && *s == '\0')
                 s++;
@@ -742,12 +742,12 @@ int duk_rp_add_parameters(duk_context *ctx, TEXIS *tx, int arryi)
         }
         }
         arryn++;
+        duk_pop(ctx);
         rc = TEXIS_PARAM(tx, arryn, v, &plen, in, out);
         if (!rc)
         {
             return (0);
         }
-        duk_pop(ctx);
     }
     return (1);
 }
@@ -1106,20 +1106,26 @@ end:
 duk_ret_t duk_rp_sql_eval(duk_context *ctx)
 {
     char *stmt = (char *)NULL;
-    char out[2048];
-    size_t len;
-    int arryi = -1, i = 0;
+    int arryi = -1;
+    duk_idx_t i = 0, top=duk_get_top(ctx);;
 
     /* find the argument that is a string */
-    for (i = 0; i < 4; i++)
+    for (i = 0; i < top; i++)
     {
-        int vtype = duk_get_type(ctx, i);
-        if (vtype == DUK_TYPE_STRING)
+        if ( duk_is_string(ctx, i) )
         {
             stmt = (char *)duk_get_string(ctx, i);
             arryi = i;
-            len = strlen(stmt);
-            break;
+        }
+        else if( duk_is_object(ctx, i) && !duk_is_array(ctx, i) )
+        {
+            /* remove returnType:'arrayh' as only one row will be returned */
+            if(duk_get_prop_string(ctx, i, "returnType"))
+            {
+                if(! strcmp(duk_get_string(ctx, -1), "arrayh") )
+                    duk_del_prop_string(ctx, i, "returnType");
+            }
+            duk_pop(ctx);
         }
     }
 
@@ -1130,18 +1136,12 @@ duk_ret_t duk_rp_sql_eval(duk_context *ctx)
         return (1);
     }
 
-    if (len > 2036)
-    {
-        duk_rp_log_error(ctx, "Error: Eval: Eval string too long (>2036)");
-        duk_push_int(ctx, -1);
-        return (1);
-    }
-
-    sprintf(out, "select (%s);", stmt);
-    duk_push_string(ctx, out);
+    duk_push_sprintf(ctx, "select %s;", stmt);
     duk_replace(ctx, arryi);
-
-    return (duk_rp_sql_exe(ctx));
+    duk_rp_sql_exe(ctx);
+    duk_get_prop_string(ctx, -1, "results");
+    duk_get_prop_index(ctx, -1, 0);
+    return (1);
 }
 
 duk_ret_t duk_texis_set(duk_context *ctx)
@@ -1280,6 +1280,15 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
         extern int TXunneededRexEscapeWarning;
         TXunneededRexEscapeWarning = 0; //silence rex escape warnings
     }
+
+    /* default to json for strlst in and out */
+    duk_push_object(ctx);
+    duk_push_string(ctx, "json");
+    duk_put_prop_string(ctx, -2, "strlsttovarcharmode");
+    duk_push_string(ctx, "json");
+    duk_put_prop_string(ctx, -2, "varchartostrlstmode");
+    (void)duk_texis_set(ctx);
+
     duk_rp_log_tx_error(ctx,pbuf); /* log any non fatal errors to this.lastErr */
 
     return 0;

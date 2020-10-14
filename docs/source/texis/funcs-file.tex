@@ -1,0 +1,242 @@
+% ----------------------------------------------------------------------------
+\subsection{File functions}
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{fromfile, fromfiletext}
+
+The \verb`fromfile` and \verb`fromfiletext` functions read a file.
+The syntax is
+\begin{verbatim}
+   fromfile(filename[, offset[, length]])
+   fromfiletext(filename[, offset[, length]])
+\end{verbatim}
+
+These functions take one required, and two optional arguments.  The
+first argument is the filename.  The second argument is an offset into
+the file, and the third argument is the length of data to read.  If the
+second argument is omitted then the file will be read from the
+beginning.  If the third argument is omitted then the file will be read
+to the end.  The result is the contents of the file.  This can be used
+to load data into a table.  For example if you have an indirect field
+and you wish to see the contents of the file you can issue SQL similar
+to the following.
+
+The difference between the two functions is the type of data that is
+returned.  \verb`fromfile` will return varbyte data, and
+\verb`fromfiletext` will return varchar data.  If you are using the
+functions to insert data into a field you should make sure that you
+use the appropriate function for the type of field you are inserting
+into.
+
+\begin{verbatim}
+     SELECT  FILENAME, fromfiletext(FILENAME)
+     FROM    DOCUMENTS
+     WHERE   DOCID = 'JT09113' ;
+\end{verbatim}
+
+The results are:
+
+\begin{screen}
+\begin{verbatim}
+  FILENAME            fromfiletext(FILENAME)
+  /docs/JT09113.txt   This is the text contained in the document
+  that has an id of JT09113.
+\end{verbatim}
+\end{screen}
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{totext}
+
+Converts data or file to text.  The syntax is
+\begin{verbatim}
+   totext(filename[, args])
+   totext(data[, args])
+\end{verbatim}
+
+This function will convert the contents of a file, if the argument given is
+an indirect, or else the result of the expression, and convert it to text.
+It does this by calling the program \verb'anytotx', which must be in the
+path.  The \verb`anytotx` program (obtained from Thunderstone) will handle
+\verb`PDF` as well as many other file formats.
+
+As of version 2.06.935767000 the \verb`totext` command will take an optional
+second argument which contains arguments to the \verb`anytotx` program.
+See the documentation for \verb`anytotx` for details on its arguments.
+
+\begin{verbatim}
+     SELECT  FILENAME, totext(FILENAME)
+     FROM    DOCUMENTS
+     WHERE   DOCID = 'JT09113' ;
+\end{verbatim}
+
+The results are:
+
+\begin{screen}
+\begin{verbatim}
+  FILENAME            totext(FILENAME)
+  /docs/JT09113.pdf   This is the text contained in the document
+  that has an id of JT09113.
+\end{verbatim}
+\end{screen}
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{toind}
+
+Create a Texis managed indirect file.  The syntax is
+\begin{verbatim}
+   toind(data)
+\end{verbatim}
+
+This function takes the argument, stores it into a file, and returns the
+filename as an \verb`indirect` type.  This is most often used in combination
+with \verb`fromfile` to create a Texis managed file.  For example:
+
+\begin{verbatim}
+     INSERT  INTO DOCUMENTS
+     VALUES('JT09114', toind(fromfile('srcfile')))
+\end{verbatim}
+
+The database will now contain a pointer to a copy of \verb|srcfile|, which
+will remain searchable even if the original is changed or removed.  An
+important point to note is that any changes to \verb|srcfile| will not be
+reflected in the database, unless the table row's \verb`indirect` column
+is modified (even to the save value, this just tells Texis to re-index it).
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{canonpath}
+
+  Returns canonical version of a file path, i.e. fully-qualified and
+without symbolic links:
+
+\begin{verbatim}
+  canonpath(path[, flags])
+\end{verbatim}
+
+The optional \verb`flags` is a set of bit flags: bit 0 set if error
+messages should be issued, bit 1 set if the return value should be
+empty instead of \verb`path` on error.  Added in version
+5.01.1139446515 20060208.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{pathcmp}
+
+  File path comparison function; like C function \verb`strcmp()` but
+for paths:
+
+\begin{verbatim}
+  pathcmp(pathA, pathB)
+\end{verbatim}
+
+Returns an integer indicating the sort order of \verb`pathA` relative
+to \verb`pathB`: 0 if \verb`pathA` is the same as \verb`pathB`, less
+than 0 if \verb`pathA` is less than \verb`pathB`, greater than 0 if
+\verb`pathA` is greater than \verb`pathB`.  Paths are compared
+case-insensitively if and only if the OS is case-insensitive for
+paths, and OS-specific alternate directory separators are considered
+the same (e.g. ``\verb`\`'' and ``\verb`/`'' in Windows).  Multiple
+consecutive directory separators are considered the same as one.  A
+trailing directory separator (if not also a leading separator) is
+ignored.  Directory separators sort lexically before any other
+character.
+
+  Note that the paths are only compared lexically: no attempt is made
+to resolve symbolic links, ``{\tt ..}'' path components, etc.  Note
+also that no inference should be made about the magnitude of negative
+or positive return values: greater magnitude does not necessarily
+indicate greater lexical ``separation'', nor should it be assumed that
+comparing the same two paths will always yield the same-magnitude
+value in future versions.  Only the sign of the return value is
+significant.  Added in version 5.01.1139446515 20060208.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{basename}
+
+  Returns the base filename of a given file path.
+
+\begin{verbatim}
+  basename(path)
+\end{verbatim}
+
+The basename is the contents of \verb`path` after the last path separator.
+No filesystem checks are performed, as this is a text/parsing function;
+thus ``\verb`.`'' and ``\verb`..`'' are not significant.
+Added in version 7.00.1352510000 20121109.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{dirname}
+
+  Returns the directory part of a given file path.
+
+\begin{verbatim}
+  dirname(path)
+\end{verbatim}
+
+The directory is the contents of \verb`path` before the last path separator
+(unless it is significant -- e.g. for the root directory -- in which case
+it is retained).  Added in version 7.00.1352510000 20121109.
+No filesystem checks are performed, as this is a text/parsing function;
+thus ``\verb`.`'' and ``\verb`..`'' are not significant.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{fileext}
+
+  Returns the file extension of a given file path.
+
+\begin{verbatim}
+  fileext(path)
+\end{verbatim}
+
+  The file extension starts with and includes a dot.  The file extension
+is only considered present in the basename of the path, i.e. after the
+last path separator.  Added in version 7.00.1352510000 20121109.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{joinpath}
+
+Joins one or more file/directory path arguments into a merged path,
+inserting/removing a path separator between arguments as needed.
+Takes one to 5 path component arguments.  E.g.:
+
+\begin{verbatim}
+  joinpath('one', 'two/', '/three/four', 'five')
+\end{verbatim}
+
+yields
+
+\begin{verbatim}
+  one/two/three/four/five
+\end{verbatim}
+
+Added in version 7.00.1352770000 20121112.  Redundant path separators
+internal to an argument are not removed, nor are ``{\tt .}'' and ``{\tt
+  ..}'' path components removed.  Prior to version 7.07.1550082000
+20190213 redundant path separators between arguments were not
+removed.
+
+% - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+\subsubsection{joinpathabsolute}
+
+Like \verb`joinpath`, except that a second or later argument that is
+an absolute path will overwrite the previously-merged path.  E.g.:
+
+\begin{verbatim}
+  joinpathabsolute('one', 'two', '/three/four', 'five')
+\end{verbatim}
+
+yields
+
+\begin{verbatim}
+  /three/four/five
+\end{verbatim}
+
+Under Windows, partially absolute path arguments -- e.g. ``{\tt
+  /dir}'' or ``{\tt C:dir}'' where the drive or dir is still relative
+-- are considered absolute for the sake of overwriting the merge.
+
+Added in version 7.00.1352770000 20121112.  Redundant path separators
+internal to an argument are not removed, nor are ``{\tt .}'' and
+``{\tt ..}'' path components removed.  Prior to version
+7.07.1550082000 20190213 partially absolute arguments were not
+considered absolute.
+
+% ----------------------------------------------------------------------------

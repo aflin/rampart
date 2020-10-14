@@ -1,0 +1,289 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>String Compare Mode &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+            
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <!-- Local TOC -->
+                <div class="local-toc"><ul>
+<li><a class="reference internal" href="#">String Compare Mode</a><ul>
+<li><a class="reference internal" href="#stringcomparemode-parameter">stringcomparemode parameter</a></li>
+</ul>
+</li>
+</ul>
+</div>
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>String Compare Mode</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/stringcompmode.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="string-compare-mode">
+<h1>String Compare Mode<a class="headerlink" href="#string-compare-mode" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="stringcomparemode-parameter">
+<h2>stringcomparemode parameter<a class="headerlink" href="#stringcomparemode-parameter" title="Permalink to this headline">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">stringcomparemode</span></code> - mode and flags for the following function:</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="funcs-string.html#length"><span class="std std-ref">length</span></a></p></li>
+<li><p><a class="reference internal" href="funcs-string.html#lower"><span class="std std-ref">lower</span></a></p></li>
+<li><p><a class="reference internal" href="funcs-string.html#upper"><span class="std std-ref">upper</span></a></p></li>
+<li><p><a class="reference internal" href="funcs-string.html#initcap"><span class="std std-ref">initcap</span></a></p></li>
+<li><p><a class="reference internal" href="funcs-string.html#stringcompare"><span class="std std-ref">stringcompare</span></a></p></li>
+</ul>
+<p>The <code class="docutils literal notranslate"><span class="pre">stringcomparemode</span></code> parameter specifies string compares (e.g. equals,
+less-than or greater-than) for the <a class="reference internal" href="funcs-string.html#stringcompare"><span class="std std-ref">stringcompare</span></a> function. It also controls
+the default mode for the non-case-style flags/mode for the functions <a class="reference internal" href="funcs-string.html#length"><span class="std std-ref">length</span></a>,
+<a class="reference internal" href="funcs-string.html#lower"><span class="std std-ref">lower</span></a>, <a class="reference internal" href="funcs-string.html#upper"><span class="std std-ref">upper</span></a> and <a class="reference internal" href="funcs-string.html#initcap"><span class="std std-ref">initcap</span></a>. The default is “unicodemulti, respectcase” - i.e.
+characters must be identical to match, though ISO-8859-1vs. UTF-8 encoding may be
+ignored.</p>
+<p>(Note that negation (“-“) can only be used with values that are “on/off”, i.e. the
+flags; case style and case mode cannot be negated.) “+” and “-” remain in effect for
+following values, until another “+”, “-” or “=” (clear the setting first) is given.</p>
+<p>The case-folding style determines what case to fold to; it is exactly one of:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">respectcase</span></code> aka <code class="docutils literal notranslate"><span class="pre">preservecase</span></code> aka <code class="docutils literal notranslate"><span class="pre">casesensitive</span></code> - Do not change case at
+all, for case-sensitive searches.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ignorecase</span></code> aka <code class="docutils literal notranslate"><span class="pre">igncase</span></code> aka <code class="docutils literal notranslate"><span class="pre">caseinsensitive</span></code> - Fold case for caseless
+(case-insensitive) matching; this is the default style for textsearchmode. This typically
+(but not always) means characters are folded to their lowercase equivalents.</p></li>
+</ul>
+<p>Any combination of zero or more of the following flags may be given in addition to a case style:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">iso-8859-1</span></code> aka <code class="docutils literal notranslate"><span class="pre">iso88591</span></code> - Interpret text as ISO-8859-1 encoded. This should only
+be used if all text is known to be in this character set. Only codepoints U+0001 through U
++00FF can be supported. Any UTF-8 text will be misinterpreted.</p></li>
+<li><p>If this flag is disabled (the default), text is interpreted as UTF-8, and invalid bytes
+(if any) are interpreted as ISO-8859-1. This supports all UTF-8 characters, as well as
+most typical ISO-8859-1 data, if any happens to be accidentally mixed in.</p></li>
+</ul>
+<p>Typically, this flag is left disabled, and text is stored in UTF-8, since it supports a
+broader range of characters. Any other character set besides UTF-8 or ISO-8859-1 is not
+supported, and should be mapped to UTF-8.</p>
+<p>utf-8 aka utf8 Alias for negating iso-8859-1, ie, specifying this disables the iso-8859-1
+flag.
+expanddiacritics aka expdiacritics Expand certain phonological diacritics: umlauts over
+“a”, “o”, “u” expand to the vowel plus “e” (for German, e.g. “für” matches “fuer”);
+circumflexes over “e” and “o” expand to the vowel plus “s” (for French, e.g. “hôtel”
+matches “hostel”). The expanded “e” or “s” is optional-match - e.g. “f”ur” also matches
+“fur” - but only against a non-optional char; i.e. “hôtel” does not match “hötel” (the “e”
+and “s” collide), and “für” does not match “füer” (both optional “e”s must match each
+other. Also, neither the vowel nor the “e”/”s” will match an ignorediacritics-stripped
+character; this prevents “für” from matching “fu’er”.
+ignorediacritics aka igndiacritics Ignore diacritic marks - Unicode non-starter or modifier
+symbols resulting from NFD decomposition - e.g. diaeresis, umlaut, circumflex, grave,
+acute, tilde etc.
+expandligatures aka expligatures Expand ligatures, e.g. “œ” (U+0153) will match “oe”. Note
+that even with this flag off, certain ligatures may still be expanded if necessary for
+case-folding under ignorecase with case mode unicodemulti; see below.
+ignorewidth aka ignwidth Ignore half- and full-width differences, e.g. for katakana and
+ASCII.
+Due to interactions between flags, they are applied in the order specified above, followed
+by case folding according to the case style (upper/lower etc.). E.g. expanddiacritics is
+applied before ignorediacritics, because otherwise the latter would strip the characters
+that the former expands.</p>
+<p>A case-folding mode may also be given in addition to the above; this determines how the
+case-folding style (e.g. upper/lower/title) is actually applied. It is one of the following:</p>
+<p>unicodemulti Use the builtin Unicode 5.1.0 1-to-N-character folding tables. All locale-independent Unicode characters with the appropriate case equivalent are folded. A single character may fold to up to 3 characters, if needed; e.g. the German es-zett character (U+00DF) will match “ss” and vice-versa under ignorecase. Note that additional ligature expansions may happen if expandligatures is set.
+unicodemono Use the builtin Unicode 5.1.0 1-to-1-character folding tables. All locale-independent Unicode characters with the appropriate case equivalent are folded. Note that even though this mode is 1-to-1-character, it is not necessarily 1-to-1-byte, i.e. a UTF-8 string may still change its byte length when folded, even though the Unicode character count will remain the same.
+ctype Use the C ctype.h functions. Case folding will be OS- and locale-dependent; a locale should be set with the SQL locale property. Only codepoints U+0001 through U+00FF can be folded; e.g. most Western European characters are folded, but Cyrillic, Greek etc. are not. Note that while this mode is 1-to-1-character, it is not necessarily 1-to-1-byte, unless the iso-8859-1 flag is also in effect. This mode was part of the default in version 5 and earlier.
+The default case-folding mode is unicodemulti; see below for the version 5 and earlier default, and important caveats.</p>
+<p>In addition to the above styles, flags and modes, several aliases may be used, and mixed with flags. The aliases have the form:</p>
+<p>[stringcomparemode|textsearchmode][default|builtin]
+where stringcomparemode or textsearchmode refers to that setting’s value (if not given: the setting being modified). default refers to the default value (modifiable with texis.ini); builtin refers to the builtin factory default; no suffix refers to the current setting value. E.g. “stringcomparemodedefault,+ignorecase” would obtain the default stringcomparemode setting (from texis.ini if available), but set the case style to ignorecase.
+A Metamorph index always uses the textsearchmode value that was set at its initial creation, not the current value. However, when multiple Metamorph indexes exist on the same fields, at search time the Texis optimizer will attempt to use the index whose (creation-time) textsearchmode is closest to the current value.</p>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>
