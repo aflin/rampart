@@ -1,0 +1,664 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>REX On Its Own &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+            
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <!-- Local TOC -->
+                <div class="local-toc"><ul>
+<li><a class="reference internal" href="#">REX On Its Own</a><ul>
+<li><a class="reference internal" href="#rex-the-regular-expression-pattern-matcher">REX, The Regular Expression Pattern Matcher</a></li>
+<li><a class="reference internal" href="#rex-program-syntax-and-options">REX Program Syntax and Options</a></li>
+<li><a class="reference internal" href="#rex-expression-syntax">REX Expression Syntax</a></li>
+<li><a class="reference internal" href="#rex-repetition-operators">REX Repetition Operators</a></li>
+<li><a class="reference internal" href="#re2-syntax">RE2 Syntax</a></li>
+<li><a class="reference internal" href="#rex-replacement-strings">REX Replacement Strings</a></li>
+<li><a class="reference internal" href="#rex-caveats-and-commentary">REX Caveats and Commentary</a></li>
+<li><a class="reference internal" href="#other-rex-notes">Other REX Notes</a></li>
+</ul>
+</li>
+</ul>
+</div>
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>REX On Its Own</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/mm6.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="rex-on-its-own">
+<h1>REX On Its Own<a class="headerlink" href="#rex-on-its-own" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="rex-the-regular-expression-pattern-matcher">
+<h2>REX, The Regular Expression Pattern Matcher<a class="headerlink" href="#rex-the-regular-expression-pattern-matcher" title="Permalink to this headline">¶</a></h2>
+<p><strong>REX</strong> is a very powerful pattern matcher which can be called
+internally within the Metamorph Query Language. It can also be used as
+an external stand-alone tool. Any pattern or expression which is
+outlined herein can be specified from within a Metamorph query by
+preceding it with a forward slash (<code class="docutils literal notranslate"><span class="pre">/</span></code>). Similarly, any <strong>REX</strong>
+pattern can be entered as Start or End Delimiter expression, or used
+otherwise in a Vortex script which calls for <code class="docutils literal notranslate"><span class="pre">rex</span></code>, there requiring no
+forward slash (<code class="docutils literal notranslate"><span class="pre">/</span></code>).</p>
+<p><strong>REX</strong> (for <strong>R</strong>egular <strong>EX</strong>pression) allows you to search for
+any fixed or variable length regular expression, and executes more
+efficiently types of patterns you might normally try to look for with
+the Unix <code class="docutils literal notranslate"><span class="pre">Grep</span></code> family. <strong>REX</strong> puts all these facilities into one
+program, along with a Search &amp; Replace capability, easier to learn
+syntax, faster execution, ability to set delimiters within which you
+want to search (i.e., it can search across lines), and goes beyond what
+is possible with other search tools.</p>
+<p>It may be somewhat new to those who haven’t previously used such tools,
+but you’ll find that if you follow REX’s syntax very literally and
+practice searching for simple, then more complex expressions, that it
+becomes quite understandable and easy to use. One thing to keep in mind
+is that REX looks both forwards and backwards, something quite different
+from other types of tools. Therefore, when you construct a REX
+expression, make sure it makes sense from a global view of the file;
+that is, whether you’d be looking forwards, or looking backwards.</p>
+<p>A REX pattern can be constructed from a series of <strong>F-REX’S</strong>
+(pronounced “f-rex”), or Fixed length Regular EXpressions, where
+repetition operators after each subexpression are used to state how many
+of each you are looking for. Unless otherwise delineated, REX assumes
+you are looking for one occurrence of each subexpression stated within
+the expression, as specified within quotation marks.</p>
+<p>To begin learning to use REX, first try some easy F-REX (fixed length)
+patterns. For example, on the query line, type in:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">/</span><span class="n">life</span>
+</pre></div>
+</div>
+<p>This pattern “<code class="docutils literal notranslate"><span class="pre">life</span></code>” is the same as the pattern “<code class="docutils literal notranslate"><span class="pre">life=</span></code>”, and
+means that you are asking the pattern matcher REX to look for one
+occurrence of the fixed length expression “<code class="docutils literal notranslate"><span class="pre">life</span></code>”.</p>
+<p>The equal sign ‘<code class="docutils literal notranslate"><span class="pre">=</span></code>’ is used to designate one occurrence of a fixed
+length pattern, and is assumed if not otherwise stated.</p>
+<p>The plus sign ‘<code class="docutils literal notranslate"><span class="pre">+</span></code>’ is used to designate one or more occurrences of a
+fixed length pattern. If you were to search for “<code class="docutils literal notranslate"><span class="pre">life+</span></code>” REX would
+look for one or more occurrences of the word “<code class="docutils literal notranslate"><span class="pre">life</span></code>”: e.g., it would
+locate the pattern “<code class="docutils literal notranslate"><span class="pre">life</span></code>” and it would also locate the pattern
+“<code class="docutils literal notranslate"><span class="pre">lifelife</span></code>”.</p>
+<p>The asterisk ‘<code class="docutils literal notranslate"><span class="pre">*</span></code>’ is used to designate zero or more occurrences of a
+fixed length pattern. If you were to try to look for “<code class="docutils literal notranslate"><span class="pre">life*</span></code>”, REX
+would be directed to look for zero or more occurrences of the word
+<code class="docutils literal notranslate"><span class="pre">life</span></code> (rather than 1 or more occurrences); therefore, while it could
+locate “<code class="docutils literal notranslate"><span class="pre">life</span></code>” or “<code class="docutils literal notranslate"><span class="pre">lifelife</span></code>”, it would also have to look for 0
+occurrences of “<code class="docutils literal notranslate"><span class="pre">life</span></code>” which could be every pattern in the file. This
+would be an impossible and unsatisfactory search, and so is not a legal
+pattern to look for. The rule is that a ‘<code class="docutils literal notranslate"><span class="pre">*</span></code>’ search must be rooted to
+something else requiring one or more occurrences.</p>
+<p>If you root “<code class="docutils literal notranslate"><span class="pre">life*</span></code>” to a fixed length pattern which must find at
+least one occurrence of something, the pattern becomes legal. Therefore,
+you could precede “<code class="docutils literal notranslate"><span class="pre">life*</span></code>” with “<code class="docutils literal notranslate"><span class="pre">love=</span></code>”, making the pattern
+“<code class="docutils literal notranslate"><span class="pre">love=life*</span></code>”. Now it is rooted to something which definitely can be
+found in the file; e.g., one occurrence of the word “<code class="docutils literal notranslate"><span class="pre">love</span></code>”, followed
+by 0 or more occurrences of the word “<code class="docutils literal notranslate"><span class="pre">life</span></code>”. Such an expression
+“<code class="docutils literal notranslate"><span class="pre">love=life*</span></code>” would locate “<code class="docutils literal notranslate"><span class="pre">love</span></code>”, “<code class="docutils literal notranslate"><span class="pre">lovelife</span></code>”, and
+“<code class="docutils literal notranslate"><span class="pre">lovelifelife</span></code>”.</p>
+<p>If there is more than one subexpression within a REX pattern, any
+designated repetition operator will attach itself to the longest
+preceding fixed length pattern. Therefore a pattern preceding a plus
+sign ‘<code class="docutils literal notranslate"><span class="pre">+</span></code>’, even if it is made of more than one subexpression, will be
+treated as one or more occurrences of the whole preceding pattern. Use
+the equal sign ‘<code class="docutils literal notranslate"><span class="pre">=</span></code>’, if necessary, to separate these subexpressions
+and prevent an incorrect interpretation.</p>
+<p>For example: if you say “<code class="docutils literal notranslate"><span class="pre">lovelife*</span></code>” (rather than “<code class="docutils literal notranslate"><span class="pre">love=life*</span></code>”)
+the ‘<code class="docutils literal notranslate"><span class="pre">*</span></code>’ operator will attach itself to the whole preceding
+expression, “<code class="docutils literal notranslate"><span class="pre">lovelife</span></code>”, and will therefore be translated to mean 0
+or more occurrences of the entire pattern “<code class="docutils literal notranslate"><span class="pre">lovelife</span></code>”, making it an
+illegal expression. On the other hand, in the expression
+“<code class="docutils literal notranslate"><span class="pre">love=life*</span></code>”, REX will correctly look for 1 occurrence of
+“<code class="docutils literal notranslate"><span class="pre">love</span></code>”, followed by 0 or more occurrences of “<code class="docutils literal notranslate"><span class="pre">life</span></code>”.</p>
+<p>Use the “<code class="docutils literal notranslate"><span class="pre">-x</span></code>” option in <code class="docutils literal notranslate"><span class="pre">REX</span></code> (from the Windows or Unix command
+line) to get feedback on how REX translates the syntax you have entered
+to what it is really looking for. In this way you can debug your use of
+syntax and learn to use REX to its maximum power. Using our same
+example, if you enter on the Windows or Unix command line:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>rex -x ``love=life*&#39;&#39;
+</pre></div>
+</div>
+<p>you will get the following output back to show you how REX will
+interpret your search request:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">1</span> <span class="n">occurrence</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="n">of</span> <span class="p">:</span> <span class="p">[</span><span class="n">Ll</span><span class="p">][</span><span class="n">Oo</span><span class="p">][</span><span class="n">Vv</span><span class="p">][</span><span class="n">Ee</span><span class="p">]</span>
+<span class="n">followed</span> <span class="n">by</span> <span class="kn">from</span> <span class="mi">0</span> <span class="n">to</span> <span class="mi">32000</span> <span class="n">occurrences</span> <span class="n">of</span> <span class="p">:</span> <span class="p">[</span><span class="n">Ll</span><span class="p">][</span><span class="n">Ii</span><span class="p">][</span><span class="n">Ff</span><span class="p">][</span><span class="n">Ee</span><span class="p">]</span>
+</pre></div>
+</div>
+<p>The brackets above, as: “<code class="docutils literal notranslate"><span class="pre">[Ll]</span></code>”, mean either of the characters shown
+inside the brackets, in that position; i.e., a capital or small ‘<code class="docutils literal notranslate"><span class="pre">l</span></code>’
+in the 1st character position, a capital or small ‘<code class="docutils literal notranslate"><span class="pre">o</span></code>’ in the 2nd
+character position, and so on.</p>
+<p>You can find REX syntax for all matters discussed above and delineated
+below, by typing in “<code class="docutils literal notranslate"><span class="pre">REX</span></code>” followed by a carriage return on the
+Windows or Unix command line.</p>
+</div>
+<div class="section" id="rex-program-syntax-and-options">
+<h2>REX Program Syntax and Options<a class="headerlink" href="#rex-program-syntax-and-options" title="Permalink to this headline">¶</a></h2>
+<p>REX locates and prints lines containing occurrences of regular
+expressions. Beginning and end of line are the default beginning and
+ending delimiters. If starting (<code class="docutils literal notranslate"><span class="pre">-s</span></code>) and ending (<code class="docutils literal notranslate"><span class="pre">-e</span></code>) delimiters
+are specified REX will print from the beginning delimiting expression to
+the ending delimiting expression. If so specified (<code class="docutils literal notranslate"><span class="pre">-p</span></code>) REX will
+print the expression only. If files are not specified, standard input is
+used. If files are specified, the filename will be printed before the
+line containing the expression, unless the “<code class="docutils literal notranslate"><span class="pre">-n</span></code>” option (don’t print
+the filename) is used.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SYNTAX</span><span class="p">:</span>  <span class="n">rex</span> <span class="p">[</span><span class="n">options</span><span class="p">]</span> <span class="n">expression</span> <span class="p">[</span><span class="n">files</span><span class="p">]</span>
+
+ <span class="n">Where</span><span class="p">:</span>  <span class="n">options</span> <span class="n">are</span> <span class="n">preceded</span> <span class="n">by</span> <span class="n">a</span> <span class="n">hyphen</span> <span class="p">(</span><span class="o">-</span><span class="p">)</span>
+         <span class="n">expressions</span> <span class="n">may</span> <span class="n">be</span> <span class="n">contained</span> <span class="ow">in</span> <span class="n">quotes</span> <span class="p">(</span><span class="s2">&quot; &quot;</span><span class="p">)</span>
+         <span class="n">filename</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="n">comes</span> <span class="n">last</span> <span class="ow">and</span> <span class="n">can</span> <span class="n">contain</span> <span class="n">wildcards</span>
+
+<span class="n">OPTIONS</span><span class="p">:</span>
+   <span class="o">-</span><span class="n">c</span>       <span class="n">Don</span><span class="s1">&#39;t print control characters, replace with space.</span>
+   <span class="o">-</span><span class="n">C</span>       <span class="n">Count</span> <span class="n">the</span> <span class="n">number</span> <span class="n">of</span> <span class="n">times</span> <span class="n">the</span> <span class="n">expression</span> <span class="n">occurs</span><span class="o">.</span>
+   <span class="o">-</span><span class="n">l</span>       <span class="n">List</span> <span class="n">file</span> <span class="n">names</span> <span class="p">(</span><span class="n">only</span><span class="p">)</span> <span class="n">that</span> <span class="n">contain</span> <span class="n">the</span> <span class="n">expression</span><span class="o">.</span>
+   <span class="o">-</span><span class="n">E</span><span class="s2">&quot;EX&quot;</span>   <span class="n">Specify</span> <span class="ow">and</span> <span class="nb">print</span> <span class="n">the</span> <span class="n">ending</span> <span class="n">delimiting</span> <span class="n">expression</span><span class="o">.</span>
+   <span class="o">-</span><span class="n">e</span><span class="s2">&quot;EX&quot;</span>   <span class="n">Specify</span> <span class="n">the</span> <span class="n">ending</span> <span class="n">delimiting</span> <span class="n">expression</span><span class="o">.</span>
+   <span class="o">-</span><span class="n">S</span><span class="s2">&quot;EX&quot;</span>   <span class="n">Specify</span> <span class="ow">and</span> <span class="nb">print</span> <span class="n">the</span> <span class="n">starting</span> <span class="n">delimiting</span> <span class="n">expression</span><span class="o">.</span>
+   <span class="o">-</span><span class="n">s</span><span class="s2">&quot;EX&quot;</span>   <span class="n">Specify</span> <span class="n">the</span> <span class="n">starting</span> <span class="n">delimiting</span> <span class="n">expression</span><span class="o">.</span>
+   <span class="o">-</span><span class="n">p</span>       <span class="n">Begin</span> <span class="n">printing</span> <span class="n">at</span> <span class="n">the</span> <span class="n">start</span> <span class="n">of</span> <span class="n">the</span> <span class="n">expression</span><span class="o">.</span>
+   <span class="o">-</span><span class="n">P</span>       <span class="n">Stop</span> <span class="n">printing</span> <span class="n">at</span> <span class="n">the</span> <span class="n">end</span> <span class="n">of</span> <span class="n">the</span> <span class="n">expression</span><span class="o">.</span>
+   <span class="o">-</span><span class="sa">r</span><span class="s2">&quot;STR&quot;</span>  <span class="n">Replace</span> <span class="n">the</span> <span class="n">expression</span> <span class="k">with</span> <span class="s2">&quot;STR&quot;</span> <span class="n">to</span> <span class="n">standard</span> <span class="n">output</span><span class="o">.</span>
+   <span class="o">-</span><span class="sa">R</span><span class="s2">&quot;STR&quot;</span>  <span class="n">Replace</span> <span class="n">the</span> <span class="n">expression</span> <span class="k">with</span> <span class="s2">&quot;STR&quot;</span> <span class="n">to</span> <span class="n">original</span> <span class="n">file</span><span class="o">.</span>
+   <span class="o">-</span><span class="n">t</span><span class="s2">&quot;Fn&quot;</span>   <span class="n">Use</span> <span class="s2">&quot;Fn&quot;</span> <span class="k">as</span> <span class="n">the</span> <span class="n">temporary</span> <span class="n">file</span><span class="o">.</span> <span class="p">(</span><span class="n">default</span><span class="p">:</span> <span class="s2">&quot;rextmp&quot;</span><span class="p">)</span>
+   <span class="o">-</span><span class="n">f</span><span class="s2">&quot;Fn&quot;</span>   <span class="n">Read</span> <span class="n">the</span> <span class="n">expression</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="kn">from</span> <span class="nn">the</span> <span class="n">file</span> <span class="s2">&quot;Fn&quot;</span><span class="o">.</span>
+   <span class="o">-</span><span class="n">n</span>       <span class="n">Do</span> <span class="ow">not</span> <span class="nb">print</span> <span class="n">the</span> <span class="n">file</span> <span class="n">name</span><span class="o">.</span>
+   <span class="o">-</span><span class="n">O</span>       <span class="n">Generate</span> <span class="s2">&quot;FNAME@OFFSET,LEN&quot;</span> <span class="n">entries</span> <span class="k">for</span> <span class="n">mm3</span> <span class="n">subfile</span> <span class="nb">list</span><span class="o">.</span>
+   <span class="o">-</span><span class="n">x</span>       <span class="n">Translate</span> <span class="n">the</span> <span class="n">expression</span> <span class="n">into</span> <span class="n">pseudo</span><span class="o">-</span><span class="n">code</span> <span class="p">(</span><span class="n">debug</span><span class="p">)</span><span class="o">.</span>
+   <span class="o">-</span><span class="n">v</span>       <span class="n">Print</span> <span class="n">lines</span> <span class="p">(</span><span class="ow">or</span> <span class="n">delimiters</span><span class="p">)</span> <span class="ow">not</span> <span class="n">containing</span> <span class="n">the</span> <span class="n">expression</span><span class="o">.</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>Each option must be placed individually on the command line.</p></li>
+<li><p>“<code class="docutils literal notranslate"><span class="pre">EX</span></code>” is a REX expression.</p></li>
+<li><p>“<code class="docutils literal notranslate"><span class="pre">Fn</span></code>” is file name.</p></li>
+<li><p>“<code class="docutils literal notranslate"><span class="pre">STR</span></code>” is a replacement string.</p></li>
+<li><p>“<code class="docutils literal notranslate"><span class="pre">N</span></code>” is a drive name e.g.: <code class="docutils literal notranslate"><span class="pre">A,B,C</span></code> …</p></li>
+</ul>
+</div>
+<div class="section" id="rex-expression-syntax">
+<h2>REX Expression Syntax<a class="headerlink" href="#rex-expression-syntax" title="Permalink to this headline">¶</a></h2>
+<ul>
+<li><p>Expressions are composed of characters and operators. Operators are
+characters with special meaning to REX. The following characters have
+special meaning: “<code class="docutils literal notranslate"><span class="pre">\=+*?{},[]^$.-!</span></code>” and must be escaped with a
+‘<code class="docutils literal notranslate"><span class="pre">\</span></code>’ if they are meant to be taken literally. The string “<code class="docutils literal notranslate"><span class="pre">&gt;&gt;</span></code>”
+is also special and if it is to be matched, it should be written
+“<code class="docutils literal notranslate"><span class="pre">\&gt;&gt;</span></code>”. Not all of these characters are special all the time; if
+an entire string is to be escaped so it will be interpreted
+literally, only the characters “<code class="docutils literal notranslate"><span class="pre">\=?+*{[^$.!&gt;</span></code>” need be escaped.</p></li>
+<li><p>A ‘<code class="docutils literal notranslate"><span class="pre">\</span></code>’ followed by an ‘<code class="docutils literal notranslate"><span class="pre">R</span></code>’ or an ‘<code class="docutils literal notranslate"><span class="pre">I</span></code>’ mean to begin
+respecting or ignoring alphabetic case distinction. (Ignoring case is
+the default.) These switches <em>do not</em> apply inside range brackets.</p></li>
+<li><p>A ‘<code class="docutils literal notranslate"><span class="pre">\</span></code>’ followed by an ‘<code class="docutils literal notranslate"><span class="pre">L</span></code>’ indicates that the characters
+following are to be taken literally up to the next ‘<code class="docutils literal notranslate"><span class="pre">\L</span></code>’. The
+purpose of this operation is to remove the special meanings from
+characters.</p></li>
+<li><p>A subexpression following ‘<code class="docutils literal notranslate"><span class="pre">\F</span></code>’ (followed by) or ‘<code class="docutils literal notranslate"><span class="pre">\P</span></code>’
+(preceded by) can be used to root the rest of an expression to which
+it is tied. It means to look for the rest of the expression “as long
+as followed by …” or “as long as preceded by …” the subexpression
+following the <code class="docutils literal notranslate"><span class="pre">\F</span></code> or <code class="docutils literal notranslate"><span class="pre">\P</span></code>, but the designated subexpression will
+be considered excluded from the located expression itself.</p></li>
+<li><p>A ‘<code class="docutils literal notranslate"><span class="pre">\</span></code>’ followed by one of the following ‘<code class="docutils literal notranslate"><span class="pre">C</span></code>’ language character
+classes matches that character class: <code class="docutils literal notranslate"><span class="pre">alpha</span></code>, <code class="docutils literal notranslate"><span class="pre">upper</span></code>,
+<code class="docutils literal notranslate"><span class="pre">lower</span></code>, <code class="docutils literal notranslate"><span class="pre">digit</span></code>, <code class="docutils literal notranslate"><span class="pre">xdigit</span></code>, <code class="docutils literal notranslate"><span class="pre">alnum</span></code>, <code class="docutils literal notranslate"><span class="pre">space</span></code>, <code class="docutils literal notranslate"><span class="pre">punct</span></code>,
+<code class="docutils literal notranslate"><span class="pre">print</span></code>, <code class="docutils literal notranslate"><span class="pre">graph</span></code>, <code class="docutils literal notranslate"><span class="pre">cntrl</span></code>, <code class="docutils literal notranslate"><span class="pre">ascii</span></code>.</p></li>
+<li><p>A ‘<code class="docutils literal notranslate"><span class="pre">\</span></code>’ followed by one of the following special characters will
+assume the following meaning: <code class="docutils literal notranslate"><span class="pre">n</span></code>=newline, <code class="docutils literal notranslate"><span class="pre">t</span></code>=tab,
+<code class="docutils literal notranslate"><span class="pre">v</span></code>=vertical tab, <code class="docutils literal notranslate"><span class="pre">b</span></code>=backspace, <code class="docutils literal notranslate"><span class="pre">r</span></code>=carriage return,
+<code class="docutils literal notranslate"><span class="pre">f</span></code>=form feed, <code class="docutils literal notranslate"><span class="pre">0</span></code>=the null character.</p></li>
+<li><p>A ‘<code class="docutils literal notranslate"><span class="pre">\</span></code>’ followed by <code class="docutils literal notranslate"><span class="pre">Xn</span></code> or <code class="docutils literal notranslate"><span class="pre">Xnn</span></code> where <code class="docutils literal notranslate"><span class="pre">n</span></code> is a hexadecimal
+digit will match that character.</p></li>
+<li><p>A ‘<code class="docutils literal notranslate"><span class="pre">\</span></code>’ followed by any single character (not one of the above)
+matches that character. Escaping a character that is not a special
+escape is not recommended, as the expression could change meaning if
+the character becomes an escape in a future release.</p></li>
+<li><p>The character ‘<code class="docutils literal notranslate"><span class="pre">^</span></code>’ placed anywhere in an expression (except after
+a ‘<code class="docutils literal notranslate"><span class="pre">[</span></code>’) matches the beginning of a line. (same as: <code class="docutils literal notranslate"><span class="pre">\x0A</span></code> in
+Unix or <code class="docutils literal notranslate"><span class="pre">\x0D\x0A</span></code> in Windows)</p></li>
+<li><p>The character ‘<code class="docutils literal notranslate"><span class="pre">$</span></code>’ placed anywhere in an expression matches the
+end of a line. (<code class="docutils literal notranslate"><span class="pre">\x0A</span></code> in Unix, <code class="docutils literal notranslate"><span class="pre">\x0D\x0A</span></code> in Windows)</p></li>
+<li><p>The character ‘<code class="docutils literal notranslate"><span class="pre">.</span></code>’ matches any character.</p></li>
+<li><p>A single character not having special meaning matches that character.</p></li>
+<li><p>A string enclosed in brackets <code class="docutils literal notranslate"><span class="pre">[]</span></code> is a set, and matches any single
+character from the string. Ranges of ASCII character codes may be
+abbreviated as in <code class="docutils literal notranslate"><span class="pre">[a-z]</span></code> or <code class="docutils literal notranslate"><span class="pre">[0-9]</span></code>. A ‘<code class="docutils literal notranslate"><span class="pre">^</span></code>’ occurring as the
+first character of the set will invert the meaning of the set. A
+literal ‘<code class="docutils literal notranslate"><span class="pre">-</span></code>’ must be preceded by a ‘<code class="docutils literal notranslate"><span class="pre">\</span></code>’. The case of alphabetic
+characters is always respected within brackets.</p>
+<p>A double-dash (“<code class="docutils literal notranslate"><span class="pre">--</span></code>”) may be used inside a bracketed set to
+subtract characters from the set; e.g. “<code class="docutils literal notranslate"><span class="pre">[\alpha--x]</span></code>” for all
+alphabetic characters except “<code class="docutils literal notranslate"><span class="pre">x</span></code>”. The left-hand side of a set
+subtraction must be a range, character class, or another set
+subtraction. The right-hand side of a set subtraction must be a
+range, character class, or a single character. Set subtraction groups
+left-to-right. The range operator “<code class="docutils literal notranslate"><span class="pre">-</span></code>” has precedence over set
+subtraction. Set subtraction was added in version 6.</p>
+</li>
+<li><p>The ‘<code class="docutils literal notranslate"><span class="pre">&gt;&gt;</span></code>’ operator in the first position of a fixed expression
+will force REX to use that expression as the “root” expression off
+which the other fixed expressions are matched. This operator
+overrides one of the optimizers in REX. This operator can be quite
+handy if you are trying to match an expression with a ‘<code class="docutils literal notranslate"><span class="pre">!</span></code>’
+operator or if you are matching an item that is surrounded by other
+items. For example: “<code class="docutils literal notranslate"><span class="pre">x+&gt;&gt;y+z+</span></code>” would force REX to find the
+“<code class="docutils literal notranslate"><span class="pre">y's</span></code>” first then go backwards and forwards for the leading
+“<code class="docutils literal notranslate"><span class="pre">x's</span></code>” and trailing “<code class="docutils literal notranslate"><span class="pre">z's</span></code>”.</p></li>
+<li><p>The ‘<code class="docutils literal notranslate"><span class="pre">!</span></code>’ character in the first position of an expression means
+that it is <em>not</em> to match the following fixed expression. For
+example: “<code class="docutils literal notranslate"><span class="pre">start=!finish+</span></code>” would match the word “<code class="docutils literal notranslate"><span class="pre">start</span></code>” and
+anything past it up to (but not including the word “<code class="docutils literal notranslate"><span class="pre">finish</span></code>”.
+Usually operations involving the “<code class="docutils literal notranslate"><span class="pre">!</span></code>” operator involve knowing
+what direction the pattern is being matched in. In these cases the
+‘<code class="docutils literal notranslate"><span class="pre">&gt;&gt;</span></code>’ operator comes in handy. If the ‘<code class="docutils literal notranslate"><span class="pre">&gt;&gt;</span></code>’ operator is used,
+it comes before the ‘<code class="docutils literal notranslate"><span class="pre">!</span></code>’. For example:
+“<code class="docutils literal notranslate"><span class="pre">&gt;&gt;start=!finish+finish</span></code>” would match anything that began with
+“<code class="docutils literal notranslate"><span class="pre">start</span></code>” and ended with “<code class="docutils literal notranslate"><span class="pre">finish</span></code>”. <em>The “``!``” operator cannot
+be used by itself</em> in an expression, or as the root expression in a
+compound expression. NOTE: This “<code class="docutils literal notranslate"><span class="pre">!</span></code>” operator “nots” the whole
+expression rather than its sequence of characters, as in earlier
+versions of REX.</p>
+<p>Note that “<code class="docutils literal notranslate"><span class="pre">!</span></code>” expressions match a character at a time, so their
+repetition operators count characters, not expression-lengths as with
+normal expressions. E.g. “<code class="docutils literal notranslate"><span class="pre">!finish{2,4}</span></code>” matches 2 to 4
+characters, whereas “<code class="docutils literal notranslate"><span class="pre">finish{2,4}</span></code>” matches 2 to 4 times the length
+of “<code class="docutils literal notranslate"><span class="pre">finish</span></code>”.</p>
+</li>
+</ul>
+</div>
+<div class="section" id="rex-repetition-operators">
+<h2>REX Repetition Operators<a class="headerlink" href="#rex-repetition-operators" title="Permalink to this headline">¶</a></h2>
+<ul>
+<li><p>A regular expression may be followed by a repetition operator in
+order to indicate the number of times it may be repeated.</p>
+<p>NOTE: Under Windows the operation “<code class="docutils literal notranslate"><span class="pre">{X,Y}</span></code>” has the syntax
+“<code class="docutils literal notranslate"><span class="pre">{X-Y}</span></code>” because Windows will not accept the comma on a command
+line. Also, <code class="docutils literal notranslate"><span class="pre">N</span></code> occurrences of an expression implies infinite
+repetitions but in this program <code class="docutils literal notranslate"><span class="pre">N</span></code> represents the quantity
+<code class="docutils literal notranslate"><span class="pre">32768</span></code> which should be a more than adequate substitute in real
+world text.</p>
+</li>
+<li><p>An expression followed by the operator “<code class="docutils literal notranslate"><span class="pre">{X,Y}</span></code>” indicates that
+from <code class="docutils literal notranslate"><span class="pre">X</span></code> to <code class="docutils literal notranslate"><span class="pre">Y</span></code> occurrences of the expression are to be located.
+This notation may take on several forms: “<code class="docutils literal notranslate"><span class="pre">{X}</span></code>” means <code class="docutils literal notranslate"><span class="pre">X</span></code>
+occurrences of the expression, “<code class="docutils literal notranslate"><span class="pre">{X,}</span></code>” means from <code class="docutils literal notranslate"><span class="pre">X</span></code> to <code class="docutils literal notranslate"><span class="pre">N</span></code>
+occurrences of the expression, and “<code class="docutils literal notranslate"><span class="pre">{,Y}</span></code>” means from <code class="docutils literal notranslate"><span class="pre">0</span></code> (no
+occurrences) to <code class="docutils literal notranslate"><span class="pre">Y</span></code> occurrences of the expression.</p></li>
+<li><p>The ‘<code class="docutils literal notranslate"><span class="pre">?</span></code>’ operator is a synonym for the operation “<code class="docutils literal notranslate"><span class="pre">{0,1}</span></code>”. Read
+as: “Zero or one occurrence.”</p></li>
+<li><p>The ‘<code class="docutils literal notranslate"><span class="pre">*</span></code>’ operator is a synonym for the operation “<code class="docutils literal notranslate"><span class="pre">{0,}</span></code>”. Read
+as: “Zero or more occurrences.”</p></li>
+<li><p>The ‘<code class="docutils literal notranslate"><span class="pre">+</span></code>’ operator is a synonym for the operation “<code class="docutils literal notranslate"><span class="pre">{1,}</span></code>”. Read
+as: “One or more occurrences.”</p></li>
+<li><p>The ‘<code class="docutils literal notranslate"><span class="pre">=</span></code>’ operator is a synonym for the operation “<code class="docutils literal notranslate"><span class="pre">{1}</span></code>”. Read
+as: “One occurrence.”</p></li>
+</ul>
+</div>
+<div class="section" id="re2-syntax">
+<h2>RE2 Syntax<a class="headerlink" href="#re2-syntax" title="Permalink to this headline">¶</a></h2>
+<p>In Texis version 7.06 and later, on some platforms the search expression
+may be given in RE2 syntax instead of REX. RE2 is a Perl-compatible
+regular expression library whose syntax may be more familiar to Unix
+users than Texis’ REX syntax. An RE2 expression in REX is indicated by
+prefixing the expression with “92&lt;re292&gt;”. E.g. “92&lt;re292&gt;92w+” would
+search for one or more word characters, as “92w” means word character in
+RE2, but not REX.</p>
+<p>REX syntax can also be indicated in an expression by prefixing it with
+“92&lt;rex92&gt;”. Since the default syntax is already REX, this flag is not
+normally needed; it is primarily useful in circumstances where the
+syntax has already been changed to RE2, but outside of the expression –
+e.g. a Vortex <code class="docutils literal notranslate"><span class="pre">&lt;rex&gt;</span></code> statement with the option <code class="docutils literal notranslate"><span class="pre">syntax=re2</span></code>.</p>
+<p>Note that RE2 syntax is not supported on all texis -platform platforms;
+where it is unsupported, attempting to invoke an RE2 expression will
+result in the error message “REX: RE2 not supported on this platform”.
+(Windows, most Linux 2.6 versions except i686-unknown-linux2.6.17-64-32
+are supported.)</p>
+</div>
+<div class="section" id="rex-replacement-strings">
+<h2>REX Replacement Strings<a class="headerlink" href="#rex-replacement-strings" title="Permalink to this headline">¶</a></h2>
+<p>NOTE: Any expression may be searched for in conjunction with a replace
+operation but the replacement string will always be of fixed size.</p>
+<p>An expression will be defined one way when given to REX to search for;
+it will be defined another way when used with the ‘<code class="docutils literal notranslate"><span class="pre">-r</span></code>’ or ‘<code class="docutils literal notranslate"><span class="pre">-R</span></code>’
+<code class="docutils literal notranslate"><span class="pre">Replace</span></code> options as the replacement string. The characters
+“<code class="docutils literal notranslate"><span class="pre">?#{}+</span></code>” have entirely different meanings when used as part of the
+syntax of a replacement string, than when used as part of the syntax of
+expressions or repetition operators.</p>
+<p>Replacement syntax is different from expression syntax, and is limited
+to the following delineated rules.</p>
+<ul class="simple">
+<li><p>The characters “<code class="docutils literal notranslate"><span class="pre">?#{}+\</span></code>” are special. To use them literally,
+precede them with the escapement character “<code class="docutils literal notranslate"><span class="pre">\</span></code>’.</p></li>
+<li><p>Replacement strings may just be a literal string or they may include
+the “ditto” character “<code class="docutils literal notranslate"><span class="pre">?</span></code>”. The ditto character will copy the
+character in the position specified in the replace string from the
+same position in the located expression.</p></li>
+<li><p>A decimal digit placed within curly braces (e.g. <code class="docutils literal notranslate"><span class="pre">{5}</span></code>) will place
+that character of the located expression to the output.</p></li>
+<li><p>A “<code class="docutils literal notranslate"><span class="pre">\</span></code>” followed by a decimal number will place that subexpression
+to the output. Subexpressions are numbered starting at 1.</p></li>
+<li><p>The sequence “<code class="docutils literal notranslate"><span class="pre">\&amp;</span></code>” will place the entire expression match (sans
+<code class="docutils literal notranslate"><span class="pre">\P</span></code> and <code class="docutils literal notranslate"><span class="pre">\F</span></code> portions) to the output. This escape was added in
+Texis version 7.06.</p></li>
+<li><p>A plus character “<code class="docutils literal notranslate"><span class="pre">+</span></code>” will place an incrementing decimal number to
+the output. One purpose of this operator is to number lines.</p></li>
+<li><p>A “<code class="docutils literal notranslate"><span class="pre">#</span></code>” in the replace string will cause the character in that
+position to be printed in hexadecimal form.</p></li>
+<li><p>Any character in the replace string may be represented by the
+hexadecimal value of that character using the following syntax:
+<code class="docutils literal notranslate"><span class="pre">\Xdd</span></code> where “<code class="docutils literal notranslate"><span class="pre">dd</span></code>” is the hexadecimal value.</p></li>
+</ul>
+</div>
+<div class="section" id="rex-caveats-and-commentary">
+<h2>REX Caveats and Commentary<a class="headerlink" href="#rex-caveats-and-commentary" title="Permalink to this headline">¶</a></h2>
+<p><strong>REX</strong> is a highly optimized pattern recognition tool that has been
+modeled after the UNIX family of tools: <code class="docutils literal notranslate"><span class="pre">GREP</span></code>, <code class="docutils literal notranslate"><span class="pre">EGREP</span></code>, <code class="docutils literal notranslate"><span class="pre">FGREP</span></code>,
+and <code class="docutils literal notranslate"><span class="pre">LEX</span></code>. Wherever possible REX’s syntax has been held consistent
+with these tools, but there are several major departures that may bite
+those who are used to using the <code class="docutils literal notranslate"><span class="pre">GREP</span></code> family.</p>
+<p>REX uses a combination of techniques that allow it to surpass the speed
+of anything similar to it by a very wide margin.</p>
+<p>The technique that provides the largest advantage is called “state
+anticipation or state skipping” which works as follows …</p>
+<p>If we were looking for the pattern:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ABCDE</span>
+</pre></div>
+</div>
+<p>in the text:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">AAAAABCDEAAAAAAA</span>
+</pre></div>
+</div>
+<p>a normal pattern matcher would do the following:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ABCDE</span>
+ <span class="n">ABCDE</span>
+  <span class="n">ABCDE</span>
+   <span class="n">ABCDE</span>
+    <span class="n">ABCDE</span>
+<span class="n">AAAAABCDEAAAAAAA</span>
+</pre></div>
+</div>
+<p>The state anticipation scheme would do the following:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ABCDE</span>
+    <span class="n">ABCDE</span>
+<span class="n">AAAAABCDEAAAAAAA</span>
+</pre></div>
+</div>
+<p>The normal algorithm moves one character at a time through the text,
+comparing the leading character of the pattern to the current text
+character of text, and if they match, it compares the leading pattern
+character +1 to the current text character +1, and so on …</p>
+<p>The state anticipation pattern matcher is aware of the length of the
+pattern to be matched, and compares the last character of the pattern to
+the corresponding text character. If the two are not equal, it moves
+over by an amount that would allow it to match the next potential hit.</p>
+<p>If one were to count the number of comparison cycles for each pattern
+matching scheme using the example above, the normal pattern matcher
+would have to perform 13 compare operations before locating the first
+occurrence; versus 6 compare operations for the state anticipation
+pattern matcher.</p>
+<p>One concept to grasp here is: “<em>The longer the pattern to be found, the
+faster the state anticipation pattern matcher will be;</em>” while a normal
+pattern matcher will slow down as the pattern gets longer.</p>
+<p>Herein lies the first major syntax departure: REX always applies
+repetition operators to the longest preceding expression. It does this
+so that it can maximize the benefits of using the state skipping pattern
+matcher.</p>
+<p>If you were to give <code class="docutils literal notranslate"><span class="pre">GREP</span></code> the expression: <code class="docutils literal notranslate"><span class="pre">ab*de+</span></code></p>
+<p>It would interpret it as: an ‘<code class="docutils literal notranslate"><span class="pre">a</span></code>’ then 0 or more ‘<code class="docutils literal notranslate"><span class="pre">b's</span></code>’ then a
+‘<code class="docutils literal notranslate"><span class="pre">d</span></code>’ then 1 or more ‘<code class="docutils literal notranslate"><span class="pre">e's</span></code>’.</p>
+<p><code class="docutils literal notranslate"><span class="pre">REX</span></code> will interpret this as: 0 or more occurrences of ‘<code class="docutils literal notranslate"><span class="pre">ab</span></code>’
+followed by 1 or more occurrences of ‘<code class="docutils literal notranslate"><span class="pre">de</span></code>’.</p>
+<p>The second technique that provides REX with a speed advantage is ability
+to locate patterns both forwards and backwards indiscriminately.</p>
+<p>Given the expression: “<code class="docutils literal notranslate"><span class="pre">abc*def</span></code>”, the pattern matcher is looking for
+“<code class="docutils literal notranslate"><span class="pre">Zero</span></code> to <code class="docutils literal notranslate"><span class="pre">N</span></code> occurrences of ‘<code class="docutils literal notranslate"><span class="pre">abc</span></code>’ followed by a ‘<code class="docutils literal notranslate"><span class="pre">def</span></code>’”.</p>
+<p>The following text examples would be matched by this expression:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">abcabcabcabcdef</span>
+<span class="k">def</span>
+<span class="nf">abcdef</span>
+</pre></div>
+</div>
+<p>But consider these patterns if they were embedded within a body of text:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">My</span> <span class="n">country</span> <span class="s1">&#39;tis of abcabcabcabcdef sweet land of def, abcdef.</span>
+</pre></div>
+</div>
+<p>A normal pattern matching scheme would begin looking for ‘<code class="docutils literal notranslate"><span class="pre">abc*</span></code>’.
+Since ‘<code class="docutils literal notranslate"><span class="pre">abc*</span></code>’ is matched by every position within the text, the
+normal pattern matcher would plod along checking for ‘<code class="docutils literal notranslate"><span class="pre">abc*</span></code>’ and then
+whether it’s there or not it would try to match ‘<code class="docutils literal notranslate"><span class="pre">def</span></code>’. REX examines
+the expression in search of the the most efficient fixed length
+subpattern and uses it as the root of search rather than the first
+subexpression. So, in the example above, REX would not begin searching
+for ‘<code class="docutils literal notranslate"><span class="pre">abc*</span></code>’ until it has located a ‘<code class="docutils literal notranslate"><span class="pre">def</span></code>’.</p>
+<p>There are many other techniques used in REX to improve the rate at which
+it searches for patterns, but these should have no effect on the way in
+which you specify an expression.</p>
+<p>The three rules that will cause the most problems to experienced
+<code class="docutils literal notranslate"><span class="pre">GREP</span></code> users are:</p>
+<ol class="arabic simple">
+<li><p>Repetition operators are always applied to the longest expression.</p></li>
+<li><p>There must be at least one subexpression that has one or more
+repetitions.</p></li>
+<li><p>No matched subexpression will be located as part of another.</p></li>
+</ol>
+<dl class="simple">
+<dt>Rule 1 Example</dt><dd><p>: <code class="docutils literal notranslate"><span class="pre">abc=def*</span></code> Means one ‘<code class="docutils literal notranslate"><span class="pre">abc</span></code>’ followed by 0 or more ‘<code class="docutils literal notranslate"><span class="pre">def's</span></code>’
+.</p>
+</dd>
+<dt>Rule 2 Example</dt><dd><p>: <code class="docutils literal notranslate"><span class="pre">abc*def*</span></code> CANNOT be located because it matches every position
+within the text.</p>
+</dd>
+<dt>Rule 3 Example</dt><dd><p>: <code class="docutils literal notranslate"><span class="pre">a+ab</span></code> Is idiosyncratic because ‘<code class="docutils literal notranslate"><span class="pre">a+</span></code>’ is a subpart of
+‘<code class="docutils literal notranslate"><span class="pre">ab</span></code>’.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="other-rex-notes">
+<h2>Other REX Notes<a class="headerlink" href="#other-rex-notes" title="Permalink to this headline">¶</a></h2>
+<ul class="simple">
+<li><p>When using REX external to Metamorph in Windows or Unix, it can
+occasionally occur that a very complicated expression requires more
+memory than is available. In the event of an error message indicating
+not enough memory, you can try the same expression using “<code class="docutils literal notranslate"><span class="pre">REXL</span></code>”,
+another version of <code class="docutils literal notranslate"><span class="pre">REX</span></code> compiled for large model. As “<code class="docutils literal notranslate"><span class="pre">REXL</span></code>” is
+slightly slower than “<code class="docutils literal notranslate"><span class="pre">REX</span></code>” it would not be recommended for use in
+most circumstances.</p></li>
+<li><p>The beginning of line (<code class="docutils literal notranslate"><span class="pre">^</span></code>) and end of line (<code class="docutils literal notranslate"><span class="pre">$</span></code>) notation
+expressions for Windows are both identified as a 2 character
+notation; i.e., REX under Windows matches <code class="docutils literal notranslate"><span class="pre">\X0d\X0a</span></code> (carriage
+return <code class="docutils literal notranslate"><span class="pre">[cr]</span></code>, line feed <code class="docutils literal notranslate"><span class="pre">[lf]</span></code>) as beginning and end of line,
+rather than <code class="docutils literal notranslate"><span class="pre">\X0a</span></code> as beginning, and <code class="docutils literal notranslate"><span class="pre">\X0d</span></code> as end.</p></li>
+</ul>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

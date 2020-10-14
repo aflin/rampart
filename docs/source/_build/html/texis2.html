@@ -1,0 +1,1565 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Queries Involving Calculated Values &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+            
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <!-- Local TOC -->
+                <div class="local-toc"><ul>
+<li><a class="reference internal" href="#">Queries Involving Calculated Values</a><ul>
+<li><a class="reference internal" href="#arithmetic-calculations">Arithmetic Calculations</a></li>
+<li><a class="reference internal" href="#manipulating-information-by-date">Manipulating Information By Date</a></li>
+<li><a class="reference internal" href="#summarizing-values-group-by-clause-and-aggregate-functions">Summarizing Values: GROUP BY Clause and Aggregate Functions</a></li>
+<li><a class="reference internal" href="#groups-with-conditions-having-clause">Groups With Conditions: HAVING Clause</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#advanced-queries">Advanced Queries</a><ul>
+<li><a class="reference internal" href="#retrieving-data-from-multiple-tables">Retrieving Data From Multiple Tables</a><ul>
+<li><a class="reference internal" href="#command-discussion">Command Discussion</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#nesting-queries">Nesting Queries</a><ul>
+<li><a class="reference internal" href="#id2">Command Discussion</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#forming-complex-queries">Forming Complex Queries</a></li>
+</ul>
+</li>
+</ul>
+</div>
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>Queries Involving Calculated Values</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/texis2.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="queries-involving-calculated-values">
+<h1>Queries Involving Calculated Values<a class="headerlink" href="#queries-involving-calculated-values" title="Permalink to this headline">¶</a></h1>
+<p>[chp:CalcQuer]</p>
+<p>While Texis focuses on manipulation of textual information, data can
+also be operated on numerically. Queries can be constructed which
+combine calculated values with text search.</p>
+<p>To illustrate the material in this chapter, we’ll use an employee table
+which the Personnel Department keeps to manage salaries and benefits. A
+sampling of the data stored in this table follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">EID</span>  <span class="n">ENAME</span>               <span class="n">DEPT</span>   <span class="n">SALARY</span>   <span class="n">BENEFITS</span>
+<span class="mi">101</span>  <span class="n">Aster</span><span class="p">,</span> <span class="n">John</span> <span class="n">A</span><span class="o">.</span>      <span class="n">MKT</span>    <span class="mi">32000</span>    <span class="n">FULL</span>
+<span class="mi">102</span>  <span class="n">Barrington</span><span class="p">,</span> <span class="n">Kyle</span>    <span class="n">MGT</span>    <span class="mi">45000</span>    <span class="n">FULL</span>
+<span class="mi">103</span>  <span class="n">Chapman</span><span class="p">,</span> <span class="n">Margaret</span>   <span class="n">LIB</span>    <span class="mi">22000</span>    <span class="n">PART</span>
+<span class="mi">104</span>  <span class="n">Jackson</span><span class="p">,</span> <span class="n">Herbert</span>    <span class="n">RND</span>    <span class="mi">30000</span>    <span class="n">FULL</span>
+<span class="mi">105</span>  <span class="n">Price</span><span class="p">,</span> <span class="n">Stella</span>       <span class="n">FIN</span>    <span class="mi">42000</span>    <span class="n">FULL</span>
+<span class="mi">106</span>  <span class="n">Sanchez</span><span class="p">,</span> <span class="n">Carla</span>      <span class="n">MKT</span>    <span class="mi">35000</span>    <span class="n">FULL</span>
+<span class="mi">107</span>  <span class="n">Smith</span><span class="p">,</span> <span class="n">Roberta</span>      <span class="n">RND</span>    <span class="mi">25000</span>    <span class="n">PART</span>
+</pre></div>
+</div>
+<div class="section" id="arithmetic-calculations">
+<h2>Arithmetic Calculations<a class="headerlink" href="#arithmetic-calculations" title="Permalink to this headline">¶</a></h2>
+<p>This section covers the computational features of Texis. They are
+adequate to allow the user to perform computations on the data and/or
+retrieve rows based on conditions involving computations. For example,
+you can adjust salaries for a 5 percent across-the-board increase, or
+you can compute weekly salaries (i.e., salary divided by 52).</p>
+<p>Arithmetic calculations are performed on fields, or columns, in the
+database. An <em>arithmetic expression</em> is used to describe the desired
+computation. The expression consists of column names and numeric
+constants connected by parentheses and arithmetic operators.
+Table [tab:ArithOp] shows the arithmetic operators used in Texis.</p>
+<p>[tab:ArithOp]</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 38%" />
+<col style="width: 29%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Arithmetic Operation</p></th>
+<th class="head"><p>Texis Operator</p></th>
+<th class="head"><p>Example</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Addition</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">+</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">SALARY</span> <span class="pre">+</span> <span class="pre">2000</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Subtraction</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">-</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">SALARY</span> <span class="pre">-</span> <span class="pre">1000</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>Multiplication</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">*</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">SALARY</span> <span class="pre">*</span> <span class="pre">1.05</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>Division</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">/</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">SALARY</span> <span class="pre">/</span> <span class="pre">26</span></code></p></td>
+</tr>
+</tbody>
+</table>
+<p>Table: Arithmetic Operators Supported in Texis</p>
+<p>Typically, the arithmetic expression is used in the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> clause to
+perform calculations on data stored in the table.</p>
+<p><strong>Example:</strong> Next year every employee will receive a 5 percent salary
+increase. List the names of each employee, his or her current salary,
+and next year’s salary.</p>
+<p>Enter this statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>  <span class="n">ENAME</span><span class="p">,</span> <span class="n">SALARY</span><span class="p">,</span> <span class="n">SALARY</span> <span class="o">*</span> <span class="mf">1.05</span>
+<span class="n">FROM</span>    <span class="n">EMPLOYEE</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>Where “<code class="docutils literal notranslate"><span class="pre">SALARY</span> <span class="pre">*</span> <span class="pre">1.05</span></code>” is the arithmetic expression.</p>
+<p>The results are:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ENAME</span>               <span class="n">SALARY</span>     <span class="n">SALARY</span> <span class="o">*</span> <span class="mf">1.05</span>
+<span class="n">Aster</span><span class="p">,</span> <span class="n">John</span> <span class="n">A</span><span class="o">.</span>      <span class="mi">32000</span>      <span class="mi">33600</span>
+<span class="n">Barrington</span><span class="p">,</span> <span class="n">Kyle</span>    <span class="mi">45000</span>      <span class="mi">47250</span>
+<span class="n">Chapman</span><span class="p">,</span> <span class="n">Margaret</span>   <span class="mi">22000</span>      <span class="mi">23100</span>
+<span class="n">Jackson</span><span class="p">,</span> <span class="n">Herbert</span>    <span class="mi">30000</span>      <span class="mi">31500</span>
+<span class="n">Price</span><span class="p">,</span> <span class="n">Stella</span>       <span class="mi">42000</span>      <span class="mi">44100</span>
+<span class="n">Sanchez</span><span class="p">,</span> <span class="n">Carla</span>      <span class="mi">35000</span>      <span class="mi">36750</span>
+<span class="n">Smith</span><span class="p">,</span> <span class="n">Roberta</span>      <span class="mi">25000</span>      <span class="mi">26250</span>
+</pre></div>
+</div>
+<p>The expression “<code class="docutils literal notranslate"><span class="pre">SALARY</span> <span class="pre">*</span> <span class="pre">1.05</span></code>” results in each value in the salary
+column being multiplied by 1.05. The results are then displayed in a new
+column that is labeled <code class="docutils literal notranslate"><span class="pre">SALARY</span> <span class="pre">*</span> <span class="pre">1.05</span></code>.</p>
+<p>If more than one arithmetic operator is used in an arithmetic
+expression, parentheses can be used to control the order in which the
+arithmetic calculations are performed. The operations enclosed in
+parentheses are computed before operations that are not enclosed in
+parentheses. For example, the expression:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">12</span> <span class="o">*</span> <span class="p">(</span><span class="n">SALARY</span> <span class="o">+</span> <span class="n">BONUS</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>means bonus is added to salary, and then this result is multiplied by
+12.</p>
+<p>If parentheses are omitted or if several operations are included within
+the parentheses, the order in which calculations are performed is as
+follows:</p>
+<ol class="arabic simple">
+<li><p>First, all multiplication, division and modulo <a class="footnote-reference brackets" href="#id3" id="id1">1</a> operations are
+performed.</p></li>
+<li><p>Then, all addition and subtraction operations are performed.</p></li>
+</ol>
+<p>For example, in the expression:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SALARY</span> <span class="o">+</span> <span class="n">SALARY</span> <span class="o">*</span> <span class="o">.</span><span class="mi">05</span>
+</pre></div>
+</div>
+<p>the value in the SALARY column is multiplied by .05, and then the salary
+value is added to this intermediate result.</p>
+<p>When two or more computations in an expression are at the same level
+(e.g., multiplication and division), the operations are executed from
+left to right. For example, in the expression:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SALARY</span> <span class="o">/</span> <span class="mi">12</span> <span class="o">*</span> <span class="mf">1.05</span>
+</pre></div>
+</div>
+<p>the salary value is first divided by 12, and then this result is
+multiplied by 1.05.</p>
+<p>Arithmetic calculation can also be used in a <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause to select
+rows based on a calculated condition. In addition, arithmetic
+expressions can be used in the HAVING and ORDER BY clauses, which will
+be discussed in later sections of this chapter.</p>
+<p><strong>Example:</strong> List the names of all employees earning a monthly salary
+above $3000.</p>
+<p>This query:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>  <span class="n">ENAME</span>
+<span class="n">FROM</span>    <span class="n">EMPLOYEE</span>
+<span class="n">WHERE</span>   <span class="p">(</span><span class="n">SALARY</span><span class="o">/</span><span class="mi">12</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">3000</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>results in:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ENAME</span>
+<span class="n">Barrington</span><span class="p">,</span> <span class="n">Kyle</span>
+<span class="n">Price</span><span class="p">,</span> <span class="n">Stella</span>
+</pre></div>
+</div>
+<p>The rows in the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table are retrieved if the condition
+“salary divided by 12” is greater than $3000. This was true only for
+Barrington and for Price, whose annual salaries (respectively $45,000
+and $42,000) are greater than $3000 when divided by 12 months.</p>
+</div>
+<div class="section" id="manipulating-information-by-date">
+<h2>Manipulating Information By Date<a class="headerlink" href="#manipulating-information-by-date" title="Permalink to this headline">¶</a></h2>
+<p>In Texis dates are stored as integers representing an absolute number of
+seconds from January 1, 1970, Greenwich Mean Time. This is done for
+efficiency, and to avoid confusions stemming from differences in
+relative times assigned to files from different time zones. The
+allowable range of years is 1970 through 2037. Years between 1902 and
+1970 may be stored and compared for equality (<code class="docutils literal notranslate"><span class="pre">=</span></code>) but will not
+compare correctly using less than (<code class="docutils literal notranslate"><span class="pre">&lt;</span></code>) and greater than (<code class="docutils literal notranslate"><span class="pre">&gt;</span></code>).</p>
+<p>Counters may also be treated as dates for comparison purposes. They may
+be compared to date fields or date strings. When compared with dates
+only the date portion of the counter is considered and the sequence
+number is ignored.</p>
+<p>The comparison operators as given in Table [tab:CompOp] are used to
+compare date values, so that dates may be used as qualifying statements
+in the <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause.</p>
+<p><strong>Example:</strong> The Strategic Planning and Intelligence Department is
+responsible for polling online news information on a daily basis,
+looking for information relevant to Acme’s ongoing business. Articles of
+interest are stored in an archived <code class="docutils literal notranslate"><span class="pre">NEWS</span></code> table which retains the full
+text of the article along with its subject, byline, source, and date.
+The date column is named NDATE, for “News Date”, as “date” is a special
+reserved SQL name and can’t be used for column names.</p>
+<p>A Date field may be compared to a number representing the number of
+seconds since 1/1/70 0:0:0 GMT (e.g.: 778876248). It may also be
+compared to a string representing a human readable date in the format
+<code class="docutils literal notranslate"><span class="pre">'YYYY-MM-DD</span> <span class="pre">[HH:MM[:SS]</span> <span class="pre">[AM|PM]]'</span></code> (e.g.: <code class="docutils literal notranslate"><span class="pre">'1994-03-05</span> <span class="pre">06:30</span> <span class="pre">pm'</span></code>
+or <code class="docutils literal notranslate"><span class="pre">'1994-07-04'</span></code>). The date string may also be preceded by
+“<code class="docutils literal notranslate"><span class="pre">begin</span> <span class="pre">of</span></code>” or “<code class="docutils literal notranslate"><span class="pre">end</span> <span class="pre">of</span></code>” meaning the first or last second of a
+day, respectively.</p>
+<p>Enter this query:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">NDATE</span><span class="p">,</span> <span class="n">SUBJECT</span>
+<span class="n">FROM</span>     <span class="n">NEWS</span>
+<span class="n">WHERE</span>    <span class="n">NDATE</span> <span class="n">BETWEEN</span> <span class="s1">&#39;begin of 1993-07-30&#39;</span>
+                   <span class="n">AND</span> <span class="s1">&#39;end of 1993-07-30&#39;</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>Although the date column is stored with an absolute value, it is
+converted to the correct relative value when displayed. However, a date
+assigned to a file is to the second, and to match that time, you must
+match the same number of seconds. Stating the date as <code class="docutils literal notranslate"><span class="pre">1993-07-30</span></code>
+refers to a particular second of that day. An article which came in at 2
+p.m. would not match in seconds. Thus you state the range of seconds
+that span the 24 hour period called “<code class="docutils literal notranslate"><span class="pre">'1993-07-30'</span></code>” by specifying a
+range between the first to last moment of the day.</p>
+<p>In this example, all the articles which were saved from July 30, 1993
+are displayed with their subject lines. The date as formatted by Texis
+when displaying the date column is the format used inside the single
+quotes. It is put in quotes because it is a text string rather than an
+absolute value.</p>
+<p>Dates are usually used to limit the amount of text retrieved based on
+some other search requirement, and would be so used along with other
+qualifying statements in the <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause. The next query is
+identical to the last, but it adds another requirement.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">NDATE</span><span class="p">,</span> <span class="n">SUBJECT</span>
+<span class="n">FROM</span>     <span class="n">NEWS</span>
+<span class="n">WHERE</span>    <span class="n">NDATE</span> <span class="n">BETWEEN</span> <span class="s1">&#39;begin of 1993-07-30&#39;</span>
+                   <span class="n">AND</span> <span class="s1">&#39;end of 1993-07-30&#39;</span>
+<span class="n">AND</span>      <span class="n">BODY</span> <span class="n">LIKE</span> <span class="s1">&#39;bill gates&#39;</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>Now we can retrieve articles from July 30, 1993, but only a list of
+those articles whose text body mentions Bill Gates. A listing of Date
+and Subject of the article will be displayed, as dictated in <code class="docutils literal notranslate"><span class="pre">SELECT</span></code>.
+Now we know which articles are available and can pick any we would want
+to read in full.</p>
+<p>This example uses a text query to find sentences in the body of the
+information with reference to “Bill Gates”. Use of this type of query in
+the <code class="docutils literal notranslate"><span class="pre">LIKE</span></code> clause is explained in Chapter [Chp:MMLike]. The following
+articles are retrieved:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">NDATE</span>                <span class="n">SUBJECT</span>
+<span class="mi">1993</span><span class="o">-</span><span class="mi">30</span><span class="o">-</span><span class="mi">07</span> <span class="mi">04</span><span class="p">:</span><span class="mi">46</span><span class="p">:</span><span class="mi">04</span>  <span class="n">High</span><span class="o">-</span><span class="n">Technology</span> <span class="n">R</span><span class="o">&amp;</span><span class="n">D</span> <span class="n">Has</span> <span class="n">Lost</span> <span class="n">Its</span> <span class="n">Cost</span><span class="o">-</span><span class="n">Effect</span><span class="o">...</span>
+<span class="mi">1993</span><span class="o">-</span><span class="mi">30</span><span class="o">-</span><span class="mi">07</span> <span class="mi">13</span><span class="p">:</span><span class="mi">10</span><span class="p">:</span><span class="mi">08</span>  <span class="n">Heavy</span> <span class="n">R</span><span class="o">&amp;</span><span class="n">D</span> <span class="n">Spending</span> <span class="n">No</span> <span class="n">Longer</span> <span class="n">the</span> <span class="n">Magic</span> <span class="n">Route</span><span class="o">...</span>
+</pre></div>
+</div>
+<p>Date fields can use any of the comparison operators as shown in
+Table [tab:CompOp] to manipulate information. We could broaden the date
+range of this search by increasing the BETWEEN range, or we could do it
+as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">NDATE</span><span class="p">,</span> <span class="n">SUBJECT</span>
+<span class="n">FROM</span>     <span class="n">NEWS</span>
+<span class="n">WHERE</span>    <span class="n">BODY</span> <span class="n">LIKE</span> <span class="s1">&#39;bill gates&#39;</span>
+<span class="n">AND</span>      <span class="n">NDATE</span> <span class="o">&gt;</span> <span class="s1">&#39;begin of 1993-07-30&#39;</span>
+<span class="n">AND</span>      <span class="n">NDATE</span> <span class="o">&lt;</span> <span class="s1">&#39;end of 1993-08-01&#39;</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>Remember that the actual value of the date is in a number of seconds.
+Therefore, greater than (<code class="docutils literal notranslate"><span class="pre">&gt;</span></code>) translates to “a greater number of
+seconds than the stated value”, and therefore means “newer than”, while
+lesser than (<code class="docutils literal notranslate"><span class="pre">&lt;</span></code>) translates to “a fewer number of seconds than the
+stated value”, and therefore means “older than”.</p>
+<p>This would increase the output list to include dates in the specified
+range; that is, between July 30th and August 1st 1993.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">NDATE</span>       <span class="n">SUBJECT</span>
+<span class="mi">1993</span><span class="o">-</span><span class="mi">07</span><span class="o">-</span><span class="mi">30</span> <span class="mi">04</span><span class="p">:</span><span class="mi">46</span><span class="p">:</span><span class="mi">04</span>  <span class="n">High</span><span class="o">-</span><span class="n">Technology</span> <span class="n">R</span><span class="o">&amp;</span><span class="n">D</span> <span class="n">Has</span> <span class="n">Lost</span> <span class="n">Its</span> <span class="n">Cost</span><span class="o">-</span><span class="n">Effect</span><span class="o">...</span>
+<span class="mi">1993</span><span class="o">-</span><span class="mi">07</span><span class="o">-</span><span class="mi">30</span> <span class="mi">13</span><span class="p">:</span><span class="mi">10</span><span class="p">:</span><span class="mi">08</span>  <span class="n">Heavy</span> <span class="n">R</span><span class="o">&amp;</span><span class="n">D</span> <span class="n">Spending</span> <span class="n">No</span> <span class="n">Longer</span> <span class="n">the</span> <span class="n">Magic</span> <span class="n">Route</span><span class="o">...</span>
+<span class="mi">1993</span><span class="o">-</span><span class="mi">07</span><span class="o">-</span><span class="mi">31</span> <span class="mi">07</span><span class="p">:</span><span class="mi">56</span><span class="p">:</span><span class="mi">44</span>  <span class="n">Microsoft</span><span class="o">-</span><span class="n">Novell</span> <span class="n">battle</span> <span class="n">out</span> <span class="ow">in</span> <span class="n">the</span> <span class="nb">open</span>
+<span class="mi">1993</span><span class="o">-</span><span class="mi">07</span><span class="o">-</span><span class="mi">31</span> <span class="mi">16</span><span class="p">:</span><span class="mi">40</span><span class="p">:</span><span class="mi">28</span>  <span class="n">Microsoft</span> <span class="n">to</span> <span class="n">Undergo</span> <span class="n">Justice</span> <span class="n">Department</span> <span class="n">Scrutiny</span>
+<span class="mi">1993</span><span class="o">-</span><span class="mi">08</span><span class="o">-</span><span class="mi">01</span> <span class="mi">09</span><span class="p">:</span><span class="mi">50</span><span class="p">:</span><span class="mi">24</span>  <span class="n">Justice</span> <span class="n">Dept</span><span class="o">.</span> <span class="n">Reportedly</span> <span class="n">to</span> <span class="n">Study</span> <span class="n">Complaints</span> <span class="o">...</span>
+</pre></div>
+</div>
+<p>Date strings have some additional operators, “today” and “now”. When
+used following DATE they are converted to today’s date and time in
+seconds for both “today” and “now”. A time period of seconds, minutes,
+hours, days, weeks, or months, can also be specified. A leading plus
+(<code class="docutils literal notranslate"><span class="pre">+</span></code>) or minus (<code class="docutils literal notranslate"><span class="pre">-</span></code>) may also be specified to indicate past or
+future. Using our example from the <code class="docutils literal notranslate"><span class="pre">NEWS</span></code> table, the form of the
+command would be:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">NDATE</span><span class="p">,</span> <span class="n">SUBJECT</span>
+<span class="n">FROM</span>     <span class="n">NEWS</span>
+<span class="n">WHERE</span>    <span class="n">NDATE</span> <span class="o">&gt;</span> <span class="s1">&#39;-7 days&#39;</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>This query requests all articles less than seven days old and would
+produce a list of their subjects and date.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">NDATE</span><span class="p">,</span> <span class="n">SUBJECT</span>
+<span class="n">FROM</span>     <span class="n">NEWS</span>
+<span class="n">WHERE</span>    <span class="n">NDATE</span> <span class="o">&lt;</span> <span class="s1">&#39;-1 minute&#39;</span>
+  <span class="n">AND</span>    <span class="n">NDATE</span> <span class="o">&gt;</span> <span class="s1">&#39;-1 hour&#39;</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>This query would produce a list of articles which came in over the last
+hour. The date must be older than 1 minute ago, but newer than 1 hour
+ago.</p>
+</div>
+<div class="section" id="summarizing-values-group-by-clause-and-aggregate-functions">
+<h2>Summarizing Values: GROUP BY Clause and Aggregate Functions<a class="headerlink" href="#summarizing-values-group-by-clause-and-aggregate-functions" title="Permalink to this headline">¶</a></h2>
+<p>So far, the examples presented have shown how to retrieve and manipulate
+values from individual rows in a table. In this section, we will
+illustrate how summary information can be obtained from groups of rows
+in a table.</p>
+<p>Often we find it useful to group data by some characteristic of the
+group, such as department or division, or benefit level, so that summary
+statistics about the group (totals, averages, etc.) can be calculated.
+For example, to calculate average departmental salaries, the user could
+group the salaries of all employees by department. In Texis, the GROUP
+BY clause is used to divide the rows of a table into groups that have
+matching values in one or more columns. The form of this clause is:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">GROUP</span> <span class="n">BY</span>   <span class="n">column</span><span class="o">-</span><span class="n">name1</span> <span class="p">[,</span><span class="n">column</span><span class="o">-</span><span class="n">name2</span><span class="p">]</span> <span class="o">...</span>
+</pre></div>
+</div>
+<p>and it fits into the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> expression in the following manner.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>     <span class="n">column</span><span class="o">-</span><span class="n">name1</span> <span class="p">[,</span><span class="n">column</span><span class="o">-</span><span class="n">name2</span><span class="p">]</span> <span class="o">...</span>
+<span class="n">FROM</span>       <span class="n">table</span><span class="o">-</span><span class="n">name</span>
+<span class="p">[</span><span class="n">WHERE</span>     <span class="n">search</span><span class="o">-</span><span class="n">condition</span><span class="p">]</span>
+<span class="p">[</span><span class="n">GROUP</span> <span class="n">BY</span>  <span class="n">column</span><span class="o">-</span><span class="n">name1</span> <span class="p">[,</span><span class="n">column</span><span class="o">-</span><span class="n">name2</span><span class="p">]</span> <span class="o">...</span> <span class="p">]</span>
+<span class="p">[</span><span class="n">ORDER</span> <span class="n">BY</span>  <span class="n">column</span><span class="o">-</span><span class="n">name1</span> <span class="p">[</span><span class="n">DESC</span><span class="p">]</span> <span class="p">[,</span><span class="n">column</span><span class="o">-</span><span class="n">name2</span><span class="p">]</span> <span class="p">[</span><span class="n">DESC</span><span class="p">]</span> <span class="p">]</span> <span class="o">...</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>The column(s) listed in the GROUP BY clause are used to form groups. The
+grouping is based on rows with the same value in the specified column or
+columns being placed in the same group. It is important to note that
+grouping is conceptual; the table is not physically rearranged.</p>
+<p>As an extension Texis also allows the GROUP BY clause to consist of
+expressions instead of just column names. This should be used with
+caution, and the same expression should be used in the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> as in
+the GROUP BY clause. This is especially true if the expression will fold
+multiple values together, such as dividing a number by 1000 to group
+quantities together if they are in the same 1000. If you select SALARY,
+and GROUP BY SALARY/1000 you will see one sample salary from the
+matching group.</p>
+<p>The GROUP BY clause is normally used along with five built-in, or
+“aggregate” functions. These functions perform special operations on an
+entire table or on a set, or group, of rows rather than on each row and
+then return one row of values for each group.</p>
+<p>Table [tab:AggFunc] lists the aggregate functions available with Texis.</p>
+<p>[tab:AggFunc]</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 24%" />
+<col style="width: 52%" />
+<col style="width: 23%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Function Name</p></th>
+<th class="head"><p>Meaning</p></th>
+<th class="head"><p>Example</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>SUM(column name)</p></td>
+<td><p>Total of the values in a numeric column</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">SUM(SALARY)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>AVG(column name)</p></td>
+<td><p>Average of the values in a column</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">AVG(SALARY)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>MAX(column name)</p></td>
+<td><p>Largest value in a column</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MAX(SALARY)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p>MIN(column name)</p></td>
+<td><p>Smallest value in a column</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MIN(SALARY)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p>COUNT(*)</p></td>
+<td><p>Count of the number of rows selected</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">COUNT(*)</span></code></p></td>
+</tr>
+</tbody>
+</table>
+<p>Table: Texis Aggregate Function Names</p>
+<p>Aggregate functions are used in place of column names in the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code>
+statement. The form of the function is:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Function</span> <span class="n">name</span> <span class="p">([</span><span class="n">DISTINCT</span><span class="p">]</span> <span class="n">argument</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>In all situations the argument represents the column name to which the
+function applies. For example, if the sum of all salaries is needed,
+then the function SUM is used and the argument is the column SALARY.
+When COUNT is used an asterisk (*) can be placed within the parentheses
+instead of a column name to count all the rows without regard to field.</p>
+<p>If the DISTINCT keyword is used then only the unique values are
+processed. This is most useful with COUNT to find the number of unique
+values. If you use DISTINCT then you must supply a column name. DISTINCT
+will work with the other aggregate functions, although there is
+typically very little need for them. The DISTINCT feature was added in
+version 4.00.1002000000</p>
+<p><strong>Example:</strong> What is the average salary paid in each department?</p>
+<p>Enter this statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>     <span class="n">DEPT</span><span class="p">,</span> <span class="n">AVG</span><span class="p">(</span><span class="n">SALARY</span><span class="p">)</span>
+<span class="n">FROM</span>       <span class="n">EMPLOYEE</span>
+<span class="n">GROUP</span> <span class="n">BY</span>   <span class="n">DEPT</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p><strong>Syntax Notes:</strong></p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">AVG</span></code> is the aggregate function name.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">(SALARY)</span></code> is the column on which the average is computed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DEPT</span></code> is the column by which the rows will be grouped.</p></li>
+</ul>
+<p>The above statement will produce the following results:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">DEPT</span>      <span class="n">AVG</span><span class="p">(</span><span class="n">SALARY</span><span class="p">)</span>
+
+<span class="n">MKT</span>       <span class="mi">33500</span>
+<span class="n">MGT</span>       <span class="mi">45000</span>
+<span class="n">LIB</span>       <span class="mi">22000</span>
+<span class="n">RND</span>       <span class="mi">27500</span>
+<span class="n">FIN</span>       <span class="mi">42000</span>
+</pre></div>
+</div>
+<p>In this query, all rows in the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table that have the same
+department codes are grouped together. The aggregate function AVG is
+calculated for the salary column in each group. The department code and
+the average departmental salary are displayed for each department.</p>
+<p>A <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> clause that contains an aggregate function cannot contain
+any column name that does not apply to a group; for example:</p>
+<p>The statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>     <span class="n">ENAME</span><span class="p">,</span> <span class="n">AVG</span><span class="p">(</span><span class="n">SALARY</span><span class="p">)</span>
+<span class="n">FROM</span>       <span class="n">EMPLOYEE</span>
+<span class="n">GROUP</span> <span class="n">BY</span>   <span class="n">DEPT</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>results in the message</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Error</span> <span class="n">at</span> <span class="n">Line</span> <span class="mi">1</span><span class="p">:</span> <span class="n">Not</span> <span class="n">a</span> <span class="n">GROUP</span> <span class="n">BY</span> <span class="n">Expression</span>
+</pre></div>
+</div>
+<p>It is not permissible to include column names in a <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> clause
+that are not referenced in the GROUP BY clause. The only column names
+that can be displayed, along with aggregate functions, must be listed in
+the GROUP BY clause. Since <code class="docutils literal notranslate"><span class="pre">ENAME</span></code> is not included in the GROUP BY
+clause, an error message results.</p>
+<p><strong>Example:</strong> The chair of the Marketing Department plans to participate
+in a national salary survey for employees in Marketing Departments.
+Determine the average salary paid to the Marketing Department employees.</p>
+<p>This statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>     <span class="n">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">),</span> <span class="n">AVG</span><span class="p">(</span><span class="n">SALARY</span><span class="p">)</span>
+<span class="n">FROM</span>       <span class="n">EMPLOYEE</span>
+<span class="n">WHERE</span>      <span class="n">DEPT</span> <span class="o">=</span> <span class="s1">&#39;MKT&#39;</span>
+</pre></div>
+</div>
+<p>Results in:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span>   <span class="n">AVG</span><span class="p">(</span><span class="n">SALARY</span><span class="p">)</span>
+
+<span class="mi">2</span>          <span class="mi">33500</span>
+</pre></div>
+</div>
+<p>In this example, the aggregate function AVG is used in a <code class="docutils literal notranslate"><span class="pre">SELECT</span></code>
+statement that has a <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause. Texis selects the rows that
+represent Marketing Department employees and then applies the aggregate
+function to these rows.</p>
+<p>You can divide the rows of a table into groups based on values in more
+than one column. For example, you might want to compute total salary by
+department and then, within a department, want subtotals by benefits
+classification.</p>
+<p><strong>Example:</strong> What is the total salary paid by benefits classification in
+each department?</p>
+<p>Enter this statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>     <span class="n">DEPT</span><span class="p">,</span> <span class="n">BENEFITS</span><span class="p">,</span> <span class="n">SUM</span><span class="p">(</span><span class="n">SALARY</span><span class="p">)</span>
+<span class="n">FROM</span>       <span class="n">EMPLOYEE</span>
+<span class="n">GROUP</span> <span class="n">BY</span>   <span class="n">DEPT</span><span class="p">,</span> <span class="n">BENEFITS</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>In this example, we are grouping by department, and within department,
+by benefits classification.</p>
+<p>We’ll get the following results:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">DEPT</span>      <span class="n">BENEFITS</span>    <span class="n">SUM</span><span class="p">(</span><span class="n">SALARY</span><span class="p">)</span>
+
+<span class="n">FIN</span>       <span class="n">FULL</span>        <span class="mi">42000</span>
+<span class="n">LIB</span>       <span class="n">PART</span>        <span class="mi">22000</span>
+<span class="n">MGT</span>       <span class="n">FULL</span>        <span class="mi">45000</span>
+<span class="n">MKT</span>       <span class="n">FULL</span>        <span class="mi">67000</span>
+<span class="n">RND</span>       <span class="n">FULL</span>        <span class="mi">30000</span>
+<span class="n">RND</span>       <span class="n">PART</span>        <span class="mi">25000</span>
+</pre></div>
+</div>
+<p>In this query, the rows are grouped by department and, within each
+department, employees with the same benefits are grouped so that totals
+can be computed. Notice that the columns DEPT and BENEFITS can appear in
+the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> statement since both columns appear in the GROUP BY
+clause.</p>
+<p>If the GROUP BY clause is omitted when an aggregate function is used,
+then the entire table is considered as one group, and the group function
+displays a single value for the entire table.</p>
+<p><strong>Example:</strong> What is the total salary paid to all employees?</p>
+<p>The statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>     <span class="n">SUM</span><span class="p">(</span><span class="n">SALARY</span><span class="p">)</span>
+<span class="n">FROM</span>       <span class="n">EMPLOYEE</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>results in:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SUM</span><span class="p">(</span><span class="n">SALARY</span><span class="p">)</span>
+
+<span class="mi">231000</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="groups-with-conditions-having-clause">
+<h2>Groups With Conditions: HAVING Clause<a class="headerlink" href="#groups-with-conditions-having-clause" title="Permalink to this headline">¶</a></h2>
+<p>Sometimes you may want to specify a condition that applies to groups
+rather than to individual rows. For example, you might want a list of
+departments where the average departmental salary is above $30,000. To
+express such a query, the HAVING clause is used. This clause specifies
+which groups should be selected and is used in combination with the
+GROUP BY clause. The form of this clause is as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="n">GROUP</span> <span class="n">BY</span>  <span class="n">column</span><span class="o">-</span><span class="n">name1</span> <span class="p">[,</span><span class="n">column</span><span class="o">-</span><span class="n">name2</span><span class="p">]</span> <span class="o">...</span>
+<span class="p">[</span><span class="n">HAVING</span>    <span class="n">search</span><span class="o">-</span><span class="n">condition</span> <span class="p">]</span>
+</pre></div>
+</div>
+<p>Conditions in the HAVING clause are applied after groups are formed. The
+search condition of the HAVING clause examines the grouped rows and
+produces a row for each group where the search condition in the HAVING
+clause is true. The clause is similar to the <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause, except
+the HAVING clause applies to groups.</p>
+<p><strong>Example:</strong> Which departments have an average salary above $30,000?
+Order the results by average salary, with highest average salary
+appearing first.</p>
+<p>The statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>     <span class="n">DEPT</span><span class="p">,</span> <span class="n">AVG</span><span class="p">(</span><span class="n">SALARY</span><span class="p">)</span> <span class="n">AS</span> <span class="n">AVG_SALARY</span>
+<span class="n">FROM</span>       <span class="n">EMPLOYEE</span>
+<span class="n">GROUP</span> <span class="n">BY</span>   <span class="n">DEPT</span>
+<span class="n">HAVING</span>     <span class="n">AVG_SALARY</span> <span class="o">&gt;</span> <span class="mi">30000</span>
+<span class="n">ORDER</span> <span class="n">BY</span>   <span class="n">AVG_SALARY</span> <span class="n">DESC</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p><strong>Syntax Notes:</strong></p>
+<ul class="simple">
+<li><p>When HAVING is used, it always follows a GROUP BY clause.</p></li>
+<li><p>When referring to aggregate values in the HAVING and ORDER BY clauses
+of a GROUP BY you must assign an alternative name to the field, and
+use that in the HAVING and ORDER BY clauses.</p></li>
+</ul>
+<p>The results are:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">DEPT</span>      <span class="n">AVG_SALARY</span>
+
+<span class="n">MGT</span>       <span class="mi">45000</span>
+<span class="n">FIN</span>       <span class="mi">42000</span>
+<span class="n">MKT</span>       <span class="mi">33500</span>
+</pre></div>
+</div>
+<p>In this query, the average salary for all departments is computed, but
+only the names of those departments having an average salary above
+$30,000 are displayed. Notice that Research and Development’s average of
+$27,500 is not displayed, nor is the Library’s average of $22,000.</p>
+<p>The GROUP BY clause does not sort the results, thus the need for the
+ORDER BY clause. Finally, note that the ORDER BY clause must be placed
+after the GROUP BY and HAVING clauses.</p>
+<p>This chapter has covered the computational capabilities of Texis. In the
+next chapter, you will learn how to develop more complex queries by
+using the join operation and the nesting of queries.</p>
+</div>
+</div>
+<div class="section" id="advanced-queries">
+<h1>Advanced Queries<a class="headerlink" href="#advanced-queries" title="Permalink to this headline">¶</a></h1>
+<p>[Chp:AdvQuer]</p>
+<p>This chapter is divided into three sections. The first one focuses on
+using the join operation to retrieve data from multiple tables. The
+second section covers nesting of queries, also known as subqueries. The
+final section introduces several advanced query techniques, including
+self-joins, correlated subqueries, subqueries using the EXISTS operator.</p>
+<div class="section" id="retrieving-data-from-multiple-tables">
+<h2>Retrieving Data From Multiple Tables<a class="headerlink" href="#retrieving-data-from-multiple-tables" title="Permalink to this headline">¶</a></h2>
+<p>All the queries looked at so far have been answered by accessing data
+from one table. Sometimes, however, answers to a query may require data
+from two or more tables.</p>
+<p>For example, for the Corporate Librarian to display a list of
+contributing authors with their long form department name requires data
+from the <code class="docutils literal notranslate"><span class="pre">REPORT</span></code> table (author) and data from the <code class="docutils literal notranslate"><span class="pre">DEPARTMENT</span></code>
+table (department name). Obtaining the data you need requires the
+ability to combine two or more tables. This process is commonly referred
+to as “<em>joining the tables</em>”.</p>
+<p>Two or more tables can be combined to form a single table by using the
+<em>join operation</em>. The join operation is based on the premise that there
+is a logical association between two tables based on a common attribute
+that links the tables. Therefore, there must be a common column in each
+table for a join operation to be executed. For example, both the
+<code class="docutils literal notranslate"><span class="pre">REPORT</span></code> table and the <code class="docutils literal notranslate"><span class="pre">DEPARTMENT</span></code> table have the department
+identification code in common. Thus, they can be joined.</p>
+<p>Joining two tables in Texis is accomplished by using a <code class="docutils literal notranslate"><span class="pre">SELECT</span></code>
+statement. The general form of the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> statement when a join
+operation is involved is:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">column</span><span class="o">-</span><span class="n">name1</span> <span class="p">[,</span><span class="n">column</span><span class="o">-</span><span class="n">name2</span><span class="p">]</span> <span class="o">...</span>
+<span class="n">FROM</span>     <span class="n">table</span><span class="o">-</span><span class="n">name1</span><span class="p">,</span> <span class="n">table</span><span class="o">-</span><span class="n">name2</span>
+<span class="n">WHERE</span>    <span class="n">table</span><span class="o">-</span><span class="n">name1</span><span class="o">.</span><span class="n">column</span><span class="o">-</span><span class="n">name</span> <span class="o">=</span> <span class="n">table</span><span class="o">-</span><span class="n">name2</span><span class="o">.</span><span class="n">column</span><span class="o">-</span><span class="n">name</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>The combination of table name with column name as stated in the
+<code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause describes the Join condition.</p>
+<div class="section" id="command-discussion">
+<h3>Command Discussion<a class="headerlink" href="#command-discussion" title="Permalink to this headline">¶</a></h3>
+<ol class="arabic">
+<li><p>A join operation pulls data from two or more tables listed in the
+<code class="docutils literal notranslate"><span class="pre">FROM</span></code> clause. These tables represent the source of the data to be
+joined.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause specifies the relationship between the tables to
+be joined. This relationship represents the <em>join condition</em>.
+Typically, the join condition expresses a relationship between rows
+from each table that match on a common attribute.</p></li>
+<li><p>When the tables to be joined have the same column name, the column
+name is prefixed with a table name in order for Texis to know from
+which table the column comes. Texis uses the notation:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">table</span><span class="o">-</span><span class="n">name</span><span class="o">.</span><span class="n">column</span><span class="o">-</span><span class="n">name</span>
+</pre></div>
+</div>
+<p>The table name in front of the column name is referred to as a
+<em>qualifier</em>.</p>
+</li>
+<li><p>The common attributes in the join condition need not have the same
+column name, but they should represent the same kind of information.
+For example, where the attribute representing names of people
+submitting resumes was named <code class="docutils literal notranslate"><span class="pre">RNAME</span></code> in table 1, and the attribute
+for names of employees was named <code class="docutils literal notranslate"><span class="pre">ENAME</span></code> in table 2, you could
+still join the tables on the common character field by specifying:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">WHERE</span> <span class="n">table</span><span class="o">-</span><span class="n">name1</span><span class="o">.</span><span class="n">RNAME</span> <span class="o">=</span> <span class="n">table</span><span class="o">-</span><span class="n">name2</span><span class="o">.</span><span class="n">ENAME</span>
+</pre></div>
+</div>
+<p>While the above is true, it is still a good rule of thumb in database
+design to give the same name to all columns referring to data of the
+same type and meaning. Columns which are designed to be a key, and
+intended as the basis for joining tables would normally be given the
+same name.</p>
+</li>
+<li><p>If a row from one of the tables never satisfies the join condition,
+that row will not appear in the joined table.</p></li>
+<li><p>The tables are joined together, and then Texis extracts the data, or
+columns, listed in the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> clause.</p></li>
+<li><p>Although tables can be combined if you omit the <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause,
+this would result in a table of all possible combinations of rows
+from the tables in the <code class="docutils literal notranslate"><span class="pre">FROM</span></code> clause. This output is usually not
+intended, nor meaningful, and can waste much computer processing
+time. Therefore, be careful in forming queries that involve multiple
+tables.</p></li>
+</ol>
+<p><strong>Example:</strong> The corporate librarian wants to distribute a list of
+authors who have contributed reports to the corporate library, along
+with the name of that author’s department. To fulfill this request, data
+from both the <code class="docutils literal notranslate"><span class="pre">REPORT</span></code> table (author) and the <code class="docutils literal notranslate"><span class="pre">DEPARTMENT</span></code> table
+(department name) are needed.</p>
+<p>You would enter this statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">AUTHOR</span><span class="p">,</span> <span class="n">DNAME</span>
+<span class="n">FROM</span>     <span class="n">REPORT</span><span class="p">,</span> <span class="n">DEPARTMENT</span>
+<span class="n">WHERE</span>    <span class="n">REPORT</span><span class="o">.</span><span class="n">DEPT</span> <span class="o">=</span> <span class="n">DEPARTMENT</span><span class="o">.</span><span class="n">DEPT</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p><strong>Syntax Notes:</strong></p>
+<ul class="simple">
+<li><p>REPORT and DEPARTMENT indicate the tables to be joined.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause statement defines the condition for the join.</p></li>
+<li><p>The notation “<code class="docutils literal notranslate"><span class="pre">REPORT.</span></code>” in “<code class="docutils literal notranslate"><span class="pre">REPORT.DEPT</span></code>”, and
+“<code class="docutils literal notranslate"><span class="pre">DEPARTMENT.</span></code>” in “<code class="docutils literal notranslate"><span class="pre">DEPARTMENT.DEPT</span></code>” are the qualifiers which
+indicate from which table to find the column.</p></li>
+</ul>
+<p>This statement will result in the following joined table:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">AUTHOR</span>                   <span class="n">DNAME</span>
+<span class="n">Jackson</span><span class="p">,</span> <span class="n">Herbert</span>         <span class="n">Research</span> <span class="ow">and</span> <span class="n">Development</span>
+<span class="n">Sanchez</span><span class="p">,</span> <span class="n">Carla</span>           <span class="n">Product</span> <span class="n">Marketing</span> <span class="ow">and</span> <span class="n">Sales</span>
+<span class="n">Price</span><span class="p">,</span> <span class="n">Stella</span>            <span class="n">Finance</span> <span class="ow">and</span> <span class="n">Accounting</span>
+<span class="n">Smith</span><span class="p">,</span> <span class="n">Roberta</span>           <span class="n">Research</span> <span class="ow">and</span> <span class="n">Development</span>
+<span class="n">Aster</span><span class="p">,</span> <span class="n">John</span> <span class="n">A</span><span class="o">.</span>           <span class="n">Product</span> <span class="n">Marketing</span> <span class="ow">and</span> <span class="n">Sales</span>
+<span class="n">Jackson</span><span class="p">,</span> <span class="n">Herbert</span>         <span class="n">Research</span> <span class="ow">and</span> <span class="n">Development</span>
+<span class="n">Barrington</span><span class="p">,</span> <span class="n">Kyle</span>         <span class="n">Management</span> <span class="ow">and</span> <span class="n">Administration</span>
+</pre></div>
+</div>
+<p>In this query, we are joining data from the REPORT and the DEPARTMENT
+tables. The common attribute in these two tables is the department code.
+The conditional expression:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">REPORT</span><span class="o">.</span><span class="n">DEPT</span> <span class="o">=</span> <span class="n">DEPARTMENT</span><span class="o">.</span><span class="n">DEPT</span>
+</pre></div>
+</div>
+<p>is used to describe how the rows in the two tables are to be matched.
+Each row of the joined table is the result of combining a row from the
+<code class="docutils literal notranslate"><span class="pre">REPORT</span></code> table and a row from the <code class="docutils literal notranslate"><span class="pre">DEPARTMENT</span></code> table for each
+comparison with matching codes.</p>
+<p>To further illustrate how the join works, look at the rows in the
+<code class="docutils literal notranslate"><span class="pre">REPORT</span></code> table below where DEPT is “MKT”:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>  <span class="n">TITLE</span>                    <span class="n">AUTHOR</span>           <span class="n">DEPT</span> <span class="n">FILENAME</span>
+  <span class="n">Disappearing</span> <span class="n">Ink</span>         <span class="n">Jackson</span><span class="p">,</span> <span class="n">Herbert</span> <span class="n">RND</span>  <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">rnd</span><span class="o">/</span><span class="n">ink</span><span class="o">.</span><span class="n">txt</span>
+<span class="o">&gt;</span> <span class="n">INK</span> <span class="n">PROMOTIONAL</span> <span class="n">CAMPAIGN</span> <span class="n">SANCHEZ</span><span class="p">,</span> <span class="n">CARLA</span>   <span class="n">MKT</span>  <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">MKT</span><span class="o">/</span><span class="n">PROMO</span><span class="o">.</span><span class="n">RPT</span>
+  <span class="n">Budget</span> <span class="k">for</span> <span class="mi">4</span><span class="n">Q</span> <span class="mi">92</span>         <span class="n">Price</span><span class="p">,</span> <span class="n">Stella</span>    <span class="n">FIN</span>  <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">ad</span><span class="o">/</span><span class="mi">4</span><span class="n">q</span><span class="o">.</span><span class="n">rpt</span>
+  <span class="n">Round</span> <span class="n">Widgets</span>            <span class="n">Smith</span><span class="p">,</span> <span class="n">Roberta</span>   <span class="n">RND</span>  <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">rnd</span><span class="o">/</span><span class="n">widge</span><span class="o">.</span><span class="n">txt</span>
+<span class="o">&gt;</span> <span class="n">PAPERCLIPS</span>               <span class="n">ASTER</span><span class="p">,</span> <span class="n">JOHN</span> <span class="n">A</span><span class="o">.</span>   <span class="n">MKT</span>  <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">MKT</span><span class="o">/</span><span class="n">CLIP</span><span class="o">.</span><span class="n">RPT</span>
+  <span class="n">Color</span> <span class="n">Panorama</span>           <span class="n">Jackson</span><span class="p">,</span> <span class="n">Herbert</span> <span class="n">RND</span>  <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">rnd</span><span class="o">/</span><span class="n">color</span><span class="o">.</span><span class="n">txt</span>
+  <span class="n">Meeting</span> <span class="n">Schedule</span>         <span class="n">Barrington</span><span class="p">,</span> <span class="n">Kyle</span> <span class="n">MGT</span>  <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">mgt</span><span class="o">/</span><span class="n">when</span><span class="o">.</span><span class="n">rpt</span>
+</pre></div>
+</div>
+<p>Now look at the rows in the <code class="docutils literal notranslate"><span class="pre">DEPARTMENT</span></code> table below where DEPT is
+“MKT”. These are matching rows since the department code (“MKT”) is the
+same.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>  <span class="n">DEPT</span> <span class="n">DNAME</span>                               <span class="n">DHEAD</span>      <span class="n">DIV</span>  <span class="n">BUDGET</span>
+  <span class="n">MGT</span>  <span class="n">Management</span> <span class="ow">and</span> <span class="n">Administration</span>       <span class="n">Barrington</span> <span class="n">CORP</span> <span class="mi">22000</span>
+  <span class="n">FIN</span>  <span class="n">Finance</span> <span class="ow">and</span> <span class="n">Accounting</span>              <span class="n">Price</span>      <span class="n">CORP</span> <span class="mi">26000</span>
+  <span class="n">LEG</span>  <span class="n">Corporate</span> <span class="n">Legal</span> <span class="n">Support</span>             <span class="n">Thomas</span>     <span class="n">CORP</span> <span class="mi">28000</span>
+  <span class="n">SUP</span>  <span class="n">Supplies</span> <span class="ow">and</span> <span class="n">Procurement</span>            <span class="n">Sweet</span>      <span class="n">CORP</span> <span class="mi">10500</span>
+  <span class="n">REC</span>  <span class="n">Recruitment</span> <span class="ow">and</span> <span class="n">Personnel</span>           <span class="n">Harris</span>     <span class="n">CORP</span> <span class="mi">15000</span>
+  <span class="n">RND</span>  <span class="n">Research</span> <span class="ow">and</span> <span class="n">Development</span>            <span class="n">Jones</span>      <span class="n">PROD</span> <span class="mi">27500</span>
+  <span class="n">MFG</span>  <span class="n">Manufacturing</span>                       <span class="n">Washington</span> <span class="n">PROD</span> <span class="mi">32000</span>
+  <span class="n">CSS</span>  <span class="n">Customer</span> <span class="n">Support</span> <span class="ow">and</span> <span class="n">Service</span>        <span class="n">Ferrer</span>     <span class="n">PROD</span> <span class="mi">11000</span>
+<span class="o">&gt;</span> <span class="n">MKT</span>  <span class="n">PRODUCT</span> <span class="n">MARKETING</span> <span class="n">AND</span> <span class="n">SALES</span>         <span class="n">BROWN</span>      <span class="n">PROD</span> <span class="mi">25000</span>
+  <span class="n">ISM</span>  <span class="n">Information</span> <span class="n">Systems</span> <span class="n">Management</span>      <span class="n">Dedrich</span>    <span class="n">INFO</span> <span class="mi">22500</span>
+  <span class="n">LIB</span>  <span class="n">Corporate</span> <span class="n">Library</span>                   <span class="n">Krinski</span>    <span class="n">INFO</span> <span class="mi">18500</span>
+  <span class="n">SPI</span>  <span class="n">Strategic</span> <span class="n">Planning</span> <span class="ow">and</span> <span class="n">Intelligence</span> <span class="n">Peters</span>     <span class="n">INFO</span> <span class="mi">28500</span>
+</pre></div>
+</div>
+<p>The matching rows can be conceptualized as combining a row from the
+<code class="docutils literal notranslate"><span class="pre">REPORT</span></code> table with a matching row from the <code class="docutils literal notranslate"><span class="pre">DEPARTMENT</span></code> table.
+Below is a sample of rows from both tables, matched on the department
+code “MKT”:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">DEPT</span> <span class="n">DNAME</span>     <span class="n">DHEAD</span> <span class="n">DIV</span>  <span class="n">BUDGET</span> <span class="n">TITLE</span>      <span class="n">AUTHOR</span>  <span class="n">FILENAME</span>
+<span class="n">MKT</span>  <span class="n">Marketing</span> <span class="n">Brown</span> <span class="n">PROD</span> <span class="mi">25000</span>  <span class="n">Ink</span>        <span class="n">Sanchez</span> <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">mkt</span><span class="o">/</span><span class="n">promo</span><span class="o">.</span><span class="n">rpt</span>
+<span class="n">MKT</span>  <span class="n">Marketing</span> <span class="n">Brown</span> <span class="n">PROD</span> <span class="mi">25000</span>  <span class="n">Paperclips</span> <span class="n">Aster</span>   <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">mkt</span><span class="o">/</span><span class="n">clip</span><span class="o">.</span><span class="n">rpt</span>
+</pre></div>
+</div>
+<p>This operation is carried out for all matching rows; i.e., each row in
+the <code class="docutils literal notranslate"><span class="pre">REPORT</span></code> table is combined, or matched, with a row having the same
+department code in the <code class="docutils literal notranslate"><span class="pre">DEPARTMENT</span></code> table:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">DEPT</span> <span class="n">DNAME</span>      <span class="n">DHEAD</span> <span class="n">DIV</span>  <span class="n">BUDGET</span> <span class="n">TITLE</span>      <span class="n">AUTHOR</span>  <span class="n">FILENAME</span>
+<span class="n">RND</span>  <span class="n">Research</span>   <span class="n">Jones</span> <span class="n">PROD</span> <span class="mi">27500</span>  <span class="n">Ink</span>        <span class="n">Jackson</span> <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">rnd</span><span class="o">/</span><span class="n">ink</span><span class="o">.</span><span class="n">txt</span>
+<span class="n">MKT</span>  <span class="n">Marketing</span>  <span class="n">Brown</span> <span class="n">PROD</span> <span class="mi">25000</span>  <span class="n">Ink</span> <span class="n">Promo</span>  <span class="n">Sanchez</span> <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">mkt</span><span class="o">/</span><span class="n">promo</span><span class="o">.</span><span class="n">rpt</span>
+<span class="n">FIN</span>  <span class="n">Finance</span>    <span class="n">Price</span> <span class="n">CORP</span> <span class="mi">26000</span>  <span class="n">Budget</span>     <span class="n">Price</span>   <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">ad</span><span class="o">/</span><span class="mi">4</span><span class="n">q</span><span class="o">.</span><span class="n">rpt</span>
+<span class="n">RND</span>  <span class="n">Research</span>   <span class="n">Jones</span> <span class="n">PROD</span> <span class="mi">27500</span>  <span class="n">Widgets</span>    <span class="n">Smith</span>   <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">rnd</span><span class="o">/</span><span class="n">widge</span><span class="o">.</span><span class="n">txt</span>
+<span class="n">MKT</span>  <span class="n">Marketing</span>  <span class="n">Brown</span> <span class="n">PROD</span> <span class="mi">25000</span>  <span class="n">Paperclips</span> <span class="n">Aster</span>   <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">mkt</span><span class="o">/</span><span class="n">clip</span><span class="o">.</span><span class="n">rpt</span>
+<span class="n">RND</span>  <span class="n">Research</span>   <span class="n">Jones</span> <span class="n">PROD</span> <span class="mi">27500</span>  <span class="n">Panorama</span>   <span class="n">Jackson</span> <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">rnd</span><span class="o">/</span><span class="n">color</span><span class="o">.</span><span class="n">txt</span>
+<span class="n">MGT</span>  <span class="n">Management</span> <span class="n">Barri</span> <span class="n">CORP</span> <span class="mi">22000</span>  <span class="n">Schedule</span>   <span class="n">Barring</span> <span class="o">/</span><span class="n">data</span><span class="o">/</span><span class="n">mgt</span><span class="o">/</span><span class="n">when</span><span class="o">.</span><span class="n">rpt</span>
+</pre></div>
+</div>
+<p>The columns requested in the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> statement determine the final
+output for the joined table:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">AUTHOR</span>                   <span class="n">DNAME</span>
+<span class="n">Jackson</span><span class="p">,</span> <span class="n">Herbert</span>         <span class="n">Research</span> <span class="ow">and</span> <span class="n">Development</span>
+<span class="n">Sanchez</span><span class="p">,</span> <span class="n">Carla</span>           <span class="n">Product</span> <span class="n">Marketing</span> <span class="ow">and</span> <span class="n">Sales</span>
+<span class="n">Price</span><span class="p">,</span> <span class="n">Stella</span>            <span class="n">Finance</span> <span class="ow">and</span> <span class="n">Accounting</span>
+<span class="n">Smith</span><span class="p">,</span> <span class="n">Roberta</span>           <span class="n">Research</span> <span class="ow">and</span> <span class="n">Development</span>
+<span class="n">Aster</span><span class="p">,</span> <span class="n">John</span> <span class="n">A</span><span class="o">.</span>           <span class="n">Product</span> <span class="n">Marketing</span> <span class="ow">and</span> <span class="n">Sales</span>
+<span class="n">Jackson</span><span class="p">,</span> <span class="n">Herbert</span>         <span class="n">Research</span> <span class="ow">and</span> <span class="n">Development</span>
+<span class="n">Barrington</span><span class="p">,</span> <span class="n">Kyle</span>         <span class="n">Management</span> <span class="ow">and</span> <span class="n">Administration</span>
+</pre></div>
+</div>
+<p>Observe that the joined table does not include any data on several
+departments from the <code class="docutils literal notranslate"><span class="pre">DEPARTMENT</span></code> table, where that department did not
+produce any contributing authors as listed in the <code class="docutils literal notranslate"><span class="pre">REPORT</span></code> table. The
+joined table includes only rows where a match has occurred between rows
+in both tables. If a row in either table does not match any row in the
+other table, the row is not included in the joined table.</p>
+<p>In addition, notice that the DEPT column is not included in the final
+joined table. Only two columns are included in the joined table since
+just two columns are listed in the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> clause, and DEPT is not
+one of them.</p>
+<p>The next example illustrates that conditions other than the join
+condition can be used in the <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause. It also shows that even
+though the results come from a single table, the solution may require
+that data from two or more tables be joined in the <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause.</p>
+<p><strong>Example:</strong> Assume that you cannot remember the department code for
+Research and Development, but you want to know the titles of all reports
+submitted from that department.</p>
+<p>Enter this statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">TITLE</span>
+<span class="n">FROM</span>     <span class="n">DEPARTMENT</span><span class="p">,</span> <span class="n">REPORT</span>
+<span class="n">WHERE</span>    <span class="n">DNAME</span> <span class="o">=</span> <span class="s1">&#39;RESEARCH AND DEVELOPMENT&#39;</span>
+  <span class="n">AND</span>    <span class="n">REPORT</span><span class="o">.</span><span class="n">DEPT</span> <span class="o">=</span> <span class="n">DEPARTMENT</span><span class="o">.</span><span class="n">DEPT</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p><strong>Syntax Notes:</strong></p>
+<ul class="simple">
+<li><p>The tables to be joined are listed after <code class="docutils literal notranslate"><span class="pre">FROM</span></code>.</p></li>
+<li><p>The condition for the join operation is specified after AND (as part
+of <code class="docutils literal notranslate"><span class="pre">WHERE</span></code>).</p></li>
+</ul>
+<p>The results follow:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">TITLE</span>
+<span class="n">Innovations</span> <span class="ow">in</span> <span class="n">Disappearing</span> <span class="n">Ink</span>
+<span class="n">Improvements</span> <span class="ow">in</span> <span class="n">Round</span> <span class="n">Widgets</span>
+<span class="n">Ink</span> <span class="n">Color</span> <span class="n">Panorama</span>
+</pre></div>
+</div>
+<p>Since you don’t know Research and Development’s department code, you use
+the department name found in the <code class="docutils literal notranslate"><span class="pre">DEPARTMENT</span></code> table in order to find
+the row that stores Research and Development’s code, which is ‘RND’.
+Conceptually, visualize the join operation to occur as follows:</p>
+<ol class="arabic simple">
+<li><p>The conditional expression DNAME = ’RESEARCH AND DEVELOPMENT’
+references one row from the <code class="docutils literal notranslate"><span class="pre">DEPARTMENT</span></code> table; i.e., the ‘RND’
+row.</p></li>
+<li><p>Now that the RND code is known, this row in the <code class="docutils literal notranslate"><span class="pre">DEPARTMENT</span></code> table
+is joined with the rows in the <code class="docutils literal notranslate"><span class="pre">REPORT</span></code> table that have DEPT = RND.
+The joined table represents the titles of the reports submitted by
+authors from the Research and Development department.</p></li>
+</ol>
+<p>As the next example illustrates, more than two tables can be joined
+together.</p>
+<p><strong>Example:</strong> Provide a list of salaries paid to those people in the
+Product Division who contributed reports to the Corporate Library. The
+report should include the author’s name, department name, and annual
+salary.</p>
+<p>You would enter this statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">AUTHOR</span><span class="p">,</span> <span class="n">DNAME</span><span class="p">,</span> <span class="n">SALARY</span>
+<span class="n">FROM</span>     <span class="n">REPORT</span><span class="p">,</span> <span class="n">DEPARTMENT</span><span class="p">,</span> <span class="n">EMPLOYEE</span>
+<span class="n">WHERE</span>    <span class="n">DEPARTMENT</span><span class="o">.</span><span class="n">DIV</span> <span class="o">=</span> <span class="s1">&#39;PROD&#39;</span>
+  <span class="n">AND</span>    <span class="n">REPORT</span><span class="o">.</span><span class="n">DEPT</span> <span class="o">=</span> <span class="n">DEPARTMENT</span><span class="o">.</span><span class="n">DEPT</span>
+  <span class="n">AND</span>    <span class="n">REPORT</span><span class="o">.</span><span class="n">DEPT</span> <span class="o">=</span> <span class="n">EMPLOYEE</span><span class="o">.</span><span class="n">DEPT</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p><strong>Syntax Notes:</strong></p>
+<ul class="simple">
+<li><p>The order of the joins in the <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause is not important.</p></li>
+<li><p>The three tables to be joined are listed after <code class="docutils literal notranslate"><span class="pre">FROM</span></code>.</p></li>
+<li><p>The first AND statement (in <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause) is the condition for
+joining the REPORT and <code class="docutils literal notranslate"><span class="pre">DEPARTMENT</span></code> tables.</p></li>
+<li><p>The second AND statement (in <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause) is the condition for
+joining the REPORT and <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> tables.</p></li>
+<li><p>While department code happens to be a column which all three tables
+have in common, it would be possible to join two tables with a common
+column, and the other two tables with a different common column, such
+as <code class="docutils literal notranslate"><span class="pre">ENAME</span></code> in the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table and AUTHOR in the REPORT
+table. (The latter would not be as efficient, nor as reliable, so
+department name was chosen instead.)</p></li>
+</ul>
+<p>The results would be:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">AUTHOR</span>               <span class="n">DNAME</span>                           <span class="n">SALARY</span>
+<span class="n">Jackson</span><span class="p">,</span> <span class="n">Herbert</span>     <span class="n">Research</span> <span class="ow">and</span> <span class="n">Development</span>        <span class="mi">30000</span>
+<span class="n">Sanchez</span><span class="p">,</span> <span class="n">Carla</span>       <span class="n">Product</span> <span class="n">Marketing</span> <span class="ow">and</span> <span class="n">Sales</span>     <span class="mi">35000</span>
+<span class="n">Smith</span><span class="p">,</span> <span class="n">Roberta</span>       <span class="n">Research</span> <span class="ow">and</span> <span class="n">Development</span>        <span class="mi">25000</span>
+<span class="n">Aster</span><span class="p">,</span> <span class="n">John</span> <span class="n">A</span><span class="o">.</span>       <span class="n">Product</span> <span class="n">Marketing</span> <span class="ow">and</span> <span class="n">Sales</span>     <span class="mi">32000</span>
+</pre></div>
+</div>
+<p>In this example, data from three tables (REPORT, DEPARTMENT,
+<code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code>) are joined together.</p>
+<p>Conceptually, the <code class="docutils literal notranslate"><span class="pre">DEPARTMENT</span></code> table references the rows that contain
+PROD; this gives us the departments in the Product Division. The
+departments in the Product Division (RND, MFG, CSS, MKT) are matched
+against the departments in the DEPT column of the <code class="docutils literal notranslate"><span class="pre">REPORT</span></code> table. The
+tables are joined for the Research and Development (RND) and Product
+Marketing and Sales (MKT) departments. This yields an intermediate table
+containing all the columns from both the DEPARTMENT and REPORT tables
+for RND and MKT rows.</p>
+<p>This intermediate table is joined with the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table, based on
+the second join condition REPORT.DEPT = EMPLOYEE.DEPT to form a
+combination of columns from all 3 tables, for the matching rows.</p>
+<p>Finally, the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> clause indicates which columns in the
+intermediate joined table that you want displayed. Thus the author,
+department name, and annual salary are shown as in the above example.</p>
+<p>As a final point, the order in which you place the conditions in the
+<code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause does not affect the way Texis accesses the data. Texis
+contains an “<em>optimizer</em>” in its underlying software, which chooses the
+best access path to the data based on factors such as index
+availability, size of tables involved, number of unique values in an
+indexed column, and other statistical information. Thus, the results
+would not be affected by writing the same query in the following order:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">AUTHOR</span><span class="p">,</span> <span class="n">DNAME</span><span class="p">,</span> <span class="n">SALARY</span>
+<span class="n">FROM</span>     <span class="n">REPORT</span><span class="p">,</span> <span class="n">DEPARTMENT</span><span class="p">,</span> <span class="n">EMPLOYEE</span>
+<span class="n">WHERE</span>    <span class="n">REPORT</span><span class="o">.</span><span class="n">DEPT</span> <span class="o">=</span> <span class="n">EMPLOYEE</span><span class="o">.</span><span class="n">DEPT</span>
+  <span class="n">AND</span>    <span class="n">REPORT</span><span class="o">.</span><span class="n">DEPT</span> <span class="o">=</span> <span class="n">DEPARTMENT</span><span class="o">.</span><span class="n">DEPT</span>
+  <span class="n">AND</span>    <span class="n">DEPARTMENT</span><span class="o">.</span><span class="n">DIV</span> <span class="o">=</span> <span class="s1">&#39;PROD&#39;</span> <span class="p">;</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="nesting-queries">
+<h2>Nesting Queries<a class="headerlink" href="#nesting-queries" title="Permalink to this headline">¶</a></h2>
+<p>At times you may wish to retrieve rows in one table based on conditions
+in a related table. For example, suppose Personnel needed to call in any
+employees in the Information Division receiving only partial benefits,
+to discuss options for upgrading to the full benefit program. To answer
+this query, you have to retrieve the names of all departments in the
+Information Division, found in the DEPARTMENT table, and then the
+employees with partial benefits in the Information Division departments,
+found in the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table.</p>
+<p>In other situations, you may want to formulate a query from one table
+that required you to make two passes through the table in order to
+obtain the desired results. For example, you may want to retrieve a list
+of staff members earning a salary higher than Jackson, but you don’t
+know Jackson’s salary. To answer this query, you first find Jackson’s
+salary; then you compare the salary of each staff member to his.</p>
+<p>One approach is to develop a <em>subquery</em>, which involves embedding a
+query (<code class="docutils literal notranslate"><span class="pre">SELECT</span></code>-<code class="docutils literal notranslate"><span class="pre">\verb</span></code>FROM“-<code class="docutils literal notranslate"><span class="pre">WHERE</span></code> block) within the
+<code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause of another query. This is sometimes referred to as a
+“<em>nested query</em>”.</p>
+<p>The format of a nested query is:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">column</span><span class="o">-</span><span class="n">name1</span> <span class="p">[,</span><span class="n">column</span><span class="o">-</span><span class="n">name2</span><span class="p">]</span>
+<span class="n">FROM</span>     <span class="n">table</span><span class="o">-</span><span class="n">name</span>
+<span class="n">WHERE</span>    <span class="n">column</span><span class="o">-</span><span class="n">name</span> <span class="n">IN</span>
+  <span class="p">(</span><span class="n">SELECT</span>   <span class="n">column</span><span class="o">-</span><span class="n">name</span>
+   <span class="n">FROM</span>     <span class="n">table</span><span class="o">-</span><span class="n">name</span>
+   <span class="n">WHERE</span>    <span class="n">search</span><span class="o">-</span><span class="n">condition</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p><strong>Syntax Notes:</strong></p>
+<ul class="simple">
+<li><p>The first <code class="docutils literal notranslate"><span class="pre">SELECT</span></code>-<code class="docutils literal notranslate"><span class="pre">\verb</span></code>FROM“-<code class="docutils literal notranslate"><span class="pre">WHERE</span></code> block is the outer
+query.</p></li>
+<li><p>The second <code class="docutils literal notranslate"><span class="pre">SELECT</span></code>-<code class="docutils literal notranslate"><span class="pre">\verb</span></code>FROM“-<code class="docutils literal notranslate"><span class="pre">WHERE</span></code> block in
+parentheses is the subquery.</p></li>
+<li><p>The IN operator is normally used if the inner query returns many rows
+and one column.</p></li>
+</ul>
+<div class="section" id="id2">
+<h3>Command Discussion<a class="headerlink" href="#id2" title="Permalink to this headline">¶</a></h3>
+<p>Here are some points concerning the use of nested queries:</p>
+<ol class="arabic">
+<li><p>The above statement contains two <code class="docutils literal notranslate"><span class="pre">SELECT</span></code>-<code class="docutils literal notranslate"><span class="pre">FROM</span></code>-<code class="docutils literal notranslate"><span class="pre">WHERE</span></code>
+blocks. The portion in parentheses is called the subquery. The
+subquery is evaluated first; then the outer query is evaluated based
+on the result of the subquery. In effect, the nested query can be
+looked at as being equivalent to:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">column</span><span class="o">-</span><span class="n">name1</span> <span class="p">[,</span><span class="n">column</span><span class="o">-</span><span class="n">name2</span><span class="p">]</span> <span class="o">...</span>
+<span class="n">FROM</span>     <span class="n">table</span><span class="o">-</span><span class="n">name</span>
+<span class="n">WHERE</span>    <span class="n">column</span><span class="o">-</span><span class="n">name</span> <span class="n">IN</span> <span class="p">(</span><span class="nb">set</span> <span class="n">of</span> <span class="n">values</span> <span class="kn">from</span> <span class="nn">the</span> <span class="n">subquery</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>where the set of values is determined from the inner
+<code class="docutils literal notranslate"><span class="pre">SELECT</span></code>-<code class="docutils literal notranslate"><span class="pre">FROM</span></code>-<code class="docutils literal notranslate"><span class="pre">WHERE</span></code> block.</p>
+</li>
+<li><p>The IN operator is used to link the outer query to the subquery when
+the subquery returns a set of values (one or more). Other comparison
+operators, such as <code class="docutils literal notranslate"><span class="pre">&lt;</span></code>, <code class="docutils literal notranslate"><span class="pre">&gt;</span></code>, <code class="docutils literal notranslate"><span class="pre">=</span></code>, etc., can be used to link an
+outer query to a subquery when the subquery returns a single value.</p></li>
+<li><p>The subquery must have only a single column or expression in the
+<code class="docutils literal notranslate"><span class="pre">SELECT</span></code> clause, so that the resulting set of values can be passed
+back to the next outer query for evaluation.</p></li>
+<li><p>You are not limited to one subquery. Though it isn’t advised, there
+could be as many as 16 levels of subqueries, with no fixed limitation
+except limits of memory and disk-space on the machine in use. Any of
+the operators (<code class="docutils literal notranslate"><span class="pre">IN</span></code>, <code class="docutils literal notranslate"><span class="pre">=</span></code>, <code class="docutils literal notranslate"><span class="pre">&lt;</span></code>, <code class="docutils literal notranslate"><span class="pre">&gt;</span></code>, etc.) can be used to link
+the subquery to the next higher level.</p></li>
+</ol>
+<p><strong>Example:</strong> List the names of all personnel in the Information Division
+by entering this statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">ENAME</span>
+<span class="n">FROM</span>     <span class="n">EMPLOYEE</span>
+<span class="n">WHERE</span>    <span class="n">DEPT</span> <span class="n">IN</span>
+  <span class="p">(</span><span class="n">SELECT</span>   <span class="n">DEPT</span>
+   <span class="n">FROM</span>     <span class="n">DEPARTMENT</span>
+   <span class="n">WHERE</span>    <span class="n">DIV</span> <span class="o">=</span> <span class="s1">&#39;INFO&#39;</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>Parentheses are placed around the subquery, as shown below the outer
+<code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause.</p>
+<p>The results are:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ENAME</span>
+<span class="n">Chapman</span><span class="p">,</span> <span class="n">Margaret</span>
+<span class="n">Dedrich</span><span class="p">,</span> <span class="n">Franz</span>
+<span class="n">Krinski</span><span class="p">,</span> <span class="n">Wanda</span>
+<span class="n">Peters</span><span class="p">,</span> <span class="n">Robert</span>
+</pre></div>
+</div>
+<p>To understand how this expression retrieves its results, work from the
+bottom up in evaluating the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> statement. In other words, the
+subquery is evaluated first. This results in a set of values that can be
+used as the basis for the outer query. The innermost <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> block
+retrieves the following set of department codes, as departments in the
+Information (‘INFO’) Division: ISM, LIB, SPI.</p>
+<p>In the outermost <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> block, the IN operator tests whether any
+department code in the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table is contained in the set of
+department codes values retrieved from the inner <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> block; i.e.,
+ISM, LIB, or SPI.</p>
+<p>In effect, the outer <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> block is equivalent to:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">ENAME</span>
+<span class="n">FROM</span>     <span class="n">EMPLOYEE</span>
+<span class="n">WHERE</span>    <span class="n">DEPT</span> <span class="n">IN</span> <span class="p">(</span><span class="s1">&#39;ISM&#39;</span><span class="p">,</span> <span class="s1">&#39;LIB&#39;</span><span class="p">,</span> <span class="s1">&#39;SPI&#39;</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>where the values in parentheses are values from the subquery.</p>
+<p>Thus, the employee names Chapman, Dedrich, Krinski and Peters are
+retrieved.</p>
+<p>Subqueries can be nested several levels deep within a query, as the next
+example illustrates.</p>
+<p><strong>Example:</strong> Acme Industrial’s ink sales are up, and management wishes
+to reward everyone in the division(s) most responsible. List the names
+of all employees in any division whose personnel have contributed
+reports on ink to the corporate library, along with their department and
+benefit level.</p>
+<p>Use this statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">ENAME</span><span class="p">,</span> <span class="n">DEPT</span><span class="p">,</span> <span class="n">BENEFITS</span>
+<span class="n">FROM</span>     <span class="n">EMPLOYEE</span>
+<span class="n">WHERE</span>    <span class="n">DEPT</span> <span class="n">IN</span>
+  <span class="p">(</span><span class="n">SELECT</span>   <span class="n">DEPT</span>
+   <span class="n">FROM</span>     <span class="n">DEPARTMENT</span>
+   <span class="n">WHERE</span>    <span class="n">DIV</span> <span class="n">IN</span>
+     <span class="p">(</span><span class="n">SELECT</span>   <span class="n">DIV</span>
+      <span class="n">FROM</span>     <span class="n">DEPARTMENT</span>
+      <span class="n">WHERE</span>    <span class="n">DEPT</span> <span class="n">IN</span>
+        <span class="p">(</span><span class="n">SELECT</span>   <span class="n">DEPT</span>
+         <span class="n">FROM</span>     <span class="n">REPORT</span>
+         <span class="n">WHERE</span>    <span class="n">TITLE</span>  <span class="n">LIKE</span> <span class="s1">&#39;ink&#39;</span><span class="p">)</span> <span class="p">)</span> <span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>IN is used for each subquery since in each case it is possible to
+retrieve several values. You could use ‘<code class="docutils literal notranslate"><span class="pre">=</span></code>’ instead where you knew
+only one value would be retrieved; e.g. where you wanted only the
+division with the greatest number of reports rather than all divisions
+contributing reports.</p>
+<p>Results of the above nested query are:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ENAME</span>                <span class="n">DEPT</span>   <span class="n">BENEFITS</span>
+<span class="n">Aster</span><span class="p">,</span> <span class="n">John</span> <span class="n">A</span><span class="o">.</span>       <span class="n">MKT</span>    <span class="n">FULL</span>
+<span class="n">Jackson</span><span class="p">,</span> <span class="n">Herbert</span>     <span class="n">RND</span>    <span class="n">FULL</span>
+<span class="n">Sanchez</span><span class="p">,</span> <span class="n">Carla</span>       <span class="n">MKT</span>    <span class="n">FULL</span>
+<span class="n">Smith</span><span class="p">,</span> <span class="n">Roberta</span>       <span class="n">MKT</span>    <span class="n">PART</span>
+<span class="n">Jones</span><span class="p">,</span> <span class="n">David</span>         <span class="n">RND</span>    <span class="n">FULL</span>
+<span class="n">Washington</span><span class="p">,</span> <span class="n">G</span><span class="o">.</span>       <span class="n">MFG</span>    <span class="n">FULL</span>
+<span class="n">Ferrer</span><span class="p">,</span> <span class="n">Miguel</span>       <span class="n">CSS</span>    <span class="n">FULL</span>
+<span class="n">Brown</span><span class="p">,</span> <span class="n">Penelope</span>      <span class="n">MKT</span>    <span class="n">FULL</span>
+</pre></div>
+</div>
+<p>Again, remember that a nested query is evaluated from the bottom up;
+i.e., from the innermost query to the outermost query. First, a text
+search is done (TITLE LIKE ’INK’) of report titles from the <code class="docutils literal notranslate"><span class="pre">REPORT</span></code>
+table. Two such titles are located: “Disappearing Ink” by Herbert
+Jackson from Research and Development (RND), and “Ink Promotional
+Campaign” by Carla Sanchez from Product Marketing and Sales (MKT). Thus
+the results of the innermost query produces a list of two department
+codes: RND and MKT.</p>
+<p>Once the departments are known, a search is done of the DEPARTMENT
+table, to locate the division or divisions to which these departments
+belong. Both departments belong to the Product Division (PROD); thus the
+results of the next subquery produces one item: PROD.</p>
+<p>A second pass is made through the same table, DEPARTMENT, to find all
+departments which belong to the Product Division. This search produces a
+list of four Product Division departments: MKT, RND, MFG, and CSS,
+adding Manufacturing as well as Customer Support and Service to the
+list.</p>
+<p>This list is passed to the outermost query so that the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code>
+table may be searched for all employees in those departments. The final
+listing is retrieved, as above.</p>
+<p>Here is another example specifically designed to illustrate the use of a
+subquery making two passes through the same table to find the desired
+results.</p>
+<p><strong>Example:</strong> List the names of employees who have salaries greater than
+that of Herbert Jackson. Assume you do not know Jackson’s salary.</p>
+<p>Enter this statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">ENAME</span><span class="p">,</span> <span class="n">SALARY</span>
+<span class="n">FROM</span>     <span class="n">EMPLOYEE</span>
+<span class="n">WHERE</span>    <span class="n">SALARY</span> <span class="o">&gt;</span>
+  <span class="p">(</span><span class="n">SELECT</span>   <span class="n">SALARY</span>
+   <span class="n">FROM</span>     <span class="n">EMPLOYEE</span>
+   <span class="n">WHERE</span>    <span class="n">ENAME</span> <span class="o">=</span> <span class="s1">&#39;Jackson, Herbert&#39;</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>The compare operator <code class="docutils literal notranslate"><span class="pre">&gt;</span></code> can be used (as could <code class="docutils literal notranslate"><span class="pre">=</span></code> and other compare
+operators) where a single value only will be returned from the subquery.</p>
+<p>Using the sample information in our <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table, the results are
+as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ENAME</span>              <span class="n">SALARY</span>
+<span class="n">Aster</span><span class="p">,</span> <span class="n">John</span> <span class="n">A</span><span class="o">.</span>     <span class="mi">32000</span>
+<span class="n">Barrington</span><span class="p">,</span> <span class="n">Kyle</span>   <span class="mi">45000</span>
+<span class="n">Price</span> <span class="n">Stella</span>       <span class="mi">42000</span>
+<span class="n">Sanchez</span><span class="p">,</span> <span class="n">Carla</span>     <span class="mi">35000</span>
+</pre></div>
+</div>
+<p>The subquery searches the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table and returns the value
+<code class="docutils literal notranslate"><span class="pre">30000</span></code>, the salary listed for Herbert Jackson. Then the outer
+<code class="docutils literal notranslate"><span class="pre">SELECT</span></code> block searches the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table again to retrieve all
+employees with <code class="docutils literal notranslate"><span class="pre">SALARY</span> <span class="pre">&gt;</span> <span class="pre">30000</span></code>. Thus the above employees with higher
+salaries are retrieved.</p>
+</div>
+</div>
+<div class="section" id="forming-complex-queries">
+<h2>Forming Complex Queries<a class="headerlink" href="#forming-complex-queries" title="Permalink to this headline">¶</a></h2>
+<p>The situations covered in this section are more technical than most end
+users have need to conceptualize. However, a system administrator may
+require such complex query structures to efficiently obtain the desired
+results.</p>
+<p>In some situations, you may find it necessary to join a table to itself,
+as though you were joining two separate tables. This is referred to as a
+<em>self join</em>. In the self join, the combined result consists of two rows
+from the same table.</p>
+<p>For example, suppose that within the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table, personnel are
+assigned a RANK of “STAFF”, “DHEAD”, and so on. To obtain a list of
+employees that includes employee name and the name of his or her
+department head requires the use of a self join.</p>
+<p>To join a table to itself, the table name appears twice in the <code class="docutils literal notranslate"><span class="pre">FROM</span></code>
+clause. To distinguish between the appearance of the same table name, a
+temporary name, called an <em>alias</em> or a <em>correlation name</em>, is assigned
+to each mention of the table name in the <code class="docutils literal notranslate"><span class="pre">FROM</span></code> clause. The form of
+the <code class="docutils literal notranslate"><span class="pre">FROM</span></code> clause with an alias is:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">FROM</span>   <span class="n">table</span><span class="o">-</span><span class="n">name</span> <span class="p">[</span><span class="n">alias1</span><span class="p">]</span> <span class="p">[,</span><span class="n">table</span><span class="o">-</span><span class="n">name</span> <span class="p">[</span><span class="n">alias2</span><span class="p">]</span> <span class="p">]</span> <span class="o">...</span>
+</pre></div>
+</div>
+<p>To help clarify the meaning of the query, the alias can be used as a
+qualifier, in the same way that the table name serves as a qualifier, in
+<code class="docutils literal notranslate"><span class="pre">SELECT</span></code> and <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clauses.</p>
+<p><strong>Example:</strong> As part of an analysis of Acme’s salary structure, you want
+to identify the names of any regular staff who are earning more than a
+department head.</p>
+<p>Enter this query:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">STAFF</span><span class="o">.</span><span class="n">ENAME</span><span class="p">,</span> <span class="n">STAFF</span><span class="o">.</span><span class="n">SALARY</span>
+<span class="n">FROM</span>     <span class="n">EMPLOYEE</span> <span class="n">DHEAD</span><span class="p">,</span> <span class="n">EMPLOYEE</span> <span class="n">STAFF</span>
+<span class="n">WHERE</span>    <span class="n">DHEAD</span><span class="o">.</span><span class="n">RANK</span> <span class="o">=</span> <span class="s1">&#39;DHEAD&#39;</span> <span class="n">AND</span> <span class="n">STAFF</span><span class="o">.</span><span class="n">RANK</span> <span class="o">=</span> <span class="s1">&#39;STAFF&#39;</span>
+  <span class="n">AND</span>    <span class="n">STAFF</span><span class="o">.</span><span class="n">SALARY</span> <span class="o">&gt;</span> <span class="n">DHEAD</span><span class="o">.</span><span class="n">SALARY</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>Using a sampling of information from the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table, we would
+get these results:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ENAME</span>               <span class="n">SALARY</span>
+
+<span class="n">Sanchez</span><span class="p">,</span> <span class="n">Carla</span>      <span class="mi">35000</span>
+</pre></div>
+</div>
+<p>In this query, the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table, using the alias feature, is
+treated as two separate tables named <code class="docutils literal notranslate"><span class="pre">DHEAD</span></code> and <code class="docutils literal notranslate"><span class="pre">STAFF</span></code>, as shown
+here (in shortened form):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">DHEAD</span> <span class="n">Table</span>                         <span class="n">STAFF</span> <span class="n">Table</span>
+<span class="n">EID</span> <span class="n">ENAME</span>   <span class="n">DEPT</span> <span class="n">RANK</span>  <span class="n">BEN</span>  <span class="n">SALARY</span>  <span class="n">EID</span> <span class="n">ENAME</span>   <span class="n">DEPT</span> <span class="n">RANK</span>  <span class="n">BEN</span>  <span class="n">SALARY</span>
+<span class="mi">101</span> <span class="n">Aster</span>   <span class="n">MKT</span>  <span class="n">STAFF</span> <span class="n">FULL</span> <span class="mi">32000</span>   <span class="mi">101</span> <span class="n">Aster</span>   <span class="n">MKT</span>  <span class="n">STAFF</span> <span class="n">FULL</span> <span class="mi">32000</span>
+<span class="mi">109</span> <span class="n">Brown</span>   <span class="n">MKT</span>  <span class="n">DHEAD</span> <span class="n">FULL</span> <span class="mi">37500</span>   <span class="mi">109</span> <span class="n">Brown</span>   <span class="n">MKT</span>  <span class="n">DHEAD</span> <span class="n">FULL</span> <span class="mi">37500</span>
+<span class="mi">103</span> <span class="n">Chapman</span> <span class="n">LIB</span>  <span class="n">STAFF</span> <span class="n">PART</span> <span class="mi">22000</span>   <span class="mi">103</span> <span class="n">Chapman</span> <span class="n">LIB</span>  <span class="n">STAFF</span> <span class="n">PART</span> <span class="mi">22000</span>
+<span class="mi">110</span> <span class="n">Krinski</span> <span class="n">LIB</span>  <span class="n">DHEAD</span> <span class="n">FULL</span> <span class="mi">32500</span>   <span class="mi">110</span> <span class="n">Krinski</span> <span class="n">LIB</span>  <span class="n">DHEAD</span> <span class="n">FULL</span> <span class="mi">32500</span>
+<span class="mi">106</span> <span class="n">Sanchez</span> <span class="n">MKT</span>  <span class="n">STAFF</span> <span class="n">FULL</span> <span class="mi">35000</span>   <span class="mi">106</span> <span class="n">Sanchez</span> <span class="n">MKT</span>  <span class="n">STAFF</span> <span class="n">FULL</span> <span class="mi">35000</span>
+</pre></div>
+</div>
+<p>Now the join operation can be made use of, as if there were two separate
+tables, evaluated as follows.</p>
+<p>First, using the following compound condition:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">DHEAD</span><span class="o">.</span><span class="n">RANK</span> <span class="o">=</span> <span class="s1">&#39;DHEAD&#39;</span> <span class="n">AND</span> <span class="n">STAFF</span><span class="o">.</span><span class="n">RANK</span> <span class="o">=</span> <span class="s1">&#39;STAFF&#39;</span>
+</pre></div>
+</div>
+<p>each department head record (Brown, Krinski) in the <code class="docutils literal notranslate"><span class="pre">DHEAD</span></code> table is
+joined with each staff record (Aster, Chapman, Sanchez) from the
+<code class="docutils literal notranslate"><span class="pre">STAFF</span></code> table to form the following intermediate result:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">DHEAD</span> <span class="n">Table</span>                         <span class="n">STAFF</span> <span class="n">Table</span>
+<span class="n">EID</span> <span class="n">ENAME</span>   <span class="n">DEPT</span> <span class="n">RANK</span>  <span class="n">BEN</span>  <span class="n">SALARY</span>  <span class="n">EID</span> <span class="n">ENAME</span>   <span class="n">DEPT</span> <span class="n">RANK</span>  <span class="n">BEN</span>  <span class="n">SALARY</span>
+<span class="mi">109</span> <span class="n">Brown</span>   <span class="n">MKT</span>  <span class="n">DHEAD</span> <span class="n">FULL</span> <span class="mi">37500</span>   <span class="mi">101</span> <span class="n">Aster</span>   <span class="n">MKT</span>  <span class="n">STAFF</span> <span class="n">FULL</span> <span class="mi">32000</span>
+<span class="mi">109</span> <span class="n">Brown</span>   <span class="n">MKT</span>  <span class="n">DHEAD</span> <span class="n">FULL</span> <span class="mi">37500</span>   <span class="mi">103</span> <span class="n">Chapman</span> <span class="n">LIB</span>  <span class="n">STAFF</span> <span class="n">PART</span> <span class="mi">22000</span>
+<span class="mi">109</span> <span class="n">Brown</span>   <span class="n">MKT</span>  <span class="n">DHEAD</span> <span class="n">FULL</span> <span class="mi">37500</span>   <span class="mi">106</span> <span class="n">Sanchez</span> <span class="n">MKT</span>  <span class="n">STAFF</span> <span class="n">FULL</span> <span class="mi">35000</span>
+<span class="mi">110</span> <span class="n">Krinski</span> <span class="n">LIB</span>  <span class="n">DHEAD</span> <span class="n">FULL</span> <span class="mi">32500</span>   <span class="mi">101</span> <span class="n">Aster</span>   <span class="n">MKT</span>  <span class="n">STAFF</span> <span class="n">FULL</span> <span class="mi">32000</span>
+<span class="mi">110</span> <span class="n">Krinski</span> <span class="n">LIB</span>  <span class="n">DHEAD</span> <span class="n">FULL</span> <span class="mi">32500</span>   <span class="mi">103</span> <span class="n">Chapman</span> <span class="n">LIB</span>  <span class="n">STAFF</span> <span class="n">PART</span> <span class="mi">22000</span>
+<span class="mi">110</span> <span class="n">Krinski</span> <span class="n">LIB</span>  <span class="n">DHEAD</span> <span class="n">FULL</span> <span class="mi">32500</span>   <span class="mi">106</span> <span class="n">Sanchez</span> <span class="n">MKT</span>  <span class="n">STAFF</span> <span class="n">FULL</span> <span class="mi">35000</span>
+</pre></div>
+</div>
+<p>Notice that every department head row is combined with each staff
+record.</p>
+<p>Next, using the condition:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">STAFF</span><span class="o">.</span><span class="n">SALARY</span> <span class="o">&gt;</span> <span class="n">DHEAD</span><span class="o">.</span><span class="n">SALARY</span>
+</pre></div>
+</div>
+<p>for each row of the joined table, the salary value from the <code class="docutils literal notranslate"><span class="pre">STAFF</span></code>
+portion is compared with the corresponding salary value from the
+<code class="docutils literal notranslate"><span class="pre">DHEAD</span></code> portion. If <code class="docutils literal notranslate"><span class="pre">STAFF.SALARY</span></code> is greater than <code class="docutils literal notranslate"><span class="pre">DHEAD.SALARY</span></code>,
+then <code class="docutils literal notranslate"><span class="pre">STAFF.ENAME</span></code> and <code class="docutils literal notranslate"><span class="pre">STAFF.SALARY</span></code> are retrieved in the final
+table.</p>
+<p>The only row in the joined table satisfying this condition of staff
+salary being greater than department head salary is the last one, where
+Carla Sanchez from Marketing, at a salary of $35,000, is earning more
+than Wanda Krinski, as department head for the Corporate Library, at a
+salary of $32,500.</p>
+<p>All the previous examples of subqueries evaluated the innermost query
+completely before moving to the next level of the query. Some queries,
+however, cannot be completely evaluated before the outer, or main, query
+is evaluated. Instead, the search condition of a subquery depends on a
+value in each row of the table named in the outer query. Therefore, the
+subquery is evaluated repeatedly, once for each row selected from the
+outer table. This type of subquery is referred to as a <em>correlated
+subquery</em>.</p>
+<p><strong>Example:</strong> Retrieve the name, department, and salary, of any employee
+whose salary is above average for his or her department.</p>
+<p>Enter this query:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">POSSIBLE</span><span class="o">.</span><span class="n">ENAME</span><span class="p">,</span> <span class="n">POSSIBLE</span><span class="o">.</span><span class="n">DEPT</span><span class="p">,</span> <span class="n">POSSIBLE</span><span class="o">.</span><span class="n">SALARY</span>
+<span class="n">FROM</span>     <span class="n">EMPLOYEE</span> <span class="n">POSSIBLE</span>
+<span class="n">WHERE</span>    <span class="n">SALARY</span> <span class="o">&gt;</span>
+  <span class="p">(</span><span class="n">SELECT</span>   <span class="n">AVG</span> <span class="p">(</span><span class="n">SALARY</span><span class="p">)</span>
+   <span class="n">FROM</span>     <span class="n">EMPLOYEE</span> <span class="n">AVERAGE</span>
+   <span class="n">WHERE</span>    <span class="n">POSSIBLE</span><span class="o">.</span><span class="n">DEPT</span> <span class="o">=</span> <span class="n">AVERAGE</span><span class="o">.</span><span class="n">DEPT</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p><strong>Syntax Notes:</strong></p>
+<ul class="simple">
+<li><p>The outer <code class="docutils literal notranslate"><span class="pre">SELECT</span></code>-<code class="docutils literal notranslate"><span class="pre">FROM</span></code>-<code class="docutils literal notranslate"><span class="pre">WHERE</span></code> block is the main query.</p></li>
+<li><p>The inner <code class="docutils literal notranslate"><span class="pre">SELECT</span></code>-<code class="docutils literal notranslate"><span class="pre">FROM</span></code>-<code class="docutils literal notranslate"><span class="pre">WHERE</span></code> block in parentheses is the
+subquery.</p></li>
+<li><p>POSSIBLE (following <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> in the outer query) and AVERAGE
+(following <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> in the subquery) are alias table names for
+the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table, so that the information may evaluated as
+though it comes from two different tables.</p></li>
+</ul>
+<p>It results in:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ENAME</span>               <span class="n">DEPT</span>   <span class="n">SALARY</span>
+<span class="n">Krinski</span><span class="p">,</span> <span class="n">Wanda</span>      <span class="n">LIB</span>    <span class="mi">32500</span>
+<span class="n">Brown</span><span class="p">,</span> <span class="n">Penelope</span>     <span class="n">MKT</span>    <span class="mi">37500</span>
+<span class="n">Sanchez</span><span class="p">,</span> <span class="n">Carla</span>      <span class="n">MKT</span>    <span class="mi">35000</span>
+<span class="n">Jones</span><span class="p">,</span> <span class="n">David</span>        <span class="n">RND</span>    <span class="mi">37500</span>
+</pre></div>
+</div>
+<p>The column AVERAGE.DEPT correlates with POSSIBLE.DEPT in the main, or
+outer, query. In other words, the average salary for a department is
+calculated in the subquery using the department of each employee from
+the table in the main query (POSSIBLE). The subquery computes the
+average salary for this department and then compares it with a row in
+the <code class="docutils literal notranslate"><span class="pre">POSSIBLE</span></code> table. If the salary in the <code class="docutils literal notranslate"><span class="pre">POSSIBLE</span></code> table is
+greater than the average salary for the department, then that employee’s
+name, department, and salary are displayed.</p>
+<p>The process of the correlated subquery works in the following manner.
+The department of the first row in POSSIBLE is used in the subquery to
+compute an average salary. Let’s take Krinksi’s row, whose department is
+the corporate library (LIB). In effect, the subquery is:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">AVG</span> <span class="p">(</span><span class="n">SALARY</span><span class="p">)</span>
+<span class="n">FROM</span>     <span class="n">EMPLOYEE</span> <span class="n">AVERAGE</span>
+<span class="n">WHERE</span>    <span class="s1">&#39;LIB&#39;</span> <span class="o">=</span> <span class="n">AVERAGE</span><span class="o">.</span><span class="n">DEPT</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>LIB is the value from the first row in POSSIBLE, as alias for
+<code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code>.</p>
+<p>This pass through the subquery results in a value of $27,250, the
+average salary for the LIB dept. In the outer query, Krinski’s salary of
+$32,500 is compared with the average salary for LIB; since it is
+greater, Krinski’s name is displayed.</p>
+<p>This process continues; next, Aster’s row in POSSIBLE is evaluated,
+where MKT is the department. This time the subquery is evaluated as
+follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">AVG</span> <span class="p">(</span><span class="n">SALARY</span><span class="p">)</span>
+<span class="n">FROM</span>     <span class="n">EMPLOYEE</span> <span class="n">AVERAGE</span>
+<span class="n">WHERE</span>    <span class="s1">&#39;MKT&#39;</span> <span class="o">=</span> <span class="n">AVERAGE</span><span class="o">.</span><span class="n">DEPT</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>The results of this pass through the subquery is an average salary of
+$34,833 for MKT, the Product Marketing and Sales Department. Since Aster
+has a salary of $32,000, a figure lower than the average, this record is
+not displayed.</p>
+<p>Every department in POSSIBLE is examined in a similar manner before this
+subquery is completed.</p>
+<p>There may be situations in which you are interested in retrieving
+records where there exists at least one row that satisfies a particular
+condition. For example, the resume records stored in the <code class="docutils literal notranslate"><span class="pre">RESUME</span></code>
+table may include some individuals who are already employed at Acme
+Industrial and so are entered in the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table. If you wanted
+to know which employees were seeking new jobs at the present time, an
+existence test using the keyword <code class="docutils literal notranslate"><span class="pre">EXISTS</span></code> can be used to answer such a
+query.</p>
+<p>This type of query is developed with a subquery. The <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause of
+the outer query is used to test the existence of rows that result from a
+subquery. The form of the <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause that is linked to the
+subquery is:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">WHERE</span> <span class="p">[</span><span class="n">NOT</span><span class="p">]</span> <span class="n">EXISTS</span> <span class="p">(</span><span class="n">subquery</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>This clause is satisfied if there is at least one row that would be
+returned by the subquery. If so, the subquery does not return any
+values; it just sets an indicator value to true. On the other hand, if
+no elements satisfy the condition, or the set is empty, the indicator
+value is false.</p>
+<p>The subquery should return a single column only.</p>
+<p><strong>Example:</strong> Retrieve a list of Acme employees who have submitted
+resumes to personnel for a different job placement.</p>
+<p>Enter this query:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">EID</span><span class="p">,</span> <span class="n">ENAME</span>
+<span class="n">FROM</span>     <span class="n">EMPLOYEE</span>
+<span class="n">WHERE</span>    <span class="n">EXISTS</span>
+  <span class="p">(</span><span class="n">SELECT</span> <span class="n">RNAME</span>
+   <span class="n">FROM</span>   <span class="n">RESUME</span>
+   <span class="n">WHERE</span>  <span class="n">EMPLOYEE</span><span class="o">.</span><span class="n">ENAME</span> <span class="o">=</span> <span class="n">RESUME</span><span class="o">.</span><span class="n">RNAME</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>The results are:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">EID</span>  <span class="n">ENAME</span>
+<span class="mi">107</span>  <span class="n">Smith</span><span class="p">,</span> <span class="n">Roberta</span>
+<span class="mi">113</span>  <span class="n">Ferrer</span><span class="p">,</span> <span class="n">Miguel</span>
+</pre></div>
+</div>
+<p>In this query, the subquery cannot be evaluated completely before the
+outer query is evaluated. Instead, we have a correlated subquery. For
+each row in <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code>, a join of <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> and <code class="docutils literal notranslate"><span class="pre">RESUME</span></code> tables
+is performed (even though <code class="docutils literal notranslate"><span class="pre">RESUME</span></code> is the only table that appears in
+the subquery’s <code class="docutils literal notranslate"><span class="pre">FROM</span></code> clause) to determine if there is a resume name
+in <code class="docutils literal notranslate"><span class="pre">RESUME</span></code> that matches a name in <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code>.</p>
+<p>For example, for the first row in the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table (ENAME =
+’Smith, Roberta’) the subquery evaluates as “true” if at least one row
+in the <code class="docutils literal notranslate"><span class="pre">RESUME</span></code> table has RNAME = ’Smith, Roberta’; otherwise, the
+expression evaluates as “false”. Since there is a row in <code class="docutils literal notranslate"><span class="pre">RESUME</span></code> with
+RNAME = ’Smith, Roberta’, the expression is true and Roberta Smith’s row
+is displayed. Each row in <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> is evaluated in a similar manner.</p>
+<p>The following is an example of the interim join (in shortened form)
+between the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> and <code class="docutils literal notranslate"><span class="pre">RESUME</span></code> Tables, for the above names
+which satisfied the search requirement by appearing in both tables:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">EMPLOYEE</span> <span class="n">Table</span>            <span class="n">RESUME</span> <span class="n">Table</span>
+<span class="n">EID</span> <span class="n">ENAME</span>          <span class="n">DEPT</span>   <span class="n">RES_ID</span>  <span class="n">RNAME</span>           <span class="n">JOB</span>       <span class="n">EXISTS</span>
+                                                            <span class="p">(</span><span class="n">subquery</span><span class="p">)</span>
+<span class="mi">107</span> <span class="n">Smith</span><span class="p">,</span> <span class="n">Roberta</span> <span class="n">RND</span>    <span class="n">R406</span>    <span class="n">Smith</span><span class="p">,</span> <span class="n">Roberta</span>  <span class="n">Engineer</span>  <span class="n">TRUE</span>
+<span class="mi">113</span> <span class="n">Ferrer</span><span class="p">,</span> <span class="n">Miguel</span> <span class="n">CSS</span>    <span class="n">R425</span>    <span class="n">Ferrer</span><span class="p">,</span> <span class="n">Miguel</span>  <span class="n">Analyst</span>   <span class="n">TRUE</span>
+</pre></div>
+</div>
+<p>Note in this example that there is no key ID field connecting the two
+tables; therefore the character field for name is being used to join the
+two tables, which might have been entered differently and therefore is
+not an altogether reliable join. This indicates that such a search is an
+unusual rather than a usual action.</p>
+<p>Such a search would be a good opportunity to use a Metamorph <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>
+qualifier rather than a straight join on a column as above, where
+<code class="docutils literal notranslate"><span class="pre">ENAME</span></code> must match exactly <code class="docutils literal notranslate"><span class="pre">RNAME</span></code>. A slightly more thorough way of
+searching for names appearing in both tables which were not necessarily
+intended to be matched exactly would use Metamorph’s approximate pattern
+matcher, indicated by a percent sign <code class="docutils literal notranslate"><span class="pre">%</span></code> preceding the name. For
+example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">EID</span><span class="p">,</span> <span class="n">ENAME</span>
+<span class="n">FROM</span>     <span class="n">EMPLOYEE</span>
+<span class="n">WHERE</span>    <span class="n">EXISTS</span>
+  <span class="p">(</span><span class="n">SELECT</span> <span class="o">*</span>
+   <span class="n">FROM</span>   <span class="n">RESUME</span>
+   <span class="n">WHERE</span>  <span class="n">EMPLOYEE</span><span class="o">.</span><span class="n">ENAME</span> <span class="n">LIKE</span> <span class="s1">&#39;%&#39;</span> <span class="o">+</span> <span class="n">RESUME</span><span class="o">.</span><span class="n">RNAME</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>In this example a name approximately like each <code class="docutils literal notranslate"><span class="pre">RNAME</span></code> in the
+<code class="docutils literal notranslate"><span class="pre">RESUME</span></code> table would be compared to each <code class="docutils literal notranslate"><span class="pre">ENAME</span></code> in the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code>
+table, increasing the likelihood of a match. (String concatenation is
+used to append the name found in the resume table to the percent sign
+(<code class="docutils literal notranslate"><span class="pre">%</span></code>) which signals the approximate pattern matcher XPM.)</p>
+<p>Often, a query is formed to test if no rows are returned in a subquery.
+In this case, the following form of the existence test is used:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">WHERE</span>   <span class="n">NOT</span> <span class="n">EXISTS</span> <span class="p">(</span><span class="n">subquery</span><span class="p">)</span>
+</pre></div>
+</div>
+<p><strong>Example:</strong> List any authors of reports submitted to the online
+corporate library who are not current employees of Acme Industrial. To
+find this out we would need to know which authors listed in the
+<code class="docutils literal notranslate"><span class="pre">REPORT</span></code> table are not entered as employees in the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table.</p>
+<p>Use this query:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">AUTHOR</span>
+<span class="n">FROM</span>     <span class="n">REPORT</span>
+<span class="n">WHERE</span>    <span class="n">NOT</span> <span class="n">EXISTS</span>
+  <span class="p">(</span><span class="n">SELECT</span> <span class="o">*</span>
+   <span class="n">FROM</span>   <span class="n">EMPLOYEE</span>
+   <span class="n">WHERE</span>  <span class="n">EMPLOYEE</span><span class="o">.</span><span class="n">ENAME</span> <span class="o">=</span> <span class="n">REPORT</span><span class="o">.</span><span class="n">AUTHOR</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>which would likely result in a list of former employees such as:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">AUTHOR</span>
+<span class="n">Acme</span><span class="p">,</span> <span class="n">John</span> <span class="n">Jacob</span> <span class="n">Snr</span><span class="o">.</span>
+<span class="n">Barrington</span><span class="p">,</span> <span class="n">Cedrick</span> <span class="n">II</span><span class="o">.</span>
+<span class="n">Rockefeller</span><span class="p">,</span> <span class="n">George</span> <span class="n">G</span><span class="o">.</span>
+</pre></div>
+</div>
+<p>Again, we have an example of a correlated subquery. Below is illustrated
+(in shortened form) how each row which satisfied the search requirement
+above in REPORT is evaluated with the records in <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> to
+determine which authors are not (or are no longer) Acme employees.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">REPORT</span> <span class="n">Table</span>                               <span class="n">EMPLOYEE</span> <span class="n">Table</span>  <span class="n">EXISTS</span>
+<span class="n">TITLE</span>              <span class="n">AUTHOR</span>
+<span class="n">Company</span> <span class="n">Origin</span>     <span class="n">Acme</span><span class="p">,</span> <span class="n">John</span> <span class="n">Jacob</span> <span class="n">Snr</span><span class="o">.</span>                   <span class="n">FALSE</span>
+<span class="n">Management</span> <span class="n">Art</span>     <span class="n">Barrington</span><span class="p">,</span> <span class="n">Cedrick</span> <span class="n">II</span><span class="o">.</span>                 <span class="n">FALSE</span>
+<span class="n">Financial</span> <span class="n">Control</span>  <span class="n">Rockefeller</span><span class="p">,</span> <span class="n">George</span> <span class="n">G</span><span class="o">.</span>                  <span class="n">FALSE</span>
+</pre></div>
+</div>
+<p>In this example each of the above authors from the REPORT Table are
+tested for existence in the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> Table. When they are not found
+to exist there it returns a value of FALSE. Since the query condition in
+the <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause is that it NOT EXISTS, this changes the false value
+to true, and these rows are displayed.</p>
+<p>For each of the queries shown in this section, there are probably
+several ways to obtain the same kind of result. Some correlated
+subqueries can also be expressed as joins. These examples are given not
+so much as the only definitive way to state these search requests, but
+more so as to give a model for what kinds of things are possible.</p>
+<p>This chapter has illustrated various complex query constructions
+possible with Texis, and has touched on the use of Metamorph in
+conjunction with standard SQL queries. The next chapter will explain
+Metamorph query language in depth and give examples of its use in
+locating relevant narrative text.</p>
+<dl class="footnote brackets">
+<dt class="label" id="id3"><span class="brackets"><a class="fn-backref" href="#id1">1</a></span></dt>
+<dd><p>The modulo operator (%) was added in Texis version 8; it is supported
+for integral types.</p>
+</dd>
+</dl>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

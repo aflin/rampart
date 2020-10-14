@@ -469,13 +469,17 @@ Added in version 02.06.934400000.
     \item \verb`allwords` \\
       Space-separate each string, e.g. ``{\tt one two bear arms}''.
     \item \verb`anywords` \\
-      Space-separate each string and append ``\verb`@0''', e.g. ``{\tt one two bear arms @0}''.
+      Space-separate each string and append ``\verb`@0''', e.g.
+       ``{\tt one two bear arms @0}''.
     \item \verb`allphrases` \\
-      Space-separate and double-quote each string, e.g. ``{\tt "one" "two" "bear arms"}''.
+      Space-separate and double-quote each string, e.g.
+      ``{\tt "one" "two" "bear arms"}''.
     \item \verb`anywords` \\
-      Space-separate and double-quote each string, and append ``\verb`@0''', e.g. ``{\tt "one" "two" "bear arms" @0}''.
+      Space-separate and double-quote each string, and append ``\verb`@0''',
+      e.g. ``{\tt "one" "two" "bear arms" @0}''.
     \item \verb`equivlist` \\
-      Make the string list into a parenthetical comma-separated list, e.g. ``{\tt (one,two,bear arms)}''.
+      Make the string list into a parenthetical comma-separated list,
+      e.g. ``{\tt (one,two,bear arms)}''.
   \end{itemize}
 
   The default is \verb`equivlist`.  Added in version 5.01.1225240000

@@ -1,0 +1,765 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Overview &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+            
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <!-- Local TOC -->
+                <div class="local-toc"><ul>
+<li><a class="reference internal" href="#">Overview</a></li>
+<li><a class="reference internal" href="#network-api-common-functions">Network API common functions</a></li>
+<li><a class="reference internal" href="#texis-specific-functions">Texis specific functions</a></li>
+</ul>
+</div>
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>Overview</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/texisapi.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="overview">
+<h1>Overview<a class="headerlink" href="#overview" title="Permalink to this headline">¶</a></h1>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SERVER</span> <span class="o">*</span><span class="n">openserver</span><span class="p">(</span><span class="n">char</span> <span class="o">*</span><span class="n">hostname</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">port</span><span class="p">)</span>
+<span class="n">SERVER</span> <span class="o">*</span><span class="n">closeserver</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">serverhandle</span><span class="p">)</span>
+<span class="nb">int</span>     <span class="n">serveruser</span><span class="p">(</span><span class="n">char</span> <span class="o">*</span><span class="n">username</span><span class="p">);</span>
+<span class="nb">int</span>     <span class="n">servergroup</span><span class="p">(</span><span class="n">char</span> <span class="o">*</span><span class="n">groupname</span><span class="p">);</span>
+<span class="nb">int</span>     <span class="n">serverpass</span><span class="p">(</span><span class="n">char</span> <span class="o">*</span><span class="n">password</span><span class="p">);</span>
+</pre></div>
+</div>
+<p><strong>Hit registration</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">int</span> <span class="n">n_regtexiscb</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">void</span> <span class="o">*</span><span class="n">usr</span><span class="p">,</span><span class="n">func</span> <span class="n">cb</span><span class="p">);</span>
+    <span class="n">func</span> <span class="n">cb</span><span class="p">(</span><span class="n">void</span> <span class="o">*</span><span class="n">usr</span><span class="p">,</span><span class="n">TEXIS</span> <span class="o">*</span><span class="n">tx</span><span class="p">,</span><span class="n">FLDLST</span> <span class="o">*</span><span class="n">fl</span><span class="p">);</span>
+</pre></div>
+</div>
+<p><strong>Hit information</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SRCHLST</span> <span class="o">*</span><span class="n">n_getsrchlst</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">TEXIS</span> <span class="o">*</span><span class="n">tx</span><span class="p">);</span>
+<span class="n">SRCHLST</span> <span class="o">*</span><span class="n">n_freesrchlst</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">SRCHLST</span> <span class="o">*</span><span class="n">sl</span><span class="p">);</span>
+<span class="n">SRCHI</span>   <span class="o">*</span><span class="n">n_srchinfo</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">SRCH</span> <span class="o">*</span><span class="n">sr</span><span class="p">,</span><span class="nb">int</span> <span class="n">i</span><span class="p">);</span>
+<span class="n">SRCHI</span>   <span class="o">*</span><span class="n">n_freesrchi</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">SRCHI</span> <span class="o">*</span><span class="n">si</span><span class="p">);</span>
+<span class="n">XPMI</span>    <span class="o">*</span><span class="n">n_xpminfo</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">SRCH</span> <span class="o">*</span><span class="n">sr</span><span class="p">,</span><span class="nb">int</span> <span class="n">i</span><span class="p">);</span>
+<span class="n">XPMI</span>    <span class="o">*</span><span class="n">n_freexpmi</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">XPMI</span> <span class="o">*</span><span class="n">xi</span><span class="p">);</span>
+</pre></div>
+</div>
+<p><strong>Object manipulation</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">BLOB</span> <span class="o">*</span><span class="n">newblob</span><span class="p">(</span><span class="n">char</span> <span class="o">*</span><span class="n">database</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">table</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">buf</span><span class="p">,</span><span class="nb">int</span> <span class="n">n</span><span class="p">);</span>
+<span class="n">BLOB</span> <span class="o">*</span><span class="n">putblob</span><span class="p">(</span><span class="n">BLOB</span> <span class="o">*</span><span class="n">bl</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">buf</span><span class="p">,</span><span class="nb">int</span> <span class="n">n</span><span class="p">);</span>
+<span class="n">BLOB</span> <span class="o">*</span><span class="n">closeblob</span><span class="p">(</span><span class="n">BLOB</span> <span class="o">*</span><span class="n">bl</span><span class="p">);</span>
+<span class="nb">int</span>   <span class="n">getblob</span><span class="p">(</span><span class="n">BLOB</span> <span class="o">*</span><span class="n">bl</span><span class="p">,</span><span class="n">char</span> <span class="o">**</span><span class="n">buf</span><span class="p">,</span><span class="nb">int</span> <span class="o">*</span><span class="n">n</span><span class="p">);</span>
+<span class="n">char</span> <span class="o">*</span><span class="n">newindirect</span><span class="p">(</span><span class="n">char</span> <span class="o">*</span><span class="n">database</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">table</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">filename</span><span class="p">);</span>
+</pre></div>
+</div>
+<p><strong>Texis control parameters</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">int</span> <span class="n">n_setdatabase</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">database</span><span class="p">);</span>
+<span class="nb">int</span> <span class="n">n_getdatabase</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">database</span><span class="p">);</span>
+</pre></div>
+</div>
+<p><strong>SQL interface</strong></p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">int</span> <span class="n">n_texis</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">queryformat</span><span class="p">,</span><span class="o">...</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>The Texis API provides the client program with an easy to use interface
+to ant Texis server without regard to machine type. This is the
+preferred interface and completely unrelated to the ODBC interface which
+is documented elswhere.</p>
+<p>The programmer is <em>strongly</em> encouraged to play with the example progams
+provided with the package before attempting their own implementation.</p>
+<dl class="simple">
+<dt>Server Connection Management</dt><dd><p>These functions allow you to connect and disconnect from a server.
+The return value from <code class="docutils literal notranslate"><span class="pre">openserver()</span></code> is a <code class="docutils literal notranslate"><span class="pre">SERVER</span> <span class="pre">*</span></code>, and will
+be used as the first parameter in all subsequent calls to the
+Server.</p>
+</dd>
+<dt>Hit registration</dt><dd><p>These functions tell the server which client function to “<em>call
+back</em>” when it has located information pertinent to the query.</p>
+</dd>
+<dt>Hit information</dt><dd><p>These functions allow you to obtain detailed information about any
+Metamorph queries that may have been used in the query.</p>
+</dd>
+<dt>Object manipulation</dt><dd><p>These functions allow you to manipulate indirect and blob fields
+within a Texis database.</p>
+</dd>
+<dt>Texis control parameters</dt><dd><p>This set of functions is for getting and changing the various
+operational parameters that define how a remote Texis performs.</p>
+</dd>
+<dt>SQL interface</dt><dd><p>This group of operations is for passing a user’s query onto the
+server for processing and subsequently obtaining the results.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="network-api-common-functions">
+<h1>Network API common functions<a class="headerlink" href="#network-api-common-functions" title="Permalink to this headline">¶</a></h1>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1">#include &quot;tstone.h&quot;</span>
+<span class="n">SERVER</span> <span class="o">*</span><span class="n">openserver</span><span class="p">(</span><span class="n">char</span> <span class="o">*</span><span class="n">hostname</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">port</span><span class="p">);</span>
+<span class="n">SERVER</span> <span class="o">*</span><span class="n">closeserver</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">serverhandle</span><span class="p">);</span>
+<span class="nb">int</span>     <span class="n">serveruser</span><span class="p">(</span><span class="n">char</span> <span class="o">*</span><span class="n">username</span><span class="p">);</span>
+<span class="nb">int</span>     <span class="n">servergroup</span><span class="p">(</span><span class="n">char</span> <span class="o">*</span><span class="n">groupname</span><span class="p">);</span>
+<span class="nb">int</span>     <span class="n">serverpass</span><span class="p">(</span><span class="n">char</span> <span class="o">*</span><span class="n">password</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>These rather generic sounding functions are for establishing or
+disconnecting a communication channel to a Thunderstone Server. The
+presumption is made that the host and port you open is the correct one
+for the type of calls you will be making.</p>
+<p>In general, the <code class="docutils literal notranslate"><span class="pre">openserver()</span></code> call returns a handle to the requested
+service at the specified <code class="docutils literal notranslate"><span class="pre">hostname</span></code> and <code class="docutils literal notranslate"><span class="pre">port</span></code>. The returned handle
+is of the type <code class="docutils literal notranslate"><span class="pre">SERVER</span> <span class="pre">*</span></code> and will have the value <code class="docutils literal notranslate"><span class="pre">SERVERPN</span></code> <a class="footnote-reference brackets" href="#id3" id="id1">1</a>
+if there’s a problem.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">closeserver()</span></code> call shuts the open communication channel with a
+server and frees the allocated memory on both the client and the server
+associated with the connection. <code class="docutils literal notranslate"><span class="pre">closeserver()</span></code> will return the value
+<code class="docutils literal notranslate"><span class="pre">SERVERPN</span></code>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">hostname</span></code> is a string that is the given internet name or number
+of the machine on which the reqested service is running. For example:
+<code class="docutils literal notranslate"><span class="pre">thunder.thunderstone.com</span></code> or <code class="docutils literal notranslate"><span class="pre">198.49.220.81</span></code>. The port number is
+also a string, and is the port number assigned to the service when it is
+brought up initially on the server machine. The port number may also be
+assigned a name of a service that is enumerated in the file
+<code class="docutils literal notranslate"><span class="pre">/etc/services</span></code>.</p>
+<p>Either <code class="docutils literal notranslate"><span class="pre">hostname</span></code> or <code class="docutils literal notranslate"><span class="pre">port</span></code> or both may be the empty string (<code class="docutils literal notranslate"><span class="pre">&quot;&quot;</span></code>)
+indicating that the compiled in default is to be used. The default for
+<code class="docutils literal notranslate"><span class="pre">hostname</span></code> is <code class="docutils literal notranslate"><span class="pre">&quot;localhost&quot;</span></code> indicating the same machine that the
+client application is running on. The default <code class="docutils literal notranslate"><span class="pre">port</span></code> is <code class="docutils literal notranslate"><span class="pre">&quot;10000&quot;</span></code>
+for Metamorph, <code class="docutils literal notranslate"><span class="pre">&quot;10001&quot;</span></code> for 3DB and <code class="docutils literal notranslate"><span class="pre">&quot;10002&quot;</span></code> for Texis.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">serveruser()</span></code>, <code class="docutils literal notranslate"><span class="pre">servergroup()</span></code>, and <code class="docutils literal notranslate"><span class="pre">serverpass()</span></code> calls set
+the user name, group name, and password, respectively, that
+<code class="docutils literal notranslate"><span class="pre">openserver()</span></code> will use when logging into the server. These functions
+will return zero on error. Non-zero is returned on success. If
+<code class="docutils literal notranslate"><span class="pre">servergroup()</span></code> is not used, the user will be logged into their
+default group as defined by the server.</p>
+<p>The default user name and password are both the empty string (<code class="docutils literal notranslate"><span class="pre">&quot;&quot;</span></code>).</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>SERVER *se;                                  /* network server pointer */
+SRCH   *sr;                                          /* search pointer */
+
+                                              /* connect to the server */
+if(serveruser(&quot;me&quot;)         &amp;&amp;
+   servergroup(&quot;somegroup&quot;) &amp;&amp;
+   serverpass(&quot;mypassword&quot;) &amp;&amp;
+   (se=openserver(&quot;thunder.thunderstone.com&quot;,&quot;666&quot;))!=SERVERPN)
+   {
+    n_reghitcb(se,(void *)NULL,mycallback);      /* setup hit callback */
+    if((sr=n_setqry(se,&quot;power struggle&quot;))!=SRCHPN)  /* setup the query */
+        {
+         if(!n_search(se,sr))                         /* find all hits */
+             puts(&quot;n_search() failed&quot;);
+         n_closesrch(se,sr);                      /* cleanup the query */
+        }
+    closeserver(se);                         /* disconnect from server */
+   }
+</pre></div>
+</div>
+<p>Make sure you are talking to the right port!</p>
+<p><code class="docutils literal notranslate"><span class="pre">/etc/services</span></code>, <code class="docutils literal notranslate"><span class="pre">services(4)</span></code></p>
+</div>
+<div class="section" id="texis-specific-functions">
+<h1>Texis specific functions<a class="headerlink" href="#texis-specific-functions" title="Permalink to this headline">¶</a></h1>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1">#include &quot;tstone.h&quot;</span>
+<span class="n">FLDLST</span>
+<span class="p">{</span>
+ <span class="nb">int</span>    <span class="n">n</span><span class="p">;</span>              <span class="o">/*</span> <span class="n">number</span> <span class="n">of</span> <span class="n">items</span> <span class="ow">in</span> <span class="n">each</span> <span class="n">of</span> <span class="n">following</span> <span class="n">lists</span> <span class="o">*/</span>
+ <span class="nb">int</span>   <span class="o">*</span><span class="nb">type</span><span class="p">;</span>                             <span class="o">/*</span> <span class="n">types</span> <span class="n">of</span> <span class="n">field</span> <span class="p">(</span><span class="n">FTN_xxx</span><span class="p">)</span> <span class="o">*/</span>
+ <span class="n">void</span> <span class="o">**</span><span class="n">data</span><span class="p">;</span>                                   <span class="o">/*</span> <span class="n">data</span> <span class="n">array</span> <span class="n">pointer</span> <span class="o">*/</span>
+ <span class="nb">int</span>   <span class="o">*</span><span class="n">ndata</span><span class="p">;</span>                    <span class="o">/*</span> <span class="n">number</span> <span class="n">of</span> <span class="n">elements</span> <span class="ow">in</span> <span class="n">data</span> <span class="n">array</span> <span class="o">*/</span>
+ <span class="n">char</span> <span class="o">**</span><span class="n">name</span><span class="p">;</span>                                        <span class="o">/*</span> <span class="n">name</span> <span class="n">of</span> <span class="n">field</span> <span class="o">*/</span>
+<span class="p">};</span>
+<span class="nb">int</span> <span class="n">n_regtexiscb</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">void</span> <span class="o">*</span><span class="n">usr</span><span class="p">,</span><span class="n">func</span> <span class="n">cb</span><span class="p">(</span><span class="n">void</span> <span class="o">*</span><span class="n">usr</span><span class="p">,</span><span class="n">TEXIS</span> <span class="o">*</span><span class="n">tx</span><span class="p">,</span><span class="n">FLDLST</span> <span class="o">*</span><span class="n">fl</span><span class="p">));</span>
+</pre></div>
+</div>
+<p>This function assigns the callback routine that the server is to call
+each time it locates an item that matches the user’s query. The client
+program can pass along a pointer to a “user” object to the register
+function that will be in turn passed to the callback routine on each
+invocation.</p>
+<p>The callback routine also gets a <code class="docutils literal notranslate"><span class="pre">TEXIS</span></code> handle that can be used to
+get further information about the hit (see <code class="docutils literal notranslate"><span class="pre">n_getsrchlst()</span></code>) and a
+<code class="docutils literal notranslate"><span class="pre">FLDLST</span></code> handle that contains the <code class="docutils literal notranslate"><span class="pre">select</span></code>ed fields.</p>
+<p>A <code class="docutils literal notranslate"><span class="pre">FLDLST</span></code> is a structure containing parallel arrays of information
+about the selected fields and a count of those fields. <code class="docutils literal notranslate"><span class="pre">FLDLST</span></code>
+members:</p>
+<p><code class="docutils literal notranslate"><span class="pre">int</span> <span class="pre">n</span></code> — The number of fields in the following lists.</p>
+<p><code class="docutils literal notranslate"><span class="pre">int</span> <span class="pre">*type</span></code> — An array of types of the fields. Each element will be
+one of the <code class="docutils literal notranslate"><span class="pre">FTN_xxxx</span></code> macros.</p>
+<p><code class="docutils literal notranslate"><span class="pre">void</span> <span class="pre">**data</span></code> — An array of data pointers. Each element will point to
+the data for the field. The data for a field is an array of <code class="docutils literal notranslate"><span class="pre">type</span></code>s.</p>
+<p><code class="docutils literal notranslate"><span class="pre">int</span> <span class="pre">*ndata</span></code> — An array of data counts. Each element says how many
+elements are in the <code class="docutils literal notranslate"><span class="pre">data</span></code> array for this field.</p>
+<p><code class="docutils literal notranslate"><span class="pre">char</span> <span class="pre">**name</span></code> — An array of strings containing the names of the
+fields.</p>
+<p>Possible types in <code class="docutils literal notranslate"><span class="pre">FLDLST-&gt;type</span></code> array:</p>
+<p><code class="docutils literal notranslate"><span class="pre">FTN_BYTE</span></code> — An 8 bit <code class="docutils literal notranslate"><span class="pre">byte</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">FTN_CHAR</span></code> — A <code class="docutils literal notranslate"><span class="pre">char</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">FTN_DOUBLE</span></code> — A <code class="docutils literal notranslate"><span class="pre">double</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">FTN_DWORD</span></code> — A 32 bit <code class="docutils literal notranslate"><span class="pre">dword</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">FTN_FLOAT</span></code> — A <code class="docutils literal notranslate"><span class="pre">float</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">FTN_INT</span></code> — An <code class="docutils literal notranslate"><span class="pre">int</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">FTN_INTEGER</span></code> — An <code class="docutils literal notranslate"><span class="pre">int</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">FTN_LONG</span></code> — A <code class="docutils literal notranslate"><span class="pre">long</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">FTN_INT64</span></code> — An <code class="docutils literal notranslate"><span class="pre">int64</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">FTN_UINT64</span></code> — A <code class="docutils literal notranslate"><span class="pre">uint64</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">FTN_SHORT</span></code> — A <code class="docutils literal notranslate"><span class="pre">short</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">FTN_SMALLINT</span></code> — A <code class="docutils literal notranslate"><span class="pre">short</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">FTN_WORD</span></code> — A 16 bit <code class="docutils literal notranslate"><span class="pre">word</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">FTN_INDIRECT</span></code> — A <code class="docutils literal notranslate"><span class="pre">char</span></code> string URL indicating the file that the
+data for this field is stored in.</p>
+<p><code class="docutils literal notranslate"><span class="pre">FTN_DATE</span></code> — A <code class="docutils literal notranslate"><span class="pre">time_t</span></code> in the same form as that from the <code class="docutils literal notranslate"><span class="pre">time()</span></code>
+system call.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">type</span></code> may also be <code class="docutils literal notranslate"><span class="pre">|</span></code>ed with <code class="docutils literal notranslate"><span class="pre">FTN_NotNullableFlag</span></code>
+(formerly <code class="docutils literal notranslate"><span class="pre">DDNULLBIT</span></code>) and/or <code class="docutils literal notranslate"><span class="pre">DDVARBIT</span></code>. If <code class="docutils literal notranslate"><span class="pre">FTN_NotNullableFlag</span></code>
+is set, it indicates that the field is not allowed to be NULL.
+<code class="docutils literal notranslate"><span class="pre">DDVARBIT</span></code> indicated that the field is variable length instead of
+fixed length. When handling hit results these bits can generally be
+ignored.</p>
+<p><code class="docutils literal notranslate"><span class="pre">n_regtexiscb()</span></code> will return true if the registration was successful,
+and will return false (0) on error.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1">#include &quot;tstone.h&quot;</span>
+
+<span class="c1">#define USERDATA my_data_structure</span>
+<span class="n">USERDATA</span>
+<span class="p">{</span>
+ <span class="n">FILE</span>   <span class="o">*</span><span class="n">outfile</span><span class="p">;</span>  <span class="o">/*</span> <span class="n">where</span> <span class="n">I</span> <span class="n">will</span> <span class="n">log</span> <span class="n">the</span> <span class="n">hits</span> <span class="o">*/</span>
+ <span class="n">long</span>   <span class="n">hitcount</span><span class="p">;</span>  <span class="o">/*</span> <span class="n">just</span> <span class="k">for</span> <span class="n">fun</span> <span class="o">*/</span>
+<span class="p">};</span>
+
+<span class="n">void</span>
+<span class="n">dispnames</span><span class="p">(</span><span class="n">ud</span><span class="p">,</span><span class="n">fl</span><span class="p">)</span>
+<span class="n">USERDATA</span> <span class="o">*</span><span class="n">ud</span><span class="p">;</span>
+<span class="n">FLDLST</span> <span class="o">*</span><span class="n">fl</span><span class="p">;</span>
+<span class="p">{</span>
+ <span class="nb">int</span> <span class="n">i</span><span class="p">;</span>
+
+ <span class="k">for</span><span class="p">(</span><span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="n">i</span><span class="o">&lt;</span><span class="n">fl</span><span class="o">-&gt;</span><span class="n">n</span><span class="p">;</span><span class="n">i</span><span class="o">++</span><span class="p">)</span>                                    <span class="o">/*</span> <span class="n">every</span> <span class="n">field</span> <span class="o">*/</span>
+    <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%s</span><span class="s2"> &quot;</span><span class="p">,</span><span class="n">fl</span><span class="o">-&gt;</span><span class="n">name</span><span class="p">[</span><span class="n">i</span><span class="p">]);</span>
+ <span class="n">putchar</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span><span class="p">);</span>                                      <span class="o">/*</span> <span class="n">end</span> <span class="n">header</span> <span class="n">line</span> <span class="o">*/</span>
+<span class="p">}</span>
+
+<span class="n">void</span>
+<span class="n">dispfields</span><span class="p">(</span><span class="n">ud</span><span class="p">,</span><span class="n">fl</span><span class="p">)</span>
+<span class="n">USERDATA</span> <span class="o">*</span><span class="n">ud</span><span class="p">;</span>
+<span class="n">FLDLST</span> <span class="o">*</span><span class="n">fl</span><span class="p">;</span>
+<span class="p">{</span>
+ <span class="nb">int</span> <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">;</span>
+
+ <span class="k">for</span><span class="p">(</span><span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="n">i</span><span class="o">&lt;</span><span class="n">fl</span><span class="o">-&gt;</span><span class="n">n</span><span class="p">;</span><span class="n">i</span><span class="o">++</span><span class="p">)</span>
+    <span class="p">{</span>
+     <span class="nb">int</span>   <span class="nb">type</span><span class="o">=</span><span class="n">fl</span><span class="o">-&gt;</span><span class="nb">type</span><span class="p">[</span><span class="n">i</span><span class="p">];</span>                       <span class="o">/*</span> <span class="n">the</span> <span class="nb">type</span> <span class="n">of</span> <span class="n">field</span> <span class="o">*/</span>
+     <span class="n">void</span> <span class="o">*</span><span class="n">p</span>   <span class="o">=</span><span class="n">fl</span><span class="o">-&gt;</span><span class="n">data</span><span class="p">[</span><span class="n">i</span><span class="p">];</span>                     <span class="o">/*</span> <span class="n">pointer</span> <span class="n">to</span> <span class="n">the</span> <span class="n">data</span> <span class="o">*/</span>
+     <span class="nb">int</span>   <span class="n">n</span>   <span class="o">=</span><span class="n">fl</span><span class="o">-&gt;</span><span class="n">ndata</span><span class="p">;</span>                         <span class="o">/*</span> <span class="n">how</span> <span class="n">many</span> <span class="n">elements</span> <span class="o">*/</span>
+     <span class="k">if</span><span class="p">(</span><span class="n">i</span><span class="o">&gt;</span><span class="mi">0</span><span class="p">)</span> <span class="n">putchar</span><span class="p">(</span><span class="s1">&#39;</span><span class="se">\t</span><span class="s1">&#39;</span><span class="p">);</span>      <span class="o">/*</span> <span class="n">tab</span> <span class="n">between</span> <span class="n">fields</span><span class="p">,</span> <span class="n">but</span> <span class="ow">not</span> <span class="n">leading</span> <span class="o">*/</span>
+     <span class="n">switch</span><span class="p">(</span><span class="nb">type</span><span class="o">&amp;~</span><span class="p">(</span><span class="n">DDNULLBIT</span><span class="o">|</span><span class="n">DDVARBIT</span><span class="p">))</span><span class="o">/*</span> <span class="n">ignore</span> <span class="n">NULL</span> <span class="ow">and</span> <span class="n">VARIABLE</span> <span class="n">bits</span> <span class="o">*/</span>
+        <span class="p">{</span>
+                            <span class="o">/*</span> <span class="n">loop</span> <span class="n">through</span> <span class="n">each</span> <span class="n">element</span> <span class="n">of</span> <span class="n">field</span> <span class="n">via</span> <span class="n">j</span> <span class="o">*/</span>
+                                    <span class="o">/*</span> <span class="n">cast</span> <span class="ow">and</span> <span class="nb">print</span> <span class="n">according</span> <span class="n">to</span> <span class="nb">type</span> <span class="o">*/</span>
+         <span class="n">case</span> <span class="n">FTN_BYTE</span>    <span class="p">:</span> <span class="k">for</span><span class="p">(</span><span class="n">j</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="n">j</span><span class="o">&lt;</span><span class="n">n</span><span class="p">;</span><span class="n">j</span><span class="o">++</span><span class="p">)</span>
+                             <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;0x</span><span class="si">%x</span><span class="s2"> &quot;</span><span class="p">,((</span><span class="n">byte</span> <span class="o">*</span><span class="p">)</span><span class="n">p</span><span class="p">)[</span><span class="n">j</span><span class="p">]);</span>
+                            <span class="k">break</span><span class="p">;</span>
+         <span class="n">case</span> <span class="n">FTN_INDIRECT</span><span class="p">:</span> <span class="o">/*</span><span class="n">nobreak</span><span class="p">;</span> <span class="n">just</span> <span class="nb">print</span> <span class="n">the</span> <span class="n">filename</span> <span class="k">as</span> <span class="n">a</span> <span class="n">string</span><span class="o">*/</span>
+         <span class="n">case</span> <span class="n">FTN_CHAR</span>    <span class="p">:</span> <span class="k">for</span><span class="p">(</span><span class="n">j</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="n">j</span><span class="o">&lt;</span><span class="n">n</span> <span class="o">&amp;&amp;</span> <span class="p">((</span><span class="n">char</span> <span class="o">*</span><span class="p">)</span><span class="n">p</span><span class="p">)[</span><span class="n">j</span><span class="p">]</span><span class="o">!=</span><span class="s1">&#39;</span><span class="se">\0</span><span class="s1">&#39;</span><span class="p">;</span><span class="n">j</span><span class="o">++</span><span class="p">)</span>
+                             <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%c</span><span class="s2">&quot;</span>  <span class="p">,((</span><span class="n">char</span> <span class="o">*</span><span class="p">)</span><span class="n">p</span><span class="p">)[</span><span class="n">j</span><span class="p">]);</span>
+                            <span class="k">break</span><span class="p">;</span>
+         <span class="n">case</span> <span class="n">FTN_DOUBLE</span>  <span class="p">:</span> <span class="k">for</span><span class="p">(</span><span class="n">j</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="n">j</span><span class="o">&lt;</span><span class="n">n</span><span class="p">;</span><span class="n">j</span><span class="o">++</span><span class="p">)</span>
+                             <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%lf</span><span class="s2"> &quot;</span><span class="p">,((</span><span class="n">double</span> <span class="o">*</span><span class="p">)</span><span class="n">p</span><span class="p">)[</span><span class="n">j</span><span class="p">]);</span>
+                            <span class="k">break</span><span class="p">;</span>
+         <span class="n">case</span> <span class="n">FTN_DWORD</span>   <span class="p">:</span> <span class="k">for</span><span class="p">(</span><span class="n">j</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="n">j</span><span class="o">&lt;</span><span class="n">n</span><span class="p">;</span><span class="n">j</span><span class="o">++</span><span class="p">)</span>
+                             <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%lu</span><span class="s2"> &quot;</span><span class="p">,(</span><span class="n">unsigned</span> <span class="n">long</span><span class="p">)((</span><span class="n">dword</span> <span class="o">*</span><span class="p">)</span><span class="n">p</span><span class="p">)[</span><span class="n">j</span><span class="p">]);</span>
+                            <span class="k">break</span><span class="p">;</span>
+         <span class="n">case</span> <span class="n">FTN_FLOAT</span>   <span class="p">:</span> <span class="k">for</span><span class="p">(</span><span class="n">j</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="n">j</span><span class="o">&lt;</span><span class="n">n</span><span class="p">;</span><span class="n">j</span><span class="o">++</span><span class="p">)</span>
+                             <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%f</span><span class="s2"> &quot;</span> <span class="p">,((</span><span class="nb">float</span> <span class="o">*</span><span class="p">)</span><span class="n">p</span><span class="p">)[</span><span class="n">j</span><span class="p">]);</span>
+                            <span class="k">break</span><span class="p">;</span>
+         <span class="n">case</span> <span class="n">FTN_INT</span>     <span class="p">:</span> <span class="k">for</span><span class="p">(</span><span class="n">j</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="n">j</span><span class="o">&lt;</span><span class="n">n</span><span class="p">;</span><span class="n">j</span><span class="o">++</span><span class="p">)</span>
+                             <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> &quot;</span> <span class="p">,((</span><span class="nb">int</span> <span class="o">*</span><span class="p">)</span><span class="n">p</span><span class="p">)[</span><span class="n">j</span><span class="p">]);</span>
+                            <span class="k">break</span><span class="p">;</span>
+         <span class="n">case</span> <span class="n">FTN_INTEGER</span> <span class="p">:</span> <span class="k">for</span><span class="p">(</span><span class="n">j</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="n">j</span><span class="o">&lt;</span><span class="n">n</span><span class="p">;</span><span class="n">j</span><span class="o">++</span><span class="p">)</span>
+                             <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> &quot;</span> <span class="p">,((</span><span class="nb">int</span> <span class="o">*</span><span class="p">)</span><span class="n">p</span><span class="p">)[</span><span class="n">j</span><span class="p">]);</span>
+                            <span class="k">break</span><span class="p">;</span>
+         <span class="n">case</span> <span class="n">FTN_LONG</span>    <span class="p">:</span> <span class="k">for</span><span class="p">(</span><span class="n">j</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="n">j</span><span class="o">&lt;</span><span class="n">n</span><span class="p">;</span><span class="n">j</span><span class="o">++</span><span class="p">)</span>
+                             <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%ld</span><span class="s2"> &quot;</span><span class="p">,((</span><span class="n">long</span> <span class="o">*</span><span class="p">)</span><span class="n">p</span><span class="p">)[</span><span class="n">j</span><span class="p">]);</span>
+                            <span class="k">break</span><span class="p">;</span>
+         <span class="n">case</span> <span class="n">FTN_SHORT</span>   <span class="p">:</span> <span class="k">for</span><span class="p">(</span><span class="n">j</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="n">j</span><span class="o">&lt;</span><span class="n">n</span><span class="p">;</span><span class="n">j</span><span class="o">++</span><span class="p">)</span>
+                             <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> &quot;</span> <span class="p">,((</span><span class="n">short</span> <span class="o">*</span><span class="p">)</span><span class="n">p</span><span class="p">)[</span><span class="n">j</span><span class="p">]);</span>
+                            <span class="k">break</span><span class="p">;</span>
+         <span class="n">case</span> <span class="n">FTN_SMALLINT</span><span class="p">:</span> <span class="k">for</span><span class="p">(</span><span class="n">j</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="n">j</span><span class="o">&lt;</span><span class="n">n</span><span class="p">;</span><span class="n">j</span><span class="o">++</span><span class="p">)</span>
+                             <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%d</span><span class="s2"> &quot;</span> <span class="p">,((</span><span class="n">short</span> <span class="o">*</span><span class="p">)</span><span class="n">p</span><span class="p">)[</span><span class="n">j</span><span class="p">]);</span>
+                            <span class="k">break</span><span class="p">;</span>
+         <span class="n">case</span> <span class="n">FTN_WORD</span>    <span class="p">:</span> <span class="k">for</span><span class="p">(</span><span class="n">j</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="n">j</span><span class="o">&lt;</span><span class="n">n</span><span class="p">;</span><span class="n">j</span><span class="o">++</span><span class="p">)</span>
+                             <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%u</span><span class="s2"> &quot;</span> <span class="p">,(</span><span class="n">unsigned</span> <span class="nb">int</span><span class="p">)((</span><span class="n">word</span> <span class="o">*</span><span class="p">)</span><span class="n">p</span><span class="p">)[</span><span class="n">j</span><span class="p">]);</span>
+                            <span class="k">break</span><span class="p">;</span>
+             <span class="o">/*</span> <span class="n">assume</span> <span class="n">exactly</span> <span class="n">one</span> <span class="n">element</span> <span class="n">on</span> <span class="n">FTN_DATE</span> <span class="k">for</span> <span class="n">this</span> <span class="n">example</span> <span class="o">*/</span>
+         <span class="n">case</span> <span class="n">FTN_DATE</span>    <span class="p">:</span> <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;</span><span class="si">%.25s</span><span class="s2">&quot;</span><span class="p">,</span><span class="n">ctime</span><span class="p">(</span><span class="n">p</span><span class="p">));</span>   <span class="o">/*</span> <span class="n">human</span> <span class="nb">format</span> <span class="o">*/</span>
+                            <span class="k">break</span><span class="p">;</span>
+         <span class="n">default</span>          <span class="p">:</span> <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;unknowntype(</span><span class="si">%d</span><span class="s2">)&quot;</span><span class="p">,</span><span class="nb">type</span><span class="p">);</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="nb">int</span>
+<span class="n">hit_handler</span><span class="p">(</span><span class="n">usr</span><span class="p">,</span><span class="n">tx</span><span class="p">,</span><span class="n">fl</span><span class="p">)</span>
+<span class="n">void</span> <span class="o">*</span><span class="n">usr</span><span class="p">;</span>  <span class="o">/*</span> <span class="n">my</span> <span class="n">USERDATA</span> <span class="n">POINTER</span> <span class="o">*/</span>
+<span class="n">TEXIS</span> <span class="o">*</span><span class="n">tx</span><span class="p">;</span>  <span class="o">/*</span> <span class="n">texis</span> <span class="n">api</span> <span class="n">handle</span> <span class="o">*/</span>
+<span class="n">FLDLST</span> <span class="o">*</span><span class="n">fl</span><span class="p">;</span> <span class="o">/*</span> <span class="n">The</span> <span class="n">field</span> <span class="nb">list</span> <span class="n">data</span> <span class="n">structure</span> <span class="o">*/</span>
+<span class="p">{</span>
+ <span class="n">USERDATA</span> <span class="o">*</span><span class="n">ud</span><span class="o">=</span><span class="p">(</span><span class="n">USERDATA</span> <span class="o">*</span><span class="p">)</span><span class="n">usr</span><span class="p">;</span>      <span class="o">/*</span> <span class="n">cast</span> <span class="n">the</span> <span class="n">void</span> <span class="n">into</span> <span class="n">the</span> <span class="n">real</span> <span class="nb">type</span> <span class="o">*/</span>
+
+ <span class="o">++</span><span class="n">ud</span><span class="o">-&gt;</span><span class="n">hitcount</span><span class="p">;</span>                          <span class="o">/*</span> <span class="n">add</span> <span class="n">one</span> <span class="n">to</span> <span class="n">the</span> <span class="n">hit</span> <span class="n">counter</span> <span class="o">*/</span>
+
+ <span class="k">if</span><span class="p">(</span><span class="n">ud</span><span class="o">-&gt;</span><span class="n">hitcount</span><span class="o">==</span><span class="mi">1</span><span class="p">)</span>                            <span class="o">/*</span> <span class="n">before</span> <span class="n">the</span> <span class="n">first</span> <span class="n">hit</span> <span class="o">*/</span>
+    <span class="n">dispnames</span><span class="p">(</span><span class="n">ud</span><span class="p">,</span><span class="n">fl</span><span class="p">);</span>                 <span class="o">/*</span> <span class="n">display</span> <span class="nb">all</span> <span class="n">of</span> <span class="n">the</span> <span class="n">field</span> <span class="n">names</span> <span class="o">*/</span>
+ <span class="n">dispfields</span><span class="p">(</span><span class="n">ud</span><span class="p">,</span><span class="n">fl</span><span class="p">);</span>                        <span class="o">/*</span> <span class="n">display</span> <span class="nb">all</span> <span class="n">of</span> <span class="n">the</span> <span class="n">fields</span> <span class="o">*/</span>
+
+ <span class="k">if</span><span class="p">(</span><span class="n">ud</span><span class="o">-&gt;</span><span class="n">hitcount</span><span class="o">&gt;=</span><span class="mi">100</span><span class="p">)</span> <span class="o">/*</span> <span class="n">tell</span> <span class="n">the</span> <span class="n">server</span> <span class="n">to</span> <span class="n">stop</span> <span class="k">if</span> <span class="n">I</span><span class="s1">&#39;ve seen too many */</span>
+    <span class="k">return</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+ <span class="k">return</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>              <span class="o">/*</span> <span class="n">tell</span> <span class="n">the</span> <span class="n">server</span> <span class="n">to</span> <span class="n">keep</span> <span class="n">giving</span> <span class="n">me</span> <span class="n">more</span> <span class="n">hits</span> <span class="o">*/</span>
+<span class="p">}</span>
+
+<span class="nb">int</span>
+<span class="n">main</span><span class="p">()</span>
+<span class="p">{</span>
+ <span class="n">SERVER</span>  <span class="o">*</span><span class="n">se</span><span class="p">;</span>
+ <span class="n">USERDATA</span> <span class="n">mydata</span><span class="p">;</span>
+ <span class="o">...</span>
+ <span class="n">mydata</span><span class="o">.</span><span class="n">outfile</span><span class="o">=</span><span class="p">(</span><span class="n">FILE</span> <span class="o">*</span><span class="p">)</span><span class="n">NULL</span><span class="p">;</span>
+ <span class="n">mydata</span><span class="o">.</span><span class="n">hitcount</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span>
+ <span class="n">n_regtexiscb</span><span class="p">(</span><span class="n">se</span><span class="p">,</span><span class="n">mydata</span><span class="p">,</span><span class="n">hit_handler</span><span class="p">);</span>
+ <span class="o">...</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>The example program <code class="docutils literal notranslate"><span class="pre">netex3.c</span></code>.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1">#include &quot;tstone.h&quot;</span>
+<span class="n">SRCHLST</span>
+<span class="p">{</span>
+ <span class="nb">int</span> <span class="n">n</span><span class="p">;</span>                                  <span class="o">/*</span> <span class="n">number</span> <span class="n">of</span> <span class="n">elements</span> <span class="ow">in</span> <span class="n">lst</span> <span class="o">*/</span>
+ <span class="n">SRCH</span> <span class="n">lst</span><span class="p">[];</span>                            <span class="o">/*</span> <span class="nb">list</span> <span class="n">of</span> <span class="n">Metamorph</span> <span class="n">searches</span> <span class="o">*/</span>
+<span class="p">};</span>
+<span class="n">SRCHLST</span> <span class="o">*</span><span class="n">n_getsrchlst</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">TEXIS</span> <span class="o">*</span><span class="n">tx</span><span class="p">);</span>
+<span class="n">SRCHLST</span> <span class="o">*</span><span class="n">n_freesrchlst</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">SRCHLST</span> <span class="o">*</span><span class="n">sl</span><span class="p">);</span>
+
+<span class="n">SRCHI</span>
+<span class="p">{</span>
+ <span class="n">char</span> <span class="o">*</span><span class="n">what</span><span class="p">;</span>                                 <span class="o">/*</span> <span class="n">what</span> <span class="n">was</span> <span class="n">searched</span> <span class="k">for</span> <span class="o">*/</span>
+ <span class="n">char</span> <span class="o">*</span><span class="n">where</span><span class="p">;</span>                                       <span class="o">/*</span> <span class="n">what</span> <span class="n">was</span> <span class="n">found</span> <span class="o">*/</span>
+ <span class="nb">int</span>   <span class="nb">len</span><span class="p">;</span>                                 <span class="o">/*</span> <span class="n">length</span> <span class="n">of</span> <span class="n">where</span> <span class="n">buffer</span> <span class="o">*/</span>
+<span class="p">};</span>
+<span class="n">SRCHI</span>   <span class="o">*</span><span class="n">n_srchinfo</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">SRCH</span> <span class="o">*</span><span class="n">sr</span><span class="p">,</span><span class="nb">int</span> <span class="n">i</span><span class="p">);</span>
+<span class="n">SRCHI</span>   <span class="o">*</span><span class="n">n_freesrchi</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">SRCHI</span> <span class="o">*</span><span class="n">si</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>These functions may be used within the hit callback function to obtain
+detailed information about any Metamorph queries that may have been used
+in the query. <code class="docutils literal notranslate"><span class="pre">n_getsrchlst()</span></code> takes the TEXIS handle passed to the
+hit callback function and returns a list of handles to all Metamorph
+searches associated with the query. These handles may then be used in
+calls to <code class="docutils literal notranslate"><span class="pre">n_srchinfo()</span></code>. <code class="docutils literal notranslate"><span class="pre">SRCHLSTPN</span></code> is returned on error.
+<code class="docutils literal notranslate"><span class="pre">SRCHLST</span></code> members:</p>
+<p><code class="docutils literal notranslate"><span class="pre">int</span> <span class="pre">n</span></code> — The number of searches contained in <code class="docutils literal notranslate"><span class="pre">lst</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">SRCH</span> <span class="pre">lst[]</span></code> — The array of searches.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">SRCHLST</span></code> returned by <code class="docutils literal notranslate"><span class="pre">n_getsrchlst()</span></code> should be freed by
+calling <code class="docutils literal notranslate"><span class="pre">n_freesrchlst()</span></code> when it is no longer needed.</p>
+<p><code class="docutils literal notranslate"><span class="pre">n_srchinfo()</span></code> takes a search handle and the index of the sub-hit to
+return information about. It returns a <code class="docutils literal notranslate"><span class="pre">SRCHI</span></code> pointer on success or
+SRCHIPN on error or if the index is out of range. The index may be
+controlled by a loop to get information about all parts of the hit.</p>
+<p>Index values and what they return:</p>
+<div class="line-block">
+<div class="line">xxxxxx = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx = xxxxxxxxxxxxxxxxxxxxx Index
+<code class="docutils literal notranslate"><span class="pre">SRCHI-&gt;what</span></code> points to <code class="docutils literal notranslate"><span class="pre">SRCHI-&gt;where</span></code> contains</div>
+<div class="line">0 The original query The whole hit</div>
+<div class="line">1 A regular expression The start delimiter</div>
+<div class="line">2 A regular expression The end delimiter</div>
+<div class="line">3-n The “set” being searched for The match</div>
+<div class="line">as listed below</div>
+</div>
+<div class="line-block">
+<div class="line">xxxxxxxxx = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx Set type
+<code class="docutils literal notranslate"><span class="pre">SRCHI-&gt;what</span></code> points to</div>
+<div class="line">REX A regular expression</div>
+<div class="line">NPM The npm query expression</div>
+<div class="line">PPM The root word of the list of words</div>
+<div class="line">XPM The “approximate” string</div>
+</div>
+<p>Each <code class="docutils literal notranslate"><span class="pre">SRCHI</span></code> returned by <code class="docutils literal notranslate"><span class="pre">n_srchinfo()</span></code> should be freed by calling
+<code class="docutils literal notranslate"><span class="pre">n_freesrchi()</span></code> when it is no longer needed.</p>
+<p><code class="docutils literal notranslate"><span class="pre">n_xpminfo()</span></code> and its example.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="c1">#include &quot;tstone.h&quot;</span>
+<span class="n">XPMI</span> <span class="o">*</span><span class="n">n_xpminfo</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">SRCH</span> <span class="o">*</span><span class="n">sr</span><span class="p">,</span><span class="nb">int</span> <span class="n">index</span><span class="p">);</span>
+<span class="n">XPMI</span> <span class="o">*</span><span class="n">n_freexpmi</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">XPMI</span> <span class="o">*</span><span class="n">xi</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>These functions may be used within the hit callback function to obtain
+detailed information about any search terms that may have used the
+approximate pattern matcher (XPM). <code class="docutils literal notranslate"><span class="pre">n_xpminfo()</span></code> is called with the
+index of the desired XPM.</p>
+<p>It returns a structure containing everything about that XPM. It returns
+XPMIPN <a class="footnote-reference brackets" href="#id4" id="id2">2</a> if index is out of bounds.</p>
+<p>To get all XPM subhits put <code class="docutils literal notranslate"><span class="pre">n_xpminfo()</span></code> in a loop with index starting
+at zero and incrementing until <code class="docutils literal notranslate"><span class="pre">XPMIPN</span></code> is returned.</p>
+<p>Each valid structure returned by <code class="docutils literal notranslate"><span class="pre">n_xpminfo()</span></code> should be freed by
+calling <code class="docutils literal notranslate"><span class="pre">n_freexpmi()</span></code> when it is no longer needed.</p>
+<p>The XPMI structure contains the following members:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">XPMI</span>                                                      <span class="o">/*</span> <span class="n">XPM</span> <span class="n">Info</span> <span class="o">*/</span>
+<span class="p">{</span>
+ <span class="n">word</span>  <span class="n">thresh</span><span class="p">;</span>               <span class="o">/*</span> <span class="n">threshold</span> <span class="n">above</span> <span class="n">which</span> <span class="n">a</span> <span class="n">hit</span> <span class="n">can</span> <span class="n">occur</span> <span class="o">*/</span>
+ <span class="n">word</span>  <span class="n">maxthresh</span><span class="p">;</span>                            <span class="o">/*</span> <span class="n">exact</span> <span class="n">match</span> <span class="n">threshold</span> <span class="o">*/</span>
+ <span class="n">word</span>  <span class="n">thishit</span><span class="p">;</span>                               <span class="o">/*</span> <span class="n">this</span> <span class="n">hit</span><span class="s1">&#39;s threshold */</span>
+ <span class="n">word</span>  <span class="n">maxhit</span><span class="p">;</span>                        <span class="o">/*</span> <span class="nb">max</span> <span class="n">threshold</span> <span class="n">located</span> <span class="n">so</span> <span class="n">far</span> <span class="o">*/</span>
+ <span class="n">char</span> <span class="o">*</span><span class="n">maxstr</span><span class="p">;</span>                      <span class="o">/*</span> <span class="n">string</span> <span class="n">of</span> <span class="n">highest</span> <span class="n">value</span> <span class="n">so</span> <span class="n">far</span> <span class="o">*/</span>
+ <span class="n">char</span> <span class="o">*</span><span class="n">srchs</span><span class="p">;</span>                              <span class="o">/*</span> <span class="n">string</span> <span class="n">being</span> <span class="n">search</span> <span class="k">for</span> <span class="o">*/</span>
+<span class="p">};</span>
+</pre></div>
+</div>
+<p>Don’t expect <code class="docutils literal notranslate"><span class="pre">XPMI.thresh</span></code> to be the percentage entered in the query
+passed to <code class="docutils literal notranslate"><span class="pre">n_setqry()</span></code>. It is an absolute number calculated from that
+percentage and the search string.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">int</span>
+<span class="n">hit_handler</span><span class="p">(</span><span class="n">usr</span><span class="p">,</span><span class="n">tx</span><span class="p">,</span><span class="n">fl</span><span class="p">)</span>
+<span class="n">void</span> <span class="o">*</span><span class="n">usr</span><span class="p">;</span>  <span class="o">/*</span> <span class="n">my</span> <span class="n">USERDATA</span> <span class="n">POINTER</span> <span class="o">*/</span>
+<span class="n">TEXIS</span> <span class="o">*</span><span class="n">tx</span><span class="p">;</span>  <span class="o">/*</span> <span class="n">texis</span> <span class="n">api</span> <span class="n">handle</span> <span class="o">*/</span>
+<span class="n">FLDLST</span> <span class="o">*</span><span class="n">fl</span><span class="p">;</span> <span class="o">/*</span> <span class="n">The</span> <span class="n">field</span> <span class="nb">list</span> <span class="n">data</span> <span class="n">structure</span> <span class="o">*/</span>
+<span class="p">{</span>
+ <span class="o">...</span>
+ <span class="n">MYAPP</span>   <span class="o">*</span><span class="n">ts</span><span class="o">=</span><span class="p">(</span><span class="n">MYAPP</span> <span class="o">*</span><span class="p">)</span><span class="n">usr</span><span class="p">;</span>
+ <span class="n">SERVER</span>  <span class="o">*</span><span class="n">se</span><span class="o">=</span><span class="n">ts</span><span class="o">-&gt;</span><span class="n">se</span><span class="p">;</span>
+ <span class="n">SRCHLST</span> <span class="o">*</span><span class="n">sl</span><span class="p">;</span>
+ <span class="n">SRCHI</span>   <span class="o">*</span><span class="n">si</span><span class="p">;</span>
+ <span class="n">XPMI</span>    <span class="o">*</span><span class="n">xi</span><span class="p">;</span>
+ <span class="nb">int</span>      <span class="n">i</span><span class="p">,</span> <span class="n">j</span><span class="p">,</span> <span class="n">k</span><span class="p">;</span>
+
+ <span class="o">...</span>
+ <span class="n">sl</span><span class="o">=</span><span class="n">n_getsrchlst</span><span class="p">(</span><span class="n">se</span><span class="p">,</span><span class="n">tx</span><span class="p">);</span>          <span class="o">/*</span> <span class="n">get</span> <span class="nb">list</span> <span class="n">of</span> <span class="n">Metamorphs</span> <span class="k">for</span> <span class="n">query</span> <span class="o">*/</span>
+ <span class="k">if</span><span class="p">(</span><span class="n">sl</span><span class="o">!=</span><span class="n">SRCHLSTPN</span><span class="p">)</span>
+    <span class="p">{</span>
+     <span class="k">for</span><span class="p">(</span><span class="n">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="n">i</span><span class="o">&lt;</span><span class="n">sl</span><span class="o">-&gt;</span><span class="n">n</span><span class="p">;</span><span class="n">i</span><span class="o">++</span><span class="p">)</span>                       <span class="o">/*</span> <span class="k">for</span> <span class="n">each</span> <span class="n">Metamorph</span> <span class="o">*/</span>
+         <span class="p">{</span>
+          <span class="n">SRCH</span> <span class="o">*</span><span class="n">sr</span><span class="o">=</span> <span class="o">&amp;</span><span class="n">sl</span><span class="o">-&gt;</span><span class="n">lst</span><span class="p">[</span><span class="n">i</span><span class="p">];</span>                             <span class="o">/*</span> <span class="n">alias</span> <span class="o">*/</span>
+                                            <span class="o">/*</span> <span class="n">loop</span> <span class="n">thru</span> <span class="nb">all</span> <span class="n">sub</span><span class="o">-</span><span class="n">hits</span> <span class="o">*/</span>
+              <span class="o">/*</span> <span class="n">the</span> <span class="n">zero</span> <span class="n">index</span> <span class="k">for</span> <span class="n">n_srchinfo</span> <span class="ow">is</span> <span class="n">the</span> <span class="n">whole</span> <span class="n">hit</span>       <span class="o">*/</span>
+              <span class="o">/*</span> <span class="n">the</span> <span class="n">one</span>  <span class="n">index</span> <span class="k">for</span> <span class="n">n_srchinfo</span> <span class="ow">is</span> <span class="n">the</span> <span class="n">start</span> <span class="n">delimiter</span> <span class="o">*/</span>
+              <span class="o">/*</span> <span class="n">the</span> <span class="n">two</span>  <span class="n">index</span> <span class="k">for</span> <span class="n">n_srchinfo</span> <span class="ow">is</span> <span class="n">the</span> <span class="n">end</span> <span class="n">delimiter</span>   <span class="o">*/</span>
+              <span class="o">/*</span> <span class="n">the</span> <span class="n">remaining</span> <span class="n">indicies</span> <span class="n">are</span> <span class="n">the</span> <span class="n">subhits</span>               <span class="o">*/</span>
+          <span class="k">for</span><span class="p">(</span><span class="n">j</span><span class="o">=</span><span class="mi">0</span><span class="p">;(</span><span class="n">si</span><span class="o">=</span><span class="n">n_srchinfo</span><span class="p">(</span><span class="n">se</span><span class="p">,</span><span class="n">sr</span><span class="p">,</span><span class="n">j</span><span class="p">))</span><span class="o">!=</span><span class="n">SRCHIPN</span><span class="p">;</span><span class="n">j</span><span class="o">++</span><span class="p">)</span>
+              <span class="p">{</span>
+               <span class="n">char</span> <span class="o">*</span><span class="n">p</span><span class="p">,</span> <span class="o">*</span><span class="n">e</span><span class="p">;</span>                <span class="o">/*</span> <span class="n">scratch</span> <span class="n">buffer</span> <span class="n">pointers</span> <span class="o">*/</span>
+               <span class="n">switch</span><span class="p">(</span><span class="n">j</span><span class="p">)</span>
+               <span class="p">{</span>
+                <span class="n">case</span> <span class="mi">0</span> <span class="p">:</span><span class="n">printf</span><span class="p">(</span><span class="s2">&quot; HIT    (</span><span class="si">%s</span><span class="s2">):</span><span class="si">%d</span><span class="s2">:&quot;</span><span class="p">,</span><span class="n">si</span><span class="o">-&gt;</span><span class="n">what</span><span class="p">,</span><span class="n">si</span><span class="o">-&gt;</span><span class="nb">len</span><span class="p">);</span> <span class="k">break</span><span class="p">;</span>
+                <span class="n">case</span> <span class="mi">1</span> <span class="p">:</span><span class="n">printf</span><span class="p">(</span><span class="s2">&quot; S-DELIM(</span><span class="si">%s</span><span class="s2">):</span><span class="si">%d</span><span class="s2">:&quot;</span><span class="p">,</span><span class="n">si</span><span class="o">-&gt;</span><span class="n">what</span><span class="p">,</span><span class="n">si</span><span class="o">-&gt;</span><span class="nb">len</span><span class="p">);</span> <span class="k">break</span><span class="p">;</span>
+                <span class="n">case</span> <span class="mi">2</span> <span class="p">:</span><span class="n">printf</span><span class="p">(</span><span class="s2">&quot; E-DELIM(</span><span class="si">%s</span><span class="s2">):</span><span class="si">%d</span><span class="s2">:&quot;</span><span class="p">,</span><span class="n">si</span><span class="o">-&gt;</span><span class="n">what</span><span class="p">,</span><span class="n">si</span><span class="o">-&gt;</span><span class="nb">len</span><span class="p">);</span> <span class="k">break</span><span class="p">;</span>
+                <span class="n">default</span><span class="p">:</span><span class="n">printf</span><span class="p">(</span><span class="s2">&quot; SUB-HIT(</span><span class="si">%s</span><span class="s2">):</span><span class="si">%d</span><span class="s2">:&quot;</span><span class="p">,</span><span class="n">si</span><span class="o">-&gt;</span><span class="n">what</span><span class="p">,</span><span class="n">si</span><span class="o">-&gt;</span><span class="nb">len</span><span class="p">);</span> <span class="k">break</span><span class="p">;</span>
+               <span class="p">}</span>
+               <span class="k">for</span><span class="p">(</span><span class="n">p</span><span class="o">=</span><span class="n">si</span><span class="o">-&gt;</span><span class="n">where</span><span class="p">,</span><span class="n">e</span><span class="o">=</span><span class="n">p</span><span class="o">+</span><span class="n">si</span><span class="o">-&gt;</span><span class="nb">len</span><span class="p">;</span><span class="n">p</span><span class="o">&lt;</span><span class="n">e</span><span class="p">;</span><span class="n">p</span><span class="o">++</span><span class="p">)</span>
+                   <span class="k">if</span><span class="p">(</span><span class="o">*</span><span class="n">p</span><span class="o">&lt;</span><span class="mi">32</span> <span class="o">&amp;&amp;</span> <span class="o">*</span><span class="n">p</span><span class="o">!=</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">&#39;</span> <span class="o">&amp;&amp;</span> <span class="o">*</span><span class="n">p</span><span class="o">!=</span><span class="s1">&#39;</span><span class="se">\t</span><span class="s1">&#39;</span><span class="p">)</span> <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">x</span><span class="si">%02x</span><span class="s2">&quot;</span><span class="p">,</span><span class="o">*</span><span class="n">p</span><span class="p">);</span>
+                   <span class="k">else</span>                              <span class="n">putchar</span><span class="p">(</span><span class="o">*</span><span class="n">p</span><span class="p">);</span>
+               <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">);</span>
+               <span class="n">n_freesrchi</span><span class="p">(</span><span class="n">se</span><span class="p">,</span><span class="n">si</span><span class="p">);</span>              <span class="o">/*</span> <span class="n">free</span> <span class="nb">any</span> <span class="n">mem</span> <span class="ow">in</span> <span class="n">si</span> <span class="o">*/</span>
+              <span class="p">}</span>
+          <span class="k">for</span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">0</span><span class="p">;(</span><span class="n">xi</span><span class="o">=</span><span class="n">n_xpminfo</span><span class="p">(</span><span class="n">se</span><span class="p">,</span><span class="n">sr</span><span class="p">,</span><span class="n">k</span><span class="p">))</span><span class="o">!=</span><span class="n">XPMIPN</span><span class="p">;</span><span class="n">k</span><span class="o">++</span><span class="p">)</span><span class="o">/*</span> <span class="n">loop</span> <span class="n">thru</span> <span class="nb">all</span> <span class="n">XPMs</span> <span class="o">*/</span>
+             <span class="p">{</span>
+              <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;XPM: </span><span class="se">\&quot;</span><span class="si">%s</span><span class="se">\&quot;</span><span class="s2">: thresh </span><span class="si">%u</span><span class="s2">, maxthresh </span><span class="si">%u</span><span class="s2">, thishit </span><span class="si">%u</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">,</span>
+                     <span class="n">xi</span><span class="o">-&gt;</span><span class="n">srchs</span><span class="p">,</span><span class="n">xi</span><span class="o">-&gt;</span><span class="n">thresh</span><span class="p">,</span><span class="n">xi</span><span class="o">-&gt;</span><span class="n">maxthresh</span><span class="p">,</span><span class="n">xi</span><span class="o">-&gt;</span><span class="n">thishit</span><span class="p">);</span>
+              <span class="n">printf</span><span class="p">(</span><span class="s2">&quot;   : maxhit </span><span class="si">%u</span><span class="s2">, maxstr </span><span class="se">\&quot;</span><span class="si">%s</span><span class="se">\&quot;\n</span><span class="s2">&quot;</span><span class="p">,</span><span class="n">xi</span><span class="o">-&gt;</span><span class="n">maxhit</span><span class="p">,</span><span class="n">xi</span><span class="o">-&gt;</span><span class="n">maxstr</span><span class="p">);</span>
+              <span class="n">n_freexpmi</span><span class="p">(</span><span class="n">se</span><span class="p">,</span><span class="n">xi</span><span class="p">);</span>                    <span class="o">/*</span> <span class="n">free</span> <span class="n">mem</span> <span class="ow">in</span> <span class="n">xi</span> <span class="o">*/</span>
+             <span class="p">}</span>
+         <span class="p">}</span>
+     <span class="n">n_freesrchlst</span><span class="p">(</span><span class="n">se</span><span class="p">,</span><span class="n">sl</span><span class="p">);</span>
+    <span class="p">}</span>
+ <span class="o">...</span>
+
+ <span class="k">return</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>              <span class="o">/*</span> <span class="n">tell</span> <span class="n">the</span> <span class="n">server</span> <span class="n">to</span> <span class="n">keep</span> <span class="n">giving</span> <span class="n">me</span> <span class="n">more</span> <span class="n">hits</span> <span class="o">*/</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>The example program <code class="docutils literal notranslate"><span class="pre">netex1.c</span></code>, <code class="docutils literal notranslate"><span class="pre">n_reghitcb()</span></code>, <code class="docutils literal notranslate"><span class="pre">n_getsrchlst()</span></code>,
+<code class="docutils literal notranslate"><span class="pre">n_srchinfo()</span></code>.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">BLOB</span> <span class="o">*</span><span class="n">newblob</span><span class="p">(</span><span class="n">char</span> <span class="o">*</span><span class="n">database</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">table</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">buf</span><span class="p">,</span><span class="nb">int</span> <span class="n">n</span><span class="p">);</span>
+<span class="n">BLOB</span> <span class="o">*</span><span class="n">putblob</span><span class="p">(</span><span class="n">BLOB</span> <span class="o">*</span><span class="n">bl</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">buf</span><span class="p">,</span><span class="nb">int</span> <span class="n">n</span><span class="p">);</span>
+<span class="n">BLOB</span> <span class="o">*</span><span class="n">closeblob</span><span class="p">(</span><span class="n">BLOB</span> <span class="o">*</span><span class="n">bl</span><span class="p">);</span>
+<span class="nb">int</span>   <span class="n">getblob</span><span class="p">(</span><span class="n">BLOB</span> <span class="o">*</span><span class="n">bl</span><span class="p">,</span><span class="n">char</span> <span class="o">**</span><span class="n">buf</span><span class="p">,</span><span class="nb">int</span> <span class="o">*</span><span class="n">n</span><span class="p">);</span>
+<span class="n">char</span> <span class="o">*</span><span class="n">url</span><span class="o">=</span><span class="n">newindirect</span><span class="p">(</span><span class="n">char</span> <span class="o">*</span><span class="n">database</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">table</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">fn</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>These functions allow you to manipulate indirect and blob fields within
+a Texis database.</p>
+<p><code class="docutils literal notranslate"><span class="pre">newblob()</span></code> will create a new blob associated with the specified
+database and table, and copy the buffer passed into the blob. The <code class="docutils literal notranslate"><span class="pre">n</span></code>
+parameter says how many bytes from buf to copy. It returns the handle of
+the created blob.</p>
+<p><code class="docutils literal notranslate"><span class="pre">putblob()</span></code> will put the contents of the buffer into the blob. The
+<code class="docutils literal notranslate"><span class="pre">n</span></code> parameter says how many bytes from buf to copy. It returns the
+blob where the data was actually put.</p>
+<p><strong>Warning:</strong> The returned <code class="docutils literal notranslate"><span class="pre">BLOB</span></code> may be different than that passed to
+<code class="docutils literal notranslate"><span class="pre">putblob()</span></code>. If so, the passed <code class="docutils literal notranslate"><span class="pre">BLOB</span></code> will then be invalid.</p>
+<p><code class="docutils literal notranslate"><span class="pre">closeblob()</span></code> cleans up the memory associated with the blob handle.
+The blob itself is left intact. It returns <code class="docutils literal notranslate"><span class="pre">BLOBPN</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">getblob()</span></code> retrieves data from a blob. It will read in the data from
+the blob, and return an allocated buffer containing the data, and the
+number of bytes actually read in. <code class="docutils literal notranslate"><span class="pre">*buf</span></code> will be set to the buffer
+pointer. <code class="docutils literal notranslate"><span class="pre">*n</span></code> will be set to the number of bytes in <code class="docutils literal notranslate"><span class="pre">*buf</span></code>. It
+returns non-0 on success, 0 on failure.</p>
+<p><code class="docutils literal notranslate"><span class="pre">newindirect()</span></code> generates a url that can be used to store data on the
+server. If <code class="docutils literal notranslate"><span class="pre">fn</span></code> is <code class="docutils literal notranslate"><span class="pre">NULL</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;&quot;</span></code> it will create a url which can
+be used to store data in that is owned by Texis. If <code class="docutils literal notranslate"><span class="pre">fn</span></code> is not
+<code class="docutils literal notranslate"><span class="pre">NULL</span></code> and not <code class="docutils literal notranslate"><span class="pre">&quot;&quot;</span></code> and is not a url already then it will be made
+into a url owned by you. If url is a full path, it will be respected.
+Otherwise the standard path of indirect files for the table will be
+prepended.</p>
+<p><code class="docutils literal notranslate"><span class="pre">newindirect()</span></code> returns a url that can be stored into. The url that is
+returned is an allocated string that <strong>MUST</strong> be freed by the caller.</p>
+<p>The blob handles and urls returned by these functions may then be used
+as the field contents of blob and indirect fields respectively.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">int</span>   <span class="n">n_setdefaults</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">)</span>
+<span class="nb">int</span>   <span class="n">n_setdatabase</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="nb">str</span> <span class="n">dbname</span><span class="p">)</span>
+<span class="nb">str</span>   <span class="n">n_getdatabase</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>This collection of functions provide the needed control over how a
+<strong>Texis</strong> server will behave. They are to be used prior to a call to
+<code class="docutils literal notranslate"><span class="pre">n_texis()</span></code>. All of the functions have a common first argument which
+is the omnipresent <code class="docutils literal notranslate"><span class="pre">SERVER</span> <span class="pre">*</span></code>. If a <code class="docutils literal notranslate"><span class="pre">set</span></code> function returns an
+<code class="docutils literal notranslate"><span class="pre">int</span></code>, the value 0 means failure and <code class="docutils literal notranslate"><span class="pre">not</span></code> 0 means the operation was
+successful. Those functions that have a <code class="docutils literal notranslate"><span class="pre">void</span></code> return value return
+nothing. If a <code class="docutils literal notranslate"><span class="pre">get</span></code> function returns a pointer type, the value
+<code class="docutils literal notranslate"><span class="pre">(type</span> <span class="pre">*)NULL</span></code> indicates a problem getting memory. Otherwise the
+pointer should be freed when no longer needed.</p>
+<dl class="simple">
+<dt>void n_setdefaults(SERVER *se)</dt><dd><p>resets all server parameters to their initial state.</p>
+</dd>
+<dt>int n_setdatabase(SERVER *se,str dbname)</dt><dd><p>sets <code class="docutils literal notranslate"><span class="pre">dbname</span></code> as the name of the <strong>Texis</strong> database that is to be
+queried against.</p>
+</dd>
+<dt>str n_getdatabase(SERVER *se)</dt><dd><p>gets the name of the <strong>Texis</strong> database that is to be queried
+against.</p>
+</dd>
+</dl>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">int</span> <span class="n">n_texis</span><span class="p">(</span><span class="n">SERVER</span> <span class="o">*</span><span class="n">se</span><span class="p">,</span><span class="n">char</span> <span class="o">*</span><span class="n">queryformat</span><span class="p">,</span><span class="o">...</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>This function comprises the real work that is to be performed by the
+network Texis server. To initiate the actual search the program makes a
+call to the <code class="docutils literal notranslate"><span class="pre">n_texis()</span></code> function. The server will begin to call the
+client’s callback routine that was set in the <code class="docutils literal notranslate"><span class="pre">n_regtexiscb()</span></code> call.
+The <code class="docutils literal notranslate"><span class="pre">n_texis()</span></code> function will return 0 on error or true if all goes
+well. <em>NOTE: It is not considered an error for there to be zero hits
+located by a search. A client’s callback routine will never be invoked
+in this instance.</em></p>
+<p>The <code class="docutils literal notranslate"><span class="pre">queryformat</span></code> argument is a <code class="docutils literal notranslate"><span class="pre">printf()</span></code> style format string that
+will be filled in by any subsequent arguments and then executed.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>#include &quot;tstone.h&quot;
+main(argc,argv)
+int argc;
+cahr **argv;
+{
+ SERVER *se;
+ char buf[80];
+ USERDATA mydata;
+
+ ...
+ n_regtexiscb(se,mydata,hit_handler);           /* setup hit callback */
+ n_setdatabase(se,argv[1]);                 /* set database to search */
+ while(gets(buf)!=(char *)NULL)                   /* crude user input */
+    if(!n_texis(se,&quot;%s;&quot;,buf))       /* add required &#39;;&#39; for the user */
+         puts(&quot;ERROR in n_texis&quot;);
+ ...
+}
+</pre></div>
+</div>
+<dl class="footnote brackets">
+<dt class="label" id="id3"><span class="brackets"><a class="fn-backref" href="#id1">1</a></span></dt>
+<dd><p><code class="docutils literal notranslate"><span class="pre">SERVERPN</span></code> is a synonym for <code class="docutils literal notranslate"><span class="pre">(SERVER*)NULL</span></code></p>
+</dd>
+<dt class="label" id="id4"><span class="brackets"><a class="fn-backref" href="#id2">2</a></span></dt>
+<dd><p><code class="docutils literal notranslate"><span class="pre">XPMIPN</span></code> is a synonym for <code class="docutils literal notranslate"><span class="pre">(XPMI*)NULL</span></code></p>
+</dd>
+</dl>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

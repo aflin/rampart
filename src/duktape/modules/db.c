@@ -1144,6 +1144,35 @@ duk_ret_t duk_rp_sql_eval(duk_context *ctx)
     return (1);
 }
 
+
+static CONST char * null_noiselist[]={""};
+
+int noiselist_needs_free=0;
+
+static void free_noiselist(char **nl)
+{
+    int i=0;
+    char *f;
+    if(noiselist_needs_free==0)
+        return;
+
+    f=nl[i];
+    
+    while(1)
+    {
+        if (*f=='\0')
+        {
+            free(f);
+            break;
+        }
+        free(f);
+        i++;
+        f=nl[i];
+    }    
+    free(nl);
+    noiselist_needs_free=0;
+}
+
 duk_ret_t duk_texis_set(duk_context *ctx)
 {
     LPSTMT lpstmt;
@@ -1186,27 +1215,60 @@ duk_ret_t duk_texis_set(duk_context *ctx)
     duk_enum(ctx, -1, 0);
     while (duk_next(ctx, -1, 1))
     {
-        if(!(duk_is_string(ctx,-2)))
-            throwinvalidprop( duk_to_string(ctx,-2) );
-        if(duk_is_number(ctx,-1))
-            duk_to_string(ctx,-1);
-        if(duk_is_boolean(ctx,-1))
+        if(!(duk_is_string(ctx, -2)))
+            throwinvalidprop( duk_to_string(ctx, -2) );
+        if(!strcmp ("noiselist", duk_get_string(ctx, -2) ) )
         {
-            if(duk_get_boolean(ctx,-1))
+            if(duk_is_null(ctx, -1))
+                globalcp->noise=(byte**)null_noiselist;
+            else if(duk_is_array(ctx, -1))
+            {
+                int i=0, len=duk_get_length(ctx, -1);
+
+                char **nl=NULL;
+                
+                if(noiselist_needs_free)
+                    free_noiselist((char**)globalcp->noise);
+
+                DUKREMALLOC(ctx, nl, sizeof(char*) * (len + 1));
+
+                while (i<len)
+                {
+                    duk_get_prop_index(ctx, -1, i);
+                    if(!(duk_is_string(ctx, -1)))
+                        RP_THROW(ctx, "sql.set: noiselist members must be strings");
+                    nl[i]=strdup(duk_get_string(ctx, -1));
+                    duk_pop(ctx);
+                    i++;
+                }
+                nl[i]=strdup("");
+                globalcp->noise=(byte**)nl;
+                noiselist_needs_free=1;
+            }
+            else
+                RP_THROW(ctx, "sql.set: noiselist must be an array of strings");
+            goto propnext;
+        }
+        if(duk_is_number(ctx, -1))
+            duk_to_string(ctx, -1);
+        if(duk_is_boolean(ctx, -1))
+        {
+            if(duk_get_boolean(ctx, -1))
                 val="on";
             else
                 val="off";
         }
         else
         {
-            if(!(duk_is_string(ctx,-1)))
-                throwinvalidprop( duk_to_string(ctx,-1) );
-            val=duk_get_string(ctx,-1);
+            if(!(duk_is_string(ctx, -1)))
+                throwinvalidprop( duk_to_string(ctx, -1) );
+            val=duk_get_string(ctx, -1);
         }
 
-        if(setprop(ddic, (char*)duk_get_string(ctx,-2), (char*)val )==-1)
+        if(setprop(ddic, (char*)duk_get_string(ctx, -2), (char*)val )==-1)
             throw_tx_error(ctx,"sql set");
 
+        propnext:
         duk_pop_2(ctx);
     }
 #ifndef USEHANDLECACHE

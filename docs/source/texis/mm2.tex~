@@ -425,8 +425,8 @@ With See References set to on, the equivalence list associated with
 the word ``\verb`cat`'' would be automatically expanded to include all
 equivalences associated with the word ``\verb`pet`''.  Not all
 equivalences have ``\verb`See also`'' notations, but with See
-References on, all equivalences associated with any ``\verb`See also`''
-root word will be included as part of the original.  With See
+References on, all equivalences associated with any ``\verb`See
+also`'' root word will be included as part of the original.  With See
 References off, only the root word and its equivalences will be
 included in that word set.
 

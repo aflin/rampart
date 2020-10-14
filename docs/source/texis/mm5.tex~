@@ -183,8 +183,8 @@ processing is still done if turned on.
 Entering more than one keyword on the query line will be interpreted
 as 2 search items, as delimited by a space character, unless it is a
 phrase known by the Equivalence File.  To link any words together as a
-phrase you need only put it in quotes.  For example, ``\verb`Alabama Representative`''
-must find those two words in that sequence, as a
+phrase you need only put it in quotes.  For example, ``\verb`Alabama
+Representative`'' must find those two words in that sequence, as a
 phrase.  Such a phrase can be entered as a new entry in the
 Equivalence File, and specific names of Alabama Representatives could
 be associated as a set.  Thereafter the quotes would not be required
@@ -192,15 +192,16 @@ on the query line for it to be processed as a single search item.
 
 A wildcard `\verb`*`' can be used along with an English word to extend
 a rooted pattern by up to 80 characters per asterisk `\verb`*`'.  For
-example, ``\verb`Pres*Bush`'' would locate ``\verb`President George Bush`''.
-More than one asterisk `\verb`*`' may be used.  Such an item
+example, ``\verb`Pres*Bush`'' would locate ``\verb`President George
+Bush`''.  More than one asterisk `\verb`*`' may be used.  Such an item
 which includes an asterisk is matched by a special operator which is
 part of \verb`SPM`, the Single Pattern Matcher which looks for single
 items.
 
 A wildcarded item can be searched for in intersection with other
 search items as well.  For example:  ``\verb`Pres*Reagan campaign`''
-would locate the sentence ``{\em {\bf President Ronald Reagan} won the {\bf election} in November.}''
+would locate the sentence ``{\em {\bf President Ronald Reagan} won the
+{\bf election} in November.}''
 
 A wildcard operator `\verb`*`' means just that:  ``anything'' before
 of after the string to which it is rooted.  If you occasionally find

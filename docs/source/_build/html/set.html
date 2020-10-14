@@ -1,0 +1,1608 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Server Properties &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+            
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <!-- Local TOC -->
+                <div class="local-toc"><ul>
+<li><a class="reference internal" href="#">Server Properties</a><ul>
+<li><a class="reference internal" href="#search-and-optimization-parameters">Search and optimization parameters</a></li>
+<li><a class="reference internal" href="#metamorph-parameters">Metamorph parameters</a></li>
+<li><a class="reference internal" href="#rank-knobs">Rank knobs</a></li>
+<li><a class="reference internal" href="#other-ranking-properties">Other ranking properties</a></li>
+<li><a class="reference internal" href="#indexing-properties">Indexing properties</a></li>
+<li><a class="reference internal" href="#locking-properties">Locking properties</a></li>
+<li><a class="reference internal" href="#miscellaneous-properties">Miscellaneous Properties</a></li>
+</ul>
+</li>
+</ul>
+</div>
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>Server Properties</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/set.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="server-properties">
+<h1>Server Properties<a class="headerlink" href="#server-properties" title="Permalink to this headline">¶</a></h1>
+<p>There are a number of properties that are settable in the SQL Engine.
+They do not need to be changed unless the behavior of the system must be
+modified. The properties are set using the following SQL syntax:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SET</span> <span class="nb">property</span> <span class="o">=</span> <span class="n">value</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">value</span></code> can be one of three types depending on the property:
+numeric, boolean or string. A boolean value is either an integer–0 is
+false, anything else is true–or one of the following strings: “<code class="docutils literal notranslate"><span class="pre">on</span></code>”,
+“<code class="docutils literal notranslate"><span class="pre">off</span></code>”, “<code class="docutils literal notranslate"><span class="pre">true</span></code>”, “<code class="docutils literal notranslate"><span class="pre">false</span></code>”, “<code class="docutils literal notranslate"><span class="pre">yes</span></code>” or “<code class="docutils literal notranslate"><span class="pre">no</span></code>”.</p>
+<p>The settings are grouped as follows:</p>
+<div class="section" id="search-and-optimization-parameters">
+<h2>Search and optimization parameters<a class="headerlink" href="#search-and-optimization-parameters" title="Permalink to this headline">¶</a></h2>
+<p>These settings affect the way that Texis will process the search. They
+include settings which change the meaning of the search, as well as how
+the search is performed.</p>
+<dl>
+<dt>defaultlike</dt><dd><p>Defines which sort of search should occur when a <code class="docutils literal notranslate"><span class="pre">like</span></code> or
+<code class="docutils literal notranslate"><span class="pre">contains</span></code> operator is in the query. The default setting of
+“<code class="docutils literal notranslate"><span class="pre">like</span></code>” behaves in the normal manner. Other settings that can be
+set are “<code class="docutils literal notranslate"><span class="pre">like3</span></code>”, “<code class="docutils literal notranslate"><span class="pre">likep</span></code>”, “<code class="docutils literal notranslate"><span class="pre">liker</span></code>” and “<code class="docutils literal notranslate"><span class="pre">matches</span></code>”. In
+each case the <code class="docutils literal notranslate"><span class="pre">like</span></code> operator will act as if the specified
+operator had been used instead.</p>
+</dd>
+<dt>matchmode</dt><dd><p>Changes the behavior of the <code class="docutils literal notranslate"><span class="pre">matches</span></code> clause. The default behavior
+is to use underscore and percent as the single and multi-character
+character wildcards. Setting <code class="docutils literal notranslate"><span class="pre">matchmode</span></code> to 1 will change the
+wildcards to question-mark and asterisk.</p>
+</dd>
+<dt>predopttype</dt><dd><p>The Texis engine can reorder the <code class="docutils literal notranslate"><span class="pre">where</span></code> clause in an attempt to
+make it faster to evaluate. There are a number of ways this can be
+done; the <code class="docutils literal notranslate"><span class="pre">predopttpye</span></code> property controls the way it reorders. The
+values are 0 to not reorder, 1 to evaluate <code class="docutils literal notranslate"><span class="pre">and</span></code> first, 2 to
+evaluate <code class="docutils literal notranslate"><span class="pre">or</span></code> first. The default is 0.</p>
+</dd>
+<dt>ignorecase</dt><dd><p><strong>Note:</strong> Deprecated; see <code class="docutils literal notranslate"><span class="pre">stringcomparemode</span></code> setting which
+supercedes this. Setting <code class="docutils literal notranslate"><span class="pre">ignorecase</span></code> to true will cause string
+comparisons (equals, sorting, etc.) in the SQL engine to ignore
+case, e.g. “<code class="docutils literal notranslate"><span class="pre">A</span></code>” will compare identical to “<code class="docutils literal notranslate"><span class="pre">a</span></code>”. (This is
+distinct from <em>text</em> comparisons, e.g. the <code class="docutils literal notranslate"><span class="pre">LIKE</span></code> operator, which
+ignore case by default and are unaffected by <code class="docutils literal notranslate"><span class="pre">ignorecase</span></code>.)
+<strong>Note:</strong> This setting will also affect any indices that are built;
+the value set at index creation will be saved with the index and
+used whenever that index is used. <strong>Note:</strong> In versions prior to
+version 5.01.1208300000 20080415, the value of <code class="docutils literal notranslate"><span class="pre">ignorecase</span></code> <em>must</em>
+be explicitly set the same when an index is created, when it or its
+table is updated and when it is used in a search, or incorrect
+results and/or corrupt indexes may occur. In later versions, this is
+not necessary; the saved-at-index-creation value will automatically
+be used. In version 6 and later, this setting toggles the
+<code class="docutils literal notranslate"><span class="pre">ignorecase</span></code> flag of the <code class="docutils literal notranslate"><span class="pre">stringcomparemode</span></code> setting, which
+supercedes it.</p>
+</dd>
+<dt>textsearchmode</dt><dd><p>Sets the APICP <code class="docutils literal notranslate"><span class="pre">textsearchmode</span></code> property; see Vortex manual for
+details and important caveats. Added in version 6.</p>
+</dd>
+<dt>stringcomparemode</dt><dd><p>Sets the APICP <code class="docutils literal notranslate"><span class="pre">stringcomparemode</span></code> property; see Vortex manual for
+details and important caveats. Added in version 6.</p>
+</dd>
+<dt>tracemetamorph</dt><dd><p>Sets the <code class="docutils literal notranslate"><span class="pre">tracemetamorph</span></code> debug property; see Vortex manual for
+details. Added in version 7.00.1375225000 20130730.</p>
+</dd>
+<dt>tracerowfields</dt><dd><p>Sets the <code class="docutils literal notranslate"><span class="pre">tracerowfields</span></code> debug property; see Vortex manual for
+details. Added in version 7.02.1406754000 20140730.</p>
+</dd>
+<dt>tracekdbf</dt><dd><p>Sets the <code class="docutils literal notranslate"><span class="pre">tracekdbf</span></code> debug property; see Vortex manual for
+details.</p>
+</dd>
+<dt>tracekdbffile</dt><dd><p>Sets the <code class="docutils literal notranslate"><span class="pre">tracekdbffile</span></code> debug property; see Vortex manual for
+details.</p>
+</dd>
+<dt>kdbfiostats</dt><dd><p>Sets the <code class="docutils literal notranslate"><span class="pre">kdbfiostats</span></code> debug property; see Vortex manual for
+details.</p>
+</dd>
+<dt>btreecachesize</dt><dd><p>Index pages are cached in memory while the index is used. The size
+of the memory cache can be adjusted to improve performance. The
+default is 20, which means that 20 index pages can be cached. This
+can be increased to allow more pages to be cached in memory. This
+will only help performance if the pages will be accessed in random
+order, more than 20 will be accessed, and the same page is likely to
+be accessed at different times. This is most likely to occur in a
+join, when a large number of keys are looked up in the index.
+Increasing the size of the cache when not needed is likely to hurt
+performance, due to the extra overhead of managing a larger cache.
+The cache size should not be decreased below the default of 20, to
+allow room for all pages which might need to be accessed at the same
+time.</p>
+</dd>
+<dt>ramrows</dt><dd><p>When ordering large result sets, the data is initially ordered in
+memory, but if more than <code class="docutils literal notranslate"><span class="pre">ramrows</span></code> records are being ordered the
+disk will be used to conserve memory. This does slow down
+performance however. The default is 10000 rows. Setting <code class="docutils literal notranslate"><span class="pre">ramrows</span></code>
+to 0 will keep the data in memory.</p>
+</dd>
+<dt>ramlimit</dt><dd><p><code class="docutils literal notranslate"><span class="pre">ramlimit</span></code> is an alternative to <code class="docutils literal notranslate"><span class="pre">ramrows</span></code>. Instead of limiting
+the number of records, the number of bytes of data in memory is
+capped. By default it is 0, which is unlimited. If both <code class="docutils literal notranslate"><span class="pre">ramlimit</span></code>
+and <code class="docutils literal notranslate"><span class="pre">ramrows</span></code> are set then the first limit to be met will trigger
+the use of disk.</p>
+</dd>
+<dt>bubble</dt><dd><p>Normally Texis will bubble results up from the index to the user.
+That is a matching record will be found in the index, returned to
+the user, then the next record found in the index, and so forth till
+the end of the query. This normally generates the first results as
+quickly as possible. By setting <code class="docutils literal notranslate"><span class="pre">bubble</span></code> to 0 the entire set of
+matching record handles will be read from the index first, and then
+each record processed from this list.</p>
+</dd>
+<dt>optimize,nooptimize</dt><dd><p>Enable or disable optimizations. The argument should be a comma
+separated list of optimizations that you want to enable or disable.
+The available optimizations are:</p>
+<dl>
+<dt>join</dt><dd><p>Optimize join table order. The default is enabled. When enabled
+Texis will arrange the order of the tables in the <code class="docutils literal notranslate"><span class="pre">FROM</span></code>
+clause to improve the performance of the join. This can be
+disabled if you believe that Texis is optimizing incorrectly. If
+it is disabled then Texis will process the tables in the left to
+right order, with the first table specified being the driving
+table. Added in version 02.06.927235551.</p>
+</dd>
+<dt>compoundindex</dt><dd><p>Allow the use of compound indexes to resolve searches. For
+example if you create an index on table (field1, field2), and
+then search where field1 = value and field2 = value, it will use
+the index to resolve both portions of this. When disabled it
+would only look for field1 in the index. Added in version
+02.06.929026214.</p>
+</dd>
+<dt>countstar</dt><dd><p>Use any regular index to determine the number of records in the
+table. If disabled Texis will read each record in the table to
+count them. Added in version 02.06.929026214.</p>
+</dd>
+<dt>minimallocking</dt><dd><p>Controls whether the table will be locked when doing reads of
+records pointed to by the index used for the query. This is
+enabled by default, which means that read locks will not be
+used. This is the optimal setting for databases which are mostly
+read, with few writes and small records. Added in version 03.00</p>
+</dd>
+<dt>groupby</dt><dd><p>This setting is enabled by default and will cause the data to be
+read only once to perform a group by operation. The query should
+produce indentical results whether this is enabled or disabled,
+with the performance being the only difference. Added in version
+03.00</p>
+</dd>
+<dt>faststats</dt><dd><p>When enabled, which is the default, and when the appopriate
+indexes exist Texis will try and resolve aggregate functions
+directly from the index that was used to perform the <code class="docutils literal notranslate"><span class="pre">WHERE</span></code>
+clause. Added in version 03.00</p>
+</dd>
+<dt>readlock</dt><dd><p>When enabled, which is the default, Texis will use readlocks
+more efficiently if there are records that are scanned, but
+don’t match the query. Texis will hold the read lock until a
+matching record is found, rather than getting and releasing a
+read lock for every record read. If you are suffering from lock
+contention problems, with writes waiting, then this can be
+disabled, which will allow more opportunity for the write locks
+to be granted. This is not normally suggested, as the work
+required to grant and release the locks would typically negate
+the benefit. Added in version 03.00</p>
+</dd>
+<dt>analyze</dt><dd><p>When enabled, which is the default, Texis will analyze the query
+for which fields are needed. This can allow for more efficient
+query processing in most cases. If you are executing a lot of
+different SQL statements that are not helped by the analysis you
+can disable this. Added in version 03.00</p>
+</dd>
+<dt>skipahead</dt><dd><p>When enabled, which is the default, Texis will skipahead as
+efficiently as possible, typically used with the SKIP parameter
+in Vortex. If disabled Texis will perform full processing on
+each skipped record, and discard the record. Added in version
+03.00</p>
+</dd>
+<dt>likewithnots</dt><dd><p>When enabled (default), <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>/<code class="docutils literal notranslate"><span class="pre">LIKEP</span></code>-type searches with
+NOT sets (negated terms) are optimized for speed. Added in
+version 4.02.1041535107 Jan 2 2003.</p>
+</dd>
+<dt>shortcuts</dt><dd><p>When enabled (default), a fully-indexed <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>/<code class="docutils literal notranslate"><span class="pre">LIKEIN</span></code>
+clause <code class="docutils literal notranslate"><span class="pre">OR</span></code>ed with another fully-indexed <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>/<code class="docutils literal notranslate"><span class="pre">LIKEIN</span></code>
+should not cause an unnecessary post-process for the <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>s
+(and entire query). Added in version 4.03.1061229000 20030818 as
+<code class="docutils literal notranslate"><span class="pre">optimization18</span></code>; in version 7.06.1475000000 20160927, alias
+<code class="docutils literal notranslate"><span class="pre">shortcuts</span></code> added.</p>
+</dd>
+<dt>likehandled</dt><dd><p>When enabled (default), a fully-indexed <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>/<code class="docutils literal notranslate"><span class="pre">LIKEIN</span></code>
+clause <code class="docutils literal notranslate"><span class="pre">OR</span></code>ed with another fully-indexed
+non-<code class="docutils literal notranslate"><span class="pre">LIKE</span></code>/<code class="docutils literal notranslate"><span class="pre">LIKEIN</span></code> clause should not cause an unnecessary
+post-process for the <code class="docutils literal notranslate"><span class="pre">LIKE</span></code> (and entire query).</p>
+<p>Also, linear and post-process <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>/<code class="docutils literal notranslate"><span class="pre">LIKEIN</span></code> operations
+caused not by the Metamorph query itself, but by the presence of
+another <code class="docutils literal notranslate"><span class="pre">OR</span></code>ed/<code class="docutils literal notranslate"><span class="pre">AND</span></code>ed clause, do not check
+<code class="docutils literal notranslate"><span class="pre">allinear</span></code> nor <code class="docutils literal notranslate"><span class="pre">alpostproc</span></code> when this optimization is
+disabled (i.e. they will perform the linear or post-process
+regardless of settings, silently). E.g. fully-indexed <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>
+<code class="docutils literal notranslate"><span class="pre">OR</span></code>ed with linear clause, or two fully-indexed <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>s
+<code class="docutils literal notranslate"><span class="pre">AND</span></code>ed (where the first’s results are under
+<code class="docutils literal notranslate"><span class="pre">maxlinearrows</span></code>), could cause linear search or
+post-processing, respectively, of an otherwise fully-indexable
+Metamorph query.</p>
+<p>Added in version 7.06.1475014000 20160927.</p>
+</dd>
+<dt>indexbatchbuild</dt><dd><p>When enabled, indexes are built as a batch, i.e. the table is
+read-locked continuously. When disabled (the default), the table
+is read-locked intermittently if possible (e.g. Metamorph
+index), allowing table modifications to proceed even during
+index creation. A continuous read lock allows greater read
+buffering of the table, possibly increasing index build speed
+(especially on platforms with slow large-file <code class="docutils literal notranslate"><span class="pre">lseek</span></code>
+behavior), at the expense of delaying table updates until after
+the index is nearly built, which may be quite some time. Note
+that non-Metamorph indexes are <em>always</em> built with a continuous
+read lock – regardless of this setting – due to the nature of
+the index. Added in version 5.01.1177455498 20070424.</p>
+</dd>
+<dt>indexdataonlycheckpredicates</dt><dd><p>When enabled (the default), allows the index-data-only
+optimization <a class="footnote-reference brackets" href="#id13" id="id1">1</a> to proceed even if the SELECT columns are
+renamed or altered in expressions. Previously, the columns had
+to be selected as-is with no renaming or expressions. Added in
+version 7.00.1369437000 20130524.</p>
+</dd>
+<dt>indexvirtualfields</dt><dd><p>When enabled (the default), attempts to reduce memory usage when
+indexing virtual fields (especially with large rows) by freeing
+certain buffers when no longer needed. Currently only applies to
+Metamorph and Metamorph inverted indexes. Added in version
+6.00.1322890000 20111203.</p>
+</dd>
+</dl>
+<p>Example: <code class="docutils literal notranslate"><span class="pre">set</span> <span class="pre">nooptimize='minimallocking'</span></code></p>
+</dd>
+<dt>options,nooptions</dt><dd><p>Enable or disable certain options. The argument should be a comma
+separated list of options to enable or disable. All options are off
+by default. The available options are:</p>
+<dl class="simple">
+<dt>triggers</dt><dd><p>When on, <em>disable</em> the creation of triggers.</p>
+</dd>
+<dt>indexcache</dt><dd><p>Cache certain Metamorph index search results, so that an
+immediately following Metamorph query with the same <code class="docutils literal notranslate"><span class="pre">WHERE</span></code>
+clause might be able to re-use the index results without
+re-searching the index. E.g. may speed up a
+<code class="docutils literal notranslate"><span class="pre">SELECT</span> <span class="pre">field1,</span> <span class="pre">field2,</span> <span class="pre">...</span></code> Metamorph query that follows a
+<code class="docutils literal notranslate"><span class="pre">SELECT</span> <span class="pre">count(*)</span></code> query with the same <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause.</p>
+</dd>
+<dt>ignoremissingfields</dt><dd><p>Ignore missing fields during an <code class="docutils literal notranslate"><span class="pre">INSERT</span></code> or <code class="docutils literal notranslate"><span class="pre">UPDATE</span></code>, i.e.
+do not issue a message and fail the query if attempting to
+insert a non-existent field. This may be useful if a SQL
+<code class="docutils literal notranslate"><span class="pre">INSERT</span></code> statement is to be used against a table where some
+fields are optional and may not exist.</p>
+</dd>
+</dl>
+<p>Example: <code class="docutils literal notranslate"><span class="pre">set</span> <span class="pre">options='indexcache'</span></code></p>
+</dd>
+<dt>ignorenewlist</dt><dd><p>When processing a Metamorph query you can instruct Texis to ignore
+the unoptimized portion of a Metamorph index by issuing the SQL
+<code class="docutils literal notranslate"><span class="pre">set</span> <span class="pre">ignorenewlist</span> <span class="pre">=</span> <span class="pre">1;</span></code>. If you have a continually changing
+dataset, and the index is frequently updated then the default of
+processing the unoptimized portion is probably correct. If the data
+tends to change in large batches, followed by a reoptimization of
+the index then the large batch can cause significant processing
+overhead. In that case it may be wise to enable the
+<code class="docutils literal notranslate"><span class="pre">ignorenewlist</span></code> option. If the option is enable then records that
+have been updated in the batch will not be found with Metamorph
+queries until the index has been optimized. Added in version
+02.06.934400000.</p>
+</dd>
+<dt>indexwithin</dt><dd><p>How to use the Metamorph index when processing “within <span class="math notranslate nohighlight">\(N\)</span>”
+(w/<span class="math notranslate nohighlight">\(N\)</span>) <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>-type queries. It is an integer combination
+of bit flags:</p>
+<dl class="simple">
+<dt>0x01</dt><dd><p>: Use index for w/<span class="math notranslate nohighlight">\(N\)</span> searches when <code class="docutils literal notranslate"><span class="pre">withinmode</span></code> is
+“<code class="docutils literal notranslate"><span class="pre">char</span> <span class="pre">[span]</span></code>”</p>
+</dd>
+<dt>0x02</dt><dd><p>: Use index for w/<span class="math notranslate nohighlight">\(N\)</span> searches when <code class="docutils literal notranslate"><span class="pre">withinmode</span></code> is
+“<code class="docutils literal notranslate"><span class="pre">word</span> <span class="pre">[span]</span></code>”</p>
+</dd>
+<dt>0x04</dt><dd><p>: Optimize within-chars window down</p>
+</dd>
+<dt>0x08</dt><dd><p>: Do not scale up intervening (non-query) words part of window
+to account for words matching multiple index expressions, which
+rarely occur; this reduces false (too wide) hits from the index.
+Also do not require post-processing if multiple index
+expressions. In rare cases valid hits may be missed if an
+intervening word does index-match multiply; the <span class="math notranslate nohighlight">\(N\)</span> value
+can simply be increased in the query to return these.</p>
+</dd>
+</dl>
+<p>The default is 0xf in version 7.06.1525203000 20180501 and later,
+when support for 0x8 was also added. In version 5.01.1153865548
+20060725 up to then, the default was 0x7. The setting was added in
+version 4.04.1075255999 20040127 with a default of 0.</p>
+</dd>
+<dt>wildoneword</dt><dd><p>Whether wildcard expressions in Metamorph queries span a single word
+only, i.e. for multi-substring wildcards. If 0 (false), the query
+“<code class="docutils literal notranslate"><span class="pre">st*ion</span></code>” matches “<code class="docutils literal notranslate"><span class="pre">stallion</span></code>” as well as “stuff an onion”. If
+1 (true), then “<code class="docutils literal notranslate"><span class="pre">st*ion</span></code>” only matches “<code class="docutils literal notranslate"><span class="pre">stallion</span></code>”, and
+linear-dictionary index searches are possible (if enabled), because
+there are no multi-word matches to (erroneously) miss. <strong>Note:</strong>
+prior to version 5.01.1208472000 20080417, this setting did not
+apply to linear searches; linear or post-process searches may have
+experienced different behavior. The default is 1 in version 6 and
+later, 0 in version 5 and earlier. Added in version 4.03.1058230349
+20030714.</p>
+</dd>
+<dt>wildsufmatch</dt><dd><p>Whether wildcard expressions in Metamorph queries suffix-match their
+trailing substrings to the end of words. If 0 (false), the query
+“<code class="docutils literal notranslate"><span class="pre">*so</span></code>” matches “<code class="docutils literal notranslate"><span class="pre">also</span></code>” as well as “<code class="docutils literal notranslate"><span class="pre">absolute</span></code>”. If 1 (true),
+then “<code class="docutils literal notranslate"><span class="pre">*so</span></code>” only matches “<code class="docutils literal notranslate"><span class="pre">also</span></code>”. Affects what terms are
+matched during linear-dictionary index searches. <strong>Note:</strong> prior to
+version 5.01.1208472000 20080417, this setting did not apply to
+linear searches; linear or post-process searches may have
+experienced different behavior. The default is 1 in version 6 and
+later, 0 in version 5 and earlier. Added in version 4.03.1058230349
+20030714.</p>
+</dd>
+<dt>wildsingle</dt><dd><p>An alias for setting <code class="docutils literal notranslate"><span class="pre">wildoneword</span></code> and <code class="docutils literal notranslate"><span class="pre">wildsufmatch</span></code> together,
+which is usually desired. Added in version 4.03.1058230349 20030714.</p>
+</dd>
+<dt>allineardict</dt><dd><p>Whether to allow linear-dictionary Metamorph index searches.
+Normally a Metamorph query term is either binary-index searchable
+(fastest), or else must be linear-table searched (slowest). However,
+certain terms, while not binary-index searchable, can be
+linear-dictionary searched in the index, which is slower than
+binary-index, yet faster than linear-table search. Examples include
+leading-prefix wildcards such as “<code class="docutils literal notranslate"><span class="pre">*tion</span></code>”. The default is 0
+(false), since query protection is enabled by default. Note that
+<code class="docutils literal notranslate"><span class="pre">wildsingle</span></code> should typically be set true so that wildcard syntax
+is more likely to be linear-dictionary searchable. Added in version
+4.03.1058230349 20030714.</p>
+</dd>
+<dt>indexminsublen</dt><dd><p>The minimum number of characters that a Metamorph index word
+expression must match in a query term, in order for the term to
+utilize the index. A term with fewer than <code class="docutils literal notranslate"><span class="pre">indexminsublen</span></code>
+indexable characters is assumed to potentially match too many words
+in the index for an index search to be more worthwhile/faster than a
+linear-table search.</p>
+<p>For binary-index searchable terms, <code class="docutils literal notranslate"><span class="pre">indexminsublen</span></code> is tested
+against the minimum prefix length; e.g. for query “<code class="docutils literal notranslate"><span class="pre">test.#&#64;</span></code>” the
+length tested is 4 (assuming default index word expression of
+“<code class="docutils literal notranslate"><span class="pre">\alnum{2,99}</span></code>”). For linear-dictionary index searches, the
+length tested is the total of all non-wildcard characters; e.g. for
+query “<code class="docutils literal notranslate"><span class="pre">ab*cd*ef</span></code>” the length tested is 6.</p>
+<p>The default for <code class="docutils literal notranslate"><span class="pre">indexminsublen</span></code> is 2. Added in version
+4.03.1058230349 20030714. Note that the query – regardless of index
+or linear search – must also pass the <code class="docutils literal notranslate"><span class="pre">qminprelen</span></code> setting.</p>
+</dd>
+<dt>dropwordmode</dt><dd><p>How to remove words from a query set when too many are present
+(<code class="docutils literal notranslate"><span class="pre">qmaxsetwords</span></code> or <code class="docutils literal notranslate"><span class="pre">qmaxwords</span></code> exceeded) in an index search,
+e.g. for a wildcard term. The possible values are 0 to retain
+suffixes and most common words up to the word limit, or 1 to drop
+the entire term. The default is 0. Added in version 3.00.947633136
+20000111.</p>
+</dd>
+<dt>metamorphstrlstmode</dt><dd><p>[‘metamorphstrlstmode’] How to convert a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> Metamorph query
+(perhaps generated by Vortex <code class="docutils literal notranslate"><span class="pre">arrayconvert</span></code>) to a regular string
+Metamorph query. For example, for the <code class="docutils literal notranslate"><span class="pre">strlst</span></code> query composed of
+the 3 strings “<code class="docutils literal notranslate"><span class="pre">one</span></code>”, “<code class="docutils literal notranslate"><span class="pre">two</span></code>”, and “<code class="docutils literal notranslate"><span class="pre">bear</span> <span class="pre">arms</span></code>”, the various
+modes would convert as follows:</p>
+<ul>
+<li><div class="line-block">
+<div class="line"><code class="docutils literal notranslate"><span class="pre">allwords</span></code></div>
+<div class="line">Space-separate each string, e.g. “one two bear arms”.</div>
+</div>
+</li>
+<li><div class="line-block">
+<div class="line"><code class="docutils literal notranslate"><span class="pre">anywords</span></code></div>
+<div class="line">Space-separate each string and append “<a href="#id2"><span class="problematic" id="id3">``</span></a>&#64;0’’’, e.g. <a href="#id4"><span class="problematic" id="id5">``</span></a>‘one
+two bear arms &#64;0’’.</div>
+</div>
+</li>
+<li><div class="line-block">
+<div class="line"><code class="docutils literal notranslate"><span class="pre">allphrases</span></code></div>
+<div class="line">Space-separate and double-quote each string, e.g. ““one” “two”
+“bear arms””.</div>
+</div>
+</li>
+<li><div class="line-block">
+<div class="line"><code class="docutils literal notranslate"><span class="pre">anywords</span></code></div>
+<div class="line">Space-separate and double-quote each string, and append
+“<a href="#id6"><span class="problematic" id="id7">``</span></a>&#64;0’’’, e.g. <a href="#id8"><span class="problematic" id="id9">``</span></a>‘“one” “two” “bear arms” &#64;0’’.</div>
+</div>
+</li>
+<li><div class="line-block">
+<div class="line"><code class="docutils literal notranslate"><span class="pre">equivlist</span></code></div>
+<div class="line">Make the string list into a parenthetical comma-separated list,
+e.g. “(one,two,bear arms)”.</div>
+</div>
+</li>
+</ul>
+<p>The default is <code class="docutils literal notranslate"><span class="pre">equivlist</span></code>. Added in version 5.01.1225240000
+20081028. See also the <code class="docutils literal notranslate"><span class="pre">varchartostrlstsep</span></code> setting (p. ), which
+affects conversion of <code class="docutils literal notranslate"><span class="pre">varchar</span></code> to <code class="docutils literal notranslate"><span class="pre">strlst</span></code> in other contexts.</p>
+</dd>
+<dt>compatibilityversion</dt><dd><p>[SqlPropertyCompatibilityVersion]</p>
+<p>Sets the Texis compatibility version – the version to attempt to
+behave as – to the given string, which is a Texis version of the
+form “<span class="math notranslate nohighlight">\(major\)</span>[.:math:<cite>minor</cite>[.:math:<cite>release</cite>]]”, where
+<span class="math notranslate nohighlight">\(major\)</span> is a major version integer, <span class="math notranslate nohighlight">\(minor\)</span> is a minor
+version integer, and <span class="math notranslate nohighlight">\(release\)</span> is a release integer. Added in
+version 7. See the <code class="docutils literal notranslate"><span class="pre">&lt;vxcp</span> <span class="pre">compatibilityversion&gt;</span></code> setting in Vortex
+for details. See also the Compatibility Version setting (p. ) in
+texis.ini, which the <code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code> setting defaults to.</p>
+</dd>
+<dt>failifincompatible</dt><dd><p>Whenever set nonzero/true, and the most recent
+<code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code> setting attempt failed, then all future SQL
+statements will fail with an error message. Since there is no
+conditional (“if”) statement in SQL, this allows a SQL script to
+essentially abort if it tries to set a Texis compatibility version
+that is unsupported, rather than continue with possibly undesired
+side effects. Added in version 7. See also
+<code class="docutils literal notranslate"><span class="pre">&lt;vxcp</span> <span class="pre">compatibilityversion&gt;</span></code> in Vortex, which obviates the need
+for this setting, as it has a checkable error return.</p>
+</dd>
+<dt>groupbymem</dt><dd><p>When set nonzero/true (the default), try to minimize memory usage
+during <code class="docutils literal notranslate"><span class="pre">GROUP</span> <span class="pre">BY</span></code>/<code class="docutils literal notranslate"><span class="pre">DISTINCT</span></code> operations (e.g. when using an
+index and sorting is not needed). Added in version 7.00.1370039228
+20130531.</p>
+</dd>
+<dt>legacyversion7orderbyrank</dt><dd><p>[SqlPropertyLegacyVersion7OrderByRank]</p>
+<p>If on, an ORDER BY $rank (or $rank-containing expression) uses
+legacy version 7 behavior, i.e. typically orders in numerically
+descending order, but may change to ascending (and have other
+idiosyncrasies) depending on index, expression and <code class="docutils literal notranslate"><span class="pre">DESC</span></code> flag
+use. If disabled, such ORDER BYs are consistent with others:
+numerically ascending unless <code class="docutils literal notranslate"><span class="pre">DESC</span></code> flag given (which would
+typically be given, to maintain descending-numerical-rank order).</p>
+<p>The default is the value of the Legacy Version 7 Order By Rank
+setting (p. ) in conf/texis.ini, which is off by default with
+<code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code> 8 and later, on in earlier versions
+(<code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code> defaults to Texis Version). Added in
+version 7.06.1508871000 20171024.</p>
+<p>Note that this setting may be removed in a future release, as its
+enabled behavior is deprecated. Its existence is only to ease
+transition of old code when upgrading to Texis version 8, and thus
+should only be used temporarily. Old code should be updated to
+reflect version 8 default behavior – and this setting removed – soon
+after upgrading.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="metamorph-parameters">
+<h2>Metamorph parameters<a class="headerlink" href="#metamorph-parameters" title="Permalink to this headline">¶</a></h2>
+<p>These settings affect the way that text searches are performed. They are
+equivalent to changing the corresponding parameter in the profile, or by
+calling the Metamorph API function to set them (if there is an
+equivalent). They are:</p>
+<dl>
+<dt>minwordlen</dt><dd><p>The smallest a word can get due to suffix and prefix removal.
+Removal of trailing vowel or double consonant can make it a letter
+shorter than this. Default 255.</p>
+</dd>
+<dt>keepnoise</dt><dd><p>Whether noise words should be stripped from the query and index.
+Default off.</p>
+</dd>
+<dt>suffixproc</dt><dd><p>Whether suffixes should be stripped from the words to find a match.
+Default on.</p>
+</dd>
+<dt>prefixproc</dt><dd><p>Whether prefixes should be stripped from the words to find a match.
+Turning this on is not suggested when using a Metamorph index.
+Default off.</p>
+</dd>
+<dt>rebuild</dt><dd><p>Make sure that the word found can be built from the root and
+appropriate suffixes and prefixes. This increases the accuracy of
+the search. Default on.</p>
+</dd>
+<dt>useequiv</dt><dd><p>Perform thesaurus lookup. If this is on then the word and all
+equivalences will be searched for. If it is off then only the query
+word is searched for. Default off. Aka <strong>keepeqvs</strong> in version
+5.01.1171414736 20070213 and later.</p>
+</dd>
+<dt>inc_sdexp</dt><dd><p>Include the start delimiter as part of the hit. This is not
+generally useful in Texis unless hit offset information is being
+retrieved. Default off.</p>
+</dd>
+<dt>inc_edexp</dt><dd><p>Include the end delimiter as part of the hit. This is not generally
+useful in Texis unless hit offset information is being retrieved.
+Default on.</p>
+</dd>
+<dt>sdexp</dt><dd><p>Start delimiter to use: a regular expression to match the start of a
+hit. The default is no delimiter.</p>
+</dd>
+<dt>edexp</dt><dd><p>End delimiter to use: a regular expression to match the start of a
+hit. The default is no delimiter.</p>
+</dd>
+<dt>intersects</dt><dd><p>Default number of intersections in Metamorph queries; overridden by
+the <code class="docutils literal notranslate"><span class="pre">&#64;</span></code> operator. Added in version 7.06.1530212000 20180628.</p>
+</dd>
+<dt>hyphenphrase</dt><dd><p>Controls whether a hyphen between words searches for the phrase of
+the two words next to each other, or searches for the hyphen
+literally. The default value of 1 will search for the two words as a
+phrase. Setting it to 0 will search for a single term including the
+hyphen. If you anticipate setting hyphenphrase to 0 then you should
+modify the index word expression to include hyphens.</p>
+</dd>
+<dt>wordc</dt><dd><p>For language or wildcard query terms during linear (non-index)
+searches, this defines which characters in the document consitute a
+word. When a match is found for language/wildcard terms, the hit is
+expanded to include all surrounding word characters, as defined by
+this setting. The resulting expansion must then match the query term
+for the hit to be valid. (This prevents the query “<code class="docutils literal notranslate"><span class="pre">pond</span></code>” from
+inadvertently matching the text “<code class="docutils literal notranslate"><span class="pre">correspondence</span></code>”, for example.)
+The value is specified as a REX character set. The default setting
+is <code class="docutils literal notranslate"><span class="pre">[\alpha\']</span></code> which corresponds to all letters and apostrophe.
+For example, to exclude apostrophe and include digits use:
+<code class="docutils literal notranslate"><span class="pre">set</span> <span class="pre">wordc='[\alnum]'</span></code> Added in version 3.00.942260000. Note that
+this setting is for linear searches: what constitutes a word for
+Metamorph <em>index</em> searches is controlled by the index expressions
+(<strong>addexp</strong> property, p. ). Also note that non-language,
+non-wildcard query terms (e.g. <code class="docutils literal notranslate"><span class="pre">123</span></code> with default settings) are
+not word-expanded.</p>
+</dd>
+<dt>langc</dt><dd><p>Defines which characters make a query term a language term. A
+language term will have prefix/suffix processing applied (if
+enabled), as well as force the use of <strong>wordc</strong> to qualify the hit
+(during linear searches). Normally <strong>langc</strong> should be set the same
+as <strong>wordc</strong> with the addition of the phrase characters space and
+hyphen. The default is <code class="docutils literal notranslate"><span class="pre">[\alpha\'</span> <span class="pre">\-]</span></code> Added in version
+3.00.942260000.</p>
+</dd>
+<dt>withinmode</dt><dd><p>A space- or comma-separated unit and optional type for the
+“within-<span class="math notranslate nohighlight">\(N\)</span>” operator (e.g. <code class="docutils literal notranslate"><span class="pre">w/5</span></code>). The unit is one of:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">char</span></code> for within-<span class="math notranslate nohighlight">\(N\)</span> characters</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">word</span></code> for within-<span class="math notranslate nohighlight">\(N\)</span> words</p></li>
+</ul>
+<p>The optional type determines what distance the operator measures. It
+is one of the following:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">radius</span></code> (the default if no type is specified when set)
+indicates all sets must be within a radius <span class="math notranslate nohighlight">\(N\)</span> of an
+“anchor” set, i.e. there is a set in the match such that all
+other sets are within <span class="math notranslate nohighlight">\(N\)</span> units right of its right edge or
+<span class="math notranslate nohighlight">\(N\)</span> units left of its left edge.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">span</span></code> indicates all sets must be within an <span class="math notranslate nohighlight">\(N\)</span>-unit span</p></li>
+</ul>
+<p>Added in version 4.04.1077930936 20040227. The optional type was
+added in version 5.01.1258712000 20091120; previously the only type
+was implicitly <code class="docutils literal notranslate"><span class="pre">radius</span></code>. In version 5 and earlier the default
+setting was <code class="docutils literal notranslate"><span class="pre">char</span></code> (i.e. char radius); in version 6 and later the
+default is word span.</p>
+</dd>
+<dt>phrasewordproc</dt><dd><p>Which words of a phrase to do suffix/wildcard processing on. The
+possible values are <code class="docutils literal notranslate"><span class="pre">mono</span></code> to treat the phrase as a monolithic
+word (i.e. only last word processed, but entire phrase counts
+towards <strong>minwordlen</strong>); <code class="docutils literal notranslate"><span class="pre">none</span></code> for no suffix/wildcard processing
+on phrases; or <code class="docutils literal notranslate"><span class="pre">last</span></code> to process just the last word. Note that a
+phrase is multi-word, i.e. a single word in double-quotes is not
+considered a phrase, and thus <strong>phrasewordproc</strong> does not apply.
+Added in version 4.03.1082000000 20040414. Mode <code class="docutils literal notranslate"><span class="pre">none</span></code> supported
+in version 5.01.1127760000 20050926.</p>
+</dd>
+<dt>mdparmodifyterms</dt><dd><p>If nonzero, allows the Metamorph query parser to modify search terms
+by compression of whitespace and quoting/unquoting. This is for
+back-compatibility with earlier versions; enabling it will break the
+information from bit 4 of <code class="docutils literal notranslate"><span class="pre">mminfo()</span></code> (query offset/lengths of
+sets). Added in version 5.01.1220640000 20080905.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="rank-knobs">
+<h2>Rank knobs<a class="headerlink" href="#rank-knobs" title="Permalink to this headline">¶</a></h2>
+<p>The following properties affect the document ranks from <code class="docutils literal notranslate"><span class="pre">likep</span></code> and
+<code class="docutils literal notranslate"><span class="pre">like</span></code> queries, and hence the order of returned documents for
+<code class="docutils literal notranslate"><span class="pre">likep</span></code>. Each property controls a factor used in the rank. The
+property’s value is the relative importance of that factor in computing
+the rank. The properties are settable from 0 (factor has no effect at
+all) to 1000 (factor has maximum relative importance).</p>
+<p>It is important to note that these property weights are relative to the
+sum of all weights. For example, if <code class="docutils literal notranslate"><span class="pre">likepleadbias</span></code> is set to 1000 and
+the remaining properties to 0, then a hit’s rank will be based solely on
+lead bias. If <code class="docutils literal notranslate"><span class="pre">likepproximity</span></code> is then set to 1000 as well, then lead
+bias and proximity each determine 50% of the rank.</p>
+<dl class="simple">
+<dt>likepproximity</dt><dd><p>Controls how important proximity of terms is. The closer the hit’s
+terms are grouped together, the better the rank. The default weight
+is 500.</p>
+</dd>
+<dt>likepleadbias</dt><dd><p>Controls how important closeness to document start is. Hits closer
+to the top of the document are considered better. The default weight
+is 500.</p>
+</dd>
+<dt>likeporder</dt><dd><p>Controls how important word order is: hits with terms in the same
+order as the query are considered better. For example, if searching
+for “bear arms”, then the hit “arm bears”, while matching both
+terms, is probably not as good as an in-order match. The default
+weight is 500.</p>
+</dd>
+<dt>likepdocfreq</dt><dd><p>Controls how important frequency in document is. The more
+occurrences of a term in a document, the better its rank, up to a
+point. The default weight is 500.</p>
+</dd>
+<dt>likeptblfreq</dt><dd><p>Controls how important frequency in the table is. The more a term
+occurs in the table being searched, the <em>worse</em> its rank. Terms that
+occur in many documents are usually less relevant than rare terms.
+For example, in a web-walk database the word “<code class="docutils literal notranslate"><span class="pre">HTML</span></code>” is likely to
+occur in most documents: it thus has little use in finding a
+specific document. The default weight is 500.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="other-ranking-properties">
+<h2>Other ranking properties<a class="headerlink" href="#other-ranking-properties" title="Permalink to this headline">¶</a></h2>
+<p>These properties affect how <code class="docutils literal notranslate"><span class="pre">LIKEP</span></code> and some <code class="docutils literal notranslate"><span class="pre">LIKE</span></code> queries are
+processed.</p>
+<dl>
+<dt>likeprows</dt><dd><p>Only the top <code class="docutils literal notranslate"><span class="pre">likeprows</span></code> relevant documents are returned by a
+<code class="docutils literal notranslate"><span class="pre">LIKEP</span></code> query (default 100). This is an arbitrary cut-off beyond
+which most results would be increasingly useless. It also speeds up
+the query process, because fewer rows need to be sorted during
+ranking. By altering <code class="docutils literal notranslate"><span class="pre">likeprows</span></code> this threshold can be changed,
+e.g. to return more results to the user (at the potential cost of
+more search time). Setting this to 0 will return all relevant
+documents (no limit).</p>
+<p>Note that in some circumstances, a <code class="docutils literal notranslate"><span class="pre">LIKEP</span></code> query might return more
+than <code class="docutils literal notranslate"><span class="pre">likeprows</span></code> results, if for example later processing requires
+examination of all <code class="docutils literal notranslate"><span class="pre">LIKEP</span></code>-matching rows (e.g. certain <code class="docutils literal notranslate"><span class="pre">AND</span></code>
+queries). Thus a SQL statement containing <code class="docutils literal notranslate"><span class="pre">LIKEP</span></code> may or may not
+be limited to <code class="docutils literal notranslate"><span class="pre">likeprows</span></code> results, depending on other clauses,
+indexes, etc.</p>
+</dd>
+<dt>likepmode</dt><dd><p>Sets the mode for <code class="docutils literal notranslate"><span class="pre">LIKEP</span></code> queries. This can be either 0, for
+early, or 1 for late. The default is 1, which is the correct setting
+for almost all cases. Does not apply to most Metamorph index
+searches.</p>
+</dd>
+<dt>likepallmatch</dt><dd><p>Setting this to 1 forces <code class="docutils literal notranslate"><span class="pre">LIKEP</span></code> to only consider those documents
+containing <em>all</em> (non-negated) query terms as matches (i.e. just as
+<code class="docutils literal notranslate"><span class="pre">LIKE</span></code> does). By default, since <code class="docutils literal notranslate"><span class="pre">LIKEP</span></code> is a ranking operator it
+returns the best results even if only some of the set-logic terms
+(non-<code class="docutils literal notranslate"><span class="pre">+</span></code> or <code class="docutils literal notranslate"><span class="pre">-</span></code> prefix) can be found. (Note that required terms
+– prefixed with a <code class="docutils literal notranslate"><span class="pre">+</span></code> – are always required in a hit regardless of
+this setting. Also note that if likepobeyintersects is true, an &#64;
+operator value in the query will override this setting.)</p>
+</dd>
+<dt>likepobeyintersects</dt><dd><p>Setting this to 1 forces <code class="docutils literal notranslate"><span class="pre">LIKEP</span></code> to obey the intersects operator
+(&#64;) in queries (even when likepallmatch is true). By default
+<code class="docutils literal notranslate"><span class="pre">LIKEP</span></code> does not use it, because it is a ranking operator. Setting
+both <code class="docutils literal notranslate"><span class="pre">likepallmatch</span></code> and <code class="docutils literal notranslate"><span class="pre">likepobeyintersects</span></code> to 1 will make
+<code class="docutils literal notranslate"><span class="pre">LIKEP</span></code> respect queries the same as <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>. (Note: <code class="docutils literal notranslate"><span class="pre">apicp</span></code>
+<code class="docutils literal notranslate"><span class="pre">alintersects</span></code> may have to be enabled in Vortex as well.)</p>
+</dd>
+<dt>likepinfthresh</dt><dd><p>This controls the “infinity” threshold in <code class="docutils literal notranslate"><span class="pre">LIKE</span></code> and <code class="docutils literal notranslate"><span class="pre">LIKEP</span></code>
+queries: if the estimated number of matching rows for a set is
+greater than this, the set is considered infinitely-occurring. If
+all the search terms found in a given document are such infinite
+sets, the document is given an estimated rank. This saves time
+ranking irrelevant but often-occurring matches, at the possible
+expense of rank position. The default is 0, which means infinite (no
+infinite sets; rank all documents).</p>
+</dd>
+<dt>likepindexthresh</dt><dd><p>Controls the maximum number of matching documents to examine
+(default infinite) for <code class="docutils literal notranslate"><span class="pre">LIKEP</span></code> and <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>. After this many
+matches have been found, stop and return the results obtained so
+far, even if more hits exist. Typically this would be set to a high
+threshold (e.g. 100000): a query that returns more than that many
+hits is probably not specific enough to produce useful results, so
+save time and don’t process the remaining hits. (It’s also a good
+bet that something useful was already found in the initial results.)
+This helps keep such noisy queries from loading a server, by
+stopping processing on them early. A more specific query that
+returns fewer hits will fall under this threshold, so all matches
+will be considered for ranking.</p>
+<p>Note that setting <code class="docutils literal notranslate"><span class="pre">likepindexthresh</span></code> is a tradeoff between speed
+and accuracy: the lower the setting, the faster queries can be
+processed, but the more queries may be dropping potentially
+high-ranking hits.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="indexing-properties">
+<h2>Indexing properties<a class="headerlink" href="#indexing-properties" title="Permalink to this headline">¶</a></h2>
+<p>[indexspace] A directory in which to store the index files. The default
+is the empty string, which means use the database directory. This can be
+used to put the indexes onto another disk to balance load or for space
+reasons. If <code class="docutils literal notranslate"><span class="pre">indexspace</span></code> is set to a non-default value when a
+Metamorph index is being updated, the new index will be stored in the
+new location.</p>
+<p>When a Metamorph index is created on an indirect field, the indirect
+files are read in blocks. This property allows the size of the block
+used to be redefined.</p>
+<p>[indexmem] When indexes are created Texis will use memory to speed up
+the process. This setting allows the amount of memory used to be
+adjusted. The default is to use 40% of physical memory, if it can be
+determined, and to use 16MB if not. If the value set is less than 100
+then it is treated as a percentage of physical memory. It the number is
+greater than 100 then it is treated as the number of bytes of memory to
+use. Setting this value too high can cause excessive swapping, while
+setting it too low causes unneeded extra merges to disk.</p>
+<p>[indexmeter] Whether to print a progress meter during index
+creation/update. The default is 0 or <code class="docutils literal notranslate"><span class="pre">'none'</span></code>, which suppresses the
+meter. A value of 1 or <code class="docutils literal notranslate"><span class="pre">'simple'</span></code> prints a simple hash-mark meter
+(with no tty control codes; suitable for redirection to a file and
+reading by other processes). A value of 2 or <code class="docutils literal notranslate"><span class="pre">'percent'</span></code> or <code class="docutils literal notranslate"><span class="pre">'pct'</span></code>
+prints a hash-mark meter with a more detailed percentage value (suitable
+for large indexes). Added in version 4.00.998688241 Aug 24 2001.</p>
+<p>A semicolon-separated list of processes to print a progress meter for.
+Syntax:</p>
+<p>``     <a href="#id10"><span class="problematic" id="id11">``</span></a>{<span class="math notranslate nohighlight">\(process\)</span>[=:math:<cite>type</cite>]}|<span class="math notranslate nohighlight">\(type\)</span> [; …]</p>
+<p>A <span class="math notranslate nohighlight">\(process\)</span> is one of <code class="docutils literal notranslate"><span class="pre">index</span></code>, <code class="docutils literal notranslate"><span class="pre">compact</span></code>, or the catch-all
+alias <code class="docutils literal notranslate"><span class="pre">all</span></code>. A <span class="math notranslate nohighlight">\(type\)</span> is a progress meter type, one of <code class="docutils literal notranslate"><span class="pre">none</span></code>,
+<code class="docutils literal notranslate"><span class="pre">simple</span></code>, <code class="docutils literal notranslate"><span class="pre">percent</span></code>, <code class="docutils literal notranslate"><span class="pre">on</span></code> (same as <code class="docutils literal notranslate"><span class="pre">simple</span></code>) or <code class="docutils literal notranslate"><span class="pre">off</span></code> (same as
+<code class="docutils literal notranslate"><span class="pre">none</span></code>). The default <span class="math notranslate nohighlight">\(type\)</span> if not given is <code class="docutils literal notranslate"><span class="pre">on</span></code>. E.g. to show
+a progress meter for all meterable processes, simply set <code class="docutils literal notranslate"><span class="pre">meter</span></code> to
+<code class="docutils literal notranslate"><span class="pre">on</span></code>. Added in version 6.00.1290500000 20101123.</p>
+<p>An additional REX expression to match words to be [addexpSqlProperty]
+indexed in a Metamorph index. This is useful if there are non-English
+words to be searched for, such as part numbers. When an index is first
+created, the expressions used are stored with it so they will be updated
+properly. The default expression is <code class="docutils literal notranslate"><span class="pre">\alnum{2,99}</span></code>. <strong>Note:</strong> Only the
+expressions set when the index is initially created (i.e. the first
+CREATE METAMORPH … statement – later statements are index updates) are
+saved. Expressions set during an update (issuance of “create metamorph
+[inverted] index” on an existent index) will <em>not</em> be added.</p>
+<p>This removes an index word expression from the list. Expressions can be
+removed either by number (starting with 0) or by expression.</p>
+<p>Lists the current index word expressions. The value specified is ignored
+(but required syntactically).</p>
+<p>Add a directory to the list of directories to use for temporary files
+while creating the index. If temporary files are needed while creating a
+Metamorph index they will be created in one of these directories, the
+one with the most space at the time of creation. If no <code class="docutils literal notranslate"><span class="pre">addindextmp</span></code>
+dirs are specified, the default list is the index’s destination dir
+(e.g. database or <code class="docutils literal notranslate"><span class="pre">indexspace</span></code>), and the environment variables <code class="docutils literal notranslate"><span class="pre">TMP</span></code>
+and <code class="docutils literal notranslate"><span class="pre">TMPDIR</span></code>.</p>
+<p>Remove a directory from the list of directories to use for temporary
+files while creating a Metamorph index.</p>
+<p>List the directories used for temporary files while creating Metamorph
+indices. Aka <code class="docutils literal notranslate"><span class="pre">listindextmp</span></code>.</p>
+<p>[indexvalues] Controls how a regular (B-tree) index stores table values.
+If set to splitstrlst (the default), then <code class="docutils literal notranslate"><span class="pre">strlst</span></code>-type fields are
+split, i.e. a separate (item,recid) tuple is stored for <em>each</em>
+(<code class="docutils literal notranslate"><span class="pre">varchar</span></code>) item in the <code class="docutils literal notranslate"><span class="pre">strlst</span></code>, rather than just one for the whole
+(strlst,recid) tuple. This allows the index to be used for some set-like
+operators that look at individual items in a <code class="docutils literal notranslate"><span class="pre">strlst</span></code>, such as most
+<code class="docutils literal notranslate"><span class="pre">IN</span></code>, <code class="docutils literal notranslate"><span class="pre">SUBSET</span></code> (p. ) and <code class="docutils literal notranslate"><span class="pre">INTERSECT</span></code> (p. ) queries.</p>
+<p>If <code class="docutils literal notranslate"><span class="pre">indexvalues</span></code> is set to <code class="docutils literal notranslate"><span class="pre">all</span></code> – or the index is not on a
+<code class="docutils literal notranslate"><span class="pre">strlst</span></code> field, or is on multiple fields – such splitting does not
+occur, and the index can generally not be used for set-like queries
+(with some exceptions; see p.  for details).</p>
+<p>Note that if index values are split (i.e. <code class="docutils literal notranslate"><span class="pre">splitstrlst</span></code> set and index
+is one field which is <code class="docutils literal notranslate"><span class="pre">strlst</span></code>), table rows with an empty (zero-items)
+<code class="docutils literal notranslate"><span class="pre">strlst</span></code> value will not be stored in the index. This means that
+queries that require searching for or listing empty-<code class="docutils literal notranslate"><span class="pre">strlst</span></code> table
+values cannot use such an index. For example, a subset query with a
+non-empty parameter on the right side and a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> table column on
+the left side will not be able to return empty-<code class="docutils literal notranslate"><span class="pre">strlst</span></code> rows when
+using an index, even though they match. Also, subset queries with an
+empty-<code class="docutils literal notranslate"><span class="pre">strlst</span></code> or empty-<code class="docutils literal notranslate"><span class="pre">varchar</span></code> parameter (left or right side)
+must use an <code class="docutils literal notranslate"><span class="pre">indexvalues=all</span></code> index instead. Thus if
+empty-<code class="docutils literal notranslate"><span class="pre">strlst</span></code> subset query parameters are a possibility, both types
+of index (<code class="docutils literal notranslate"><span class="pre">splitstrlst</span></code> and <code class="docutils literal notranslate"><span class="pre">all</span></code>) should be created.</p>
+<p>As with <code class="docutils literal notranslate"><span class="pre">stringcomparemode</span></code>, only the creation-time <code class="docutils literal notranslate"><span class="pre">indexvalues</span></code>
+value is ever used by an index, not the current value, and the optimizer
+will attempt to choose the best index at search time. The
+<code class="docutils literal notranslate"><span class="pre">indexvalues</span></code> setting was added in Texis version 7; previous versions
+effectively had <code class="docutils literal notranslate"><span class="pre">indexvalues</span></code> set to <code class="docutils literal notranslate"><span class="pre">splitstrlst</span></code>. <strong>Caveat:</strong> A
+version 6 Texis will issue an error when encountering an indexvalues=all
+index (as it is unimplemented in version 6), and will refuse to modify
+the index or the table it is on. <strong>A version 5 or earlier Texis,
+however, may silently corrupt an indexvalues=all index during table
+modifications.</strong></p>
+<p>This sets a limit as to how much of an index should be used. If a
+particular portion of the query matches more than the given percent of
+the rows the index will not be used. It is often more efficient to try
+and find another index rather than use an index for a very frequent
+term. The default is set to 50, so if more than half the records match,
+the index will not be used. This only applies to ordinary indices.</p>
+<p>Whether to log operations on a particular B-tree, for debugging.
+Generally enabled only at the request of tech support. The value syntax
+is:</p>
+<blockquote>
+<div><p><span class="math notranslate nohighlight">\([\)</span><code class="docutils literal notranslate"><span class="pre">on=</span></code><span class="math notranslate nohighlight">\(|\)</span><code class="docutils literal notranslate"><span class="pre">off=</span></code><span class="math notranslate nohighlight">\(][\)</span><code class="docutils literal notranslate"><span class="pre">/dir/</span></code><span class="math notranslate nohighlight">\(]\)</span><code class="docutils literal notranslate"><span class="pre">file</span></code><span class="math notranslate nohighlight">\([\)</span><code class="docutils literal notranslate"><span class="pre">.btr</span></code><span class="math notranslate nohighlight">\(]\)</span></p>
+</div></blockquote>
+<p>Prefixing <code class="docutils literal notranslate"><span class="pre">on=</span></code> or <code class="docutils literal notranslate"><span class="pre">off=</span></code> turns logging on or off, respectively; the
+default (if no prefix) is on. Logging applies to the named B-tree file;
+if a relative path is given, logging applies to the named B-tree in any
+database accessed.</p>
+<p>The logging status is also saved in the B-tree file itself, if the index
+is opened for writing (e.g. at create or update). This means that once
+logging is enabled and saved, <em>every</em> process that accesses the B-tree
+will log operations, not just ones that have <code class="docutils literal notranslate"><span class="pre">btreelog</span></code> explicitly
+set. This is critical for debugging, as every operation must be logged.
+Thus, <code class="docutils literal notranslate"><span class="pre">btreelog</span></code> can just be set once (e.g. at index create), without
+having to modify (and track down) every script that might use the
+B-tree. Logging can be disabled later, by setting “<code class="docutils literal notranslate"><span class="pre">off=file</span></code>” and
+accessing the index for an update.</p>
+<p>Operations are logged to a text file with the same name as the B-tree,
+but ending in “<code class="docutils literal notranslate"><span class="pre">.log</span></code>” instead of “<code class="docutils literal notranslate"><span class="pre">.btr</span></code>”. The columns in the log
+file are as follows; most are for tech support analysis, and note that
+they may change in a future Texis release:</p>
+<ul class="simple">
+<li><p><strong>Date</strong> Date</p></li>
+<li><p><strong>Time</strong> Time (including microseconds)</p></li>
+<li><p><strong>Script and line</strong> Vortex script and line number, if known</p></li>
+<li><p><strong>PID</strong> Process ID</p></li>
+<li><p><strong>DBTBL handle</strong> <code class="docutils literal notranslate"><span class="pre">DBTBL</span></code> handle</p></li>
+<li><p><strong>Read locks</strong> Number of read locks (<code class="docutils literal notranslate"><span class="pre">DBTBL.nireadl</span></code>)</p></li>
+<li><p><strong>Write locks</strong> Number of write locks (<code class="docutils literal notranslate"><span class="pre">DBTBL.niwrite</span></code>)</p></li>
+<li><p><strong>B-tree handle</strong> <code class="docutils literal notranslate"><span class="pre">BTREE</span></code> handle</p></li>
+<li><p><strong>Action</strong> What action was taken:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">open</span></code> B-tree open: <strong>Recid</strong> is root page offset</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">create</span></code> B-tree create</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">close</span></code> B-tree close</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">RDroot</span></code> Read root page</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dump</span></code> B-tree dump</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">WRhdr</span></code> Write B-tree header: <strong>Recid</strong> is root page offset</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">WRdd</span></code> Write data dictionary: <strong>Recid</strong> is <code class="docutils literal notranslate"><span class="pre">DD</span></code> offset. (Read
+<code class="docutils literal notranslate"><span class="pre">DD</span></code> at open is not logged.)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">delete</span></code> Delete key: <strong>Recid</strong> is for the key</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">append</span></code> Append key</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">insert</span></code> Insert key</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">search</span></code> Search for key</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">RDpage</span></code> Read page: <strong>Recid</strong> is for the page</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">WRpage</span></code> Write page</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CRpage</span></code> Create page</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">FRpage</span></code> Free page</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">FRdbf</span></code> Free DBF block</p></li>
+</ul>
+</li>
+<li><p><strong>Result</strong> Result of action:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">ok</span></code> Success</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">fail</span></code> Failure</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dup</span></code> Duplicate (e.g. duplicate insert into unique B-tree)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hit</span></code> Search found the key</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">miss</span></code> Search did not find the key</p></li>
+</ul>
+</li>
+<li><p><strong>Search mode</strong> Search mode:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">B</span></code> Find before</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">F</span></code> Find</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">A</span></code> Find after</p></li>
+</ul>
+</li>
+<li><p><strong>Index guarantee</strong> <code class="docutils literal notranslate"><span class="pre">DBTBL.indguar</span></code> flag (<code class="docutils literal notranslate"><span class="pre">1</span></code> if no post-process
+needed)</p></li>
+<li><p><strong>Index type</strong> Index type:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">N</span></code> <code class="docutils literal notranslate"><span class="pre">DBIDX_NATIVE</span></code> (bubble-up)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">M</span></code> <code class="docutils literal notranslate"><span class="pre">DBIDX_MEMORY</span></code> (RAM B-tree)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">C</span></code> <code class="docutils literal notranslate"><span class="pre">DBIDX_CACHE</span></code> (RAM cache)</p></li>
+</ul>
+</li>
+<li><p><strong>Recid</strong> Record id; see notes for <strong>Action</strong> column</p></li>
+<li><p><strong>Key size</strong> Key size (in bytes)</p></li>
+<li><p><strong>Key flags</strong> Flags for each key value, separated by commas:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">D</span></code> <code class="docutils literal notranslate"><span class="pre">OF_DESCENDING</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">I</span></code> <code class="docutils literal notranslate"><span class="pre">OF_IGN_CASE</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">X</span></code> <code class="docutils literal notranslate"><span class="pre">OF_DONT_CARE</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">E</span></code> <code class="docutils literal notranslate"><span class="pre">OF_PREFER_END</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">S</span></code> <code class="docutils literal notranslate"><span class="pre">OF_PREFER_START</span></code></p></li>
+</ul>
+</li>
+<li><p><strong>Key</strong> Key, i.e. value being inserted, deleted etc.; multiple values
+separated with commas</p></li>
+</ul>
+<p>Unavailable or not-applicable fields are logged with a dash. Note that
+enabling logging can produce a large log file quickly; free disk space
+should be monitored. The <code class="docutils literal notranslate"><span class="pre">btreelog</span></code> setting was added in version
+5.01.1134028000 20051208.</p>
+<p>Dump B-tree indexes, for debugging. Generally enabled only at the
+request of tech support. The value is an integer whose bits are defined
+as follows:</p>
+<p>Bits 0-15 define what to dump. Files are created that are named after
+the B-tree, with a different extension:</p>
+<ul class="simple">
+<li><p>0: Issue a <code class="docutils literal notranslate"><span class="pre">putmsg</span></code> about where dump file(s) are</p></li>
+<li><p>1: <code class="docutils literal notranslate"><span class="pre">.btree</span></code> file: Copy of in-mem <code class="docutils literal notranslate"><span class="pre">BTREE</span></code> struct</p></li>
+<li><p>2: <code class="docutils literal notranslate"><span class="pre">.btrcopy</span></code> file: Copy of <code class="docutils literal notranslate"><span class="pre">.btr</span></code> file</p></li>
+<li><p>3: <code class="docutils literal notranslate"><span class="pre">.cache</span></code> file: Page cache from <code class="docutils literal notranslate"><span class="pre">BCACHE</span></code>, <code class="docutils literal notranslate"><span class="pre">BPAGE</span></code></p></li>
+<li><p>4: <code class="docutils literal notranslate"><span class="pre">.his</span></code> file: History from <code class="docutils literal notranslate"><span class="pre">BTRL</span></code></p></li>
+<li><p>5: <code class="docutils literal notranslate"><span class="pre">.core</span></code> file: <code class="docutils literal notranslate"><span class="pre">fork()</span></code> and dump core</p></li>
+</ul>
+<p>Bits 16+ define when to dump:</p>
+<ul class="simple">
+<li><p>16: At “Cannot insert value” messages</p></li>
+<li><p>17: At “Cannot delete value” messages</p></li>
+<li><p>18: At “Trying to insert duplicate value” messages</p></li>
+</ul>
+<p>The files are for tech support analysis. Formats and bits subject to
+change in future Texis releases. The <code class="docutils literal notranslate"><span class="pre">btreedump</span></code> setting was added in
+version 5.01.1131587000 20051109.</p>
+<p>This set the maximum number of records that should be searched linearly.
+If using the indices to date yield a result set larger than
+<code class="docutils literal notranslate"><span class="pre">maxlinearrows</span></code> then the program will try to find more indices to use.
+Once the result set is smaller than <code class="docutils literal notranslate"><span class="pre">maxlinearrows</span></code>, or all possible
+indices are exhausted, the records will be processed. The default is
+1000.</p>
+<p>How many rows a single term can appear in, and still be returned by
+<code class="docutils literal notranslate"><span class="pre">liker</span></code>. When searching for multiple terms with <code class="docutils literal notranslate"><span class="pre">liker</span></code> and
+<code class="docutils literal notranslate"><span class="pre">likep</span></code> one does not always want documents only containing a very
+frequent term to be displayed. This sets the limit of what is considered
+frequent. The default is 1000.</p>
+<p>If this option is turned on then data from an index can be selected as
+if it were a table. When selecting from an ordinary (B-tree) index, the
+fields that the index was created on will be listed. When selecting from
+a Metamorph index a list of words (<code class="docutils literal notranslate"><span class="pre">Word</span></code> column‘), count of rows
+containing each word (<code class="docutils literal notranslate"><span class="pre">RowCount</span></code>), and – for Metamorph inverted
+indexes – count of all hits in all rows (<code class="docutils literal notranslate"><span class="pre">OccurrenceCount</span></code>) for each
+word will be returned.</p>
+<p>In versions of Texis after October 1998, the <code class="docutils literal notranslate"><span class="pre">indexchunk</span></code> setting is
+deprecated and unused. In prior releases, when creating a Metamorph
+index temporary files are used which in the worst case can grow to twice
+the size of the data being indexed. This process can be broken into
+stages, such that after indexing a certain amount of data the temporary
+files are processed, to generate a partial index, and then the process
+repeats for the rest of the data. By default the amount of free disk
+space is checked on startup, and used to calculate when it will need to
+perform the processing step. If the system does not report free disk
+space accurately, or to free more disk space, this value can be changed.
+The default is 0, which automatically calculates a value. Otherwise it
+is set to the number of bytes of data to index before processing the
+temporary files. Lower values conserve disk space, at the expense of
+more time to process intermediate files.</p>
+<p><em>Windows/NT specific</em> After updating a Metamorph index the database will
+wait this long before trying to remove the old copy of the index. This
+is to allow any other process currently using the index time to stop
+using the index, so it can be removed. The default is twenty seconds. If
+a whole batch of Metamorph indices are being updated right after
+another, it may be useful to set this to 0 for all but the last index,
+as an attempt will be made to remove all old indices after every index
+update.</p>
+<p>Integer whose bit flags control some tracing messages about database
+cleanup housekeeping (e.g. removal of unneeded temporary or deleted
+indexes and tables). A bit-wise OR of the following values:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">0x01</span></code>: Report successful removal of temporary/deleted
+indexes/tables.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">0x02</span></code>: Report failed removal of such indexes/tables.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">0x04</span></code>: Report on in-use checks of temporary indexes/tables.</p></li>
+</ul>
+<p>The default is 0 (i.e. no messages). Note that these cleanup actions may
+also be handled by the Database Monitor; see also the DB Cleanup Verbose
+setting in conf/texis.ini. Added in version 6.00.1339712000 20120614.</p>
+<p>For debugging: trace index usage, especially during searches, issuing
+informational <code class="docutils literal notranslate"><span class="pre">putmsg</span></code>s. Greater values produce more messages. Note
+that the meaning of values, as well as the messages printed, are subject
+to change without notice. Aka <code class="docutils literal notranslate"><span class="pre">traceindex</span></code>, <code class="docutils literal notranslate"><span class="pre">traceidx</span></code>. Added in
+version 3.00.942186316 19991109.</p>
+<p>For debugging: trace index usage for this particular recid. Added in
+version 3.01.945660772 19991219.</p>
+<p>For debugging: dump index recids during search/usage. Value is a bitwise
+OR of the following flags:</p>
+<dl class="simple">
+<dt>Bit 0</dt><dd><p>for new list</p>
+</dd>
+<dt>Bit 1</dt><dd><p>for delete list</p>
+</dd>
+<dt>Bit 2</dt><dd><p>for token file</p>
+</dd>
+<dt>Bit 3</dt><dd><p>for overall counts too</p>
+</dd>
+</dl>
+<p>The default is 0.</p>
+<p>Whether to use memory-mapping to access Metamorph index files, instead
+of <code class="docutils literal notranslate"><span class="pre">read()</span></code>. The value is a bitwise OR of the following flags:</p>
+<dl class="simple">
+<dt>Bit 0</dt><dd><p>for token file</p>
+</dd>
+<dt>Bit 1</dt><dd><p>for <code class="docutils literal notranslate"><span class="pre">.dat</span></code> file</p>
+</dd>
+</dl>
+<p>The default is 1 (i.e. for token file only). Note that memory-mapping
+may not be supported on all platforms.</p>
+<p>Read buffer size, when reading (not memory-mapping) Metamorh index
+<code class="docutils literal notranslate"><span class="pre">.tok</span></code> and <code class="docutils literal notranslate"><span class="pre">.dat</span></code> files. The default is 64KB; suffixes like “<code class="docutils literal notranslate"><span class="pre">KB</span></code>”
+are respected. During search, actual read block size could be less (if
+predicted) or more (if blocks merged). Also used during index
+create/update. Decreasing this size when creating large indexes can save
+memory (due to the large number of intermediate files), at the potential
+expense of time. Aka <code class="docutils literal notranslate"><span class="pre">indexreadbufsize</span></code>. Added in version
+4.00.1006398833 20011121.</p>
+<p>Write buffer size for creating Metamorph indexes. The default is 128KB;
+suffixes like “<code class="docutils literal notranslate"><span class="pre">KB</span></code>” are respected. Aka <code class="docutils literal notranslate"><span class="pre">indexwritebufsize</span></code>. Added
+in version 4.00.1007509154 20011204.</p>
+<p>Memory-map buffer size for Metamorph indexes. During search, it is used
+for the <code class="docutils literal notranslate"><span class="pre">.dat</span></code> file, if it is memory-mapped (see <code class="docutils literal notranslate"><span class="pre">indexmmap</span></code>); it is
+ignored for the <code class="docutils literal notranslate"><span class="pre">.tok</span></code> file since the latter is heavily used and thus
+fully mapped (if <code class="docutils literal notranslate"><span class="pre">indexmmap</span></code> permits it). During index update,
+<code class="docutils literal notranslate"><span class="pre">indexmmapbufsz</span></code> is used for the <code class="docutils literal notranslate"><span class="pre">.dat</span></code> file, if it is
+memory-mapped; the <code class="docutils literal notranslate"><span class="pre">.tok</span></code> file will be entirely memory-mapped if it is
+smaller than this size, else it is read. Aka <code class="docutils literal notranslate"><span class="pre">indexmmapbufsize</span></code>. The
+default is 0, which uses 25% of RAM. Added in version 3.01.959984092
+20000602. In version 4.00.1007509154 20011204 and later, “<code class="docutils literal notranslate"><span class="pre">KB</span></code>” etc.
+suffixes are allowed.</p>
+<p>Whether to enable index “slurp” optimization during Metamorph index
+create/update, where possible. Optimization is always possible for index
+create; during index update, it is possible if the new insert/update
+recids all occur after the original recids (e.g. the table is
+insert-only, or all updates created a new block). Optimization saves
+about 20% of index create/update time by merging piles an entire word at
+a time, instead of word/token at a time. The default is 1 (enabled); set
+to 0 to disable. Added in version 4.00.1004391616 20011029.</p>
+<p>Whether to enable index “append” optimization during Metamorph index
+update, where possible. Optimization is possible if the new insert
+recids all occur after the original recids, and there were no
+deletes/updates (e.g. the table is insert-only); it is irrelevant during
+index create. Optimization saves index build time by avoiding original
+token translation if not needed. The default is 1 (enabled); set to 0 to
+disable. Added in version 4.00.1006312820 20011120.</p>
+<p>Whether to enable index “write-split” optimization during Metamorph
+index create/update. Optimization saves memory by splitting the writes
+for (potentially large) <code class="docutils literal notranslate"><span class="pre">.dat</span></code> blocks into multiple calls, thus
+needing less buffer space. The default is 1 (enabled); set to 0 to
+disable. Added in version 4.00.1015532186 20020307.</p>
+<p>Whether to optimize access to certain index B-trees during exclusive
+access. The optimization may reduce seeks and reads, which may lead to
+increased index creation speed on platforms with slow large-file
+<code class="docutils literal notranslate"><span class="pre">lseek</span></code> behavior. The default is 1 (enabled); set to 0 to disable.
+Added in version 5.01.1177548533 20070425.</p>
+<p>Whether to enable index “merge-flush” optimization during Metamorph
+index create/update. Optimization saves time by flushing in-memory index
+piles to disk just before final merge; generally saves time where
+<code class="docutils literal notranslate"><span class="pre">indexslurp</span></code> is not possible. The default is 1 (enabled); set to 0 to
+disable. Added in version 4.00.1011143988 20020115.</p>
+<p>indexversion Which version of Metamorph index to produce or update, when
+creating or updating Metamorph indexes. The supported values are 0
+through 3; the default is 2. Setting version 0 sets the default index
+version for that Texis release. Note that old versions of Texis may not
+support version 3 indexes. Version 3 indexes may use less disk space
+than version 2, but are considered experimental. Added in version
+3.00.954374722 20000329.</p>
+<p>[indexmaxsingle] For Metamorph indexes; the maximum number of locations
+that a single-recid dictionary word may have and still be stored solely
+in the <code class="docutils literal notranslate"><span class="pre">.btr</span></code> B-tree file (without needing a <code class="docutils literal notranslate"><span class="pre">.dat</span></code> entry).
+Single-recid-occurence words usually have their data stored solely in
+the B-tree to save a <code class="docutils literal notranslate"><span class="pre">.dat</span></code> access at search time. However, if the
+word occurs many times in that single recid, the data (for a Metamorph
+inverted index) may be large enough to bloat the B-tree and thus negate
+the savings, so if the single-recid word occurs more than
+<code class="docutils literal notranslate"><span class="pre">indexmaxsingle</span></code> times, it is stored in the <code class="docutils literal notranslate"><span class="pre">.dat</span></code>. The default is
+8.</p>
+<p>Whether/how to unique the new list during Metamorph index searches.
+Works around a potential bug in old versions of Texis; not generally
+set. The possible values are:</p>
+<dl class="simple">
+<dt>0</dt><dd><p>: do not unique at all</p>
+</dd>
+<dt>1</dt><dd><p>: unique auxillary/compound index new list only</p>
+</dd>
+<dt>2</dt><dd><p>: unique all new lists</p>
+</dd>
+<dt>3</dt><dd><p>: unique all new lists and report first few duplicates</p>
+</dd>
+</dl>
+<p>The default is 0.</p>
+<p>Size of read buffer for tables, used when it is possible to buffer table
+reads (e.g. during some index creations). The default is 16KB. When
+setting, suffixes such as “<code class="docutils literal notranslate"><span class="pre">KB</span></code>” etc. are supported. Set to 0 to
+disable read buffering. Added in version 5.01.1177700467 20070427. Aka
+<code class="docutils literal notranslate"><span class="pre">tablereadbufsize</span></code>.</p>
+</div>
+<div class="section" id="locking-properties">
+<h2>Locking properties<a class="headerlink" href="#locking-properties" title="Permalink to this headline">¶</a></h2>
+<p>These properties affect the way that locking occurs in the database
+engine. Setting these properties without understanding the consequences
+can lead to inaccurate results, and even corrupt tables.</p>
+<dl class="simple">
+<dt>singleuser</dt><dd><p>This will turn off locking completely. <em>This should be used with
+extreme caution</em>. The times when it is safe to use this option are
+if the database is read-only, or if there is only one connection to
+the database. Default off. This replaces the prior setting of
+<code class="docutils literal notranslate"><span class="pre">nolocking</span></code>.</p>
+</dd>
+<dt>lockmode</dt><dd><p>This can be set to either manual or automatic. In manual mode the
+person writing the program is responsible for getting and releasing
+locks. In automatic mode Texis will do this itself. Manual mode can
+reduce the number of locks required, or implement specific
+application logic. In manual mode care must be taken that reads and
+writes can not occur at the same time. The two modes can co-exist,
+in that one process can have manual mode, and the other automatic.
+Default automatic.</p>
+</dd>
+<dt>locksleepmethod</dt><dd><p>Determines whether to use a portable or OS specific method of
+sleeping while waiting for a lock. By default the OS specific method
+is used. This should not need to be changed.</p>
+</dd>
+<dt>locksleeptime</dt><dd><p>How long to wait between attempts to check the lock. If this value
+is too small locks will be checked too often, wasting CPU time. If
+it is too high then the process might be sleeping when there is no
+lock, delaying database access. Generally the busier the system the
+higher this setting should be. It is measured in thousandths of a
+second. The default is 20.</p>
+</dd>
+<dt>locksleepmaxtime</dt><dd><p>The lock sleep time automatically increments the if unable to get a
+lock to allow other processes an opportunity to get the CPU. This
+sets a limit on how lock to sleep. It is measured in thousandths of
+a second. The default is 100. Added in version 4.00.1016570000.</p>
+</dd>
+<dt>fairlock</dt><dd><p>Whether to be fair or not. A process which is running in fair mode
+will not obtain a lock if the lock which has been waiting longest
+would conflict. A process which is not in fair mode will obtain the
+lock as soon as it can. This can cause a process to wait forever for
+a lock. This typically happens if there are lots of processes
+reading the table, and one trying to write. Setting <code class="docutils literal notranslate"><span class="pre">fairlock</span></code> to
+true will guarantee that the writer can obtain the lock as long as
+the readers are getting and releasing locks. Without <code class="docutils literal notranslate"><span class="pre">fairlock</span></code>
+there is no such guarantee, however the readers will see better
+performance as they will rarely if ever wait for the writer. This
+flag only affects the process which sets the flag. It is not
+possible to force another process to be fair. The default is that it
+operates in fair mode.</p>
+</dd>
+<dt>lockverbose</dt><dd><p>How verbose the lock code should be. The default minimum level of 0
+will report all serious problems in the lock manager, as they are
+detected and corrected. A verbosity level of 1 will also display
+messages about less serious problems, such as processes that have
+exited without closing the lock structure. Level 2 will also show
+when a lock can not be immediately obtained. Level 3 will show every
+lock as it is released. In version 5.01.1160010000 20061004 and
+later, the level can be bitwise OR’d with 0x10 and/or 0x20 to report
+system calls before and after (respectively). Levels 1 and above
+should generally only be used for debugging. In version
+7.07.1565800000 20190814 and later, 0x40 and 0x80 may be set to
+report before and after semaphore locking/unlocking.</p>
+</dd>
+<dt>debugbreak</dt><dd><p>Stop in debugger when set. Internal/debug use available in some
+versions. Added in version 4.02.1045505248 Feb 17 2003.</p>
+</dd>
+<dt>debugmalloc</dt><dd><p>Integer; controls debug malloc library. Internal/debug use in some
+versions. Added in version 4.03.1050682062 Apr 18 2003.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="miscellaneous-properties">
+<h2>Miscellaneous Properties<a class="headerlink" href="#miscellaneous-properties" title="Permalink to this headline">¶</a></h2>
+<p>These properties do not fit nicely into a group, and are presented here.</p>
+<dl>
+<dt>tablespace</dt><dd><p>Similar to <code class="docutils literal notranslate"><span class="pre">indexspace</span></code> above. Sets a directory into which tables
+created will be placed. This property does not stay set across
+invocations. Default is empty string, which means the database
+directory.</p>
+</dd>
+<dt>datefmt</dt><dd><p>This is a <code class="docutils literal notranslate"><span class="pre">strftime</span></code> format used to format dates for conversion to
+character format. This will affect <code class="docutils literal notranslate"><span class="pre">tsql</span></code>, as well as attempts to
+retrieve dates in ASCII format. Although the features supported by
+different operating systems will vary, some of the more common
+format codes are:</p>
+<ul class="simple">
+<li><p>Output <code class="docutils literal notranslate"><span class="pre">%</span></code></p></li>
+<li><p>abbreviated weekday name</p></li>
+<li><p>full weekday name</p></li>
+<li><p>abbreviated month name</p></li>
+<li><p>full month name</p></li>
+<li><p>local date and time representation</p></li>
+<li><p>day of month (01 - 31)</p></li>
+<li><p>date as <code class="docutils literal notranslate"><span class="pre">%m/%d/%y</span></code></p></li>
+<li><p>day of month ( 1 - 31)</p></li>
+<li><p>Hour (00 - 23)</p></li>
+<li><p>Hour (01 - 12)</p></li>
+<li><p>day of year (001 - 366)</p></li>
+<li><p>month (01 - 12)</p></li>
+<li><p>Minute (00 - 59)</p></li>
+<li><p>AM/PM</p></li>
+<li><p>Seconds (00 - 59)</p></li>
+<li><p>Week number (beginning Sunday) (00-53)</p></li>
+<li><p>Week day (0-6) (0 is Sunday)</p></li>
+<li><p>Week number (beginning Monday) (00-53)</p></li>
+<li><p>local date representation</p></li>
+<li><p>local time representation</p></li>
+<li><p>two digit year (00 - 99)</p></li>
+<li><p>Year with century</p></li>
+<li><p>Time zone name</p></li>
+</ul>
+<p>Default <code class="docutils literal notranslate"><span class="pre">%Y-%m-%d</span> <span class="pre">%H:%M:%S</span></code>, which can be restored by setting
+datefmt to an empty string. Note that in version 6.00.1300386000
+20110317 and later, the <code class="docutils literal notranslate"><span class="pre">stringformat()</span></code> SQL function can be used
+to format dates (and other values) without needing to set a global
+property.</p>
+</dd>
+<dt>timezone</dt><dd><p>Change the default timezone that Texis will use. This should be
+formatted as for the TZ environment variable. For example for US
+Eastern time you should set timezone to <code class="docutils literal notranslate"><span class="pre">EST5EDT</span></code>. Some systems
+may allow alternate representations, such as <code class="docutils literal notranslate"><span class="pre">US/Eastern</span></code>, and if
+your operating system accepts them, so will Texis.</p>
+</dd>
+<dt>locale</dt><dd><p>Can be used to change the locale that Texis uses. This will impact
+the display of dates if using names, as well as the meaning of the
+character classes in REX expressions, so <code class="docutils literal notranslate"><span class="pre">\alpha</span></code> will be correct.
+Also with the correct locale set (and OS support), Metamorph will
+work case insensitively correctly (with mono-byte character sets and
+Texis version 5 or earlier; see <code class="docutils literal notranslate"><span class="pre">textsearchmode</span></code> for UTF-8/Unicode
+and version 6 or later support).</p>
+</dd>
+<dt>indirectcompat</dt><dd><p>Setting this to 1 sets compatibility with early versions of Texis as
+far as display of indirects go. If set to 1 a trailing <code class="docutils literal notranslate"><span class="pre">&#64;</span></code> is
+added to the end of the filename. Default 0.</p>
+</dd>
+<dt>indirectspace</dt><dd><p>Controls where indirects are created. The default location is a
+directory called indirects in the database directory. Texis will
+automatically create a directory structure under that directory to
+allow for efficient indirect access. At the top level there will be
+16 directories, 0 through 9 and a through f. When you create the
+directory for indirects you can precreate these directories, or use
+them as mount points. You should make sure that the Texis user has
+permissions to the directories. Added in version 03.00.940520000</p>
+</dd>
+<dt>triggermode</dt><dd><p>This setting changes the way that the command is treated when
+creating a trigger. The default behavior is that the command will be
+executed with an extra arg, which is the filename of the table
+containing the records. If <code class="docutils literal notranslate"><span class="pre">triggermode</span></code> is set to 1 then the
+strings <code class="docutils literal notranslate"><span class="pre">$db</span></code> and <code class="docutils literal notranslate"><span class="pre">$table</span></code> are replaced by the database and
+table in that database containing the records. This allows any
+program which can access the database to retrieve the values in the
+table without custom coding.</p>
+</dd>
+<dt>paramchk</dt><dd><p>Enables or disables the checking of parameters in the SQL statement.
+By default it is enabled, which will cause any unset parameters to
+cause an error. If paramchk is set to 0 then unset parameters will
+not cause an error, and will be ignored. This lets a single complex
+query be given, yet parameter values need only be supplied for those
+clauses that should take effect on the query.</p>
+</dd>
+<dt>message,nomessage</dt><dd><p>Enable or disable messages from the SQL engine. The argument should
+be a comma separated list of messages that you want to enable or
+disable. The known messages are:</p>
+<dl class="simple">
+<dt>duplicate</dt><dd><p>Message Trying to insert duplicate value () in index when an
+attempt is made to insert a record which has a duplicate value
+and a unique index exists. The default is enabled.</p>
+</dd>
+</dl>
+</dd>
+<dt>varchartostrlstsep</dt><dd><p>[‘varchartostrlstsep’] The separator character or mode to use when
+converting a <code class="docutils literal notranslate"><span class="pre">varchar</span></code> string into a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> list of strings in
+Texis. The default is set by the <code class="docutils literal notranslate"><span class="pre">conf/texis.ini</span></code> setting Varchar
+To Strlst Sep (p. ); if that is not set, the “factory” built-in
+default is <code class="docutils literal notranslate"><span class="pre">create</span></code> in version 7 (or <code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code> 7)
+and later, or <code class="docutils literal notranslate"><span class="pre">lastchar</span></code> in version 6 (or <code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code>
+6) and earlier.</p>
+<p>A value of <code class="docutils literal notranslate"><span class="pre">create</span></code> indicates that the separator is to be created:
+the entire string is taken intact as the sole item for the resulting
+<code class="docutils literal notranslate"><span class="pre">strlst</span></code>, <a class="footnote-reference brackets" href="#id14" id="id12">2</a> and a separator is created that is not present in
+the string (to aid re-conversion to <code class="docutils literal notranslate"><span class="pre">varchar</span></code>). This can be used
+in conjunction with Vortex’s setting to ensure that single-value as
+well as multi-value Vortex variables are converted consistently when
+inserted into a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> column: single-value vars by
+<code class="docutils literal notranslate"><span class="pre">varchartostrlstsep</span></code>, multi-value by <code class="docutils literal notranslate"><span class="pre">arrayconvert</span></code>.</p>
+<p>The value <code class="docutils literal notranslate"><span class="pre">lastchar</span></code> indicates that the last character in the
+source string should be the separator; e.g. “a,b,c,” would be split
+on the comma and result in a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> of 3 values: “a”, “b” and
+“c”.</p>
+<p><code class="docutils literal notranslate"><span class="pre">varchartostrlstsep</span></code> may also be a single byte character, in which
+case that character is used as the separator. This is useful for
+converting CSV-type strings e.g. “a,b,c” without having to modify
+the string and append the separator character first (i.e. for
+lastchar mode).</p>
+<p><code class="docutils literal notranslate"><span class="pre">varchartostrlstsep</span></code> may also be set to <code class="docutils literal notranslate"><span class="pre">default</span></code> to restore the
+default (<code class="docutils literal notranslate"><span class="pre">conf/texis.ini</span></code>) setting. It may also be set to
+<code class="docutils literal notranslate"><span class="pre">builtindefault</span></code> to restore the “factory” built-in default (which
+changes under <code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code>, see above); these values
+were added in version 5.01.1231553000 20090109. If no
+<code class="docutils literal notranslate"><span class="pre">conf/texis.ini</span></code> value is set, <code class="docutils literal notranslate"><span class="pre">default</span></code> is the same as
+<code class="docutils literal notranslate"><span class="pre">builtindefault</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">varchartostrlstsep</span></code> was added in version 5.01.1226978000
+20081117. See also the <code class="docutils literal notranslate"><span class="pre">metamorphstrlstmode</span></code> setting (p. ), which
+affects conversion of <code class="docutils literal notranslate"><span class="pre">strlst</span></code> values into Metamorph queries; and
+the <code class="docutils literal notranslate"><span class="pre">convert</span></code> SQL function (p. ), which in Texis version 7 and
+later can take a <code class="docutils literal notranslate"><span class="pre">varchartostrlstsep</span></code> mode argument. The
+<code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code> property (p. ), when set, affects
+<code class="docutils literal notranslate"><span class="pre">varchartostrlstsep</span></code> as well.</p>
+</dd>
+<dt>multivaluetomultirow</dt><dd><p>[multivaluetomultirow] Whether to split multi-value fields (e.g.
+<code class="docutils literal notranslate"><span class="pre">strlst</span></code>) into multiple rows (e.g. of <code class="docutils literal notranslate"><span class="pre">varchar</span></code>) when
+appropriate, i.e. during GROUP BY or DISTINCT on such a field. If
+nonzero/true, a GROUP BY or DISTINCT on a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> field will
+split the field into its <code class="docutils literal notranslate"><span class="pre">varchar</span></code> members for processing. For
+example, consider the following table:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">create</span> <span class="n">table</span> <span class="n">test</span><span class="p">(</span><span class="n">Colors</span> <span class="n">strlst</span><span class="p">);</span>
+<span class="n">insert</span> <span class="n">into</span> <span class="n">test</span><span class="p">(</span><span class="n">Colors</span><span class="p">)</span>
+  <span class="n">values</span><span class="p">(</span><span class="n">convert</span><span class="p">(</span><span class="s1">&#39;red,green,blue,&#39;</span><span class="p">,</span> <span class="s1">&#39;strlst&#39;</span><span class="p">,</span> <span class="s1">&#39;lastchar&#39;</span><span class="p">));</span>
+<span class="n">insert</span> <span class="n">into</span> <span class="n">test</span><span class="p">(</span><span class="n">Colors</span><span class="p">)</span>
+  <span class="n">values</span><span class="p">(</span><span class="n">convert</span><span class="p">(</span><span class="s1">&#39;blue,orange,green,&#39;</span><span class="p">,</span> <span class="s1">&#39;strlst&#39;</span><span class="p">,</span> <span class="s1">&#39;lastchar&#39;</span><span class="p">));</span>
+</pre></div>
+</div>
+<p>With <code class="docutils literal notranslate"><span class="pre">multivaluetomultirow</span></code> set true, the statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">select</span> <span class="n">count</span><span class="p">(</span><span class="n">Colors</span><span class="p">)</span> <span class="n">Count</span><span class="p">,</span> <span class="n">Colors</span> <span class="kn">from</span> <span class="nn">test</span> <span class="n">group</span> <span class="n">by</span> <span class="n">Colors</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>generates the following output:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>      <span class="n">Count</span>       <span class="n">Colors</span>
+<span class="o">------------+------------+</span>
+           <span class="mi">2</span> <span class="n">blue</span>
+           <span class="mi">2</span> <span class="n">green</span>
+           <span class="mi">1</span> <span class="n">orange</span>
+           <span class="mi">1</span> <span class="n">red</span>
+</pre></div>
+</div>
+<p>Note that the <code class="docutils literal notranslate"><span class="pre">strlst</span></code> values have been split, allowing the two
+<code class="docutils literal notranslate"><span class="pre">blue</span></code> and <code class="docutils literal notranslate"><span class="pre">green</span></code> values to be counted individually. This also
+results in the returned <code class="docutils literal notranslate"><span class="pre">Colors</span></code> type being <code class="docutils literal notranslate"><span class="pre">varchar</span></code> instead of
+its declared <code class="docutils literal notranslate"><span class="pre">strlst</span></code>, and the sum of <code class="docutils literal notranslate"><span class="pre">Count</span></code> values being
+greater than the number of rows in the table. Note also that merely
+<code class="docutils literal notranslate"><span class="pre">SELECT</span></code>ing a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> will not cause it to be split: it must
+be specified in the GROUP BY or DISTINCT clause.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">multivaluetomultirow</span></code> was added in version 5.01.1243980000
+20090602. It currently only applies to <code class="docutils literal notranslate"><span class="pre">strlst</span></code> values and only to
+single-column GROUP BY or DISTINCT clauses. A system-wide default
+for this SQL setting can be set in conf/texis.ini with the Multi
+Value To Multi Row setting. If unset, it defaults to true through
+version 6 (or <code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code> 6), and false in version 7
+and later (because in general GROUP BY/DISTINCT are expected to
+return true table rows for results). The <code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code>
+property (p. ), when set, affects this property as well.</p>
+</dd>
+<dt>inmode</dt><dd><p>[InmodeProperty] How the IN operator should behave. If set to
+<code class="docutils literal notranslate"><span class="pre">subset</span></code>, IN behaves like the SUBSET operator (p. ). If set to
+<code class="docutils literal notranslate"><span class="pre">intersect</span></code>, IN behaves like the INTERSECT operator (p. ). Added
+in version 7, where the default is <code class="docutils literal notranslate"><span class="pre">subset</span></code>. Note that in version
+6 (or <code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code> 6) and earlier, IN always behaved in
+an INTERSECT-like manner. The <code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code> property
+(p. ), when set, affects this property as well.</p>
+</dd>
+<dt>hexifybytes</dt><dd><p>[hexifybytesProperty]</p>
+<p>Whether conversion of <code class="docutils literal notranslate"><span class="pre">byte</span></code> to <code class="docutils literal notranslate"><span class="pre">char</span></code> (or vice-versa) should
+encode to (or decode from) hexadecimal. In Texis version 6 (or
+<code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code> 6) and earlier, this always occurred. In
+Texis version 7 (or <code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code> 7) and later, it is
+controllable with the <code class="docutils literal notranslate"><span class="pre">hexifybytes</span></code> SQL property: 0 for off/as-is,
+1 for hexadecimal conversion. This property is on by default in
+<code class="docutils literal notranslate"><span class="pre">tsql</span></code> (i.e. hex conversion ala version 6 and earlier), so that
+<code class="docutils literal notranslate"><span class="pre">SELECT</span></code>ing from certain system tables that contain <code class="docutils literal notranslate"><span class="pre">byte</span></code>
+columns will still be readable from the command line. However, the
+property is off by default in version 7 and later non-<code class="docutils literal notranslate"><span class="pre">tsql</span></code>
+programs (such as Vortex), to avoid the hassle of hex conversion
+when raw binary data is needed (e.g. images), and because Vortex
+etc. have more tools for dealing with binary data, obviating the
+need for hex conversion. (The <code class="docutils literal notranslate"><span class="pre">hextobin()</span></code> and <code class="docutils literal notranslate"><span class="pre">bintohex()</span></code> SQL
+functions may also be useful, p. .) The <code class="docutils literal notranslate"><span class="pre">hexifybytes</span></code> property was
+added in version 7. It is also settable in the <code class="docutils literal notranslate"><span class="pre">conf/texis.ini</span></code>
+config file (p. ). The <code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code> property (p. ), when
+set, affects this property as well.</p>
+</dd>
+<dt>unalignedbufferwarning</dt><dd><p>Whether to issue “Unaligned buffer” warning messages when unaligned
+buffers are encountered in certain situations. Messages are issued
+if this setting is true/nonzero (the default). Added in version
+7.00.1366400000 20130419.</p>
+</dd>
+<dt>unneededrexescapewarning</dt><dd><p>[UnneededRexEscapeWarningSqlProperty]</p>
+<p>Whether to issue “REX: Unneeded escape sequence …” warnings when a
+REX expression uses certain unneeded escapes. An unneeded escape is
+when a character is escaped that has no special meaning in the
+current context in REX, either alone or escaped. Such escapes are
+interpreted as just the literal character alone (respect-case); e.g
+“<code class="docutils literal notranslate"><span class="pre">\w</span></code>” has no special meaning in REX, and is taken as “<code class="docutils literal notranslate"><span class="pre">w</span></code>”.</p>
+<p>While such escapes have no meaning currently, some may take on a
+specific new meaning in a future Texis release, if REX syntax is
+expanded. Thus using them in an expression now may unexpectedly (and
+silently) result in their behavior changing after a Texis update;
+hence the warning message. Expressions using such escapes should
+thus have them changed to the unescaped literal character.</p>
+<p>If updating the code is not feasible, the warning may be silenced by
+setting <code class="docutils literal notranslate"><span class="pre">unneededrexescapewarning</span></code> to 0 – at the risk of silent
+behavior change at an upgrade. Added in version 7.06.1465574000
+20160610. Overrides Unneeded REX Escape Warning setting (p. ) in
+conf/texis.ini.</p>
+</dd>
+<dt>nulloutputstring</dt><dd><p>The string value to output for SQL NULL values. The default is
+“<code class="docutils literal notranslate"><span class="pre">NULL</span></code>”. Note that this is different than the output string for
+zero-integer <code class="docutils literal notranslate"><span class="pre">date</span></code> values, which are also shown as “<code class="docutils literal notranslate"><span class="pre">NULL</span></code>”.
+Added in version 7.02.1405382000 20140714.</p>
+</dd>
+<dt>validatebtrees</dt><dd><p>Bit flags for additional consistency checks on B-trees. Added in
+version 7.04.1449078000 20151202. Overrides Validate Btrees setting
+(p. ) in <code class="docutils literal notranslate"><span class="pre">conf/texis.ini</span></code>.</p>
+</dd>
+</dl>
+<dl class="footnote brackets">
+<dt class="label" id="id13"><span class="brackets"><a class="fn-backref" href="#id1">1</a></span></dt>
+<dd><p>The index-data-only optimization allows Texis to not only use the
+index to resolve the WHERE clause, but also the SELECT clause in
+certain circumstances, potentially avoiding a read of the table
+altogether and speeding up results. One of the prerequisites for this
+optimization is that the SELECT clause only refer to columns
+available in the index.</p>
+</dd>
+<dt class="label" id="id14"><span class="brackets"><a class="fn-backref" href="#id12">2</a></span></dt>
+<dd><p>In version 7 (or <code class="docutils literal notranslate"><span class="pre">compatibilityversion</span></code> 7) and later, note that in
+create mode, an empty source string will result in an empty
+(zero-items) strlst: this helps maintain consistency of empty-string
+meaning empty-set for strlst, as is true in other contexts. In
+version 6 and earlier an empty source string produced a
+one-empty-string-item strlst in create mode.</p>
+</dd>
+</dl>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

@@ -190,8 +190,8 @@ special reserved SQL name and can't be used for column names.
 A Date field may be compared to a number representing the number of
 seconds since 1/1/70 0:0:0 GMT (e.g.:  778876248).  It may also be
 compared to a string representing a human readable date in the format
-\verb`'YYYY-MM-DD [HH:MM[:SS] [AM|PM]]'` (e.g.:  \verb`'1994-03-05 06:30 pm'` or \verb`'1994-07-04'`).
-The date string may also be preceded by
+\verb`'YYYY-MM-DD [HH:MM[:SS] [AM|PM]]'` (e.g.:  \verb`'1994-03-05 06:30
+pm'` or \verb`'1994-07-04'`).  The date string may also be preceded by
 ``\verb`begin of`'' or ``\verb`end of`'' meaning the first or last second
 of a day, respectively.
 

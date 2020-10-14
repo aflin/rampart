@@ -462,8 +462,8 @@ would not normally invoke See Referencing, and would do so only where
 such abstraction was desired.
 
 Not all equivalences have ``\verb`See also`'' notations; but with See
-Referencing on, all equivalences associated with any ``\verb`See also`''
-root word will be included as part of the original.  With See
+Referencing on, all equivalences associated with any ``\verb`See
+also`'' root word will be included as part of the original.  With See
 References off, only the root word and its equivalences will be
 included in that word set, regardless of whether a see reference
 exists or not.
