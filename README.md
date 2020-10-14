@@ -21,7 +21,9 @@ make install
 ```
 
 ## Compiling on Linux (including raspberry pi) ##
+```
 apt install flex bison libidn2-dev libldap2-dev
+```
 
 Then, after cloning, you can do the following to build:
 
