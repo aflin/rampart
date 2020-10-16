@@ -15,6 +15,7 @@
 #include "cgi.h"
 #include "../../rp.h"
 #include "../core/duktape.h"
+#include "api3.h"
 
 int texis_resetparams(TEXIS *tx);
 int texis_cancel(TEXIS *tx);
@@ -1503,5 +1504,8 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     duk_push_c_function(ctx, RPdbFunc_re2file, 4);
     duk_put_prop_string(ctx, -2, "re2File");
+
+    duk_push_c_function(ctx, searchfile, 3);
+    duk_put_prop_string(ctx, -2, "searchFile");
     return 1;
 }

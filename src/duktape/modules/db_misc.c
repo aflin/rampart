@@ -720,6 +720,418 @@ RPsqlFuncs_abstract(duk_context *ctx)
 	return 1;
 }
 
+/* metamorph/searchfile */
+#define RDBUFSZ  30000
+
+static int duk_rp_GPS_icase(duk_context *ctx, duk_idx_t idx, const char * prop)
+{
+    const char *realprop=NULL, *compprop=NULL;
+    
+    duk_enum(ctx, idx, 0);
+    while (duk_next(ctx, -1 , 0 ))
+    {
+        compprop=duk_get_string(ctx, -1);
+        if ( !strcasecmp( compprop, prop) )
+        {
+            realprop=compprop;
+            duk_pop(ctx);
+            break;
+        }
+        duk_pop(ctx);
+    }
+    duk_pop(ctx);
+    if(realprop)
+    {
+        duk_get_prop_string(ctx, idx, realprop);
+        return 1;
+    }
+    duk_push_undefined(ctx);
+    return 0;
+}
+
+duk_ret_t dosearchfile(duk_context *ctx, const char *search, const char *file, APICP *cp, int showsubhit)
+{
+    MMAPI *mm=MMAPIPN;
+    int nhits=0;
+    char    *buf=NULL;
+    int    nread;
+    long bufbase;
+    FILE *fh;
+
+    if ((mm = openmmapi(search, TXbool_False, cp)) == MMAPIPN)/* open API and do NULL chk */
+    {
+         closeapicp(cp);                  /* cleanup the control parameters */
+         RP_THROW(ctx, "searchfile: Unable to open API");
+    }
+
+     if((fh=fopen(file,"r"))==(FILE *)NULL)
+         RP_THROW(ctx, "Unable to open input file: %s",file);
+
+
+                /* allocate memory for the read buffer */
+/*
+#define pushhit(name,val) do{\
+    duk_push_string(ctx, (const char*)(val) );\
+    duk_put_prop_string(ctx, -2, (name) );\
+}while(0)
+
+#define pushnhit(name,val) do{\
+    duk_push_int(ctx, (int)(val) );\
+    duk_put_prop_string(ctx, -2, (name) );\
+}while(0)
+*/
+    DUKREMALLOC(ctx, buf, RDBUFSZ);
+    duk_push_array(ctx);
+
+    for(bufbase=0L,nread=rdmmapi((byte *)buf,RDBUFSZ,fh,mm); /* seed read */
+        nread>0;                            /* is there more to look at ?? */
+                                                          /* read some more */
+        bufbase+=nread,nread=rdmmapi((byte *)buf,RDBUFSZ,fh,mm)
+    ){
+        char    *hit;         /* the offset within the buffer of the "hit" */
+
+                /* this loop locates the hits within the buffer */
+                                 /* find first hit */
+        for(hit=getmmapi(mm,(byte *)buf,(byte *)buf+nread,SEARCHNEWBUF);
+            hit!=(char *)NULL;                       /* was there a hit ?? */
+                                                          /* find next hit */
+            hit=getmmapi(mm,(byte *)buf,(byte *)buf+nread,CONTINUESEARCH)
+        ){
+            int   index;                           /* the info index item */
+            char *where;                          /* where was it located */
+            char  *what;                         /* what item was located */
+            int  length;                /* the length of the located item */
+
+                 /* we found a hit so count and print it */
+            duk_push_object(ctx);
+            duk_push_int(ctx, bufbase+(hit-buf));
+            duk_put_prop_string(ctx, -2, "offset");
+
+              /* the zero index for infommapi is the whole hit */
+              /* the one  index for infommapi is the start delimiter */
+              /* the two  index for infommapi is the end delimiter */
+
+            for(index=0;infommapi(mm,index,&what,&where,&length)>0;index++)
+            {
+                duk_idx_t j=0;
+                switch(index)
+                {
+                    case 0:
+                        duk_push_lstring(ctx, where, (duk_size_t)length);
+                        duk_put_prop_string(ctx, -2, "match");
+                        break;
+
+                    case 1: break;
+                    case 2: if(showsubhit)duk_push_array(ctx); break;
+                    default:
+                        if(showsubhit)
+                        {
+                            duk_push_object(ctx);
+                            duk_push_string(ctx,what);
+                            duk_put_prop_string(ctx, -2, "term");
+                            duk_push_lstring(ctx, where, (duk_size_t)length);
+                            duk_put_prop_string(ctx, -2, "match");
+                            duk_put_prop_index(ctx, -2, j++);
+                        }
+                        break;
+
+                }
+            }
+            if( showsubhit && duk_is_array(ctx, -1) )
+                duk_put_prop_string(ctx, -2, "subMatches");
+/*
+            for(index=0;index<mm->mme->nels;index++)
+            {
+                SEL *sp=mm->mme->el[index];
+                if(sp->pmtype==PMISXPM && sp->member)
+                {
+                    XPMS *xs=sp->xs;
+                    
+                    pushhit("maxstr", xs->maxstr);
+                    pushnhit("thresh", xs->thresh);
+                    pushnhit("maxThresh", xs->maxthresh);
+                    pushnhit("thisMatch", xs->thishit);
+                    pushnhit("maxMatch", xs->maxhit);
+                }
+             }
+*/
+             duk_put_prop_index(ctx, -2, nhits);
+             nhits++;
+        }
+    }
+    free(buf);                               /* deallocate the data buffer */
+    return 1;
+}
+
+static byte *argstr (duk_context *ctx, char *optname, byte *var)
+{
+    const char *s=REQUIRE_STRING(ctx, -1, "searchfile: option %s requires a boolean", optname);
+    if(var!=(byte *)NULL) free(var);   /* check and deallocate the old var */
+    var=NULL;
+    var = (byte *)strdup(s);
+    return(var);
+}
+
+static byte **arglst (duk_context *ctx, char *optname, byte **var)
+{
+    int len=0,i=0;
+    if(!duk_is_array(ctx, -1))
+        RP_THROW(ctx, "searchfile: option %s requires an array", optname);
+
+    len=(int)duk_get_length(ctx, -1);
+
+    if(var!=(byte **)NULL)
+    {
+        /* An empty string is ALWAYS the end of lst */
+        for(i=0;*var[i]!='\0';i++)
+            free(var[i]);            /* free the individial string memory */
+        free(var[i]);             /* free the memory from the empty string */
+        free(var);                                 /* free the list memory */
+    }
+    var=NULL;
+    DUKREMALLOC(ctx, var, (len+1)*sizeof(byte *) );
+
+    for (i=0;i<len;i++)
+    {
+        duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+        var[i]=(byte *)strdup(duk_to_string(ctx, -1));
+        duk_pop(ctx);
+    }
+    var[i]=(byte *)strdup("");
+    return(var);
+} 
+
+static void searchfile_setcp(duk_context *ctx, APICP *cp, duk_idx_t obj_idx)
+{
+    if(duk_rp_GPS_icase(ctx, obj_idx, "alintersects"))
+    {
+        cp->alintersects =REQUIRE_BOOL(ctx, -1, "searchfile: option alintersects requires a boolean");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "suffixproc" ))
+    {
+        cp->suffixproc =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option suffixproc requires a boolean");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "prefixproc" ))
+    {
+        cp->prefixproc =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option prefixproc requires a boolean");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "defsuffrm"  ))
+    {
+        cp->defsuffrm  =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option defsuffrm requires a boolean");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "rebuild"    ))
+    {
+        cp->rebuild    =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option rebuild requires a boolean");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "incsd"      ))
+    {
+        cp->incsd      =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option incsd requires a boolean");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "inced"      ))
+    {
+        cp->inced      =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option inced requires a boolean");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "withinproc" ))
+    {
+        cp->withinproc =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option withinproc requires a boolean");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "intersects" ))
+    {
+        cp->intersects =REQUIRE_BOOL(ctx, -1, "searchfile: option intersects requires a boolean");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "minwordlen" ))
+    {
+        cp->minwordlen =REQUIRE_INT(ctx, -1, "searchfile: option minwordlen requires an int");
+        if(cp->minwordlen<2)
+            RP_THROW(ctx, "searchfile: option minwordlen requires an int >= 2");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "see"        ))
+    {
+        cp->see        =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option see requires a boolean");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "keepeqvs"   ))
+    {
+        cp->keepeqvs   =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option keepeqvs requires a boolean");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "useeqiv"   ))
+    {
+        cp->keepeqvs   =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option keepeqvs requires a boolean");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "keepnoise"  ))
+    {
+        cp->keepnoise  =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option keepnoise requires a boolean");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "eqprefix"   ))
+    {
+        cp->eqprefix   =argstr(ctx, "eqprefix", cp->eqprefix);
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "ueqprefix"  ))
+    {
+        cp->ueqprefix  =argstr(ctx, "ueqprefix", cp->ueqprefix);
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "sdexp"      ))
+    {
+        cp->sdexp      =argstr(ctx, "sdexp", cp->sdexp);
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "edexp"      ))
+    {
+        cp->edexp      =argstr(ctx, "edexp", cp->edexp);
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "suffix"     ))
+    {
+        cp->suffix     =arglst(ctx, "suffix", cp->suffix);
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "prefix"     ))
+    {
+        cp->prefix     =arglst(ctx, "prefix", cp->prefix);
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "noise"      ))
+    {
+        cp->noise      =arglst(ctx, "noise", cp->noise);
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "qmaxsets"   ))
+    {
+        cp->qmaxsets=REQUIRE_INT(ctx, -1, "searchfile: option qmaxsets requires an int");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "qmaxsetwords"))
+    {
+        cp->qmaxsetwords=REQUIRE_INT(ctx, -1, "searchfile: option qmaxsetwords requires an int");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "qmaxwords"  ))
+    {
+        cp->qmaxwords=REQUIRE_INT(ctx, -1, "searchfile: option qmaxwords requires an int");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "qminwordlen"))
+    {
+        cp->qminwordlen=REQUIRE_INT(ctx, -1, "searchfile: option qminwordlen requires an int");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "qminprelen" ))
+    {
+        cp->qminprelen =REQUIRE_INT(ctx, -1, "searchfile: option qminprelen requires an int");
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "hyeqsp"     ))
+    {
+        pm_hyeqsp((int)REQUIRE_BOOL(ctx, -1, "searchfile: option hyeqsp requires a boolean"));
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "wordc"      ))
+    {
+               byte *value = (byte *)REQUIRE_STRING(ctx, -1, "searchfile: option wordc requires a string");
+               byte *wordc=pm_getwordc();
+               int j;
+               for(j=0;j<DYNABYTE;j++) wordc[j]=0;
+               if(dorange(&value,wordc)<0) 
+                   RP_THROW(ctx,"searchfile: option wordc - Bad range: %s at %s",duk_get_string(ctx, -1),value);
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "langc"      ))
+    {
+               byte *value = (byte *)REQUIRE_STRING(ctx, -1, "searchfile: option langc requires a string");
+               byte *langc=pm_getlangc();
+               int j;
+               for(j=0;j<DYNABYTE;j++) langc[j]=0;
+               if(dorange(&value,langc)<0)
+                   RP_THROW(ctx,"searchfile: option langc - Bad range: %s at %s",duk_get_string(ctx, -1),value);
+    }
+    duk_pop(ctx);
+} 
+
+duk_ret_t searchfile(duk_context *ctx)
+{
+    duk_idx_t top=duk_get_top(ctx), i=0, obj_idx=-1;
+    const char *search=NULL, *file=NULL;
+    APICP *cp=APICPPN;
+    int dosubhit=0;
+
+    for (i=0; i<top; i++)
+    {
+        if (duk_is_string(ctx, i))
+        {
+            if(search != NULL)
+                file = duk_get_string(ctx, i);
+            else
+                search = duk_get_string(ctx, i);
+        }
+        else if (duk_is_object(ctx, i))
+        {
+            obj_idx=i;
+        }
+    }
+    if(!search || !file)
+        RP_THROW(ctx, "searchfile: requires search terms (string) and a filename (string)");
+    
+    if((cp=openapicp())==APICPPN)
+         RP_THROW (ctx, "searchfile: Could not create control parameters structure");
+
+    cp->keepnoise=0;
+    cp->keepeqvs=0;
+    
+    if(obj_idx != -1)
+    {
+        searchfile_setcp(ctx, cp, obj_idx);
+        if( duk_rp_GPS_icase(ctx, obj_idx, "includesubmatches") )
+            dosubhit=1;
+        duk_pop(ctx); 
+    }
+    return dosearchfile(ctx, search, file, cp, dosubhit);
+}
+
+
+/* get the expression from a /pattern/ or a "string" */
 static const char *get_exp(duk_context *ctx, duk_idx_t idx)
 {
     const char *ret=NULL;
@@ -1331,3 +1743,5 @@ RPsqlFunc_sandr2(duk_context *ctx)
     sandr(ctx, 1);
     return 1;
 }
+
+
