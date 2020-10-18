@@ -899,7 +899,6 @@ htp__callback_find_(evhtp_callbacks_t * cbs,
     if (evhtp_unlikely(cbs == NULL)) {
         return NULL;
     }
-
     path_len = strlen(path);
 
     TAILQ_FOREACH(callback, cbs, next) {
@@ -1588,12 +1587,19 @@ htp__request_set_callbacks_(evhtp_request_t * request)
         cb    = callback->cb;
         cbarg = callback->cbarg;
         hooks = callback->hooks;
+/* this is idiotic: said with great respect to a brilliant library for which I am extremely grateful -ajf
+
+   OK that harshness deserves and explanation:  If I want to match just '/' and only that, I use regex '^/$', but 
+   the following allows everything (e.g. '/whatever') to match '/', no matter how expressed with any 
+   'path/pattern' using whatever_cb()
+
     } else if ((callback = htp__callback_find_(evhtp->callbacks, path->path,
                     &path->matched_soff, &path->matched_eoff))) {
-        /* matched a callback using *just* the path (/a/b/c/) */
+        /* matched a callback using *just* the path (/a/b/c/) /
         cb    = callback->cb;
         cbarg = callback->cbarg;
         hooks = callback->hooks;
+*/
     } else {
         /* no callbacks found for either case, use defaults */
         cb    = evhtp->defaults.cb;
