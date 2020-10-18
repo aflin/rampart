@@ -35,6 +35,8 @@
 #include "internal.h"
 #include "numtoa.h"
 #include "evhtp/evhtp.h"
+#include "regint.h" /* def for oniguruma regex_t (aka 're_pattern_buffer')*/
+#include "oniguruma.h"
 
 /**
  * @brief structure containing a single callback and configuration
@@ -890,9 +892,9 @@ htp__callback_find_(evhtp_callbacks_t * cbs,
     size_t             path_len;
     evhtp_callback_t * callback;
 
-#ifndef EVHTP_DISABLE_REGEX
-    regmatch_t         pmatch[28];
-#endif
+//#ifndef EVHTP_DISABLE_REGEX
+//    regmatch_t         pmatch[28];
+//#endif
 
     if (evhtp_unlikely(cbs == NULL)) {
         return NULL;
@@ -902,6 +904,16 @@ htp__callback_find_(evhtp_callbacks_t * cbs,
 
     TAILQ_FOREACH(callback, cbs, next) {
         switch (callback->type) {
+            /* added exact match type -ajf */
+            case evhtp_callback_type_exact:
+                if (strcmp(path, callback->val.path) == 0) {
+                    *start_offset = 0;
+                    *end_offset   = path_len;
+
+                    return callback;
+                }
+
+                break;
             case evhtp_callback_type_hash:
                 if (strncmp(path, callback->val.path, callback->len) == 0) {
                     *start_offset = 0;
@@ -913,16 +925,24 @@ htp__callback_find_(evhtp_callbacks_t * cbs,
                 break;
 #ifndef EVHTP_DISABLE_REGEX
             case evhtp_callback_type_regex:
-                if (regexec(callback->val.regex,
-                        path,
-                        callback->val.regex->re_nsub + 1,
-                        pmatch, 0) == 0) {
-                    *start_offset = pmatch[callback->val.regex->re_nsub].rm_so;
-                    *end_offset   = pmatch[callback->val.regex->re_nsub].rm_eo;
-
-                    return callback;
+                /* switched to normal onig calls (instead of the onigposix.h ones) -ajf */
+                {
+                    int r;
+                    OnigRegion *region= onig_region_new();
+                    UChar *str=(UChar*)path;
+                    UChar *end=(UChar* )path + onigenc_str_bytelen_null(ONIG_ENCODING_UTF8, (UChar* )path);
+                    unsigned char *start=str, *range=end;
+                    
+                    r = onig_search(callback->val.regex, str, end,
+                        start, range, region, ONIG_OPTION_NONE);
+                    if( r >= 0)
+                    {
+                        *start_offset = region->beg[0];
+                        *end_offset   = region->end[0];
+                        onig_region_free(region, 1);
+                        return callback;
+                    }
                 }
-
                 break;
 #endif
             case evhtp_callback_type_glob:
@@ -938,6 +958,7 @@ htp__callback_find_(evhtp_callbacks_t * cbs,
 
                     return callback;
                 }
+                break;
             }
             default:
                 break;
@@ -4220,13 +4241,13 @@ evhtp_callback_new(const char * path, evhtp_callback_type type, evhtp_callback_c
 
         return NULL;
     }
-
     hcb->type  = type;
     hcb->cb    = cb;
     hcb->cbarg = arg;
     hcb->len   = strlen(path);
 
     switch (type) {
+        case evhtp_callback_type_exact: /* ajf */
         case evhtp_callback_type_hash:
             hcb->val.path = htp__strdup_(path);
 
@@ -4246,14 +4267,31 @@ evhtp_callback_new(const char * path, evhtp_callback_type type, evhtp_callback_c
 
                 return NULL;
             }
+            /* switched to normal onig calls (instead of the onigposix.h ones) -ajf */
+            {
+                OnigEncoding enc=ONIG_ENCODING_UTF8;
+                OnigErrorInfo einfo;
+                int r;
+                unsigned char *end=(UChar *)path + onigenc_str_bytelen_null(enc, (UChar*)path);
+                UChar* pattern = (UChar* ) path;
 
-            if (regcomp(hcb->val.regex, (char *)path, REG_EXTENDED) != 0) {
-                evhtp_safe_free(hcb->val.regex, htp__free_);
-                evhtp_safe_free(hcb, htp__free_);
+                onig_initialize(&enc, 1);
 
-                return NULL;
+                r=onig_new( &hcb->val.regex, pattern, 
+                    pattern+ onigenc_str_bytelen_null(enc, pattern),
+                    ONIG_OPTION_NONE, enc, ONIG_SYNTAX_DEFAULT, &einfo);
+                if (r != ONIG_NORMAL) {
+                    char s[ONIG_MAX_ERROR_MESSAGE_LEN];
+
+                    onig_error_code_to_str((UChar* )s, r, &einfo);
+                    fprintf(stderr, "Regular Expression error in path '%s': %s\n", path, s);
+
+                    evhtp_safe_free(hcb->val.regex, htp__free_);
+                    evhtp_safe_free(hcb, htp__free_);
+
+                    return NULL;
+                }
             }
-
             break;
 #endif
         case evhtp_callback_type_glob:
@@ -4283,6 +4321,7 @@ evhtp_callback_free(evhtp_callback_t * callback)
     }
 
     switch (callback->type) {
+        case evhtp_callback_type_exact: /* -ajf */
         case evhtp_callback_type_hash:
             evhtp_safe_free(callback->val.path, htp__free_);
             break;
@@ -4529,6 +4568,41 @@ evhtp_set_cb(evhtp_t * htp, const char * path, evhtp_callback_cb cb, void * arg)
     }
 
     if (!(hcb = evhtp_callback_new(path, evhtp_callback_type_hash, cb, arg))) {
+        htp__unlock_(htp);
+
+        return NULL;
+    }
+
+    if (evhtp_callbacks_add_callback(htp->callbacks, hcb)) {
+        evhtp_safe_free(hcb, evhtp_callback_free);
+        htp__unlock_(htp);
+
+        return NULL;
+    }
+
+    htp__unlock_(htp);
+
+    return hcb;
+}
+/* added exact match callback - ajf */
+evhtp_callback_t *
+evhtp_set_exact_cb(evhtp_t * htp, const char * path, evhtp_callback_cb cb, void * arg)
+{
+    evhtp_callback_t * hcb;
+
+    htp__lock_(htp);
+
+    if (htp->callbacks == NULL) {
+        if (!(htp->callbacks = htp__calloc_(sizeof(evhtp_callbacks_t), 1))) {
+            htp__unlock_(htp);
+
+            return NULL;
+        }
+
+        TAILQ_INIT(htp->callbacks);
+    }
+
+    if (!(hcb = evhtp_callback_new(path, evhtp_callback_type_exact, cb, arg))) {
         htp__unlock_(htp);
 
         return NULL;

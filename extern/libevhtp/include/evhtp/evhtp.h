@@ -14,9 +14,10 @@
 
 #include <evhtp/parser.h>
 
-#ifndef EVHTP_DISABLE_REGEX
-#include <onigposix.h>
-#endif
+/* switched to normal onig calls (instead of the onigposix.h ones) -ajf */
+//#ifndef EVHTP_DISABLE_REGEX
+//#include <onigposix.h>
+//#endif
 
 #include <sys/queue.h>
 #include <event2/event.h>
@@ -130,6 +131,8 @@ enum evhtp_callback_type {
 #ifndef EVHTP_DISABLE_REGEX
     evhtp_callback_type_regex,
 #endif
+    /* added exact match callback */
+    evhtp_callback_type_exact
 };
 
 enum evhtp_proto {
@@ -664,6 +667,21 @@ EVHTP_EXPORT void evhtp_set_post_accept_cb(evhtp_t * htp, evhtp_post_accept_cb, 
  * @return evhtp_callback_t * on success, NULL on error.
  */
 EVHTP_EXPORT evhtp_callback_t * evhtp_set_cb(evhtp_t * htp, const char * path,
+    evhtp_callback_cb cb, void * arg);
+
+/* added exact_cb -ajf */
+
+/**
+ * @brief sets a callback to be executed on a specific path
+ *
+ * @param htp the initialized evhtp_t
+ * @param path the path to match
+ * @param cb the function to be executed
+ * @param arg user-defined argument passed to the callback
+ *
+ * @return evhtp_callback_t * on success, NULL on error.
+ */
+EVHTP_EXPORT evhtp_callback_t * evhtp_set_exact_cb(evhtp_t * htp, const char * path,
     evhtp_callback_cb cb, void * arg);
 
 

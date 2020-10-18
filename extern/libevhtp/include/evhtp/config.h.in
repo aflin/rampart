@@ -43,10 +43,10 @@ extern "C" {
 #cmakedefine EVHTP_USE_TCMALLOC
 #cmakedefine EVHTP_DEBUG
 #cmakedefine EVHTP_DISABLE_MEMFUNCTIONS
-
-#ifndef EVHTP_DISABLE_REGEX
-#include <onigposix.h>
-#endif
+/* switched to normal onig calls (instead of the onigposix.h ones) -ajf */
+//#ifndef EVHTP_DISABLE_REGEX
+//#include <onigposix.h>
+//#endif
 
 #ifdef EVHTP_USE_TCMALLOC
 #include <google/tcmalloc.h>

@@ -8,6 +8,7 @@
 
      The third part sets up and runs the http server.
 
+     see also scripts in the ./servermods/ directory
    ******************************************************************* */
 
 
@@ -285,7 +286,7 @@ function ramistest(req) {
 
 /* this is a sample function to return a webpage listing the contents of a directory.
    see directoryFunc in server.start() below.  This function is the same as the
-   built in server.defaultDirList() function.
+   built in function.
 */
 
 function dirlist(req) {
@@ -409,14 +410,26 @@ var pid=server.start(
 
         If directoryFunc is not set, a url pointing to a directory without an index.htm(l)
         will return a 403 Forbidden error.
+
+        these two lines perform the same function (in this script):
     */
     //directoryFunc: dirlist,
-    directoryFunc: server.defaultDirList,
+    // or
+    directoryFunc: true, //use default directory list function
 
     /* **********************************************************
        map urls to functions or paths on the filesystem 
        If it ends in a '/' then matches everything in that path
        except a more specific ('/something.html') path
+       
+       priority is given to file-paths (doesn't end in '/'), then
+         regular expressions, then paths, and in each of these groups
+         they are then ordered by length, with longest coming first.
+       If you wish to specify your own priority, set:
+
+    mapSort: false,
+
+       and then put them in your prefered order below.
        ********************************************************** */
     map:
     {
@@ -452,8 +465,17 @@ var pid=server.start(
         */
         "/showreq*":          {module:"servermod"},
 
-        /* this also works. However you lose the ability to update 
-            the module while the server is running              */
+        /* regular expressions can also be used. prepend a '~' to
+           your expression: e.g.:
+
+        "~/show[rR]eq.*":    {module:"servermod"},
+
+          see https://github.com/kkos/oniguruma/blob/master/doc/RE
+          for full syntax
+        */
+
+        /* This also works. However DON'T USE. you lose the ability 
+            to update the module while the server is running              */
         //"/showreq*":          require("servermod.js"),
 
         /* 

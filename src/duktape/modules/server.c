@@ -1109,7 +1109,7 @@ static evhtp_res sendobj(DHS *dhs)
         {
             duk_pop(ctx); /* get rid of 'headers' non object */
             duk_del_prop_string(ctx, -1, "headers");
-            RP_THROW(ctx, "rpserver.start: callback -- \"headers\" parameter in return value must be set to an object (headers:{...})");
+            RP_THROW(ctx, "server.start: callback -- \"headers\" parameter in return value must be set to an object (headers:{...})");
         }
     }
     duk_pop(ctx);
@@ -2953,7 +2953,7 @@ static int duk_rp_GPS_icase(duk_context *ctx, duk_idx_t idx, const char * prop)
 /*
 #define sslallowconf(opt,flag,defaulton) do {\
     if ( duk_rp_GPS_icase(ctx, ob_idx, opt) ){\
-       if(!REQUIRE_BOOL(ctx, -1, "rpserver.start: parameter \"%s\" requires a boolean (true|false)",opt))\
+       if(!REQUIRE_BOOL(ctx, -1, "server.start: parameter \"%s\" requires a boolean (true|false)",opt))\
            ssl_config->ssl_opts |= flag;\
     } else if (!defaulton)\
         {printf("'%s'==false\n",opt);ssl_config->ssl_opts |= flag;}\
@@ -2978,13 +2978,13 @@ static void get_secure(duk_context *ctx, duk_idx_t ob_idx, evhtp_ssl_cfg_t *ssl_
 
     if (duk_rp_GPS_icase(ctx, ob_idx, "sslkeyfile"))
     {
-        ssl_config->privfile = strdup(REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"sslkeyfile\" requires a string (filename)"));
+        ssl_config->privfile = strdup(REQUIRE_STRING(ctx, -1, "server.start: parameter \"sslkeyfile\" requires a string (filename)"));
     }
     duk_pop(ctx);
 
     if (duk_rp_GPS_icase(ctx, ob_idx, "sslcertfile"))
     {
-        ssl_config->pemfile = strdup(REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"sslcertfile\" requires a string (filename)"));
+        ssl_config->pemfile = strdup(REQUIRE_STRING(ctx, -1, "server.start: parameter \"sslcertfile\" requires a string (filename)"));
     }
     duk_pop(ctx);
 }
@@ -3015,10 +3015,10 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
     {
         if(duk_rp_GPS_icase(ctx, ob_idx, "accessLog") )
         {
-            const char *fn=REQUIRE_STRING(ctx,-1,  "rpserver.start: parameter \"accessLog\" requires a string (filename)");
+            const char *fn=REQUIRE_STRING(ctx,-1,  "server.start: parameter \"accessLog\" requires a string (filename)");
             access_fh=fopen(fn,"a");
             if(access_fh==NULL)
-                RP_THROW(ctx, "rpserver.start: error opening accessLog file '%s': %s", fn, strerror(errno));
+                RP_THROW(ctx, "server.start: error opening accessLog file '%s': %s", fn, strerror(errno));
         }
         else
         {
@@ -3027,10 +3027,10 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
 
         if(duk_rp_GPS_icase(ctx, ob_idx, "errorLog") )
         {
-            const char *fn=REQUIRE_STRING(ctx,-1, "rpserver.start: parameter \"errorLog\" requires a string (filename)");
+            const char *fn=REQUIRE_STRING(ctx,-1, "server.start: parameter \"errorLog\" requires a string (filename)");
             error_fh=fopen(fn,"a");
             if(error_fh==NULL)
-                RP_THROW(ctx, "rpserver.start: error opening errorLog file '%s': %s", fn, strerror(errno));
+                RP_THROW(ctx, "server.start: error opening errorLog file '%s': %s", fn, strerror(errno));
         }
         else
         {
@@ -3077,6 +3077,41 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
      }\
 } while(0)
 
+#define DIRLISTFUNC \
+"    function (req) {\n"\
+"        var html=\"<!DOCTYPE html>\\n\"+\n"\
+"        '<html><head><meta charset=\"UTF-8\"><title>Index of ' + \n"\
+"            req.path.path+ \n"\
+"            \"</title><style>td{padding-right:22px;}</style></head><body><h1>\"+\n"\
+"            req.path.path+\n"\
+"            '</h1><hr><table>';\n"\
+"\n"\
+"        function hsize(size) {\n"\
+"            var ret=rampart.utils.sprintf(\"%d\",size);\n"\
+"            if(size >= 1073741824)\n"\
+"                ret=rampart.utils.sprintf(\"%.1fG\", size/1073741824);\n"\
+"            else if (size >= 1048576)\n"\
+"                ret=rampart.utils.sprintf(\"%.1fM\", size/1048576);\n"\
+"            else if (size >=1024)\n"\
+"                ret=rampart.utils.sprintf(\"%.1fk\", size/1024); \n"\
+"            return ret;\n"\
+"        }\n"\
+"\n"\
+"        if(req.path.path != '/')\n"\
+"            html+= '<tr><td><a href=\"../\">Parent Directory</a></td><td></td><td>-</td></tr>';\n"\
+"        rampart.utils.readdir(req.fsPath).sort().forEach(function(d){\n"\
+"            var st=rampart.utils.stat(req.fsPath+'/'+d);\n"\
+"            if (st.isDirectory())\n"\
+"                d+='/';\n"\
+"            html=rampart.utils.sprintf('%s<tr><td><a href=\"%s\">%s</a></td><td>%s</td><td>%s</td></tr>',\n"\
+"                html, d, d, st.mtime.toLocaleString() ,hsize(st.size));\n"\
+"        });\n"\
+"        \n"\
+"        html+=\"</table></body></html>\";\n"\
+"        return {html:html};\n"\
+"    }\n"
+
+
 
 #ifdef COMBINE_EVLOOPS
 extern struct event_base *elbase;
@@ -3091,7 +3126,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     char ipany[INET6_ADDRSTRLEN + 5]={0};
     char *ip_addr = NULL;
     uint16_t port = 8088;
-    int nthr=0;
+    int nthr=0, mapsort=1;
     evhtp_t *htp = NULL;
 #ifndef COMBINE_EVLOOPS
     struct event_base *evbase;
@@ -3131,7 +3166,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         /* daemon */
         if (duk_rp_GPS_icase(ctx, ob_idx, "daemon"))
         {
-            daemon = REQUIRE_BOOL(ctx, -1, "rpserver.start: parameter \"daemon\" requires a boolean (true|false)");
+            daemon = REQUIRE_BOOL(ctx, -1, "server.start: parameter \"daemon\" requires a boolean (true|false)");
         }
         duk_pop(ctx);
     }
@@ -3150,7 +3185,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         dpid=fork();
         if(dpid==-1)
         {
-            fprintf(stderr, "rpserver.start: fork failed\n");
+            fprintf(stderr, "server.start: fork failed\n");
             exit(1);
         }
         else if(!dpid)
@@ -3163,7 +3198,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             close(child2par[0]);
             logging(ctx,ob_idx);
             if (setsid()==-1) {
-                fprintf(error_fh, "rpserver.start: failed to become a session leader while daemonising: %s",strerror(errno));
+                fprintf(error_fh, "server.start: failed to become a session leader while daemonising: %s",strerror(errno));
                 exit(1);
             }
             /* need to double fork, and need to write back the pid of grandchild to parent. */
@@ -3171,14 +3206,14 @@ duk_ret_t duk_server_start(duk_context *ctx)
             
             if(dpid==-1)
             {
-                fprintf(stderr, "rpserver.start: fork failed\n");
+                fprintf(stderr, "server.start: fork failed\n");
                 exit(1);
             }
             else if(dpid2)
             {	/* still child */
                 if(-1 == write(child2par[1], &dpid2, sizeof(pid_t)) )
                 {
-                    fprintf(error_fh, "rpserver.start: failed to send pid to parent\n");
+                    fprintf(error_fh, "server.start: failed to send pid to parent\n");
                 }
                 close(child2par[1]);
                 exit(0);
@@ -3224,7 +3259,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             waitpid(dpid,&pstatus,0);
             if(-1 == read(child2par[0], &dpid2, sizeof(pid_t)) )
             {
-                fprintf(error_fh, "rpserver.start: failed to get pid from child\n");
+                fprintf(error_fh, "server.start: failed to get pid from child\n");
             }
             close(child2par[0]);
             duk_push_int(ctx,(int)dpid2);
@@ -3251,7 +3286,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             {
                 int signed_port = duk_rp_get_int_default(ctx, -1, -1);
                 if (signed_port < 1)
-                    RP_THROW(ctx, "rpserver.start: parameter \"port\" invalid");
+                    RP_THROW(ctx, "server.start: parameter \"port\" invalid");
                 port=(uint16_t) signed_port;
             }
             duk_pop(ctx);
@@ -3263,11 +3298,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
         {
             if(duk_rp_GPS_icase(ctx, ob_idx, "user"))
             {
-                const char *user=REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"user\" requires a string (username)");
+                const char *user=REQUIRE_STRING(ctx, -1, "server.start: parameter \"user\" requires a string (username)");
                 struct passwd  *pwd;
                 
                 if(! (pwd = getpwnam(user)) )
-                    RP_THROW(ctx, "rpserver.start: error getting user '%s' in start()\n",user);
+                    RP_THROW(ctx, "server.start: error getting user '%s' in start()\n",user);
 
                 if( !strcmp("root",user) )
                     fprintf(stderr,"\n******* WARNING: YOU ARE RUNNING SERVER AS ROOT. NOT A GOOD IDEA. YOU'VE BEEN WARNED!!!! ********\n\n");
@@ -3277,7 +3312,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 unprivg=pwd->pw_gid;
             }
             else
-                RP_THROW(ctx, "rpserver.start: starting as root requires you name a {user:'unpriv_user_name'} in start()");
+                RP_THROW(ctx, "server.start: starting as root requires you name a {user:'unpriv_user_name'} in start()");
 
             duk_pop(ctx);
         }
@@ -3287,14 +3322,14 @@ duk_ret_t duk_server_start(duk_context *ctx)
         {
             confThreads = duk_rp_get_int_default(ctx, -1, -1);
             if(confThreads == -1)
-                RP_THROW(ctx,"rpserver.start: parameter \"threads\" invalid");
+                RP_THROW(ctx,"server.start: parameter \"threads\" invalid");
         }
         duk_pop(ctx);
 
         /* multithreaded */
         if (duk_rp_GPS_icase(ctx, ob_idx, "usethreads"))
         {
-            mthread = REQUIRE_BOOL(ctx, -1, "rpserver.start: parameter \"threads\" requires a boolean (true|false)");
+            mthread = REQUIRE_BOOL(ctx, -1, "server.start: parameter \"threads\" requires a boolean (true|false)");
             gl_singlethreaded = !mthread;
         }
         duk_pop(ctx);
@@ -3302,7 +3337,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
          /* connect timeout */
         if (duk_rp_GPS_icase(ctx, ob_idx, "connectTimeout"))
         {
-            double to = REQUIRE_NUMBER(ctx, -1,  "rpserver.start: parameter \"connectTimeout\" requires a number (float)");
+            double to = REQUIRE_NUMBER(ctx, -1,  "server.start: parameter \"connectTimeout\" requires a number (float)");
             ctimeout.tv_sec = (time_t)to;
             ctimeout.tv_usec = (suseconds_t)1000000.0 * (to - (double)ctimeout.tv_sec);
             fprintf(access_fh, "set connection timeout to %d sec and %d microseconds\n", (int)ctimeout.tv_sec, (int)ctimeout.tv_usec);
@@ -3312,7 +3347,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         /* script timeout */
         if (duk_rp_GPS_icase(ctx, ob_idx, "scriptTimeout"))
         {
-            double to = REQUIRE_NUMBER(ctx, -1, "rpserver.start: parameter \"scriptTimeout\" requires a number (float)");
+            double to = REQUIRE_NUMBER(ctx, -1, "server.start: parameter \"scriptTimeout\" requires a number (float)");
             dhs->timeout.tv_sec = (time_t)to;
             dhs->timeout.tv_usec = (suseconds_t)1000000.0 * (to - (double)dhs->timeout.tv_sec);
             fprintf(access_fh, "set script timeout to %d sec and %d microseconds\n", (int)dhs->timeout.tv_sec, (int)dhs->timeout.tv_usec);
@@ -3322,7 +3357,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         /* ssl opts*/
         if (duk_rp_GPS_icase(ctx, ob_idx, "secure"))
         {
-            rp_using_ssl = REQUIRE_BOOL(ctx, -1, "rpserver.start: parameter \"secure\" requires a boolean (true|false)");
+            rp_using_ssl = REQUIRE_BOOL(ctx, -1, "server.start: parameter \"secure\" requires a boolean (true|false)");
         }
         duk_pop(ctx);
 
@@ -3442,7 +3477,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     mod=MODULE_FILE;
                 }
                 else
-                    RP_THROW(ctx, "rpserver.start: Option for notFoundFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
+                    RP_THROW(ctx, "server.start: Option for notFoundFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
 
                 /* copy function into array at pos 0 in stack and into index fpos in array */
                 duk_put_prop_index(ctx, 0, fpos);
@@ -3464,7 +3499,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 fpos++;
             }
             else
-                RP_THROW(ctx, "rpserver.start: Option for notFoundFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
+                RP_THROW(ctx, "server.start: Option for notFoundFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
 
         }
         duk_pop(ctx);
@@ -3472,13 +3507,24 @@ duk_ret_t duk_server_start(duk_context *ctx)
         /* directory listing page/function */
         if (duk_rp_GPS_icase(ctx, ob_idx, "directoryFunc"))
         {
-            if ( duk_is_object(ctx,-1) )
+            if ( duk_is_object(ctx,-1) || duk_is_boolean(ctx, -1) )
             {   /* map to function or module */
                 /* copy the function to array at stack pos 0 */
                 const char *fname;
                 char mod=MODULE_NONE;
 
-                if (duk_is_function(ctx, -1))
+                if(duk_is_boolean(ctx, -1))
+                {
+                    if(duk_get_boolean(ctx, -1))
+                    {
+                        duk_pop(ctx);
+                        duk_compile_string(ctx, DUK_COMPILE_FUNCTION, DIRLISTFUNC);
+                        fname="defaultDirlist";
+                        fprintf(access_fh, "mapping function   %-20s ->    function %s()\n", "Directory List", fname);
+                    }
+                    else goto dfunc_end;
+                }
+                else if (duk_is_function(ctx, -1))
                 {
                     duk_get_prop_string(ctx, -1, "name");
                     fname = duk_get_string(ctx, -1);
@@ -3493,7 +3539,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     mod=MODULE_FILE;
                 }
                 else
-                    RP_THROW(ctx, "rpserver.start: Option for directoryFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
+                    RP_THROW(ctx, "server.start: Option for directoryFunc must be a boolean, a function or an object to load a module (e.g. {module:'mymodule'}");
 
                 /* copy function into array at pos 0 in stack and into index fpos in array */
                 duk_put_prop_index(ctx, 0, fpos);
@@ -3515,8 +3561,14 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 fpos++;
             }
             else
-                RP_THROW(ctx, "rpserver.start: Option for directoryFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
+                RP_THROW(ctx, "server.start: Option for directoryFunc must be a boolean, a function or an object to load a module (e.g. {module:'mymodule'}");
+        }
+        dfunc_end:
+        duk_pop(ctx);
 
+        if (duk_rp_GPS_icase(ctx, ob_idx, "mapSort"))
+        {
+            mapsort=REQUIRE_BOOL(ctx, -1, "server.start: parameter mapSort requires a boolean");
         }
         duk_pop(ctx);
 
@@ -3525,12 +3577,28 @@ duk_ret_t duk_server_start(duk_context *ctx)
             if (duk_is_object(ctx, -1) && !duk_is_function(ctx, -1) && !duk_is_array(ctx, -1))
             {
                 int mlen=0,j=0,pathlen=0;
-                /* longer == more specific/match first */
-                duk_push_string(ctx,"function(map) { return Object.keys(map).sort(function(a, b){  return b.length - a.length; }); }"); 
+
+                if(mapsort)
+                {
+                    /* longer == more specific/match first */
+                    //duk_push_string(ctx,"function(map) { return Object.keys(map).sort(function(a, b){  return b.length - a.length; }); }"); 
+                    /* priority to exact, regex, path, then by length */
+                    duk_push_string(ctx, "function(map){return Object.keys(map).sort(function(a, b){\n\
+                                     var blen=b.length, alen=a.length;\n\
+                                     if(a.charAt(0) == '~') alen+=1000; else if(a.charAt(alen-1) != '/') alen+=1000000;\n\
+                                     if(b.charAt(0) == '~') blen+=1000; else if(b.charAt(blen-1) != '/') blen+=1000000;\n\
+                                     return blen - alen;});}");
+                }
+                else
+                {
+                    duk_push_string(ctx, "function(map){return Object.keys(map)}");
+                }
+
                 duk_push_string(ctx,"mapsort");
                 duk_compile(ctx,DUK_COMPILE_FUNCTION);
                 duk_dup(ctx,-2);
                 duk_call(ctx,1);
+
                 mlen=(int)duk_get_length(ctx, -1);
                 for (j=0; j<mlen; j++)
                 {
@@ -3546,14 +3614,37 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         DHS *cb_dhs;
                         const char *fname;
                         char mod=MODULE_NONE;
+                        int cbtype=0;
+                        evhtp_callback_t  *req_callback;
 
-                        path = (char *)duk_to_string(ctx, -2);
+                        path = (char *)duk_get_string(ctx, -2);
                         DUKREMALLOC(ctx, s, strlen(path) + 2);
 
-                        if (*path != '/' && *path != '*')
-                            sprintf(s, "/%s", path);
-                        else
+                        if (*path == '~')
+                        {
+                            cbtype=2;
+                            path++;
                             sprintf(s, "%s", path);
+                        }
+                        else
+                        {
+                            int k, len=(int)strlen(path);
+                            for (k=0; k<len; k++)
+                            {
+                                if (path[k]=='*' && (k!=0 && path[k-1]!='\\'))
+                                {
+                                    cbtype=1;
+                                    break;
+                                }
+                            }
+
+                            if (*path != '/' && *path != '*')
+                                sprintf(s, "/%s", path);
+                            else
+                                sprintf(s, "%s", path);
+                            if  (*(s + strlen(s) - 1)=='/')
+                                cbtype=3;
+                        }
 
                         if (duk_is_function(ctx, -1))
                         {
@@ -3577,7 +3668,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             if (duk_get_prop_string(ctx,-1, "modulePath") )
                             {
                                 if( *( s + strlen(s) -1) == '*' || *s=='*')
-                                    RP_THROW(ctx, "rpserver.start: parameter \"map:modulePath\" -- glob not allowed in module path %s",s);
+                                    RP_THROW(ctx, "server.start: parameter \"map:modulePath\" -- glob not allowed in module path %s",s);
 
                                 fname = duk_get_string(ctx, -1);
                                 fprintf(access_fh, "mapping folder     %-20s ->    module path:%s\n", s, fname);
@@ -3589,7 +3680,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             duk_pop(ctx);                            
                         }
                         
-                        duk_push_error_object(ctx, DUK_ERR_ERROR, "rpserver.start: parameter \"map\" -- Option for path %s must be a function or an object to load a module (e.g. {module:'mymodule'}",s);
+                        duk_push_error_object(ctx, DUK_ERR_ERROR, "server.start: parameter \"map\" -- Option for path %s must be a function or an object to load a module (e.g. {module:'mymodule'}",s);
                         free(s);
                         (void)duk_throw(ctx);
                         
@@ -3613,18 +3704,19 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         fpos++;
 
                         /* register callback with evhtp using the callback dhs struct */
-                        if (*s == '*' || *(s + strlen(s) - 1) == '*')
+                        if(cbtype==2)
                         {
-                            //evhtp_callback_t  *req_callback =
+                            req_callback =evhtp_set_regex_cb(htp, s, http_callback, cb_dhs);
+                            if(!req_callback) 
+                                RP_THROW(ctx, "server.start - parameter \"map\": Bad regular expression");
+                        } 
+                        else if (cbtype==1)
                             evhtp_set_glob_cb(htp, s, http_callback, cb_dhs);
-                            //evhtp_callback_set_hook(req_callback,evhtp_hook_on_request_fini,req_on_finish, NULL);
-                        }
-                        else
-                        {
-                            //evhtp_callback_t  *req_callback =
+                        else if (cbtype==3)
                             evhtp_set_cb(htp, s, http_callback, cb_dhs);
-                            //evhtp_callback_set_hook(req_callback,evhtp_hook_on_request_fini,req_on_finish, NULL);
-                        }
+                        else
+                            evhtp_set_exact_cb(htp, s, http_callback, cb_dhs);
+
                         free(s);
                         duk_pop(ctx);
                     }
@@ -3633,7 +3725,17 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             for each mapped http path                   */
                     { /* map to filesystem */
                         DHMAP *map = NULL;
-                        RPPATH foundpath;
+                        mode_t mode;
+                        struct stat sb;
+                        int j, len=(int)strlen(path);
+
+                        for (j=0; j<len; j++)
+                        {
+                            if (path[j]=='*' && (j!=0 && path[j-1]!='\\'))
+                            {
+                                RP_THROW(ctx, "server.start: parameter \"map\" -- system path \"%s\" name cannot contain glob \"*\"", path);
+                            }
+                        }
 
                         DUKREMALLOC(ctx, map, sizeof(DHMAP));
 
@@ -3642,24 +3744,29 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         if (*path != '/' || *(path + strlen(path) - 1) != '/')
                         {
                             if (*path != '/' && *(path + strlen(path) - 1) != '/')
-                                sprintf(s, "/%s/*", path);
+                                sprintf(s, "/%s/", path);
                             else if (*path != '/')
-                                sprintf(s, "/%s*", path);
+                                sprintf(s, "/%s", path);
                             else
-                                sprintf(s, "%s/*", path);
+                                sprintf(s, "%s/", path);
                         }
                         else
-                            sprintf(s, "%s*", path);
+                            sprintf(s, "%s", path);
 
                         map->key = s;
                         map->dhs = dhs;
-
+                        
                         fspath = (char *)duk_to_string(ctx, -1);
-                        foundpath=rp_find_path(fspath,"");
-                        if(!strlen(foundpath.path))
-                            RP_THROW(ctx, "rpserver.start: parameter \"map\" -- Couldn't find fileserver path '%s'",fspath);
 
-                        fspath=foundpath.path;
+                        if (stat(fspath, &sb) == -1)
+                        {
+                            RP_THROW(ctx, "server.start: parameter \"map\" -- Couldn't find fileserver path '%s'",fspath);
+                        }
+                        mode = sb.st_mode & S_IFMT;
+
+                        if (mode != S_IFDIR)
+                            RP_THROW(ctx, "server.start: parameter \"map\" -- Fileserver path '%s' requires a directory",fspath);
+                        
                         DUKREMALLOC(ctx, fs, strlen(fspath) + 2)
 
                         if (*(fspath + strlen(fspath) - 1) != '/')
@@ -3671,14 +3778,14 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
                         fprintf(access_fh, "mapping folder     %-20s ->    %s\n", s, fs);
                         map->val = fs;
-                        evhtp_set_glob_cb(htp, s, fileserver, map);
+                        evhtp_set_cb(htp, s, fileserver, map);
 
                         duk_pop_2(ctx);
                     }
                 }
             }
             else
-                RP_THROW(ctx, "rpserver.start: value of parameter \"map\" must be an object");
+                RP_THROW(ctx, "server.start: value of parameter \"map\" requires an object");
         }
         duk_pop(ctx);
     }
@@ -3692,7 +3799,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         {
             filecount++;
             if (stat(ssl_config->pemfile, &f_stat) != 0)
-                RP_THROW(ctx, "rpserver.start: Cannot load SSL cert '%s' (%s)", ssl_config->pemfile, strerror(errno));
+                RP_THROW(ctx, "server.start: Cannot load SSL cert '%s' (%s)", ssl_config->pemfile, strerror(errno));
             else
             {
                 FILE* file = fopen(ssl_config->pemfile,"r");
@@ -3716,7 +3823,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
             filecount++;
             if (stat(ssl_config->privfile, &f_stat) != 0)
-                RP_THROW(ctx, "rpserver.start: Cannot load SSL key '%s' (%s)", ssl_config->privfile, strerror(errno));
+                RP_THROW(ctx, "server.start: Cannot load SSL key '%s' (%s)", ssl_config->privfile, strerror(errno));
             else
             {
                 FILE* file = fopen(ssl_config->privfile,"r");
@@ -3737,17 +3844,17 @@ duk_ret_t duk_server_start(duk_context *ctx)
         if (ssl_config->cafile)
         {
             if (stat(ssl_config->cafile, &f_stat) != 0)
-                RP_THROW(ctx, "rpserver.start: Cannot load SSL CA File '%s' (%s)", ssl_config->cafile, strerror(errno));
+                RP_THROW(ctx, "server.start: Cannot load SSL CA File '%s' (%s)", ssl_config->cafile, strerror(errno));
         }
         if (filecount < 2)
-            RP_THROW(ctx, "rpserver.start: Minimally ssl must be configured with, e.g. -\n"
+            RP_THROW(ctx, "server.start: Minimally ssl must be configured with, e.g. -\n"
                                   "{\n\t\"secure\":true,\n\t\"sslkeyfile\": \"/path/to/privkey.pem\","
                                   "\n\t\"sslcertfile\":\"/path/to/fullchain.pem\"\n}");
         fprintf(access_fh, "Initializing ssl/tls\n");
         {
             unsigned long err=0;
             if (evhtp_ssl_init(htp, ssl_config) == -1)
-                RP_THROW(ctx, "rpserver.start: error setting up ssl/tls server");
+                RP_THROW(ctx, "server.start: error setting up ssl/tls server");
             err = ERR_get_error();
             if(err)
             {
@@ -3758,7 +3865,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         if (duk_rp_GPS_icase(ctx, ob_idx, "sslMinVersion"))
         {
-            const char *sslver=REQUIRE_STRING(ctx, -1, "rpserver.start: parameter \"sslMaxVer\" requires a string (ssl3|tls1|tls1.1|tls1.2)");
+            const char *sslver=REQUIRE_STRING(ctx, -1, "server.start: parameter \"sslMaxVer\" requires a string (ssl3|tls1|tls1.1|tls1.2)");
             if (!strcmp("tls1.2",sslver))
                 SSL_CTX_set_min_proto_version(htp->ssl_ctx, TLS1_2_VERSION);
             else if (!strcmp("tls1.1",sslver))
@@ -3770,7 +3877,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             else if (!strcmp("ssl3",sslver))
                 SSL_CTX_set_min_proto_version(htp->ssl_ctx, SSL3_VERSION);
             else
-                RP_THROW(ctx, "rpserver.start: parameter \"sslMaxVer\" must be ssl3, tls1, tls1.1 or tls1.2");
+                RP_THROW(ctx, "server.start: parameter \"sslMaxVer\" must be ssl3, tls1, tls1.1 or tls1.2");
         }
         else
             SSL_CTX_set_min_proto_version(htp->ssl_ctx, TLS1_2_VERSION);
@@ -3801,11 +3908,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 {
                     if (!strncmp("ipv6:",ipany,5))
                     {
-                        RP_THROW(ctx, "rpserver.start: could not bind to [%s] port %d", ipany+5, port);
+                        RP_THROW(ctx, "server.start: could not bind to [%s] port %d", ipany+5, port);
                     }
                     else
                     {
-                        RP_THROW(ctx, "rpserver.start: could not bind to %s port %d", ipany, port);
+                        RP_THROW(ctx, "server.start: could not bind to %s port %d", ipany, port);
                     }
                 }
                 free(ip_addr);
@@ -3823,11 +3930,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         {
                             if (!strncmp("ipv6:",ipany,5))
                             {
-                                RP_THROW(ctx, "rpserver.start: could not bind to [%s] port %d", ipany+5, port);
+                                RP_THROW(ctx, "server.start: could not bind to [%s] port %d", ipany+5, port);
                             }
                             else
                             {
-                                RP_THROW(ctx, "rpserver.start: could not bind to %s port %d", ipany, port);
+                                RP_THROW(ctx, "server.start: could not bind to %s port %d", ipany, port);
                             }
                         }
                         free(ip_addr);
@@ -3842,9 +3949,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
         else
         {
             if (!(ip_addr = bind_sock_port(htp, ipv4, port, 2048)))
-                RP_THROW(ctx, "rpserver.start: could not bind to %s port %d", ipv4, port);
+                RP_THROW(ctx, "server.start: could not bind to %s port %d", ipv4, port);
             if (!(ip_addr = bind_sock_port(htp, ipv6, port, 2048)))
-                RP_THROW(ctx, "rpserver.start: could not bind to %s, %d", ipv6, port);
+                RP_THROW(ctx, "server.start: could not bind to %s, %d", ipv6, port);
         }
         duk_pop(ctx);
     }
@@ -3852,9 +3959,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
     {
         /* default ip and port */
         if (!(ip_addr = bind_sock_port(htp, ipv4, port, 2048)))
-            RP_THROW(ctx, "rpserver.start: could not bind to %s port %d", ipv4, port);
+            RP_THROW(ctx, "server.start: could not bind to %s port %d", ipv4, port);
         if (!(ip_addr = bind_sock_port(htp, ipv6, port, 2048)))
-            RP_THROW(ctx, "rpserver.start: could not bind to %s, %d", ipv6, port);
+            RP_THROW(ctx, "server.start: could not bind to %s, %d", ipv6, port);
     }
 
     //done with options, get rid of ob_idx
@@ -3902,7 +4009,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     if (pthread_mutex_init(&ctxlock, NULL) == EINVAL)
     {
-        fprintf(stderr, "rpserver.start: could not initialize context lock\n");
+        fprintf(stderr, "server.start: could not initialize context lock\n");
         exit(1);
     }
 
@@ -3923,17 +4030,17 @@ duk_ret_t duk_server_start(duk_context *ctx)
         close(STDIN_FILENO);
         close(STDOUT_FILENO);
         if (open("/dev/null",O_RDONLY) == -1) {
-            fprintf(error_fh,"rpserver.start: failed to reopen stdin while daemonising (errno=%d)",errno);
+            fprintf(error_fh,"server.start: failed to reopen stdin while daemonising (errno=%d)",errno);
             exit(1);
         }
         if (open("/dev/null",O_WRONLY) == -1) {
-            fprintf(error_fh,"rpserver.start: failed to reopen stdout while daemonising (errno=%d)",errno);
+            fprintf(error_fh,"server.start: failed to reopen stdout while daemonising (errno=%d)",errno);
             exit(1);
         }
         close(STDERR_FILENO);
         if (open("/dev/null",O_RDWR) == -1) {
             /* FIXME: what to do when error_fh=stderr? */
-            fprintf(error_fh,"rpserver.start: failed to reopen stderr while daemonising (errno=%d)",errno);
+            fprintf(error_fh,"server.start: failed to reopen stderr while daemonising (errno=%d)",errno);
             exit(1);
         }
         stderr=error_fh;
@@ -3960,40 +4067,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
     return 1;
 }
 
-#define DIRLISTFUNC \
-"    function (req) {\n"\
-"        var html=\"<!DOCTYPE html>\\n\"+\n"\
-"        '<html><head><meta charset=\"UTF-8\"><title>Index of ' + \n"\
-"            req.path.path+ \n"\
-"            \"</title><style>td{padding-right:22px;}</style></head><body><h1>\"+\n"\
-"            req.path.path+\n"\
-"            '</h1><hr><table>';\n"\
-"\n"\
-"        function hsize(size) {\n"\
-"            var ret=rampart.utils.sprintf(\"%d\",size);\n"\
-"            if(size >= 1073741824)\n"\
-"                ret=rampart.utils.sprintf(\"%.1fG\", size/1073741824);\n"\
-"            else if (size >= 1048576)\n"\
-"                ret=rampart.utils.sprintf(\"%.1fM\", size/1048576);\n"\
-"            else if (size >=1024)\n"\
-"                ret=rampart.utils.sprintf(\"%.1fk\", size/1024); \n"\
-"            return ret;\n"\
-"        }\n"\
-"\n"\
-"        if(req.path.path != '/')\n"\
-"            html+= '<tr><td><a href=\"../\">Parent Directory</a></td><td></td><td>-</td></tr>';\n"\
-"        rampart.utils.readdir(req.fsPath).sort().forEach(function(d){\n"\
-"            var st=rampart.utils.stat(req.fsPath+'/'+d);\n"\
-"            if (st.isDirectory())\n"\
-"                d+='/';\n"\
-"            html=rampart.utils.sprintf('%s<tr><td><a href=\"%s\">%s</a></td><td>%s</td><td>%s</td></tr>',\n"\
-"                html, d, d, st.mtime.toLocaleString() ,hsize(st.size));\n"\
-"        });\n"\
-"        \n"\
-"        html+=\"</table></body></html>\";\n"\
-"        return {html:html};\n"\
-"    }\n"
-
 static const duk_function_list_entry utils_funcs[] = {
     {"start", duk_server_start, 2 /*nargs*/},
     {NULL, NULL, 0}};
@@ -4007,8 +4080,12 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_put_function_list(ctx, -1, utils_funcs);
     duk_put_number_list(ctx, -1, utils_consts);
 
+    /*
     duk_compile_string(ctx, DUK_COMPILE_FUNCTION, DIRLISTFUNC);
+    duk_push_string(ctx, "defaultDirList");
+    duk_put_prop_string(ctx, -2, "fname");
     duk_put_prop_string(ctx, -2, "defaultDirList");
+    */
 
     return 1;
 }
