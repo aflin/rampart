@@ -3467,13 +3467,13 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     duk_get_prop_string(ctx, -1, "name");
                     fname = duk_get_string(ctx, -1);
                     duk_pop(ctx);
-                    fprintf(access_fh, "mapping function   %-20s ->    function %s()\n", "404", fname);
+                    fprintf(access_fh, "mapping not found  to function   %-20s ->    function %s()\n", "404", fname);
                 }
                 else if (duk_get_prop_string(ctx,-1, "module") )
                 {
                     fname = duk_get_string(ctx, -1);
                     duk_pop(ctx);
-                    fprintf(access_fh, "mapping function   %-20s ->    module:%s\n", "404", fname);
+                    fprintf(access_fh, "mapping not found  to function   %-20s ->    module:%s\n", "404", fname);
                     mod=MODULE_FILE;
                 }
                 else
@@ -3520,7 +3520,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         duk_pop(ctx);
                         duk_compile_string(ctx, DUK_COMPILE_FUNCTION, DIRLISTFUNC);
                         fname="defaultDirlist";
-                        fprintf(access_fh, "mapping function   %-20s ->    function %s()\n", "Directory List", fname);
+                        fprintf(access_fh, "mapping dir  list  to function   %-20s ->    function %s()\n", "Directory List", fname);
                     }
                     else goto dfunc_end;
                 }
@@ -3529,13 +3529,13 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     duk_get_prop_string(ctx, -1, "name");
                     fname = duk_get_string(ctx, -1);
                     duk_pop(ctx);
-                    fprintf(access_fh, "mapping function   %-20s ->    function %s()\n", "Directory List", fname);
+                    fprintf(access_fh, "mapping dir  list  to function   %-20s ->    function %s()\n", "Directory List", fname);
                 }
                 else if (duk_get_prop_string(ctx,-1, "module") )
                 {
                     fname = duk_get_string(ctx, -1);
                     duk_pop(ctx);
-                    fprintf(access_fh, "mapping function   %-20s ->    module:%s\n", "Directory List", fname);
+                    fprintf(access_fh, "mapping dir  list  to function   %-20s ->    module:%s\n", "Directory List", fname);
                     mod=MODULE_FILE;
                 }
                 else
@@ -3577,6 +3577,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             if (duk_is_object(ctx, -1) && !duk_is_function(ctx, -1) && !duk_is_array(ctx, -1))
             {
                 int mlen=0,j=0,pathlen=0;
+                static char *pathtypes[]= { "exact", "glob ", "regex", "dir  " };
 
                 if(mapsort)
                 {
@@ -3642,7 +3643,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                 sprintf(s, "/%s", path);
                             else
                                 sprintf(s, "%s", path);
-                            if  (*(s + strlen(s) - 1)=='/')
+
+                            if  (!cbtype && *(s + strlen(s) - 1)=='/')
                                 cbtype=3;
                         }
 
@@ -3651,7 +3653,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             duk_get_prop_string(ctx, -1, "name");
                             fname = duk_get_string(ctx, -1);
                             duk_pop(ctx);
-                            fprintf(access_fh, "mapping function   %-20s ->    function %s()\n", s, fname);
+                            fprintf(access_fh, "mapping %s path to function   %-20s ->    function %s()\n", pathtypes[cbtype], s, fname);
                             goto copyfunction;
                         }
                         else 
@@ -3659,7 +3661,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             if (duk_get_prop_string(ctx,-1, "module") )
                             {
                                 fname = duk_get_string(ctx, -1);
-                                fprintf(access_fh, "mapping function   %-20s ->    module:%s\n", s, fname);
+                                fprintf(access_fh, "mapping %s path to function   %-20s ->    module:%s\n", pathtypes[cbtype],s, fname);
                                 mod=MODULE_FILE;
                                 duk_pop(ctx);
                                 goto copyfunction;
@@ -3671,7 +3673,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                     RP_THROW(ctx, "server.start: parameter \"map:modulePath\" -- glob not allowed in module path %s",s);
 
                                 fname = duk_get_string(ctx, -1);
-                                fprintf(access_fh, "mapping folder     %-20s ->    module path:%s\n", s, fname);
+                                fprintf(access_fh, "mapping %s path to mod folder %-20s ->    module path:%s\n", pathtypes[cbtype], s, fname);
                                 mod=MODULE_PATH;
                                 duk_pop(ctx);
                                 pathlen=strlen(s);
@@ -3702,7 +3704,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             copy_cb_func(cb_dhs, totnthreads);
                         
                         fpos++;
-
                         /* register callback with evhtp using the callback dhs struct */
                         if(cbtype==2)
                         {
@@ -3776,7 +3777,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         else
                             sprintf(fs, "%s", fspath);
 
-                        fprintf(access_fh, "mapping folder     %-20s ->    %s\n", s, fs);
+                        fprintf(access_fh, "mapping filesystem folder        %-20s ->    %s\n", s, fs);
                         map->val = fs;
                         evhtp_set_cb(htp, s, fileserver, map);
 
