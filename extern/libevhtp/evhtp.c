@@ -1595,7 +1595,7 @@ htp__request_set_callbacks_(evhtp_request_t * request)
 
     } else if ((callback = htp__callback_find_(evhtp->callbacks, path->path,
                     &path->matched_soff, &path->matched_eoff))) {
-        /* matched a callback using *just* the path (/a/b/c/) /
+        / * matched a callback using *just* the path (/a/b/c/)* /
         cb    = callback->cb;
         cbarg = callback->cbarg;
         hooks = callback->hooks;

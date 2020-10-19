@@ -36,6 +36,12 @@ testFeature("hexify of crypto.rand(32):",function(){
 });
 
 
+testFeature("hexify of crypto.randnum():",function(){
+  var res=crypto.randnum();
+  return ( res>0 && res<1);
+});
+
+
 testFeature("en/decrypt with key,iv and aes-256-cbc",function(){
   var encBuffer = crypto.encrypt({
     key: "01234567890123456789012345678901",
@@ -84,6 +90,16 @@ testFeature("en/decrypt with password, with options", function(){
   return comphash==hash;
 });
 
+
+testFeature("hmac sha256", function(){
+  var ret=crypto.hmac("mysecret","mydata");
+  return ret="f49cf057cd4de7c1a4cb0b051570372892674487333ac5ab3ea603f29aec9ffe";
+});
+
+testFeature("hmac sha512", function(){
+  var ret=crypto.hmac("mysecret","mydata");
+  return ret="7f416275882395b49071c91caebc4d300b7aed08cb891680371154b61d867428271d3d00425ea7728b91344e442846db66b15b9043160c9a95d02aac6f514dd7";
+});
 
 /*
 printf("\ncrypt of this file with aes-256-cbc (sha512 hashes before and after):\n%s\n%s\n",hash,comphash);

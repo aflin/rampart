@@ -423,6 +423,7 @@ void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase)
     else
         ucase=39;
 
+    idx=duk_normalize_index(ctx, idx);
     duk_to_buffer(ctx,idx,&sz);
 
     buf=(unsigned char *)duk_get_buffer_data(ctx,idx,&sz);
@@ -448,7 +449,6 @@ void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase)
 
         buf++;
     }
-    
     duk_push_lstring(ctx,out,sz*2);
     duk_replace(ctx,idx);
     free(out);

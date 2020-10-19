@@ -25,7 +25,7 @@ extern int   rampart_argc;
 #define REQUIRE_STRING(ctx,idx,...) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_string((ctx),i)) {\
-        RP_THROW(ctx, __VA_ARGS__ );\
+        RP_THROW((ctx), __VA_ARGS__ );\
     }\
     const char *r=duk_get_string((ctx),i);\
     r;\
@@ -34,7 +34,7 @@ extern int   rampart_argc;
 #define REQUIRE_LSTRING(ctx,idx,len,...) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_string((ctx),i)) {\
-        RP_THROW(ctx, __VA_ARGS__ );\
+        RP_THROW((ctx), __VA_ARGS__ );\
     }\
     const char *r=duk_get_lstring((ctx),i,(len));\
     r;\
@@ -43,16 +43,26 @@ extern int   rampart_argc;
 #define REQUIRE_INT(ctx,idx,...) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_number((ctx),i)) {\
-        RP_THROW(ctx, __VA_ARGS__ );\
+        RP_THROW((ctx), __VA_ARGS__ );\
     }\
     int r=duk_get_int((ctx),i);\
+    r;\
+})
+
+#define REQUIRE_UINT(ctx,idx,...) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_number((ctx),i)) {\
+        RP_THROW((ctx), __VA_ARGS__ );\
+    }\
+    int r=duk_get_int((ctx),i);\
+    if(r<0) RP_THROW((ctx), __VA_ARGS__ );\
     r;\
 })
 
 #define REQUIRE_BOOL(ctx,idx,...) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_boolean((ctx),i)) {\
-        RP_THROW(ctx, __VA_ARGS__ );\
+        RP_THROW((ctx), __VA_ARGS__ );\
     }\
     int r=duk_get_boolean((ctx),i);\
     r;\
@@ -61,7 +71,7 @@ extern int   rampart_argc;
 #define REQUIRE_NUMBER(ctx,idx,...) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_number((ctx),i)) {\
-        RP_THROW(ctx, __VA_ARGS__ );\
+        RP_THROW((ctx), __VA_ARGS__ );\
     }\
     double r=duk_get_number((ctx),i);\
     r;\
@@ -70,7 +80,7 @@ extern int   rampart_argc;
 #define REQUIRE_FUNCTION(ctx,idx,...) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_function((ctx),i)) {\
-        RP_THROW(ctx, __VA_ARGS__ );\
+        RP_THROW((ctx), __VA_ARGS__ );\
     }\
     duk_require_function((ctx),i);\
 })
@@ -78,9 +88,21 @@ extern int   rampart_argc;
 #define REQUIRE_BUFFER_DATA(ctx,idx,sz,...) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_buffer_data((ctx),i)) {\
-        RP_THROW(ctx, __VA_ARGS__ );\
+        RP_THROW((ctx), __VA_ARGS__ );\
     }\
     void *r=duk_get_buffer_data((ctx),i,(sz));\
+    r;\
+})
+
+#define REQUIRE_STR_TO_BUF(ctx, idx, sz, ...) ({\
+    void *r=NULL;\
+    duk_idx_t i=(idx);\
+    if( duk_is_string( (ctx), i ) )\
+        r=duk_to_buffer( (ctx), i, (sz) );\
+    else if ( duk_is_buffer( (ctx), i ) )\
+        r=duk_get_buffer( (ctx), i, (sz) );\
+    else\
+        RP_THROW( (ctx), __VA_ARGS__);\
     r;\
 })
 

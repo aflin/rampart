@@ -5,8 +5,10 @@
 #include <openssl/sha.h>
 #include <openssl/md5.h>
 #include <openssl/rand.h>
+#include <openssl/hmac.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdint.h>
 #include "../../rp.h"
 
 #define OPENSSL_ERR_STRING_MAX_SIZE 1024
@@ -320,6 +322,36 @@ static duk_ret_t duk_decrypt(duk_context *ctx)
     return duk_rp_crypt(ctx,1);
 }
 
+static duk_ret_t duk_hmac(duk_context *ctx)
+{
+    duk_size_t keysz, datasz;
+    void *key= REQUIRE_STR_TO_BUF(ctx, 0, &keysz, "crypto.hmac - arg 0 (key) requires a string or buffer");
+    void *data= REQUIRE_STR_TO_BUF(ctx, 1, &datasz, "crypto.hmac - arg 1 (data) requires a string or buffer");
+    const EVP_MD *md=EVP_get_digestbyname("sha256");
+    unsigned char md_value[EVP_MAX_MD_SIZE];
+    unsigned int md_len;
+
+    if(!duk_is_undefined(ctx, -2)){
+        const char *digestfunc=NULL;
+        digestfunc=REQUIRE_STRING(ctx, 2, "crypto.hmac - arg 3 (\"digest function\") requires a string");
+        md=EVP_get_digestbyname(digestfunc);
+        if(md==NULL)
+            RP_THROW(ctx, "crypto.hmac - arg 3 (\"digest function\") \"%s\" invalid", digestfunc);
+    }
+
+    if(! HMAC(md, key, (int)keysz, data, (int)datasz, md_value, &md_len) )
+        DUK_OPENSSL_ERROR(ctx);
+
+    void *out = duk_push_fixed_buffer(ctx, (duk_size_t)md_len);
+    memcpy(out, md_value, (size_t)md_len );
+
+    if(!duk_is_boolean(ctx,3)||!duk_get_boolean(ctx,3))
+        duk_rp_toHex(ctx,-1,0);
+
+    return 1;    
+}
+
+
 /**
  * Macro to make a duktape SHA hash function from a given digest size 
  * and context size 
@@ -395,11 +427,24 @@ static duk_ret_t duk_md5(duk_context *ctx)
  */
 static duk_ret_t duk_rand(duk_context *ctx)
 {
-    duk_size_t len = duk_require_uint(ctx, -1);
+    duk_size_t len = REQUIRE_UINT(ctx, -1, "crypto.rand requires a positive integer");
     void *buffer = duk_push_fixed_buffer(ctx, len);
     /* RAND_bytes may return 0 or -1 on error */
     if (RAND_bytes(buffer, len) != 1)
         DUK_OPENSSL_ERROR(ctx);
+    return 1;
+}
+
+static duk_ret_t duk_randnum(duk_context *ctx)
+{
+    uint64_t randint=0;
+    double ret=0;
+    /* RAND_bytes may return 0 or -1 on error */
+    if (RAND_bytes((unsigned char *)&randint, sizeof(uint64_t)) != 1)
+        DUK_OPENSSL_ERROR(ctx);
+
+    ret = (double)randint/(double)UINT64_MAX;
+    duk_push_number(ctx, ret);
     return 1;
 }
 
@@ -433,11 +478,14 @@ const duk_function_list_entry crypto_funcs[] = {
     {"sha512", duk_sha512, 2},
     {"md5", duk_md5, 2},
     {"rand", duk_rand, 1},
+    {"randnum", duk_randnum, 0},
     {"seed", duk_seed_rand, 1},
+    {"hmac", duk_hmac, 4},
     {NULL, NULL, 0}};
 
 duk_ret_t duk_open_module(duk_context *ctx)
 {
+    OpenSSL_add_all_digests() ;
     duk_push_object(ctx);
     duk_put_function_list(ctx, -1, crypto_funcs);
     return 1;
