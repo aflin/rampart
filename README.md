@@ -7,7 +7,7 @@ Cmake version 3.13 required.
 You will need to install the following dependencies:
 
 ```
-brew install libidn2 gawk
+brew install libidn2 gawk python3
 ```
 
 Then, after cloning, you can do the following to build:
@@ -22,9 +22,12 @@ make install
 
 ## Compiling on Linux (including raspberry pi) ##
 ```
-apt install flex bison libidn2-dev libldap2-dev
+apt install flex bison libidn2-dev libldap2-dev python3
 ```
-
+or
+```
+yum install libidn2-devel openldap-devel flex bison python3
+```
 Then, after cloning, you can do the following to build:
 
 ```
