@@ -31,7 +31,7 @@ extern int RP_TX_isforked;
 
 uid_t unprivu=0;
 gid_t unprivg=0;
-
+//#define RP_TIMEO_DEBUG
 #ifdef RP_TIMEO_DEBUG
 #define debugf(...) printf(__VA_ARGS__);
 #else
@@ -1891,6 +1891,7 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
     struct timespec ts;
     struct timeval now;
     int ret = 0;
+	uint64_t nsec=0;
 
     //printf("in thread\n");
 #ifdef RP_TIMEO_DEBUG
@@ -1918,7 +1919,15 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
     debugf("0x%x: with timeout set\n", (int)x);
     dhr->have_timeout = 1;
     ts.tv_sec = now.tv_sec + dhs->timeout.tv_sec;
-    ts.tv_nsec = (dhs->timeout.tv_usec + now.tv_usec) * 1000;
+    nsec = (dhs->timeout.tv_usec + now.tv_usec) * 1000;
+	if(nsec > 1000000000)
+	{
+		ts.tv_sec += nsec/1000000000;
+		nsec=nsec % 1000000000;
+	}
+	ts.tv_nsec=nsec;
+
+    debugf("now= %d.%06d, timeout=%d.%6d\n",(int)now.tv_sec, (int)now.tv_usec, (int)ts.tv_sec, (int)(ts.tv_nsec/1000));
 
     if (pthread_mutex_init(&(dhr->lock), NULL) == EINVAL)
     {
@@ -1977,7 +1986,7 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
             if (duk_is_undefined(dhs->ctx, -1))
             {
                 duk_pop(dhs->ctx);
-                if(duk_get_prop_string(dhs->ctx, dhs->func_idx, "module"))
+                if(duk_get_prop_string(dhs->ctx, -1, "module"))
                 {
                     printerr( "timeout in module:%s()\n", duk_to_string(dhs->ctx, -1));
                 }
@@ -1991,7 +2000,10 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
         }
         send500(req, "Timeout in Script");
     }
-
+#ifdef RP_TIMEO_DEBUG
+    gettimeofday(&now, NULL);
+    printf("at end: now= %d.%06d, timeout=%d.%6d\n",(int)now.tv_sec, (int)now.tv_usec, (int)ts.tv_sec, (int)(ts.tv_nsec/1000));
+#endif
     pthread_join(script_runner, NULL);
     pthread_cond_destroy(&(dhr->cond));
     free(dhr);
