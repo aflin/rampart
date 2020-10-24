@@ -2818,26 +2818,92 @@ duk_ret_t duk_fwrite(duk_context *ctx)
 
 duk_ret_t duk_fclose(duk_context *ctx)
 {
-    FILE *f = getfh(ctx,0,"fclose()");
-    pthread_mutex_t *lock;
-    
-    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("filelock") );
-    lock=duk_get_pointer(ctx, -1);
-    if (lock)
+    if (!duk_is_object(ctx, 0))
     {
-        free(lock);
-        duk_pop(ctx);
-        duk_push_pointer(ctx,NULL);
-        duk_put_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filelock") );
-    } 
-
-    if(f)
-    {
-        fclose(f);
-        duk_push_pointer(ctx,NULL);
-        duk_put_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filehandle") );
+        RP_THROW(ctx, "error fclose(): parameter is not a filehandle object");
     }
+    else
+    {
+        FILE *f=NULL;
 
+        if(duk_get_prop_string(ctx, 0, "stream"))
+        {
+            const char *s=duk_require_string(ctx,-1);
+            FILE *f=NULL;
+            if (!strcmp(s,"stdout"))
+                f=stdout;
+            else if (!strcmp(s,"stderr"))
+                f=stderr;
+            else if (!strcmp(s,"accessLog"))
+                f=access_fh;
+            else if (!strcmp(s,"errorLog"))
+                f=error_fh;
+            else
+                RP_THROW(ctx,"error: fclose({stream:\"streamName\"},...): streamName must be stdout, stderr, accessLog or errorLog");
+
+            fclose(f);
+            return 0;
+        }
+        else
+        {
+            pthread_mutex_t *lock;
+
+            duk_pop(ctx);
+            f = getfh(ctx,0,"fclose()");
+            
+            duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("filelock") );
+            lock=duk_get_pointer(ctx, -1);
+            if (lock)
+            {
+                free(lock);
+                duk_pop(ctx);
+                duk_push_pointer(ctx,NULL);
+                duk_put_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filelock") );
+            } 
+
+            if(f)
+            {
+                fclose(f);
+                duk_push_pointer(ctx,NULL);
+                duk_put_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filehandle") );
+            }
+        }
+    }
+    return 0;
+}
+
+duk_ret_t duk_fflush(duk_context *ctx)
+{
+    if (!duk_is_object(ctx, 0))
+    {
+        RP_THROW(ctx, "error fclose(): parameter is not a filehandle object");
+    }
+    else
+    {
+        FILE *f=NULL;
+
+        if(duk_get_prop_string(ctx, 0, "stream"))
+        {
+            const char *s=duk_require_string(ctx,-1);
+            FILE *f=NULL;
+            if (!strcmp(s,"stdout"))
+                f=stdout;
+            else if (!strcmp(s,"stderr"))
+                f=stderr;
+            else if (!strcmp(s,"accessLog"))
+                f=access_fh;
+            else if (!strcmp(s,"errorLog"))
+                f=error_fh;
+            else
+                RP_THROW(ctx,"error: fflush({stream:\"streamName\"},...): streamName must be stdout, stderr, accessLog or errorLog");
+
+            fflush(f);
+            return 0;
+        }
+        duk_pop(ctx);
+        f = getfh_nonull(ctx,0,"fflush()");
+        fflush(f);
+    }
     return 0;
 }
 
@@ -3028,6 +3094,9 @@ void duk_printf_init(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_fclose, 1);
     duk_put_prop_string(ctx, -2, "fclose");
+
+    duk_push_c_function(ctx, duk_fflush, 1);
+    duk_put_prop_string(ctx, -2, "fflush");
 
     duk_push_c_function(ctx, duk_fseek, 3);
     duk_put_prop_string(ctx, -2, "fseek");
