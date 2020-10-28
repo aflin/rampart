@@ -1357,17 +1357,6 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     return 0;
 }
 
-/* if false, turn off.  Otherwise turn on */
-duk_ret_t duk_rp_sql_singleuser(duk_context *ctx)
-{
-    if (duk_is_boolean(ctx, 0) && duk_get_boolean(ctx, 0) == 0)
-        TXsingleuser = 0;
-    else
-        TXsingleuser = 1;
-
-    return 0;
-}
-
 /* **************************************************
    Initialize Sql module 
    ************************************************** */
@@ -1423,10 +1412,6 @@ duk_ret_t duk_open_module(duk_context *ctx)
     /* Set Sql.prototype = protoObj */
     duk_put_prop_string(ctx, -2, "prototype"); /* -> stack: [ {}, Sql-->[prototype-->{exe=fn_exe,...}] ] */
     duk_put_prop_string(ctx, -2, "init");      /* [ {init()} ] */
-
-    /* for single_user */
-    duk_push_c_function(ctx, duk_rp_sql_singleuser, 1 /*nargs*/);
-    duk_put_prop_string(ctx, -2, "singleUser");
 
     duk_push_c_function(ctx, RPfunc_stringformat, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "stringFormat");

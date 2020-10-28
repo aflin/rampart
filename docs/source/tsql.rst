@@ -1,3 +1,5 @@
+Tsql Command Line Utility
+=========================
 ::
 
     tsql [-a command] [-c [-w width]] [-l rows] [-hqm?] [-d database]

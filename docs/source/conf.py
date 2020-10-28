@@ -55,7 +55,17 @@ html_theme = "neo_rtd_theme"
 html_theme_path = [sphinx_theme.get_html_theme_path('neo_rtd_theme')]
 
 
+pygments_style = 'sphinx'
+
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
+# ADDED to allow wrapping in tables: 
+# https://rackerlabs.github.io/docs-rackspace/tools/rtd-tables.html
+# -ajf
+html_context = {
+    'css_files': [
+        '_static/theme_overrides.css',  # override wide tables in RTD theme
+        ],
+     }
