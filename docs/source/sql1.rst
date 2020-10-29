@@ -23,11 +23,8 @@ We include the nearly all of it here for completeness and as it may
 provide a deeper understanding of philosophy behind the library's 
 functionality.
 
-JavaScript Functions
---------------------
-
-Loading the Module
-~~~~~~~~~~~~~~~~~~
+Loading the Javascript Module
+-----------------------------
 
 Loading of the sql module from within Rampart JavaScript is a simple matter
 of using the ``require`` statement:
@@ -54,15 +51,15 @@ Return value:
     }
 
 The returned object contains functions that can be split into two groups:
-`Database functions`_ and `String functions`_.
+`Database Functions`_ and `String Functions`_.
 
 Database Functions
-~~~~~~~~~~~~~~~~~~
+------------------
 
 .. _initconst:
 
 init() constructor
-""""""""""""""""""
+~~~~~~~~~~~~~~~~~~
 
 The ``init`` constructor function takes a path (and an optional boolean) as 
 parameters and returns an object representing a new connection to the specified 
@@ -108,7 +105,7 @@ current user.
 
 
 exec()
-""""""
+~~~~~~
 
 The exec function executes a sql statement on the database opened with
 :ref:`init() <initconst>`.  It takes a string containing a sql statement and an optional
@@ -526,7 +523,7 @@ Full Example:
 
 
 eval()
-""""""
+~~~~~~
 
 The ``eval`` function is a shortcut for executing sql server functions where
 only one computed result is desired.
@@ -557,7 +554,7 @@ See :ref:`sql-server-funcs:Server functions` for a complete list of Server
 functions.
 
 set()
-"""""
+~~~~~
 
 The ``set`` function sets server properties.  For a full listing, see
 :ref:`sql-set:Server Properties`. Arguments are given as keys with
@@ -578,7 +575,7 @@ Example:
 
 
 close()
-"""""""
+~~~~~~~
 
 In general it is not necessary to use ``close()`` as the "connection" to the
 database is not over a socket.  However, if resources to a database are no
@@ -587,13 +584,12 @@ even after calling ``sql.close()``, other ``sql.*`` continue to function
 properly and in the same manner as when the "connection" was first opened.
 
 String Functions
-~~~~~~~~~~~~~~~~
-
+----------------
 As Texis is adept at handling text information, it includes several
 text handling functions which Rampart exposes for use in JavaScript.
 
 stringFormat()
-""""""""""""""
+~~~~~~~~~~~~~~
 
 The ``stringFormat()`` function is identical to the server function
 :ref:`sql-server-funcs:stringformat`, except that it is not limited to five
@@ -615,7 +611,7 @@ Return Value:
    The formatted string.
 
 Escape Sequences
-''''''''''''''''
+""""""""""""""""
 The following escape sequences are recognized in the format string:
 
 *   ``\n`` Newline (ASCII 10)
@@ -631,7 +627,7 @@ The following escape sequences are recognized in the format string:
 *   ``\ooo`` Octal escape. ooo is 1 to 3 octal digits.
 
 Standard Formats
-''''''''''''''''
+""""""""""""""""
 
 A format code is a ``%`` (percent sign), followed by zero or more flag characters,
 an optional width and/or precision size, and the format character itself. The 
@@ -673,7 +669,7 @@ A simple example (with its output):
    /* output = "This is test number 42 (in hex: 2a)." */
 
 Standard Flags
-''''''''''''''
+""""""""""""""
 After the ``%`` sign (and before the format code letter), zero or more of the 
 following flags may appear:
 
@@ -788,7 +784,7 @@ are for compatibility with the C function printf(), and are not generally
 needed.
 
 Extended Flags
-''''''''''''''
+""""""""""""""
 
 The following flags are available for format codes, in addition to the standard
 printf() flags described above:
@@ -910,7 +906,130 @@ Example:
    var output=Sql.stringFormat("You owe $%10.2kf to us.", 56387.34");
    /* output  = "You owe $ 56,387.34 to us." */
 
+Metamorph Hit Mark-up
+"""""""""""""""""""""
 
+The ``%s``, ``%H``, ``%V`` and ``%v`` stringFormat codes can execute Metamorph queries on the
+string argument and mark-up the resulting hits.  An ``m`` flag to these codes
+indicates that Metamorph hit mark-up should occur; the Metamorph query
+string is then taken to be the next argument (before the normal string
+argument to be searched and printed).  The m flag and its sub-flags are only
+valid for the ``%s`` and ``%H`` codes.
+
+Following the m flag can be any of the following sub-flags.  These must
+immediately follow the m flag, as some letters have other meanings
+elsewhere:
+
+*   ``I`` for inline stylesheet (<span style=...>) highlighting with different styles per term
+*   ``C`` for class (<span class=...>) highlighting with different classes per term
+*   ``b`` for HTML bold highlighting of hits
+*   ``B`` for VT100 bold highlighting of hits
+*   ``U`` for VT100 underline highlighting of hits
+*   ``R`` for VT100 reverse-video highlighting of hits
+*   ``h`` for HTML HREF highlighting (default)
+*   ``n`` indicates that hits that overlap tags should not be truncated/moved
+*   ``p`` for paragraph formatting: print "<p/>" at paragraph breaks
+
+*   ``P`` same as ``p``, but use (next additional argument) REX expression to
+    match paragraph breaks.  If given twice (PP), use another additional
+    argument after REX expression as replacement string, instead of "<p/>. 
+    PP was added in version 6.
+
+*   ``c`` to continue hit count into next query call
+*   ``N`` to mark up NOT terms as well
+*   ``e`` to mark up the exact query (no queryfixupmode/NOT processing)
+*   ``q`` to mark up the query itself, not the text, e.g. as a legend
+
+For example, to highlight query terms from $query in the text contained in
+$buffer in different colors, insert paragraph breaks, and escape the output
+to be HTML-safe, use:
+
+
+<fmt "%mIpH" $query $buffer>
+
+Each hit found by the query has each of its sets' hits (e.g.  each term)
+highlighted in the output.  With I and/or C highlighting, if there are
+delimiters used in the query, the entire delimited region is also
+highlighted.  The Metamorph query uses the same apicp defaults and
+parameters as SQL queries.  These can be changed with the apicp function
+(here).
+
+If a width is given for the format code, it indicates the character offset
+in the string argument to begin the query and printing (0 is the first
+character).  Thus a large text argument can be marked up in several chunks. 
+Note that this differs from the normal behavior of the width, which is to
+specify the overall width of the field to print in.  The precision is the
+same - it gives the maximum number of characters of the input string to
+print - only it starts counting from the width.
+
+The h flag sets HREF highlighting (the default).  Each hit becomes an HREF
+that links to the next hit in the output, with the last hit pointing back to
+the first.  In the output, the anchors for the hits are named hitN, where N
+is the hit number (starting with 1).
+
+Hits can be bold highlighted in the output with the b flag; this surrounds
+them with <b> and </b> tags.  b and h can be combined; the default if
+neither is given is HREF highlighting.  In version 5.01.1212100000 20080529
+and later, the B and U flags may be given, for VT100-terminal bold and
+underline highlighting; this may be useful for command-line scripts.  In
+version 6.00.1297382538 20110210 and later, the R flag may be given for
+VT100-terminal reverse-video highlighting.
+
+In version 6 and later, the I or C flags may be given, for inline styles or
+classes.  This allows much more flexibility in defining the markup, as a
+style or class for each distinct query term may then be defined.  The styles
+and classes used can be controlled with <fmtcp> (here).
+
+In version 5.01.1223065000 20081003 and later, the q flag may be given, to
+highlight the query itself, instead of the following text buffer (which must
+still be given but is ignored).  This can be used at the top of a
+highlighted document to give a highlighting "legend" to illustrate what
+terms are highlighted and how.  The n and e flags are also implicitly
+enabled when q is given.  Note that settings given inline with the query
+(e.g.  "@suffixproc=0") will not be highlighted (in version 6.00.1316840000
+20110924 and later), since they do not themselves ever find or match any
+terms - this helps avoid misleading the user that such "terms" will ever be
+found in the text.  However, since they are still considered separate query
+sets - because their order in the query is significant, as they only affect
+following sets - a class/style is "reserved" (i.e.  not used) for them in
+the querycyclenum rotation.
+
+Normally, hits that overlap HTML tags in the search string are truncated or
+moved to appear outside the tag in the output, so that the highlighting tags
+do not overlap them and muddle the HTML output.  The n tag indicates that
+this truncation should not be done.  (It is also not done for the %H (HTML
+escapement) format code, since the tags in the string will be escaped
+already.)
+
+The p and P flags do paragraph formatting as documented previously.
+
+The c flag indicates that the hit count should be continued for the next
+query.  By default, the last hit marked up is linked back to the first hit. 
+Therefore, each %-code query markup is self-contained: if multiple calls are
+made, the hit count (and resulting HREFs) will start over for each call,
+which may not be desired.  If the c flag is given, the last hit in the
+string is linked to the "next" hit (N+1) instead of the first, and the next
+query will start numbering hits at N+1 instead of 1.  Thus, all but the last
+query markup call by a script should use the c flag.
+
+The e flag indicates that the query should be used exactly as given. 
+Normally, queryfixupmode (here) and N flag processing is done to the query,
+which might cause more terms to be highlighted than are actually found by
+the query (e.g.  highlighting of sets in the query that are not needed to
+resolve it, if not all sets are required).  With e set, such processing is
+not done, and some apparent hits may be left unhighlighted.  This processing
+and the e flag were added in version 2.00.897097720 19980605.  See
+queryfixupmode (here) for details on how the query is modified when e is not
+given.
+
+The following example marks up each $body value from a table that matches
+the user's submitted $query string.  Each set (term) is color-coded
+differently, and the $body text is HTML-escaped:
+
+
+<sql max=10 "select body from data where body like $query">
+  <fmt "%mIH" $query $body>
+</sql>
 
 
 Introduction to Texis Sql

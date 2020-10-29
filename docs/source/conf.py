@@ -50,10 +50,14 @@ exclude_patterns = []
 # a list of builtin themes.
 #
 #html_theme = 'classic'
+
 import sphinx_theme
 html_theme = "neo_rtd_theme"
 html_theme_path = [sphinx_theme.get_html_theme_path('neo_rtd_theme')]
 
+#html_theme = 'rtcat_sphinx_theme'
+#import rtcat_sphinx_theme
+#html_theme_path = [rtcat_sphinx_theme.get_html_theme_path()]
 
 pygments_style = 'sphinx'
 
@@ -69,3 +73,24 @@ html_context = {
         '_static/theme_overrides.css',  # override wide tables in RTD theme
         ],
      }
+#html_theme_options = {
+#    'canonical_url': '',
+#    'analytics_id': 'UA-XXXXXXX-1',  #  Provided by Google in your dashboard
+#    'logo_only': False,
+#    'display_version': True,
+#    'prev_next_buttons_location': 'bottom',
+#    'style_external_links': False,
+#    'vcs_pageview_mode': '',
+#    'style_nav_header_background': 'white',
+    # Toc options
+# navigation depth 5 doesn't seem to work with
+# preferred themes
+html_theme_options = {
+    'display_version': False,
+    'collapse_navigation': True,
+    'sticky_navigation': True,
+    'navigation_depth': 4,
+    'includehidden': True,
+    'titles_only': False
+}
+     
