@@ -69,7 +69,7 @@ testFeature("insert of urls and binary md5 hash", function(){
 
 testFeature("making unique index on non-unique data", function(){
   var ret=sql.exec("create unique index urls_Md5_ux on urls(Md5);");
-  return Sql.rex(/non-unique=/,sql.lastErr).length != 0;
+  return Sql.rex(/non-unique=/,sql.errMsg).length != 0;
 });
 
 testFeature("select md5 hash, hexify, nested sql", function() {
@@ -104,7 +104,7 @@ testFeature("checking hashes in copied table", function(){
 
 testFeature("insert dup into table with unique index", function(){
   var res=sql.exec("insert into urls values (?,?);",[md5(urls[0],true),urls[0]]);
-  if ( Sql.rex(/duplicate=/,sql.lastErr).length )
+  if ( Sql.rex(/duplicate=/,sql.errMsg).length )
     return true;
 
   return false;

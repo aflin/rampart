@@ -7,7 +7,7 @@ rampart.globalize(rampart.utils);
 
 var sql=new Sql.init("./wikidb",true); /* true means make db if it doesn't exist */
 
-console.log(sql.lastErr);
+console.log(sql.errMsg);
 
 /* check if our table exists.  If not, make it */
 var ret=sql.exec("select * from SYSTABLES where NAME='wikitext'");
@@ -33,8 +33,8 @@ function procfile2(file){
            function(match,matchinfo,i){
              var sm=matchinfo.submatches;
              var ret=sql.exec("insert into wikitext values (?,?,?);", sm );
-             if (sql.lastErr.length)
-               printf('%s',sql.lastErr);
+             if (sql.errMsg.length)
+               printf('%s',sql.errMsg);
            }
          );
 }
@@ -49,8 +49,8 @@ function procfilex(file){
              var ret=sql.exec("insert into wikitext values (?,?,?);",
                [sm[1], sm[4], sm[7]]
              );
-             if (sql.lastErr.length)
-               printf('%s',sql.lastErr);
+             if (sql.errMsg.length)
+               printf('%s',sql.errMsg);
            }
          );
 }

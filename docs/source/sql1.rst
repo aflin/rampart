@@ -4,26 +4,32 @@ Preface
 
 Acknowledgment
 ~~~~~~~~~~~~~~
+
 The developers of Rampart are indebted to Thunderstone, LLC for the
 decades of development it took to create the Texis library.
+
+License
+~~~~~~~
+
+Use of the ``rampart-sql`` module is governed by the Rampart Source
+Available License.
 
 Documentation Caveat
 ~~~~~~~~~~~~~~~~~~~~
 As the Texis library encompasses more functionality than is currently
-used in Rampart, some settings and procedures may not be directly
-applicable in the context of its use from within a javascript program.
+used in Rampart. Some settings and procedures may not be directly
+applicable in the context of its use from within a JavaScript program.
 We include the nearly all of it here for completeness and as it may
 provide a deeper understanding of philosophy behind the library's 
-operation.
+functionality.
 
-
-Javascript Function
--------------------
+JavaScript Functions
+--------------------
 
 Loading the Module
 ~~~~~~~~~~~~~~~~~~
 
-Loading of the sql module from within Rampart javascript is a simple matter
+Loading of the sql module from within Rampart JavaScript is a simple matter
 of using the ``require`` statement:
 
 .. code-block:: javascript
@@ -36,7 +42,6 @@ Return value:
 
     {
         init:         {_func:true},
-        singleUser:   {_func:true},
         stringFormat: {_func:true},
         abstract:     {_func:true},
         sandr:        {_func:true},
@@ -49,7 +54,7 @@ Return value:
     }
 
 The returned object contains functions that can be split into two groups:
-Database functions and String functions.
+`Database functions`_ and `String functions`_.
 
 Database Functions
 ~~~~~~~~~~~~~~~~~~
@@ -60,14 +65,16 @@ init() constructor
 """"""""""""""""""
 
 The ``init`` constructor function takes a path (and an optional boolean) as 
-parameters and returns a new connection to the specified database.
+parameters and returns an object representing a new connection to the specified 
+database.  The return object include the following functions: ``exec()``,
+``eval()``, ``set()``, and ``close()``.
 
 .. code-block:: javascript
 
     var sql = new Sql.init(dbpath [,create]);
 
 +--------+------------+---------------------------------------------------+
-|Argument|Value       |Meaning                                            |
+|Argument|Type        |Description                                        |
 +========+============+===================================================+
 |dbpath  |String      | The path to the directory containing the database |
 +--------+------------+---------------------------------------------------+
@@ -95,29 +102,33 @@ Example:
 	/* create database if it does not exist */
 	var sql = new Sql.init("/path/to/my/db", true);
 
+Note that to create a new database, the folder ``/path/to/my/db`` must not
+exist, but ``/path/to/my`` must exist and have write permissions for the
+current user.
+
 
 exec()
 """"""
 
 The exec function executes a sql statement on the database opened with
 :ref:`init() <initconst>`.  It takes a string containing a sql statement and an optional
-array, object and/or function.  They may be specified in any order.
+array, object and/or function.  The parameters may be specified in any order.
 
 .. code-block:: javascript
 
-    var res = sql.exec(statement [, parameters, options, callback])
+    var res = sql.exec(statement [, sql_parameters, options, callback])
 
-+--------+------------------+---------------------------------------------------+
-|Argument|Value             |Meaning                                            |
++--------------+------------+---------------------------------------------------+
+|Argument      |Type        |Description                                        |
 +==============+============+===================================================+
 |statement     |String      | The sql statement                                 |
 +--------------+------------+---------------------------------------------------+
-|parameters    |Array       | `?` substitution parameters                       |
+|sql_parameters|Array       | ``?`` substitution parameters                     |
 +--------------+------------+---------------------------------------------------+
-|options       |object      | Options (skip, max, returnType, includeCounts)    |
+|options       |Object      | Options (skip, max, returnType, includeCounts)    |
 |              |            | *described below*                                 |
 +--------------+------------+---------------------------------------------------+
-|callback      |function    | a function to handle data one row at a time.      |
+|callback      |Function    | a function to handle data one row at a time.      |
 +--------------+------------+---------------------------------------------------+
 
 .. _returnval:
@@ -126,20 +137,25 @@ Return Value:
 	With no options or callback, an object is returned.  The object contains
 	two or three key/value pairs.  
 	
-	The first is ``results``: an array of objects.  Each
-	object will have a key value equal to the corresponding column name 
-	and the value equal to the corresponding field of the retrieved row.
+	Key: ``results``; Value: an array of objects.  Each
+	object will have a key set to the corresponding column name 
+	and the value set to the corresponding field of the retrieved row.
 	
-	The second is ``rowCount``: a number corresponding to the number of rows
+	Key: ``rowCount``; Value: a number corresponding to the number of rows
 	returned.
 
-	The third possible value is ``countInfo`` (if option ``includeCounts``
-	is set ``true``).  See description :ref:`below <execopts>`.
+	Key: ``countInfo``; Value: if option ``includeCounts``
+	is not set ``false``, count info is set (see description in :ref:`below <execopts>`). 
+	Otherwise	undefined.
+
+	Key:  ``columns``; Value: an array corresponding to the column names or
+	aliases selected and returned in results.
 
 	If a callback function is specified, the number of rows fetched is
-	returned.
+	returned.  The callback is given the above values as arguments in the
+	following order: ``cbfunc(row_result, index, columns, countInfo)``
 
-	Other return values are discussed under `Options` below.
+    Other return values are discussed :ref:`below <execopts>`.
 
 Statement:
     A statement is a string containing a single sql statement to be executed. A trailing
@@ -148,20 +164,22 @@ Statement:
 .. code-block:: javascript
 
     var res = sql.exec(
-    	"select * from employees where Salary > 50000 and Start_date < '2018-12-31'"
+        "select * from employees where Salary > 50000 and Start_date < '2018-12-31'"
     );
 
-Note that you must use multiple ``exec()`` for each statement to be executed.
+Note that concatenating statements separated by ``;`` is not supported in
+JavaScript, and a script must use a separate ``exec()`` for each statement 
+to be executed.
 
-Parameters:
-    Parameters are contained in array and correspond to ``?`` in the sql
+Sql Parameters:
+    Sql Parameters are specified in array and correspond to each ``?`` in the sql
     statement.  Example:
 
 .. code-block:: javascript
 
     var res = sql.exec(
-    	"select * from employees where Salary > ? and Start-date ?",
-    	[50000,"2018-12-31"]
+        "select * from employees where Salary > ? and Start-date < ?",
+        [50000, "2018-12-31"]
     );
 
 The use of Parameters can make the handling of user input safe from sql injection.
@@ -171,7 +189,7 @@ array.
 .. _execopts:
 
 Options:
-    The ``options`` object contains the following:
+    The ``options`` object may contain any of the following:
 
    * ``max`` (number):  maximum number of rows to return (default: 10).
    * ``skip`` (number): the number of rows to skip (default: 0)
@@ -179,46 +197,55 @@ Options:
      in the return object.
 
       * default: an array of objects as described :ref:`above <returnval>`.
-      * ``array``: an array of arrays. The outer array corresponds to
-        each row fetched. The inner array corresponds to the fields
+
+      * ``array``: an array of arrays. The outer array members correspond to
+        each row fetched. The inner array members correspond to the fields
         returned in each row.  No information regarding column names
         is returned.
-
-      * ``arrayh``: an array of arrays.  Same as ``array`` except that
-        the first row will contain the names of the columns. Actual
-        results begin in the second outer array member.
 
       * ``novars``: an empty array is returned.  The sql statement is
         still executed.  This may be useful for updates and deletes
         where the return value would otherwise not be used.
 
    * ``includeCounts`` (boolean): whether to include count information in the return object.
-     The information will be returned as an object in the return object
-     with the key ``countInfo``.  The numbers returned will only be
-     useful when performing an :ref:`text search <sql3:Intelligent Text Search Queries>`.
-     The ``countInfo`` contains the following:
+     Default is ``true``. The information will be returned as an object in the ``sql.exec()`` 
+     return object (or as the fourth parameter to a callback function)with the key 
+     ``countInfo``.  The numbers returned will only be useful when performing 
+     an :ref:`text search <sql3:Intelligent Text Search Queries>` on a field
+     with a fulltext index.
+     If count information is not available, the numbers will be negative.
+
+     The ``countInfo`` object contains the following:
 
       * ``indexCount`` (number): a single value estimating the number
         of matching rows.
 
       * ``rowsMatchedMin`` (number): Minimum number of rows matched *before* 
-        any ``group by``, likeprows, aggregates or multivaluetomultirow
-        are applied
+        any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
+        :ref:`sql-set:likeprows`, 
+        :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
+        :ref:`sql-set:multivaluetomultirow` are applied.
 
       * ``rowsMatchedMax`` (number): Maximum number of rows matched *before* 
-        any ``group by``, likeprows, aggregates or multivaluetomultirow
-        are applied
+        any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
+        :ref:`sql-set:likeprows`, 
+        :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
+        :ref:`sql-set:multivaluetomultirow` are applied.
 
       * ``rowsReturnedMin`` (number): Minimum number of rows matched *after* 
-        any ``group by``, likeprows, aggregates or multivaluetomultirow
-        are applied
+        any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
+        :ref:`sql-set:likeprows`, 
+        :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
+        :ref:`sql-set:multivaluetomultirow` are applied.
 
       * ``rowsReturnedMax`` (number): Maximum number of rows matched *after* 
-        any ``group by``, likeprows, aggregates or multivaluetomultirow
-        are applied
+        any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
+        :ref:`sql-set:likeprows`, 
+        :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
+        :ref:`sql-set:multivaluetomultirow` are applied.
 
 Callback:
-   A function taking as parameters (``result``, ``index`` [``countInfo``]).
+   A function taking as parameters (``result_row``, ``index``, ``columns``, ``countInfo``).
    The callback is executed once for each row retrieved:
 
    * ``result``: (array/object): depending on the setting of ``returnType``
@@ -229,9 +256,662 @@ Callback:
      used, the first ``index value`` (where ``results`` contains the column
      names) will be ``-1``.
 
+   * ``columns``: an array corresponding to the column names or
+     aliases selected and returned in results.
+   
    * ``countInfo``: an object as described above in :ref:`Options <execopts>` if the
      ``includeCounts`` option is set ``true``.  Otherwise it will be
      ``undefined``. 
+
+Full Example:
+
+.. code-block:: javascript
+
+   function pprint(obj) {
+       console.log ( JSON.stringify(obj, null, 4) );
+   }
+
+   var Sql = require("rampart-sql");
+
+   /* create database if it does not exist */
+   var sql = new Sql.init("./mytestdb",true);
+
+   /* check if table exists */
+   var res = sql.exec(
+       "select * from SYSTABLES where NAME='employees'",
+       {"returnType":"novars"} /* we only need the count */
+   );
+
+   if(res.rowCount) /* 1 if the table exists */
+   {
+       /* drop table from previous run */
+       res=sql.exec("drop table employees");
+   }
+
+   /* create the table */
+   res=sql.exec(
+           "create table employees (Classification varchar(8), " +
+           "Name varchar(16), Age int, Salary int, Title varchar(16), " +
+           "Start_date date, Bio varchar(128) )",
+           {"returnType":"novars"}
+   );
+
+   /* populate variables for insertion */
+   var cl = [
+       "principal", "principal", "salary",
+       "salary", "hourly", "intern"
+   ];
+   var name = [
+       "Debbie Dreamer", "Rusty Grump","Georgia Geek",
+       "Sydney Slacker", "Pat Particular", "Billie Barista"
+   ];
+   var age = [ 63, 58, 44, 44, 32, 22 ];
+   var salary = [ 250000, 250000, 100000, 100000, 80000, 0 ];
+   var title = [
+       "Chief Executive Officer", "Chief Financial Officer", "Lead Programmer",
+       "Programmer", "Systems Administrator", "Intern"
+   ];
+
+   /* 
+     String dates converted to local time .
+     Javascript dates are UTC unless offset
+     is given, and are inserted as is.
+   */
+   var startDate = [ 
+       '1999-12-31', 
+       '1999-12-31', 
+       '2001-3-15', 
+       new Date('2002-5-12T00:00:00.0-0800'),
+       new Date('2003-7-14'), 
+       new Date('2020-3-18')
+   ];
+
+   var bio = [
+   "Born and raised in Manhattan, New York. U.C. Berkeley graduate. " +
+       "Loves to skydive. Built Company from scratch. Still uses word-perfect.",
+
+   "Born in Switzerland, raised in South Dakota. Columbia graduate. "+
+       "Financed operation with inheritance. Has no sense of humor.",
+
+   "Stanford graduate. Enjoys pizza and beer. Proficient in Perl, COBOL,"+
+       "FORTRAN and IBM System/360",
+
+   "DeVry University graduate. Enjoys a good nap. Proficient in Python, "+
+       "Perl and JavaScript",
+
+   "High School graduate. Self taught Linux and windows administration skills. Proficient in "+
+       "Bash and GNU utilities. Capable of crashing or resurrecting machines with a single ping.",
+
+   "Harvard graduate, full ride scholarship, top of class.  Proficient in C, C++, "+
+       "Rust, Haskell Node, Python. Into skydiving. Makes a mean latte."
+   ];
+
+   /* insert rows */
+   for (var i=0; i<6; i++)
+   {
+       sql.exec(
+           "insert into employees values(?,?,?,?,?,?,?)",
+           [ cl[i], name[i], age[i], salary[i], title[i], startDate[i], bio[i] ]
+       );
+   }
+
+   sql.close();
+
+   /* create text index */
+   sql.exec("create fulltext index employees_Bio_text on employees(Bio)");
+
+   /* perform some queries */
+   res=sql.exec("select Name, Age from employees");
+   pprint(res);
+   /* expected output:
+      {
+          "columns": [
+              "Name",
+              "Age"
+          ],
+          "results": [
+              {
+                  "Name": "Debbie Dreamer",
+                  "Age": 63
+              },
+              {
+                  "Name": "Rusty Grump",
+                  "Age": 58
+              },
+              {
+                  "Name": "Georgia Geek",
+                  "Age": 44
+              },
+              {
+                  "Name": "Sydney Slacker",
+                  "Age": 44
+              },
+              {
+                  "Name": "Pat Particular",
+                  "Age": 32
+              },
+              {
+                  "Name": "Billie Barista",
+                  "Age": 22
+              }
+          ],
+          "countInfo": {
+              "indexCount": -1,
+              "rowsMatchedMin": -1,
+              "rowsMatchedMax": -2,
+              "rowsReturnedMin": -1,
+              "rowsReturnedMax": -2
+          },
+          "rowCount": 6
+      }
+   */
+
+   res=sql.exec(
+       "select Name, Age from employees",
+       {returnType:'arrayh', max:2}
+   );
+   pprint(res);
+   /* expected output:
+      {
+          "columns": [
+              "Name",
+              "Age"
+          ],  
+          "results": [
+              {
+                  "Name": "Debbie Dreamer",
+                  "Age": 63
+              },
+              {
+                  "Name": "Rusty Grump",
+                  "Age": 58
+              }
+          ],
+          "countInfo": {
+              "indexCount": -1,
+              "rowsMatchedMin": -1,
+              "rowsMatchedMax": -2,
+              "rowsReturnedMin": -1,
+              "rowsReturnedMax": -2
+          },
+          "rowCount": 2
+      }
+      {
+          "columns": [
+              "Name"
+          ],
+          "results": [
+              {
+                  "Name": "Georgia Geek"
+              },
+              {
+                  "Name": "Sydney Slacker"
+              },
+              {
+                  "Name": "Pat Particular"
+              }
+          ],
+          "countInfo": {
+              "indexCount": 4,
+              "rowsMatchedMin": 0,
+              "rowsMatchedMax": 4,
+              "rowsReturnedMin": 0,
+              "rowsReturnedMax": 4
+          },
+          "rowCount": 3
+      }
+      first 2 of 2 matches
+      - ["Name","Salary"]
+      0 ["Debbie Dreamer",250000]
+      1 ["Billie Barista",0]
+   */
+   res=sql.exec(
+       "select Name from employees where Bio likep 'proficient' and Salary > 50000",
+       {includeCounts: true}
+   );
+   pprint(res);
+
+   /* expected output:
+      {
+          "columns": [
+              "Name"
+          ],
+          "results": [
+              {
+                  "Name": "Georgia Geek"
+              },
+              {
+                  "Name": "Sydney Slacker"
+              },
+              {
+                  "Name": "Pat Particular"
+              }
+          ],
+          "countInfo": {
+              "indexCount": 4,
+              "rowsMatchedMin": 0,
+              "rowsMatchedMax": 4,
+              "rowsReturnedMin": 0,
+              "rowsReturnedMax": 4
+          },
+          "rowCount": 3
+      }
+   */
+
+   /* skydive => skydiving */
+   sql.set({
+       minwordlen: 5,
+       suffixproc: true
+   });
+
+   res=sql.exec(
+       "select Name, Salary from employees where Bio likep 'skydive' order by Salary desc",
+       {returnType:"array"},
+       function (res, i, coln, cinfo) {
+           if(!i) {
+               console.log("first 2 of "+cinfo.indexCount+" matches");
+               console.log("-", coln);
+           }
+           console.log(i,res);
+       }
+   );
+   /* expected output:
+      first 2 of 2 matches
+      - ["Name","Salary"]
+      0 ["Debbie Dreamer",250000]
+      1 ["Billie Barista",0]
+   */
+
+   console.log(res); // 2
+
+
+eval()
+""""""
+
+The ``eval`` function is a shortcut for executing sql server functions where
+only one computed result is desired.
+
+With ``exec()``, this:
+
+.. code-block:: javascript
+
+   var Sql = require("rampart-sql");
+
+   var sql = new Sql.init("/path/to/my/db", true);
+
+   var res1 = sql.exec("select joinpath('one', 'two/', '/three/four', 'five') newpath");
+   var res=res1.results[0];
+   console.log(res); /* {newpath:"one/two/three/four/five"} */
+
+can be more easily written as:
+    
+.. code-block:: javascript
+
+   var Sql = require("rampart-sql");
+   var sql = new Sql.init("/path/to/my/db", true);
+   
+   var res = sql.eval("joinpath('one', 'two/', '/three/four', 'five') newpath");
+   console.log(res); /* {newpath:"one/two/three/four/five"} */
+
+See :ref:`sql-server-funcs:Server functions` for a complete list of Server
+functions.
+
+set()
+"""""
+
+The ``set`` function sets server properties.  For a full listing, see
+:ref:`sql-set:Server Properties`. Arguments are given as keys with
+corresponding values set to a string, number or boolean as appropriate.
+Note that booleans ``true``/``false`` are equivalent to setting 
+``0``/``1``, ``on``/``off``, or ``yes``/``no`` as described in 
+:ref:`sql-set:Server Properties`.
+There is no return value.
+
+Example:
+
+.. code-block:: javascript
+
+	sql.set({
+		likepleadbias: 750,
+		likepallmatch: true
+	});
+
+
+close()
+"""""""
+
+In general it is not necessary to use ``close()`` as the "connection" to the
+database is not over a socket.  However, if resources to a database are no
+longer needed, ``close()`` will clean up some of those resources.  Note that 
+even after calling ``sql.close()``, other ``sql.*`` continue to function
+properly and in the same manner as when the "connection" was first opened.
+
+String Functions
+~~~~~~~~~~~~~~~~
+
+As Texis is adept at handling text information, it includes several
+text handling functions which Rampart exposes for use in JavaScript.
+
+stringFormat()
+""""""""""""""
+
+The ``stringFormat()`` function is identical to the server function
+:ref:`sql-server-funcs:stringformat`, except that it is not limited to five
+arguments.
+
+.. code-block:: javascript
+
+    var output = new Sql.stringFormat(format [,args, ...]);
+
++--------+------------+---------------------------------------------------+
+|Argument|Type        |Description                                        |
++========+============+===================================================+
+|format  |String      | A printf() style format                           |
++--------+------------+---------------------------------------------------+
+|args    |Varies      | Arguments corresponding to ``%`` format options   |
++--------+------------+---------------------------------------------------+
+
+Return Value:
+   The formatted string.
+
+Escape Sequences
+''''''''''''''''
+The following escape sequences are recognized in the format string:
+
+*   ``\n`` Newline (ASCII 10)
+*   ``\r`` Carriage return (ASCII 13)
+*   ``\t`` Tab (ASCII 9)
+*   ``\a`` Bell character (ASCII 7)
+*   ``\b`` Backspace (ASCII 8)
+*   ``\e`` Escape character (ASCII 27)
+*   ``\f`` Form feed (ASCII 12)
+*   ``\v`` Vertical tab (ASCII 11)
+*   ``\\`` Backslash
+*   ``\xhh`` Hexadecimal escape. hh is 1 or more hex digits.
+*   ``\ooo`` Octal escape. ooo is 1 to 3 octal digits.
+
+Standard Formats
+''''''''''''''''
+
+A format code is a ``%`` (percent sign), followed by zero or more flag characters,
+an optional width and/or precision size, and the format character itself. The 
+standard format codes, which are the same as in printf(), and how they print 
+their arguments are:
+
+*   ``%d`` or %i Integer number.
+*   ``%u`` Unsigned integer number.
+*   ``%x`` or %X Hexadecimal (base 16) number; upper-case letters used if 
+    upper-case X.
+
+*   ``%o`` Octal (base 8) number.
+*   ``%f`` Floating-point decimal number.
+*   ``%e`` or %E Exponential floating-point number (e.g. 1.23e+05). Upper-case
+    exponent if upper-case E.
+
+*   ``%g`` or %G Either %f or %e format, whichever is shorter. Upper-case 
+    exponent if upper-case G.
+
+*   ``%s`` A text string. The j flag (here) may be given for newline 
+    translation.
+
+*   ``%c`` A single character. If the argument is a decimal, hexadecimal
+    or octal integer, it is interpreted as the ASCII code of the character
+    to print. If the ! flag is given, a character is decoded instead: prints
+    the decimal ASCII code for the first character of the argument.
+
+*   ``%%`` A percent-sign; no argument and no flags are given. This
+    is for printing out a literal ``%`` in the format string, which 
+    otherwise would be interpreted as a format code.
+
+A simple example (with its output):
+
+.. code-block:: javascript
+
+   var Sql=require("rampart-sql");
+   var output = Sql.stringFormat("This is %s number %d (in hex: %x).",
+   	 "test", 42, 42);
+   /* output = "This is test number 42 (in hex: 2a)." */
+
+Standard Flags
+''''''''''''''
+After the ``%`` sign (and before the format code letter), zero or more of the 
+following flags may appear:
+
+..
+  Warning: the ``⠀`` line below is not a space, it is a U+2800 Braille Pattern Blank
+  the only way I could get a literal string with one white space character.
+
+*   ``#`` (pound sign) Specifies that the value should be printed using an 
+    "alternate format", depending on the format code.  For format code(s):
+
+   *   ``%o`` A non-zero result will be prepended with 0 (zero) in the output.
+   *   ``%x``, %X A non-zero result will be prepended with ``0x`` or ``0X``.
+
+   *   ``%e``, ``%E``, ``%f``, ``%g``, ``%G`` The result will always contain 
+       a decimal point, even if no digits follow it (normally, a decimal
+       point appears in the results of those conversions only if a digit
+       follows).  For ``%g`` and ``%G`` conversions, trailing zeros are not
+       removed from the result as they would otherwise be.
+
+   *   ``%b`` A non-zero result will be prepended with 0b.
+
+*   ``0`` (digit zero) Specifies zero padding. For all numeric formats,
+    the output is padded on the left with zeros instead of spaces.
+
+*   ``-`` (negative field width) Indicates that the result is to be left 
+    adjusted in the output field instead of right.  A ``-`` overrides a
+    ``0`` flag if both are present.  (For the ``%L`` extended code, this
+    flag indicates the argument is a latitude.)
+
+*   ``⠀`` (a space) Indicates that a space should be left before a positive
+    number produced by a signed format (e.g.  ``%d``, ``%i``, ``%e``,
+    ``%E``, ``%f``, ``%g``, or ``%G``).
+
+*   ``+`` (plus sign) If given with a numeric code, indicates that a sign 
+    always be placed before a number produced by a signed format.  A ``+``
+    overrides a space if both are used.
+
+For the ``%L`` extended code, a + flag indicates the argument is a location
+- latitude and longitude, or geocode.
+
+If given with a string code, ``+`` indicates that if the string value
+exceeds the given precision, truncate the string by a further 3 bytes, and
+append an ellipsis ("...").  This can be useful to give an indication of
+when a value is being truncated on display.
+
+Examples:
+
+.. code-block:: javascript
+
+   var Sql=require("rampart-sql");
+   var output = Sql.stringFormat("%#x %#x", 42, 0);
+   var output2= Sql.stringFormat("%+d %+d",  42, -42);
+   /*
+      0x2a 0
+      +42 -42
+   */
+
+Following any flags, an optional width number may be given.  This indicates
+the minimum field width to print the value in (unless using the ``m`` flag;
+see `Metamorph Hit Mark-up`_).  If the printed value is narrower, the output
+will be padded with spaces on the left.  Note the horizontal spacing in this
+example (output is the right column):
+
+.. code-block:: javascript
+
+   var x = [42, 12345, 87654321, 912];
+   for (var i=0; i<x.length; i++)
+      console.log(Sql.stringFormat("%6d",x[i]));
+   /* output:
+       42
+    12345
+   87654321
+      912
+   */
+
+After the width, a decimal point (``.``) and precision number may be given. 
+For the integer formats (``%d``, ``%i``, ``%o``, ``%u``, ``%x`` and ``%X``),
+the precision indicates the minimum number of digits to print; if there are
+fewer the output value is prepended with zeros.  For the ``%e``, ``%E`` and
+``%f`` formats, the precision is the number of digits to appear after the
+decimal point; the default is 6.  For the ``%g`` and ``%G`` formats, the
+precision is the maximum number of significant digits (default 6).  For the
+``%s`` (string) format, it is the maximum number of characters to print.
+
+Examples:
+
+.. code-block:: javascript
+
+   var output = Sql.stringFormat("Error number %5.3d:", 5);
+   /* output = "Error number   005:" */
+
+   output = Sql.stringFormat("The %1.6s is %4.2f.", 
+      "answering machine", 123.456789);
+   /* output="The answer is 123.46." */
+
+The field width or precision, or both, may be given as a parameter instead
+of a digit string by using an * (asterisk) character instead.  In this case,
+the width or precision will be taken from the next (integer) argument. 
+Example (note spacing):
+
+.. code-block:: javascript
+
+   var width = 10;
+   var prec = 2;
+   var output = Sql.stringFormat("%*.*f", width, prec, 123.4567);
+   /* output = "    123.46" */
+
+An ``h`` or ``l`` (el) flag may appear immediately before the format code
+for numeric formats, indicating a short or long value (``l`` has a different
+meaning for ``%H``, ``%/`` and ``%:``, see `Extended Flags`_).  These flags
+are for compatibility with the C function printf(), and are not generally
+needed.
+
+Extended Flags
+''''''''''''''
+
+The following flags are available for format codes, in addition to the standard
+printf() flags described above:
+
+*   ``a`` Next argument is strftime() format string; used for ``%t``/``%T``
+    time code (here).
+
+*   ``k`` For numeric formats, print a comma (,) every 3 places to the left
+    of the decimal (e.g.  every multiple of a thousand).
+
+*   ``K`` (upper case "K") Same as ``k``, but print the next argument instead of
+    a comma.
+
+*   ``&`` (ampersand) Use the HTML entity ``&nbsp``; instead of space when
+    padding fields.  This is of some use when printing in an HTML
+    environment where spaces are normally compressed when displayed, and
+    thus space padding would be lost.
+
+*   ``!`` (exclamation point) When used with ``%H``, ``%U``, ``%V``, ``%B``,
+    ``%c``, ``%W`` or ``%z``, decode appropriately instead of encoding. 
+    (Note that for ``%H``, only ampersand-escaped entities are decoded)
+
+*   ``_`` (underscore) Use decimal ASCII value 160 instead of 32 (space)
+    when padding fields.  This is the ISO Latin-1 character for the HTML
+    entity &nbsp;.  For the ``%v`` (UTF-16 encode) format code, a leading
+    BOM (byte-order-mark) will not be output.  For the ``%!v`` (UTF-16
+    decode) format code, a leading BOM in the input will be preserved
+    instead of stripped in the output.  For the ``%Q``/``%!Q``
+    (quoted-printable encode/decode) format codes, the "Q" encoding will be
+    used instead of quoted-printable.
+
+*   ``^`` (caret) Output only XML-safe characters; unsafe characters are
+    replaced with a question mark.  Valid for ``%V``, ``%=V``, ``%!V``,
+    ``%v``, ``%!v``, ``%W``, ``%!W`` and ``%s`` format codes (text is
+    assumed to be ISO-8859-1 for ``%s``).  XML safe characters are all
+    characters except: ``U+0000`` through ``U+0008`` inclusive, ``U+000B``,
+    ``U+000C``, ``U+000E`` through ``U+001F`` inclusive, ``U+FFFE`` and
+    ``U+FFFF``.
+
+*   ``=`` (equal sign) Input encoding is "equal to" (the same) as output
+    encoding, i.e.  just validate it and replace illegal encoding sequences
+    with "?".  Unescaping of HTML sequences in the source (``h`` flag) is
+    disabled.  Valid for ``%V`` format code.
+
+*   ``|`` (pipe) Interpret illegal encoding sequences in the source as
+    individual ISO-8859-1 bytes, instead of replacing with the "?"
+    character.  When used with ``%=V`` for example, this allows UTF-8 to be
+    validated and passed through as-is, yet isolated ISO-8859-1 characters
+    (if any) will still be converted to UTF-8.  Valid for ``%!V``, ``%=V``,
+    ``%v``, ``%W`` and %``!W`` format codes.
+
+*   ``h`` For ``%!V`` (UTF-8 decode) and ``%v`` (UTF-16 encode): if given once,
+    HTML-escapes out-of-range (over 255 for ``%!V`` , over ``0x10FFFF`` for
+    %v) characters instead of replacing with ``?``.  For ``%V`` (UTF-8
+    encode) and ``%!v`` (UTF-16 decode): if given once, unescapes HTML
+    sequences first; this allows characters that are out-of-range in the
+    input encoding to be represented natively in the output encoding.  For
+    ``%V``, ``%!V``, ``%v``, ``%!v``, ``%W`` and ``%!W``, if given twice
+    (e.g.  ``hh``), also HTML-escapes low (7-bit) values (e.g.  control
+    chars, ``<``, ``>``) in the output.  If given three times (e.g. 
+    ``hhh``), just HTML-escapes 7-bit values; does not also decode HTML
+    entities in the input.  Note that the ``h`` flag is also used in another
+    context as a sub-flag for `Metamorph Hit Mark-up`_.
+
+*   ``j`` (jay)   For the ``%s``, ``%H``, ``%v``, ``%V``, ``%B`` and ``%Q``
+    format codes (and their ``!``-decode variants), also do newline
+    translation.  Any of the newline byte sequences CR, LF, or CRLF in the
+    input will be replaced with the machine-native newline sequence in the
+    output, instead of being output as-is.  This allows text newlines to be
+    portably "cleaned up" for the current system, without having to detect
+    what the system is.  If ``c`` is given immediately after the ``j``,
+    ``CR`` is used as the output sequence, instead of the machine-native
+    sequence.  If ``l`` (el) is given immediately after the ``j``, ``LF`` is
+    used as the output sequence.  If both ``c`` and ``l`` are given (in
+    either order), CRLF is used.  The ``c`` and ``l`` subflags allow a
+    non-native system's newline convention to be used, e.g.  by a web
+    application that is adapting to browsers of varying operating systems. 
+    Note that for the ``%B`` format code, input CR/LF bytes are never
+    translated (since it is a binary encoding); ``j`` and its subflags only
+    affect the output of "soft" line-wrap newlines that do not correspond to
+    any input character.
+
+*   ``l`` (el) For ``%H``, only encode low (7-bit) characters; leave characters
+    above 127 as-is.  This is useful when HTML-escaping UTF-8 text, to avoid
+    disturbing multi-byte characters.  When combined with ``!`` (decode),
+    escape sequences are decoded to low (7-bit) strings, e.g.  "&copy;" is
+    replaced with "(c)" instead of ASCII character 169.  (The ``l`` flag is
+    also used with numeric format codes to indicate a long integer or
+    double, and with the ``j`` flag as a subflag.) The l flag has yet
+    another meaning when used with the %/ or %: format codes; see discussion
+    of those codes above.
+
+*   ``m`` For the ``%s``, ``%H``, ``%V`` and ``%v`` codes, mark up with a
+    Metamorph query.  See next section for a discussion of this flag and its
+    subflags ``b``, ``B``, ``U``, ``R``, ``h``, ``n``, ``p``, ``P``, ``c`` and
+    ``e``.
+
+*   ``p`` Perform paragraph markup (for ``%s`` and ``%H`` codes).  Paragraph breaks
+    (text matching the REX expression "$=\space+") are replaced with "<p/>"
+    tags in the output.  For the ``%U`` code, do path escapement: space is encoded
+    to ``%20`` not ``+``, and  ``&+;=`` are left as-is and ``+`` is
+    not decoded when also using ``!``.
+
+*   ``P`` (upper case "P") For ``%s`` and ``%H``, same as p, but use the next
+    additional argument as the REX expression to match paragraph breaks.  If
+    given twice (PP), use another additional argument after the REX expression
+    as the replacement string, instead of "<p/>".  PP was added in version 6.
+
+*   ``q`` For the %U code, in version 7 and earlier, do full-encoding:
+    encode "/" (forward slash) and "@" (at-sign) as well (implies ``p`` flag as
+    well).
+
+For the %W code, only the "Q" encoding will be used (no base64).
+
+Example:
+
+.. code-block:: javascript
+
+   var output=Sql.stringFormat("You owe $%10.2kf to us.", 56387.34");
+   /* output  = "You owe $ 56,387.34 to us." */
+
+
+
 
 Introduction to Texis Sql
 -------------------------
@@ -244,84 +924,62 @@ What is it?
 """""""""""
 Texis is a relational database server that specializes in managing
 textual information. It has many of the same abilities as products like
-Oracle(r), Informix(r), and Sybase(r) with one key difference: it can
-intelligently search and manage databases that have natural language
-text in them, which is something they can’t do.
+mysql, sqlite3 and postgresql with one key difference: its primary purpose
+is to intelligently search and manage databases that contain natural language
+text, which is invariably a secondary add-on function for other databases.
 
 Why is that different?
 """"""""""""""""""""""
-Most other products are capable of storing a limited field that contains
-text, and usually that information is limited to being less than 500
-characters long. And when it comes to finding something in that field
-you’re limited to being able to search for a single word or string of
-characters.
-In Texis you can store text of any size, and you’re able to query that
-information in natural language for just about anything you can imagine.
-We took our powerful Metamorph concept based text engine and built a
-specialized relational database server around it so that you have the
-best of both worlds.
+Most other products are optimized for sql queries for traditional sql
+relational database functionality.  Texis has been highly optimized to handle 
+Full Text Search functions.  Where Full Text Search is an afterthought for
+other sql database engines which support it, it is the primary focus of Texis.
 
-What can we do with it?
-"""""""""""""""""""""""
-Look at your current info-system and for the occurrence of anything that
+In Texis you can store text of nearly any size, and you’re able to query that
+information in natural language for any imaginable query.
+Texis utilizes the powerful Metamorph concept based text engine and has a 
+specialized relational database server built around it so that both
+relational models and Full Text Search are well supported.
+
+What can it do?
+"""""""""""""""
+Texis is designed to efficiently handle documents and data that
 contains natural language information. This includes things like:
-e-mail, personnel records, research reports, memos, faxes, product
-descriptions, and word processing documents. Now imagine being able to
-collect and perform queries against these items as if they were a
-traditional database.
-If you look closely enough you’ll probably discover that about half the
-information that is resident within the organization has natural
-language or text as one of its most significant attributes. And chances
-are that there is little or no ability to manage and query these
-information resources based on their content. Traditional databases are
-fine as long as you are just adding up numbers or manipulating
-inventories, but people use language to communicate and no product
-except Texis can provide real access to the “natural language”
-components.
+e-mail, personnel records, research reports, memos, product
+descriptions, web pages, and general documents.  Texis allows you to
+import, associate, organize  and perform natural language queries against these
+items in a similar manner as traditional database, with the power of a fast, 
+memory efficient Full Text Search engine. It provides a single system to handle
+relational data in combination with a natural language record retrieval system.
 
 Features Unique to Texis
 """"""""""""""""""""""""
-Before we give you the specifications, we need to explain some features
+Before exploring the specifications, here are some features
 that are unique to Texis.
 
 Zero Latency Insert
 """""""""""""""""""
 When a record is added or updated within a Texis table it is available
-for retrieval immediately. With any other product you would have to wait
-until the record was “indexed” before it would become available. The
-reason for this follows.
+for retrieval immediately. This includes documents with fields that have a
+fulltext index on them.  Optimization of fulltext documents is automatic, so
+there is no need to write maintenance code.
 
 Variable Sized Records
 """"""""""""""""""""""
-Most databases allocate disk space in fixed size blocks that each
-contain a fixed number of records. The space allocated to each record is
-the maximum size that that record definition allows.
-For example, let’s say you have a table that contains a 6 digit fixed
-length part number, and a variable length part description that could be
-up to 1000 characters long. Under the definition above, a 10,000 record
-database would require at least 10,060,000 bytes of disk space.
-But let’s look a little closer at the facts behind our table. Our
-*maximum* part description is 1000 bytes, but that’s only because we
-have a few parts with really long winded descriptions; most of our part
-descriptions have an average length of about 100 characters. This is
-where Texis comes in; it only stores what you use, not what you might
-use. This means that our table would only require about 1 MB of disk
-space instead of 10 Mbytes.
-But wait, it doesn’t stop there! We have another hat trick. Because we
-store our records in this manner we also remove the limitation of having
-to specify the maximum length of a variable length field. In Texis any
-variable field can contain up to a Gigabyte. (Not that we recommend 1
-Gig fields.)
+Like many databases, Texis allows fields with variable length text.  The
+``varchar`` field is set with a suggested size, but is efficiently managed
+regardless of the amount of text added. In Texis, any variable sized field can
+contain up to one gigabyte.
 
 Indirect Fields
 """""""""""""""
 Indirect fields are byte fields that exist as real files within the file
 system. This field type is usually used when you are creating a database
 that is managing a collection of files on the server (like word
-processing files for instance). They can also be used when the 1 Gig
+processing files for instance). They can also be used when the one gigabyte
 limitation of fields is too small.
-You may use indirect fields to point to your files anywhere on your file
-system or you may let Texis manage them under the database.
+Texis can use indirect fields that point to your files anywhere on the file
+system and optionally can manage them under the database.
 Since files may contain any amount of any kind of data indirect fields
 may be used to store arbitrarily large binary objects. These Binary
 Large OBjects are often called BLOBs in other RDBMSes.
@@ -333,26 +991,25 @@ better suited to externally-managed files, or data in which nearly every
 row’s field value is very large. The ``blob`` (or compressed ``blobz``) 
 type is better suited to data that may often be either large or small, 
 or which Texis can manage more easily (e.g. faster access, and 
-automatically track changes for index updates).
+automatically track changes for index updates). The 
+``indirect``/``blob``/``blobz`` type fields have the additional benefit 
+of storing data that is indexed, but not often retrieved, which reduces
+the main table file size and improves file system caching.
 
 Variable Length Index Keys
 """"""""""""""""""""""""""
-Traditional database systems allocate their indexes in fixed blocks, and
-so do we; but we were faced with a problem. Typical English language
-contains words of extremely variant length, and we wanted to minimize
-the overhead of storing these words in an index. Traditional Btrees have
-fixed length keys, so we invented a variable length key Btree in order
+Typical English language contains words of extremely variant length. Texis 
+minimizes the overhead of storing these words in an index. Traditional Btrees
+have fixed length keys, so we invented a variable length key Btree in order
 to minimize our overhead while not limiting the maximum length of a key.
 
-Why all the variable stuff?
-"""""""""""""""""""""""""""
-Texis stands for Text Information Server, and text databases are really
-different in nature to the content of most standard databases. Have a
-look at the word processing files that are on your machine. The vast
-majority are probably relatively small, but then there’s an occasional
-whopper. The same is true for the content of most documents: their size
-and content are extremely variable.
-Texis is optimized for two things: Query time and variable sized data.
+Advantages of Variable Length Fields and Btrees
+"""""""""""""""""""""""""""""""""""""""""""""""
+Texis stands for Text Information Server, and text databases are fundamentally
+different in nature to the content of most standard databases. Texis is
+optimized to handle text data in the context of text retrieval. A mix of
+large and small documents can be handled efficiently in the same table.
+As such, Texis is optimized for two things: Query time and variable sized data.
 
 Specifications
 """"""""""""""
@@ -366,7 +1023,7 @@ Specifications
 +---------------------------------+-------------------------------------------------------------------------------------+
 | Tables per database             | 10,000                                                                              |
 +---------------------------------+-------------------------------------------------------------------------------------+
-| Max table size                  | 2 gigabytes (``2^31``) on 32-bit systems, 9 exabytes (``2^63``) on 64-bit systems   |
+| Max table size                  | On 32-bit systems - varies with filesystem, 9 exabytes (``2^63``) on 64-bit systems |
 +---------------------------------+-------------------------------------------------------------------------------------+
 | Rows per table                  | 1 billion                                                                           |
 +---------------------------------+-------------------------------------------------------------------------------------+
@@ -376,19 +1033,19 @@ Specifications
 +---------------------------------+-------------------------------------------------------------------------------------+
 | Max field size                  | 1 gigabyte                                                                          |
 +---------------------------------+-------------------------------------------------------------------------------------+
-| Max field name                  | 32 characters                                                                       |
+| Max field column name           | 32 characters                                                                       |
 +---------------------------------+-------------------------------------------------------------------------------------+
 | Max tables per query            | 400                                                                                 |
 +---------------------------------+-------------------------------------------------------------------------------------+
-| User password security          | Yes                                                                                 |
+| User password security          | Yes (usable but unsupported in rampart)                                             |
 +---------------------------------+-------------------------------------------------------------------------------------+
-| Group password security         | Yes                                                                                 |
+| Group password security         | Yes (usable but unsupported in rampart)                                             |
 +---------------------------------+-------------------------------------------------------------------------------------+
 | Index types                     | Btree, Inverted, Text, Text inverted                                                |
 +---------------------------------+-------------------------------------------------------------------------------------+
 | Max index key size              | 8192                                                                                |
 +---------------------------------+-------------------------------------------------------------------------------------+
-| Standard Data Types             |                                                                                     |
+| Standard Data Types             |  see :ref:`Datatypes <datatypes>`                                                   |
 +---------------------------------+-------------------------------------------------------------------------------------+
 | Max user defined data types     | 64                                                                                  |
 +---------------------------------+-------------------------------------------------------------------------------------+
@@ -415,29 +1072,29 @@ system).
 
 Relational Database Background
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Texis, as most recent DBMSs, is based on the relational data model. The
+Texis, like all sql based DBMSs, is based on the relational data model. The
 fundamental organizational structure for data in the relational model is
 the relation. A *relation* is a two-dimensional table made up of rows
 and columns. Each relation, also called a table, stores data about
 *entities*. These entities are objects or events on which an
-organization chooses to collect data. Patients, doctors, services, and
-insurance carriers are examples of entities.
-The columns in a relation represent characteristics (*attributes*,
-*fields*, or *data items* of an entity, such as patient identification
-number, patient name, address, etc. The rows (called *tuples* in
-relational jargon) in the relation represent specific occurrences (or
-records) of a patient, doctor, insurance group number, service rendered,
-etc. Each row consists of a sequence of values, one for each column in
-the table.
+application chooses to collect data. Patients, company information, products, 
+services, metadata descriptions of media, web pages, legal documents, 
+documentation, personal data and/or any grouping of text based documentation 
+are examples of entities.The columns in a relation represent characteristics
+(*attributes*, *fields*, or *data items* of an entity, such as url, text,
+links, date, address, names, descriptions, abstract, etc). The rows
+(called *tuples* in relational jargon) in the relation represent specific 
+occurrences (or records) of a patient, doctor, time-frame, description,
+location, web page, products, customer id, url, document text, etc. Each row 
+consists of a sequence of values, one for each column in the table.
 In addition, each row (or record) in a table must be unique. The
 *primary key* of a relation is the attribute or attributes whose value
 uniquely identifies a specific row in a relation. For example, a Patient
 identification number (ID) is normally used as a primary key for
 accessing a patient’s hospital records. A Customer ID number can be the
 primary key in a business.
-Over the years, many different sets of terms have been used
-interchangeably when discussing the relational model.
-The following table lists these terms and shows their relationship.
+Many different sets of terms can be used interchangeably when discussing
+the relational model. The following table lists these terms and shows their relationship.
 
 .. _reldbterm:
 
@@ -510,6 +1167,8 @@ nonprocedural query language.
 
 Support of SQL
 ~~~~~~~~~~~~~~
+**YUK YUK YUK**
+
 As more corporate data processing centers use SQL, more vendors are
 offering relational database products based on the SQL language.
 In 1986, the American National Standards Institute (ANSI) approved SQL
@@ -663,10 +1322,10 @@ dictionary referred to as the *system catalog*. This catalog is made up
 of various tables that store descriptive and statistical information
 related to the database. The catalog can be accessed to retrieve
 information about the contents and structure of the database. The system
-catalog is discussed in more detail in Chapter [chp:AdmDB].
-As shown in Figure [fig:CrTab], the CREATE TABLE command results in an
+catalog is discussed in more detail in Chapter :ref:`sql4:Administration of the Database`.
+As shown in the Figure below, the CREATE TABLE command results in an
 empty table.
-[fig:CrTab]
+
 ::
 
       RES_ID RNAME            JOB            EDUC         EXP
@@ -805,6 +1464,8 @@ Column Names:
     | ``Date``             | ``DATE``               | Can not be SQL data type.          |
     +----------------------+------------------------+------------------------------------+
 
+.. _datatypes:
+
 Data Types:
 
     Each column within a table can store only one type of data. For
@@ -814,9 +1475,11 @@ Data Types:
     the CREATE TABLE statement has a data type declared with it. These
     data types include *character*, *byte*, *integer*, *smallint*,
     *float*, *double*, *date*, *varchar*, *counter*, *strlst*, and
-    *indirect*. Table [tab:DTypes] illustrates the general format for
+    *indirect*. The table below illustrates the general format for
     each data type. A description of each of the Data Types listed in
-    Table [tab:DTypes] follows.
+    the following Table.
+
+.. _dtypes:
 
     +----------------+---------------------+---------------------+-----------------------+
     | Type of Data   | Texis Syntax        | Example             | Data Value            |
@@ -842,6 +1505,8 @@ Data Types:
     | Numeric        | UNSIGNED SMALLINT   | UNSIGNED SMALLINT   | 60000                 |
     +----------------+---------------------+---------------------+-----------------------+
     | Date/Time      | DATE                | DATE                | 719283474             |
+    +----------------+---------------------+---------------------+-----------------------+
+    | Bytes          | VARBYTE(length)     | VARBYTE(16)         | DE23..                |
     +----------------+---------------------+---------------------+-----------------------+
     | Text           | VARCHAR(length)     | VARCHAR(200)        | “The subject of …”    |
     +----------------+---------------------+---------------------+-----------------------+
@@ -920,12 +1585,18 @@ Data Types:
         the user. DATEs may also be entered as strings representing a
         date/time format such as ``'1994-03-05 3:00pm'``
     VARCHAR(length):
-        Used to store text field information entirely in Texis. The
-        specified length is offered as a suggestion only, as this data
+        Used to store text field information of variable size in a Texis table.
+        The specified length is offered as a suggestion only, as this data
         type can hold an unlimited number of characters. In the example
-        in Table [tab:DTypes], there may be a short description of the
+        in :ref:`Datatypes Table <dtypes>`, there may be a short description of the
         text, or a relatively small abstract which is stored in the
-        field of the column itself.
+        field of the column itself. However the field can handle text of any
+        size up to one gigabyte.
+    VARBYTE(length):
+        Similar to ``VARCHAR`` Used to store a byte field information of
+        variable size. The specified length is offered as a suggestion only, 
+        as this data type can hold an unlimited number of bytes up to one
+        gigabyte.
     BLOB:
         Used to store text, graphic images, audio, and so on, where the
         object is not stored in the table itself, but is indirectly held
@@ -938,8 +1609,8 @@ Data Types:
         limited by the filesystem. The BLOB file is not accessed unless
         the data in it is needed. This will improve the performance of
         queries that do not need to access the data. This can also be
-        useful if you are creating a METAMORPH INVERTED index, and do
-        not allow post processing, and do not display the actual
+        useful if you are creating a ``METAMORPH INVERTED`` or ``FULLTEXT`` 
+        index, and do not allow post processing, and do not display the actual
         contents of the record, as the data will not be accessed at all,
         and can be removed. This should only be done with extreme
         caution.
@@ -971,10 +1642,10 @@ Data Types:
         across all tables in the database. To insert a counter value in
         SQL you can use the ``COUNTER`` keyword in the insert clause. A
         counter is made up of two fields, a time, and a sequence number.
-        This allows the field to be compared with times, to find all
-        records inserted before a particular time for example.
+        This allows the field to be compared with times, e.g., to find all
+        records inserted before a particular time.
     STRLST:
-        A string list is used to hold a number of different strings. The
+        A string list is used to hold an arbitrary number of strings. The
         strings are delimited by a user defined character in the input
         string. The delimiter character is printed as the last character
         in the result string when a ``strlst`` value is converted to a
@@ -991,27 +1662,26 @@ Data Types:
 
     One large difference in Texis over other database management systems
     is in the range of data types it supports. While the traditional
-    fixed length forms of CHAR, INTEGER, FLOAT and so on are used, there
+    fixed length forms of CHAR, INTEGER, FLOAT and so on are supported, there
     is a corresponding variable length data type which can be used when
-    appropriate, such as is represented in VARCHAR.
+    appropriate, such as is represented in VARCHAR or VARBYTE.
     The length following CHAR, as in ``CHAR(100)``, indicates that 100
     is the maximum number of allowed characters. Each record with such a
     data type defined will have a size of 100 characters, regardless of
     whether 3 characters, 57 characters, or even a NULL value is
     entered. The length following VARCHAR, as in ``VARCHAR(100)``,
     indicates that 100 characters is a suggested length. If an entry of
-    350 characters is required in this field, VARCHAR can make
+    350 characters is required in this field, VARCHAR will make
     allowances to handle it.
     The 100 character suggestion in this case is used for memory
-    allocation, rather than field length limitation. Therefore a VARCHAR
-    length should be entered as the average, rather than the largest
-    size for that field. Entering an extremely large length to
-    accommodate one or two unusual entries would impair the handling of
-    memory for normal operations.
+    allocation, rather than field length limitation. Therefore a
+    VARCHAR/VARBYTE length should be entered as the average, rather 
+    than the largest size for that field. Entering an extremely large 
+    length to accommodate one or two unusual entries would impair the 
+    handling of memory for normal operations.
     The sophisticated aspects of database design involving choice and
     use of data types towards performance and optimization of table
-    manipulation are addressed in more depth in Chapter [chp:AdmDB],
-    *Administration of the Database*.
+    manipulation are addressed in more depth in :ref:`sql4:Administration of the Database`.
     The order in which the columns are listed in the CREATE TABLE
     command is the order in which the column names will appear in the
     table.

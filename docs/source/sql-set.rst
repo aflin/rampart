@@ -1,22 +1,30 @@
 
 Server Properties
 -----------------
+
 There are a number of properties that are settable in the SQL Engine.
 They do not need to be changed unless the behavior of the system must be
 modified. The properties are set using the following SQL syntax:
+
 ::
+
         SET property = value;
+
 The ``value`` can be one of three types depending on the property:
 numeric, boolean or string. A boolean value is either an integer–0 is
 false, anything else is true–or one of the following strings: “``on``”,
 “``off``”, “``true``”, “``false``”, “``yes``” or “``no``”.
+
 The settings are grouped as follows:
+
 
 Search and optimization parameters
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 These settings affect the way that Texis will process the search. They
 include settings which change the meaning of the search, as well as how
 the search is performed.
+
 
 defaultlike
 """""""""""
@@ -27,12 +35,14 @@ defaultlike
     each case the ``like`` operator will act as if the specified
     operator had been used instead.
 
+
 matchmode
 """""""""
     Changes the behavior of the ``matches`` clause. The default behavior
     is to use underscore and percent as the single and multi-character
     character wildcards. Setting ``matchmode`` to 1 will change the
     wildcards to question-mark and asterisk.
+
 
 predopttype
 """""""""""
@@ -41,6 +51,7 @@ predopttype
     done; the ``predopttpye`` property controls the way it reorders. The
     values are 0 to not reorder, 1 to evaluate ``and`` first, 2 to
     evaluate ``or`` first. The default is 0.
+
 
 ignorecase
 """"""""""
@@ -62,40 +73,48 @@ ignorecase
     ``ignorecase`` flag of the ``stringcomparemode`` setting, which
     supercedes it.
 
+
 textsearchmode
 """"""""""""""
     Sets the APICP ``textsearchmode`` property; see Vortex manual for
     details and important caveats. Added in version 6.
+
 
 stringcomparemode
 """""""""""""""""
     Sets the APICP ``stringcomparemode`` property; see Vortex manual for
     details and important caveats. Added in version 6.
 
+
 tracemetamorph
 """"""""""""""
     Sets the ``tracemetamorph`` debug property; see Vortex manual for
     details. Added in version 7.00.1375225000 20130730.
+
 
 tracerowfields
 """"""""""""""
     Sets the ``tracerowfields`` debug property; see Vortex manual for
     details. Added in version 7.02.1406754000 20140730.
 
+
 tracekdbf
 """""""""
     Sets the ``tracekdbf`` debug property; see Vortex manual for
     details.
+
 
 tracekdbffile
 """""""""""""
     Sets the ``tracekdbffile`` debug property; see Vortex manual for
     details.
 
+
 kdbfiostats
 """""""""""
     Sets the ``kdbfiostats`` debug property; see Vortex manual for
     details.
+
 
 btreecachesize
 """"""""""""""
@@ -113,6 +132,7 @@ btreecachesize
     allow room for all pages which might need to be accessed at the same
     time.
 
+
 ramrows
 """""""
     When ordering large result sets, the data is initially ordered in
@@ -121,6 +141,7 @@ ramrows
     performance however. The default is 10000 rows. Setting ``ramrows``
     to 0 will keep the data in memory.
 
+
 ramlimit
 """"""""
     ``ramlimit`` is an alternative to ``ramrows``. Instead of limiting
@@ -128,6 +149,7 @@ ramlimit
     capped. By default it is 0, which is unlimited. If both ``ramlimit``
     and ``ramrows`` are set then the first limit to be met will trigger
     the use of disk.
+
 
 bubble
 """"""
@@ -138,6 +160,7 @@ bubble
     quickly as possible. By setting ``bubble`` to 0 the entire set of
     matching record handles will be read from the index first, and then
     each record processed from this list.
+
 
 optimize,nooptimize
 """""""""""""""""""
@@ -153,6 +176,7 @@ optimize,nooptimize
         it is disabled then Texis will process the tables in the left to
         right order, with the first table specified being the driving
         table. Added in version 02.06.927235551.
+
     compoundindex
         Allow the use of compound indexes to resolve searches. For
         example if you create an index on table (field1, field2), and
@@ -160,27 +184,32 @@ optimize,nooptimize
         the index to resolve both portions of this. When disabled it
         would only look for field1 in the index. Added in version
         02.06.929026214.
+
     countstar
         Use any regular index to determine the number of records in the
         table. If disabled Texis will read each record in the table to
         count them. Added in version 02.06.929026214.
+
     minimallocking
         Controls whether the table will be locked when doing reads of
         records pointed to by the index used for the query. This is
         enabled by default, which means that read locks will not be
         used. This is the optimal setting for databases which are mostly
         read, with few writes and small records. Added in version 03.00
+
     groupby
         This setting is enabled by default and will cause the data to be
         read only once to perform a group by operation. The query should
         produce indentical results whether this is enabled or disabled,
         with the performance being the only difference. Added in version
         03.00
+
     faststats
         When enabled, which is the default, and when the appopriate
         indexes exist Texis will try and resolve aggregate functions
         directly from the index that was used to perform the ``WHERE``
         clause. Added in version 03.00
+
     readlock
         When enabled, which is the default, Texis will use readlocks
         more efficiently if there are records that are scanned, but
@@ -192,22 +221,26 @@ optimize,nooptimize
         to be granted. This is not normally suggested, as the work
         required to grant and release the locks would typically negate
         the benefit. Added in version 03.00
+
     analyze
         When enabled, which is the default, Texis will analyze the query
         for which fields are needed. This can allow for more efficient
         query processing in most cases. If you are executing a lot of
         different SQL statements that are not helped by the analysis you
         can disable this. Added in version 03.00
+
     skipahead
         When enabled, which is the default, Texis will skipahead as
         efficiently as possible, typically used with the SKIP parameter
         in Vortex. If disabled Texis will perform full processing on
         each skipped record, and discard the record. Added in version
         03.00
+
     likewithnots
         When enabled (default), ``LIKE``/``LIKEP``-type searches with
         NOT sets (negated terms) are optimized for speed. Added in
         version 4.02.1041535107 Jan 2 2003.
+
     shortcuts
         When enabled (default), a fully-indexed ``LIKE``/``LIKEIN``
         clause ``OR``\ ed with another fully-indexed ``LIKE``/``LIKEIN``
@@ -215,11 +248,13 @@ optimize,nooptimize
         (and entire query). Added in version 4.03.1061229000 20030818 as
         ``optimization18``; in version 7.06.1475000000 20160927, alias
         ``shortcuts`` added.
+
     likehandled
         When enabled (default), a fully-indexed ``LIKE``/``LIKEIN``
         clause ``OR``\ ed with another fully-indexed
         non-\ ``LIKE``/``LIKEIN`` clause should not cause an unnecessary
         post-process for the ``LIKE`` (and entire query).
+
         Also, linear and post-process ``LIKE``/``LIKEIN`` operations
         caused not by the Metamorph query itself, but by the presence of
         another ``OR``\ ed/\ ``AND``\ ed clause, do not check
@@ -231,7 +266,9 @@ optimize,nooptimize
         ``maxlinearrows``), could cause linear search or
         post-processing, respectively, of an otherwise fully-indexable
         Metamorph query.
+
         Added in version 7.06.1475014000 20160927.
+
     indexbatchbuild
         When enabled, indexes are built as a batch, i.e. the table is
         read-locked continuously. When disabled (the default), the table
@@ -245,19 +282,23 @@ optimize,nooptimize
         that non-Metamorph indexes are *always* built with a continuous
         read lock – regardless of this setting – due to the nature of
         the index. Added in version 5.01.1177455498 20070424.
+
     indexdataonlycheckpredicates
         When enabled (the default), allows the index-data-only
         optimization [1]_ to proceed even if the SELECT columns are
         renamed or altered in expressions. Previously, the columns had
         to be selected as-is with no renaming or expressions. Added in
         version 7.00.1369437000 20130524.
+
     indexvirtualfields
         When enabled (the default), attempts to reduce memory usage when
         indexing virtual fields (especially with large rows) by freeing
         certain buffers when no longer needed. Currently only applies to
         Metamorph and Metamorph inverted indexes. Added in version
         6.00.1322890000 20111203.
+
     Example: ``set nooptimize='minimallocking'``
+
 
 options,nooptions
 """""""""""""""""
@@ -267,6 +308,7 @@ options,nooptions
 
     triggers
         When on, *disable* the creation of triggers.
+
     indexcache
         Cache certain Metamorph index search results, so that an
         immediately following Metamorph query with the same ``WHERE``
@@ -274,13 +316,16 @@ options,nooptions
         re-searching the index. E.g. may speed up a
         ``SELECT field1, field2, ...`` Metamorph query that follows a
         ``SELECT count(*)`` query with the same ``WHERE`` clause.
+
     ignoremissingfields
         Ignore missing fields during an ``INSERT`` or ``UPDATE``, i.e.
         do not issue a message and fail the query if attempting to
         insert a non-existent field. This may be useful if a SQL
         ``INSERT`` statement is to be used against a table where some
         fields are optional and may not exist.
+
     Example: ``set options='indexcache'``
+
 
 ignorenewlist
 """""""""""""
@@ -297,19 +342,24 @@ ignorenewlist
     queries until the index has been optimized. Added in version
     02.06.934400000.
 
+
 indexwithin
 """""""""""
     How to use the Metamorph index when processing “within :math:`N`”
     (w/\ :math:`N`) ``LIKE``-type queries. It is an integer combination
     of bit flags:
+
     0x01
         : Use index for w/\ :math:`N` searches when ``withinmode`` is
         “``char [span]``”
+
     0x02
         : Use index for w/\ :math:`N` searches when ``withinmode`` is
         “``word [span]``”
+
     0x04
         : Optimize within-chars window down
+
     0x08
         : Do not scale up intervening (non-query) words part of window
         to account for words matching multiple index expressions, which
@@ -318,10 +368,12 @@ indexwithin
         expressions. In rare cases valid hits may be missed if an
         intervening word does index-match multiply; the :math:`N` value
         can simply be increased in the query to return these.
+
     The default is 0xf in version 7.06.1525203000 20180501 and later,
     when support for 0x8 was also added. In version 5.01.1153865548
     20060725 up to then, the default was 0x7. The setting was added in
     version 4.04.1075255999 20040127 with a default of 0.
+
 
 wildoneword
 """""""""""
@@ -337,6 +389,7 @@ wildoneword
     later, 0 in version 5 and earlier. Added in version 4.03.1058230349
     20030714.
 
+
 wildsufmatch
 """"""""""""
     Whether wildcard expressions in Metamorph queries suffix-match their
@@ -350,10 +403,12 @@ wildsufmatch
     later, 0 in version 5 and earlier. Added in version 4.03.1058230349
     20030714.
 
+
 wildsingle
 """"""""""
     An alias for setting ``wildoneword`` and ``wildsufmatch`` together,
     which is usually desired. Added in version 4.03.1058230349 20030714.
+
 
 allineardict
 """"""""""""
@@ -369,6 +424,7 @@ allineardict
     is more likely to be linear-dictionary searchable. Added in version
     4.03.1058230349 20030714.
 
+
 indexminsublen
 """"""""""""""
     The minimum number of characters that a Metamorph index word
@@ -377,15 +433,18 @@ indexminsublen
     indexable characters is assumed to potentially match too many words
     in the index for an index search to be more worthwhile/faster than a
     linear-table search.
+
     For binary-index searchable terms, ``indexminsublen`` is tested
     against the minimum prefix length; e.g. for query “``test.#@``” the
     length tested is 4 (assuming default index word expression of
     “``\alnum{2,99}``”). For linear-dictionary index searches, the
     length tested is the total of all non-wildcard characters; e.g. for
     query “``ab*cd*ef``” the length tested is 6.
+
     The default for ``indexminsublen`` is 2. Added in version
     4.03.1058230349 20030714. Note that the query – regardless of index
     or linear search – must also pass the ``qminprelen`` setting.
+
 
 dropwordmode
 """"""""""""
@@ -396,6 +455,7 @@ dropwordmode
     the entire term. The default is 0. Added in version 3.00.947633136
     20000111.
 
+
 metamorphstrlstmode
 """""""""""""""""""
     [‘metamorphstrlstmode’] How to convert a ``strlst`` Metamorph query
@@ -403,27 +463,34 @@ metamorphstrlstmode
     Metamorph query. For example, for the ``strlst`` query composed of
     the 3 strings “``one``”, “``two``”, and “``bear arms``”, the various
     modes would convert as follows:
+
     -  | ``allwords``
        | Space-separate each string, e.g. “one two bear arms”.
+
     -  | ``anywords``
-       | Space-separate each string and append “\ ``@0''', e.g. ``\ ‘one
-         two bear arms @0’’.
+       | Space-separate each string and append ``@0``, e.g. 
+         ``\ ‘one two bear arms @0``.
+
     -  | ``allphrases``
-       | Space-separate and double-quote each string, e.g. ““one” “two”
-         “bear arms””.
+       | Space-separate and double-quote each string, e.g. ``"one" "two" "bear arms"``.
+
     -  | ``anywords``
        | Space-separate and double-quote each string, and append
-         “\ ``@0''', e.g. ``\ ‘“one” “two” “bear arms” @0’’.
+         \ ``@0``, e.g. ``"one" "two" "bear arms" @0``.
+
     -  | ``equivlist``
        | Make the string list into a parenthetical comma-separated list,
          e.g. “(one,two,bear arms)”.
+
     The default is ``equivlist``. Added in version 5.01.1225240000
     20081028. See also the ``varchartostrlstsep`` setting (p. ), which
     affects conversion of ``varchar`` to ``strlst`` in other contexts.
 
+
 compatibilityversion
 """"""""""""""""""""
     [SqlPropertyCompatibilityVersion]
+
     Sets the Texis compatibility version – the version to attempt to
     behave as – to the given string, which is a Texis version of the
     form “:math:`major`\ [.:math:`minor`\ [.:math:`release`]]”, where
@@ -432,6 +499,7 @@ compatibilityversion
     version 7. See the ``<vxcp compatibilityversion>`` setting in Vortex
     for details. See also the Compatibility Version setting (p. ) in
     texis.ini, which the ``compatibilityversion`` setting defaults to.
+
 
 failifincompatible
 """"""""""""""""""
@@ -445,6 +513,7 @@ failifincompatible
     ``<vxcp compatibilityversion>`` in Vortex, which obviates the need
     for this setting, as it has a checkable error return.
 
+
 groupbymem
 """"""""""
     When set nonzero/true (the default), try to minimize memory usage
@@ -452,9 +521,11 @@ groupbymem
     index and sorting is not needed). Added in version 7.00.1370039228
     20130531.
 
+
 legacyversion7orderbyrank
 """""""""""""""""""""""""
     [SqlPropertyLegacyVersion7OrderByRank]
+
     If on, an ORDER BY $rank (or $rank-containing expression) uses
     legacy version 7 behavior, i.e. typically orders in numerically
     descending order, but may change to ascending (and have other
@@ -462,11 +533,13 @@ legacyversion7orderbyrank
     use. If disabled, such ORDER BYs are consistent with others:
     numerically ascending unless ``DESC`` flag given (which would
     typically be given, to maintain descending-numerical-rank order).
+
     The default is the value of the Legacy Version 7 Order By Rank
     setting (p. ) in conf/texis.ini, which is off by default with
     ``compatibilityversion`` 8 and later, on in earlier versions
     (``compatibilityversion`` defaults to Texis Version). Added in
     version 7.06.1508871000 20171024.
+
     Note that this setting may be removed in a future release, as its
     enabled behavior is deprecated. Its existence is only to ease
     transition of old code when upgrading to Texis version 8, and thus
@@ -474,12 +547,15 @@ legacyversion7orderbyrank
     reflect version 8 default behavior – and this setting removed – soon
     after upgrading.
 
+
 Metamorph parameters
 ~~~~~~~~~~~~~~~~~~~~
+
 These settings affect the way that text searches are performed. They are
 equivalent to changing the corresponding parameter in the profile, or by
 calling the Metamorph API function to set them (if there is an
 equivalent). They are:
+
 
 minwordlen
 """"""""""
@@ -487,15 +563,18 @@ minwordlen
     Removal of trailing vowel or double consonant can make it a letter
     shorter than this. Default 255.
 
+
 keepnoise
 """""""""
     Whether noise words should be stripped from the query and index.
     Default off.
 
+
 suffixproc
 """"""""""
     Whether suffixes should be stripped from the words to find a match.
     Default on.
+
 
 prefixproc
 """"""""""
@@ -503,11 +582,13 @@ prefixproc
     Turning this on is not suggested when using a Metamorph index.
     Default off.
 
+
 rebuild
 """""""
     Make sure that the word found can be built from the root and
     appropriate suffixes and prefixes. This increases the accuracy of
     the search. Default on.
+
 
 useequiv
 """"""""
@@ -516,11 +597,13 @@ useequiv
     word is searched for. Default off. Aka **keepeqvs** in version
     5.01.1171414736 20070213 and later.
 
+
 inc\_sdexp
 """"""""""
     Include the start delimiter as part of the hit. This is not
     generally useful in Texis unless hit offset information is being
     retrieved. Default off.
+
 
 inc\_edexp
 """"""""""
@@ -528,21 +611,25 @@ inc\_edexp
     useful in Texis unless hit offset information is being retrieved.
     Default on.
 
+
 sdexp
 """""
     Start delimiter to use: a regular expression to match the start of a
     hit. The default is no delimiter.
 
+
 edexp
 """""
     End delimiter to use: a regular expression to match the start of a
     hit. The default is no delimiter.
+
 intersects
 
 inc\_sdexp
 """"""""""
     Default number of intersections in Metamorph queries; overridden by
     the ``@`` operator. Added in version 7.06.1530212000 20180628.
+
 
 hyphenphrase
 """"""""""""
@@ -552,6 +639,7 @@ hyphenphrase
     phrase. Setting it to 0 will search for a single term including the
     hyphen. If you anticipate setting hyphenphrase to 0 then you should
     modify the index word expression to include hyphens.
+
 
 wordc
 """""
@@ -572,6 +660,7 @@ wordc
     non-wildcard query terms (e.g. ``123`` with default settings) are
     not word-expanded.
 
+
 langc
 """""
     Defines which characters make a query term a language term. A
@@ -582,25 +671,33 @@ langc
     hyphen. The default is ``[\alpha\' \-]`` Added in version
     3.00.942260000.
 
+
 withinmode
 """"""""""
     A space- or comma-separated unit and optional type for the
     “within-\ :math:`N`” operator (e.g. ``w/5``). The unit is one of:
+
     -  ``char`` for within-\ :math:`N` characters
+
     -  ``word`` for within-\ :math:`N` words
+
     The optional type determines what distance the operator measures. It
     is one of the following:
+
     -  ``radius`` (the default if no type is specified when set)
        indicates all sets must be within a radius :math:`N` of an
        “anchor” set, i.e. there is a set in the match such that all
        other sets are within :math:`N` units right of its right edge or
        :math:`N` units left of its left edge.
+
     -  ``span`` indicates all sets must be within an :math:`N`-unit span
+
     Added in version 4.04.1077930936 20040227. The optional type was
     added in version 5.01.1258712000 20091120; previously the only type
     was implicitly ``radius``. In version 5 and earlier the default
     setting was ``char`` (i.e. char radius); in version 6 and later the
     default is word span.
+
 
 phrasewordproc
 """"""""""""""
@@ -614,6 +711,7 @@ phrasewordproc
     Added in version 4.03.1082000000 20040414. Mode ``none`` supported
     in version 5.01.1127760000 20050926.
 
+
 mdparmodifyterms
 """"""""""""""""
     If nonzero, allows the Metamorph query parser to modify search terms
@@ -622,19 +720,23 @@ mdparmodifyterms
     information from bit 4 of ``mminfo()`` (query offset/lengths of
     sets). Added in version 5.01.1220640000 20080905.
 
+
 Rank knobs
 ~~~~~~~~~~
+
 The following properties affect the document ranks from ``likep`` and
 ``like`` queries, and hence the order of returned documents for
 ``likep``. Each property controls a factor used in the rank. The
 property’s value is the relative importance of that factor in computing
 the rank. The properties are settable from 0 (factor has no effect at
 all) to 1000 (factor has maximum relative importance).
+
 It is important to note that these property weights are relative to the
 sum of all weights. For example, if ``likepleadbias`` is set to 1000 and
 the remaining properties to 0, then a hit’s rank will be based solely on
 lead bias. If ``likepproximity`` is then set to 1000 as well, then lead
 bias and proximity each determine 50% of the rank.
+
 
 likepproximity
 """"""""""""""
@@ -642,11 +744,13 @@ likepproximity
     terms are grouped together, the better the rank. The default weight
     is 500.
 
+
 likepleadbias
 """""""""""""
     Controls how important closeness to document start is. Hits closer
     to the top of the document are considered better. The default weight
     is 500.
+
 
 likeporder
 """"""""""
@@ -656,11 +760,13 @@ likeporder
     terms, is probably not as good as an in-order match. The default
     weight is 500.
 
+
 likepdocfreq
 """"""""""""
     Controls how important frequency in document is. The more
     occurrences of a term in a document, the better its rank, up to a
     point. The default weight is 500.
+
 
 likeptblfreq
 """"""""""""
@@ -671,10 +777,13 @@ likeptblfreq
     occur in most documents: it thus has little use in finding a
     specific document. The default weight is 500.
 
+
 Other ranking properties
 ~~~~~~~~~~~~~~~~~~~~~~~~
+
 These properties affect how ``LIKEP`` and some ``LIKE`` queries are
 processed.
+
 
 likeprows
 """""""""
@@ -686,6 +795,7 @@ likeprows
     e.g. to return more results to the user (at the potential cost of
     more search time). Setting this to 0 will return all relevant
     documents (no limit).
+
     Note that in some circumstances, a ``LIKEP`` query might return more
     than ``likeprows`` results, if for example later processing requires
     examination of all ``LIKEP``-matching rows (e.g. certain ``AND``
@@ -693,12 +803,14 @@ likeprows
     be limited to ``likeprows`` results, depending on other clauses,
     indexes, etc.
 
+
 likepmode
 """""""""
     Sets the mode for ``LIKEP`` queries. This can be either 0, for
     early, or 1 for late. The default is 1, which is the correct setting
     for almost all cases. Does not apply to most Metamorph index
     searches.
+
 
 likepallmatch
 """""""""""""
@@ -711,6 +823,7 @@ likepallmatch
     this setting. Also note that if likepobeyintersects is true, an @
     operator value in the query will override this setting.)
 
+
 likepobeyintersects
 """""""""""""""""""
     Setting this to 1 forces ``LIKEP`` to obey the intersects operator
@@ -719,6 +832,7 @@ likepobeyintersects
     both ``likepallmatch`` and ``likepobeyintersects`` to 1 will make
     ``LIKEP`` respect queries the same as ``LIKE``. (Note: ``apicp``
     ``alintersects`` may have to be enabled in Vortex as well.)
+
 
 likepinfthresh
 """"""""""""""
@@ -730,6 +844,7 @@ likepinfthresh
     ranking irrelevant but often-occurring matches, at the possible
     expense of rank position. The default is 0, which means infinite (no
     infinite sets; rank all documents).
+
 
 likepindexthresh
 """"""""""""""""
@@ -745,13 +860,16 @@ likepindexthresh
     stopping processing on them early. A more specific query that
     returns fewer hits will fall under this threshold, so all matches
     will be considered for ranking.
+
     Note that setting ``likepindexthresh`` is a tradeoff between speed
     and accuracy: the lower the setting, the faster queries can be
     processed, but the more queries may be dropping potentially
     high-ranking hits.
 
+
 Indexing properties
 ~~~~~~~~~~~~~~~~~~~
+
 
 indexspace
 """"""""""
@@ -761,9 +879,11 @@ indexspace
     reasons. If ``indexspace`` is set to a non-default value when a
     Metamorph index is being updated, the new index will be stored in the
     new location.
+
     When a Metamorph index is created on an indirect field, the indirect
     files are read in blocks. This property allows the size of the block
     used to be redefined.
+
 
 indexmem 
 """"""""
@@ -775,6 +895,7 @@ indexmem
     greater than 100 then it is treated as the number of bytes of memory to
     use. Setting this value too high can cause excessive swapping, while
     setting it too low causes unneeded extra merges to disk.
+
 indexmeter
 ~~~~~~~~~~ 
     Whether to print a progress meter during index
@@ -784,15 +905,19 @@ indexmeter
     reading by other processes). A value of 2 or ``'percent'`` or ``'pct'``
     prints a hash-mark meter with a more detailed percentage value (suitable
     for large indexes). Added in version 4.00.998688241 Aug 24 2001.
+
     A semicolon-separated list of processes to print a progress meter for.
     Syntax:
+
          {:math:`process`\ [= :math:`type`]}\|\ :math:`type` [; ...]
+
     A :math:`process` is one of ``index``, ``compact``, or the catch-all
     alias ``all``. A :math:`type` is a progress meter type, one of ``none``,
     ``simple``, ``percent``, ``on`` (same as ``simple``) or ``off`` (same as
     ``none``). The default :math:`type` if not given is ``on``. E.g. to show
     a progress meter for all meterable processes, simply set ``meter`` to
     ``on``. Added in version 6.00.1290500000 20101123.
+
 
 addexp
 """"""
@@ -807,15 +932,18 @@ addexp
     [inverted] index” or “create fulltext index” on an existent index) will 
     *not* be added.
 
+
 delexp
 """"""
     This removes an index word expression from the list. Expressions can be
     removed either by number (starting with 0) or by expression.
 
+
 lstexp
 """"""
     Lists the current index word expressions. The value specified is ignored
     (but required syntactically).
+
 
 addindextmp
 """""""""""
@@ -827,15 +955,18 @@ addindextmp
     (e.g. database or ``indexspace``), and the environment variables ``TMP``
     and ``TMPDIR``.
 
+
 delindextmp
 """""""""""
     Remove a directory from the list of directories to use for temporary
     files while creating a Metamorph index.
 
+
 lstindextmp
 """""""""""
     List the directories used for temporary files while creating Metamorph
     indices. Aka ``listindextmp``.
+
 
 indexvalues
 """""""""""
@@ -846,10 +977,12 @@ indexvalues
     (strlst,recid) tuple. This allows the index to be used for some set-like
     operators that look at individual items in a ``strlst``, such as most
     ``IN``, ``SUBSET`` (p. ) and ``INTERSECT`` (p. ) queries.
+
     If ``indexvalues`` is set to ``all`` – or the index is not on a
     ``strlst`` field, or is on multiple fields – such splitting does not
     occur, and the index can generally not be used for set-like queries
     (with some exceptions; see p.  for details).
+
     Note that if index values are split (i.e. ``splitstrlst`` set and index
     is one field which is ``strlst``), table rows with an empty (zero-items)
     ``strlst`` value will not be stored in the index. This means that
@@ -862,6 +995,7 @@ indexvalues
     must use an ``indexvalues=all`` index instead. Thus if
     empty-\ ``strlst`` subset query parameters are a possibility, both types
     of index (``splitstrlst`` and ``all``) should be created.
+
     As with ``stringcomparemode``, only the creation-time ``indexvalues``
     value is ever used by an index, not the current value, and the optimizer
     will attempt to choose the best index at search time. The
@@ -873,6 +1007,7 @@ indexvalues
     however, may silently corrupt an indexvalues=all index during table
     modifications.**
 
+
 btreethreshold
 """"""""""""""
     This sets a limit as to how much of an index should be used. If a
@@ -882,16 +1017,20 @@ btreethreshold
     term. The default is set to 50, so if more than half the records match,
     the index will not be used. This only applies to ordinary indices.
 
+
 btreelog
 """"""""
     Whether to log operations on a particular B-tree, for debugging.
     Generally enabled only at the request of tech support. The value syntax
     is:
+
         :math:`[`\ ``on=``\ :math:`|`\ ``off=``\ :math:`][`\ ``/dir/``\ :math:`]`\ ``file``\ :math:`[`\ ``.btr``\ :math:`]`
+
     Prefixing ``on=`` or ``off=`` turns logging on or off, respectively; the
     default (if no prefix) is on. Logging applies to the named B-tree file;
     if a relative path is given, logging applies to the named B-tree in any
     database accessed.
+
     The logging status is also saved in the B-tree file itself, if the index
     is opened for writing (e.g. at create or update). This means that once
     logging is enabled and saved, *every* process that accesses the B-tree
@@ -901,87 +1040,152 @@ btreelog
     having to modify (and track down) every script that might use the
     B-tree. Logging can be disabled later, by setting “``off=file``” and
     accessing the index for an update.
+
     Operations are logged to a text file with the same name as the B-tree,
     but ending in “``.log``” instead of “``.btr``”. The columns in the log
     file are as follows; most are for tech support analysis, and note that
     they may change in a future Texis release:
+
     -  **Date** Date
+
     -  **Time** Time (including microseconds)
+
     -  **Script and line** Vortex script and line number, if known
+
     -  **PID** Process ID
+
     -  **DBTBL handle** ``DBTBL`` handle
+
     -  **Read locks** Number of read locks (``DBTBL.nireadl``)
+
     -  **Write locks** Number of write locks (``DBTBL.niwrite``)
+
     -  **B-tree handle** ``BTREE`` handle
+
     -  **Action** What action was taken:
+
        -  ``open`` B-tree open: **Recid** is root page offset
+
        -  ``create`` B-tree create
+
        -  ``close`` B-tree close
+
        -  ``RDroot`` Read root page
+
        -  ``dump`` B-tree dump
+
        -  ``WRhdr`` Write B-tree header: **Recid** is root page offset
+
        -  ``WRdd`` Write data dictionary: **Recid** is ``DD`` offset. (Read
           ``DD`` at open is not logged.)
+
        -  ``delete`` Delete key: **Recid** is for the key
+
        -  ``append`` Append key
+
        -  ``insert`` Insert key
+
        -  ``search`` Search for key
+
        -  ``RDpage`` Read page: **Recid** is for the page
+
        -  ``WRpage`` Write page
+
        -  ``CRpage`` Create page
+
        -  ``FRpage`` Free page
+
        -  ``FRdbf`` Free DBF block
+
     -  **Result** Result of action:
+
        -  ``ok`` Success
+
        -  ``fail`` Failure
+
        -  ``dup`` Duplicate (e.g. duplicate insert into unique B-tree)
+
        -  ``hit`` Search found the key
+
        -  ``miss`` Search did not find the key
+
     -  **Search mode** Search mode:
+
        -  ``B`` Find before
+
        -  ``F`` Find
+
        -  ``A`` Find after
+
     -  **Index guarantee** ``DBTBL.indguar`` flag (``1`` if no post-process
        needed)
+
     -  **Index type** Index type:
+
        -  ``N`` ``DBIDX_NATIVE`` (bubble-up)
+
        -  ``M`` ``DBIDX_MEMORY`` (RAM B-tree)
+
        -  ``C`` ``DBIDX_CACHE`` (RAM cache)
+
     -  **Recid** Record id; see notes for **Action** column
+
     -  **Key size** Key size (in bytes)
+
     -  **Key flags** Flags for each key value, separated by commas:
+
        -  ``D`` ``OF_DESCENDING``
+
        -  ``I`` ``OF_IGN_CASE``
+
        -  ``X`` ``OF_DONT_CARE``
+
        -  ``E`` ``OF_PREFER_END``
+
        -  ``S`` ``OF_PREFER_START``
+
     -  **Key** Key, i.e. value being inserted, deleted etc.; multiple values
        separated with commas
+
     Unavailable or not-applicable fields are logged with a dash. Note that
     enabling logging can produce a large log file quickly; free disk space
     should be monitored. The ``btreelog`` setting was added in version
     5.01.1134028000 20051208.
+
 
 btreedump
 """""""""
     Dump B-tree indexes, for debugging. Generally enabled only at the
     request of tech support. The value is an integer whose bits are defined
     as follows:
+
     Bits 0-15 define what to dump. Files are created that are named after
     the B-tree, with a different extension:
+
     -  0: Issue a ``putmsg`` about where dump file(s) are
+
     -  1: ``.btree`` file: Copy of in-mem ``BTREE`` struct
+
     -  2: ``.btrcopy`` file: Copy of ``.btr`` file
+
     -  3: ``.cache`` file: Page cache from ``BCACHE``, ``BPAGE``
+
     -  4: ``.his`` file: History from ``BTRL``
+
     -  5: ``.core`` file: ``fork()`` and dump core
+
         Bits 16+ define when to dump:
+
     -  16: At “Cannot insert value” messages
+
     -  17: At “Cannot delete value” messages
+
     -  18: At “Trying to insert duplicate value” messages
+
     The files are for tech support analysis. Formats and bits subject to
     change in future Texis releases. The ``btreedump`` setting was added in
     version 5.01.1131587000 20051109.
+
 
 maxlinearrows
 """""""""""""
@@ -992,6 +1196,7 @@ maxlinearrows
     indices are exhausted, the records will be processed. The default is
     1000.
 
+
 likerrows
 """""""""
     How many rows a single term can appear in, and still be returned by
@@ -999,6 +1204,7 @@ likerrows
     ``likep`` one does not always want documents only containing a very
     frequent term to be displayed. This sets the limit of what is considered
     frequent. The default is 1000.
+
 
 indexaccess
 """""""""""
@@ -1010,19 +1216,26 @@ indexaccess
     indexes – count of all hits in all rows (``OccurrenceCount``) for each
     word will be returned.
 
+
 dbcleanupverbose
 """"""""""""""""
+
 *FIXME:ASK THUNDERSTONE ABOUT THIS -ajf*
     Integer whose bit flags control some tracing messages about database
     cleanup housekeeping (e.g. removal of unneeded temporary or deleted
     indexes and tables). A bit-wise OR of the following values:
+
     -  ``0x01``: Report successful removal of temporary/deleted
        indexes/tables.
+
     -  ``0x02``: Report failed removal of such indexes/tables.
+
     -  ``0x04``: Report on in-use checks of temporary indexes/tables.
+
     The default is 0 (i.e. no messages). Note that these cleanup actions may
     also be handled by the Database Monitor; see also the DB Cleanup Verbose
     setting in conf/texis.ini. Added in version 6.00.1339712000 20120614.
+
 
 indextrace
 """"""""""
@@ -1032,35 +1245,47 @@ indextrace
     to change without notice. Aka ``traceindex``, ``traceidx``. Added in
     version 3.00.942186316 19991109.
 
+
 tracerecid
 """"""""""
     For debugging: trace index usage for this particular recid. Added in
     version 3.01.945660772 19991219.
 
+
 indexdump
 """""""""
     For debugging: dump index recids during search/usage. Value is a bitwise
     OR of the following flags:
+
     Bit 0
         for new list
+
     Bit 1
         for delete list
+
     Bit 2
         for token file
+
     Bit 3
         for overall counts too
+
     The default is 0.
+
 
 indexmmap
 """""""""
     Whether to use memory-mapping to access Metamorph index files, instead
     of ``read()``. The value is a bitwise OR of the following flags:
+
     Bit 0
         for token file
+
     Bit 1
         for ``.dat`` file
+
     The default is 1 (i.e. for token file only). Note that memory-mapping
     may not be supported on all platforms.
+
 
 indexreadbufsz
 """"""""""""""
@@ -1073,11 +1298,13 @@ indexreadbufsz
     expense of time. Aka ``indexreadbufsize``. Added in version
     4.00.1006398833 20011121.
 
+
 indexwritebufsz
 """""""""""""""
     Write buffer size for creating Metamorph indexes. The default is 128KB;
     suffixes like “``KB``” are respected. Aka ``indexwritebufsize``. Added
     in version 4.00.1007509154 20011204.
+
 
 indexmmapbufsz
 """"""""""""""
@@ -1092,6 +1319,7 @@ indexmmapbufsz
     20000602. In version 4.00.1007509154 20011204 and later, “``KB``” etc.
     suffixes are allowed.
 
+
 indexslurp
 """"""""""
     Whether to enable index “slurp” optimization during Metamorph index
@@ -1103,6 +1331,7 @@ indexslurp
     a time, instead of word/token at a time. The default is 1 (enabled); set
     to 0 to disable. Added in version 4.00.1004391616 20011029.
 
+
 indexappend
 """""""""""
     Whether to enable index “append” optimization during Metamorph index
@@ -1113,6 +1342,7 @@ indexappend
     token translation if not needed. The default is 1 (enabled); set to 0 to
     disable. Added in version 4.00.1006312820 20011120.
 
+
 indexwritesplit
 """""""""""""""
     Whether to enable index “write-split” optimization during Metamorph
@@ -1120,6 +1350,7 @@ indexwritesplit
     for (potentially large) ``.dat`` blocks into multiple calls, thus
     needing less buffer space. The default is 1 (enabled); set to 0 to
     disable. Added in version 4.00.1015532186 20020307.
+
 
 indexbtreeexclusive
 """""""""""""""""""
@@ -1129,6 +1360,7 @@ indexbtreeexclusive
     ``lseek`` behavior. The default is 1 (enabled); set to 0 to disable.
     Added in version 5.01.1177548533 20070425.
 
+
 mergeflush
 """"""""""
     Whether to enable index “merge-flush” optimization during Metamorph
@@ -1136,6 +1368,7 @@ mergeflush
     piles to disk just before final merge; generally saves time where
     ``indexslurp`` is not possible. The default is 1 (enabled); set to 0 to
     disable. Added in version 4.00.1011143988 20020115.
+
 
 indexversion 
 """"""""""""
@@ -1146,6 +1379,7 @@ indexversion
     support version 3 indexes. Version 3 indexes may use less disk space
     than version 2, but are considered experimental. Added in version
     3.00.954374722 20000329.
+
 
 indexmaxsingle
 """"""""""""""
@@ -1160,20 +1394,27 @@ indexmaxsingle
     ``indexmaxsingle`` times, it is stored in the ``.dat``. The default is
     8.
 
+
 uniqnewlist
 """""""""""
     Whether/how to unique the new list during Metamorph index searches.
     Works around a potential bug in old versions of Texis; not generally
     set. The possible values are:
+
     0
         : do not unique at all
+
     1
         : unique auxillary/compound index new list only
+
     2
         : unique all new lists
+
     3
         : unique all new lists and report first few duplicates
+
     The default is 0.
+
 
 tablereadbufsz
 """"""""""""""
@@ -1183,11 +1424,14 @@ tablereadbufsz
     disable read buffering. Added in version 5.01.1177700467 20070427. Aka
     ``tablereadbufsize``.
 
+
 Locking properties
 ~~~~~~~~~~~~~~~~~~
+
 These properties affect the way that locking occurs in the database
 engine. Setting these properties without understanding the consequences
 can lead to inaccurate results, and even corrupt tables.
+
 
 singleuser
 """"""""""
@@ -1196,6 +1440,7 @@ singleuser
     if the database is read-only, or if there is only one connection to
     the database. Default off. This replaces the prior setting of
     ``nolocking``.
+
 
 lockmode
 """"""""
@@ -1208,11 +1453,13 @@ lockmode
     in that one process can have manual mode, and the other automatic.
     Default automatic.
 
+
 locksleepmethod
 """""""""""""""
     Determines whether to use a portable or OS specific method of
     sleeping while waiting for a lock. By default the OS specific method
     is used. This should not need to be changed.
+
 
 locksleeptime
 """""""""""""
@@ -1223,12 +1470,14 @@ locksleeptime
     higher this setting should be. It is measured in thousandths of a
     second. The default is 20.
 
+
 locksleepmaxtime
 """"""""""""""""
     The lock sleep time automatically increments the if unable to get a
     lock to allow other processes an opportunity to get the CPU. This
     sets a limit on how lock to sleep. It is measured in thousandths of
     a second. The default is 100. Added in version 4.00.1016570000.
+
 
 fairlock
 """"""""
@@ -1246,6 +1495,7 @@ fairlock
     possible to force another process to be fair. The default is that it
     operates in fair mode.
 
+
 lockverbose
 """""""""""
     How verbose the lock code should be. The default minimum level of 0
@@ -1261,19 +1511,24 @@ lockverbose
     7.07.1565800000 20190814 and later, 0x40 and 0x80 may be set to
     report before and after semaphore locking/unlocking.
 
+
 debugbreak
 """"""""""
     Stop in debugger when set. Internal/debug use available in some
     versions. Added in version 4.02.1045505248 Feb 17 2003.
+
 
 debugmalloc
 """""""""""
     Integer; controls debug malloc library. Internal/debug use in some
     versions. Added in version 4.03.1050682062 Apr 18 2003.
 
+
 Miscellaneous Properties
 ~~~~~~~~~~~~~~~~~~~~~~~~
+
 These properties do not fit nicely into a group, and are presented here.
+
 
 tablespace
 """"""""""
@@ -1282,6 +1537,7 @@ tablespace
     invocations. Default is empty string, which means the database
     directory.
 
+
 datefmt
 """""""
     This is a ``strftime`` format used to format dates for conversion to
@@ -1289,35 +1545,61 @@ datefmt
     retrieve dates in ASCII format. Although the features supported by
     different operating systems will vary, some of the more common
     format codes are:
+
     -  Output ``%``
+
     -  abbreviated weekday name
+
     -  full weekday name
+
     -  abbreviated month name
+
     -  full month name
+
     -  local date and time representation
+
     -  day of month (01 - 31)
+
     -  date as ``%m/%d/%y``
+
     -  day of month ( 1 - 31)
+
     -  Hour (00 - 23)
+
     -  Hour (01 - 12)
+
     -  day of year (001 - 366)
+
     -  month (01 - 12)
+
     -  Minute (00 - 59)
+
     -  AM/PM
+
     -  Seconds (00 - 59)
+
     -  Week number (beginning Sunday) (00-53)
+
     -  Week day (0-6) (0 is Sunday)
+
     -  Week number (beginning Monday) (00-53)
+
     -  local date representation
+
     -  local time representation
+
     -  two digit year (00 - 99)
+
     -  Year with century
+
     -  Time zone name
+
     Default ``%Y-%m-%d %H:%M:%S``, which can be restored by setting
     datefmt to an empty string. Note that in version 6.00.1300386000
     20110317 and later, the ``stringformat()`` SQL function can be used
     to format dates (and other values) without needing to set a global
     property.
+
 
 timezone
 """"""""
@@ -1326,6 +1608,7 @@ timezone
     Eastern time you should set timezone to ``EST5EDT``. Some systems
     may allow alternate representations, such as ``US/Eastern``, and if
     your operating system accepts them, so will Texis.
+
 
 locale
 """"""
@@ -1337,11 +1620,13 @@ locale
     Texis version 5 or earlier; see ``textsearchmode`` for UTF-8/Unicode
     and version 6 or later support).
 
+
 indirectcompat
 """"""""""""""
     Setting this to 1 sets compatibility with early versions of Texis as
     far as display of indirects go. If set to 1 a trailing ``@`` is
     added to the end of the filename. Default 0.
+
 
 indirectspace
 """""""""""""
@@ -1354,6 +1639,7 @@ indirectspace
     them as mount points. You should make sure that the Texis user has
     permissions to the directories. Added in version 03.00.940520000
 
+
 triggermode
 """""""""""
     This setting changes the way that the command is treated when
@@ -1365,6 +1651,7 @@ triggermode
     program which can access the database to retrieve the values in the
     table without custom coding.
 
+
 paramchk
 """"""""
     Enables or disables the checking of parameters in the SQL statement.
@@ -1374,15 +1661,18 @@ paramchk
     query be given, yet parameter values need only be supplied for those
     clauses that should take effect on the query.
 
+
 message,nomessage
 """""""""""""""""
     Enable or disable messages from the SQL engine. The argument should
     be a comma separated list of messages that you want to enable or
     disable. The known messages are:
+
     duplicate
         Message Trying to insert duplicate value () in index when an
         attempt is made to insert a record which has a duplicate value
         and a unique index exists. The default is enabled.
+
 
 varchartostrlstsep
 """"""""""""""""""
@@ -1394,6 +1684,7 @@ varchartostrlstsep
     default is ``create`` in version 7 (or ``compatibilityversion`` 7)
     and later, or ``lastchar`` in version 6 (or ``compatibilityversion``
     6) and earlier.
+
     A value of ``create`` indicates that the separator is to be created:
     the entire string is taken intact as the sole item for the resulting
     ``strlst``, [2]_ and a separator is created that is not present in
@@ -1402,15 +1693,18 @@ varchartostrlstsep
     well as multi-value Vortex variables are converted consistently when
     inserted into a ``strlst`` column: single-value vars by
     ``varchartostrlstsep``, multi-value by ``arrayconvert``.
+
     The value ``lastchar`` indicates that the last character in the
     source string should be the separator; e.g. “a,b,c,” would be split
     on the comma and result in a ``strlst`` of 3 values: “a”, “b” and
     “c”.
+
     ``varchartostrlstsep`` may also be a single byte character, in which
     case that character is used as the separator. This is useful for
     converting CSV-type strings e.g. “a,b,c” without having to modify
     the string and append the separator character first (i.e. for
     lastchar mode).
+
     ``varchartostrlstsep`` may also be set to ``default`` to restore the
     default (``conf/texis.ini``) setting. It may also be set to
     ``builtindefault`` to restore the “factory” built-in default (which
@@ -1418,6 +1712,7 @@ varchartostrlstsep
     were added in version 5.01.1231553000 20090109. If no
     ``conf/texis.ini`` value is set, ``default`` is the same as
     ``builtindefault``.
+
     ``varchartostrlstsep`` was added in version 5.01.1226978000
     20081117. See also the ``metamorphstrlstmode`` setting (p. ), which
     affects conversion of ``strlst`` values into Metamorph queries; and
@@ -1425,6 +1720,7 @@ varchartostrlstsep
     later can take a ``varchartostrlstsep`` mode argument. The
     ``compatibilityversion`` property (p. ), when set, affects
     ``varchartostrlstsep`` as well.
+
 
 multivaluetomultirow
 """"""""""""""""""""
@@ -1434,19 +1730,27 @@ multivaluetomultirow
     nonzero/true, a GROUP BY or DISTINCT on a ``strlst`` field will
     split the field into its ``varchar`` members for processing. For
     example, consider the following table:
+
     ::
+
             create table test(Colors strlst);
             insert into test(Colors)
               values(convert('red,green,blue,', 'strlst', 'lastchar'));
             insert into test(Colors)
               values(convert('blue,orange,green,', 'strlst', 'lastchar'));
           
+
     With ``multivaluetomultirow`` set true, the statement:
+
     ::
+
             select count(Colors) Count, Colors from test group by Colors;
           
+
     generates the following output:
+
     ::
+
                   Count       Colors
             ------------+------------+
                        2 blue
@@ -1454,6 +1758,7 @@ multivaluetomultirow
                        1 orange
                        1 red
           
+
     Note that the ``strlst`` values have been split, allowing the two
     ``blue`` and ``green`` values to be counted individually. This also
     results in the returned ``Colors`` type being ``varchar`` instead of
@@ -1461,6 +1766,7 @@ multivaluetomultirow
     greater than the number of rows in the table. Note also that merely
     ``SELECT``\ ing a ``strlst`` will not cause it to be split: it must
     be specified in the GROUP BY or DISTINCT clause.
+
     The ``multivaluetomultirow`` was added in version 5.01.1243980000
     20090602. It currently only applies to ``strlst`` values and only to
     single-column GROUP BY or DISTINCT clauses. A system-wide default
@@ -1471,6 +1777,7 @@ multivaluetomultirow
     return true table rows for results). The ``compatibilityversion``
     property (p. ), when set, affects this property as well.
 
+
 inmode
 """"""
     How the IN operator should behave. If set to
@@ -1480,6 +1787,7 @@ inmode
     6 (or ``compatibilityversion`` 6) and earlier, IN always behaved in
     an INTERSECT-like manner. The ``compatibilityversion`` property
     (p. ), when set, affects this property as well.
+
 
 hexifybytes
 """""""""""
@@ -1502,12 +1810,14 @@ hexifybytes
     config file (p. ). The ``compatibilityversion`` property (p. ), when
     set, affects this property as well.
 
+
 unalignedbufferwarning
 """"""""""""""""""""""
     Whether to issue “Unaligned buffer” warning messages when unaligned
     buffers are encountered in certain situations. Messages are issued
     if this setting is true/nonzero (the default). Added in version
     7.00.1366400000 20130419.
+
 
 unneededrexescapewarning
 """"""""""""""""""""""""
@@ -1517,17 +1827,20 @@ unneededrexescapewarning
     current context in REX, either alone or escaped. Such escapes are
     interpreted as just the literal character alone (respect-case); e.g
     “``\w``” has no special meaning in REX, and is taken as “``w``”.
+
     While such escapes have no meaning currently, some may take on a
     specific new meaning in a future Texis release, if REX syntax is
     expanded. Thus using them in an expression now may unexpectedly (and
     silently) result in their behavior changing after a Texis update;
     hence the warning message. Expressions using such escapes should
     thus have them changed to the unescaped literal character.
+
     If updating the code is not feasible, the warning may be silenced by
     setting ``unneededrexescapewarning`` to 0 – at the risk of silent
     behavior change at an upgrade. Added in version 7.06.1465574000
     20160610. Overrides Unneeded REX Escape Warning setting (p. ) in
     conf/texis.ini.
+
 
 nulloutputstring
 """"""""""""""""
@@ -1536,11 +1849,13 @@ nulloutputstring
     zero-integer ``date`` values, which are also shown as “``NULL``”.
     Added in version 7.02.1405382000 20140714.
 
+
 validatebtrees
 """"""""""""""
     Bit flags for additional consistency checks on B-trees. Added in
     version 7.04.1449078000 20151202. Overrides Validate Btrees setting
     (p. ) in ``conf/texis.ini``.
+
 .. [1]
    The index-data-only optimization allows Texis to not only use the
    index to resolve the WHERE clause, but also the SELECT clause in
@@ -1548,6 +1863,7 @@ validatebtrees
    altogether and speeding up results. One of the prerequisites for this
    optimization is that the SELECT clause only refer to columns
    available in the index.
+
 .. [2]
    In version 7 (or ``compatibilityversion`` 7) and later, note that in
    create mode, an empty source string will result in an empty

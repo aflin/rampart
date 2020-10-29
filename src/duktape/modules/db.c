@@ -361,14 +361,14 @@ duk_ret_t duk_rp_sql_close(duk_context *ctx)
 } while(0)
 
 /* **************************************************
-     store an error string in this.lastErr 
+     store an error string in this.errMsg 
    **************************************************   */
 void duk_rp_log_error(duk_context *ctx, char *pbuf)
 {
     duk_push_this(ctx);
-    if(duk_has_prop_string(ctx,-1,"lastErr") )
+    if(duk_has_prop_string(ctx,-1,"errMsg") )
     {
-        duk_get_prop_string(ctx,-1,"lastErr");
+        duk_get_prop_string(ctx,-1,"errMsg");
         duk_push_string(ctx, pbuf);
         duk_concat(ctx,2);
     }
@@ -387,7 +387,7 @@ void duk_rp_log_error(duk_context *ctx, char *pbuf)
 #endif
     }
 #endif
-    duk_put_prop_string(ctx, -2, "lastErr");
+    duk_put_prop_string(ctx, -2, "errMsg");
     duk_pop(ctx);
 }
 
@@ -538,8 +538,8 @@ void duk_rp_init_qstruct(QUERY_STRUCT *q)
     q->callback = -1;
     q->skip = 0;
     q->max = RESMAX_DEFAULT;
-    q->retarray = 0;
-    q->getCounts = 0;
+    q->rettype = 0;
+    q->getCounts = 1;
     q->err = QS_SUCCESS;
 }
 
@@ -613,7 +613,7 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
             {
 
                 if (duk_get_prop_string(ctx, i, "includeCounts"))
-                    q->getCounts = duk_get_boolean_default(ctx, -1, 0);
+                    q->getCounts = duk_get_boolean_default(ctx, -1, 1);
 
                 duk_pop(ctx);
 
@@ -635,15 +635,11 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
 
                     if (!strcasecmp("array", rt))
                     {
-                        q->retarray = 1;
-                    }
-                    else if (!strcasecmp("arrayh", rt))
-                    {
-                        q->retarray = 2;
+                        q->rettype = 1;
                     }
                     else if (!strcasecmp("novars", rt))
                     {
-                        q->retarray = 3;
+                        q->rettype = 2;
                     }
                 }
 
@@ -767,6 +763,7 @@ int duk_rp_add_parameters(duk_context *ctx, TEXIS *tx, int arryi)
     duk_put_prop_string(ctx,-2,"rowsReturnedMax");\
 }while(0);
 
+
 /* **************************************************
    This is called when sql.exec() has no callback.
    fetch rows and push results to array 
@@ -776,7 +773,7 @@ int duk_rp_fetch(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
 {
     int rown = 0, i = 0,
         resmax = q->max,
-        retarray = q->retarray;
+        rettype = q->rettype;
     FLDLST *fl;
     TXCOUNTINFO cinfo;
 
@@ -785,23 +782,24 @@ int duk_rp_fetch(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
     /* create return object */
     duk_push_object(ctx);
 
-    /* create results array (outer array if retarray>0) */
+    /* create results array (outer array if rettype>0) */
     duk_push_array(ctx);
 
     /* array of arrays or novars requested */
-    if (retarray)
+    if (rettype)
     {
+
         /* push values into subarrays and add to outer array */
         while (rown < resmax && (fl = TEXIS_FETCH(tx, -1)))
         {
             /* novars, we need to get each row (for del and return count value) but not return any vars */
-            if (retarray == 3)
+            if (rettype == 2)
             {
                 rown++;
                 continue;
             }
             /* we want first row to be column names */
-            if (retarray == 2)
+            if (!rown)
             {
                 /* an array of column names */
                 duk_push_array(ctx);
@@ -810,8 +808,7 @@ int duk_rp_fetch(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
                     duk_push_string(ctx, fl->name[i]);
                     duk_put_prop_index(ctx, -2, i);
                 }
-                duk_put_prop_index(ctx, -2, rown++);
-                retarray = 1; /* do this only once */
+                duk_put_prop_string(ctx, -3, "columns");
             }
 
             /* push values into array */
@@ -831,6 +828,18 @@ int duk_rp_fetch(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
     {
         while (rown < resmax && (fl = TEXIS_FETCH(tx, -1)))
         {
+            if (!rown)
+            {
+                /* an array of column names */
+                duk_push_array(ctx);
+                for (i = 0; i < fl->n; i++)
+                {
+                    duk_push_string(ctx, fl->name[i]);
+                    duk_put_prop_index(ctx, -2, i);
+                }
+                duk_put_prop_string(ctx, -3, "columns");
+            }
+
             duk_push_object(ctx);
             for (i = 0; i < fl->n; i++)
             {
@@ -843,6 +852,7 @@ int duk_rp_fetch(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
             duk_put_prop_index(ctx, -2, rown++);
         }
     }
+
     duk_put_prop_string(ctx,-2,"results");
     if(q->getCounts)
     {
@@ -865,8 +875,8 @@ int duk_rp_fetchWCallback(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
 {
     int rown = 0, i = 0,
         resmax = q->max,
-        retarray = q->retarray,
-        callback = q->callback;
+        rettype = q->rettype;
+    duk_idx_t callback_idx = q->callback, colnames_idx=0;
     FLDLST *fl;
     TXCOUNTINFO cinfo;
 
@@ -875,113 +885,85 @@ int duk_rp_fetchWCallback(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
 
     while (rown < resmax && (fl = TEXIS_FETCH(tx, -1)))
     {
-        duk_dup(ctx, callback);
-        duk_push_this(ctx);
 
-        /* array requested */
-        switch (retarray)
+        if (!rown)
         {
-        /* novars */
-        case 3:
-        {
-            duk_dup(ctx, callback);
-            duk_push_this(ctx);
-            duk_push_object(ctx);
-            duk_push_int(ctx, rown++ );
-
-            if(q->getCounts)
-            {
-                pushcounts;
-                duk_call_method(ctx, 3);/* function({_empty_},resnum,info){} */
-            }
-            else
-                duk_call_method(ctx, 2);
-
-            break;
-        }
-
-        /* requesting first row to be column names
-           so for the first row, we do two callbacks:
-           one for headers, one for first row
-        */
-        case 2:
-        {
-            /* set up an extra call to callback */
-            duk_dup(ctx, callback);
-            duk_push_this(ctx);
-
+            /* an array of column names */
             duk_push_array(ctx);
             for (i = 0; i < fl->n; i++)
             {
                 duk_push_string(ctx, fl->name[i]);
                 duk_put_prop_index(ctx, -2, i);
             }
-            
-            duk_push_int(ctx, -1 );
-            
-            if(q->getCounts)
-            {
-                pushcounts;
-                duk_call_method(ctx, 3); /* function(res,resnum,info){} */
-            }
-            else
-                duk_call_method(ctx, 2);
-
-            retarray = 1;            /* give names to callback only once */
-
-            /* if function returns false, exit while loop, return number of rows so far */
-            if (duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1))
-            {
-                duk_pop(ctx);
-                return (rown);
-            }
-            duk_pop(ctx);
-            /* no break, fallthrough */
+            colnames_idx=duk_get_top_index(ctx); 
         }
-        case 1:
+
+        duk_dup(ctx, callback_idx); /* the function */
+        duk_push_this(ctx);         /* calling with this */
+
+        switch (rettype)
         {
-            duk_dup(ctx, callback);
-            duk_push_this(ctx);
-            duk_push_array(ctx);
-            for (i = 0; i < fl->n; i++)
+            /* novars */
+            case 2:
             {
-                duk_rp_pushfield(ctx, fl, i);
-                duk_put_prop_index(ctx, -2, i);
+                duk_push_object(ctx);       /*empty object */
+                duk_push_int(ctx, rown++ ); /* index */
+                duk_dup(ctx, colnames_idx);
+
+                if(q->getCounts)
+                {
+                    pushcounts;             /* countInfo */
+                    duk_call_method(ctx, 4);/* function({_empty_},resnum,info){} */
+                }
+                else
+                    duk_call_method(ctx, 3);
+
+                break;
             }
-
-            duk_push_int(ctx, rown++ );
-
-            if(q->getCounts)
+            /* array */
+            case 1:
             {
-                pushcounts;
-                duk_call_method(ctx, 3);/* function({_empty_},resnum,info){} */
-            }
-            else
-                duk_call_method(ctx, 2);
+                duk_push_array(ctx);
+                for (i = 0; i < fl->n; i++)
+                {
+                    duk_rp_pushfield(ctx, fl, i);
+                    duk_put_prop_index(ctx, -2, i);
+                }
 
-            break;
-        }
-        /* object requested */
-        case 0:
-        {
-            duk_push_object(ctx);
-            for (i = 0; i < fl->n; i++)
+                duk_push_int(ctx, rown++ );
+                duk_dup(ctx, colnames_idx);
+                if(q->getCounts)
+                {
+                    pushcounts;
+                    duk_call_method(ctx, 4);/* function({_empty_},resnum,info){} */
+                }
+                else
+                    duk_call_method(ctx, 3);
+
+                break;
+            }
+            /* object requested */
+            case 0:
             {
-                duk_rp_pushfield(ctx, fl, i);
-                duk_put_prop_string(ctx, -2, (const char *)fl->name[i]);
-            }
-            duk_push_int(ctx, rown++ );
+                duk_push_object(ctx);
+                for (i = 0; i < fl->n; i++)
+                {
+                    duk_rp_pushfield(ctx, fl, i);
+                    duk_put_prop_string(ctx, -2, (const char *)fl->name[i]);
+                }
+                duk_push_int(ctx, rown++ );
+                duk_dup(ctx, colnames_idx);
 
-            if(q->getCounts)
-            {
-                pushcounts;
-                duk_call_method(ctx, 3);/* function({_empty_},resnum,info){} */
-            }
-            else
-                duk_call_method(ctx, 2);
+                if(q->getCounts)
+                {
+                    pushcounts;
+                    duk_call_method(ctx, 4);/* function({_empty_},resnum,info){} */
+                }
+                else
+                    duk_call_method(ctx, 3);
 
-            break;
-        }
+                break;
+            }
         } /* switch */
         /* if function returns false, exit while loop, return number of rows so far */
         if (duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1))
@@ -1022,8 +1004,8 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 
     duk_push_this(ctx);
 
-    /* clear the sql.lastErr string */
-    duk_del_prop_string(ctx,-1,"lastErr");
+    /* clear the sql.errMsg string */
+    duk_del_prop_string(ctx,-1,"errMsg");
 
     if (!duk_get_prop_string(ctx, -1, "db"))
         RP_THROW(ctx, "no database has been opened");
@@ -1097,7 +1079,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
 #endif
 
 end:
-    duk_rp_log_tx_error(ctx,pbuf); /* log any non fatal errors to this.lastErr */
+    duk_rp_log_tx_error(ctx,pbuf); /* log any non fatal errors to this.errMsg */
     return 1; /* returning outer array */
 }
 
@@ -1275,7 +1257,7 @@ duk_ret_t duk_texis_set(duk_context *ctx)
 #ifndef USEHANDLECACHE
     tx=TEXIS_CLOSE(tx);
 #endif
-    duk_rp_log_tx_error(ctx,pbuf); /* log any non fatal errors to this.lastErr */
+    duk_rp_log_tx_error(ctx,pbuf); /* log any non fatal errors to this.errMsg */
     return 0;
 }
 
@@ -1352,7 +1334,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "varchartostrlstmode");
     (void)duk_texis_set(ctx);
 
-    duk_rp_log_tx_error(ctx,pbuf); /* log any non fatal errors to this.lastErr */
+    duk_rp_log_tx_error(ctx,pbuf); /* log any non fatal errors to this.errMsg */
 
     return 0;
 }

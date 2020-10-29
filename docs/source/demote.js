@@ -13,7 +13,7 @@ if(!stat(file,true))
 
 var text=readFile(file);
 
-var lines=rex(/[^\n]+\n=/, text);
+var lines=rex(/[^\n]*\n=/, text);
 var lastline="";
 
 for (var i=0;i<lines.length;i++)

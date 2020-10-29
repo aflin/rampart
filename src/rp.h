@@ -150,17 +150,16 @@ extern int   rampart_argc;
 
     QUERY_STRUCT
     {
-        const char *sql; /* the sql statement (allocated by duk and on its stack) */
-        int arryi;       /* location of array of parameters in ctx, or -1 */
-        int callback;    /* location of callback in ctx, or -1 */
-        int skip;        /* number of results to skip */
-        int max;         /* maximum number of results to return */
-        char retarray;   /* 0 for return object with key as column names, 
-                            1 for array with no column names and
-                            2 for array with first row populated with column names 
-                            3 for novars                                           */
+        const char *sql;    /* the sql statement (allocated by duk and on its stack) */
+        int arryi;          /* location of array of parameters in ctx, or -1 */
+        duk_idx_t callback; /* location of callback in ctx, or -1 */
+        int skip;           /* number of results to skip */
+        int max;            /* maximum number of results to return */
+        char rettype;       /* 0 for return object with key as column names, 
+                               1 for array
+                               2 for novars                                           */
         char err;
-        char getCounts; /* whether to include metamorph counts in return */
+        char getCounts;     /* whether to include metamorph counts in return */
     };
 
     duk_ret_t duk_rp_sql_close(duk_context *ctx);
