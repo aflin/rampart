@@ -399,6 +399,27 @@ void duk_rp_log_tx_error(duk_context *ctx, char *buf)
     duk_rp_log_error(ctx, buf);
 }
 
+static duk_ret_t counter_to_string(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, "counterString");
+    return(1);
+}
+
+static duk_ret_t counter_to_date(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, "counterDate");
+    return(1);
+}
+
+static duk_ret_t counter_to_sequence(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, "counterSequence");
+    return(1);
+}
+
 /* **************************************************
   push a single field from a row of the sql results
    ************************************************** */
@@ -502,15 +523,36 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
     }
     case FTN_COUNTER:
     {
-        /* TODO: revisit how we want this to be presented to JS */
-        /* create backing buffer and copy data into it */
-        //p=(unsigned char *) duk_push_fixed_buffer(ctx, 8 /*size*/);
-        //memcpy(p,fl->data[i],8);
-
         char s[32];
+        void *v=NULL;
         ft_counter *acounter = fl->data[i];
+
+        duk_push_object(ctx);
         snprintf(s, 32, "%lx%lx", acounter->date, acounter->seq);
         duk_push_string(ctx, s);
+        duk_put_prop_string(ctx, -2, "counterString");
+        
+        (void)duk_get_global_string(ctx, "Date");
+        duk_push_number(ctx, 1000.0 * (duk_double_t) acounter->date);
+        duk_new(ctx, 1);
+        duk_put_prop_string(ctx, -2, "counterDate");
+
+        duk_push_number(ctx, (duk_double_t) acounter->seq);
+        duk_put_prop_string(ctx, -2, "counterSequence");
+
+        duk_push_c_function(ctx, counter_to_string, 0);
+        duk_put_prop_string(ctx, -2, "toString");
+
+        duk_push_c_function(ctx, counter_to_date, 0);
+        duk_put_prop_string(ctx, -2, "toDate");
+
+        duk_push_c_function(ctx, counter_to_sequence, 0);
+        duk_put_prop_string(ctx, -2, "toSequence");
+
+        v=duk_push_fixed_buffer(ctx, 8);
+        memcpy(v, acounter, 8);
+        duk_put_prop_string(ctx, -2, "counterValue");
+
         break;
     }
     case FTN_BYTE:

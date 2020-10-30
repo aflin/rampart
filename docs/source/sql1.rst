@@ -23,6 +23,11 @@ We include the nearly all of it here for completeness and as it may
 provide a deeper understanding of philosophy behind the library's 
 functionality.
 
+Note that the convention used in this document is ``var Sql`` with a capital
+"S" for the module and ``var sql`` with a lower-case "s" for the instance of
+a connection to a database made with the 
+:ref:`init() constructor <initconst>`.
+
 Loading the Javascript Module
 -----------------------------
 
@@ -905,6 +910,84 @@ Example:
 
    var output=Sql.stringFormat("You owe $%10.2kf to us.", 56387.34");
    /* output  = "You owe $ 56,387.34 to us." */
+
+Printing Date/Time Values
+""""""""""""""""""""""""" 
+
+Dates can be printed with fmt by using the ``%at`` format.  The ``t`` code indicates
+a time is being printed, and the a flag indicates that the next argument is
+a strftime()-style format string.  Following that is a time argument. 
+
+Example: 
+
+.. code-block:: javascript
+
+   var output=Sql.stringFormat("%at", "%B", "now");
+   /* "%B" is the strftime()-style string 
+      (indicating the month should be printed) */  
+
+A capital ``T`` may be used insteadof lower-case ``t`` to change the timezone to
+Universal Time (GMT/UTC) instead of local time for output.  These strftime()
+codes are available:
+
+*   ``%a`` for the abbreviated weekday name (e.g. Sun, Mon, Tue, etc.)
+*   ``%A`` for the full weekday name (e.g. Sunday, Monday, Tuesday, etc.)
+*   ``%b`` for the abbreviated month name (e.g. Jan, Feb, Mar, etc.)
+*   ``%B`` for the full month name (e.g. January, February, March, etc.)
+*   ``%c`` for the preferred date and time representation.
+*   ``%d`` for the day of the month as a decimal number (range 01 through 31).
+*   ``%H`` for the hour as a decimal number using a 24-hour clock (range 00 through 23).
+*   ``%I`` for the hour as a decimal number using a 12-hour clock (range 01 through 12).
+*   ``%j`` for the day of the year as a decimal number (range 001 through 366).
+*   ``%m`` for the month as a decimal number (range 01 through 12).
+*   ``%M`` for the minute as a decimal number (range 00 through 59).
+*   ``%p`` for AM or PM, depending on the time.
+*   ``%S`` for the second as a decimal number (range 00 through 60; 60 to allow for possible leap second if implemented).
+*   ``%U`` for the week number of the current year as a decimal number, starting with the first Sunday as the first day of the first week (range 00 through 53).
+*   ``%W`` for the week number of the current year as a decimal number, starting with the first Monday as the first day of the first week (range 00 through 53).
+*   ``%w`` for the day of the week as a decimal, Sunday being 0.
+*   ``%x`` for the preferred date representation without the time.
+*   ``%X`` for the preferred time representation without the date.
+*   ``%y`` for the year as a decimal number without a century (range 00 through 99).
+*   ``%Y`` for the year as a decimal number including the century.
+*   ``%Z`` for the time zone or name or abbreviation.
+*   ``%%`` for a literal `%' character.
+
+Since ``stringFormat`` arguments are typecast if needed, the date argument can be
+a Texis date or counter type, or a Texis-parseable date string.  For
+example, to print today's date in the form month/day/year:
+
+.. code-block:: javascript
+
+   var output=Sql.stringFormat("%at", "%m/%d/%y", "now");
+   console.log(output);
+
+
+Or to print the title and insertion date of books matching a query, in the
+style "February 20, 1997" (assuming id is a :ref:`Texis counter field <dtypes>`):
+
+.. code-block:: javascript
+
+   sql.exec("select id, Title from books where Desc like ?",
+            [query],
+            function(res) {
+               console.log(
+               	Sql.stringFormat("%at %s", "%B %d, %Y", res.id, res.Title) 
+               );
+            }
+   );
+   
+To use a default strftime() format, eliminate the a flag and its corresponding strftime() format argument:
+
+.. code-block:: javascript
+
+	var curDate = Sql.stringFormat("%t", "now");
+
+This will print today's date in a default format.
+
+
+CAVEATS
+As dates are printed using the standard C library, not all strftime() codes are available or behave identically on all platforms.
 
 Metamorph Hit Mark-up
 """""""""""""""""""""

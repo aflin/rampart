@@ -538,6 +538,35 @@ FLD *rp_add_arg(duk_context *ctx, duk_idx_t idx)
   /* convert object to json or string */
   if(duk_is_object(ctx,idx))
   {
+    if ( duk_has_prop_string(ctx, idx, "setUTCMilliseconds") && 
+         duk_has_prop_string(ctx, idx, "getUTCFullYear")
+       )
+    {
+        duk_get_prop_string(ctx, idx, "getTime");
+        if (duk_is_function(ctx, -1))
+        {        
+            double d;
+            duk_dup(ctx, idx);
+            duk_call_method(ctx, 0);
+            d=duk_get_number(ctx, -1);
+            duk_pop(ctx);
+            duk_push_number(ctx, d/1000.0);
+            duk_replace(ctx, idx);
+            goto arg_is_number;            
+        }
+        duk_pop(ctx);
+    }
+    else if( duk_has_prop_string(ctx, idx, "counterValue") )
+    {
+        ft_counter *acounter=NULL;
+
+        duk_get_prop_string(ctx, idx, "counterValue");
+        acounter = (ft_counter *)duk_get_buffer_data(ctx, -1, NULL);
+        if((ret=createfld("counter",1,0)) == FLDPN)
+          goto err;
+        putfld(ret, acounter, 1);
+        goto done;
+    }
     duk_push_string(ctx,"function(o){return JSON.stringify(o)}");
     duk_push_string(ctx,"internal");
     duk_compile(ctx,DUK_COMPILE_FUNCTION);
@@ -565,7 +594,8 @@ FLD *rp_add_arg(duk_context *ctx, duk_idx_t idx)
     putfld(ret,s,sz);
     goto done;
   }
-  
+
+  arg_is_number:
   if(duk_is_number(ctx,idx))
   {
     double *d=NULL;
