@@ -475,32 +475,32 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
     }
     case FTN_INTEGER:
     {
-        duk_push_int(ctx, (duk_int_t) * ((ft_integer *)fl->data[i]));
+        duk_push_number(ctx, (duk_double_t) * ((ft_integer *)fl->data[i]));
         break;
     }
     case FTN_LONG:
     {
-        duk_push_int(ctx, (duk_int_t) * ((ft_long *)fl->data[i]));
+        duk_push_number(ctx, (duk_double_t) * ((ft_long *)fl->data[i]));
         break;
     }
     case FTN_SMALLINT:
     {
-        duk_push_int(ctx, (duk_int_t) * ((ft_smallint *)fl->data[i]));
+        duk_push_number(ctx, (duk_double_t) * ((ft_smallint *)fl->data[i]));
         break;
     }
     case FTN_SHORT:
     {
-        duk_push_int(ctx, (duk_int_t) * ((ft_short *)fl->data[i]));
+        duk_push_number(ctx, (duk_double_t) * ((ft_short *)fl->data[i]));
         break;
     }
     case FTN_DWORD:
     {
-        duk_push_int(ctx, (duk_int_t) * ((ft_dword *)fl->data[i]));
+        duk_push_number(ctx, (duk_double_t) * ((ft_dword *)fl->data[i]));
         break;
     }
     case FTN_WORD:
     {
-        duk_push_int(ctx, (duk_int_t) * ((ft_word *)fl->data[i]));
+        duk_push_number(ctx, (duk_double_t) * ((ft_word *)fl->data[i]));
         break;
     }
     case FTN_DOUBLE:

@@ -989,6 +989,95 @@ This will print today's date in a default format.
 CAVEATS
 As dates are printed using the standard C library, not all strftime() codes are available or behave identically on all platforms.
 
+
+Latitude, Longitude and Location
+""""""""""""""""""""""""""""""""
+
+The %L code may be used with ``stringFormat`` to print a latitude, longitude
+or location (geocode) value, in a manner similar to how date/time values are
+printed with %t.  Flags indicate what type of value is expected, and/or if a
+subformat is provided:
+
+*   ``-`` (minus) A latitude argument is expected (memory aid: latitude
+    lines are horizontal, so is minus sign).  This is the default.
+
+*   ``|`` (pipe) A longitude is expected (memory aid: longitude lines are
+    vertical; so is pipe).
+
+*   ``+`` (plus) A location is expected; either a geocode long value, or a
+    latitude and longitude (e.g.  comma-separated).
+
+*   ``a`` Like ``%at`` (date/time format), the next argument (before the
+    latitude/longitude/location) is a subformat indicating how to print the
+    latitude and/or longitude.  Without this flag, no subformat argument is
+    expected, and a default subformat is used.
+
+Latitude, longitude and location arguments should be in one of the formats
+supported by the 
+:ref:`parselatitude() <sql-server-funcs:parselatitude,parselongitude>`, 
+:ref:`parselongitude() <sql-server-funcs:parselatitude,parselongitude>`, 
+or :ref:`latlon2geocode() <sql-server-funcs:latlon2geocode, latlon2geocodearea>
+(with single arg) SQL functions, as appropriate.  If the ``a`` flag is given,
+the subformat string may contain the following codes:
+
+*   ``%D for degrees
+*   ``%M for minutes
+*   ``%S for seconds
+*   ``%H for the hemisphere letter ("N", "S", "E" or "W")
+*   ``%h for the hemisphere sign ("+" or "-")
+*   ``%o for an ISO-8859-1 degree sign
+*   ``%O for a UTF-8 degree sign
+*   ``%% for a percent sign
+
+A field width, precision, space, zero and/or minus flags may be given with
+the ``%D``/``%M``/``%S`` codes, with the same meaning as for numeric fmt
+codes.  If no flags are given to a code, the width is set to 2 (or 3 for
+longitude degrees), with space padding for degrees and zero padding for
+minutes and seconds.
+
+Additionally, a single ``d``, ``i``, ``f`` or ``g`` numeric-type flag may be
+given with the ``%D``/``%M``/``%S`` codes.  This flag will print the value
+with the corresponding fmt numeric code, e.g.  truncated to an integer for d
+or i, floating-point with potential roundoff for f or g.  This flag is only
+valid for the smallest unit (degrees/minutes/seconds) printed: larger units
+will always be printed in integer format.  This ensures that a fractional
+value will not be printed twice erroneously, e.g.  20.5 degrees will not
+have its ".5" degrees fractional part printed if "30" minutes is also being
+printed, because the degrees numeric-type will be forced to integer
+regardless of flags.
+
+The default numeric-type flag is ``g`` for the smallest unit.  This helps ensure
+values are printed with the least number of decimal places needed (often
+none), yet with more (sub-second) accuracy if specified in the original
+value.  Additionally, for the ``g`` type, if a degrees/minutes/seconds value is
+less than ( 10^-(p-2) ), where p is the format code's precision (default 6),
+it will be truncated to 0.  This helps prevent exponential-format printing
+of values, which is often merely an artifact of floating-point roundoff
+during unit conversion, and not part of the original user-specified value.
+
+Examples:
+
+.. code-block:: javascript
+
+   sql.exec("create table geotest(city varchar(64), lat double, lon double,geocode long);");
+   sql.exec("insert into geotest values('Cleveland, OH, USA', 41.4,  -81.5,  -1);");
+   sql.exec("insert into geotest values('Seattle, WA, USA',   47.6, -122.3,  -1);");
+   sql.exec("insert into geotest values('Dayton, OH, USA',    39.75, -84.19, -1);");
+   sql.exec("insert into geotest values('Columbus, OH, USA',  39.96, -83.0,  -1);");
+   sql.exec("update geotest set geocode = latlon2geocode(lat, lon);");
+   sql.exec("create index xgeotest_geocode on geotest(geocode);");
+
+   var nres=sql.exec("select city, lat, lon, geocode, distlatlon(41.4, -81.5, lat, lon) MilesAway "+
+      "from geotest " +
+      "where geocode between (select latlon2geocodearea(41.4, -81.5, 3.0)) " +
+      "order by 4 asc;",
+      function(res,i) {
+         console.log(i+1,res);
+         console.log(Sql.stringFormat("Loc: %+L", res.geocode));
+      }
+   );
+
+
 Metamorph Hit Mark-up
 """""""""""""""""""""
 
