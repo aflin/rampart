@@ -68,7 +68,7 @@ init() constructor
 
 The ``init`` constructor function takes a path (and an optional boolean) as 
 parameters and returns an object representing a new connection to the specified 
-database.  The return object include the following functions: ``exec()``,
+database.  The return object includes the following functions: ``exec()``,
 ``eval()``, ``set()``, and ``close()``.
 
 .. code-block:: javascript
@@ -136,8 +136,8 @@ array, object and/or function.  The parameters may be specified in any order.
 .. _returnval:
 
 Return Value:
-	With no options or callback, an object is returned.  The object contains
-	two or three key/value pairs.  
+	With no callback, an object is returned.  The object contains
+	three or four key/value pairs.  
 	
 	Key: ``results``; Value: an array of objects.  Each
 	object will have a key set to the corresponding column name 
@@ -147,8 +147,9 @@ Return Value:
 	returned.
 
 	Key: ``countInfo``; Value: if option ``includeCounts``
-	is not set ``false``, count info is set (see description in :ref:`below <execopts>`). 
-	Otherwise	undefined.
+	is not set ``false``, information regarding the number of total
+	possible matches is set (see description in :ref:`below <countinfo>`). 
+	Otherwise undefined.
 
 	Key:  ``columns``; Value: an array corresponding to the column names or
 	aliases selected and returned in results.
@@ -157,7 +158,8 @@ Return Value:
 	returned.  The callback is given the above values as arguments in the
 	following order: ``cbfunc(row_result, index, columns, countInfo)``
 
-    Other return values are discussed :ref:`below <execopts>`.
+   With a callback, the number of rows retrieved is returned. the Above values
+   are passed to the callback.
 
 Statement:
     A statement is a string containing a single sql statement to be executed. A trailing
@@ -202,8 +204,8 @@ Options:
 
       * ``array``: an array of arrays. The outer array members correspond to
         each row fetched. The inner array members correspond to the fields
-        returned in each row.  No information regarding column names
-        is returned.
+        returned in each row.  Information regarding column names
+        is available in :ref:`columns <returnval>`.
 
       * ``novars``: an empty array is returned.  The sql statement is
         still executed.  This may be useful for updates and deletes
@@ -217,7 +219,10 @@ Options:
      with a fulltext index.
      If count information is not available, the numbers will be negative.
 
-     The ``countInfo`` object contains the following:
+.. _countinfo:
+
+     For a :ref:`text search <sql3:Intelligent Text Search Queries>` The
+     ``countInfo`` object contains the following:
 
       * ``indexCount`` (number): a single value estimating the number
         of matching rows.
@@ -261,9 +266,12 @@ Callback:
    * ``columns``: an array corresponding to the column names or
      aliases selected and returned in results.
    
-   * ``countInfo``: an object as described above in :ref:`Options <execopts>` if the
-     ``includeCounts`` option is set ``true``.  Otherwise it will be
+   * ``countInfo``: an object as described above in `countinfo`_ if the
+     ``includeCounts`` option is not set ``false``.  Otherwise it will be
      ``undefined``. 
+
+   * Note: Regardless of ``max`` setting , returning ``false`` from the
+     ``callback`` will cancel the retreival of any remaining rows.
 
 Full Example:
 
@@ -290,7 +298,7 @@ Full Example:
        res=sql.exec("drop table employees");
    }
 
-   /* create the table */
+   /* (re)create the table */
    res=sql.exec(
            "create table employees (Classification varchar(8), " +
            "Name varchar(16), Age int, Salary int, Title varchar(16), " +
@@ -317,7 +325,7 @@ Full Example:
    /* 
      String dates converted to local time .
      Javascript dates are UTC unless offset
-     is given, and are inserted as is.
+     is given, and as such are inserted as is.
    */
    var startDate = [ 
        '1999-12-31', 
@@ -345,7 +353,7 @@ Full Example:
        "Bash and GNU utilities. Capable of crashing or resurrecting machines with a single ping.",
 
    "Harvard graduate, full ride scholarship, top of class.  Proficient in C, C++, "+
-       "Rust, Haskell Node, Python. Into skydiving. Makes a mean latte."
+       "Rust, Haskell, Node, Python. Into skydiving. Makes a mean latte."
    ];
 
    /* insert rows */
@@ -356,8 +364,6 @@ Full Example:
            [ cl[i], name[i], age[i], salary[i], title[i], startDate[i], bio[i] ]
        );
    }
-
-   sql.close();
 
    /* create text index */
    sql.exec("create fulltext index employees_Bio_text on employees(Bio)");
@@ -406,11 +412,13 @@ Full Example:
           },
           "rowCount": 6
       }
+		Note that countInfo values are all negative since no
+		text search was performed.
    */
 
    res=sql.exec(
        "select Name, Age from employees",
-       {returnType:'arrayh', max:2}
+       {returnType:'array', max:2}
    );
    pprint(res);
    /* expected output:
@@ -420,14 +428,14 @@ Full Example:
               "Age"
           ],  
           "results": [
-              {
-                  "Name": "Debbie Dreamer",
-                  "Age": 63
-              },
-              {
-                  "Name": "Rusty Grump",
-                  "Age": 58
-              }
+              [
+                  "Debbie Dreamer",
+                  63
+              ],
+              [
+                  "Rusty Grump",
+                  58
+              ]
           ],
           "countInfo": {
               "indexCount": -1,
@@ -438,38 +446,9 @@ Full Example:
           },
           "rowCount": 2
       }
-      {
-          "columns": [
-              "Name"
-          ],
-          "results": [
-              {
-                  "Name": "Georgia Geek"
-              },
-              {
-                  "Name": "Sydney Slacker"
-              },
-              {
-                  "Name": "Pat Particular"
-              }
-          ],
-          "countInfo": {
-              "indexCount": 4,
-              "rowsMatchedMin": 0,
-              "rowsMatchedMax": 4,
-              "rowsReturnedMin": 0,
-              "rowsReturnedMax": 4
-          },
-          "rowCount": 3
-      }
-      first 2 of 2 matches
-      - ["Name","Salary"]
-      0 ["Debbie Dreamer",250000]
-      1 ["Billie Barista",0]
    */
    res=sql.exec(
-       "select Name from employees where Bio likep 'proficient' and Salary > 50000",
-       {includeCounts: true}
+       "select Name from employees where Bio likep 'proficient' and Salary > 50000"
    );
    pprint(res);
 
@@ -498,6 +477,7 @@ Full Example:
           },
           "rowCount": 3
       }
+      Note that indexCount is the count before "Salary > 50000" filter
    */
 
    /* skydive => skydiving */
@@ -511,17 +491,20 @@ Full Example:
        {returnType:"array"},
        function (res, i, coln, cinfo) {
            if(!i) {
-               console.log("first 2 of "+cinfo.indexCount+" matches");
+               console.log(
+                  "Total approximate number of matches in db: " +
+                  cinfo.indexCount
+               );
                console.log("-", coln);
            }
-           console.log(i,res);
+           console.log(i+1,res);
        }
    );
    /* expected output:
-      first 2 of 2 matches
+      Total approximate number of matches in db: 2
       - ["Name","Salary"]
-      0 ["Debbie Dreamer",250000]
-      1 ["Billie Barista",0]
+      1 ["Debbie Dreamer",250000]
+      2 ["Billie Barista",0]
    */
 
    console.log(res); // 2
@@ -530,7 +513,8 @@ Full Example:
 eval()
 ~~~~~~
 
-The ``eval`` function is a shortcut for executing sql server functions where
+The ``eval`` function is a shortcut for executing sql
+:ref:`sql-server-funcs:Server functions` where
 only one computed result is desired.
 
 With ``exec()``, this:
@@ -584,9 +568,10 @@ close()
 
 In general it is not necessary to use ``close()`` as the "connection" to the
 database is not over a socket.  However, if resources to a database are no
-longer needed, ``close()`` will clean up some of those resources.  Note that 
-even after calling ``sql.close()``, other ``sql.*`` continue to function
-properly and in the same manner as when the "connection" was first opened.
+longer needed, ``close()`` will clean up some of those resources.  Note that
+even after calling ``sql.close()``, the ``sql.*`` functions will continue to
+operate as expected and in the same manner as when the "connection" was first
+opened.
 
 String Functions
 ----------------
@@ -602,7 +587,7 @@ arguments.
 
 .. code-block:: javascript
 
-    var output = new Sql.stringFormat(format [,args, ...]);
+    var output = Sql.stringFormat(format [,args, ...]);
 
 +--------+------------+---------------------------------------------------+
 |Argument|Type        |Description                                        |
@@ -788,129 +773,6 @@ meaning for ``%H``, ``%/`` and ``%:``, see `Extended Flags`_).  These flags
 are for compatibility with the C function printf(), and are not generally
 needed.
 
-Extended Flags
-""""""""""""""
-
-The following flags are available for format codes, in addition to the standard
-printf() flags described above:
-
-*   ``a`` Next argument is strftime() format string; used for ``%t``/``%T``
-    time code (here).
-
-*   ``k`` For numeric formats, print a comma (,) every 3 places to the left
-    of the decimal (e.g.  every multiple of a thousand).
-
-*   ``K`` (upper case "K") Same as ``k``, but print the next argument instead of
-    a comma.
-
-*   ``&`` (ampersand) Use the HTML entity ``&nbsp``; instead of space when
-    padding fields.  This is of some use when printing in an HTML
-    environment where spaces are normally compressed when displayed, and
-    thus space padding would be lost.
-
-*   ``!`` (exclamation point) When used with ``%H``, ``%U``, ``%V``, ``%B``,
-    ``%c``, ``%W`` or ``%z``, decode appropriately instead of encoding. 
-    (Note that for ``%H``, only ampersand-escaped entities are decoded)
-
-*   ``_`` (underscore) Use decimal ASCII value 160 instead of 32 (space)
-    when padding fields.  This is the ISO Latin-1 character for the HTML
-    entity &nbsp;.  For the ``%v`` (UTF-16 encode) format code, a leading
-    BOM (byte-order-mark) will not be output.  For the ``%!v`` (UTF-16
-    decode) format code, a leading BOM in the input will be preserved
-    instead of stripped in the output.  For the ``%Q``/``%!Q``
-    (quoted-printable encode/decode) format codes, the "Q" encoding will be
-    used instead of quoted-printable.
-
-*   ``^`` (caret) Output only XML-safe characters; unsafe characters are
-    replaced with a question mark.  Valid for ``%V``, ``%=V``, ``%!V``,
-    ``%v``, ``%!v``, ``%W``, ``%!W`` and ``%s`` format codes (text is
-    assumed to be ISO-8859-1 for ``%s``).  XML safe characters are all
-    characters except: ``U+0000`` through ``U+0008`` inclusive, ``U+000B``,
-    ``U+000C``, ``U+000E`` through ``U+001F`` inclusive, ``U+FFFE`` and
-    ``U+FFFF``.
-
-*   ``=`` (equal sign) Input encoding is "equal to" (the same) as output
-    encoding, i.e.  just validate it and replace illegal encoding sequences
-    with "?".  Unescaping of HTML sequences in the source (``h`` flag) is
-    disabled.  Valid for ``%V`` format code.
-
-*   ``|`` (pipe) Interpret illegal encoding sequences in the source as
-    individual ISO-8859-1 bytes, instead of replacing with the "?"
-    character.  When used with ``%=V`` for example, this allows UTF-8 to be
-    validated and passed through as-is, yet isolated ISO-8859-1 characters
-    (if any) will still be converted to UTF-8.  Valid for ``%!V``, ``%=V``,
-    ``%v``, ``%W`` and %``!W`` format codes.
-
-*   ``h`` For ``%!V`` (UTF-8 decode) and ``%v`` (UTF-16 encode): if given once,
-    HTML-escapes out-of-range (over 255 for ``%!V`` , over ``0x10FFFF`` for
-    %v) characters instead of replacing with ``?``.  For ``%V`` (UTF-8
-    encode) and ``%!v`` (UTF-16 decode): if given once, unescapes HTML
-    sequences first; this allows characters that are out-of-range in the
-    input encoding to be represented natively in the output encoding.  For
-    ``%V``, ``%!V``, ``%v``, ``%!v``, ``%W`` and ``%!W``, if given twice
-    (e.g.  ``hh``), also HTML-escapes low (7-bit) values (e.g.  control
-    chars, ``<``, ``>``) in the output.  If given three times (e.g. 
-    ``hhh``), just HTML-escapes 7-bit values; does not also decode HTML
-    entities in the input.  Note that the ``h`` flag is also used in another
-    context as a sub-flag for `Metamorph Hit Mark-up`_.
-
-*   ``j`` (jay)   For the ``%s``, ``%H``, ``%v``, ``%V``, ``%B`` and ``%Q``
-    format codes (and their ``!``-decode variants), also do newline
-    translation.  Any of the newline byte sequences CR, LF, or CRLF in the
-    input will be replaced with the machine-native newline sequence in the
-    output, instead of being output as-is.  This allows text newlines to be
-    portably "cleaned up" for the current system, without having to detect
-    what the system is.  If ``c`` is given immediately after the ``j``,
-    ``CR`` is used as the output sequence, instead of the machine-native
-    sequence.  If ``l`` (el) is given immediately after the ``j``, ``LF`` is
-    used as the output sequence.  If both ``c`` and ``l`` are given (in
-    either order), CRLF is used.  The ``c`` and ``l`` subflags allow a
-    non-native system's newline convention to be used, e.g.  by a web
-    application that is adapting to browsers of varying operating systems. 
-    Note that for the ``%B`` format code, input CR/LF bytes are never
-    translated (since it is a binary encoding); ``j`` and its subflags only
-    affect the output of "soft" line-wrap newlines that do not correspond to
-    any input character.
-
-*   ``l`` (el) For ``%H``, only encode low (7-bit) characters; leave characters
-    above 127 as-is.  This is useful when HTML-escaping UTF-8 text, to avoid
-    disturbing multi-byte characters.  When combined with ``!`` (decode),
-    escape sequences are decoded to low (7-bit) strings, e.g.  "&copy;" is
-    replaced with "(c)" instead of ASCII character 169.  (The ``l`` flag is
-    also used with numeric format codes to indicate a long integer or
-    double, and with the ``j`` flag as a subflag.) The l flag has yet
-    another meaning when used with the %/ or %: format codes; see discussion
-    of those codes above.
-
-*   ``m`` For the ``%s``, ``%H``, ``%V`` and ``%v`` codes, mark up with a
-    Metamorph query.  See next section for a discussion of this flag and its
-    subflags ``b``, ``B``, ``U``, ``R``, ``h``, ``n``, ``p``, ``P``, ``c`` and
-    ``e``.
-
-*   ``p`` Perform paragraph markup (for ``%s`` and ``%H`` codes).  Paragraph breaks
-    (text matching the REX expression "$=\space+") are replaced with "<p/>"
-    tags in the output.  For the ``%U`` code, do path escapement: space is encoded
-    to ``%20`` not ``+``, and  ``&+;=`` are left as-is and ``+`` is
-    not decoded when also using ``!``.
-
-*   ``P`` (upper case "P") For ``%s`` and ``%H``, same as p, but use the next
-    additional argument as the REX expression to match paragraph breaks.  If
-    given twice (PP), use another additional argument after the REX expression
-    as the replacement string, instead of "<p/>".  PP was added in version 6.
-
-*   ``q`` For the %U code, in version 7 and earlier, do full-encoding:
-    encode "/" (forward slash) and "@" (at-sign) as well (implies ``p`` flag as
-    well).
-
-For the %W code, only the "Q" encoding will be used (no base64).
-
-Example:
-
-.. code-block:: javascript
-
-   var output=Sql.stringFormat("You owe $%10.2kf to us.", 56387.34");
-   /* output  = "You owe $ 56,387.34 to us." */
-
 Printing Date/Time Values
 """"""""""""""""""""""""" 
 
@@ -1059,7 +921,7 @@ Examples:
 
 .. code-block:: javascript
 
-   sql.exec("create table geotest(city varchar(64), lat double, lon double,geocode long);");
+   sql.exec("create table geotest(city varchar(64), lat double, lon double, geocode long);");
    sql.exec("insert into geotest values('Cleveland, OH, USA', 41.4,  -81.5,  -1);");
    sql.exec("insert into geotest values('Seattle, WA, USA',   47.6, -122.3,  -1);");
    sql.exec("insert into geotest values('Dayton, OH, USA',    39.75, -84.19, -1);");
@@ -1077,6 +939,254 @@ Examples:
       }
    );
 
+Other Format Codes
+""""""""""""""""""
+
+In addition to the standard printf() formatting codes, other <fmt> codes are
+available:
+
+*   ``%t``, ``%T`` strftime()-style output of a date or counter field (see
+    above)
+
+*   ``%L`` Output of a latitude, longitude, or location (geocode); see above
+
+*   ``%H`` Prints its string (e.g.  varchar) argument, applying HTML escape
+    codes where needed to make the string "safe" for HTML output (``"``,
+    ``&``, ``<``, ``>``, ``DEL`` and control chars less than 32 except
+    ``TAB``, ``LF``, ``FF`` and ``CR`` are escaped).  With the ``!`` flag,
+    decodes instead (to ISO-8859-1); see also the ``l`` (el) flag, here. 
+    The ``j`` flag (here) may be given for newline translation.  When
+    decoding with ``!``, out-of-ISO-8859-1-range characters are output as
+    ``?``; to decode HTML to UTF-8 instead, use ``%hV``.
+
+*   ``%U`` Prints its string argument, encoding for a URL, i.e using
+    %-codes.  With the !  flag, decodes instead.  With the p (path) flag,
+    spaces are encoded as ``%20`` instead of ``+``.  With the ``q`` flag,
+    ``/`` (slash) and ``@`` (at-sign) are encoded as well (or only
+    unreserved/safe chars are decoded, if ``!``  too).  
+    See `Extended Flags`_.
+
+*   ``%V`` (upper-case vee) Prints its string argument, encoding 8-bit
+    ISO-8859-1 chars for UTF-8 (compressed Unicode).  With the ``!``  flag,
+    decodes instead (to ISO-8859-1).  Illegal, truncated, or out-of-range
+    sequences are translated as question-marks (?); this can be modified with
+    the ``h`` flag (here).  The ``j`` flag (here) may be given for newline
+    translation.
+
+*   ``%v`` (lower-case vee) Prints its UTF-8 string argument, encoding to
+    UTF-16.  With the ``!`` flag (here), decodes to UTF-8 instead. 
+    Illegal, truncated, or out-of-range sequences are translated as ``?``
+    (question-marks).  This can be modified with the ``h`` flag.  The ``<``
+    (less-than) flag forces UTF-16LE (little-endian) output (encode) or
+    treats input as little-endian (decode).  The ``>`` flag forces UTF-16BE
+    (big-endian) output (encode) or treats input as big-endian (decode). 
+    The default endian-ness is big-endian; for decode, a leading
+    byte-order-mark character (hex 0xFEFF) will determine endian-ness if
+    present.  The ``_`` (underscore) flag skips printing a leading
+    byte-order-mark when encoding; when decoding the ``_`` flag saves (does
+    not delete) a leading byte-order-mark in the input.  The ``j`` flag may
+    be given for newline translation.
+
+*   ``%B`` Prints its string argument, encoding to base64.  If a non-zero
+    field width is given, a newline is output after every "width" bytes output
+    (absolute value, rounded up to 4) and at the end of the base64 output. 
+    Thus "%64B" would format with no more than 64 bytes per line.  This is
+    useful for encoding into a MIME mail message with line length restraints. 
+    A ``!`` flag indicates that the string is to be decoded instead of encoded. 
+    The ``j`` flag (here) may be given to set the newline style, though it only
+    applies to soft (output) newlines; input CR/LF bytes are never modified
+    since base64 is a binary encoding.
+
+*   ``%Q`` Prints its string argument, encoding to quoted-printable (per RFC
+    2045).  If a non-zero field width is given, a newline is output after
+    every "width" bytes output (absolute value, rounded up where needed).  A
+    negative field width or ``-`` flag indicates "binary" encoding: input CR and
+    LF bytes are also hex-encoded; normally they are output as-is (or subject
+    to the ``j`` flag, here) and therefore subject to possible newline translation
+    by a mail transfer agent etc.  A ``!`` flag indicates that decoding instead
+    of encoding is to be done (and the field width and negative flag are
+    ignored).  The ``j`` flag (here) may be given for newline translation.  If an
+    ``_`` (underscore) flag is given, "Q" encoding (per RFC 2047) is used instead
+    of quoted-printable: it is similar, except that U+0020 (space) is output
+    as underscore (_), no whitespace is ever output (e.g.  tab/CR/LF are
+    hex-encoded, and the field width is ignored), and certain other special
+    characters are hex-encoded that normally would not be (e.g.  dollar sign,
+    percent, ampersand etc.).  With the underscore flag, the resulting output
+    is safe for all RFC 2047 "Q" encoding contexts.
+
+*   ``%W`` Prints its UTF-8 string argument, encoding
+    linear-whitespace-separated tokens to RFC 2047 encoded-word format
+    (i.e.  "=?...?=" mail header tokens) as needed.  Tokens that do not
+    require encoding are left as-is.  A ``!`` flag indicates that decoding
+    instead of encoding should be done.  A ``q`` flag for ``%W`` indicates
+    that only the "Q" encoding should be used for encoded words; normally
+    either "Q" or base64 - whichever is shorter - is used.  The ``hh``,
+    ``hhh``, ``j``, ``^`` and ``|`` flags are respected.  The h flag is
+    aslo supported for %``!W``.  If a non-zero field width is given, it is
+    used as the desired maximum byte length of encoded words: if an encoded
+    word would be longer than this, it is split atomically into multiple
+    words, separated by newline-space.
+
+*   ``%z Prints its argument, encoded (compressed) in the gzip deflate
+    format.  The ``!`` flag will decode (decompress) the argument instead. 
+    A precision value will limit the output to that many bytes, as with
+    ``%s``; this can be used to "peek" at the start of compressed data
+    without decoding all of it (and consuming memory to do so).
+
+*   ``For either encode or decode, a single l flag may be given to indicate
+    zlib deflate format instead, or a ``ll`` (double el) to indicate raw
+    deflate format instead.  All variants use the same deflate algorithm,
+    but gzip adds (typically) 18 bytes of headers/footers, zlib 6, and raw
+    none.  Additionally, decoding with ``%!z`` (no flags) will accept any
+    of the three variants.
+
+*   ``%b Binary output of an integer.
+
+*   ``%F Prints a float as a fraction: whole number plus fraction.
+
+*   ``%r Lowercase Roman numeral output of an integer.
+
+*   ``%R Uppercase Roman numeral output of an integer.
+
+All the standard flags, as well as the extended flags (below), can be given
+to these codes, where applicable.  
+
+Examples:
+
+.. code-block:: javascript
+
+   console.log(
+      Sql.stringFormat("Year %R %H %R", 1977, "<", 1997)
+   );
+   /* Year MCMLXXVII &lt; MCMXCVII */
+
+   console.log(
+      Sql.stringFormat("%F", 5.75)
+  );
+  /* 5 3/4 */
+
+Extended Flags
+""""""""""""""
+
+The following flags are available for format codes, in addition to the standard
+printf() flags described above:
+
+*   ``a`` Next argument is strftime() format string; used for ``%t``/``%T``
+    time code (here).
+
+*   ``k`` For numeric formats, print a comma (,) every 3 places to the left
+    of the decimal (e.g.  every multiple of a thousand).
+
+*   ``K`` (upper case "K") Same as ``k``, but print the next argument instead of
+    a comma.
+
+*   ``&`` (ampersand) Use the HTML entity ``&nbsp``; instead of space when
+    padding fields.  This is of some use when printing in an HTML
+    environment where spaces are normally compressed when displayed, and
+    thus space padding would be lost.
+
+*   ``!`` (exclamation point) When used with ``%H``, ``%U``, ``%V``, ``%B``,
+    ``%c``, ``%W`` or ``%z``, decode appropriately instead of encoding. 
+    (Note that for ``%H``, only ampersand-escaped entities are decoded)
+
+*   ``_`` (underscore) Use decimal ASCII value 160 instead of 32 (space)
+    when padding fields.  This is the ISO Latin-1 character for the HTML
+    entity &nbsp;.  For the ``%v`` (UTF-16 encode) format code, a leading
+    BOM (byte-order-mark) will not be output.  For the ``%!v`` (UTF-16
+    decode) format code, a leading BOM in the input will be preserved
+    instead of stripped in the output.  For the ``%Q``/``%!Q``
+    (quoted-printable encode/decode) format codes, the "Q" encoding will be
+    used instead of quoted-printable.
+
+*   ``^`` (caret) Output only XML-safe characters; unsafe characters are
+    replaced with a question mark.  Valid for ``%V``, ``%=V``, ``%!V``,
+    ``%v``, ``%!v``, ``%W``, ``%!W`` and ``%s`` format codes (text is
+    assumed to be ISO-8859-1 for ``%s``).  XML safe characters are all
+    characters except: ``U+0000`` through ``U+0008`` inclusive, ``U+000B``,
+    ``U+000C``, ``U+000E`` through ``U+001F`` inclusive, ``U+FFFE`` and
+    ``U+FFFF``.
+
+*   ``=`` (equal sign) Input encoding is "equal to" (the same) as output
+    encoding, i.e.  just validate it and replace illegal encoding sequences
+    with "?".  Unescaping of HTML sequences in the source (``h`` flag) is
+    disabled.  Valid for ``%V`` format code.
+
+*   ``|`` (pipe) Interpret illegal encoding sequences in the source as
+    individual ISO-8859-1 bytes, instead of replacing with the "?"
+    character.  When used with ``%=V`` for example, this allows UTF-8 to be
+    validated and passed through as-is, yet isolated ISO-8859-1 characters
+    (if any) will still be converted to UTF-8.  Valid for ``%!V``, ``%=V``,
+    ``%v``, ``%W`` and %``!W`` format codes.
+
+*   ``h`` For ``%!V`` (UTF-8 decode) and ``%v`` (UTF-16 encode): if given once,
+    HTML-escapes out-of-range (over 255 for ``%!V`` , over ``0x10FFFF`` for
+    %v) characters instead of replacing with ``?``.  For ``%V`` (UTF-8
+    encode) and ``%!v`` (UTF-16 decode): if given once, unescapes HTML
+    sequences first; this allows characters that are out-of-range in the
+    input encoding to be represented natively in the output encoding.  For
+    ``%V``, ``%!V``, ``%v``, ``%!v``, ``%W`` and ``%!W``, if given twice
+    (e.g.  ``hh``), also HTML-escapes low (7-bit) values (e.g.  control
+    chars, ``<``, ``>``) in the output.  If given three times (e.g. 
+    ``hhh``), just HTML-escapes 7-bit values; does not also decode HTML
+    entities in the input.  Note that the ``h`` flag is also used in another
+    context as a sub-flag for `Metamorph Hit Mark-up`_.
+
+*   ``j`` (jay)   For the ``%s``, ``%H``, ``%v``, ``%V``, ``%B`` and ``%Q``
+    format codes (and their ``!``-decode variants), also do newline
+    translation.  Any of the newline byte sequences CR, LF, or CRLF in the
+    input will be replaced with the machine-native newline sequence in the
+    output, instead of being output as-is.  This allows text newlines to be
+    portably "cleaned up" for the current system, without having to detect
+    what the system is.  If ``c`` is given immediately after the ``j``,
+    ``CR`` is used as the output sequence, instead of the machine-native
+    sequence.  If ``l`` (el) is given immediately after the ``j``, ``LF`` is
+    used as the output sequence.  If both ``c`` and ``l`` are given (in
+    either order), CRLF is used.  The ``c`` and ``l`` subflags allow a
+    non-native system's newline convention to be used, e.g.  by a web
+    application that is adapting to browsers of varying operating systems. 
+    Note that for the ``%B`` format code, input CR/LF bytes are never
+    translated (since it is a binary encoding); ``j`` and its subflags only
+    affect the output of "soft" line-wrap newlines that do not correspond to
+    any input character.
+
+*   ``l`` (el) For ``%H``, only encode low (7-bit) characters; leave characters
+    above 127 as-is.  This is useful when HTML-escaping UTF-8 text, to avoid
+    disturbing multi-byte characters.  When combined with ``!`` (decode),
+    escape sequences are decoded to low (7-bit) strings, e.g.  "&copy;" is
+    replaced with "(c)" instead of ASCII character 169.  (The ``l`` flag is
+    also used with numeric format codes to indicate a long integer or
+    double, and with the ``j`` flag as a subflag.) The l flag has yet
+    another meaning when used with the %/ or %: format codes; see discussion
+    of those codes above.
+
+*   ``m`` For the ``%s``, ``%H``, ``%V`` and ``%v`` codes, mark up with a
+    Metamorph query.  See next section for a discussion of this flag and its
+    subflags ``b``, ``B``, ``U``, ``R``, ``h``, ``n``, ``p``, ``P``, ``c`` and
+    ``e``.
+
+*   ``p`` Perform paragraph markup (for ``%s`` and ``%H`` codes).  Paragraph breaks
+    (text matching the REX expression "$=\space+") are replaced with "<p/>"
+    tags in the output.  For the ``%U`` code, do path escapement: space is encoded
+    to ``%20`` not ``+``, and  ``&+;=`` are left as-is and ``+`` is
+    not decoded when also using ``!``.
+
+*   ``P`` (upper case "P") For ``%s`` and ``%H``, same as p, but use the next
+    additional argument as the REX expression to match paragraph breaks.  If
+    given twice (PP), use another additional argument after the REX expression
+    as the replacement string, instead of "<p/>".  PP was added in version 6.
+
+*   ``q`` For the %U code, in version 7 and earlier, do full-encoding:
+    encode "/" (forward slash) and "@" (at-sign) as well (implies ``p`` flag as
+    well).
+
+For the %W code, only the "Q" encoding will be used (no base64).
+
+Example:
+
+.. code-block:: javascript
+
+   var output=Sql.stringFormat("You owe $%10.2kf to us.", 56387.34);
+   /* output  = "You owe $ 56,387.34 to us." */
 
 Metamorph Hit Mark-up
 """""""""""""""""""""
@@ -1203,6 +1313,217 @@ differently, and the $body text is HTML-escaped:
   <fmt "%mIH" $query $body>
 </sql>
 
+abstract()
+~~~~~~~~~~
+
+The abstract function generates an abstract of a given portion of text.
+
+.. code-block:: javascript
+
+   var options=
+      {
+         max: max,
+         style: style,
+         query: query
+      }; 
+   var abstract = Sql.abstract(text, options);
+
+**or**
+
+.. code-block:: javascript
+
+    var abstract = Sql.abstract(text [,max [,style [,query]]]);
+
+
++--------+------------+---------------------------------------------------+
+|Argument|Type        |Description                                        |
++========+============+===================================================+
+|text    |String      | The text from which an abstract will be generated.|
++--------+------------+---------------------------------------------------+
+|max     |Number      | Maximum length in characters of the abstract.     |
++--------+------------+---------------------------------------------------+
+|style   |String      | Method used to generate the abstract.             |
++--------+------------+---------------------------------------------------+
+|query   |String      | query or keywords used to center the abstract.    |
++--------+------------+---------------------------------------------------+
+
+Return Value:
+   The abstract string.
+
+The abstract will be less than ``max`` characters long, and will attempt to
+end at a word boundary.  If ``max`` is not specified (or is less than or
+equal to 0) then a default size of 230 characters is used.
+
+The ``style`` argument allows a choice between several different ways of
+creating the abstract.  Note that some of these styles require the ``query``
+argument as well, which is a Metamorph search query:
+
+*   ``dumb`` Start the abstract at the top of the document.
+
+*   ``smart`` This style will look for the first meaningful chunk of text,
+    skipping over any headers at the top of the text.  This is the default if
+    neither ``style`` nor ``query`` is given.
+
+*   ``querysingle`` Center the abstract contiguously on the best occurence
+    of ``query`` in the document.
+
+*   ``querymultiple`` Like ``querysingle``, but also break up the abstract into
+    multiple sections (separated with ``...``) if needed to help ensure all
+    terms are visible.  Also it wll take care with URLs to try to show the start
+    and end.
+
+*   ``querybest`` An alias for the best available query-based style; currently the
+    same as ``querymultiple``.  Using ``querybest`` in a script ensures that
+    if improved styles become available in future releases, the script will
+    automatically "upgrade" to the best style.
+
+
+If no ``query`` is given with a ``query*`` mode (``querysingle``,
+``querymultiple`` or ``querybest``), it falls back to ``dumb`` mode.
+If a ``query`` is given with anything other than a ``query*`` mode 
+(``dumb``/``smart``), the mode is promoted to ``querybest``.  The current locale
+and index expressions also have an effect on the abstract in the ``query*``
+modes, so that it more closely reflects an index-obtained hit.
+
+Example:
+
+.. code-block:: javascript
+
+   var gba= "Four score and seven years ago our fathers brought forth on " +
+   "this continent, a new nation, conceived in Liberty, and dedicated to " +
+   "the proposition that all men are created equal.\n" +
+
+   "Now we are engaged in a great civil war, testing whether that nation, " +
+   "or any nation so conceived and so dedicated, can long endure.  We are " +
+   "met on a great battle-field of that war.  We have come to dedicate a " +
+   "portion of that field, as a final resting place for those who here " +
+   "gave their lives that that nation might live.  It is altogether " +
+   "fitting and proper that we should do this.\n" +
+
+   "But, in a larger sense, we can not dedicate -- we can not consecrate " +
+   "-- we can not hallow -- this ground.  The brave men, living and dead, " +
+   "who struggled here, have consecrated it, far above our poor power to " +
+   "add or detract.  The world will little note, nor long remember what we " +
+   "say here, but it can never forget what they did here.  It is for us " +
+   "the living, rather, to be dedicated here to the unfinished work which " +
+   "they who fought here have thus far so nobly advanced.  It is rather " +
+   "for us to be here dedicated to the great task remaining before us -- " +
+   "that from these honored dead we take increased devotion to that cause " +
+   "for which they gave the last full measure of devotion -- that we here " +
+   "highly resolve that these dead shall not have died in vain -- that " +
+   "this nation, under God, shall have a new birth of freedom -- and that " +
+   "government of the people, by the people, for the people, shall not " +
+   "perish from the earth.\n";
+
+   var abstract = Sql.abstract(gba);
+   /* abstract = 
+      Four score and seven years ago our fathers brought forth on this
+      continent, a new nation, conceived in Liberty, and dedicated to the
+      proposition that all men are created equal.  Now we are engaged in a
+      great civil war, testing ...
+   */
+
+   abstract = Sql.abstract(gba, 100, "querybest", "unfinished work");
+   /* abstract =
+      It is for us the living, rather, to be dedicated here to the
+      unfinished work which they who fought ...
+   */
+
+sandr()
+~~~~~~~
+
+The ``sandr`` function replaces in ``data`` every occurrence of ``expr``
+(`rex()`_ expression(s)) with the corresponding string(s) from ``replace``.  It
+returns ``data``, a string or array of strings with any replacements.
+
+If ``replace`` has fewer values than ``expr``, it is "padded" with empty
+replacement strings for the extra search values.
+
+.. code-block:: javascript
+
+   var dataOut = Sql.sandr(expr, replace, data);
+
+
++--------+-----------------------------+---------------------------------------------------+
+|Argument|Type                         |Description                                        |
++========+=============================+===================================================+
+|expr    |String/Array of Strings      | `rex`_ expression(s_ to search for                |
++--------+-----------------------------+---------------------------------------------------+
+|replace |String/Array of Strings      | Text to replace the `rex()`_ expressions          |
++--------+-----------------------------+---------------------------------------------------+
+|data    |String/Array of Strings      | string(s) as input for search and replace         |
++--------+-----------------------------+---------------------------------------------------+ 
+
+
+Return Value:
+   If ``data`` is an array, an array of strings corresponding to the ``data`` array
+   with replacements made.
+
+   If ``data`` is a string, a string corresponding to the ``data`` string with
+   replacements made.
+
+Replacement Strings:
+""""""""""""""""""""
+
+   *   The characters ``?`` ``#`` ``{`` ``}`` ``+`` and ``\`` are special. 
+       To use them literally, precede them with the escapement character
+       ``\``.
+
+   *   Replacement strings may just be a literal string or they may include
+       the "ditto" character ``?``.  The ditto character will copy the character
+       in the position specified in the replace-string from the same position
+       in the located expression.
+
+   *   A decimal digit placed within curly-braces (e.g.  {5}) will place
+       that character of the located expression to the output.
+
+   *   A ``\`` followed by a decimal number will place that subexpression to
+       the output.  Subexpressions are numbered starting at 1.
+
+   *   The sequence ``\&`` will place the entire expression match (not
+       including ``\P`` and ``\F`` portions) to the output.
+
+   *   A plus-character ``+`` will place an incrementing decimal number to the
+       output.  One purpose of this operator is to number lines.
+
+   *   A ``#`` followed by a number will cause the numbered subexpression to
+       be printed in hexadecimal form.
+
+   *   Any character in the replace-string may be represented by the
+       hexadecimal value of that character using the following syntax:
+       ``\xhh`` where hh is the hexadecimal value.
+
+
+Example:
+
+.. code-block:: javascript
+
+	var data="I am not unhappy and am not unwilling to participate";
+	var expr=["participate", "not un"];
+	var replace="try"; /* "participate"->"try", "not un"->"" */
+	var dataOut=Sql.sandr(expr, replace, data);
+	/* dataOut = "I am happy and am willing to try" */
+
+See `rex()`_ for rex regular expression syntax.
+
+sandr2()
+~~~~~~~~
+
+The ``sandr2`` function operates in the same manner as ``sandr``, with the
+exception that it uses `re2()`_ regular expressions.
+
+rex()
+~~~~~
+
+re2()
+~~~~~
+
+rexFile()
+~~~~~~~~~
+
+re2File()
+~~~~~~~~~
+
 
 Introduction to Texis Sql
 -------------------------
@@ -1217,17 +1538,17 @@ Texis is a relational database server that specializes in managing
 textual information. It has many of the same abilities as products like
 mysql, sqlite3 and postgresql with one key difference: its primary purpose
 is to intelligently search and manage databases that contain natural language
-text, which is invariably a secondary add-on function for other databases.
+text.
 
 Why is that different?
 """"""""""""""""""""""
 Most other products are optimized for sql queries for traditional sql
-relational database functionality.  Texis has been highly optimized to handle 
-Full Text Search functions.  Where Full Text Search is an afterthought for
+relational database functionality. Texis has been highly optimized to handle 
+Full Text Search functions. Where Full Text Search is an afterthought for
 other sql database engines which support it, it is the primary focus of Texis.
 
-In Texis you can store text of nearly any size, and you’re able to query that
-information in natural language for any imaginable query.
+In Texis you can store text of nearly any size, and the database can query that
+information in natural language in a manner similar to any web based search.
 Texis utilizes the powerful Metamorph concept based text engine and has a 
 specialized relational database server built around it so that both
 relational models and Full Text Search are well supported.
@@ -1245,54 +1566,58 @@ relational data in combination with a natural language record retrieval system.
 
 Features Unique to Texis
 """"""""""""""""""""""""
-Before exploring the specifications, here are some features
-that are unique to Texis.
+
+Before exploring the specifications, here are some features that are unique
+to Texis.
 
 Zero Latency Insert
 """""""""""""""""""
-When a record is added or updated within a Texis table it is available
-for retrieval immediately. This includes documents with fields that have a
+
+When a record is added or updated within a Texis table it is available for
+retrieval immediately.  This includes documents with fields that have a
 fulltext index on them.  Optimization of fulltext documents is automatic, so
 there is no need to write maintenance code.
 
 Variable Sized Records
 """"""""""""""""""""""
+
 Like many databases, Texis allows fields with variable length text.  The
 ``varchar`` field is set with a suggested size, but is efficiently managed
-regardless of the amount of text added. In Texis, any variable sized field can
-contain up to one gigabyte.
+regardless of the amount of text added.  In Texis, any variable sized field
+can contain up to one gigabyte.
 
-Indirect Fields
-"""""""""""""""
+Indirect Fields 
+""""""""""""""" 
+
 Indirect fields are byte fields that exist as real files within the file
-system. This field type is usually used when you are creating a database
-that is managing a collection of files on the server (like word
-processing files for instance). They can also be used when the one gigabyte
-limitation of fields is too small.
-Texis can use indirect fields that point to your files anywhere on the file
-system and optionally can manage them under the database.
-Since files may contain any amount of any kind of data indirect fields
-may be used to store arbitrarily large binary objects. These Binary
-Large OBjects are often called BLOBs in other RDBMSes.
-However in Texis the ``indirect`` type is distinct from
-``blob``/``blobz``. While each ``indirect`` field is a separate external
-file, all of a table’s ``blob``/``blobz`` fields are stored together in
-one ``.blb`` file adjacent to the ``.tbl`` file. Thus, ``indirect`` is
-better suited to externally-managed files, or data in which nearly every
-row’s field value is very large. The ``blob`` (or compressed ``blobz``) 
-type is better suited to data that may often be either large or small, 
-or which Texis can manage more easily (e.g. faster access, and 
-automatically track changes for index updates). The 
-``indirect``/``blob``/``blobz`` type fields have the additional benefit 
-of storing data that is indexed, but not often retrieved, which reduces
-the main table file size and improves file system caching.
+system.  This field type is usually used when you are creating a database
+that is managing a collection of files on the server (like word processing
+files for instance).  They can also be used when the one gigabyte limitation
+of fields is too small.  Texis can use indirect fields that point to your
+files anywhere on the file system and optionally can manage them under the
+database.  Since files may contain any amount of any kind of data, indirect
+fields may be used to store arbitrarily large binary objects.  These Binary
+Large OBjects are often called BLOBs in other RDBMSes.  However in Texis the
+``indirect`` type is distinct from ``blob``/``blobz``.  While each
+``indirect`` field is a separate external file, all of a table’s
+``blob``/``blobz`` fields are stored together in one ``.blb`` file adjacent
+to the ``.tbl`` file.  Thus, ``indirect`` is better suited to
+externally-managed files, or data in which nearly every row’s field value is
+very large.  The ``blob`` (or compressed ``blobz``) type is better suited to
+data that may often be either large or small, or which Texis can manage more
+easily (e.g.  faster access, and automatically track changes for index
+updates).  The ``indirect``/``blob``/``blobz`` type fields have the
+additional benefit of storing data that is indexed, but not often retrieved,
+which reduces the main table file size and improves file system caching.
 
 Variable Length Index Keys
 """"""""""""""""""""""""""
-Typical English language contains words of extremely variant length. Texis 
-minimizes the overhead of storing these words in an index. Traditional Btrees
-have fixed length keys, so we invented a variable length key Btree in order
-to minimize our overhead while not limiting the maximum length of a key.
+
+Typical English language contains words of extremely variant length.  Texis
+minimizes the overhead of storing these words in an index.  Traditional
+Btrees have fixed length keys, so we invented a variable length key Btree in
+order to minimize our overhead while not limiting the maximum length of a
+key.
 
 Advantages of Variable Length Fields and Btrees
 """""""""""""""""""""""""""""""""""""""""""""""
@@ -1344,48 +1669,47 @@ Specifications
 
 Texis as a Relational Database Management System
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Texis is a database management system (DBMS) which follows the
-relational database model, while including methods for addressing the
-inclusion of large quantities of narrative full text. Texis provides a
-method for managing and manipulating an organization’s shared data,
-where intelligent text retrieval is harnessed as a qualifying action for
-selecting the desired information.
-Texis serves as an “intelligent agent” between the database and the
-people seeking data from the database, providing an environment where it
-is convenient and efficient to retrieve information from and store data
-in the database. Texis provides for the definition of the database and
-for data storage. Through security, backup and recovery, and other
-services, Texis protects the stored data.
-At the same time Texis provides methods for integrating advanced full
-text retrieval techniques and object manipulation with the more
-traditional roles performed by the RDBMS (relational database management
-system).
+
+Texis is a database management system (DBMS) which follows the relational
+database model, while including methods for addressing the inclusion of
+large quantities of narrative full text.  Texis provides a method for
+managing and manipulating an organization’s shared data, where intelligent
+text retrieval is harnessed as a qualifying action for selecting the desired
+information.  Texis serves as an “intelligent agent” between the database
+and the people seeking data from the database, providing an environment
+where it is convenient and efficient to retrieve information from and store
+data in the database.  Texis provides for the definition of the database and
+for data storage.  Through security, backup and recovery, and other
+services, Texis protects the stored data.  At the same time Texis provides
+methods for integrating advanced full text retrieval techniques and object
+manipulation with the more traditional roles performed by the RDBMS
+(relational database management system).
 
 Relational Database Background
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Texis, like all sql based DBMSs, is based on the relational data model. The
-fundamental organizational structure for data in the relational model is
-the relation. A *relation* is a two-dimensional table made up of rows
-and columns. Each relation, also called a table, stores data about
-*entities*. These entities are objects or events on which an
-application chooses to collect data. Patients, company information, products, 
-services, metadata descriptions of media, web pages, legal documents, 
-documentation, personal data and/or any grouping of text based documentation 
-are examples of entities.The columns in a relation represent characteristics
-(*attributes*, *fields*, or *data items* of an entity, such as url, text,
-links, date, address, names, descriptions, abstract, etc). The rows
-(called *tuples* in relational jargon) in the relation represent specific 
-occurrences (or records) of a patient, doctor, time-frame, description,
-location, web page, products, customer id, url, document text, etc. Each row 
-consists of a sequence of values, one for each column in the table.
-In addition, each row (or record) in a table must be unique. The
-*primary key* of a relation is the attribute or attributes whose value
-uniquely identifies a specific row in a relation. For example, a Patient
-identification number (ID) is normally used as a primary key for
-accessing a patient’s hospital records. A Customer ID number can be the
-primary key in a business.
-Many different sets of terms can be used interchangeably when discussing
-the relational model. The following table lists these terms and shows their relationship.
+
+Texis, like all sql based DBMSs, is based on the relational data model.  The
+fundamental organizational structure for data in the relational model is the
+relation.  A *relation* is a two-dimensional table made up of rows and
+columns.  Each relation, also called a table, stores data about *entities*. 
+These entities are objects or events on which an application chooses to
+collect data.  Patients, company information, products, services, metadata
+descriptions of media, web pages, legal documents, documentation, personal
+data and/or any grouping of text based documentation are examples of
+entities.The columns in a relation represent characteristics (*attributes*,
+*fields*, or *data items* of an entity, such as url, text, links, date,
+address, names, descriptions, abstract, etc).  The rows (called *tuples* in
+relational jargon) in the relation represent specific occurrences (or
+records) of a patient, doctor, time-frame, description, location, web page,
+products, customer id, url, document text, etc.  Each row consists of a
+sequence of values, one for each column in the table.  In addition, each row
+(or record) in a table must be unique.  The *primary key* of a relation is
+the attribute or attributes whose value uniquely identifies a specific row
+in a relation.  For example, a Patient identification number (ID) is
+normally used as a primary key for accessing a patient’s hospital records. 
+A Customer ID number can be the primary key in a business.  Many different
+sets of terms can be used interchangeably when discussing the relational
+model.  The following table lists these terms and shows their relationship.
 
 .. _reldbterm:
 
@@ -1431,34 +1755,33 @@ b. INVOICE Relation
       71122           11/17/92         412.00             128
       71123           11/22/92         150.00             112
 
-An important characteristic of the relational model is that records
-stored in one table can be related to records stored in other tables by
-matching common data values from the different tables. Thus data in
-different relations can be tied together, or integrated. For example, in
-the above figure, invoice 71115 in the INVOICE relation is related
-to Patient 112, Frazier, in the Patient relation because they both have
-the same patient ID. Invoices 71118, 71121, and 71123 are also related
-to Patient 112.
+An important characteristic of the relational model is that records stored
+in one table can be related to records stored in other tables by matching
+common data values from the different tables.  Thus data in different
+relations can be tied together, or integrated.  For example, in the above
+figure, invoice 71115 in the INVOICE relation is related to Patient 112,
+Frazier, in the Patient relation because they both have the same patient ID. 
+Invoices 71118, 71121, and 71123 are also related to Patient 112.
+
 A database in the relational model is made up of a collection of
-interrelated relations. Each relation represents data (to the users of
-the database) as a two-dimensional table. The terms *relation* and
-*table* are interchangeable. For the remainder of the text, the term
-*table* will be used when referring to a relation.
-Access to data in the database is accomplished in two ways. The first
-way is by writing application programs written in procedural languages
-such as C that add, modify, delete, and retrieve data from the database.
-These functions are performed by issuing requests to the DBMS. The
-second method of accessing data is accomplished by issuing commands, or
-queries, in a fourth-generation language (4GL) directly to the DBMS to
-find certain data. This language is called a *query language*, which is
-a nonprocedural language characterized by high-level English-like
-commands such as ``UPDATE``, ``DELETE``, ``SELECT``, etc. Structured
-Query Language (SQL, also pronounced “Sequel”) is an example of a
+interrelated relations.  Each relation represents data (to the users of the
+database) as a two-dimensional table.  The terms *relation* and *table* are
+interchangeable.  For the remainder of the text, the term *table* will be
+used when referring to a relation.  Access to data in the database is
+accomplished in two ways.  The first way is by writing application programs
+written in procedural languages such as C that add, modify, delete, and
+retrieve data from the database.  These functions are performed by issuing
+requests to the DBMS.  The second method of accessing data is accomplished
+by issuing commands, or queries, in a fourth-generation language (4GL)
+directly to the DBMS to find certain data.  This language is called a *query
+language*, which is a nonprocedural language characterized by high-level
+English-like commands such as ``UPDATE``, ``DELETE``, ``SELECT``, etc. 
+Structured Query Language (SQL, also pronounced “Sequel”) is an example of a
 nonprocedural query language.
 
 Support of SQL
 ~~~~~~~~~~~~~~
-**YUK YUK YUK**
+**YUK YUK YUK -- FIXME for 2020 **
 
 As more corporate data processing centers use SQL, more vendors are
 offering relational database products based on the SQL language.

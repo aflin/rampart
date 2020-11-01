@@ -1440,7 +1440,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_c_function(ctx, RPfunc_stringformat, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "stringFormat");
 
-    duk_push_c_function(ctx, RPsqlFuncs_abstract, 2);
+    duk_push_c_function(ctx, RPsqlFuncs_abstract, 4);
     duk_put_prop_string(ctx, -2, "abstract");
 
     duk_push_c_function(ctx, RPsqlFunc_sandr, 3);

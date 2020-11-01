@@ -705,20 +705,20 @@ RPsqlFuncs_abstract(duk_context *ctx)
 	ft_char *text=NULL, *query = CHARPN;
 	ft_long maxsz=230;
 	ft_long style = TXABS_STYLE_SMART;
+	const char *style_str="smart";
+	const char *styles[]= {
+	    "dumb","smart","querysingle","querymultiple","querybest",NULL
+	};
+	int i=0;
 	DBTBL *tbl=NULL;
 	duk_idx_t idx=0;
 	char *ab;
 
 	if (globalcp == APICPPN) globalcp = TXopenapicp();
 
-	if( duk_is_string(ctx,idx) || ( (idx=1) && duk_is_string(ctx,idx) ) )
-	{
-	    text=(ft_char *)duk_get_string(ctx,idx);
-	}
-	else
-	    RP_THROW(ctx,"abstract: no text provided");
+	text=(char *)REQUIRE_STRING(ctx, idx, "abstract: no text provided");
 
-	idx=!idx;
+	idx++;
 	
 	if( duk_is_object(ctx,idx) )
 	{
@@ -726,23 +726,36 @@ RPsqlFuncs_abstract(duk_context *ctx)
 	        maxsz=(ft_long)REQUIRE_NUMBER(ctx,-1,"abstract: parameter \"max\" requires a number");
             duk_pop(ctx);
 
-	    if(duk_get_prop_string(ctx,idx,"maxsize"))
-	        maxsz=(ft_long)REQUIRE_NUMBER(ctx,-1,"abstract: parameter \"maxsize\" requires a number");
-            duk_pop(ctx);
-
-            if(duk_get_prop_string(ctx,idx,"q"))
-                query=(ft_char *)strdup(REQUIRE_STRING(ctx,-1,"abstract: parameter \"query\" requires a string"));
-            duk_pop(ctx);
-
             if(duk_get_prop_string(ctx,idx,"query"))
                 query=(ft_char *)strdup(REQUIRE_STRING(ctx,-1,"abstract: parameter \"query\" requires a string"));
             duk_pop(ctx);
 
             if(duk_get_prop_string(ctx,idx,"style"))
-                style= TXstrToAbs((char *)REQUIRE_STRING(ctx,-1,"abstract: parameter \"style\" requires a string (dumb|smart|querysingle|querymultiple|querybest)"));
+                style_str=REQUIRE_STRING(ctx,-1,"abstract: parameter \"style\" requires a string (dumb|smart|querysingle|querymultiple|querybest)");
             duk_pop(ctx);
 
 	}
+	else if (duk_is_number(ctx,idx))
+	{
+	    maxsz=(ft_long)duk_get_number(ctx,idx);
+	    idx++;
+            if (duk_is_string(ctx,idx))
+            {
+                style_str=duk_get_string(ctx,idx);
+                idx++;
+
+                if (duk_is_string(ctx,idx))
+                    query=(ft_char *)strdup(duk_get_string(ctx,idx));
+            }
+            
+        }	
+	
+	while(styles[i] && strcmp(style_str,styles[i])!=0) i++;
+	if(styles[i]==NULL)
+	    RP_THROW(ctx, "abstract: parameter \"style\" requires a string (dumb|smart|querysingle|querymultiple|querybest)");
+	
+        style = TXstrToAbs((char *)style_str);
+
 	ab=(char*)abstract(text, maxsz, style, query, tbl, CHARPPN, CHARPN);
 	duk_push_string(ctx, ab);
 	free(query);
