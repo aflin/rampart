@@ -10,10 +10,20 @@ modified. The properties are set using the following SQL syntax:
 
         SET property = value;
 
-The ``value`` can be one of three types depending on the property:
-numeric, boolean or string. A boolean value is either an integer–0 is
-false, anything else is true–or one of the following strings: “``on``”,
-“``off``”, “``true``”, “``false``”, “``yes``” or “``no``”.
+or in Rampart JavaScript:
+
+.. code-block:: javascript
+
+   sql.set({
+      property1: value1
+      [, property2: value2, ...]
+   });
+
+The ``value`` can be one of three types depending on the property: numeric,
+boolean or string.  A boolean value is either an integer–0 is false,
+anything else is true–or one of the following strings: “``on``”, “``off``”,
+“``true``”, “``false``”, “``yes``” or “``no``”.  Using the Rampart
+Javascript ``sql.set()``, booleans should be set to ``true`` or ``false``.
 
 The settings are grouped as follows:
 

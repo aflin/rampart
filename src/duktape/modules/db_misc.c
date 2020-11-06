@@ -1352,7 +1352,8 @@ static int rex (
         1: string or filename, ignored here
         2: object, callback or undefined (corresponding to func_idx and opt_idx)
         3: object, callback or undefined (but not same as 2 unless both undefined)
-        4: return object from prev run from rexfile 
+        4: if enumerating over array in rex_re2(), enum object
+        [4/5]: return object from prev run from re* or re*file 
     */
     /* return subexpressions by default if have callback */
     if(func_idx>0)
@@ -1442,7 +1443,7 @@ static int rex (
         docallback=0;
     }
 
-    ret_idx=duk_get_top_index(ctx); /* should always be 4 */
+    ret_idx=duk_get_top_index(ctx); /* should always be 4 ( or 5 if enum in rex_re2() ) */
 
 
 /* true if two strings overlap */
@@ -1628,13 +1629,32 @@ rex_re2(duk_context *ctx, TXrexSyntax type)
     duk_idx_t opt_idx=-1, func_idx=-1; //-1 == not found
 
     get_func_opt;
-    /* get string/buffer to be searched */
+    /* get string/buffer/array of strings/buffers to be searched */
     if(duk_is_string(ctx,1))
         str=(byte*)duk_get_lstring(ctx,1,&sz);
     else if (duk_is_buffer_data(ctx,1))
         str=(byte*)duk_get_buffer_data(ctx,1,&sz);
+    else if (duk_is_array(ctx,1))
+    {
+        int i=0;
+        duk_idx_t next_idx=-1;
+
+        duk_enum(ctx, 1, DUK_ENUM_OWN_PROPERTIES_ONLY);
+        next_idx=duk_normalize_index(ctx, -1);
+        while (duk_next(ctx, next_idx , 1 )) 
+        {
+            if(duk_is_string(ctx,-1))
+                str=(byte*)duk_get_lstring(ctx,-1,&sz);
+            else if (duk_is_buffer_data(ctx,-1))
+                str=(byte*)duk_get_buffer_data(ctx,-1,&sz);
+            end = str+sz;
+            duk_pop_2(ctx); /* key & value */
+            i=rex(ctx,str,end,opt_idx,func_idx,type,i);
+        }
+        return 1;
+    }
     else
-        RP_THROW(ctx,"re%c: item to be matched (arg 2), must be a string or buffer",
+        RP_THROW(ctx,"re%c: item to be matched (arg 2), must be a string, buffer or array of strings/buffers",
             ((type==TXrexSyntax_Re2)?'2':'x'));
 
     end = str+sz;

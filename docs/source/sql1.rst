@@ -6,27 +6,32 @@ Acknowledgment
 ~~~~~~~~~~~~~~
 
 The developers of Rampart are indebted to Thunderstone, LLC for the
-decades of development it took to create the Texis library.
+Texis library and the decades of development behind it.
 
 License
 ~~~~~~~
 
-Use of the ``rampart-sql`` module is governed by the Rampart Source
-Available License.
+Use of the ``rampart-sql`` module and the Texis library is governed by the
+Rampart Source Available License.
 
 Documentation Caveat
 ~~~~~~~~~~~~~~~~~~~~
-As the Texis library encompasses more functionality than is currently
-used in Rampart. Some settings and procedures may not be directly
-applicable in the context of its use from within a JavaScript program.
-We include the nearly all of it here for completeness and as it may
-provide a deeper understanding of philosophy behind the library's 
-functionality.
+
+As the Texis library and its included Metamorph search engine encompasses
+more functionality than is currently used in Rampart, some settings and
+procedures may not be directly applicable in the context of its use from
+within a JavaScript program.  We include nearly all of it here for
+completeness and as it may provide a deeper understanding of philosophy
+behind the library's functionality.
 
 Note that the convention used in this document is ``var Sql`` with a capital
-"S" for the module and ``var sql`` with a lower-case "s" for the instance of
-a connection to a database made with the 
-:ref:`init() constructor <initconst>`.
+"S" for the loading of the module and ``var sql`` with a lower-case "s" for
+the instance of a connection to a database made with the JavaScript
+:ref:`init() constructor <initconst>` function.
+
+Note also that the term "Texis" refers to the SQL engine, the text
+search index and the text search engine.  The term "Metamorph" is used to
+solely refer to the text search engine.
 
 Loading the Javascript Module
 -----------------------------
@@ -113,12 +118,13 @@ exec()
 ~~~~~~
 
 The exec function executes a sql statement on the database opened with
-:ref:`init() <initconst>`.  It takes a string containing a sql statement and an optional
-array, object and/or function.  The parameters may be specified in any order.
+:ref:`init() <initconst>`.  It takes a string containing a sql statement and
+an optional array of sql parameters, an object of options and/or a callback
+function.  The parameters may be specified in any order.
 
 .. code-block:: javascript
 
-    var res = sql.exec(statement [, sql_parameters, options, callback])
+    var res = sql.exec(statement [, sql_parameters] [, options] [, callback])
 
 +--------------+------------+---------------------------------------------------+
 |Argument      |Type        |Description                                        |
@@ -133,37 +139,9 @@ array, object and/or function.  The parameters may be specified in any order.
 |callback      |Function    | a function to handle data one row at a time.      |
 +--------------+------------+---------------------------------------------------+
 
-.. _returnval:
-
-Return Value:
-	With no callback, an object is returned.  The object contains
-	three or four key/value pairs.  
-	
-	Key: ``results``; Value: an array of objects.  Each
-	object will have a key set to the corresponding column name 
-	and the value set to the corresponding field of the retrieved row.
-	
-	Key: ``rowCount``; Value: a number corresponding to the number of rows
-	returned.
-
-	Key: ``countInfo``; Value: if option ``includeCounts``
-	is not set ``false``, information regarding the number of total
-	possible matches is set (see description in :ref:`below <countinfo>`). 
-	Otherwise undefined.
-
-	Key:  ``columns``; Value: an array corresponding to the column names or
-	aliases selected and returned in results.
-
-	If a callback function is specified, the number of rows fetched is
-	returned.  The callback is given the above values as arguments in the
-	following order: ``cbfunc(row_result, index, columns, countInfo)``
-
-   With a callback, the number of rows retrieved is returned. the Above values
-   are passed to the callback.
-
 Statement:
-    A statement is a string containing a single sql statement to be executed. A trailing
-    ``;`` (semicolon) is optional. Example:
+    A statement is a string containing a single sql statement to be
+    executed.  A trailing ``;`` (semicolon) is optional.  Example:
 
 .. code-block:: javascript
 
@@ -172,8 +150,8 @@ Statement:
     );
 
 Note that concatenating statements separated by ``;`` is not supported in
-JavaScript, and a script must use a separate ``exec()`` for each statement 
-to be executed.
+JavaScript, and as such, a script must use a separate ``exec()`` for each
+statement to be executed.
 
 Sql Parameters:
     Sql Parameters are specified in array and correspond to each ``?`` in the sql
@@ -196,72 +174,40 @@ Options:
     The ``options`` object may contain any of the following:
 
    * ``max`` (number):  maximum number of rows to return (default: 10).
-   * ``skip`` (number): the number of rows to skip (default: 0)
+   * ``skip`` (number): the number of rows to skip (default: 0).
    * ``returnType`` (string): Determines the format of the ``results`` value
      in the return object.
 
-      * default: an array of objects as described :ref:`above <returnval>`.
+      * default: an array of objects as described :ref:`below <returnval>`.
 
       * ``array``: an array of arrays. The outer array members correspond to
-        each row fetched. The inner array members correspond to the fields
-        returned in each row.  Information regarding column names
-        is available in :ref:`columns <returnval>`.
+        each row fetched.  The inner array members correspond to the fields
+        returned in each row.  Note that column names are still available,
+        in order, in :ref:`columns <returnval>`.
 
       * ``novars``: an empty array is returned.  The sql statement is
         still executed.  This may be useful for updates and deletes
         where the return value would otherwise not be used.
 
    * ``includeCounts`` (boolean): whether to include count information in the return object.
-     Default is ``true``. The information will be returned as an object in the ``sql.exec()`` 
-     return object (or as the fourth parameter to a callback function)with the key 
-     ``countInfo``.  The numbers returned will only be useful when performing 
-     an :ref:`text search <sql3:Intelligent Text Search Queries>` on a field
-     with a fulltext index.
-     If count information is not available, the numbers will be negative.
-
-.. _countinfo:
-
-     For a :ref:`text search <sql3:Intelligent Text Search Queries>` The
-     ``countInfo`` object contains the following:
-
-      * ``indexCount`` (number): a single value estimating the number
-        of matching rows.
-
-      * ``rowsMatchedMin`` (number): Minimum number of rows matched *before* 
-        any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
-        :ref:`sql-set:likeprows`, 
-        :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
-        :ref:`sql-set:multivaluetomultirow` are applied.
-
-      * ``rowsMatchedMax`` (number): Maximum number of rows matched *before* 
-        any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
-        :ref:`sql-set:likeprows`, 
-        :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
-        :ref:`sql-set:multivaluetomultirow` are applied.
-
-      * ``rowsReturnedMin`` (number): Minimum number of rows matched *after* 
-        any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
-        :ref:`sql-set:likeprows`, 
-        :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
-        :ref:`sql-set:multivaluetomultirow` are applied.
-
-      * ``rowsReturnedMax`` (number): Maximum number of rows matched *after* 
-        any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
-        :ref:`sql-set:likeprows`, 
-        :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
-        :ref:`sql-set:multivaluetomultirow` are applied.
+     Default is ``true``.  The information will be returned as an object in
+     the ``sql.exec()`` return object as the value of the key ``countInfo``
+     (or as the fourth parameter to a callback function).  The numbers
+     returned will only be useful when performing a 
+     :ref:`text search <sql3:Intelligent Text Search Queries>` on a field
+     with a fulltext index.  If count information is not available, the
+     numbers will be negative. See :ref:`countInfo <countinfo>`
+     below.
 
 Callback:
    A function taking as parameters (``result_row``, ``index``, ``columns``, ``countInfo``).
    The callback is executed once for each row retrieved:
 
-   * ``result``: (array/object): depending on the setting of ``returnType``
-     in ``Options`` above, a single row is passed to the callback as a an
+   * ``result_row``: (array/object): depending on the setting of ``returnType``
+     in ``Options`` above, a single row is passed to the callback as an
      object or an array.
 
-   * ``index``: The ordinal number of this search result.  If ``arrayh`` is
-     used, the first ``index value`` (where ``results`` contains the column
-     names) will be ``-1``.
+   * ``index``: The ordinal number of the current search result.
 
    * ``columns``: an array corresponding to the column names or
      aliases selected and returned in results.
@@ -271,9 +217,115 @@ Callback:
      ``undefined``. 
 
    * Note: Regardless of ``max`` setting , returning ``false`` from the
-     ``callback`` will cancel the retreival of any remaining rows.
+     ``callback`` will cancel the retreival of any remaining rows. 
+     Returning ``undefined`` or any other value will allow the next row to be
+     retrieved up to ``max`` rows.
 
-Full Example:
+.. _returnval:
+
+Return Value:
+	With no callback, an object is returned.  The object contains
+	three or four key/value pairs.  
+	
+	Key: ``results``; Value: an array of objects.  Each object will have
+	a key set to the corresponding column name and the value set to the
+	corresponding field of the retrieved row.  If ``returnType`` is set
+	to ``array``, an array of arrays containing the values (one inner
+	array per row) will be returned.
+	
+	Key: ``rowCount``; Value: a number corresponding to the number of rows
+	returned.
+
+	Key:  ``columns``; Value: an array corresponding to the column names or
+	aliases selected and returned in results.
+
+.. _countinfo:
+
+      Key: ``countInfo``; Value: if option ``includeCounts`` is not set
+      ``false``, information regarding the number of total possible matches
+      is set.  Otherwise undefined.  When performing a :ref:`text search
+      <sql3:Intelligent Text Search Queries>` the ``countInfo`` object
+      contains the following:
+
+         * ``indexCount`` (number): a single value estimating the number
+           of matching rows.
+
+         * ``rowsMatchedMin`` (number): Minimum number of rows matched *before* 
+           any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
+           :ref:`sql-set:likeprows`, 
+           :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
+           :ref:`sql-set:multivaluetomultirow` are applied.
+
+         * ``rowsMatchedMax`` (number): Maximum number of rows matched *before* 
+           any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
+           :ref:`sql-set:likeprows`, 
+           :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
+           :ref:`sql-set:multivaluetomultirow` are applied.
+
+         * ``rowsReturnedMin`` (number): Minimum number of rows matched *after* 
+           any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
+           :ref:`sql-set:likeprows`, 
+           :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
+           :ref:`sql-set:multivaluetomultirow` are applied.
+
+         * ``rowsReturnedMax`` (number): Maximum number of rows matched *after* 
+           any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
+           :ref:`sql-set:likeprows`, 
+           :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
+           :ref:`sql-set:multivaluetomultirow` are applied.
+
+If a callback function is specified, the number of rows fetched is
+returned.  The callback is given the above values as arguments in the
+following order: ``cbfunc(result_row, index, columns, countInfo)``.
+
+When a callback is provided, the number of rows retrieved is returned.
+
+Error Messages:
+   Errors may or may not throw a JavaScript exception depending on the
+   error.  If the syntax is correct but the statement cannot be executed, no
+   exception is thrown and ``sql.errMsg`` will contain the error message. 
+   Otherwise an exception is thrown and the error may be caught with
+   ``catch(error)``.
+
+Error Message Example:
+
+.. code-block:: javascript
+
+   var Sql = require("rampart-sql");
+   
+   /* create database if it does not exist */
+   var sql = new Sql.init("./mytestdb",true);
+            
+   /* create a table */
+   sql.exec("create table testtb (text varchar(16), number double)");
+   
+   /* create a unique index on number */
+   sql.exec("create unique index testtb_number_ux on testeb(number)");
+
+   /* insert a row */
+   sql.exec("insert into testtb values ('A B C', 123)");
+   
+   /* attempt to insert a duplicate */
+   sql.exec("insert into testtb values ('D E F', 123)");
+
+   console.log(sql.errMsg);
+   /* output = 
+      "178 Trying to insert duplicate value (123) in index
+      ./mytestdb/testtb_number_ux.btr"
+   */
+
+   try {
+   	sql.exec("insert into testtb values ('D E F', 456, 789)");
+   } catch (e) {
+   	console.log(e);
+   }   
+   /* output = 
+       "Error: sql prep error: 100 More Values Than Fields in the function: Insert
+        000 SQLPrepare() failed with -1: An error occurred in the function: texis_prepare"
+   */
+
+   
+Full Example of ``exec()`` functionality:
 
 .. code-block:: javascript
 
@@ -323,9 +375,9 @@ Full Example:
    ];
 
    /* 
-     String dates converted to local time .
+     String dates are converted to local time .
      Javascript dates are UTC unless offset
-     is given, and as such are inserted as is.
+     is given.
    */
    var startDate = [ 
        '1999-12-31', 
@@ -340,19 +392,19 @@ Full Example:
    "Born and raised in Manhattan, New York. U.C. Berkeley graduate. " +
        "Loves to skydive. Built Company from scratch. Still uses word-perfect.",
 
-   "Born in Switzerland, raised in South Dakota. Columbia graduate. "+
+   "Born in Switzerland, raised in South Dakota. Columbia graduate. " +
        "Financed operation with inheritance. Has no sense of humor.",
 
-   "Stanford graduate. Enjoys pizza and beer. Proficient in Perl, COBOL,"+
+   "Stanford graduate. Enjoys pizza and beer. Proficient in Perl, COBOL," +
        "FORTRAN and IBM System/360",
 
-   "DeVry University graduate. Enjoys a good nap. Proficient in Python, "+
+   "DeVry University graduate. Enjoys a good nap. Proficient in Python, " +
        "Perl and JavaScript",
 
-   "High School graduate. Self taught Linux and windows administration skills. Proficient in "+
+   "Lincoln High School graduate. Self taught Linux and windows administration skills. Proficient in " +
        "Bash and GNU utilities. Capable of crashing or resurrecting machines with a single ping.",
 
-   "Harvard graduate, full ride scholarship, top of class.  Proficient in C, C++, "+
+   "Harvard graduate, full ride scholarship, top of class.  Proficient in C, C++, " +
        "Rust, Haskell, Node, Python. Into skydiving. Makes a mean latte."
    ];
 
@@ -545,18 +597,21 @@ functions.
 set()
 ~~~~~
 
-The ``set`` function sets server properties.  For a full listing, see
+The ``set`` function sets Texis server properties. For a full listing, see
 :ref:`sql-set:Server Properties`. Arguments are given as keys with
 corresponding values set to a string, number or boolean as appropriate.
 Note that booleans ``true``/``false`` are equivalent to setting 
 ``0``/``1``, ``on``/``off``, or ``yes``/``no`` as described in 
 :ref:`sql-set:Server Properties`.
+
 There is no return value.
 
 Example:
 
 .. code-block:: javascript
 
+        /* rank higher docs with words appearing at beginning of document *
+         *  and only return matches with all the given query terms.       */
 	sql.set({
 		likepleadbias: 750,
 		likepallmatch: true
@@ -624,26 +679,28 @@ an optional width and/or precision size, and the format character itself. The
 standard format codes, which are the same as in printf(), and how they print 
 their arguments are:
 
-*   ``%d`` or %i Integer number.
+*   ``%d`` or ``%i`` Integer number.
 *   ``%u`` Unsigned integer number.
-*   ``%x`` or %X Hexadecimal (base 16) number; upper-case letters used if 
-    upper-case X.
+
+*   ``%x`` or ``%X`` Hexadecimal (base 16) number; upper-case letters are
+    used if upper-case X.
 
 *   ``%o`` Octal (base 8) number.
 *   ``%f`` Floating-point decimal number.
-*   ``%e`` or %E Exponential floating-point number (e.g. 1.23e+05). Upper-case
+
+*   ``%e`` or ``%E`` Exponential floating-point number (e.g. 1.23e+05). Upper-case
     exponent if upper-case E.
 
-*   ``%g`` or %G Either %f or %e format, whichever is shorter. Upper-case 
+*   ``%g`` or ``%G`` Either ``%f`` or ``%e`` format, whichever is shorter. Upper-case 
     exponent if upper-case G.
 
-*   ``%s`` A text string. The j flag (here) may be given for newline 
+*   ``%s`` A text string. The ``j`` flag may be given for newline 
     translation.
 
 *   ``%c`` A single character. If the argument is a decimal, hexadecimal
     or octal integer, it is interpreted as the ASCII code of the character
-    to print. If the ! flag is given, a character is decoded instead: prints
-    the decimal ASCII code for the first character of the argument.
+    to print.  If the ``!`` flag is given, a character is decoded instead:
+    prints the decimal ASCII code for the first character of the argument.
 
 *   ``%%`` A percent-sign; no argument and no flags are given. This
     is for printing out a literal ``%`` in the format string, which 
@@ -665,7 +722,7 @@ following flags may appear:
 
 ..
   Warning: the ``⠀`` line below is not a space, it is a U+2800 Braille Pattern Blank
-  the only way I could get a literal string with one white space character.
+  the only way I could get a literal string containing one single white space character.
 
 *   ``#`` (pound sign) Specifies that the value should be printed using an 
     "alternate format", depending on the format code.  For format code(s):
@@ -696,14 +753,14 @@ following flags may appear:
 *   ``+`` (plus sign) If given with a numeric code, indicates that a sign 
     always be placed before a number produced by a signed format.  A ``+``
     overrides a space if both are used.
+    
+    For the ``%L`` extended code, a ``+`` flag indicates the argument is a
+    location with latitude and longitude, or a geocode.
 
-For the ``%L`` extended code, a + flag indicates the argument is a location
-- latitude and longitude, or geocode.
-
-If given with a string code, ``+`` indicates that if the string value
-exceeds the given precision, truncate the string by a further 3 bytes, and
-append an ellipsis ("...").  This can be useful to give an indication of
-when a value is being truncated on display.
+   If given with a string code, ``+`` indicates that if the string value
+   exceeds the given precision, truncate the string by a further 3 bytes, and
+   append an ellipsis ("...").  This can be useful to give an indication of
+   when a value is being truncated on display.
 
 Examples:
 
@@ -713,15 +770,15 @@ Examples:
    var output = Sql.stringFormat("%#x %#x", 42, 0);
    var output2= Sql.stringFormat("%+d %+d",  42, -42);
    /*
-      0x2a 0
-      +42 -42
+      output  = "0x2a 0"
+      output2 = "+42 -42"
    */
 
 Following any flags, an optional width number may be given.  This indicates
 the minimum field width to print the value in (unless using the ``m`` flag;
 see `Metamorph Hit Mark-up`_).  If the printed value is narrower, the output
 will be padded with spaces on the left.  Note the horizontal spacing in this
-example (output is the right column):
+example:
 
 .. code-block:: javascript
 
@@ -942,8 +999,8 @@ Examples:
 Other Format Codes
 """"""""""""""""""
 
-In addition to the standard printf() formatting codes, other <fmt> codes are
-available:
+In addition to the standard printf() formatting codes, other
+``stringFormat`` codes are available:
 
 *   ``%t``, ``%T`` strftime()-style output of a date or counter field (see
     above)
@@ -1185,7 +1242,7 @@ Example:
 
 .. code-block:: javascript
 
-   var output=Sql.stringFormat("You owe $%10.2kf to us.", 56387.34);
+   var output = Sql.stringFormat("You owe $%10.2kf to us.", 56387.34);
    /* output  = "You owe $ 56,387.34 to us." */
 
 Metamorph Hit Mark-up
@@ -1214,20 +1271,54 @@ elsewhere:
 
 *   ``P`` same as ``p``, but use (next additional argument) REX expression to
     match paragraph breaks.  If given twice (PP), use another additional
-    argument after REX expression as replacement string, instead of "<p/>. 
-    PP was added in version 6.
+    argument after REX expression as replacement string, instead of "<p/>". 
 
 *   ``c`` to continue hit count into next query call
 *   ``N`` to mark up NOT terms as well
 *   ``e`` to mark up the exact query (no queryfixupmode/NOT processing)
 *   ``q`` to mark up the query itself, not the text, e.g. as a legend
 
-For example, to highlight query terms from $query in the text contained in
-$buffer in different colors, insert paragraph breaks, and escape the output
+Examples: 
+
+To highlight query terms from ``query`` in the text contained in
+``text`` in different colors, insert paragraph breaks, and escape the output
 to be HTML-safe, use:
 
+.. code-block:: javascript
 
-<fmt "%mIpH" $query $buffer>
+   var query = "format javascript";
+   var text = "Highlight formatting made easy in javascript.\n\n<Try some formatting today!>";
+   var output = Sql.stringFormat("%mIpH", query, text);
+   /* output  = `
+   Highlight <span style="background:#ffff66;color:black;font-weight:bold;">formatting</span> made easy in <span style="background:#a0ffff;color:black;font-weight:bold;">javascript</span>.
+   <p/>
+
+   &lt;Try some <span style="background:#ffff66;color:black;font-weight:bold;">formatting</span> today!&gt;`
+   */
+
+To highlight query terms from ``query`` in ``text`` in bold with anchors,
+and links, insert paragraph breaks, and escape the output
+to be HTML-safe, use:
+
+.. code-block:: javascript
+
+   var query  = "format javascript";
+   var text   = "Highlight formatting made easy in javascript.\n\n<Try some formatting today!>";
+                                 /* qc = mark up query itself and continue counting hits   *
+                                  *                 hb = create links, highlight in bold   *
+                                  *                   pH = mark paragraphs and html escape */
+   var output = Sql.stringFormat("%mqchbpH\n<p/>\n%mhbpH", query, "", query, text);
+   /* output  = `
+   <a name="hit1" href="#hit2"><b>format</b></a> <a name="hit2" href="#hit3"><b>javascript</b></a>
+   <p/>
+   Highlight <a name="hit3" href="#hit4"><b>formatting</b></a> made easy in <a name="hit4" href="#hit5"><b>javascript</b></a>.
+   <p/>
+
+   &lt;Try some <a name="hit5" href="#hit1"><b>formatting</b></a> today!&gt;`
+   */
+
+TODO:  
+   Remove version references.  Explain apicp. Explain use of "@0".
 
 Each hit found by the query has each of its sets' hits (e.g.  each term)
 highlighted in the output.  With I and/or C highlighting, if there are
@@ -1283,35 +1374,44 @@ this truncation should not be done.  (It is also not done for the %H (HTML
 escapement) format code, since the tags in the string will be escaped
 already.)
 
-The p and P flags do paragraph formatting as documented previously.
+The ``p`` and ``P`` flags do paragraph formatting as documented previously.
 
-The c flag indicates that the hit count should be continued for the next
+The ``c`` flag indicates that the hit count should be continued for the next
 query.  By default, the last hit marked up is linked back to the first hit. 
-Therefore, each %-code query markup is self-contained: if multiple calls are
+Therefore, each ``%``-code query markup is self-contained: if multiple calls are
 made, the hit count (and resulting HREFs) will start over for each call,
 which may not be desired.  If the c flag is given, the last hit in the
 string is linked to the "next" hit (N+1) instead of the first, and the next
 query will start numbering hits at N+1 instead of 1.  Thus, all but the last
-query markup call by a script should use the c flag.
+query markup call by a script should use the ``c`` flag.
 
 The e flag indicates that the query should be used exactly as given. 
-Normally, queryfixupmode (here) and N flag processing is done to the query,
+Normally, queryfixupmode (here) and ``N`` flag processing is done to the query,
 which might cause more terms to be highlighted than are actually found by
 the query (e.g.  highlighting of sets in the query that are not needed to
-resolve it, if not all sets are required).  With e set, such processing is
-not done, and some apparent hits may be left unhighlighted.  This processing
-and the e flag were added in version 2.00.897097720 19980605.  See
-queryfixupmode (here) for details on how the query is modified when e is not
-given.
+resolve it, if not all sets are required).  With ``e`` set, such processing is
+not done, and some apparent hits may be left unhighlighted.
 
-The following example marks up each $body value from a table that matches
-the user's submitted $query string.  Each set (term) is color-coded
-differently, and the $body text is HTML-escaped:
+See queryfixupmode (here) for details on how the query is modified when
+``e`` is not given.
 
+The following example creates an abstract, marks up each abstract value from
+a table that matches the user's submitted query string.  Each set (term) is
+color-coded differently, and the ``abstract(body)`` is HTML-escaped:
 
-<sql max=10 "select body from data where body like $query">
-  <fmt "%mIH" $query $body>
-</sql>
+.. code-block:: javascript
+
+   var results='<div class="results">';
+   sql.exec(sql "select abstract(body) abs from data_tbl where body like ?",
+   	[query],
+   	function(res) {
+   	   results += Sql.stringFormat('<div class="hit">%mIH</div>", query, res.abs);
+   	}
+   );
+   results +="</div>";
+
+For more information on ``abstract``, see `abstract()`_ below and
+``abstract`` in :ref:`sql-server-funcs:Server functions`.
 
 abstract()
 ~~~~~~~~~~
@@ -1447,7 +1547,7 @@ replacement strings for the extra search values.
 +--------+-----------------------------+---------------------------------------------------+
 |Argument|Type                         |Description                                        |
 +========+=============================+===================================================+
-|expr    |String/Array of Strings      | `rex`_ expression(s_ to search for                |
+|expr    |String/Array of Strings      | `rex()`_ expression(s) to search for              |
 +--------+-----------------------------+---------------------------------------------------+
 |replace |String/Array of Strings      | Text to replace the `rex()`_ expressions          |
 +--------+-----------------------------+---------------------------------------------------+
@@ -1515,14 +1615,515 @@ exception that it uses `re2()`_ regular expressions.
 rex()
 ~~~~~
 
+The ``rex`` function uses special (non-perlre) regular expressions to search for
+substrings in text.
+
+.. code-block:: javascript
+
+   var ret = Sql.rex(expr, data [, callback] [, options]);
+
+
++--------+-----------------------------+---------------------------------------------------------------+
+|Argument|Type                         |Description                                                    |
++========+=============================+===============================================================+
+|expr    |String/Array of Strings      | ``rex`` :ref:`expression(s) <sql1:Expressions>` to search for |
++--------+-----------------------------+---------------------------------------------------------------+
+|data    |String/Buffer/Array          | string(s)/buffers() as input text to be searched              |
++--------+-----------------------------+---------------------------------------------------------------+
+|callback|Function                     | Optional callback Function                                    |
++--------+-----------------------------+---------------------------------------------------------------+
+|options |Object                       | ``exclude`` and ``submatches`` options                        |
++--------+-----------------------------+---------------------------------------------------------------+
+
+expr:
+   A string or array of strings of ``rex`` regular expressions used to match
+   the text in ``data``. See `Expressions`_ below for full syntax.
+
+data:
+   A string, buffer or an array with string(s) and/or buffers(s) containing
+   the text to be searched.
+
+options:
+   The ``rex`` function may take an object of options:
+
+.. code-block:: javascript
+
+   {
+      "exclude":    [ "none" | "overlap" | "duplicate" ],
+      "submatches": [ true | false ]
+   }
+
+The default value of ``submatches`` is ``true`` if there is a callback,
+otherwise ``false``.
+
+If the ``submatches`` option is set ``false`` and no ``callback`` is
+provided, an array of matching strings is returned.
+
+If the ``submatches`` option is set ``true`` and no ``callback`` is
+provided, the return value is set to an array of objects, one per match
+containing the following information:
+
+.. code-block:: javascript
+
+   [
+      {
+         match:"match1",
+         expressionIndex:matchedExpressionNo, 
+         submatches:
+            [
+               "array",
+               "of",
+               "submatches"
+            ]
+      },
+      {...},
+      ...
+   ]
+
+*   ``match`` - the matched string.
+
+*   ``expressionIndex - the index in ``expr`` of the expression that
+    produced ``match``, if ``expr`` is an array.  Otherwise ``0``.
+
+*   ``sumbatches`` - array of submatches (one per substring matched with a
+    ``+``, ``*``, ``=`` or ``{x,y}``) from search expression in the order
+    specified in the search pattern.  For ``*`` or ``{0,y}``, this may be an
+    empty string ("").
+
+See `Callback`_ below for callback() parameters where ``submatches`` is set
+``true`` or ``false``. 
+
+The ``exclude`` option is used for when there are multiple expressions (as
+provided by an array of strings for the ``expr`` argument) that might match
+the same portion of text.  
+
+*   ``none`` returns all possible matches, even if the portion of text that
+    matches is the same or overlaps with another.
+
+*   ``overlap`` will remove the shorter (in character length) of two matches
+    where one match overlaps with the other.
+
+*   ``duplicate`` (the default mode) will remove the shorter (in character
+    length of two matches where one match is entirely encompassed in the
+    other.
+
+Example:
+
+.. code-block:: javascript
+
+   var search =  ['th=','>>is=','this ','his= is='];
+   var txt    =  'hello, this is a message';
+
+   var ret = Sql.rex(search, txt, {exclude:'duplicate'});
+   /* ret == [ "this", "his is" ] */
+
+   ret = Sql.rex(search, txt, {exclude:'overlap'});
+   /* ret == [ "his is" ] */
+
+   ret = Sql.rex(search, txt, {exclude:'none'});
+   /* ret == ["this ", "th", "his is", "is", "is"] */
+
+.. _Callback:
+
+Callback:
+   The callback function will be passed the following:
+
+.. code-block:: javascript
+
+   var ret = Sql.rex(search, txt, function(match, submatches, index)
+      {
+      	console.log(index,  'matched string "' + match +'"')   
+      	console.log("    ", 'submatches: ', submatches);
+      }
+   );
+
+   var ret = Sql.rex(search, txt, function(match, index)
+      {submatches:false},
+      {
+      	console.log(index, 'matched string "' + match +'"')   
+      }
+   );
+
+*   ``match`` - the current string matched.
+
+*   ``sumbatches`` - array of submatches (one per substring matched with a
+    ``+``, ``*``, ``=`` or ``{x,y}``) from search expression in the order
+    specified in the search pattern.  For ``*`` or ``{0,y}``, this may be an
+    empty string ("").
+
+*   ``index`` - ordinal position of current match.
+
+Return Value:
+   Depending on the ``submatches`` option, an array of matching strings or
+   an array of objects with matching string and submatch information.
+   
+   If a callback function is specified, the number of matches is returned.
+
+Expressions
+"""""""""""
+
+*   Expressions are composed of characters and operators.  Operators
+    are characters with special meaning to REX.  The following
+    characters have special meaning: ``\=?+*{},[]^$.-!`` and must
+    be escaped with a ``\`` if they are meant to be taken literally.
+    The string ">>" is also special and if it is to be matched,
+    it should be written ``\>>``.  Not all of these characters are
+    special all the time; if an entire string is to be escaped so it
+    will be interpreted literally, only the characters ``\=?+*{[^$.!>``
+    need be escaped.
+
+*   A ``\`` followed by an ``R`` or an ``I`` means to begin respecting
+    or ignoring alphabetic case distinction, until the end of the
+    sub-expression.  (Ignoring case is the default, and will re-apply
+    at the next sub-expression.)  These switches DO NOT apply to
+    characters inside range brackets.
+
+*   A ``\`` followed by an ``L`` indicates that the characters following
+    are to be taken literally up to the next ``\L``.  The purpose of
+    this operation is to remove the special meanings from characters.
+
+*   A sub-expression following ``\F`` (followed by) or ``\P`` (preceded by)
+    can be used to root the rest of an expression to which it is tied.
+    It means to look for the rest of the expression "as long as followed
+    by ..." or " as long as preceded by ..." the sub-expression
+    following the \F or \P, but the designated sub-expression will be
+    considered excluded from the located expression itself.
+
+*   A ``\`` followed by one of the following ``C`` language character
+    classes matches any character in that class: ``alpha``, ``upper``,
+    ``lower``, ``digit``, ``xdigit``, ``alnum``, ``space``, ``punct``,
+    ``print``, ``graph``, ``cntrl``, ``ascii``.  Note that the definition of
+    these classes may be affected by the current locale.
+
+*   A ``\`` followed by one of the following special characters
+    will assume the following meaning: ``n``=newline, ``t``=tab,
+    ``v``=vertical tab, ``b``=backspace, ``r``=carriage return,
+    ``f``=form feed, ``0``= the null character.
+
+*   A ``\`` followed by  ``Xn`` or ``Xnn`` where ``n`` is a hexadecimal digit
+    will match that character.
+
+*   A ``\`` followed by any single character (not one of the above
+    special escape characters/tokens) matches that character.  Escaping
+    a character that is not a special escape is not recommended, as the
+    expression could change meaning if the character becomes an escape
+    in a future release.
+
+*   The character ``^`` placed anywhere in an expression (except after a
+    ``[``) matches the beginning of a line (same as \x0A).
+
+*   The character ``$`` placed anywhere in an expression
+    matches the end of a line (\x0A in Unix).
+
+*   The character ``.`` matches any character.
+
+*   A single character not having special meaning matches that
+    character.
+
+*   A string enclosed in brackets (``[]``) is a set, and matches any
+    single character from the string.  Ranges of ASCII character codes
+    may be abbreviated with a dash, as in ``[a-z]`` or ``[0-9]``.
+    A ``^`` occurring as the first character of the set will invert
+    the meaning of the set, i.e. any character NOT in the set will
+    match instead.  A literal ``-`` must be preceded by a ``\``.
+    The case of alphabetic characters is always respected within brackets.
+
+    A double-dash (``--``) may be used inside a bracketed set to subtract
+    characters from the set; e.g. ``[\alpha--x]`` for all alphabetic
+    characters except ``x``.  The left-hand side of a set subtraction
+    must be a range, character class, or another set subtraction.
+    The right-hand side of a set subtraction must be a range, character
+    class, or a single character.  Set subtraction groups left-to-right.
+    The range operator ``-`` has precedence over set subtraction.
+
+*   The ``>>`` operator in the first position of a fixed expression
+    will force REX to use that expression as the "root" expression
+    off which the other fixed expressions are matched.  This operator
+    overrides one of the optimizers in REX.  This operator can
+    be quite handy if you are trying to match an expression
+    with a ``!`` operator or if you are matching an item that
+    is surrounded by other items.  For example: ``x+>>y+z+``
+    would force REX to find the "y's' first then go backwards
+    and forwards for the leading "x's" and trailing "z's".
+
+*   The ``!`` character in the first position of an expression means
+    that it is NOT to match the following fixed expression.
+    For example: ``start=!finish+`` would match the word "start"
+    and anything past it up to (but not including the word "finish".
+    Usually operations involving the NOT operator involve knowing
+    what direction the pattern is being matched in.  In these cases
+    the ``>>`` operator comes in handy.  If the ``>>`` operator is used,
+    it comes before the ``!``.  For example: ``>>start=!finish+finish``
+    would match anything that began with "start" and ended with
+    "finish".  THE NOT OPERATOR CANNOT BE USED BY ITSELF in an
+    expression, or as the root expression in a compound expression.
+
+    Note that ``!`` expressions match a character at a time, so their
+    repetition operators count characters, not expression-lengths
+    as with normal expressions.  E.g. ``!finish{2,4}`` matches 2 to 4
+    characters, whereas ``finish{2,4}`` matches 2 to 4 times the length
+    of ``finish``.
+
+Repitition Operators
+""""""""""""""""""""
+*   A regular expression may be followed by a repetition operator in
+    order to indicate the number of times it may be repeated.
+
+*   An expression followed by the operator ``{X,Y}`` indicates that
+    from X to Y occurrences of the expression are to be located.  This
+    notation may take on several forms: "{X}" means X occurrences of
+    the expression, "{X,}" means X or more occurrences of the
+    expression, and "{,Y}" means from 0 (no occurrences) to Y
+    occurrences of the expression.
+
+*   The '?' operator is a synonym for the operation ``{0,1}``.
+    Read as: "Zero or one occurrence."
+
+*   The '*' operator is a synonym for the operation ``{0,}``.
+    Read as: "Zero or more occurrences."
+
+*   The '+' operator is a synonym for the operation ``{1,}``.
+    Read as: "One or more occurrences."
+
+*   The '=' operator is a synonym for the operation ``{1}``.
+    Read as: "One occurrence."
+
+Discussion
+""""""""""
+``rex`` is a highly optimized pattern recognition tool that has been modeled
+after the Unix family of tools: GREP, EGREP, FGREP, and LEX.  Wherever
+possible its syntax has been held consistent with these tools, but
+there are several major departures that may bite those who are used to
+using GREP or Perl Regular Expression families.
+
+``rex`` uses a combination of techniques that allow it to surpass the speed of
+anything similar to it by a very wide margin.
+
+The technique that provides the largest advantage is called
+"state-anticipation or state-skipping" which works as follows:
+
+if we were looking for the pattern:
+
+::
+
+                       ABCDE
+in the text:
+
+::
+
+                       AAAAABCDEAAAAAAA
+
+a normal pattern matcher would do the following:
+
+::
+
+                       ABCDE
+                        ABCDE
+                         ABCDE
+                          ABCDE
+                           ABCDE
+                       AAAAABCDEAAAAAAA
+
+The state-anticipation scheme would do the following:
+
+::
+
+                       ABCDE
+                           ABCDE
+                       AAAAABCDEAAAAAAA
+
+The normal algorithm moves one character at time through the text,
+comparing the leading character of the pattern to the current text
+character of text, and if they match, it compares the leading pattern
+character +1 to the current text character +1 , and so on...
+
+The state anticipation pattern matcher is aware of the length of the
+pattern to be matched, and compares the last character of the pattern to
+the corresponding text character.  If the two are not equal, it moves
+over by an amount that would allow it to match the next potential hit.
+
+If one were to count the number of comparison cycles for each pattern
+matching scheme using the example above, the normal pattern matcher would
+have to perform 13 compare operations before locating the first occurrence
+vs. 6 compare operations for the state-anticipation pattern matcher.
+
+One concept to grasp here is that: "The longer the pattern to be found,
+the faster the state-anticipation pattern matcher will be."  While a
+normal pattern matcher will slow down as the pattern gets longer.
+
+Herein lies the first major syntax departure: ``rex`` always applies
+repetition operators to the longest preceding expression.  It does
+this so that it can maximize the benefits of using the state-skipping
+pattern matcher.
+
+If you were to give GREP the expression : ab*de+
+It would interpret it as:
+
+   an "a" then 0 or more "b"'s then a "d" then 1 or more "e"'s.
+
+``rex`` will interpret this as
+
+   0 or more occurrences of "ab" followed by 1 or more occurrences of "de".
+
+
+The second technique that provides ``rex`` with a speed advantage is ability
+to locate patterns both forwards and backwards indiscriminately.
+
+Given the expression: "abc*def", the pattern matcher is looking for
+"Zero to N occurrences of 'abc' followed by a 'def'".
+
+The following text examples would be matched by this expression:
+
+.. code-block:: none
+
+     abcabcabcabcdef
+     def
+     abcdef
+
+But consider these patterns if they were embedded within a body of text:
+
+.. code-block:: none
+
+     My country 'tis of abcabcabcabcdef sweet land of def, abcdef.
+
+A normal pattern matching scheme would begin looking for 'abc*' .  Since
+'abc*' is matched by every position within the text, the normal pattern
+matcher would plod along checking for 'abc*' and then whether it's there
+or not it would try to match "def".  ``rex`` examines the expression
+in search of the the most efficient fixed length sub-pattern and uses it
+as the root of search rather than the first sub-expression.  So, in the
+example above, ``rex`` would not begin searching for "abc*" until it has located
+a "def".
+
+There are many other techniques used in ``rex`` to improve the rate at which
+it searches for patterns, but these should have no effect on the way in
+which you specify an expression.
+
+The three rules that will cause the most problems to experienced Perl
+Regular Expression users are:
+
+1.  Repetition operators are always applied to strings, rather than
+    single characters.
+
+2.  There must be at least one sub-expression that has one or more 
+    repetitions.
+
+3.  No matched sub-expression will be located as part of another.
+
+Rule 1 example:
+
+   ``abc=def*``  means one "abc" followed by 0 or more "def"'s .
+
+Rule 2 example:
+
+   ``abc*def*``  *can not* be located because it matches every 
+   position within the text.
+
+Rule 3 example:
+
+   ``a+ab``  Is idiosyncratic because "a+" is a subpart of "ab".
+
+Note that when using ``\`` escapes in javascript strings, they must be
+double escaped as javascript interprets the ``\`` before it is passed on to
+the ``rex`` function (.e.g.  ``Sql.rex("\\n=[^\\n]+"``, text)``). 
+However the following *unsupported* syntax can also be used in most cases:
+``Sql.rex(/\n=[^\n]+/, text)``.  This may be useful for quick
+scripting, but as the ``/pattern/`` is compiled by javascript, and then
+again by ``rex``, this will perform unnecessary computation and can fail if
+the syntax of the statement is supported by ``rex`` but not by javascript.
+
+
+Example:
+
+.. code-block:: javascript
+
+   var html    =  '<img src="/img.gif" alt="my image">' +
+                  '<img alt = "second img" src ="/img2.gif">' +
+                  '<map>'+
+                     '<area shape="rect" coords="34,44,270,350" ' +
+                         'alt="not an img"href="/nai.html"></area>'+
+                  '</map>';
+
+   /* find alt text in img tags
+      start at "alt", search forward for alt text
+      and backwards for "<img"
+      exclude all but the alt text.
+   */
+   var ret = Sql.rex('<img=!<...*>>alt=\\space*\\==\\space*"\\P=[^"]+', html );
+   /* ret == [ "my image", "second img" ] */
+	
+Note that this example is not robust and would also match 
+``<img src="/img.gif"><a alt="alt">link text</a>``.  A more robust solution would be
+as follows:
+
+.. code-block:: javascript
+
+   var html    =  '<img src="/img.gif" alt="my image">' +
+                  '<img alt = "second img" src ="/img2.gif">' +
+                  '<map>'+
+                     '<area shape="rect" coords="34,44,270,350" ' +
+                         'alt="not an img"href="/nai.html"></area>'+
+                  '</map>'+
+                  '<img src="/img.gif"><a alt="alt">link text</a>';
+
+   var ret = Sql.rex(">><img =[^>]*>=", html);
+   ret = Sql.rex('>>alt=\\space*\\==\\space*"\\P=[^"]+', ret);
+   /* ret == [ "my image", "second img" ] */
+
+
+
+
 re2()
 ~~~~~
+
+The ``re2`` function operates identically to the ``rex`` function 
+except that it uses Perl Regular Expressions and no submatch information
+is returned (empty array).  See `rex()`_ above.
+
+.. code-block:: javascript
+
+   var ret = Sql.re2(re2_expr, data [, callback] [, options]);
 
 rexFile()
 ~~~~~~~~~
 
+The ``rexFile`` function operates identically to the ``rex`` function
+except that it takes a file name for the text to search.
+See `rex()`_ above.
+
+.. code-block:: javascript
+
+   var ret = Sql.rexFile(expr, filename [, callback] [, options]);
+
+In addition to the ``options`` available in `rex()`_, (``exclude`` and
+``submatches``), there is also the option to specify a read buffer
+``delimiter``:
+
+*  ``delimiter`` - pattern to match at the end of the read buffer.  Default
+   is ``$`` (end of line).  If your pattern crosses lines (includes a
+   ``\n`` character), this may be use to specify a delimiter which will not
+   be included in the pattern to be matched.  As such, this provides the
+   guarantee that matching of the desired pattern will occur even if a match
+   would otherwise cross the internal read buffer boundry.
+
 re2File()
 ~~~~~~~~~
+
+The ``re2File`` function operates identically to the ``rexFile`` function
+except that it uses Perl Regular Expressions and no submatch information
+is returned (empty array). See `rexFile()`_ above.
+
+.. code-block:: javascript
+
+   var ret = Sql.re2File(re2_expr, filename [, callback] [, options]);
+
+
+searchFile()
+~~~~~~~~~~~~
+
+The ``searchFile`` function performs a keyword search on a file and returns
+the matching portions of that file.  
+
 
 
 Introduction to Texis Sql
