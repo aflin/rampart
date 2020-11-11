@@ -348,7 +348,11 @@ duk_ret_t duk_rp_sql_close(duk_context *ctx)
 }while(0)
 #endif
 
-
+#define clearmsgbuf() do {                \
+    fseek(mmsgfh, 0, SEEK_SET);           \
+    fwrite("\0", 1, 1, mmsgfh);           \
+    fseek(mmsgfh, 0, SEEK_SET);           \
+} while(0)
 
 #define msgtobuf(buf)  do {               \
     size_t sz;                            \
@@ -1228,6 +1232,8 @@ duk_ret_t duk_texis_set(duk_context *ctx)
     int added_ret_obj=0;
     char *rlsts[]={"noiseList","suffixList","suffixEquivsList","prefixList"};
 
+    clearmsgbuf();
+
     duk_push_this(ctx);
 
     if (!duk_get_prop_string(ctx, -1, "db"))
@@ -1254,13 +1260,21 @@ duk_ret_t duk_texis_set(duk_context *ctx)
     else
         throw_tx_error(ctx,"open sql");
 
+    if(!duk_is_object(ctx, -1) || duk_is_array(ctx, -1) || duk_is_function(ctx, -1) )
+        RP_THROW(ctx, "sql.set() - object with {prop:value} expected as parameter - got '%s'",duk_safe_to_string(ctx, -1));
+
     duk_enum(ctx, -1, 0);
     while (duk_next(ctx, -1, 1))
     {
         int retlisttype=-1, setlisttype=-1, i=0;
         char propa[64], *prop=&propa[0];
+        duk_size_t sz;
+        const char *dprop=duk_get_lstring(ctx, -2, &sz);
+        
+        if(sz>63)
+            RP_THROW(ctx, "sql.set - '%s' - unknown/invalid property", dprop);
 
-        strcpy(prop, duk_get_string(ctx, -2));
+        strcpy(prop, dprop);
 
         for(i = 0; prop[i]; i++)
             prop[i] = tolower(prop[i]);
@@ -1293,6 +1307,8 @@ duk_ret_t duk_texis_set(duk_context *ctx)
         else if (!strcmp ("suffixlst", prop) || !strcmp ("suffixlist",prop))
             setlisttype=1;
         else if (!strcmp ("suffixeqivslst", prop) || !strcmp ("suffixequivslist",prop))
+            setlisttype=2;
+        else if (!strcmp ("suffixeqlst", prop) || !strcmp ("suffixeqlist",prop))
             setlisttype=2;
         else if (!strcmp ("prefixlst", prop) || !strcmp ("prefixlist",prop))
             setlisttype=3;
