@@ -41,12 +41,12 @@ RPstringformatResetArgs(RPSFD *info)
 static void *
 RPstringformatArgCb(HTPFT type, HTPFW what, void *data, char **fmterr,
                     size_t *sz)
-/* Argument callback for htbuf_cpf() call in TXfunc_stringformat();
+/* Argument callback for htbuf_cpf() call in RPfunc_stringformat();
  * returns next requested argument, casting if needed.
  * See also vortex.c:dofmt_argcb().
  */
 {
-  static CONST char     fn[] = "TXstringformatArgCb";
+  static CONST char     fn[] = "stringFormat()";
   static CONST byte     htpft2ftn[HTPFT_NUM] =
   {
     0,                                          /* HTPFT_VOID */
@@ -183,7 +183,7 @@ RPstringformatArgCb(HTPFT type, HTPFW what, void *data, char **fmterr,
               errCharBuf[3] = '\0';
             }
           txpmbuf_putmsg(info->pmbuf, MWARN + UGE, CHARPN,
-                    "Syntax error at offset %d (%s) in stringformat() format",
+                    "Syntax error at offset %d (%s) in format",
                  (int)(*fmterr - info->fmtBegin), errCharBuf);
           break;
         default:                                /* should not happen */
@@ -197,7 +197,7 @@ RPstringformatArgCb(HTPFT type, HTPFW what, void *data, char **fmterr,
     {
       if (info->numArgsUsed == info->numArgs)   /* first time */
         txpmbuf_putmsg(info->pmbuf, MWARN + UGE, fn,
-                       "Too few arguments for stringFormat() format");
+                       "Too few arguments");
       ret = NULL;                               /* print nothing */
       goto done;
     }
@@ -538,6 +538,7 @@ FLD *rp_add_arg(duk_context *ctx, duk_idx_t idx)
   /* convert object to json or string */
   if(duk_is_object(ctx,idx))
   {
+    /* check if it is a date */
     if ( duk_has_prop_string(ctx, idx, "setUTCMilliseconds") && 
          duk_has_prop_string(ctx, idx, "getUTCFullYear")
        )
@@ -556,6 +557,7 @@ FLD *rp_add_arg(duk_context *ctx, duk_idx_t idx)
         }
         duk_pop(ctx);
     }
+    /* check if it is a texis/rampart counter object */
     else if( duk_has_prop_string(ctx, idx, "counterValue") )
     {
         ft_counter *acounter=NULL;
@@ -596,6 +598,8 @@ FLD *rp_add_arg(duk_context *ctx, duk_idx_t idx)
   }
 
   arg_is_number:
+/*
+  Need to free *d.
   if(duk_is_number(ctx,idx))
   {
     double *d=NULL;
@@ -608,7 +612,24 @@ FLD *rp_add_arg(duk_context *ctx, duk_idx_t idx)
     putfld(ret,d,1);
     goto done;
   }
+*/
 
+  /* let duktape take care of freeing the double */
+  if(duk_is_number(ctx,idx))
+  {
+    double *dbuf, d=(double)duk_get_number(ctx,idx);
+
+    dbuf=(double *) duk_push_fixed_buffer(ctx, (duk_size_t)sizeof(double));
+    memcpy(dbuf, &d, sizeof(double));
+    /* put buffer in place of double on stack */
+    duk_replace(ctx, idx);
+
+    if((ret=createfld("double",1,0)) == FLDPN)
+      goto err;
+
+    putfld(ret,dbuf,1);
+    goto done;
+  }
 
   err:
     RP_THROW(ctx,"stringFormat: error assigning value to field");
@@ -621,7 +642,7 @@ FLD *rp_add_arg(duk_context *ctx, duk_idx_t idx)
 duk_ret_t
 RPfunc_stringformat(duk_context *ctx)
 {
-  static CONST char     fn[] = "TXfunc_stringformat";
+  //static CONST char     fn[] = "RPfunc_stringformat";
   HTBUF                 *outBuf = HTBUFPN;
   size_t                outDataLen, fmtLen;
   char                  *outData, *fmtData = CHARPN, *fmt;
@@ -633,20 +654,21 @@ RPfunc_stringformat(duk_context *ctx)
   FLD			*args[argn];
   HTPFARG		cvtData[argn];
   void			*dupData[argn];
-
+  char pbuf[msgbufsz];
 
   if (duk_get_top(ctx)==0)
-    RP_THROW(ctx,"stringFormat: arguments required");
+    RP_THROW(ctx,"stringFormat(): arguments required");
 
   memset(&info, 0, sizeof(RPSFD));
   memset(&dupData,0,argn*sizeof(void *));
 
+  
   info.pmbuf = pmbuf;
   info.args=args;
   info.cvtData=cvtData;
   info.dupData=dupData;  
 
-  fmt=(char *)REQUIRE_LSTRING(ctx,0,&duk_sz,"stringFormat: String required at argument 0");
+  fmt=(char *)REQUIRE_LSTRING(ctx,0,&duk_sz,"stringFormat(): String required at argument 0");
   fmtLen=(size_t)duk_sz;
   fmtData = TXcesc2str(fmt, fmtLen, &fmtLen);
 
@@ -668,9 +690,18 @@ RPfunc_stringformat(duk_context *ctx)
   if (!htbuf_cpf(outBuf, fmtData, fmtLen, HTPFF_PROMOTE_TO_HUGE,
                  RPstringformatArgCb, (void *)&info))
     goto err;
+
   if (info.numArgsUsed < info.numArgs)
-    txpmbuf_putmsg(pmbuf, MWARN + UGE, fn,
-                   "Too many arguments for stringFormat() format");
+    //txpmbuf_putmsg(pmbuf, MWARN + UGE, fn,
+    RP_THROW(ctx,
+                   "Too many arguments in the function: stringFormat()");
+
+  /* catch errors from RPstringformatArgCb */
+  TXLOCK
+  msgtobuf(pbuf);
+  TXUNLOCK
+  if(*pbuf!='\0')
+      RP_THROW(ctx, "%s", pbuf+4);
 
   /* Copy the output to the field: - - - - - - - - - - - - - - - - - - - - */
   if (!htbuf_write(outBuf, "", 0)) goto noMem;  /* ensure non-NULL outData */
@@ -691,10 +722,10 @@ RPfunc_stringformat(duk_context *ctx)
     for (i=0;i<info.numArgs;i++)
       closefld(info.args[i]);
 
-    RP_THROW(ctx,"stringFormat failed");
+    RP_THROW(ctx,"stringFormat() failed");
 
   noMem:
-    RP_THROW(ctx,"out of memeory in stringFormat");
+    RP_THROW(ctx,"out of memeory in stringFormat()");
 
   return 0;
 }
@@ -1173,23 +1204,6 @@ duk_ret_t searchfile(duk_context *ctx)
     return dosearchfile(ctx, search, file, cp, dosubhit);
 }
 
-
-/* get the expression from a /pattern/ or a "string" */
-static const char *get_exp(duk_context *ctx, duk_idx_t idx)
-{
-    const char *ret=NULL;
-
-    if(duk_is_object(ctx,idx) && duk_has_prop_string(ctx,idx,"source") )
-    {
-        duk_get_prop_string(ctx,idx,"source");
-        ret=duk_get_string(ctx,-1);
-        duk_pop(ctx);
-    }
-    else if ( duk_is_string(ctx,idx) )
-        ret=duk_get_string(ctx,idx);
-
-    return ret;
-}
 
 char **VXsandr ARGS((char **, char **, char **));
 

@@ -6,11 +6,11 @@ There are a number of properties that are settable in the SQL Engine.
 They do not need to be changed unless the behavior of the system must be
 modified. The properties are set using the following SQL syntax:
 
-::
+.. code-block:: javascript
 
-        SET property = value;
+        sql.exec("SET property = value;");
 
-or in Rampart JavaScript:
+or using the :ref:`sql1:set()` function:
 
 .. code-block:: javascript
 
@@ -19,11 +19,17 @@ or in Rampart JavaScript:
       [, property2: value2, ...]
    });
 
-The ``value`` can be one of three types depending on the property: numeric,
-boolean or string.  A boolean value is either an integer–0 is false,
+The ``property`` names are case insensitive and may be specified in
+*camelCase*, *lower case*, *UPPER CASE* or as you prefer.  Most properties
+can be set using either ``sql.exec("SET property = value;");`` or
+``sql.set({property: value});``.  However, note below that a few properties
+(such as ``noiseList``) can only be set using the ``sql.set()`` function.
+
+The ``value`` can be one of four types depending on the property: Number,
+Boolean, Array or String.  A Boolean value is either an integer  – 0 is false,
 anything else is true–or one of the following strings: “``on``”, “``off``”,
-“``true``”, “``false``”, “``yes``” or “``no``”.  Using the Rampart
-Javascript ``sql.set()``, booleans should be set to ``true`` or ``false``.
+“``true``”, “``false``”, “``yes``” or “``no``”. Using the ``sql.set()``
+function, Booleans cat be set to javascript Booleans ``true`` or ``false``.
 
 The settings are grouped as follows:
 
@@ -36,35 +42,35 @@ include settings which change the meaning of the search, as well as how
 the search is performed.
 
 
-defaultlike
+defaultLike
 """""""""""
     Defines which sort of search should occur when a ``like`` or
     ``contains`` operator is in the query. The default setting of
-    “``like``” behaves in the normal manner. Other settings that can be
-    set are “``like3``”, “``likep``”, “``liker``” and “``matches``”. In
+    ``like`` behaves in the normal manner. Other settings that can be
+    set are ``like3``, ``likep``, ``liker`` and ``matches``. In
     each case the ``like`` operator will act as if the specified
     operator had been used instead.
 
 
-matchmode
+matchMode
 """""""""
-    Changes the behavior of the ``matches`` clause. The default behavior
-    is to use underscore and percent as the single and multi-character
-    character wildcards. Setting ``matchmode`` to 1 will change the
-    wildcards to question-mark and asterisk.
+    Changes the behavior of the ``matches`` clause.  The default behavior is
+    to use ``_`` (underscore) and ``%`` (percent) as the single and
+    multi-character character wildcards.  Setting ``matchmode`` to 1 will
+    change the wildcards to ``?`` (question-mark) and ``*`` (asterisk).
 
 
-predopttype
+pRedoPtType
 """""""""""
     The Texis engine can reorder the ``where`` clause in an attempt to
     make it faster to evaluate. There are a number of ways this can be
-    done; the ``predopttpye`` property controls the way it reorders. The
-    values are 0 to not reorder, 1 to evaluate ``and`` first, 2 to
+    done; the ``pRedoPtTpye`` property controls the way it reorders. The
+    values are ``0`` to not reorder, ``1`` to evaluate ``and`` first, ``2`` to
     evaluate ``or`` first. The default is 0.
 
-
-ignorecase
-""""""""""
+.. can be removed?
+    ignoreCase
+    """"""""""
     **Note:** Deprecated; see ``stringcomparemode`` setting which
     supercedes this. Setting ``ignorecase`` to true will cause string
     comparisons (equals, sorting, etc.) in the SQL engine to ignore
@@ -84,49 +90,209 @@ ignorecase
     supercedes it.
 
 
-textsearchmode
-""""""""""""""
-    Sets the APICP ``textsearchmode`` property; see Vortex manual for
-    details and important caveats. Added in version 6.
+textSearchMode 
+"""""""""""""" 
+
+   ``textSearchMode`` changes the mode and flags for text searches.  It
+   controls case-sensitivity and other character-folding aspects of
+   Metamorph text searches.  The value consists of a comma-separated list of
+   values: a *case-folding style*, zero or more *optional flags*, and a
+   *case-folding mode*.  The ``textSearchMode`` setting may be altered
+   (instead of cleared and set) by using ``+`` or ``-`` in front of the
+   given values to denote adding or removing just those values, rather than
+   clearing the whole setting first.  This makes it easier to alter just the
+   desired parts, without having to specify the remainder of the setting. 
+   For example, ``+respectcase, ignorewidth, -expandligatures`` sets the
+   case style to case-sensitive, turns on ignorewidth and turns off ligature
+   expansion, without changing other flags such as ``ignoreDiacritics``. 
+
+   Note that all option values are case-insensitive (e.g. ``ignoreDiacritics`` 
+   is the same as ``ignorediacritics``).
+
+   Note also that negation (``-``) can only be used with values that are "on/off",
+   (the *optional flags*).  *Case-folding style* and *case-folding mode* cannot be
+   negated.  ``+`` and ``-`` remain in effect for following values, until another
+   ``+``, ``-`` or ``=`` (clear the setting first) is given.
+
+   The *case-folding style* determines the result of the case folding operation.
+   It is exactly oneof:
+
+      *  ``respectCase`` aka ``preserveCase`` aka ``caseSensitive`` -  Do not
+         change case at all, for case-sensitive searches.
+
+      *  ``ignoreCase`` aka ``igncase`` aka ``caseInsensitive`` - Fold case for
+         caseless (case-insensitive) matching; this is the default style for
+         ``textSearchMode``.  This typically (but not always) means characters are folded
+         to their lowercase equivalents.
+
+   .. these appear to make no difference for any rampart or sql server functions
+
+      *  ``upperCase`` - Fold to uppercase. Note: This style is for functions that actually
+         return a string, e.g. <strfold>; it should not be used in comparison
+         situations such as indexes and searches as its comparison behavior is
+         undefined. See the stringcomparemode setting, here.
+
+      *  ``lowerCase`` - Fold to lower-case. Note: This style is for functions that
+         actually return a string, e.g. <strfold>; it should not be used in
+         comparison situations such as indexes and searches as its comparison
+         behavior is undefined. See the stringcomparemode setting, here.
+
+      *  ``titleCase`` - Fold to title-case. Titlecase means the first character of a word
+         is uppercased, while the rest of the word is lowercased. Note: This style is
+         for functions that actually return a string, e.g. <strfold>; it should not
+         be used in comparison situations such as indexes and searches as its
+         comparison behavior is undefined. See the `stringCompareMode`_ setting.
+
+   Any combination of zero or more of the following *optional flags* may be given in
+   addition to a case style:
+
+      *  ``iso-8859-1`` aka ``iso88591`` - Interpret text as ISO-8859-1 encoded. This should
+         only be used if all text is known to be in this character set. Only
+         codepoints U+0001 through U+00FF can be supported. Any UTF-8 text will be
+         misinterpreted.
+
+         If this flag is disabled (the default), text is interpreted as UTF-8, and
+         invalid bytes (if any) are interpreted as ISO-8859-1. This supports all
+         UTF-8 characters, as well as most typical ISO-8859-1 data, if any happens to
+         be accidentally mixed in.
+
+         Typically, this flag is left disabled, and text is stored in UTF-8, since it
+         supports a broader range of characters. Any other character set besides
+         UTF-8 or ISO-8859-1 is not supported, and should be mapped to UTF-8.
+
+      *  ``utf-8`` aka ``utf8`` - Alias for negating iso-8859-1. Specifying this disables
+         the ``iso-8859-1`` flag.
+
+      *  ``expandDiacritics`` aka ``expdiacritics`` - Expand certain phonological diacritics:
+         umlauts over ``a``, ``o``, ``u`` expand to the vowel plus ``e`` (for German, e.g.
+         ``für`` matches ``fuer``); circumflexes over ``e`` and ``o`` expand to the vowel
+         plus ``s`` (for French, e.g. ``hôtel`` matches ``hostel``). The expanded ``e`` or
+         ``s`` is optional-match - e.g. ``für`` also matches ``fur`` - but only against a
+         non-optional char; i.e. ``hôtel`` does not match ``hötel`` (the ``e`` and ``s``
+         collide), and ``für`` does not match ``füer`` (both optional ``e`` s must match
+         each other). Also, neither the vowel nor the ``e``/``s`` will match an
+         ignorediacritics-stripped character; this prevents ``für`` from matching
+         ``fu'er``.
+
+      *  ``ignoreDiacritics`` aka ``igndiacritics`` - Ignore diacritic marks - Unicode
+         non-starter or modifier symbols resulting from NFD decomposition - e.g.
+         diaeresis, umlaut, circumflex, grave, acute, tilde etc.
+
+      *  ``expandLigatures`` aka ``expligatures`` - Expand ligatures, e.g. "œ" (U+0153) will
+         match "oe". Note that even with this flag off, certain ligatures may still
+         be expanded if necessary for case-folding under ignorecase with case mode
+         unicodemulti (see below).
+
+      *  ``ignoreWidth`` aka ``ignwidth`` - Ignore half- and full-width differences, e.g. for
+         katakana and ASCII.
+
+   Due to interactions between flags, they are applied in the order specified
+   above, followed by case folding according to the case style (upper/lower
+   etc.). E.g. expanddiacritics is applied before ignorediacritics, because
+   otherwise the latter would strip the characters that the former expands.
+
+   A *case-folding mode* may also be given in addition to the above; this
+   determines how the case-folding style (e.g. upper/lower/title) is actually
+   applied. It is one of the following:
+
+      *  ``unicodemulti`` - Use the builtin Unicode 5.1.0 1-to-N-character folding tables.
+         All locale-independent Unicode characters with the appropriate case
+         equivalent are folded. A single character may fold to up to 3 characters, if
+         needed; e.g. ``ß`` (the German es-zett character; U+00DF) will match "ss" and
+         vice-versa under ignorecase. Note that additional ligature expansions may
+         happen if expandligatures is set.  ``unicodemulti`` is the default mode.
+
+      *  ``unicodemono`` - Use the builtin Unicode 5.1.0 1-to-1-character folding tables.
+         All locale-independent Unicode characters with the appropriate case
+         equivalent are folded. Note that even though this mode is 1-to-1-character,
+         it is not necessarily 1-to-1-byte, i.e. a UTF-8 string may still change its
+         byte length when folded, even though the Unicode character count will remain
+         the same.
+
+      *  ``ctype`` - Use the C ctype.h functions. Case folding will be OS and
+         locale dependent (a locale should be set with the SQL `locale`_ property). Only
+         codepoints U+0001 through U+00FF can be folded; e.g. most Western European
+         characters are folded, but Cyrillic, Greek etc. are not. Note that while
+         this mode is 1-to-1-character, it is not necessarily 1-to-1-byte, unless the
+         iso-8859-1 flag is also in effect.
+
+   In addition to the above styles, flags and modes, several aliases may be
+   used, and mixed with flags. The aliases have the form:
+
+   ::
+
+      [stringCompareMode|textSearchMode][default|builtin]
+
+   ``stringcomparemode`` or ``textsearchmode`` refers to that setting's value (if
+   not given: the setting being modified). ``default`` refers to the default value
+   (modifiable with texis.ini) and ``builtin`` refers to the builtin factory
+   default (if not given: the the alias refers to the current setting value).
+   Example: ``stringcomparemodedefault,+ignorecase`` would obtain the default
+   stringcomparemode setting (from texis.ini if available), but set the case
+   style to ignorecase.
+
+   A Metamorph index always uses the textsearchmode value that was set at its
+   initial creation, not the current value. However, when multiple Metamorph
+   indexes exist on the same fields, at search time the Texis optimizer will
+   attempt to use the index whose (creation-time) textsearchmode is closest to
+   the current value.
+
+   The ``textSearchMode`` default is
+   ``unicodemulti, ignorecase, ignorewidth, ignorediacritics, expandligatures``
+   (note that UTF-8 text is expected, since iso-8859-1 is not specified in the
+   default).
 
 
-stringcomparemode
+stringCompareMode
 """""""""""""""""
-    Sets the APICP ``stringcomparemode`` property; see Vortex manual for
-    details and important caveats. Added in version 6.
+    Mode and flags for string compares, e.g.  equals, less-than etc.  It
+    also controls the default mode for some
+    :ref:`sql-server-funcs:String Functions` such as
+    :ref:`sql-server-funcs:stringCompare`.  Its value is given in the same
+    format as the `textSearchMode`_ setting, but the default is
+    ``unicodemulti, respectcase`` - i.e.  characters must be identical to
+    match, though ISO-8859-1 vs. UTF-8 encoding may be ignored.
+
+    A regular (B-tree) index will always use the ``stringCompareMode`` value that
+    was set at its creation, not the current value. However, when multiple
+    regular indexes exist on the same fields, at search time the Texis optmizer
+    will attempt to use the index whose (creation-time) ``stringCompareMode`` is
+    closest to the current value. This allows some dynamic flexibility in
+    supporting queries with different ``stringCompareMode`` values (e.g.
+    case-sensitive vs. insensitive). 
+
+.. todo: find out if these are applicable ..
+   tracemetamorph
+   """"""""""""""
+       Sets the ``tracemetamorph`` debug property; see Vortex manual for
+       details. Added in version 7.00.1375225000 20130730.
 
 
-tracemetamorph
-""""""""""""""
-    Sets the ``tracemetamorph`` debug property; see Vortex manual for
-    details. Added in version 7.00.1375225000 20130730.
+   tracerowfields
+   """"""""""""""
+       Sets the ``tracerowfields`` debug property; see Vortex manual for
+       details. Added in version 7.02.1406754000 20140730.
 
 
-tracerowfields
-""""""""""""""
-    Sets the ``tracerowfields`` debug property; see Vortex manual for
-    details. Added in version 7.02.1406754000 20140730.
+   tracekdbf
+   """""""""
+       Sets the ``tracekdbf`` debug property; see Vortex manual for
+       details.
 
 
-tracekdbf
-"""""""""
-    Sets the ``tracekdbf`` debug property; see Vortex manual for
-    details.
+   tracekdbffile
+   """""""""""""
+       Sets the ``tracekdbffile`` debug property; see Vortex manual for
+       details.
 
 
-tracekdbffile
-"""""""""""""
-    Sets the ``tracekdbffile`` debug property; see Vortex manual for
-    details.
+   kdbfiostats
+   """""""""""
+       Sets the ``kdbfiostats`` debug property; see Vortex manual for
+       details.
 
 
-kdbfiostats
-"""""""""""
-    Sets the ``kdbfiostats`` debug property; see Vortex manual for
-    details.
-
-
-btreecachesize
+btreeCacheSize
 """"""""""""""
     Index pages are cached in memory while the index is used. The size
     of the memory cache can be adjusted to improve performance. The
@@ -143,36 +309,36 @@ btreecachesize
     time.
 
 
-ramrows
+ramRows
 """""""
     When ordering large result sets, the data is initially ordered in
     memory, but if more than ``ramrows`` records are being ordered the
     disk will be used to conserve memory. This does slow down
-    performance however. The default is 10000 rows. Setting ``ramrows``
+    performance however. The default is 10000 rows. Setting ``ramRows``
     to 0 will keep the data in memory.
 
 
-ramlimit
+ramLimit
 """"""""
     ``ramlimit`` is an alternative to ``ramrows``. Instead of limiting
     the number of records, the number of bytes of data in memory is
-    capped. By default it is 0, which is unlimited. If both ``ramlimit``
-    and ``ramrows`` are set then the first limit to be met will trigger
+    capped. By default it is 0, which is unlimited. If both ``ramLimit``
+    and ``ramRows`` are set then the first limit to be met will trigger
     the use of disk.
 
 
 bubble
 """"""
-    Normally Texis will bubble results up from the index to the user.
-    That is a matching record will be found in the index, returned to
-    the user, then the next record found in the index, and so forth till
-    the end of the query. This normally generates the first results as
-    quickly as possible. By setting ``bubble`` to 0 the entire set of
-    matching record handles will be read from the index first, and then
-    each record processed from this list.
+    Normally Texis will bubble results up from the index to the user.  This
+    means that a matching record will be found in the index, returned to the
+    user, then the next record found in the index, and so forth till the end
+    of the query.  This normally generates the first results as quickly as
+    possible.  By setting ``bubble`` to 0 the entire set of matching record
+    handles will be read from the index first, and then each record
+    processed from this list.
 
 
-optimize,nooptimize
+optimize,noOptimize
 """""""""""""""""""
     Enable or disable optimizations. The argument should be a comma
     separated list of optimizations that you want to enable or disable.
@@ -185,40 +351,38 @@ optimize,nooptimize
         disabled if you believe that Texis is optimizing incorrectly. If
         it is disabled then Texis will process the tables in the left to
         right order, with the first table specified being the driving
-        table. Added in version 02.06.927235551.
+        table.
 
     compoundindex
         Allow the use of compound indexes to resolve searches. For
         example if you create an index on table (field1, field2), and
         then search where field1 = value and field2 = value, it will use
         the index to resolve both portions of this. When disabled it
-        would only look for field1 in the index. Added in version
-        02.06.929026214.
+        would only look for field1 in the index.
 
     countstar
         Use any regular index to determine the number of records in the
         table. If disabled Texis will read each record in the table to
-        count them. Added in version 02.06.929026214.
+        count them.
 
     minimallocking
         Controls whether the table will be locked when doing reads of
         records pointed to by the index used for the query. This is
         enabled by default, which means that read locks will not be
         used. This is the optimal setting for databases which are mostly
-        read, with few writes and small records. Added in version 03.00
+        read, with few writes and small records.
 
     groupby
         This setting is enabled by default and will cause the data to be
         read only once to perform a group by operation. The query should
         produce indentical results whether this is enabled or disabled,
-        with the performance being the only difference. Added in version
-        03.00
+        with the performance being the only difference.
 
     faststats
         When enabled, which is the default, and when the appopriate
         indexes exist Texis will try and resolve aggregate functions
         directly from the index that was used to perform the ``WHERE``
-        clause. Added in version 03.00
+        clause.
 
     readlock
         When enabled, which is the default, Texis will use readlocks
@@ -230,34 +394,32 @@ optimize,nooptimize
         disabled, which will allow more opportunity for the write locks
         to be granted. This is not normally suggested, as the work
         required to grant and release the locks would typically negate
-        the benefit. Added in version 03.00
+        the benefit.
 
     analyze
         When enabled, which is the default, Texis will analyze the query
         for which fields are needed. This can allow for more efficient
-        query processing in most cases. If you are executing a lot of
+        query processing in most cases. If you are executing many
         different SQL statements that are not helped by the analysis you
-        can disable this. Added in version 03.00
+        can disable this.
 
     skipahead
         When enabled, which is the default, Texis will skipahead as
-        efficiently as possible, typically used with the SKIP parameter
-        in Vortex. If disabled Texis will perform full processing on
-        each skipped record, and discard the record. Added in version
-        03.00
+        efficiently as possible, typically used with the ``skip`` parameter
+        in ``sql.exec()``. If disabled Texis will perform full processing on
+        each skipped record, and discard the record. Note that this will
+        have no effect on a ``delete`` statement (skipped rows are still
+        deleted, but their values are not returned).
 
     likewithnots
         When enabled (default), ``LIKE``/``LIKEP``-type searches with
-        NOT sets (negated terms) are optimized for speed. Added in
-        version 4.02.1041535107 Jan 2 2003.
+        NOT sets (negated terms) are optimized for speed.
 
     shortcuts
         When enabled (default), a fully-indexed ``LIKE``/``LIKEIN``
         clause ``OR``\ ed with another fully-indexed ``LIKE``/``LIKEIN``
         should not cause an unnecessary post-process for the ``LIKE``\ s
-        (and entire query). Added in version 4.03.1061229000 20030818 as
-        ``optimization18``; in version 7.06.1475000000 20160927, alias
-        ``shortcuts`` added.
+        (and entire query).
 
     likehandled
         When enabled (default), a fully-indexed ``LIKE``/``LIKEIN``
@@ -277,8 +439,6 @@ optimize,nooptimize
         post-processing, respectively, of an otherwise fully-indexable
         Metamorph query.
 
-        Added in version 7.06.1475014000 20160927.
-
     indexbatchbuild
         When enabled, indexes are built as a batch, i.e. the table is
         read-locked continuously. When disabled (the default), the table
@@ -291,26 +451,24 @@ optimize,nooptimize
         the index is nearly built, which may be quite some time. Note
         that non-Metamorph indexes are *always* built with a continuous
         read lock – regardless of this setting – due to the nature of
-        the index. Added in version 5.01.1177455498 20070424.
+        the index.
 
     indexdataonlycheckpredicates
         When enabled (the default), allows the index-data-only
-        optimization [1]_ to proceed even if the SELECT columns are
+        optimization to proceed even if the SELECT columns are
         renamed or altered in expressions. Previously, the columns had
-        to be selected as-is with no renaming or expressions. Added in
-        version 7.00.1369437000 20130524.
+        to be selected as-is with no renaming or expressions.
 
     indexvirtualfields
         When enabled (the default), attempts to reduce memory usage when
         indexing virtual fields (especially with large rows) by freeing
-        certain buffers when no longer needed. Currently only applies to
-        Metamorph and Metamorph inverted indexes. Added in version
-        6.00.1322890000 20111203.
+        certain buffers when no longer needed.  Currently this only applies
+        to Metamorph and Metamorph inverted ("text") indexes.
 
-    Example: ``set nooptimize='minimallocking'``
+    Example: ``sql.set({nooptimize:"minimallocking"});``
 
 
-options,nooptions
+options,noOptions
 """""""""""""""""
     Enable or disable certain options. The argument should be a comma
     separated list of options to enable or disable. All options are off
@@ -319,7 +477,7 @@ options,nooptions
     triggers
         When on, *disable* the creation of triggers.
 
-    indexcache
+    indexCache
         Cache certain Metamorph index search results, so that an
         immediately following Metamorph query with the same ``WHERE``
         clause might be able to re-use the index results without
@@ -327,33 +485,32 @@ options,nooptions
         ``SELECT field1, field2, ...`` Metamorph query that follows a
         ``SELECT count(*)`` query with the same ``WHERE`` clause.
 
-    ignoremissingfields
+    ignoreMissingFields
         Ignore missing fields during an ``INSERT`` or ``UPDATE``, i.e.
         do not issue a message and fail the query if attempting to
         insert a non-existent field. This may be useful if a SQL
         ``INSERT`` statement is to be used against a table where some
         fields are optional and may not exist.
 
-    Example: ``set options='indexcache'``
+    Example: ``sql.set({options:"indexCache"});``
 
 
-ignorenewlist
+ignoreNewList
 """""""""""""
-    When processing a Metamorph query you can instruct Texis to ignore
-    the unoptimized portion of a Metamorph index by issuing the SQL
-    ``set ignorenewlist = 1;``. If you have a continually changing
-    dataset, and the index is frequently updated then the default of
-    processing the unoptimized portion is probably correct. If the data
-    tends to change in large batches, followed by a reoptimization of
-    the index then the large batch can cause significant processing
-    overhead. In that case it may be wise to enable the
-    ``ignorenewlist`` option. If the option is enable then records that
-    have been updated in the batch will not be found with Metamorph
-    queries until the index has been optimized. Added in version
-    02.06.934400000.
+    When processing a Metamorph query you can instruct Texis to ignore the
+    unoptimized portion of a Metamorph index by issuing the SQL ``set
+    ignorenewlist = 1;`` or ``sql.set({ignoreNewList:true});``.  If you have
+    a continually changing dataset, and the index is frequently updated then
+    the default of processing the unoptimized portion is probably correct. 
+    If the data tends to change in large batches, followed by a
+    reoptimization of the index then the large batch can cause significant
+    processing overhead.  In that case it may be wise to enable the
+    ``ignoreNewList`` option.  If the option is enable then records that
+    have been updated in the batch will not be found with Metamorph queries
+    until the index has been optimized.
 
 
-indexwithin
+indexWithin
 """""""""""
     How to use the Metamorph index when processing “within :math:`N`”
     (w/\ :math:`N`) ``LIKE``-type queries. It is an integer combination
@@ -379,48 +536,39 @@ indexwithin
         intervening word does index-match multiply; the :math:`N` value
         can simply be increased in the query to return these.
 
-    The default is 0xf in version 7.06.1525203000 20180501 and later,
-    when support for 0x8 was also added. In version 5.01.1153865548
-    20060725 up to then, the default was 0x7. The setting was added in
-    version 4.04.1075255999 20040127 with a default of 0.
+    The default is 0xf.
 
 
-wildoneword
+wildOneWord
 """""""""""
     Whether wildcard expressions in Metamorph queries span a single word
     only, i.e. for multi-substring wildcards. If 0 (false), the query
     “``st*ion``” matches “``stallion``” as well as “stuff an onion”. If
     1 (true), then “``st*ion``” only matches “``stallion``”, and
     linear-dictionary index searches are possible (if enabled), because
-    there are no multi-word matches to (erroneously) miss. **Note:**
-    prior to version 5.01.1208472000 20080417, this setting did not
-    apply to linear searches; linear or post-process searches may have
-    experienced different behavior. The default is 1 in version 6 and
-    later, 0 in version 5 and earlier. Added in version 4.03.1058230349
-    20030714.
+    there are no multi-word matches to (erroneously) miss.
+
+    The default is 1 (true).
 
 
-wildsufmatch
+wildSufMatch
 """"""""""""
     Whether wildcard expressions in Metamorph queries suffix-match their
     trailing substrings to the end of words. If 0 (false), the query
     “``*so``” matches “``also``” as well as “``absolute``”. If 1 (true),
     then “``*so``” only matches “``also``”. Affects what terms are
-    matched during linear-dictionary index searches. **Note:** prior to
-    version 5.01.1208472000 20080417, this setting did not apply to
-    linear searches; linear or post-process searches may have
-    experienced different behavior. The default is 1 in version 6 and
-    later, 0 in version 5 and earlier. Added in version 4.03.1058230349
-    20030714.
+    matched during linear-dictionary index searches.
+
+    The default is 1 (true)
 
 
-wildsingle
+wildSingle
 """"""""""
-    An alias for setting ``wildoneword`` and ``wildsufmatch`` together,
-    which is usually desired. Added in version 4.03.1058230349 20030714.
+    An alias for setting `wildOneWord`_ and `wildSufMatch`_ together,
+    which is usually desired.
 
 
-allineardict
+alLinearDict
 """"""""""""
     Whether to allow linear-dictionary Metamorph index searches.
     Normally a Metamorph query term is either binary-index searchable
@@ -430,49 +578,47 @@ allineardict
     binary-index, yet faster than linear-table search. Examples include
     leading-prefix wildcards such as “``*tion``”. The default is 0
     (false), since query protection is enabled by default. Note that
-    ``wildsingle`` should typically be set true so that wildcard syntax
-    is more likely to be linear-dictionary searchable. Added in version
-    4.03.1058230349 20030714.
+    ``wildSingle`` should typically be set true so that wildcard syntax
+    is more likely to be linear-dictionary searchable.
 
 
-indexminsublen
+indexMinSublen
 """"""""""""""
     The minimum number of characters that a Metamorph index word
     expression must match in a query term, in order for the term to
-    utilize the index. A term with fewer than ``indexminsublen``
+    utilize the index. A term with fewer than ``indexMinSublen``
     indexable characters is assumed to potentially match too many words
     in the index for an index search to be more worthwhile/faster than a
     linear-table search.
 
-    For binary-index searchable terms, ``indexminsublen`` is tested
+    For binary-index searchable terms, ``indexMinSublen`` is tested
     against the minimum prefix length; e.g. for query “``test.#@``” the
     length tested is 4 (assuming default index word expression of
     “``\alnum{2,99}``”). For linear-dictionary index searches, the
     length tested is the total of all non-wildcard characters; e.g. for
     query “``ab*cd*ef``” the length tested is 6.
 
-    The default for ``indexminsublen`` is 2. Added in version
-    4.03.1058230349 20030714. Note that the query – regardless of index
-    or linear search – must also pass the ``qminprelen`` setting.
+    The default for ``indexminsublen`` is 2.
+
+    Note that the query – regardless of index or linear search – must also
+    pass the `qMinPrelen`_ setting.
 
 
-dropwordmode
+dropWordMode
 """"""""""""
     How to remove words from a query set when too many are present
-    (``qmaxsetwords`` or ``qmaxwords`` exceeded) in an index search,
+    (`qMaxSetWords`_ or `qMaxWords`_ exceeded) in an index search,
     e.g. for a wildcard term. The possible values are 0 to retain
     suffixes and most common words up to the word limit, or 1 to drop
-    the entire term. The default is 0. Added in version 3.00.947633136
-    20000111.
+    the entire term. The default is 0.
 
 
-metamorphstrlstmode
+metamorphStrlstMode
 """""""""""""""""""
-    [‘metamorphstrlstmode’] How to convert a ``strlst`` Metamorph query
-    (perhaps generated by Vortex ``arrayconvert``) to a regular string
-    Metamorph query. For example, for the ``strlst`` query composed of
-    the 3 strings “``one``”, “``two``”, and “``bear arms``”, the various
-    modes would convert as follows:
+    How to convert a ``strlst`` Metamorph query to a regular string
+    Metamorph query.  For example, for the ``strlst`` query composed of the
+    3 strings “``one``”, “``two``”, and “``bear arms``”, the various modes
+    would convert as follows:
 
     -  | ``allwords``
        | Space-separate each string, e.g. “one two bear arms”.
@@ -484,7 +630,7 @@ metamorphstrlstmode
     -  | ``allphrases``
        | Space-separate and double-quote each string, e.g. ``"one" "two" "bear arms"``.
 
-    -  | ``anywords``
+    -  | ``anyphrases``
        | Space-separate and double-quote each string, and append
          \ ``@0``, e.g. ``"one" "two" "bear arms" @0``.
 
@@ -492,13 +638,11 @@ metamorphstrlstmode
        | Make the string list into a parenthetical comma-separated list,
          e.g. “(one,two,bear arms)”.
 
-    The default is ``equivlist``. Added in version 5.01.1225240000
-    20081028. See also the ``varchartostrlstsep`` setting (p. ), which
-    affects conversion of ``varchar`` to ``strlst`` in other contexts.
+    The default is ``equivlist``.
 
-
-compatibilityversion
-""""""""""""""""""""
+.. probably don't want these ones included
+    compatibilityversion
+    """"""""""""""""""""
     [SqlPropertyCompatibilityVersion]
 
     Sets the Texis compatibility version – the version to attempt to
@@ -510,9 +654,8 @@ compatibilityversion
     for details. See also the Compatibility Version setting (p. ) in
     texis.ini, which the ``compatibilityversion`` setting defaults to.
 
-
-failifincompatible
-""""""""""""""""""
+    failifincompatible
+    """"""""""""""""""
     Whenever set nonzero/true, and the most recent
     ``compatibilityversion`` setting attempt failed, then all future SQL
     statements will fail with an error message. Since there is no
@@ -526,14 +669,14 @@ failifincompatible
 
 groupbymem
 """"""""""
-    When set nonzero/true (the default), try to minimize memory usage
+    When set ``true`` (the default), try to minimize memory usage
     during ``GROUP BY``/``DISTINCT`` operations (e.g. when using an
-    index and sorting is not needed). Added in version 7.00.1370039228
-    20130531.
+    index and sorting is not needed).
 
+..  don't need this one either
 
-legacyversion7orderbyrank
-"""""""""""""""""""""""""
+    legacyversion7orderbyrank
+    """""""""""""""""""""""""
     [SqlPropertyLegacyVersion7OrderByRank]
 
     If on, an ORDER BY $rank (or $rank-containing expression) uses
@@ -567,122 +710,118 @@ calling the Metamorph API function to set them (if there is an
 equivalent). They are:
 
 
-minwordlen
+minWordLen
 """"""""""
-    The smallest a word can get due to suffix and prefix removal.
-    Removal of trailing vowel or double consonant can make it a letter
-    shorter than this. Default 255.
+    The smallest a word can get due to suffix and prefix removal.  Removal
+    of trailing vowel or double consonant can make it a letter shorter than
+    this.  Default ``255`` (effectively turning suffix and prefix removal
+    off; a reasonable value for prefix and suffix processing would be a
+    value close to ``5``, depending on the application).  Note that this is
+    different from qminwordlen, which is the minimum word length allowed in
+    a query.
 
-
-keepnoise
+keepNoise
 """""""""
-    Whether noise words should be stripped from the query and index.
-    Default off.
+    Whether noise words should be used to resolve queries and to build text
+    indexes.  Default is ``false`` (filter out noise words).
 
-
-suffixproc
+suffixProc
 """"""""""
-    Whether suffixes should be stripped from the words to find a match.
-    Default on.
+    Whether suffixes should be stripped from the words to find a match. 
+    Default ``true``.  Note that ``minwordlen`` must be set to an
+    appropriate size as well.
 
 
-prefixproc
+prefixProc
 """"""""""
     Whether prefixes should be stripped from the words to find a match.
     Turning this on is not suggested when using a Metamorph index.
-    Default off.
-
+    Default ``false``.  Note that ``minwordlen`` must be set to an
+    appropriate size as well.
 
 rebuild
 """""""
     Make sure that the word found can be built from the root and
     appropriate suffixes and prefixes. This increases the accuracy of
-    the search. Default on.
+    the search. Default ``false``.
 
+keepEqvs
+""""""""
+    See `useEquiv`_.
 
-useequiv
+useEquiv
 """"""""
     Perform thesaurus lookup. If this is on then the word and all
     equivalences will be searched for. If it is off then only the query
-    word is searched for. Default off. Aka **keepeqvs** in version
-    5.01.1171414736 20070213 and later.
+    word is searched for. Default off. Same as ``keepeqvs``.
 
+.. possibly include this later or in a more appropriate section
+    inc\_sdexp
+    """"""""""
+        Include the start delimiter as part of the hit. This is not
+        generally useful in Texis unless hit offset information is being
+        retrieved. Default off.
 
-inc\_sdexp
-""""""""""
-    Include the start delimiter as part of the hit. This is not
-    generally useful in Texis unless hit offset information is being
-    retrieved. Default off.
+    inc\_edexp
+    """"""""""
+        Include the end delimiter as part of the hit. This is not generally
+        useful in Texis unless hit offset information is being retrieved.
+        Default on.
 
+    sdexp
+    """""
+        Start delimiter to use: a regular expression to match the start of a
+        hit. The default is no delimiter.
 
-inc\_edexp
-""""""""""
-    Include the end delimiter as part of the hit. This is not generally
-    useful in Texis unless hit offset information is being retrieved.
-    Default on.
-
-
-sdexp
-"""""
-    Start delimiter to use: a regular expression to match the start of a
-    hit. The default is no delimiter.
-
-
-edexp
-"""""
-    End delimiter to use: a regular expression to match the start of a
-    hit. The default is no delimiter.
+    edexp
+    """""
+        End delimiter to use: a regular expression to match the start of a
+        hit. The default is no delimiter.
 
 intersects
-
-inc\_sdexp
 """"""""""
     Default number of intersections in Metamorph queries; overridden by
-    the ``@`` operator. Added in version 7.06.1530212000 20180628.
+    the ``@`` operator. Note that this is generally not needed for a
+    ``likep`` search.
 
-
-hyphenphrase
+hyphenPhrase
 """"""""""""
-    Controls whether a hyphen between words searches for the phrase of
-    the two words next to each other, or searches for the hyphen
-    literally. The default value of 1 will search for the two words as a
-    phrase. Setting it to 0 will search for a single term including the
-    hyphen. If you anticipate setting hyphenphrase to 0 then you should
+    Controls whether a hyphen between words searches for the phrase of the
+    two words next to each other, or searches for the hyphen literally.  The
+    default value of ``true`` will search for the two words as a phrase. 
+    Setting it to ``false`` will search for a single term including the
+    hyphen.  If you anticipate setting hyphenphrase to 0 then you should
     modify the index word expression to include hyphens.
-
 
 wordc
 """""
-    For language or wildcard query terms during linear (non-index)
-    searches, this defines which characters in the document consitute a
-    word. When a match is found for language/wildcard terms, the hit is
-    expanded to include all surrounding word characters, as defined by
-    this setting. The resulting expansion must then match the query term
-    for the hit to be valid. (This prevents the query “``pond``” from
-    inadvertently matching the text “``correspondence``”, for example.)
-    The value is specified as a REX character set. The default setting
-    is ``[\alpha\']`` which corresponds to all letters and apostrophe.
-    For example, to exclude apostrophe and include digits use:
-    ``set wordc='[\alnum]'`` Added in version 3.00.942260000. Note that
-    this setting is for linear searches: what constitutes a word for
-    Metamorph *index* searches is controlled by the index expressions
-    (**addexp** property, p. ). Also note that non-language,
-    non-wildcard query terms (e.g. ``123`` with default settings) are
-    not word-expanded.
+    For language or wildcard query terms during linear (non-index) searches,
+    this defines which characters in the document consitute a word.  When a
+    match is found for language/wildcard terms, the hit is expanded to
+    include all surrounding word characters, as defined by this setting. 
+    The resulting expansion must then match the query term for the hit to be
+    valid.  (This prevents the query “``pond``” from inadvertently matching
+    the text “``correspondence``”, for example.) The value is specified as a
+    REX character set.  The default setting is ``[\alpha\']`` which
+    corresponds to all letters and apostrophe.  For example, to exclude
+    apostrophe and include digits use: ``set wordc='[\alnum]'`` or
+    ``sql.set({wordc:"[\\alnum]"});`` Note that this setting is for linear
+    searches: what constitutes a word for Metamorph *index* searches is
+    controlled by the index expressions (`addexp`_ property.  Also note that
+    non-language, non-wildcard query terms (e.g.  ``123`` with default
+    settings) are not word-expanded.
 
 
 langc
 """""
     Defines which characters make a query term a language term. A
     language term will have prefix/suffix processing applied (if
-    enabled), as well as force the use of **wordc** to qualify the hit
-    (during linear searches). Normally **langc** should be set the same
-    as **wordc** with the addition of the phrase characters space and
-    hyphen. The default is ``[\alpha\' \-]`` Added in version
-    3.00.942260000.
+    enabled), as well as force the use of ``wordc`` to qualify the hit
+    (during linear searches). Normally ``langc`` should be set the same
+    as ``wordc`` with the addition of the phrase characters space and
+    hyphen. The default is ``[\alpha\' \-]``.
 
-
-withinmode
+withinMode
 """"""""""
     A space- or comma-separated unit and optional type for the
     “within-\ :math:`N`” operator (e.g. ``w/5``). The unit is one of:
@@ -702,33 +841,167 @@ withinmode
 
     -  ``span`` indicates all sets must be within an :math:`N`-unit span
 
-    Added in version 4.04.1077930936 20040227. The optional type was
-    added in version 5.01.1258712000 20091120; previously the only type
-    was implicitly ``radius``. In version 5 and earlier the default
-    setting was ``char`` (i.e. char radius); in version 6 and later the
-    default is word span.
-
+    Example: ``sql.set({withinmode: "char, span"});``.
 
 phrasewordproc
 """"""""""""""
     Which words of a phrase to do suffix/wildcard processing on. The
-    possible values are ``mono`` to treat the phrase as a monolithic
-    word (i.e. only last word processed, but entire phrase counts
-    towards **minwordlen**); ``none`` for no suffix/wildcard processing
-    on phrases; or ``last`` to process just the last word. Note that a
-    phrase is multi-word, i.e. a single word in double-quotes is not
-    considered a phrase, and thus **phrasewordproc** does not apply.
-    Added in version 4.03.1082000000 20040414. Mode ``none`` supported
-    in version 5.01.1127760000 20050926.
+    possible values are:
+
+    * ``mono`` to treat the phrase as a monolithic
+      word (i.e. only last word processed, but entire phrase counts
+      towards ``minwordlen``).  
+
+    * ``none`` for no suffix/wildcard processing on phrases.
+
+    * ``last`` to process just the last word.  Note that a phrase is
+      multi-word, i.e.  a single word in double-quotes is not considered a
+      phrase, and thus ``phrasewordproc`` does not apply.
+
+    * ``all`` to process all words in the phrase.  Only applicable for
+      searches against a text index and not applicable to linear searches. 
+
+    The default value is ``last``.
+
+.. skip for now
+
+    mdparmodifyterms
+    """"""""""""""""
+        If nonzero, allows the Metamorph query parser to modify search terms
+        by compression of whitespace and quoting/unquoting. This is for
+        back-compatibility with earlier versions; enabling it will break the
+        information from bit 4 of ``mminfo()`` (query offset/lengths of
+        sets). Added in version 5.01.1220640000 20080905.
+
+defSuffRm
+"""""""""
+    AKA ``defsufrm``.  Whether to remove a trailing vowel, or one of a
+    trailing double consonant pair, after normal suffix processing, and if
+    the word is still ``minwordlen`` or greater.  This only has effect if
+    suffix processing is enabled (``suffixproc`` set ``true`` and the
+    original word is at least minwordlen long).  Default value is ``true``.
+
+eqPrefix
+""""""""
+    The name of the equivalence file. Default is "builtin",
+    which uses the built-in 
+    :ref:`equivalence list <mm3:Thesaurus Customization>`.
+
+exactPhrase 
+"""""""""""
+    Whether to exactly resolve the noise words in phrases.
+
+    * ``true`` - a phrase such as "state of the art" will only match those
+      exact words; however this may require post-processing to resolve the
+      noise words "of the" (potentially slower).
+
+    * ``false`` - any word is permitted in place of the noise words, and
+      no post-processing is done: faster but potentially less accurate.
+
+    * ``"ignorewordposition"`` - the same as off, but non-noise words are
+      permitted in any order or position; essentially emulates behavior of a
+      non-inverted Metamorph index with no post-processing, but on a
+      Metamorph inverted index too.
+
+    The default is ``false``.
+
+.. skip for now
+    inced (boolean, on by default) Whether to include the end delimiters in
+    hits. Ignored for w/N (within N chars or words) delimiters.
+
+    incsd (boolean, off by default) Whether to include the start delimiters in
+    hits. Ignored for w/N (within N chars or words) delimiters.
+
+noiseList
+"""""""""
+    The noise word list used during query processing. An array of strings.  The default
+    noise list is:
+
+::
+
+   [
+      "a",          "about",     "after",       "again",    "ago",       "all",
+      "almost",     "also",      "always",      "am",       "an",        "and",
+      "another",    "any",       "anybody",     "anyhow",   "anyone",    "anything",
+      "anyway",     "are",       "as",          "at",       "away",      "back",
+      "be",         "became",    "because",     "been",     "before",    "being",
+      "between",    "but",       "by",          "came",     "can",       "cannot",
+      "come",       "could",     "did",         "do",       "does",      "doing",
+      "done",       "down",      "each",        "else",     "even",      "ever",
+      "every",      "everyone",  "everything",  "for",      "from",      "front",
+      "get",        "getting",   "go",          "goes",     "going",     "gone",
+      "got",        "gotten",    "had",         "has",      "have",      "having",
+      "he",         "her",       "here",        "him",      "his",       "how",
+      "i",          "if",        "in",          "into",     "is",        "isn't",
+      "it",         "just",      "last",        "least",    "left",      "less",
+      "let",        "like",      "make",        "many",     "may",       "maybe",
+      "me",         "mine",      "more",        "most",     "much",      "my",
+      "myself",     "never",     "no",          "none",     "not",       "now",
+      "of",         "off",       "on",          "one",      "onto",      "or",
+      "our",        "ourselves", "out",         "over",     "per",       "put",
+      "putting",    "same",      "saw",         "see",      "seen",      "shall",
+      "she",        "should",    "so",          "some",     "somebody",  "someone",
+      "something",  "stand",     "such",        "sure",     "take",      "than",
+      "that",       "the",       "their",       "them",     "then",      "there",
+      "these",      "they",      "this",        "those",    "through",   "till",
+      "to",         "too",       "two",         "unless",   "until",     "up",
+      "upon",       "us",        "very",        "was",      "we",        "went",
+      "were",       "what",      "what's",      "whatever", "when",      "where",
+      "whether",    "which",     "while",       "who",      "whoever",   "whom",
+      "whose",      "why",       "will",        "with",     "within",    "without",
+      "won't",      "would",     "wouldn't",    "yet",      "you",       "your"
+   ]
+
+.. skip
+    olddelim (boolean, off by default) Whether to emulate "old" delimiter
+    behavior. If turned on, it is possible for a hit to occur outside dissimilar
+    start and end delimiters, such as in this example text:
+
+    start-delim ... end-delim ... hit ... start-delim ... end-delim
+    Here the hit is "within" the outermost start and end delimiters, but it's
+    not within the nearest delimiters. With olddelim off (the default), this hit
+    now does not match: it would have to occur within the nearest delimiters,
+    which would have to be in the correct order. (Added in version 3.0.950300000
+    20000211. Previous versions behave as if olddelim were on.)
 
 
-mdparmodifyterms
-""""""""""""""""
-    If nonzero, allows the Metamorph query parser to modify search terms
-    by compression of whitespace and quoting/unquoting. This is for
-    back-compatibility with earlier versions; enabling it will break the
-    information from bit 4 of ``mminfo()`` (query offset/lengths of
-    sets). Added in version 5.01.1220640000 20080905.
+
+suffixList
+""""""""""
+ (list) The suffix list used for suffix processing (if enabled) during
+search. The default suffix list is:
+' (single quote) able age aged ager ages al ally ance anced ancer ances ant
+ary at ate ated ater atery ates atic ed en ence enced encer ences end ent er
+ery es ess est ful ial ible ibler ic ical ice iced icer ices ics ide ided
+ider ides ier ily ing ion ious ise ised ises ish ism ist ity ive ived ives
+ize ized izer izes less ly ment ncy ness nt ory ous re red res ry s ship
+sion th tic tion ty ual ul ward
+
+suffixeq (list) The suffix list used for suffix processing during
+equivalence lookup. The default suffixeq list is:
+' (single quote) ies s
+
+suffixproc (boolean, on by default) Whether to do suffix processing.
+
+
+ueqprefix (string) The name of the user equivalence file. Default is empty.
+withinmode (string)   A space- or comma-separated unit and optional type for
+the "within-N" operator (e.g. w/5). The unit is one of:
+char for within-N characters
+word for within-N words
+The optional type determines what distance the operator measures. It is one
+of the following:
+radius (the default if no type specified when set) indicates all sets must
+be within a radius N of an "anchor" set, i.e. there is a set in the match
+such that all other sets are within N units right of its right edge or N
+units left of its left edge.
+span indicates all sets must be within an N-unit span
+Added in version 4.03.1081200000 20040405. The optional type was added in
+version 5.01.1258712000 20091120; previously the only type was implicitly
+radius. The default setting for version 5 and earlier is char (i.e. char
+radius); in version 6 and later the default is word span.
+withinproc (boolean, on by default) Whether to process the w/ operator in
+queries.
 
 
 Rank knobs
@@ -907,15 +1180,17 @@ indexmem
     setting it too low causes unneeded extra merges to disk.
 
 indexmeter
-~~~~~~~~~~ 
+"""""""""" 
     Whether to print a progress meter during index
     creation/update. The default is 0 or ``'none'``, which suppresses the
-    meter. A value of 1 or ``'simple'`` prints a simple hash-mark meter
+    meter. A value of ``1`` or ``'simple'`` prints a simple hash-mark meter
     (with no tty control codes; suitable for redirection to a file and
-    reading by other processes). A value of 2 or ``'percent'`` or ``'pct'``
+    reading by other processes). A value of ``2`` or ``'percent'`` or ``'pct'``
     prints a hash-mark meter with a more detailed percentage value (suitable
-    for large indexes). Added in version 4.00.998688241 Aug 24 2001.
+    for large indexes).
 
+meter
+"""""
     A semicolon-separated list of processes to print a progress meter for.
     Syntax:
 
@@ -926,7 +1201,7 @@ indexmeter
     ``simple``, ``percent``, ``on`` (same as ``simple``) or ``off`` (same as
     ``none``). The default :math:`type` if not given is ``on``. E.g. to show
     a progress meter for all meterable processes, simply set ``meter`` to
-    ``on``. Added in version 6.00.1290500000 20101123.
+    ``on``.
 
 
 addexp
@@ -1536,7 +1811,6 @@ debugmalloc
 
 Miscellaneous Properties
 ~~~~~~~~~~~~~~~~~~~~~~~~
-
 These properties do not fit nicely into a group, and are presented here.
 
 
@@ -1622,13 +1896,11 @@ timezone
 
 locale
 """"""
-    Can be used to change the locale that Texis uses. This will impact
-    the display of dates if using names, as well as the meaning of the
-    character classes in REX expressions, so ``\alpha`` will be correct.
-    Also with the correct locale set (and OS support), Metamorph will
-    work case insensitively correctly (with mono-byte character sets and
-    Texis version 5 or earlier; see ``textsearchmode`` for UTF-8/Unicode
-    and version 6 or later support).
+    Can be used to change the locale that Texis uses.  This will impact the
+    display of dates if using names, as well as the meaning of the character
+    classes in REX expressions, so ``\alpha`` will be correct.  Also with
+    the correct locale set (and OS support), Metamorph will work case
+    insensitively correctly (see ``textsearchmode`` for UTF-8/Unicode).
 
 
 indirectcompat
@@ -1881,3 +2153,200 @@ validatebtrees
    meaning empty-set for strlst, as is true in other contexts. In
    version 6 and earlier an empty source string produced a
    one-empty-string-item strlst in create mode.
+
+Query Protection
+~~~~~~~~~~~~~~~~ 
+
+The following settings alter the set of query syntax and features that
+are allowed. Metamorph has a powerful search syntax, but if improperly or
+inadvertently used, it can take a long time to resolve poorly constructed
+queries. In a high-load environment such as a Web search engine this can bog
+down a server, slowing all users for the sake of one bad search.
+
+Therefore, use of Texis in Rampart is by default highly restrictive of the
+queries it will allow, denying some specialized features for the sake of
+quicker resolution of all queries.  By altering these settings, script
+authors can "open up" Texis and Metamorph to allow more powerful searches,
+at the risk of higher load for special searches.
+
+alequivs 
+""""""""
+  Boolean, ``false`` by default.  If ``true``, allows equivalences in queries.  If
+  ``false``, only the actual terms in a query will be searched for; no
+  equivalences will be used.  This is regardless of ``~`` usage or the
+  setting of `keepeqvs`_.  Note that the equivalence file will still be used to
+  check for phrases in the query, however.  Turning this on allows greater
+  search flexibility, as equivalent words to a term can be searched for, but
+  decreases search speed.
+
+alintersects
+""""""""""""
+   Boolean, ``false`` by default. If ``true``, allow use of the ``@``
+   (intersections) operator in queries. Queries with few or no intersections
+   (e.g. @0) may be slower, as they can generate a copious number of hits.
+
+allinear 
+""""""""
+   Boolean, ``false`` by default. If on, an all-linear query-one without
+   any indexable "anchor" words-is allowed. A query like "/money #million"
+   where all the terms use unindexable pattern matchers (REX, NPM or XPM) is an
+   example. Such a query requires that the entire table be linearly searched,
+   which can be very slow for a table of significant size.
+   If allinear is ``false``, all queries must have at least one term that can be
+   resolved with the text index, and a text index must exist on the
+   field. Under such circumstances, other unindexable terms in the query can
+   generally be resolved quickly, if the "anchor" term limits the linear search
+   to a tiny fraction of the table. The error message "Query would require
+   linear search" may be generated by linear queries if allinear is off.
+
+   Note that an otherwise indexable query like "rocket" may become linear if
+   there is no text index on its field, or if an index for another part of
+   the SQL query is favored instead by Texis. For example, with the SQL query
+   "select Title from Books where Date > 'May 1998' and Title like 'gardening'"
+   Texis may use a Date index rather than a Title text index for speed. In
+   such a case it may be necessary to enable linear processing for a
+   complicated query to proceed-since part of the table is being linearly
+   searched.
+
+alnot
+"""""
+
+   Boolean, ``true`` by default.  If ``true``, allows "NOT" logic (e.g.  the
+   ``-`` operator) in a query.  alpostproc (boolean, off by default) If on,
+   post-processing of queries is allowed when needed after an index lookup,
+   e.g.  to resolve unindexable terms like REX expressions, or like queries
+   with a non-inverted Metamorph index.  If off, some queries are faster,
+   but may not be as accurate if they aren't completely resolved.  The error
+   message "Query would require post-processing" may be generated by such
+   queries if alpostproc is off.  Note: In tsql version 5 and earlier the
+   default was on.  alwild (boolean, on by default) If on, wildcards are
+   allowed in queries.  Wildcards can slow searches because potentially many
+   words must be looked for.
+
+alwithin
+""""""""
+   Boolean, ``false`` by default.  If ``true``, "within" operators (``w/``)
+   are allowed.  These generally require a post-process to resolve, and
+   hence can slow searches.  If off, the error message "'delimiters' not
+   allowed in query" will be generated if the within operator is used in a
+   query.
+
+builtindefaults Restore all settings to builtin Thunderstone factory
+defaults, ignoring any texis.ini [Apicp] changes. Added in Texis version 6.
+defaults Restore all settings to defaults set in the texis.ini) [Apicp]
+section (or builtin defaults for settings not set there).
+
+denymode (string or integer; warning by default) What action to take when a
+disallowed query is attempted:
+silent or 0 Silently remove the offending set or operation.
+warning or 1 Remove the term and warn about it with a putmsg-catchable
+message.
+error or 2 Fail the query.
+A message such as "'delimiters' not allowed in query" may be generated when
+a disallowed query is attempted and denymode is not silent.
+
+qMaxSets
+""""""""
+ (integer, 100 by default) The maximum number of sets (terms)
+allowed in a query. Added in version 2.6.934800000 19990816. Note: also
+settable as qmaxterms for back-compatibility with earlier versions.
+
+qMaxSetWords
+""""""""""""
+ (integer, 500 by default, unlimited by default in tsql) The
+maximum number of search words allowed per set (term), after equivalence and
+wildcard expansion. Some wildcard searches can potentially match thousands
+of distinct words in an index, many of which may be garbage or typos but
+still have to be looked up, slowing a query. If this limit is exceeded, a
+message such as "Max words per set exceeded at word `xyz*' in query `xyz*
+abc'" is generated, and the entire set is considered a noise word and not
+looked up in the index. A value of 0 means unlimited. Added in version
+2.6.934900000 19990817.
+In version 3.0.947600000 20000110 and later, the set may only be partially
+dropped (with the message "Partially dropping term `xyz*' in query `xyz*
+abc'") depending on the setting of dropwordmode (which must be set with a
+SQL set statement). If dropwordmode is 0 (the default), the root word, valid
+suffixes, and more-common words are still searched, up to the qmaxsetwords
+limit if possible; the remaining wildcard matches are dropped. If
+dropwordmode is 1, the entire set is dropped as if a noise word.
+
+Note that qmaxsetwords is the max number of search words, not the number of
+matching hits after the search. Thus a single but often-occurring word like
+"html" counts as one word in this context. Note: In tsql version 5 and
+earlier the default was unlimited.
+
+qMaxWords
+"""""""""
+ (integer, 1100 by default) The maximum number of words allowed in
+the entire query, after equivalence and wildcard expansion. If this limit is
+exceeded, a message such as "Max words per query exceeded at word `xyz*' in
+query `xyz* abc'" is generated, and the query cannot be resolved. 0 means
+unlimited. Added in version 2.6.934900000 19990817. Like qmaxsetwords, this
+is distinct search words, not hits. dropwordmode also applies here. Note: In
+tsql version 5 and earlier the default was unlimited.
+
+qMinPrelen
+""""""""""
+(integer, 2 by default) The minimum allowed length of the prefix
+(non-``*`` part) of a wildcard term. Short prefixes (e.g. "a*") may match many
+words and thus slow the search.
+
+qminwordlen (integer, 2 by default) The minimum allowed length of a word in
+a query. Note that this is different from minwordlen, the minimum word
+length for prefix/suffix processing to occur. Note: In tsql version 5 and
+earlier the default was 1.
+
+querySettings 
+"""""""""""""
+Container for changing all or a group of
+settings to a certain mode. (Explicit texis.ini [Apicp] settings still
+apply, as with all non-builtin "...defaults" settings). The argument may be
+one of the following:
+
+*  ``defaults - Set Rampart defaults:
+
+   The following are set ``false``: 
+   ``prefixProc``, ``keepnoise``, ``keepeqvs``/``useequivs``, ``alpostproc``,
+   ``allinear``, alwithin, alintersects, alequivs, alexactphrase are off
+
+alwild, alnot are on
+qminwordlen, qminprelen are 2
+minwordlen 255
+eqprefix set to "builtin"
+ueqprefix set to "eqvsusr"
+denymode is "warning"
+qmaxsets is 100
+
+.. this was removed above
+   sdexp/edexp are empty
+
+
+The rest are different from Texis 6 and later:
+alpostproc, allinear, alwithin, alintersects, alequivs, alexactphrase are on
+(instead of off in version 6)
+qminwordlen, qminprelen are 1 (instead of 2 in version 6)
+qmaxsetwords is unlimited (instead of 500 in version 6)
+qmaxwords is unlimited (instead of 1100 in version 6)
+vortexdefaults or 2 Set Vortex defaults; same as <apicp defaults>.
+protectionoff or 3 Turn off query protection settings, i.e. set all al...
+settings on (allowed), exactphrase on, qmin... limits to minimums, qmax...
+limits to maximum (unlimited), denymode to warning.
+Added in Texis version 6.
+
+.. to be removed
+    texisdefaults Restore Texis (as opposed to Vortex) version 5 and earlier
+    default values. Note: This setting is deprecated in Texis version 6 and
+    later (as Texis defaults have changed to match Vortex defaults for
+    consistency), and may be removed in a future release. Set querysettings
+    texis5defaults instead. The texisdefaults setting is still respected, but
+    will cause a warning noting that it is deprecated. If legacy scripts cannot
+    be updated to use querysettings texis5defaults instead, this warning can be
+    silenced with the texis.ini setting [Texis] Texis Defaults Warning = off
+    (here).
+    Setting texisdefaults turns off query protection, e.g. it will enable linear
+    searches, post-processing, within operators, etc. Note: this will permit
+    some queries to run than can potentially take an inordinate amount of time,
+    even with a Metamorph index. Use with caution.
+
+
+

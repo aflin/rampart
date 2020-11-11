@@ -86,7 +86,8 @@ database.  The return object includes the following functions: ``exec()``,
 |dbpath  |String      | The path to the directory containing the database |
 +--------+------------+---------------------------------------------------+
 |create  |Boolean     | if true, and the directory does not exist, the    |
-|        |            | directory and a new database will be created.     |
+|        |            | directory and a new database will be created in   |
+|        |            | the location specified.                           |
 +--------+------------+---------------------------------------------------+
 
 Return Value:
@@ -227,11 +228,12 @@ Return Value:
 	With no callback, an object is returned.  The object contains
 	three or four key/value pairs.  
 	
-	Key: ``results``; Value: an array of objects.  Each object will have
-	a key set to the corresponding column name and the value set to the
-	corresponding field of the retrieved row.  If ``returnType`` is set
-	to ``array``, an array of arrays containing the values (one inner
-	array per row) will be returned.
+	Key: ``results``; Value: an array of objects.  Each object
+	corresponds to a row in the database and will have keys set to the
+	corresponding column names and the values set to the corresponding
+	field of the retrieved row.  If ``returnType`` is set to ``array``,
+	an array of arrays containing the values (one inner array per row)
+	will be returned.
 	
 	Key: ``rowCount``; Value: a number corresponding to the number of rows
 	returned.
@@ -284,8 +286,8 @@ Error Messages:
    Errors may or may not throw a JavaScript exception depending on the
    error.  If the syntax is correct but the statement cannot be executed, no
    exception is thrown and ``sql.errMsg`` will contain the error message. 
-   Otherwise an exception is thrown and the error may be caught with
-   ``catch(error)``.
+   Otherwise an exception is thrown, ``sql.errMsg`` is set and the error may
+   be caught with ``catch(error)``.
 
 Error Message Example:
 
@@ -322,6 +324,7 @@ Error Message Example:
    /* output = 
        "Error: sql prep error: 100 More Values Than Fields in the function: Insert
         000 SQLPrepare() failed with -1: An error occurred in the function: texis_prepare"
+      sql.errMsg is similar.
    */
 
    
@@ -599,12 +602,23 @@ set()
 
 The ``set`` function sets Texis server properties. For a full listing, see
 :ref:`sql-set:Server Properties`. Arguments are given as keys with
-corresponding values set to a string, number or boolean as appropriate.
+corresponding values set to a string, number, array or boolean as appropriate.
 Note that booleans ``true``/``false`` are equivalent to setting 
 ``0``/``1``, ``on``/``off``, or ``yes``/``no`` as described in 
 :ref:`sql-set:Server Properties`.
 
-There is no return value.
+Normally there is no return value (``undefined``).  
+
+FIXME once names in sql-set.html are finalized:
+
+However if :ref:`sql-set:lstexp`,
+:ref:`sql-set:lstindextmp` and/or :ref:`sql-set:lstnoise` is set ``true``, an object is
+returned with corresponding keys ``expressionsList``, ``indexTempList``,
+``suffixList``, ``suffixEquivsList`` and/or
+``noiseList`` respectively.
+
+Note also that though ``sql.set()`` is a function of ``sql`` (a single opened
+database), settings apply to all databases in use by the current process.
 
 Example:
 
@@ -617,6 +631,22 @@ Example:
 		likepallmatch: true
 	});
 
+	/* an example with a return value */
+	var lists = sql.set({
+		addExp: [ "[\\alnum\\x80-\\xff]+","[\\alnum\\x80-\\xff,']+"],
+		addIndexTmp: ["/tmp","/var/tmp"],
+		listNoise: true,
+		listIndextemp: true,
+		listExpressions: true
+	});
+	/* 
+	   lists = 
+	   {
+	   	noiseList:        ["a","about",...,"you","your"],
+	   	indexTempList:    ["/tmp","/var/tmp"],
+	   	expressionsList:  ["\\alnum{2,99}", "[\\alnum\\x80-\xff]+", "[\\alnum\\x80-\xff,']+"]
+	   }
+	*/		                        	 
 
 close()
 ~~~~~~~
@@ -636,7 +666,8 @@ text handling functions which Rampart exposes for use in JavaScript.
 stringFormat()
 ~~~~~~~~~~~~~~
 
-The ``stringFormat()`` function is identical to the server function
+The ``stringFormat()`` function is identical to the 
+:ref:`server function <sql-server-funcs:Server functions>`
 :ref:`sql-server-funcs:stringformat`, except that it is not limited to five
 arguments.
 
@@ -741,10 +772,12 @@ following flags may appear:
 *   ``0`` (digit zero) Specifies zero padding. For all numeric formats,
     the output is padded on the left with zeros instead of spaces.
 
-*   ``-`` (negative field width) Indicates that the result is to be left 
+*   ``-`` (minus sign) Indicates that the result is to be left 
     adjusted in the output field instead of right.  A ``-`` overrides a
-    ``0`` flag if both are present.  (For the ``%L`` extended code, this
-    flag indicates the argument is a latitude.)
+    ``0`` flag if both are present.
+    
+    For the ``%L`` extended code, this flag indicates the argument is a
+    latitude.)
 
 *   ``⠀`` (a space) Indicates that a space should be left before a positive
     number produced by a signed format (e.g.  ``%d``, ``%i``, ``%e``,
@@ -757,10 +790,10 @@ following flags may appear:
     For the ``%L`` extended code, a ``+`` flag indicates the argument is a
     location with latitude and longitude, or a geocode.
 
-   If given with a string code, ``+`` indicates that if the string value
-   exceeds the given precision, truncate the string by a further 3 bytes, and
-   append an ellipsis ("...").  This can be useful to give an indication of
-   when a value is being truncated on display.
+    If given with a string code, ``+`` indicates that if the string value
+    exceeds the given precision, truncate the string by a further 3 bytes, and
+    append an ellipsis ("...").  This can be useful to give an indication of
+    when a value is being truncated on display.
 
 Examples:
 
@@ -833,9 +866,10 @@ needed.
 Printing Date/Time Values
 """"""""""""""""""""""""" 
 
-Dates can be printed with fmt by using the ``%at`` format.  The ``t`` code indicates
-a time is being printed, and the a flag indicates that the next argument is
-a strftime()-style format string.  Following that is a time argument. 
+Dates can be printed with ``stringFormat()`` by using the ``%at`` format. 
+The ``t`` code indicates a time is being printed, and the a flag indicates
+that the next argument is a strftime()-style format string.  Following that
+is a time argument.
 
 Example: 
 
@@ -870,7 +904,7 @@ codes are available:
 *   ``%y`` for the year as a decimal number without a century (range 00 through 99).
 *   ``%Y`` for the year as a decimal number including the century.
 *   ``%Z`` for the time zone or name or abbreviation.
-*   ``%%`` for a literal `%' character.
+*   ``%%`` for a literal ``%`` character.
 
 Since ``stringFormat`` arguments are typecast if needed, the date argument can be
 a Texis date or counter type, or a Texis-parseable date string.  For
@@ -939,31 +973,31 @@ or :ref:`latlon2geocode() <sql-server-funcs:latlon2geocode, latlon2geocodearea>
 (with single arg) SQL functions, as appropriate.  If the ``a`` flag is given,
 the subformat string may contain the following codes:
 
-*   ``%D for degrees
-*   ``%M for minutes
-*   ``%S for seconds
-*   ``%H for the hemisphere letter ("N", "S", "E" or "W")
-*   ``%h for the hemisphere sign ("+" or "-")
-*   ``%o for an ISO-8859-1 degree sign
-*   ``%O for a UTF-8 degree sign
-*   ``%% for a percent sign
+*   ``%D`` for degrees
+*   ``%M`` for minutes
+*   ``%S`` for seconds
+*   ``%H`` for the hemisphere letter ("N", "S", "E" or "W")
+*   ``%h`` for the hemisphere sign ("+" or "-")
+*   ``%o`` for an ISO-8859-1 degree sign
+*   ``%O`` for a UTF-8 degree sign
+*   ``%%`` for a percent sign
 
 A field width, precision, space, zero and/or minus flags may be given with
-the ``%D``/``%M``/``%S`` codes, with the same meaning as for numeric fmt
-codes.  If no flags are given to a code, the width is set to 2 (or 3 for
-longitude degrees), with space padding for degrees and zero padding for
-minutes and seconds.
+the ``%D``/``%M``/``%S`` codes, with the same meaning as for numeric
+``stringFormat()`` codes.  If no flags are given to a code, the width is set
+to 2 (or 3 for longitude degrees), with space padding for degrees and zero
+padding for minutes and seconds.
 
 Additionally, a single ``d``, ``i``, ``f`` or ``g`` numeric-type flag may be
 given with the ``%D``/``%M``/``%S`` codes.  This flag will print the value
-with the corresponding fmt numeric code, e.g.  truncated to an integer for d
-or i, floating-point with potential roundoff for f or g.  This flag is only
-valid for the smallest unit (degrees/minutes/seconds) printed: larger units
-will always be printed in integer format.  This ensures that a fractional
-value will not be printed twice erroneously, e.g.  20.5 degrees will not
-have its ".5" degrees fractional part printed if "30" minutes is also being
-printed, because the degrees numeric-type will be forced to integer
-regardless of flags.
+with the corresponding ``stringFormat()`` numeric code, e.g.  truncated to
+an integer for ``d`` or ``i``, floating-point with potential roundoff for
+``f`` or ``g``.  This flag is only valid for the smallest unit
+(degrees/minutes/seconds) printed: larger units will always be printed in
+integer format.  This ensures that a fractional value will not be printed
+twice erroneously, e.g.  20.5 degrees will not have its ".5" degrees
+fractional part printed if "30" minutes is also being printed, because the
+degrees numeric-type will be forced to integer regardless of flags.
 
 The default numeric-type flag is ``g`` for the smallest unit.  This helps ensure
 values are printed with the least number of decimal places needed (often
@@ -1078,32 +1112,32 @@ In addition to the standard printf() formatting codes, other
     instead of encoding should be done.  A ``q`` flag for ``%W`` indicates
     that only the "Q" encoding should be used for encoded words; normally
     either "Q" or base64 - whichever is shorter - is used.  The ``hh``,
-    ``hhh``, ``j``, ``^`` and ``|`` flags are respected.  The h flag is
+    ``hhh``, ``j``, ``^`` and ``|`` flags are respected.  The ``h`` flag is
     aslo supported for %``!W``.  If a non-zero field width is given, it is
     used as the desired maximum byte length of encoded words: if an encoded
     word would be longer than this, it is split atomically into multiple
     words, separated by newline-space.
 
-*   ``%z Prints its argument, encoded (compressed) in the gzip deflate
+*   ``%z`` Prints its argument, encoded (compressed) in the gzip deflate
     format.  The ``!`` flag will decode (decompress) the argument instead. 
     A precision value will limit the output to that many bytes, as with
     ``%s``; this can be used to "peek" at the start of compressed data
     without decoding all of it (and consuming memory to do so).
 
-*   ``For either encode or decode, a single l flag may be given to indicate
+*   For either encode or decode, a single ``l`` flag may be given to indicate
     zlib deflate format instead, or a ``ll`` (double el) to indicate raw
     deflate format instead.  All variants use the same deflate algorithm,
     but gzip adds (typically) 18 bytes of headers/footers, zlib 6, and raw
     none.  Additionally, decoding with ``%!z`` (no flags) will accept any
     of the three variants.
 
-*   ``%b Binary output of an integer.
+*   ``%b`` Binary output of an integer.
 
-*   ``%F Prints a float as a fraction: whole number plus fraction.
+*   ``%F`` Prints a float as a fraction: whole number plus fraction.
 
-*   ``%r Lowercase Roman numeral output of an integer.
+*   ``%r`` Lowercase Roman numeral output of an integer.
 
-*   ``%R Uppercase Roman numeral output of an integer.
+*   ``%R`` Uppercase Roman numeral output of an integer.
 
 All the standard flags, as well as the extended flags (below), can be given
 to these codes, where applicable.  
@@ -1796,9 +1830,9 @@ Expressions
     these classes may be affected by the current locale.
 
 *   A ``\`` followed by one of the following special characters
-    will assume the following meaning: ``n``=newline, ``t``=tab,
-    ``v``=vertical tab, ``b``=backspace, ``r``=carriage return,
-    ``f``=form feed, ``0``= the null character.
+    will assume the following meaning: ``n`` = newline, ``t`` = tab,
+    ``v`` = vertical tab, ``b`` = backspace, ``r`` = carriage return,
+    ``f`` = form feed, ``0`` = the null character.
 
 *   A ``\`` followed by  ``Xn`` or ``Xnn`` where ``n`` is a hexadecimal digit
     will match that character.
@@ -1907,6 +1941,7 @@ if we were looking for the pattern:
 ::
 
                        ABCDE
+
 in the text:
 
 ::
@@ -2382,6 +2417,7 @@ nonprocedural query language.
 
 Support of SQL
 ~~~~~~~~~~~~~~
+
 **YUK YUK YUK -- FIXME for 2020 **
 
 As more corporate data processing centers use SQL, more vendors are

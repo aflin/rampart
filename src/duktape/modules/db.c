@@ -47,7 +47,6 @@ extern int RP_TX_isforked;
 #define TXLOCK if(!RP_TX_isforked) pthread_mutex_lock(&lock);
 #define TXUNLOCK if(!RP_TX_isforked) pthread_mutex_unlock(&lock);
 
-#include "db_misc.c" /* copied and altered thunderstone code for stringformat and abstract */
 
 /* TODO: make not using handle cache work with cancel */
 #ifndef USEHANDLECACHE
@@ -398,6 +397,26 @@ void duk_rp_log_tx_error(duk_context *ctx, char *buf)
     TXUNLOCK
     duk_rp_log_error(ctx, buf);
 }
+
+/* get the expression from a /pattern/ or a "string" */
+static const char *get_exp(duk_context *ctx, duk_idx_t idx)
+{
+    const char *ret=NULL;
+
+    if(duk_is_object(ctx,idx) && duk_has_prop_string(ctx,idx,"source") )
+    {
+        duk_get_prop_string(ctx,idx,"source");
+        ret=duk_get_string(ctx,-1);
+        duk_pop(ctx);
+    }
+    else if ( duk_is_string(ctx,idx) )
+        ret=duk_get_string(ctx,idx);
+
+    return ret;
+}
+
+
+#include "db_misc.c" /* copied and altered thunderstone code for stringformat and abstract */
 
 static duk_ret_t counter_to_string(duk_context *ctx)
 {
@@ -781,8 +800,8 @@ int duk_rp_add_parameters(duk_context *ctx, TEXIS *tx, int arryi)
         }
         }
         arryn++;
-        duk_pop(ctx);
         rc = TEXIS_PARAM(tx, arryn, v, &plen, in, out);
+        duk_pop(ctx);
         if (!rc)
         {
             return (0);
@@ -918,13 +937,16 @@ int duk_rp_fetchWCallback(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
     int rown = 0, i = 0,
         resmax = q->max,
         rettype = q->rettype;
-    duk_idx_t callback_idx = q->callback, colnames_idx=0;
+    duk_idx_t callback_idx = q->callback, colnames_idx=0, count_idx=-1;
     FLDLST *fl;
     TXCOUNTINFO cinfo;
 
     if(q->getCounts)
+    {
         texis_getCountInfo(tx,&cinfo);
-
+        pushcounts;             /* countInfo */
+        count_idx=duk_get_top_index(ctx);
+    }
     while (rown < resmax && (fl = TEXIS_FETCH(tx, -1)))
     {
 
@@ -945,17 +967,22 @@ int duk_rp_fetchWCallback(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
 
         switch (rettype)
         {
-            /* novars */
-            case 2:
+            /* object requested */
+            case 0:
             {
-                duk_push_object(ctx);       /*empty object */
-                duk_push_int(ctx, rown++ ); /* index */
+                duk_push_object(ctx);
+                for (i = 0; i < fl->n; i++)
+                {
+                    duk_rp_pushfield(ctx, fl, i);
+                    duk_put_prop_string(ctx, -2, (const char *)fl->name[i]);
+                }
+                duk_push_int(ctx, rown++ );
                 duk_dup(ctx, colnames_idx);
 
                 if(q->getCounts)
                 {
-                    pushcounts;             /* countInfo */
-                    duk_call_method(ctx, 4);/* function({_empty_},resnum,info){} */
+                    duk_dup(ctx, count_idx);  /* countInfo */
+                    duk_call_method(ctx, 4);/* function({_res_},resnum,colnames,info){} */
                 }
                 else
                     duk_call_method(ctx, 3);
@@ -976,30 +1003,25 @@ int duk_rp_fetchWCallback(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
                 duk_dup(ctx, colnames_idx);
                 if(q->getCounts)
                 {
-                    pushcounts;
-                    duk_call_method(ctx, 4);/* function({_empty_},resnum,info){} */
+                    duk_dup(ctx, count_idx);  /* countInfo */
+                    duk_call_method(ctx, 4);/* function([_res_],resnum,colnames,info){} */
                 }
                 else
                     duk_call_method(ctx, 3);
 
                 break;
             }
-            /* object requested */
-            case 0:
+            /* novars */
+            case 2:
             {
-                duk_push_object(ctx);
-                for (i = 0; i < fl->n; i++)
-                {
-                    duk_rp_pushfield(ctx, fl, i);
-                    duk_put_prop_string(ctx, -2, (const char *)fl->name[i]);
-                }
-                duk_push_int(ctx, rown++ );
+                duk_push_object(ctx);       /*empty object */
+                duk_push_int(ctx, rown++ ); /* index */
                 duk_dup(ctx, colnames_idx);
 
                 if(q->getCounts)
                 {
-                    pushcounts;
-                    duk_call_method(ctx, 4);/* function({_empty_},resnum,info){} */
+                    duk_dup(ctx, count_idx);  /* countInfo */
+                    duk_call_method(ctx, 4);  /* function({_empty_},resnum,colnames,info){} */
                 }
                 else
                     duk_call_method(ctx, 3);
@@ -1170,15 +1192,12 @@ duk_ret_t duk_rp_sql_eval(duk_context *ctx)
 }
 
 
-static CONST char * null_noiselist[]={""};
-
-int noiselist_needs_free=0;
-
-static void free_noiselist(char **nl)
+static void free_list(char **nl)
 {
     int i=0;
     char *f;
-    if(noiselist_needs_free==0)
+
+    if(nl==NULL)
         return;
 
     f=nl[i];
@@ -1195,7 +1214,7 @@ static void free_noiselist(char **nl)
         f=nl[i];
     }    
     free(nl);
-    noiselist_needs_free=0;
+//    *needs_free=0;
 }
 
 duk_ret_t duk_texis_set(duk_context *ctx)
@@ -1203,9 +1222,11 @@ duk_ret_t duk_texis_set(duk_context *ctx)
     LPSTMT lpstmt;
     DDIC *ddic=NULL;
     TEXIS *tx;
-    const char *db,*val;
+    const char *db,*val="";
     DB_HANDLE *hcache = NULL;
     char pbuf[msgbufsz];
+    int added_ret_obj=0;
+    char *rlsts[]={"noiseList","suffixList","suffixEquivsList","prefixList"};
 
     duk_push_this(ctx);
 
@@ -1233,27 +1254,95 @@ duk_ret_t duk_texis_set(duk_context *ctx)
     else
         throw_tx_error(ctx,"open sql");
 
-#define throwinvalidprop(s) do{\
-    RP_THROW(ctx,"invalid option '%s'",(s));\
-} while(0)
-
     duk_enum(ctx, -1, 0);
     while (duk_next(ctx, -1, 1))
     {
-        if(!(duk_is_string(ctx, -2)))
-            throwinvalidprop( duk_to_string(ctx, -2) );
-        if(!strcmp ("noiselist", duk_get_string(ctx, -2) ) )
+        int retlisttype=-1, setlisttype=-1, i=0;
+        char propa[64], *prop=&propa[0];
+
+        strcpy(prop, duk_get_string(ctx, -2));
+
+        for(i = 0; prop[i]; i++)
+            prop[i] = tolower(prop[i]);
+
+        /* a few aliases */
+        if(!strcmp("listexp", prop) || !strcmp("listexpressions", prop))
+            prop="lstexp";
+        else if (!strcmp("listindextmp", prop) || !strcmp("listindextemp", prop) || !strcmp("lstindextemp", prop))
+            prop="lstindextmp"; 
+        else if (!strcmp("addindextemp", prop))
+            prop="addindextmp";
+        else if (!strcmp("addexpressions", prop))
+            prop="addexp";
+        else if (!strcmp("delexpressions", prop) || !strcmp("deleteexpressions", prop))
+            prop="delexp";
+        else if (!strcmp("keepequivs", prop) || !strcmp("useequivs", prop))
+            prop="useequiv";
+        else if (!strcmp("equivsfile", prop))
+            prop="eqprefix";
+        else if (!strcmp ("lstnoise", prop) || !strcmp ("listnoise",prop))
+            retlisttype=0;
+        else if (!strcmp ("lstsuffix", prop) || !strcmp ("listsuffix",prop))
+            retlisttype=1;
+        else if (!strcmp ("lstsuffixeqivs", prop) || !strcmp ("listsuffixequivs",prop))
+            retlisttype=2;
+        else if (!strcmp ("lstprefix", prop) || !strcmp ("listprefix",prop))
+            retlisttype=3;
+        else if (!strcmp ("noiselst", prop) || !strcmp ("noiselist",prop))
+            setlisttype=0;
+        else if (!strcmp ("suffixlst", prop) || !strcmp ("suffixlist",prop))
+            setlisttype=1;
+        else if (!strcmp ("suffixeqivslst", prop) || !strcmp ("suffixequivslist",prop))
+            setlisttype=2;
+        else if (!strcmp ("prefixlst", prop) || !strcmp ("prefixlist",prop))
+            setlisttype=3;
+
+        if(retlisttype>-1)
         {
+            byte *nw;
+            byte **lsts[]={globalcp->noise,globalcp->suffix,globalcp->suffixeq,globalcp->prefix};
+            char *rprop=rlsts[retlisttype];
+            byte **lst=lsts[retlisttype];
+            
+            i=0;
+            /* skip if false */
+            if(duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1))
+                goto propnext;
+            
+            if(!added_ret_obj)
+            {
+                duk_push_object(ctx);
+                duk_insert(ctx, 0);
+                added_ret_obj=1;
+            }
+
+            duk_push_array(ctx);
+            while ( (nw=lst[i]) && *nw != '\0' )
+            {
+                duk_push_string(ctx, (const char *) nw);
+                duk_put_prop_index(ctx, -2, i++);
+            }
+
+            duk_put_prop_string(ctx, 0, rprop); 
+
+            goto propnext;
+        }
+
+        if(setlisttype>-1)
+        {
+            char **nl=NULL; /* the list to be populated */
+            /* set the new list up, then free and replace current list *
+             * should be null or an array of strings ONLY              */
             if(duk_is_null(ctx, -1))
-                globalcp->noise=(byte**)null_noiselist;
+            {
+                DUKREMALLOC(ctx, nl, sizeof(char*) * 1);
+                nl[0]=strdup("");
+            }
             else if(duk_is_array(ctx, -1))
             {
-                int i=0, len=duk_get_length(ctx, -1);
+                int len=duk_get_length(ctx, -1);
 
-                char **nl=NULL;
-                
-                if(noiselist_needs_free)
-                    free_noiselist((char**)globalcp->noise);
+                i=0;
 
                 DUKREMALLOC(ctx, nl, sizeof(char*) * (len + 1));
 
@@ -1261,45 +1350,209 @@ duk_ret_t duk_texis_set(duk_context *ctx)
                 {
                     duk_get_prop_index(ctx, -1, i);
                     if(!(duk_is_string(ctx, -1)))
-                        RP_THROW(ctx, "sql.set: noiselist members must be strings");
+                    {
+                        /* note that the RP_THROW below might be caught in js, so we need to clean up *
+                         * terminate what we have so far, then free it                                */
+                        nl[i]=strdup("");
+                        free_list((char**)nl);
+                        RP_THROW(ctx, "sql.set: %s must be an array of strings", rlsts[setlisttype] );
+                    }
                     nl[i]=strdup(duk_get_string(ctx, -1));
                     duk_pop(ctx);
                     i++;
                 }
                 nl[i]=strdup("");
-                globalcp->noise=(byte**)nl;
-                noiselist_needs_free=1;
             }
             else
-                RP_THROW(ctx, "sql.set: noiselist must be an array of strings");
+            {
+                RP_THROW(ctx, "sql.set: %s must be an array of strings", rlsts[setlisttype] );
+            }
+            switch(setlisttype)
+            {
+                case 0: free_list((char**)globalcp->noise);
+                        globalcp->noise=(byte**)nl;
+                        break;
+
+                case 1: free_list((char**)globalcp->suffix);
+                        globalcp->suffix=(byte**)nl;
+                        break;
+
+                case 2: free_list((char**)globalcp->suffixeq);
+                        globalcp->suffixeq=(byte**)nl;
+                        break;
+
+                case 3: free_list((char**)globalcp->prefix);
+                        globalcp->prefix=(byte**)nl;
+                        break;
+            }
+
             goto propnext;
         }
-        if(duk_is_number(ctx, -1))
-            duk_to_string(ctx, -1);
-        if(duk_is_boolean(ctx, -1))
+
+        /* addexp, delexp and addindextmp take one at a time, but may take multiple 
+           so handle arrays here
+        */
+        if 
+        (
+            duk_is_array(ctx, -1) && 
+            (
+                !strcmp(prop,"addexp") |
+                !strcmp(prop,"delexp") |
+                !strcmp(prop,"addindextmp")
+            )
+        )
         {
-            if(duk_get_boolean(ctx, -1))
-                val="on";
-            else
-                val="off";
+            int ptype=0;
+            
+            if(!strcmp(prop,"delexp"))
+                ptype=1;
+            else if (!strcmp(prop,"addindextmp"))
+                ptype=2;
+            
+            duk_enum(ctx, -1, DUK_ENUM_ARRAY_INDICES_ONLY);
+            while(duk_next(ctx, -1, 1))
+            {
+                const char *aval;
+                
+                if (ptype==1)
+                {
+                    if(duk_is_number(ctx, -1))
+                    {
+                        duk_to_string(ctx, -1);
+                        aval=duk_get_string(ctx, -1);
+                    }
+                    else
+                    {
+                        aval=get_exp(ctx, -1);
+                    
+                        if(!aval)
+                        {
+                            RP_THROW
+                            (
+                                ctx, 
+                                "sql.set: deleteExpressions - array must be an array of strings, expressions or numbers (expressions or expression index)\n"
+                            );
+                        }
+                    }                
+                }
+                else if (ptype==0)
+                {
+                    aval=get_exp(ctx, -1);
+                    
+                    if(!aval)
+                    {
+                        RP_THROW
+                        (
+                            ctx, 
+                            "sql.set: addExpressions - array must be an array of strings or expressions\n"
+                        );
+                    }
+                }
+                else
+                {
+                    if(!duk_is_string(ctx, -1))
+                    {
+                        RP_THROW(ctx, "sql.set: addIndexTemp - array must be an array of strings\n");
+                    }
+                    aval=duk_get_string(ctx, -1);
+                }
+                if(setprop(ddic, (char*)prop, (char*)aval )==-1)
+                {
+                    throw_tx_error(ctx,"sql set");
+                }
+                duk_pop_2(ctx);
+            }
+            duk_pop(ctx);
         }
         else
         {
-            if(!(duk_is_string(ctx, -1)))
-                throwinvalidprop( duk_to_string(ctx, -1) );
-            val=duk_get_string(ctx, -1);
-        }
+            if(duk_is_number(ctx, -1))
+                duk_to_string(ctx, -1);
+            if(duk_is_boolean(ctx, -1))
+            {
+                if(duk_get_boolean(ctx, -1))
+                    val="on";
+                else
+                    val="off";
+            }
+            else
+            {
+                if(!(duk_is_string(ctx, -1)))
+                {
+                    RP_THROW(ctx,"invalid value '%s'", duk_safe_to_string(ctx, -1));
+                }
+                val=duk_get_string(ctx, -1);
+            }
 
-        if(setprop(ddic, (char*)duk_get_string(ctx, -2), (char*)val )==-1)
-            throw_tx_error(ctx,"sql set");
+            if(!strcmp(prop,"querydefaults") || !strcmp(prop,"querydefault"))
+            {
+                if(!duk_get_boolean_default(ctx, -1, 1))
+                    goto propnext;
+                prop="querysettings";
+                val="vortexdefaults";
+            }
+            if(setprop(ddic, (char*)prop, (char*)val )==-1)
+            {
+                throw_tx_error(ctx,"sql set");
+            }
+        }
+        /* lstexp and lstindextmp are output via putmsg, capture output here */
+        if( (!strcmp(prop, "lstexp")||!strcmp(prop, "lstindextmp")) 
+                && strcmp(val,"off") )
+        {
+            if(!added_ret_obj)
+            {
+                duk_push_object(ctx);
+                duk_insert(ctx, 0);
+                added_ret_obj=1;
+            }
+            duk_push_array(ctx);
+            msgtobuf(pbuf);
+            if(strncmp("200  ",pbuf,5)==0)
+            {
+                char *s=pbuf+5, *end;
+                duk_size_t slen=0;
+                int arrayi=0;
+
+                while (*s != '\0')
+                {
+                    while(isdigit(*s)||*s==':'||*s==' ')s++;
+                    end=strchr(s,'\n');
+                    if(end)
+                        slen=(duk_size_t)(end-s);
+                    else
+                        break;
+                    duk_push_lstring(ctx,s,slen);
+                    duk_put_prop_index(ctx, -2, arrayi++);
+                    s+=slen+1;
+                }
+            }
+            duk_put_prop_string(ctx, 0, 
+                ( 
+                    strcmp(prop, "lstindextmp")?"expressionsList":"indexTempList"
+                )
+            );
+        }
 
         propnext:
         duk_pop_2(ctx);
+        /* capture and throw errors here */
+        TXLOCK
+        msgtobuf(pbuf);
+        TXUNLOCK
+        if(*pbuf!='\0')
+            RP_THROW(ctx, "sql.set(): %s", pbuf+4);
     }
 #ifndef USEHANDLECACHE
     tx=TEXIS_CLOSE(tx);
 #endif
     duk_rp_log_tx_error(ctx,pbuf); /* log any non fatal errors to this.errMsg */
+
+    if(added_ret_obj)
+    {
+        duk_pull(ctx, 0);
+        return 1;
+    }
     return 0;
 }
 
@@ -1311,11 +1564,11 @@ duk_ret_t duk_texis_set(duk_context *ctx)
    var sql=new Sql("/database/path",true); //create db if not exists
 
    There are x handle caches, one for each thread
-   There is one handle cache for all new Sql() calls 
+   There is one handle cache for all new sql.exec() calls 
    in each thread regardless of how many dbs will be opened.
 
    Calling new Sql() only stores the name of the db path
-   And there is one database per new Sql("/db/path");
+   And there is only one database per new Sql("/db/path");
 
    Here we only check to see that the database exists and
    construct the js object.  Actual opening and caching
@@ -1350,7 +1603,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
             if (!createdb(db))
             {
                 duk_rp_log_tx_error(ctx,pbuf);
-                RP_THROW(ctx, "cannot create database at '%s' (root path not found, lacking permission or other error\n)", db, pbuf);
+                RP_THROW(ctx, "cannot create database at '%s' (root path not found, lacking permission or other error\n%s)", db, pbuf);
             }
         }
         else
@@ -1368,8 +1621,12 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
         TXunneededRexEscapeWarning = 0; //silence rex escape warnings
     }
 
-    /* default to json for strlst in and out */
+    /* settings object for defaults*/
     duk_push_object(ctx);
+    /* vortex defaults */
+    duk_push_string(ctx, "defaults");
+    duk_put_prop_string(ctx, -2, "querysettings");
+    /* default to json for strlst in and out */
     duk_push_string(ctx, "json");
     duk_put_prop_string(ctx, -2, "strlsttovarcharmode");
     duk_push_string(ctx, "json");
