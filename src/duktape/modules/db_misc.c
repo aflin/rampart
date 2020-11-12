@@ -747,13 +747,23 @@ RPsqlFuncs_abstract(duk_context *ctx)
 
 	if (globalcp == APICPPN) globalcp = TXopenapicp();
 
-	text=(char *)REQUIRE_STRING(ctx, idx, "abstract: no text provided");
+	if(duk_is_string(ctx, idx))
+	{
+            text=(ft_char *)REQUIRE_STRING(ctx, idx, "abstract: no text provided");
+            idx++;
+        }
+        else if (duk_is_object(ctx, idx))
+        {
+            text=(ft_char *)REQUIRE_STRING(ctx, idx+1, "abstract: no text provided");
+        }
 
-	idx++;
-	
 	if( duk_is_object(ctx,idx) )
 	{
 	    if(duk_get_prop_string(ctx,idx,"max"))
+	        maxsz=(ft_long)REQUIRE_NUMBER(ctx,-1,"abstract: parameter \"max\" requires a number");
+            duk_pop(ctx);
+
+	    if(duk_get_prop_string(ctx,idx,"maxsize"))
 	        maxsz=(ft_long)REQUIRE_NUMBER(ctx,-1,"abstract: parameter \"max\" requires a number");
             duk_pop(ctx);
 
@@ -764,7 +774,6 @@ RPsqlFuncs_abstract(duk_context *ctx)
             if(duk_get_prop_string(ctx,idx,"style"))
                 style_str=REQUIRE_STRING(ctx,-1,"abstract: parameter \"style\" requires a string (dumb|smart|querysingle|querymultiple|querybest)");
             duk_pop(ctx);
-
 	}
 	else if (duk_is_number(ctx,idx))
 	{
@@ -780,6 +789,8 @@ RPsqlFuncs_abstract(duk_context *ctx)
             }
             
         }	
+        if (text==NULL)
+            RP_THROW(ctx, "abstract: no text provided");
 	
 	while(styles[i] && strcmp(style_str,styles[i])!=0) i++;
 	if(styles[i]==NULL)
