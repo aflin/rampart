@@ -155,7 +155,7 @@ JavaScript, and as such, a script must use a separate ``exec()`` for each
 statement to be executed.
 
 Sql Parameters:
-    Sql Parameters are specified in array and correspond to each ``?`` in the sql
+    Sql Parameters are specified in array each member correspond to each ``?`` in the sql
     statement.  Example:
 
 .. code-block:: javascript

@@ -455,7 +455,7 @@ optimize,noOptimize
 
     indexdataonlycheckpredicates
         When enabled (the default), allows the index-data-only
-        optimization to proceed even if the SELECT columns are
+        optimization [1]_ to proceed even if the SELECT columns are
         renamed or altered in expressions. Previously, the columns had
         to be selected as-is with no renaming or expressions.
 
@@ -745,15 +745,14 @@ rebuild
     appropriate suffixes and prefixes. This increases the accuracy of
     the search. Default ``false``.
 
-keepEqvs
-""""""""
-    See `useEquiv`_.
-
 useEquiv
 """"""""
-    Perform thesaurus lookup. If this is on then the word and all
-    equivalences will be searched for. If it is off then only the query
-    word is searched for. Default off. Same as ``keepeqvs``.
+    AKA ``keepEqvs``.  Perform thesaurus lookup on unaltered terms.  Negates
+    the meaning of ``~``.  If set ``true`` then the word and all
+    equivalences will be searched for unless the term is preceded with a
+    ``~``.  If it is ``false`` then only the query word is searched for
+    (unless the term is preceded with a ``~``).  Default is ``false``.  Note
+    ``alEquivs`_ must be set ``true`` for any thesaurus lookup to occur.
 
 .. possibly include this later or in a more appropriate section
     inc\_sdexp
@@ -823,23 +822,21 @@ langc
 
 withinMode
 """"""""""
-    A space- or comma-separated unit and optional type for the
-    “within-\ :math:`N`” operator (e.g. ``w/5``). The unit is one of:
+    A space or comma separated unit and optional type for
+    the "within-N" operator (e.g. ``w/5``). The unit is one of:
 
-    -  ``char`` for within-\ :math:`N` characters
+   *  ``char`` for within-N characters
+   *  ``word`` for within-N words
 
-    -  ``word`` for within-\ :math:`N` words
+   The optional type determines what distance the operator measures.  It is
+   one of the following:
 
-    The optional type determines what distance the operator measures. It
-    is one of the following:
+   *  ``radius`` (the default if no type specified when set) indicates all sets must
+      be within a radius N of an "anchor" set, i.e. there is a set in the match
+      such that all other sets are within N units right of its right edge or N
+      units left of its left edge.
 
-    -  ``radius`` (the default if no type is specified when set)
-       indicates all sets must be within a radius :math:`N` of an
-       “anchor” set, i.e. there is a set in the match such that all
-       other sets are within :math:`N` units right of its right edge or
-       :math:`N` units left of its left edge.
-
-    -  ``span`` indicates all sets must be within an :math:`N`-unit span
+   *  ``span`` indicates all sets must be within an N-unit span.
 
     Example: ``sql.set({withinmode: "char, span"});``.
 
@@ -878,13 +875,13 @@ defSuffRm
     AKA ``defsufrm``.  Whether to remove a trailing vowel, or one of a
     trailing double consonant pair, after normal suffix processing, and if
     the word is still ``minwordlen`` or greater.  This only has effect if
-    suffix processing is enabled (``suffixproc`` set ``true`` and the
+    suffix processing is enabled (``suffixProc`` set ``true`` and the
     original word is at least minwordlen long).  Default value is ``true``.
 
 eqPrefix
 """"""""
-    The name of the equivalence file. Default is "builtin",
-    which uses the built-in 
+    AKA ``equivsFile`` when used from ``sql.set()``.  The name of the
+    equivalence file.  Default is "builtin", which uses the built-in
     :ref:`equivalence list <mm3:Thesaurus Customization>`.
 
 exactPhrase 
@@ -952,6 +949,17 @@ noiseList
       "won't",      "would",     "wouldn't",    "yet",      "you",       "your"
    ]
 
+    This setting can only be set using ``sql.set()``.
+
+listNoise
+"""""""""
+    If not set to ``false``, the return object of ``sql.set()`` will include
+    the property ``noiseList``, which will be set to an array containing the
+    current noise list. 
+
+    This setting can only be used via ``sql.set()``.
+
+
 .. skip
     olddelim (boolean, off by default) Whether to emulate "old" delimiter
     behavior. If turned on, it is possible for a hit to occur outside dissimilar
@@ -968,40 +976,100 @@ noiseList
 
 suffixList
 """"""""""
- (list) The suffix list used for suffix processing (if enabled) during
-search. The default suffix list is:
-' (single quote) able age aged ager ages al ally ance anced ancer ances ant
-ary at ate ated ater atery ates atic ed en ence enced encer ences end ent er
-ery es ess est ful ial ible ibler ic ical ice iced icer ices ics ide ided
-ider ides ier ily ing ion ious ise ised ises ish ism ist ity ive ived ives
-ize ized izer izes less ly ment ncy ness nt ory ous re red res ry s ship
-sion th tic tion ty ual ul ward
+    The suffix list used for suffix processing (if enabled) during
+    search. An array of strings. The default suffix list is:
 
-suffixeq (list) The suffix list used for suffix processing during
-equivalence lookup. The default suffixeq list is:
-' (single quote) ies s
+::
 
-suffixproc (boolean, on by default) Whether to do suffix processing.
+     [
+         "'",       "able",   "age",     "aged",   "ager",
+         "ages",    "al",     "ally",    "ance",   "anced",
+         "ancer",   "ances",  "ant",     "ary",    "at",
+         "ate",     "ated",   "ater",    "atery",  "ates",
+         "atic",    "ed",     "en",      "ence",   "enced",
+         "encer",   "ences",  "end",     "ent",    "er",
+         "ery",     "es",     "ess",     "est",    "ful",
+         "ial",     "ible",   "ibler",   "ic",     "ical",
+         "ice",     "iced",   "icer",    "ices",   "ics",
+         "ide",     "ided",   "ider",    "ides",   "ier",
+         "ily",     "ing",    "ion",     "ious",   "ise",
+         "ised",    "ises",   "ish",     "ism",    "ist",
+         "ity",     "ive",    "ived",    "ives",   "ize",
+         "ized",    "izer",   "izes",    "less",   "ly",
+         "ment",    "ncy",    "ness",    "nt",     "ory",
+         "ous",     "re",     "red",     "res",    "ry",
+         "s",       "ship",   "sion",    "th",     "tic",
+         "tion",    "ty",     "ual",     "ul",     "ward"
+     ] 
 
+    This setting can only be set using ``sql.set()``.
 
-ueqprefix (string) The name of the user equivalence file. Default is empty.
-withinmode (string)   A space- or comma-separated unit and optional type for
-the "within-N" operator (e.g. w/5). The unit is one of:
-char for within-N characters
-word for within-N words
-The optional type determines what distance the operator measures. It is one
-of the following:
-radius (the default if no type specified when set) indicates all sets must
-be within a radius N of an "anchor" set, i.e. there is a set in the match
-such that all other sets are within N units right of its right edge or N
-units left of its left edge.
-span indicates all sets must be within an N-unit span
-Added in version 4.03.1081200000 20040405. The optional type was added in
-version 5.01.1258712000 20091120; previously the only type was implicitly
-radius. The default setting for version 5 and earlier is char (i.e. char
-radius); in version 6 and later the default is word span.
-withinproc (boolean, on by default) Whether to process the w/ operator in
-queries.
+    See also `suffixProc`_.
+
+listSuffix
+""""""""""
+    If not set to ``false``, the return object of ``sql.set()`` will include
+    the property ``suffixList``, which will be set to an array containing the
+    current suffix list. 
+
+    This setting can only be used via ``sql.set()``.
+
+suffixEquivsList
+""""""""""""""""
+    The suffix list used for suffix processing during
+    equivalence lookup. The default suffixeq list is:
+
+::
+
+     [ "'",  "ies",  "s" ]
+
+    This setting can only be set using ``sql.set()``.
+
+listSuffixEquivs
+""""""""""""""""
+    If not set to ``false``, the return object of ``sql.set()`` will include
+    the property ``suffixListEquivs``, which will be set to an array containing the
+    current suffix list. 
+
+    This setting can only be used via ``sql.set()``.
+
+prefixList
+""""""""""
+    The prefix list used for prefix processing (if enabled) during
+    search. An array of strings. The default prefix list is:
+
+::
+
+     [
+         "ante",      "anti",          "arch",           "auto",
+         "be",        "bi",            "counter",        "de",
+         "dis",       "em",            "en",             "ex",
+         "extra",     "fore",          "hyper",          "in",
+         "inter",     "mis",           "non",            "post",
+         "pre",       "pro",           "re",             "semi",
+         "sub",       "super",         "ultra",          "un"
+     ] 
+
+    This setting can only be set using ``sql.set()``.
+
+    See also `prefixProc`_.
+
+listPrefix
+""""""""""
+    If not set to ``false``, the return object of ``sql.set()`` will include
+    the property ``prefixList``, which will be set to an array containing the
+    current prefix list. 
+
+    This setting can only be used via ``sql.set()``.
+
+uEqPrefix
+"""""""""
+    AKA ``userEquivsFile`` when set from ``sql.set()``.  
+    The name of the user equivalence file. Default is empty.
+
+withinproc
+""""""""""
+   Whether to process the w/ operator in queries.  The default is ``true``.
 
 
 Rank knobs
@@ -1021,44 +1089,44 @@ lead bias. If ``likepproximity`` is then set to 1000 as well, then lead
 bias and proximity each determine 50% of the rank.
 
 
-likepproximity
+likepProximity
 """"""""""""""
     Controls how important proximity of terms is. The closer the hit’s
     terms are grouped together, the better the rank. The default weight
-    is 500.
+    is ``500``.
 
 
-likepleadbias
+likepLeadBias
 """""""""""""
     Controls how important closeness to document start is. Hits closer
     to the top of the document are considered better. The default weight
-    is 500.
+    is ``500``.
 
 
-likeporder
+likepOrder
 """"""""""
     Controls how important word order is: hits with terms in the same
     order as the query are considered better. For example, if searching
     for “bear arms”, then the hit “arm bears”, while matching both
     terms, is probably not as good as an in-order match. The default
-    weight is 500.
+    weight is ``500``.
 
 
-likepdocfreq
+likepDocFreq
 """"""""""""
     Controls how important frequency in document is. The more
     occurrences of a term in a document, the better its rank, up to a
-    point. The default weight is 500.
+    point. The default weight is ``500``.
 
 
-likeptblfreq
+likepTblFreq
 """"""""""""
     Controls how important frequency in the table is. The more a term
     occurs in the table being searched, the *worse* its rank. Terms that
     occur in many documents are usually less relevant than rare terms.
     For example, in a web-walk database the word “``HTML``” is likely to
     occur in most documents: it thus has little use in finding a
-    specific document. The default weight is 500.
+    specific document. The default weight is ``500``.
 
 
 Other ranking properties
@@ -1068,34 +1136,34 @@ These properties affect how ``LIKEP`` and some ``LIKE`` queries are
 processed.
 
 
-likeprows
+likepRows
 """""""""
     Only the top ``likeprows`` relevant documents are returned by a
-    ``LIKEP`` query (default 100). This is an arbitrary cut-off beyond
+    ``LIKEP`` query (default ``100``). This is an arbitrary cut-off beyond
     which most results would be increasingly useless. It also speeds up
     the query process, because fewer rows need to be sorted during
     ranking. By altering ``likeprows`` this threshold can be changed,
     e.g. to return more results to the user (at the potential cost of
-    more search time). Setting this to 0 will return all relevant
+    more search time). Setting this to ``0`` will return all relevant
     documents (no limit).
 
     Note that in some circumstances, a ``LIKEP`` query might return more
-    than ``likeprows`` results, if for example later processing requires
+    than ``likepRows`` results, if for example later processing requires
     examination of all ``LIKEP``-matching rows (e.g. certain ``AND``
     queries). Thus a SQL statement containing ``LIKEP`` may or may not
-    be limited to ``likeprows`` results, depending on other clauses,
+    be limited to ``likepRows`` results, depending on other clauses,
     indexes, etc.
 
 
-likepmode
+likepMode
 """""""""
-    Sets the mode for ``LIKEP`` queries. This can be either 0, for
-    early, or 1 for late. The default is 1, which is the correct setting
-    for almost all cases. Does not apply to most Metamorph index
+    Sets the mode for ``LIKEP`` queries.  This can be either ``0``, for
+    early, or ``1`` for late.  The default is ``1``, which is the correct
+    setting for almost all cases.  Does not apply to most Metamorph index
     searches.
 
 
-likepallmatch
+likepAllMatch
 """""""""""""
     Setting this to 1 forces ``LIKEP`` to only consider those documents
     containing *all* (non-negated) query terms as matches (i.e. just as
@@ -1103,21 +1171,21 @@ likepallmatch
     returns the best results even if only some of the set-logic terms
     (non-``+`` or ``-`` prefix) can be found. (Note that required terms
     – prefixed with a ``+`` – are always required in a hit regardless of
-    this setting. Also note that if likepobeyintersects is true, an @
+    this setting. Also note that if ``likepObeyIntersects`` is ``true``, an @
     operator value in the query will override this setting.)
 
 
-likepobeyintersects
+likepObeyIntersects
 """""""""""""""""""
     Setting this to 1 forces ``LIKEP`` to obey the intersects operator
     (@) in queries (even when likepallmatch is true). By default
     ``LIKEP`` does not use it, because it is a ranking operator. Setting
-    both ``likepallmatch`` and ``likepobeyintersects`` to 1 will make
-    ``LIKEP`` respect queries the same as ``LIKE``. (Note: ``apicp``
-    ``alintersects`` may have to be enabled in Vortex as well.)
+    both ``likepAllMatch`` and ``likepObeyIntersects`` to 1 will make
+    ``LIKEP`` respect queries the same as ``LIKE``. (Note:
+    `alIntersects`_ may have to be enabled as well.)
 
 
-likepinfthresh
+likepInfThresh
 """"""""""""""
     This controls the “infinity” threshold in ``LIKE`` and ``LIKEP``
     queries: if the estimated number of matching rows for a set is
@@ -1125,11 +1193,11 @@ likepinfthresh
     all the search terms found in a given document are such infinite
     sets, the document is given an estimated rank. This saves time
     ranking irrelevant but often-occurring matches, at the possible
-    expense of rank position. The default is 0, which means infinite (no
+    expense of rank position. The default is ``0``, which means infinite (no
     infinite sets; rank all documents).
 
 
-likepindexthresh
+likepIndexThresh
 """"""""""""""""
     Controls the maximum number of matching documents to examine
     (default infinite) for ``LIKEP`` and ``LIKE``. After this many
@@ -1144,7 +1212,7 @@ likepindexthresh
     returns fewer hits will fall under this threshold, so all matches
     will be considered for ranking.
 
-    Note that setting ``likepindexthresh`` is a tradeoff between speed
+    Note that setting ``likepIndexThresh`` is a tradeoff between speed
     and accuracy: the lower the setting, the faster queries can be
     processed, but the more queries may be dropping potentially
     high-ranking hits.
@@ -1154,7 +1222,7 @@ Indexing properties
 ~~~~~~~~~~~~~~~~~~~
 
 
-indexspace
+indexSpace
 """"""""""
     A directory in which to store the index files. The default
     is the empty string, which means use the database directory. This can be
@@ -1163,12 +1231,14 @@ indexspace
     Metamorph index is being updated, the new index will be stored in the
     new location.
 
+indexBlock
+""""""""""
     When a Metamorph index is created on an indirect field, the indirect
     files are read in blocks. This property allows the size of the block
     used to be redefined.
 
 
-indexmem 
+indexMem
 """"""""
     When indexes are created Texis will use memory to speed up
     the process. This setting allows the amount of memory used to be
@@ -1179,7 +1249,7 @@ indexmem
     use. Setting this value too high can cause excessive swapping, while
     setting it too low causes unneeded extra merges to disk.
 
-indexmeter
+indexMeter
 """""""""" 
     Whether to print a progress meter during index
     creation/update. The default is 0 or ``'none'``, which suppresses the
@@ -1203,72 +1273,141 @@ meter
     a progress meter for all meterable processes, simply set ``meter`` to
     ``on``.
 
-
-addexp
+addExp
 """"""
-    An additional REX expression to match words to be
-    indexed in a Metamorph index. This is useful if there are non-English
-    words to be searched for, such as part numbers. When an index is first
-    created, the expressions used are stored with it so they will be updated
-    properly. The default expression is ``\alnum{2,99}``. **Note:** Only the
-    expressions set when the index is initially created (i.e. the first
-    CREATE METAMORPH ... statement – later statements are index updates) are
-    saved. Expressions set during an update (issuance of “create metamorph
-    [inverted] index” or “create fulltext index” on an existent index) will 
-    *not* be added.
+
+    AKA ``addExpressions`` in ``sql.set()``.  A single additional, or an
+    array of additional REX expression to match words to be indexed in a
+    Metamorph index.  This is useful if there are non-English words to be
+    searched for, such as part numbers.  When an index is first created, the
+    expressions used are stored with it so they will be updated properly. 
+    The default expression is ``\alnum{2,99}``.  **Note:** Only the
+    expressions set when the index is initially created (i.e.  the first
+    CREATE METAMORPH ...  statement – later statements are index updates)
+    are saved.  Expressions set during an update (issuance of “create
+    metamorph [inverted] index” or “create fulltext index” on an existent
+    index) will *not* be added.
 
 
-delexp
+delExp
 """"""
-    This removes an index word expression from the list. Expressions can be
-    removed either by number (starting with 0) or by expression.
+
+    AKA ``deleteExpressions`` in ``sql.set()``.  A single value or an array
+    of values.  This removes an index word expression from the list. 
+    Expressions can be removed either by number (starting with 0) or by
+    expression.  *Note* avoid using numbers in an array as the index
+    numbering changes with each delete.
 
 
-lstexp
+lstExp
 """"""
-    Lists the current index word expressions. The value specified is ignored
-    (but required syntactically).
+
+    AKA ``listExpressions`` in ``sql.set()``.  If not set ``false``, the
+    return object of ``sql.set()`` will include the property
+    ``expressionsList`` which will be set to an array with the current list
+    of word expressions.
+
+Example:
+
+.. code-block:: javascript
+
+   /* delete the default "\alnum{2,99}" expression,
+      add two expressions and list.                  */
+
+   var lists = sql.set({
+      deleteExpressions: 0,
+      addExpressions: [ /\alnum\x80-\xff]+/,"[\\alnum\\x80-\\xff']+" ],
+      listExpressions: true
+   });
+   
+   console.log(JSON.stringify(lists,null,3));
+
+   /* expected output
+   {
+      "expressionsList": [
+         "\\alnum\\x80-\\xff]+",
+         "[\\alnum\\x80-\\xff']+"
+      ]
+   }
+   */
 
 
-addindextmp
+
+addIndexTmp
 """""""""""
-    Add a directory to the list of directories to use for temporary files
-    while creating the index. If temporary files are needed while creating a
-    Metamorph index they will be created in one of these directories, the
-    one with the most space at the time of creation. If no ``addindextmp``
-    dirs are specified, the default list is the index’s destination dir
-    (e.g. database or ``indexspace``), and the environment variables ``TMP``
-    and ``TMPDIR``.
+
+    AKA ``addIndexTemp`` in ``sql.set()``.  A string or array of strings. 
+    Add a directory or directories to the list of directories to use for
+    temporary files while creating the index.  If temporary files are needed
+    while creating a Metamorph index they will be created in one of these
+    directories, the one with the most space at the time of creation.  If no
+    ``addIndexTmp`` dirs are specified, the default list is the index’s
+    destination dir (e.g.  database or ``indexSpace``), and the environment
+    variables ``TMP`` and ``TMPDIR``.
 
 
-delindextmp
+delIndexTmp
 """""""""""
-    Remove a directory from the list of directories to use for temporary
-    files while creating a Metamorph index.
+
+    AKA ``deleteIndexTemp`` in ``sql.set()``.  A single value or an array of
+    values.  Remove a directory from the list of directories to use for
+    temporary files while creating a Metamorph index.  Expressions can be
+    removed either by number (starting with 0) or by expression.  *Note*
+    avoid using numbers in an array as the index numbering changes with each
+    delete.
 
 
-lstindextmp
+
+lstIndexTmp
 """""""""""
-    List the directories used for temporary files while creating Metamorph
-    indices. Aka ``listindextmp``.
+    AKA ``listIndexTemp`` in ``sql.set()``.  If not set ``false``, the
+    return object of ``sql.set()`` will include the property
+    ``indexTempList`` which will be set to an array with the current list
+    of temporary directories.
+
+Example:
+
+.. code-block:: javascript
+
+   sql.set({
+      addIndexTemp: ["/tmp","/var/tmp","/usr/tmp"]
+   });
+
+   /* do some stuff here */
+
+   var lists = sql.set({
+      deleteIndexTemp: 1,
+      listIndexTemp: true
+   });
+
+   console.log(JSON.stringify(lists,null,3));
+
+   /* expected output:
+   {  
+      "indexTempList": [
+         "/tmp",
+         "/usr/tmp"
+      ]
+   }
+   */
 
 
-indexvalues
+indexValues
 """""""""""
     Controls how a regular (B-tree) index stores table values.
-    If set to splitstrlst (the default), then ``strlst``-type fields are
+    If set to ``splitStrlst`` (the default), then ``strlst``-type fields are
     split, i.e. a separate (item,recid) tuple is stored for *each*
     (``varchar``) item in the ``strlst``, rather than just one for the whole
     (strlst,recid) tuple. This allows the index to be used for some set-like
     operators that look at individual items in a ``strlst``, such as most
-    ``IN``, ``SUBSET`` (p. ) and ``INTERSECT`` (p. ) queries.
+    ``IN``, ``SUBSET`` and ``INTERSECT`` queries.
 
-    If ``indexvalues`` is set to ``all`` – or the index is not on a
+    If ``indexValues`` is set to ``all`` – or the index is not on a
     ``strlst`` field, or is on multiple fields – such splitting does not
     occur, and the index can generally not be used for set-like queries
-    (with some exceptions; see p.  for details).
+    (with some exceptions; see :ref:`sql1:Searches Using SUBSET`  for details).
 
-    Note that if index values are split (i.e. ``splitstrlst`` set and index
+    Note that if index values are split (i.e. ``splitStrlst`` set and index
     is one field which is ``strlst``), table rows with an empty (zero-items)
     ``strlst`` value will not be stored in the index. This means that
     queries that require searching for or listing empty-\ ``strlst`` table
@@ -1277,34 +1416,27 @@ indexvalues
     the left side will not be able to return empty-\ ``strlst`` rows when
     using an index, even though they match. Also, subset queries with an
     empty-\ ``strlst`` or empty-\ ``varchar`` parameter (left or right side)
-    must use an ``indexvalues=all`` index instead. Thus if
+    must use an ``indexValues=all`` index instead. Thus if
     empty-\ ``strlst`` subset query parameters are a possibility, both types
-    of index (``splitstrlst`` and ``all``) should be created.
+    of index (``splitStrlst`` and ``all``) should be created.
 
-    As with ``stringcomparemode``, only the creation-time ``indexvalues``
+    As with ``stringCompareMode``, only the creation-time ``indexValues``
     value is ever used by an index, not the current value, and the optimizer
-    will attempt to choose the best index at search time. The
-    ``indexvalues`` setting was added in Texis version 7; previous versions
-    effectively had ``indexvalues`` set to ``splitstrlst``. **Caveat:** A
-    version 6 Texis will issue an error when encountering an indexvalues=all
-    index (as it is unimplemented in version 6), and will refuse to modify
-    the index or the table it is on. **A version 5 or earlier Texis,
-    however, may silently corrupt an indexvalues=all index during table
-    modifications.**
+    will attempt to choose the best index at search time.
 
 
-btreethreshold
+btreeThreshold
 """"""""""""""
     This sets a limit as to how much of an index should be used. If a
     particular portion of the query matches more than the given percent of
     the rows the index will not be used. It is often more efficient to try
     and find another index rather than use an index for a very frequent
-    term. The default is set to 50, so if more than half the records match,
+    term. The default is set to ``50``, so if more than half the records match,
     the index will not be used. This only applies to ordinary indices.
 
-
-btreelog
-""""""""
+.. need to test in rampart first
+   btreeLog
+   """"""""
     Whether to log operations on a particular B-tree, for debugging.
     Generally enabled only at the request of tech support. The value syntax
     is:
@@ -1438,8 +1570,8 @@ btreelog
     5.01.1134028000 20051208.
 
 
-btreedump
-"""""""""
+   btreedump
+   """""""""
     Dump B-tree indexes, for debugging. Generally enabled only at the
     request of tech support. The value is an integer whose bits are defined
     as follows:
@@ -1472,26 +1604,26 @@ btreedump
     version 5.01.1131587000 20051109.
 
 
-maxlinearrows
+maxLinearRows
 """""""""""""
     This set the maximum number of records that should be searched linearly.
     If using the indices to date yield a result set larger than
-    ``maxlinearrows`` then the program will try to find more indices to use.
-    Once the result set is smaller than ``maxlinearrows``, or all possible
+    ``maxLinearRows`` then the program will try to find more indices to use.
+    Once the result set is smaller than ``maxLinearRows``, or all possible
     indices are exhausted, the records will be processed. The default is
-    1000.
+    ``1000``.
 
 
-likerrows
+likerRows
 """""""""
     How many rows a single term can appear in, and still be returned by
     ``liker``. When searching for multiple terms with ``liker`` and
     ``likep`` one does not always want documents only containing a very
     frequent term to be displayed. This sets the limit of what is considered
-    frequent. The default is 1000.
+    frequent. The default is ``1000``.
 
 
-indexaccess
+indexAccess
 """""""""""
     If this option is turned on then data from an index can be selected as
     if it were a table. When selecting from an ordinary (B-tree) index, the
@@ -1501,11 +1633,63 @@ indexaccess
     indexes – count of all hits in all rows (``OccurrenceCount``) for each
     word will be returned.
 
+    This may be useful for applications such as AJAX type-ahead suggestion.
 
-dbcleanupverbose
-""""""""""""""""
+    Example:
 
-*FIXME:ASK THUNDERSTONE ABOUT THIS -ajf*
+.. code-block:: javascript
+
+   var Sql=require("rampart-sql");
+
+   var db=process.scriptPath + '/wikidb';
+
+   var sql=new Sql.init(db);
+
+   /* allow access to index as a table */
+   sql.set({
+       indexAccess: true
+   });
+
+   /* a sample typeahead request */
+   var typeahead="qu"
+
+   /* find the 10 most used terms that start with 'qu' 
+      in the metamorph inverted index (i.e. text index) 
+      "wikitext_Doc_mmix"                              */
+   var res=sql.exec(
+     "select Word from wikitext_Doc_mmix where Word matches ? order by RowCount DESC",
+     [typeahead+'%'],
+     {returnType: "array"}
+   );
+
+   /* flatten to a single array */
+   res=[].concat.apply([], res.results);
+   /* sample return to application */
+   console.log(JSON.stringify({words:res},null,3));
+
+   /* expected output:
+   {
+      "words": [
+         "quickly",
+         "queen",
+         "quality",
+         "quite",
+         "quarter",
+         "question",
+         "qualified",
+         "questions",
+         "qualifying",
+         "quebec"
+      ]
+   }
+   */
+
+
+.. exclude for now
+   dbcleanupverbose
+   """"""""""""""""
+
+   *FIXME:ASK THUNDERSTONE ABOUT THIS -ajf*
     Integer whose bit flags control some tracing messages about database
     cleanup housekeeping (e.g. removal of unneeded temporary or deleted
     indexes and tables). A bit-wise OR of the following values:
@@ -1522,8 +1706,8 @@ dbcleanupverbose
     setting in conf/texis.ini. Added in version 6.00.1339712000 20120614.
 
 
-indextrace
-""""""""""
+   indextrace
+   """"""""""
     For debugging: trace index usage, especially during searches, issuing
     informational ``putmsg``\ s. Greater values produce more messages. Note
     that the meaning of values, as well as the messages printed, are subject
@@ -1531,14 +1715,14 @@ indextrace
     version 3.00.942186316 19991109.
 
 
-tracerecid
-""""""""""
+   tracerecid
+   """"""""""
     For debugging: trace index usage for this particular recid. Added in
     version 3.01.945660772 19991219.
 
 
-indexdump
-"""""""""
+   indexdump
+   """""""""
     For debugging: dump index recids during search/usage. Value is a bitwise
     OR of the following flags:
 
@@ -1557,7 +1741,7 @@ indexdump
     The default is 0.
 
 
-indexmmap
+indexMmap
 """""""""
     Whether to use memory-mapping to access Metamorph index files, instead
     of ``read()``. The value is a bitwise OR of the following flags:
@@ -1572,7 +1756,7 @@ indexmmap
     may not be supported on all platforms.
 
 
-indexreadbufsz
+indexReadBufSz
 """"""""""""""
     Read buffer size, when reading (not memory-mapping) Metamorh index
     ``.tok`` and ``.dat`` files. The default is 64KB; suffixes like “``KB``”
@@ -1580,93 +1764,91 @@ indexreadbufsz
     predicted) or more (if blocks merged). Also used during index
     create/update. Decreasing this size when creating large indexes can save
     memory (due to the large number of intermediate files), at the potential
-    expense of time. Aka ``indexreadbufsize``. Added in version
-    4.00.1006398833 20011121.
+    expense of time. AKA ``indexReadBufSize``.
 
-
-indexwritebufsz
+indexWriteBufSz
 """""""""""""""
     Write buffer size for creating Metamorph indexes. The default is 128KB;
-    suffixes like “``KB``” are respected. Aka ``indexwritebufsize``. Added
-    in version 4.00.1007509154 20011204.
+    suffixes like “``KB``” are respected. Aka ``indexWriteBufSize``.
 
-
-indexmmapbufsz
+indexMmapBufSz
 """"""""""""""
     Memory-map buffer size for Metamorph indexes. During search, it is used
     for the ``.dat`` file, if it is memory-mapped (see ``indexmmap``); it is
     ignored for the ``.tok`` file since the latter is heavily used and thus
-    fully mapped (if ``indexmmap`` permits it). During index update,
-    ``indexmmapbufsz`` is used for the ``.dat`` file, if it is
+    fully mapped (if ``indexMmap`` permits it). During index update,
+    ``indexMmapBufSz`` is used for the ``.dat`` file, if it is
     memory-mapped; the ``.tok`` file will be entirely memory-mapped if it is
-    smaller than this size, else it is read. Aka ``indexmmapbufsize``. The
-    default is 0, which uses 25% of RAM. Added in version 3.01.959984092
-    20000602. In version 4.00.1007509154 20011204 and later, “``KB``” etc.
-    suffixes are allowed.
+    smaller than this size, else it is read. AKA ``indexMmapBufSize``. The
+    default is 0, which uses 25% of RAM. “``KB``” etc. suffixes are allowed.
 
 
-indexslurp
+indexSlurp
 """"""""""
+
     Whether to enable index “slurp” optimization during Metamorph index
-    create/update, where possible. Optimization is always possible for index
-    create; during index update, it is possible if the new insert/update
-    recids all occur after the original recids (e.g. the table is
-    insert-only, or all updates created a new block). Optimization saves
-    about 20% of index create/update time by merging piles an entire word at
-    a time, instead of word/token at a time. The default is 1 (enabled); set
-    to 0 to disable. Added in version 4.00.1004391616 20011029.
+    create/update, where possible.  Optimization is always possible for
+    index create; during index update, it is possible if the new
+    insert/update recids all occur after the original recids (e.g.  the
+    table is insert-only, or all updates created a new block).  Optimization
+    saves about 20% of index create/update time by merging piles an entire
+    word at a time, instead of word/token at a time.  The default is
+    ``true`` (enabled); set to 0 to disable.
 
 
-indexappend
+indexAppend
 """""""""""
+
     Whether to enable index “append” optimization during Metamorph index
-    update, where possible. Optimization is possible if the new insert
+    update, where possible.  Optimization is possible if the new insert
     recids all occur after the original recids, and there were no
-    deletes/updates (e.g. the table is insert-only); it is irrelevant during
-    index create. Optimization saves index build time by avoiding original
-    token translation if not needed. The default is 1 (enabled); set to 0 to
-    disable. Added in version 4.00.1006312820 20011120.
+    deletes/updates (e.g.  the table is insert-only); it is irrelevant
+    during index create.  Optimization saves index build time by avoiding
+    original token translation if not needed.  The default is ``true``
+    (enabled); set to ``false`` to disable.
 
 
-indexwritesplit
+indexWriteSplit
 """""""""""""""
+
     Whether to enable index “write-split” optimization during Metamorph
-    index create/update. Optimization saves memory by splitting the writes
+    index create/update.  Optimization saves memory by splitting the writes
     for (potentially large) ``.dat`` blocks into multiple calls, thus
-    needing less buffer space. The default is 1 (enabled); set to 0 to
-    disable. Added in version 4.00.1015532186 20020307.
+    needing less buffer space.  The default is ``true`` (enabled); set to
+    ``false`` to disable.
 
 
-indexbtreeexclusive
+indexBtreeExclusive
 """""""""""""""""""
+
     Whether to optimize access to certain index B-trees during exclusive
-    access. The optimization may reduce seeks and reads, which may lead to
+    access.  The optimization may reduce seeks and reads, which may lead to
     increased index creation speed on platforms with slow large-file
-    ``lseek`` behavior. The default is 1 (enabled); set to 0 to disable.
-    Added in version 5.01.1177548533 20070425.
+    ``lseek`` behavior.  The default is ``true`` (enabled); set to ``false``
+    to disable.
 
 
-mergeflush
+mergeFlush
 """"""""""
+
     Whether to enable index “merge-flush” optimization during Metamorph
-    index create/update. Optimization saves time by flushing in-memory index
-    piles to disk just before final merge; generally saves time where
-    ``indexslurp`` is not possible. The default is 1 (enabled); set to 0 to
-    disable. Added in version 4.00.1011143988 20020115.
+    index create/update.  Optimization saves time by flushing in-memory
+    index piles to disk just before final merge; generally saves time where
+    ``indexslurp`` is not possible.  The default is ``true`` (enabled); set
+    to ``false`` to disable.
 
 
-indexversion 
+indexVersion 
 """"""""""""
     Which version of Metamorph index to produce or update, when
     creating or updating Metamorph indexes. The supported values are 0
     through 3; the default is 2. Setting version 0 sets the default index
     version for that Texis release. Note that old versions of Texis may not
     support version 3 indexes. Version 3 indexes may use less disk space
-    than version 2, but are considered experimental. Added in version
-    3.00.954374722 20000329.
+    than version 2, but are considered experimental.
 
 
-indexmaxsingle
+indexMaxSingle
 """"""""""""""
     For Metamorph indexes; the maximum number of locations
     that a single-recid dictionary word may have and still be stored solely
@@ -1676,12 +1858,12 @@ indexmaxsingle
     word occurs many times in that single recid, the data (for a Metamorph
     inverted index) may be large enough to bloat the B-tree and thus negate
     the savings, so if the single-recid word occurs more than
-    ``indexmaxsingle`` times, it is stored in the ``.dat``. The default is
-    8.
+    ``indexMaxSingle`` times, it is stored in the ``.dat``. The default is
+    ``8``.
 
-
-uniqnewlist
-"""""""""""
+.. skip this
+  uniqnewlist
+  """""""""""
     Whether/how to unique the new list during Metamorph index searches.
     Works around a potential bug in old versions of Texis; not generally
     set. The possible values are:
@@ -1701,16 +1883,15 @@ uniqnewlist
     The default is 0.
 
 
-tablereadbufsz
+tableReadBufSz
 """"""""""""""
     Size of read buffer for tables, used when it is possible to buffer table
     reads (e.g. during some index creations). The default is 16KB. When
-    setting, suffixes such as “``KB``” etc. are supported. Set to 0 to
-    disable read buffering. Added in version 5.01.1177700467 20070427. Aka
-    ``tablereadbufsize``.
+    setting, suffixes such as “``KB``” etc. are supported. Set to ``0`` to
+    disable read buffering. Aka ``tableReadBufSize``.
 
 
-Locking properties
+Locking Properties
 ~~~~~~~~~~~~~~~~~~
 
 These properties affect the way that locking occurs in the database
@@ -1718,17 +1899,16 @@ engine. Setting these properties without understanding the consequences
 can lead to inaccurate results, and even corrupt tables.
 
 
-singleuser
+singleUser
 """"""""""
-    This will turn off locking completely. *This should be used with
-    extreme caution*. The times when it is safe to use this option are
+    This will turn off locking completely. **This should be used with
+    extreme caution**. The times when it is safe to use this option are
     if the database is read-only, or if there is only one connection to
-    the database. Default off. This replaces the prior setting of
-    ``nolocking``.
+    the database. Default ``false``.
 
-
-lockmode
+lockMode
 """"""""
+    **HOW DO YOU MANUALLY DO THIS???**
     This can be set to either manual or automatic. In manual mode the
     person writing the program is responsible for getting and releasing
     locks. In automatic mode Texis will do this itself. Manual mode can
@@ -1739,14 +1919,14 @@ lockmode
     Default automatic.
 
 
-locksleepmethod
+lockSleepMethod
 """""""""""""""
     Determines whether to use a portable or OS specific method of
     sleeping while waiting for a lock. By default the OS specific method
     is used. This should not need to be changed.
 
 
-locksleeptime
+lockSleepTime
 """""""""""""
     How long to wait between attempts to check the lock. If this value
     is too small locks will be checked too often, wasting CPU time. If
@@ -1756,15 +1936,15 @@ locksleeptime
     second. The default is 20.
 
 
-locksleepmaxtime
+lockSleepMaxTime
 """"""""""""""""
     The lock sleep time automatically increments the if unable to get a
     lock to allow other processes an opportunity to get the CPU. This
     sets a limit on how lock to sleep. It is measured in thousandths of
-    a second. The default is 100. Added in version 4.00.1016570000.
+    a second. The default is 100.
 
 
-fairlock
+fairLock
 """"""""
     Whether to be fair or not. A process which is running in fair mode
     will not obtain a lock if the lock which has been waiting longest
@@ -1781,8 +1961,9 @@ fairlock
     operates in fair mode.
 
 
-lockverbose
+lockVerbose
 """""""""""
+    **HOW MUCH OF THIS STILL APPLIES??**
     How verbose the lock code should be. The default minimum level of 0
     will report all serious problems in the lock manager, as they are
     detected and corrected. A verbosity level of 1 will also display
@@ -1797,14 +1978,15 @@ lockverbose
     report before and after semaphore locking/unlocking.
 
 
-debugbreak
-""""""""""
+.. skip
+  debugbreak
+  """"""""""
     Stop in debugger when set. Internal/debug use available in some
     versions. Added in version 4.02.1045505248 Feb 17 2003.
 
 
-debugmalloc
-"""""""""""
+  debugmalloc
+  """""""""""
     Integer; controls debug malloc library. Internal/debug use in some
     versions. Added in version 4.03.1050682062 Apr 18 2003.
 
@@ -1814,15 +1996,15 @@ Miscellaneous Properties
 These properties do not fit nicely into a group, and are presented here.
 
 
-tablespace
+tableSpace
 """"""""""
-    Similar to ``indexspace`` above. Sets a directory into which tables
+    Similar to `indexSpace`_ above. Sets a directory into which tables
     created will be placed. This property does not stay set across
     invocations. Default is empty string, which means the database
     directory.
 
 
-datefmt
+dateFmt
 """""""
     This is a ``strftime`` format used to format dates for conversion to
     character format. This will affect ``tsql``, as well as attempts to
@@ -1830,62 +2012,59 @@ datefmt
     different operating systems will vary, some of the more common
     format codes are:
 
-    -  Output ``%``
+    ``%%`` -  Output ``%``
 
-    -  abbreviated weekday name
+    ``%a`` -  abbreviated weekday name
 
-    -  full weekday name
+    ``%A`` -  full weekday name
 
-    -  abbreviated month name
+    ``%b`` -  abbreviated month name
 
-    -  full month name
+    ``%B`` -  full month name
 
-    -  local date and time representation
+    ``%c`` -  local date and time representation
 
-    -  day of month (01 - 31)
+    ``%d`` -  day of month (01 - 31)
 
-    -  date as ``%m/%d/%y``
+    ``%D`` -  date as ``%m/%d/%y``
 
-    -  day of month ( 1 - 31)
+    ``%e`` -  day of month ( 1 - 31)
 
-    -  Hour (00 - 23)
+    ``%H`` -  Hour (00 - 23)
 
-    -  Hour (01 - 12)
+    ``%I`` -  Hour (01 - 12)
 
-    -  day of year (001 - 366)
+    ``%j`` -  day of year (001 - 366)
 
-    -  month (01 - 12)
+    ``%m`` -  month (01 - 12)
 
-    -  Minute (00 - 59)
+    ``%M`` -  Minute (00 - 59)
 
-    -  AM/PM
+    ``%p`` -  AM/PM
 
-    -  Seconds (00 - 59)
+    ``%s`` -  Seconds (00 - 59)
 
-    -  Week number (beginning Sunday) (00-53)
+    ``%U`` -  Week number (beginning Sunday) (00-53)
 
-    -  Week day (0-6) (0 is Sunday)
+    ``%w`` -  Week day (0-6) (0 is Sunday)
 
-    -  Week number (beginning Monday) (00-53)
+    ``%W`` -  Week number (beginning Monday) (00-53)
 
-    -  local date representation
+    ``%x`` -  local date representation
 
-    -  local time representation
+    ``%X`` -  local time representation
 
-    -  two digit year (00 - 99)
+    ``%y`` -  two digit year (00 - 99)
 
-    -  Year with century
+    ``%Y`` -  Year with century
 
-    -  Time zone name
+    ``%z`` -  Time zone name
 
     Default ``%Y-%m-%d %H:%M:%S``, which can be restored by setting
-    datefmt to an empty string. Note that in version 6.00.1300386000
-    20110317 and later, the ``stringformat()`` SQL function can be used
-    to format dates (and other values) without needing to set a global
-    property.
+    ``dateFmt`` to an empty string.
 
 
-timezone
+timeZone
 """"""""
     Change the default timezone that Texis will use. This should be
     formatted as for the TZ environment variable. For example for US
@@ -1901,16 +2080,18 @@ locale
     classes in REX expressions, so ``\alpha`` will be correct.  Also with
     the correct locale set (and OS support), Metamorph will work case
     insensitively correctly (see ``textsearchmode`` for UTF-8/Unicode).
+    *TODO PROVIDE EXAMPLE and EXPLAIN FORMAT*
 
+.. skip
 
-indirectcompat
-""""""""""""""
+   indirectCompat
+   """"""""""""""
     Setting this to 1 sets compatibility with early versions of Texis as
     far as display of indirects go. If set to 1 a trailing ``@`` is
     added to the end of the filename. Default 0.
 
 
-indirectspace
+indirectSpace
 """""""""""""
     Controls where indirects are created. The default location is a
     directory called indirects in the database directory. Texis will
@@ -1918,27 +2099,27 @@ indirectspace
     allow for efficient indirect access. At the top level there will be
     16 directories, 0 through 9 and a through f. When you create the
     directory for indirects you can precreate these directories, or use
-    them as mount points. You should make sure that the Texis user has
-    permissions to the directories. Added in version 03.00.940520000
+    them as mount points. You should make sure that the current user has
+    permissions to the directories.
 
 
-triggermode
+triggerMode
 """""""""""
-    This setting changes the way that the command is treated when
-    creating a trigger. The default behavior is that the command will be
-    executed with an extra arg, which is the filename of the table
-    containing the records. If ``triggermode`` is set to 1 then the
-    strings ``$db`` and ``$table`` are replaced by the database and
-    table in that database containing the records. This allows any
-    program which can access the database to retrieve the values in the
-    table without custom coding.
+
+    This setting changes the way that the command is treated when creating a
+    trigger.  The default behavior is that the command will be executed with
+    an extra argument, which is the filename of the table containing the
+    records.  If ``triggermode`` is set to 1 then the strings ``$db`` and
+    ``$table`` are replaced by the database and table in that database
+    containing the records.  This allows any program which can access the
+    database to retrieve the values in the table without custom coding.
 
 
-paramchk
+paramChk
 """"""""
     Enables or disables the checking of parameters in the SQL statement.
     By default it is enabled, which will cause any unset parameters to
-    cause an error. If paramchk is set to 0 then unset parameters will
+    cause an error. If paramchk is set to ``false`` then unset parameters will
     not cause an error, and will be ignored. This lets a single complex
     query be given, yet parameter values need only be supplied for those
     clauses that should take effect on the query.
@@ -1955,39 +2136,54 @@ message,nomessage
         attempt is made to insert a record which has a duplicate value
         and a unique index exists. The default is enabled.
 
-
-varchartostrlstsep
-""""""""""""""""""
-*FIXME: add json -ajf*
-    [‘varchartostrlstsep’] The separator character or mode to use when
+varcharToStrlstMode
+"""""""""""""""""""
+    AKA ``varcharToStrlstSep``. The separator character or mode to use when
     converting a ``varchar`` string into a ``strlst`` list of strings in
-    Texis. The default is set by the ``conf/texis.ini`` setting Varchar
-    To Strlst Sep (p. ); if that is not set, the “factory” built-in
-    default is ``create`` in version 7 (or ``compatibilityversion`` 7)
-    and later, or ``lastchar`` in version 6 (or ``compatibilityversion``
-    6) and earlier.
+    Texis. In Rampart,the default is set to ``json`` regardless of the 
+    ``conf/texis.ini`` setting.  Using ``tsql``, it is set to ``create``, or
+    as set in ``conf/texis.ini``.
 
-    A value of ``create`` indicates that the separator is to be created:
-    the entire string is taken intact as the sole item for the resulting
-    ``strlst``, [2]_ and a separator is created that is not present in
-    the string (to aid re-conversion to ``varchar``). This can be used
-    in conjunction with Vortex’s setting to ensure that single-value as
-    well as multi-value Vortex variables are converted consistently when
-    inserted into a ``strlst`` column: single-value vars by
-    ``varchartostrlstsep``, multi-value by ``arrayconvert``.
+    *  ``json`` - expect a JSON array of each string.  Example:
+       ``sql.exec("update myTable set myStrchrField = ?;",[ [1,2,3] ]);``
 
-    The value ``lastchar`` indicates that the last character in the
-    source string should be the separator; e.g. “a,b,c,” would be split
-    on the comma and result in a ``strlst`` of 3 values: “a”, “b” and
-    “c”.
+    *  ``create`` - indicates that the separator is to be created:
+       the entire string is taken intact as the sole item for the resulting
+       ``strlst``, [2]_ and a separator is created that is not present in
+       the string (to aid re-conversion to ``varchar``).
 
-    ``varchartostrlstsep`` may also be a single byte character, in which
-    case that character is used as the separator. This is useful for
-    converting CSV-type strings e.g. “a,b,c” without having to modify
-    the string and append the separator character first (i.e. for
-    lastchar mode).
+    *  ``lastchar`` indicates that the last character in the
+       source string should be the separator; e.g. “a,b,c,” would be split
+       on the comma and result in a ``strlst`` of 3 values: “a”, “b” and
+       “c”.
 
-    ``varchartostrlstsep`` may also be set to ``default`` to restore the
+    *  a single character - ``varcharToStrlstMode`` may also be a single byte
+       character, in which case that character is used as the separator.  This
+       is useful for converting CSV-type strings e.g.  “a,b,c” without having
+       to modify the string and append the separator character first (i.e.  for
+       lastchar mode).
+    
+    See also the `metamorphStrLstMode`_ setting, which
+    affects conversion of ``strlst`` values into Metamorph queries; and
+    the :ref:`sql-server-funcs:convert` SQL function, which
+    can take a ``varcharToStrlstMode`` mode argument.
+
+strlstToVarcharMode
+"""""""""""""""""""
+    The mode for converting a ``strlst`` to a ``varchar`` in Texis. In
+    Rampart,the default is set to ``json`` regardless of the 
+    ``conf/texis.ini`` setting.  Using ``tsql``, it is set to
+    ``delimited``, or as set in ``conf/texis.ini``.
+
+    *  ``json`` - convert to a JSON string.
+    *  ``delimited`` - convert to a list of strings delimited by the last
+       character.
+
+
+
+.. skip
+
+    ``varcharToStrlstSep`` may also be set to ``default`` to restore the
     default (``conf/texis.ini``) setting. It may also be set to
     ``builtindefault`` to restore the “factory” built-in default (which
     changes under ``compatibilityversion``, see above); these values
@@ -1995,23 +2191,17 @@ varchartostrlstsep
     ``conf/texis.ini`` value is set, ``default`` is the same as
     ``builtindefault``.
 
-    ``varchartostrlstsep`` was added in version 5.01.1226978000
-    20081117. See also the ``metamorphstrlstmode`` setting (p. ), which
-    affects conversion of ``strlst`` values into Metamorph queries; and
-    the ``convert`` SQL function (p. ), which in Texis version 7 and
-    later can take a ``varchartostrlstsep`` mode argument. The
-    ``compatibilityversion`` property (p. ), when set, affects
-    ``varchartostrlstsep`` as well.
 
 
-multivaluetomultirow
+
+multiValueToMultiRow
 """"""""""""""""""""
-    [multivaluetomultirow] Whether to split multi-value fields (e.g.
-    ``strlst``) into multiple rows (e.g. of ``varchar``) when
-    appropriate, i.e. during GROUP BY or DISTINCT on such a field. If
-    nonzero/true, a GROUP BY or DISTINCT on a ``strlst`` field will
-    split the field into its ``varchar`` members for processing. For
-    example, consider the following table:
+
+    Whether to split multi-value fields (e.g.``strlst``) into multiple rows
+    (e.g.  of ``varchar``) when appropriate, i.e.  during GROUP BY or
+    DISTINCT on such a field.  If nonzero/true, a GROUP BY or DISTINCT on a
+    ``strlst`` field will split the field into its ``varchar`` members for
+    processing.  For example, consider the following table:
 
     ::
 
@@ -2049,59 +2239,41 @@ multivaluetomultirow
     ``SELECT``\ ing a ``strlst`` will not cause it to be split: it must
     be specified in the GROUP BY or DISTINCT clause.
 
-    The ``multivaluetomultirow`` was added in version 5.01.1243980000
-    20090602. It currently only applies to ``strlst`` values and only to
-    single-column GROUP BY or DISTINCT clauses. A system-wide default
-    for this SQL setting can be set in conf/texis.ini with the Multi
-    Value To Multi Row setting. If unset, it defaults to true through
-    version 6 (or ``compatibilityversion`` 6), and false in version 7
-    and later (because in general GROUP BY/DISTINCT are expected to
-    return true table rows for results). The ``compatibilityversion``
-    property (p. ), when set, affects this property as well.
+    The ``multivaluetomultirow`` currently only applies to ``strlst`` values
+    and only to single-column GROUP BY or DISTINCT clauses.  A system-wide
+    default for this SQL setting can be set in conf/texis.ini with the Multi
+    Value To Multi Row setting.  If unset, it defaults to ``false``
+    (because in general GROUP BY/DISTINCT are expected to return true
+    table rows for results).
 
-
-inmode
+inMode
 """"""
     How the IN operator should behave. If set to
     ``subset``, IN behaves like the SUBSET operator (p. ). If set to
-    ``intersect``, IN behaves like the INTERSECT operator (p. ). Added
-    in version 7, where the default is ``subset``. Note that in version
-    6 (or ``compatibilityversion`` 6) and earlier, IN always behaved in
-    an INTERSECT-like manner. The ``compatibilityversion`` property
-    (p. ), when set, affects this property as well.
+    ``intersect``, IN behaves like the INTERSECT operator (p. ).
+    The default is ``subset``.
 
-
-hexifybytes
+hexifyBytes
 """""""""""
-    Whether conversion of ``byte`` to ``char`` (or vice-versa) should
-    encode to (or decode from) hexadecimal. In Texis version 6 (or
-    ``compatibilityversion`` 6) and earlier, this always occurred. In
-    Texis version 7 (or ``compatibilityversion`` 7) and later, it is
-    controllable with the ``hexifybytes`` SQL property: 0 for off/as-is,
-    1 for hexadecimal conversion. This property is on by default in
-    ``tsql`` (i.e. hex conversion ala version 6 and earlier), so that
-    ``SELECT``\ ing from certain system tables that contain ``byte``
-    columns will still be readable from the command line. However, the
-    property is off by default in version 7 and later non-\ ``tsql``
-    programs (such as Vortex), to avoid the hassle of hex conversion
-    when raw binary data is needed (e.g. images), and because Vortex
-    etc. have more tools for dealing with binary data, obviating the
-    need for hex conversion. (The ``hextobin()`` and ``bintohex()`` SQL
-    functions may also be useful, p. .) The ``hexifybytes`` property was
-    added in version 7. It is also settable in the ``conf/texis.ini``
-    config file (p. ). The ``compatibilityversion`` property (p. ), when
-    set, affects this property as well.
 
+    Whether conversion of ``byte`` to ``char`` (or vice-versa) should encode
+    to (or decode from) hexadecimal.  Set to ``false`` for off/as-is,
+    ``true`` for hexadecimal conversion.  This property is on by default in
+    ``tsql`` so that ``SELECT``\ ing from certain system tables that contain
+    ``byte`` columns will still be readable from the command line.  However,
+    the property is off by default in Rampart to avoid the hassle of hex
+    conversion when raw binary data is needed (e.g.  images), and because
+    Rampart JavaScript has buffers and functions for dealing with binary
+    data, obviating the need for hex conversion.
 
-unalignedbufferwarning
+unalignedBufferWarning
 """"""""""""""""""""""
+
     Whether to issue “Unaligned buffer” warning messages when unaligned
     buffers are encountered in certain situations. Messages are issued
-    if this setting is true/nonzero (the default). Added in version
-    7.00.1366400000 20130419.
+    if this setting is true/nonzero (the default).
 
-
-unneededrexescapewarning
+unneededRexEscapeWarning
 """"""""""""""""""""""""
     Whether to issue “REX: Unneeded escape sequence ...” warnings when a
     REX expression uses certain unneeded escapes. An unneeded escape is
@@ -2118,25 +2290,33 @@ unneededrexescapewarning
     thus have them changed to the unescaped literal character.
 
     If updating the code is not feasible, the warning may be silenced by
-    setting ``unneededrexescapewarning`` to 0 – at the risk of silent
-    behavior change at an upgrade. Added in version 7.06.1465574000
-    20160610. Overrides Unneeded REX Escape Warning setting (p. ) in
-    conf/texis.ini.
+    setting ``unneededRexEscapeWarning`` to ``false`` – at the risk of silent
+    behavior change at an upgrade.
+    Overrides Unneeded REX Escape Warning setting in ``conf/texis.ini`` and
+    is set ``false`` regardless in Rampart by default.
 
 
-nulloutputstring
+nullOutputString
 """"""""""""""""
+
     The string value to output for SQL NULL values. The default is
     “``NULL``”. Note that this is different than the output string for
     zero-integer ``date`` values, which are also shown as “``NULL``”.
-    Added in version 7.02.1405382000 20140714.
 
-
-validatebtrees
+validateBtrees
 """"""""""""""
-    Bit flags for additional consistency checks on B-trees. Added in
-    version 7.04.1449078000 20151202. Overrides Validate Btrees setting
-    (p. ) in ``conf/texis.ini``.
+    Bit flags for additional consistency checks on B-trees.
+    Overrides Validate Btrees setting in ``conf/texis.ini``.
+
+    *  ``0x0001`` - validate tree on open   
+    *  ``0x0002`` - validate page on read   
+    *  ``0x0004`` - validate page on write   
+    *  ``0x0008`` - validate page on release   
+    *  ``0x0010`` - other page-release errors   
+    *  ``0x0020`` - more stringent limits   
+    *  ``0x0040`` - validate on page manipulation   
+    *  ``0x1000`` - attempt to fix bad pages if possible   
+    *  ``0x2000`` - overwrite freed pages in memory
 
 .. [1]
    The index-data-only optimization allows Texis to not only use the
@@ -2147,12 +2327,9 @@ validatebtrees
    available in the index.
 
 .. [2]
-   In version 7 (or ``compatibilityversion`` 7) and later, note that in
-   create mode, an empty source string will result in an empty
+   Note that in create mode, an empty source string will result in an empty
    (zero-items) strlst: this helps maintain consistency of empty-string
-   meaning empty-set for strlst, as is true in other contexts. In
-   version 6 and earlier an empty source string produced a
-   one-empty-string-item strlst in create mode.
+   meaning empty-set for strlst, as is true in other contexts.
 
 Query Protection
 ~~~~~~~~~~~~~~~~ 
@@ -2169,25 +2346,25 @@ quicker resolution of all queries.  By altering these settings, script
 authors can "open up" Texis and Metamorph to allow more powerful searches,
 at the risk of higher load for special searches.
 
-alequivs 
+alEquivs 
 """"""""
   Boolean, ``false`` by default.  If ``true``, allows equivalences in queries.  If
   ``false``, only the actual terms in a query will be searched for; no
   equivalences will be used.  This is regardless of ``~`` usage or the
-  setting of `keepeqvs`_.  Note that the equivalence file will still be used to
+  setting of `useEquiv`_.  Note that the equivalence file will still be used to
   check for phrases in the query, however.  Turning this on allows greater
   search flexibility, as equivalent words to a term can be searched for, but
   decreases search speed.
 
-alintersects
+alIntersects
 """"""""""""
    Boolean, ``false`` by default. If ``true``, allow use of the ``@``
    (intersections) operator in queries. Queries with few or no intersections
    (e.g. @0) may be slower, as they can generate a copious number of hits.
 
-allinear 
+alLinear 
 """"""""
-   Boolean, ``false`` by default. If on, an all-linear query-one without
+   Boolean, ``false`` by default. If ``true``, an all-linear query-one without
    any indexable "anchor" words-is allowed. A query like "/money #million"
    where all the terms use unindexable pattern matchers (REX, NPM or XPM) is an
    example. Such a query requires that the entire table be linearly searched,
@@ -2208,22 +2385,29 @@ allinear
    complicated query to proceed-since part of the table is being linearly
    searched.
 
-alnot
+alNot
 """""
-
    Boolean, ``true`` by default.  If ``true``, allows "NOT" logic (e.g.  the
-   ``-`` operator) in a query.  alpostproc (boolean, off by default) If on,
-   post-processing of queries is allowed when needed after an index lookup,
-   e.g.  to resolve unindexable terms like REX expressions, or like queries
-   with a non-inverted Metamorph index.  If off, some queries are faster,
-   but may not be as accurate if they aren't completely resolved.  The error
-   message "Query would require post-processing" may be generated by such
-   queries if alpostproc is off.  Note: In tsql version 5 and earlier the
-   default was on.  alwild (boolean, on by default) If on, wildcards are
+   ``-`` operator) in a query.  
+
+alPostProc 
+""""""""""
+
+   Boolean, ``false`` by default If ``true``, post-processing of queries is
+   allowed when needed after an index lookup, e.g.  to resolve unindexable
+   terms like REX expressions, or like queries with a non-inverted Metamorph
+   index.  If ``false``, some queries are faster, but may not be as accurate
+   if they aren't completely resolved.  The error message "Query would
+   require post-processing" may be generated by such queries if
+   ``alPostProc`` is ``false``.
+
+alWild 
+""""""
+   Boolean, ``true`` by default. If ``true``, wildcards are
    allowed in queries.  Wildcards can slow searches because potentially many
    words must be looked for.
 
-alwithin
+alWithin
 """"""""
    Boolean, ``false`` by default.  If ``true``, "within" operators (``w/``)
    are allowed.  These generally require a post-process to resolve, and
@@ -2231,122 +2415,127 @@ alwithin
    allowed in query" will be generated if the within operator is used in a
    query.
 
-builtindefaults Restore all settings to builtin Thunderstone factory
-defaults, ignoring any texis.ini [Apicp] changes. Added in Texis version 6.
-defaults Restore all settings to defaults set in the texis.ini) [Apicp]
-section (or builtin defaults for settings not set there).
+.. skip
+   builtindefaults Restore all settings to builtin Thunderstone factory
+   defaults, ignoring any texis.ini [Apicp] changes. Added in Texis version 6.
 
-denymode (string or integer; warning by default) What action to take when a
-disallowed query is attempted:
-silent or 0 Silently remove the offending set or operation.
-warning or 1 Remove the term and warn about it with a putmsg-catchable
-message.
-error or 2 Fail the query.
-A message such as "'delimiters' not allowed in query" may be generated when
-a disallowed query is attempted and denymode is not silent.
+   defaults Restore all settings to defaults set in the texis.ini) [Apicp]
+   section (or builtin defaults for settings not set there).
+
+denyMode
+""""""""
+   String or Integer, ``warning`` by default. What action to take when a
+   disallowed query is attempted:
+
+   *  ``silent`` or ``0`` - Silently remove the offending set or operation.
+   *  ``warning`` or ``1`` - Remove the term and warn about it in
+      ``sql.errMsg``.
+   *  ``error`` or ``2`` - Fail the query.
+
+   A message such as "'delimiters' not allowed in query" may be generated when
+   a disallowed query is attempted and ``denyMode`` is not ``silent``.
 
 qMaxSets
 """"""""
- (integer, 100 by default) The maximum number of sets (terms)
-allowed in a query. Added in version 2.6.934800000 19990816. Note: also
-settable as qmaxterms for back-compatibility with earlier versions.
+   Integer, ``100`` by default. The maximum number of sets (terms)
+   allowed in a query.
 
 qMaxSetWords
 """"""""""""
- (integer, 500 by default, unlimited by default in tsql) The
-maximum number of search words allowed per set (term), after equivalence and
-wildcard expansion. Some wildcard searches can potentially match thousands
-of distinct words in an index, many of which may be garbage or typos but
-still have to be looked up, slowing a query. If this limit is exceeded, a
-message such as "Max words per set exceeded at word `xyz*' in query `xyz*
-abc'" is generated, and the entire set is considered a noise word and not
-looked up in the index. A value of 0 means unlimited. Added in version
-2.6.934900000 19990817.
-In version 3.0.947600000 20000110 and later, the set may only be partially
-dropped (with the message "Partially dropping term `xyz*' in query `xyz*
-abc'") depending on the setting of dropwordmode (which must be set with a
-SQL set statement). If dropwordmode is 0 (the default), the root word, valid
-suffixes, and more-common words are still searched, up to the qmaxsetwords
-limit if possible; the remaining wildcard matches are dropped. If
-dropwordmode is 1, the entire set is dropped as if a noise word.
+   Integer, ``500`` by default,  ``unlimited`` by default in ``tsql``.  The
+   maximum number of search words allowed per set (term), after equivalence and
+   wildcard expansion. Some wildcard searches can potentially match thousands
+   of distinct words in an index, many of which may be garbage or typos but
+   still have to be looked up, slowing a query. If this limit is exceeded, a
+   message such as "Max words per set exceeded at word 'xyz*' in query 'xyz*
+   abc'" is generated, and the entire set is considered a noise word and not
+   looked up in the index. A value of 0 means unlimited.
 
-Note that qmaxsetwords is the max number of search words, not the number of
-matching hits after the search. Thus a single but often-occurring word like
-"html" counts as one word in this context. Note: In tsql version 5 and
-earlier the default was unlimited.
+   Note the set may only be partially dropped (with the message "Partially
+   dropping term 'xyz*' in query 'xyz* abc'") depending on the setting of
+   `dropWordMode`_.  If `dropWordMode`_ is ``false`` (the default), the root word,
+   valid suffixes, and more-common words are still searched, up to the
+   ``qMaxSetWords`` limit if possible; the remaining wildcard matches are
+   dropped.  If `dropWordMode`_ is ``true``, the entire set is dropped as if a
+   noise word.
+
+   Note that qmaxsetwords is the max number of search words, not the number of
+   matching hits after the search. Thus a single but often-occurring word like
+   "html" counts as one word in this context. Note: In tsql version 5 and
+   earlier the default was unlimited.
 
 qMaxWords
 """""""""
- (integer, 1100 by default) The maximum number of words allowed in
-the entire query, after equivalence and wildcard expansion. If this limit is
-exceeded, a message such as "Max words per query exceeded at word `xyz*' in
-query `xyz* abc'" is generated, and the query cannot be resolved. 0 means
-unlimited. Added in version 2.6.934900000 19990817. Like qmaxsetwords, this
-is distinct search words, not hits. dropwordmode also applies here. Note: In
-tsql version 5 and earlier the default was unlimited.
+
+   Integer, ``1100`` by default.  The maximum number of words allowed in the
+   entire query, after equivalence and wildcard expansion.  If this limit is
+   exceeded, a message such as "Max words per query exceeded at word 'xyz*'
+   in query 'xyz* abc'" is generated, and the query cannot be resolved. 
+   ``0`` means unlimited.  Like ``qMaxSetWords``, this is distinct search words,
+   not hits.  `dropWordMode`_ also applies here.
 
 qMinPrelen
 """"""""""
-(integer, 2 by default) The minimum allowed length of the prefix
-(non-``*`` part) of a wildcard term. Short prefixes (e.g. "a*") may match many
-words and thus slow the search.
 
-qminwordlen (integer, 2 by default) The minimum allowed length of a word in
-a query. Note that this is different from minwordlen, the minimum word
-length for prefix/suffix processing to occur. Note: In tsql version 5 and
-earlier the default was 1.
+   Integer, ``2`` by default. The minimum allowed length of the prefix
+   (non-``*`` part) of a wildcard term. Short prefixes (e.g. "a*") may match many
+   words and thus slow the search.
+
+qMinWordLen 
+"""""""""""
+
+   Integer, ``2`` by default. The minimum allowed length of a word in
+   a query. Note that this is different from `minWordLen`_, the minimum word
+   length for prefix/suffix processing to occur.
 
 querySettings 
 """""""""""""
-Container for changing all or a group of
-settings to a certain mode. (Explicit texis.ini [Apicp] settings still
-apply, as with all non-builtin "...defaults" settings). The argument may be
-one of the following:
+   Container for changing all or a group of
+   settings to a certain mode. (Explicit texis.ini [Apicp] settings still
+   apply, as with all non-builtin "...defaults" settings). The argument may be
+   one of the following:
 
-*  ``defaults - Set Rampart defaults:
+   *  ``defaults`` - Set Rampart defaults:
 
-   The following are set ``false``: 
-   ``prefixProc``, ``keepnoise``, ``keepeqvs``/``useequivs``, ``alpostproc``,
-   ``allinear``, alwithin, alintersects, alequivs, alexactphrase are off
+      The following are set ``false``: 
 
-alwild, alnot are on
-qminwordlen, qminprelen are 2
-minwordlen 255
-eqprefix set to "builtin"
-ueqprefix set to "eqvsusr"
-denymode is "warning"
-qmaxsets is 100
+      ``prefixProc``, ``keepNoise``, ``keepEqvs``/``useEquivs``, ``alPostProc``,
+      ``alLinear``, ``alWithin``, ``alIntersects``, ``alEquivs`` and
+      ``alExactphrase``.
+
+      The following are set ``true``:
+
+      ``alwild`` and ``alnot``.
+
+      The following are set as listed:
+
+      *  ``qMinWordLen``, ``qminprelen`` -  2
+      *  ``minWordLen`` - 255
+      *  ``eqPrefix`` - "builtin"
+      *  ``uEqPrefix`` - "eqvsusr"
+      *  ``denymode`` - "warning"
+      *  ``qMaxSets`` - 100
+      *  ``qMaxSetWords`` - 500
+
+   *  ``protectionOff`` - turn off all `Query Protection`_ settings 
+      (e.g. all ``al``\ .. setting are set ``true``).
 
 .. this was removed above
    sdexp/edexp are empty
 
+Restoring Defaults
+~~~~~~~~~~~~~~~~~~
 
-The rest are different from Texis 6 and later:
-alpostproc, allinear, alwithin, alintersects, alequivs, alexactphrase are on
-(instead of off in version 6)
-qminwordlen, qminprelen are 1 (instead of 2 in version 6)
-qmaxsetwords is unlimited (instead of 500 in version 6)
-qmaxwords is unlimited (instead of 1100 in version 6)
-vortexdefaults or 2 Set Vortex defaults; same as <apicp defaults>.
-protectionoff or 3 Turn off query protection settings, i.e. set all al...
-settings on (allowed), exactphrase on, qmin... limits to minimums, qmax...
-limits to maximum (unlimited), denymode to warning.
-Added in Texis version 6.
+defaults
+""""""""
+   String or Boolean.
 
-.. to be removed
-    texisdefaults Restore Texis (as opposed to Vortex) version 5 and earlier
-    default values. Note: This setting is deprecated in Texis version 6 and
-    later (as Texis defaults have changed to match Vortex defaults for
-    consistency), and may be removed in a future release. Set querysettings
-    texis5defaults instead. The texisdefaults setting is still respected, but
-    will cause a warning noting that it is deprecated. If legacy scripts cannot
-    be updated to use querysettings texis5defaults instead, this warning can be
-    silenced with the texis.ini setting [Texis] Texis Defaults Warning = off
-    (here).
-    Setting texisdefaults turns off query protection, e.g. it will enable linear
-    searches, post-processing, within operators, etc. Note: this will permit
-    some queries to run than can potentially take an inordinate amount of time,
-    even with a Metamorph index. Use with caution.
+   * ``true`` or ``"rampart"`` - reset all settings (including
+     `querySettings`_:"defaults" above) to their original values.
 
+   * ``"texis"`` - Same as above, except: 
 
+      *  `varcharToStrlstMode`_ is set to ``create``.
+      *  `strlstToVarcharMode`_ is set to ``delimited``.
+      *  `unneededRexEscapeWarning`_ is set to ``true``.
 

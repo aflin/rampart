@@ -17,6 +17,7 @@
 #include "../core/duktape.h"
 #include "api3.h"
 
+extern int TXunneededRexEscapeWarning;
 int texis_resetparams(TEXIS *tx);
 int texis_cancel(TEXIS *tx);
 #define DB_HANDLE struct db_handle_s_list
@@ -1221,6 +1222,54 @@ static void free_list(char **nl)
 //    *needs_free=0;
 }
 
+void rp_set_tx_defaults(duk_context *ctx, TEXIS *tx, int rampartdef)
+{
+    LPSTMT lpstmt;
+    DDIC *ddic=NULL;
+    DB_HANDLE *hcache = NULL;
+    const char *db=NULL;
+    if (tx==NULL)
+    {
+        duk_push_this(ctx);
+
+        if (!duk_get_prop_string(ctx, -1, "db"))
+            RP_THROW(ctx, "no database is open");
+#ifdef USEHANDLECACHE
+        hcache = get_handle(db, "settings");
+        tx = hcache->tx;
+#else
+        tx = TEXIS_OPEN((char *)db);
+#endif
+    }
+
+    if(!tx)
+        throw_tx_error(ctx,"open sql");
+    
+    lpstmt = tx->hstmt;
+    if(lpstmt && lpstmt->dbc && lpstmt->dbc->ddic)
+            ddic = lpstmt->dbc->ddic;
+    else
+        throw_tx_error(ctx,"open sql");
+
+    TXresetproperties(ddic);
+
+#define duk_tx_set_prop(prop,val) \
+if(setprop(ddic, prop, val )==-1)\
+    throw_tx_error(ctx,"sql set");
+
+    duk_tx_set_prop("querysettings","defaults");
+
+    /* rampart defaults */
+    if(rampartdef)
+    {
+        duk_tx_set_prop("strlsttovarcharmode","json");
+        duk_tx_set_prop("varchartostrlstmode","json");
+        TXunneededRexEscapeWarning = 0; //silence rex escape warnings
+    }
+    else
+        TXunneededRexEscapeWarning = 1;
+}
+
 duk_ret_t duk_texis_set(duk_context *ctx)
 {
     LPSTMT lpstmt;
@@ -1270,7 +1319,7 @@ duk_ret_t duk_texis_set(duk_context *ctx)
         char propa[64], *prop=&propa[0];
         duk_size_t sz;
         const char *dprop=duk_get_lstring(ctx, -2, &sz);
-        
+
         if(sz>63)
             RP_THROW(ctx, "sql.set - '%s' - unknown/invalid property", dprop);
 
@@ -1284,6 +1333,8 @@ duk_ret_t duk_texis_set(duk_context *ctx)
             prop="lstexp";
         else if (!strcmp("listindextmp", prop) || !strcmp("listindextemp", prop) || !strcmp("lstindextemp", prop))
             prop="lstindextmp"; 
+        else if (!strcmp("deleteindextmp", prop) || !strcmp("deleteindextemp", prop) || !strcmp("delindextemp", prop))
+            prop="delindextmp"; 
         else if (!strcmp("addindextemp", prop))
             prop="addindextmp";
         else if (!strcmp("addexpressions", prop))
@@ -1294,6 +1345,8 @@ duk_ret_t duk_texis_set(duk_context *ctx)
             prop="useequiv";
         else if (!strcmp("equivsfile", prop))
             prop="eqprefix";
+        else if (!strcmp("userequivsfile", prop))
+            prop="ueqprefix";
         else if (!strcmp ("lstnoise", prop) || !strcmp ("listnoise",prop))
             retlisttype=0;
         else if (!strcmp ("lstsuffix", prop) || !strcmp ("listsuffix",prop))
@@ -1312,6 +1365,34 @@ duk_ret_t duk_texis_set(duk_context *ctx)
             setlisttype=2;
         else if (!strcmp ("prefixlst", prop) || !strcmp ("prefixlist",prop))
             setlisttype=3;
+        else if (!strcmp ("defaults", prop))
+        {
+            if(duk_is_boolean(ctx, -1))
+            {
+                if (duk_get_boolean(ctx, -1) )
+                {
+                    rp_set_tx_defaults(ctx, tx, 1);
+                }
+                goto propnext;
+            }
+            if(duk_is_string(ctx, -1))
+                val=duk_get_string(ctx, -1);
+            else
+                goto default_err;
+            if(!strcasecmp("texis", val))
+            {
+                rp_set_tx_defaults(ctx, tx, 0);
+                goto propnext;
+            }
+            else if(!strcasecmp("rampart", val))
+            {
+                rp_set_tx_defaults(ctx, tx, 1);
+                goto propnext;
+            }
+
+            default_err:
+            RP_THROW(ctx, "sql.set() - property defaults option requires a string('texis' or 'rampart') or a boolean");
+        }
 
         if(retlisttype>-1)
         {
@@ -1414,6 +1495,7 @@ duk_ret_t duk_texis_set(duk_context *ctx)
             (
                 !strcmp(prop,"addexp") |
                 !strcmp(prop,"delexp") |
+                !strcmp(prop,"delindextmp") |
                 !strcmp(prop,"addindextmp")
             )
         )
@@ -1424,11 +1506,13 @@ duk_ret_t duk_texis_set(duk_context *ctx)
                 ptype=1;
             else if (!strcmp(prop,"addindextmp"))
                 ptype=2;
+            else if (!strcmp(prop,"delindextmp"))
+                ptype=3;
             
             duk_enum(ctx, -1, DUK_ENUM_ARRAY_INDICES_ONLY);
             while(duk_next(ctx, -1, 1))
             {
-                const char *aval;
+                const char *aval=NULL;
                 
                 if (ptype==1)
                 {
@@ -1449,6 +1533,26 @@ duk_ret_t duk_texis_set(duk_context *ctx)
                                 "sql.set: deleteExpressions - array must be an array of strings, expressions or numbers (expressions or expression index)\n"
                             );
                         }
+                    }                
+                }
+                else if (ptype==3)
+                {
+                    if(duk_is_number(ctx, -1))
+                    {
+                        duk_to_string(ctx, -1);
+                        aval=duk_get_string(ctx, -1);
+                    }
+                    else if (duk_is_string(ctx, -1))
+                    {
+                        aval=duk_get_string(ctx, -1);
+                    }
+                    else
+                    {
+                        RP_THROW
+                        (
+                            ctx, 
+                            "sql.set: deleteIndexTemp - array must be an array of strings or numbers\n"
+                        );
                     }                
                 }
                 else if (ptype==0)
@@ -1500,13 +1604,15 @@ duk_ret_t duk_texis_set(duk_context *ctx)
                 val=duk_get_string(ctx, -1);
             }
 
+/*
             if(!strcmp(prop,"querydefaults") || !strcmp(prop,"querydefault"))
             {
                 if(!duk_get_boolean_default(ctx, -1, 1))
                     goto propnext;
                 prop="querysettings";
-                val="vortexdefaults";
+                val="defaults";
             }
+*/
             if(setprop(ddic, (char*)prop, (char*)val )==-1)
             {
                 throw_tx_error(ctx,"sql set");
@@ -1632,10 +1738,8 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "db");
 
     SET_THREAD_UNSAFE(ctx);
-    {
-        extern int TXunneededRexEscapeWarning;
-        TXunneededRexEscapeWarning = 0; //silence rex escape warnings
-    }
+
+    TXunneededRexEscapeWarning = 0; //silence rex escape warnings
 
     /* settings object for defaults*/
     duk_push_object(ctx);
