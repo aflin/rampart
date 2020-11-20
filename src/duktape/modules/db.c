@@ -1,3 +1,8 @@
+/* Copyright (C) 2020 Aaron Flin - All Rights Reserved
+ * You may use, distribute this code under the
+ * terms of the Rampart Open Source License.
+ * see rsal.txt for details
+ */
 #include "txcoreconfig.h"
 #include <limits.h>
 #include <stdlib.h>
@@ -855,6 +860,23 @@ int duk_rp_fetch(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
     if (rettype)
     {
 
+        /* still fill columns if rexmax == 0 */
+        /* WTF: return columns if table is empty */
+        if (resmax < 1)
+        {
+            if((fl = TEXIS_FETCH(tx, -1)))
+            {
+                /* an array of column names */
+                duk_push_array(ctx);
+                for (i = 0; i < fl->n; i++)
+                {
+                    duk_push_string(ctx, fl->name[i]);
+                    duk_put_prop_index(ctx, -2, i);
+                }
+                duk_put_prop_string(ctx, -3, "columns");
+            }        
+
+        } else
         /* push values into subarrays and add to outer array */
         while (rown < resmax && (fl = TEXIS_FETCH(tx, -1)))
         {
@@ -1236,6 +1258,8 @@ void rp_set_tx_defaults(duk_context *ctx, TEXIS *tx, int rampartdef)
             RP_THROW(ctx, "no database is open");
 #ifdef USEHANDLECACHE
         hcache = get_handle(db, "settings");
+        if(!hcache)
+            throw_tx_error(ctx,"sql open");
         tx = hcache->tx;
 #else
         tx = TEXIS_OPEN((char *)db);
@@ -1293,6 +1317,8 @@ duk_ret_t duk_texis_set(duk_context *ctx)
 
 #ifdef USEHANDLECACHE
     hcache = get_handle(db, "settings");
+    if(!hcache)
+        throw_tx_error(ctx,"sql open");
     tx = hcache->tx;
 #else
     tx = TEXIS_OPEN((char *)db);

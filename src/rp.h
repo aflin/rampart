@@ -1,3 +1,9 @@
+/* Copyright (C) 2020 Aaron Flin - All Rights Reserved
+ * You may use, distribute or alter this code under the
+ * terms of the MIT license
+ * see https://opensource.org/licenses/MIT
+ */
+
 #if !defined(RP_H_INCLUDED)
 #define RP_H_INCLUDED
 #include <limits.h>

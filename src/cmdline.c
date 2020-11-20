@@ -1,3 +1,9 @@
+/* Copyright (C) 2020 Aaron Flin - All Rights Reserved
+   Copyright (C) 2020 Benjamin Flin - All Rights Reserved
+ * You may use, distribute or alter this code under the
+ * terms of the MIT license
+ * see https://opensource.org/licenses/MIT
+ */
 #include "duktape/core/duktape.h"
 #include "duktape/register.h"
 #include <stdio.h>
@@ -719,6 +725,39 @@ int main(int argc, char *argv[])
     rampart_argc=argc;
     access_fh=stdout;
     error_fh=stderr;
+
+    /* get script path */
+    if(rampart_argc>1)
+    {
+        char p[PATH_MAX], *s;
+        
+        strcpy(p, rampart_argv[1]);
+        s=strrchr(p,'/');
+        if (s)
+        {
+            char *dupp;
+
+            *s='\0';
+            dupp=strdup(p);
+            s=realpath(dupp,p);
+            free (dupp);
+        }
+        else
+        {
+            if( !(s=getcwd(p,PATH_MAX)) )
+            {
+                fprintf(stderr,"path to script is longer than allowed\n");
+                exit(1);
+            }
+        }
+        if (!s)
+            s="";
+
+        RP_script_path=strdup(s);
+    }
+    else
+        RP_script_path=strdup("");
+
 
     /* set rlimit to filelimit, or highest allowed value below that */
     getrlimit(RLIMIT_NOFILE, &rlp);

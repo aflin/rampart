@@ -1,3 +1,10 @@
+/* Copyright (C) 2020 Aaron Flin - All Rights Reserved
+   Copyright (C) 2020 Benjamin Flin - All Rights Reserved
+ * You may use, distribute or alter this code under the
+ * terms of the MIT license
+ * see https://opensource.org/licenses/MIT
+ */
+
 #include <unistd.h>
 #include <errno.h>
 #include <sys/stat.h>

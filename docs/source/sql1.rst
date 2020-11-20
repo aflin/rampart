@@ -14,8 +14,19 @@ License
 Use of the ``rampart-sql`` module and the Texis library is governed by the
 Rampart Source Available License.
 
+What does it do?
+~~~~~~~~~~~~~~~~
+
+The rampart-sql module provides database and full text search capabilities
+in Rampart.  It includes a SQL relational database with a fully integrated
+full text search engine.
+
 Documentation Caveat
 ~~~~~~~~~~~~~~~~~~~~
+
+In this document, the term "Texis" used to refer to the SQL engine, the text
+search index and the text search engine.  The term "Metamorph" is used to
+solely refer to the text search engine.
 
 As the Texis library and its included Metamorph search engine encompasses
 more functionality than is currently used in Rampart, some settings and
@@ -25,13 +36,9 @@ completeness and as it may provide a deeper understanding of philosophy
 behind the library's functionality.
 
 Note that the convention used in this document is ``var Sql`` with a capital
-"S" for the loading of the module and ``var sql`` with a lower-case "s" for
-the instance of a connection to a database made with the JavaScript
-:ref:`init() constructor <initconst>` function.
-
-Note also that the term "Texis" refers to the SQL engine, the text
-search index and the text search engine.  The term "Metamorph" is used to
-solely refer to the text search engine.
+"S" for the return object of the loaded module and ``var sql`` with a
+lower-case "s" for the instance of a connection to a database made with the
+JavaScript :ref:`init() constructor <initconst>` function.
 
 Loading the Javascript Module
 -----------------------------
@@ -1353,6 +1360,7 @@ to be HTML-safe, use:
 
 TODO:  
    Remove version references.  Explain apicp. Explain use of "@0".
+   Find out why the sql.set properties aren't being applied.
 
 Each hit found by the query has each of its sets' hits (e.g.  each term)
 highlighted in the output.  With I and/or C highlighting, if there are

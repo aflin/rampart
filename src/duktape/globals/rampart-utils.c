@@ -1,3 +1,9 @@
+/* Copyright (C) 2020 Aaron Flin - All Rights Reserved
+   Copyright (C) 2020 Benjamin Flin - All Rights Reserved
+ * You may use, distribute or alter this code under the
+ * terms of the MIT license
+ * see https://opensource.org/licenses/MIT
+ */
 #include <ctype.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -567,36 +573,8 @@ void duk_process_init(duk_context *ctx)
         duk_push_string(ctx,rampart_argv[0]);
         duk_put_prop_string(ctx,-2,"argv0");
 
-        if(rampart_argc>1)
-        {
-            char p[PATH_MAX], *s;
-            
-            strcpy(p, rampart_argv[1]);
-            s=strrchr(p,'/');
-            if (s)
-            {
-                char *dupp;
-
-                *s='\0';
-                dupp=strdup(p);
-                s=realpath(dupp,p);
-                free (dupp);
-            }
-            else
-            {
-                if( !(s=getcwd(p,PATH_MAX)) )
-                {
-                    fprintf(stderr,"path to script is longer than allowed\n");
-                    exit(1);
-                }
-            }
-
-            if(!RP_script_path) //doing this multiple times in rpserver.so
-                RP_script_path=strdup(s);
-
-            duk_push_string(ctx,s);
-            duk_put_prop_string(ctx,-2,"scriptPath");
-        }
+        duk_push_string(ctx,RP_script_path);
+        duk_put_prop_string(ctx,-2,"scriptPath");
 
     }
 
@@ -1113,17 +1091,38 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
 
 duk_ret_t duk_rp_readln_finalizer(duk_context *ctx)
 {
+    /* for readln */
     duk_push_this(ctx);
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filepointer"));
-    FILE *fp = duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
-    if (fp)
+    if (duk_is_undefined(ctx, -1))
+        /* for readLine */
+        duk_push_current_function(ctx);
+    if (duk_is_undefined(ctx, -1))
+        return 0;
+    if (duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filepointer")))
     {
-        fclose(fp);
+        FILE *fp = duk_get_pointer(ctx, -1);
+        duk_pop(ctx);
+        if (fp)
+        {
+            fclose(fp);
+        }
     }
     return 0;
 }
 
+#ifdef FORGET_ABOUT_READLN
+/* TODO:  ask Ben to fix this.  Or better yet, just skip it.
+   var rl=readln("./file.txt")[Symbol.iterator]();
+   var res=rl.next();
+   while (!res.done) {
+       console.log(res.value);
+       rex=rl.next();
+   }
+ 
+  The typo "rex=rl.next();" caused this:
+    corrupted double-linked list
+    Aborted
+*/
 
 duk_ret_t duk_rp_readln_iter(duk_context *ctx)
 {
@@ -1192,11 +1191,14 @@ duk_ret_t duk_rp_readln_iter(duk_context *ctx)
     }
 }
 
+
 /**
  * Reads a file line by line using getline and javascript iterators.
  * @param {string} filename - the path to the file to be read.
  * @returns {Iterator} an object with a Symbol.iterator.
  */
+ 
+ 
 duk_ret_t duk_rp_readln(duk_context *ctx)
 {
     const char *filename = duk_require_string(ctx, -1);
@@ -1235,6 +1237,7 @@ duk_ret_t duk_rp_readln(duk_context *ctx)
 
     return 1;
 }
+#endif //FORGET_ABOUT_READLN
 
 static duk_ret_t readline_next(duk_context *ctx)
 {
@@ -1269,8 +1272,14 @@ static duk_ret_t readline_next(duk_context *ctx)
 
         if (nread == -1)
         {
-            duk_push_pointer(ctx, NULL);
-            duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("filepointer"));
+          /*  duk_push_pointer(ctx, NULL);
+              duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("filepointer")); */
+
+            /* clear finalizer */
+            duk_push_null(ctx);
+            duk_set_finalizer(ctx, 0);
+
+            /* close here rather than in finalizer */
             fclose(fp);
             duk_push_null(ctx);
         }
@@ -1306,7 +1315,13 @@ duk_ret_t duk_rp_readline(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "next");
     
     duk_push_c_function(ctx,duk_rp_readln_finalizer,0);
-    duk_put_prop_string(ctx, -2, "finish");
+
+    duk_push_pointer(ctx,fp);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
+
+
+//    duk_put_prop_string(ctx, -2, "finish");
+    duk_set_finalizer(ctx, -2);
 
     return 1;
 }
@@ -1384,7 +1399,8 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
     const char *path = duk_get_string(ctx, 0);
     struct stat path_stat;
     int err,
-        safestat = duk_get_boolean_default(ctx,1,0);
+        //safestat = duk_get_boolean_default(ctx,1,0);
+        safestat=1;
 
     if (islstat)
         err=lstat(path, &path_stat);
@@ -1538,30 +1554,48 @@ void *duk_rp_exec_thread_waitpid(void *arg)
  */
 duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 {
+    int kill_signal=SIGTERM, background=0, i=0;
+    unsigned int timeout=0;
+    const char *path;
+    char **args=NULL;
+    duk_size_t nargs;
 
     // get options
-    duk_get_prop_string(ctx, -1, "timeout");
-    unsigned int timeout = duk_get_uint_default(ctx, -1, 0);
+    if(duk_get_prop_string(ctx, -1, "timeout"))
+    {
+        if (!duk_is_number(ctx, -1))
+            RP_THROW(ctx, "exec(): timeout value must be a number");
+
+        timeout = duk_get_uint_default(ctx, -1, 0);
+    }
     duk_pop(ctx);
 
-    duk_get_prop_string(ctx, -1, "killSignal");
-    int kill_signal = duk_get_int_default(ctx, -1, SIGKILL);
+    if(duk_get_prop_string(ctx, -1, "killSignal"))
+    {
+        kill_signal = REQUIRE_INT(ctx, -1, "exec(): killSignal value must be a Number");
+    }
     duk_pop(ctx);
 
     duk_get_prop_string(ctx, -1, "path");
-    const char *path = duk_require_string(ctx, -1);
+    path = REQUIRE_STRING(ctx, -1, "exec(): path must be a String");
     duk_pop(ctx);
 
-    duk_get_prop_string(ctx, -1, "background");
-    int background = duk_get_boolean_default(ctx, -1, 0);
+    if(duk_get_prop_string(ctx, -1, "background"))
+    {
+       background = REQUIRE_BOOL(ctx, -1, "exec(): background value must be a Boolean");
+    }
     duk_pop(ctx);
 
     // get arguments into null terminated buffer
     duk_get_prop_string(ctx, -1, "args");
-    duk_size_t nargs = duk_get_length(ctx, -1);
-    char **args = NULL;
-    int i;
+
+    if(!duk_is_array(ctx, -1))
+        RP_THROW(ctx, "exec(): args value must be an Array");
+
+    nargs = duk_get_length(ctx, -1);
+
     DUKREMALLOC(ctx,args, (nargs + 1) * sizeof(char *));
+
     for (i = 0; i < nargs; i++)
     {
         duk_get_prop_index(ctx, -1, i);
@@ -1673,14 +1707,21 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 
 duk_ret_t duk_rp_exec(duk_context *ctx)
 {
-    duk_idx_t i=0, obj_idx=-1, top=duk_get_top(ctx);
+    duk_idx_t i=1, obj_idx=-1, top=duk_get_top(ctx), arr_idx;
     char *comm=NULL, *s=NULL;
     duk_uarridx_t arrayi=0;
     duk_push_object(ctx); //object for exec_raw
     duk_push_array(ctx);  //array for args
-    for (;i<top;i++)
+
+    arr_idx=duk_get_top_index(ctx);
+
+    comm=strdup( REQUIRE_STRING(ctx, 0, "exec(): first argument must be a String (command to execute)") );
+    duk_dup(ctx, 0);
+    duk_put_prop_index(ctx, arr_idx, arrayi++);
+
+    for (i=1; i<top; i++)
     {
-        if(duk_is_object(ctx,i) && !duk_is_function(ctx,i) && !duk_is_array(ctx,i))
+        if(obj_idx==-1 && duk_is_object(ctx,i) && !duk_is_function(ctx,i) && !duk_is_array(ctx,i))
         {
             obj_idx=i;
             continue;
@@ -1688,8 +1729,13 @@ duk_ret_t duk_rp_exec(duk_context *ctx)
 
         if (!duk_is_string(ctx,i))
         {
-            if ( !duk_is_function(ctx, i) )
-                (void)duk_json_encode(ctx, i); 
+            if (duk_is_undefined(ctx, i) )
+            {
+                duk_push_string(ctx, "undefined");
+                duk_replace(ctx,i);
+            }
+            else if ( !duk_is_function(ctx, i) )
+                (void)duk_json_encode(ctx, i);
             else
             {
                 duk_push_string(ctx,"{_func:true}");
@@ -1697,21 +1743,17 @@ duk_ret_t duk_rp_exec(duk_context *ctx)
             }
         }    
 
-
-        if(i==0)
-            comm=strdup(duk_get_string(ctx,0));
-
         duk_dup(ctx,i);
-        duk_put_prop_index(ctx,top+1,arrayi);
-
-        arrayi++;
+//        printf("arg = '%s'\n", duk_get_string(ctx, -1));
+        duk_put_prop_index(ctx, arr_idx, arrayi++);
     }
-
+    /* stack: [ ..., empty_obj, args_arr ] */
     if(obj_idx!=-1)
     {
         duk_pull(ctx, obj_idx);
-        //duk_del_prop_string(ctx,-1,"args");
+        /* stack: [ ..., empty_obj, args_arr, options_object ] */
         duk_replace(ctx, -3); 
+        /* stack: [ ..., options_object, args_arr ] */
     }
     duk_put_prop_string(ctx, -2, "args");
 
@@ -1806,20 +1848,30 @@ duk_ret_t duk_rp_shell(duk_context *ctx)
 duk_ret_t duk_rp_kill(duk_context *ctx)
 {
     pid_t pid = duk_require_int(ctx, 0);
-    int ret, signal = SIGTERM;
+    int ret, x=0, signal = SIGTERM,kerrno=0;
     
     if(duk_is_number(ctx,1))
         signal=duk_get_int(ctx, 1);
 
     errno=0;
     ret= kill(pid, signal);
-
     //printf("kill (%d, %d), ret=%d err='%s'\n",(int)pid, signal, ret, strerror(errno));
+    kerrno=errno;
+    if(signal)
+        while(waitpid(pid, NULL, WNOHANG) == 0) 
+        {
+            usleep(1000);
+            x++;
+            if(x>10)
+            {
+                break;
+            }
+        }
 
-    if (ret || errno)
-        duk_push_int(ctx,0);
+    if (ret || kerrno)
+        duk_push_false(ctx);
     else
-        duk_push_int(ctx,1);
+        duk_push_true(ctx);
 
     return 1;
 }
@@ -2571,8 +2623,8 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "readFile");
     duk_push_c_function(ctx, duk_rp_readline, 1);
     duk_put_prop_string(ctx, -2, "readLine");
-    duk_push_c_function(ctx, duk_rp_readln, 1);
-    duk_put_prop_string(ctx, -2, "readln");
+//    duk_push_c_function(ctx, duk_rp_readln, 1);
+//    duk_put_prop_string(ctx, -2, "readln");
     duk_push_c_function(ctx, duk_rp_stat, 2);
     duk_put_prop_string(ctx, -2, "stat");
     duk_push_c_function(ctx, duk_rp_lstat, 2);
@@ -2712,28 +2764,40 @@ duk_ret_t duk_printf(duk_context *ctx)
     f;\
 })
 #define getfh_nonull(ctx,idx,func) ({\
-    FILE *f;\
-    if( !duk_get_prop_string(ctx,idx,DUK_HIDDEN_SYMBOL("filehandle")) )\
-        RP_THROW(ctx,"error %s: argument is not a file handle",func);\
-    f=duk_get_pointer(ctx,-1);\
-    duk_pop(ctx);\
-    if(f==NULL)\
-        RP_THROW(ctx,"error %s: file handle was previously closed",func);\
+    FILE *f=NULL;\
+    if(duk_get_prop_string(ctx, idx, "stream")){\
+        const char *s=REQUIRE_STRING(ctx,-1, "error: %s({stream:\"streamName\"},...): streamName must be stdout, stderr, stdin, accessLog or errorLog", func);\
+        if (!strcmp(s,"stdout")) f=stdout;\
+        else if (!strcmp(s,"stderr")) f=stderr;\
+        else if (!strcmp(s,"stdin")) f=stdin;\
+        else if (!strcmp(s,"accessLog")) f=access_fh;\
+        else if (!strcmp(s,"errorLog")) f=error_fh;\
+        else RP_THROW(ctx,"error: %s({stream:\"streamName\"},...): streamName must be stdout, stderr, stdin, accessLog or errorLog", func);\
+        duk_pop(ctx);\
+    } else {\
+        duk_pop(ctx);\
+        if( !duk_get_prop_string(ctx,idx,DUK_HIDDEN_SYMBOL("filehandle")) )\
+            RP_THROW(ctx,"error %s(): argument is not a file handle",func);\
+        f=duk_get_pointer(ctx,-1);\
+        duk_pop(ctx);\
+        if(f==NULL)\
+            RP_THROW(ctx,"error %s(): file handle was previously closed",func);\
+    }\
     f;\
 })
 
 duk_ret_t duk_fseek(duk_context *ctx)
 {
     FILE *f = getfh_nonull(ctx,0,"fseek()");
-    long offset=(long)duk_require_number(ctx,1);
+    long offset=(long)REQUIRE_NUMBER(ctx, 1, "fseek(): second argument must be a number (seek position)");
     int whence=SEEK_SET;
-    const char *wstr=duk_require_string(ctx,2);
+    const char *wstr=REQUIRE_STRING(ctx,2, "fseek(): third argument must be a string (whence)");
 
-    if(!strcmp(wstr,"SEEK_SET"))
+    if(!strcasecmp(wstr,"SEEK_SET"))
         whence=SEEK_SET;
-    else if(!strcmp(wstr,"SEEK_END"))
+    else if(!strcasecmp(wstr,"SEEK_END"))
         whence=SEEK_END;
-    else if(!strcmp(wstr,"SEEK_CUR"))
+    else if(!strcasecmp(wstr,"SEEK_CUR"))
         whence=SEEK_CUR;
     else
         RP_THROW(ctx,"error fseek(): invalid argument '%s'",wstr);
@@ -2768,31 +2832,56 @@ duk_ret_t duk_fread(duk_context *ctx)
 {
     FILE *f = getfh_nonull(ctx,0,"fread()");
     void *buf;
-    size_t read, sz=(size_t)duk_require_number(ctx,1);
+    size_t r, read=0, sz=4096, max=SIZE_MAX;
+    int isz=-1;
+
+    if (!duk_is_undefined(ctx,1))
+    {
+        int isz=REQUIRE_INT(ctx, 1, "fread(): second argument (chunk_size) must be a Number (integer)");
+        if(isz > 0)
+            sz=(size_t)isz;
+    }
+
+    if (!duk_is_undefined(ctx,2))
+    {
+        int imax = REQUIRE_INT(ctx, 2, "fread(): third argument (max_bytes) must be a Number (integer)");
+        if(imax>0)
+            max=(size_t)imax;
+    }
+
+    if(isz > 0)
+        sz=(size_t)isz;
+
     buf=duk_push_dynamic_buffer(ctx, (duk_size_t)sz);
 
-    read=fread(buf,1,sz,f);
-    if(read != sz)
+    while (1)
     {
+        r=fread(buf+read,1,sz,f);
         if(ferror(f))
             RP_THROW(ctx, "error fread(): error reading file");
-
-        duk_resize_buffer(ctx, -1, (duk_size_t)read);
+        read+=r;
+        if (r != sz || r > max ) break;
+        duk_resize_buffer(ctx, -1, read+sz);
     }
-    return(1);
+
+    if(read > max) read=max;
+    duk_resize_buffer(ctx, -1, read);
+
+    return (1);
 }
 
 duk_ret_t duk_fwrite(duk_context *ctx)
 {
     FILE *f = getfh_nonull(ctx,0,"fwrite()");
     void *buf;
-    size_t wrote, sz=(size_t)duk_get_number_default(ctx,2,-1);
+    size_t wrote, 
+        sz=(size_t)duk_get_number_default(ctx,2,-1);
     duk_size_t bsz;
     pthread_mutex_t *lock_p=NULL;
 
     duk_to_buffer(ctx,1,&bsz);
     buf=duk_get_buffer_data(ctx, 1, &bsz);
-    if(sz !=-1)
+    if(sz > 0)
     {
         if((size_t)bsz < sz)
             sz=(size_t)bsz;
@@ -2834,12 +2923,14 @@ duk_ret_t duk_fclose(duk_context *ctx)
                 f=stdout;
             else if (!strcmp(s,"stderr"))
                 f=stderr;
+            else if (!strcmp(s,"stdin"))
+                f=stdin;
             else if (!strcmp(s,"accessLog"))
                 f=access_fh;
             else if (!strcmp(s,"errorLog"))
                 f=error_fh;
             else
-                RP_THROW(ctx,"error: fclose({stream:\"streamName\"},...): streamName must be stdout, stderr, accessLog or errorLog");
+                RP_THROW(ctx,"error: fclose({stream:\"streamName\"},...): streamName must be stdout, stderr, stdin, accessLog or errorLog");
 
             fclose(f);
             return 0;
@@ -2911,8 +3002,16 @@ duk_ret_t duk_fopen(duk_context *ctx)
 {
     FILE *f;
     pthread_mutex_t *newlock=NULL;
-    const char *fn=duk_require_string(ctx,0);
-    const char *mode=duk_require_string(ctx,1);
+    const char *fn=REQUIRE_STRING(ctx,0, "fopen(): filename (String) required as first parameter");
+    const char *mode=REQUIRE_STRING(ctx, 1, "fopen(): mode (String) required as second parameter");
+    int mlen=strlen(mode);
+
+    if (
+        mlen > 2 || 
+        (  mlen > 1 && mode[1] != '+') ||
+        (*mode != 'r' && *mode != 'w' && *mode != 'a')
+    )
+        RP_THROW(ctx, "error opening file '%s': invalid mode '%s'", fn, mode);
 
     f=fopen(fn,mode);
     if(f==NULL) goto err;
@@ -3107,7 +3206,7 @@ void duk_printf_init(duk_context *ctx)
     duk_push_c_function(ctx, duk_rewind, 1);
     duk_put_prop_string(ctx, -2, "rewind");
 
-    duk_push_c_function(ctx, duk_fread, 2);
+    duk_push_c_function(ctx, duk_fread, 3);
     duk_put_prop_string(ctx, -2, "fread");
 
     duk_push_c_function(ctx, duk_fwrite, 3);
@@ -3132,6 +3231,11 @@ void duk_printf_init(duk_context *ctx)
     duk_push_string(ctx,"stderr");
     duk_put_prop_string(ctx,-2,"stream");
     duk_put_prop_string(ctx, -2,"stderr");
+
+    duk_push_object(ctx);
+    duk_push_string(ctx,"stdin");
+    duk_put_prop_string(ctx,-2,"stream");
+    duk_put_prop_string(ctx, -2,"stdin");
 
     duk_put_prop_string(ctx, -2,"utils");
     duk_put_global_string(ctx,"rampart");

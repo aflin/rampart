@@ -1,7 +1,9 @@
-/* 
-   some of this is code copied from texis/texisapi dir 
-   see copyright messages there.
-*/
+/* Copyright (C) Thunderstone, LLC - All Rights Reserved
+ * Copyright (C) 2020 Aaron Flin - All Rights Reserved
+ * You may use, distribute this code under the
+ * terms of the Rampart Open Source License.
+ * see rsal.txt for details
+ */
 
 typedef struct  RPSFD_tag                       /* stringformat data */
 {
@@ -1064,7 +1066,7 @@ static void searchfile_setcp(duk_context *ctx, APICP *cp, duk_idx_t obj_idx)
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "useeqiv"   ))
     {
-        cp->keepeqvs   =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option keepeqvs requires a boolean");
+        cp->keepeqvs   =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option useequiv requires a boolean");
     }
     duk_pop(ctx);
 

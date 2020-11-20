@@ -803,7 +803,23 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
         case 'c':
         {
             unsigned int l = 1U;
-            const char *c = PF_REQUIRE_STRING(ctx, fidx++);
+            unsigned char c='\0';
+            
+            if (duk_is_string(ctx, fidx))
+            {
+                c=*(duk_get_string(ctx, fidx++));
+            }
+            else if (duk_is_number(ctx, fidx))
+            {
+                int n=(int)duk_get_number(ctx, fidx);
+                if(n<0 || n>255)
+                     RP_THROW(ctx, "string (single char) or number (0-255) required in format string argument %d", fidx);
+                c=(unsigned char)n;
+                fidx++;
+            }
+            else
+                RP_THROW(ctx, "string (single char) or number (0-255) required in format string argument %d", fidx);
+                            
             // pre padding
             if (!(flags & FLAGS_LEFT))
             {
@@ -813,7 +829,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                 }
             }
             // char output
-            out((char)*c, buffer, idx++, maxlen);
+            out(c, buffer, idx++, maxlen);
             // post padding
             if (flags & FLAGS_LEFT)
             {

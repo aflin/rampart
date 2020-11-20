@@ -1,3 +1,9 @@
+/* Copyright (C) 2020 Aaron Flin - All Rights Reserved
+ * You may use, distribute or alter this code under the
+ * terms of the MIT license
+ * see https://opensource.org/licenses/MIT
+ */
+
 #include "register.h"
 #include "core/duk_console.h"
 #include "core/module.h"

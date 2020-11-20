@@ -84,7 +84,6 @@ testFeature("readLine/trim",function(){
         i++;
         lastline=line;
     }
-    rl.finish();
     return firstline=="//first line" && trim(lastline)=="//lastline";
 });
 
@@ -126,7 +125,7 @@ testFeature("mkdir/rmdir/stat",function(){
     rmdir("t1/t2",true);
     var mode1=sprintf("%o",stat1.mode & 0777);
     var stat2=true;
-    stat2=stat("t1",true);//true==safestat: return false instead of throwing error
+    stat2=stat("t1");
     return (!stat2 && mode1=="777");
 });
 
@@ -142,19 +141,19 @@ testFeature("readdir",function(){
 
 testFeature("copy/delete",function(){
     copyFile(thisfile,"test1.js",true);
-    var stat1=stat("test1.js",true);
+    var stat1=stat("test1.js");
     var diff=shell("diff "+ thisfile +" test1.js");
     rmFile("test1.js");
-    var stat2=stat("test1.js",true);
+    var stat2=stat("test1.js");
     return stat1.mode && !stat2 && diff.stdout == "";
 });
 
 testFeature("symlink/delete/lstat",function(){
     symlink(thisfile,"test1.js");
-    var islink=lstat("test1.js",true).isSymbolicLink();
+    var islink=lstat("test1.js").isSymbolicLink();
     var diff=shell("diff "+ thisfile +" test1.js");
     rmFile("test1.js");
-    var stat2=stat("test1.js",true);
+    var stat2=stat("test1.js");
     return islink && !stat2 && diff.stdout == "";
 });
 
@@ -163,10 +162,10 @@ testFeature("hard link/delete",function(){
         src:thisfile,
         target:"test1.js"
     });
-    var stat1=stat("test1.js",true);
+    var stat1=stat("test1.js");
     var test=shell("if [ test1.js -ef "+thisfile+" ]; then echo yes; fi");
     rmFile("test1.js");
-    var stat2=stat("test1.js",true);
+    var stat2=stat("test1.js");
     return stat1.mode && !stat2 && test.stdout == "yes\n";
 });
 
@@ -187,7 +186,7 @@ testFeature("copy over hard/sym link throw",function(){
 
 testFeature("touch/rename",function(){
     touch("myfile");
-    var stat1=stat("myfile",true);
+    var stat1=stat("myfile");
     rename("myfile","/tmp/myfile"); //copies if different mounted fs
     var stat2=stat("/tmp/myfile");
     rmFile("/tmp/myfile");
