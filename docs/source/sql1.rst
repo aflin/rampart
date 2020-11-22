@@ -67,7 +67,7 @@ Return value:
         searchFile:   {_func:true}
     }
 
-The returned object contains functions that can be split into two groups:
+The returned Object contains functions that can be split into two groups:
 `Database Functions`_ and `String Functions`_.
 
 Database Functions
@@ -78,10 +78,12 @@ Database Functions
 init() constructor
 ~~~~~~~~~~~~~~~~~~
 
-The ``init`` constructor function takes a path (and an optional boolean) as 
-parameters and returns an object representing a new connection to the specified 
-database.  The return object includes the following functions: ``exec()``,
-``eval()``, ``set()``, and ``close()``.
+The ``init`` constructor function takes a String, the path to the database
+and an optional Boolean as parameters. It returns an object representing a
+new connection to the specified database.  The return object includes the
+following functions: ``exec()``, ``eval()``, ``set()``, and ``close()``.
+
+Usage:
 
 .. code-block:: javascript
 
@@ -98,6 +100,7 @@ database.  The return object includes the following functions: ``exec()``,
 +--------+------------+---------------------------------------------------+
 
 Return Value:
+   An Object of functions:
 
 .. code-block:: none
 
@@ -117,17 +120,17 @@ Example:
 	/* create database if it does not exist */
 	var sql = new Sql.init("/path/to/my/db", true);
 
-Note that to create a new database, the folder ``/path/to/my/db`` must not
-exist, but ``/path/to/my`` must exist and have write permissions for the
-current user.
+Note that to create a new database, the folder ``/path/to/my/db`` **must
+not** exist, but ``/path/to/my`` **must** exist and have write permissions for
+the current user.
 
 
 exec()
 ~~~~~~
 
 The exec function executes a sql statement on the database opened with
-:ref:`init() <initconst>`.  It takes a string containing a sql statement and
-an optional array of sql parameters, an object of options and/or a callback
+:ref:`init() <initconst>`.  It takes a String containing a sql statement and
+an optional Array of sql parameters, an Object of options and/or a callback
 function.  The parameters may be specified in any order.
 
 .. code-block:: javascript

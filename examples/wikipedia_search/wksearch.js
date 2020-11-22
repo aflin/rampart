@@ -2,8 +2,6 @@
 var server=require("rampart-server");
 
 function index(req) {
-//printf("%J\n",req);
-
     if(req.path.path != '/' && req.path.path != '/index.html')
         return {status:404};
 
@@ -18,18 +16,18 @@ function index(req) {
         '\n'+
         "</body></html>\n";
 
-
-
     return({html:html});
 }
 
 
 server.start(
 {
-    bind: [ "[::]:8088", "0.0.0.0:8088" ], /* bind to all */
+    /* bind port 8088, and to all ipv4 and ipv6 ip addresses */
+    bind: [ "[::]:8088", "0.0.0.0:8088" ],
     scriptTimeout: 10.0,
     connectTimeout:20.0,
     useThreads: true, //make server multithreaded
+//    daemon: true,
 //    user:"unpriv-user",  //if starting as root
 //    log: true,
     map:

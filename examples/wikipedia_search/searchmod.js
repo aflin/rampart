@@ -89,9 +89,9 @@ function search(req) {
         "select Id, Title, stringformat('%mbH','@0 '+?,abstract(Doc,0,3,?)) Ab from wikitext where Doc likep ?",
         [q,q,q],
         {max:10,skip:skip,includeCounts:true},
-        function(res,i,info) {
+        function(res,i,cols,info) {
             if(!i) {
-                icount=info.indexCount;
+                icount=parseInt(info.indexCount);
                 html+=sprintf('<div class="info">Results %d-%d of about %d</div>',skip+1,(skip+10>icount)?icount:skip+10,icount);
             }
             html+=sprintf('<div class="resi" style="padding-top: 15px;">'+

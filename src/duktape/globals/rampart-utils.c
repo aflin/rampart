@@ -246,7 +246,7 @@ int rp_mkdir_parent(const char *path, mode_t mode)
                 if (errno != EEXIST)
                 {
                     (void)umask(old_umask);
-                    return 1;
+                    return -1;
                 }
             }
 
@@ -419,6 +419,18 @@ duk_ret_t duk_process_exit(duk_context *ctx)
     return 0;
 }
 
+duk_ret_t duk_process_getpid(duk_context *ctx)
+{
+    duk_push_int(ctx, (duk_int_t)getpid());
+    return 1;
+}
+
+duk_ret_t duk_process_getppid(duk_context *ctx)
+{
+    duk_push_int(ctx, (duk_int_t)getppid());
+    return 1;
+}
+
 void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase)
 {
     unsigned char *buf,*end;
@@ -557,6 +569,10 @@ void duk_process_init(duk_context *ctx)
 
     duk_push_c_function(ctx,duk_process_exit,1);
     duk_put_prop_string(ctx,-2,"exit");
+    duk_push_c_function(ctx,duk_process_getpid,0);
+    duk_put_prop_string(ctx,-2,"getpid");
+    duk_push_c_function(ctx,duk_process_getppid,0);
+    duk_put_prop_string(ctx,-2,"getppid");
 
     {   /* add process.argv */
         int i=0;
@@ -1879,7 +1895,7 @@ duk_ret_t duk_rp_kill(duk_context *ctx)
 /**
  * Creates a directory with the name given as a path
  * @param {path} - the directory to be created
- * @param {mode=} - the mode of the newly created directory (default: 0777)
+ * @param {mode=} - the mode of the newly created directory (default: 0755)
  * Ex.
  * utils.mkdir("new/directory")
  */
@@ -1941,8 +1957,7 @@ duk_ret_t duk_rp_rmdir(duk_context *ctx)
                 {
 
                     *p = '\0';
-
-                    if (rmdir(_path) != 0)
+                    if( strcmp(".", _path)!=0 && rmdir(_path) != 0)
                         RP_THROW(ctx, "rmdir(): error removing directories recursively: %s", strerror(errno));
 
                     *p = '/';
@@ -1955,6 +1970,7 @@ duk_ret_t duk_rp_rmdir(duk_context *ctx)
 /**
  * Reads the directory given by path.
  * @param {path} the directory
+ * @param {showhidden} list ".*" files a well
  * @returns an array of file names
  */
 duk_ret_t duk_rp_readdir(duk_context *ctx)
@@ -2072,7 +2088,7 @@ duk_ret_t duk_rp_copyFile(duk_context *ctx, char *fname)
         if(!err)
         {
             if(dest_stat.st_ino == src_stat.st_ino)
-                RP_THROW(ctx, "copyFile(): same file: '%s' is a link to '%s'", src_filename, dest_filename);
+                RP_THROW(ctx, "copyFile(): same file: '%s' is the same file as or a link to '%s'", src_filename, dest_filename);
         }
 
         if (!err && !overwrite)
@@ -2124,6 +2140,19 @@ duk_ret_t duk_rp_copyFile(duk_context *ctx, char *fname)
         }
         fclose(src);
         fclose(dest);
+        /* check that file stats and is the same size */
+        errno=0;
+        if (stat(dest_filename, &dest_stat) != 0)
+            RP_THROW(ctx, "%s: error getting information for '%s' after copy: %s", fname, dest_filename, strerror(errno));
+
+        /* if src is growing, dest might be smaller now
+           but src was stat'd when copy began, so dest
+           should always be equal or larger than what src
+           was before copy began.
+           if src is truncated during copy, dest could be smaller.
+           However user should be informed, so still throw error           */
+        if(dest_stat.st_size < src_stat.st_size)
+            RP_THROW(ctx, "%s: error copying file (partial copy) '%d' bytes copied", (int) dest_stat.st_size);
     }
     return 0;
 }
@@ -2311,7 +2340,13 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
             else
             {
                 FILE *fp = fopen(path, "w"); // create file
+                if (!fp)
+                    RP_THROW(ctx, "touch(): failed to create file");
                 fclose(fp);
+                if ( stat(path, &filestat) != 0)
+                {
+                    RP_THROW(ctx, "touch(): failed to get file information");
+                }
             }
         }
 
@@ -2320,7 +2355,7 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
         {
 
             if (stat(reference, &refrence_stat) != 0) //reference file doesn't exist
-                RP_THROW(ctx, "reference file does not exist");
+                RP_THROW(ctx, "touch(): reference file does not exist");
 
             new_mtime = setmodify ? refrence_stat.st_mtime : filestat.st_mtime; // if setmodify, update m_time
             new_atime = setaccess ? refrence_stat.st_atime : filestat.st_atime; // if setacccess, update a_time
@@ -2362,7 +2397,7 @@ duk_ret_t duk_rp_rename(duk_context *ctx)
 
             return 0;            
         }
-        RP_THROW(ctx, "error renaming '%s' to '%s': %s (%d)", old, new, strerror(errno),errno);
+        RP_THROW(ctx, "error renaming '%s' to '%s': %s", old, new, strerror(errno));
     }
 
     return 0;
@@ -2504,6 +2539,8 @@ duk_ret_t duk_rp_nsleep(duk_context *ctx)
     nanosleep(&stime,NULL);
     return 0;
 }
+
+/* TODO: shelve locks until can update with new lockserver */
 
 duk_ret_t duk_rp_mlock_constructor(duk_context *ctx)
 {
@@ -3098,11 +3135,11 @@ duk_ret_t duk_fprintf(duk_context *ctx)
         }
         duk_pop(ctx);
 
-        RP_THROW(ctx,"error: fprintf({},...): invalid option");
+        RP_THROW(ctx,"error: fprintf(): invalid option");
     }
     else
     {
-        fn=duk_require_string(ctx,0);
+        fn=REQUIRE_STRING(ctx, 0, "fprintf(output): output must be a filehandle opened with fopen() or a String (filename)");
         if( duk_is_boolean(ctx,1) )
         {
             append=duk_get_boolean(ctx,1);

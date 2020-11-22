@@ -7,7 +7,7 @@ Preface
 Acknowledgement
 """""""""""""""
 
-Rampart uses the `Duktape Javascript Engine <https://duktape.org>`_. It is an 
+Rampart uses the `Duktape Javascript Engine <https://duktape.org>`_. Duktape is an 
 embeddable JavaScript engine, with a focus on portability and compact footprint.
 The developers of Rampart are extremely grateful for the excellent api and
 ease of use of this library.
@@ -60,7 +60,7 @@ following:
 * Standard module support for ``C`` and ``Javascript`` modules via the
   ``require()`` function.
 
-* File and c-functions utilities such as ``printf``, ``fseek``, and ``exec``.
+* File and C-functions utilities such as ``printf``, ``fseek``, and ``exec``.
 
 * Included ``C`` modules (``rampart-ramis``, ``rampart-curl``, ``rampart-sql``, ``rampart-server`` and
   ``rampart-crypto``).
@@ -105,7 +105,7 @@ Put all or named properties of an object in the global namespace.
 
 .. code-block:: javascript
 
-    rampart.globalize(var_obj [, prop_names ]);
+    rampart.globalize(var_obj [, prop_names]);
 
 +------------+------------+---------------------------------------------------+
 |Argument    |Type        |Description                                        |
@@ -118,7 +118,8 @@ Put all or named properties of an object in the global namespace.
 +------------+------------+---------------------------------------------------+
 
 
-Return value: ``undefined``.
+Return value: 
+   ``undefined``.
 
 Example:
 
@@ -175,7 +176,7 @@ Usage:
    rampart.utils.printf(fmt, ...)
    
 Return Value:
-   Number: The length in characters of the printed string.
+   Number. The length in characters of the printed string.
 
 Standard formats:  Most of the normal flags and formats are respected.
 See standard formats and flags from
@@ -212,7 +213,7 @@ sprintf
 Same as ``printf()`` except a string is returned
 
 Return Value:
-   String: The formatted string.
+   String. The formatted string.
 
 bprintf
 '''''''
@@ -220,36 +221,7 @@ bprintf
 Same as ``sprintf()`` except a buffer is returned.
 
 Return Value:
-   Buffer:  The formatted string as a buffer.
-
-fprintf
-'''''''
-
-Same as ``printf()`` except output is sent to the file provided by
-the String or filehandle opened with `fopen`_\ ().
-
-Usage:
-
-.. code-block:: javascript
-
-   fprintf(output, fmt, ...);
-
-Where ``output`` may be a String or an object returned from `fopen`_\ ().
-
-Return Value:
-   Number: The length in characters of the printed string.
-
-Example:
-
-.. code-block:: javascript
-
-   var handle = fopen("/tmp/out.txt", "w+");
-   fprintf(handle, "A number: %d\n", 123);
-   fclose(handle);
-
-   /* OR */
-
-   fprintf("/tmp/out.txt", "A number: %d\n", 456);
+   Buffer.  The formatted string as a buffer.
 
 fopen
 '''''
@@ -258,7 +230,7 @@ Open a filehandle for use with `fprintf`_\ (), `fclose`_\ (), `fseek`_\ (),
 `rewind`_\ (), `ftell`_\ (), `fflush`_\ () `fread`_\ () and `fwrite`_\ ().
 
 Return Value:
-   Object: The opened filehandle.
+   Object. The opened filehandle.
 
 Usage:
 
@@ -303,6 +275,49 @@ Example:
    var handle = rampart.utils.fopen("/tmp/out.txt", "a");
    ...
    rampart.utils.fclose(handle);
+
+fprintf
+'''''''
+
+Same as ``printf()`` except output is sent to the file provided by
+a String or filehandle Object opened and returned from `fopen`_\ ().
+
+Usage:
+
+.. code-block:: javascript
+
+   var output = fopen(filename, mode);
+   rampart.utils.fprintf(output, fmt, ...);
+
+   /* or */
+
+   var output = filename;
+   rampart.utils.fprintf(output, [, append], fmt, ...); 
+
+   
+Where:
+
+* ``output`` may be a String (a filename), or an Object returned from `fopen`_\ ().
+
+* ``fmt`` is a String, a `printf`_\ () format.
+
+* ``append`` is an optional Boolean - if ``true`` append instead of
+  overwrite an existing file.
+
+Return Value:
+   Number. The length in characters of the printed string.
+
+Example:
+
+.. code-block:: javascript
+
+   var handle = fopen("/tmp/out.txt", "w+");
+   fprintf(handle, "A number: %d\n", 123);
+   fclose(handle);
+
+   /* OR */
+
+   fprintf("/tmp/out.txt", "A number: %d\n", 456); /* implicit fclose */
 
 fseek
 '''''
@@ -349,7 +364,7 @@ Example
 
    fseek(handle, 0, "seek_set");
 
-   var out=fread(handle, 6);
+   var out=fread(handle);
 
    printf("%B", out);
    /* expect output: "abcdef" */
@@ -388,14 +403,15 @@ Usage:
    var pos = rampart.utils.ftell(handle);
 
 Return Value:
-   Number: current position of ``handle``.
+   Number. Current position of ``handle``.
 
 
 fflush
 ''''''
 
 For output file handles opened with `fopen`_\ (), or for
-``stdout``/``stderr``/``accessLog``/``errorLog``, fflush() forces a write of buffered data.
+``stdout``/``stderr``/``accessLog``/``errorLog``, ``fflush()`` forces a
+write of buffered data.
 
 Usage:
 
@@ -426,7 +442,7 @@ Usage:
 
 .. code-block:: javascript
 
-    rampart.utils.fread(handle [,chunk_size [,max_size]]);
+    rampart.utils.fread(handle [, chunk_size [, max_size]]);
 
 +------------+------------+---------------------------------------------------+
 |Argument    |Type        |Description                                        |
@@ -444,7 +460,7 @@ Usage:
 +------------+------------+---------------------------------------------------+
 
 Return Value:
-    Buffer containing read bytes.
+    Buffer. Contents set to the read bytes.
 
 fwrite
 ''''''
@@ -455,7 +471,7 @@ Usage:
 
 .. code-block:: javascript
 
-    var nbytes = rampart.utils.frwrite(handle, data [,max_bytes]);
+    var nbytes = rampart.utils.frwrite(handle, data [, max_bytes]);
 
 +------------+------------+---------------------------------------------------+
 |Argument    |Type        |Description                                        |
@@ -470,7 +486,7 @@ Usage:
 +------------+------------+---------------------------------------------------+
 
 Return Value:
-    Number of bytes written.
+    Number. Number of bytes written.
 
 
 hexify
@@ -482,7 +498,7 @@ Usage:
 
 .. code-block:: javascript
 
-   var hexstring = rampart.utils.hexify(data [,upper]);
+   var hexstring = rampart.utils.hexify(data [, upper]);
 
 Where ``data`` is the string of bytes to be converted and ``upper`` is a
 Boolean, which if true prints using upper-case ``A-F``.
@@ -535,7 +551,7 @@ Usage:
 
 .. code-block:: javascript
 
-   var buf = rampart.utils.stringToBuffer(data [,buftype ]);
+   var buf = rampart.utils.stringToBuffer(data [, buftype ]);
 
 Where ``data`` is a String or Buffer and ``buftype`` is one of the following
 Strings:
@@ -625,11 +641,11 @@ Caveats:
 *  All primitive values will be converted to strings.
 
 *  If ``repeat`` or ``bracket`` was used to create the 
-   query string, all values will be returned as strings (even if an array of
-   numbers was given to `objectToQuery`_\ ().
+   query string, all values will be returned as strings (even if an Array of
+   Numbers was given to `objectToQuery`_\ ().
 
 *  If ``comma`` was used to create the query string, no separation of comma
-   separated values will occur and the entire value.
+   separated values will occur and the entire value will be returned as a String.
 
 *  If ``json`` was used, numeric values will be preserves as Numbers.
 
@@ -643,7 +659,7 @@ Example:
      key3: ["val1","val2"]
    }
 
-   var type = ["repeat", "bracket", "comma", "json"  ];
+   var type = [ "repeat", "bracket", "comma", "json" ];
 
    for (var i=0; i<4; i++) {
        var qs = rampart.utils.objectToQuery(obj, type[i] );
@@ -718,11 +734,16 @@ Usage:
 
 .. code-block:: javascript
 
-   var cont = rampart.utils.readFile(optsObj);
+   var contents = rampart.utils.readFile({
+      file: filename
+      [, offset: offsetPos]
+      [, length: rLength]
+      [, retString: return_str]
+   });
 
    /* or */
 
-   var cont = rampart.utils.readFile(filename [, offset [, length]] [, retString]);
+   var contents = rampart.utils.readFile(filename [, offsetPos [, rLength]] [, return_str]);
 
 
 Where ``optsObj`` is an object with the key ``filename`` and optional keys
@@ -734,15 +755,15 @@ Where ``optsObj`` is an object with the key ``filename`` and optional keys
 +============+============+=====================================================+
 |filename    |String      | Path to the file to be read                         |
 +------------+------------+-----------------------------------------------------+
-|offset      |Number      | If positive, offset from beginning of file          |
+|offsetPos   |Number      | If positive, offset from beginning of file          |
 |            |            +-----------------------------------------------------+
 |            |            | If negative, offset from end of file                |
 +------------+------------+-----------------------------------------------------+
-|length      |Number      | If greater than zero, amount in bytes to be read.   |
+|rLength     |Number      | If greater than zero, amount in bytes to be read.   |
 |            |            +-----------------------------------------------------+
 |            |            |Otherwise, position from end of file to stop reading.|
 +------------+------------+-----------------------------------------------------+
-|retString   |Boolean     | If not set, or ``false``, return a Buffer.          |
+|return_str  |Boolean     | If not set, or ``false``, return a Buffer.          |
 |            |            +-----------------------------------------------------+
 |            |            | If ``true``, return contents as a String.           |
 |            |            | May be truncated if file contains nulls.            |
@@ -757,7 +778,14 @@ Example:
 
    rampart.utils.fprintf("/tmp/file.txt","This is a text file\n");
 
-   var txt = rampart.utils.readFile("/tmp/file.txt",10, -6, true);
+   var txt = rampart.utils.readFile({
+      filename:  "/tmp/file.txt",
+      offset:    10, 
+      length:    -6, 
+      retString: true
+   });
+
+   /* or var txt = rampart.utils.readFile("/tmp/file.txt", 10, -6, true); */
 
    rampart.utils.printf("'%s'\n", txt);
 
@@ -809,9 +837,10 @@ contains the property ``next``, a function to retrieve and return the next
 line of text in the file.
 
 Return Value:
-   Object.  Property ``next`` of return object is a function which retrieves
-   and returns the next line of text in the file.  After the last line of
-   ``file`` returned, subsequent calls to ``next`` will return ``null``.
+   Object.  Property ``next`` of the return Object is a function which
+   retrieves and returns the next line of text in the file.  After the last
+   line of ``file`` is returned, subsequent calls to ``next`` will return
+   ``null``.
 
 Example:
 
@@ -845,7 +874,7 @@ Usage:
 Where ``file`` is a String (name of file).
 
 Return Value:
-   ``false`` if file does not exist.  Otherwise an Object with the following
+   Boolean/Object. ``false`` if file does not exist.  Otherwise an Object with the following
    properties:
 
 .. code-block:: javascript
@@ -874,7 +903,7 @@ Return Value:
    }
 
 See `stat (2) <https://man7.org/linux/man-pages/man2/stat.2.html>`_ for
-meaning of each property.  The ``is*`` functions return true if the
+meaning of each property.  The ``is*()`` functions return ``true`` if the
 corresponding file property is true.
 
 Example:
@@ -894,7 +923,7 @@ Example:
 lstat
 '''''
 
-Same as `stat`_\ () except if ``file`` is a link, return information on the link itself.
+Same as `stat`_\ () except if ``file`` is a link, return information about the link itself.
 
 Return Value:
    Same as `stat`_\ () with the addition of the property/function
@@ -909,7 +938,7 @@ Usage:
 
 .. code-block:: javascript
 
-   var ret = rampart.utils.exec(command [, options] [,arg1, arg2, ...] );
+   var ret = rampart.utils.exec(command [, options] [,arg1, arg2, ..., argn] );
 
 Where:
 
@@ -925,6 +954,10 @@ Where:
 
    *  ``background`` - Boolean.  Whether to execute detached and return
       immediately.  ``stdout`` and ``stderr`` below will be set to null.
+
+*  ``argn`` - String/Number/Object/Boolean/Null - Arguments to be passed to
+   ``command``.  Non-Strings are converted to a String (e.g. "true", "null",
+   "42" or for Object, the equivalent of ``JSON.stringify(obj)``).
 
 Return Value:
    Object.  Properties as follows
@@ -982,7 +1015,7 @@ kill
 
 Terminate a process or send a signal.
 
-Usage
+Usage:
 
 .. code-block:: javascript
 
@@ -992,7 +1025,7 @@ Where ``pid`` is a Number, the process id of process to be sent a signal and
 ``signal`` is a Number, the signal to send.  If ``signal`` is not specified,
 ``15`` (``SIGTERM``) is used.  See manual page for kill(1) for a list of
 signals, which may vary by platform.  Setting ``signal`` to ``0`` sends no
-signal, but checks on the existence of the process identified by ``pid``.
+signal, but checks for the existence of the process identified by ``pid``.
 
 Return Value:
    Boolean.  ``true`` if signal successfully sent.  ``false`` if there was
@@ -1008,7 +1041,7 @@ Example:
    if (rampart.utils.kill(pid,0)) {
        console.log("process is still running");
        rampart.utils.kill(pid);
-       if(!rampart.utils.kill(pid,0))
+       if( rampart.utils.kill(pid,0) == 0 )
           console.log("and now is dead");
    } else
        console.log("not running");
@@ -1021,34 +1054,345 @@ Example:
 mkdir
 '''''
 
+Create a directory.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.utils.mkdir(path [, mode]);
+
+Where ``path`` is a String, the directory to be created and ``mode`` is a
+Number or String, the octal permissions mode. Any parent directories which
+do not exist will also be created.  Throws error if lacking permissions or
+if another error encountered.
+
+Note that ``mode`` is normally given as an octal.  As such it can be, e.g.,
+``0755`` (octal number) or ``"755"`` (string representation of an octal
+number), but ``755``, as a decimal number may not work as intended.
+
+
+
+Return Value:
+   ``undefined``.
+
 rmdir
 '''''
+
+Remove an empty directory.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.utils.rmdir(path [, recurse]);
+
+Where ``path`` is a String, the directory to be removed and ``recurse`` is an
+optional Boolean, which if ``true``, parent directories explicitely present in
+``path`` will also be removed.  Throws an error if the directory cannot be
+removed (.e.g., not empty or lacking permission).
+
+Return Value:
+   ``undefined``.
+
+Example:
+
+.. code-block:: javascript
+
+   /* make the following directories in the 
+      current working directory             */
+   rampart.utils.mkdir("p1/p2/p3",0755);
+
+   /* remove the directories recursively */
+   rampart.utils.rmdir("p1/p2/p3", true);
+
+
 
 readdir
 '''''''
 
+Get listing of directory files.
+
+Usage:
+
+.. code-block:: javascript
+
+   var files = rampart.utils.readdir(path [, showhidden]);
+
+Where ``path`` is a String, the directory whose content will be listed and
+``showhidden`` is a Boolean, which if ``true``, files or directories
+beginning with ``.`` (hidden files) will be included in the return value.
+
+Return Value: 
+   Array.  An Array of Strings, each filename in the directory.
+
+
 copyFile
 ''''''''
+
+Make a copy of a file.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.utils.copyFile({src: source, dest: destination [, overwrite: overWrite]});
+
+   /* or */
+
+   rampart.utils.copyFile(source, destination [, overWrite]);
+
+Where ``source`` is a String, the file to be copied, ``destination`` is a
+String, the name of the target file and optional ``overWrite`` is a Boolean
+which if ``true`` will overwrite ``destination`` if it exists.
+
+Return Value:
+   ``undefined``.
 
 rmFile
 ''''''
 
+Delete a file.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.utils.rmFile(filename);
+
+Where ``filename`` is a String, the name of the file to be removed.
+
+Return Value:
+   ``undefined``.
+
 link
 ''''
 
+Create a hard link.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.utils.link({src: sourceName, target: targetName});
+
+   /* or */
+
+   rampart.utils.link(sourceName, targetName);
+
+Where ``sourceName`` is the existing file and ``targetName`` is the name of
+the to-be-created link.
+
+Return Value:
+   ``undefined``.
+
 symlink
 '''''''
+Create a soft (symbolic) link.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.utils.symlink({src: sourceName, target: targetName});
+
+   /* or */
+
+   rampart.utils.symlink(sourceName, targetName);
+
+Where ``sourceName`` is the existing file and ``targetName`` is the name of
+the to-be-created symlink.
+
+Return Value:
+   ``undefined``.
 
 chmod
 '''''
 
+Change the file mode bits of a file or directory.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.utils.chmod(path [, mode]);
+
+Where ``path`` is a String, the file or directory upon which to be operated
+and ``mode`` is a Number or String, the octal permissions mode.  Any parent
+directories which do not exist will also be created.  Throws error if
+lacking permissions or if another error encountered.
+
+Note that ``mode`` is normally given as an octal.  As such it can be, e.g.,
+``0755`` (octal number) or ``"755"`` (string representation of an octal
+number), but ``755``, as a decimal number may not work as intended.
+
+Return Value: 
+   ``undefined``.
+
 touch
 '''''
+
+Create an empty file, or update the access time stamp of an existing file.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.utils.touch(file);
+
+   /* or */
+
+   rampart.utils.touch({
+      path: file  
+      [, nocreate: noCreate]
+      [, setaccess: setAccess]
+      [, setmodify: setModify] 
+      [, reference: referenceFile]
+   });
+
+Where:
+
+* ``file`` is a String, the name of the file upon which to operate, 
+
+* ``noCreate`` is a Boolean (default ``false``) which, if ``true``
+  will only update the time stamp, and will no create non-existing
+  ``file``.
+
+* ``setAccess`` is a Boolean (default ``true``).  Whether to update
+  access time stamp of file.
+
+* ``setModify`` is a Boolean (default ``true``).  Whether to update
+  modification time stamp of file.
+
+* ``referenceFile`` is a String.  If specified, the named file's access and
+  modification time stamps will be used rather than the current time/date.
+
+Return Value:
+   ``undefined``.
 
 rename
 ''''''
 
+Rename or move a file.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.utils.rename(source, destination);
+
+Where ``source`` is a String, the file to be renamed or moved, ``destination`` is a
+String, the name of the target file.
+
+Return Value:
+   ``undefined``.
+
 sleep
 '''''
 
+Pause execution for specified number of seconds.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.utils.sleep(seconds);
+
+Where ``seconds`` is a Number.  Seconds may be a fraction of seconds. 
+Internally `nanosleep <https://man7.org/linux/man-pages//man2/nanosleep.2.html>`_
+is used.
+
+Example:
+
+.. code-block:: javascript
+
+   /* wait 1.5 seconds */
+   rampart.utils.sleep(1.5);
+
+getpid
+''''''
+
+Get the process id of the current process.
+
+Usage:
+
+.. code-block:: javascript
+
+   var pid = rampart.utils.getpid();
+
+Return Value:
+   Number. The pid of the current process.
+
+getppid
+'''''''
+
+Get the process id of the parent of the current process.
+
+Usage:
+
+.. code-block:: javascript
+
+   var ppid = rampart.utils.getppid();
+
+Return Value:
+   Number. The pid of the parent process.
+
+Process Global Variable and Functions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+The ``process`` global variable contains the following properties:
+
+exit
+""""
+
+The exit function terminates the execution of the current script.
+
+Usage:
+
+.. code-block:: javascript
+
+   process.exit([exitcode]);
+
+Where the optional ``exitcode`` is a Number, the status that rampart returns
+to its parent (default 0);
+
+env
+"""
+
+The value of ``process.env`` is an Object containing properties and values
+corresponding to the environment variables available to Rampart upon
+execution.
+
+argv
+""""
+
+The value of ``process.argv`` is an Array of the arguments passed to rampart
+upon execution.  The first member is always the name of the rampart
+executable.  The second is usually the filename of the script provided on
+the command line.  However if flags are present (arguments starting with
+``-``), the script name may be a later argument.  Subsequent members occur
+in the order they were given on the command line.
+
+scriptPath
+""""""""""
+
+The value of ``process.scriptPath`` is a String containing the path
+(directory) in which the currently executing script can be found (e.g.
+if ``rampart /path/to/my/script.js`` is run, ``process.scriptPath`` will
+be ``/path/to/my/``).
+
+Additional Global Variables and Functions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Other global variables are provided by the Duktape JavaScript engine and
+include:
+
+* `Duktape <https://duktape.org/guide.html#builtin-duktape>`_
+* `CBOR <https://duktape.org/guide.html#builtin-cbor>`_
+* `TextEncoder <https://duktape.org/guide.html#builtin-textencoder>`_
+* `TextDecoder <https://duktape.org/guide.html#builtin-textdecoder>`_
+* `performance <https://duktape.org/guide.html#builtin-performance>`_
+
+For more information, see the `Duktape Guide <https://duktape.org/guide.html>`_
 
