@@ -1,4 +1,3 @@
-
 Preface
 -------
 
@@ -36,9 +35,9 @@ completeness and as it may provide a deeper understanding of philosophy
 behind the library's functionality.
 
 Note that the convention used in this document is ``var Sql`` with a capital
-"S" for the return object of the loaded module and ``var sql`` with a
+"S" for the return :green:`Object` of the loaded module and ``var sql`` with a
 lower-case "s" for the instance of a connection to a database made with the
-JavaScript :ref:`init() constructor <initconst>` function.
+JavaScript :ref:`init() constructor <initconst>` :green:`Function`.
 
 Loading the Javascript Module
 -----------------------------
@@ -67,7 +66,7 @@ Return value:
         searchFile:   {_func:true}
     }
 
-The returned Object contains functions that can be split into two groups:
+The returned :green:`Object` contains :green:`Functions` that can be split into two groups:
 `Database Functions`_ and `String Functions`_.
 
 Database Functions
@@ -78,10 +77,10 @@ Database Functions
 init() constructor
 ~~~~~~~~~~~~~~~~~~
 
-The ``init`` constructor function takes a String, the path to the database
-and an optional Boolean as parameters. It returns an object representing a
-new connection to the specified database.  The return object includes the
-following functions: ``exec()``, ``eval()``, ``set()``, and ``close()``.
+The ``init`` constructor function takes a :green:`String`, the path to the database
+and an optional :green:`Boolean` as parameters. It returns an :green:`Object` representing a
+new connection to the specified database.  The return :green:`Object` includes the
+following :green:`Functions`: ``exec()``, ``eval()``, ``set()``, and ``close()``.
 
 Usage:
 
@@ -89,18 +88,18 @@ Usage:
 
     var sql = new Sql.init(dbpath [,create]);
 
-+--------+------------+---------------------------------------------------+
-|Argument|Type        |Description                                        |
-+========+============+===================================================+
-|dbpath  |String      | The path to the directory containing the database |
-+--------+------------+---------------------------------------------------+
-|create  |Boolean     | if true, and the directory does not exist, the    |
-|        |            | directory and a new database will be created in   |
-|        |            | the location specified.                           |
-+--------+------------+---------------------------------------------------+
++--------+------------------+---------------------------------------------------+
+|Argument|Type              |Description                                        |
++========+==================+===================================================+
+|dbpath  |:green:`String`   | The path to the directory containing the database |
++--------+------------------+---------------------------------------------------+
+|create  |:green:`Boolean`  | if true, and the directory does not exist, the    |
+|        |                  | directory and a new database will be created in   |
+|        |                  | the location specified.                           |
++--------+------------------+---------------------------------------------------+
 
 Return Value:
-   An Object of functions:
+   An :green:`Object` of :green:`Functions`:
 
 .. code-block:: none
 
@@ -128,30 +127,30 @@ the current user.
 exec()
 ~~~~~~
 
-The exec function executes a sql statement on the database opened with
-:ref:`init() <initconst>`.  It takes a String containing a sql statement and
-an optional Array of sql parameters, an Object of options and/or a callback
-function.  The parameters may be specified in any order.
+The exec :green:`Function` executes a sql statement on the database opened with
+:ref:`init() <initconst>`.  It takes a :green:`String` containing a sql statement and
+an optional :green:`Array` of sql parameters, an :green:`Object` of options and/or a callback
+:green:`Function`.  The parameters may be specified in any order.
 
 .. code-block:: javascript
 
     var res = sql.exec(statement [, sql_parameters] [, options] [, callback])
 
-+--------------+------------+---------------------------------------------------+
-|Argument      |Type        |Description                                        |
-+==============+============+===================================================+
-|statement     |String      | The sql statement                                 |
-+--------------+------------+---------------------------------------------------+
-|sql_parameters|Array       | ``?`` substitution parameters                     |
-+--------------+------------+---------------------------------------------------+
-|options       |Object      | Options (skip, max, returnType, includeCounts)    |
-|              |            | *described below*                                 |
-+--------------+------------+---------------------------------------------------+
-|callback      |Function    | a function to handle data one row at a time.      |
-+--------------+------------+---------------------------------------------------+
++--------------+------------------+---------------------------------------------------+
+|Argument      |Type              |Description                                        |
++==============+==================+===================================================+
+|statement     |:green:`String`   | The sql statement                                 |
++--------------+------------------+---------------------------------------------------+
+|sql_parameters|:green:`Array`    | ``?`` substitution parameters                     |
++--------------+------------------+---------------------------------------------------+
+|options       |:green:`Object`   | Options (skip, max, returnType, includeCounts)    |
+|              |                  | *described below*                                 |
++--------------+------------------+---------------------------------------------------+
+|callback      |:green:`Function` | a function to handle data one row at a time.      |
++--------------+------------------+---------------------------------------------------+
 
 Statement:
-    A statement is a string containing a single sql statement to be
+    A statement is a :green:`String` containing a single sql statement to be
     executed.  A trailing ``;`` (semicolon) is optional.  Example:
 
 .. code-block:: javascript
@@ -165,8 +164,8 @@ JavaScript, and as such, a script must use a separate ``exec()`` for each
 statement to be executed.
 
 Sql Parameters:
-    Sql Parameters are specified in array each member correspond to each ``?`` in the sql
-    statement.  Example:
+    Sql Parameters are specified in an :green:`Array` with each member
+    correspond to each ``?`` in the sql statement.  Example:
 
 .. code-block:: javascript
 
@@ -177,53 +176,54 @@ Sql Parameters:
 
 The use of Parameters can make the handling of user input safe from sql injection.
 Note that if there is only one parameter, it still must be contained in an
-array.
+:green:`Array`.
 
 .. _execopts:
 
 Options:
-    The ``options`` object may contain any of the following:
+ The ``options`` :green:`Object` may contain any of the following:
 
-   * ``max`` (number):  maximum number of rows to return (default: 10).
-   * ``skip`` (number): the number of rows to skip (default: 0).
-   * ``returnType`` (string): Determines the format of the ``results`` value
-     in the return object.
+   * ``max`` (:green:`Number`):  maximum number of rows to return (default: 10).
+   * ``skip`` (:green:`Number`): the number of rows to skip (default: 0).
+   * ``returnType`` (:green:`String`): Determines the format of the ``results`` value
+     in the return :green:`Object`.
 
-      * default: an array of objects as described :ref:`below <returnval>`.
+      * default: an :green:`Array` of :green:`Objects` as described :ref:`below <returnval>`.
 
-      * ``array``: an array of arrays. The outer array members correspond to
-        each row fetched.  The inner array members correspond to the fields
-        returned in each row.  Note that column names are still available,
-        in order, in :ref:`columns <returnval>`.
+      * ``"array"``: an :green:`Array` of :green:`Arrays`. The outer :green:`Array` members correspond to
+        each row fetched.  The inner :green:`Array` members correspond to
+        the fields returned in each row.  Note that column names are still
+        available, in order, in :ref:`columns <returnval>`.
 
-      * ``novars``: an empty array is returned.  The sql statement is
+      * ``"novars"``: an empty :green:`Array` is returned.  The sql statement is
         still executed.  This may be useful for updates and deletes
         where the return value would otherwise not be used.
 
-   * ``includeCounts`` (boolean): whether to include count information in the return object.
-     Default is ``true``.  The information will be returned as an object in
-     the ``sql.exec()`` return object as the value of the key ``countInfo``
-     (or as the fourth parameter to a callback function).  The numbers
-     returned will only be useful when performing a 
+   * ``includeCounts`` (:green:`Boolean`): whether to include count
+     information in the return :green:`Object`.  Default is ``true``.  The
+     information will be returned as an :green:`Object` in the
+     ``sql.exec()`` return :green:`Object` as the value of the key
+     ``countInfo`` (or as the fourth parameter to a callback :green:`Function`).  The
+     :green:`Numbers` returned will only be useful when performing a
      :ref:`text search <sql3:Intelligent Text Search Queries>` on a field
      with a fulltext index.  If count information is not available, the
-     numbers will be negative. See :ref:`countInfo <countinfo>`
+     :green:`Number`s will be negative.  See :ref:`countInfo <countinfo>`
      below.
 
 Callback:
-   A function taking as parameters (``result_row``, ``index``, ``columns``, ``countInfo``).
+   A :green:`Function` taking as parameters (``result_row``, ``index``, ``columns``, ``countInfo``).
    The callback is executed once for each row retrieved:
 
-   * ``result_row``: (array/object): depending on the setting of ``returnType``
+   * ``result_row``: (:green:`Array`/:green:`Object`): depending on the setting of ``returnType``
      in ``Options`` above, a single row is passed to the callback as an
-     object or an array.
+     :green:`Object` or an :green:`Array`.
 
-   * ``index``: The ordinal number of the current search result.
+   * ``index``: (:green:`Number`) The ordinal number of the current search result.
 
-   * ``columns``: an array corresponding to the column names or
+   * ``columns``: an :green:`Array` corresponding to the column names or
      aliases selected and returned in results.
    
-   * ``countInfo``: an object as described above in `countinfo`_ if the
+   * ``countInfo``: an :green:`Object` as described above in `countinfo`_ if the
      ``includeCounts`` option is not set ``false``.  Otherwise it will be
      ``undefined``. 
 
@@ -235,62 +235,63 @@ Callback:
 .. _returnval:
 
 Return Value:
-	With no callback, an object is returned.  The object contains
+	:green:`Number`/:green:`Object`.
+
+        With no callback, an :green:`Object` is returned.  The :green:`Object` contains
 	three or four key/value pairs.  
 	
-	Key: ``results``; Value: an array of objects.  Each object
-	corresponds to a row in the database and will have keys set to the
-	corresponding column names and the values set to the corresponding
-	field of the retrieved row.  If ``returnType`` is set to ``array``,
-	an array of arrays containing the values (one inner array per row)
-	will be returned.
+	Key: ``results``; Value: an :green:`Array` of :green:`Objects`. 
+	Each :green:`Object` corresponds to a row in the database and will
+	have keys set to the corresponding column names and the values set
+	to the corresponding field of the retrieved row.  If ``returnType``
+	is set to ``"array"``, an :green:`Array` of :green:`Arrays`
+	containing the values (one inner :green:`Array` per row) will be
+	returned.
 	
-	Key: ``rowCount``; Value: a number corresponding to the number of rows
+	Key: ``rowCount``; Value: a :green:`Number` corresponding to the number of rows
 	returned.
 
-	Key:  ``columns``; Value: an array corresponding to the column names or
+	Key:  ``columns``; Value: an :green:`Array` corresponding to the column names or
 	aliases selected and returned in results.
 
 .. _countinfo:
 
-      Key: ``countInfo``; Value: if option ``includeCounts`` is not set
-      ``false``, information regarding the number of total possible matches
-      is set.  Otherwise undefined.  When performing a :ref:`text search
-      <sql3:Intelligent Text Search Queries>` the ``countInfo`` object
-      contains the following:
+  Key: ``countInfo``; Value: if option ``includeCounts`` is not set
+  ``false``, information regarding the number of total possible matches
+  is set.  Otherwise undefined.  When performing a :ref:`text search
+  <sql3:Intelligent Text Search Queries>` the ``countInfo`` :green:`Object`
+  contains the following:
 
-         * ``indexCount`` (number): a single value estimating the number
-           of matching rows.
+   * ``indexation`` (:green:`Number`): a single value estimating the number
+     of matching rows.
 
-         * ``rowsMatchedMin`` (number): Minimum number of rows matched *before* 
-           any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
-           :ref:`sql-set:likeprows`, 
-           :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
-           :ref:`sql-set:multivaluetomultirow` are applied.
+   * ``rowsMatchedMin`` (:green:`Number`): Minimum number of rows matched **before** 
+     any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
+     :ref:`sql-set:likeprows`, 
+     :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
+     :ref:`sql-set:multivaluetomultirow` are applied.
 
-         * ``rowsMatchedMax`` (number): Maximum number of rows matched *before* 
-           any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
-           :ref:`sql-set:likeprows`, 
-           :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
-           :ref:`sql-set:multivaluetomultirow` are applied.
+   * ``rowsMatchedMax`` (:green:`Number`): Maximum number of rows matched **before** 
+     any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
+     :ref:`sql-set:likeprows`, 
+     :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
+     :ref:`sql-set:multivaluetomultirow` are applied.
 
-         * ``rowsReturnedMin`` (number): Minimum number of rows matched *after* 
-           any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
-           :ref:`sql-set:likeprows`, 
-           :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
-           :ref:`sql-set:multivaluetomultirow` are applied.
+   * ``rowsReturnedMin`` (:green:`Number`): Minimum number of rows matched **after** 
+     any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
+     :ref:`sql-set:likeprows`, 
+     :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
+     :ref:`sql-set:multivaluetomultirow` are applied.
 
-         * ``rowsReturnedMax`` (number): Maximum number of rows matched *after* 
-           any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
-           :ref:`sql-set:likeprows`, 
-           :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
-           :ref:`sql-set:multivaluetomultirow` are applied.
+   * ``rowsReturnedMax`` (:green:`Number`): Maximum number of rows matched **after** 
+     any :ref:`group by <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>`, 
+     :ref:`sql-set:likeprows`, 
+     :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
+     :ref:`sql-set:multivaluetomultirow` are applied.
 
-If a callback function is specified, the number of rows fetched is
-returned.  The callback is given the above values as arguments in the
-following order: ``cbfunc(result_row, index, columns, countInfo)``.
-
-When a callback is provided, the number of rows retrieved is returned.
+  If a callback :green:`Function` is specified, a :green:`Number`,the number of rows fetched is
+  returned.  The callback is given the above values as arguments in the
+  following order: ``cbfunc(result_row, index, columns, countInfo)``.
 
 Error Messages:
    Errors may or may not throw a JavaScript exception depending on the
@@ -299,7 +300,7 @@ Error Messages:
    Otherwise an exception is thrown, ``sql.errMsg`` is set and the error may
    be caught with ``catch(error)``.
 
-Error Message Example:
+   Error Message Example:
 
 .. code-block:: javascript
 
@@ -337,8 +338,8 @@ Error Message Example:
       sql.errMsg is similar.
    */
 
-   
-Full Example of ``exec()`` functionality:
+Full Example:
+  Below is a full example of ``exec()`` functionality:
 
 .. code-block:: javascript
 
@@ -578,7 +579,7 @@ Full Example of ``exec()`` functionality:
 eval()
 ~~~~~~
 
-The ``eval`` function is a shortcut for executing sql
+The ``eval`` :green:`Function` is a shortcut for executing sql
 :ref:`sql-server-funcs:Server functions` where
 only one computed result is desired.
 
@@ -610,24 +611,24 @@ functions.
 set()
 ~~~~~
 
-The ``set`` function sets Texis server properties. For a full listing, see
-:ref:`sql-set:Server Properties`. Arguments are given as keys with
-corresponding values set to a string, number, array or boolean as appropriate.
-Note that booleans ``true``/``false`` are equivalent to setting 
-``0``/``1``, ``on``/``off``, or ``yes``/``no`` as described in 
-:ref:`sql-set:Server Properties`.
+The ``set`` :green:`Function` sets Texis server properties.  For a full listing, see
+:ref:`sql-set:Server Properties`.  Arguments are given as keys with
+corresponding values set to a :green:`String`, :green:`Number`, :green:`Array` or
+:green:`Boolean` as appropriate.  Note that :green:`Booleans`
+``true``/``false`` are equivalent to setting ``0``/``1``, ``on``/``off``, or
+``yes``/``no`` as described in :ref:`sql-set:Server Properties`.
 
 Normally there is no return value (``undefined``).  
 
 FIXME once names in sql-set.html are finalized:
 
 However if :ref:`sql-set:lstexp`,
-:ref:`sql-set:lstindextmp` and/or :ref:`sql-set:lstnoise` is set ``true``, an object is
+:ref:`sql-set:lstindextmp` and/or :ref:`sql-set:listNoise` is set ``true``, an :green:`Object` is
 returned with corresponding keys ``expressionsList``, ``indexTempList``,
 ``suffixList``, ``suffixEquivsList`` and/or
 ``noiseList`` respectively.
 
-Note also that though ``sql.set()`` is a function of ``sql`` (a single opened
+Note also that though ``sql.set()`` is a :green:`Function` of ``sql`` (a single opened
 database), settings apply to all databases in use by the current process.
 
 Example:
@@ -664,19 +665,19 @@ close()
 In general it is not necessary to use ``close()`` as the "connection" to the
 database is not over a socket.  However, if resources to a database are no
 longer needed, ``close()`` will clean up some of those resources.  Note that
-even after calling ``sql.close()``, the ``sql.*`` functions will continue to
+even after calling ``sql.close()``, the ``sql.*`` :green:`Functions` will continue to
 operate as expected and in the same manner as when the "connection" was first
 opened.
 
 String Functions
 ----------------
 As Texis is adept at handling text information, it includes several
-text handling functions which Rampart exposes for use in JavaScript.
+text handling :green:`Functions` which Rampart exposes for use in JavaScript.
 
 stringFormat()
 ~~~~~~~~~~~~~~
 
-The ``stringFormat()`` function is identical to the 
+The ``stringFormat()`` :green:`Function` is identical to the 
 :ref:`server function <sql-server-funcs:Server functions>`
 :ref:`sql-server-funcs:stringformat`, except that it is not limited to five
 arguments.
@@ -685,20 +686,20 @@ arguments.
 
     var output = Sql.stringFormat(format [,args, ...]);
 
-+--------+------------+---------------------------------------------------+
-|Argument|Type        |Description                                        |
-+========+============+===================================================+
-|format  |String      | A printf() style format                           |
-+--------+------------+---------------------------------------------------+
-|args    |Varies      | Arguments corresponding to ``%`` format options   |
-+--------+------------+---------------------------------------------------+
++--------+------------------+---------------------------------------------------+
+|Argument|Type              |Description                                        |
++========+==================+===================================================+
+|format  |:green:`String`   | A printf() style format                           |
++--------+------------------+---------------------------------------------------+
+|args    |Varies            | Arguments corresponding to ``%`` format options   |
++--------+------------------+---------------------------------------------------+
 
 Return Value:
-   The formatted string.
+   The formatted :green:`String`.
 
 Escape Sequences
 """"""""""""""""
-The following escape sequences are recognized in the format string:
+The following escape sequences are recognized in the format :green:`String`:
 
 *   ``\n`` Newline (ASCII 10)
 *   ``\r`` Carriage return (ASCII 13)
@@ -744,7 +745,7 @@ their arguments are:
     prints the decimal ASCII code for the first character of the argument.
 
 *   ``%%`` A percent-sign; no argument and no flags are given. This
-    is for printing out a literal ``%`` in the format string, which 
+    is for printing out a literal ``%`` in the format :green:`String`, which 
     otherwise would be interpreted as a format code.
 
 A simple example (with its output):
@@ -800,8 +801,8 @@ following flags may appear:
     For the ``%L`` extended code, a ``+`` flag indicates the argument is a
     location with latitude and longitude, or a geocode.
 
-    If given with a string code, ``+`` indicates that if the string value
-    exceeds the given precision, truncate the string by a further 3 bytes, and
+    If given with a string code, ``+`` indicates that if the :green:`String` value
+    exceeds the given precision, truncate the :green:`String` by a further 3 bytes, and
     append an ellipsis ("...").  This can be useful to give an indication of
     when a value is being truncated on display.
 
@@ -817,7 +818,7 @@ Examples:
       output2 = "+42 -42"
    */
 
-Following any flags, an optional width number may be given.  This indicates
+Following any flags, an optional width :green:`Number` may be given.  This indicates
 the minimum field width to print the value in (unless using the ``m`` flag;
 see `Metamorph Hit Mark-up`_).  If the printed value is narrower, the output
 will be padded with spaces on the left.  Note the horizontal spacing in this
@@ -835,14 +836,15 @@ example:
       912
    */
 
-After the width, a decimal point (``.``) and precision number may be given. 
-For the integer formats (``%d``, ``%i``, ``%o``, ``%u``, ``%x`` and ``%X``),
-the precision indicates the minimum number of digits to print; if there are
-fewer the output value is prepended with zeros.  For the ``%e``, ``%E`` and
-``%f`` formats, the precision is the number of digits to appear after the
-decimal point; the default is 6.  For the ``%g`` and ``%G`` formats, the
-precision is the maximum number of significant digits (default 6).  For the
-``%s`` (string) format, it is the maximum number of characters to print.
+After the width, a decimal point (``.``) and precision :green:`Number` may
+be given.  For the integer formats (``%d``, ``%i``, ``%o``, ``%u``, ``%x``
+and ``%X``), the precision indicates the minimum number of digits to print;
+if there are fewer the output value is prepended with zeros.  For the
+``%e``, ``%E`` and ``%f`` formats, the precision is the number of digits to
+appear after the decimal point; the default is 6.  For the ``%g`` and ``%G``
+formats, the precision is the maximum number of significant digits (default
+6).  For the ``%s`` (string) format, it is the maximum number of characters
+to print.
 
 Examples:
 
@@ -956,9 +958,9 @@ As dates are printed using the standard C library, not all strftime() codes are 
 Latitude, Longitude and Location
 """"""""""""""""""""""""""""""""
 
-The %L code may be used with ``stringFormat`` to print a latitude, longitude
+The ``%L`` code may be used with ``stringFormat`` to print a latitude, longitude
 or location (geocode) value, in a manner similar to how date/time values are
-printed with %t.  Flags indicate what type of value is expected, and/or if a
+printed with ``%t``.  Flags indicate what type of value is expected, and/or if a
 subformat is provided:
 
 *   ``-`` (minus) A latitude argument is expected (memory aid: latitude
@@ -1036,9 +1038,18 @@ Examples:
       "order by 4 asc;",
       function(res,i) {
          console.log(i+1,res);
-         console.log(Sql.stringFormat("Loc: %+L", res.geocode));
+         console.log(Sql.stringFormat("  Loc: %+L", res.geocode));
       }
    );
+   /* expected output:
+   1 {city:"Dayton, OH, USA",lat:39.75,lon:-84.19,geocode:253806089136,MilesAway:181.31350567274416}
+     Loc: 39°45'00"N  84°11'24"W
+   2 {city:"Columbus, OH, USA",lat:39.96,lon:-83,geocode:253824238336,MilesAway:126.70040182902217}
+     Loc: 39°57'36"N  83°00'00"W
+   3 {city:"Cleveland, OH, USA",lat:41.4,lon:-81.5,geocode:253913441856,MilesAway:0}
+     Loc: 41°24'00"N  81°30'00"W
+   */
+
 
 Other Format Codes
 """"""""""""""""""
@@ -1293,9 +1304,9 @@ Metamorph Hit Mark-up
 """""""""""""""""""""
 
 The ``%s``, ``%H``, ``%V`` and ``%v`` stringFormat codes can execute Metamorph queries on the
-string argument and mark-up the resulting hits.  An ``m`` flag to these codes
+:green:`String` argument and mark-up the resulting hits.  An ``m`` flag to these codes
 indicates that Metamorph hit mark-up should occur; the Metamorph query
-string is then taken to be the next argument (before the normal string
+string is then taken to be the next argument (before the normal :green:`String`
 argument to be searched and printed).  The m flag and its sub-flags are only
 valid for the ``%s`` and ``%H`` codes.
 
@@ -1340,7 +1351,7 @@ to be HTML-safe, use:
    &lt;Try some <span style="background:#ffff66;color:black;font-weight:bold;">formatting</span> today!&gt;`
    */
 
-To highlight query terms from ``query`` in ``text`` in bold with anchors,
+To highlight query terms from ``query`` in ``text`` in bold with anchors
 and links, insert paragraph breaks, and escape the output
 to be HTML-safe, use:
 
@@ -1480,20 +1491,20 @@ The abstract function generates an abstract of a given portion of text.
     var abstract = Sql.abstract(text [,max [,style [,query]]]);
 
 
-+--------+------------+---------------------------------------------------+
-|Argument|Type        |Description                                        |
-+========+============+===================================================+
-|text    |String      | The text from which an abstract will be generated.|
-+--------+------------+---------------------------------------------------+
-|max     |Number      | Maximum length in characters of the abstract.     |
-+--------+------------+---------------------------------------------------+
-|style   |String      | Method used to generate the abstract.             |
-+--------+------------+---------------------------------------------------+
-|query   |String      | query or keywords used to center the abstract.    |
-+--------+------------+---------------------------------------------------+
++--------+------------------+---------------------------------------------------+
+|Argument|Type              |Description                                        |
++========+==================+===================================================+
+|text    |:green:`String`   | The text from which an abstract will be generated.|
++--------+------------------+---------------------------------------------------+
+|max     |:green:`Number`   | Maximum length in characters of the abstract.     |
++--------+------------------+---------------------------------------------------+
+|style   |:green:`String`   | Method used to generate the abstract.             |
++--------+------------------+---------------------------------------------------+
+|query   |:green:`String`   | query or keywords used to center the abstract.    |
++--------+------------------+---------------------------------------------------+
 
 Return Value:
-   The abstract string.
+   :green:`String`. The abstract text.
 
 The abstract will be less than ``max`` characters long, and will attempt to
 end at a word boundary.  If ``max`` is not specified (or is less than or
@@ -1578,33 +1589,33 @@ sandr()
 ~~~~~~~
 
 The ``sandr`` function replaces in ``data`` every occurrence of ``expr``
-(`rex()`_ expression(s)) with the corresponding string(s) from ``replace``.  It
-returns ``data``, a string or array of strings with any replacements.
+(`rex()`_ expression(s)) with the corresponding :green:`String`(s) from ``replace``.  It
+returns ``dataOut``, a :green:`String` or :green:`Array` of :green:`String`s with any replacements.
 
 If ``replace`` has fewer values than ``expr``, it is "padded" with empty
-replacement strings for the extra search values.
+replacement :green:`Strings` for the extra search values.
 
 .. code-block:: javascript
 
    var dataOut = Sql.sandr(expr, replace, data);
 
 
-+--------+-----------------------------+---------------------------------------------------+
-|Argument|Type                         |Description                                        |
-+========+=============================+===================================================+
-|expr    |String/Array of Strings      | `rex()`_ expression(s) to search for              |
-+--------+-----------------------------+---------------------------------------------------+
-|replace |String/Array of Strings      | Text to replace the `rex()`_ expressions          |
-+--------+-----------------------------+---------------------------------------------------+
-|data    |String/Array of Strings      | string(s) as input for search and replace         |
-+--------+-----------------------------+---------------------------------------------------+ 
++--------+---------------------------------------------------+---------------------------------------------------+
+|Argument|Type                                               |Description                                        |
++========+===================================================+===================================================+
+|expr    |:green:`String`/:green:`Array` of :green:`Strings` | `rex()`_ expression(s) to search for              |
++--------+---------------------------------------------------+---------------------------------------------------+
+|replace |:green:`String`/:green:`Array` of :green:`Strings` | Text to replace the `rex()`_ expressions          |
++--------+---------------------------------------------------+---------------------------------------------------+
+|data    |:green:`String`/:green:`Array` of :green:`Strings` | string(s) as input for search and replace         |
++--------+---------------------------------------------------+---------------------------------------------------+ 
 
 
 Return Value:
-   If ``data`` is an array, an array of strings corresponding to the ``data`` array
-   with replacements made.
+   If ``data`` is an :green:`Array`, an :green:`Array` of :green:`Strings` corresponding to the ``data``
+   :green:`Array` with replacements made.
 
-   If ``data`` is a string, a string corresponding to the ``data`` string with
+   If ``data`` is a :green:`String`, a :green:`String` corresponding to the ``data`` :green:`String` with
    replacements made.
 
 Replacement Strings:
@@ -1668,28 +1679,28 @@ substrings in text.
    var ret = Sql.rex(expr, data [, callback] [, options]);
 
 
-+--------+-----------------------------+---------------------------------------------------------------+
-|Argument|Type                         |Description                                                    |
-+========+=============================+===============================================================+
-|expr    |String/Array of Strings      | ``rex`` :ref:`expression(s) <sql1:Expressions>` to search for |
-+--------+-----------------------------+---------------------------------------------------------------+
-|data    |String/Buffer/Array          | string(s)/buffers() as input text to be searched              |
-+--------+-----------------------------+---------------------------------------------------------------+
-|callback|Function                     | Optional callback Function                                    |
-+--------+-----------------------------+---------------------------------------------------------------+
-|options |Object                       | ``exclude`` and ``submatches`` options                        |
-+--------+-----------------------------+---------------------------------------------------------------+
++--------+-----------------------------------------------------+---------------------------------------------------------------+
+|Argument|Type                                                 |Description                                                    |
++========+=====================================================+===============================================================+
+|expr    |:green:`String`/:green:`Array` of :green:`Strings`   | ``rex`` :ref:`expression(s) <sql1:Expressions>` to search for |
++--------+-----------------------------------------------------+---------------------------------------------------------------+
+|data    |:green:`String`/Buffer/:green:`Array`                | string(s)/buffers() as input text to be searched              |
++--------+-----------------------------------------------------+---------------------------------------------------------------+
+|callback|:green:`Function`                                    | Optional callback Function                                    |
++--------+-----------------------------------------------------+---------------------------------------------------------------+
+|options |:green:`Object`                                      | ``exclude`` and ``submatches`` options                        |
++--------+-----------------------------------------------------+---------------------------------------------------------------+
 
 expr:
-   A string or array of strings of ``rex`` regular expressions used to match
+   A :green:`String` or :green:`Array` of :green:`Strings` of ``rex`` regular expressions used to match
    the text in ``data``. See `Expressions`_ below for full syntax.
 
 data:
-   A string, buffer or an array with string(s) and/or buffers(s) containing
+   A :green:`String`, buffer or an :green:`Array` with :green:`String`(s) and/or Buffers(s) containing
    the text to be searched.
 
 options:
-   The ``rex`` function may take an object of options:
+   The ``rex`` function may take an :green:`Object` of options:
 
 .. code-block:: javascript
 
@@ -1702,10 +1713,10 @@ The default value of ``submatches`` is ``true`` if there is a callback,
 otherwise ``false``.
 
 If the ``submatches`` option is set ``false`` and no ``callback`` is
-provided, an array of matching strings is returned.
+provided, an :green:`Array` of matching :green:`Strings` is returned.
 
 If the ``submatches`` option is set ``true`` and no ``callback`` is
-provided, the return value is set to an array of objects, one per match
+provided, the return value is set to an :green:`Array` of :green:`Objects`, one per match
 containing the following information:
 
 .. code-block:: javascript
@@ -1725,21 +1736,21 @@ containing the following information:
       ...
    ]
 
-*   ``match`` - the matched string.
+*   ``match`` - the matched :green:`String`.
 
 *   ``expressionIndex - the index in ``expr`` of the expression that
-    produced ``match``, if ``expr`` is an array.  Otherwise ``0``.
+    produced ``match``, if ``expr`` is an :green:`Array`.  Otherwise ``0``.
 
-*   ``sumbatches`` - array of submatches (one per substring matched with a
+*   ``sumbatches`` - :green:`Array` of submatches (one per substring matched with a
     ``+``, ``*``, ``=`` or ``{x,y}``) from search expression in the order
     specified in the search pattern.  For ``*`` or ``{0,y}``, this may be an
-    empty string ("").
+    empty :green:`String` ("").
 
 See `Callback`_ below for callback() parameters where ``submatches`` is set
 ``true`` or ``false``. 
 
 The ``exclude`` option is used for when there are multiple expressions (as
-provided by an array of strings for the ``expr`` argument) that might match
+provided by an :green:`Array` of :green:`Strings` for the ``expr`` argument) that might match
 the same portion of text.  
 
 *   ``none`` returns all possible matches, even if the portion of text that
@@ -1789,20 +1800,20 @@ Callback:
       }
    );
 
-*   ``match`` - the current string matched.
+*   ``match`` - the current :green:`String` matched.
 
-*   ``sumbatches`` - array of submatches (one per substring matched with a
+*   ``sumbatches`` - :green:`Array` of submatches (one per substring matched with a
     ``+``, ``*``, ``=`` or ``{x,y}``) from search expression in the order
     specified in the search pattern.  For ``*`` or ``{0,y}``, this may be an
-    empty string ("").
+    empty :green:`String` ("").
 
 *   ``index`` - ordinal position of current match.
 
 Return Value:
-   Depending on the ``submatches`` option, an array of matching strings or
-   an array of objects with matching string and submatch information.
+   Depending on the ``submatches`` option, an :green:`Array` of matching :green:`Strings` or
+   an :green:`Array` of :green:`Objects` with matching :green:`String` and submatch information.
    
-   If a callback function is specified, the number of matches is returned.
+   If a callback function is specified, a :green:`Number`, the number of matches is returned.
 
 Expressions
 """""""""""
@@ -2069,7 +2080,7 @@ Rule 3 example:
 
    ``a+ab``  Is idiosyncratic because "a+" is a subpart of "ab".
 
-Note that when using ``\`` escapes in javascript strings, they must be
+Note that when using ``\`` escapes in JavaScript :green:`Strings`, they must be
 double escaped as javascript interprets the ``\`` before it is passed on to
 the ``rex`` function (.e.g.  ``Sql.rex("\\n=[^\\n]+"``, text)``). 
 However the following *unsupported* syntax can also be used in most cases:
@@ -2124,7 +2135,7 @@ re2()
 
 The ``re2`` function operates identically to the ``rex`` function 
 except that it uses Perl Regular Expressions and no submatch information
-is returned (empty array).  See `rex()`_ above.
+is returned (empty :green:`Array`).  See `rex()`_ above.
 
 .. code-block:: javascript
 
@@ -2157,7 +2168,7 @@ re2File()
 
 The ``re2File`` function operates identically to the ``rexFile`` function
 except that it uses Perl Regular Expressions and no submatch information
-is returned (empty array). See `rexFile()`_ above.
+is returned (empty :green:`Array`). See `rexFile()`_ above.
 
 .. code-block:: javascript
 

@@ -39,7 +39,7 @@ Core features of Duktape
 A partial list of Duktape features:
 
 * Partial support for ECMAScript 2015 (E6) and ECMAScript 2016 (E7), see Post-ES5 feature status and kangax/compat-table
-* ES2015 TypedArray and Node.js Buffer bindings
+* ES2015 TypedArray and Node.js :green:`Buffer` bindings
 * CBOR bindings
 * Encoding API bindings based on the WHATWG Encoding Living Standard
 * performance.now()
@@ -90,7 +90,8 @@ However, the functionality and speed of the available C functions provide
 comparable efficacy and are a viable alternative to 
 `LAMP <https://en.wikipedia.org/wiki/LAMP_(software_bundle)>`_, 
 `MEAN <https://en.wikipedia.org/wiki/MEAN_(solution_stack)>`_ or other
-stacks, all in a single product.
+stacks, all in a single product, while consuming considerably less resources
+than the aforementioned.
 
 Rampart Global Variable and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -101,21 +102,21 @@ There are two global variables beyond what is provided by Duktape:
 rampart.globalize
 """""""""""""""""
 
-Put all or named properties of an object in the global namespace.  
+Put all or named properties of an :green:`Object` in the global namespace.  
 
 .. code-block:: javascript
 
     rampart.globalize(var_obj [, prop_names]);
 
-+------------+------------+---------------------------------------------------+
-|Argument    |Type        |Description                                        |
-+============+============+===================================================+
-|var_obj     |Object      | The path to the directory containing the database |
-+------------+------------+---------------------------------------------------+
-|prop_names  |Array       | optional array of property names to be put into   |
-|            |            | the global namespace.  If specified, only the     |
-|            |            | named properties will be exported.                |
-+------------+------------+---------------------------------------------------+
++------------+----------------+---------------------------------------------------+
+|Argument    |Type            |Description                                        |
++============+================+===================================================+
+|var_obj     |:green:`Object` | The path to the directory containing the database |
++------------+----------------+---------------------------------------------------+
+|prop_names  |:green:`Array`  | optional :green:`Array` of property names to be   |
+|            |                | put into the global namespace.  If specified, only|
+|            |                | the named properties will be exported.            |
++------------+----------------+---------------------------------------------------+
 
 
 Return value: 
@@ -136,7 +137,7 @@ Example:
 rampart.utils
 """""""""""""
 
-Utility functions are provided by the global ``rampart.utils`` object.
+Utility functions are provided by the global ``rampart.utils`` :green:`Object`.
 These functions bring file io and other functionality to Duktape javascript.
 
 `fprintf`_ (), `fseek`_\ (), `rewind`_\ (), `ftell`_\ (), `fflush`_\ (),
@@ -165,7 +166,7 @@ rampart.utils.errorLog:
 printf
 ''''''
 
-Print formatted string to stdout.  Provides C-like 
+Print a formatted string to stdout.  Provides C-like 
 `printf(3) <https://man7.org/linux/man-pages/man3/printf.3.html>`_ 
 functionality in javascript.
 
@@ -176,7 +177,7 @@ Usage:
    rampart.utils.printf(fmt, ...)
    
 Return Value:
-   Number. The length in characters of the printed string.
+   :green:`Number`. The length in characters of the printed string.
 
 Standard formats:  Most of the normal flags and formats are respected.
 See standard formats and flags from
@@ -184,17 +185,17 @@ See standard formats and flags from
 
 Extended (non-standard) formats:
 
-   * ``%s`` - corresponding argument is treated as a string (converted if
-     necessary)
+   * ``%s`` - corresponding argument is treated as a :green:`String`
+     (converted/coerced if necessary)
 
    * ``%S`` - same as ``%s`` except an error is thrown if corresponding argument is
-     not a String.
+     not a :green:`String`.
 
-   * ``%J`` - print objects as JSON.
+   * ``%J`` - print :green:`Object` as JSON.
 
-   * ``%B`` - print contents of a buffer as is.
+   * ``%B`` - print contents of a :green:`Buffer` as is.
 
-   * ``%U`` - url encode (or if ``!`` flag present, decode) a string. 
+   * ``%U`` - url encode (or if ``!`` flag present, decode) a :green:`String`. 
 
 Example:
 
@@ -210,18 +211,18 @@ Example:
 sprintf
 '''''''
 
-Same as ``printf()`` except a string is returned
+Same as ``printf()`` except a :green:`String` is returned
 
 Return Value:
-   String. The formatted string.
+   :green:`String`. The formatted string.
 
 bprintf
 '''''''
 
-Same as ``sprintf()`` except a buffer is returned.
+Same as ``sprintf()`` except a :green:`Buffer` is returned.
 
 Return Value:
-   Buffer.  The formatted string as a buffer.
+   :green:`Buffer`.  The formatted string as a :green:`Buffer`.
 
 fopen
 '''''
@@ -230,7 +231,7 @@ Open a filehandle for use with `fprintf`_\ (), `fclose`_\ (), `fseek`_\ (),
 `rewind`_\ (), `ftell`_\ (), `fflush`_\ () `fread`_\ () and `fwrite`_\ ().
 
 Return Value:
-   Object. The opened filehandle.
+   :green:`Object`. The opened filehandle.
 
 Usage:
 
@@ -238,27 +239,27 @@ Usage:
 
    var handle = rampart.utils.fopen(filename, mode);
 
-Where ``filename`` is a String containing the file to be opened and mode is
-a String (one of the following):
+Where ``filename`` is a :green:`String` containing the file to be opened and mode is
+a :green:`String` (one of the following):
 
-*  ``r`` - Open text file for reading.  The stream is positioned at the
+*  ``"r"`` - Open text file for reading.  The stream is positioned at the
    beginning of the file.
 
-*  ``r+`` - Open for reading and writing.  The stream is positioned at the
+*  ``"r+"`` - Open for reading and writing.  The stream is positioned at the
    beginning of the file.
 
-*  ``w`` - Truncate file to zero length or create text file for writing. 
+*  ``"w"`` - Truncate file to zero length or create text file for writing. 
    The stream is positioned at the beginning of the file.
 
-*  ``w+`` - Open for reading and writing.  The file is created if it does
+*  ``"w+"`` - Open for reading and writing.  The file is created if it does
    not exist, otherwise it is truncated.  The stream is positioned at the
    beginning of the file.
 
-*  ``a`` - Open for appending (writing at end of file).  The file is
+*  ``"a"`` - Open for appending (writing at end of file).  The file is
    created if it does not exist.  The stream is positioned at the end of the
    file.
 
-*  ``a+`` - Open for reading and appending (writing at end of file).  The
+*  ``"a+"`` - Open for reading and appending (writing at end of file).  The
    file is created if it does not exist.  The initial file position for reading
    is at the beginning of the file, but output is always appended to the end of the
    file.
@@ -266,7 +267,7 @@ a String (one of the following):
 fclose
 ''''''
 
-Close a previously opened handle object opened with `fopen`_\ ().
+Close a previously opened handle :green:`Object` opened with `fopen`_\ ().
 
 Example:
 
@@ -280,7 +281,7 @@ fprintf
 '''''''
 
 Same as ``printf()`` except output is sent to the file provided by
-a String or filehandle Object opened and returned from `fopen`_\ ().
+a :green:`String` or filehandle :green:`Object` opened and returned from `fopen`_\ ().
 
 Usage:
 
@@ -297,15 +298,15 @@ Usage:
    
 Where:
 
-* ``output`` may be a String (a filename), or an Object returned from `fopen`_\ ().
+* ``output`` may be a :green:`String` (a filename), or an :green:`Object` returned from `fopen`_\ ().
 
-* ``fmt`` is a String, a `printf`_\ () format.
+* ``fmt`` is a :green:`String`, a `printf`_\ () format.
 
-* ``append`` is an optional Boolean - if ``true`` append instead of
+* ``append`` is an optional :green:`Boolean` - if ``true`` append instead of
   overwrite an existing file.
 
 Return Value:
-   Number. The length in characters of the printed string.
+   :green:`Number`. The length in characters of the printed string.
 
 Example:
 
@@ -330,19 +331,19 @@ Usage:
 
    rampart.utils.fseek(handle, offset, whence);
 
-+------------+------------+---------------------------------------------------+
-|Argument    |Type        |Description                                        |
-+============+============+===================================================+
-|handle      |Object      | A handle opened with `fopen`_\ ()                 |
-+------------+------------+---------------------------------------------------+
-|offset      |Number      | offset in bytes from whence                       |
-+------------+------------+---------------------------------------------------+
-|whence      |String      | "seek_set" - measure offset from start of file    |
-+            +            +---------------------------------------------------+
-|            |            | "seek_cur" - measure offsef from current position |
-+            +            +---------------------------------------------------+
-|            |            | "seek_end" - measure offset from end of file.     |
-+------------+------------+---------------------------------------------------+
++------------+----------------+---------------------------------------------------+
+|Argument    |Type            |Description                                        |
++============+================+===================================================+
+|handle      |:green:`Object` | A handle opened with `fopen`_\ ()                 |
++------------+----------------+---------------------------------------------------+
+|offset      |:green:`Number` | offset in bytes from whence                       |
++------------+----------------+---------------------------------------------------+
+|whence      |:green:`String` | "seek_set" - measure offset from start of file    |
++            +                +---------------------------------------------------+
+|            |                | "seek_cur" - measure offsef from current position |
++            +                +---------------------------------------------------+
+|            |                | "seek_end" - measure offset from end of file.     |
++------------+----------------+---------------------------------------------------+
 
 Return Value:
    ``undefined``
@@ -403,7 +404,7 @@ Usage:
    var pos = rampart.utils.ftell(handle);
 
 Return Value:
-   Number. Current position of ``handle``.
+   :green:`Number`. Current position of ``handle``.
 
 
 fflush
@@ -444,23 +445,24 @@ Usage:
 
     rampart.utils.fread(handle [, chunk_size [, max_size]]);
 
-+------------+------------+---------------------------------------------------+
-|Argument    |Type        |Description                                        |
-+============+============+===================================================+
-|handle      |Object      | A handle opened with `fopen`_\ ()                 |
-+------------+------------+---------------------------------------------------+
-|chunk_size  |Number      | Initial size of return buffer and number of bytes |
-|            |            | to read at a time. If total number of bytes read  |
-|            |            | is greater, the buffer grows as needed. If total  |
-|            |            | of bytes read is less, the returned buffer will be|
-|            |            | reduced in size to match. 4096 if not specified.  |
-+------------+------------+---------------------------------------------------+
-|max_size    |Number      | Maximum number of bytes to read.  Unlimited if    |
-|            |            | not specified.                                    |
-+------------+------------+---------------------------------------------------+
++------------+-----------------+---------------------------------------------------+
+|Argument    |Type             |Description                                        |
++============+=================+===================================================+
+|handle      |:green:`Object`  | A handle opened with `fopen`_\ ()                 |
++------------+-----------------+---------------------------------------------------+
+|chunk_size  |:green:`Number`  | Initial size of return :green:`Buffer` and number |
+|            |                 | of bytes to read at a time. If total number of    |
+|            |                 | bytes read is greater, the buffer grows as needed.|
+|            |                 | If total bytes read is less, the returned buffer  |
+|            |                 | will be reduced in size to match. Default is 4096 |
+|            |                 | if not specified.                                 |
++------------+-----------------+---------------------------------------------------+
+|max_size    |:green:`Number`  | Maximum number of bytes to read.  Unlimited if    |
+|            |                 | not specified.                                    |
++------------+-----------------+---------------------------------------------------+
 
 Return Value:
-    Buffer. Contents set to the read bytes.
+    :green:`Buffer`. Contents set to the read bytes.
 
 fwrite
 ''''''
@@ -473,20 +475,20 @@ Usage:
 
     var nbytes = rampart.utils.frwrite(handle, data [, max_bytes]);
 
-+------------+------------+---------------------------------------------------+
-|Argument    |Type        |Description                                        |
-+============+============+===================================================+
-|handle      |Object      | A handle opened with `fopen`_\ ()                 |
-+------------+------------+---------------------------------------------------+
-|data        |Buffer/     | The data to be written.                           |
-|            |String      |                                                   |
-+------------+------------+---------------------------------------------------+
-|max_bytes   |Number      | Maximum number of bytes to write. Buffer/String   |
-|            |            | length if not specified.                          |
-+------------+------------+---------------------------------------------------+
++------------+-----------------+---------------------------------------------------+
+|Argument    |Type             |Description                                        |
++============+=================+===================================================+
+|handle      |:green:`Object`  | A handle opened with `fopen`_\ ()                 |
++------------+-----------------+---------------------------------------------------+
+|data        |:green:`Buffer`/ | The data to be written.                           |
+|            |:green:`String`  |                                                   |
++------------+-----------------+---------------------------------------------------+
+|max_bytes   |:green:`Number`  | Maximum number of bytes to write. :green:`Buffer`/|
+|            |                 | :green:`String` length if not specified.          |
++------------+-----------------+---------------------------------------------------+
 
 Return Value:
-    Number. Number of bytes written.
+    :green:`Number`. Number of bytes written.
 
 
 hexify
@@ -500,11 +502,12 @@ Usage:
 
    var hexstring = rampart.utils.hexify(data [, upper]);
 
-Where ``data`` is the string of bytes to be converted and ``upper`` is a
-Boolean, which if true prints using upper-case ``A-F``.
+Where ``data`` is the string of bytes (:green:`String` or :green:`Buffer`)
+to be converted and ``upper`` is an optional :green:`Boolean`, which if true
+prints using upper-case ``A-F``.
 
 Return Value:
-   String. Each byte in data is converted to its two character hex representation.
+   :green:`String`. Each byte in data is converted to its two character hex representation.
 
 Example:  See `dehexify`_ below.
 
@@ -520,7 +523,7 @@ Usage:
    var data = rampart.utils.hexify(hexstring);
 
 Return Value:
-   Buffer.  Each two character hex representation converted to binary.
+   :green:`Buffer`.  Each two character hex representation converted to binary.
 
 
 Example:
@@ -542,10 +545,10 @@ Example:
 stringToBuffer
 ''''''''''''''
 
-Performs a byte-for-byte copy of string into a buffer.  
-Also convert one Buffer to a buffer of another type.
+Performs a byte-for-byte copy of :green:`String` into a :green:`Buffer`.  
+Also convert one :green:`Buffer` to a :green:`Buffer` of another type.
 See ``duk_to_buffer()`` in the 
-`duktape documentation <https://wiki.duktape.org/howtobuffers2x#string-to-buffer-conversion>`_
+`Duktape documentation <https://wiki.duktape.org/howtobuffers2x#string-to-buffer-conversion>`_
 
 Usage:
 
@@ -553,29 +556,29 @@ Usage:
 
    var buf = rampart.utils.stringToBuffer(data [, buftype ]);
 
-Where ``data`` is a String or Buffer and ``buftype`` is one of the following
-Strings:
+Where ``data`` is a :green:`String` or :green:`Buffer` and ``buftype`` is one of the following
+:green:`Strings`:
 
-   * ``"fixed"`` - returned buffer is a "fixed" buffer.
-   * ``"dynamic"`` - returned buffer is a "dynamic" buffer.
+   * ``"fixed"`` - returned :green:`Buffer` is a "fixed" :green:`Buffer`.
+   * ``"dynamic"`` - returned :green:`Buffer` is a "dynamic" :green:`Buffer`.
 
-If no ``buftype`` is given and ``data`` is a Buffer, the same type of buffer
-is returned.  If no ``buftype`` is given and ``data`` is a String, a "fixed"
-buffer is returned.
+If no ``buftype`` is given and ``data`` is a :green:`Buffer`, the same type of :green:`Buffer`
+is returned.  If no ``buftype`` is given and ``data`` is a :green:`String`, a "fixed"
+:green:`Buffer` is returned.
 
-See `duktape documentation <https://wiki.duktape.org/howtobuffers2x>`_ for
-more information on different types of buffers.
+See `Duktape documentation <https://wiki.duktape.org/howtobuffers2x>`_ for
+more information on different types of :green:`Buffers`.
 
 Return Value:
-   Buffer.  Contents of String/Buffer copied to a new Buffer Object.
+   :green:`Buffer`.  Contents of :green:`String`/:green:`Buffer` copied to a new :green:`Buffer` :green:`Object`.
 
 bufferToString
 ''''''''''''''
 
-Performs a 1:1 copy of the contents of a Buffer to a String.
+Performs a 1:1 copy of the contents of a :green:`Buffer` to a :green:`String`.
 
 See ``duk_buffer_to_string()`` in the
-`duktape documentation <https://wiki.duktape.org/howtobuffers2x#buffer-to-string-conversion>`_
+`Duktape documentation <https://wiki.duktape.org/howtobuffers2x#buffer-to-string-conversion>`_
 
 Usage:
 
@@ -583,15 +586,15 @@ Usage:
 
    var str = rampart.utils.bufferToString(data);
 
-Where data is a Buffer Object.
+Where data is a :green:`Buffer` :green:`Object`.
 
 Return Value:
-   String.  Contents of Buffer copied to a new String.
+   :green:`String`.  Contents of :green:`Buffer` copied to a new :green:`String`.
 
 objectToQuery
 '''''''''''''
 
-Convert an object of key/value pairs to a string suitable for use as a query
+Convert an :green:`Object` of key/value pairs to a :green:`String` suitable for use as a query
 string in an HTTP request.
 
 Usage:
@@ -600,8 +603,8 @@ Usage:
 
    var qs = rampart.utils.objectToQuery(kvObj [, arrayOpt]);
 
-Where ``kvObj`` is an Object containing the key/value pairs and ``arrayOpt``
-controls how Array values are treated, and is
+Where ``kvObj`` is an :green:`Object` containing the key/value pairs and ``arrayOpt``
+controls how :green:`Array` values are treated, and is
 one of the following:
 
    * ``repeat`` - default value if not specified.  Repeat the key in the
@@ -616,18 +619,18 @@ one of the following:
      (comma).  Example: ``{key1: ["val1", "val2"]}`` becomes
      ``key1=val1,val2``.
 
-   * ``json`` - encode array as a JSON object.  Example: 
+   * ``json`` - encode array as JSON.  Example: 
      ``{key1: ["val1", "val2"]}`` becomes
      ``key1=%5b%22val1%22%2c%22val2%22%5d``.
 
 Note that the values ``null`` and ``undefined`` will be translated as the
-strings ``"null"`` and ``"undefined"`` respectively.  Also values which
-themselves are Objects will be converted to JSON.
+:green:`Strings` ``"null"`` and ``"undefined"`` respectively.  Also values which
+themselves are :green:`Objects` will be converted to JSON.
 
 queryToObject
 '''''''''''''
 
-Convert a query string to an object.  Reverses the process, with caveats, of
+Convert a query string to an :green:`Object`.  Reverses the process, with caveats, of
 `objectToQuery`_\ ().
 
 Usage:
@@ -638,16 +641,16 @@ Usage:
 
 Caveats:
 
-*  All primitive values will be converted to strings.
+*  All primitive values will be converted to :green:`Strings`.
 
 *  If ``repeat`` or ``bracket`` was used to create the 
-   query string, all values will be returned as strings (even if an Array of
-   Numbers was given to `objectToQuery`_\ ().
+   query string, all values will be returned as strings (even if an :green:`Array` of
+   :green:`Numbers` was given to `objectToQuery`_\ ().
 
 *  If ``comma`` was used to create the query string, no separation of comma
-   separated values will occur and the entire value will be returned as a String.
+   separated values will occur and the entire value will be returned as a :green:`String`.
 
-*  If ``json`` was used, numeric values will be preserves as Numbers.
+*  If ``json`` was used, numeric values will be preserves as :green:`Numbers`.
 
 Example:
 
@@ -746,31 +749,31 @@ Usage:
    var contents = rampart.utils.readFile(filename [, offsetPos [, rLength]] [, return_str]);
 
 
-Where ``optsObj`` is an object with the key ``filename`` and optional keys
+Where ``optsObj`` is an :green:`Object` with the key ``filename`` and optional keys
 ``offset``, ``length`` and/or ``retString``.
 
 
-+------------+------------+-----------------------------------------------------+
-|Argument    |Type        |Description                                          |
-+============+============+=====================================================+
-|filename    |String      | Path to the file to be read                         |
-+------------+------------+-----------------------------------------------------+
-|offsetPos   |Number      | If positive, offset from beginning of file          |
-|            |            +-----------------------------------------------------+
-|            |            | If negative, offset from end of file                |
-+------------+------------+-----------------------------------------------------+
-|rLength     |Number      | If greater than zero, amount in bytes to be read.   |
-|            |            +-----------------------------------------------------+
-|            |            |Otherwise, position from end of file to stop reading.|
-+------------+------------+-----------------------------------------------------+
-|return_str  |Boolean     | If not set, or ``false``, return a Buffer.          |
-|            |            +-----------------------------------------------------+
-|            |            | If ``true``, return contents as a String.           |
-|            |            | May be truncated if file contains nulls.            |
-+------------+------------+-----------------------------------------------------+
++------------+-----------------+-----------------------------------------------------+
+|Argument    |Type             |Description                                          |
++============+=================+=====================================================+
+|filename    |:green:`String`  | Path to the file to be read                         |
++------------+-----------------+-----------------------------------------------------+
+|offsetPos   |:green:`Number`  | If positive, offset from beginning of file          |
+|            |                 +-----------------------------------------------------+
+|            |                 | If negative, offset from end of file                |
++------------+-----------------+-----------------------------------------------------+
+|rLength     |:green:`Number`  | If greater than zero, amount in bytes to be read.   |
+|            |                 +-----------------------------------------------------+
+|            |                 |Otherwise, position from end of file to stop reading.|
++------------+-----------------+-----------------------------------------------------+
+|return_str  |:green:`Boolean` | If not set, or ``false``, return a :green:`Buffer`. |
+|            |                 +-----------------------------------------------------+
+|            |                 | If ``true``, return contents as a :green:`String`.  |
+|            |                 | May be truncated if file contains null characters.  |
++------------+-----------------+-----------------------------------------------------+
 
 Return Value:
-   Buffer or String.  The contents of the file.
+   :green:`Buffer` or :green:`String`.  The contents of the file.
 
 Example:
 
@@ -797,7 +800,7 @@ Example:
 trim
 ''''
 
-Remove whitespace characters from beginning and end of a String.
+Remove whitespace characters from beginning and end of a :green:`String`.
 
 Usage:
 
@@ -805,10 +808,10 @@ Usage:
 
    var trimmed = rampart.utils.trim(str);
 
-Where ``str`` is a String.
+Where ``str`` is a :green:`String`.
 
 Return Value:
-   String. ``str`` with whitespace removed from beginning and end.
+   :green:`String`. ``str`` with whitespace removed from beginning and end.
 
 Example:
 
@@ -832,12 +835,12 @@ Usage:
    var rl = readLine(file);
    var line=rl.next();
 
-Where ``file`` is a String (name of file to be read) and return object
+Where ``file`` is a :green:`String` (name of file to be read) and return :green:`Object`
 contains the property ``next``, a function to retrieve and return the next
 line of text in the file.
 
 Return Value:
-   Object.  Property ``next`` of the return Object is a function which
+   :green:`Object`.  Property ``next`` of the return :green:`Object` is a function which
    retrieves and returns the next line of text in the file.  After the last
    line of ``file`` is returned, subsequent calls to ``next`` will return
    ``null``.
@@ -871,10 +874,10 @@ Usage:
 
    var st = stat(file);
 
-Where ``file`` is a String (name of file).
+Where ``file`` is a :green:`String` (name of file).
 
 Return Value:
-   Boolean/Object. ``false`` if file does not exist.  Otherwise an Object with the following
+   :green:`Boolean`/:green:`Object`. ``false`` if file does not exist.  Otherwise an :green:`Object` with the following
    properties:
 
 .. code-block:: javascript
@@ -927,7 +930,7 @@ Same as `stat`_\ () except if ``file`` is a link, return information about the l
 
 Return Value:
    Same as `stat`_\ () with the addition of the property/function
-   ``isSymbolicLink`` to test whether the file is a symbolic link.
+   ``isSymbolicLink()`` to test whether the file is a symbolic link.
 
 exec
 ''''
@@ -942,43 +945,43 @@ Usage:
 
 Where:
 
-*  ``command`` - String. An absolute path to an executable or the name of
+*  ``command`` - :green:`String`. An absolute path to an executable or the name of
    an executable that may be found in the current ``PATH`` environment variable.
 
-*  ``options`` - Object. Containing the following properties:
+*  ``options`` - :green:`Object`. Containing the following properties:
 
-   *  ``timeout`` - Number: Maximum amount of time in milliseconds before
+   *  ``timeout`` - :green:`Number`: Maximum amount of time in milliseconds before
       the process is automatically killed.
 
-   *  ``killSignal`` - Number. If timeout is reached, use this signal 
+   *  ``killSignal`` - :green:`Number`. If timeout is reached, use this signal 
 
-   *  ``background`` - Boolean.  Whether to execute detached and return
-      immediately.  ``stdout`` and ``stderr`` below will be set to null.
+   *  ``background`` - :green:`Boolean`.  Whether to execute detached and return
+      immediately.  ``stdout`` and ``stderr`` below will be set to ``null``.
 
-*  ``argn`` - String/Number/Object/Boolean/Null - Arguments to be passed to
-   ``command``.  Non-Strings are converted to a String (e.g. "true", "null",
-   "42" or for Object, the equivalent of ``JSON.stringify(obj)``).
+*  ``argn`` - :green:`String`/:green:`Number`/:green:`Object`/:green:`Boolean`/:green:`Null` - Arguments to be passed to
+   ``command``.  Non-Strings are converted to a :green:`String` (e.g. "true", "null",
+   "42" or for :green:`Object`, the equivalent of ``JSON.stringify(obj)``).
 
 Return Value:
-   Object.  Properties as follows
+   :green:`Object`.  Properties as follows:
 
-   * ``stdout`` - String. Output of command if ``background`` is not set ``false``. 
+   * ``stdout`` - :green:`String`. Output of command if ``background`` is not set ``false``. 
      Otherwise ``null``.
 
-   * ``stderr`` - String. stderr output of command if ``background`` is not set ``false``.
+   * ``stderr`` - :green:`String`. stderr output of command if ``background`` is not set ``false``.
      Otherwise ``null``.
 
-   * ``exitStatus`` - Number.  The returned exit status of the command.
+   * ``exitStatus`` - :green:`Number`.  The returned exit status of the command.
 
-   * ``timedOut`` - Boolean.  Set true if program was killed after
+   * ``timedOut`` - :green:`Boolean`.  Set true if program was killed after
      ``timeout`` milliseconds elapsed.
 
-   * ``pid`` - Number. Process id of the executed command.
+   * ``pid`` - :green:`Number`. Process id of the executed command.
 
 shell
 '''''
 
-Execute String in a bash shell. Equivalent to 
+Execute :green:`String` in a bash shell. Equivalent to 
 ``rampart.utils.exec("bash", "-c", shellcmd);``.
 
 Usage:
@@ -987,7 +990,7 @@ Usage:
 
    var ret = rampart.utils.shell(shellcmd);
 
-Where ``shellcmd`` is a String containing the command and arguments to be
+Where ``shellcmd`` is a :green:`String` containing the command and arguments to be
 passed to bash.
 
 Return Value:
@@ -1021,14 +1024,14 @@ Usage:
 
    var ret = rampart.utils.kill(pid [, signal]);
 
-Where ``pid`` is a Number, the process id of process to be sent a signal and
-``signal`` is a Number, the signal to send.  If ``signal`` is not specified,
+Where ``pid`` is a :green:`Number`, the process id of process to be sent a signal and
+``signal`` is a :green:`Number`, the signal to send.  If ``signal`` is not specified,
 ``15`` (``SIGTERM``) is used.  See manual page for kill(1) for a list of
 signals, which may vary by platform.  Setting ``signal`` to ``0`` sends no
 signal, but checks for the existence of the process identified by ``pid``.
 
 Return Value:
-   Boolean.  ``true`` if signal successfully sent.  ``false`` if there was
+   :green:`Boolean`.  ``true`` if signal successfully sent.  ``false`` if there was
    an error or process does not exist.
 
 Example:
@@ -1062,13 +1065,13 @@ Usage:
 
    rampart.utils.mkdir(path [, mode]);
 
-Where ``path`` is a String, the directory to be created and ``mode`` is a
-Number or String, the octal permissions mode. Any parent directories which
+Where ``path`` is a :green:`String`, the directory to be created and ``mode`` is a
+:green:`Number` or :green:`String`, the octal permissions mode. Any parent directories which
 do not exist will also be created.  Throws error if lacking permissions or
 if another error encountered.
 
 Note that ``mode`` is normally given as an octal.  As such it can be, e.g.,
-``0755`` (octal number) or ``"755"`` (string representation of an octal
+``0755`` (octal number) or ``"755"`` (:green:`String` representation of an octal
 number), but ``755``, as a decimal number may not work as intended.
 
 
@@ -1087,8 +1090,8 @@ Usage:
 
    rampart.utils.rmdir(path [, recurse]);
 
-Where ``path`` is a String, the directory to be removed and ``recurse`` is an
-optional Boolean, which if ``true``, parent directories explicitely present in
+Where ``path`` is a :green:`String`, the directory to be removed and ``recurse`` is an
+optional :green:`Boolean`, which if ``true``, parent directories explicitely present in
 ``path`` will also be removed.  Throws an error if the directory cannot be
 removed (.e.g., not empty or lacking permission).
 
@@ -1119,12 +1122,12 @@ Usage:
 
    var files = rampart.utils.readdir(path [, showhidden]);
 
-Where ``path`` is a String, the directory whose content will be listed and
-``showhidden`` is a Boolean, which if ``true``, files or directories
+Where ``path`` is a :green:`String`, the directory whose content will be listed and
+``showhidden`` is a :green:`Boolean`, which if ``true``, files or directories
 beginning with ``.`` (hidden files) will be included in the return value.
 
 Return Value: 
-   Array.  An Array of Strings, each filename in the directory.
+   :green:`Array`.  An :green:`Array` of :green:`Strings`, each filename in the directory.
 
 
 copyFile
@@ -1142,8 +1145,8 @@ Usage:
 
    rampart.utils.copyFile(source, destination [, overWrite]);
 
-Where ``source`` is a String, the file to be copied, ``destination`` is a
-String, the name of the target file and optional ``overWrite`` is a Boolean
+Where ``source`` is a :green:`String`, the file to be copied, ``destination`` is a
+:green:`String`, the name of the target file and optional ``overWrite`` is a :green:`Boolean`
 which if ``true`` will overwrite ``destination`` if it exists.
 
 Return Value:
@@ -1160,7 +1163,7 @@ Usage:
 
    rampart.utils.rmFile(filename);
 
-Where ``filename`` is a String, the name of the file to be removed.
+Where ``filename`` is a :green:`String`, the name of the file to be removed.
 
 Return Value:
    ``undefined``.
@@ -1217,13 +1220,13 @@ Usage:
 
    rampart.utils.chmod(path [, mode]);
 
-Where ``path`` is a String, the file or directory upon which to be operated
-and ``mode`` is a Number or String, the octal permissions mode.  Any parent
+Where ``path`` is a :green:`String`, the file or directory upon which to be operated
+and ``mode`` is a :green:`Number` or :green:`String`, the octal permissions mode.  Any parent
 directories which do not exist will also be created.  Throws error if
 lacking permissions or if another error encountered.
 
 Note that ``mode`` is normally given as an octal.  As such it can be, e.g.,
-``0755`` (octal number) or ``"755"`` (string representation of an octal
+``0755`` (octal number) or ``"755"`` (:green:`String` representation of an octal
 number), but ``755``, as a decimal number may not work as intended.
 
 Return Value: 
@@ -1252,19 +1255,19 @@ Usage:
 
 Where:
 
-* ``file`` is a String, the name of the file upon which to operate, 
+* ``file`` is a :green:`String`, the name of the file upon which to operate, 
 
-* ``noCreate`` is a Boolean (default ``false``) which, if ``true``
+* ``noCreate`` is a :green:`Boolean` (default ``false``) which, if ``true``
   will only update the time stamp, and will no create non-existing
   ``file``.
 
-* ``setAccess`` is a Boolean (default ``true``).  Whether to update
+* ``setAccess`` is a :green:`Boolean` (default ``true``).  Whether to update
   access time stamp of file.
 
-* ``setModify`` is a Boolean (default ``true``).  Whether to update
+* ``setModify`` is a :green:`Boolean` (default ``true``).  Whether to update
   modification time stamp of file.
 
-* ``referenceFile`` is a String.  If specified, the named file's access and
+* ``referenceFile`` is a :green:`String`.  If specified, the named file's access and
   modification time stamps will be used rather than the current time/date.
 
 Return Value:
@@ -1281,8 +1284,8 @@ Usage:
 
    rampart.utils.rename(source, destination);
 
-Where ``source`` is a String, the file to be renamed or moved, ``destination`` is a
-String, the name of the target file.
+Where ``source`` is a :green:`String`, the file to be renamed or moved, ``destination`` is a
+:green:`String`, the name of the target file.
 
 Return Value:
    ``undefined``.
@@ -1298,7 +1301,7 @@ Usage:
 
    rampart.utils.sleep(seconds);
 
-Where ``seconds`` is a Number.  Seconds may be a fraction of seconds. 
+Where ``seconds`` is a :green:`Number`.  Seconds may be a fraction of seconds. 
 Internally `nanosleep <https://man7.org/linux/man-pages//man2/nanosleep.2.html>`_
 is used.
 
@@ -1321,7 +1324,7 @@ Usage:
    var pid = rampart.utils.getpid();
 
 Return Value:
-   Number. The pid of the current process.
+   :green:`Number`. The pid of the current process.
 
 getppid
 '''''''
@@ -1335,7 +1338,7 @@ Usage:
    var ppid = rampart.utils.getppid();
 
 Return Value:
-   Number. The pid of the parent process.
+   :green:`Number`. The pid of the parent process.
 
 Process Global Variable and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1354,20 +1357,20 @@ Usage:
 
    process.exit([exitcode]);
 
-Where the optional ``exitcode`` is a Number, the status that rampart returns
-to its parent (default 0);
+Where the optional ``exitcode`` is a :green:`Number`, the status that rampart returns
+to its parent (default: ``0``);
 
 env
 """
 
-The value of ``process.env`` is an Object containing properties and values
+The value of ``process.env`` is an :green:`Object` containing properties and values
 corresponding to the environment variables available to Rampart upon
 execution.
 
 argv
 """"
 
-The value of ``process.argv`` is an Array of the arguments passed to rampart
+The value of ``process.argv`` is an :green:`Array` of the arguments passed to rampart
 upon execution.  The first member is always the name of the rampart
 executable.  The second is usually the filename of the script provided on
 the command line.  However if flags are present (arguments starting with
@@ -1377,7 +1380,7 @@ in the order they were given on the command line.
 scriptPath
 """"""""""
 
-The value of ``process.scriptPath`` is a String containing the path
+The value of ``process.scriptPath`` is a :green:`String` containing the path
 (directory) in which the currently executing script can be found (e.g.
 if ``rampart /path/to/my/script.js`` is run, ``process.scriptPath`` will
 be ``/path/to/my/``).
@@ -1395,4 +1398,164 @@ include:
 * `performance <https://duktape.org/guide.html#builtin-performance>`_
 
 For more information, see the `Duktape Guide <https://duktape.org/guide.html>`_
+
+Also added to Rampart is the ``setTimeout()`` function.  It is considered
+experimental and is mainly included to support asynchronous functions in 
+`ECMAScript 2015+ and Babel.js`_ functions.
+
+ECMAScript 2015+ and Babel.js
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Acknowledgement
+"""""""""""""""
+
+Rampart experimentally uses the `Babel.js <https://babeljs.io/>`_.  Babel.js
+is a toolchain that is used by rampart to convert ECMAScript 2015+ (and
+optionally TypeScript) code into a version of JavaScript compatible with
+Duktape.  The authors of Rampart are extremely grateful to the 
+`Babel development team <https://babeljs.io/team>`_.
+
+License
+"""""""
+Babel.js is 
+`MIT licensed <https://github.com/babel/babel/blob/main/LICENSE>`_. 
+
+Usage
+"""""
+
+A slightly modified version of babel.js (currently babel-standalone v
+7.11.1) and the associated collection of polyfills (babel-polyfill.js) are
+included in the Rampart distribution.  To use ECMA 2015+ features of
+JavaScript, simply include the following at the beginning of the script:
+
+.. code-block:: javascript
+
+   "use babel"
+
+Note that the ``"use babel"`` string should be the first JavaScript text in
+the script.  However it may come after any comments or a hash-bang line.  It
+also should be the only text on the line, other than an optional comment. 
+
+Example:
+
+.. code-block:: javascript
+
+   #!/usr/local/bin/rampart
+   // above is ignored by rampart.
+
+   /* My first ECMA 2015 Script using Rampart/Duktape/Babel */
+
+   "use babel" /* a comment on this line is ok */
+
+   console.log(`a multiline string
+   using backticks is much easier than
+   using 
+   console.log( 
+                "string\\n" +
+                "string2\\n"
+              );
+   `);
+
+The ``"use babel"`` directive optionally takes a ``:`` followed by babel
+options.  Without options ``"use babel"`` is equivalent to 
+``"use babel:{ presets: ['env'], retainLines: true }"``.  See 
+`babel documentation <https://babeljs.io/docs/en/babel-preset-env>`_ 
+for more information on possible options.
+
+A simple example in 
+`TypeScript <https://www.typescriptlang.org/docs/handbook/typescript-in-5-minutes.html>`_:
+
+.. code-block:: javascript
+
+   /* note that filename is required for 'typescript'
+      and that 'env' is also included to allow for ECMA 2015+  */
+
+   "use babel:{ filename: 'myfile.ts', presets: ['typescript','env'], retainLines: true }"
+
+   interface Point {
+     x: number;
+     y: number;
+   }
+
+   function printPoint(p: Point) {
+     console.log(`${p.x}, ${p.y}`);
+   }
+
+   // prints "12, 26"
+   const point = { x: 12, y: 26 };
+   printPoint(point);
+
+Note that babel does not actually do any type checking.  See
+`this caveat <https://babeljs.io/docs/en/babel-plugin-transform-typescript#caveats>`_.
+
+For a list of tested and supported syntax, see the 
+``/usr/local/rampart/tests/babel-test.js`` file.
+
+How it works
+""""""""""""
+
+When the ``"use babel"`` string is found, Rampart automatically loads
+babel.js and uses it to transpile the script into JavaScript compatible with
+the Duktape JavaScript engine.  A cache copy of the transpiled script will
+be saved in the same directory, and will be named by removing ``.js`` from
+the original script name and replacing it with ``.babel.js``.  Thus if, e.g.,
+the original script was named ``myfile.js``, the transpiled version will be
+named ``myfile.babel.js``.
+
+When the original script is run again, rampart will check the date on the
+script, and if it was not modified after the creation of the ``*.babel.js``
+file, the transpile stage will be skipped and the cached, transpiled script
+will be run directly.
+
+Caveats
+"""""""
+
+For a complicated script, the transpile stage can be very slow.  However if
+the script has not changed since last run, the execution speed will be
+normal as the cached/transpiled code will be used and thus no traspiling
+will occur.
+
+Also note that nearly all Rampart functions are synchronous, and therefore
+will be executed before any babel transpiled asynchronous code
+regardless of its position in the script.  This is normal behavior for
+JavaScript, but may be counterintuitive if coming from, e.g. Node.js
+where most functions are asynchronous.
+
+As an example, the following code produces the same output in Rampart and
+Node.js.
+
+.. code-block:: javascript
+
+   "use babel" /* ignored in node */
+
+   function resolveme() {
+     return new Promise(resolve => {
+
+       setTimeout(() => {
+         console.log("**I'm async in a Timeout!!**");
+       },5);
+
+       resolve("**I'm async!!**");
+
+     });
+   }
+
+   async function asyncCall() {
+     const result = await resolveme();
+     console.log(result);
+   }
+
+
+   asyncCall();
+
+
+   console.log(`a multiline string
+   using backticks`);
+
+   /* expect output:
+   a multiline string
+   using backticks
+   **I'm async!!**
+   **I'm async in a Timeout!!**
+   */
 

@@ -464,7 +464,8 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     if(strcmp("stdin",fn) != 0 )
     {
         /* file.js => file.babel.js */
-        s=strrchr(fn,'.');
+        /* skip the first char in case of "./file" */
+        s=strrchr(fn+1,'.');
         if(s)
         {
             size_t l=s-fn;

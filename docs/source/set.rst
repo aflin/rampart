@@ -436,23 +436,23 @@ metamorphstrlstmode
     the 3 strings “``one``”, “``two``”, and “``bear arms``”, the various
     modes would convert as follows:
 
-    -  | ``allwords``
-       | Space-separate each string, e.g. “one two bear arms”.
+    *  ``allwords``
+       Space-separate each string, e.g. “one two bear arms”.
 
-    -  | ``anywords``
-       | Space-separate each string and append “\ ``@0''', e.g. ``\ ‘one
-         two bear arms @0’’.
+    *  ``anywords``
+       Space-separate each string and append “\ ``@0''', e.g. ``\ ‘one
+        bear arms @0’’.
 
-    -  | ``allphrases``
-       | Space-separate and double-quote each string, e.g. ““one” “two”
-         “bear arms””.
+    *  ``allphrases``
+       Space-separate and double-quote each string, e.g. ““one” “two”
+       bear arms””.
 
-    -  | ``anywords``
-       | Space-separate and double-quote each string, and append
-         “\ ``@0''', e.g. ``\ ‘“one” “two” “bear arms” @0’’.
+    *  ``anywords``
+       Space-separate and double-quote each string, and append
+       “\ ``@0''', e.g. ``\ ‘“one” “two” “bear arms” @0’’.
 
-    -  | ``equivlist``
-       | Make the string list into a parenthetical comma-separated list,
+    *  ``equivlist``
+       Make the string list into a parenthetical comma-separated list,
          e.g. “(one,two,bear arms)”.
 
     The default is ``equivlist``. Added in version 5.01.1225240000

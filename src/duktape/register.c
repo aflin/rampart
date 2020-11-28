@@ -38,6 +38,7 @@ void duk_init_context(duk_context *ctx)
     duk_console_init(ctx, DUK_CONSOLE_FLUSH); /* register console.log, console.error etc. */
     duk_module_init(ctx);                     /* register require() function */
     duk_printf_init(ctx);                     /* register the printf and sprintf functions from printf.c */
-    duk_misc_init(ctx);                       /* register functions in misc.c */
-    duk_process_init(ctx);                    /* register process vars */
+    duk_misc_init(ctx);                       /* register functions in rampart-utils.c */
+    duk_import_init(ctx);                     /* register functions in rampart-import.c */
+    duk_process_init(ctx);                    /* register process.* vars */
 }

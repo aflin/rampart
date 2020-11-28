@@ -32,10 +32,10 @@ FILE *error_fh;
 int duk_rp_server_logging=0;
 
 
-/* utility function for global object:
-      var buf=toBuffer(val); //fixed if string, same type if already buffer
+/* utility function for rampart object:
+      var buf=rampart.utils.StringToBuffer(val); //fixed if string, same type if already buffer
         or
-      var buf=toBUffer(val,"[dynamic|fixed]"); //always converted to type
+      var buf=rampart.utils.StringToBuffer(val,"[dynamic|fixed]"); //always converted to type
 */
 #define BUFREADSZ 4096
 #define homesubdir "/.rampart/"

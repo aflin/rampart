@@ -73,6 +73,7 @@ html_static_path = ['_static']
 html_context = {
     'css_files': [
         '_static/theme_overrides.css',  # override wide tables in RTD theme
+        '_static/hacks.css' #colors from https://bitbucket.org/lbesson/web-sphinx/src/master/.static/hacks.css
         ],
      }
 #html_theme_options = {
@@ -95,4 +96,7 @@ html_theme_options = {
     'includehidden': True,
     'titles_only': False
 }
-     
+
+rst_prolog = """
+.. include:: special.rst
+"""
