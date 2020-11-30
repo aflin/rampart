@@ -133,6 +133,15 @@ int tx_rp_cancelled = 0;
     r;                                    \
 })
 
+#define TEXIS_FLUSH(a) ({               \
+    xprintf("skip\n");                    \
+    TXLOCK                                \
+    int r = texis_flush((a)); \
+    TXUNLOCK                              \
+    EXIT_IF_CANCELLED                     \
+    r;                                    \
+})
+
 #define TEXIS_PARAM(a, b, c, d, e, f) ({               \
     xprintf("Param\n");                                \
     TXLOCK                                             \
@@ -1071,6 +1080,326 @@ int duk_rp_fetchWCallback(duk_context *ctx, TEXIS *tx, QUERY_STRUCT *q)
 #undef pushcounts
 
 /* ************************************************** 
+   Sql.prototype.import
+   ************************************************** */
+duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
+{
+    /* currently only csv
+       but eventually add option for others
+       by checking options object for
+       "type":"filetype" - with default "csv"
+    */
+    const char *func_name = isfile?"sql.importCsvFile":"sql.importCsv";
+    DCSV dcsv=duk_rp_parse_csv(ctx, isfile, 1, func_name);
+    int ncols=dcsv.csv->cols, i=0;
+    int tbcols=0, start=0;
+
+    TEXIS *tx=NULL;
+    char **field_names=NULL;
+
+#define closecsv do {\
+    int col;\
+    for(col=0;col<dcsv.csv->cols;col++) \
+        free(dcsv.hnames[col]); \
+    free(dcsv.hnames); \
+    closeCSV(dcsv.csv); \
+} while(0)
+
+
+    if(strlen(dcsv.tbname)<1)
+        RP_THROW(ctx, "%s(): option tableName is required", func_name);
+
+    const char *db;
+    char pbuf[msgbufsz];
+    struct sigaction sa = { {0} };
+
+    sa.sa_flags = 0; //SA_NODEFER;
+    sa.sa_handler = die_nicely;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGUSR1, &sa, NULL);
+
+    //  signal(SIGUSR1, die_nicely);
+
+    SET_THREAD_UNSAFE(ctx);
+
+    duk_push_this(ctx);
+
+    /* clear the sql.errMsg string */
+    duk_del_prop_string(ctx,-1,"errMsg");
+
+    if (!duk_get_prop_string(ctx, -1, "db"))
+    {
+        closecsv;
+        RP_THROW(ctx, "no database has been opened");
+    }
+    db = duk_get_string(ctx, -1);
+    duk_pop_2(ctx);
+
+    {
+        FLDLST *fl;
+        char sql[128];
+       
+        snprintf(sql, 128, "select NAME from SYSCOLUMNS where TBNAME='%s' order by ORDINAL_POSITION;", dcsv.tbname);
+        
+        tx = TEXIS_OPEN((char *)db);
+
+        if (!tx)
+        {
+            closecsv;
+            throw_tx_error(ctx,"open sql");
+        }
+
+        if (!TEXIS_PREP(tx, sql))
+        {
+            closecsv;
+            throw_tx_error(ctx,"sql prep");
+        }
+
+        if (!TEXIS_EXEC(tx))
+        {
+            closecsv;
+            throw_tx_error(ctx,"sql exec");
+        }
+
+
+        while((fl = TEXIS_FETCH(tx, -1)))
+        {
+            /* an array of column names */
+            DUKREMALLOC(ctx, field_names, (tbcols+2) * sizeof(char*) );
+            
+            field_names[tbcols] = strdup(fl->data[0]);
+            tbcols++;
+        }        
+        field_names[tbcols] = NULL;
+
+    }
+
+#define fn_cleanup do { \
+    int j=0; \
+    while(field_names[j]!=NULL) \
+        free(field_names[j++]); \
+    free(field_names); \
+    closecsv; \
+} while(0);
+
+    
+    {
+        /* ncols = number of columns in the csv
+           tbcols = number of columns in the table   */
+        int col_order[tbcols]; /* one per table column and value is 0 -> ncols-1 */
+
+        if(dcsv.arr_idx>-1)
+        {
+            duk_idx_t idx=dcsv.arr_idx;
+            int aval=0, len= (int)duk_get_length(ctx, idx);
+            char **hn=dcsv.hnames;
+            
+            for(i=0;i<len;i++)
+            {
+                duk_get_prop_index(ctx, idx, (duk_uarridx_t)i);
+                if( duk_is_string(ctx, -1))
+                {
+                    int j=0;
+                    const char *s=duk_get_string(ctx, -1);
+                    if (strlen(s)==0)
+                        aval=-1;
+                    else
+                    {
+                        while (hn[j]!=NULL)
+                        {
+                            if(strcmp(hn[j],s)==0)
+                            {
+                                aval=j;
+                                break;
+                            }
+                            j++;
+                        }
+                        if (hn[j]==NULL)
+                        {
+                            fn_cleanup;
+                            RP_THROW(ctx, "%s(): array contains '%s', which is not a known column name", func_name,s);
+                        }
+                    }
+                }
+                else if(! duk_is_number(ctx, -1))
+                {
+                    fn_cleanup;
+                    RP_THROW(ctx, "%s(): array requires an array of Integers/Strings (column numbers/names)", func_name);
+                }
+                else
+                    aval=duk_get_int(ctx, -1);
+
+                duk_pop(ctx);
+                if( aval>=ncols )
+                {
+                    fn_cleanup;
+                    RP_THROW(ctx, "%s(): array contains column number %d. There are %d columns in the csv (numbered 0-%d)",
+                        func_name, aval, ncols, ncols-1);
+                }
+                col_order[i]=aval;
+                //printf("order[%d]=%d\n",i,aval);
+            }
+            /* fill rest, if any, with -1 */
+            for (i=len; i<tbcols; i++)
+                col_order[i]=-1;
+        }    
+        else
+        {
+            /* insert order is col order */
+            for(i=0;i<tbcols;i++)
+                col_order[i]=i;
+        }
+        
+        {
+            int slen = 24 + strlen(dcsv.tbname) + (2*tbcols) -1;
+            char sql[slen];
+            CSV *csv = dcsv.csv;
+            void *v=NULL;   /* value to be passed to db */
+            long plen, l; /* lenght of value */
+            int in=0, out=0, row=0, col=0;
+
+            snprintf(sql, slen, "insert into %s values (", dcsv.tbname);
+            for (i=0;i<tbcols-1;i++)
+                strcat(sql,"?,");
+            
+            strcat(sql,"?);");
+
+            //printf("%s, %d, %d\n", sql, slen, (int)strlen(sql) );
+
+            if (!TEXIS_PREP(tx, sql))
+            {
+                fn_cleanup;
+                throw_tx_error(ctx,"sql prep");
+            }
+
+            if(dcsv.hasHeader) start=1;
+            for(row=start;row<csv->rows;row++)      // iterate through the CSVITEMS contained in each row and column
+            {
+                for(  col=0; /* col<csv->cols && */col<tbcols; col++)
+                {
+                    if(col_order[col]>-1)
+                    {
+                    //printf("doing col_order[%d] = %d\n", col, col_order[col]);
+                        CSVITEM item=csv->item[row][col_order[col]];
+                        switch(item.type)
+                        {
+                            case integer:        
+                                in=SQL_C_INTEGER;
+                                out=SQL_INTEGER;
+                                v=(long*)&item.integer;
+                                plen=sizeof(long);
+                                break;
+                            case floatingPoint:  
+                                in=SQL_C_DOUBLE;
+                                out=SQL_DOUBLE;
+                                v=(double *)&item.integer;
+                                plen=sizeof(double);
+                                break;
+                            case string:
+                                v = (char *)item.string;
+                                plen = strlen(v);
+                                in = SQL_C_CHAR;
+                                out = SQL_VARCHAR;
+                                break;
+                            case dateTime:
+                            {
+                                struct tm *t=&item.dateTime;
+                                in=SQL_C_LONG;
+                                out=SQL_DATE;
+                                l=(long) mktime(t);
+                                v = (long*)&l;
+                                plen=sizeof(long);
+                                break;
+                            }
+                            case nil:
+                                l=0;
+                                in=SQL_C_INTEGER;
+                                out=SQL_INTEGER;
+                                v=(long*)&l;
+                                plen=sizeof(long);
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        l=0;
+                        v=(long*)&l;
+                        plen=sizeof(long);
+                        in=SQL_C_INTEGER;
+                        out=SQL_INTEGER;
+                    }
+                    if( !TEXIS_PARAM(tx, col+1, v, &plen, in, out))
+                    {
+                        fn_cleanup;
+                        throw_tx_error(ctx,"sql add parameters");
+                    }
+
+
+                }
+                if (col<tbcols)
+                {
+                    l=0;
+                    v=(long*)&l;
+                    plen=sizeof(long);
+                    in=SQL_C_INTEGER;
+                    out=SQL_INTEGER;
+                    for(; col<tbcols; col++)
+                    {
+                        if( !TEXIS_PARAM(tx, col+1, v, &plen, in, out))
+                        {
+                            fn_cleanup;
+                            throw_tx_error(ctx,"sql add parameters");
+                        }
+                    }
+                }
+                
+                if (!TEXIS_EXEC(tx))
+                {
+                    fn_cleanup;
+                    throw_tx_error(ctx,"sql exec");
+                }
+                if (!TEXIS_FLUSH(tx))
+                {
+                    fn_cleanup;
+                    throw_tx_error(ctx,"sql flush");
+                }
+
+                texis_resetparams(tx);
+
+                if (dcsv.func_idx > -1 && !( (row-start) % dcsv.cbstep ) )
+                {
+                    duk_dup(ctx, dcsv.func_idx);
+                    duk_push_int(ctx, row-start);
+                    duk_call(ctx, 1);
+                    if(duk_is_boolean(ctx, -1) && ! duk_get_boolean(ctx, -1) )
+                        goto funcend;
+                    duk_pop(ctx);
+                }
+            }
+        }
+    }
+
+    funcend:
+
+    duk_push_int(ctx, dcsv.csv->rows - start);
+    fn_cleanup;    
+    duk_rp_log_tx_error(ctx,pbuf); /* log any non fatal errors to this.errMsg */
+    tx=TEXIS_CLOSE(tx);
+    return 1;
+}
+
+duk_ret_t duk_rp_sql_import_csv_file(duk_context *ctx)
+{
+    return duk_rp_sql_import(ctx, 1);
+}
+
+duk_ret_t duk_rp_sql_import_csv_str(duk_context *ctx)
+{
+    return duk_rp_sql_import(ctx, 0);
+}
+
+
+/* ************************************************** 
    Sql.prototype.exec 
    ************************************************** */
 duk_ret_t duk_rp_sql_exe(duk_context *ctx)
@@ -1790,9 +2119,9 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
 duk_ret_t duk_open_module(duk_context *ctx)
 {
     /* Set up locks:
-     this will be run once per new duk_context/thread in server.c
-     but needs to be done only once for all threads
-  */
+     * this will be run once per new duk_context/thread in server.c
+     * but needs to be done only once for all threads
+     */
 
     if (!db_is_init)
     {
@@ -1835,6 +2164,14 @@ duk_ret_t duk_open_module(duk_context *ctx)
     /* set Sql.prototype.set */
     duk_push_c_function(ctx, duk_texis_set, 1 /*nargs*/);   /* [ {}, Sql protoObj-->{exe:fn_exe,...} fn_set ] */
     duk_put_prop_string(ctx, -2, "set");                    /* [ {}, Sql protoObj-->{exe:fn_exe,query:fn_exe,close:fn_close,set:fn_set} ] */
+
+    /* set Sql.prototype.importCsvFile */
+    duk_push_c_function(ctx, duk_rp_sql_import_csv_file, 4 /*nargs*/);
+    duk_put_prop_string(ctx, -2, "importCsvFile");
+
+    /* set Sql.prototype.importCsv */
+    duk_push_c_function(ctx, duk_rp_sql_import_csv_str, 4 /*nargs*/);
+    duk_put_prop_string(ctx, -2, "importCsv");
 
     /* Set Sql.prototype = protoObj */
     duk_put_prop_string(ctx, -2, "prototype"); /* -> stack: [ {}, Sql-->[prototype-->{exe=fn_exe,...}] ] */

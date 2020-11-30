@@ -12,8 +12,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include "duktape/core/duktape.h"
-//#include "texint.h"
-//#include "texisapi.h"
+#include "duktape/globals/csv_parser.h"
 
 #if defined(__cplusplus)
 extern "C"
@@ -124,7 +123,7 @@ extern int   rampart_argc;
 //#define PUTMSG_STDERR     /* print texis error messages to stderr */
 /* end settings */
 
-/* this should probably just exit */
+
 #define DUKREMALLOC(ctx, s, t)                 \
     (s) = realloc((s), (t));                   \
     if ((char *)(s) == (char *)NULL)           \
@@ -266,6 +265,28 @@ extern FILE *access_fh;
 extern FILE *error_fh;
 extern int duk_rp_server_logging;
 
+/* csv parser */
+
+#define DCSV struct duk_csv_s
+
+DCSV {
+    CSV *csv;
+    char **hnames;
+    const char *tbname;
+    duk_idx_t obj_idx;
+    duk_idx_t str_idx;
+    duk_idx_t col_idx;
+    duk_idx_t func_idx;
+    duk_idx_t arr_idx;
+    int cbstep;
+    char retType;
+    char hasHeader;
+    char inplace;
+    char isfile;
+    char include_rawstring;
+};
+
+DCSV duk_rp_parse_csv(duk_context *ctx, int isfile, int normalize, const char *func_name);
 
 #if defined(__cplusplus)
 }

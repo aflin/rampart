@@ -121,68 +121,87 @@ CSV *openCSVstr(duk_context *ctx, duk_idx_t str_idx, int inplace)
     return(csv);
 }
 
-
-
-duk_ret_t duk_rp_import_csv(duk_context *ctx, int isfile)
+DCSV duk_rp_parse_csv(duk_context *ctx, int isfile, int normalize, const char *func_name)
 {
     const char *filename = "";
-    const char *func_name  = isfile?"csfFile":"csv"; 
     char **hnames=NULL;
-    duk_idx_t  obj_idx=-1, str_idx=-1, 
-               col_idx=-1, func_idx=-1, idx=0;
-    CSV        *csv=NULL;
-    int        row, col, start=0, 
-               retType=0, hasHeader=0, normalize=0,
-               inplace=0;
-    putcol_t putcol = &putcol_prim;
+    DCSV dcsv;
+    duk_idx_t idx=0, obj_idx=-1;
+    CSV *csv=NULL;
+    int col=0;
 
-    for (idx=0;idx<3;idx++)
+    dcsv.csv=NULL;
+    dcsv.hnames=NULL;
+    dcsv.tbname="";
+    dcsv.obj_idx=-1;
+    dcsv.str_idx=-1;
+    dcsv.arr_idx=-1;
+    dcsv.col_idx=-1;
+    dcsv.func_idx=-1;
+    dcsv.retType=0;
+    dcsv.hasHeader=0;
+    dcsv.inplace=0;        
+    dcsv.include_rawstring=0;
+    dcsv.cbstep=1;
+    dcsv.isfile=isfile;
+
+    for (idx=0;idx<4;idx++)
     {
         if( 
             duk_is_string(ctx, idx) 
             || (!isfile && duk_is_buffer_data(ctx, idx))
         )
-            str_idx=idx;
+            dcsv.str_idx=idx;
         
         else if(duk_is_function(ctx, idx))
-            func_idx=idx;
-        
+            dcsv.func_idx=idx;
+
+        else if(duk_is_array(ctx, idx))
+            dcsv.arr_idx=idx;        
+
         else if( duk_is_object(ctx, idx) )
-            obj_idx=idx;
+            dcsv.obj_idx = obj_idx = idx;
+
     }
 
-
-#define setbool(val) do {\
-if (duk_get_prop_string(ctx, obj_idx, (#val) ) ) \
-    csv->val = REQUIRE_BOOL(ctx, -1, "%s(): option %s requires a Boolean", func_name, (#val) );\
-duk_pop(ctx);\
-} while(0)
-
-
     /* get options that do not require csv to be opened*/
-    if(obj_idx>-1)
+    if(dcsv.obj_idx>-1)
     {
+        if (duk_get_prop_string(ctx, obj_idx, "tableName") )
+        {
+            dcsv.tbname = REQUIRE_STRING(ctx, -1, "%s(): option tableName requires a String (name of table)", func_name);
+        }
+        duk_pop(ctx);
+
         if (duk_get_prop_string(ctx, obj_idx, "returnType") )  // not consistent with rampart-sql exec(), but default is array
         {
             const char *s = REQUIRE_STRING(ctx, -1, "%s(): option retType requires a String (\"object\" or \"array\")", func_name);
             if( strcasecmp("object",s) == 0 )
-                retType=1;
+                dcsv.retType=1;
             else if ( strcasecmp("array", s) != 0 )
                 RP_THROW(ctx, "%s(): option retType requires a String (\"object\" or \"array\")", func_name);
         }
         duk_pop(ctx);
 
         if (duk_get_prop_string(ctx, obj_idx, "hasHeaderRow") )
-            hasHeader=REQUIRE_BOOL(ctx, -1, "%s(): option hasHeaderRow requires a Boolean", func_name);
+            dcsv.hasHeader=REQUIRE_BOOL(ctx, -1, "%s(): option hasHeaderRow requires a Boolean", func_name);
         duk_pop(ctx);
 
         if (duk_get_prop_string(ctx, obj_idx, "normalize") )
             normalize=REQUIRE_BOOL(ctx, -1, "%s(): option normalize requires a Boolean", func_name);
         duk_pop(ctx);
 
+        if (duk_get_prop_string(ctx, obj_idx, "callbackStep") )
+        {
+            dcsv.cbstep=REQUIRE_INT(ctx, -1, "%s(): option cbstep requires an Integer greater than 0", func_name);
+            if (dcsv.cbstep<1)
+                RP_THROW(ctx, "%s(): option cbstep requires an Integer greater than 0", func_name);
+        }
+        duk_pop(ctx);
+
         if (duk_get_prop_string(ctx, obj_idx, "includeRawString"))
             if (duk_get_boolean_default(ctx, -1, 0))
-                putcol = &putcol_raw;
+                dcsv.include_rawstring=1;
         duk_pop(ctx);
 
         /* not working.  csv_parse requires a null terminated string
@@ -194,16 +213,15 @@ duk_pop(ctx);\
         duk_pop(ctx);
         */
     }
-
-    if (str_idx>-1)
+    if (dcsv.str_idx>-1)
     {
         if (isfile)
         {
-            filename = duk_get_string(ctx, str_idx);
+            filename = duk_get_string(ctx, dcsv.str_idx);
             csv=openCSV((char*)filename);
         }
         else
-            csv=openCSVstr(ctx, str_idx, inplace);
+            csv=openCSVstr(ctx, dcsv.str_idx, dcsv.inplace);
     }
     else
     {
@@ -218,9 +236,30 @@ duk_pop(ctx);\
         RP_THROW(ctx, "%s: error - %s - %s", func_name, filename, strerror(csvErrNo));
     }
 
+#define closecsv do {\
+    int col;\
+    for(col=0;col<dcsv.csv->cols;col++) \
+        free(dcsv.hnames[col]); \
+    free(dcsv.hnames); \
+    if (dcsv.inplace)\
+        dcsv.csv->buf=NULL;\
+    closeCSV(dcsv.csv); \
+} while(0)
+
+
+#define setbool(val) do {\
+if (duk_get_prop_string(ctx, obj_idx, (#val) ) ) { \
+    if(!duk_is_boolean(ctx, -1)) {\
+        closeCSV(dcsv.csv);\
+        RP_THROW(ctx, "%s(): option %s requires a Boolean", func_name, (#val) );\
+    }\
+    csv->val = duk_get_boolean(ctx, -1);\
+}\
+duk_pop(ctx);\
+} while(0)
 
     /* get options that require csv opened*/
-    if(obj_idx>-1)
+    if(dcsv.obj_idx>-1)
     {
         setbool(stripLeadingWhite);  //    boolean true    remove leading whitespace characters from cells
         setbool(stripTrailingWhite); //    boolean true    remove trailing whitespace characters from cells
@@ -233,36 +272,65 @@ duk_pop(ctx);\
 
         if (duk_get_prop_string(ctx, obj_idx, "delimiter") ) //use the character 'c' as a column delimiter e.g \t
         {
-            const char *s = REQUIRE_STRING(ctx, -1, "%s(): option delimiter requires a String (single character delimiter)", func_name);
+            const char *s;
+            if(!duk_is_string(ctx, -1))
+            {
+                closeCSV(dcsv.csv);
+                RP_THROW(ctx, "%s(): option delimiter requires a String (single character delimiter)", func_name);
+            }
+            s=duk_get_string(ctx, -1);
             csv->delimiter = *s;
         }
         duk_pop(ctx);
+
         if (duk_get_prop_string(ctx, obj_idx, "timeFormat") ) // set the format for parsing a date/time see manpage for strptime()
-            csv->timeFormat = (char *)REQUIRE_STRING(ctx, -1, "%s(): option timeFormat requires a String (strptime() style string format)", func_name);
+        {
+            if(!duk_is_string(ctx, -1))
+            {
+                closeCSV(dcsv.csv);
+                RP_THROW(ctx, "%s(): option timeFormat requires a String (strptime() style string format)", func_name);
+            }
+            csv->timeFormat = (char *)duk_get_string(ctx, -1);
+        }
         duk_pop(ctx);
     }
 
     if(parseCSV(csv)<0)      // now actually parse the file
+    {
+        closeCSV(dcsv.csv);
         RP_THROW(ctx, "%s(): parse error: %s\n", func_name, csv->errorMsg);
-    
+    }
+
     if(normalize)
         normalizeCSV(csv);        // examine each column and force data type to the majority 
 
     /* COLUMN NAMES */
-    DUKREMALLOC(ctx, hnames, csv->cols * sizeof(char *)); 
-    if (hasHeader)
+    DUKREMALLOC(ctx, hnames, (csv->cols+1) * sizeof(char *)); 
+    if (dcsv.hasHeader)
     {
         for(col=0;col<csv->cols;col++)
             hnames[col] = strdup((char*) csv->item[0][col].string);
 
-        /* check for dups */
+        /* terminate for good luck */
+        hnames[col] = NULL;
+
+        /* check for dups 
+         * only a show stopper if returning an object
+         * but kinda bad if using column names in sql.import*
+        */
+        if(dcsv.retType)
         {
             int x, y;
             for(x=0; x<csv->cols-1; x++)
             {
                 for(y=x+1; y<csv->cols; y++)
+                {
                     if (!strcmp( hnames[x], hnames[y]))
+                    {
+                        closecsv;
                         RP_THROW(ctx, "%s(): duplicate header column names (columns %d and %d )", func_name, x+1, y+1);  
+                    }
+                }
             }
         }
     }
@@ -279,7 +347,7 @@ duk_pop(ctx);\
     
     /* push column names into an array*/
     duk_push_array(ctx);
-    col_idx=duk_get_top_index(ctx);
+    dcsv.col_idx=duk_get_top_index(ctx);
     for(col=0;col<csv->cols;col++)
     {
         duk_push_string(ctx, hnames[col]);
@@ -287,21 +355,40 @@ duk_pop(ctx);\
     }
     /* END COLUMN NAMES */
 
+    dcsv.csv=csv;
+    dcsv.hnames=hnames;
+
+    return dcsv;
+}
+
+
+duk_ret_t duk_rp_import_csv(duk_context *ctx, int isfile)
+{
+    const char *func_name  = isfile?"csfFile":"csv"; 
+    int        row, col, start=0;
+    putcol_t putcol = &putcol_prim;
+    DCSV dcsv=duk_rp_parse_csv(ctx, isfile, 0, func_name);
+    CSV *csv=dcsv.csv;
+    char **hnames=dcsv.hnames;
+
+    if (dcsv.include_rawstring)
+        putcol = &putcol_raw;
+
     /* outer return object and array when no callback*/
-    if(func_idx == -1)
+    if(dcsv.func_idx == -1)
     {
         duk_push_object(ctx);
         duk_push_array(ctx);
     }
-    if (retType)
+    if (dcsv.retType)
     /* return an array of object or object as first param to callback*/
     {
         /* populate rows */
-        if (hasHeader) start=1;
+        if (dcsv.hasHeader) start=1;
         for(row=start;row<csv->rows;row++)      // iterate through the CSVITEMS contained in each row and column
         {
-            if(func_idx > -1)
-                duk_dup(ctx, func_idx);
+            if(dcsv.func_idx > -1)
+                duk_dup(ctx, dcsv.func_idx);
             /* inner row object or object as first parameter to callback */
             duk_push_object(ctx);
 
@@ -311,13 +398,14 @@ duk_pop(ctx);\
                 duk_put_prop_string(ctx, -2, hnames[col]);
             }
 
-            if (func_idx > -1)
+            if (dcsv.func_idx > -1)
             {
                 duk_push_int(ctx, row-start);
-                duk_dup(ctx, col_idx);
+                duk_dup(ctx, dcsv.col_idx);
                 duk_call(ctx, 3);
                 if(duk_is_boolean(ctx, -1) && ! duk_get_boolean(ctx, -1) )
                     goto funcend;
+                duk_pop(ctx);
             }
             else
                 duk_put_prop_index(ctx, -2, row-start);
@@ -327,11 +415,11 @@ duk_pop(ctx);\
     else
     /* return an array of arrays or return array as first param to callback*/
     {
-        if(hasHeader) start=1;
+        if(dcsv.hasHeader) start=1;
         for(row=start;row<csv->rows;row++)      // iterate through the CSVITEMS contained in each row and column
         {
-            if(func_idx > -1)
-                duk_dup(ctx, func_idx);
+            if(dcsv.func_idx > -1)
+                duk_dup(ctx, dcsv.func_idx);
             /* inner row array or array as first parameter to callback*/
             duk_push_array(ctx);
 
@@ -340,13 +428,14 @@ duk_pop(ctx);\
                 putcol(ctx, csv->item[row][col]);
                 duk_put_prop_index(ctx, -2, col);
             }
-            if (func_idx > -1)
+            if (dcsv.func_idx > -1)
             {
                 duk_push_int(ctx, row-start);
-                duk_dup(ctx, col_idx);
+                duk_dup(ctx, dcsv.col_idx);
                 duk_call(ctx, 3);
                 if(duk_is_boolean(ctx, -1) && ! duk_get_boolean(ctx, -1) )
                     goto funcend;
+                duk_pop(ctx);
             }
             else
                 duk_put_prop_index(ctx, -2, row-start);
@@ -355,13 +444,15 @@ duk_pop(ctx);\
 
     funcend:
 
-    if(func_idx > -1)
+    if(dcsv.func_idx > -1)
         duk_push_int(ctx, csv->rows - start);
     else
     {
         duk_put_prop_string(ctx, -2, "results");
-        duk_dup(ctx, col_idx);
+        duk_dup(ctx, dcsv.col_idx);
         duk_put_prop_string(ctx, -2, "columns");
+        duk_push_int(ctx, csv->rows - start);
+        duk_put_prop_string(ctx, -2, "rowCount");
     }
 
     /* free header names */
@@ -370,7 +461,7 @@ duk_pop(ctx);\
     free(hnames);            
     
     /* do not free csv->buf if inplace */
-    if (inplace)
+    if (dcsv.inplace)
         csv->buf=NULL;
 
     closeCSV(csv);

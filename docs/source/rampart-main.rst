@@ -1340,6 +1340,214 @@ Usage:
 Return Value:
    :green:`Number`. The pid of the parent process.
 
+rampart.import
+""""""""""""""
+
+csvFile
+'''''''
+
+The csvFile :green:`Function` imports csv data from a file.  It takes a 
+:green:`String` containing a file name and optionally
+an :green:`Object` of options and/or a callback
+:green:`Function`.  The parameters may be specified in any order.
+
+Usage: 
+
+.. code-block:: javascript
+
+    var res = rampart.import.csvFile(filename [, options] [, callback]);
+
++--------------+------------------+---------------------------------------------------+
+|Argument      |Type              |Description                                        |
++==============+==================+===================================================+
+|filename      |:green:`String`   | The csv file to import                            |
++--------------+------------------+---------------------------------------------------+
+|options       |:green:`Object`   | Options *described below*                         |
++--------------+------------------+---------------------------------------------------+
+|callback      |:green:`Function` | a function to handle data one row at a time.      |
++--------------+------------------+---------------------------------------------------+
+
+filename:
+    The name of the csv file to be opened;
+
+options:
+    The ``options`` :green:`Object` may contain any of the following.
+
+      * ``stripLeadingWhite`` -  :green:`Boolean` (default ``true``):
+        Remove leading whitespace characters from cells.
+
+      * ``stripTrailingWhite`` - :green:`Boolean` (default ``true``): Remove
+        trailing whitespace characters from cells.
+
+      * ``doubleQuoteEscape`` -  :green:`Boolean` (default ``false``):
+        ``""`` within strings is used to embed ``"`` characters.
+
+      * ``singleQuoteNest`` -  :green:`Boolean` (default ``true``): Strings
+        may be bounded by ``'`` pairs and ``"`` characters within are ignored.
+
+      * ``backslashEscape`` -  :green:`Boolean` (default ``true``):
+        Characters preceded by '\\' are translated and escaped.
+
+      * ``allEscapes`` -  :green:`Boolean` (default ``true``): All ``\\``
+        escape sequences known by the 'C' compiler are translated, if
+        ``false`` only backslash, single quote, and double quote are escaped.
+
+      * ``europeanDecimal``  -  :green:`Boolean` (default ``false``):
+        Numbers like ``123 456,78`` will be parsed as ``123456.78``.
+
+      * ``tryParsingStrings`` -  :green:`Boolean` (default ``false``): Look
+        inside quoted strings for dates and numbers to parse, if false
+        anything quoted is a string.
+
+      * ``delimiter`` - :green:`String` (default ``","``):  Use the first
+        character of string as a column delimiter (e.g ``\\t``).
+
+      * ``timeFormat`` -  :green:`String` (default ``"%Y-%m-%d %H:%M:%S"``):
+        Set the format for parsing a date/time. See manpage for 
+        `strptime() <https://man7.org/linux/man-pages/man3/strptime.3p.html>`_.
+
+      * ``returnType``-  :green:`String` (default ``"array"``, optionally
+        ``"object"``): Whether to
+        return an :green:`Array` or an :green:`Object` for each row.
+
+      * ``hasHeaderRow`` - -  :green:`Boolean` (default ``false``): Whether
+        to treat the first row as column names. If ``false``, the first row
+        is imported as csv data and the column names will
+        default to ``col_1, col_2, ..., col_n``.
+
+      * ``normalize`` - :green:`Boolean` (default ``false``): If ``true``,
+        examine each column in the parsed CSV object to find the majority
+        type of that column.  It then casts all the members of that column
+        to the majority type, or set it to ``null`` if it is
+        unable to do so. If ``false``, each cell is individually normalized.
+
+      * ``includeRawString`` :green:`Boolean` (default ``false``): if
+        ``true``, return each cell as an object containing 
+	``{value: normalized value, raw: originalString}``.  If false, each
+	cell value is the primative normalized value.
+
+callback:
+   A :green:`Function` taking as parameters (``result_row``, ``index``, ``columns``).
+   The callback is executed once for each row in the csv file:
+
+   * ``result_row``: (:green:`Array`/:green:`Object`): depending on the setting of ``returnType``
+     in ``Options`` above, a single row is passed to the callback as an
+     :green:`Object` or an :green:`Array`.
+
+   * ``index``: (:green:`Number`) The ordinal number of the current search result.
+
+   * ``columns``: an :green:`Array` corresponding to the column names or
+     aliases selected and returned in results.
+   
+.. _returnval:
+
+Return Value:
+	:green:`Number`/:green:`Object`.
+
+        With no callback, an :green:`Object` is returned.  The :green:`Object` contains
+	three or four key/value pairs.  
+	
+	Key: ``results``; Value: an :green:`Array` of :green:`Arrays`. 
+	Each outer :green:`Array` corresponds to a row in the csv file
+	and eac inner :green:`Array` corresponds to the columns in that row.
+	If ``returnType`` is set to ``"object"``, an :green:`Array` of
+	:green:`Objects` with keys set to the corresponding column names 
+	and the values set to the corresponding column values  of the
+	imported row.
+	
+	Key: ``rowCount``; Value: a :green:`Number` corresponding to the number of rows
+	returned.
+
+	Key:  ``columns``; Value: an :green:`Array` corresponding to the column names or
+	aliases selected and returned in results.
+
+	With a callback, the return value is set to number of rows in the
+        csv file (not including the Header if ``hasHeaderRow`` is ``true``).
+
+Note: In the callback, the loop can be cancelled at any point by returning
+``false``.  The return value (number of rows) will still be the total number
+of rows in the csv file.
+
+csv
+'''
+
+Usage:
+
+.. code-block:: javascript
+
+    var res = rampart.import.csv(csvData [, options] [, callback]);
+
+
+Same as `csvFile`_\ () except instead of a file name, a :green:`String` or :green:`Buffer` containing
+the csv data is passed as a parameter.
+
+Example:
+
+.. code-block:: javascript
+
+   var csvdata = 
+   "column 1, column 2, column 3, column 4\n"+
+   "1.0, val2, val3, val4\n" +
+   "valx, val5, val6, value 7\n";
+
+   /* no callback */
+   console.log( 
+     JSON.stringify(
+       rampart.import.csv(csvdata, 
+           {
+               hasHeaderRow: true, 
+               normalize: true
+           }
+       ),null,3
+     )
+   );
+
+   /* with callback */
+   var rows=rampart.import.csv(
+      csvdata, 
+      {
+         hasHeaderRow: true,
+         normalize: true,
+         returnType:'object', 
+         includeRawString:true
+      },
+      function(res,i,col){
+           console.log(i,res,col);
+      }
+   );
+
+   console.log("rows:", rows);
+
+   /* expected output:
+   {
+      "results": [
+         [
+            1,
+            "val2",
+            "val3",
+            "val4"
+         ],
+         [
+            null,
+            "val5",
+            "val6",
+            "value 7"
+         ]
+      ],
+      "columns": [
+         "column 1",
+         "column 2",
+         "column 3",
+         "column 4"
+      ],
+      "rowCount": 2
+   }
+   0 {"column 1":{value:1,raw:"1.0"},"column 2":{value:"val2",raw:"val2"},"column 3":{value:"val3",raw:"val3"},"column 4":{value:"val4",raw:"val4"}} ["column 1","column 2","column 3","column 4"]
+   1 {"column 1":{value:null,raw:"valx"},"column 2":{value:"val5",raw:"val5"},"column 3":{value:"val6",raw:"val6"},"column 4":{value:"value 7",raw:"value 7"}} ["column 1","column 2","column 3","column 4"]
+   rows: 2
+   */
+
+
 Process Global Variable and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1380,10 +1588,10 @@ in the order they were given on the command line.
 scriptPath
 """"""""""
 
-The value of ``process.scriptPath`` is a :green:`String` containing the path
-(directory) in which the currently executing script can be found (e.g.
-if ``rampart /path/to/my/script.js`` is run, ``process.scriptPath`` will
-be ``/path/to/my/``).
+The value of ``process.scriptPath`` is a :green:`String` containing the
+canonical path (directory) in which the currently executing script can be
+found (e.g.  if ``rampart /path/to/my/script.js`` is run,
+``process.scriptPath`` will be ``/path/to/my``).
 
 Additional Global Variables and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

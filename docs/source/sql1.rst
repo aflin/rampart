@@ -104,10 +104,12 @@ Return Value:
 .. code-block:: none
 
     {
-        exec:  {_func:true},
-        eval:  {_func:true},
-        set:   {_func:true},
-        close: {_func:true}
+        exec:          {_func:true},
+        eval:          {_func:true},
+        set:           {_func:true},
+        importCsv:     {_func:true},
+        importCsvFile: {_func:true},
+        close:         {_func:true}
     }
     
 Example:
@@ -262,7 +264,7 @@ Return Value:
   <sql3:Intelligent Text Search Queries>` the ``countInfo`` :green:`Object`
   contains the following:
 
-   * ``indexation`` (:green:`Number`): a single value estimating the number
+   * ``indexCount`` (:green:`Number`): a single value estimating the number
      of matching rows.
 
    * ``rowsMatchedMin`` (:green:`Number`): Minimum number of rows matched **before** 
@@ -658,6 +660,214 @@ Example:
 	   	expressionsList:  ["\\alnum{2,99}", "[\\alnum\\x80-\xff]+", "[\\alnum\\x80-\xff,']+"]
 	   }
 	*/		                        	 
+
+importCsvFile()
+~~~~~~~~~~~
+
+The importCsvFile :green:`Function` is similar to the
+:ref:`rampart.import.csvFile <rampart-main:csvFile>` :green:`Function` 
+except that it imports csv data from a file directly
+into a SQL table.  It takes a :green:`String` containing a file name, an
+:green:`Object` of options, optionally an :green:`Array` specifying the
+order of columns and optionally a callback :green:`Function`.  The
+parameters may be specified in any order.
+
+Usage: 
+
+.. code-block:: javascript
+
+    var res = sql.importCsvFile(filename, options [, ordering] [, callback]);
+
++--------------+------------------+---------------------------------------------------+
+|Argument      |Type              |Description                                        |
++==============+==================+===================================================+
+|filename      |:green:`String`   | The csv file to import                            |
++--------------+------------------+---------------------------------------------------+
+|options       |:green:`Object`   | Options *described below*                         |
++--------------+------------------+---------------------------------------------------+
+|ordering      |:green:`Array`    | Order of csv columns to table columns             |
++--------------+------------------+---------------------------------------------------+
+|callback      |:green:`Function` | a function to monitor the progress of the import. |
++--------------+------------------+---------------------------------------------------+
+
+filename:
+    The name of the csv file to be opened;
+
+options:
+    The ``options`` :green:`Object` may contain any of the following.
+
+      * ``tableName`` - :green:`String` (no default; **required**) -
+        The name of the table into which the csv data will be inserted.
+
+      * ``callbackStep`` - :green:`Number` - Where number is ``n``, execute
+        callback, if provided, for every nth row imported.
+
+      * ``stripLeadingWhite`` -  :green:`Boolean` (default ``true``):
+        Remove leading whitespace characters from cells.
+
+      * ``stripTrailingWhite`` - :green:`Boolean` (default ``true``): Remove
+        trailing whitespace characters from cells.
+
+      * ``doubleQuoteEscape`` -  :green:`Boolean` (default ``false``):
+        ``""`` within strings is used to embed ``"`` characters.
+
+      * ``singleQuoteNest`` -  :green:`Boolean` (default ``true``): Strings
+        may be bounded by ``'`` pairs and ``"`` characters within are ignored.
+
+      * ``backslashEscape`` -  :green:`Boolean` (default ``true``):
+        Characters preceded by '\\' are translated and escaped.
+
+      * ``allEscapes`` -  :green:`Boolean` (default ``true``): All ``\\``
+        escape sequences known by the 'C' compiler are translated, if
+        ``false`` only backslash, single quote, and double quote are escaped.
+
+      * ``europeanDecimal``  -  :green:`Boolean` (default ``false``):
+        Numbers like ``123 456,78`` will be parsed as ``123456.78``.
+
+      * ``tryParsingStrings`` -  :green:`Boolean` (default ``false``): Look
+        inside quoted strings for dates and numbers to parse, if false
+        anything quoted is a string.
+
+      * ``delimiter`` - :green:`String` (default ``","``):  Use the first
+        character of string as a column delimiter (e.g ``\\t``).
+
+      * ``timeFormat`` -  :green:`String` (default ``"%Y-%m-%d %H:%M:%S"``):
+        Set the format for parsing a date/time. See manpage for 
+        `strptime() <https://man7.org/linux/man-pages/man3/strptime.3p.html>`_.
+
+      * ``hasHeaderRow`` - -  :green:`Boolean` (default ``false``): Whether
+        to treat the first row as column names. If ``false``, the first row
+        is imported as csv data and the column names will
+        default to ``col_1, col_2, ..., col_n``.
+
+      * ``normalize`` - :green:`Boolean` (default ``true``): If ``true``,
+        examine each column in the parsed CSV object to find the majority
+        type of that column.  It then casts all the members of that column
+        to the majority type, or set it to ``null`` if it is
+        unable to do so. If ``false``, each cell is individually normalized.
+	NOTE: unlike the 
+	:ref:`rampart.import.csvFile <rampart-main:csvFile>` :green:`Function`,
+	the default is ``true``.
+
+ordering:
+   An :green:`Array` of :green:`Strings` or :green:`Numbers` corresponding
+   to the csv columns, listed in the order of insertion into the table.
+   Example:  If ``[0,3,4]`` is specified, the first, fourth and fifth row in
+   the csv will be inserted into the first, second and third row of SQL table.
+   ``-1`` can be used to insert a ``0`` or blank string (``""``) in that
+   position in the table.  Also a :green:`String` corresponding to the csv
+   column name may be used in place of a number.
+
+callback:
+   A :green:`Function` taking as its sole parameter (``index``), the
+   current ``0`` based row being imported.
+   The callback is executed once for each row in the csv file unless the
+   option ``callbackStep`` is specified.
+
+Return Value:
+	:green:`Number`. The return value is set to number of rows in the
+	csv file.
+
+Note: In the callback, the loop can cancell the import at any point by returning
+``false``.  The return value (number of rows) will still be the total number
+of rows in the csv file.
+
+Example:
+
+.. code-block:: javascript
+
+   var ret=sql.importCsvFile(
+      /* csv file to import */
+      "sample.csv",
+
+      /* options */
+      {
+         tableName:"testtb",
+         callbackStep: 1000,
+         hasHeaderRow: true,
+      },
+
+      /* reorder csv rows switching second and third */
+      [0,2,1],
+
+      /* print progress */
+      function(i){
+         console.log(i);
+      }
+   );
+
+   console.log("total="+ret);
+
+   /* expected output for 10000 row csv:
+   1000
+   2000
+   ...
+   9000                                                                         
+   total=10000
+   */
+
+importCsv()
+~~~~~~~~~~~
+
+Same as `importCsvFile()`_ except instead of a file name, a :green:`String` or
+:green:`Buffer` containing the csv data is passed as a parameter.
+
+Example:
+
+.. code-block:: javascript
+
+   var Sql=require("rampart-sql");
+   var sql= new Sql.init("/path/mytestdb");
+
+   var csv = 
+   "Dept,       item1 Quantity, item1 Description, item1 Value, item2 Quantity, item2 Description, item2 Value\n" +
+   "accounting, 5,              Macbook Pro,       1200.0,      300,            Pencils,           0.1\n" +
+   "marketing,  20,             Dell XPS 15,       1150.0,      350,            Pens,              0.5\n" +
+   "logistics,  30,             iPad Air,          300.0,       100,            Duktape,           1.5\n"
+
+   /* note this table has more rows than the csv*/
+   sql.exec("create table company_assets(Department varchar(16), "+
+              "Num_item1 int, Desc_item1 varchar(16), Val_item1 float, Tot_Val_item1 float, " +
+              "Num_item2 int, Desc_item2 varchar(16), Val_item2 float, Tot_Val_item2 float, " +
+              "Tot_Val_items float);");
+
+   /* import the csv data */
+   sql.importCsv(
+      csv,
+      {
+          tableName: "company_assets",
+          hasHeaderRow: true
+      },
+      /* 
+         order of insertion. Can be column name or column number
+         "" or -1 means insert a null value (0, 0.0 or "")
+      */
+      [
+         "Dept",
+         "item1 Quantity", "item1 Description", "item1 Value", -1,
+         "item2 Quantity", "item2 Description", "item2 Value", -1,
+          -1
+      ]  
+   );
+
+   /* update rows that defaulted to 0*/
+   sql.exec("update company_assets set Tot_Val_item1 = ( Num_item1 * Val_item1 )");
+   sql.exec("update company_assets set Tot_Val_item2 = ( Num_item2 * Val_item2 )");
+   sql.exec("update company_assets set Tot_Val_items = ( Tot_Val_item1 + Tot_Val_item2 )");
+
+   /* print the results */
+   sql.exec("select * from company_assets", {returnType:'array'},function(res,i,cols) {
+       if( i==0)
+           console.log("-", cols);
+       console.log(i, res);
+   });
+
+   /* output:
+   - ["Department","Num_item1","Desc_item1","Val_item1","Tot_Val_item1","Num_item2","Desc_item2","Val_item2","Tot_Val_item2","Tot_Val_items"]
+   0 ["accounting",5,"Macbook Pro",1200,6000,300,"Pencils",0.10000000149011612,30,6030]
+   1 ["marketing",20,"Dell XPS 15",1150,23000,350,"Pens",0.5,175,23175]
+   2 ["logistics",30,"iPad Air",300,9000,100,"Duktape",1.5,150,9150]
+   */
 
 close()
 ~~~~~~~
