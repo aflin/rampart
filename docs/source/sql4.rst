@@ -556,11 +556,10 @@ with this statement:
 The table on which the index was created would not be touched. However,
 the index created for it has been removed.
 
+.. _DBCurr:
 
 Keeping the Database Current
 ----------------------------
-
-[chp:DBCurr]
 
 To keep the data in your database current, three types of transactions
 must be performed on the data. These transactions are:

@@ -124,6 +124,12 @@ extern int   rampart_argc;
 /* end settings */
 
 
+/* 
+   Question: should we just exit
+   or allow users to catch a malloc
+   error?  
+*/
+
 #define DUKREMALLOC(ctx, s, t)                 \
     (s) = realloc((s), (t));                   \
     if ((char *)(s) == (char *)NULL)           \
@@ -181,6 +187,7 @@ extern int   rampart_argc;
 
 #define RP_TIME_T_FOREVER 2147483647
 
+/* debugging macros */
 #define printstack(ctx)                           \
     do                                            \
     {                                             \

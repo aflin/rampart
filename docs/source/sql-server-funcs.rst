@@ -1851,24 +1851,23 @@ supported by `parselatitude, parselongitude`_, provided they are
 disambiguated (e.g. separate parameters; or if one parameter, separated
 by a comma and/or fully specified with degrees/minutes/seconds).
 
-::
+.. code-block:: sql
 
       -- Populate a table with latitude/longitude information:
-      create table geotest(city varchar(64), lat double, lon double,
-                           geocode long);
+      create table geotest(city varchar(64), lat double, lon double, geocode long);
       insert into geotest values('Cleveland, OH, USA', 41.4,  -81.5,  -1);
       insert into geotest values('San Francisco, CA, USA',   37.78, -122.42,  -1);
       insert into geotest values('Davis, Ca, USA',    38.55, -121.74, -1);
       insert into geotest values('New York, NY, USA',  40.81, -73.96,  -1);
+
       -- Prepare for geographic searches:
       update geotest set geocode = latlon2geocode(lat, lon);
       create index xgeotest_geocode on geotest(geocode);
+
       -- Search for cities within a 3-degree-radius "circle" (box)
       -- of Cleveland, nearest first:
-      select city, lat, lon, distlatlon(41.4, -81.5, lat, lon) MilesAway
-      from geotest
-      where geocode between (select latlon2geocodearea(41.4, -81.5, 3.0))
-      order by 4 asc;
+      select city, lat, lon, distlatlon(41.4, -81.5, lat, lon) MilesAway from geotest
+         where geocode between (select latlon2geocodearea(41.4, -81.5, 3.0)) order by 4 asc;
 
 
 The geocode values returned by ``latlon2geocode`` and

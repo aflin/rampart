@@ -2,15 +2,13 @@
 Intelligent Text Search Queries
 -------------------------------
 
-[Chp:MMLike]
-
 This manual has concentrated so far on the manipulation of fields within
 a relational database. As a text information server Texis provides all
 the capabilities one would expect from a traditional RDBMS.
 
 Texis was also designed to incorporate large quantities of narrative
 full text stored within the database. This is evidenced by its data
-types as presented in Chapter [chp:TabDef], *Table Definition*. When
+types as presented in :ref:`sql1:Table Definition`. When
 textual content becomes the focus of the search, the emphasis shifts
 from one of document management to one of research. Texis has embodied
 within it special programs geared to accomplish this.
@@ -23,9 +21,9 @@ possible on full text information with Metamorph is possible with Texis,
 within the framework of a relational database.
 
 Metamorph is covered in a complete sense in its own section in this
-manual and can be studied of itself. Please refer to the *Metamorph
-Intelligent Text Query Language* sections for a full understanding of
-all Metamorph’s theory and application.
+manual and can be studied of itself. Please refer to the 
+:ref:`mm1:Metamorph: The Program Inside the Program` section for a 
+full understanding of all Metamorph’s theory and application.
 
 This chapter deals with the use of Metamorph within the ``LIKE`` portion
 of the ``WHERE`` clause. Texis can accomplish any Metamorph search
@@ -50,17 +48,18 @@ faster, and less precise ranking figure than the one returned by
 ``LIKEP``. The ranking takes into account how many of the query terms
 are present, as well as their weight, and for ``LIKEP``, how close
 together the words are, and where in the document they occur. Most
-queries will use ``LIKE`` of ``LIKEP``, with ``LIKE3`` and ``LIKER``
+queries will use ``LIKEP``, with ``LIKE3`` and ``LIKER``
 used in special circumstances when you want to avoid the post-processing
 that would fully resolve the query.
 
-There are also two forms of Metamorph index, the Metamorph inverted
-index and the Metamorph index. The inverted form contains additional
-information which allows phrases to be resolved and ``LIKEP`` rankings
-to be calculated entirely using the index. This improved functionality
-comes at a cost in terms of space.
+There are also two main forms of Metamorph index, the Metamorph inverted
+index (AKA "FULLTEXT" index) and the Metamorph compact index.  The inverted
+form contains additional information which allows phrases to be resolved and
+``LIKEP`` rankings to be calculated entirely using the index.  This improved
+functionality comes at a cost in terms of space.  See 
+:ref:`sql4:Creating a Metamorph Index` for more information.
 
-If your queries are single word ``LIKE`` queries then the Metamorph
+If your queries are single word ``LIKE`` queries, then the Metamorph compact
 index has all the information needed, so the additional overhead of the
 inverted index is not needed.
 
@@ -132,18 +131,18 @@ vocabulary evolve.
 A word need not be “known” by Metamorph for it to be processed. The fact
 of a word having associations stored in the Thesaurus makes abstraction
 of concept possible, but is not required to match word forms. Such word
-stemming knowledge is inherent. And, any string of characters can be
+stemming knowledge is inherent. Further, any string of characters can be
 matched exactly as entered.
 
-You can edit the special word lists Metamorph uses to process English if
-you wish. As it may not be immediately apparent to what degree these
+The special word lists Metamorph uses to process English can be edited. 
+As it may not be immediately apparent to what degree these
 word lists may affect general searching, it is cautioned that such
 editing be used sparingly and with the wisdom of experience. Even so,
 what Metamorph deems to be Noise, Prefixes, and Suffixes is all under
 user control.
 
-See the Metamorph portion of this manual for a complete explanation of
-all these terms and other background information.
+See the :ref:`mm1:Metamorph: The Program Inside the Program` section for a
+complete explanation of all these terms and other background information.
 
 
 Constructing a Metamorph Query
@@ -168,9 +167,9 @@ ordinance is stored in a column called BODY.
 To find ordinances containing references to dogs, the ``WHERE`` clause
 takes this form:
 
-::
+.. code-block:: sql
 
-         WHERE column-name LIKE 'metamorph-query'
+         WHERE column-name LIKEP 'metamorph-query'
 
 You can put any Metamorph query in the quotes (``'metamorph-query'``)
 although you would need to escape a literal ``'`` with another ``'`` by
@@ -187,21 +186,21 @@ statement.
 
 In this example, the ``WHERE`` clause would look like this:
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE 'dog'
+         WHERE BODY LIKEP 'dog'
 
 When Texis executes the search, ordinances whose bodies contain matching
 sentences would be retrieved. An example of a qualifying sentence would
 be:
 
-::
+.. code-block:: text
 
          DOG:  any member of the canine family.
 
 And this sentence:
 
-::
+.. code-block:: text
 
          It shall be unlawful and a nuisance for any DOG owner to
          permit a dog to be free of restraint in the city.
@@ -225,15 +224,15 @@ concept grouping.
 
 **Example:**
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE 'dog fine'
+         WHERE BODY LIKEP 'dog fine'
 
 Fewer hits will be retrieved than when only one search item is entered
 (i.e., “dog”), as you are requiring both “dog” and “fine” to occur in
 the same sentence. This sentence would qualify:
 
-::
+.. code-block:: text
 
          The owner of any DOG who permits such a dog to be free of
          restraint in violation of Section 4.2 of this article shall
@@ -244,13 +243,13 @@ found.
 
 **Example:**
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE 'dog owner vaccination city'
+         WHERE BODY LIKEP 'dog owner vaccination city'
 
 Such a query locates this sentence:
 
-::
+.. code-block:: text
 
          Every veterinarian who VACCINATES any cat or DOG within the
          CITY limits shall issue a certification of vaccination to
@@ -281,14 +280,14 @@ sentence; “``w/all``” incdicates the entire field; “``w/#``” indicates
 text bodies of those ordinances for controls issued about dogs. The
 following query uses sentence proximity to qualify its hits.
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE 'dog control w/sent'
+         WHERE BODY LIKEP 'dog control w/sent'
 
 This sentence qualifies as a hit because “control” and “dogs” are in the
 same sentence.
 
-::
+.. code-block:: text
 
          Ordinances provide that the animal CONTROL officer takes
          possession of DOGS which are free of restraint.
@@ -297,29 +296,29 @@ Add a within operator to the Metamorph query to indicate both stated
 search items must occur within a single line of text, rather than within
 a sentence.
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE 'dog control w/line'
+         WHERE BODY LIKEP 'dog control w/line'
 
 The retrieved concept group has changed from a sentence to a line, so
 “dog” and “control” must occur in closer proximity to each other. Now
 the line, rather than the sentence, is the hit.
 
-::
+.. code-block:: text
 
          CONTROL officer takes possession of DOGS
 
 Expanding the proximity range to a paragraph broadens the allowed
 distance between located search words.
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE 'dog control w/para'
+         WHERE BODY LIKEP 'dog control w/para'
 
 The same query with a different “within” operator now locates this whole
 paragraph as the hit:
 
-::
+.. code-block:: text
 
          The mayor, subject to the approval of the city council,
          shall appoint an animal CONTROL officer who is qualified to
@@ -337,9 +336,9 @@ expression using REX syntax which follows the “``w/``”. Anything
 following “``w/``” that is not one of the previously defined special
 delimiters is assumed to be a REX expression. For example:
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE 'dog control w/\RSECTION'
+         WHERE BODY LIKEP 'dog control w/\RSECTION'
 
 What follows the ‘``w/``’ now is a user designed REX expression for
 sections. This would work on text which contained capitalized headers
@@ -349,9 +348,9 @@ text.
 Delimiters can also be expressed as a number of characters forward and
 backwards from the located search items. For example:
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE 'dog control w/500'
+         WHERE BODY LIKEP 'dog control w/500'
 
 In this example “dog” and “control” must occur within a window of 500
 characters forwards and backwards from the first item located.
@@ -379,7 +378,7 @@ you may wish to specify this.
 Delimiter Syntax Summary
 """"""""""""""""""""""""
 
-::
+.. code-block:: text
 
             w/{abbreviation}
          or
@@ -406,27 +405,39 @@ Rules of Delimiter Syntax
 
 -  Accepted built-in abbreviations following the slash ‘``/``’ are:
 
-   [tab:within]
 
-   | ``[^\digit\upper][.?!][\space'"]``\ xxx = Meaning Abbreviation
-     Meaning
-   | ``line`` within a line
-   | ``sent`` within a sentence
-   | ``para`` within a paragraph
-   | ``page`` within a page
-   | ``all`` within a field
-   | ``NUMBER`` within NUMBER characters
+   +----------------+------------------------------+
+   |  Abbreviation  |     Meaning                  |
+   +================+==============================+
+   | ``line``       |   within a line              |
+   +----------------+------------------------------+
+   | ``sent``       | within a sentence            |
+   +----------------+------------------------------+
+   | ``para``       | within a paragraph           |
+   +----------------+------------------------------+
+   | ``page``       | within a page                |
+   +----------------+------------------------------+
+   | ``all``        | within a field               |
+   +----------------+------------------------------+
+   |   NUMBER       | within NUMBER characters     |
+   +----------------+------------------------------+
 
-   | ``[^\digit\upper][.?!][\space'"]``\ xxx = Meaning REX Expression
-     Meaning
-   | ``$`` 1 new line
-   | ``[^\digit\upper][.?!][\space'"]`` not a digit or upper case
-     letter, then
-   | a period, question, or exclamation point, then
-   | any space character, single or double quote
-   | ``\x0a=\space+`` a new line + some space
-   | ``\x0c`` form feed for printer output
 
+   +------------------------------------+---------------------------------------------+
+   |  REX Expression                    |     Meaning                                 |
+   +====================================+=============================================+
+   | ``$``                              | 1 new line                                  |
+   +------------------------------------+---------------------------------------------+
+   | ``[^\digit\upper][.?!][\space'"]`` | not a digit or upper case                   |
+   |                                    | letter, then a period, question, or         |
+   |                                    | exclamation point, then                     |
+   |                                    | any space character, single or double quote |
+   +------------------------------------+---------------------------------------------+
+   | ``\x0a=\space+``                   | a new line + some space                     |
+   +------------------------------------+---------------------------------------------+
+   | ``\x0c``                           | form feed for printer output                |
+   +------------------------------------+---------------------------------------------+
+ 
 -  A number following a slash ‘``/``’ means the number of characters
    before and after the first search item found. Therefore “``w/250``”
    means “within a proximity of 250 characters”. When the first
@@ -464,8 +475,8 @@ Rules of Delimiter Syntax
    delimiter in the hit.
 
 
-Using Set Logic to Weight Search Items
-""""""""""""""""""""""""""""""""""""""
+Using Set Logic in Metamorph Queries
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
 Set Logic and Intersections Defined
@@ -489,15 +500,15 @@ and you want each one to occur in the targeted hit.
 Here is an example of a typical query, where no special weighting has
 been assigned:
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE 'mayor powers duties city'
+         WHERE BODY LIKEP 'mayor powers duties city'
 
 The query equally weights each item, and searches for a sentence
 containing “mayor” and “powers” and “duties” and “city” anywhere within
 it, finding this sentence:
 
-::
+.. code-block:: text
 
          In the case of absence from the CITY or the failure,
          inability or refusal of both the MAYOR and mayor pro tempore
@@ -522,19 +533,21 @@ sets.
 
 **Example:**
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE '~alcohol ~consumption'
+         WHERE BODY LIKEP '~alcohol ~consumption'
 
 In the above example, the tilde (``~``) preceding “alcohol” and
 preceding “consumption” enables concept expansion on both words, thereby
 including the set of associations listed for each word in the Thesaurus.
+See :ref:`sql-set:useEquiv` Server Property for caveats relating to the 
+usage of ``~``.
 
 Where something from the concept set “alcohol” and something from the
 concept set “consumption” meet within a sentence, there is a hit. This
 default set logic finds a 1 intersection sentence:
 
-::
+.. code-block:: text
 
          It shall be unlawful to USE the city swimming pool or enter
          the enclosure in which it is located when a person is
@@ -556,13 +569,13 @@ valid hit.
 
 **Example:**
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE '~alcohol ~sweets ~consumption'
+         WHERE BODY LIKEP '~alcohol ~sweets ~consumption'
 
 Such a 2 intersection search finds this hit:
 
-::
+.. code-block:: text
 
          any public sleeping or EATING place, or any place or vehicle
          where food or DRINK is manufactured, prepared, stored, or
@@ -583,9 +596,9 @@ desired intersections (2) is preceded by the at sign (``@``):
 
 **Example:**
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE '~alcohol ~sweets ~consumption @2'
+         WHERE BODY LIKEP '~alcohol ~sweets ~consumption @2'
 
 The “``@2``” designation is redundant as it is understood by the program
 to be the default maximum number of intersections possible, but it would
@@ -603,7 +616,7 @@ If you wanted only one intersection of these three items, it would
 create an interesting range of possibilities. You might find an
 intersection of any of the following combinations:
 
-::
+.. code-block:: text
 
          alcohol (AND) sweets
          alcohol (AND) consumption
@@ -614,15 +627,15 @@ items.
 
 **Example:**
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE '~alcohol ~sweets ~consumption @1'
+         WHERE BODY LIKEP '~alcohol ~sweets ~consumption @1'
 
 This 1 intersection search finds the following, where any 2 occurrences
 from the 3 specified sets occur within the hit. Hits for a higher
 intersection number (``@2``) as shown above also appear.
 
-::
+.. code-block:: text
 
       ~consumption (and) ~alcohol @1
          It shall be unlawful to USE the city swimming pool or enter
@@ -669,15 +682,15 @@ where zero (``0``) indicates no intersections are required (``@0``):
 
 **Example:**
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE '~alcohol ~sweets ~consumption @0'
+         WHERE BODY LIKEP '~alcohol ~sweets ~consumption @0'
 
 In addition to the hits listed above for a higher number of
 intersections, the following 0 intersection hits would be found, due to
 the presence of only one item (a or b or c) required:
 
-::
+.. code-block:: text
 
       ~alcohol @0
          Every person licensed to sell LIQUOR, wine or beer or mixed
@@ -718,9 +731,9 @@ permuted items. The number of intersections required as specified by
 
 **Example:**
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE '+license plumbing alcohol taxes @0'
+         WHERE BODY LIKEP '+license plumbing alcohol taxes @0'
 
 This search requires (``+``) the occurrence of “license”, which must be
 found in the same sentence with either “plumbing”, “alcohol”, or
@@ -732,7 +745,7 @@ designation applies to the other search items only.
 
 This query finds the following hits:
 
-::
+.. code-block:: text
 
       +license (and) @0 alcohol
          Every person licensed to sell liquor, wine or beer or mixed
@@ -778,9 +791,9 @@ apply to the remaining permuted items.
 
 **Example:**
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE 'license ~alcohol -drink'
+         WHERE BODY LIKEP 'license ~alcohol -drink'
 
 This search has the goal of finding licensing issues surrounding
 alcohol. However, the presence of the word “drink” might incorrectly
@@ -788,7 +801,7 @@ produce references about restaurants that do not serve alcohol.
 
 Excluding the hit if it contains “drink” retrieves these hits:
 
-::
+.. code-block:: text
 
      license (and) ~alcohol -drink
          Every person licensed to sell LIQUOR, wine or beer or mixed
@@ -801,7 +814,7 @@ Excluding the hit if it contains “drink” retrieves these hits:
 
 But excludes this hit:
 
-::
+.. code-block:: text
 
      license (and) ~alcohol -drink  {Excluded Hit}
          The city council shall have the power to regulate, LICENSE
@@ -836,9 +849,9 @@ follows.
 
 **Example:**
 
-::
+.. code-block:: sql
 
-         WHERE BODY LIKE '+officer @1 law power pay duties -mayor'
+         WHERE BODY LIKEP '+officer @1 law power pay duties -mayor'
 
 The above query makes these requirements:
 
@@ -852,7 +865,7 @@ The above query makes these requirements:
 This query retrieves the following hits, while excluding hits containing
 “mayor”.
 
-::
+.. code-block:: text
 
       power, duties +officer (but not) -mayor
          The city council shall have POWER from time to time to

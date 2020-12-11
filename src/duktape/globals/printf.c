@@ -878,7 +878,22 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             if (!duk_is_string(ctx, fidx))
             {
                 if ( !duk_is_function(ctx, fidx) )
-                    (void)duk_json_encode(ctx, fidx); 
+                {
+                    if(width)
+                    {
+                        /* JSON.stringify(obj,null,width) */
+                        duk_get_global_string(ctx, "JSON");
+                        duk_push_string(ctx, "stringify");
+                        duk_dup(ctx, fidx);
+                        duk_push_null(ctx);
+                        duk_push_int(ctx, width);
+                        duk_call_prop(ctx, -5, 3);
+                        duk_replace(ctx, fidx);
+                        duk_pop(ctx); /* JSON */
+                    }
+                    else
+                        (void)duk_json_encode(ctx, fidx);
+                }
                 else
                 {
                     duk_push_string(ctx,"{_func:true}");

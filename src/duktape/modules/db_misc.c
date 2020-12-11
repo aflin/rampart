@@ -992,25 +992,25 @@ static void searchfile_setcp(duk_context *ctx, APICP *cp, duk_idx_t obj_idx)
 {
     if(duk_rp_GPS_icase(ctx, obj_idx, "alintersects"))
     {
-        cp->alintersects =REQUIRE_BOOL(ctx, -1, "searchfile: option alintersects requires a boolean");
+        cp->alintersects =REQUIRE_BOOL(ctx, -1, "searchfile: option alIntersects requires a boolean");
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "suffixproc" ))
     {
-        cp->suffixproc =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option suffixproc requires a boolean");
+        cp->suffixproc =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option suffixProc requires a boolean");
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "prefixproc" ))
     {
-        cp->prefixproc =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option prefixproc requires a boolean");
+        cp->prefixproc =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option prefixProc requires a boolean");
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "defsuffrm"  ))
     {
-        cp->defsuffrm  =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option defsuffrm requires a boolean");
+        cp->defsuffrm  =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option defSuffRm requires a boolean");
     }
     duk_pop(ctx);
 
@@ -1034,19 +1034,19 @@ static void searchfile_setcp(duk_context *ctx, APICP *cp, duk_idx_t obj_idx)
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "withinproc" ))
     {
-        cp->withinproc =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option withinproc requires a boolean");
+        cp->withinproc =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option withinProc requires a boolean");
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "intersects" ))
     {
-        cp->intersects =REQUIRE_BOOL(ctx, -1, "searchfile: option intersects requires a boolean");
+        cp->intersects =REQUIRE_INT(ctx, -1, "searchfile: option intersects requires an int");
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "minwordlen" ))
     {
-        cp->minwordlen =REQUIRE_INT(ctx, -1, "searchfile: option minwordlen requires an int");
+        cp->minwordlen =REQUIRE_INT(ctx, -1, "searchfile: option minWordLen requires an int");
         if(cp->minwordlen<2)
             RP_THROW(ctx, "searchfile: option minwordlen requires an int >= 2");
     }
@@ -1060,91 +1060,109 @@ static void searchfile_setcp(duk_context *ctx, APICP *cp, duk_idx_t obj_idx)
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "keepeqvs"   ))
     {
-        cp->keepeqvs   =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option keepeqvs requires a boolean");
+        cp->keepeqvs   =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option keepEqvs requires a boolean");
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "useeqiv"   ))
     {
-        cp->keepeqvs   =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option useequiv requires a boolean");
+        cp->keepeqvs   =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option useEquiv requires a boolean");
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "keepnoise"  ))
     {
-        cp->keepnoise  =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option keepnoise requires a boolean");
+        cp->keepnoise  =(byte)REQUIRE_BOOL(ctx, -1, "searchfile: option keepNoise requires a boolean");
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "eqprefix"   ))
     {
-        cp->eqprefix   =argstr(ctx, "eqprefix", cp->eqprefix);
+        cp->eqprefix   =argstr(ctx, "eqPrefix", cp->eqprefix);
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "ueqprefix"  ))
     {
-        cp->ueqprefix  =argstr(ctx, "ueqprefix", cp->ueqprefix);
+        cp->ueqprefix  =argstr(ctx, "uEqPrefix", cp->ueqprefix);
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "sdexp"      ))
     {
-        cp->sdexp      =argstr(ctx, "sdexp", cp->sdexp);
+        cp->sdexp      =argstr(ctx, "sdExp", cp->sdexp);
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "edexp"      ))
     {
-        cp->edexp      =argstr(ctx, "edexp", cp->edexp);
+        cp->edexp      =argstr(ctx, "edExp", cp->edexp);
     }
     duk_pop(ctx);
 
-    if(duk_rp_GPS_icase(ctx, obj_idx, "suffix"     ))
+    if(duk_rp_GPS_icase(ctx, obj_idx, "suffixlist"     ))
     {
-        cp->suffix     =arglst(ctx, "suffix", cp->suffix);
+        cp->suffix     =arglst(ctx, "suffixList", cp->suffix);
     }
     duk_pop(ctx);
 
-    if(duk_rp_GPS_icase(ctx, obj_idx, "prefix"     ))
+    if(duk_rp_GPS_icase(ctx, obj_idx, "prefixlist"     ))
     {
-        cp->prefix     =arglst(ctx, "prefix", cp->prefix);
+        cp->prefix     =arglst(ctx, "prefixList", cp->prefix);
     }
     duk_pop(ctx);
 
-    if(duk_rp_GPS_icase(ctx, obj_idx, "noise"      ))
+    if(duk_rp_GPS_icase(ctx, obj_idx, "noiselist"      ))
     {
-        cp->noise      =arglst(ctx, "noise", cp->noise);
+        cp->noise      =arglst(ctx, "noiseList", cp->noise);
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "suffixlst"     ))
+    {
+        cp->suffix     =arglst(ctx, "suffixLst", cp->suffix);
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "prefixlst"     ))
+    {
+        cp->prefix     =arglst(ctx, "prefixLst", cp->prefix);
+    }
+    duk_pop(ctx);
+
+    if(duk_rp_GPS_icase(ctx, obj_idx, "noiselst"      ))
+    {
+        cp->noise      =arglst(ctx, "noiseLst", cp->noise);
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "qmaxsets"   ))
     {
-        cp->qmaxsets=REQUIRE_INT(ctx, -1, "searchfile: option qmaxsets requires an int");
+        cp->qmaxsets=REQUIRE_INT(ctx, -1, "searchfile: option qMaxSets requires an int");
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "qmaxsetwords"))
     {
-        cp->qmaxsetwords=REQUIRE_INT(ctx, -1, "searchfile: option qmaxsetwords requires an int");
+        cp->qmaxsetwords=REQUIRE_INT(ctx, -1, "searchfile: option qMaxSetWords requires an int");
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "qmaxwords"  ))
     {
-        cp->qmaxwords=REQUIRE_INT(ctx, -1, "searchfile: option qmaxwords requires an int");
+        cp->qmaxwords=REQUIRE_INT(ctx, -1, "searchfile: option qMaxWords requires an int");
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "qminwordlen"))
     {
-        cp->qminwordlen=REQUIRE_INT(ctx, -1, "searchfile: option qminwordlen requires an int");
+        cp->qminwordlen=REQUIRE_INT(ctx, -1, "searchfile: option qMinWordLen requires an int");
     }
     duk_pop(ctx);
 
     if(duk_rp_GPS_icase(ctx, obj_idx, "qminprelen" ))
     {
-        cp->qminprelen =REQUIRE_INT(ctx, -1, "searchfile: option qminprelen requires an int");
+        cp->qminprelen =REQUIRE_INT(ctx, -1, "searchfile: option qMinPreLen requires an int");
     }
     duk_pop(ctx);
 

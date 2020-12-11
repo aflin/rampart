@@ -82,7 +82,7 @@ following:
 
 Rampart philosophy
 ~~~~~~~~~~~~~~~~~~
-Though rampart supports ``setTimeout()`` (and other async functions via
+Though Rampart supports ``setTimeout()`` (and other async functions via
 babel), the functions added to `Duktape <https://duktape.org>`_ 
 via modules as well as the built-in functions are syncronous.  Raw javascript
 execution is more memory efficient, but far slower than with, e.g., node.js.
@@ -168,7 +168,7 @@ printf
 
 Print a formatted string to stdout.  Provides C-like 
 `printf(3) <https://man7.org/linux/man-pages/man3/printf.3.html>`_ 
-functionality in javascript.
+functionality in JavaScript.
 
 Usage:
 
@@ -186,12 +186,15 @@ See standard formats and flags from
 Extended (non-standard) formats:
 
    * ``%s`` - corresponding argument is treated as a :green:`String`
-     (converted/coerced if necessary)
+     (converted/coerced if necessary).
 
    * ``%S`` - same as ``%s`` except an error is thrown if corresponding argument is
      not a :green:`String`.
 
-   * ``%J`` - print :green:`Object` as JSON.
+   * ``%J`` - print :green:`Object` as JSON.  An optional width (i.e.
+     ``printf("%4J", obj);``) may be given which will print with new lines and 
+     indentation of the specified amount (equivalent to 
+     ``printf("%s", JSON.stringify(obj, null, 4) );``). 
 
    * ``%B`` - print contents of a :green:`Buffer` as is.
 
@@ -287,14 +290,15 @@ Usage:
 
 .. code-block:: javascript
 
-   var output = fopen(filename, mode);
+   var output = rampart.utils.fopen(filename, mode);
    rampart.utils.fprintf(output, fmt, ...);
+   rampart.utils.fclose(output);
 
    /* or */
 
    var output = filename;
    rampart.utils.fprintf(output, [, append], fmt, ...); 
-
+   /* file is automatically closed after function returns */
    
 Where:
 
@@ -424,6 +428,10 @@ Example:
 
 .. code-block:: javascript
 
+   /* normally a flush happens automatically
+      when a '\n' is printed.  Since we are using
+      '\r', flush manually                        */
+
    for (var i=0; i< 10; i++) {
       rampart.utils.printf("doing #%d\r", i);
       rampart.utils.fflush(rampart.utils.stdout);
@@ -431,8 +439,6 @@ Example:
    }
 
    rampart.utils.printf("blast off!!!\n");
-
-
 
 fread
 '''''
@@ -503,8 +509,8 @@ Usage:
    var hexstring = rampart.utils.hexify(data [, upper]);
 
 Where ``data`` is the string of bytes (:green:`String` or :green:`Buffer`)
-to be converted and ``upper`` is an optional :green:`Boolean`, which if true
-prints using upper-case ``A-F``.
+to be converted and ``upper`` is an optional :green:`Boolean`, which if
+``true`` prints using upper-case ``A-F``.
 
 Return Value:
    :green:`String`. Each byte in data is converted to its two character hex representation.
@@ -523,7 +529,8 @@ Usage:
    var data = rampart.utils.hexify(hexstring);
 
 Return Value:
-   :green:`Buffer`.  Each two character hex representation converted to binary.
+   :green:`Buffer`.  Each two character hex representation converted to a
+   byte in the binary string.
 
 
 Example:
@@ -1388,7 +1395,7 @@ options:
       * ``backslashEscape`` -  :green:`Boolean` (default ``true``):
         Characters preceded by '\\' are translated and escaped.
 
-      * ``allEscapes`` -  :green:`Boolean` (default ``true``): All ``\\``
+      * ``allEscapes`` -  :green:`Boolean` (default ``true``): All ``\``
         escape sequences known by the 'C' compiler are translated, if
         ``false`` only backslash, single quote, and double quote are escaped.
 
@@ -1396,11 +1403,11 @@ options:
         Numbers like ``123 456,78`` will be parsed as ``123456.78``.
 
       * ``tryParsingStrings`` -  :green:`Boolean` (default ``false``): Look
-        inside quoted strings for dates and numbers to parse, if false
+        inside quoted strings for dates and numbers to parse, if ``false``
         anything quoted is a string.
 
       * ``delimiter`` - :green:`String` (default ``","``):  Use the first
-        character of string as a column delimiter (e.g ``\\t``).
+        character of string as a column delimiter (e.g ``\t``).
 
       * ``timeFormat`` -  :green:`String` (default ``"%Y-%m-%d %H:%M:%S"``):
         Set the format for parsing a date/time. See manpage for 
@@ -1565,7 +1572,7 @@ Usage:
 
    process.exit([exitcode]);
 
-Where the optional ``exitcode`` is a :green:`Number`, the status that rampart returns
+Where the optional ``exitcode`` is a :green:`Number`, the status that Rampart returns
 to its parent (default: ``0``);
 
 env
@@ -1614,17 +1621,19 @@ experimental and is mainly included to support asynchronous functions in
 ECMAScript 2015+ and Babel.js
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Acknowledgement
-"""""""""""""""
+Babel Acknowledgement
+"""""""""""""""""""""
 
-Rampart experimentally uses the `Babel.js <https://babeljs.io/>`_.  Babel.js
-is a toolchain that is used by rampart to convert ECMAScript 2015+ (and
-optionally TypeScript) code into a version of JavaScript compatible with
-Duktape.  The authors of Rampart are extremely grateful to the 
+Rampart experimentally uses `Babel.js <https://babeljs.io/>`_ to support a
+greater breath of javascript syntax and functionality.  Babel.js is a
+toolchain that converts ECMAScript 2015+ (and optionally TypeScript) code
+into a version of JavaScript compatible with Duktape.  The authors of
+Rampart are extremely grateful to the 
 `Babel development team <https://babeljs.io/team>`_.
 
-License
-"""""""
+Babel License
+"""""""""""""
+
 Babel.js is 
 `MIT licensed <https://github.com/babel/babel/blob/main/LICENSE>`_. 
 
@@ -1710,7 +1719,7 @@ the original script name and replacing it with ``.babel.js``.  Thus if, e.g.,
 the original script was named ``myfile.js``, the transpiled version will be
 named ``myfile.babel.js``.
 
-When the original script is run again, rampart will check the date on the
+When the original script is run again, Rampart will check the date on the
 script, and if it was not modified after the creation of the ``*.babel.js``
 file, the transpile stage will be skipped and the cached, transpiled script
 will be run directly.
@@ -1753,12 +1762,12 @@ Node.js.
      console.log(result);
    }
 
-
    asyncCall();
 
-
-   console.log(`a multiline string
-   using backticks`);
+   console.log(
+   `a multiline string
+   using backticks`
+   );
 
    /* expect output:
    a multiline string

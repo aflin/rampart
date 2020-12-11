@@ -10,7 +10,7 @@ modified. The properties are set using the following SQL syntax:
 
         sql.exec("SET property = value;");
 
-or using the :ref:`sql1:set()` function:
+or using the :ref:`rampart-sql:set()` function:
 
 .. code-block:: javascript
 
@@ -752,7 +752,7 @@ useEquiv
     equivalences will be searched for unless the term is preceded with a
     ``~``.  If it is ``false`` then only the query word is searched for
     (unless the term is preceded with a ``~``).  Default is ``false``.  Note
-    ``alEquivs`_ must be set ``true`` for any thesaurus lookup to occur.
+    `alEquivs`_ must be set ``true`` for any thesaurus lookup to occur.
 
 .. possibly include this later or in a more appropriate section
     inc\_sdexp
@@ -1067,7 +1067,7 @@ uEqPrefix
     AKA ``userEquivsFile`` when set from ``sql.set()``.  
     The name of the user equivalence file. Default is empty.
 
-withinproc
+withinProc
 """"""""""
    Whether to process the w/ operator in queries.  The default is ``true``.
 
@@ -1129,7 +1129,7 @@ likepTblFreq
     specific document. The default weight is ``500``.
 
 
-Other ranking properties
+Other Ranking Properties
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 These properties affect how ``LIKEP`` and some ``LIKE`` queries are
@@ -2249,9 +2249,11 @@ multiValueToMultiRow
 inMode
 """"""
     How the IN operator should behave. If set to
-    ``subset``, IN behaves like the SUBSET operator (p. ). If set to
-    ``intersect``, IN behaves like the INTERSECT operator (p. ).
-    The default is ``subset``.
+    ``subset``, IN behaves like the 
+    :ref:`SUBSET <sql1:Searches Using SUBSET>` operator. If set to
+    ``intersect``, IN behaves like the 
+    :ref:`INTERSECT <sql1:Searches Using INTERSECT>`
+    operator. The default is ``subset``.
 
 hexifyBytes
 """""""""""

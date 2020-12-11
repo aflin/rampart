@@ -2,17 +2,15 @@
 Queries Involving Calculated Values
 -----------------------------------
 
-[chp:CalcQuer]
-
 While Texis focuses on manipulation of textual information, data can
 also be operated on numerically. Queries can be constructed which
 combine calculated values with text search.
 
-To illustrate the material in this chapter, we’ll use an employee table
-which the Personnel Department keeps to manage salaries and benefits. A
-sampling of the data stored in this table follows:
+To illustrate the material in this section, this example uses an employee
+table which the Personnel Department keeps to manage salaries and benefits. 
+A sampling of the data stored in this table follows:
 
-::
+.. code-block:: text
 
       EID  ENAME               DEPT   SALARY   BENEFITS
       101  Aster, John A.      MKT    32000    FULL
@@ -27,19 +25,17 @@ sampling of the data stored in this table follows:
 Arithmetic Calculations
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-This section covers the computational features of Texis. They are
-adequate to allow the user to perform computations on the data and/or
+This section covers the computational features of Texis. They
+allow the user to perform computations on the data and/or
 retrieve rows based on conditions involving computations. For example,
-you can adjust salaries for a 5 percent across-the-board increase, or
-you can compute weekly salaries (i.e., salary divided by 52).
+salaries can be adjusted for a 5 percent across-the-board increase, or
+weekly salaries can be computed (i.e., salary divided by 52).
 
 Arithmetic calculations are performed on fields, or columns, in the
 database. An *arithmetic expression* is used to describe the desired
 computation. The expression consists of column names and numeric
 constants connected by parentheses and arithmetic operators.
-Table [tab:ArithOp] shows the arithmetic operators used in Texis.
-
-[tab:ArithOp]
+The table below shows the arithmetic operators used in Texis.
 
 +------------------------+------------------+---------------------+
 | Arithmetic Operation   | Texis Operator   | Example             |
@@ -52,8 +48,8 @@ Table [tab:ArithOp] shows the arithmetic operators used in Texis.
 +------------------------+------------------+---------------------+
 | Division               | ``/``            | ``SALARY / 26``     |
 +------------------------+------------------+---------------------+
-
-Table: Arithmetic Operators Supported in Texis
+| Modulus [1]_           | ``%``            | ``SALARY % 52``     |
++------------------------+------------------+---------------------+
 
 Typically, the arithmetic expression is used in the ``SELECT`` clause to
 perform calculations on data stored in the table.
@@ -64,7 +60,7 @@ and next year’s salary.
 
 Enter this statement:
 
-::
+.. code-block:: sql
 
          SELECT  ENAME, SALARY, SALARY * 1.05
          FROM    EMPLOYEE ;
@@ -73,7 +69,7 @@ Where “``SALARY * 1.05``” is the arithmetic expression.
 
 The results are:
 
-::
+.. code-block:: text
 
       ENAME               SALARY     SALARY * 1.05
       Aster, John A.      32000      33600
@@ -88,13 +84,30 @@ The expression “``SALARY * 1.05``” results in each value in the salary
 column being multiplied by 1.05. The results are then displayed in a new
 column that is labeled ``SALARY * 1.05``.
 
+**Example:** What is John Aster's weekly pay?
+
+.. code-block:: sql
+
+         SELECT  ENAME, SALARY / 52 as WEEKLY_DOLLARS, 
+         SALARY % 52 * 100 / 52 as WEEKLY_CENTS 
+         FROM    EMPLOYEE WHERE ENAME = 'Aster, John A.' ;
+
+The results are:
+
+.. code-block:: text
+
+      ENAME             WEEKLY_DOLLARS  WEEKLY_CENTS
+
+      Aster, John A.    615             38
+
+
 If more than one arithmetic operator is used in an arithmetic
 expression, parentheses can be used to control the order in which the
 arithmetic calculations are performed. The operations enclosed in
 parentheses are computed before operations that are not enclosed in
 parentheses. For example, the expression:
 
-::
+.. code-block:: text
 
          12 * (SALARY + BONUS)
 
@@ -105,14 +118,14 @@ If parentheses are omitted or if several operations are included within
 the parentheses, the order in which calculations are performed is as
 follows:
 
-#. First, all multiplication, division and modulo [1]_ operations are
+#. First, all multiplication, division and modulo operations are
    performed.
 
 #. Then, all addition and subtraction operations are performed.
 
 For example, in the expression:
 
-::
+.. code-block:: text
 
          SALARY + SALARY * .05
 
@@ -123,7 +136,7 @@ When two or more computations in an expression are at the same level
 (e.g., multiplication and division), the operations are executed from
 left to right. For example, in the expression:
 
-::
+.. code-block:: text
 
          SALARY / 12 * 1.05
 
@@ -132,15 +145,15 @@ multiplied by 1.05.
 
 Arithmetic calculation can also be used in a ``WHERE`` clause to select
 rows based on a calculated condition. In addition, arithmetic
-expressions can be used in the HAVING and ORDER BY clauses, which will
-be discussed in later sections of this chapter.
+expressions can be used in the ``HAVING`` and ``ORDER BY`` clauses, which will
+be discussed in later sections.
 
 **Example:** List the names of all employees earning a monthly salary
 above $3000.
 
 This query:
 
-::
+.. code-block:: sql
 
          SELECT  ENAME
          FROM    EMPLOYEE
@@ -148,7 +161,7 @@ This query:
 
 results in:
 
-::
+.. code-block:: text
 
       ENAME
       Barrington, Kyle
@@ -164,29 +177,35 @@ Manipulating Information By Date
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 In Texis dates are stored as integers representing an absolute number of
-seconds from January 1, 1970, Greenwich Mean Time. This is done for
-efficiency, and to avoid confusions stemming from differences in
-relative times assigned to files from different time zones. The
-allowable range of years is 1970 through 2037. Years between 1902 and
-1970 may be stored and compared for equality (``=``) but will not
-compare correctly using less than (``<``) and greater than (``>``).
+seconds from January 1, 1970, Greenwich Mean Time.  This is done for
+efficiency, and to avoid confusions stemming from differences in relative
+times assigned to files from different time zones.  On many 32 bit systems,
+the allowable range of years is limited to 1970 through 2037.  See 
+`Year 2038 problem <https://en.wikipedia.org/wiki/Year_2038_problem>`_ 
+for a full discussion.
+
+Years between 1902 and 1970 may be stored and compared for equality (``=``)
+but will not compare correctly using less than (``<``) and greater than
+(``>``).
 
 Counters may also be treated as dates for comparison purposes. They may
 be compared to date fields or date strings. When compared with dates
 only the date portion of the counter is considered and the sequence
 number is ignored.
 
-The comparison operators as given in Table [tab:CompOp] are used to
+The comparison operators as given in 
+:ref:`the comparison operators table <compop>` are used to
 compare date values, so that dates may be used as qualifying statements
 in the ``WHERE`` clause.
 
-**Example:** The Strategic Planning and Intelligence Department is
-responsible for polling online news information on a daily basis,
-looking for information relevant to Acme’s ongoing business. Articles of
-interest are stored in an archived ``NEWS`` table which retains the full
-text of the article along with its subject, byline, source, and date.
-The date column is named NDATE, for “News Date”, as “date” is a special
-reserved SQL name and can’t be used for column names.
+.. nope
+   **Example:** The Strategic Planning and Intelligence Department is
+   responsible for polling online news information on a daily basis,
+   looking for information relevant to Acme’s ongoing business. Articles of
+   interest are stored in an archived ``NEWS`` table which retains the full
+   text of the article along with its subject, byline, source, and date.
+   The date column is named NDATE, for “News Date”, as “date” is a special
+   reserved SQL name and can’t be used for column names.
 
 A Date field may be compared to a number representing the number of
 seconds since 1/1/70 0:0:0 GMT (e.g.: 778876248). It may also be
@@ -196,25 +215,25 @@ or ``'1994-07-04'``). The date string may also be preceded by
 “``begin of``” or “``end of``” meaning the first or last second of a
 day, respectively.
 
-Enter this query:
+Example from a "NEWS" table:
 
-::
+.. code-block:: sql
 
          SELECT   NDATE, SUBJECT
          FROM     NEWS
          WHERE    NDATE BETWEEN 'begin of 1993-07-30'
                             AND 'end of 1993-07-30' ;
 
-Although the date column is stored with an absolute value, it is
-converted to the correct relative value when displayed. However, a date
-assigned to a file is to the second, and to match that time, you must
-match the same number of seconds. Stating the date as ``1993-07-30``
-refers to a particular second of that day. An article which came in at 2
-p.m. would not match in seconds. Thus you state the range of seconds
-that span the 24 hour period called “``'1993-07-30'``” by specifying a
-range between the first to last moment of the day.
+Although the date column is stored with an absolute value, it is converted
+to the correct relative value when displayed.  However, a date assigned to a
+file is to the second, and to match that time, you must match the same
+number of seconds.  Stating the date as ``1993-07-30`` refers to a
+particular second of that day.  A row with the date ``1993-07-30 14:02:01``
+would not match in seconds.  Thus you state the range of seconds that span
+the 24 hour period by specifying a range between the first to last moment of
+the day.
 
-In this example, all the articles which were saved from July 30, 1993
+In this example, all rows with dates/times on July 30, 1993
 are displayed with their subject lines. The date as formatted by Texis
 when displaying the date column is the format used inside the single
 quotes. It is put in quotes because it is a text string rather than an
@@ -225,7 +244,7 @@ some other search requirement, and would be so used along with other
 qualifying statements in the ``WHERE`` clause. The next query is
 identical to the last, but it adds another requirement.
 
-::
+.. code-block:: sql
 
          SELECT   NDATE, SUBJECT
          FROM     NEWS
@@ -241,21 +260,23 @@ to read in full.
 
 This example uses a text query to find sentences in the body of the
 information with reference to “Bill Gates”. Use of this type of query in
-the ``LIKE`` clause is explained in Chapter [Chp:MMLike]. The following
-articles are retrieved:
+the ``LIKE`` clause is explained in the :ref:`sql3:Intelligent Text Search
+Queries` section. 
 
-::
+In this example, the following rows might be retrieved:
+
+.. code-block:: text
 
       NDATE                SUBJECT
       1993-30-07 04:46:04  High-Technology R&D Has Lost Its Cost-Effect...
       1993-30-07 13:10:08  Heavy R&D Spending No Longer the Magic Route...
 
-Date fields can use any of the comparison operators as shown in
-Table [tab:CompOp] to manipulate information. We could broaden the date
-range of this search by increasing the BETWEEN range, or we could do it
-as follows:
+Date fields can use any of the comparison operators as shown in 
+:ref:`the comparison operators table <compop>` to manipulate information.  
+We could broaden the date range of this search could be broadened by
+increasing the ``BETWEEN`` range, or as follows:
 
-::
+.. code-block:: sql
 
          SELECT   NDATE, SUBJECT
          FROM     NEWS
@@ -263,7 +284,7 @@ as follows:
          AND      NDATE > 'begin of 1993-07-30'
          AND      NDATE < 'end of 1993-08-01' ;
 
-Remember that the actual value of the date is in a number of seconds.
+Note that the actual value of the date is still a number of seconds.
 Therefore, greater than (``>``) translates to “a greater number of
 seconds than the stated value”, and therefore means “newer than”, while
 lesser than (``<``) translates to “a fewer number of seconds than the
@@ -272,7 +293,7 @@ stated value”, and therefore means “older than”.
 This would increase the output list to include dates in the specified
 range; that is, between July 30th and August 1st 1993.
 
-::
+.. code-block:: text
 
       NDATE       SUBJECT
       1993-07-30 04:46:04  High-Technology R&D Has Lost Its Cost-Effect...
@@ -289,7 +310,7 @@ hours, days, weeks, or months, can also be specified. A leading plus
 future. Using our example from the ``NEWS`` table, the form of the
 command would be:
 
-::
+.. code-block:: sql
 
          SELECT   NDATE, SUBJECT
          FROM     NEWS
@@ -298,7 +319,7 @@ command would be:
 This query requests all articles less than seven days old and would
 produce a list of their subjects and date.
 
-::
+.. code-block:: sql
 
          SELECT   NDATE, SUBJECT
          FROM     NEWS
@@ -316,25 +337,25 @@ Summarizing Values: GROUP BY Clause and Aggregate Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 So far, the examples presented have shown how to retrieve and manipulate
-values from individual rows in a table. In this section, we will
-illustrate how summary information can be obtained from groups of rows
+values from individual rows in a table. This section
+illustrates how summary information can be obtained from groups of rows
 in a table.
 
-Often we find it useful to group data by some characteristic of the
+Often it is useful to group data by some characteristic of the
 group, such as department or division, or benefit level, so that summary
 statistics about the group (totals, averages, etc.) can be calculated.
 For example, to calculate average departmental salaries, the user could
-group the salaries of all employees by department. In Texis, the GROUP
-BY clause is used to divide the rows of a table into groups that have
-matching values in one or more columns. The form of this clause is:
+group the salaries of all employees by department. In Texis, the 
+``GROUP BY`` clause is used to combine the rows of a table into groups that 
+have matching values in one or more columns. The form of this clause is:
 
-::
+.. code-block:: text
 
          GROUP BY   column-name1 [,column-name2] ...
 
 and it fits into the ``SELECT`` expression in the following manner.
 
-::
+.. code-block:: sql
 
          SELECT     column-name1 [,column-name2] ...
          FROM       table-name
@@ -342,28 +363,28 @@ and it fits into the ``SELECT`` expression in the following manner.
          [GROUP BY  column-name1 [,column-name2] ... ]
          [ORDER BY  column-name1 [DESC] [,column-name2] [DESC] ] ... ;
 
-The column(s) listed in the GROUP BY clause are used to form groups. The
+The column(s) listed in the ``GROUP BY`` clause are used to form groups. The
 grouping is based on rows with the same value in the specified column or
 columns being placed in the same group. It is important to note that
 grouping is conceptual; the table is not physically rearranged.
 
-As an extension Texis also allows the GROUP BY clause to consist of
+As an extension Texis also allows the ``GROUP BY`` clause to consist of
 expressions instead of just column names. This should be used with
 caution, and the same expression should be used in the ``SELECT`` as in
-the GROUP BY clause. This is especially true if the expression will fold
+the ``GROUP BY`` clause. This is especially true if the expression will fold
 multiple values together, such as dividing a number by 1000 to group
-quantities together if they are in the same 1000. If you select SALARY,
-and GROUP BY SALARY/1000 you will see one sample salary from the
+quantities together if they are in the same 1000. If you select ``SALARY``,
+and ``GROUP BY SALARY/1000`` you will see one sample salary from the
 matching group.
 
-The GROUP BY clause is normally used along with five built-in, or
+.. needs an example of group by with expression
+
+The ``GROUP BY`` clause is normally used along with five built-in,
 “aggregate” functions. These functions perform special operations on an
 entire table or on a set, or group, of rows rather than on each row and
 then return one row of values for each group.
 
-Table [tab:AggFunc] lists the aggregate functions available with Texis.
-
-[tab:AggFunc]
+The table below lists the aggregate functions available with Texis.
 
 +--------------------+-------------------------------------------+-------------------+
 | Function Name      | Meaning                                   | Example           |
@@ -379,33 +400,31 @@ Table [tab:AggFunc] lists the aggregate functions available with Texis.
 | COUNT(\*)          | Count of the number of rows selected      | ``COUNT(*)``      |
 +--------------------+-------------------------------------------+-------------------+
 
-Table: Texis Aggregate Function Names
-
 Aggregate functions are used in place of column names in the ``SELECT``
 statement. The form of the function is:
 
-::
+.. code-block:: text
 
-         Function name ([DISTINCT] argument)
+         Function_name ([DISTINCT] argument)
 
 In all situations the argument represents the column name to which the
 function applies. For example, if the sum of all salaries is needed,
-then the function SUM is used and the argument is the column SALARY.
-When COUNT is used an asterisk (\*) can be placed within the parentheses
+then the function ``SUM`` is used and the argument is the column ``SALARY``.
+When ``COUNT`` is used, an ``*`` (asterisk) can be placed within the parentheses
 instead of a column name to count all the rows without regard to field.
 
-If the DISTINCT keyword is used then only the unique values are
-processed. This is most useful with COUNT to find the number of unique
-values. If you use DISTINCT then you must supply a column name. DISTINCT
+If the ``DISTINCT`` keyword is used then only the unique values are
+processed. This is most useful with ``COUNT`` to find the number of unique
+values. If you use ``DISTINCT`` then you must supply a column name. ``DISTINCT``
 will work with the other aggregate functions, although there is
-typically very little need for them. The DISTINCT feature was added in
-version 4.00.1002000000
+typically very little need for them.
+
 
 **Example:** What is the average salary paid in each department?
 
 Enter this statement:
 
-::
+.. code-block:: sql
 
          SELECT     DEPT, AVG(SALARY)
          FROM       EMPLOYEE
@@ -421,7 +440,7 @@ Enter this statement:
 
 The above statement will produce the following results:
 
-::
+.. code-block:: text
 
       DEPT      AVG(SALARY)
 
@@ -432,7 +451,7 @@ The above statement will produce the following results:
       FIN       42000
 
 In this query, all rows in the ``EMPLOYEE`` table that have the same
-department codes are grouped together. The aggregate function AVG is
+department codes are grouped together. The aggregate function ``AVG`` is
 calculated for the salary column in each group. The department code and
 the average departmental salary are displayed for each department.
 
@@ -441,7 +460,7 @@ any column name that does not apply to a group; for example:
 
 The statement:
 
-::
+.. code-block:: sql
 
          SELECT     ENAME, AVG(SALARY)
          FROM       EMPLOYEE
@@ -449,23 +468,20 @@ The statement:
 
 results in the message
 
-::
+.. code-block:: text
 
          Error at Line 1: Not a GROUP BY Expression
 
 It is not permissible to include column names in a ``SELECT`` clause
-that are not referenced in the GROUP BY clause. The only column names
+that are not referenced in the ``GROUP BY`` clause. The only column names
 that can be displayed, along with aggregate functions, must be listed in
-the GROUP BY clause. Since ``ENAME`` is not included in the GROUP BY
+the ``GROUP BY`` clause. Since ``ENAME`` is not included in the ``GROUP BY``
 clause, an error message results.
 
-**Example:** The chair of the Marketing Department plans to participate
-in a national salary survey for employees in Marketing Departments.
-Determine the average salary paid to the Marketing Department employees.
+**Example:** The following statement can be used to determine the average
+salary paid to the Marketing Department employees:
 
-This statement:
-
-::
+.. code-block:: sql
 
          SELECT     COUNT(*), AVG(SALARY)
          FROM       EMPLOYEE
@@ -473,20 +489,20 @@ This statement:
 
 Results in:
 
-::
+.. code-block:: text
 
       COUNT(*)   AVG(SALARY)
 
       2          33500
 
-In this example, the aggregate function AVG is used in a ``SELECT``
+In this example, the aggregate function ``AVG`` is used in a ``SELECT``
 statement that has a ``WHERE`` clause. Texis selects the rows that
 represent Marketing Department employees and then applies the aggregate
 function to these rows.
 
-You can divide the rows of a table into groups based on values in more
-than one column. For example, you might want to compute total salary by
-department and then, within a department, want subtotals by benefits
+The rows of a table can be combined into groups based on values in more
+than one column. For example, it is possible to compute total salary by
+department and then, within a department, the subtotals by benefits
 classification.
 
 **Example:** What is the total salary paid by benefits classification in
@@ -494,18 +510,18 @@ each department?
 
 Enter this statement:
 
-::
+.. code-block:: sql
 
          SELECT     DEPT, BENEFITS, SUM(SALARY)
          FROM       EMPLOYEE
          GROUP BY   DEPT, BENEFITS ;
 
-In this example, we are grouping by department, and within department,
+In this example, results are grouped by department, and within department,
 by benefits classification.
 
-We’ll get the following results:
+The following results are returned:
 
-::
+.. code-block:: text
 
       DEPT      BENEFITS    SUM(SALARY)
 
@@ -518,11 +534,11 @@ We’ll get the following results:
 
 In this query, the rows are grouped by department and, within each
 department, employees with the same benefits are grouped so that totals
-can be computed. Notice that the columns DEPT and BENEFITS can appear in
+can be computed. Notice that the columns ``DEPT`` and ``BENEFITS`` can appear in
 the ``SELECT`` statement since both columns appear in the GROUP BY
 clause.
 
-If the GROUP BY clause is omitted when an aggregate function is used,
+If the ``GROUP BY`` clause is omitted when an aggregate function is used,
 then the entire table is considered as one group, and the group function
 displays a single value for the entire table.
 
@@ -530,14 +546,14 @@ displays a single value for the entire table.
 
 The statement:
 
-::
+.. code-block:: sql
 
          SELECT     SUM(SALARY)
          FROM       EMPLOYEE ;
 
 results in:
 
-::
+.. code-block:: text
 
       SUM(SALARY)
 
@@ -547,23 +563,23 @@ results in:
 Groups With Conditions: HAVING Clause
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Sometimes you may want to specify a condition that applies to groups
-rather than to individual rows. For example, you might want a list of
-departments where the average departmental salary is above $30,000. To
-express such a query, the HAVING clause is used. This clause specifies
-which groups should be selected and is used in combination with the
-GROUP BY clause. The form of this clause is as follows:
+The ``HAVING`` clause allows the specification of a condition that applies
+to groups rather than to individual rows.  For example, formulating a
+statement that performs a grouping of departments where the average
+departmental salary is above $30,000 can be achieved with ``HAVING``.  This
+clause specifies which groups should be selected and is used in combination
+with the ``GROUP BY`` clause.  The form of this clause is as follows:
 
-::
+.. code-block:: sql
 
          [GROUP BY  column-name1 [,column-name2] ...
          [HAVING    search-condition ]
 
-Conditions in the HAVING clause are applied after groups are formed. The
-search condition of the HAVING clause examines the grouped rows and
-produces a row for each group where the search condition in the HAVING
-clause is true. The clause is similar to the ``WHERE`` clause, except
-the HAVING clause applies to groups.
+``search-condition``\ s in the HAVING clause are applied after groups are
+formed.  The search condition of the HAVING clause examines the grouped rows
+and produces a row for each group where the search condition in the
+``HAVING`` clause is true.  The clause is similar to the ``WHERE`` clause,
+except the ``HAVING`` clause applies to groups.
 
 **Example:** Which departments have an average salary above $30,000?
 Order the results by average salary, with highest average salary
@@ -571,7 +587,7 @@ appearing first.
 
 The statement:
 
-::
+.. code-block:: sql
 
          SELECT     DEPT, AVG(SALARY) AS AVG_SALARY
          FROM       EMPLOYEE
@@ -581,15 +597,16 @@ The statement:
 
 **Syntax Notes:**
 
--  When HAVING is used, it always follows a GROUP BY clause.
+-  When ``HAVING`` is used, it always follows a ``GROUP BY`` clause.
 
--  When referring to aggregate values in the HAVING and ORDER BY clauses
-   of a GROUP BY you must assign an alternative name to the field, and
-   use that in the HAVING and ORDER BY clauses.
+-  When referring to aggregate values in the ``HAVING`` and ``ORDER BY`` clauses
+   of a ``GROUP BY``\ , an alternative name must be assigned to the field
+   and that name must be used in the ``HAVING`` and ``ORDER BY`` clauses, as
+   ``AVG_SALARY`` is used in the above example.
 
 The results are:
 
-::
+.. code-block:: text
 
       DEPT      AVG_SALARY
 
@@ -602,25 +619,24 @@ only the names of those departments having an average salary above
 $30,000 are displayed. Notice that Research and Development’s average of
 $27,500 is not displayed, nor is the Library’s average of $22,000.
 
-The GROUP BY clause does not sort the results, thus the need for the
-ORDER BY clause. Finally, note that the ORDER BY clause must be placed
-after the GROUP BY and HAVING clauses.
+The ``GROUP BY`` clause does not sort the results, thus the need for the
+``ORDER BY`` clause. Finally, note that the ``ORDER BY`` clause must be placed
+after the ``GROUP BY`` and ``HAVING`` clauses.
 
-This chapter has covered the computational capabilities of Texis. In the
-next chapter, you will learn how to develop more complex queries by
-using the join operation and the nesting of queries.
+.. remove
+   This chapter has covered the computational capabilities of Texis. In the
+   next chapter, you will learn how to develop more complex queries by
+   using the join operation and the nesting of queries.
 
 
 Advanced Queries
 ----------------
 
-[Chp:AdvQuer]
-
-This chapter is divided into three sections. The first one focuses on
+This section is divided into three parts. The first one focuses on
 using the join operation to retrieve data from multiple tables. The
 second section covers nesting of queries, also known as subqueries. The
 final section introduces several advanced query techniques, including
-self-joins, correlated subqueries, subqueries using the EXISTS operator.
+self-joins, correlated subqueries, subqueries using the ``EXISTS`` operator.
 
 
 Retrieving Data From Multiple Tables
@@ -637,19 +653,19 @@ table (department name). Obtaining the data you need requires the
 ability to combine two or more tables. This process is commonly referred
 to as “*joining the tables*”.
 
-Two or more tables can be combined to form a single table by using the
-*join operation*. The join operation is based on the premise that there
-is a logical association between two tables based on a common attribute
-that links the tables. Therefore, there must be a common column in each
-table for a join operation to be executed. For example, both the
-``REPORT`` table and the ``DEPARTMENT`` table have the department
-identification code in common. Thus, they can be joined.
+Two or more tables can be combined to form a single virtual table by using
+the *join operation*.  The join operation is based on the premise that there
+is a logical association between two tables based on a common attribute that
+links the tables.  Therefore, there must be a common column in each table
+for a join operation to be executed.  For example, both the ``REPORT`` table
+and the ``DEPARTMENT`` table have the department identification code in
+common.  Thus, they can be joined.
 
 Joining two tables in Texis is accomplished by using a ``SELECT``
 statement. The general form of the ``SELECT`` statement when a join
 operation is involved is:
 
-::
+.. code-block:: sql
 
          SELECT   column-name1 [,column-name2] ...
          FROM     table-name1, table-name2
@@ -720,7 +736,7 @@ from both the ``REPORT`` table (author) and the ``DEPARTMENT`` table
 
 You would enter this statement:
 
-::
+.. code-block:: sql
 
          SELECT   AUTHOR, DNAME
          FROM     REPORT, DEPARTMENT
@@ -728,7 +744,7 @@ You would enter this statement:
 
 **Syntax Notes:**
 
--  REPORT and DEPARTMENT indicate the tables to be joined.
+-  ``REPORT`` and ``DEPARTMENT`` indicate the tables to be joined.
 
 -  The ``WHERE`` clause statement defines the condition for the join.
 
@@ -738,7 +754,7 @@ You would enter this statement:
 
 This statement will result in the following joined table:
 
-::
+.. code-block:: text
 
       AUTHOR                   DNAME
       Jackson, Herbert         Research and Development
@@ -749,11 +765,11 @@ This statement will result in the following joined table:
       Jackson, Herbert         Research and Development
       Barrington, Kyle         Management and Administration
 
-In this query, we are joining data from the REPORT and the DEPARTMENT
+In this query, we are joining data from the ``REPORT`` and the ``DEPARTMENT``
 tables. The common attribute in these two tables is the department code.
 The conditional expression:
 
-::
+.. code-block:: text
 
          REPORT.DEPT = DEPARTMENT.DEPT
 
@@ -763,9 +779,9 @@ Each row of the joined table is the result of combining a row from the
 comparison with matching codes.
 
 To further illustrate how the join works, look at the rows in the
-``REPORT`` table below where DEPT is “MKT”:
+``REPORT`` table below where ``DEPT`` is ``MKT``:
 
-::
+.. code-block:: text
 
       TITLE                    AUTHOR           DEPT FILENAME
       Disappearing Ink         Jackson, Herbert RND  /data/rnd/ink.txt
@@ -776,11 +792,11 @@ To further illustrate how the join works, look at the rows in the
       Color Panorama           Jackson, Herbert RND  /data/rnd/color.txt
       Meeting Schedule         Barrington, Kyle MGT  /data/mgt/when.rpt
 
-Now look at the rows in the ``DEPARTMENT`` table below where DEPT is
-“MKT”. These are matching rows since the department code (“MKT”) is the
+Now look at the rows in the ``DEPARTMENT`` table below where ``DEPT`` is
+``MKT``. These are matching rows since the department code (``MKT``) is the
 same.
 
-::
+.. code-block:: text
 
       DEPT DNAME                               DHEAD      DIV  BUDGET
       MGT  Management and Administration       Barrington CORP 22000
@@ -799,9 +815,9 @@ same.
 The matching rows can be conceptualized as combining a row from the
 ``REPORT`` table with a matching row from the ``DEPARTMENT`` table.
 Below is a sample of rows from both tables, matched on the department
-code “MKT”:
+code ``MKT``:
 
-::
+.. code-block:: text
 
     DEPT DNAME     DHEAD DIV  BUDGET TITLE      AUTHOR  FILENAME
     MKT  Marketing Brown PROD 25000  Ink        Sanchez /data/mkt/promo.rpt
@@ -811,7 +827,7 @@ This operation is carried out for all matching rows; i.e., each row in
 the ``REPORT`` table is combined, or matched, with a row having the same
 department code in the ``DEPARTMENT`` table:
 
-::
+.. code-block:: text
 
     DEPT DNAME      DHEAD DIV  BUDGET TITLE      AUTHOR  FILENAME
     RND  Research   Jones PROD 27500  Ink        Jackson /data/rnd/ink.txt
@@ -825,7 +841,7 @@ department code in the ``DEPARTMENT`` table:
 The columns requested in the ``SELECT`` statement determine the final
 output for the joined table:
 
-::
+.. code-block:: text
 
       AUTHOR                   DNAME
       Jackson, Herbert         Research and Development
@@ -843,9 +859,9 @@ joined table includes only rows where a match has occurred between rows
 in both tables. If a row in either table does not match any row in the
 other table, the row is not included in the joined table.
 
-In addition, notice that the DEPT column is not included in the final
+In addition, notice that the ``DEPT`` column is not included in the final
 joined table. Only two columns are included in the joined table since
-just two columns are listed in the ``SELECT`` clause, and DEPT is not
+just two columns are listed in the ``SELECT`` clause, and ``DEPT`` is not
 one of them.
 
 The next example illustrates that conditions other than the join
@@ -859,7 +875,7 @@ submitted from that department.
 
 Enter this statement:
 
-::
+.. code-block:: sql
 
          SELECT   TITLE
          FROM     DEPARTMENT, REPORT
@@ -875,7 +891,7 @@ Enter this statement:
 
 The results follow:
 
-::
+.. code-block:: text
 
       TITLE
       Innovations in Disappearing Ink
@@ -884,15 +900,15 @@ The results follow:
 
 Since you don’t know Research and Development’s department code, you use
 the department name found in the ``DEPARTMENT`` table in order to find
-the row that stores Research and Development’s code, which is ‘RND’.
+the row that stores Research and Development’s code, which is ``RND``.
 Conceptually, visualize the join operation to occur as follows:
 
 #. The conditional expression DNAME = ’RESEARCH AND DEVELOPMENT’
-   references one row from the ``DEPARTMENT`` table; i.e., the ‘RND’
+   references one row from the ``DEPARTMENT`` table; i.e., the ``RND``
    row.
 
 #. Now that the RND code is known, this row in the ``DEPARTMENT`` table
-   is joined with the rows in the ``REPORT`` table that have DEPT = RND.
+   is joined with the rows in the ``REPORT`` table that have ``DEPT = RND``.
    The joined table represents the titles of the reports submitted by
    authors from the Research and Development department.
 
@@ -906,7 +922,7 @@ salary.
 
 You would enter this statement:
 
-::
+.. code-block:: sql
 
          SELECT   AUTHOR, DNAME, SALARY
          FROM     REPORT, DEPARTMENT, EMPLOYEE
@@ -935,7 +951,7 @@ You would enter this statement:
 
 The results would be:
 
-::
+.. code-block:: text
 
       AUTHOR               DNAME                           SALARY
       Jackson, Herbert     Research and Development        30000
@@ -943,20 +959,20 @@ The results would be:
       Smith, Roberta       Research and Development        25000
       Aster, John A.       Product Marketing and Sales     32000
 
-In this example, data from three tables (REPORT, DEPARTMENT,
+In this example, data from three tables (``REPORT``, ``DEPARTMENT``,
 ``EMPLOYEE``) are joined together.
 
 Conceptually, the ``DEPARTMENT`` table references the rows that contain
-PROD; this gives us the departments in the Product Division. The
-departments in the Product Division (RND, MFG, CSS, MKT) are matched
-against the departments in the DEPT column of the ``REPORT`` table. The
-tables are joined for the Research and Development (RND) and Product
-Marketing and Sales (MKT) departments. This yields an intermediate table
-containing all the columns from both the DEPARTMENT and REPORT tables
-for RND and MKT rows.
+``PROD``; this gives us the departments in the Product Division.  The
+departments in the Product Division (``RND``, ``MFG``, ``CSS``, ``MKT``) are
+matched against the departments in the ``DEPT`` column of the ``REPORT``
+table.  The tables are joined for the Research and Development (``RND``) and
+Product Marketing and Sales (``MKT``) departments.  This yields an
+intermediate table containing all the columns from both the ``DEPARTMENT``
+and ``REPORT`` tables for ``RND`` and ``MKT``.
 
 This intermediate table is joined with the ``EMPLOYEE`` table, based on
-the second join condition REPORT.DEPT = EMPLOYEE.DEPT to form a
+the second join condition ``REPORT.DEPT = EMPLOYEE.DEPT`` to form a
 combination of columns from all 3 tables, for the matching rows.
 
 Finally, the ``SELECT`` clause indicates which columns in the
@@ -971,7 +987,7 @@ availability, size of tables involved, number of unique values in an
 indexed column, and other statistical information. Thus, the results
 would not be affected by writing the same query in the following order:
 
-::
+.. code-block:: sql
 
          SELECT   AUTHOR, DNAME, SALARY
          FROM     REPORT, DEPARTMENT, EMPLOYEE
@@ -1006,7 +1022,7 @@ query (``SELECT``-``\verb``\ FROM“-\ ``WHERE`` block) within the
 
 The format of a nested query is:
 
-::
+.. code-block:: sql
 
          SELECT   column-name1 [,column-name2]
          FROM     table-name
@@ -1017,10 +1033,10 @@ The format of a nested query is:
 
 **Syntax Notes:**
 
--  The first ``SELECT``-``\verb``\ FROM“-\ ``WHERE`` block is the outer
+-  The first ``SELECT``-``FROM``-``WHERE`` block is the outer
    query.
 
--  The second ``SELECT``-``\verb``\ FROM“-\ ``WHERE`` block in
+-  The second ``SELECT``-``FROM``-``WHERE`` block in
    parentheses is the subquery.
 
 -  The IN operator is normally used if the inner query returns many rows
@@ -1047,7 +1063,7 @@ Here are some points concerning the use of nested queries:
    where the set of values is determined from the inner
    ``SELECT``-``FROM``-``WHERE`` block.
 
-#. The IN operator is used to link the outer query to the subquery when
+#. The ``IN`` operator is used to link the outer query to the subquery when
    the subquery returns a set of values (one or more). Other comparison
    operators, such as ``<``, ``>``, ``=``, etc., can be used to link an
    outer query to a subquery when the subquery returns a single value.
@@ -1065,7 +1081,7 @@ Here are some points concerning the use of nested queries:
 **Example:** List the names of all personnel in the Information Division
 by entering this statement:
 
-::
+.. code-block:: sql
 
          SELECT   ENAME
          FROM     EMPLOYEE
@@ -1079,7 +1095,7 @@ Parentheses are placed around the subquery, as shown below the outer
 
 The results are:
 
-::
+.. code-block:: text
 
       ENAME
       Chapman, Margaret
@@ -1092,16 +1108,16 @@ bottom up in evaluating the ``SELECT`` statement. In other words, the
 subquery is evaluated first. This results in a set of values that can be
 used as the basis for the outer query. The innermost ``SELECT`` block
 retrieves the following set of department codes, as departments in the
-Information (‘INFO’) Division: ISM, LIB, SPI.
+Information (``INFO``) Division: ``ISM``, ``LIB``, ``SPI``.
 
-In the outermost ``SELECT`` block, the IN operator tests whether any
+In the outermost ``SELECT`` block, the ``IN`` operator tests whether any
 department code in the ``EMPLOYEE`` table is contained in the set of
 department codes values retrieved from the inner ``SELECT`` block; i.e.,
-ISM, LIB, or SPI.
+``ISM``, ``LIB``, or ``SPI``.
 
 In effect, the outer ``SELECT`` block is equivalent to:
 
-::
+.. code-block:: sql
 
          SELECT   ENAME
          FROM     EMPLOYEE
@@ -1123,7 +1139,7 @@ benefit level.
 
 Use this statement:
 
-::
+.. code-block:: sql
 
          SELECT   ENAME, DEPT, BENEFITS
          FROM     EMPLOYEE
@@ -1138,7 +1154,7 @@ Use this statement:
                   FROM     REPORT
                   WHERE    TITLE  LIKE 'ink') ) ) ;
 
-IN is used for each subquery since in each case it is possible to
+``IN`` is used for each subquery since in each case it is possible to
 retrieve several values. You could use ‘``=``’ instead where you knew
 only one value would be retrieved; e.g. where you wanted only the
 division with the greatest number of reports rather than all divisions
@@ -1146,7 +1162,7 @@ contributing reports.
 
 Results of the above nested query are:
 
-::
+.. code-block:: text
 
       ENAME                DEPT   BENEFITS
       Aster, John A.       MKT    FULL
@@ -1160,22 +1176,22 @@ Results of the above nested query are:
 
 Again, remember that a nested query is evaluated from the bottom up;
 i.e., from the innermost query to the outermost query. First, a text
-search is done (TITLE LIKE ’INK’) of report titles from the ``REPORT``
+search is done (``TITLE LIKE 'ink'``) of report titles from the ``REPORT``
 table. Two such titles are located: “Disappearing Ink” by Herbert
-Jackson from Research and Development (RND), and “Ink Promotional
-Campaign” by Carla Sanchez from Product Marketing and Sales (MKT). Thus
+Jackson from Research and Development (``RND``), and “Ink Promotional
+Campaign” by Carla Sanchez from Product Marketing and Sales (``MKT``). Thus
 the results of the innermost query produces a list of two department
-codes: RND and MKT.
+codes: ``RND`` and ``MKT``.
 
-Once the departments are known, a search is done of the DEPARTMENT
+Once the departments are known, a search is done of the ``DEPARTMENT``
 table, to locate the division or divisions to which these departments
-belong. Both departments belong to the Product Division (PROD); thus the
-results of the next subquery produces one item: PROD.
+belong. Both departments belong to the Product Division (``PROD``); thus the
+results of the next subquery produces one item: ``PROD``.
 
-A second pass is made through the same table, DEPARTMENT, to find all
-departments which belong to the Product Division. This search produces a
-list of four Product Division departments: MKT, RND, MFG, and CSS,
-adding Manufacturing as well as Customer Support and Service to the
+A second pass is made through the same table, ``DEPARTMENT``, to find all
+departments which belong to the Product Division.  This search produces a
+list of four Product Division departments: ``MKT``, ``RND``, ``MFG``, and
+``CSS``, adding Manufacturing as well as Customer Support and Service to the
 list.
 
 This list is passed to the outermost query so that the ``EMPLOYEE``
@@ -1191,7 +1207,7 @@ that of Herbert Jackson. Assume you do not know Jackson’s salary.
 
 Enter this statement:
 
-::
+.. code-block:: sql
 
          SELECT   ENAME, SALARY
          FROM     EMPLOYEE
@@ -1206,7 +1222,7 @@ operators) where a single value only will be returned from the subquery.
 Using the sample information in our ``EMPLOYEE`` table, the results are
 as follows:
 
-::
+.. code-block:: text
 
       ENAME              SALARY
       Aster, John A.     32000
@@ -1249,7 +1265,7 @@ temporary name, called an *alias* or a *correlation name*, is assigned
 to each mention of the table name in the ``FROM`` clause. The form of
 the ``FROM`` clause with an alias is:
 
-::
+.. code-block:: sql
 
          FROM   table-name [alias1] [,table-name [alias2] ] ...
 
@@ -1263,7 +1279,7 @@ department head.
 
 Enter this query:
 
-::
+.. code-block:: sql
 
          SELECT   STAFF.ENAME, STAFF.SALARY
          FROM     EMPLOYEE DHEAD, EMPLOYEE STAFF
@@ -1273,7 +1289,7 @@ Enter this query:
 Using a sampling of information from the ``EMPLOYEE`` table, we would
 get these results:
 
-::
+.. code-block:: text
 
       ENAME               SALARY
 
@@ -1283,7 +1299,7 @@ In this query, the ``EMPLOYEE`` table, using the alias feature, is
 treated as two separate tables named ``DHEAD`` and ``STAFF``, as shown
 here (in shortened form):
 
-::
+.. code-block:: text
 
       DHEAD Table                         STAFF Table
       EID ENAME   DEPT RANK  BEN  SALARY  EID ENAME   DEPT RANK  BEN  SALARY
@@ -1298,7 +1314,7 @@ tables, evaluated as follows.
 
 First, using the following compound condition:
 
-::
+.. code-block:: sql
 
          DHEAD.RANK = 'DHEAD' AND STAFF.RANK = 'STAFF'
 
@@ -1306,7 +1322,7 @@ each department head record (Brown, Krinski) in the ``DHEAD`` table is
 joined with each staff record (Aster, Chapman, Sanchez) from the
 ``STAFF`` table to form the following intermediate result:
 
-::
+.. code-block:: text
 
       DHEAD Table                         STAFF Table
       EID ENAME   DEPT RANK  BEN  SALARY  EID ENAME   DEPT RANK  BEN  SALARY
@@ -1322,7 +1338,7 @@ record.
 
 Next, using the condition:
 
-::
+.. code-block:: text
 
            STAFF.SALARY > DHEAD.SALARY
 
@@ -1356,7 +1372,7 @@ whose salary is above average for his or her department.
 
 Enter this query:
 
-::
+.. code-block:: sql
 
          SELECT   POSSIBLE.ENAME, POSSIBLE.DEPT, POSSIBLE.SALARY
          FROM     EMPLOYEE POSSIBLE
@@ -1372,14 +1388,14 @@ Enter this query:
 -  The inner ``SELECT``-``FROM``-``WHERE`` block in parentheses is the
    subquery.
 
--  POSSIBLE (following ``EMPLOYEE`` in the outer query) and AVERAGE
+-  ``POSSIBLE`` (following ``EMPLOYEE`` in the outer query) and ``AVERAGE``
    (following ``EMPLOYEE`` in the subquery) are alias table names for
    the ``EMPLOYEE`` table, so that the information may evaluated as
    though it comes from two different tables.
 
 It results in:
 
-::
+.. code-block:: text
 
       ENAME               DEPT   SALARY
       Krinski, Wanda      LIB    32500
@@ -1387,50 +1403,50 @@ It results in:
       Sanchez, Carla      MKT    35000
       Jones, David        RND    37500
 
-The column AVERAGE.DEPT correlates with POSSIBLE.DEPT in the main, or
+The column ``AVERAGE.DEPT`` correlates with ``POSSIBLE.DEPT`` in the main, or
 outer, query. In other words, the average salary for a department is
 calculated in the subquery using the department of each employee from
-the table in the main query (POSSIBLE). The subquery computes the
+the table in the main query (``POSSIBLE``). The subquery computes the
 average salary for this department and then compares it with a row in
 the ``POSSIBLE`` table. If the salary in the ``POSSIBLE`` table is
 greater than the average salary for the department, then that employee’s
 name, department, and salary are displayed.
 
 The process of the correlated subquery works in the following manner.
-The department of the first row in POSSIBLE is used in the subquery to
+The department of the first row in ``POSSIBLE`` is used in the subquery to
 compute an average salary. Let’s take Krinksi’s row, whose department is
-the corporate library (LIB). In effect, the subquery is:
+the corporate library (``LIB``). In effect, the subquery is:
 
-::
+.. code-block:: sql
 
          SELECT   AVG (SALARY)
          FROM     EMPLOYEE AVERAGE
          WHERE    'LIB' = AVERAGE.DEPT ;
 
-LIB is the value from the first row in POSSIBLE, as alias for
+``LIB`` is the value from the first row in ``POSSIBLE``, as alias for
 ``EMPLOYEE``.
 
 This pass through the subquery results in a value of $27,250, the
 average salary for the LIB dept. In the outer query, Krinski’s salary of
-$32,500 is compared with the average salary for LIB; since it is
+$32,500 is compared with the average salary for ``LIB``; since it is
 greater, Krinski’s name is displayed.
 
-This process continues; next, Aster’s row in POSSIBLE is evaluated,
-where MKT is the department. This time the subquery is evaluated as
+This process continues; next, Aster’s row in ``POSSIBLE`` is evaluated,
+where ``MKT`` is the department. This time the subquery is evaluated as
 follows:
 
-::
+.. code-block:: sql
 
          SELECT   AVG (SALARY)
          FROM     EMPLOYEE AVERAGE
          WHERE    'MKT' = AVERAGE.DEPT ;
 
 The results of this pass through the subquery is an average salary of
-$34,833 for MKT, the Product Marketing and Sales Department. Since Aster
+$34,833 for ``MKT``, the Product Marketing and Sales Department. Since Aster
 has a salary of $32,000, a figure lower than the average, this record is
 not displayed.
 
-Every department in POSSIBLE is examined in a similar manner before this
+Every department in ``POSSIBLE`` is examined in a similar manner before this
 subquery is completed.
 
 
@@ -1451,7 +1467,7 @@ the outer query is used to test the existence of rows that result from a
 subquery. The form of the ``WHERE`` clause that is linked to the
 subquery is:
 
-::
+.. code-block:: sql
 
          WHERE [NOT] EXISTS (subquery)
 
@@ -1468,7 +1484,7 @@ resumes to personnel for a different job placement.
 
 Enter this query:
 
-::
+.. code-block:: sql
 
          SELECT   EID, ENAME
          FROM     EMPLOYEE
@@ -1479,7 +1495,7 @@ Enter this query:
 
 The results are:
 
-::
+.. code-block:: text
 
       EID  ENAME
       107  Smith, Roberta
@@ -1492,18 +1508,19 @@ is performed (even though ``RESUME`` is the only table that appears in
 the subquery’s ``FROM`` clause) to determine if there is a resume name
 in ``RESUME`` that matches a name in ``EMPLOYEE``.
 
-For example, for the first row in the ``EMPLOYEE`` table (ENAME =
-’Smith, Roberta’) the subquery evaluates as “true” if at least one row
-in the ``RESUME`` table has RNAME = ’Smith, Roberta’; otherwise, the
-expression evaluates as “false”. Since there is a row in ``RESUME`` with
-RNAME = ’Smith, Roberta’, the expression is true and Roberta Smith’s row
-is displayed. Each row in ``EMPLOYEE`` is evaluated in a similar manner.
+For example, for the first row in the ``EMPLOYEE`` table 
+(``ENAME = 'Smith, Roberta'``) the subquery evaluates as ``true`` if at
+least one row in the ``RESUME`` table has RNAME = ’Smith, Roberta’;
+otherwise, the expression evaluates as “false”.  Since there is a row in
+``RESUME`` with ``RNAME = 'Smith, Roberta'``, the expression is true and Roberta
+Smith’s row is displayed.  Each row in ``EMPLOYEE`` is evaluated in a
+similar manner.
 
 The following is an example of the interim join (in shortened form)
 between the ``EMPLOYEE`` and ``RESUME`` Tables, for the above names
 which satisfied the search requirement by appearing in both tables:
 
-::
+.. code-block:: text
 
       EMPLOYEE Table            RESUME Table
       EID ENAME          DEPT   RES_ID  RNAME           JOB       EXISTS
@@ -1511,7 +1528,7 @@ which satisfied the search requirement by appearing in both tables:
       107 Smith, Roberta RND    R406    Smith, Roberta  Engineer  TRUE
       113 Ferrer, Miguel CSS    R425    Ferrer, Miguel  Analyst   TRUE
 
-Note in this example that there is no key ID field connecting the two
+Note in this example that there is no key ``ID`` field connecting the two
 tables; therefore the character field for name is being used to join the
 two tables, which might have been entered differently and therefore is
 not an altogether reliable join. This indicates that such a search is an
@@ -1522,10 +1539,10 @@ qualifier rather than a straight join on a column as above, where
 ``ENAME`` must match exactly ``RNAME``. A slightly more thorough way of
 searching for names appearing in both tables which were not necessarily
 intended to be matched exactly would use Metamorph’s approximate pattern
-matcher, indicated by a percent sign ``%`` preceding the name. For
+matcher, indicated by a ``%`` (percent sign) preceding the name. For
 example:
 
-::
+.. code-block:: sql
 
          SELECT   EID, ENAME
          FROM     EMPLOYEE
@@ -1543,7 +1560,7 @@ used to append the name found in the resume table to the percent sign
 Often, a query is formed to test if no rows are returned in a subquery.
 In this case, the following form of the existence test is used:
 
-::
+.. code-block:: sql
 
          WHERE   NOT EXISTS (subquery)
 
@@ -1554,7 +1571,7 @@ find this out we would need to know which authors listed in the
 
 Use this query:
 
-::
+.. code-block:: sql
 
          SELECT   AUTHOR
          FROM     REPORT
@@ -1565,7 +1582,7 @@ Use this query:
 
 which would likely result in a list of former employees such as:
 
-::
+.. code-block:: text
 
       AUTHOR
       Acme, John Jacob Snr.
@@ -1574,10 +1591,10 @@ which would likely result in a list of former employees such as:
 
 Again, we have an example of a correlated subquery. Below is illustrated
 (in shortened form) how each row which satisfied the search requirement
-above in REPORT is evaluated with the records in ``EMPLOYEE`` to
+above in ``REPORT`` is evaluated with the records in ``EMPLOYEE`` to
 determine which authors are not (or are no longer) Acme employees.
 
-::
+.. code-block:: text
 
       REPORT Table                               EMPLOYEE Table  EXISTS
       TITLE              AUTHOR
@@ -1587,8 +1604,8 @@ determine which authors are not (or are no longer) Acme employees.
 
 In this example each of the above authors from the REPORT Table are
 tested for existence in the ``EMPLOYEE`` Table. When they are not found
-to exist there it returns a value of FALSE. Since the query condition in
-the ``WHERE`` clause is that it NOT EXISTS, this changes the false value
+to exist there it returns a value of ``FALSE``. Since the query condition in
+the ``WHERE`` clause is that it ``NOT EXISTS``, this changes the false value
 to true, and these rows are displayed.
 
 For each of the queries shown in this section, there are probably
@@ -1597,12 +1614,81 @@ subqueries can also be expressed as joins. These examples are given not
 so much as the only definitive way to state these search requests, but
 more so as to give a model for what kinds of things are possible.
 
-This chapter has illustrated various complex query constructions
-possible with Texis, and has touched on the use of Metamorph in
-conjunction with standard SQL queries. The next chapter will explain
-Metamorph query language in depth and give examples of its use in
-locating relevant narrative text.
+
+Virtual Fields
+~~~~~~~~~~~~~~
+
+To improve the capabilities of Texis, especially with regard to
+Metamorph searching multiple fields we implemented the concept of
+virtual fields. This allows you to treat the concatentation of any
+number of text fields as a single field. As a single field you can
+create an index on the fields, search the fields, and perform any other
+operation allowable on a field. Concatenation is represented by the
+``\`` operator. For example:
+
+.. code-block:: sql
+
+        SELECT TITLE
+        FROM   PAPERS
+        WHERE  ABSTRACT\BODY LIKE 'ink coloration';
+
+would display the title of all papers whose abstract or body matched the
+query ``ink coloration``. By itself this is helpful, but the real change
+is that you could create an index on this virtual field as follows:
+
+.. code-block:: sql
+
+        CREATE METAMORPH INDEX IXMMABSBOD ON PAPERS(ABSTRACT\BODY);
+
+which could greatly improve the performance of this query. You can
+create any type of index on a virtual field, although it is important to
+remember that for non Metamorph indices the sum of the fields should not
+exceed 2048 bytes. If your keys are text fields this method allows you
+to create a unique index across several fields.
+
+Column Aliasing
+~~~~~~~~~~~~~~~
+
+Similar to the abililty to alias the name of a table in the from clause
+it is also possible to alias column names. An alias can have up to 35
+characters (case is significant).
+
+This has several possible uses. One is simply to produce a more
+informative report, for example:
+
+.. code-block:: sql
+
+        SELECT COUNT(*) EMPLOYEES
+        FROM   EMPLOYEES;
+
+might produce the following output
+
+.. code-block:: text
+
+        EMPLOYEES
+           42
+
+Another important use is when using the create table as select
+statement. This allows you to rename a field, or to name a calculated
+field.
+
+.. code-block:: sql
+
+        CREATE TABLE INVENTORY AS
+        SELECT PROD_ID, SALES * 3 MAX_LEVEL, SALES MIN_LEVEL
+        FROM   SALES;
+
+Would create a new table with three fields, ``PROD_ID``, ``MAX_LEVEL``, and
+``MIN_LEVEL``.
+
+.. nope
+   This chapter has illustrated various complex query constructions
+   possible with Texis, and has touched on the use of Metamorph in
+   conjunction with standard SQL queries. The next chapter will explain
+   Metamorph query language in depth and give examples of its use in
+   locating relevant narrative text.
 
 .. [1]
-   The modulo operator (%) was added in Texis version 8; it is supported
-   for integral types.
+   The modulo operator (%) is supported for integral types.  Dividend floats
+   are cast (floor) to integer prior to the operation.  Divisor must be an integer
+   or an error is thrown. A Divisor of 0 returns ``NULL``.
