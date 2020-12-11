@@ -93,12 +93,12 @@ testFeature("en/decrypt with password, with options", function(){
 
 testFeature("hmac sha256", function(){
   var ret=crypto.hmac("mysecret","mydata");
-  return ret="f49cf057cd4de7c1a4cb0b051570372892674487333ac5ab3ea603f29aec9ffe";
+  return ret=="f49cf057cd4de7c1a4cb0b051570372892674487333ac5ab3ea603f29aec9ffe";
 });
 
 testFeature("hmac sha512", function(){
-  var ret=crypto.hmac("mysecret","mydata");
-  return ret="7f416275882395b49071c91caebc4d300b7aed08cb891680371154b61d867428271d3d00425ea7728b91344e442846db66b15b9043160c9a95d02aac6f514dd7";
+  var ret=crypto.hmac("mysecret","mydata","sha512");
+  return ret=="7f416275882395b49071c91caebc4d300b7aed08cb891680371154b61d867428271d3d00425ea7728b91344e442846db66b15b9043160c9a95d02aac6f514dd7";
 });
 
 /*
