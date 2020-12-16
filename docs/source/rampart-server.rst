@@ -371,16 +371,16 @@ Mapped Directories
   
   .. code-block:: javascript
 
-    var server=require("rampart-server");
+      var server = require("rampart-server");
 
-    var pid = server.start({
-      map: {
-        "/"   : "/var/www/html,
-        /* trailing '/' in '/css' is implied */
-        "/css": "/usr/local/etc/httpd/css"
-      }
-           
-    });
+      var pid = server.start({
+          map: {
+            "/"   : "/var/www/html",
+            /* trailing '/' in '/css' is implied */
+            "/css": "/usr/local/etc/httpd/css"
+          }
+               
+      });
   
   In the above example, all the files in ``/var/www/html/*`` would be mapped
   to ``http://localhost:8088/*`` including any subdirectories.  However,
@@ -390,10 +390,11 @@ Mapped Directories
 
   Note that globs and regular expressions are not allowed for mapped
   directories.  Note also that keys for mapped directories are always
-  treated as directories and have a trailing ``/`` added if not present.  
-  If, e.g., ``map:{"/file.html":"/my/dir"}`` was
-  specified, ``http://localhost:8088/file.html`` would return "NOT FOUND" but
-  ``http://localhost:8088/file.html/`` would access ``/my/dir/``.
+  treated as directories and have a trailing ``/`` added if not present. 
+  If, e.g., ``map:{"/file.html":"/my/dir"}`` was specified,
+  ``http://localhost:8088/file.html`` would return "NOT FOUND" but URLs
+  beginning with ``http://localhost:8088/file.html/`` would return files
+  from ``/my/dir/``.
 
 The Request Object
 ~~~~~~~~~~~~~~~~~~
@@ -468,19 +469,231 @@ The Request Object
 
         server.start(
         {
-           ...,
-           map : {
-              "/showreq.html" : function(req) {
-                 return( { txt: rampart.utils.sprintf("%3J",req) } );
+            ...,
+            map : {
+                "/showreq.html" : function(req) {
+                return( { txt: rampart.utils.sprintf("%3J",req) } );
               }
-           }
+            }
         });
 
-  Note that the ``params`` key is an :green:`Object` with keys set to an
+  Note that the ``params`` key is an :green:`Object` with properties set to an
   amalgam of all the useful variables sent from the client.  It includes
   variables from headers, cookies, GET query parameters and POST data,
   prioritize in that order.  If, e.g., a query parameter has the same name
   as a cookie, the cookie value will override the the query parameter.
+
+
+Posting Form Data
+"""""""""""""""""
+
+    When posting form data, the request object will include an additional
+    property ``postData``, which will contain the parsed contents of the
+    posted form.  The ``postData`` properties will also be copied to
+    ``params``, so long as there are no name collisions between those keys and
+    variables set from cookies, headers or query parameters.  The raw posted
+    content will be returned in the property ``body`` as a :green:`Buffer`. 
+    Example:
+
+    .. code-block:: javascript
+
+        server.start(
+        {
+            ...,
+            map : {
+
+                "post.html": function(){
+                    var html = '<html><body><form action="/showreq.html" method="POST">'+
+                        '<label for="fname">First name:</label><br>' +
+                        '<input type="text" id="fname" name="fname"><br>' +
+                        '<label for="lname">Last name:</label><br>' +
+                        '<input type="text" id="lname" name="lname">'+
+                        '<input type="submit" name="go">'+                
+                    '</form></body></html>';
+            
+                     return {html:html};
+                },
+
+                "/showreq.html" : function(req) {
+
+                    /* convert "body" to text so we can print it out */
+                    req.body=rampart.utils.bufferToString(req.body);
+
+                    return( { txt: rampart.utils.sprintf("%3J",req) } );
+                }
+            }
+        });
+
+        /* response from posting form at http://localhost:8088/post.html
+           might include:
+
+            {
+               "ip": "::1",
+               "port": 38680,
+               "method": "POST",
+               "path": {
+                  "file": "showreq.html",
+                  "path": "/showreq.html",
+                  "base": "/",
+                  "scheme": "http://",
+                  "host": "localhost:8088",
+                  "url": "http://localhost:8088/showreq.html"
+               },
+               "query": {},
+               "body": "fname=Joe&lname=Public&go=Submit",
+               "query_raw": "",
+
+                ...,
+
+               "postData": {
+                  "fname": "Joe",
+                  "lname": "Public",
+                  "go": "Submit"
+               },
+               "params": {
+                  "fname": "Joe",
+                  "lname": "Public",
+                  "go": "Submit",
+
+                  ...,
+
+               }
+            }    
+        */
+
+Posting Multipart Form Data
+"""""""""""""""""""""""""""
+
+    Multipart form data will also be returned in the property ``formData``.
+    It will be similarly parsed, except that the value of each key will be
+    an object providing details for each part.  Example:
+    
+    .. code-block:: javascript
+
+        server.start(
+        {
+            ...,
+            map : {
+
+                "postfile.html": function(){
+                    var html = '<html><body><form action="/showreq.html" enctype="multipart/form-data" method="POST">'+
+                        'File: <input type="FILE" name="file"/>' +
+                        '<input type="submit" name="Upload" value="Upload" />' +
+                    '</form></body></html>';
+
+                    return {html: html};    
+                },
+
+                "/showreq.html" : function(req) {
+
+                    /* convert "body" to text so we can print it out */
+                    req.body=rampart.utils.bufferToString(req.body);
+
+                    return( { txt: rampart.utils.sprintf("%3J",req) } );
+                }
+            }
+        });
+    
+        /* posting a small file called "helloWorld.txt with the contents "Hello World!"
+        {
+           "ip": "::1",
+           "port": 47362,
+           "method": "POST",
+           "path": {
+              "file": "showreq.html",
+              "path": "/showreq.html",
+              "base": "/",
+              "scheme": "http://",
+              "host": "localhost:8088",
+              "url": "http://localhost:8088/showreq.html"
+           },
+           "query": {},
+           "body": "------WebKitFormBoundaryVF2DDClCAAwjrcth\r\nContent-Disposition: form-data; name=\"file\"; filename=\"helloWorld.txt\"\r\nContent-Type: text/plain\r\n\r\nHello World!\r\n------WebKitFormBoundaryVF2DDClCAAwjrcth\r\nContent-Disposition: form-data; name=\"Upload\"\r\n\r\nUpload\r\n------WebKitFormBoundaryVF2DDClCAAwjrcth--\r\n",
+           "query_raw": "",
+
+            ...,
+
+           "headers": {
+              ...,
+              "Content-Length": "299",
+              "Content-Type": "multipart/form-data; boundary=----WebKitFormBoundaryVF2DDClCAAwjrcth",
+              ...,
+           },
+           "postData": {
+              "file": {
+                 "Content-Disposition": "form-data",
+                 "name": "file",
+                 "filename": "helloWorld.txt",
+                 "Content-Type": "text/plain",
+                 "contents": {
+                    "0": 72,
+                    "1": 101,
+                    "2": 108,
+                    "3": 108,
+                    "4": 111,
+                    "5": 32,
+                    "6": 87,
+                    "7": 111,
+                    "8": 114,
+                    "9": 108,
+                    "10": 100,
+                    "11": 33
+                 }
+              },
+              "Upload": {
+                 "Content-Disposition": "form-data",
+                 "name": "Upload",
+                 "contents": {
+                    "0": 85,
+                    "1": 112,
+                    "2": 108,
+                    "3": 111,
+                    "4": 97,
+                    "5": 100
+                 }
+              }
+           },
+           "params": {
+              "file": {
+                 "Content-Disposition": "form-data",
+                 "name": "file",
+                 "filename": "helloWorld.txt",
+                 "Content-Type": "text/plain",
+                 "contents": {
+                    "0": 72,
+                    "1": 101,
+                    "2": 108,
+                    "3": 108,
+                    "4": 111,
+                    "5": 32,
+                    "6": 87,
+                    "7": 111,
+                    "8": 114,
+                    "9": 108,
+                    "10": 100,
+                    "11": 33
+                 }
+              },
+              "Upload": {
+                 "Content-Disposition": "form-data",
+                 "name": "Upload",
+                 "contents": {
+                    "0": 85,
+                    "1": 112,
+                    "2": 108,
+                    "3": 111,
+                    "4": 97,
+                    "5": 100
+                 }
+              },
+
+              ...,
+
+           }
+        }
+        */
+    
+    Note that like ``body``, the ``contents`` property of each uploaded part is a :green:`Buffer`.
 
 The Return Object
 ~~~~~~~~~~~~~~~~~
@@ -589,6 +802,7 @@ Built-in Directory Function
         });
 
 Full Example
+~~~~~~~~~~~~
 
 Below is a full example:
 
