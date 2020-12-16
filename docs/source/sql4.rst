@@ -20,7 +20,7 @@ library.
 The creation of indexes improves the performance associated with
 processing large tables. However, an excessive number of indexes can
 result in an increase in processing time during update operations
-because of the additional effort needed to maintain the indexes. Thus,
+because of the additional computation needed to maintain the indexes. Thus,
 for tables undergoing frequent change, there could be a “cost”
 associated with an excessive number of indexes.
 
@@ -28,23 +28,22 @@ In addition, as the number of indexes increases, the storage
 requirements needed to hold the indexes becomes significant. Other
 cautions include not indexing small amounts of data as doing so may slow
 down searches due to the overhead of looking in an index. The point at
-which it makes sense to use an index will depend upon the system in use.
-And it would be important to use the correct kind of index for the job.
+which it makes sense to use an index will depend upon the application and
+the type of index chosen.
 
 Since there are so many factors involved in the decision as to whether
 and what kind of index will most optimize the search, Texis largely
-takes over the management of these decisions. The user can suggest those
-tables on which an index ought to be created. Beyond this, the user
+takes over the management of these decisions. The user can specify those
+tables on which an index will be created. Beyond this, the user
 would not know the status of the index, which is always in flux, nor
 whether it has been updated at the time of the search.
 
 Unlike other systems, Texis ensures that all information which has been
-added to any table can be searched immediately, regardless of whether it
-has been indexed, and regardless of whether it has been suggested that
-an index be maintained on that table or not. Sequential table space
-scans and index based scans are efficiently managed by Texis so that the
-database can always be searched in the most optimized manner, with the
-most current information available to the user.
+added to any table can be searched immediately, regardless of whether it has
+been indexed, and regardless of whether Texis actually uses the index. 
+Sequential table space scans and index based scans are efficiently managed
+by Texis so that the database can always be searched in the most optimized
+manner, with the most current information available to the user.
 
 To this end, there are two types of indexes supported by Texis:
 
@@ -57,7 +56,8 @@ To this end, there are two types of indexes supported by Texis:
    field being indexed.
 
 When an index is created, neither an end user nor an application
-programmer need (nor can) reference the index in a query. Indexes are
+programmer need reference (nor can access, except see :ref:`sql-set:indexAccess`) 
+the index in a query. Indexes are
 used automatically by Texis when needed to choose the best path to the
 data.
 
@@ -68,7 +68,7 @@ Creating An Index
 The CREATE INDEX command is used to establish an index. The form of this
 command is:
 
-::
+.. code-block::  sql
 
          CREATE INDEX index-name
          ON table-name (column-name [DESC] [, column-name [DESC]] ...)
@@ -103,7 +103,7 @@ to these queries.
 
 This command:
 
-::
+.. code-block::  sql
 
          CREATE INDEX DEPTINDEX
          ON EMPLOYEE (DEPT) ;
@@ -128,21 +128,20 @@ Thus, an employee ID can serve as a primary key for personnel records.
 
 When a table is created in Texis, duplicate records can be stored in the
 table. The uniqueness characteristic is not enforced automatically. To
-prevent duplicate records from being stored in a table, some steps must
-be taken.
+prevent duplicate records from being stored in a table, a unique index can
+be created on the column or columns representing the primary key.
 
-First, a separate file called an “index” must be created. In this case
-the index is created so that the DBMS can ensure that all values in a
-special column or columns of a table are unique. For example, the
+The index is created so that the DBMS can ensure that all values in the
+designated column or columns of a table are unique. For example, the
 ``EMPLOYEE`` table can be indexed on ``EID`` (employee ID) so that each
 row of the ``EMPLOYEE`` table contains a different employee ID value
 (i.e., no duplicate ``EID``\ s can be entered.)
 
-A variation of the CREATE INDEX command, CREATE UNIQUE INDEX, is used to
-establish an index that assures no duplicate primary key values are
-stored in a table. The form of this command is:
+This is accomplished with a variation of the ``CREATE INDEX`` command. 
+``CREATE UNIQUE INDEX``, is used to establish an index that assures no duplicate
+primary key values are stored in a table.  The form of this command is:
 
-::
+.. code-block::  sql
 
          CREATE [UNIQUE] INDEX index-name
          ON table-name (column-name [DESC] [,column-name [DESC]] ...) ;
@@ -151,14 +150,14 @@ stored in a table. The form of this command is:
 Command Discussion
 """"""""""""""""""
 
--  The keyword ``UNIQUE`` in the clause CREATE UNIQUE INDEX specifies
+-  The keyword ``UNIQUE`` in the clause ``CREATE UNIQUE INDEX`` specifies
    that in the creation and maintenance of the index no two records in
    the index table can have the same value for the index column (or
    column combination). Thus, any ``INSERT`` or ``UPDATE`` command that
    attempts to add a duplicate row in the index would be rejected.
 
 -  Each index is assigned a name and is related to a particular table
-   based on the ON table-name clause.
+   based on the ``ON`` table-name clause.
 
 -  An index is based on the specified column within the specified table,
    and will be arranged in ascending order.
@@ -167,7 +166,7 @@ Command Discussion
 records with the same employee ID from being stored in the table with
 this command:
 
-::
+.. code-block::  sql
 
          CREATE UNIQUE INDEX EMPINDEX
          ON EMPLOYEE (EID) ;
@@ -185,14 +184,13 @@ ten employees have been added to the ``EMPLOYEE`` table. Each row of the
 index, ``EMPINDEX``, consists of a column value for the index column and
 a pointer, or physical address, to the location of a row in the
 ``EMPLOYEE`` table. As employees are added or deleted from the
-``EMPLOYEE`` table, Texis automatically updates the index in the most
-efficient and timely manner.
+``EMPLOYEE`` table, Texis automatically updates the index.
 
-To conceptualize how the index works, assume you didn’t realize
-Chapman’s record was already stored in the ``EMPLOYEE`` table and you
-attempt to add her record again. You enter the command:
+To conceptualize how the index works, assume there exists a record for
+"Chapman, Margaret" with ``EID=103`` stored in the ``EMPLOYEE`` table and in an
+attempt to add her record again, the following command is issued:
 
-::
+.. code-block::  sql
 
          INSERT INTO EMPLOYEE
          VALUES ('103','Chapman, Margaret','LIB','STAFF','PART',22000) ;
@@ -203,14 +201,14 @@ and Texis responds with an error message, such as:
 
          ERROR: Duplicate Value in Index
 
-This message occurs because the value 103, the employee ID (``EID``), is
-already stored in ``EMPINDEX`` and attempting to add another 103 value
+This message occurs because the value ``103``, the employee ID (``EID``), is
+already stored in ``EMPINDEX`` and attempting to add another ``103`` value
 results in a duplicate value, which is not permitted in a unique index.
 
-When we add a new employee named Krinski with an ``EID`` equal to 110 by
+When adding a new employee named Krinski with an ``EID`` equal to 110 by
 entering this command:
 
-::
+.. code-block::  sql
 
          INSERT INTO EMPLOYEE
          VALUES ('110','Krinski','LIB','DHEAD','FULL',32500) ;
@@ -253,15 +251,15 @@ especially when a column contains a large amount of text, there is a
 need for an index which goes beyond the methods used in these previous
 examples.
 
-For example, let us take the case of the News database being archived on
-a daily basis by the Strategic Planning and Intelligence Department. The
-entire body of the news article is stored in a table, whether the data
-type in use is ``VARCHAR``, indicating a variable length number of
-characters, or ``INDIRECT``, indicating it points elsewhere to the
-actual location of the files. While subjects, dates, and bylines are
-important, the most often queried part is the body of the article, or
-the text field itself. The column we want to index is a text column
-rather than something much more concise like an an employee ID number.
+For example, consider a News database being archived on a daily basis by the
+Strategic Planning and Intelligence Department.  The entire body of the news
+article is stored in a table, whether the data type in use is ``VARCHAR``,
+indicating a variable length number of characters, or ``INDIRECT``,
+indicating it points elsewhere to the actual location of the files.  While
+subjects, dates, and bylines are important, the most often queried part is
+the body of the article, or the text field itself.  The column we want to
+index is a text column rather than something much more concise like an an
+employee ID number.
 
 To accurately find text in the files, where search items are to be found
 in proximity to other search items within some defined delimiters, all
@@ -274,32 +272,48 @@ This linear scan following the index lookup is referred to as a
 *post-search* or *post-processing*.
 
 Metamorph query language as used following ``LIKE`` and its variants is
-described in detail in Chapter [Chp:MMLike], *Intelligent Text Search
-Queries*. Where you anticipate such ``LIKE`` queries will be common on
-that field, it would be appropriate to create a Metamorph index.
+described in detail in :ref:`sql3:Intelligent Text Search Queries`. 
+If the application requires full text search efficacy using ``LIKE`` 
+queries on a field, the creation of a Metamorph index will greatly improve
+the performance of such queries.
 
 The form of the command is:
 
-::
+.. code-block::  sql
 
          CREATE METAMORPH [INVERTED|COUNTER] INDEX index-name
          ON table-name (column-name [, column-name...]) ;
 
-Syntax is the same as in the previous CREATE INDEX examples, except that
-you are specifying the type of index you want created (i.e. a Metamorph
-index).
+Or alternatively:
+
+.. code-block::  sql
+
+         CREATE FULLTEXT INDEX index-name
+         ON table-name (column-name [, column-name...]) ;
+
+
+Syntax is the same as in the previous ``CREATE INDEX`` examples, except that
+you are specifying the type of index you want created (i.e. a
+Metamorph/Fulltext index).
 
 **Example:** The news database that is being accumulated from selected
 news articles is getting too large to search from beginning to end for
 content based searches which make heavy use of the ``LIKE`` clause. A
 Metamorph index should be created for the Strategic Planning and
-Intelligence Department to enhance their research capability. The column
-containing the text of the articles is called ``BODY``.
+Intelligence Department to improve performance. Assuming the column
+containing the text of the articles is called ``BODY``, the following will
+create the Metamorph index:
 
-An index called ``BODYINDEX`` will be created and maintained on the
+.. code-block::  sql
+
+         CREATE FULLTEXT INDEX newsBody_ftx
+         ON NEWS (BODY) ;
+
+An index called ``newsBody_ftx`` will be created and maintained on the
 ``BODY`` column of the ``NEWS`` table, which contains the full text of
-all collected news articles. Now content searches can stay fast as well
-as accurate, regardless of how large this database becomes.
+all collected news articles. With the creation of the index comes increased
+performance since Texis can use the index to find matches to queries without
+linearly searching the entire table upon each request.
 
 Additional columns can be specified in addition to the text field to be
 indexed. These should be fixed length fields, such as dates, counters or
@@ -314,44 +328,51 @@ Metamorph Index Types: Inverted vs. Compact vs. Counter
 There are three types of Metamorph index: inverted, compact and counter.
 All are used to aid in resolving
 ``LIKE``/``LIKEP``/``LIKE3``/``LIKER``/``LIKEIN`` queries, and are
-created with some variant of the syntax CREATE METAMORPH INDEX.
+created with some variant of the syntax ``CREATE METAMORPH INDEX``.
 
 
 Inverted
 """"""""
 
 An inverted Metamorph index is the most commonly used type of Metamorph
-index, and is created with CREATE METAMORPH INVERTED INDEX. In Texis
-version 7 (and ``compatibilityversion`` 7) and later, this is the
-default Metamorph index type created when no other flags are given, e.g.
-CREATE METAMORPH INDEX; in version 6 (or ``compatibilityversion`` 6), a
-compact index is created. The version 7 index option WORDPOSITIONS ’on’
-(p. ) also explicitly creates this type of Metamorph index (same effect
-as the ``INVERTED`` flag after ``METAMORPH``).
+index, and is created with ``CREATE METAMORPH INVERTED INDEX``, 
+``CREATE METAMORPH INDEX`` or  ``CREATE FULLTEXT INDEX`` (each of these
+produces the same "inverted" index).
 
-An inverted Metamorph index maintains knowledge not only of what rows
-words occur in, but also what position in each row the words occur in
-(the ``WORDPOSITIONS``). With such an index Texis can often avoid a
+.. skip
+  In Texisversion 7 (and ``compatibilityversion`` 7) and later, this is the
+  default Metamorph index type created when no other flags are given, e.g.
+  CREATE METAMORPH INDEX; in version 6 (or ``compatibilityversion`` 6), a
+  compact index is created. The version 7 index option WORDPOSITIONS ’on’
+  (p. ) also explicitly creates this type of Metamorph index (same effect
+  as the ``INVERTED`` flag after ``METAMORPH``).
+
+An inverted Metamorph index maintains knowledge not only of what rows words
+occur in, but also what position in each row the words occur in the text
+field (the ``WORDPOSITIONS``).  With such an index Texis can often avoid a
 post-search altogether, because the index contains all the information
-needed for phrase resolution and rank computation. This can speed up
-searches more than a compact Metamorph index, especially for ranking
-queries using ``LIKEP``, or phrase searches. Because of the greater
-range of queries resolvable with an inverted Metamorph index (vs.
-compact), in Texis version 7 and later it is the default Metamorph type
-created. However, an inverted Metamorph index consumes more disk space,
-typically 20-30% of the text size versus about 7% for a compact
-Metamorph index. Index updating is also slower because of this.
+needed for phrase resolution and rank computation.  This can speed up
+searches more than a compact Metamorph index, especially for ranking queries
+using ``LIKEP``, or phrase searches.  Because of the greater range of
+queries resolvable with an inverted Metamorph index (vs.  compact),
+it is the default Metamorph type created.  However, an
+inverted Metamorph index consumes more disk space, typically 20-30% of the
+text size versus about 7% for a compact Metamorph index.  Index updating is
+also slower because of this.
 
 
 Compact
 """""""
 
-A compact Metamorph index maintains knowledge of what rows words occur
-in, but does not store word position information. In Texis version 7 and
-later, it is created by adding the index option WORDPOSITIONS ’off’
-(p. ). In Texis version 6 and earlier, this was the default Metamorph
-index type, and was created with CREATE METAMORPH INDEX (no
-flags/options).
+A compact Metamorph index maintains knowledge of what rows words occur in,
+but does not store word position information.  It is created by adding the
+index option WORDPOSITIONS ’off’:
+
+.. code-block::  sql
+
+         CREATE METAMORPH INDEX newsBody_ftx
+         ON NEWS (BODY) WITH WORDPOSITIONS 'off';
+
 
 Because of the lack of word position information, a compact Metamorph
 index only consumes about 7% of the text size in disk space (vs. about
@@ -371,12 +392,13 @@ Counter
 
 A Metamorph counter index contains the same information that a compact
 Metamorph index has, but also includes additional information which
-improves the performance of ``LIKEIN`` queries. If you are doing
+improves the performance of ``LIKEIN`` queries (see 
+:ref:`sql1:query searching using likein`). If you are doing
 ``LIKEIN`` queries then you should create this type of index, otherwise
 you should use either the normal or inverted forms of the Metamorph
-index. A Metamorph counter index is created with CREATE METAMORPH
-COUNTER INDEX; in Texis version 7 and later the COUNTS ’on’ index option
-(p. ) can be given instead of the ``COUNTER`` flag to accomplish the
+index. A Metamorph counter index is created with 
+``CREATE METAMORPH COUNTER INDEX``. The ``WITH COUNTS 'on'`` index option
+can also be given instead of the ``COUNTER`` flag to accomplish the
 same action.
 
 
@@ -395,7 +417,8 @@ track of all the files possibly containing that word. A good general
 rule of thumb is “The longer the word, the faster the search”.
 
 Also, neither type of Metamorph index is useful for special pattern
-matchers (REX, XPM, NPM) as these terms cannot be indexed. If other
+matchers (REX, XPM, NPM) as these terms cannot be indexed (see 
+:ref:`mm5:Types of Searches in Metamorph`). If other
 indexable terms are present in the query, the index will be used with
 them to narrow the result list, but a post-search or possibly even a
 complete linear scan of the table may be needed to resolve special
@@ -405,11 +428,17 @@ pattern matchers.
 Using LIKE3 for Index Only Search (No Post-Search)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-In certain special cases, such as static information which does not
-change at all except under very controlled circumstances easily managed
-by the system administrator, there may be instances where an index based
-search with no qualifying linear post-search may be done without losing
-meaningful responses to entered queries.
+.. me no like this
+   In certain special cases, such as static information which does not
+   change at all except under very controlled circumstances easily managed
+   by the system administrator, there may be instances where an index based
+   search with no qualifying linear post-search may be done without losing
+   meaningful responses to entered queries.
+
+In certain situations, the full capabilities of ``LIKER``/``LIKEP`` (phrase
+resolution and rank computation) are not necessary or desired by the
+application. For such an application, a Compact Metamorph Index and the use
+of ``LIKE3`` may be sufficient.
 
 This kind of search is completely optimized based on certain defaults
 which would be known to be acceptable, including:
@@ -421,26 +450,29 @@ which would be known to be acceptable, including:
    (i.e., the delimiters used to define proximity of search items is the
    length of the whole text field).
 
-As more often than not maintaining all the above rules is impractical,
-dispensing with the post-search would not be done very frequently.
-However, in some circumstances where these rules fit, the search
-requirements are narrow, and speed is of the essence, the post-search
-can be eliminated for optimization purposes.
+In some circumstances where these rules fit, the search requirements are
+narrow, and speed is of the essence, a potentially expensive post-search can
+be eliminated by using ``LIKE3``.
+
+Difference between LIKE and LIKE3
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Texis will examine the query given to ``LIKE``, and if it can guarantee
-the same results without the post-search it will not perform the
-post-search, and ``LIKE`` will then be equivalent to ``LIKE3``. With
-these caveats in mind, ``LIKE3`` may be substituted for ``LIKE`` in any
-of the queries illustrated in the previous chapters.
+the same results, it will not perform the
+post-search. In this case ``LIKE`` will then be equivalent to ``LIKE3``.
+
+However, if using ``LIKE3`` a post-search will never be performed.
 
 
 Creating an Inverted Index
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The inverted index (not to be confused with a Metamorph inverted index–a
-different type of index) is a highly specialized index, which is
+The inverted index (not to be confused with a Metamorph inverted index — AKA
+Fulltext index) is a highly specialized index, which is
 designed to speed up one class of query only, and as such has some
-limitations on its use. The primary limitation is that it can currently
+limitations on its use. 
+
+The primary limitation is that it can currently
 only be used on a field that is of the type UNSIGNED INT or ``DATE``.
 Inverted indexes can be used to speed up the ORDER BY operation in the
 case that you are ordering by the field that was indexed only. For
@@ -450,7 +482,7 @@ you should have a descending index.
 
 An inverted index can be created using this command:
 
-::
+.. code-block::  sql
 
          CREATE INVERTED INDEX SALINDEX
          ON EMPLOYEE (SALARY) ;
@@ -459,28 +491,23 @@ An inverted index can be created using this command:
 Index Options
 ~~~~~~~~~~~~~
 
-A series of index options may be specified using a WITH clause at the
-end of any CREATE [index-type] INDEX statement:
+A series of index options may be specified using a ``WITH`` clause at the
+end of any ``CREATE [index-type] INDEX`` statement:
 
-::
+.. code-block::  sql
 
          CREATE [index-type] INDEX index-name
          ON table-name (column-name [DESC] [, column-name [DESC]] ...)
          [WITH option-name [value] [option-name [value] ...]] ;
 
-Index options control how the index is made, or what sub-type of index
-is created. Many options are identical to global or server properties
-set with the SET statement (p. ), but as options are set directly in the
-CREATE INDEX statement, they override those server properties, yet only
-apply to the statement they are set in. Thus, using index options allows
-modularization of CREATE INDEX statements, making it clearer what
-settings apply to what index by directly specifying them in the CREATE
-statement, and avoiding side-effects on later statements.
-
-Note that the WITH clause is only supported in Texis version 7 and
-later. Previous releases can only set server-wide properties, via the
-SET statement.
-
+Index options control how the index is made, or what sub-type of index is
+created.  Many options are identical to global or server properties set with
+the ``SET`` statement (see :ref:`sql-set:Server Properties`), but as options
+are set directly in the ``CREATE INDEX`` statement, they override those
+server properties forthe statement in which they are set.  Thus,
+using index options allows modularization of ``CREATE INDEX`` statements, making
+it clearer what settings apply to which index by directly specifying them in
+the ``CREATE`` statement, and avoiding side-effects on later statements.
 
 Available Options
 """""""""""""""""
@@ -489,50 +516,46 @@ The available index options are as follows. Note that some options are
 only applicable to certain index types, as noted; using a option that
 does not apply to the given index type will result in an error:
 
--  | ``counts 'on'|'off'``
-   | For Metamorph or Metamorph counter index types only. If set to
+-    ``counts 'on'|'off'``
+     For Metamorph or Metamorph counter index types only. If set to
      “``on``”, creates a Metamorph counter type index (useful for
-     ``LIKEIN`` searches); if “``off``” (the default), a regular
+     ``LIKEIN`` searches); if “``off``” (the default), a compact
      Metamorph or Metamorph inverted index is created.
 
--  | ``indexmaxsingle N``
-   | For Metamorph, Metamorph inverted, and Metamorph counter index
-     types only. Same as the indexmaxsingle server property (p. ).
+-    ``indexmaxsingle N``
+     For Metamorph, Metamorph inverted, and Metamorph counter index
+     types only. Same as the :ref:`sql-set:indexMaxSingle` server property.
 
--  | ``indexmem N``
+-    ``indexmem N`` - See :ref:`sql-set:indexMem`
 
--  | ``indexmeter N|type``
+-    ``indexmeter N|type`` - See :ref:`sql-set:indexMeter`
 
--  | ``indexspace N``
+-    ``indexspace N`` - See :ref:`sql-set:indexSpace`
 
--  | ``indexvalues type``
-   | These options have the same effect as the same-named server
-     properties set with SET.
+-    ``indexvalues type`` - See :ref:`sql-set:indexValues`
 
--  | ``indexversion N``
+-    ``keepnoise 'on'|'off'`` - See :ref:`sql-set:keepNoise`
 
--  | ``keepnoise 'on'|'off'``
+-    ``noiselist ('word','word',...)`` - See :ref:`sql-set:noiseList`
 
--  | ``noiselist ('word','word',...)``
+-    ``textsearchmode mode`` - See :ref:`sql-set:textSearchMode`
 
--  | ``textsearchmode mode``
+-    ``wordexpressions ('expr','expr',...)`` - See :ref:`sql-set:addExp` 
+     and :ref:`sql-set:delExp`
 
--  | ``wordexpressions ('expr','expr',...)``
-   | For Metamorph, Metamorph inverted, and Metamorph counter index
-     types only. Same effect as the same-named server properties.
-
--  | ``wordpositions 'on'|'off'``
-   | For Metamorph and Metamorph inverted index types only. If “``on``”
-     (the default in version or ``compatibilityversion`` 7 and later),
+-    ``wordpositions 'on'|'off'``
+     For Metamorph and Metamorph inverted index types only. If “``on``”
+     (the default)
      creates a full-inversion (Metamorph inverted) index; if “``off``”,
      creates a compact (Metamorph) index.
 
--  | ``max_index_text N``
+-    ``max_index_text N``
 
--  | ``stringcomparemode mode``
-   | For regular index types only. Same effect as the same-named server
-     properties.
+-    ``stringcomparemode mode``  - See :ref:`sql-set:stringCompareMode` and
+     :ref:`sql-set:stringCompareMode/textSearchMode parameters`.
 
+.. skip
+  -    ``indexversion N``
 
 Dropping an Index
 ~~~~~~~~~~~~~~~~~
@@ -540,7 +563,7 @@ Dropping an Index
 Any index – unique or non-unique, sorted order or Metamorph – can be
 eliminated if it is no longer needed. The DROP INDEX command is used to
 remove an index. The format of this command is similar to the DROP TABLE
-command illustrated in Chapter [chp:TabDef].
+command illustrated in :ref:`sql1:Removing a Table`.
 
 ::
 
@@ -578,15 +601,25 @@ Once a table has been defined and before any data can be retrieved, data
 must be entered into the table. Initially, data can be entered into the
 table in several ways:
 
--  Batch mode: Data is loaded into the table from a file.
+-  Batch mode: Data is loaded into the table from a file. See - e.g 
+   :ref:`rampart-sql:importCsv()` and :ref:`rampart-sql:importCsvFile()`.
 
 -  Interactive mode: Data for each record is added by interactive
-   prompting of each column in a record.
+   prompting of each column in a record. This can be done with the
+   :ref:`tsql:Tsql Command Line Utility`.
 
--  Line Input: A row of data is keyed for insertion into a table using a
-   line editor and then is submitted to the database.
+-  Via scripting:  Using a combination of Rampart JavaScript functions such as
+   :ref:`rampart-sql:exec()`,
+   :ref:`rampart-main:fread`, :ref:`rampart-main:readLine`,
+   :ref:`rampart-main:readFile`, ``rampart-curl:fetch``,
+   :ref:`rampart-sql:rex()` and others, text data in many arbitrary formats
+   can be processed and inserted into Texis tables.
 
-Generally a Load Program would be used to load data into the tables at
+.. what?
+   -  Line Input: A row of data is keyed for insertion into a table using a
+      line editor and then is submitted to the database.
+
+Generally scripting would be used to load data into the tables at
 the outset. It would be unusual to use line input especially to get
 started, but it is used in the following examples so that the correct
 syntax can be clearly seen.
@@ -608,7 +641,7 @@ two formats:
 In the first format, the user enters values one row at a time, using the
 following version of the ``INSERT`` command:
 
-::
+.. code-block:: sql
 
          INSERT INTO  table-name [(column-name1 [,column-name2] ... )]
          VALUES  (value1, value2 ... ) ;
@@ -617,20 +650,20 @@ following version of the ``INSERT`` command:
 Command Discussion
 """"""""""""""""""
 
--  The INSERT INTO clause indicates that you intend to add a row to a
+-  The ``INSERT INTO`` clause indicates that you intend to add a row to a
    table.
 
--  Following the INSERT INTO clause, the user specifies the name of the
+-  Following the ``INSERT INTO`` clause, the user specifies the name of the
    table into which the data is to be inserted.
 
 -  When data values are being entered in the same order the columns were
    created in there is no need to list the column names following the
-   INSERT INTO clause. However, sometimes when a row is added, the
+   ``INSERT INTO`` clause. However, sometimes when a row is added, the
    correct ordering of column values is not known. In those cases, the
    columns being added must be listed following the table name in the
    order that the values will be supplied.
 
--  Following the keyword VALUES are the values to be added to one row of
+-  Following the keyword ``VALUES`` are the values to be added to one row of
    a table. The entire row of values is placed within parentheses. Each
    data value is separated from the next by a comma. The first value
    corresponds to the first column in the table; the second value
@@ -652,12 +685,12 @@ data values we have are as follows:
 You can create a record containing these values by entering this
 command:
 
-::
+.. code-block:: sql
 
          INSERT INTO EMPLOYEE
          VALUES (101,'Aster, John A.','MKT','STAFF','FULL',32000) ;
 
-Quotes are placed around character values so Texis can distinguish data
+Single Quotes are placed around character values so Texis can distinguish data
 values from column names.
 
 A new employee record gets added to the EMPLOYEE table, so that the
@@ -680,7 +713,7 @@ as a character string; e.g., ``'/data/rnd/ink.txt'`` as stored in the
 FILENAME column. This column manages the filename only, not the text
 contained in that file.
 
-In the examples used in Chapter [chp:TabDef], *Table Definition*, a
+In the examples used in :ref:`sql1:Table Definition`, a
 RESUME table is created which uses a VARCHAR field of around 2000
 characters to hold the text of the resumes. In this case, the job
 experience text of each resume is stored in the column EXP. A Load
@@ -694,13 +727,13 @@ rather than treated as a character string. The INDIRECT type looks at
 the contents of the file when doing ``LIKE``, and these contents can be
 retrieved using the API (Application Program Interface).
 
-The form of the INSERT INTO command is the same as above. Where a data
+The form of the ``INSERT INTO`` command is the same as above. Where a data
 type is defined as ``INDIRECT``, a filename may be entered as the value
 of one or more columns.
 
 **Example:** Let’s say we have the following information available for a
 resume to be entered into the RESUME table, and that the job experience
-column EXP has been defined as INDIRECT.
+column ``EXP`` has been defined as INDIRECT.
 
 ::
 
@@ -710,7 +743,7 @@ column EXP has been defined as INDIRECT.
         EDUC = B.A. 1982 Radford University
         EXP = contained in the resume file "/usr/local/resume/smith.res"
 
-Use this INSERT INTO statement to add a row containing this information
+Use this ``INSERT INTO`` statement to add a row containing this information
 to the RESUME table:
 
 ::
@@ -720,7 +753,7 @@ to the RESUME table:
                  'B.A. 1982 Radford University',
                  '/usr/local/resume/smith.res') ;
 
-The EXP column acts as a pointer to the full text files containing the
+The ``EXP`` column acts as a pointer to the full text files containing the
 resumes. As such, the text in those files responds to all
 ``SELECT``-``FROM``-``WHERE`` statements. Thus Metamorph queries used
 after ``LIKE`` can be done on the text content manipulated by Texis in
@@ -747,14 +780,14 @@ query against an existing table. The form of this ``INSERT`` command is:
 Command Discussion
 """"""""""""""""""
 
--  The INSERT INTO clause indicates that you intend to add a row or rows
+-  The ``INSERT INTO`` clause indicates that you intend to add a row or rows
    to a table.
 
--  Following the INSERT INTO clause, the user specifies the name of the
+-  Following the ``INSERT INTO`` clause, the user specifies the name of the
    table to be updated.
 
 -  The query is evaluated, and a copy of the results from the query is
-   stored in the table specified after the INSERT INTO clause. If rows
+   stored in the table specified after the ``INSERT INTO`` clause. If rows
    already exist in the table being copied to, then the new rows are
    added to the end of the table.
 
@@ -767,10 +800,10 @@ overall departmental budgets. We want to manipulate the relational
 information stored in the database without affecting the actual table in
 use.
 
-*Step 1:* Create a new table named EMP\_RAISE, where the projected
+*Step 1:* Create a new table named ``EMP_RAISE``, where the projected
 results can be studied without affecting the live stored information.
-Use this CREATE TABLE statement, which defines data types as in the
-original table, EMPLOYEE, creating an empty table.
+Use this ``CREATE TABLE`` statement, which defines data types as in the
+original table, ``EMPLOYEE``, creating an empty table.
 
 ::
 
@@ -782,7 +815,7 @@ original table, EMPLOYEE, creating an empty table.
             BENEFITS  CHAR(4)
             SALARY    INTEGER) ;
 
-*Step 2:* Copy the data in the EMPLOYEE table to the EMP\_RAISE table.
+*Step 2:* Copy the data in the ``EMPLOYEE`` table to the ``EMP_RAISE`` table.
 We will later change salaries to the projected new salaries using the
 ``UPDATE`` command. For now, the new table must be loaded as follows:
 
@@ -793,10 +826,10 @@ We will later change salaries to the projected new salaries using the
            FROM    EMPLOYEE ;
 
 The number of records which exist in the EMPLOYEE table at the time this
-INSERT INTO command is done is the number of records which will be
-created in the new EMP\_RAISE table. Now that the new table has data
+``INSERT INTO`` command is done is the number of records which will be
+created in the new ``EMP_RAISE` table. Now that the new table has data
 values, it can be queried and updated, without affecting the data in the
-EMPLOYEE table.
+``EMPLOYEE`` table.
 
 An easier way to create a copy of the table is to use the following
 syntax:
@@ -820,7 +853,7 @@ increased. To modify the values of one or more columns in one or more
 records of a table, the user specifies the ``UPDATE`` command. The
 general form of this statement is:
 
-::
+.. code-block:: sql
 
          UPDATE  table-name
          SET     column-name1 = expression1
@@ -833,7 +866,7 @@ Command Discussion
 
 -  The ``UPDATE`` clause indicates which table is to be modified.
 
--  The SET clause is followed by the column or columns to be modified.
+-  The ``SET`` clause is followed by the column or columns to be modified.
    The expression represents the new value to be assigned to the column.
    The expression can contain constants, column names, or arithmetic
    expressions.
@@ -853,7 +886,7 @@ partial to full with this statement:
 
 The value ``'FULL'`` is the change being made. It will replace the
 current value ``'PART'`` listed in the BENEFITS column for Margaret
-Chapman, whose employee ID number is 103. A change is made for all
+Chapman, whose employee ID number is ``103``. A change is made for all
 records that satisfy the search condition; in this example, only one row
 is updated.
 
@@ -868,7 +901,7 @@ Use this statement to update all staff salaries with the intended raise:
          SET     SALARY = SALARY * 1.1
          WHERE   RANK = 'STAFF' ;
 
-If a portion of the EMP\_RAISE table looked like this before the update:
+If a portion of the ``EMP_RAISE`` table looked like this before the update:
 
 ::
 
@@ -894,8 +927,8 @@ It would look like this after the update operation:
       106  Sanchez, Carla      MKT    STAFF  FULL       38500
       107  Smith, Roberta      RND    STAFF  PART       27500
 
-Notice that only the STAFF rows are changed to reflect the increase.
-DHEAD row salaries remain as they were. As a word of caution, it’s easy
+Notice that only the ``STAFF`` rows are changed to reflect the increase.
+``DHEAD`` row salaries remain as they were. As a word of caution, it’s easy
 to “accidentally” modify all rows in a table. Check your statement
 carefully before executing it.
 
@@ -907,7 +940,7 @@ When a file is inserted into an INDIRECT column, the ownership and
 location of the file remains as it was when loaded. If the resume file
 called “``/usr/local/resume/smith.res``” was owned by the Library, it
 will remain so when pointed to by the INDIRECT column unless you take
-steps to make it otherwise. For example, if Personnel owns the RESUME
+steps to make it otherwise. For example, if Personnel owns the ``RESUME``
 table but not the files themselves, an attempt to update the resume
 files would not be successful. The management and handling of the resume
 files is still in the domain of the Library.
@@ -918,19 +951,19 @@ it is, or you can instruct Texis to create a copy of the file under its
 own ownership and control. In either case, the file still exists outside
 of Texis.
 
-Where you want Texis to own a copy of the data, a Texis owned file can
-be made with the TOIND function. You can then do whatever you want with
-one version without affecting the other, including removing the original
-if that is appropriate. The permissions on such Texis owned files will
-be the same as the ownership and permissions assigned to the Texis table
-which owns it.
+Where you want Texis to own a copy of the data, a Texis owned file can be
+made with the :ref:`sql-server-funcs:toind` function.  You can then do
+whatever you want with one version without affecting the other, including
+removing the original if that is appropriate.  The permissions on such Texis
+owned files will be the same as the ownership and permissions assigned to
+the Texis table which owns it.
 
 The file is copied into the table using an ``UPDATE`` statement. The
 form of ``UPDATE`` is the same, but with special use of the expression
 for the column name following SET. The form of this portion of the
 ``UPDATE`` statement would be:
 
-::
+.. code-block:: sql
 
          UPDATE  table-name
          SET     column-name = toind (fromfile ('local-file') ) ;
@@ -947,7 +980,7 @@ function “``toind``”.
 **Example:** To make a Texis owned copy of the Smith resume file for the
 RESUME table, use this ``UPDATE`` statement:
 
-::
+.. code-block:: sql
 
          UPDATE  RESUME
          SET     EXP = toind (fromfile ('/usr/local/resume/smith.res') ) ;
@@ -973,7 +1006,7 @@ Deleting a record removes all data values in a row from a table. One or
 more rows from a table can be deleted with the use of the ``DELETE``
 command. This command has the following form:
 
-::
+.. code-block:: sql
 
          DELETE FROM  table-name
          [WHERE  search-condition] ;
@@ -982,7 +1015,7 @@ command. This command has the following form:
 Command Discussion
 """"""""""""""""""
 
--  The DELETE FROM clause indicates you want to remove a row from a
+-  The ``DELETE FROM`` clause indicates you want to remove a row from a
    table. Following this clause, the user specifies the name of the
    table from which data is to be deleted.
 
@@ -990,14 +1023,14 @@ Command Discussion
    similar to that used in the ``SELECT`` statement.
 
 -  Where INDIRECT text columns are concerned, such rows will be deleted
-   just as any other when DELETE FROM is used. However, the files
+   just as any other when ``DELETE FROM`` is used. However, the files
    pointed to by INDIRECT will only be removed where managed by Texis,
    as defined in the previous section on Texis owned files.
 
 An employee whose ID number is 117 has quit his job. Use this statement
-to delete his record from the EMPLOYEE table.
+to delete his record from the ``EMPLOYEE`` table.
 
-::
+.. code-block:: sql
 
          DELETE FROM EMPLOYEE
          WHERE  EID = 117 ;
@@ -1012,12 +1045,12 @@ case, one record is deleted from the table. Note that the entire record:
 is deleted, not just the column specified in the ``WHERE`` clause.
 
 When you delete records, aim for consistency. For example, if you intend
-to delete Peters’ record in the EMPLOYEE table, you must also delete the
-reference to Peters as department head in the DEPARTMENT table and so
+to delete Peters’ record in the ``EMPLOYEE`` table, you must also delete the
+reference to Peters as department head in the ``DEPARTMENT`` table and so
 on. This would involve two separate operations.
 
 **Example:** Let’s say we want to delete all the department heads from
-the EMP\_RAISE table as they are not really part of the analysis. Use
+the ``EMP_RAISE`` table as they are not really part of the analysis. Use
 this statement:
 
 ::
@@ -1026,7 +1059,7 @@ this statement:
          WHERE  RANK = 'DHEAD' ;
 
 The block of all records of employees who are department heads are
-removed from the EMP\_RAISE table, leaving the table with just these
+removed from the ``EMP_RAISE`` table, leaving the table with just these
 entries:
 
 ::
@@ -1046,16 +1079,16 @@ could be done with this statement:
 
          DELETE FROM  EMP_RAISE ;
 
-All rows of EMP\_RAISE would be deleted, leaving an empty table.
+All rows of ``EMP_RAISE`` would be deleted, leaving an empty table.
 However, the definition of the table has not been deleted; it still
 exists even though it has no data values, so rows can be added to the
 table at any time.
 
 It is important to note the difference between the ``DELETE`` command
-and the DROP TABLE command. In the former, you eliminate one or more
+and the ``DROP TABLE`` command. In the former, you eliminate one or more
 rows from the indicated table. However, the structure of the table is
 still defined, and rows can be added to the table at any time. In the
-case of the DROP TABLE command, the table definition is removed from the
+case of the ``DROP TABLE`` command, the table definition is removed from the
 system catalog. You have removed not only access to the data in the
 table, but also access to the table itself. Thus, to add data to a
 “dropped” table, you must first create the table again.
@@ -1063,8 +1096,6 @@ table, but also access to the table itself. Thus, to add data to a
 
 Security
 --------
-
-[Chp:Sec]
 
 Many people have access to a database: managers, analysts, data-entry
 clerks, programmers, temporary workers, and so on. Each individual or
@@ -1103,10 +1134,10 @@ Creating Users and Logging In
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 When a database is created there are two users created by default. The
-default users are PUBLIC and \_SYSTEM. PUBLIC has the minimal
-permissions possible in Texis, and \_SYSTEM has the maximum permissions
+default users are PUBLIC and _SYSTEM. PUBLIC has the minimal
+permissions possible in Texis, and _SYSTEM has the maximum permissions
 in Texis. When these are created they are created without any password.
-You should change the password on \_SYSTEM to prevent security issues.
+You should change the password on _SYSTEM to prevent security issues.
 The password on PUBLIC can be left blank to allow anonymous access to
 the database, or it can be set to restrict access.
 
@@ -1118,13 +1149,13 @@ people are working on the database you should see the previous comments
 about operating system permissions.
 
 To create new users in the database you must may either use the program
-tsql -a a, and you will be prompted for the user’s information, or you
-can user the CREATE USER SQL statement. You must log in as \_SYSTEM to
+``tsql -a add``, and you will be prompted for the user’s information, or you
+can user the ``CREATE USER SQL`` statement. You must log in as _SYSTEM to
 add or delete users.
 
 The syntax for the user administration command in SQL are as follows:
 
-::
+.. code-block:: sql
 
     CREATE USER username IDENTIFIED BY password ;
 
@@ -1133,7 +1164,7 @@ The syntax for the user administration command in SQL are as follows:
     DROP   USER username ;
 
 You may issue the ``ALTER`` ``USER`` command if you are logged in as the
-same user that is given in the statement, or if you are \_SYSTEM. The
+same user that is given in the statement, or if you are _SYSTEM. The
 password should be given as a string in single quotes. The ``ALTER``
 ``USER`` statement is used to change a user’s password; the new password
 being specified in the command. Dropping a user will not remove any
@@ -1175,11 +1206,11 @@ the following:
 ``DELETE``: Remove rows from a table.
 
 The authorization subsystem of Texis is based on privileges that are
-controlled by the statements GRANT and REVOKE. The GRANT command allows
+controlled by the statements ``GRANT`` and ``REVOKE``. The ``GRANT`` command allows
 the “owner” of a table to specify the operations, or privileges, that
 other users may perform on a table. The format of the command is:
 
-::
+.. code-block:: sql
 
          GRANT  [ALL]
                 privilege1 [,privilege2] ...
@@ -1192,24 +1223,24 @@ other users may perform on a table. The format of the command is:
 Command Discussion
 """"""""""""""""""
 
--  GRANT is a required keyword that indicates you are granting access to
+-  ``GRANT`` is a required keyword that indicates you are granting access to
    tables to other users.
 
 -  Privilege refers to the type of privilege or privileges you are
    granting. One or more of the following privileges can be granted:
    ``SELECT``, ``INSERT``, ``UPDATE``, ``DELETE``, and ``ALTER``.
-   Alternatively, ALL can be specified if all of the above actions are
+   Alternatively, ``ALL`` can be specified if all of the above actions are
    to be granted to the user.
 
--  ON indicates the table(s) to which these privileges are being
+-  ``ON`` indicates the table(s) to which these privileges are being
    assigned.
 
--  PUBLIC is used if the privileges are to granted to all users. If you
+-  ``PUBLIC`` is used if the privileges are to granted to all users. If you
    want only certain users to have privileges assigned to this table,
    you must list the user identifications (“``userid's``”) of all those
    who will be allowed to share the table.
 
--  If the clause WITH GRANT OPTION is specified, the recipient of the
+-  If the clause ``WITH GRANT OPTION`` is specified, the recipient of the
    privileges specified can grant these privileges to other users.
 
 **Example:** The Systems Administrator in the Information Systems
@@ -1218,7 +1249,7 @@ owner. As owner of the EMPLOYEE table, he grants the ``SELECT``
 privilege to the firm’s CPA in Accounting. As owner of the table he
 issues the following command:
 
-::
+.. code-block:: sql
 
          GRANT   SELECT
          ON      EMPLOYEE
@@ -1232,17 +1263,17 @@ issues the following command:
    in other words, cannot change it with ``UPDATE`` or other such
    privileges.
 
--  ON refers to the table these privileges are being granted on; in this
-   case, the EMPLOYEE table.
+-  ``ON`` refers to the table these privileges are being granted on; in this
+   case, the ``EMPLOYEE`` table.
 
 -  What follows TO is the user ID (``userid``) of the person to whom the
    privilege is granted. In this case the ``SELECT`` privilege is
    granted to the person in accounting whose user ID is “CPA”.
 
-**Example:** The owner of the EMPLOYEE table allows the clerks in
+**Example:** The owner of the ``EMPLOYEE`` table allows the clerks in
 Personnel to add and modify employee data with this command:
 
-::
+.. code-block:: sql
 
          GRANT   UPDATE, INSERT
          ON      EMPLOYEE
@@ -1250,50 +1281,50 @@ Personnel to add and modify employee data with this command:
 
 In this case there are two clerks with two separate user ID’s, “CLERK1”
 and “CLERK2”. Both are granted privileges to ``UPDATE`` and ``INSERT``
-new information into the EMPLOYEE table.
+new information into the ``EMPLOYEE`` table.
 
-**Example:** The owner of the EMPLOYEE table, the System Administrator,
+**Example:** The owner of the ``EMPLOYEE`` table, the System Administrator,
 gives the Director of Personnel complete access (``SELECT``, ``INSERT``,
-``UPDATE``, ``DELETE``, ``ALTER``) to the EMPLOYEE table, along with
+``UPDATE``, ``DELETE``, ``ALTER``) to the ``EMPLOYEE`` table, along with
 permission to assign these privileges to others. This statement is used:
 
-::
+.. code-block:: sql
 
          GRANT   ALL
          ON      EMPLOYEE
          TO      PERS
          WITH GRANT OPTION ;
 
-ALL following GRANT includes all 5 of the privileges. PERS is the user
-ID of the Director of Personnel. WITH GRANT OPTION allows the Director
+``ALL`` following ``GRANT`` includes all 5 of the privileges. ``PERS`` is the user
+ID of the Director of Personnel. ``WITH GRANT OPTION`` allows the Director
 of Personnel to grant these privileges to other users.
 
 **Example:** A systems analyst in the Strategic Planning and
-Intelligence Department has created and is owner of the NEWS table in
+Intelligence Department has created and is owner of the ``NEWS`` table in
 which they are daily archiving online news articles of interest. It is
 decided to give all employees read-only access to this database. Owner
 of the table can do so with this command:
 
-::
+.. code-block:: sql
 
          GRANT   SELECT
          ON      NEWS
          TO      PUBLIC ;
 
 Anyone with access to the server on which the news table is stored will
-have permission to read the articles in the NEWS table, since the
-``SELECT`` privilege has been granted to PUBLIC.
+have permission to read the articles in the ``NEWS`` table, since the
+``SELECT`` privilege has been granted to ``PUBLIC``.
 
 
 Removing Privileges
 ~~~~~~~~~~~~~~~~~~~
 
 Privileges assigned to other users can be taken away by the person who
-granted them. In Texis, the REVOKE statement would be used to remove
-privileges granted by the GRANT command. The general form of this
+granted them. In Texis, the ``REVOKE`` statement would be used to remove
+privileges granted by the ``GRANT`` command. The general form of this
 statement is:
 
-::
+.. code-block:: sql
 
          REVOKE  [ALL]
                  privilege1 [,privilege2] ...
@@ -1305,26 +1336,26 @@ statement is:
 Command Discussion
 """"""""""""""""""
 
--  REVOKE is a required keyword that indicates you are removing access
+-  ``REVOKE`` is a required keyword that indicates you are removing access
    to tables .
 
 -  Privilege refers to the type of privilege or privileges you are
    revoking. One or more of the following privileges can be revoked:
    ``SELECT``, ``INSERT``, ``UPDATE``, ``DELETE``, and ``ALTER``.
-   Alternatively, ALL can be specified if all of the above actions are
+   Alternatively, ``ALL`` can be specified if all of the above actions are
    to be taken away from the user.
 
--  The ON clause indicates the table(s) from which these privileges are
+-  The ``ON`` clause indicates the table(s) from which these privileges are
    being removed.
 
--  PUBLIC is used if the privileges are taken away from all users of the
+-  ``PUBLIC`` is used if the privileges are taken away from all users of the
    indicated table(s). Otherwise, you list the user names of only those
    who are no longer allowed to share the table.
 
 **Example:** The Personnel clerks no longer need to access the EMPLOYEE
 table. Revoke their privileges as follows:
 
-::
+.. code-block:: sql
 
          REVOKE  UPDATE, INSERT
          ON      EMPLOYEE
@@ -1337,8 +1368,6 @@ that can be implemented in Texis.
 
 Administration of the Database
 ------------------------------
-
-[chp:AdmDB]
 
 This chapter covers topics related to the administration of the
 database. The topics include the following:
@@ -1357,17 +1386,15 @@ columns, and indexes, is maintained within a set of tables referred to
 as the *system catalog*. Texis automatically maintains these tables in
 the system catalog in response to commands issued by users. For example,
 the catalog tables are updated automatically when a new table is defined
-using the CREATE TABLE command.
+using the ``CREATE TABLE`` command.
 
 Database administrators and end users can access data in the system
 catalog just as they access data in other Texis tables by using the
 ``SELECT`` statement. This enables a user to inquire about data in the
 database and serves as a useful reference tool when developing queries.
 
-Table [tab:SysCat] lists the tables that make up the system catalog for
+The Table below lists the tables that make up the system catalog for
 Texis.
-
-[tab:SysCat]
 
 +--------------------+---------------------------------------------------------+
 | Table Name         | Description                                             |
@@ -1387,15 +1414,13 @@ Texis.
 | ``SYSMETAINDEX``   | Contains one row per Metamorph index in the database.   |
 +--------------------+---------------------------------------------------------+
 
-Table: Overview of System Catalog Tables in Texis
-
-One commonly referenced table, SYSTABLES, contains a row for each table
+One commonly referenced table, ``SYSTABLES``, contains a row for each table
 that has been defined. For each table, the name of the table, authorized
 ID of the user who created the table, type of table, and so on is
-maintained. When users access SYSTABLES, they see data pertaining to
+maintained. When users access ``SYSTABLES``, they see data pertaining to
 tables that they can access.
 
-Texis’s system catalog table, “SYSTABLES” has these columns, defined
+Texis’s system catalog table, ``SYSTABLES`` has these columns, defined
 with the following data types:
 
 ::
@@ -1418,15 +1443,8 @@ NAME
 TYPE
     indicates the type of table.
 
-    S
-        indicates a System table, and is Texis owned. ‘S’ is assigned to
-        all tables where the user who created the table is “texis”.
-
     T
         indicates a normal Table.
-
-    V
-        indicates a normal View.
 
     B
         indicates a Btree table. A Btree is a special type of table that
@@ -1444,6 +1462,12 @@ TYPE
         may have the same name as another, normal table. They are
         automatically removed when no longer needed.
 
+.. afaik, these don't happen
+    S
+        indicates a System table, and is Texis owned. ‘S’ is assigned to
+        all tables where the user who created the table is “texis”.
+    V
+        indicates a normal View.
     D
         indicates a Deleted table. On some operating systems (such as
         Windows), when a table is ``DROP``\ ped, it cannot be removed
@@ -1470,33 +1494,34 @@ statement:
 
 ::
 
-         SELECT  NAME, TYPE
+         SELECT  NAME, TYPE, CREATOR
          FROM    SYSTABLES ;
 
 The result will be a listing of the available tables, as follows:
 
 ::
 
-      NAME             TYPE
+    NAME         TYPE         CREATOR
 
-      SYSCOLUMNS       S
-      SYSINDEX         S
-      SYSMETAINDEX     S
-      SYSTABLES        S
-      CODES            T
-      DEPARTMENT       T
-      EMPLOYEE         T
-      NEWS             T
-      REPORT           T
-      RESUME           T
+    SYSCOLUMNS   T            _SYSTEM
+    SYSTABLES    T            _SYSTEM
+    SYSINDEX     T            _SYSTEM
+    SYSUSERS     T            _SYSTEM
+    SYSPERMS     T            _SYSTEM
+    SYSTRIG      T            _SYSTEM
+    SYSMETAINDEX T            _SYSTEM
+    EMPLOYEE     T            PUBLIC
+    NEWS         T            PUBLIC
+    REPORT       T            PUBLIC
+    RESUME       T            PUBLIC
 
 In the above example, the first four tables: SYSCOLUMNS, SYSINDEX,
-SYSMETAINDEX, and SYSTABLES, comprise the system catalog and are marked
-as type S, for “*system*”.
+SYSMETAINDEX, and SYSTABLES, comprise the system catalog and are owned
+by the _SYSTEM user account.
 
 The next six in the list are the tables which have been used for
 examples throughout this manual: CODES, DEPARTMENT, EMPLOYEE, NEWS,
-REPORT, and RESUME. These are marked as type T, for “*table*”.
+REPORT, and RESUME. These are owned by the "PUBLIC" user account.
 
 The table SYSCOLUMNS contains a row for every column of every table in
 the database. For each column, its name, name of the table to which it
@@ -1505,17 +1530,33 @@ permitted in the columns is maintained information. Users querying
 SYSCOLUMNS can retrieve data on columns in tables to which they have
 access.
 
-Texis’s system catalog table “SYSCOLUMNS” has these columns, defined
-with the following data types:
+Texis’s system catalog table “SYSCOLUMNS” has the following columns, defined
+with the following data types, as can be seen from executing this
+statement:
+
+.. code-block:: sql
+
+   SELECT NAME, TYPE, SIZE FROM SYSCOLUMNS 
+   WHERE TBNAME='SYSCOLUMNS'
+
 
 ::
 
-         NAME     -  CHAR(20)
-         TBNAME   -  CHAR(20)
-         TYPE     -  CHAR(15)
-         INDEX    -  CHAR(20)
-         NONNULL  -  BYTE
-         REMARK   -  CHAR(80)
+    NAME         TYPE                 SIZE
+
+    NAME         char                   35
+    TBNAME       char                   35
+    TYPE         char                   15
+    SIZE         int                     1
+    ORDINAL_POSITION int                 1
+    IDX          char                   35
+    NULLABLE     short                   1
+    SQLTYPE      short                   1
+    PRECIS       int                     1
+    LENGTH       int                     1
+    SCALE        short                   1
+    RADIX        short                   1
+    REMARK       char                   80
 
 NAME
     is the column name itself.
@@ -1527,17 +1568,30 @@ TYPE
     is the data type assigned to the column, defined as a string. TYPE
     might contain “char”, “varchar”, “integer”, “indirect”, and so on.
 
-INDEX
-    is the name of an index created on this column. (This field is
-    reserved for use in future versions of Texis. As it is not currently
-    being used, one should not be surprised if the INDEX field is
-    empty.)
+SIZE
+    is the size of the column.  If defined as ``CHAR(16)`` then the size
+    would be 16.
 
-NONNULL
-    indicates whether NULL fields should be disallowed. (This field is
-    reserved for use in future versions of Texis. As it is not currently
-    being used, one should not be surprised if the INDEX field is
-    empty.)
+ORDINAL_POSITION
+    The position of this column in the table.
+
+IDX
+    is the name of an index created on this column. (This field is
+    reserved for use in future versions of Texis.)
+
+NULLABLE
+    indicates whether NULL fields should be allowed. (This field is
+    reserved for use in future versions of Texis.)
+
+SQLTYPE
+
+PRECIS
+
+LENGTH
+
+SCALE
+
+RADIX
 
 REMARK
     is reserved for any user comment about the column.
@@ -1577,13 +1631,14 @@ columns, defined with the following data types:
 
 ::
 
-         NAME     -  CHAR(20)
-         TBNAME   -  CHAR(20)
-         FNAME    -  CHAR(20)
-         ORDER    -  CHAR
-         TYPE     -  BYTE
-         UNIQUE   -  BYTE
-         FIELDS   -  CHAR(20)
+         NAME       -  CHAR(35)
+         TBNAME     -  CHAR(35)
+         COLLSEQ    -  CHAR(1)
+         TYPE       -  BYTE(1)
+         NON_UNIQUE -  BYTE(1)
+         FNAME      -  CHAR(255)
+         FIELDS     -  VARCHAR(35)
+         PARAMS     -  VARCHAR(35)
 
 NAME
     is the name of the index.
@@ -1594,20 +1649,25 @@ TBNAME
 FNAME
     is the file name of the index.
 
-ORDER
+COLLSEQ
     indicates sort order. ‘A’ indicates *ascending*; ‘D’ indicates
     *descending*. This field is not currently used, but is planned for
     future releases.
 
 TYPE
-    indicates the type of index, either Btree or Metamorph.
+    indicates the type of index, either ``B`` for Btree or ``F`` for
+    Fulltext/Metamorph.
 
-UNIQUE
-    indicates whether the values entered should be unique. This field is
+NON_UNIQUE
+    indicates whether the index was created with the ``unique`` keyword
+    (``0`` if unique). This field is
     not currently used, but is planned for future releases.
 
 FIELDS
-    indicates which field is indexed.
+    indicates the field or fields upon which the index was made.
+
+PARAMS
+    indicates the :ref:`sql-set:String Compare Mode` used to create the index.
 
 “SYSMETAINDEX” controls a demon that checks Metamorph indexes, those
 indexes used on text oriented columns. The demon waits a certain number
@@ -1673,10 +1733,13 @@ modifiable during compaction: attempts to insert, delete or update rows
 will block until compaction is finished. The table is readable during
 compaction, however, so ``SELECT``\ s are possible. Progress meters may
 be printed during compaction by setting the SQL property ``meter`` to
-``'compact'``. The ``ALTER`` ``TABLE`` :math:`name` ``COMPACT`` syntax
-was added in version 6.00.1291080000 20101129. **NOTE: Versions prior to
-version 6.00.1291080000 20101129 should not attempt to access the table
-during compaction, or corruption may result.**
+``'compact'``. 
+
+.. nope
+   The ``ALTER`` ``TABLE`` :math:`name` ``COMPACT`` syntax
+   was added in version 6.00.1291080000 20101129. **NOTE: Versions prior to
+   version 6.00.1291080000 20101129 should not attempt to access the table
+   during compaction, or corruption may result.**
 
 Note that compacting a table is generally only useful when the table
 will no longer be modified, or has undergone a large amount of deletions
@@ -1729,14 +1792,15 @@ Since the full syntax of the original ``CREATE`` statement may not be
 known, or may be cumbersome to remember and re-enter, a Metamorph index
 may also be optimized with an ``ALTER INDEX`` statement:
 
-| ``     ALTER INDEX`` :math:`indexName`\ :math:`|`\ ``ALL`` [``ON``
-  :math:`tableName`]
-| ``         OPTIMIZE``\ :math:`|`\ ``REBUILD``
+.. code-block:: sql
 
-This will optimize the index named :math:`indexName`, or all indexes in
+  ALTER INDEX indexName|ALL [ON tableName]
+  OPTIMIZE|REBUILD
+
+This will optimize the index named ``indexName``, or all indexes in
 the database if ``ALL`` is given. Adding the optional ``ON``
-:math:`tableName` clause will limit the index(es) optimized to only
-those on the table named :math:`tableName`. If a non-Metamorph index is
+``tableName`` clause will limit the index(es) optimized to only
+those on the table named ``tableName``. If a non-Metamorph index is
 specified, it will be silently ignored, as non-Metamorph indexes are
 always in an optimized state.
 
@@ -1748,53 +1812,52 @@ index type may be rebuilt, not just Metamorph indexes. During
 rebuilding, the original index is still available for search use;
 however inserts, deletes and updates may be postponed until the rebuild
 completes. Rebuilding is not generally needed, but may be useful if the
-index is suspected to be corrupt. The ``ALTER INDEX`` syntax was added
-in Texis version 7.
+index is suspected to be corrupt.
+
+.. coming soon to a computer near you.
+   Automatic Index Optimization via chkind
+   """""""""""""""""""""""""""""""""""""""
+
+   Another method of Metamorph index optimization is automatically, via the
+   ``chkind`` daemon, and is enabled by default. This is a process that
+   runs automatically in the background (as part of the database monitor),
+   and periodically checks how out-of-date Metamorph indexes are. When an
+   index reaches a certain (configurable) threshold of “staleness”, it is
+   re-optimized. See p.  for more details on ``chkind`` and its
+   configuration.
 
 
-Automatic Index Optimization via chkind
-"""""""""""""""""""""""""""""""""""""""
+   Choosing Manual vs. Automatic Index Optimization
+   """"""""""""""""""""""""""""""""""""""""""""""""
 
-Another method of Metamorph index optimization is automatically, via the
-``chkind`` daemon, and is enabled by default. This is a process that
-runs automatically in the background (as part of the database monitor),
-and periodically checks how out-of-date Metamorph indexes are. When an
-index reaches a certain (configurable) threshold of “staleness”, it is
-re-optimized. See p.  for more details on ``chkind`` and its
-configuration.
+   Whether to optimize Metamorph indexes manually (via a SQL statement) or
+   automatically (via ``chkind``) depends on the nature of table changes
+   and searches.
 
+   Deployments where table changes occur in batches, and/or search load
+   predictably ebbs and flows, are good candidates for manual optimization.
+   The optimizations can be scheduled for just after the batch table
+   updates, and if possible when search load is low. This will keep the
+   index(es) up-to-date (and thus performing best) for the longest amount
+   of time, while also avoiding the performance penalty of updating both
+   the table and the index simultaneously. Optimizing at off-peak search
+   times also improves peak-load search performance by freeing up resources
+   during the peak. Contrast this with automatic optimization, which cannot
+   know about upcoming table updates or search load, and thus might trigger
+   an index update that coincides with either, negatively impacting
+   performance.
 
-Choosing Manual vs. Automatic Index Optimization
-""""""""""""""""""""""""""""""""""""""""""""""""
+   Applications where tables are changed at a more constant rate (e.g. a
+   steady stream of changes) may be better candidates for automatic
+   updating. There may not be any predictable “best time” to run the
+   optimization, nor may it be known how much the indexes are out-of-date.
+   Thus the decision on when to optimize can be left to ``chkind``\ ’s
+   automatic out-of-date scan, which attempts to minimize both staleness of
+   the index and frequency of index optimizations.
 
-Whether to optimize Metamorph indexes manually (via a SQL statement) or
-automatically (via ``chkind``) depends on the nature of table changes
-and searches.
-
-Deployments where table changes occur in batches, and/or search load
-predictably ebbs and flows, are good candidates for manual optimization.
-The optimizations can be scheduled for just after the batch table
-updates, and if possible when search load is low. This will keep the
-index(es) up-to-date (and thus performing best) for the longest amount
-of time, while also avoiding the performance penalty of updating both
-the table and the index simultaneously. Optimizing at off-peak search
-times also improves peak-load search performance by freeing up resources
-during the peak. Contrast this with automatic optimization, which cannot
-know about upcoming table updates or search load, and thus might trigger
-an index update that coincides with either, negatively impacting
-performance.
-
-Applications where tables are changed at a more constant rate (e.g. a
-steady stream of changes) may be better candidates for automatic
-updating. There may not be any predictable “best time” to run the
-optimization, nor may it be known how much the indexes are out-of-date.
-Thus the decision on when to optimize can be left to ``chkind``\ ’s
-automatic out-of-date scan, which attempts to minimize both staleness of
-the index and frequency of index optimizations.
-
-Some situation may call for a combination, e.g. ``chkind`` to handle
-miscellaneous table updates, and an occasional manual optimization after
-batch updates, or just before peak search load.
+   Some situation may call for a combination, e.g. ``chkind`` to handle
+   miscellaneous table updates, and an occasional manual optimization after
+   batch updates, or just before peak search load.
 
 
 Reserved Words

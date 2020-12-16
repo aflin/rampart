@@ -326,3 +326,9 @@ div.sphinxsidebar a {
     margin-right: auto;
     background-size: 35px 35px;
 }
+
+/* more hacks unrelated to above, but conviently placed below */
+
+li {margin-bottom:10px;}
+p {margin-bottom:10px;}
+.wy-nav-side li {margin-bottom: 0px;}

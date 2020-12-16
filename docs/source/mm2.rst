@@ -1,3 +1,28 @@
+Metamorph: The Program Inside the Program
+=========================================
+
+Background
+----------
+
+Deep inside of Texis stands Metamorph, the original incarnation of
+Thunderstone’s text retrieval methodology. While Metamorph has grown
+into Texis, its intelligent text query language has remained intact. It
+carries with it a whole philosophy of concept based text retrieval which
+sets a layer of assumptions about how text, particularly English, should
+be processed to retain its meaning.
+
+Metamorph is made reference to in many places throughout Thunderstone’s
+program documentation. While originally it was a stand-alone program, it
+lives on as functions which are used at all levels of the search,
+chiefly thought about only in relation to the formulation of queries
+themselves, and attendant processing of the vocabulary base of the
+language itself.
+
+Most of what one need to know about Metamorph is included at the
+appropriate places in the documentation. This section is devoted to some
+of the more advanced aspects of a Metamorph text search beyond that which
+can be achieved from a simple multiword query.
+
 Hits, Intersections and Sets
 ============================
 

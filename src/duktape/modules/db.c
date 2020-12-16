@@ -1946,9 +1946,9 @@ duk_ret_t duk_texis_set(duk_context *ctx)
             if(duk_is_boolean(ctx, -1))
             {
                 if(duk_get_boolean(ctx, -1))
-                    val="on";
+                    val="1";
                 else
-                    val="off";
+                    val="0";
             }
             else
             {

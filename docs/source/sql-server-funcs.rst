@@ -18,7 +18,7 @@ exec
 
 Execute an external command. The syntax is
 
-::
+.. code-block:: sql
 
        exec(commandline[, INPUT[, INPUT[, INPUT[, INPUT]]]]);
 
@@ -35,7 +35,7 @@ For example this could be used to OCR text. If you have a program which
 will take an image filename on the command line, and return the text on
 standard out you could issue SQL as follows:
 
-::
+.. code-block:: sql
 
          UPDATE     DOCUMENTS
          SET        TEXT = exec('ocr '+IMGFILE)
@@ -44,7 +44,7 @@ standard out you could issue SQL as follows:
 Another example would be if you wanted to print envelopes from names and
 addresses in a table you might use the following SQL:
 
-::
+.. code-block:: sql
 
          SELECT exec('envelope ', FIRST_NAME+' '+LAST_NAME+'
          ', STREET + '
@@ -65,7 +65,7 @@ you can also get messages which describe each hit and subhits.
 
 The SQL to use is as follows:
 
-::
+.. code-block:: sql
 
         SELECT mminfo(query,data[,nhits,[0,msgs]]) from TABLE
                [where CONDITION];
@@ -104,8 +104,7 @@ msgs
 
     Where ``N`` is the set number (starting with 1), ``setoff`` is the
     byte offset from the start of the query where set ``N`` is, and
-    ``setlen`` is the length of the set. This information is available
-    in version 5.01.1220640000 20080905 and later.
+    ``setlen`` is the length of the set.
 
     Hit offset/length information is of the form:
 
@@ -128,12 +127,18 @@ msgs
     -  suboff and sublen will be repeated for as many terms as are
        required to satisfy the query.
 
-::
+
 
     Example:
+
+    ::
+
        select mminfo('power struggle @0 w/.',Body,0,0,1) inf from html
               where Title\Meta\Body like 'power struggle';
+
     Would give something of the form:
+
+::
 
     300 <Data from Texis> 62 5 0 5
     power
@@ -155,7 +160,7 @@ convert
 The convert function allows you to change the type of an expression. The
 syntax is
 
-::
+.. code-block:: sql
 
        CONVERT(expression, 'type-name'[, 'mode'])
 
@@ -178,25 +183,24 @@ want to use convert are
            CONVERT(id, 'date')
            1995-01-27 22:43:48
 
--  If you have an application which is expecting data in a particular
+*  If you have an application which is expecting data in a particular
    type you can use convert to make sure you will receive the correct
    type.
 
-Caveat: Note that in Texis version 7 and later, ``convert()``\ ing data
-from/to ``varbyte``/``varchar`` no longer converts the data to/from
-hexadecimal by default (as was done in earlier versions) in programs
-other than ``tsql``; it is now preserved as-is (though truncated at nul
-for ``varchar``). See the ``bintohex()`` and ``hextobin()`` functions
-(p. ) for hexadecimal conversion, and the ``hexifybytes`` SQL property
-(p. ) for controlling automatic hex conversion.
+* The optional third argument given to ``convert()`` is a
+  :ref:`sql-set:varcharToStrlstMode` mode value.  This third argument may
+  only be supplied when converting to type ``strlst`` or ``varstrlst``.  It
+  allows the separator character or mode to be conveniently specified
+  locally to the conversion, instead of having to alter the global
+  :ref:`sql-set:varcharToStrlstMode` mode.
 
-Also in Texis version 7 and later, an optional third argument may be
-given to ``convert()``, which is a ``varchartostrlstsep`` mode value
-(p. ). This third argument may only be supplied when converting to type
-``strlst`` or ``varstrlst``. It allows the separator character or mode
-to be conveniently specified locally to the conversion, instead of
-having to alter the global ``varchartostrlstsep`` mode.
-
+* Note that ``convert()``\ ing data
+  from/to ``varbyte``/``varchar`` does not convert the data to/from
+  hexadecimal by default in programs
+  other than ``tsql``; it is preserved as-is (though truncated at nul
+  for ``varchar``). See the `bintohex`_\ () and `hextobin`_\ () functions
+  for hexadecimal conversion, and the :ref:`sql-set:hexifyBytes` SQL property
+  for controlling automatic hex conversion.
 
 seq
 """
@@ -204,7 +208,7 @@ seq
 Returns a sequence number. The number can be initialized to any value,
 and the increment can be defined for each call. The syntax is:
 
-::
+.. code-block:: sql
 
         seq(increment [, init])
 
@@ -215,7 +219,7 @@ initial value will be zero if init has not been specified.
 
 Examples of typical use:
 
-::
+.. code-block:: sql
 
          SELECT  NAME, seq(1)
          FROM    SYSTABLES
@@ -233,7 +237,7 @@ The results are:
      SYSTRIG                 5
      SYSMETAINDEX            6
 
-::
+.. code-block:: sql
 
          SELECT  seq(0, 100)
          FROM    SYSDUMMY;
@@ -263,7 +267,7 @@ random
 
 Returns a random int. The syntax is:
 
-::
+.. code-block:: sql
 
         random(max [, seed])
 
@@ -284,7 +288,7 @@ random to the ORDER BY clause.
 
 Examples of typical use:
 
-::
+.. code-block:: sql
 
          SELECT  NAME, random(100)
          FROM    SYSTABLES
@@ -302,7 +306,7 @@ The results might be:
      SYSTRIG                 84
      SYSMETAINDEX            96
 
-::
+.. code-block:: sql
 
          SELECT  ENAME
          FROM    EMPLOYEE
@@ -316,30 +320,28 @@ bintohex
 
 Converts a binary (``varbyte``) value into a hexadecimal string.
 
-::
+.. code-block:: sql
 
         bintohex(varbyteData[, 'stream|pretty'])
 
 A string (``varchar``) hexadecimal representation of the ``varbyteData``
 parameter is returned. This can be useful to visually examine binary
 data that may contain non-printable or nul bytes. The optional second
-argument is a comma-separated string of any of the following flags:
+argument is one of the following flags:
 
 -  ``stream``: Use the default output mode: a continuous stream of
-   hexadecimal bytes, i.e. the same format that
-   ``convert(varbyteData, 'varchar')`` would have returned in Texis
-   version 6 and earlier.
+   hexadecimal bytes.
 
 -  ``pretty``: Return a “pretty” version of the data: print 16 byte per
    line, space-separate the hexadecimal bytes, and print an ASCII dump
    on the right side.
 
-The ``bintohex()`` function was added in Texis version 7. Caveat: Note
-that in version 7 and later, ``convert()``\ ing data from/to
-``varbyte``/``varchar`` no longer converts the data to/from hexadecimal
-by default (as was done in earlier versions) in programs other than
-``tsql``; it is now preserved as-is (though truncated at nul for
-``varchar``). See the ``hexifybytes`` SQL property (p. ) to change this.
+.. already mentioned above
+   Caveat: Note that `convert()``\ ing data from/to
+   ``varbyte``/``varchar`` converts the data to/from hexadecimal
+   by default when using ``tsql``; otherwise it is preserved as-is 
+   (though truncated at nul for ``varchar``). See the
+   :ref:`sql-set:hexifyBytes` SQL property to change this.
 
 
 hextobin
@@ -347,33 +349,33 @@ hextobin
 
 Converts a hexadecimal stream to its binary representation.
 
-::
+.. code-block:: sql
 
         hextobin(hexString[, 'stream|pretty'])
 
 The hexadecimal ``varchar`` string ``hexString`` is converted to its
 binary representation, and the ``varbyte`` result returned. The optional
-second argument is a comma-separated string of any of the following
-flags:
+second argument is one of the following flags:
 
 -  ``stream``: Only accept the ``stream`` format of ``bintohex()``, i.e.
    a stream of hexadecimal bytes, the same format that
-   ``convert(varbyteData, 'varchar')`` would have returned in Texis
-   version 6 and earlier. Whitespace is acceptable, but only between
+   ``bintohex(varbyteData, 'stream')`` returns.
+   Whitespace is acceptable, but only between
    (not within) hexadecimal bytes. Case-insensitive. Non-conforming data
    will result in an error message and the function failing.
 
--  ``pretty``: Accept either ``stream`` or ``pretty`` format data; if
-   the latter, only the hexadecimal bytes are parsed (e.g. ASCII column
+-  ``pretty``: Accept either ``stream`` or ``pretty`` `bintohex`_ formatted data; 
+   if the latter, only the hexadecimal bytes are parsed (e.g. ASCII column
    is ignored). Parsing is more liberal, but may be confused if the data
    deviates significantly from either format.
 
-The ``hextobin()`` function was added in Texis version 7. Caveat: Note
-that in version 7 and later, ``convert()``\ ing data from/to
-``varbyte``/``varchar`` no longer converts the data to/from hexadecimal
-by default (as was done in earlier versions) in programs other than
-``tsql``; it is now preserved as-is (though truncated at nul for
-``varchar``). See the ``hexifybytes`` SQL property (p. ) to change this.
+.. already mentioned in convert
+   The ``hextobin()`` function was added in Texis version 7. Caveat: Note
+   that in version 7 and later, ``convert()``\ ing data from/to
+   ``varbyte``/``varchar`` no longer converts the data to/from hexadecimal
+   by default (as was done in earlier versions) in programs other than
+   ``tsql``; it is now preserved as-is (though truncated at nul for
+   ``varchar``). See the ``hexifybytes`` SQL property (p. ) to change this.
 
 
 identifylanguage
@@ -384,7 +386,7 @@ returning a probability in addition to the identified language, this
 function can also serve as a test of whether the given string is really
 natural-language text, or perhaps binary/encoded data instead. Syntax:
 
-::
+.. code-block:: sql
 
         identifylanguage(text[, language[, samplesize]])
 
@@ -400,8 +402,7 @@ de, es, fr, ja, pl, tr, da, en, eu, it, ko, ru).
 
 The optional third argument samplesize is the initial integer size in
 bytes of the text to sample when determining language; it defaults to
-16384. The samplesize parameter was added in version 7.01.1382113000
-20131018.
+16384. 
 
 Note that since a ``strlst`` value is returned, the probability is
 returned as a ``strlst`` element, not a ``double`` value, and thus
@@ -418,7 +419,7 @@ By combining the ``lookup()`` function with a ``GROUP BY``, a column may
 be grouped into bins or ranges – e.g. for price-range grouping – instead
 of distinct individual values. Syntax:
 
-::
+.. code-block:: sql
 
         lookup(keys, ranges[, names])
 
@@ -487,7 +488,7 @@ following SKUs and ``float`` prices:
 they may be grouped into price ranges (with most-products first) with
 this SQL:
 
-::
+.. code-block:: sql
 
     SELECT   lookup(Price, convert('0..25,25..50,50..,', 'strlst', 'lastchar'),
          convert('Under $25,$25-49.99,$50 and up,', 'strlst', 'lastchar'))
@@ -497,48 +498,61 @@ this SQL:
          convert('Under $25,$25-49.99,$50 and up,', 'strlst', 'lastchar'))
     ORDER BY 2 DESC;
 
-or this in Rampart javascript:
+or this in Rampart JavaScript:
 
-::
+.. code-block:: javascript
 
     var Sql=require("rampart-sql");
 
     var sql=new Sql.init("/path/to/database");
-
+    
     var range=['0..25','25..50','50..'];
     var rangenames=['Under $25','$25-$49','$50 and up'];
-    res = sql.exec("SELECT lookup( convert(?,'strlst','json'), convert(?,'strlst','json') ) PriceRange"+
+    var res = sql.exec(
+        "SELECT lookup( Price, convert(?,'strlst','json'), convert(?,'strlst','json') ) PriceRange,"+
         "count(SKU) NumberOfProducts FROM Products " +
-    	"GROUP BY lookup(convert(?,'strlst','json'), convert(?,'strlst','json') )" +
+        "GROUP BY lookup(Price, convert(?,'strlst','json'), convert(?,'strlst','json') )" +
         "ORDER BY 2 DESC",
         [range,rangenames,range,rangenames],
-        {returnType:"arrayh"}
-    )
+        {returnType:"array"}
+    );
 
     rows=res.results;
+    cols=res.columns;
     for (var i=0;i<rows.length;i++) {
-            rampart.utils.printf("%-10s %10s\n", rows[i][0]+',', rows[i][1]);
 
-            if (!i)
-                rampart.utils.printf("----------+----------\n");
+            if (!i) {
+                rampart.utils.printf("%-12s %16s\n", cols[0] , cols[1]);
+                rampart.utils.printf("------------+----------------\n");
+            }
+
+            rampart.utils.printf("%-12s %16s\n", rows[i][0], rows[i][1]);
+
     }
+
 
 
 which would give these results:
 
 ::
 
-      PriceRange NumberOfProducts
-    ------------+------------+
-    Under $25,              4
-    $50 and up,             4
-    $25-49.99,              3
-                            1
+   PriceRange   NumberOfProducts
+   ------------+----------------
+   $50 and up                  4
+   Under $25                   4
+   $25-$49                     3
+                               1
 
-The trailing commas in PriceRange values are due to them being
-``strlst`` values, for possible multiple ranges. Note the empty
-PriceRange for the fourth row: the -2 Price matched no ranges, and hence
-an empty PriceRange was returned for it.
+Note that:
+
+* In the ``tsql`` example, the trailing commas in the ``PriceRange`` values are used
+  to converted to ``strlst`` values via the ``convert(.., .., 'lastchar')``
+  function.  In the Rampart JavaScript version, the array of strings are
+  converted into a ``strlst`` using ``convert(.., .., 'json')`` function.
+  See `convert`_ () mode above for details.
+
+* The empty PriceRange for the fourth row: the -2 Price matched no ranges, and hence an
+  empty PriceRange was returned for it.
 
 
 See also: `lookupCanonicalizeRanges`_, `lookupParseRange`_
@@ -551,7 +565,7 @@ The ``lookupCanonicalizeRanges()`` function returns the canonical
 version(s) of its ranges argument, which is zero or more ranges of the
 syntaxes acceptable to :ref:`lookup() <function:lookup>`:
 
-::
+.. code-block:: sql
 
         lookupCanonicalizeRanges(ranges, keyType)
 
@@ -568,7 +582,7 @@ compared alphabetically with “1000” and considered invalid (greater
 than).
 
 This function can be used to verify the syntax of a range, or to
-transform it into a standard form for ``lookupParseRange()`` (p. ).
+transform it into a standard form for `lookupParseRange`_\ ().
 
 For an implicit-upper-bound range, the upper bound is determined by the
 *next* range’s lower bound. Thus the full list of ranges (if multiple)
@@ -584,10 +598,10 @@ lookupParseRange
 
 The ``lookupParseRange()`` function parses a single :ref:`lookup() <function:lookup>`-style
 range into its constituent parts, returning them as strings in one
-``strlst`` value. This can be used by Vortex scripts to edit a range.
+``strlst`` value. This can be used by scripts to edit a range.
 Syntax:
 
-::
+.. code-block:: sql
 
         lookupParseRange(range, parts)
 
@@ -602,14 +616,14 @@ part. The concatenation of the above listed parts, in the above order,
 should equal the given range. Non-string range arguments are not
 supported.
 
-::
+.. code-block:: sql
 
         lookupParseRange('10..20', 'lowerInclusivity')
 
 would return a single empty-string ``strlst``, as there is no
 lower-bound inclusive/exclusive operator in the range “10..20”.
 
-::
+.. code-block:: sql
 
         lookupParseRange('10..20', 'lowerBound')
 
@@ -619,37 +633,38 @@ For an implicit-upper-bound range, the upper bound is determined by the
 *next* range’s lower bound. Since ``lookupParseRange()`` only takes one
 range, passing such a range to it may result in an incorrect (unlimited)
 upper bound. Thus the full list of ranges (if multiple) should always be
-given to ``lookupCanonicalizeRanges()`` first, and only then the desired
+given to `lookupCanonicalizeRanges`_\ () first, and only then the desired
 canonicalized range passed to ``lookupParseRange()``.
 
 See also: `lookup`_, `lookupCanonicalizeRanges`_
 
 
-hasFeature
-""""""""""
+.. unneeded
+   hasFeature
+   """"""""""
 
-Returns 1 if given feature is supported, 0 if not (or unknown). The
-syntax is:
+   Returns 1 if given feature is supported, 0 if not (or unknown). The
+   syntax is:
 
-::
+   .. code-block:: sql
 
-        hasFeature(feature)
+           hasFeature(feature)
 
-where feature is one of the following ``varchar`` tokens:
+   where feature is one of the following ``varchar`` tokens:
 
--  ``RE2`` For RE2 regular expression support in REX
+   -  ``RE2`` For RE2 regular expression support in REX
 
-This function is typically used in Vortex scripts to test if a feature
-is supported with the current version of Texis, and if not, to work
-around that fact if possible. For example:
+   This function is typically used in Vortex scripts to test if a feature
+   is supported with the current version of Texis, and if not, to work
+   around that fact if possible. For example:
 
-::
+   ::
 
-         <if hasFeature( "RE2" ) = 1>
-           ... proceed with RE2 expressions ...
-         <else>
-           ... use REX instead ...
-         </if>
+            <if hasFeature( "RE2" ) = 1>
+              ... proceed with RE2 expressions ...
+            <else>
+              ... use REX instead ...
+            </if>
 
 
 
@@ -658,7 +673,7 @@ ifNull
 
 Substitute another value for NULL values. Syntax:
 
-::
+.. code-block:: sql
 
        ifNull(testVal, replaceVal)
 
@@ -667,7 +682,7 @@ type of ``testVal``) is returned; otherwise ``testVal`` is returned.
 This function can be used to ensure that NULL value(s) in a column are
 replaced with a non-NULL value, if a non-NULL value is required:
 
-::
+.. code-block:: sql
 
         SELECT ifNull(myColumn, 'Unknown') FROM myTable;
 
@@ -679,65 +694,65 @@ isNull
 Tests a value, and returns a ``long`` value of 1 if NULL, 0 if not.
 Syntax:
 
-::
+.. code-block:: sql
 
        isNull(testVal)
 
-::
+.. code-block:: sql
 
         SELECT isNull(myColumn) FROM myTable;
 
 Note that Texis ``isNull`` behavior differs from some other SQL implementations; see
 also `ifNull`_.
 
+.. not in this version
+   xmlTreeQuickXPath
+   """""""""""""""""
 
-xmlTreeQuickXPath
-"""""""""""""""""
+   Extracts information from an XML document.
 
-Extracts information from an XML document.
+   .. code-block:: sql
 
-::
+           xmlTreeQuickXPath(string xmlRaw, string xpathQuery
+               [, string[] xmlns)
 
-        xmlTreeQuickXPath(string xmlRaw, string xpathQuery
-            [, string[] xmlns)
+   Parameters:
 
-Parameters:
+   -  ``xmlRaw`` - the plain text of the xml document you want to extract
+      information from
 
--  ``xmlRaw`` - the plain text of the xml document you want to extract
-   information from
+   -  ``xpathQuery`` - the XPath expression that identifies the nodes you
+      want to extract the data from
 
--  ``xpathQuery`` - the XPath expression that identifies the nodes you
-   want to extract the data from
+   -  ``xmlns`` *(optional)* - an array of ``prefix=URI`` namespaces to use
+      in the XPath query
 
--  ``xmlns`` *(optional)* - an array of ``prefix=URI`` namespaces to use
-   in the XPath query
+   Returns:
 
-Returns:
+   -  String values of the node from the XML document ``xmlRaw`` that match
+      ``xpathQuery``
 
--  String values of the node from the XML document ``xmlRaw`` that match
-   ``xpathQuery``
+   ``xmlTreeQuickXPath`` allows you to easily extract information from an
+   XML document in a one-shot function. It is intended to be used in SQL
+   statements to extract specific information from a field that contains
+   XML data.
 
-``xmlTreeQuickXPath`` allows you to easily extract information from an
-XML document in a one-shot function. It is intended to be used in SQL
-statements to extract specific information from a field that contains
-XML data.
+   If the ``xmlData`` field of a table has content like this:
 
-If the ``xmlData`` field of a table has content like this:
+   ::
 
-::
+       <extraInfo>
+           <price>8.99</price>
+           <author>John Doe</author>
+           <isbn>978-0-06-051280-4</isbn>
+       </extraInfo>
 
-    <extraInfo>
-        <price>8.99</price>
-        <author>John Doe</author>
-        <isbn>978-0-06-051280-4</isbn>
-    </extraInfo>
+   Then the following SQL statement will match that row:
 
-Then the following SQL statement will match that row:
+   .. code-block:: sql
 
-::
-
-    SELECT * from myTable where xmlTreeQuickXPath(data,
-    '/extraInfo/author') = 'John Doe'
+       SELECT * from myTable where xmlTreeQuickXPath(data,
+       '/extraInfo/author') = 'John Doe'
 
 File functions
 ~~~~~~~~~~~~~~
@@ -749,7 +764,7 @@ fromfile, fromfiletext
 The ``fromfile`` and ``fromfiletext`` functions read a file. The syntax
 is
 
-::
+.. code-block:: sql
 
        fromfile(filename[, offset[, length]])
        fromfiletext(filename[, offset[, length]])
@@ -770,7 +785,7 @@ will return varchar data. If you are using the functions to insert data
 into a field you should make sure that you use the appropriate function
 for the type of field you are inserting into.
 
-::
+.. code-block:: sql
 
          SELECT  FILENAME, fromfiletext(FILENAME)
          FROM    DOCUMENTS
@@ -778,47 +793,47 @@ for the type of field you are inserting into.
 
 The results are:
 
-::
+.. code-block:: sql
 
       FILENAME            fromfiletext(FILENAME)
       /docs/JT09113.txt   This is the text contained in the document
       that has an id of JT09113.
 
+.. not available
+   totext
+   """"""
 
-totext
-""""""
+   Converts data or file to text. The syntax is
 
-Converts data or file to text. The syntax is
+   .. code-block:: sql
 
-::
+          totext(filename[, args])
+          totext(data[, args])
 
-       totext(filename[, args])
-       totext(data[, args])
+   This function will convert the contents of a file, if the argument given
+   is an indirect, or else the result of the expression, and convert it to
+   text. It does this by calling the program ``anytotx``, which must be in
+   the path. The ``anytotx`` program (obtained from Thunderstone) will
+   handle ``PDF`` as well as many other file formats.
 
-This function will convert the contents of a file, if the argument given
-is an indirect, or else the result of the expression, and convert it to
-text. It does this by calling the program ``anytotx``, which must be in
-the path. The ``anytotx`` program (obtained from Thunderstone) will
-handle ``PDF`` as well as many other file formats.
+   The ``totext`` command will take an
+   optional second argument which contains arguments to the ``anytotx``
+   program. See the documentation for ``anytotx`` for details on its
+   arguments.
 
-The ``totext`` command will take an
-optional second argument which contains arguments to the ``anytotx``
-program. See the documentation for ``anytotx`` for details on its
-arguments.
+   .. code-block:: sql
 
-::
+            SELECT  FILENAME, totext(FILENAME)
+            FROM    DOCUMENTS
+            WHERE   DOCID = 'JT09113' ;
 
-         SELECT  FILENAME, totext(FILENAME)
-         FROM    DOCUMENTS
-         WHERE   DOCID = 'JT09113' ;
+   The results are:
 
-The results are:
+   ::
 
-::
-
-      FILENAME            totext(FILENAME)
-      /docs/JT09113.pdf   This is the text contained in the document
-      that has an id of JT09113.
+         FILENAME            totext(FILENAME)
+         /docs/JT09113.pdf   This is the text contained in the document
+         that has an id of JT09113.
 
 
 toind
@@ -826,7 +841,7 @@ toind
 
 Create a Texis managed indirect file. The syntax is
 
-::
+.. code-block:: sql
 
        toind(data)
 
@@ -834,7 +849,7 @@ This function takes the argument, stores it into a file, and returns the
 filename as an ``indirect`` type. This is most often used in combination
 with ``fromfile`` to create a Texis managed file. For example:
 
-::
+.. code-block:: sql
 
          INSERT  INTO DOCUMENTS
          VALUES('JT09114', toind(fromfile('srcfile')))
@@ -852,7 +867,7 @@ canonpath
 Returns canonical version of a file path, i.e. fully-qualified and
 without symbolic links:
 
-::
+.. code-block:: sql
 
       canonpath(path[, flags])
 
@@ -867,7 +882,7 @@ pathcmp
 File path comparison function; like C function ``strcmp()`` but for
 paths:
 
-::
+.. code-block:: sql
 
       pathcmp(pathA, pathB)
 
@@ -896,7 +911,7 @@ basename
 
 Returns the base filename of a given file path.
 
-::
+.. code-block:: sql
 
       basename(path)
 
@@ -910,7 +925,7 @@ dirname
 
 Returns the directory part of a given file path.
 
-::
+.. code-block:: sql
 
       dirname(path)
 
@@ -925,7 +940,7 @@ fileext
 
 Returns the file extension of a given file path.
 
-::
+.. code-block:: sql
 
       fileext(path)
 
@@ -941,7 +956,7 @@ Joins one or more file/directory path arguments into a merged path,
 inserting/removing a path separator between arguments as needed. Takes
 one to 5 path component arguments. E.g.:
 
-::
+.. code-block:: sql
 
       joinpath('one', 'two/', '/three/four', 'five')
 
@@ -962,7 +977,7 @@ joinpathabsolute
 Like ``joinpath``, except that a second or later argument that is an
 absolute path will overwrite the previously-merged path. E.g.:
 
-::
+.. code-block:: sql
 
       joinpathabsolute('one', 'two', '/three/four', 'five')
 
@@ -989,7 +1004,7 @@ abstract
 
 Generate an abstract of a given portion of text. The syntax is
 
-::
+.. code-block:: sql
 
        abstract(text[, maxsize[, style[, query]]])
 
@@ -1003,29 +1018,27 @@ between several different ways of creating the abstract. Note that some
 of these styles require the ``query`` argument as well, which is a
 Metamorph query to look for:
 
--  | ``dumb`` (0)
-   | Start the abstract at the top of the document.
+* ``dumb`` (0) - Start the abstract at the top of the document.
 
--  | ``smart`` (1)
-   | This style will look for the first meaningful chunk of text,
-     skipping over any headers at the top of the text. This is the
-     default if neither ``style`` nor ``query`` is given.
+* ``smart`` (1) - This style will look for the first meaningful 
+  chunk of text, skipping over any headers at the top of the text.  This
+  is the default if neither ``style`` nor ``query`` is given.
 
--  | ``querysingle`` (2)
-   | Center the abstract contiguously on the best occurence of ``query``
-     in the document.
+* ``querysingle`` (2) -
+  Center the abstract contiguously on the best occurence of ``query``
+  in the document.
 
--  | ``querymultiple`` (3)
-   | Like ``querysingle``, but also break up the abstract into multiple
-     sections (separated with “``...``”) if needed to help ensure all
-     terms are visible. Also take care with URLs to try to show the
-     start and end.
+* ``querymultiple`` (3) -
+  Like ``querysingle``, but also break up the abstract into multiple
+  sections (separated with “``...``”) if needed to help ensure all
+  terms are visible. Also take care with URLs to try to show the
+  start and end.
 
--  | ``querybest``
-   | An alias for the best available query-based style; currently the
-     same as ``querymultiple``. Using ``querybest`` in a script ensures
-     that if improved styles become available in future releases, the
-     script will automatically “upgrade” to the best style.
+* ``querybest`` -
+  An alias for the best available query-based style; currently the
+  same as ``querymultiple``. Using ``querybest`` in a script ensures
+  that if improved styles become available in future releases, the
+  script will automatically “upgrade” to the best style.
 
 If no ``query`` is given for the ``query``\ :math:`...` modes, they fall
 back to ``dumb`` mode. If a ``query`` is given with a
@@ -1034,11 +1047,13 @@ promoted to ``querybest``. The current locale and index expressions also
 have an effect on the abstract in the ``query``\ :math:`...` modes, so
 that it more closely reflects an index-obtained hit.
 
-::
+.. code-block:: sql
 
          SELECT     abstract(STORY, 0, 1, 'power struggle')
          FROM       ARTICLES
          WHERE      ARTID = 'JT09115' ;
+
+See also the Rampart JavaScript :ref:`rampart-sql:abstract()` function.
 
 
 text2mm
@@ -1046,7 +1061,7 @@ text2mm
 
 Generate ``LIKEP`` query. The syntax is
 
-::
+.. code-block:: sql
 
        text2mm(text[, maxwords])
 
@@ -1058,7 +1073,7 @@ returned. Most commonly ``text2mm`` will be given the name of a field.
 If it is an ``indirect`` field you will need to call ``fromfile`` as
 shown below:
 
-::
+.. code-block:: sql
 
          SELECT     text2mm(fromfile(FILENAME))
          FROM       DOCUMENTS
@@ -1072,15 +1087,15 @@ keywords
 
 Generate list of keywords. The syntax is
 
-::
+.. code-block:: sql
 
        keywords(text[, maxwords])
 
 keywords is similar to text2mm but produces a list of phrases, with a
-linefeed separating them. The difference between text2mm and keywords is
-that keywords will maintain the phrases. keywords also takes an optional
-second argument which indicates how many words or phrases should be
-returned.
+linefeed separating them.  The difference between text2mm and keywords is
+that keywords will maintain the phrases.  The keywords function also takes
+an optional second argument which indicates how many words or phrases should
+be returned.
 
 
 length
@@ -1089,13 +1104,13 @@ length
 Returns the length in characters of a ``char`` or ``varchar``
 expression, or number of strings/items in other types. The syntax is
 
-::
+.. code-block:: sql
 
       length(value[, mode])
 
 For example:
 
-::
+.. code-block:: sql
 
          SELECT  NAME, length(NAME)
          FROM    SYSTABLES
@@ -1113,19 +1128,19 @@ The results are:
      SYSTRIG                 7
      SYSMETAINDEX           12
 
-The optional ``mode`` argument is a :doc:`stringcomparemode <stringcompmode>`-style compare
-mode to use; see the Vortex manual on for details on syntax and the
-default. If ``mode`` is not given, the current apicp :doc:`stringcomparemode <stringcompmode>`
+The optional ``mode`` argument is a :ref:`sql-set:stringCompareMode`-style compare
+mode to use. If ``mode`` is not given, the current apicp 
+:ref:`sql-set:stringCompareMode`
 is used. Currently the only pertinent ``mode`` flag is “iso-8859-1”,
 which determines whether to interpret ``value`` as ISO-8859-1 or UTF-8.
 This can alter how many characters long the string appears to be, as
 UTF-8 characters are variable-byte-sized, whereas ISO-8859-1 characters
-are always mono-byte. The ``mode`` argument was added in version 6.
+are always mono-byte.
 
-In version 5.01.1226622000 20081113 and later, if given a ``strlst``
+Note that if given a ``strlst``
 type ``value``, ``length()`` returns the number of string values in the
-list. For other types, it returns the number of values, e.g. for
-``varint`` it returns the number of integer values.
+list. For other types, it returns the number of values (e.g. for
+``varint`` it returns the number of integer values).
 
 
 
@@ -1135,13 +1150,13 @@ lower
 Returns the text expression with all letters in lower-case. The syntax
 is
 
-::
+.. code-block:: sql
 
       lower(text[, mode])
 
 For example:
 
-::
+.. code-block:: sql
 
          SELECT  NAME, lower(NAME)
          FROM    SYSTABLES
@@ -1159,27 +1174,23 @@ The results are:
      SYSTRIG              systrig
      SYSMETAINDEX         sysmetaindex
 
-Added in version 2.6.932060000.
-
 The optional ``mode`` argument is a string-folding mode in the same
 format as ; see the Vortex manual for details on the syntax and default.
-If ``mode`` is unspecified, the current apicp :doc:`stringcomparemode <stringcompmode>` setting
-– with “+lowercase” aded – is used. The ``mode`` argument was added in
-version 6.
-
+If ``mode`` is unspecified, the current apicp :ref:`sql-set:stringCompareMode` 
+setting – with “+lowercase” aded – is used.
 
 upper
 """""
 
 Returns the text expression with all letters in upper-case. The sytax is
 
-::
+.. code-block:: sql
 
       upper(text[, mode])
 
 For example:
 
-::
+.. code-block:: sql
 
          SELECT  NAME, upper(NAME)
          FROM    SYSTABLES
@@ -1197,21 +1208,17 @@ The results are:
      SYSTRIG              SYSTRIG
      SYSMETAINDEX         SYSMETAINDEX
 
-Added in version 2.6.932060000.
-
 The optional ``mode`` argument is a string-folding mode in the same
 format as ; see the Vortex manual for details on the syntax and default.
-If ``mode`` is unspecified, the current apicp :doc:`stringcomparemode <stringcompmode>` setting
-– with “+uppercase” added – is used. The ``mode`` argument was added in
-version 6.
-
+If ``mode`` is unspecified, the current apicp :ref:`sql-set:stringCompareMode`
+setting – with “+uppercase” added – is used.
 
 initcap
 """""""
 
 Capitalizes text. The syntax is
 
-::
+.. code-block:: sql
 
       initcap(text[, mode])
 
@@ -1219,7 +1226,7 @@ Returns the text expression with the first letter of each word in title
 case (i.e. upper case), and all other letters in lower-case. For
 example:
 
-::
+.. code-block:: sql
 
          SELECT  NAME, initcap(NAME)
          FROM    SYSTABLES
@@ -1237,13 +1244,12 @@ The results are:
      SYSTRIG              Systrig
      SYSMETAINDEX         Sysmetaindex
 
-Added in version 2.6.932060000.
 
 The optional ``mode`` argument is a string-folding mode in the same
-format as ; see the Vortex manual for details on the syntax and default.
-If ``mode`` is unspecified, the current apicp :doc:`stringcomparemode <stringcompmode>` setting
-– with “+titlecase” added – is used. The ``mode`` argument was added in
-version 6.
+format as :ref:`sql-set:stringCompareMode`.
+If ``mode`` is unspecified, the current :ref:`sql-set:stringCompareMode` setting
+– with “+titlecase” added – is used.
+
 
 
 sandr
@@ -1251,25 +1257,25 @@ sandr
 
 Search and replace text.
 
-::
+.. code-block:: sql
 
        sandr(search, replace, text)
 
 Returns the text expression with the search REX expression replaced with
-the replace expression. See the REX documentation and the Vortex sandr
-function documentation for complete syntax of the search and replace
-expressions.
+the replace expression. See the Rampart Sql.\ :ref:`rampart-sql:rex()`  and 
+the Rampart Sql.\ :ref:`rampart-sql:sandr()` function documentation for 
+complete syntax of the search and replace expressions.
 
-::
+.. code-block:: sql
 
-         SELECT  NAME, sandr('>>=SYS=', 'SYSTEM TABLE ', NAME) DESC
+         SELECT  NAME, sandr('>>=SYS=', 'SYSTEM TABLE ', NAME) DESCR
          FROM    SYSTABLES
 
 The results are:
 
 ::
 
-      NAME                DESC
+      NAME                DESCR
      SYSTABLES            SYSTEM TABLE TABLES
      SYSCOLUMNS           SYSTEM TABLE COLUMNS
      SYSINDEX             SYSTEM TABLE INDEX
@@ -1278,8 +1284,6 @@ The results are:
      SYSTRIG              SYSTEM TABLE TRIG
      SYSMETAINDEX         SYSTEM TABLE METAINDEX
 
-Added in version 3.0
-
 
 separator
 """""""""
@@ -1287,14 +1291,14 @@ separator
 Returns the separator character from its ``strlst`` argument, as a
 ``varchar`` string:
 
-::
+.. code-block:: sql
 
        separator(strlstValue)
 
 This can be used in situations where the ``strlstValue`` argument may
 have a nul character as the separator, in which case simply converting
 ``strlstValue`` to ``varchar`` and looking at the last character would
-be incorrect. Added in version 5.01.1226030000 20081106.
+be incorrect.
 
 
 stringcompare
@@ -1304,15 +1308,14 @@ Compares its string (``varchar``) arguments ``a`` and ``b``, returning
 -1 if ``a`` is less than ``b``, 0 if they are equal, or 1 if ``a`` is
 greater than ``b``:
 
-::
+.. code-block:: sql
 
       stringcompare(a, b[, mode])
 
 The strings are compared using the optional ``mode`` argument, which is
 a string-folding mode in the same format as ; see the Vortex manual for
 details on the syntax and default. If ``mode`` is unspecified, the
-current apicp :doc:`stringcomparemode <stringcompmode>` setting is used. Function added in
-version 6.00.1304108000 20110429.
+current apicp :ref:`sql-set:stringCompareMode` setting is used.
 
 
 stringformat
@@ -1322,7 +1325,7 @@ Returns its arguments formatted into a string (``varchar``), like the
 equivalent Vortex function ``<strfmt>`` (based on the C function
 ``sprintf()``):
 
-::
+.. code-block:: sql
 
       stringformat(format[, arg[, arg[, arg[, arg]]]])
 
@@ -1345,12 +1348,12 @@ argument.
 
 In addition, the following math-related functions are available:
 
--  | ``isNaN(x)``
-   | Returns 1 if ``x`` is a float or double NaN (Not a Number) value, 0
-     if not. This function should be used to test for NaN, rather than
-     using the equality operator (e.g. ``x = 'NaN'``), because the IEEE
-     standard defines ``NaN == NaN`` to be false, not true as might be
-     expected.
+-  ``isNaN(x)``
+   Returns 1 if ``x`` is a float or double NaN (Not a Number) value, 0
+   if not. This function should be used to test for NaN, rather than
+   using the equality operator (e.g. ``x = 'NaN'``), because the IEEE
+   standard defines ``NaN == NaN`` to be false, not true as might be
+   expected.
 
 Date functions
 ~~~~~~~~~~~~~~
@@ -1390,73 +1393,73 @@ least-significant bit of the first integer. 31 is the most-significant
 bit of the first integer, 32 is the least-significant bit of the second
 integer (if a multi-value ``varint``), etc.
 
--  | ``bitand(a, b)``
-   | Returns the bit-wise AND of ``a`` and ``b``. If one argument is
-     shorter than the other, it will be expanded with 0-value integers.
+- ``bitand(a, b)``
+  Returns the bit-wise AND of ``a`` and ``b``. If one argument is
+  shorter than the other, it will be expanded with 0-value integers.
 
--  | ``bitor(a, b)``
-   | Returns the bit-wise OR of ``a`` and ``b``. If one argument is
-     shorter than the other, it will be expanded with 0-value integers.
+- ``bitor(a, b)``
+  Returns the bit-wise OR of ``a`` and ``b``. If one argument is
+  shorter than the other, it will be expanded with 0-value integers.
 
--  | ``bitxor(a, b)``
-   | Returns the bit-wise XOR (exclusive OR) of ``a`` and ``b``. If one
-     argument is shorter than the other, it will be expanded with
-     0-value integers.
+- ``bitxor(a, b)``
+  Returns the bit-wise XOR (exclusive OR) of ``a`` and ``b``. If one
+  argument is shorter than the other, it will be expanded with
+  0-value integers.
 
--  | ``bitnot(a)``
-   | Returns the bit-wise NOT of ``a``.
+- ``bitnot(a)``
+  Returns the bit-wise NOT of ``a``.
 
--  | ``bitsize(a)``
-   | Returns the total number of bits in ``a``, i.e. the highest bit
-     number plus 1.
+- ``bitsize(a)``
+  Returns the total number of bits in ``a``, i.e. the highest bit
+  number plus 1.
 
--  | ``bitcount(a)``
-   | Returns the number of bits in ``a`` that are set to 1.
+- ``bitcount(a)``
+  Returns the number of bits in ``a`` that are set to 1.
 
--  | ``bitmin(a)``
-   | Returns the lowest bit number in ``a`` that is set to 1. If none
-     are set to 1, returns -1.
+- ``bitmin(a)``
+  Returns the lowest bit number in ``a`` that is set to 1. If none
+  are set to 1, returns -1.
 
--  | ``bitmax(a)``
-   | Returns the highest bit number in ``a`` that is set to 1. If none
-     are set to 1, returns -1.
+- ``bitmax(a)``
+  Returns the highest bit number in ``a`` that is set to 1. If none
+  are set to 1, returns -1.
 
--  | ``bitlist(a)``
-   | Returns the list of bit numbers of ``a``, in ascending order, that
-     are set to 1, as a ``varint``. Returns a single -1 if no bits are
-     set to 1.
+- ``bitlist(a)``
+  Returns the list of bit numbers of ``a``, in ascending order, that
+  are set to 1, as a ``varint``. Returns a single -1 if no bits are
+  set to 1.
 
--  | ``bitshiftleft(a, n)``
-   | Returns ``a`` shifted ``n`` bits to the left, with 0s padded for
-     bits on the right. If ``n`` is negative, shifts right instead.
+- ``bitshiftleft(a, n)``
+  Returns ``a`` shifted ``n`` bits to the left, with 0s padded for
+  bits on the right. If ``n`` is negative, shifts right instead.
 
--  | ``bitshiftright(a, n)``
-   | Returns ``a`` shifted ``n`` bits to the right, with 0s padded for
-     bits on the left (i.e. an unsigned shift). If ``n`` is negative,
-     shifts left instead.
+- ``bitshiftright(a, n)``
+  Returns ``a`` shifted ``n`` bits to the right, with 0s padded for
+  bits on the left (i.e. an unsigned shift). If ``n`` is negative,
+  shifts left instead.
 
--  | ``bitrotateleft(a, n)``
-   | Returns ``a`` rotated ``n`` bits to the left, with left
-     (most-significant) bits wrapping around to the right. If ``n`` is
-     negative, rotates right instead.
+- ``bitrotateleft(a, n)``
+  Returns ``a`` rotated ``n`` bits to the left, with left
+  (most-significant) bits wrapping around to the right. If ``n`` is
+  negative, rotates right instead.
 
--  | ``bitrotateright(a, n)``
-   | Returns ``a`` rotated ``n`` bits to the right, with right
-     (least-significant) bits wrapping around to the left. If ``n`` is
-     negative, rotates left instead.
+- ``bitrotateright(a, n)``
+  Returns ``a`` rotated ``n`` bits to the right, with right
+  (least-significant) bits wrapping around to the left. If ``n`` is
+  negative, rotates left instead.
 
--  | ``bitset(a, n)``
-   | Returns ``a`` with bit number ``n`` set to 1. ``a`` will be padded
-     with 0-value integers if needed to reach ``n`` (e.g.
-     ``bitset(5, 40)`` will return a ``varint(2)``).
+- ``bitset(a, n)``
+  Returns ``a`` with bit number ``n`` set to 1. ``a`` will be padded
+  with 0-value integers if needed to reach ``n`` (e.g.
+  ``bitset(5, 40)`` will return a ``varint(2)``).
 
--  | ``bitclear(a, n)``
-   | Returns ``a`` with bit number ``n`` set to 0. ``a`` will be padded
-     with 0-value integers if needed to reach ``n`` (e.g.
-     ``bitclear(5, 40)`` will return a ``varint(2)``).
+- ``bitclear(a, n)``
+  Returns ``a`` with bit number ``n`` set to 0. ``a`` will be padded
+  with 0-value integers if needed to reach ``n`` (e.g.
+  ``bitclear(5, 40)`` will return a ``varint(2)``).
 
--  | ``bitisset(a, n)``
-   | Returns 1 if bit number ``n`` is set to 1 in ``a``, 0 if not.
+- ``bitisset(a, n)``
+  Returns 1 if bit number ``n`` is set to 1 in ``a``, 0 if not.
 
 Internet/IP address functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1486,66 +1489,66 @@ A/B/C/D/E rules, but will be large enough to include all given bytes of
 the IP. E.g. 1.2.3.4 is Class A which has a netmask of 8, but the
 netmask will be extended to 32 to include all 4 given bytes.
 
--  | ``inetabbrev(inet)``
-   | Returns a possibly shorter-than-canonical representation of
-     ``$inet``, where trailing zero byte(s) of an IPv4 address may be
-     omitted. All bytes of the network, and leading non-zero bytes of
-     the host, will be included. E.g. returns 192.100.0/24. The
-     /\ :math:`B` netmask is included, except if the network is host-only
-     (i.e.netmask is the full size of the IP address). Empty string is
-     returned on error.
+- ``inetabbrev(inet)``
+  Returns a possibly shorter-than-canonical representation of
+  ``$inet``, where trailing zero byte(s) of an IPv4 address may be
+  omitted. All bytes of the network, and leading non-zero bytes of
+  the host, will be included. E.g. returns 192.100.0/24. The
+  /\ :math:`B` netmask is included, except if the network is host-only
+  (i.e.netmask is the full size of the IP address). Empty string is
+  returned on error.
 
--  | ``inetcanon(inet)``
-   | Returns canonical representation of ``$inet``. For IPv4, this is
-     dotted-decimal with all 4 bytes. The /\ :math:`B` netmask is
-     included, except if
-     the network is host-only (i.e. netmask is the full size of the IP
-     address). Empty string is returned on error.
+- ``inetcanon(inet)``
+  Returns canonical representation of ``$inet``. For IPv4, this is
+  dotted-decimal with all 4 bytes. The /\ :math:`B` netmask is
+  included, except if
+  the network is host-only (i.e. netmask is the full size of the IP
+  address). Empty string is returned on error.
 
--  | ``inetnetwork(inet)``
-   | Returns string IP address with the network bits of ``inet``, and
-     the host bits set to 0. Empty string is returned on error.
+- ``inetnetwork(inet)``
+  Returns string IP address with the network bits of ``inet``, and
+  the host bits set to 0. Empty string is returned on error.
 
--  | ``inethost(inet)``
-   | Returns string IP address with the host bits of ``inet``, and the
-     network bits set to 0. Empty string is returned on error.
+- ``inethost(inet)``
+  Returns string IP address with the host bits of ``inet``, and the
+  network bits set to 0. Empty string is returned on error.
 
--  | ``inetbroadcast(inet)``
-   | Returns string IP broadcast address for ``inet``, i.e. with the
-     network bits, and host bits set to 1. Empty string is returned on
-     error.
+- ``inetbroadcast(inet)``
+  Returns string IP broadcast address for ``inet``, i.e. with the
+  network bits, and host bits set to 1. Empty string is returned on
+  error.
 
--  | ``inetnetmask(inet)``
-   | Returns string IP netmask for ``inet``, i.e. with the network bits
-     set to 1, and host bits set to 0. Empty string is returned on
-     error.
+- ``inetnetmask(inet)``
+  Returns string IP netmask for ``inet``, i.e. with the network bits
+  set to 1, and host bits set to 0. Empty string is returned on
+  error.
 
--  | ``inetnetmasklen(inet)``
-   | Returns integer netmask length of ``inet``. -1 is returned on
-     error.
+- ``inetnetmasklen(inet)``
+  Returns integer netmask length of ``inet``. -1 is returned on
+  error.
 
--  | ``inetcontains(inetA, inetB)``
-   | Returns 1 if ``inetA`` contains ``inetB``, i.e. every address in
-     ``inetB`` occurs within the ``inetA`` network. 0 is returned if
-     not, or -1 on error.
+- ``inetcontains(inetA, inetB)``
+  Returns 1 if ``inetA`` contains ``inetB``, i.e. every address in
+  ``inetB`` occurs within the ``inetA`` network. 0 is returned if
+  not, or -1 on error.
 
--  | ``inetclass(inet)``
-   | Returns class of ``inet``, e.g. A, B, C, D, E or classless if a
-     different netmask is used (or the address is IPv6). Empty string is
-     returned on error.
+- ``inetclass(inet)``
+  Returns class of ``inet``, e.g. A, B, C, D, E or classless if a
+  different netmask is used (or the address is IPv6). Empty string is
+  returned on error.
 
--  | ``inet2int(inet)``
-   | Returns integer representation of IP network/host bits of ``$inet``
-     (i.e. without netmask); useful for compact storage of address as
-     integer(s) instead of string. Returns -1 is returned on error (note
-     that -1 may also be returned for an all-ones IP address, e.g.
-     255.255.255.255).
+- ``inet2int(inet)``
+  Returns integer representation of IP network/host bits of ``$inet``
+  (i.e. without netmask); useful for compact storage of address as
+  integer(s) instead of string. Returns -1 is returned on error (note
+  that -1 may also be returned for an all-ones IP address, e.g.
+  255.255.255.255).
 
--  | ``int2inet(i)``
-   | Returns ``inet`` string for 1- or 4-value varint ``$i`` taken as an
-     IP address. Since no netmask can be stored in the integer form of
-     an IP address, the returned IP string will not have a netmask.
-     Empty string is returned on error.
+- ``int2inet(i)``
+  Returns ``inet`` string for 1- or 4-value varint ``$i`` taken as an
+  IP address. Since no netmask can be stored in the integer form of
+  an IP address, the returned IP string will not have a netmask.
+  Empty string is returned on error.
 
 
 urlcanonicalize
@@ -1553,45 +1556,45 @@ urlcanonicalize
 
 Canonicalize a URL. Usage:
 
-::
+.. code-block:: sql
 
        urlcanonicalize(url[, flags])
 
 Returns a copy of ``url``, canonicalized according to case-insensitive
 comma-separated ``flags``, which are zero or more of:
 
--  | ``lowerProtocol``
-   | Lower-cases the protocol.
+- ``lowerProtocol``
+  Lower-cases the protocol.
 
--  | ``lowerHost``
-   | Lower-cases the hostname.
+- ``lowerHost``
+  Lower-cases the hostname.
 
--  | ``removeTrailingDot``
-   | Removes trailing dot(s) in hostname.
+- ``removeTrailingDot``
+  Removes trailing dot(s) in hostname.
 
--  | ``reverseHost``
-   | Reverse the host/domains in the hostname. E.g.
-     http://host.example.com/ becomes http://com.example.host/. This can
-     be used to put the most-significant part of the hostname leftmost.
+- ``reverseHost``
+  Reverse the host/domains in the hostname. E.g.
+  http://host.example.com/ becomes http://com.example.host/. This can
+  be used to put the most-significant part of the hostname leftmost.
 
--  | ``removeStandardPort``
-   | Remove the port number if it is the standard port for the protocol.
+- ``removeStandardPort``
+  Remove the port number if it is the standard port for the protocol.
 
--  | ``decodeSafeBytes``
-   | URL-decode safe bytes, where semantics are unlikely to change. E.g.
-     “``%41``” becomes “``A``”, but “``%2F``” remains encoded, because
-     it would decode to “``/``”.
+- ``decodeSafeBytes``
+  URL-decode safe bytes, where semantics are unlikely to change. E.g.
+  “``%41``” becomes “``A``”, but “``%2F``” remains encoded, because
+  it would decode to “``/``”.
 
--  | ``upperEncoded``
-   | Upper-case the hex characters of encoded bytes.
+- ``upperEncoded``
+  Upper-case the hex characters of encoded bytes.
 
--  | ``lowerPath``
-   | Lower-case the (non-encoded) characters in the path. May be used
-     for URLs known to point to case-insensitive filesystems, e.g.
-     Windows.
+- ``lowerPath``
+  Lower-case the (non-encoded) characters in the path. May be used
+  for URLs known to point to case-insensitive filesystems, e.g.
+  Windows.
 
--  | ``addTrailingSlash``
-   | Adds a trailing slash to the path, if no path is present.
+- ``addTrailingSlash``
+  Adds a trailing slash to the path, if no path is present.
 
 Default flags are all but ``reverseHost``, ``lowerPath``. A flag may be
 prefixed with the operator ``+`` to append the flag to existing flags;
@@ -1613,7 +1616,7 @@ other geocodes that are within a certain distance.
 azimuth2compass
 """""""""""""""
 
-::
+.. code-block:: sql
 
       azimuth2compass(double azimuth [, int resolution [, int verbosity]])
 
@@ -1660,7 +1663,7 @@ For an azimuth value of ``105``, here are some example results of
 azimuthgeocode
 """"""""""""""
 
-::
+.. code-block:: sql
 
       azimuthgeocode(geocode1, geocode2 [, method])
 
@@ -1688,7 +1691,7 @@ possible values:
 azimuthlatlon
 """""""""""""
 
-::
+.. code-block:: sql
 
       azimuthlatlon(lat1, lon1, lat2, lon2, [, method])
 
@@ -1718,7 +1721,7 @@ possible values:
 dms2dec, dec2dms
 """"""""""""""""
 
-::
+.. code-block:: sql
 
       dms2dec(dms)
       dec2dms(dec)
@@ -1745,7 +1748,7 @@ needed.
 distgeocode
 """""""""""
 
-::
+.. code-block:: sql
 
       distgeocode(geocode1, geocode2 [, method] )
 
@@ -1776,7 +1779,7 @@ See Also: `distlatlon`_
 distlatlon
 """"""""""
 
-::
+.. code-block:: sql
 
       distlatlon(lat1, lon1, lat2, lon2 [, method] )
 
@@ -1807,7 +1810,7 @@ See Also: `distgeocode`_
 latlon2geocode, latlon2geocodearea
 """"""""""""""""""""""""""""""""""
 
-::
+.. code-block:: sql
 
       latlon2geocode(lat[, lon])
       latlon2geocodearea(lat[, lon], radius)
@@ -1882,7 +1885,7 @@ See Also: `geocode2lat, geocode2lon`_
 geocode2lat, geocode2lon
 """"""""""""""""""""""""
 
-::
+.. code-block:: sql
 
       geocode2lat(geocode)
       geocode2lon(geocode)
@@ -1895,7 +1898,7 @@ coordinate is in the decimal degrees format. An invalid geocode value
 If you want :math:`DDDMMSS` “degrees minutes seconds” (DMS) format, you
 can use :ref:`dec2dms <dms-dec>` to convert it.
 
-::
+.. code-block:: sql
 
       select city, geocode2lat(geocode), geocode2lon(geocode) from geotest;
 
@@ -1912,7 +1915,7 @@ See Also: :ref:`latlon2geocode <latlon2x>`
 parselatitude, parselongitude
 """""""""""""""""""""""""""""
 
-::
+.. code-block:: sql
 
       parselatitude(latitudeText)
       parselongitude(longitudeText)
@@ -1922,23 +1925,25 @@ The ``parselatitude`` and ``parselongitude`` functions parse a text
 its value in decimal degrees as a ``double``. The coordinate should be
 in one of the following forms (optional parts in square brackets):
 
-| [:math:`H`] :math:`nnn` [:math:`U`] [``:``] [:math:`H`] [:math:`nnn`
-  [:math:`U`] [``:``] [:math:`nnn` [:math:`U`]]] [:math:`H`]
-| :math:`DDMM`\ [:math:`.MMM`...]
-| :math:`DDMMSS`\ [:math:`.SSS`...]
+* [:math:`H`] :math:`nnn` [:math:`U`] [:] [:math:`H`] [:math:`nnn` 
+  [:math:`U`] [:] [:math:`nnn` [:math:`U`]]] [:math:`H`]
+
+* :math:`DDMM`\ [:math:`.MMM`...]
+
+* :math:`DDMMSS`\ [:math:`.SSS`...]
 
 where the terms are:
 
--  | :math:`nnn`
-   | A number (integer or decimal) with optional plus/minus sign. Only
-     the first number may be negative, in which case it is a south
-     latitude or west longitude. Note that this is true even for
-     :math:`DDDMMSS` (DMS) longitudes – i.e. the ISO 6709 east-positive
-     standard is followed, not the deprecated Texis/Vortex west-positive
-     standard.
+- :math:`nnn`
+  A number (integer or decimal) with optional plus/minus sign. Only
+  the first number may be negative, in which case it is a south
+  latitude or west longitude. Note that this is true even for
+  :math:`DDDMMSS` (DMS) longitudes – i.e. the ISO 6709 east-positive
+  standard is followed, not the deprecated Texis/Vortex west-positive
+  standard.
 
--  | :math:`U`
-   | A unit (case-insensitive):
+- :math:`U`
+  A unit (case-insensitive):
 
    -  ``d``
 
@@ -1976,8 +1981,8 @@ where the terms are:
    degrees/minutes value; this is to help disambiguate “seconds” vs.
    “southern hemisphere”.
 
--  | :math:`H`
-   | A hemisphere (case-insensitive):
+- :math:`H`
+  A hemisphere (case-insensitive):
 
    -  ``N``
 
@@ -1998,24 +2003,24 @@ where the terms are:
    A longitude hemisphere may not be given for a latitude, and
    vice-versa.
 
--  | :math:`DD`
-   | A two- or three-digit degree value, with optional sign. Note that
-     longitudes are east-positive ala ISO 6709, not west-positive like
-     the deprecated Texis standard.
+- :math:`DD`
+  A two- or three-digit degree value, with optional sign. Note that
+  longitudes are east-positive ala ISO 6709, not west-positive like
+  the deprecated Texis standard.
 
--  | :math:`MM`
-   | A two-digit minutes value, with leading zero if needed to make two
-     digits.
+- :math:`MM`
+  A two-digit minutes value, with leading zero if needed to make two
+  digits.
 
--  | :math:`.MMM`...
-   | A zero or more digit fractional minute value.
+- :math:`.MMM`...
+  A zero or more digit fractional minute value.
 
--  | :math:`SS`
-   | A two-digit seconds value, with leading zero if needed to make two
-     digits.
+- :math:`SS`
+  A two-digit seconds value, with leading zero if needed to make two
+  digits.
 
--  | :math:`.SSS`...
-   | A zero or more digit fractional seconds value.
+- :math:`.SSS`...
+  A zero or more digit fractional seconds value.
 
 Whitespace is generally not required between terms in the first format.
 A hemisphere token may only occur once. Degrees/minutes/seconds numbers
@@ -2026,7 +2031,7 @@ interpreted as a :math:`DMMSS`\ [:math:`.SSS`...] value instead. To
 force :math:`DDDMMSS`\ [:math:`.SSS`...] for small numbers, pad with
 leading zeros to 6 or 7 digits.
 
-::
+.. code-block:: sql
 
     insert into geotest(lat, lon)
       values(parselatitude('54d 40m 10"'),
@@ -2067,24 +2072,24 @@ those features, e.g.
 isjson
 """"""
 
-::
+.. code-block:: sql
 
       isjson(JsonDocument)
 
 The ``isjson`` function returns 1 if the document is valid JSON, 0
 otherwise.
 
-::
+.. code-block:: sql
 
     isjson('{ "type" : 1 }'): 1
     isjson('{}'): 1
     isjson('json this is not'): 0
 
 
-json\_format
-""""""""""""
+json_format
+"""""""""""
 
-::
+.. code-block:: sql
 
       json_format(JsonDocument, FormatOptions)
 
@@ -2113,10 +2118,10 @@ Valid ``FormatOptions`` are:
 -  ESCAPE\_SLASH - escape forward slash ``/`` as ``\/``
 
 
-json\_type
-""""""""""
+json_type
+"""""""""
 
-::
+.. code-block:: sql
 
       json_type(JsonDocument)
 
@@ -2137,26 +2142,34 @@ element. Valid responses are:
 
 -  BOOLEAN
 
-Assuming a field ``Json`` containing: “items” : [ “Num” : 1, “Text” :
-“The Name”, “First” : true , “Num” : 2.0, “Text” : “The second one”,
-“First” : false , null ]
+Assuming a field ``Json`` containing:
 
 ::
+
+   {"items":
+     [ 
+      {"myNum":1, "myText": "Some text", "myBool": true},
+      {"myNum":2.0, "myText": "Some more text", "myBool": false},
+      null
+     ]
+   }
+
+.. code-block:: sql
 
     json_type(Json): OBJECT
     json_type(Json.$.items[0]): OBJECT
     json_type(Json.$.items): ARRAY
-    json_type(Json.$.items[0].Num): INTEGER
-    json_type(Json.$.items[1].Num): DOUBLE
-    json_type(Json.$.items[0].Text): STRING
-    json_type(Json.$.items[0].First): BOOLEAN
+    json_type(Json.$.items[0].myNum): INTEGER
+    json_type(Json.$.items[1].myNum): DOUBLE
+    json_type(Json.$.items[0].myText): STRING
+    json_type(Json.$.items[0].myBool): BOOLEAN
     json_type(Json.$.items[2]): NULL
 
 
-json\_value
-"""""""""""
+json_value
+""""""""""
 
-::
+.. code-block:: sql
 
       json_value(JsonDocument, Path)
 
@@ -2172,17 +2185,17 @@ Assuming the same Json field from the previous examples:
     json_value(Json, '$'):
     json_value(Json, '$.items[0]'):
     json_value(Json, '$.items'):
-    json_value(Json, '$.items[0].Num'): 1
-    json_value(Json, '$.items[1].Num'): 2.0
-    json_value(Json, '$.items[0].Text'): The Name
-    json_value(Json, '$.items[0].First'): true
+    json_value(Json, '$.items[0].myNum'): 1
+    json_value(Json, '$.items[1].myNum'): 2.0
+    json_value(Json, '$.items[0].myText'): Some Text
+    json_value(Json, '$.items[0].myBool'): true
     json_value(Json, '$.items[2]'):
 
 
-json\_query
-"""""""""""
+json_query
+""""""""""
 
-::
+.. code-block:: sql
 
       json_query(JsonDocument, Path)
 
@@ -2193,34 +2206,36 @@ to a scalar no value is returned.
 
 Assuming the same Json field from the previous examples:
 
-| ``json_query(Json, '$')``
-| ``---------------------``
-| ``{"items":[{"Num":1,"Text":"The Name","First":true},``\ ``{"Num":2.0,"Text":"The second one","First":false},null]}``
+::
 
-| ``json_query(Json, '$.items[0]')``
-| ``------------------------------``
-| ``{"Num":1,"Text":"The Name","First":true}``
+  json_query(Json, '$')
+  ---------------------
+  {"items":[{"myNum":1,"myText":"Some text","myBool":true},{"myNum":2.0,"myText":"Some more text","myBool":false},null]}
 
-| ``json_query(Json, '$.items')``
-| ``---------------------------``
-| ``[{"Num":1,"Text":"The Name","First":true},``\ ``{"Num":2.0,"Text":"The second one","First":false},null]``
+  json_query(Json, '$.items[0]')
+  ------------------------------
+  {"myNum":1,"myText":"Some text","myBool":true}
+
+  json_query(Json, '$.items')``
+  ---------------------------
+  [{"myNum":1,"myText":"Some text","myBool":true},{"myNum":2.0,"myText":"Some more text","myBool":false},null]
 
 The following will return an empty string as they refer to scalars or
 non-existent keys.
 
 ::
 
-    json_query(Json, '$.items[0].Num')
-    json_query(Json, '$.items[1].Num')
-    json_query(Json, '$.items[0].Text')
-    json_query(Json, '$.items[0].First')
+    json_query(Json, '$.items[0].myNum')
+    json_query(Json, '$.items[1].myNum')
+    json_query(Json, '$.items[0].myText')
+    json_query(Json, '$.items[0].myBool')
     json_query(Json, '$.items[2]')
 
 
-json\_modify
-""""""""""""
+json_modify
+"""""""""""
 
-::
+.. code-block:: sql
 
       json_modify(JsonDocument, Path, NewValue)
 
@@ -2246,41 +2261,41 @@ other than an array.
     {"foo":{"bar":99}}
 
 
-json\_merge\_patch
-""""""""""""""""""
+json_merge_patch
+""""""""""""""""
 
-::
+.. code-block:: sql
 
       json_merge_patch(JsonDocument, Patch)
 
 The ``json_merge_patch`` function provides a way to patch a target JSON
 document with another JSON document. The patch function conforms to
-:rfc:`7386`
-(href=https://tools.ietf.org/html/rfc7386) RFC 7386
+:rfc:`7386`\ .
+
 
 Keys in ``JsonDocument`` are replaced if found in ``Patch``. If the
 value in ``Patch`` is ``null`` then the key will be removed in the
 target document.
 
-::
+.. code-block:: sql
 
-    json_merge_patch('{"a":"b"}',          '{"a":"c"}'
-    --------------------------------------------------
+    json_merge_patch('{"a":"b"}', '{"a":"c"}')
+    ------------------------------------------
     {"a":"c"}
 
-    json_merge_patch('{"a": [{"b":"c"}]}', '{"a": [1]}'
-    ---------------------------------------------------
+    json_merge_patch('{"a": [{"b":"c"}]}', '{"a": [1]}')
+    ----------------------------------------------------
     {"a":[1]}
 
-    json_merge_patch('[1,2]',              '{"a":"b", "c":null}'
-    ------------------------------------------------------------
+    json_merge_patch('[1,2]', '{"a":"b", "c":null}')
+    ------------------------------------------------
     {"a":"b"}
 
 
-json\_merge\_preserve
-"""""""""""""""""""""
+json_merge_preserve
+"""""""""""""""""""
 
-::
+.. code-block:: sql
 
       json_merge_preserve(JsonDocument, Patch)
 
@@ -2297,14 +2312,30 @@ the target document.
 
 ::
 
-    json_merge_preserve('{"a":"b"}',          '{"a":"c"}'
-    -----------------------------------------------------
+    json_merge_preserve('{"a":"b"}', '{"a":"c"}')
+    ---------------------------------------------
     {"a":["b","c"]}
 
-    json_merge_preserve('{"a": [{"b":"c"}]}', '{"a": [1]}'
-    ------------------------------------------------------
+    json_merge_preserve('{"a": [{"b":"c"}]}', '{"a": [1]}')
+    -------------------------------------------------------
     {"a":[{"b":"c"},1]}
 
-    json_merge_preserve('[1,2]',              '{"a":"b", "c":null}'
-    ---------------------------------------------------------------
+    json_merge_preserve('{"a": [{"b":"c"}]}', '{"a": 1}')
+    -----------------------------------------------------
+    {"a":[{"b":"c"},1]}
+
+    json_merge_preserve('{"a": [{"b":"c"}]}', '{"a": [1,2]}')
+    ---------------------------------------------------------
+    {"a":[{"b":"c"},1,2]}
+
+    json_merge_preserve('{"a": [{"b":"c"}]}', '{"a": {"d":1,"e":2} }')
+    ------------------------------------------------------------------
+    {"a":[{"b":"c"},{"d":1,"e":2}]}
+
+    json_merge_preserve('{"a": {"b":"c"}}', '{"a": {"d":1, "e":2} }')
+    -----------------------------------------------------------------
+    {"a":{"b":"c","d":1,"e":2}}
+
+    json_merge_preserve('[1,2]', '{"a":"b", "c":null}')
+    ---------------------------------------------------
     [1,2,{"a":"b","c":null}]

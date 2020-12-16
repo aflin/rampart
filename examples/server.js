@@ -373,8 +373,8 @@ var pid=server.start(
     /*  fork and continue after server start (see end of the script) */
     //daemon: true, // fork and run in background. stdin and stderr are closed, so logging must go to a file.
 
-    /* make server multi-threaded. */
-    useThreads: true,
+    /* uncomment to make server single-threaded. */
+    //useThreads: false,
     /*  By default, number of threads is set to cpu core count.
         "threads" has no effect unless useThreads is set true.
         The number can be changed here:
@@ -422,9 +422,13 @@ var pid=server.start(
        If it ends in a '/' then matches everything in that path
        except a more specific ('/something.html') path
        
-       priority is given to file-paths (doesn't end in '/'), then
-         regular expressions, then paths, and in each of these groups
-         they are then ordered by length, with longest coming first.
+       priority is given to Exact Paths (Begins with '/' and no '*' in path), then
+         regular expressions, then globs.
+         
+       If mapSort: false, then in each of these groups
+         is left unsorted.
+       Otherwise they are then ordered by length, with longest 
+         having priority.
        If you wish to specify your own priority, set:
 
     mapSort: false,

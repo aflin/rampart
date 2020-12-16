@@ -6,9 +6,9 @@ There are a number of properties that are settable in the SQL Engine.
 They do not need to be changed unless the behavior of the system must be
 modified. The properties are set using the following SQL syntax:
 
-.. code-block:: javascript
+.. code-block:: sql
 
-        sql.exec("SET property = value;");
+        SET property = value;
 
 or using the :ref:`rampart-sql:set()` function:
 
@@ -20,19 +20,18 @@ or using the :ref:`rampart-sql:set()` function:
    });
 
 The ``property`` names are case insensitive and may be specified in
-*camelCase*, *lower case*, *UPPER CASE* or as you prefer.  Most properties
-can be set using either ``sql.exec("SET property = value;");`` or
-``sql.set({property: value});``.  However, note below that a few properties
-(such as ``noiseList``) can only be set using the ``sql.set()`` function.
+*camelCase*, *lower case*, *UPPER CASE* or as you prefer.  In Rampart
+JavaScript, most properties can be set using either 
+``sql.exec("SET property = value;");`` or ``sql.set({property: value});``. 
+However, note below that a few properties (such as ``noiseList``) can only
+be set using the :ref:`rampart-sql:set()` function.
 
 The ``value`` can be one of four types depending on the property: Number,
-Boolean, Array or String.  A Boolean value is either an integer  – 0 is false,
-anything else is true–or one of the following strings: “``on``”, “``off``”,
-“``true``”, “``false``”, “``yes``” or “``no``”. Using the ``sql.set()``
-function, Booleans cat be set to javascript Booleans ``true`` or ``false``.
+Boolean, Array or String.  A Boolean value is either an integer  – ``0`` is false,
+``1`` is true. Using the ``sql.set()``
+function, Booleans cat also be set to JavaScript Booleans ``true`` or ``false``.
 
 The settings are grouped as follows:
-
 
 Search and optimization parameters
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -95,7 +94,53 @@ textSearchMode
 
    ``textSearchMode`` changes the mode and flags for text searches.  It
    controls case-sensitivity and other character-folding aspects of
-   Metamorph text searches.  The value consists of a comma-separated list of
+   Metamorph text searches.  
+
+   The ``textSearchMode`` default is
+   ``unicodemulti, ignorecase, ignorewidth, ignorediacritics, expandligatures``
+   (note that UTF-8 text is expected, since iso-8859-1 is not specified in the
+   default).
+
+   See `stringCompareMode/textSearchMode parameters`_ below for possible
+   settings.
+
+
+stringCompareMode
+"""""""""""""""""
+    Mode and flags for the following function and
+    properties:
+
+    - :ref:`sql-server-funcs:stringcompare`
+    - :ref:`sql-server-funcs:length`
+    - :ref:`sql-server-funcs:lower`
+    - :ref:`sql-server-funcs:upper`
+    - :ref:`sql-server-funcs:initcap`
+
+    The ``stringcomparemode`` parameter specifies string compares (e.g. 
+    equals, less-than or greater-than) for the
+    :ref:`sql-server-funcs:stringcompare` function.  It also controls the
+    default mode for the non-case-style flags/mode for the functions
+    :ref:`sql-server-funcs:length`, :ref:`sql-server-funcs:lower`,
+    :ref:`sql-server-funcs:upper` and :ref:`sql-server-funcs:initcap`.
+
+    Its value is given in the same format as the `textSearchMode`_ setting, 
+    (see `stringCompareMode/textSearchMode parameters`_ below)
+    but the default is "``unicodemulti, respectcase``" — i.e. 
+    characters must be identical to match, though ISO-8859-1 vs.  UTF-8
+    encoding may be ignored.
+
+    A regular (B-tree) index will always use the ``stringCompareMode`` value that
+    was set at its creation, not the current value. However, when multiple
+    regular indexes exist on the same fields, at search time the Texis optmizer
+    will attempt to use the index whose (creation-time) ``stringCompareMode`` is
+    closest to the current value. This allows some dynamic flexibility in
+    supporting queries with different ``stringCompareMode`` values (e.g.
+    case-sensitive vs. insensitive). 
+
+stringCompareMode/textSearchMode parameters
+"""""""""""""""""""""""""""""""""""""""""""
+
+   The value consists of a comma-separated list of
    values: a *case-folding style*, zero or more *optional flags*, and a
    *case-folding mode*.  The ``textSearchMode`` setting may be altered
    (instead of cleared and set) by using ``+`` or ``-`` in front of the
@@ -237,29 +282,7 @@ textSearchMode
    attempt to use the index whose (creation-time) textsearchmode is closest to
    the current value.
 
-   The ``textSearchMode`` default is
-   ``unicodemulti, ignorecase, ignorewidth, ignorediacritics, expandligatures``
-   (note that UTF-8 text is expected, since iso-8859-1 is not specified in the
-   default).
 
-
-stringCompareMode
-"""""""""""""""""
-    Mode and flags for string compares, e.g.  equals, less-than etc.  It
-    also controls the default mode for some
-    :ref:`sql-server-funcs:String Functions` such as
-    :ref:`sql-server-funcs:stringCompare`.  Its value is given in the same
-    format as the `textSearchMode`_ setting, but the default is
-    ``unicodemulti, respectcase`` - i.e.  characters must be identical to
-    match, though ISO-8859-1 vs. UTF-8 encoding may be ignored.
-
-    A regular (B-tree) index will always use the ``stringCompareMode`` value that
-    was set at its creation, not the current value. However, when multiple
-    regular indexes exist on the same fields, at search time the Texis optmizer
-    will attempt to use the index whose (creation-time) ``stringCompareMode`` is
-    closest to the current value. This allows some dynamic flexibility in
-    supporting queries with different ``stringCompareMode`` values (e.g.
-    case-sensitive vs. insensitive). 
 
 .. todo: find out if these are applicable ..
    tracemetamorph
@@ -914,42 +937,43 @@ noiseList
     The noise word list used during query processing. An array of strings.  The default
     noise list is:
 
-::
+    ::
 
-   [
-      "a",          "about",     "after",       "again",    "ago",       "all",
-      "almost",     "also",      "always",      "am",       "an",        "and",
-      "another",    "any",       "anybody",     "anyhow",   "anyone",    "anything",
-      "anyway",     "are",       "as",          "at",       "away",      "back",
-      "be",         "became",    "because",     "been",     "before",    "being",
-      "between",    "but",       "by",          "came",     "can",       "cannot",
-      "come",       "could",     "did",         "do",       "does",      "doing",
-      "done",       "down",      "each",        "else",     "even",      "ever",
-      "every",      "everyone",  "everything",  "for",      "from",      "front",
-      "get",        "getting",   "go",          "goes",     "going",     "gone",
-      "got",        "gotten",    "had",         "has",      "have",      "having",
-      "he",         "her",       "here",        "him",      "his",       "how",
-      "i",          "if",        "in",          "into",     "is",        "isn't",
-      "it",         "just",      "last",        "least",    "left",      "less",
-      "let",        "like",      "make",        "many",     "may",       "maybe",
-      "me",         "mine",      "more",        "most",     "much",      "my",
-      "myself",     "never",     "no",          "none",     "not",       "now",
-      "of",         "off",       "on",          "one",      "onto",      "or",
-      "our",        "ourselves", "out",         "over",     "per",       "put",
-      "putting",    "same",      "saw",         "see",      "seen",      "shall",
-      "she",        "should",    "so",          "some",     "somebody",  "someone",
-      "something",  "stand",     "such",        "sure",     "take",      "than",
-      "that",       "the",       "their",       "them",     "then",      "there",
-      "these",      "they",      "this",        "those",    "through",   "till",
-      "to",         "too",       "two",         "unless",   "until",     "up",
-      "upon",       "us",        "very",        "was",      "we",        "went",
-      "were",       "what",      "what's",      "whatever", "when",      "where",
-      "whether",    "which",     "while",       "who",      "whoever",   "whom",
-      "whose",      "why",       "will",        "with",     "within",    "without",
-      "won't",      "would",     "wouldn't",    "yet",      "you",       "your"
-   ]
+       [
+          "a",          "about",     "after",       "again",    "ago",       "all",
+          "almost",     "also",      "always",      "am",       "an",        "and",
+          "another",    "any",       "anybody",     "anyhow",   "anyone",    "anything",
+          "anyway",     "are",       "as",          "at",       "away",      "back",
+          "be",         "became",    "because",     "been",     "before",    "being",
+          "between",    "but",       "by",          "came",     "can",       "cannot",
+          "come",       "could",     "did",         "do",       "does",      "doing",
+          "done",       "down",      "each",        "else",     "even",      "ever",
+          "every",      "everyone",  "everything",  "for",      "from",      "front",
+          "get",        "getting",   "go",          "goes",     "going",     "gone",
+          "got",        "gotten",    "had",         "has",      "have",      "having",
+          "he",         "her",       "here",        "him",      "his",       "how",
+          "i",          "if",        "in",          "into",     "is",        "isn't",
+          "it",         "just",      "last",        "least",    "left",      "less",
+          "let",        "like",      "make",        "many",     "may",       "maybe",
+          "me",         "mine",      "more",        "most",     "much",      "my",
+          "myself",     "never",     "no",          "none",     "not",       "now",
+          "of",         "off",       "on",          "one",      "onto",      "or",
+          "our",        "ourselves", "out",         "over",     "per",       "put",
+          "putting",    "same",      "saw",         "see",      "seen",      "shall",
+          "she",        "should",    "so",          "some",     "somebody",  "someone",
+          "something",  "stand",     "such",        "sure",     "take",      "than",
+          "that",       "the",       "their",       "them",     "then",      "there",
+          "these",      "they",      "this",        "those",    "through",   "till",
+          "to",         "too",       "two",         "unless",   "until",     "up",
+          "upon",       "us",        "very",        "was",      "we",        "went",
+          "were",       "what",      "what's",      "whatever", "when",      "where",
+          "whether",    "which",     "while",       "who",      "whoever",   "whom",
+          "whose",      "why",       "will",        "with",     "within",    "without",
+          "won't",      "would",     "wouldn't",    "yet",      "you",       "your"
+       ]
 
-    This setting can only be set using ``sql.set()``.
+
+   This setting can only be set using ``sql.set()``.
 
 listNoise
 """""""""
@@ -979,28 +1003,28 @@ suffixList
     The suffix list used for suffix processing (if enabled) during
     search. An array of strings. The default suffix list is:
 
-::
+    ::
 
-     [
-         "'",       "able",   "age",     "aged",   "ager",
-         "ages",    "al",     "ally",    "ance",   "anced",
-         "ancer",   "ances",  "ant",     "ary",    "at",
-         "ate",     "ated",   "ater",    "atery",  "ates",
-         "atic",    "ed",     "en",      "ence",   "enced",
-         "encer",   "ences",  "end",     "ent",    "er",
-         "ery",     "es",     "ess",     "est",    "ful",
-         "ial",     "ible",   "ibler",   "ic",     "ical",
-         "ice",     "iced",   "icer",    "ices",   "ics",
-         "ide",     "ided",   "ider",    "ides",   "ier",
-         "ily",     "ing",    "ion",     "ious",   "ise",
-         "ised",    "ises",   "ish",     "ism",    "ist",
-         "ity",     "ive",    "ived",    "ives",   "ize",
-         "ized",    "izer",   "izes",    "less",   "ly",
-         "ment",    "ncy",    "ness",    "nt",     "ory",
-         "ous",     "re",     "red",     "res",    "ry",
-         "s",       "ship",   "sion",    "th",     "tic",
-         "tion",    "ty",     "ual",     "ul",     "ward"
-     ] 
+         [
+             "'",       "able",   "age",     "aged",   "ager",
+             "ages",    "al",     "ally",    "ance",   "anced",
+             "ancer",   "ances",  "ant",     "ary",    "at",
+             "ate",     "ated",   "ater",    "atery",  "ates",
+             "atic",    "ed",     "en",      "ence",   "enced",
+             "encer",   "ences",  "end",     "ent",    "er",
+             "ery",     "es",     "ess",     "est",    "ful",
+             "ial",     "ible",   "ibler",   "ic",     "ical",
+             "ice",     "iced",   "icer",    "ices",   "ics",
+             "ide",     "ided",   "ider",    "ides",   "ier",
+             "ily",     "ing",    "ion",     "ious",   "ise",
+             "ised",    "ises",   "ish",     "ism",    "ist",
+             "ity",     "ive",    "ived",    "ives",   "ize",
+             "ized",    "izer",   "izes",    "less",   "ly",
+             "ment",    "ncy",    "ness",    "nt",     "ory",
+             "ous",     "re",     "red",     "res",    "ry",
+             "s",       "ship",   "sion",    "th",     "tic",
+             "tion",    "ty",     "ual",     "ul",     "ward"
+         ] 
 
     This setting can only be set using ``sql.set()``.
 
@@ -1019,9 +1043,9 @@ suffixEquivsList
     The suffix list used for suffix processing during
     equivalence lookup. The default suffixeq list is:
 
-::
+    ::
 
-     [ "'",  "ies",  "s" ]
+         [ "'",  "ies",  "s" ]
 
     This setting can only be set using ``sql.set()``.
 
@@ -1038,17 +1062,17 @@ prefixList
     The prefix list used for prefix processing (if enabled) during
     search. An array of strings. The default prefix list is:
 
-::
+    ::
 
-     [
-         "ante",      "anti",          "arch",           "auto",
-         "be",        "bi",            "counter",        "de",
-         "dis",       "em",            "en",             "ex",
-         "extra",     "fore",          "hyper",          "in",
-         "inter",     "mis",           "non",            "post",
-         "pre",       "pro",           "re",             "semi",
-         "sub",       "super",         "ultra",          "un"
-     ] 
+         [
+             "ante",      "anti",          "arch",           "auto",
+             "be",        "bi",            "counter",        "de",
+             "dis",       "em",            "en",             "ex",
+             "extra",     "fore",          "hyper",          "in",
+             "inter",     "mis",           "non",            "post",
+             "pre",       "pro",           "re",             "semi",
+             "sub",       "super",         "ultra",          "un"
+         ] 
 
     This setting can only be set using ``sql.set()``.
 
@@ -1307,29 +1331,29 @@ lstExp
     ``expressionsList`` which will be set to an array with the current list
     of word expressions.
 
-Example:
+    Example:
 
-.. code-block:: javascript
+    .. code-block:: javascript
 
-   /* delete the default "\alnum{2,99}" expression,
-      add two expressions and list.                  */
+       /* delete the default "\alnum{2,99}" expression,
+          add two expressions and list.                  */
 
-   var lists = sql.set({
-      deleteExpressions: 0,
-      addExpressions: [ /\alnum\x80-\xff]+/,"[\\alnum\\x80-\\xff']+" ],
-      listExpressions: true
-   });
-   
-   console.log(JSON.stringify(lists,null,3));
+       var lists = sql.set({
+          deleteExpressions: 0,
+          addExpressions: [ /\alnum\x80-\xff]+/,"[\\alnum\\x80-\\xff']+" ],
+          listExpressions: true
+       });
+       
+       console.log(JSON.stringify(lists,null,3));
 
-   /* expected output
-   {
-      "expressionsList": [
-         "\\alnum\\x80-\\xff]+",
-         "[\\alnum\\x80-\\xff']+"
-      ]
-   }
-   */
+       /* expected output
+       {
+          "expressionsList": [
+             "\\alnum\\x80-\\xff]+",
+             "[\\alnum\\x80-\\xff']+"
+          ]
+       }
+       */
 
 
 
@@ -1365,31 +1389,31 @@ lstIndexTmp
     ``indexTempList`` which will be set to an array with the current list
     of temporary directories.
 
-Example:
+    Example:
 
-.. code-block:: javascript
+    .. code-block:: javascript
 
-   sql.set({
-      addIndexTemp: ["/tmp","/var/tmp","/usr/tmp"]
-   });
+       sql.set({
+          addIndexTemp: ["/tmp","/var/tmp","/usr/tmp"]
+       });
 
-   /* do some stuff here */
+       /* do some stuff here */
 
-   var lists = sql.set({
-      deleteIndexTemp: 1,
-      listIndexTemp: true
-   });
+       var lists = sql.set({
+          deleteIndexTemp: 1,
+          listIndexTemp: true
+       });
 
-   console.log(JSON.stringify(lists,null,3));
+       console.log(JSON.stringify(lists,null,3));
 
-   /* expected output:
-   {  
-      "indexTempList": [
-         "/tmp",
-         "/usr/tmp"
-      ]
-   }
-   */
+       /* expected output:
+       {  
+          "indexTempList": [
+             "/tmp",
+             "/usr/tmp"
+          ]
+       }
+       */
 
 
 indexValues
@@ -1633,56 +1657,57 @@ indexAccess
     indexes – count of all hits in all rows (``OccurrenceCount``) for each
     word will be returned.
 
-    This may be useful for applications such as AJAX type-ahead suggestion.
+    This may be useful for applications such as an AJAX type-ahead suggestion.
 
     Example:
 
-.. code-block:: javascript
+    .. code-block:: javascript
 
-   var Sql=require("rampart-sql");
+       var Sql=require("rampart-sql");
 
-   var db=process.scriptPath + '/wikidb';
+       var db=process.scriptPath + '/path/to/my/wikidb';
 
-   var sql=new Sql.init(db);
+       var sql=new Sql.init(db);
 
-   /* allow access to index as a table */
-   sql.set({
-       indexAccess: true
-   });
+       /* allow access to index as a table */
+       sql.set({
+           indexAccess: true
+       });
 
-   /* a sample typeahead request */
-   var typeahead="qu"
+       /* a sample typeahead request */
+       var typeahead="qu"
 
-   /* find the 10 most used terms that start with 'qu' 
-      in the metamorph inverted index (i.e. text index) 
-      "wikitext_Doc_mmix"                              */
-   var res=sql.exec(
-     "select Word from wikitext_Doc_mmix where Word matches ? order by RowCount DESC",
-     [typeahead+'%'],
-     {returnType: "array"}
-   );
+       /* find the 10 most used terms that start with 'qu' 
+          in the metamorph inverted index (i.e. fulltext index) 
+          "wikitext_Doc_mmix"                              */
+       var res=sql.exec(
+         "select Word from wikitext_Doc_mmix where Word matches ? order by RowCount DESC",
+         [typeahead+'%'],
+         {returnType: "array"}
+       );
 
-   /* flatten to a single array */
-   res=[].concat.apply([], res.results);
-   /* sample return to application */
-   console.log(JSON.stringify({words:res},null,3));
+       /* flatten to a single array */
+       res=[].concat.apply([], res.results);
 
-   /* expected output:
-   {
-      "words": [
-         "quickly",
-         "queen",
-         "quality",
-         "quite",
-         "quarter",
-         "question",
-         "qualified",
-         "questions",
-         "qualifying",
-         "quebec"
-      ]
-   }
-   */
+       /* sample return to application */
+       console.log(JSON.stringify({words:res},null,3));
+
+       /* expected output:
+       {
+          "words": [
+             "quickly",
+             "queen",
+             "quality",
+             "quite",
+             "quarter",
+             "question",
+             "qualified",
+             "questions",
+             "qualifying",
+             "quebec"
+          ]
+       }
+       */
 
 
 .. exclude for now
@@ -1894,6 +1919,8 @@ tableReadBufSz
 Locking Properties
 ~~~~~~~~~~~~~~~~~~
 
+:orange:`THIS SECTION SHOULD BE REDONE WITH NEW LOCKSERVER`
+
 These properties affect the way that locking occurs in the database
 engine. Setting these properties without understanding the consequences
 can lead to inaccurate results, and even corrupt tables.
@@ -2080,7 +2107,6 @@ locale
     classes in REX expressions, so ``\alpha`` will be correct.  Also with
     the correct locale set (and OS support), Metamorph will work case
     insensitively correctly (see ``textsearchmode`` for UTF-8/Unicode).
-    *TODO PROVIDE EXAMPLE and EXPLAIN FORMAT*
 
 .. skip
 

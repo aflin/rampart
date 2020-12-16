@@ -14,7 +14,6 @@ The rampart-sql module
    sql4
    sql-set
    tsql
-   mm1
    mm2
    mm3
    mm4

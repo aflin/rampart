@@ -14,75 +14,57 @@ statement, and display the results on stdout (the screen). If no query
 is present then queries will be accepted on stdin (the keyboard).
 Queries on stdin must be terminated by a semicolon. To exit from tsql
 you should produce EOF on it’s stdin. On Unix systems this is usually
-done with Control-D, and on Windows with Control-Z.
+done with Control-D (a Control-C should also exit the program).
 
 Tsql also provides facilities for doing many administrative tasks.
 
 **Options**
 
 To aid in the use of tsql from scripts or as parts of a chain of
-commands there are many options available. The options are
+commands there are many options available, which may be viewed by
+executing ``tsql -help`` or ``tsql -?`` on the command line:
 
--h
-    Don’t display the column headers.
+::
 
--q
-    Don’t display the SQL prompt and copyright statement.
-
--c
-    Change the format to one field per line.
-
--w width
-    Make the field headings width characters long. 0 means use the
-    longest heading’s width.
-
--l rows
-    Limit output to the number of rows specified.
-
--u username
-    Login as username. If the -p option is not specified then you will
-    be prompted for a password. The user must have been previously added
-    to the system. This forces usage of the Texis permission scheme. If
-    this is not specified then the name defaults to PUBLIC. See
-    Chapter [Chp:Sec] for more information.
-
--p password
-    Use password to log in.
-
--P password
-    \_SYSTEM password to log in for admin.
-
--d database
-    Specify the location of the database.
-
--m
-    Create the named database. See creatdb.
-
--i file
-    Read SQL commands from file instead of stdin. Commands read this way
-    will echo to stdout, whereas commands read from input redirection
-    would not.
-
--r
-    Read the default profile file.
-
--R profile
-    Read the specified profile file.
-
--f
-    Specify a format. One or two characters can follow with the
-    following meanings.
-
-    t
-        same as ``-c`` option
-
-    c
-        default behaviour
-
-    any other character
-        is a field separator character. This can be followed by q to
-        suppress the quotes around the fields. To get quoted comma
-        separated values you would use ``-f ,``
-
--?
-    Print a command summary.
+    Usage: tsql [-a command] [-c [-w width]] [-l rows] [-hmqrv?]
+                [-d database] [-u username] [-p password] [-i file]
+                [-R profile] sql-statement
+    Options:
+      --install-dir[-force]{=| }dir    Alternate installation dir
+                                   (default is `/usr/local/morph3')
+      --texis-conf{=| }file            Alternate conf/texis.ini file
+      -a command       Enter Admin mode; respects -d -u -p
+          Commands:
+             (A)dd     add a user
+             (C)hange  change a password
+             (D)elete  delete a user
+      -h               Suppress column headings
+      -v               Display inserted/deleted rows
+      -n               Display total row count with -v
+      -q               Suppress SQL> prompt
+      -c               Format one field per line
+      -w width         Make field headings width characters long
+                       (0: align to longest heading)
+      -l rows          Limit output to rows
+      -s rows          Skip rows of output
+      -u username      Login as username
+                       (if -p not given, password will be prompted for)
+      -p password      Login using password
+      -P password      _SYSTEM password for admin
+      -d database      Use database as the data dictionary
+      -m               Create the database named with -d
+      -i file          Read SQL commands from file instead of the keyboard
+      -r               Read default profile
+      -R profile       Read specified profile
+      -f delim         Specify a delimiter or format; 1 or 2 chars:
+         t             same as -c option
+         c             default behavior
+         other char    field separator e.g. `-f ,' for CSV
+                       (follow with q/n to suppress quotes/newlines)
+      -t               Show timing information
+      -V               Increase Texis verbosity (may be used multiple times)
+      -x               Debug: do not capture ABEND etc. signals
+      --show-counts    Show min/max counts of rows matched and returned
+      --lockverbose n  Set lockverbose (tracing) level n
+      --timeout n[.n]  Set timeout of n[.n] seconds (-1 none; may cause corruption)
+      -?               Show this help

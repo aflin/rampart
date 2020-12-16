@@ -48,7 +48,7 @@ pthread_mutex_t ctxlock;
 
 
 volatile int gl_threadno = 0;
-int gl_singlethreaded = 1;
+int gl_singlethreaded = 0;
 
 duk_context **thread_ctx = NULL, *main_ctx;
 
@@ -75,9 +75,19 @@ static const char *method_strmap[] = {
     "TRACE",
     "CONNECT",
     "PATCH",
-    "UNKNOWN",
+    "UNKNOWN"
 };
 
+/*
+static const char *scheme_strmap[] = {
+    "",
+    "ftp://",
+    "http://",
+    "htps://",
+    "nfs://",
+    ""
+};
+*/
 /* IPC Pipe info for parent/child and child pid */
 
 #define FORKINFO struct fork_info_s
@@ -567,6 +577,13 @@ void push_req_vars(DHS *dhs)
     putval("file", path->file);
     putval("path", path->full);
     putval("base", path->path);
+    /* Getting scheme from request:
+       this is likely for proxy server stuff (but might be for
+       the request part of the library???)
+       which probably is not currently possible here.
+       TODO: find out if so, and how to handle proxy requests.
+     printf("scheme=%s\n",scheme_strmap[dhs->req->uri->scheme]);
+    */
     putval("scheme",scheme);
     putval("host", host);
     if(uri->query_raw && strlen((char*)uri->query_raw))
@@ -3150,7 +3167,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     struct event_base *evbase;
 #endif
     evhtp_ssl_cfg_t *ssl_config = calloc(1, sizeof(evhtp_ssl_cfg_t));
-    int confThreads = -1, mthread = 0, daemon=0;
+    int confThreads = -1, mthread = 1, daemon=0;
     struct stat f_stat;
     struct timeval ctimeout;
     duk_uarridx_t fpos =0;
@@ -3348,8 +3365,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
         if (duk_rp_GPS_icase(ctx, ob_idx, "usethreads"))
         {
             mthread = REQUIRE_BOOL(ctx, -1, "server.start: parameter \"threads\" requires a boolean (true|false)");
-            gl_singlethreaded = !mthread;
         }
+        gl_singlethreaded = !mthread;
         duk_pop(ctx);
 
          /* connect timeout */
@@ -3604,8 +3621,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     /* priority to exact, regex, path, then by length */
                     duk_push_string(ctx, "function(map){return Object.keys(map).sort(function(a, b){\n\
                                      var blen=b.length, alen=a.length;\n\
-                                     if(a.charAt(0) == '~') alen+=1000; else if(a.charAt(alen-1) != '/') alen+=1000000;\n\
-                                     if(b.charAt(0) == '~') blen+=1000; else if(b.charAt(blen-1) != '/') blen+=1000000;\n\
+                                     if(a.charAt(0) == '~') alen+=1000; else if(a.charAt(0) == '/') alen+=1000000;\n\
+                                     if(b.charAt(0) == '~') blen+=1000; else if(b.charAt(0) == '/') blen+=1000000;\n\
                                      return blen - alen;});}");
                 }
                 else
@@ -3613,6 +3630,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     duk_push_string(ctx, "function(map){return Object.keys(map)}");
                 }
 
+                /* FIXME:  Allow \* in filesystem mappings and remove the 
+                   \ from both
+                */
                 duk_push_string(ctx,"mapsort");
                 duk_compile(ctx,DUK_COMPILE_FUNCTION);
                 duk_dup(ctx,-2);

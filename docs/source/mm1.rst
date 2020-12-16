@@ -19,7 +19,7 @@ themselves, and attendant processing of the vocabulary base of the
 language itself.
 
 Most of what you need to know about Metamorph is included at the
-appropriate places in our documentation. This section is devoted to some
+appropriate places in the documentation. This section is devoted to some
 of the aspects of Metamorph which were documented early on in the
 Research & Development of our product line, but may still be of interest
 for context rich applications or just to the curious user.
@@ -135,15 +135,13 @@ therefore has been included in Texis as part of the search technique
 used to qualify hits.
 
 Metamorph is the search engine inside of Texis which contains maximum
-capability for identification of a diverse variety of lexical items. No
-other program has such an extended capability to recognize these items.
-We can look for special expressions by themselves or in proximity to
-sets of concepts. Logical set operators ’and’, ’or’, and ’not’ are
-applied to whole sets of lexical items, rather than just single,
-specified lexical items. Because Metamorph is so fast, benchmarked even
-in its very early years of development as searching up to 4.5 megabytes
-per second in some Unix environments, we can read text live where
-required and get extremely impressive results.
+capability for identification of a diverse variety of lexical items.  No
+other program has such an extended capability to recognize these items.  We
+can look for special expressions by themselves or in proximity to sets of
+concepts.  Logical set operators ’and’, ’or’, and ’not’ are applied to whole
+sets of lexical items, rather than just single, specified lexical items. 
+Because Metamorph is so fast, we can read text live where required and get
+extremely impressive results.
 
 Where stream text is involved, such as for a message analysis system
 where large amounts of information are coming in at a steady rate, or a
@@ -155,7 +153,7 @@ well as inefficient and lacking in discretion. Indexes are more
 appropriately useful when searching large amounts of archived data.
 Texis makes use of Metamorph search engines internally where required to
 read the stream text in all of its rich context but without losing speed
-of efficiency.
+or efficiency.
 
 Where Texis sends out a Metamorph query, it is fast and thorough in its
 search and its retrieval. A parser picks out phrases without having to

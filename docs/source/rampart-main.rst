@@ -38,7 +38,7 @@ Core features of Duktape
 
 A partial list of Duktape features:
 
-* Partial support for ECMAScript 2015 (E6) and ECMAScript 2016 (E7), see Post-ES5 feature status and kangax/compat-table
+* Partial support for ECMAScript 2015 (E6) and ECMAScript 2016 (E7).
 * ES2015 TypedArray and Node.js :green:`Buffer` bindings
 * CBOR bindings
 * Encoding API bindings based on the WHATWG Encoding Living Standard
@@ -97,7 +97,7 @@ Rampart Global Variable and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 There are two global variables beyond what is provided by Duktape:
-``rampart`` and ``process``.
+``rampart`` and ``process``, as well as the ``require`` function.
 
 rampart.globalize
 """""""""""""""""
@@ -1600,6 +1600,56 @@ canonical path (directory) in which the currently executing script can be
 found (e.g.  if ``rampart /path/to/my/script.js`` is run,
 ``process.scriptPath`` will be ``/path/to/my``).
 
+Using the require Function to Import Modules
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Scripts may reference function stored in external files.  These files are
+known as modules.  A module is a C or JavaScript file which exports
+an :green:`Object` or :green:`Function` when the ``require("scriptname")``
+syntax is used. 
+
+Example for the SQL C Module:
+
+.. code-block:: javascript
+
+   var sql = require("rampart-sql");
+
+This will search the current directory and the rampart modules directories
+for a module named ``rampart-sql.so`` or ``rampart-sql.js`` and use the
+first one found.  In this case ``rampart-sql.so`` will be found and the SQL
+module and its functions will be usable via the named variable ``sql``.  See,
+e.g, :ref:`rampart-sql:Loading the Javascript Module` for full details.
+
+Example using a JavaScript module:
+
+If you have an often used function, or a function used for serving web pages 
+with :ref:`rampart-server:The rampart-server module`, it can be placed in a
+separate file (here the file is named ``times2.js``):
+
+.. code-block:: javascript
+
+   function timestwo (num) {
+      return num *2;
+   }
+
+   module.exports=timestwo;
+
+The ``module.exports`` variable is set to the :green:`Object` or
+:green:`Function` being exported.
+
+In another script, the exported ``timestwo`` function could be accessed as such:
+
+.. code-block:: javascript
+
+  var x2 = require("times2");
+  /* alternatively
+    var x2 = require("times2.js");
+  */
+
+  var res = x2(5);
+
+  /* res == 10 */
+
 Additional Global Variables and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1616,7 +1666,7 @@ For more information, see the `Duktape Guide <https://duktape.org/guide.html>`_
 
 Also added to Rampart is the ``setTimeout()`` function.  It is considered
 experimental and is mainly included to support asynchronous functions in 
-`ECMAScript 2015+ and Babel.js`_ functions.
+`ECMAScript 2015+ and Babel.js`_\ .
 
 ECMAScript 2015+ and Babel.js
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -2000,7 +2000,12 @@ htp__request_parse_fini_(htparser * p)
      * arguments.
      *
      * htp__should_parse_query_body_ does all the proper null checks.
-     */
+     *
+     
+         NEVER DO THIS:  we will parse body separately.  query_raw will only be if
+         on url from GET, and never overwitten with contents from body regardless of method
+         --ajf
+    
     if (htp__should_parse_query_body_(c->request) == 1) {
         const char      * body;
         size_t            body_len;
@@ -2024,7 +2029,7 @@ htp__request_parse_fini_(htparser * p)
 
         uri->query = evhtp_parse_query(body, body_len);
     }
-
+    */
     /*
      * XXX c->request should never be NULL, but we have found some path of
      * execution where this actually happens. We will check for now, but the bug

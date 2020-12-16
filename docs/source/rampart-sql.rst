@@ -623,17 +623,17 @@ The ``set`` :green:`Function` sets Texis server properties.  For a full listing,
 :ref:`sql-set:Server Properties`.  Arguments are given as keys with
 corresponding values set to a :green:`String`, :green:`Number`, :green:`Array` or
 :green:`Boolean` as appropriate.  Note that :green:`Booleans`
-``true``/``false`` are equivalent to setting ``0``/``1``, ``on``/``off``, or
-``yes``/``no`` as described in :ref:`sql-set:Server Properties`.
+``true``/``false`` are equivalent to setting ``1``/``0``
+as described in :ref:`sql-set:Server Properties`.
 
 Normally there is no return value (``undefined``).  
 
-FIXME once names in sql-set.html are finalized:
-
 However if :ref:`sql-set:lstexp`,
-:ref:`sql-set:lstindextmp` and/or :ref:`sql-set:listNoise` is set ``true``, an :green:`Object` is
+:ref:`sql-set:lstindextmp`, :ref:`sql-set:listPrefix`,
+:ref:`sql-set:listSuffix`, :ref:`sql-set:listSuffixEquivs`,  and/or 
+:ref:`sql-set:listNoise` is set ``true``, an :green:`Object` is
 returned with corresponding keys ``expressionsList``, ``indexTempList``,
-``suffixList``, ``suffixEquivsList`` and/or
+``prefixList``, ``suffixList``, ``suffixEquivsList`` and/or
 ``noiseList`` respectively.
 
 Note also that though ``sql.set()`` is a :green:`Function` of ``sql`` (a single opened
