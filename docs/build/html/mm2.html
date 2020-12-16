@@ -1,0 +1,882 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Metamorph: The Program Inside the Program &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
+        <link rel="up" title="The rampart-sql module" href="sqltoc.html"/>
+        <link rel="next" title="Thesaurus Customization" href="mm3.html"/>
+        <link rel="prev" title="Tsql Command Line Utility" href="tsql.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart Javascript</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html">Preface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#loading-the-javascript-module">Loading the Javascript Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#database-functions">Database Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#string-functions">String Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html">Introduction to Texis SQL</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#creating-a-database">Creating a Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#table-definition">Table Definition</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#a-first-look-at-queries">A First Look at Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql2.html">Queries Involving Calculated Values</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql2.html#advanced-queries">Advanced Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql3.html">Intelligent Text Search Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html">Server functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html">Indexing for Increased Performance</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html#keeping-the-database-current">Keeping the Database Current</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html#security">Security</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html#administration-of-the-database">Administration of the Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-set.html">Server Properties</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tsql.html">Tsql Command Line Utility</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Metamorph: The Program Inside the Program</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#background">Background</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#hits-intersections-and-sets">Hits, Intersections and Sets</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#definition-and-background">Definition and Background</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#basic-operation">Basic Operation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#intersections-and-search-logic">Intersections and Search Logic</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#intersection-quantity-specification-further-explained">Intersection Quantity Specification Further Explained</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#how-and-logic-affects-intersection-settings">How ‘+’ and ‘-’ Logic Affects Intersection Settings</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#modulating-set-size">Modulating Set Size</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#limiting-sets-to-roots-only">Limiting Sets to Roots Only</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#expanding-sets-by-use-of-see-references">Expanding Sets by Use of See References</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#modulating-set-content">Modulating Set Content</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#modulating-hit-size-by-adjusting-delimiters">Modulating Hit Size by Adjusting Delimiters</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#discussion">Discussion</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#delimiter-syntax-summary">Delimiter Syntax Summary</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#rules-of-delimiter-syntax">Rules of Delimiter Syntax</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="mm3.html">Thesaurus Customization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm4.html">Tailoring Metamorph’s Linguistics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm5.html">Types of Searches in Metamorph</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm6.html">REX On Its Own</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="sqltoc.html">The rampart-sql module</a> &raquo;</li>
+        
+      <li>Metamorph: The Program Inside the Program</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/mm2.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="metamorph-the-program-inside-the-program">
+<h1>Metamorph: The Program Inside the Program<a class="headerlink" href="#metamorph-the-program-inside-the-program" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="background">
+<h2>Background<a class="headerlink" href="#background" title="Permalink to this headline">¶</a></h2>
+<p>Deep inside of Texis stands Metamorph, the original incarnation of
+Thunderstone’s text retrieval methodology. While Metamorph has grown
+into Texis, its intelligent text query language has remained intact. It
+carries with it a whole philosophy of concept based text retrieval which
+sets a layer of assumptions about how text, particularly English, should
+be processed to retain its meaning.</p>
+<p>Metamorph is made reference to in many places throughout Thunderstone’s
+program documentation. While originally it was a stand-alone program, it
+lives on as functions which are used at all levels of the search,
+chiefly thought about only in relation to the formulation of queries
+themselves, and attendant processing of the vocabulary base of the
+language itself.</p>
+<p>Most of what one need to know about Metamorph is included at the
+appropriate places in the documentation. This section is devoted to some
+of the more advanced aspects of a Metamorph text search beyond that which
+can be achieved from a simple multiword query.</p>
+</div>
+</div>
+<div class="section" id="hits-intersections-and-sets">
+<h1>Hits, Intersections and Sets<a class="headerlink" href="#hits-intersections-and-sets" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="definition-and-background">
+<h2>Definition and Background<a class="headerlink" href="#definition-and-background" title="Permalink to this headline">¶</a></h2>
+<p>A “<em>hit</em>” is the term used to refer to a portion of text Metamorph
+retrieves in response to a specified query or search request. We use the
+term “hit” to mean the program has found or “hit” on something it was
+looking for. Hits can have varying degrees of relevance or validity,
+based on the number of intersections of concept matched within that
+delimited block of text.</p>
+<p>An “<em>intersection</em>” is defined as an occurrence of at least one member
+of each of two sets of strings located within a section of text as
+demarcated by a specified beginning and ending delimiter.</p>
+<p>A “<em>set</em>” is the group of possible strings a pattern matcher will look
+for, as specified by the search item. A set can be a list of words and
+word forms, a range of characters or quantities, or some other class of
+possible matches based on which pattern matcher Metamorph uses to
+process that item.</p>
+<p>Intersection quantity refers to the number of unions of sets existing
+within the specified delimiters. The maximum number of intersections
+possible for any given query will be the maximum number of designated
+sets minus one.</p>
+<p>The number of intersections present in any given hit directly determines
+how relevant that response will be to the stated query. Therefore, the
+designated intersection quantity can modulate the amount of abstraction
+or inference you wish to allow away from the original concept as stated
+in your query.</p>
+<p>Because intersection quantity can be adjusted by the user to determine
+how tightly correlated the retrieved responses must be, the term
+“correlation threshold level” has in the past been used interchangeably
+with “intersection quantity” in earlier writings and versions of
+Metamorph. However, intersection quantity is a more precise lexical
+concept, and is therefore the preferred and more accurate term.</p>
+<p>Intersections, whether calculated automatically by Metamorph or set by
+the user, signify the number of intersections of specified sets being
+searched for, to be matched anywhere within the delimited block of text;
+this could be within a sentence, paragraph or page or some other
+designated amount of text.</p>
+<p>Metamorph provides a template of variables which go into a search, all
+of which can be stored so that one can analyze exactly what produced the
+search results and adjust them as desired. The intersection quantity
+variable is the most important in terms of designating how closely you
+wish to have the retrieved responses (hits) correlated to your search
+query.</p>
+</div>
+<div class="section" id="basic-operation">
+<h2>Basic Operation<a class="headerlink" href="#basic-operation" title="Permalink to this headline">¶</a></h2>
+<p>A default Metamorph search will calculate the maximum number of
+intersections possible in a hit based on your query.</p>
+<p>Metamorph picks out the important elements of your question and creates
+a series of sets of words and/or patterns; counting the number of sets,
+it does a search for any hit which contains all those elements. If you
+ask: “<code class="docutils literal notranslate"><span class="pre">Was</span> <span class="pre">there</span> <span class="pre">a</span> <span class="pre">power</span> <span class="pre">struggle?</span></code>” the program will look for hits
+containing 1 intersection of the 2 sets “<code class="docutils literal notranslate"><span class="pre">power</span></code>” and “<code class="docutils literal notranslate"><span class="pre">struggle</span></code>”.
+In this case the program is executing the search at intersection
+quantity 1, as it is looking for text containing 1 union of 2 sets.</p>
+<p>When you first enter the query, Metamorph determines how many sets of
+concepts it will be searching for. Upon execution, the program will
+attempt to find hits containing the maximum number of intersections of
+something from each of those sets, within the defined delimiters of a
+sentence.</p>
+<p>A “sentence” is specified as the block of text from one sentence type
+delimiter <code class="docutils literal notranslate"><span class="pre">[.?!]</span></code> to the next sentence type delimiter <code class="docutils literal notranslate"><span class="pre">[.?!]</span></code>. Any
+sentence found which contains that maximum number of intersections will
+be considered a valid hit, and can be made available for viewing, in the
+context of the full text of the file in which it is located.</p>
+</div>
+<div class="section" id="intersections-and-search-logic">
+<h2>Intersections and Search Logic<a class="headerlink" href="#intersections-and-search-logic" title="Permalink to this headline">¶</a></h2>
+<p>A common and simple search would be to enter a few search items on the
+query line, in hopes of locating a sentence which matches the idea of
+what you have entered. You want a sentence containing some correlation
+to the ideas you have entered. For example, enter on the query line:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">property</span> <span class="n">evaluation</span>
+</pre></div>
+</div>
+<p>This should find a relevant response containing a connection to both
+entered keywords. The user would be happy to locate the sentence:</p>
+<blockquote>
+<div><p>The broker came to <strong>assess</strong> the current market value of our
+<strong>house</strong>.</p>
+</div></blockquote>
+<p>Here “<code class="docutils literal notranslate"><span class="pre">assess</span></code>” is linked to “<code class="docutils literal notranslate"><span class="pre">evaluation</span></code>”, and “<code class="docutils literal notranslate"><span class="pre">house</span></code>” is
+linked to “<code class="docutils literal notranslate"><span class="pre">property</span></code>”, within the bounds of one sentence. Therefore
+it is a hit, and can be brought up for viewing.</p>
+<p>Requiring an occurrence of 2 search items is referred to as 1
+intersection. The occurrence of 3 search items is 2 intersections. The
+default search logic is to look for the maximum number of intersections
+possible of all entered search items. If you were searching large
+quantities of text, you could add several qualifiers, as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nb">property</span> <span class="n">tax</span> <span class="n">market</span> <span class="n">assessment</span>
+</pre></div>
+</div>
+<p>The maximum number of intersections would be looked for; i.e., an
+occurrence of “<code class="docutils literal notranslate"><span class="pre">property</span></code>”, “<code class="docutils literal notranslate"><span class="pre">tax</span></code>”, “<code class="docutils literal notranslate"><span class="pre">market</span></code>”, and
+“<code class="docutils literal notranslate"><span class="pre">assessment</span></code>”, anywhere inside the text unit. This can be thought of
+as “and” logic.</p>
+<p>To override the default “and” logic, you would enter the desired number
+of intersections with ‘<code class="docutils literal notranslate"><span class="pre">&#64;#</span></code>’: as “<code class="docutils literal notranslate"><span class="pre">&#64;0</span></code>” (“at zero intersections”),
+“<code class="docutils literal notranslate"><span class="pre">&#64;1</span></code>” (“at one intersection”), “<code class="docutils literal notranslate"><span class="pre">&#64;2</span></code>” (“at two intersections”), and
+so on.</p>
+<p>To get “or” logic you would enter “<code class="docutils literal notranslate"><span class="pre">&#64;0</span></code>” on the query line with your
+search items. In this example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nd">@0</span> <span class="nb">property</span> <span class="n">tax</span>
+</pre></div>
+</div>
+<p>“<code class="docutils literal notranslate"><span class="pre">&#64;0</span></code>” (read as: “at zero intersections”) means that zero
+intersections are required; therefore you are specifying that you want
+an occurrence of either “<code class="docutils literal notranslate"><span class="pre">property</span></code>” or “<code class="docutils literal notranslate"><span class="pre">tax</span></code>” anywhere inside of
+the delimited text, or sentence.</p>
+<p>To obtain different permutations of logic you can specify a number of
+intersections greater than zero but less than an intersection of all
+specified items. For example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nd">@1</span> <span class="nb">property</span> <span class="n">tax</span> <span class="n">value</span>
+</pre></div>
+</div>
+<p>requires one intersection of any two of the three specified items.
+Therefore, the text unit will be retrieved if it contains an occurrence
+of “<code class="docutils literal notranslate"><span class="pre">property</span></code>” and “<code class="docutils literal notranslate"><span class="pre">tax</span></code>”, “<code class="docutils literal notranslate"><span class="pre">property</span></code>” and “<code class="docutils literal notranslate"><span class="pre">value</span></code>”, or
+“<code class="docutils literal notranslate"><span class="pre">tax</span></code>” and “<code class="docutils literal notranslate"><span class="pre">value</span></code>”.</p>
+<p>Any search item not marked with a ‘<code class="docutils literal notranslate"><span class="pre">+</span></code>’ or a minus ‘<code class="docutils literal notranslate"><span class="pre">-</span></code>’ is assumed
+to be equally weighted. Each unmarked item could be preceded with
+‘<code class="docutils literal notranslate"><span class="pre">=</span></code>’ but it is not required on the query line as it is understood.
+Intersection quantities “<code class="docutils literal notranslate"><span class="pre">&#64;#</span></code>” apply to these equally weighted sets
+not otherwise marked with ‘<code class="docutils literal notranslate"><span class="pre">+</span></code>’ or ‘<code class="docutils literal notranslate"><span class="pre">-</span></code>’.</p>
+<p>Mandatory inclusion ‘<code class="docutils literal notranslate"><span class="pre">+</span></code>’ and mandatory exclusion ‘<code class="docutils literal notranslate"><span class="pre">-</span></code>’ logic can be
+assigned, and can be used with combinatorial logic. For example, you
+might enter this query:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">+</span><span class="n">tax</span> <span class="o">-</span><span class="n">federal</span> <span class="nd">@1</span> <span class="n">market</span> <span class="n">assessment</span> <span class="n">value</span> <span class="nb">property</span> <span class="n">assets</span> <span class="n">w</span><span class="o">/</span><span class="n">page</span>
+</pre></div>
+</div>
+<p>This query means that within any page (“<code class="docutils literal notranslate"><span class="pre">w/page</span></code>”), you must include
+an occurrence of “<code class="docutils literal notranslate"><span class="pre">tax</span></code>” (designated with the plus sign ‘<code class="docutils literal notranslate"><span class="pre">+</span></code>’), but
+must exclude the hit if it contains any reference to “<code class="docutils literal notranslate"><span class="pre">federal</span></code>”
+(designated with the minus sign ‘<code class="docutils literal notranslate"><span class="pre">-</span></code>’). The “<code class="docutils literal notranslate"><span class="pre">&#64;1</span></code>” means that you
+also want 1 intersection of any 2 of the other 5 equally weighted
+(unmarked with ‘<code class="docutils literal notranslate"><span class="pre">+</span></code>’ or ‘<code class="docutils literal notranslate"><span class="pre">-</span></code>’) query items: “<code class="docutils literal notranslate"><span class="pre">market</span></code>”,
+“<code class="docutils literal notranslate"><span class="pre">assessment</span></code>”, “<code class="docutils literal notranslate"><span class="pre">value</span></code>”, “<code class="docutils literal notranslate"><span class="pre">property</span></code>”, and “<code class="docutils literal notranslate"><span class="pre">assets</span></code>”.</p>
+</div>
+<div class="section" id="intersection-quantity-specification-further-explained">
+<h2>Intersection Quantity Specification Further Explained<a class="headerlink" href="#intersection-quantity-specification-further-explained" title="Permalink to this headline">¶</a></h2>
+<p>If you want all possibilities you can find, you will find very adequate
+answers to your search requests usually by setting the quantity to 1 or
+2. If you don’t get answers at that quantity, drop it lower.</p>
+<p>With intersections at 0, the program will retrieve hits containing 0 set
+intersections; i.e., it will locate any occurrence of any set element.
+The denotation of 0 indicates no intersection of specified sets is
+required. In other words, you want Metamorph to locate any hit in which
+there is any equivalence to any of the set elements in your question.
+This is comparable to an “or” search.</p>
+<p>With intersections at 1, the program will retrieve hits containing an
+intersection of any 2 specified set elements; for example, an
+intersection of “<code class="docutils literal notranslate"><span class="pre">life</span></code>” and “<code class="docutils literal notranslate"><span class="pre">death</span></code>”. With intersections at 2, the
+program will retrieve hits containing any 2 intersections of any 3
+specified set elements; e.g., “<code class="docutils literal notranslate"><span class="pre">life</span></code>” and “<code class="docutils literal notranslate"><span class="pre">death</span></code>” plus
+“<code class="docutils literal notranslate"><span class="pre">death</span></code>” and “<code class="docutils literal notranslate"><span class="pre">infinity</span></code>”. With the intersection variable at 3, the
+program might locate an occurrence of “<code class="docutils literal notranslate"><span class="pre">life</span></code>” and “<code class="docutils literal notranslate"><span class="pre">death</span></code>”,
+“<code class="docutils literal notranslate"><span class="pre">death</span></code>” and “<code class="docutils literal notranslate"><span class="pre">infinity</span></code>”, plus “<code class="docutils literal notranslate"><span class="pre">infinity</span></code>” and “<code class="docutils literal notranslate"><span class="pre">money</span></code>”. The
+higher the number of intersections being sought, the more precise the
+retrieved response must be.</p>
+<p>The lower you set the intersection quantity, the more hits are likely to
+be found in relation to the question asked; but many of them are likely
+to be quite abstract. The higher you set the intersection quantity, the
+fewer hits are likely to be found in relation to the question asked; but
+those hits are likely to be more intelligently and precisely related to
+the search query, as they require a higher number of matching sets.</p>
+<p>A smaller intersection quantity will also retrieve any larger
+intersection quantity responses as a matter of course. However, the
+program only searches for the number of intersections of elements it is
+directed to search for, so it will only highlight the requested number
+of sets.</p>
+<p>Conversely, the program cannot locate hits containing more intersections
+than are possible. If you have set intersections to 6, but you enter a
+question containing only 3 set elements, realize that one pass through
+the data will find no answers, as you have designated more intersections
+than are possible to find.</p>
+</div>
+<div class="section" id="how-and-logic-affects-intersection-settings">
+<h2>How ‘+’ and ‘-’ Logic Affects Intersection Settings<a class="headerlink" href="#how-and-logic-affects-intersection-settings" title="Permalink to this headline">¶</a></h2>
+<p>The assignment of intersection quantity refers to the number of
+intersections of sets being sought in the search. This presumes that all
+sets are equal to each other in value. A search for:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span> <span class="n">life</span>  <span class="n">love</span>  <span class="n">death</span>
+<span class="o">=</span><span class="n">life</span> <span class="o">=</span><span class="n">love</span> <span class="o">=</span><span class="n">death</span>  <span class="p">(</span><span class="n">same</span> <span class="k">as</span> <span class="n">above</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>presumes that each set has equal value; if something from each set is
+found, it would reflect an intersection quantity of 2, as it contains 2
+intersections of “equal” value. In Metamorph terms, this is referred to
+as “set logic”.</p>
+<p>When you assign a ‘<code class="docutils literal notranslate"><span class="pre">+</span></code>’ (“must include”) logic operator to a set, this
+means that you must include something from that designated set in any
+hit that is found. When you assign a ‘<code class="docutils literal notranslate"><span class="pre">-</span></code>’ (“not”) logic operator to a
+set, this means that you must exclude any hit which contains any element
+from that designated set.</p>
+<p>Examples of these might be:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">+</span><span class="n">spirit</span> <span class="o">=</span><span class="n">life</span> <span class="o">=</span><span class="n">love</span> <span class="o">=</span><span class="n">death</span>
+          <span class="ow">or</span>
+<span class="o">-</span><span class="n">alien</span> <span class="o">=</span><span class="n">life</span> <span class="o">=</span><span class="n">love</span> <span class="o">=</span><span class="n">death</span>
+</pre></div>
+</div>
+<p>It doesn’t matter whether the equal sign ‘<code class="docutils literal notranslate"><span class="pre">=</span></code>’ is entered or not. It
+also doesn’t matter what sequence these operand sets are entered in, or
+how many of each. The only rule is you cannot enter only “not” sets.</p>
+<p>In the above two examples, the maximum intersection quantity is still 2.
+The “must include” (<code class="docutils literal notranslate"><span class="pre">+</span></code>) set (“and logic”) and the “must exclude”
+(<code class="docutils literal notranslate"><span class="pre">-</span></code>) set (“not logic”) are outside the calculation of maximum
+intersections possible, as both are special cases. In a search where you
+designate something like this:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">war</span> <span class="n">peace</span> <span class="o">-</span><span class="n">Reagan</span> <span class="o">+</span><span class="n">diplomacy</span>
+</pre></div>
+</div>
+<p>the maximum intersection quantity is only 1, referring to an
+intersection of the “<code class="docutils literal notranslate"><span class="pre">war</span></code>” and the “<code class="docutils literal notranslate"><span class="pre">peace</span></code>” sets. Therefore, if
+you wish to definitely find something related to “<code class="docutils literal notranslate"><span class="pre">diplomacy</span></code>”, but to
+exclude any references related to “<code class="docutils literal notranslate"><span class="pre">Reagan</span></code>”, and you want to
+intersect what is found with either war or peace, set intersections to
+0:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nd">@0</span> <span class="n">war</span> <span class="n">peace</span> <span class="o">-</span><span class="n">Reagan</span> <span class="o">+</span><span class="n">diplomacy</span>
+</pre></div>
+</div>
+<p>The 0 intersection setting applies to either the “<code class="docutils literal notranslate"><span class="pre">war</span></code>” set or the
+“<code class="docutils literal notranslate"><span class="pre">peace</span></code>” set (the unmarked equally weighted sets), as both
+“<code class="docutils literal notranslate"><span class="pre">Reagan</span></code>” and “<code class="docutils literal notranslate"><span class="pre">diplomacy</span></code>” are special cases and not included in
+the intersection quantity calculation.</p>
+</div>
+<div class="section" id="modulating-set-size">
+<h2>Modulating Set Size<a class="headerlink" href="#modulating-set-size" title="Permalink to this headline">¶</a></h2>
+<p>Metamorph can draw upon a vast built-in intelligence comprised of
+equivalence sets, as contained in a 2MB+ collection of 250,000+ word
+associations. The user has the option of how much of this “mind” he
+wants to draw upon at any given time, by regulating to what degree he
+wishes to make use of the built-in connective structure in this
+Equivalence File.</p>
+<p>When enabled via <code class="docutils literal notranslate"><span class="pre">keepeqvs</span></code>/<code class="docutils literal notranslate"><span class="pre">Synonyms</span></code> (for the entire query) or the
+<code class="docutils literal notranslate"><span class="pre">~</span></code> operator (for a particular query term), each query term is
+expanded by pulling from the Equivalence File the set of known
+associations listed with each entry. This lets you draw upon the full
+power of all the associations in all of its equivalence sets. Still, you
+have the option of quantitatively limiting or expanding this set
+expansion, or selectively editing their content.</p>
+<div class="section" id="limiting-sets-to-roots-only">
+<h3>Limiting Sets to Roots Only<a class="headerlink" href="#limiting-sets-to-roots-only" title="Permalink to this headline">¶</a></h3>
+<p>There may be times when you want to limit set size to root words only
+from your search query. This is the default in <code class="docutils literal notranslate"><span class="pre">tsql</span></code>, Vortex and the
+Search Appliance. If using the MM3 API, or if equivalences have been
+enabled with <code class="docutils literal notranslate"><span class="pre">keepeqvs</span></code> (Vortex/<code class="docutils literal notranslate"><span class="pre">tsql</span></code>) or <code class="docutils literal notranslate"><span class="pre">Synonyms</span></code> (Search
+Appliance), then equivalences can be excluded for a particular word –
+while still retaining morpheme processing – by preceding the word with a
+tilde (<code class="docutils literal notranslate"><span class="pre">~</span></code>). This should be done where you wish to look for
+intersections of concepts while holding abstraction to a minimum, and
+you do not want any automatic expansion of those words into word lists.
+If equivalences are not currently enabled via <code class="docutils literal notranslate"><span class="pre">keepeqvs</span></code>/<code class="docutils literal notranslate"><span class="pre">Synonyms</span></code>,
+then the <code class="docutils literal notranslate"><span class="pre">~</span></code> operator has the opposite effect: it <em>enables</em>
+equivalences for that term only. Thus, it always toggles the pre-set
+behavior for its word.</p>
+<p>Regardless of settings, you can also give explicit equivalences directly
+in the query, instead of the thesaurus-provided ones, using parentheses;
+see p. .</p>
+<p>Where you wish to use morpheme processing on root words only,
+restricting concept expansion completely, turn off Equivalence File
+access altogether by setting the global APICP flag “<code class="docutils literal notranslate"><span class="pre">keepeqvs</span></code>” off.
+Where “<code class="docutils literal notranslate"><span class="pre">keepeqvs</span></code>” is set to off, the tilde (<code class="docutils literal notranslate"><span class="pre">~</span></code>) is not required
+(indeed, it would re-enable concept expansion).</p>
+<p>Restricting set expansion is useful for proper nouns which you do not
+want expanded into abstract concepts (e.g., <code class="docutils literal notranslate"><span class="pre">President</span> <span class="pre">Bush</span></code>),
+technical or legal terminology, or simply any precise discrete search.
+Selectively cut off the set expansion by designating a tilde (<code class="docutils literal notranslate"><span class="pre">~</span></code>)
+preceding the word you are looking for.</p>
+<p>Using REX syntax by preceding the word with a forward slash (<code class="docutils literal notranslate"><span class="pre">/</span></code>), can
+further delimit the pattern you are looking for, though in a different
+manner. Note however, that using non-SPM/PPM pattern matchers such as
+REX may slow the query, as Metamorph indexes cannot be used for such
+terms.</p>
+<p>To check this out for yourself, in an application where Metamorph hit
+markup has been set up, compare the results of the following queries
+(assuming Vortex or <code class="docutils literal notranslate"><span class="pre">tsql</span></code> defaults):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Query</span> <span class="mi">1</span><span class="p">:</span>    <span class="n">President</span>  <span class="n">Bush</span>
+<span class="n">Query</span> <span class="mi">2</span><span class="p">:</span>   <span class="o">~</span><span class="n">President</span> <span class="o">~</span><span class="n">Bush</span>
+<span class="n">Query</span> <span class="mi">3</span><span class="p">:</span>   <span class="s2">&quot;President Bush&quot;</span>
+<span class="n">Query</span> <span class="mi">4</span><span class="p">:</span>   <span class="o">/</span><span class="n">President</span> <span class="o">/</span><span class="n">Bush</span>
+<span class="n">Query</span> <span class="mi">5</span><span class="p">:</span>   <span class="o">/</span>\<span class="n">RPresident</span> <span class="o">/</span>\<span class="n">RBush</span>
+</pre></div>
+</div>
+<dl>
+<dt>Query 1</dt><dd><p><code class="docutils literal notranslate"><span class="pre">President</span> <span class="pre">Bush</span></code>: In the first example you would get any hit
+containing an occurrence of the word “<code class="docutils literal notranslate"><span class="pre">President</span></code>” and the word
+“<code class="docutils literal notranslate"><span class="pre">Bush</span></code>”, including other related word forms (suffixes etc.). So
+you would get a hit like “<strong>*President</strong> <strong>Bush</strong> came to tea.*”; as
+well as “<strong>*Bush</strong> attended a conference of corporation
+<strong>presidents*</strong>.” There are no equivalences added to the
+“<code class="docutils literal notranslate"><span class="pre">President</span></code>” set, or the “<code class="docutils literal notranslate"><span class="pre">Bush</span></code>” set.</p>
+</dd>
+<dt>Query 2</dt><dd><p><code class="docutils literal notranslate"><span class="pre">~President</span> <span class="pre">~Bush</span></code>: In the second example you have elected to keep
+the full set size, so you would obtain references to “<code class="docutils literal notranslate"><span class="pre">President</span></code>”
+and “<code class="docutils literal notranslate"><span class="pre">Bush</span></code>” while also allowing for other abstractions. Since the
+word “<code class="docutils literal notranslate"><span class="pre">chief</span></code>” is associated with “<code class="docutils literal notranslate"><span class="pre">president</span></code>”, and the word
+“<code class="docutils literal notranslate"><span class="pre">jungle</span></code>” is associated with “<code class="docutils literal notranslate"><span class="pre">bush</span></code>”, you would retrieve a
+sentence such as, “<em>We met the **chief*</em> at his home deep in the
+Amazon <strong>jungle</strong>.*”</p>
+</dd>
+<dt>Query 3</dt><dd><p><code class="docutils literal notranslate"><span class="pre">&quot;President</span> <span class="pre">Bush&quot;</span></code>: The third example calls for “<code class="docutils literal notranslate"><span class="pre">President</span></code>”
+and “<code class="docutils literal notranslate"><span class="pre">Bush</span></code>” as a two word phrase by putting it in quotes, so that
+it will be treated as one set rather than as two. It has no
+equivalences, because the phrase “<code class="docutils literal notranslate"><span class="pre">President</span> <span class="pre">Bush</span></code>” has no
+equivalences known by the Equivalence File; you could add
+equivalences to that phrase if you wished by editing the User Equiv
+File. While you would retrieve the hit “<strong>*President Bush</strong> came to
+tea.*”, you would exclude the hit “<strong>*Bush</strong> attended a conference
+of corporation <strong>presidents</strong>.*” You would get a hit like “<em>We
+elected a new **president Bush*</em>.*”</p>
+</dd>
+<dt>Query 4</dt><dd><p><code class="docutils literal notranslate"><span class="pre">/President</span> <span class="pre">/Bush</span></code>: In the fourth example you have limited the
+root word set in a different way. Signalling REX with the forward
+slash ‘<code class="docutils literal notranslate"><span class="pre">/</span></code>’ means that you will use REX to accomplish a string
+search on whatever comes after the ‘<code class="docutils literal notranslate"><span class="pre">/</span></code>’. Therefore, you can find
+“<em>Our **president*</em>’s name is <strong>Bush</strong>.*” and “<em>We planted those
+**bush*</em>es near the <strong>President</strong>’s house.*” This search gets
+similar yet different results than Example 1. Look at exactly what
+is highlighted by the Metamorph hit markup to see the difference in
+what was located.</p>
+</dd>
+<dt>Query 5</dt><dd><p><code class="docutils literal notranslate"><span class="pre">/\RPresident</span> <span class="pre">/\RBush</span></code>: In the fifth example there is better
+reason to use REX syntax, so that you can limit the set even further
+by specifying proper nouns only. The designation ‘<code class="docutils literal notranslate"><span class="pre">\R</span></code>’ means to
+“respect case”, and would retrieve the sentence “<strong>*President</strong>
+<strong>Bush</strong> came to tea.*”, but would rule out the sentence “<strong>*Bush</strong>
+attended a conference of corporation <strong>president</strong>s.*” It would
+also rule out the hit “<em>We elected a new **president*</em> <strong>Bush</strong>.*”,
+and “<em>We planted those **bush*</em>es near the <strong>President</strong>’s
+house.*”</p>
+<p>NOTE: In the previous example, the “respect case” designation
+(<code class="docutils literal notranslate"><span class="pre">\R</span></code>) must follow a forward slash (<code class="docutils literal notranslate"><span class="pre">/</span></code>) which indicates that
+REX syntax follows. Remember that words in a query are not case
+sensitive unless you so designate, using REX. (See Chapter on REX
+syntax.)</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="expanding-sets-by-use-of-see-references">
+<h3>Expanding Sets by Use of See References<a class="headerlink" href="#expanding-sets-by-use-of-see-references" title="Permalink to this headline">¶</a></h3>
+<p>You can exponentially increase the denseness of connectivity in the
+equivalence file by turning on the option called “See References”. This
+greatly increases set size overall.</p>
+<p>The concept of a “See” reference is the same as in a dictionary. When
+you are looking up the word “<code class="docutils literal notranslate"><span class="pre">cat</span></code>”, you’ll get a description and a
+few definitions which try to outline exactly what the concept of “cat”
+is all about. Then it may say at the end, “<code class="docutils literal notranslate"><span class="pre">See</span> <span class="pre">also</span> <span class="pre">pet</span></code>”.</p>
+<p>With See References set to on, the equivalence list associated with the
+word “<code class="docutils literal notranslate"><span class="pre">cat</span></code>” would be automatically expanded to include all
+equivalences associated with the word “<code class="docutils literal notranslate"><span class="pre">pet</span></code>”. Not all equivalences
+have “<code class="docutils literal notranslate"><span class="pre">See</span> <span class="pre">also</span></code>” notations, but with See References on, all
+equivalences associated with any “<code class="docutils literal notranslate"><span class="pre">See</span> <span class="pre">also</span></code>” root word will be
+included as part of the original. With See References off, only the root
+word and its equivalences will be included in that word set.</p>
+<p>In the Equivalence File, See References are denoted with the at sign
+(<code class="docutils literal notranslate"><span class="pre">&#64;</span></code>). In this way, additional second level references can be added or
+deleted from a root word entry.</p>
+<p>For some of the more common words like “<code class="docutils literal notranslate"><span class="pre">take</span></code>” and “<code class="docutils literal notranslate"><span class="pre">life</span></code>” and
+such, allowing See References can make a set surprisingly huge, so you
+should think twice before operating in this mode. It is really intended
+to expand the range of opportunity to the user, so that there is more to
+pick and choose from when editing the content of the word lists.</p>
+<p>If you are using the default equivalence sets it is generally better to
+run with the “<code class="docutils literal notranslate"><span class="pre">See</span></code>” option “<code class="docutils literal notranslate"><span class="pre">off</span></code>”. You would not normally want to
+be doing searches where the word lists are too large; we suggest
+limiting the set size to well under 100 in any case, whether you are
+running with See References either on or off.</p>
+<p>In a theoretical sense, given no limitations, using endless levels of
+See References could eventually create a circle which covered the whole
+spectrum of life, and led right back to the word one had started with.
+Therefore Metamorph has intentionally built-in limitations on set size
+to prevent this connectivity of concept from becoming redundant or out
+of hand. Firstly, See References are restricted to only one level of
+reference. Secondly, if a word set approaches around 256, Metamorph will
+automatically truncate it in the search process, cutting off any words
+outside the numerical limit.</p>
+<p>To make use of the See References option, set the corresponding APICP
+flag “<code class="docutils literal notranslate"><span class="pre">see</span></code>”.</p>
+</div>
+</div>
+<div class="section" id="modulating-set-content">
+<h2>Modulating Set Content<a class="headerlink" href="#modulating-set-content" title="Permalink to this headline">¶</a></h2>
+<p>The ability to dictate precise content of all word sets passed to the
+Metamorph Search Engine is left open to the user on an optional basis.
+We have tried to build into the program enough intelligence through its
+Equivalence File so that you would never be required to pay any
+attention to the lists of equivalences if you didn’t want to.</p>
+<p>Even if Metamorph has no known associations with a word it will still
+process it with no difficulty, using its built-in morpheme processing
+capability. You’ll find that more often than not you are not required to
+teach Metamorph anything about your search vocabulary to get
+satisfactory results, even when using technical terminology.</p>
+<p>When you want to control exactly what associations are made with any or
+all the words or expressions in your searches, you can do so by editing
+the equivalence set associated with any word already known by the
+Equivalence File, or by creating associations for a new or created word
+not yet known. This is covered in detail under the Chapter on <em>Thesaurus
+Customization</em>.</p>
+</div>
+<div class="section" id="modulating-hit-size-by-adjusting-delimiters">
+<h2>Modulating Hit Size by Adjusting Delimiters<a class="headerlink" href="#modulating-hit-size-by-adjusting-delimiters" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="discussion">
+<h3>Discussion<a class="headerlink" href="#discussion" title="Permalink to this headline">¶</a></h3>
+<p>Delimiters can be defined as the beginning and ending patterns in the
+text which define the text unit inside of which your query items will be
+located. Concept proximity is adjusted through delimiters.</p>
+<p>If you look for the words “<code class="docutils literal notranslate"><span class="pre">bear</span></code>” and “<code class="docutils literal notranslate"><span class="pre">woods</span></code>” within a sentence,
+the result will be a tight match to your query. Looking for “<code class="docutils literal notranslate"><span class="pre">bear</span></code>”
+and “<code class="docutils literal notranslate"><span class="pre">woods</span></code>” inside a paragraph is less restrictive. Requiring only
+that “<code class="docutils literal notranslate"><span class="pre">bear</span></code>” and “<code class="docutils literal notranslate"><span class="pre">woods</span></code>” occur inside the same section might or
+might not have much to do with what you are looking for. Knowing that,
+you would probably add more qualifying search items when searching by
+section; e.g., “<code class="docutils literal notranslate"><span class="pre">bear</span></code>” “<code class="docutils literal notranslate"><span class="pre">woods</span></code>” “<code class="docutils literal notranslate"><span class="pre">winchester</span></code>” “<code class="docutils literal notranslate"><span class="pre">rifle</span></code>”. In
+short, the relevance of your search results will differ greatly based on
+the type of text unit by which you are searching.</p>
+<p>Beginning and ending delimiters are defined by repeating patterns in the
+text, technically known as regular expressions. A sentence can be
+identified by its ending punctuation (period, question mark, or
+exclamation point); a paragraph is often identified by a few new lines
+in a row; a page is often identified by the presence of a page
+formatting character.</p>
+<p>In a Metamorph search, the entered query concepts will be searched for
+within the bounds of two such expressions, called delimiters. These
+regular expressions are defined with REX syntax for Regular Expressions.
+If you know how to write a regular expression using REX you can enter
+delimiters of your own design. In lieu of that you can rely upon the
+defaults that have been provided.</p>
+<p>Since the most common types of search are by line, sentence, paragraph,
+page, or whole document, these expressions have been written into the
+Metamorph Query Language so that you can signal their use dynamically
+from within any query, using English. The expression “<code class="docutils literal notranslate"><span class="pre">w/delim</span></code>” means
+“within a …” where 4 characters following “<code class="docutils literal notranslate"><span class="pre">w/</span></code>” are an abbreviation
+for a commonly delimited unit of text. If you want to search by
+paragraph, you would add “<code class="docutils literal notranslate"><span class="pre">w/para</span></code>” as an item on the query line.</p>
+<p>For example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">power</span> <span class="n">struggle</span> <span class="n">w</span><span class="o">/</span><span class="n">para</span>
+</pre></div>
+</div>
+<p>Such a search will look within any paragraph for an occurrence of the
+concept “<code class="docutils literal notranslate"><span class="pre">power</span></code>” and the concept “<code class="docutils literal notranslate"><span class="pre">struggle</span></code>”.</p>
+<p>You can designate a quantitative proximity, using the same syntax, by
+stating how many characters you want before and after the located search
+items. For example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">power</span> <span class="n">struggle</span> <span class="n">w</span><span class="o">/</span><span class="mi">150</span>
+</pre></div>
+</div>
+<p>Such a search will look within a 300 character range (150 before, 150
+after the first item located) for an occurrence of the concept <code class="docutils literal notranslate"><span class="pre">power</span></code>
+and the concept <code class="docutils literal notranslate"><span class="pre">struggle</span></code>. This is useful for text which doesn’t
+follow any particular text pattern, such as source code.</p>
+<p>You can also write your own expressions, useful for section heads and/or
+tails. To enter delimiters of your own design, create a REX expression
+first which works, and enter it following the “<code class="docutils literal notranslate"><span class="pre">w/</span></code>”. For example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">power</span> <span class="n">struggle</span> <span class="n">w</span><span class="o">/</span>\<span class="n">n</span>\<span class="n">RSECTION</span>
+</pre></div>
+</div>
+<p>This search uses the pattern “<code class="docutils literal notranslate"><span class="pre">SECTION</span></code>” where it begins on a new line
+and is in Caps only, as both beginning and ending delimiters. Thus an
+occurrence of the set “<code class="docutils literal notranslate"><span class="pre">power</span></code>” and the set “<code class="docutils literal notranslate"><span class="pre">struggle</span></code>” need only
+occur within the same section as so demarcated, which might be several
+pages long.</p>
+<p>You can figure out such useful section delimiter expressions when
+setting up an application, and use the corresponding APICP flag
+<code class="docutils literal notranslate"><span class="pre">sdexp</span></code> (start delimiter expression) and <code class="docutils literal notranslate"><span class="pre">edexp</span></code> (end delimiter
+expression) in a Vortex script to make use of them.</p>
+<p>The following examples of queries would dictate the proximity of the
+search items “<code class="docutils literal notranslate"><span class="pre">power</span></code>” and “<code class="docutils literal notranslate"><span class="pre">struggle</span></code>”, by specifying the desired
+delimiters. Noting the highlighted search items, you might try these
+searches on the demo text files to see the difference in what is
+retrieved.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>power struggle w/line   within a line (1 new line)
+power struggle w/sent   within a sentence (ending punctuation)
+power struggle w/para   within a paragraph (a new line + some space)
+power struggle w/page   within a page (where format character exists)
+power struggle w/all    within whole document (all of the record)
+
+power struggle w/500    within a window of 500 characters forward
+                        and backwards
+
+power struggle w/$$$    within user designed expression for a section;
+                        where what follows the slash `/&#39; is assumed to
+                        be a REX expression.  (In this case, the
+                        expression means 3 new lines in a row.)
+</pre></div>
+</div>
+<p>More often than not the beginning and ending delimiters are the same.
+Therefore if you do not specify an ending delimiter (as in the above
+example), it will be assumed that the one specified is to be used for
+both. If two expressions are specified, the first will be beginning, the
+second will be ending. Specifying both would be required most frequently
+where special types of messages or sections are used which follow a
+prescribed format.</p>
+<p>Another factor to consider is whether you want the expression defining
+the text unit to be included inside that text unit or not. For example,
+the ending delimiter for a sentence (ending punctuation from the located
+sentence) obviously belongs with the hit. However, the beginning
+delimiter (ending punctuation from the previous sentence) is really the
+end of the last sentence, and therefore should be excluded.</p>
+<p>Inclusion or exclusion of beginning and ending delimiters with the hit
+has been thought out for the defaults provided. However, if you are
+designing your own beginning and ending expressions, you may wish to so
+specify.</p>
+</div>
+<div class="section" id="delimiter-syntax-summary">
+<h3>Delimiter Syntax Summary<a class="headerlink" href="#delimiter-syntax-summary" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>   <span class="n">w</span><span class="o">/</span><span class="p">{</span><span class="n">abbreviation</span><span class="p">}</span>
+<span class="ow">or</span>
+   <span class="n">w</span><span class="o">/</span><span class="p">{</span><span class="n">number</span><span class="p">}</span>
+<span class="ow">or</span>
+   <span class="n">w</span><span class="o">/</span><span class="p">{</span><span class="n">expression</span><span class="p">}</span>
+<span class="ow">or</span>
+   <span class="n">W</span><span class="o">/</span><span class="p">{</span><span class="n">expression</span><span class="p">}</span>
+<span class="ow">or</span>
+   <span class="n">w</span><span class="o">/</span><span class="p">{</span><span class="n">expression</span><span class="p">}</span> <span class="n">W</span><span class="o">/</span><span class="p">{</span><span class="n">expression</span><span class="p">}</span>
+<span class="ow">or</span>
+   <span class="n">W</span><span class="o">/</span><span class="p">{</span><span class="n">expression</span><span class="p">}</span> <span class="n">w</span><span class="o">/</span><span class="p">{</span><span class="n">expression</span><span class="p">}</span>
+<span class="ow">or</span>
+   <span class="n">w</span><span class="o">/</span><span class="p">{</span><span class="n">expression</span><span class="p">}</span> <span class="n">w</span><span class="o">/</span><span class="p">{</span><span class="n">expression</span><span class="p">}</span>
+<span class="ow">or</span>
+   <span class="n">W</span><span class="o">/</span><span class="p">{</span><span class="n">expression</span><span class="p">}</span> <span class="n">W</span><span class="o">/</span><span class="p">{</span><span class="n">expression</span><span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="rules-of-delimiter-syntax">
+<h3>Rules of Delimiter Syntax<a class="headerlink" href="#rules-of-delimiter-syntax" title="Permalink to this headline">¶</a></h3>
+<ul>
+<li><p>The above can be anywhere on a query line, and is interpreted as
+“within {the following delimiters}”.</p></li>
+<li><p>Accepted built-in abbreviations following the slash ‘<code class="docutils literal notranslate"><span class="pre">/</span></code>’ are:</p>
+<div class="line-block">
+<div class="line"><code class="docutils literal notranslate"><span class="pre">[^\digit\upper][.?!][\space'&quot;]</span></code>xxx = Meaning ABBREV MEANING</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">line</span></code> within a line</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">sent</span></code> within a sentence</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">para</span></code> within a paragraph</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">page</span></code> within a page</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">all</span></code> within a whole record</div>
+</div>
+<div class="line-block">
+<div class="line"><code class="docutils literal notranslate"><span class="pre">[^\digit\upper][.?!][\space'&quot;]</span></code>xxx = Meaning REX EXPRESSION
+MEANING</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">$</span></code> 1 new line</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">[^\digit\upper][.?!][\space'&quot;]</span></code> not a digit or upper case
+letter, then</div>
+<div class="line">a period, question, or exclamation point, then</div>
+<div class="line">any space character, single or double quote</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">\x0a=\space+</span></code> a new line + some space</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">\x0c</span></code> form feed for printer output</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">&quot;&quot;</span></code> both start and end delims are empty</div>
+</div>
+</li>
+<li><p>A number following a slash ‘<code class="docutils literal notranslate"><span class="pre">/</span></code>’ means the number of characters
+before and after the first search item found. Therefore “<code class="docutils literal notranslate"><span class="pre">w/250</span></code>”
+means “within a proximity of 250 characters”. When the first
+occurrence of a valid search item is found, a window of 250
+characters in either direction will be used to determine if it is a
+valid hit. The implied REX expression is: “<code class="docutils literal notranslate"><span class="pre">.{250}</span></code>” meaning “250
+of any character”.</p></li>
+<li><p>If what follows the slash ‘<code class="docutils literal notranslate"><span class="pre">/</span></code>’ is not recognized as a built-in, it
+is assumed that what follows is a REX expression.</p></li>
+<li><p>If one expression only is present, it will be used for both beginning
+and ending delimiter. If two expressions are present, the first is
+the beginning delimiter, the second the ending delimiter. The
+exception is within-<span class="math notranslate nohighlight">\(N\)</span> (e.g. “<code class="docutils literal notranslate"><span class="pre">w/250</span></code>”), which always
+specifies both start and end delimiters, overriding any preceding
+“<code class="docutils literal notranslate"><span class="pre">w/</span></code>”.</p></li>
+<li><p>The use of a small ‘<code class="docutils literal notranslate"><span class="pre">w</span></code>’ means to exclude the delimiters from the
+hit.</p></li>
+<li><p>The use of a capital ‘<code class="docutils literal notranslate"><span class="pre">W</span></code>’ means to include the delimiters in the
+hit.</p></li>
+<li><p>Designate small ‘<code class="docutils literal notranslate"><span class="pre">w</span></code>’ and capital ‘<code class="docutils literal notranslate"><span class="pre">W</span></code>’ to exclude beginning
+delimiter, and include ending delimiter, or vice versa Note that for
+within-<span class="math notranslate nohighlight">\(N\)</span> queries (e.g. “<code class="docutils literal notranslate"><span class="pre">w/250</span></code>”), the “delimiter” is
+effectively always included in the hit, regardless of the case of the
+<code class="docutils literal notranslate"><span class="pre">w</span></code>.</p></li>
+<li><p>If the same expression is to be used, the expression need not be
+repeated. Example: “<code class="docutils literal notranslate"><span class="pre">w/[.?!]</span> <span class="pre">W/</span></code>” means to use an ending
+punctuation character as both beginning and end delimiter, but to
+exclude the beginning delimiter from the hit, and include the end
+delimiter in the hit.</p></li>
+</ul>
+</div>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="mm3.html" class="btn btn-neutral float-right" title="Thesaurus Customization" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="tsql.html" class="btn btn-neutral" title="Tsql Command Line Utility" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

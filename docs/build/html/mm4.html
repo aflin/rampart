@@ -1,0 +1,638 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Tailoring Metamorph’s Linguistics &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
+        <link rel="up" title="The rampart-sql module" href="sqltoc.html"/>
+        <link rel="next" title="Types of Searches in Metamorph" href="mm5.html"/>
+        <link rel="prev" title="Thesaurus Customization" href="mm3.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart Javascript</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html">Preface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#loading-the-javascript-module">Loading the Javascript Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#database-functions">Database Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#string-functions">String Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html">Introduction to Texis SQL</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#creating-a-database">Creating a Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#table-definition">Table Definition</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#a-first-look-at-queries">A First Look at Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql2.html">Queries Involving Calculated Values</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql2.html#advanced-queries">Advanced Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql3.html">Intelligent Text Search Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html">Server functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html">Indexing for Increased Performance</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html#keeping-the-database-current">Keeping the Database Current</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html#security">Security</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html#administration-of-the-database">Administration of the Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-set.html">Server Properties</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tsql.html">Tsql Command Line Utility</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm2.html">Metamorph: The Program Inside the Program</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm2.html#hits-intersections-and-sets">Hits, Intersections and Sets</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm3.html">Thesaurus Customization</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Tailoring Metamorph’s Linguistics</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#editing-special-word-lists">Editing Special Word Lists</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#question-parsing">Question Parsing</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#morpheme-processing">Morpheme Processing</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#morpheme-stripping-routine">Morpheme Stripping Routine</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#suffix-list-editing-notes">Suffix List Editing Notes</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#toggling-prefix-suffix-processing-on-off">Toggling Prefix/Suffix Processing On/Off</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#toggling-morpheme-rebuild-step-on-off">Toggling Morpheme Rebuild Step On/Off</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#setting-minimum-word-length">Setting Minimum Word Length</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#warning-to-linguistic-fiddlers">Warning to Linguistic Fiddlers</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#apicp-metamorph-control-parameters-summary">APICP Metamorph Control Parameters Summary</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="mm5.html">Types of Searches in Metamorph</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm6.html">REX On Its Own</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="sqltoc.html">The rampart-sql module</a> &raquo;</li>
+        
+      <li>Tailoring Metamorph’s Linguistics</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/mm4.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="tailoring-metamorphs-linguistics">
+<h1>Tailoring Metamorph’s Linguistics<a class="headerlink" href="#tailoring-metamorphs-linguistics" title="Permalink to this headline">¶</a></h1>
+<p>[chp:mmling]</p>
+<div class="section" id="editing-special-word-lists">
+<h2>Editing Special Word Lists<a class="headerlink" href="#editing-special-word-lists" title="Permalink to this headline">¶</a></h2>
+<p>There are special word lists which are called upon at various points in
+the Metamorph search routine and influence the way your search requests
+are processed, as well as which hits are deemed valid and presented for
+viewing. These lists can be tailored to user specification if desired.</p>
+<p>While it is encouraged that you edit equivalences as often as you wish
+to reflect what you have in mind to search for, it should be clearly
+understood that editing equivalences that go with search words is a very
+different activity from editing the special word lists which govern
+Metamorph’s approach to linguistically processing the English language.</p>
+<p>The default content of the special lists is the result of much research
+on the part of the program developers, and reflects what has been locked
+inside Metamorph for a long time for effective use in most situations.
+Still, these lists are open to editing to conform to program purpose:
+that just about everything that is related to how Metamorph processes
+language is subject to modification.</p>
+<p>The special word lists are what the program classifies as: Noise (which
+also includes Pronouns, Is-associations, and Question words), Prefixes,
+Suffixes, and Equiv-Suffixes.</p>
+<p>For example, here is the default Pronoun list:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">anybody</span>             <span class="n">ourselves</span>         <span class="n">you</span>
+<span class="n">anyone</span>              <span class="n">she</span>               <span class="n">your</span>
+<span class="n">anything</span>            <span class="n">somebody</span>
+<span class="n">each</span>                <span class="n">someone</span>
+<span class="n">everyone</span>            <span class="n">something</span>
+<span class="n">everything</span>          <span class="n">their</span>
+<span class="n">he</span>                  <span class="n">them</span>
+<span class="n">her</span>                 <span class="n">they</span>
+<span class="n">him</span>                 <span class="n">this</span>
+<span class="n">his</span>                 <span class="n">us</span>
+<span class="n">i</span>                   <span class="n">we</span>
+<span class="n">me</span>                  <span class="n">whatever</span>
+<span class="n">mine</span>                <span class="n">who</span>
+<span class="n">my</span>                  <span class="n">whoever</span>
+<span class="n">myself</span>              <span class="n">whom</span>
+<span class="n">our</span>                 <span class="n">whose</span>
+</pre></div>
+</div>
+<p>The content of this list is stored in ASCII format in a Metamorph
+profile, and can be edited there, if you have an application set up
+which can read a special profile. Otherwise trust the internal defaults
+of the program, and override them with an inline APICP directive if you
+need to change them, as shown under <em>Question Parsing</em>.</p>
+</div>
+<div class="section" id="question-parsing">
+<h2>Question Parsing<a class="headerlink" href="#question-parsing" title="Permalink to this headline">¶</a></h2>
+<p>A Metamorph query will by default be parsed for noise before the main
+words are sent out to the executed search. The intent is that a user can
+phrase his search request in a manner which reflects how he is thinking
+about it, without requiring him to categorize his thoughts into a
+syntactical procedure.</p>
+<p>You do have the option to keep the noise words as significant words in
+the query. This choice can be invoked by setting the APICP flag
+<code class="docutils literal notranslate"><span class="pre">keepnoise</span></code> to <code class="docutils literal notranslate"><span class="pre">on</span></code>. If off, as is the Metamorph default used by
+Texis, the question parser is invoked and allowed to exercise discretion
+in determining what is most important about your query. This selection
+process determines what should be treated as a search word, and
+therefore included in the set count and intersection quantity assigned
+to each significant search item.</p>
+<p>A need to edit these lists would be most likely to come up if one were
+searching language from a different era or with a vastly different
+language style; perhaps for example the Bible. Where “<code class="docutils literal notranslate"><span class="pre">thee's</span></code>” and
+“<code class="docutils literal notranslate"><span class="pre">thou's</span></code>” replace “<code class="docutils literal notranslate"><span class="pre">you</span></code>” and “<code class="docutils literal notranslate"><span class="pre">yours</span></code>”, certain things should be
+filtered out from the query that might not be entered in the list. These
+categories can be defined as follows, where all of these categories are
+grouped for APICP programming purposes under “noise”.</p>
+<dl class="simple">
+<dt>Noise</dt><dd><p>Small, common, relational words which appear frequently in a
+particular language and refine and fine tune specific
+communications, but do not majorly affect the larger concepts under
+discussion; e.g., about, in, on, whether.</p>
+</dd>
+<dt>Pronouns</dt><dd><p>Words indicating person, number, and gender which are used in place
+of other nouns; e.g., her, his, we, them, its.</p>
+</dd>
+<dt>Is</dt><dd><p>Words indicating state of being or existence, or used as auxiliary
+verbs as assistive in defining tense and use; e.g., is, being, was.</p>
+</dd>
+<dt>Questions</dt><dd><p>Words indicating a question is being asked and requires an answer or
+response; e.g., what, where, when.</p>
+</dd>
+</dl>
+<p>Syntax for setting a custom list inside a Vortex script is as follows,
+where what you write in would override the default internal noise list:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>&lt;$noiselist = &quot;am&quot; &quot;are&quot; &quot;was&quot; &quot;were&quot; &quot;thee&quot; &quot;thou&quot; &quot;has&quot; &quot;hast&quot;
+   &quot;from&quot; &quot;hence&quot;&gt;
+&lt;apicp noise $noiselist&gt;
+</pre></div>
+</div>
+</div>
+<div class="section" id="morpheme-processing">
+<h2>Morpheme Processing<a class="headerlink" href="#morpheme-processing" title="Permalink to this headline">¶</a></h2>
+<p>Metamorph’s whole search process is built around its ability to deal
+with root morphemes in words, and in fact the program was originally
+christened “Metamorph” based on that ability. An inherent part of the
+search process is to take search words, strip them of suffixes and
+prefixes down to a recognizable morpheme, search for the morpheme, find
+a possible match, then go through the process again with the possible
+match to see if it is indeed what you were looking for.</p>
+<p>The elements which affect morpheme processing are very subtle as they
+affect all language and therefore all of any text you are searching.
+Therefore, any changes entered into the defaults which dictate how or
+whether morpheme processing is done, will affect broadly the nature of
+your search results.</p>
+<p>The options which affect morpheme processing are the following:</p>
+<ul class="simple">
+<li><p>Content of the Equiv-Suffixes List;</p></li>
+<li><p>Content of the Prefix List;</p></li>
+<li><p>Content of the Suffix List;</p></li>
+<li><p>Prefix processing on/off toggle;</p></li>
+<li><p>Suffix processing on/off toggle;</p></li>
+<li><p>Morpheme rebuild on/off toggle;</p></li>
+<li><p>Minimum word length setting.</p></li>
+</ul>
+<p>The content of the <code class="docutils literal notranslate"><span class="pre">Equiv-Suffix</span></code> List determines which suffixes will
+be stripped before doing lookup for a matching entry in the Equivalence
+File.</p>
+<p>The content of the <code class="docutils literal notranslate"><span class="pre">Prefix</span></code> and <code class="docutils literal notranslate"><span class="pre">Suffix</span></code> Lists determines precisely
+what will be stripped from a search word to obtain the morpheme which is
+passed to the Search Engine. Specifically this relates to all words in
+all equivalence sets.</p>
+<p>To understand why the program is doing what it is doing you need to know
+more than just what is contained in the lists; you must also understand
+the sequence of the Morpheme Stripping process. If you understand these
+rules, you will have better judgment on how to edit the prefix and
+suffix lists, what happens when you turn off prefix and/or suffix
+processing altogether, what happens if you turn off the morpheme rebuild
+step, and where the minimum word length setting comes in.</p>
+<div class="section" id="morpheme-stripping-routine">
+<h3>Morpheme Stripping Routine<a class="headerlink" href="#morpheme-stripping-routine" title="Permalink to this headline">¶</a></h3>
+<p>This routine is done by the Engine as a preliminary step before actually
+executing any search, using the content of the Prefix and Suffix Lists.
+This routine is used to get words from the Equivalence File, and only
+does the suffix stripping part, using the content of the Equiv-Suffix
+List.</p>
+<ol class="arabic simple">
+<li><p>When it is time to execute a search, the suffix and prefix lists are
+each sorted by descending size and ascending alphabetical order. The
+reason for and importance of descending order is so that suffixes and
+prefixes can be stripped largest to smallest. There is no particular
+reason for alphabetical order except to provide a predictable
+ordering sequence.</p></li>
+<li><p>Get the word to be checked from entered query; e.g.,
+“<code class="docutils literal notranslate"><span class="pre">antidisestablishmentarianism</span></code>”.</p></li>
+<li><p>Check the word’s length to see if it is greater than or equal to the
+length set in minimum word length. The default in Texis is 255. A
+setting of 5 normally produces the best results with the default
+suffix list. If so, carry on. If not, there is no need to morpheme
+strip the word; it would just get searched for as is; e.g.,
+“<code class="docutils literal notranslate"><span class="pre">red</span></code>”.</p></li>
+<li><p>Check the word found against the list of suffixes to see if there is
+a match, starting from largest suffix on the list.</p></li>
+<li><p>If a match is found strip it from the word. Note: This is why
+ordering by size is so important: because you want to remove suffixes
+(or prefixes) by the largest first, so as not to miss multiple
+suffixes, where one suffix may be a subset of another.</p></li>
+<li><p>Continue checking against the list for the next match. Follow steps
+4-5 until no more matches found. In the case of our example above,
+based on the default suffix list, we would be left with the following
+morpheme before prefix processing: “<code class="docutils literal notranslate"><span class="pre">antidisestablishmentarian</span></code>”.
+Note the following things:</p>
+<ul class="simple">
+<li><p>The suffix “<code class="docutils literal notranslate"><span class="pre">ism</span></code>” was on the list and was stripped.</p></li>
+<li><p>Neither “<code class="docutils literal notranslate"><span class="pre">an</span></code>”, “<code class="docutils literal notranslate"><span class="pre">ian</span></code>”, nor “<code class="docutils literal notranslate"><span class="pre">arian</span></code>” was on the suffix
+list, so it was not stripped.</p></li>
+<li><p>The suffix “<code class="docutils literal notranslate"><span class="pre">ment</span></code>” is on the suffix list, but it was not left
+at the end of the word at any point, and therefore was not
+removed.</p></li>
+<li><p>If “<code class="docutils literal notranslate"><span class="pre">arian</span></code>” and “<code class="docutils literal notranslate"><span class="pre">ian</span></code>” were both entered on the suffix list,
+“<code class="docutils literal notranslate"><span class="pre">arian</span></code>” would be removed first, so as not to remove “<code class="docutils literal notranslate"><span class="pre">ian</span></code>”
+and be left with “<code class="docutils literal notranslate"><span class="pre">ar</span></code>” at the end of the word which would not
+be strippable.</p></li>
+</ul>
+</li>
+<li><p>If suffix checking (only), remove any trailing vowels, or 1 of any
+double trailing consonants. This handles things like “<code class="docutils literal notranslate"><span class="pre">strive</span></code>”,
+which would be correctly stripped down to “<code class="docutils literal notranslate"><span class="pre">striv</span></code>” so that it
+won’t miss matches for “<code class="docutils literal notranslate"><span class="pre">striving</span></code>”, etc. (trailing vowel). And
+things like “<code class="docutils literal notranslate"><span class="pre">travelling</span></code>” would be stripped to “<code class="docutils literal notranslate"><span class="pre">travell</span></code>”; you
+have to strip the second ‘<code class="docutils literal notranslate"><span class="pre">l</span></code>’ so that you wouldn’t miss the word
+“<code class="docutils literal notranslate"><span class="pre">travel</span></code>” (trailing double consonant). Note: this is only done for
+suffix checking, not prefix checking.</p></li>
+<li><p>Now repeat Steps 4-6 for prefix stripping against the prefix list. In
+our example, “<code class="docutils literal notranslate"><span class="pre">antidisestablishmentarian</span></code>” would get stripped down
+to “<code class="docutils literal notranslate"><span class="pre">establishmentarian</span></code>”. This is what you have left and is what
+goes to the pattern matcher.</p></li>
+<li><p>When something is found, the pattern matcher builds it back up again
+to make sure it is truly a match to what you were looking for. This
+prevents things like taking “<code class="docutils literal notranslate"><span class="pre">pressure</span></code>” when you were really
+looking for “<code class="docutils literal notranslate"><span class="pre">president</span></code>”, “<code class="docutils literal notranslate"><span class="pre">restive</span></code>” when you were really
+looking for “<code class="docutils literal notranslate"><span class="pre">restaurant</span></code>”, and other such oddities.</p></li>
+</ol>
+</div>
+<div class="section" id="suffix-list-editing-notes">
+<h3>Suffix List Editing Notes<a class="headerlink" href="#suffix-list-editing-notes" title="Permalink to this headline">¶</a></h3>
+<p>It should be noted that the Suffix List used for Equivalence Lookup is
+different than the Suffix List used for matching words in the text. One
+should make changes in the Suffix List with great care, as it is so
+basic to what can be found in the text.</p>
+<p>While caution should also be applied to editing the Equiv-Suffix List,
+doing so has a different effect upon the search results. The default
+Equiv-Suffix List is quite short by comparison, containing only 3
+suffixes. This is because different forms of words tend to have
+different sets of concepts, as contained in the Equivalence File.</p>
+<p>If you feel the suffix list is not broad enough, you might wish to
+carefully expand it. An example of a valid suffix to add might be
+“<code class="docutils literal notranslate"><span class="pre">al</span></code>”. Doing so would mean that typing in a query using the word
+“<code class="docutils literal notranslate"><span class="pre">environmental</span></code>” would pull up the equivalences listed for
+“<code class="docutils literal notranslate"><span class="pre">environment</span></code>”.</p>
+<p>If an exact entry for your word exists, only its equivalences will be
+retrieved from the Equivalence File. You want “<code class="docutils literal notranslate"><span class="pre">monumental</span></code>” to match
+“<code class="docutils literal notranslate"><span class="pre">colossal</span></code>”, but you would probably be unhappy if it matched
+“<code class="docutils literal notranslate"><span class="pre">tombstone</span></code>” from the set associated with “<code class="docutils literal notranslate"><span class="pre">monument</span></code>”. If no such
+exact entry existed, you would have to be prepared for “<code class="docutils literal notranslate"><span class="pre">monumental</span></code>”
+to dutifully retrieve the word “<code class="docutils literal notranslate"><span class="pre">obelisk</span></code>” if it were linked to
+“<code class="docutils literal notranslate"><span class="pre">monument</span></code>”.</p>
+<p>Keeping all these English nuances in mind, you do in fact have complete
+control over exactly what you can make the program retrieve.</p>
+</div>
+<div class="section" id="toggling-prefix-suffix-processing-on-off">
+<h3>Toggling Prefix/Suffix Processing On/Off<a class="headerlink" href="#toggling-prefix-suffix-processing-on-off" title="Permalink to this headline">¶</a></h3>
+<p>[set:presuf]</p>
+<p>You can toggle prefix and suffix processing individually on and off. If
+you don’t like the way a particular word is being suffix or prefix
+processed, the easiest thing to do is simply turn off suffix or prefix
+processing temporarily and search for the word exactly as you want it.
+This is done by setting the corresponding APICP flag for <code class="docutils literal notranslate"><span class="pre">suffixproc</span></code>
+or <code class="docutils literal notranslate"><span class="pre">prefixproc</span></code>.</p>
+<p>When one or both (suffix or prefix) morpheme processes are off, none of
+that respective routine (or routines) will be done at all. If both are
+off, you get a search for exactly the word you were looking for with no
+removal at all, and no check once found; in other words, the word you
+enter is passed directly from the search line to the <code class="docutils literal notranslate"><span class="pre">PPM</span></code> (Parallel
+Pattern Matcher) search algorithm.</p>
+<p>Note that prefix processing is not supported by the Metamorph index, and
+thus enabling it will require a linear search (slower). This is why
+prefix processing is off by default in Vortex, <code class="docutils literal notranslate"><span class="pre">tsql</span></code> and the Search
+Appliance.</p>
+</div>
+<div class="section" id="toggling-morpheme-rebuild-step-on-off">
+<h3>Toggling Morpheme Rebuild Step On/Off<a class="headerlink" href="#toggling-morpheme-rebuild-step-on-off" title="Permalink to this headline">¶</a></h3>
+<p>You can also turn off the Morpheme Rebuild step if you want to, by
+setting it with the corresponding APICP flag <code class="docutils literal notranslate"><span class="pre">rebuild</span></code>. The Rebuild
+step, referenced in Step 9 above, is intended as a check to rebuild
+morphemes back up into words once found, to verify hits. If not
+otherwise set, the default is “<code class="docutils literal notranslate"><span class="pre">on</span></code>”; i.e., that this step is done.</p>
+<p>It may happen however, that you either miss a hit you feel you should
+have gotten, or are getting a hit that does not make sense to you. If
+so, you can try turning off the rebuild step, do your search, go into
+context and see exactly what was retrieved (as it will be highlighted)
+and why. This will at least serve to explain to you exactly what is
+going on in the search process.</p>
+<p>Remember that the English language is based on more irregularities than
+regularities. Metamorph is designed to process the English language as
+best as it can, in a regular fashion. We leave it to specific
+applications to adjust these language toggles to one’s own satisfaction,
+and expect that everything will not be set in exactly the same way every
+time.</p>
+</div>
+<div class="section" id="setting-minimum-word-length">
+<h3>Setting Minimum Word Length<a class="headerlink" href="#setting-minimum-word-length" title="Permalink to this headline">¶</a></h3>
+<p>[set:minwrdlen]</p>
+<p>Minimum word length is the approximate number of significant characters
+the program will deal with at a morpheme level. You increase it to
+obtain more exactness to the search pattern entered, and decrease it for
+less exactness to that pattern. The smaller the minimum word length, the
+slower the search will be, although the difference may be imperceptible.</p>
+<p>Vortex scripts, <code class="docutils literal notranslate"><span class="pre">tsql</span></code> and the Search Appliance use a default minimum
+word length of 255, which essentially turns off morpheme stripping and
+allows for exact searching in locating documents. To use morpheme
+processing on a content oriented, English-smart application, set the
+APICP flag for <code class="docutils literal notranslate"><span class="pre">minwordlen</span></code> to 5. From years of experience we have
+established this as the best place to start, and really do not advise
+changing this setting arbitrarily.</p>
+<p>As applies to the Morpheme Stripping Routine, note the following: in
+general (about 90% of the time) these rules are followed exactly, and
+the word would never be stripped smaller than the set length. But in
+certain cases to take into account certain overlapping rules and/or
+idiosyncrasies as it sees fit, it will sometimes strip down further than
+minimum word length; but never more than 1 character.</p>
+</div>
+</div>
+<div class="section" id="warning-to-linguistic-fiddlers">
+<h2>Warning to Linguistic Fiddlers<a class="headerlink" href="#warning-to-linguistic-fiddlers" title="Permalink to this headline">¶</a></h2>
+<p>The program defaults and guidelines as described herein pass on to the
+user years of experience in what works best in terms of all these
+linguistic elements to accomplish in the main generally satisfactory
+search results. If you are not getting good results for some reason, or
+have allowed various situation specific choices at some points of your
+program, restore the defaults before continuing. This can be done by
+setting the APICP flag <code class="docutils literal notranslate"><span class="pre">defaults</span></code>, which restores the Vortex defaults
+to the next search.</p>
+</div>
+<div class="section" id="apicp-metamorph-control-parameters-summary">
+<h2>APICP Metamorph Control Parameters Summary<a class="headerlink" href="#apicp-metamorph-control-parameters-summary" title="Permalink to this headline">¶</a></h2>
+<p>You can modify these APICP settings by adjusting these flags to modify
+the Metamorph control parameters below. These are covered elsewhere in
+relation to their use in Texis, Vortex, or the Metamorph API; see the
+appropriate manual. The settings are:</p>
+<ul class="simple">
+<li><p>: Whether to do suffix processing or not.</p></li>
+<li><p>: Whether to do suffix processing or not.</p></li>
+<li><p>: Whether to do word rebuilding.</p></li>
+<li><p>: Include start <code class="docutils literal notranslate"><span class="pre">w/</span></code> delimiters in hits (always on for <code class="docutils literal notranslate"><span class="pre">w/N</span></code>).</p></li>
+<li><p>: Include end <code class="docutils literal notranslate"><span class="pre">w/</span></code> delimiters in hits (always on for <code class="docutils literal notranslate"><span class="pre">w/N</span></code>).</p></li>
+<li><p>: Whether to respect the within (<code class="docutils literal notranslate"><span class="pre">w/</span></code>) operator.</p></li>
+<li><p>: Minimum word length for morpheme processing.</p></li>
+<li><p>: Default number of intersections (if no <code class="docutils literal notranslate"><span class="pre">&#64;</span></code>).</p></li>
+<li><p>: Whether to look up “see also” references.</p></li>
+<li><p>: Whether to keep equivalences for words/phrases.</p></li>
+<li><p>: Whether to keep noise words in the query.</p></li>
+<li><p>: Default start delimiter REX expression.</p></li>
+<li><p>: Default end delimiter REX expression.</p></li>
+<li><p>: Main equivalence file name.</p></li>
+<li><p>: User equivalence file name.</p></li>
+<li><p>: Suffix list for suffix processing during search.</p></li>
+<li><p>: Suffix list for suffix processing during equivalence lookup.</p></li>
+<li><p>: Prefix list for prefix processing during search.</p></li>
+<li><p>: Noise word list.</p></li>
+<li><p>: Restore defaults for all APICP settings.</p></li>
+</ul>
+<p>Note that the default values for these (and other) settings may vary
+between Vortex, the Search Appliance, <code class="docutils literal notranslate"><span class="pre">tsql</span></code> and the Metamorph API.
+See the section on “Differences Between Vortex, tsql and Metamorph API”
+in the Vortex manual for a list of differences.</p>
+<p>The easiest way to make use of these settings is in a Vortex script,
+e.g.:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">&lt;</span><span class="n">apicp</span> <span class="n">suffixproc</span> <span class="mi">1</span><span class="o">&gt;</span>
+</pre></div>
+</div>
+<p>In <code class="docutils literal notranslate"><span class="pre">tsql</span></code>, they can be altered with a SQL <code class="docutils literal notranslate"><span class="pre">set</span></code> statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">tsql</span> <span class="s2">&quot;set suffixproc=1; select ...&quot;</span>
+</pre></div>
+</div>
+<p>The various C APIs have their own calls, e.g. <code class="docutils literal notranslate"><span class="pre">n_setsuffixproc()</span></code>.</p>
+<p>Some of the settings can also be changed inline with the query, for
+example: horse &#64;minwordlen=3 cat. Such inline settings will apply to all
+terms after the setting.</p>
+<p>You can also create thesaurus entries that apply specific settings, for
+example the thesaurus entry:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">battery</span><span class="o">=</span><span class="p">{</span><span class="nd">@suffixproc</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="n">battery</span><span class="p">,</span><span class="n">batteries</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>could be used to give exact word forms for just a specific word in a
+query. I.e. only the words battery and batteries will match for battery:
+no suffix processing for other suffixes will be done for that term,
+though such processing may be done for other terms. The { and } curly
+braces are required to enable inline settings in an equiv list. Also,
+the settings should be given first in the list, so that they apply to
+all the words in the list.</p>
+<p>To use inline settings in a query-specified equiv list, you will need to
+escape the = which is special, e.g.:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="s2">&quot;cell phone&quot;</span> <span class="p">({</span><span class="nd">@suffixproc</span>\<span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="n">battery</span><span class="p">,</span><span class="n">batteries</span><span class="p">})</span>
+</pre></div>
+</div>
+<p>The following settings may be specified inline:</p>
+<ul class="simple">
+<li></li>
+<li></li>
+<li></li>
+<li></li>
+<li></li>
+<li></li>
+</ul>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="mm5.html" class="btn btn-neutral float-right" title="Types of Searches in Metamorph" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="mm3.html" class="btn btn-neutral" title="Thesaurus Customization" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

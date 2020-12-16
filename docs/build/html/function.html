@@ -1,0 +1,805 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Server functions &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart Javascript</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>Server functions</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/function.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="server-functions">
+<h1>Server functions<a class="headerlink" href="#server-functions" title="Permalink to this headline">¶</a></h1>
+<p>The Texis server has a number of functions built into it which can
+operate on fields. This can occur anywhere an expression can occur in a
+SQL statement. It is possible that the server at your site has been
+extended with additional functions. Each of the arguments can be either
+a single field name, or another expression.</p>
+<div class="section" id="other-functions">
+<h2>Other Functions<a class="headerlink" href="#other-functions" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="exec">
+<h3>exec<a class="headerlink" href="#exec" title="Permalink to this headline">¶</a></h3>
+<p>Execute an external command. The syntax is</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">exec</span><span class="p">(</span><span class="n">commandline</span><span class="p">[,</span> <span class="n">INPUT</span><span class="p">[,</span> <span class="n">INPUT</span><span class="p">[,</span> <span class="n">INPUT</span><span class="p">[,</span> <span class="n">INPUT</span><span class="p">]]]]);</span>
+</pre></div>
+</div>
+<p>Allows execution of an external command. The first argument is the
+command to execute. Any subsequent arguments are written to the standard
+input of the process. The standard output of the command is read as the
+return from the function.</p>
+<p>This function allows unlimited extensibility of Texis, although if a
+particular function is being used often then it should be linked into
+the Texis server to avoid the overhead of invoking another process.</p>
+<p>For example this could be used to OCR text. If you have a program which
+will take an image filename on the command line, and return the text on
+standard out you could issue SQL as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">UPDATE</span>     <span class="n">DOCUMENTS</span>
+<span class="n">SET</span>        <span class="n">TEXT</span> <span class="o">=</span> <span class="n">exec</span><span class="p">(</span><span class="s1">&#39;ocr &#39;</span><span class="o">+</span><span class="n">IMGFILE</span><span class="p">)</span>
+<span class="n">WHERE</span>      <span class="n">TEXT</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>Another example would be if you wanted to print envelopes from names and
+addresses in a table you might use the following SQL:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span> <span class="n">exec</span><span class="p">(</span><span class="s1">&#39;envelope &#39;</span><span class="p">,</span> <span class="n">FIRST_NAME</span><span class="o">+</span><span class="s1">&#39; &#39;</span><span class="o">+</span><span class="n">LAST_NAME</span><span class="o">+</span><span class="s1">&#39;</span>
+<span class="s1">&#39;, STREET + &#39;</span>
+<span class="s1">&#39;, CITY + &#39;</span><span class="p">,</span> <span class="s1">&#39; + STATE + &#39;</span> <span class="s1">&#39; + ZIP)</span>
+<span class="n">FROM</span> <span class="n">ADDRESSES</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>Notice in this example the addition of spaces and line-breaks between
+the fields. Texis does not add any delimiters between fields or
+arguments itself.</p>
+</div>
+<div class="section" id="mminfo">
+<h3>mminfo<a class="headerlink" href="#mminfo" title="Permalink to this headline">¶</a></h3>
+<p>This function lets you obtain Metamorph info. You have the choice of
+either just getting the portions of the document which were the hits, or
+you can also get messages which describe each hit and subhits.</p>
+<p>The SQL to use is as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span> <span class="n">mminfo</span><span class="p">(</span><span class="n">query</span><span class="p">,</span><span class="n">data</span><span class="p">[,</span><span class="n">nhits</span><span class="p">,[</span><span class="mi">0</span><span class="p">,</span><span class="n">msgs</span><span class="p">]])</span> <span class="kn">from</span> <span class="nn">TABLE</span>
+       <span class="p">[</span><span class="n">where</span> <span class="n">CONDITION</span><span class="p">];</span>
+</pre></div>
+</div>
+<dl>
+<dt>query</dt><dd><p>Query should be a string containing a metamorph query.</p>
+</dd>
+<dt>data</dt><dd><p>The text to search. May be literal data or a field from the table.</p>
+</dd>
+<dt>nhits</dt><dd><p>The maximum number of hits to return. If it is 0, which is the
+default, you will get all the hits.</p>
+</dd>
+<dt>msgs</dt><dd><p>An integer; controls what information is returned. A bit-wise OR of
+any combination of the following values:</p>
+<ul class="simple">
+<li><p>1 to get matches and offset/length information</p></li>
+<li><p>2 to suppress text from <code class="docutils literal notranslate"><span class="pre">data</span></code> which matches; printed by
+default</p></li>
+<li><p>4 to get a count of hits (up to <code class="docutils literal notranslate"><span class="pre">nhits</span></code>)</p></li>
+<li><p>8 to get the hit count in a numeric parseable format</p></li>
+<li><p>16 to get the offset/length in the original query of each search
+set</p></li>
+</ul>
+<p>Set offset/length information (value 16) is of the form:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Set</span> <span class="n">N</span> <span class="n">offset</span><span class="o">/</span><span class="nb">len</span> <span class="ow">in</span> <span class="n">query</span><span class="p">:</span> <span class="n">setoff</span> <span class="n">setlen</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">N</span></code> is the set number (starting with 1), <code class="docutils literal notranslate"><span class="pre">setoff</span></code> is the
+byte offset from the start of the query where set <code class="docutils literal notranslate"><span class="pre">N</span></code> is, and
+<code class="docutils literal notranslate"><span class="pre">setlen</span></code> is the length of the set. This information is available
+in version 5.01.1220640000 20080905 and later.</p>
+<p>Hit offset/length information is of the form:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">300</span> <span class="o">&lt;</span><span class="n">Data</span> <span class="kn">from</span> <span class="nn">Texis</span><span class="o">&gt;</span> <span class="n">offset</span> <span class="n">length</span> <span class="n">suboff</span> <span class="n">sublen</span> <span class="p">[</span><span class="n">suboff</span> <span class="n">sublen</span><span class="p">]</span><span class="o">..</span>
+<span class="mi">301</span> <span class="n">End</span> <span class="n">of</span> <span class="n">Metamorph</span> <span class="n">hit</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><p>offset is the offset within the data of the overall hit context
+(sentence, paragraph, etc…)</p></li>
+<li><p>length is the length of the overall hit context</p></li>
+<li><p>suboff is the offset within the hit of a matching term</p></li>
+<li><p>sublen is the length of the matching term</p></li>
+<li><p>suboff and sublen will be repeated for as many terms as are
+required to satisfy the query.</p></li>
+</ul>
+</dd>
+</dl>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Example</span><span class="p">:</span>
+   <span class="n">select</span> <span class="n">mminfo</span><span class="p">(</span><span class="s1">&#39;power struggle @0 w/.&#39;</span><span class="p">,</span><span class="n">Body</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span> <span class="n">inf</span> <span class="kn">from</span> <span class="nn">html</span>
+          <span class="n">where</span> <span class="n">Title</span>\<span class="n">Meta</span>\<span class="n">Body</span> <span class="n">like</span> <span class="s1">&#39;power struggle&#39;</span><span class="p">;</span>
+<span class="n">Would</span> <span class="n">give</span> <span class="n">something</span> <span class="n">of</span> <span class="n">the</span> <span class="n">form</span><span class="p">:</span>
+
+<span class="mi">300</span> <span class="o">&lt;</span><span class="n">Data</span> <span class="kn">from</span> <span class="nn">Texis</span><span class="o">&gt;</span> <span class="mi">62</span> <span class="mi">5</span> <span class="mi">0</span> <span class="mi">5</span>
+<span class="n">power</span>
+<span class="mi">301</span> <span class="n">End</span> <span class="n">of</span> <span class="n">Metamorph</span> <span class="n">hit</span>
+<span class="mi">300</span> <span class="o">&lt;</span><span class="n">Data</span> <span class="kn">from</span> <span class="nn">Texis</span><span class="o">&gt;</span> <span class="mi">2042</span> <span class="mi">5</span> <span class="mi">0</span> <span class="mi">5</span>
+<span class="n">power</span>
+<span class="mi">301</span> <span class="n">End</span> <span class="n">of</span> <span class="n">Metamorph</span> <span class="n">hit</span>
+<span class="mi">300</span> <span class="o">&lt;</span><span class="n">Data</span> <span class="kn">from</span> <span class="nn">Texis</span><span class="o">&gt;</span> <span class="mi">2331</span> <span class="mi">5</span> <span class="mi">0</span> <span class="mi">5</span>
+<span class="n">POWER</span>
+<span class="mi">301</span> <span class="n">End</span> <span class="n">of</span> <span class="n">Metamorph</span> <span class="n">hit</span>
+<span class="mi">300</span> <span class="o">&lt;</span><span class="n">Data</span> <span class="kn">from</span> <span class="nn">Texis</span><span class="o">&gt;</span> <span class="mi">2892</span> <span class="mi">8</span> <span class="mi">0</span> <span class="mi">8</span>
+<span class="n">STRUGGLE</span>
+<span class="mi">301</span> <span class="n">End</span> <span class="n">of</span> <span class="n">Metamorph</span> <span class="n">hit</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="convert">
+<h3>convert<a class="headerlink" href="#convert" title="Permalink to this headline">¶</a></h3>
+<p>The convert function allows you to change the type of an expression. The
+syntax is</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">CONVERT</span><span class="p">(</span><span class="n">expression</span><span class="p">,</span> <span class="s1">&#39;type-name&#39;</span><span class="p">[,</span> <span class="s1">&#39;mode&#39;</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>The type name should in general be in lower case.</p>
+<p>This can be useful in a number of situations. Some cases where you might
+want to use convert are</p>
+<ul>
+<li><p>The display format for a different format is more useful. For example
+you might want to convert a field of type COUNTER to a DATE field, so
+you can see when the record was inserted, for example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span> <span class="n">convert</span><span class="p">(</span><span class="nb">id</span><span class="p">,</span> <span class="s1">&#39;date&#39;</span><span class="p">)</span>
+<span class="n">FROM</span>   <span class="n">LOG</span><span class="p">;</span>
+</pre></div>
+</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">CONVERT</span><span class="p">(</span><span class="nb">id</span><span class="p">,</span> <span class="s1">&#39;date&#39;</span><span class="p">)</span>
+<span class="mi">1995</span><span class="o">-</span><span class="mi">01</span><span class="o">-</span><span class="mi">27</span> <span class="mi">22</span><span class="p">:</span><span class="mi">43</span><span class="p">:</span><span class="mi">48</span>
+</pre></div>
+</div>
+</li>
+<li><p>If you have an application which is expecting data in a particular
+type you can use convert to make sure you will receive the correct
+type.</p></li>
+</ul>
+<p>Caveat: Note that in Texis version 7 and later, <code class="docutils literal notranslate"><span class="pre">convert()</span></code>ing data
+from/to <code class="docutils literal notranslate"><span class="pre">varbyte</span></code>/<code class="docutils literal notranslate"><span class="pre">varchar</span></code> no longer converts the data to/from
+hexadecimal by default (as was done in earlier versions) in programs
+other than <code class="docutils literal notranslate"><span class="pre">tsql</span></code>; it is now preserved as-is (though truncated at nul
+for <code class="docutils literal notranslate"><span class="pre">varchar</span></code>). See the <code class="docutils literal notranslate"><span class="pre">bintohex()</span></code> and <code class="docutils literal notranslate"><span class="pre">hextobin()</span></code> functions
+(p. ) for hexadecimal conversion, and the <code class="docutils literal notranslate"><span class="pre">hexifybytes</span></code> SQL property
+(p. ) for controlling automatic hex conversion.</p>
+<p>Also in Texis version 7 and later, an optional third argument may be
+given to <code class="docutils literal notranslate"><span class="pre">convert()</span></code>, which is a <code class="docutils literal notranslate"><span class="pre">varchartostrlstsep</span></code> mode value
+(p. ). This third argument may only be supplied when converting to type
+<code class="docutils literal notranslate"><span class="pre">strlst</span></code> or <code class="docutils literal notranslate"><span class="pre">varstrlst</span></code>. It allows the separator character or mode
+to be conveniently specified locally to the conversion, instead of
+having to alter the global <code class="docutils literal notranslate"><span class="pre">varchartostrlstsep</span></code> mode.</p>
+</div>
+<div class="section" id="seq">
+<h3>seq<a class="headerlink" href="#seq" title="Permalink to this headline">¶</a></h3>
+<p>Returns a sequence number. The number can be initialized to any value,
+and the increment can be defined for each call. The syntax is:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">seq</span><span class="p">(</span><span class="n">increment</span> <span class="p">[,</span> <span class="n">init</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>If init is given then the sequence number is initialized to that value,
+which will be the value returned. It is then incremented by increment.
+If init is not specified then the current value will be retained. The
+initial value will be zero if init has not been specified.</p>
+<p>Examples of typical use:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>  <span class="n">NAME</span><span class="p">,</span> <span class="n">seq</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">FROM</span>    <span class="n">SYSTABLES</span>
+</pre></div>
+</div>
+<p>The results are:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span> <span class="n">NAME</span>                <span class="n">seq</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">SYSTABLES</span>               <span class="mi">0</span>
+<span class="n">SYSCOLUMNS</span>              <span class="mi">1</span>
+<span class="n">SYSINDEX</span>                <span class="mi">2</span>
+<span class="n">SYSUSERS</span>                <span class="mi">3</span>
+<span class="n">SYSPERMS</span>                <span class="mi">4</span>
+<span class="n">SYSTRIG</span>                 <span class="mi">5</span>
+<span class="n">SYSMETAINDEX</span>            <span class="mi">6</span>
+</pre></div>
+</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>  <span class="n">seq</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+<span class="n">FROM</span>    <span class="n">SYSDUMMY</span><span class="p">;</span>
+
+<span class="n">SELECT</span>  <span class="n">NAME</span><span class="p">,</span> <span class="n">seq</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">FROM</span>    <span class="n">SYSTABLES</span>
+</pre></div>
+</div>
+<p>The results are:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span> <span class="n">seq</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+    <span class="mi">100</span>
+
+ <span class="n">NAME</span>                <span class="n">seq</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">SYSTABLES</span>             <span class="mi">100</span>
+<span class="n">SYSCOLUMNS</span>            <span class="mi">101</span>
+<span class="n">SYSINDEX</span>              <span class="mi">102</span>
+<span class="n">SYSUSERS</span>              <span class="mi">103</span>
+<span class="n">SYSPERMS</span>              <span class="mi">104</span>
+<span class="n">SYSTRIG</span>               <span class="mi">105</span>
+<span class="n">SYSMETAINDEX</span>          <span class="mi">106</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="random">
+<h3>random<a class="headerlink" href="#random" title="Permalink to this headline">¶</a></h3>
+<p>Returns a random int. The syntax is:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">random</span><span class="p">(</span><span class="nb">max</span> <span class="p">[,</span> <span class="n">seed</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>If seed is given then the random number generator is seeded to that
+value. The random number generator will only be seeded once in each
+session, and will be randomly seeded on the first call if no seed is
+supplied. The seed parameter is ignored in the second and later calls to
+random in a process.</p>
+<p>The returned number is always non-negative, and never larger than the
+limit of the C lib’s random number generator (typically either 32767 or
+2147483647). If max is non-zero, then the returned number will also be
+less than max.</p>
+<p>This function is typically used to either generate a random number for
+later use, or to generate a random ordering of result records by adding
+random to the ORDER BY clause.</p>
+<p>Examples of typical use:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>  <span class="n">NAME</span><span class="p">,</span> <span class="n">random</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
+<span class="n">FROM</span>    <span class="n">SYSTABLES</span>
+</pre></div>
+</div>
+<p>The results might be:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span> <span class="n">NAME</span>                <span class="n">random</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
+<span class="n">SYSTABLES</span>               <span class="mi">90</span>
+<span class="n">SYSCOLUMNS</span>              <span class="mi">16</span>
+<span class="n">SYSINDEX</span>                <span class="mi">94</span>
+<span class="n">SYSUSERS</span>                <span class="mi">96</span>
+<span class="n">SYSPERMS</span>                 <span class="mi">1</span>
+<span class="n">SYSTRIG</span>                 <span class="mi">84</span>
+<span class="n">SYSMETAINDEX</span>            <span class="mi">96</span>
+</pre></div>
+</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>  <span class="n">ENAME</span>
+<span class="n">FROM</span>    <span class="n">EMPLOYEE</span>
+<span class="n">ORDER</span> <span class="n">BY</span> <span class="n">random</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>The results would be a list of employees in a random order.</p>
+</div>
+<div class="section" id="bintohex">
+<h3>bintohex<a class="headerlink" href="#bintohex" title="Permalink to this headline">¶</a></h3>
+<p>Converts a binary (<code class="docutils literal notranslate"><span class="pre">varbyte</span></code>) value into a hexadecimal string.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">bintohex</span><span class="p">(</span><span class="n">varbyteData</span><span class="p">[,</span> <span class="s1">&#39;stream|pretty&#39;</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>A string (<code class="docutils literal notranslate"><span class="pre">varchar</span></code>) hexadecimal representation of the <code class="docutils literal notranslate"><span class="pre">varbyteData</span></code>
+parameter is returned. This can be useful to visually examine binary
+data that may contain non-printable or nul bytes. The optional second
+argument is a comma-separated string of any of the following flags:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">stream</span></code>: Use the default output mode: a continuous stream of
+hexadecimal bytes, i.e. the same format that
+<code class="docutils literal notranslate"><span class="pre">convert(varbyteData,</span> <span class="pre">'varchar')</span></code> would have returned in Texis
+version 6 and earlier.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pretty</span></code>: Return a “pretty” version of the data: print 16 byte per
+line, space-separate the hexadecimal bytes, and print an ASCII dump
+on the right side.</p></li>
+</ul>
+<p>The <code class="docutils literal notranslate"><span class="pre">bintohex()</span></code> function was added in Texis version 7. Caveat: Note
+that in version 7 and later, <code class="docutils literal notranslate"><span class="pre">convert()</span></code>ing data from/to
+<code class="docutils literal notranslate"><span class="pre">varbyte</span></code>/<code class="docutils literal notranslate"><span class="pre">varchar</span></code> no longer converts the data to/from hexadecimal
+by default (as was done in earlier versions) in programs other than
+<code class="docutils literal notranslate"><span class="pre">tsql</span></code>; it is now preserved as-is (though truncated at nul for
+<code class="docutils literal notranslate"><span class="pre">varchar</span></code>). See the <code class="docutils literal notranslate"><span class="pre">hexifybytes</span></code> SQL property (p. ) to change this.</p>
+</div>
+<div class="section" id="hextobin">
+<h3>hextobin<a class="headerlink" href="#hextobin" title="Permalink to this headline">¶</a></h3>
+<p>Converts a hexadecimal stream to its binary representation.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">hextobin</span><span class="p">(</span><span class="n">hexString</span><span class="p">[,</span> <span class="s1">&#39;stream|pretty&#39;</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>The hexadecimal <code class="docutils literal notranslate"><span class="pre">varchar</span></code> string <code class="docutils literal notranslate"><span class="pre">hexString</span></code> is converted to its
+binary representation, and the <code class="docutils literal notranslate"><span class="pre">varbyte</span></code> result returned. The optional
+second argument is a comma-separated string of any of the following
+flags:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">stream</span></code>: Only accept the <code class="docutils literal notranslate"><span class="pre">stream</span></code> format of <code class="docutils literal notranslate"><span class="pre">bintohex()</span></code>, i.e.
+a stream of hexadecimal bytes, the same format that
+<code class="docutils literal notranslate"><span class="pre">convert(varbyteData,</span> <span class="pre">'varchar')</span></code> would have returned in Texis
+version 6 and earlier. Whitespace is acceptable, but only between
+(not within) hexadecimal bytes. Case-insensitive. Non-conforming data
+will result in an error message and the function failing.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pretty</span></code>: Accept either <code class="docutils literal notranslate"><span class="pre">stream</span></code> or <code class="docutils literal notranslate"><span class="pre">pretty</span></code> format data; if
+the latter, only the hexadecimal bytes are parsed (e.g. ASCII column
+is ignored). Parsing is more liberal, but may be confused if the data
+deviates significantly from either format.</p></li>
+</ul>
+<p>The <code class="docutils literal notranslate"><span class="pre">hextobin()</span></code> function was added in Texis version 7. Caveat: Note
+that in version 7 and later, <code class="docutils literal notranslate"><span class="pre">convert()</span></code>ing data from/to
+<code class="docutils literal notranslate"><span class="pre">varbyte</span></code>/<code class="docutils literal notranslate"><span class="pre">varchar</span></code> no longer converts the data to/from hexadecimal
+by default (as was done in earlier versions) in programs other than
+<code class="docutils literal notranslate"><span class="pre">tsql</span></code>; it is now preserved as-is (though truncated at nul for
+<code class="docutils literal notranslate"><span class="pre">varchar</span></code>). See the <code class="docutils literal notranslate"><span class="pre">hexifybytes</span></code> SQL property (p. ) to change this.</p>
+</div>
+<div class="section" id="identifylanguage">
+<h3>identifylanguage<a class="headerlink" href="#identifylanguage" title="Permalink to this headline">¶</a></h3>
+<p>Tries to identify the predominant language of a given string. By
+returning a probability in addition to the identified language, this
+function can also serve as a test of whether the given string is really
+natural-language text, or perhaps binary/encoded data instead. Syntax:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">identifylanguage</span><span class="p">(</span><span class="n">text</span><span class="p">[,</span> <span class="n">language</span><span class="p">[,</span> <span class="n">samplesize</span><span class="p">]])</span>
+</pre></div>
+</div>
+<p>The return value is a two-element <code class="docutils literal notranslate"><span class="pre">strlst</span></code>: a probability and a
+language code. The probability is a value from 0.000 to 1.000 that the
+text argument is composed in the language named by the returned language
+code. The language code is a two-letter ISO-639-1 code.</p>
+<p>If an ISO-639-1 code is given for the optional language argument, the
+probability for that particular language is returned, instead of for the
+highest-probability language of the known/built-in languages (currently
+de, es, fr, ja, pl, tr, da, en, eu, it, ko, ru).</p>
+<p>The optional third argument samplesize is the initial integer size in
+bytes of the text to sample when determining language; it defaults to
+16384. The samplesize parameter was added in version 7.01.1382113000
+20131018.</p>
+<p>Note that since a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> value is returned, the probability is
+returned as a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> element, not a <code class="docutils literal notranslate"><span class="pre">double</span></code> value, and thus
+should be cast to <code class="docutils literal notranslate"><span class="pre">double</span></code> during comparisons.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">identifylanguage()</span></code> function is experimental, and its behavior,
+syntax, name and/or existence are subject to change.</p>
+</div>
+<div class="section" id="lookup">
+<h3>lookup<a class="headerlink" href="#lookup" title="Permalink to this headline">¶</a></h3>
+<p>By combining the <code class="docutils literal notranslate"><span class="pre">lookup()</span></code> function with a <code class="docutils literal notranslate"><span class="pre">GROUP</span> <span class="pre">BY</span></code>, a column may
+be grouped into bins or ranges – e.g. for price-range grouping – instead
+of distinct individual values. Syntax:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">lookup</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">ranges</span><span class="p">[,</span> <span class="n">names</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>The keys argument is one (or more, e.g. <code class="docutils literal notranslate"><span class="pre">strlst</span></code>) values to look up;
+each is searched for in the ranges argument, which is one (or more, e.g.
+<code class="docutils literal notranslate"><span class="pre">strlst</span></code>) ranges. All range(s) that the given key(s) match will be
+returned. If the names argument is given, the corresponding names
+value(s) are returned instead; this allows ranges to be renamed into
+human-readable values. If names is given, the number of its values must
+equal the number of ranges.</p>
+<p>Each range is a pair of values (lower and upper bounds) separated by
+“..” (two periods). The range is optionally surrounded by square (bound
+included) or curly (bound excluded) brackets. E.g.:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="mf">10.</span><span class="o">.</span><span class="mi">20</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>denotes the range 10 to 20: including 10 (“[”) but not including (“}”)
+20. Both an upper and lower bracket must be given if either is present
+(though they need not be the same type). The default if no brackets are
+given is to include the lower bound but exclude the upper bound; this
+makes consecutive ranges non-overlapping, if they have the same upper
+and lower bound and no brackets (e.g. “0..10,10..20”). Either bound may
+be omitted, in which case that bound is unlimited. Each range’s lower
+bound must not be greater than its upper bound, nor equal if either
+bound is exclusive.</p>
+<p>If a ranges value is not varchar/char, or does not contain “..”, its
+entire value is taken as a single inclusive lower bound, and the
+exclusive upper bound will be the next ranges value’s lower bound (or
+unlimited if no next value). E.g. the <code class="docutils literal notranslate"><span class="pre">varint</span></code> lower-bound list:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">0</span><span class="p">,</span><span class="mi">10</span><span class="p">,</span><span class="mi">20</span><span class="p">,</span><span class="mi">30</span>
+</pre></div>
+</div>
+<p>is equivalent to the <code class="docutils literal notranslate"><span class="pre">strlst</span></code> range list:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="mf">0.</span><span class="o">.</span><span class="mi">10</span><span class="p">},[</span><span class="mf">10.</span><span class="o">.</span><span class="mi">20</span><span class="p">},[</span><span class="mf">20.</span><span class="o">.</span><span class="mi">30</span><span class="p">},[</span><span class="mf">30.</span><span class="o">.</span><span class="p">]</span>
+</pre></div>
+</div>
+<p>By using the <code class="docutils literal notranslate"><span class="pre">lookup()</span></code> function in a <code class="docutils literal notranslate"><span class="pre">GROUP</span> <span class="pre">BY</span></code>, a column may be
+grouped into ranges. For example, given a table Products with the
+following SKUs and <code class="docutils literal notranslate"><span class="pre">float</span></code> prices:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SKU</span>    <span class="n">Price</span>
+<span class="o">------------</span>
+<span class="mi">1234</span>   <span class="mf">12.95</span>
+<span class="mi">1235</span>    <span class="mf">5.99</span>
+<span class="mi">1236</span>   <span class="mf">69.88</span>
+<span class="mi">1237</span>   <span class="mf">39.99</span>
+<span class="mi">1238</span>   <span class="mf">29.99</span>
+<span class="mi">1239</span>   <span class="mf">25.00</span>
+<span class="mi">1240</span>   <span class="mf">50.00</span>
+<span class="mi">1241</span>   <span class="o">-</span><span class="mf">2.00</span>
+<span class="mi">1242</span>  <span class="mf">499.95</span>
+<span class="mi">1243</span>   <span class="mf">19.95</span>
+<span class="mi">1244</span>    <span class="mf">9.99</span>
+<span class="mi">1245</span>  <span class="mf">125.00</span>
+</pre></div>
+</div>
+<p>they may be grouped into price ranges (with most-products first) with
+this SQL:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>   <span class="n">lookup</span><span class="p">(</span><span class="n">Price</span><span class="p">,</span> <span class="n">convert</span><span class="p">(</span><span class="s1">&#39;0..25,25..50,50..,&#39;</span><span class="p">,</span> <span class="s1">&#39;strlst&#39;</span><span class="p">,</span> <span class="s1">&#39;lastchar&#39;</span><span class="p">),</span>
+     <span class="n">convert</span><span class="p">(</span><span class="s1">&#39;Under $25,$25-49.99,$50 and up,&#39;</span><span class="p">,</span> <span class="s1">&#39;strlst&#39;</span><span class="p">,</span> <span class="s1">&#39;lastchar&#39;</span><span class="p">))</span>
+       <span class="n">PriceRange</span><span class="p">,</span> <span class="n">count</span><span class="p">(</span><span class="n">SKU</span><span class="p">)</span> <span class="n">NumberOfProducts</span>
+<span class="n">FROM</span> <span class="n">Products</span>
+<span class="n">GROUP</span> <span class="n">BY</span> <span class="n">lookup</span><span class="p">(</span><span class="n">Price</span><span class="p">,</span> <span class="n">convert</span><span class="p">(</span><span class="s1">&#39;0..25,25..50,50..,&#39;</span><span class="p">,</span> <span class="s1">&#39;strlst&#39;</span><span class="p">,</span> <span class="s1">&#39;lastchar&#39;</span><span class="p">),</span>
+     <span class="n">convert</span><span class="p">(</span><span class="s1">&#39;Under $25,$25-49.99,$50 and up,&#39;</span><span class="p">,</span> <span class="s1">&#39;strlst&#39;</span><span class="p">,</span> <span class="s1">&#39;lastchar&#39;</span><span class="p">))</span>
+<span class="n">ORDER</span> <span class="n">BY</span> <span class="mi">2</span> <span class="n">DESC</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>or this in Rampart javascript:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>var Sql=require(&quot;rampart-sql&quot;);
+
+var sql=new Sql.init(&quot;/path/to/database&quot;);
+
+var range=[&#39;0..25&#39;,&#39;25..50&#39;,&#39;50..&#39;];
+var rangenames=[&#39;Under $25&#39;,&#39;$25-$49&#39;,&#39;$50 and up&#39;];
+res = sql.exec(&quot;SELECT lookup( convert(?,&#39;strlst&#39;,&#39;json&#39;), convert(?,&#39;strlst&#39;,&#39;json&#39;) ) PriceRange&quot;+
+    &quot;count(SKU) NumberOfProducts FROM Products &quot; +
+    &quot;GROUP BY lookup(convert(?,&#39;strlst&#39;,&#39;json&#39;), convert(?,&#39;strlst&#39;,&#39;json&#39;) )&quot; +
+    &quot;ORDER BY 2 DESC&quot;,
+    [range,rangenames,range,rangenames],
+    {returnType:&quot;arrayh&quot;}
+)
+
+rows=res.results;
+for (var i=0;i&lt;rows.length;i++) {
+        rampart.utils.printf(&quot;%-10s %10s\n&quot;, rows[i][0]+&#39;,&#39;, rows[i][1]);
+
+        if (!i)
+            rampart.utils.printf(&quot;----------+----------\n&quot;);
+}
+</pre></div>
+</div>
+<p>which would give these results:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>  PriceRange NumberOfProducts
+------------+------------+
+Under $25,              4
+$50 and up,             4
+$25-49.99,              3
+                        1
+</pre></div>
+</div>
+<p>The trailing commas in PriceRange values are due to them being
+<code class="docutils literal notranslate"><span class="pre">strlst</span></code> values, for possible multiple ranges. Note the empty
+PriceRange for the fourth row: the -2 Price matched no ranges, and hence
+an empty PriceRange was returned for it.</p>
+<p>See also: <a class="reference internal" href="#lookupcanonicalizeranges">lookupCanonicalizeRanges</a>, <a class="reference internal" href="#lookupparserange">lookupParseRange</a></p>
+</div>
+<div class="section" id="lookupcanonicalizeranges">
+<h3>lookupCanonicalizeRanges<a class="headerlink" href="#lookupcanonicalizeranges" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">lookupCanonicalizeRanges()</span></code> function returns the canonical
+version(s) of its ranges argument, which is zero or more ranges of the
+syntaxes acceptable to <a class="reference internal" href="#lookup"><span class="std std-ref">lookup()</span></a>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">lookupCanonicalizeRanges</span><span class="p">(</span><span class="n">ranges</span><span class="p">,</span> <span class="n">keyType</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The canonical version always includes both a lower and upper
+inclusive/exclusive bracket/brace, both lower and upper bounds (unless
+unlimited), the “..” range operator, and is independent of other ranges
+that may be in the sequence.</p>
+<p>The keyType parameter is a <code class="docutils literal notranslate"><span class="pre">varchar</span></code> string denoting the SQL type of
+the key field that would be looked up in the given range(s). This
+ensures that comparisons are done correctly. E.g. for a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> range
+list of “0,500,1000”, keyType should be “integer”, so that “500” is not
+compared alphabetically with “1000” and considered invalid (greater
+than).</p>
+<p>This function can be used to verify the syntax of a range, or to
+transform it into a standard form for <code class="docutils literal notranslate"><span class="pre">lookupParseRange()</span></code> (p. ).</p>
+<p>For an implicit-upper-bound range, the upper bound is determined by the
+<em>next</em> range’s lower bound. Thus the full list of ranges (if multiple)
+should be given to <code class="docutils literal notranslate"><span class="pre">lookupCanonicalizeRanges()</span></code> – even if only one
+range needs to be canonicalized – so that each range gets its proper
+bounds.</p>
+<p>See also: <a class="reference internal" href="#lookup">lookup</a>, <a class="reference internal" href="#lookupparserange">lookupParseRange</a></p>
+</div>
+<div class="section" id="lookupparserange">
+<h3>lookupParseRange<a class="headerlink" href="#lookupparserange" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">lookupParseRange()</span></code> function parses a single <a class="reference internal" href="#lookup"><span class="std std-ref">lookup()</span></a>-style
+range into its constituent parts, returning them as strings in one
+<code class="docutils literal notranslate"><span class="pre">strlst</span></code> value. This can be used by Vortex scripts to edit a range.
+Syntax:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">lookupParseRange</span><span class="p">(</span><span class="nb">range</span><span class="p">,</span> <span class="n">parts</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The parts argument is zero or more of the following part tokens as
+strings:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">lowerInclusivity</span></code>: Returns the inclusive/exclusive operator for
+the lower bound, e.g. “{” or “”</p></li>
+</ul>
+<p>If a requested part is not present, an empty string is returned for that
+part. The concatenation of the above listed parts, in the above order,
+should equal the given range. Non-string range arguments are not
+supported.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">lookupParseRange</span><span class="p">(</span><span class="s1">&#39;10..20&#39;</span><span class="p">,</span> <span class="s1">&#39;lowerInclusivity&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>would return a single empty-string <code class="docutils literal notranslate"><span class="pre">strlst</span></code>, as there is no
+lower-bound inclusive/exclusive operator in the range “10..20”.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">lookupParseRange</span><span class="p">(</span><span class="s1">&#39;10..20&#39;</span><span class="p">,</span> <span class="s1">&#39;lowerBound&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>would return a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> with the single value “10”.</p>
+<p>For an implicit-upper-bound range, the upper bound is determined by the
+<em>next</em> range’s lower bound. Since <code class="docutils literal notranslate"><span class="pre">lookupParseRange()</span></code> only takes one
+range, passing such a range to it may result in an incorrect (unlimited)
+upper bound. Thus the full list of ranges (if multiple) should always be
+given to <code class="docutils literal notranslate"><span class="pre">lookupCanonicalizeRanges()</span></code> first, and only then the desired
+canonicalized range passed to <code class="docutils literal notranslate"><span class="pre">lookupParseRange()</span></code>.</p>
+<p>See also: <a class="reference internal" href="#lookup">lookup</a>, <a class="reference internal" href="#lookupcanonicalizeranges">lookupCanonicalizeRanges</a></p>
+</div>
+<div class="section" id="hasfeature">
+<h3>hasFeature<a class="headerlink" href="#hasfeature" title="Permalink to this headline">¶</a></h3>
+<p>Returns 1 if given feature is supported, 0 if not (or unknown). The
+syntax is:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">hasFeature</span><span class="p">(</span><span class="n">feature</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>where feature is one of the following <code class="docutils literal notranslate"><span class="pre">varchar</span></code> tokens:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">RE2</span></code> For RE2 regular expression support in REX</p></li>
+</ul>
+<p>This function is typically used in Vortex scripts to test if a feature
+is supported with the current version of Texis, and if not, to work
+around that fact if possible. For example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">&lt;</span><span class="k">if</span> <span class="n">hasFeature</span><span class="p">(</span> <span class="s2">&quot;RE2&quot;</span> <span class="p">)</span> <span class="o">=</span> <span class="mi">1</span><span class="o">&gt;</span>
+  <span class="o">...</span> <span class="n">proceed</span> <span class="k">with</span> <span class="n">RE2</span> <span class="n">expressions</span> <span class="o">...</span>
+<span class="o">&lt;</span><span class="k">else</span><span class="o">&gt;</span>
+  <span class="o">...</span> <span class="n">use</span> <span class="n">REX</span> <span class="n">instead</span> <span class="o">...</span>
+<span class="o">&lt;/</span><span class="k">if</span><span class="o">&gt;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="ifnull">
+<h3>ifNull<a class="headerlink" href="#ifnull" title="Permalink to this headline">¶</a></h3>
+<p>Substitute another value for NULL values. Syntax:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ifNull</span><span class="p">(</span><span class="n">testVal</span><span class="p">,</span> <span class="n">replaceVal</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>If <code class="docutils literal notranslate"><span class="pre">testVal</span></code> is a SQL NULL value, then <code class="docutils literal notranslate"><span class="pre">replaceVal</span></code> (cast to the
+type of <code class="docutils literal notranslate"><span class="pre">testVal</span></code>) is returned; otherwise <code class="docutils literal notranslate"><span class="pre">testVal</span></code> is returned.
+This function can be used to ensure that NULL value(s) in a column are
+replaced with a non-NULL value, if a non-NULL value is required:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span> <span class="n">ifNull</span><span class="p">(</span><span class="n">myColumn</span><span class="p">,</span> <span class="s1">&#39;Unknown&#39;</span><span class="p">)</span> <span class="n">FROM</span> <span class="n">myTable</span><span class="p">;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="isnull">
+<h3>isNull<a class="headerlink" href="#isnull" title="Permalink to this headline">¶</a></h3>
+<p>Tests a value, and returns a <code class="docutils literal notranslate"><span class="pre">long</span></code> value of 1 if NULL, 0 if not.
+Syntax:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">isNull</span><span class="p">(</span><span class="n">testVal</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span> <span class="n">isNull</span><span class="p">(</span><span class="n">myColumn</span><span class="p">)</span> <span class="n">FROM</span> <span class="n">myTable</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>Note that Texis <code class="docutils literal notranslate"><span class="pre">isNull</span></code> behavior differs from some other SQL implementations; see
+also <a class="reference internal" href="#ifnull">ifNull</a>.</p>
+</div>
+<div class="section" id="xmltreequickxpath">
+<h3>xmlTreeQuickXPath<a class="headerlink" href="#xmltreequickxpath" title="Permalink to this headline">¶</a></h3>
+<p>Extracts information from an XML document.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">xmlTreeQuickXPath</span><span class="p">(</span><span class="n">string</span> <span class="n">xmlRaw</span><span class="p">,</span> <span class="n">string</span> <span class="n">xpathQuery</span>
+    <span class="p">[,</span> <span class="n">string</span><span class="p">[]</span> <span class="n">xmlns</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Parameters:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">xmlRaw</span></code> - the plain text of the xml document you want to extract
+information from</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">xpathQuery</span></code> - the XPath expression that identifies the nodes you
+want to extract the data from</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">xmlns</span></code> <em>(optional)</em> - an array of <code class="docutils literal notranslate"><span class="pre">prefix=URI</span></code> namespaces to use
+in the XPath query</p></li>
+</ul>
+<p>Returns:</p>
+<ul class="simple">
+<li><p>String values of the node from the XML document <code class="docutils literal notranslate"><span class="pre">xmlRaw</span></code> that match
+<code class="docutils literal notranslate"><span class="pre">xpathQuery</span></code></p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">xmlTreeQuickXPath</span></code> allows you to easily extract information from an
+XML document in a one-shot function. It is intended to be used in SQL
+statements to extract specific information from a field that contains
+XML data.</p>
+<p>If the <code class="docutils literal notranslate"><span class="pre">xmlData</span></code> field of a table has content like this:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">&lt;</span><span class="n">extraInfo</span><span class="o">&gt;</span>
+    <span class="o">&lt;</span><span class="n">price</span><span class="o">&gt;</span><span class="mf">8.99</span><span class="o">&lt;/</span><span class="n">price</span><span class="o">&gt;</span>
+    <span class="o">&lt;</span><span class="n">author</span><span class="o">&gt;</span><span class="n">John</span> <span class="n">Doe</span><span class="o">&lt;/</span><span class="n">author</span><span class="o">&gt;</span>
+    <span class="o">&lt;</span><span class="n">isbn</span><span class="o">&gt;</span><span class="mi">978</span><span class="o">-</span><span class="mi">0</span><span class="o">-</span><span class="mi">06</span><span class="o">-</span><span class="mi">051280</span><span class="o">-</span><span class="mi">4</span><span class="o">&lt;/</span><span class="n">isbn</span><span class="o">&gt;</span>
+<span class="o">&lt;/</span><span class="n">extraInfo</span><span class="o">&gt;</span>
+</pre></div>
+</div>
+<p>Then the following SQL statement will match that row:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span> <span class="o">*</span> <span class="kn">from</span> <span class="nn">myTable</span> <span class="n">where</span> <span class="n">xmlTreeQuickXPath</span><span class="p">(</span><span class="n">data</span><span class="p">,</span>
+<span class="s1">&#39;/extraInfo/author&#39;</span><span class="p">)</span> <span class="o">=</span> <span class="s1">&#39;John Doe&#39;</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

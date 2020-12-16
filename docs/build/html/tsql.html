@@ -1,0 +1,319 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Tsql Command Line Utility &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
+        <link rel="up" title="The rampart-sql module" href="sqltoc.html"/>
+        <link rel="next" title="Metamorph: The Program Inside the Program" href="mm2.html"/>
+        <link rel="prev" title="Server Properties" href="sql-set.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart Javascript</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html">Preface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#loading-the-javascript-module">Loading the Javascript Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#database-functions">Database Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#string-functions">String Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html">Introduction to Texis SQL</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#creating-a-database">Creating a Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#table-definition">Table Definition</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#a-first-look-at-queries">A First Look at Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql2.html">Queries Involving Calculated Values</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql2.html#advanced-queries">Advanced Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql3.html">Intelligent Text Search Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html">Server functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html">Indexing for Increased Performance</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html#keeping-the-database-current">Keeping the Database Current</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html#security">Security</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html#administration-of-the-database">Administration of the Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-set.html">Server Properties</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Tsql Command Line Utility</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm2.html">Metamorph: The Program Inside the Program</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm2.html#hits-intersections-and-sets">Hits, Intersections and Sets</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm3.html">Thesaurus Customization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm4.html">Tailoring Metamorph’s Linguistics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm5.html">Types of Searches in Metamorph</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm6.html">REX On Its Own</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="sqltoc.html">The rampart-sql module</a> &raquo;</li>
+        
+      <li>Tsql Command Line Utility</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/tsql.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="tsql-command-line-utility">
+<h1>Tsql Command Line Utility<a class="headerlink" href="#tsql-command-line-utility" title="Permalink to this headline">¶</a></h1>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>tsql [-a command] [-c [-w width]] [-l rows] [-hqm?] [-d database]
+[-u username] [-p password] [-i file] [&quot;SQL statement&quot;]
+</pre></div>
+</div>
+<p>Tsql is the main program provided for interactive use of a Texis
+database. You should either be in the database directory, or else
+specify it on the command line as the -d &lt;database&gt; option.</p>
+<p>If a query is present on the command line than tsql will execute that
+statement, and display the results on stdout (the screen). If no query
+is present then queries will be accepted on stdin (the keyboard).
+Queries on stdin must be terminated by a semicolon. To exit from tsql
+you should produce EOF on it’s stdin. On Unix systems this is usually
+done with Control-D (a Control-C should also exit the program).</p>
+<p>Tsql also provides facilities for doing many administrative tasks.</p>
+<p><strong>Options</strong></p>
+<p>To aid in the use of tsql from scripts or as parts of a chain of
+commands there are many options available, which may be viewed by
+executing <code class="docutils literal notranslate"><span class="pre">tsql</span> <span class="pre">-help</span></code> or <code class="docutils literal notranslate"><span class="pre">tsql</span> <span class="pre">-?</span></code> on the command line:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>Usage: tsql [-a command] [-c [-w width]] [-l rows] [-hmqrv?]
+            [-d database] [-u username] [-p password] [-i file]
+            [-R profile] sql-statement
+Options:
+  --install-dir[-force]{=| }dir    Alternate installation dir
+                               (default is `/usr/local/morph3&#39;)
+  --texis-conf{=| }file            Alternate conf/texis.ini file
+  -a command       Enter Admin mode; respects -d -u -p
+      Commands:
+         (A)dd     add a user
+         (C)hange  change a password
+         (D)elete  delete a user
+  -h               Suppress column headings
+  -v               Display inserted/deleted rows
+  -n               Display total row count with -v
+  -q               Suppress SQL&gt; prompt
+  -c               Format one field per line
+  -w width         Make field headings width characters long
+                   (0: align to longest heading)
+  -l rows          Limit output to rows
+  -s rows          Skip rows of output
+  -u username      Login as username
+                   (if -p not given, password will be prompted for)
+  -p password      Login using password
+  -P password      _SYSTEM password for admin
+  -d database      Use database as the data dictionary
+  -m               Create the database named with -d
+  -i file          Read SQL commands from file instead of the keyboard
+  -r               Read default profile
+  -R profile       Read specified profile
+  -f delim         Specify a delimiter or format; 1 or 2 chars:
+     t             same as -c option
+     c             default behavior
+     other char    field separator e.g. `-f ,&#39; for CSV
+                   (follow with q/n to suppress quotes/newlines)
+  -t               Show timing information
+  -V               Increase Texis verbosity (may be used multiple times)
+  -x               Debug: do not capture ABEND etc. signals
+  --show-counts    Show min/max counts of rows matched and returned
+  --lockverbose n  Set lockverbose (tracing) level n
+  --timeout n[.n]  Set timeout of n[.n] seconds (-1 none; may cause corruption)
+  -?               Show this help
+</pre></div>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="mm2.html" class="btn btn-neutral float-right" title="Metamorph: The Program Inside the Program" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="sql-set.html" class="btn btn-neutral" title="Server Properties" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

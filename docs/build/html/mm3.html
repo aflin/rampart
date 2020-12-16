@@ -1,0 +1,811 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Thesaurus Customization &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
+        <link rel="up" title="The rampart-sql module" href="sqltoc.html"/>
+        <link rel="next" title="Tailoring Metamorph’s Linguistics" href="mm4.html"/>
+        <link rel="prev" title="Metamorph: The Program Inside the Program" href="mm2.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart Javascript</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html">Preface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#loading-the-javascript-module">Loading the Javascript Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#database-functions">Database Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#string-functions">String Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html">Introduction to Texis SQL</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#creating-a-database">Creating a Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#table-definition">Table Definition</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#a-first-look-at-queries">A First Look at Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql2.html">Queries Involving Calculated Values</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql2.html#advanced-queries">Advanced Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql3.html">Intelligent Text Search Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html">Server functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html">Indexing for Increased Performance</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html#keeping-the-database-current">Keeping the Database Current</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html#security">Security</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html#administration-of-the-database">Administration of the Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-set.html">Server Properties</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tsql.html">Tsql Command Line Utility</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm2.html">Metamorph: The Program Inside the Program</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm2.html#hits-intersections-and-sets">Hits, Intersections and Sets</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Thesaurus Customization</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#specializing-knowledge">Specializing Knowledge</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#equivalence-file-explanation">Equivalence File Explanation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#editing-concept-sets-with-backref">Editing Concept Sets With Backref</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#toggling-equiv-expansion-on-or-off">Toggling Equiv Expansion On or Off</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#creating-a-user-equivalence-file-by-hand">Creating a User Equivalence File By Hand</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#user-equivalence-file-format">User Equivalence File Format</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#back-referencing">Back Referencing</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#see-referencing">See Referencing</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#word-classes-and-parts-of-speech">Word Classes and Parts of Speech</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rules-of-precedence-and-syntax">Rules of Precedence and Syntax</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#specialized-user-equivalence-files">Specialized User Equivalence Files</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="mm4.html">Tailoring Metamorph’s Linguistics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm5.html">Types of Searches in Metamorph</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm6.html">REX On Its Own</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="sqltoc.html">The rampart-sql module</a> &raquo;</li>
+        
+      <li>Thesaurus Customization</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/mm3.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="thesaurus-customization">
+<h1>Thesaurus Customization<a class="headerlink" href="#thesaurus-customization" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="specializing-knowledge">
+<h2>Specializing Knowledge<a class="headerlink" href="#specializing-knowledge" title="Permalink to this headline">¶</a></h2>
+<p>You could say that Metamorph’s general knowledge approximates that of
+the man on the street without the benefit of specialized knowledge. This
+knowledge is stored in a large Thesaurus containing some 250,000 word
+associations supplied with the program.</p>
+<p>It is not necessary for a query item to be stored in the Thesaurus for
+Metamorph to search for it. In fact, for many technical terms you would
+want only forms of that exact word rather than any abstract
+associations.</p>
+<p>If you wanted someone to intelligently correlate information from a
+medical, legal, or other specialized or technical data base, you would
+expect him to have a working knowledge of the nomenclature used in
+discussing those subjects. Therefore, we have created a facility for
+teaching Metamorph specialized vocabulary and domain specific inference
+sets to draw upon for its concept set expansion.</p>
+<p>You are customizing Metamorph for your own use by adding semantic
+knowledge to the web of equivalences. In this way, the program can be
+made “smarter” and able to take on the “viewpoints” of the user where
+required. Metamorph becomes an increasingly powerful retrieval tool
+through this process of the user teaching it new language and
+associations.</p>
+<p>By passing this ability onto the user, and allowing for thesaurus
+customization to be an integral part of a search environment, the job of
+evolving vocabulary becomes entirely the user’s responsibility and under
+his control. We provide a basic foundation of over 250,000 associations
+which is adequate to process any query with a reasonable amount of
+discretion and intelligence. The job of refining that vocabulary and
+keeping it up to date as language evolves is up to you.</p>
+</div>
+<div class="section" id="equivalence-file-explanation">
+<h2>Equivalence File Explanation<a class="headerlink" href="#equivalence-file-explanation" title="Permalink to this headline">¶</a></h2>
+<p>Metamorph draws upon a large interconnected web of root words and their
+equivalence sets called the Equivalence File. For every English word
+entered as a search item, a lookup is done in this file, and whatever
+list of associations exists therein is included with the specified root
+word.</p>
+<p>The entered keyword is called the “root”. The associations pulled from
+the Equivalence File are called the equivalences, or “equivs”.</p>
+<p>Each list of words created from such Equivalence File lookup is passed
+to PPM (the Parallel Pattern Matcher) for text searching. Morpheme
+processing is done on all equivalences of all root words. Therefore, all
+valid word forms of all words in a concept set are searched for.</p>
+<p>There are over 250,000 of these word associations contained in the
+Equivalence File, making a Metamorph search fairly intelligent without
+the need for customization before trying it.</p>
+<p>While the Equivalence File is similar to a thesaurus, it is more
+accurately comprised of associations of different types, signalling
+paths of equivalent weightings through a volume of vocabulary.</p>
+<p>Where special nomenclature, slang, acronyms, or technical terminology is
+in abundance, one can customize the Equivalence File by making a User
+Equivalence File, through which tailored priorities can be ordered and
+new entries added.</p>
+</div>
+<div class="section" id="editing-concept-sets-with-backref">
+<h2>Editing Concept Sets With Backref<a class="headerlink" href="#editing-concept-sets-with-backref" title="Permalink to this headline">¶</a></h2>
+<p>It is intended that permanent Equivalence editing be done with the whole
+group’s needs in mind, rather than to please just one individual user.
+Vocabulary additions, specialized nomenclature, slang and acronyms that
+would be common to a particular group, subgroup, purpose or project,
+would be entered and saved in a User Equivalence File, as named with the
+corresponding APICP flag <code class="docutils literal notranslate"><span class="pre">ueqprefix</span></code>, and pointed to in the managing
+program; e.g., a Vortex script.</p>
+<p>While it is possible to create several User Equivalence Files for
+different groups with differing acronyms and vocabulary, this is not
+always necessary. More often than not there is only one User Equivalence
+File per system, and multiples are created only to resolve conflicts in
+terminology.</p>
+<p>Running with See References on produces anywhere from 75 to 200
+equivalences associated with a particular word; more than 256 words are
+truncated. This is usually much more than is prudent, so it is intended
+that with See References on, you would edit such a list down to
+correspond more closely to what you really had in mind for the search
+question at hand.</p>
+<p>To check existing equivalence set for a word, use the BACKREF program,
+where the syntax is:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">backref</span> <span class="o">-</span><span class="n">e</span> <span class="n">input_file</span> <span class="n">output_file</span>
+</pre></div>
+</div>
+<p>where <code class="docutils literal notranslate"><span class="pre">input_file</span></code> is your ASCII equiv source filename, and
+<code class="docutils literal notranslate"><span class="pre">output_file</span></code> is the backreferenced and indexed binary file which the
+Metamorph engine will use. The default User Equiv source file is
+<code class="docutils literal notranslate"><span class="pre">eqvsusr.lst</span></code> and its binary counterpart is <code class="docutils literal notranslate"><span class="pre">eqvsusr</span></code>.</p>
+<p>When you enter a query like “<code class="docutils literal notranslate"><span class="pre">power</span> <span class="pre">struggle</span></code>” in a query input box,
+where concept search has been enabled, your search already knows 57
+equivalences for <code class="docutils literal notranslate"><span class="pre">power</span></code>, and 23 equivalences for <code class="docutils literal notranslate"><span class="pre">struggle</span></code>. Using
+the above command for BACKREF, you can see what those sets are composed
+of, and you can edit them. When asked to enter a root term, enter
+<code class="docutils literal notranslate"><span class="pre">power</span></code>, and the list below would be revealed:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">power</span><span class="p">;</span><span class="n">n</span>  <span class="mi">57</span> <span class="n">equivalences</span>
+  <span class="n">ability</span><span class="p">;</span><span class="n">n</span>          <span class="n">intensity</span><span class="p">;</span><span class="n">n</span>        <span class="n">primacy</span><span class="p">;</span><span class="n">n</span>          <span class="n">might</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">acquistion</span><span class="p">;</span><span class="n">n</span>       <span class="n">jurisdiction</span><span class="p">;</span><span class="n">n</span>     <span class="n">regency</span><span class="p">;</span><span class="n">n</span>          <span class="n">reign</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">ascendency</span><span class="p">;</span><span class="n">n</span>       <span class="n">justice</span><span class="p">;</span><span class="n">n</span>          <span class="n">restraint</span><span class="p">;</span><span class="n">n</span>        <span class="n">rule</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">authority</span><span class="p">;</span><span class="n">n</span>        <span class="n">kingship</span><span class="p">;</span><span class="n">n</span>         <span class="n">scepter</span><span class="p">;</span><span class="n">n</span>          <span class="n">sovereignty</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">carte</span> <span class="n">blanche</span><span class="p">;</span><span class="n">n</span>    <span class="n">leadership</span><span class="p">;</span><span class="n">n</span>       <span class="n">skill</span><span class="p">;</span><span class="n">n</span>            <span class="n">sway</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">clutches</span><span class="p">;</span><span class="n">n</span>         <span class="n">majesty</span><span class="p">;</span><span class="n">n</span>          <span class="n">strength</span><span class="p">;</span><span class="n">n</span>         <span class="n">electrify</span><span class="p">;</span><span class="n">v</span>
+  <span class="n">command</span><span class="p">;</span><span class="n">n</span>          <span class="n">mastership</span><span class="p">;</span><span class="n">n</span>       <span class="n">suction</span><span class="p">;</span><span class="n">n</span>
+  <span class="n">control</span><span class="p">;</span><span class="n">n</span>          <span class="n">mastery</span><span class="p">;</span><span class="n">n</span>          <span class="n">superiority</span><span class="p">;</span><span class="n">n</span>
+  <span class="n">domination</span><span class="p">;</span><span class="n">n</span>       <span class="n">militarism</span><span class="p">;</span><span class="n">n</span>       <span class="n">supremacy</span><span class="p">;</span><span class="n">n</span>
+  <span class="n">dominion</span><span class="p">;</span><span class="n">n</span>         <span class="n">monarchy</span><span class="p">;</span><span class="n">n</span>         <span class="n">vigor</span><span class="p">;</span><span class="n">n</span>
+  <span class="n">efficiency</span><span class="p">;</span><span class="n">n</span>       <span class="n">nuclear</span> <span class="n">fission</span><span class="p">;</span><span class="n">n</span>  <span class="n">weight</span><span class="p">;</span><span class="n">n</span>
+  <span class="n">electricity</span><span class="p">;</span><span class="n">n</span>      <span class="n">omnipotence</span><span class="p">;</span><span class="n">n</span>      <span class="n">ability</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">energy</span><span class="p">;</span><span class="n">n</span>           <span class="n">persuasiveness</span><span class="p">;</span><span class="n">n</span>   <span class="n">capability</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">force</span><span class="p">;</span><span class="n">n</span>            <span class="n">potency</span><span class="p">;</span><span class="n">n</span>          <span class="n">control</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">hegemony</span><span class="p">;</span><span class="n">n</span>         <span class="n">predominance</span><span class="p">;</span><span class="n">n</span>     <span class="n">energy</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">imperialism</span><span class="p">;</span><span class="n">n</span>      <span class="n">preponderance</span><span class="p">;</span><span class="n">n</span>    <span class="n">faculty</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">influence</span><span class="p">;</span><span class="n">n</span>        <span class="n">pressure</span><span class="p">;</span><span class="n">n</span>         <span class="n">function</span><span class="p">;</span><span class="n">u</span>
+</pre></div>
+</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">struggle</span><span class="p">;</span><span class="n">n</span>  <span class="mi">23</span> <span class="n">equivalences</span>
+  <span class="n">battle</span><span class="p">;</span><span class="n">n</span>       <span class="n">agonize</span><span class="p">;</span><span class="n">v</span>
+  <span class="n">combat</span><span class="p">;</span><span class="n">n</span>       <span class="n">compete</span><span class="p">;</span><span class="n">v</span>
+  <span class="n">competition</span><span class="p">;</span><span class="n">n</span>  <span class="n">contest</span><span class="p">;</span><span class="n">v</span>
+  <span class="n">conflict</span><span class="p">;</span><span class="n">n</span>     <span class="n">fight</span><span class="p">;</span><span class="n">v</span>
+  <span class="n">effort</span><span class="p">;</span><span class="n">n</span>       <span class="n">flounder</span><span class="p">;</span><span class="n">v</span>
+  <span class="n">exertion</span><span class="p">;</span><span class="n">n</span>     <span class="n">strive</span><span class="p">;</span><span class="n">v</span>
+  <span class="n">experience</span><span class="p">;</span><span class="n">n</span>
+  <span class="n">fight</span><span class="p">;</span><span class="n">n</span>
+  <span class="n">scuffle</span><span class="p">;</span><span class="n">n</span>
+  <span class="n">strife</span><span class="p">;</span><span class="n">n</span>
+  <span class="n">attempt</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">clash</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">conflict</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">endeavor</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">fight</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">flight</span><span class="p">;</span><span class="n">u</span>
+  <span class="n">oppose</span><span class="p">;</span><span class="n">u</span>
+</pre></div>
+</div>
+<p>The root entry appears at the top, with its equivalences (each with an
+assigned class, or part of speech) listed underneath. The ‘<code class="docutils literal notranslate"><span class="pre">n</span></code>’
+following (or preceding) “<code class="docutils literal notranslate"><span class="pre">power</span></code>” stands for “<code class="docutils literal notranslate"><span class="pre">noun</span></code>”, and is the
+class to which “<code class="docutils literal notranslate"><span class="pre">power</span></code>” has been assigned. (‘<code class="docutils literal notranslate"><span class="pre">v</span></code>’ means “<code class="docutils literal notranslate"><span class="pre">verb</span></code>”;
+‘<code class="docutils literal notranslate"><span class="pre">u</span></code>’ means “<code class="docutils literal notranslate"><span class="pre">unclassed</span></code>”.)</p>
+<p>Once editing a root word’s set of equivalences, you’ll have these
+choices, offered below:</p>
+<div class="line-block">
+<div class="line"><code class="docutils literal notranslate"><span class="pre">xxxxxxxxxxxxxxxx</span></code>xx = Saves all changes made to list to User
+Equivalence File. <code class="docutils literal notranslate"><span class="pre">Delete</span></code> Deletes equivalence (named by number).</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">Add</span></code> Opens word entry line below list to add new equivalence.</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">Zap</span></code> Deletes entire equivalence list.</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">Change-class</span></code> Prompts on line below for new word class assignment.</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">By-class-delete</span></code> Deletes all words in the entered class.</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">Save</span> <span class="pre">Changes</span></code> Saves all changes made to list to User Equiv File.</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">Undo</span> <span class="pre">Changes</span></code> Restores previous root word entry screen.</div>
+<div class="line"><code class="docutils literal notranslate"><span class="pre">Redisplay</span></code> Refreshes the list with any changes made (or as it was).</div>
+</div>
+<p>If you choose “<code class="docutils literal notranslate"><span class="pre">Save</span> <span class="pre">Changes</span></code>”, any changes made to the list will be
+saved to the named User Equivalence File when you quit the program with
+<code class="docutils literal notranslate"><span class="pre">qq</span></code>.</p>
+<p>When a new word is added, you are prompted to enter its class. When the
+new word is added to the list, it will be sorted in alphabetically at
+its appropriate place in the list, under the class to which it belongs.
+Existing thesaurus entries have been classed according to the standard
+parts of speech as described below. However, you may create and assign
+any class you like.</p>
+<p>In the example above under “<code class="docutils literal notranslate"><span class="pre">struggle</span></code>”, you might want to
+delete-by-class all those entries listed as verbs. Doing so would
+eliminate with one keystroke all equivalences classed as ‘<code class="docutils literal notranslate"><span class="pre">v</span></code>’:
+“<code class="docutils literal notranslate"><span class="pre">agonize</span></code>”, “<code class="docutils literal notranslate"><span class="pre">compete</span></code>”, “<code class="docutils literal notranslate"><span class="pre">contest</span></code>”, “<code class="docutils literal notranslate"><span class="pre">fight</span></code>”,
+“<code class="docutils literal notranslate"><span class="pre">flounder</span></code>”, and “<code class="docutils literal notranslate"><span class="pre">strive</span></code>”. The classes in use are as follows:</p>
+<div class="line-block">
+<div class="line">Pxxx = Pronoun P Pronoun</div>
+<div class="line">c conjunction</div>
+<div class="line">i interjection</div>
+<div class="line">m modifier</div>
+<div class="line">n noun</div>
+<div class="line">p preposition</div>
+<div class="line">u unclassed</div>
+<div class="line">v verb</div>
+</div>
+<p>You can <code class="docutils literal notranslate"><span class="pre">Undo</span> <span class="pre">Changes</span></code> anytime while editing, to escape from the
+action you are in. This restores the entry screen, which lets you choose
+another root word to edit, add to, or delete. When you are finished
+editing a word, either <code class="docutils literal notranslate"><span class="pre">Save</span></code> or <code class="docutils literal notranslate"><span class="pre">Undo</span></code> Changes, then <code class="docutils literal notranslate"><span class="pre">qq</span></code> to
+Quit. At that point the source file will be indexed into its binary form
+usable by the search, if you have saved any changes.</p>
+</div>
+<div class="section" id="toggling-equiv-expansion-on-or-off">
+<h2>Toggling Equiv Expansion On or Off<a class="headerlink" href="#toggling-equiv-expansion-on-or-off" title="Permalink to this headline">¶</a></h2>
+<p>The APICP flag <code class="docutils literal notranslate"><span class="pre">keepeqvs</span></code> lets you set the default for concept
+expansion. If set on, unless otherwise marked, the search will use any
+equivalences found in the Equivalence File associated with any word
+entered in a query. This global condition can be selectively reversed by
+preceding a word in a query with a <code class="docutils literal notranslate"><span class="pre">~</span></code> tilde. If the global setting is
+off, the <code class="docutils literal notranslate"><span class="pre">~</span></code> will selectively enable concept expansion (i.e.,
+equivalence look-up) on that word; if the global setting is on, the
+<code class="docutils literal notranslate"><span class="pre">~</span></code> will turn it off for that word. (Note that equivalences can also
+be explicitly specified in parentheses; see p. .)</p>
+<p>While use of the Equivalence File is an integral part of the
+intelligence of a Metamorph search, in certain kinds of particularly
+specialized or technical data such abstraction may not be desired.
+Turning the <code class="docutils literal notranslate"><span class="pre">keepeqvs</span></code> flag off prevents any automatic lookup in the
+Equivalence File, changing the nature of the search so that the emphasis
+is rather on intersections of valid word forms of specified English
+words, mixed in with special expressions. For example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>What RESEARCH has been done about HEALTH DRINKS?
+</pre></div>
+</div>
+<p>Morpheme processing will be retained on the important (non-noise) words,
+but equivalences will not be included. An example of a sentence this
+question would retrieve, would be:</p>
+<blockquote>
+<div><p>The company had been <strong>researching</strong> ingredients which would taste
+good in a <strong>drink</strong> while still promoting good <strong>health</strong>.</p>
+</div></blockquote>
+<p>Where the global setting is on and you wish to selectively restrict
+Equivalence Lookup on some but not all words, you use tilde ‘<code class="docutils literal notranslate"><span class="pre">~</span></code>’ in
+front of those words where no equivalences are desired. This would be
+the preferred method of search for some types of technical material,
+such as medical case data.</p>
+<p>Although at first glance it would seem that an effective Metamorph
+search could not be done on technical data until much specialized
+nomenclature was taught to the Equivalence File, this is not always the
+case. Often a technical term means only that, and the power is in
+intersecting some valid English form of that word with some other
+concept set.</p>
+<p>An example of a very discrete query that requires no knowledge
+engineering beyond what comes “out of the box” with Metamorph might be
+as in this query (assuming <code class="docutils literal notranslate"><span class="pre">keepeqvs</span></code> turned on):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">stomach</span> <span class="o">~</span><span class="n">cancer</span> <span class="n">operation</span>
+</pre></div>
+</div>
+<p>The tilde ‘<code class="docutils literal notranslate"><span class="pre">~</span></code>’ is used to restrict equivalence lookup on “<code class="docutils literal notranslate"><span class="pre">cancer</span></code>”
+(toggle the <code class="docutils literal notranslate"><span class="pre">keepeqvs</span></code> setting, to off), as references to such things
+as “<code class="docutils literal notranslate"><span class="pre">illness</span></code>” rather than “<code class="docutils literal notranslate"><span class="pre">cancer</span></code>” would be too abstract.
+However, what you do want is concept expansion on the related words.
+Therefore, such a search would retrieve the sentence:</p>
+<blockquote>
+<div><p>Suffering severe pains in his <strong>abdomen</strong>, it was first thought to
+be appendicitis; however this led to exploratory <strong>surgery</strong> which
+revealed <strong>cancerous</strong> tissue.</p>
+</div></blockquote>
+<p>In this example, “<code class="docutils literal notranslate"><span class="pre">cancerous</span></code>” is a valid word form of “<code class="docutils literal notranslate"><span class="pre">cancer</span></code>”
+included through the morpheme process; “<code class="docutils literal notranslate"><span class="pre">abdomen</span></code>” was found because
+it was in the “<code class="docutils literal notranslate"><span class="pre">stomach</span></code>” equivalence list; “<code class="docutils literal notranslate"><span class="pre">surgery</span></code>” was found
+because it was in the “<code class="docutils literal notranslate"><span class="pre">operation</span></code>” equivalence list.</p>
+<p>Again, with the <code class="docutils literal notranslate"><span class="pre">keepeqvs</span></code> flag set on, use of the tilde (<code class="docutils literal notranslate"><span class="pre">~</span></code>)
+reverses its meaning. Therefore, the above example would seek only valid
+word forms of the root words “<code class="docutils literal notranslate"><span class="pre">stomach</span></code>” and “<code class="docutils literal notranslate"><span class="pre">operation</span></code>”, but the
+tilde preceding “<code class="docutils literal notranslate"><span class="pre">cancer</span></code>” would selectively enable Equivalence Lookup
+on that word alone. So, with <code class="docutils literal notranslate"><span class="pre">keepeqvs</span></code> off, we might retrieve instead
+the following:</p>
+<blockquote>
+<div><p>In the midst of the <strong>operation</strong> to remove her appendix, an
+abnormal <strong>growth</strong> was found in the <strong>stomach</strong> area.</p>
+</div></blockquote>
+<p>This last response is matched because “<code class="docutils literal notranslate"><span class="pre">operation</span></code>” and “<code class="docutils literal notranslate"><span class="pre">stomach</span></code>”
+are forms of those root words; “<code class="docutils literal notranslate"><span class="pre">growth</span></code>” is in the equivalence list
+for “<code class="docutils literal notranslate"><span class="pre">cancer</span></code>” and was included in the set of possibilities due to the
+tilde (<code class="docutils literal notranslate"><span class="pre">~</span></code>) preceding it.</p>
+</div>
+<div class="section" id="creating-a-user-equivalence-file-by-hand">
+<h2>Creating a User Equivalence File By Hand<a class="headerlink" href="#creating-a-user-equivalence-file-by-hand" title="Permalink to this headline">¶</a></h2>
+<p>The User Equivalence File is read by Metamorph as an overlay to the Main
+Equivalence File. The search looks for matching root entries first in
+the User Equivalence File, and then in the Main Equivalence File. The
+information found in both places is combined, following certain rules.</p>
+<p>When editing equivalences using the BACKREF program as shown, the
+changes you make are written to the named User Equivalence File. It is
+also possible to hand edit a User Equivalence File if you understand the
+syntax which is used when writing directly to it.</p>
+<p>In order to precisely deal with issues such as precedence, substitution,
+removal, assignment, back referencing, and see references, a strict
+format must be adhered to. Any erroneous characters included in the User
+Equivalence File could be misinterpreted, causing unseen difficulties.
+Therefore, one must take care to ensure the User Equivalence file is
+flat ASCII.</p>
+<p>If you want to create a User Equivalence file independent of the
+<code class="docutils literal notranslate"><span class="pre">backref</span> <span class="pre">-e</span></code> feature, follow these steps:</p>
+<ol class="arabic">
+<li><p>Using an ASCII only editor, open a file called “<code class="docutils literal notranslate"><span class="pre">eqvsusr.lst</span></code>”. If
+you already have a list of words and equivalences you want to add in
+a flat ASCII file, you can edit the entries into the prescribed
+format. Otherwise, simply begin entering root words with their
+equivalences as outlined in the following sections.</p></li>
+<li><p>After creating the above User Equivalence File, it must still be
+indexed by the “<code class="docutils literal notranslate"><span class="pre">backref</span></code>” program supplied with your Texis
+package. <code class="docutils literal notranslate"><span class="pre">Backref</span></code> takes an ASCII filename as the first argument,
+and creates a file of the name given in the second argument. For
+example, use this command on your ASCII User Equivalence File:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">backref</span> <span class="n">eqvsusr</span><span class="o">.</span><span class="n">lst</span> <span class="n">eqvsusr</span>
+</pre></div>
+</div>
+<p>Where “<code class="docutils literal notranslate"><span class="pre">eqvsusr.lst</span></code>” is the ASCII file containing your User
+Equivalence entries, and “<code class="docutils literal notranslate"><span class="pre">eqvsusr</span></code>” is the file ready for use by
+the Metamorph search engine.</p>
+</li>
+<li><p>If you have not otherwise named a special User Equiv File in some
+managing program such as a vortex script, the indexed User
+Equivalence File must be called “<code class="docutils literal notranslate"><span class="pre">eqvsusr</span></code>”, and must be located in
+the “<code class="docutils literal notranslate"><span class="pre">morph3</span></code>” directory, in order for it to be used by a Metamorph
+search.</p></li>
+</ol>
+</div>
+<div class="section" id="user-equivalence-file-format">
+<h2>User Equivalence File Format<a class="headerlink" href="#user-equivalence-file-format" title="Permalink to this headline">¶</a></h2>
+<p>A User Equivalence File is an ASCII file created by the user, which
+corresponds to information in the larger 2+ megabyte Main Equivalence
+File which comes with the Texis package.</p>
+<p>Each root word is listed as a separate entry, on its own line with a
+list of known associations or equivalences (equivs).</p>
+<p>The root words go down the lefthand side of the file, each one a new
+entry; the equivalences go out left to right as separated by commas.
+Word class (part of speech) and other optional weighting information may
+be stored with each entry.</p>
+<p>Here is an example of a User Equivalence File. It contains no special
+information beyond root words and their equivalences. Its chief purpose
+would be the addition of domain specific vocabulary. Phrases are
+acceptable as roots or as equivalences.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">chicken</span><span class="p">,</span><span class="n">bird</span><span class="p">,</span><span class="n">seed</span><span class="p">,</span><span class="n">egg</span><span class="p">,</span><span class="n">aviary</span><span class="p">,</span><span class="n">rooster</span>
+<span class="n">seed</span><span class="p">,</span><span class="n">food</span><span class="p">,</span><span class="n">feed</span><span class="p">,</span><span class="n">sprout</span>
+<span class="n">ranch</span><span class="p">,</span><span class="n">farm</span><span class="p">,</span><span class="n">pen</span><span class="p">,</span><span class="n">hen</span> <span class="n">house</span><span class="p">,</span><span class="n">chicken</span> <span class="n">house</span><span class="p">,</span><span class="n">pig</span> <span class="n">sty</span>
+<span class="n">Farmer</span><span class="s1">&#39;s Almanac,research,weather forecast,book</span>
+<span class="n">rose</span><span class="p">,</span><span class="n">flower</span><span class="p">,</span><span class="n">thorn</span><span class="p">,</span><span class="n">red</span> <span class="n">flower</span>
+<span class="n">water</span><span class="p">,</span><span class="n">moisture</span><span class="p">,</span><span class="n">dew</span><span class="p">,</span><span class="n">dewdrop</span><span class="p">,</span><span class="n">Atlantic</span> <span class="n">Ocean</span>
+<span class="n">bee</span> <span class="n">pollen</span><span class="p">,</span><span class="n">mating</span><span class="p">,</span><span class="n">flower</span><span class="p">,</span><span class="n">pollination</span><span class="p">,</span><span class="n">Vitamin</span> <span class="n">B</span>
+<span class="n">grow</span><span class="p">,</span><span class="n">mature</span><span class="p">,</span><span class="n">blossom</span><span class="p">,</span><span class="n">ripen</span>
+</pre></div>
+</div>
+<p>Root word entries should be kept to a reasonable line length; around 80
+characters for standard screen display is prudent. In no case should a
+root word entry exceed 1K per line. Where more equivalences exist for a
+root word than can be fit onto one line, enter multiple entries where
+the root word is repeated as the first item. For example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">abort</span><span class="p">,</span><span class="n">cancel</span><span class="p">,</span><span class="n">cease</span><span class="p">,</span><span class="n">destroy</span><span class="p">,</span><span class="n">end</span><span class="p">,</span><span class="n">fail</span><span class="p">,</span><span class="n">kill</span>
+<span class="n">abort</span><span class="p">,</span><span class="n">miscarry</span><span class="p">,</span><span class="n">nullify</span><span class="p">,</span><span class="n">terminate</span><span class="p">,</span><span class="n">zap</span>
+</pre></div>
+</div>
+<p>It is important to remember that these are not just synonyms. They can
+be anything you wish to associate with a particular word: i.e.,
+identities, generalities, or specifics of the word entry, plus
+associated phrases, acronyms, or spelling variations. Even antonyms
+could be listed if you wished, although that wouldn’t generally be
+advisable.</p>
+<p>The word “equivalence” is used in a programming sense, to indicate that
+each equivalence will be treated in weight exactly the same as every
+other equivalence in that set grouping when a search is executed.</p>
+</div>
+<div class="section" id="back-referencing">
+<h2>Back Referencing<a class="headerlink" href="#back-referencing" title="Permalink to this headline">¶</a></h2>
+<p>Both the Main Equivalence File and the User Equivalence File include a
+provision for “back referencing”. That is, where a word is stored as the
+equivalence to another root entry, there is an inherent connection
+“backwards” to the root, when that equivalence is entered as a keyword
+(root) on the Query Line.</p>
+<p>For example, imagine the following Equivalence File entry for the root
+acronym “<code class="docutils literal notranslate"><span class="pre">A&amp;R</span></code>”:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">A</span><span class="o">&amp;</span><span class="n">R</span><span class="p">,</span><span class="n">automation</span><span class="p">,</span><span class="n">robotics</span><span class="p">,</span><span class="n">automation</span> <span class="ow">and</span> <span class="n">robotics</span>
+</pre></div>
+</div>
+<p>Metamorph, and so therefore Texis, knows when you enter “<code class="docutils literal notranslate"><span class="pre">robotics</span></code>”
+as a root word in a query, that it should back search and associate it
+with “<code class="docutils literal notranslate"><span class="pre">A&amp;R</span></code>”. Therefore, when “<code class="docutils literal notranslate"><span class="pre">robotics</span></code>” is used as a keyword,
+“<code class="docutils literal notranslate"><span class="pre">A&amp;R</span></code>” will be automatically associated as one of its equivalences.</p>
+<p>Back referencing means that the following association is implicitly
+understood, and need not be separately entered:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">robotics</span><span class="p">,</span><span class="n">A</span><span class="o">&amp;</span><span class="n">R</span>
+</pre></div>
+</div>
+<p>Such automatic back searching capability exponentially increases the
+density of association and connection within the Equivalence File and
+User Equivalence File.</p>
+</div>
+<div class="section" id="see-referencing">
+<h2>See Referencing<a class="headerlink" href="#see-referencing" title="Permalink to this headline">¶</a></h2>
+<p>You can exponentially increase the denseness of connectivity in the
+Equivalence File by invoking “See References”, set with the APICP flag
+<code class="docutils literal notranslate"><span class="pre">see</span></code>.</p>
+<p>The concept of a “<code class="docutils literal notranslate"><span class="pre">See</span></code>” reference is the same as in a dictionary.
+When looking up the word “<code class="docutils literal notranslate"><span class="pre">cat</span></code>”, you’ll get a description and a few
+definitions for cat. Then it may say at the end “<code class="docutils literal notranslate"><span class="pre">see</span> <span class="pre">also</span> <span class="pre">pet</span></code>”. With
+See Referencing on, the equivalence list associated with the word
+“<code class="docutils literal notranslate"><span class="pre">cat</span></code>” is expanded to also include all the equivalences associated
+with the word “<code class="docutils literal notranslate"><span class="pre">pet</span></code>”.</p>
+<p>See Referencing greatly increases the general size of word sets in use
+in any search, increasing the chance for abstraction of concept. One
+would not normally invoke See Referencing, and would do so only where
+such abstraction was desired.</p>
+<p>Not all equivalences have “<code class="docutils literal notranslate"><span class="pre">See</span> <span class="pre">also</span></code>” notations; but with See
+Referencing on, all equivalences associated with any “<code class="docutils literal notranslate"><span class="pre">See</span> <span class="pre">also</span></code>” root
+word will be included as part of the original. With See References off,
+only the root word and its equivalences will be included in that word
+set, regardless of whether a see reference exists or not.</p>
+<p>See Referencing is restricted to only one level of reference, to prevent
+inadvertent “endless” looping or overlap of concepts. In any case, a
+word set will be truncated at the point it approaches 256 equivalences.</p>
+<p>See References are denoted with the at sign (<code class="docutils literal notranslate"><span class="pre">&#64;</span></code>). Enter the word
+preceded by ‘<code class="docutils literal notranslate"><span class="pre">&#64;</span></code>’. For example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">cowboy</span><span class="p">,</span><span class="n">horse</span><span class="p">,</span><span class="n">cows</span><span class="p">,</span><span class="nd">@rancher</span>
+<span class="n">rancher</span><span class="p">,</span><span class="n">plains</span><span class="p">,</span><span class="n">landowner</span>
+</pre></div>
+</div>
+<p>In normal usage, the search item “<code class="docutils literal notranslate"><span class="pre">cowboy</span></code>” expands to the set
+“<code class="docutils literal notranslate"><span class="pre">cowboy</span></code>”, “<code class="docutils literal notranslate"><span class="pre">horse</span></code>”, “<code class="docutils literal notranslate"><span class="pre">cows</span></code>” and “<code class="docutils literal notranslate"><span class="pre">rancher</span></code>”. With see
+referencing invoked, “<code class="docutils literal notranslate"><span class="pre">cowboy</span></code>” expands to “<code class="docutils literal notranslate"><span class="pre">cowboy</span></code>”, “<code class="docutils literal notranslate"><span class="pre">horse</span></code>”,
+and “<code class="docutils literal notranslate"><span class="pre">cows</span></code>” as well as “<code class="docutils literal notranslate"><span class="pre">rancher</span></code>”, “<code class="docutils literal notranslate"><span class="pre">plains</span></code>”, and
+“<code class="docutils literal notranslate"><span class="pre">landowner</span></code>”.</p>
+<p>The see reference ‘<code class="docutils literal notranslate"><span class="pre">&#64;</span></code>’ marking in a User Equivalence file will only
+connect entries which are in the User Equivalence file. In the above
+example, the entry for “<code class="docutils literal notranslate"><span class="pre">rancher</span></code>” must exist in the User Equivalence
+to be so linked.</p>
+</div>
+<div class="section" id="word-classes-and-parts-of-speech">
+<h2>Word Classes and Parts of Speech<a class="headerlink" href="#word-classes-and-parts-of-speech" title="Permalink to this headline">¶</a></h2>
+<p>Part of speech or other word class information can be stored with
+equivalence entries. Use the following abbreviations:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">P</span><span class="p">:</span> <span class="n">Pronoun</span>           <span class="n">n</span><span class="p">:</span> <span class="n">noun</span>
+<span class="n">c</span><span class="p">:</span> <span class="n">conjunction</span>       <span class="n">p</span><span class="p">:</span> <span class="n">preposition</span>
+<span class="n">i</span><span class="p">:</span> <span class="n">interjection</span>      <span class="n">u</span><span class="p">:</span> <span class="n">unclassed</span>
+<span class="n">m</span><span class="p">:</span> <span class="n">modifier</span>          <span class="n">v</span><span class="p">:</span> <span class="n">verb</span>
+</pre></div>
+</div>
+<p>A part of speech abbreviation follows a semicolon (<code class="docutils literal notranslate"><span class="pre">;</span></code>), where the
+part of speech designation applies to that word and to all equivalences
+which follow it up to the next part of speech abbreviation on the line.
+For example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">wish</span><span class="p">;</span><span class="n">n</span><span class="p">,</span><span class="n">pie</span> <span class="ow">in</span> <span class="n">the</span> <span class="n">sky</span><span class="p">,</span><span class="n">dream</span><span class="p">;</span><span class="n">v</span><span class="p">,</span><span class="n">yearn</span><span class="p">,</span><span class="n">long</span><span class="p">,</span><span class="n">pine</span>
+</pre></div>
+</div>
+<p>The above is an entry for the root word “<code class="docutils literal notranslate"><span class="pre">wish</span></code>”. The equivalences
+“<code class="docutils literal notranslate"><span class="pre">pie</span> <span class="pre">in</span> <span class="pre">the</span> <span class="pre">sky</span></code>”, and “<code class="docutils literal notranslate"><span class="pre">dream</span></code>” are classed as nouns. The
+equivalences “<code class="docutils literal notranslate"><span class="pre">yearn</span></code>”, “<code class="docutils literal notranslate"><span class="pre">long</span></code>”, and “<code class="docutils literal notranslate"><span class="pre">pine</span></code>” are classed as
+verbs.</p>
+</div>
+<div class="section" id="rules-of-precedence-and-syntax">
+<h2>Rules of Precedence and Syntax<a class="headerlink" href="#rules-of-precedence-and-syntax" title="Permalink to this headline">¶</a></h2>
+<p>A root word and its equivalences are separated by commas. The comma
+(<code class="docutils literal notranslate"><span class="pre">,</span></code>) signifies addition of an item to a set.</p>
+<p>Where an entry exists in a User Equivalence File and also in the Main
+Equivalence File, equivalences found for all entries of that root word
+are combined into one set. Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">constellation</span><span class="p">,</span><span class="n">celestial</span> <span class="n">heavens</span>
+</pre></div>
+</div>
+<p>Phrases are acceptable as roots or as equivalences, and locate matches
+as separated by a hyphen or any kind of white space, provided the
+separation is only one character long. Use spaces rather than hyphens to
+enter normally hyphenated words.</p>
+<p>When “<code class="docutils literal notranslate"><span class="pre">constellation</span></code>” is entered as a search item on the Query Line,
+“<code class="docutils literal notranslate"><span class="pre">celestial</span> <span class="pre">heavens</span></code>” from the User Equivalence File will be added to
+the existing set, making the complete concept set:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">constellation</span>
+<span class="n">celestial</span> <span class="n">heavens</span>
+<span class="n">configuration</span> <span class="n">of</span> <span class="n">stars</span>
+<span class="n">galaxy</span>
+<span class="n">group</span> <span class="n">of</span> <span class="n">stars</span>
+<span class="n">nebula</span>
+<span class="n">star</span>
+<span class="n">zodiac</span>
+</pre></div>
+</div>
+<p>Equivs can be removed from a larger set by preceding them with a tilde
+(<code class="docutils literal notranslate"><span class="pre">~</span></code>) in the User Equivalence File. For example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">constellation</span><span class="o">~</span><span class="n">nebula</span><span class="o">~</span><span class="n">zodiac</span><span class="p">,</span><span class="n">big</span> <span class="n">dipper</span>
+</pre></div>
+</div>
+<p>This entry for constellation reads “remove ‘<code class="docutils literal notranslate"><span class="pre">nebula</span></code>’, remove
+‘<code class="docutils literal notranslate"><span class="pre">zodiac</span></code>’, and add ‘<code class="docutils literal notranslate"><span class="pre">big</span> <span class="pre">dipper</span></code>’”; making the complete concept
+set:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">constellation</span>
+<span class="n">big</span> <span class="n">dipper</span>
+<span class="n">configuration</span> <span class="n">of</span> <span class="n">stars</span>
+<span class="n">galaxy</span>
+<span class="n">group</span> <span class="n">of</span> <span class="n">stars</span>
+<span class="n">star</span>
+</pre></div>
+</div>
+<p>A whole equivalence set can be substituted for what is in the Main
+Equivalence File with a User Equivalence File entry which uses the equal
+sign (<code class="docutils literal notranslate"><span class="pre">=</span></code>) preceding the favored list of equivalences. For example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">constellation</span><span class="o">=</span><span class="n">constellation</span><span class="p">,</span><span class="n">galaxy</span><span class="p">,</span><span class="n">nebula</span><span class="p">,</span><span class="n">star</span>
+</pre></div>
+</div>
+<p>This entry for constellation replaces any entries in the Main
+Equivalence File, making the complete concept set:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">constellation</span>
+<span class="n">galaxy</span>
+<span class="n">nebula</span>
+<span class="n">star</span>
+</pre></div>
+</div>
+<p>Don’t forget to include the root word following the equal sign (<code class="docutils literal notranslate"><span class="pre">=</span></code>),
+as the substitution is literal for the whole set, and the root word must
+be repeated to be included.</p>
+<p>To permanently swap one word for another, you could make one entry only,
+having the effect of assignment. For example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">constellation</span><span class="o">=</span><span class="n">andromeda</span>
+</pre></div>
+</div>
+<p>Subsequent searches for “<code class="docutils literal notranslate"><span class="pre">constellation</span></code>” where concept searching is
+invoked will swap “<code class="docutils literal notranslate"><span class="pre">constellation</span></code>” for “<code class="docutils literal notranslate"><span class="pre">andromeda</span></code>”.</p>
+<p>To permanently disable concept expansion for an item, use the equal sign
+(<code class="docutils literal notranslate"><span class="pre">=</span></code>) to replace a keyword with itself only. For example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">constellation</span><span class="o">=</span><span class="n">constellation</span>
+</pre></div>
+</div>
+<p>Any equivalences from the Main Equivalence File would be ignored, as the
+set is replaced by this entry.</p>
+<p>The above rules for substitution apply where what immediately follows
+the equal sign (<code class="docutils literal notranslate"><span class="pre">=</span></code>) is alphanumeric. In the special case where the
+1st character following the equal operator (<code class="docutils literal notranslate"><span class="pre">=</span></code>) is not alphanumeric,
+the entirety of what follows on the line is grabbed as a unit, rather
+than as a list of equivalences. Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">lots</span><span class="o">=</span><span class="c1">#&gt;100</span>
+</pre></div>
+</div>
+<p>The root word “<code class="docutils literal notranslate"><span class="pre">lots</span></code>” will be replaced on the Query Line by the NPM
+expression which follows the equal sign “<code class="docutils literal notranslate"><span class="pre">#&gt;100</span></code>”, therefore finding
+numeric quantities greater than 100, rather than finding English
+occurrences of the word “<code class="docutils literal notranslate"><span class="pre">lots</span></code>”.</p>
+<p>All root and equivalence entries are case insensitive. If you need case
+sensitivity you must so specify with <code class="docutils literal notranslate"><span class="pre">REX</span></code> syntax on the Query Line.
+<code class="docutils literal notranslate"><span class="pre">REX</span></code>, <code class="docutils literal notranslate"><span class="pre">NPM</span></code>, <code class="docutils literal notranslate"><span class="pre">XPM</span></code>, and <code class="docutils literal notranslate"><span class="pre">*</span></code> (Wildcard) expressions cannot be
+entered as equivalences, as equivalences are sent directly to <code class="docutils literal notranslate"><span class="pre">PPM</span></code>
+which processes lists of English words.</p>
+<p>The only way an English word may be linked in this way to a special
+expression is through the use of substitution. In this case the
+expression which follows an equal sign (<code class="docutils literal notranslate"><span class="pre">=</span></code>) will be substituted for
+the root word. Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">bush</span><span class="o">=/</span>\<span class="n">RBush</span>
+</pre></div>
+</div>
+<p>The root word “<code class="docutils literal notranslate"><span class="pre">bush</span></code>” will be replaced on the Query Line by the
+<code class="docutils literal notranslate"><span class="pre">REX</span></code> expression which follows the equal sign “<code class="docutils literal notranslate"><span class="pre">/\RBush</span></code>”; therefore
+finding only the proper name “<code class="docutils literal notranslate"><span class="pre">Bush</span></code>”, rather than the common noun
+“<code class="docutils literal notranslate"><span class="pre">bush</span></code>” along with any of its equivalences (“<code class="docutils literal notranslate"><span class="pre">jungle</span></code>”,
+“<code class="docutils literal notranslate"><span class="pre">shrub</span></code>”, “<code class="docutils literal notranslate"><span class="pre">hedge</span></code>”) as listed in the Main Equivalence File.</p>
+</div>
+<div class="section" id="specialized-user-equivalence-files">
+<h2>Specialized User Equivalence Files<a class="headerlink" href="#specialized-user-equivalence-files" title="Permalink to this headline">¶</a></h2>
+<p>Where you are creating your own specialized lexicon of terms, such as
+for medical, legal, technical, or acronym laden fields, you may be in a
+position to obtain your own digitized compilation of such which could be
+of some size.</p>
+<p>Rather than starting from scratch, take the digitized file, flatten it
+to ASCII, then follow the User Equivalence rules as outlined in the
+previous sections to edit it into the correct format.</p>
+<p>If you have questions on how you might speed up this activity, call
+Thunderstone technical support for discussion of details.</p>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="mm4.html" class="btn btn-neutral float-right" title="Tailoring Metamorph’s Linguistics" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="mm2.html" class="btn btn-neutral" title="Metamorph: The Program Inside the Program" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

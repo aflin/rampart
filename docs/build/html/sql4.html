@@ -1,0 +1,1837 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Indexing for Increased Performance &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
+        <link rel="up" title="The rampart-sql module" href="sqltoc.html"/>
+        <link rel="next" title="Server Properties" href="sql-set.html"/>
+        <link rel="prev" title="Server functions" href="sql-server-funcs.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart Javascript</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html">Preface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#loading-the-javascript-module">Loading the Javascript Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#database-functions">Database Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#string-functions">String Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html">Introduction to Texis SQL</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#creating-a-database">Creating a Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#table-definition">Table Definition</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#a-first-look-at-queries">A First Look at Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql2.html">Queries Involving Calculated Values</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql2.html#advanced-queries">Advanced Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql3.html">Intelligent Text Search Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html">Server functions</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Indexing for Increased Performance</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#when-and-how-to-index">When and How to Index</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#creating-an-index">Creating An Index</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#command-discussion">Command Discussion</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#creating-a-unique-index">Creating a Unique Index</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#id1">Command Discussion</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#creating-a-metamorph-index">Creating a Metamorph Index</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#metamorph-index-types-inverted-vs-compact-vs-counter">Metamorph Index Types: Inverted vs. Compact vs. Counter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#inverted">Inverted</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#compact">Compact</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#counter">Counter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#metamorph-index-capabilities-and-limitations">Metamorph Index Capabilities and Limitations</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#using-like3-for-index-only-search-no-post-search">Using LIKE3 for Index Only Search (No Post-Search)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#difference-between-like-and-like3">Difference between LIKE and LIKE3</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#creating-an-inverted-index">Creating an Inverted Index</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#index-options">Index Options</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#available-options">Available Options</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#dropping-an-index">Dropping an Index</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#keeping-the-database-current">Keeping the Database Current</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#adding-new-records">Adding New Records</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#inserting-one-row-at-a-time">Inserting One Row at a Time</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id2">Command Discussion</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#inserting-text">Inserting Text</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#inserting-multiple-rows-at-a-time">Inserting Multiple Rows at a Time</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id3">Command Discussion</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#updating-records">Updating Records</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#id4">Command Discussion</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#making-a-texis-owned-file">Making a Texis Owned File</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#deleting-records">Deleting Records</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#id5">Command Discussion</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#security">Security</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#creating-users-and-logging-in">Creating Users and Logging In</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#granting-privileges">Granting Privileges</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#id6">Command Discussion</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#removing-privileges">Removing Privileges</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#id7">Command Discussion</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#administration-of-the-database">Administration of the Database</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#system-catalog">System Catalog</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#optimization">Optimization</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#table-compaction">Table Compaction</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#index-maintenance">Index Maintenance</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#manual-index-optimization-via-create-metamorph-index">Manual Index Optimization via CREATE METAMORPH INDEX</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#manual-index-optimization-via-alter-index">Manual Index Optimization via ALTER INDEX</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#reserved-words">Reserved Words</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="sql-set.html">Server Properties</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tsql.html">Tsql Command Line Utility</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm2.html">Metamorph: The Program Inside the Program</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm2.html#hits-intersections-and-sets">Hits, Intersections and Sets</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm3.html">Thesaurus Customization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm4.html">Tailoring Metamorph’s Linguistics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm5.html">Types of Searches in Metamorph</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm6.html">REX On Its Own</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="sqltoc.html">The rampart-sql module</a> &raquo;</li>
+        
+      <li>Indexing for Increased Performance</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/sql4.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="indexing-for-increased-performance">
+<h1>Indexing for Increased Performance<a class="headerlink" href="#indexing-for-increased-performance" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="when-and-how-to-index">
+<h2>When and How to Index<a class="headerlink" href="#when-and-how-to-index" title="Permalink to this headline">¶</a></h2>
+<p>There are two basic mechanisms for accessing Texis tables: a table space
+scan which is sequential, and an index based scan which is direct. Index
+based retrieval is usually more efficient than table space scan with
+some exceptions.</p>
+<p>The use of indexes is one of the major ways in which the performance of
+queries (i.e. the speed with which results are retrieved) can be
+improved in relational databases. Indexes allow the DBMS to retrieve
+rows from a table without scanning the entire table, much as a library
+user can use a card catalog to find books without scanning the entire
+library.</p>
+<p>The creation of indexes improves the performance associated with
+processing large tables. However, an excessive number of indexes can
+result in an increase in processing time during update operations
+because of the additional computation needed to maintain the indexes. Thus,
+for tables undergoing frequent change, there could be a “cost”
+associated with an excessive number of indexes.</p>
+<p>In addition, as the number of indexes increases, the storage
+requirements needed to hold the indexes becomes significant. Other
+cautions include not indexing small amounts of data as doing so may slow
+down searches due to the overhead of looking in an index. The point at
+which it makes sense to use an index will depend upon the application and
+the type of index chosen.</p>
+<p>Since there are so many factors involved in the decision as to whether
+and what kind of index will most optimize the search, Texis largely
+takes over the management of these decisions. The user can specify those
+tables on which an index will be created. Beyond this, the user
+would not know the status of the index, which is always in flux, nor
+whether it has been updated at the time of the search.</p>
+<p>Unlike other systems, Texis ensures that all information which has been
+added to any table can be searched immediately, regardless of whether it has
+been indexed, and regardless of whether Texis actually uses the index.
+Sequential table space scans and index based scans are efficiently managed
+by Texis so that the database can always be searched in the most optimized
+manner, with the most current information available to the user.</p>
+<p>To this end, there are two types of indexes supported by Texis:</p>
+<ol class="arabic simple">
+<li><p>The canonical sorted order alphabetical index found in traditional
+SQL systems, and</p></li>
+<li><p>The Metamorph index, optimized for systems containing a large number
+of rows, or a lot of text, or both. The Metamorph index is used when
+it is expected that <code class="docutils literal notranslate"><span class="pre">LIKE</span></code> or its variants will be common on the
+field being indexed.</p></li>
+</ol>
+<p>When an index is created, neither an end user nor an application
+programmer need reference (nor can access, except see <a class="reference internal" href="sql-set.html#indexaccess"><span class="std std-ref">indexAccess</span></a>)
+the index in a query. Indexes are
+used automatically by Texis when needed to choose the best path to the
+data.</p>
+</div>
+<div class="section" id="creating-an-index">
+<h2>Creating An Index<a class="headerlink" href="#creating-an-index" title="Permalink to this headline">¶</a></h2>
+<p>The CREATE INDEX command is used to establish an index. The form of this
+command is:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="k">INDEX</span> <span class="k">index</span><span class="o">-</span><span class="n">name</span>
+<span class="k">ON</span> <span class="k">table</span><span class="o">-</span><span class="n">name</span> <span class="p">(</span><span class="k">column</span><span class="o">-</span><span class="n">name</span> <span class="p">[</span><span class="k">DESC</span><span class="p">]</span> <span class="p">[,</span> <span class="k">column</span><span class="o">-</span><span class="n">name</span> <span class="p">[</span><span class="k">DESC</span><span class="p">]]</span> <span class="p">...)</span>
+<span class="p">[</span><span class="k">WITH</span> <span class="k">option</span><span class="o">-</span><span class="n">name</span> <span class="p">[</span><span class="n">value</span><span class="p">]</span> <span class="p">[</span><span class="k">option</span><span class="o">-</span><span class="n">name</span> <span class="p">[</span><span class="n">value</span><span class="p">]</span> <span class="p">...]]</span> <span class="p">;</span>
+</pre></div>
+</div>
+<div class="section" id="command-discussion">
+<h3>Command Discussion<a class="headerlink" href="#command-discussion" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li><p>Each index is assigned a name and is related to a particular table
+based on the ON table-name clause.</p></li>
+<li><p>The entries in an index are ordered on a specified column within the
+specified table, and arranged in either ascending or descending
+order.</p></li>
+<li><p>The term <em>index key</em> refers to the column (or set of columns) in a
+table that is used to determine the order of entries in an index.
+Where an index does consist of multiple columns, the most important
+column is placed first.</p></li>
+<li><p>Further options controlling how and what type of index is created may
+be set in the WITH clause; see p. .</p></li>
+<li><p>A table can have many different indexes associated with its columns.
+Each index is created by issuing a separate CREATE INDEX command.</p></li>
+</ul>
+<p><strong>Example</strong>: Many queries to the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table reference the
+employee’s department; therefore, the database designer decides to
+create an index using the <code class="docutils literal notranslate"><span class="pre">DEPT</span></code> column to improve performance related
+to these queries.</p>
+<p>This command:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="k">INDEX</span> <span class="n">DEPTINDEX</span>
+<span class="k">ON</span> <span class="n">EMPLOYEE</span> <span class="p">(</span><span class="n">DEPT</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>would direct the creation of an index called <code class="docutils literal notranslate"><span class="pre">DEPTINDEX</span></code> (the Index
+name) on the table <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code>, using the <code class="docutils literal notranslate"><span class="pre">DEPT</span></code> column as indicated
+in parentheses as the Index key.</p>
+<p>The index can be used by the system to provide quick access to employee
+data that are subject to conditions related to the employee’s
+department.</p>
+</div>
+</div>
+<div class="section" id="creating-a-unique-index">
+<h2>Creating a Unique Index<a class="headerlink" href="#creating-a-unique-index" title="Permalink to this headline">¶</a></h2>
+<p>The <em>primary key</em> is an important concept in data processing. The
+primary key is a field or combination of fields in a record that allows
+you to uniquely identify a record from all the other records in a table.
+For example, companies assign IDs to employees as unique identifiers.
+Thus, an employee ID can serve as a primary key for personnel records.</p>
+<p>When a table is created in Texis, duplicate records can be stored in the
+table. The uniqueness characteristic is not enforced automatically. To
+prevent duplicate records from being stored in a table, a unique index can
+be created on the column or columns representing the primary key.</p>
+<p>The index is created so that the DBMS can ensure that all values in the
+designated column or columns of a table are unique. For example, the
+<code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table can be indexed on <code class="docutils literal notranslate"><span class="pre">EID</span></code> (employee ID) so that each
+row of the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table contains a different employee ID value
+(i.e., no duplicate <code class="docutils literal notranslate"><span class="pre">EID</span></code>s can be entered.)</p>
+<p>This is accomplished with a variation of the <code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">INDEX</span></code> command.
+<code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">UNIQUE</span> <span class="pre">INDEX</span></code>, is used to establish an index that assures no duplicate
+primary key values are stored in a table.  The form of this command is:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="p">[</span><span class="k">UNIQUE</span><span class="p">]</span> <span class="k">INDEX</span> <span class="k">index</span><span class="o">-</span><span class="n">name</span>
+<span class="k">ON</span> <span class="k">table</span><span class="o">-</span><span class="n">name</span> <span class="p">(</span><span class="k">column</span><span class="o">-</span><span class="n">name</span> <span class="p">[</span><span class="k">DESC</span><span class="p">]</span> <span class="p">[,</span><span class="k">column</span><span class="o">-</span><span class="n">name</span> <span class="p">[</span><span class="k">DESC</span><span class="p">]]</span> <span class="p">...)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<div class="section" id="id1">
+<h3>Command Discussion<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li><p>The keyword <code class="docutils literal notranslate"><span class="pre">UNIQUE</span></code> in the clause <code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">UNIQUE</span> <span class="pre">INDEX</span></code> specifies
+that in the creation and maintenance of the index no two records in
+the index table can have the same value for the index column (or
+column combination). Thus, any <code class="docutils literal notranslate"><span class="pre">INSERT</span></code> or <code class="docutils literal notranslate"><span class="pre">UPDATE</span></code> command that
+attempts to add a duplicate row in the index would be rejected.</p></li>
+<li><p>Each index is assigned a name and is related to a particular table
+based on the <code class="docutils literal notranslate"><span class="pre">ON</span></code> table-name clause.</p></li>
+<li><p>An index is based on the specified column within the specified table,
+and will be arranged in ascending order.</p></li>
+</ul>
+<p><strong>Example:</strong> Create an index for the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table that prevents
+records with the same employee ID from being stored in the table with
+this command:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="k">UNIQUE</span> <span class="k">INDEX</span> <span class="n">EMPINDEX</span>
+<span class="k">ON</span> <span class="n">EMPLOYEE</span> <span class="p">(</span><span class="n">EID</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>This command directs the creation of a unique index on the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code>
+table, where the index name is <code class="docutils literal notranslate"><span class="pre">EMPINDEX</span></code>. The <code class="docutils literal notranslate"><span class="pre">EID</span></code> column as
+indicated in parentheses is the Index key.</p>
+<p>In other words, an index called <code class="docutils literal notranslate"><span class="pre">EMPINDEX</span></code> has been created on the
+<code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table for the employee ID number.</p>
+<p>The index is stored separately from the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table. The example
+below shows the relationship between <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> and <code class="docutils literal notranslate"><span class="pre">EMPINDEX</span></code> after
+ten employees have been added to the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table. Each row of the
+index, <code class="docutils literal notranslate"><span class="pre">EMPINDEX</span></code>, consists of a column value for the index column and
+a pointer, or physical address, to the location of a row in the
+<code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table. As employees are added or deleted from the
+<code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table, Texis automatically updates the index.</p>
+<p>To conceptualize how the index works, assume there exists a record for
+“Chapman, Margaret” with <code class="docutils literal notranslate"><span class="pre">EID=103</span></code> stored in the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table and in an
+attempt to add her record again, the following command is issued:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">EMPLOYEE</span>
+<span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;103&#39;</span><span class="p">,</span><span class="s1">&#39;Chapman, Margaret&#39;</span><span class="p">,</span><span class="s1">&#39;LIB&#39;</span><span class="p">,</span><span class="s1">&#39;STAFF&#39;</span><span class="p">,</span><span class="s1">&#39;PART&#39;</span><span class="p">,</span><span class="mi">22000</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>and Texis responds with an error message, such as:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">ERROR</span><span class="p">:</span> <span class="n">Duplicate</span> <span class="n">Value</span> <span class="ow">in</span> <span class="n">Index</span>
+</pre></div>
+</div>
+<p>This message occurs because the value <code class="docutils literal notranslate"><span class="pre">103</span></code>, the employee ID (<code class="docutils literal notranslate"><span class="pre">EID</span></code>), is
+already stored in <code class="docutils literal notranslate"><span class="pre">EMPINDEX</span></code> and attempting to add another <code class="docutils literal notranslate"><span class="pre">103</span></code> value
+results in a duplicate value, which is not permitted in a unique index.</p>
+<p>When adding a new employee named Krinski with an <code class="docutils literal notranslate"><span class="pre">EID</span></code> equal to 110 by
+entering this command:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">EMPLOYEE</span>
+<span class="k">VALUES</span> <span class="p">(</span><span class="s1">&#39;110&#39;</span><span class="p">,</span><span class="s1">&#39;Krinski&#39;</span><span class="p">,</span><span class="s1">&#39;LIB&#39;</span><span class="p">,</span><span class="s1">&#39;DHEAD&#39;</span><span class="p">,</span><span class="s1">&#39;FULL&#39;</span><span class="p">,</span><span class="mi">32500</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>the record is successfully created. The value 110 did not previously
+exist in the unique index <code class="docutils literal notranslate"><span class="pre">EMPINDEX</span></code>, and so it was allowed to be
+entered as a new row in the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table. As the <code class="docutils literal notranslate"><span class="pre">EMPINDEX</span></code> is
+in sorted order, it is much faster to ascertain that information than it
+would be by searching the entire <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table.</p>
+<p>The relationship between <code class="docutils literal notranslate"><span class="pre">EMPINDEX</span></code> the index, and <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> the
+table, appear below as they would containing 10 employee records. The
+dashed lines indicate pointers from the index to rows in the table.
+However, this is conceptual rather than actual, and not all pointers are
+shown.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">EMPINDEX</span>      <span class="n">EMPLOYEE</span>
+<span class="n">Index</span>         <span class="n">Table</span>
+              <span class="n">EID</span>  <span class="n">ENAME</span>               <span class="n">DEPT</span>   <span class="n">RANK</span>   <span class="n">BENEFITS</span>   <span class="n">SALARY</span>
+<span class="mi">101</span> <span class="o">--------&gt;</span> <span class="mi">101</span>  <span class="n">Aster</span><span class="p">,</span> <span class="n">John</span> <span class="n">A</span><span class="o">.</span>      <span class="n">MKT</span>    <span class="n">STAFF</span>  <span class="n">FULL</span>       <span class="mi">32000</span>
+<span class="mi">102</span> <span class="o">--+</span>       <span class="mi">109</span>  <span class="n">Brown</span><span class="p">,</span> <span class="n">Penelope</span>     <span class="n">MKT</span>    <span class="n">DHEAD</span>  <span class="n">FULL</span>       <span class="mi">37500</span>
+<span class="mi">103</span>   <span class="o">|</span>       <span class="mi">104</span>  <span class="n">Jackson</span><span class="p">,</span> <span class="n">Herbert</span>    <span class="n">RND</span>    <span class="n">STAFF</span>  <span class="n">FULL</span>       <span class="mi">30000</span>
+<span class="mi">104</span>   <span class="o">|</span>  <span class="o">+--&gt;</span> <span class="mi">108</span>  <span class="n">Jones</span><span class="p">,</span> <span class="n">David</span>        <span class="n">RND</span>    <span class="n">DHEAD</span>  <span class="n">FULL</span>       <span class="mi">37500</span>
+<span class="mi">105</span>   <span class="o">+--|--&gt;</span> <span class="mi">102</span>  <span class="n">Barrington</span><span class="p">,</span> <span class="n">Kyle</span>    <span class="n">MGT</span>    <span class="n">DHEAD</span>  <span class="n">FULL</span>       <span class="mi">45000</span>
+<span class="mi">106</span>      <span class="o">|</span>    <span class="mi">106</span>  <span class="n">Sanchez</span><span class="p">,</span> <span class="n">Carla</span>      <span class="n">MKT</span>    <span class="n">STAFF</span>  <span class="n">FULL</span>       <span class="mi">35000</span>
+<span class="mi">108</span> <span class="o">-----+</span>    <span class="mi">105</span>  <span class="n">Price</span><span class="p">,</span> <span class="n">Stella</span>       <span class="n">FIN</span>    <span class="n">DHEAD</span>  <span class="n">FULL</span>       <span class="mi">42000</span>
+<span class="mi">107</span>           <span class="mi">103</span>  <span class="n">Chapman</span><span class="p">,</span> <span class="n">Margaret</span>   <span class="n">LIB</span>    <span class="n">STAFF</span>  <span class="n">PART</span>       <span class="mi">22000</span>
+<span class="mi">109</span>           <span class="mi">107</span>  <span class="n">Smith</span><span class="p">,</span> <span class="n">Roberta</span>      <span class="n">RND</span>    <span class="n">STAFF</span>  <span class="n">PART</span>       <span class="mi">25000</span>
+<span class="mi">110</span> <span class="o">--------&gt;</span> <span class="mi">110</span>  <span class="n">Krinski</span><span class="p">,</span> <span class="n">Wanda</span>      <span class="n">LIB</span>    <span class="n">DHEAD</span>  <span class="n">FULL</span>       <span class="mi">32500</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="creating-a-metamorph-index">
+<h2>Creating a Metamorph Index<a class="headerlink" href="#creating-a-metamorph-index" title="Permalink to this headline">¶</a></h2>
+<p>A sorted order index is optimized for columns containing values of
+limited length, which can easily be canonically managed. In some cases,
+especially when a column contains a large amount of text, there is a
+need for an index which goes beyond the methods used in these previous
+examples.</p>
+<p>For example, consider a News database being archived on a daily basis by the
+Strategic Planning and Intelligence Department.  The entire body of the news
+article is stored in a table, whether the data type in use is <code class="docutils literal notranslate"><span class="pre">VARCHAR</span></code>,
+indicating a variable length number of characters, or <code class="docutils literal notranslate"><span class="pre">INDIRECT</span></code>,
+indicating it points elsewhere to the actual location of the files.  While
+subjects, dates, and bylines are important, the most often queried part is
+the body of the article, or the text field itself.  The column we want to
+index is a text column rather than something much more concise like an an
+employee ID number.</p>
+<p>To accurately find text in the files, where search items are to be found
+in proximity to other search items within some defined delimiters, all
+the words of all the text in question must be indexed in an efficient
+manner which still allows everything relevant to be found based on its
+content, even after it has been archived away. A Metamorph index
+combines indexing technology with a linear free text scan of selected
+portions of the database where appropriate in order to accomplish this.
+This linear scan following the index lookup is referred to as a
+<em>post-search</em> or <em>post-processing</em>.</p>
+<p>Metamorph query language as used following <code class="docutils literal notranslate"><span class="pre">LIKE</span></code> and its variants is
+described in detail in <a class="reference internal" href="sql3.html#intelligent-text-search-queries"><span class="std std-ref">Intelligent Text Search Queries</span></a>.
+If the application requires full text search efficacy using <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>
+queries on a field, the creation of a Metamorph index will greatly improve
+the performance of such queries.</p>
+<p>The form of the command is:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="n">METAMORPH</span> <span class="p">[</span><span class="n">INVERTED</span><span class="o">|</span><span class="n">COUNTER</span><span class="p">]</span> <span class="k">INDEX</span> <span class="k">index</span><span class="o">-</span><span class="n">name</span>
+<span class="k">ON</span> <span class="k">table</span><span class="o">-</span><span class="n">name</span> <span class="p">(</span><span class="k">column</span><span class="o">-</span><span class="n">name</span> <span class="p">[,</span> <span class="k">column</span><span class="o">-</span><span class="n">name</span><span class="p">...])</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>Or alternatively:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="n">FULLTEXT</span> <span class="k">INDEX</span> <span class="k">index</span><span class="o">-</span><span class="n">name</span>
+<span class="k">ON</span> <span class="k">table</span><span class="o">-</span><span class="n">name</span> <span class="p">(</span><span class="k">column</span><span class="o">-</span><span class="n">name</span> <span class="p">[,</span> <span class="k">column</span><span class="o">-</span><span class="n">name</span><span class="p">...])</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>Syntax is the same as in the previous <code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">INDEX</span></code> examples, except that
+you are specifying the type of index you want created (i.e. a
+Metamorph/Fulltext index).</p>
+<p><strong>Example:</strong> The news database that is being accumulated from selected
+news articles is getting too large to search from beginning to end for
+content based searches which make heavy use of the <code class="docutils literal notranslate"><span class="pre">LIKE</span></code> clause. A
+Metamorph index should be created for the Strategic Planning and
+Intelligence Department to improve performance. Assuming the column
+containing the text of the articles is called <code class="docutils literal notranslate"><span class="pre">BODY</span></code>, the following will
+create the Metamorph index:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="n">FULLTEXT</span> <span class="k">INDEX</span> <span class="n">newsBody_ftx</span>
+<span class="k">ON</span> <span class="n">NEWS</span> <span class="p">(</span><span class="n">BODY</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>An index called <code class="docutils literal notranslate"><span class="pre">newsBody_ftx</span></code> will be created and maintained on the
+<code class="docutils literal notranslate"><span class="pre">BODY</span></code> column of the <code class="docutils literal notranslate"><span class="pre">NEWS</span></code> table, which contains the full text of
+all collected news articles. With the creation of the index comes increased
+performance since Texis can use the index to find matches to queries without
+linearly searching the entire table upon each request.</p>
+<p>Additional columns can be specified in addition to the text field to be
+indexed. These should be fixed length fields, such as dates, counters or
+numbers. The extra data in the index can be used to improve searches
+which combine a <code class="docutils literal notranslate"><span class="pre">LIKE</span></code> statement with restrictions on the other
+fields, or which ORDER BY some or all of the other fields.</p>
+<div class="section" id="metamorph-index-types-inverted-vs-compact-vs-counter">
+<h3>Metamorph Index Types: Inverted vs. Compact vs. Counter<a class="headerlink" href="#metamorph-index-types-inverted-vs-compact-vs-counter" title="Permalink to this headline">¶</a></h3>
+<p>There are three types of Metamorph index: inverted, compact and counter.
+All are used to aid in resolving
+<code class="docutils literal notranslate"><span class="pre">LIKE</span></code>/<code class="docutils literal notranslate"><span class="pre">LIKEP</span></code>/<code class="docutils literal notranslate"><span class="pre">LIKE3</span></code>/<code class="docutils literal notranslate"><span class="pre">LIKER</span></code>/<code class="docutils literal notranslate"><span class="pre">LIKEIN</span></code> queries, and are
+created with some variant of the syntax <code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">METAMORPH</span> <span class="pre">INDEX</span></code>.</p>
+</div>
+<div class="section" id="inverted">
+<h3>Inverted<a class="headerlink" href="#inverted" title="Permalink to this headline">¶</a></h3>
+<p>An inverted Metamorph index is the most commonly used type of Metamorph
+index, and is created with <code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">METAMORPH</span> <span class="pre">INVERTED</span> <span class="pre">INDEX</span></code>,
+<code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">METAMORPH</span> <span class="pre">INDEX</span></code> or  <code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">FULLTEXT</span> <span class="pre">INDEX</span></code> (each of these
+produces the same “inverted” index).</p>
+<p>An inverted Metamorph index maintains knowledge not only of what rows words
+occur in, but also what position in each row the words occur in the text
+field (the <code class="docutils literal notranslate"><span class="pre">WORDPOSITIONS</span></code>).  With such an index Texis can often avoid a
+post-search altogether, because the index contains all the information
+needed for phrase resolution and rank computation.  This can speed up
+searches more than a compact Metamorph index, especially for ranking queries
+using <code class="docutils literal notranslate"><span class="pre">LIKEP</span></code>, or phrase searches.  Because of the greater range of
+queries resolvable with an inverted Metamorph index (vs.  compact),
+it is the default Metamorph type created.  However, an
+inverted Metamorph index consumes more disk space, typically 20-30% of the
+text size versus about 7% for a compact Metamorph index.  Index updating is
+also slower because of this.</p>
+</div>
+<div class="section" id="compact">
+<h3>Compact<a class="headerlink" href="#compact" title="Permalink to this headline">¶</a></h3>
+<p>A compact Metamorph index maintains knowledge of what rows words occur in,
+but does not store word position information.  It is created by adding the
+index option WORDPOSITIONS ’off’:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="n">METAMORPH</span> <span class="k">INDEX</span> <span class="n">newsBody_ftx</span>
+<span class="k">ON</span> <span class="n">NEWS</span> <span class="p">(</span><span class="n">BODY</span><span class="p">)</span> <span class="k">WITH</span> <span class="n">WORDPOSITIONS</span> <span class="s1">&#39;off&#39;</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>Because of the lack of word position information, a compact Metamorph
+index only consumes about 7% of the text size in disk space (vs. about
+20-30% for a Metamorph inverted index); this compact size can also speed
+up its usage. However, a post-process search is needed after index usage
+if the query needs word-position information (e.g. to resolve phrases,
+within “<code class="docutils literal notranslate"><span class="pre">w/N</span></code>” operators, <code class="docutils literal notranslate"><span class="pre">LIKEP</span></code> ranking), which can greatly slow
+such queries. Thus a compact Metamorph index is best suited to queries
+that do not need word position information, such as single non-phrased
+words with no special pattern matchers, and no ranking (e.g. <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>).
+A <code class="docutils literal notranslate"><span class="pre">LIKER</span></code> or <code class="docutils literal notranslate"><span class="pre">LIKE3</span></code> search (below), which never does a post-search,
+can also use a compact Metamorph index without loss of performance.</p>
+</div>
+<div class="section" id="counter">
+<h3>Counter<a class="headerlink" href="#counter" title="Permalink to this headline">¶</a></h3>
+<p>A Metamorph counter index contains the same information that a compact
+Metamorph index has, but also includes additional information which
+improves the performance of <code class="docutils literal notranslate"><span class="pre">LIKEIN</span></code> queries (see
+<a class="reference internal" href="sql1.html#query-searching-using-likein"><span class="std std-ref">Query searching using LIKEIN</span></a>). If you are doing
+<code class="docutils literal notranslate"><span class="pre">LIKEIN</span></code> queries then you should create this type of index, otherwise
+you should use either the normal or inverted forms of the Metamorph
+index. A Metamorph counter index is created with
+<code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">METAMORPH</span> <span class="pre">COUNTER</span> <span class="pre">INDEX</span></code>. The <code class="docutils literal notranslate"><span class="pre">WITH</span> <span class="pre">COUNTS</span> <span class="pre">'on'</span></code> index option
+can also be given instead of the <code class="docutils literal notranslate"><span class="pre">COUNTER</span></code> flag to accomplish the
+same action.</p>
+</div>
+<div class="section" id="metamorph-index-capabilities-and-limitations">
+<h3>Metamorph Index Capabilities and Limitations<a class="headerlink" href="#metamorph-index-capabilities-and-limitations" title="Permalink to this headline">¶</a></h3>
+<p>As with any tool the best use can be obtained by knowing the
+capabilities and limitations of the tool. The Metamorph index allows for
+rapid location of records containing one or more keywords. The Metamorph
+index also takes care of some of the set logic.</p>
+<p>The following should be noted when generating queries. The most
+important point is the choice of keywords. If a keyword is chosen that
+occurs in many files, then the index will have to do more work to keep
+track of all the files possibly containing that word. A good general
+rule of thumb is “The longer the word, the faster the search”.</p>
+<p>Also, neither type of Metamorph index is useful for special pattern
+matchers (REX, XPM, NPM) as these terms cannot be indexed (see
+<a class="reference internal" href="mm5.html#types-of-searches-in-metamorph"><span class="std std-ref">Types of Searches in Metamorph</span></a>). If other
+indexable terms are present in the query, the index will be used with
+them to narrow the result list, but a post-search or possibly even a
+complete linear scan of the table may be needed to resolve special
+pattern matchers.</p>
+</div>
+</div>
+<div class="section" id="using-like3-for-index-only-search-no-post-search">
+<h2>Using LIKE3 for Index Only Search (No Post-Search)<a class="headerlink" href="#using-like3-for-index-only-search-no-post-search" title="Permalink to this headline">¶</a></h2>
+<p>In certain situations, the full capabilities of <code class="docutils literal notranslate"><span class="pre">LIKER</span></code>/<code class="docutils literal notranslate"><span class="pre">LIKEP</span></code> (phrase
+resolution and rank computation) are not necessary or desired by the
+application. For such an application, a Compact Metamorph Index and the use
+of <code class="docutils literal notranslate"><span class="pre">LIKE3</span></code> may be sufficient.</p>
+<p>This kind of search is completely optimized based on certain defaults
+which would be known to be acceptable, including:</p>
+<ul class="simple">
+<li><p>All the search items can be keywords (i.e., no special pattern
+matchers will be used).</p></li>
+<li><p>All searches can be done effectively within the length of the field
+(i.e., the delimiters used to define proximity of search items is the
+length of the whole text field).</p></li>
+</ul>
+<p>In some circumstances where these rules fit, the search requirements are
+narrow, and speed is of the essence, a potentially expensive post-search can
+be eliminated by using <code class="docutils literal notranslate"><span class="pre">LIKE3</span></code>.</p>
+</div>
+<div class="section" id="difference-between-like-and-like3">
+<h2>Difference between LIKE and LIKE3<a class="headerlink" href="#difference-between-like-and-like3" title="Permalink to this headline">¶</a></h2>
+<p>Texis will examine the query given to <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>, and if it can guarantee
+the same results, it will not perform the
+post-search. In this case <code class="docutils literal notranslate"><span class="pre">LIKE</span></code> will then be equivalent to <code class="docutils literal notranslate"><span class="pre">LIKE3</span></code>.</p>
+<p>However, if using <code class="docutils literal notranslate"><span class="pre">LIKE3</span></code> a post-search will never be performed.</p>
+</div>
+<div class="section" id="creating-an-inverted-index">
+<h2>Creating an Inverted Index<a class="headerlink" href="#creating-an-inverted-index" title="Permalink to this headline">¶</a></h2>
+<p>The inverted index (not to be confused with a Metamorph inverted index — AKA
+Fulltext index) is a highly specialized index, which is
+designed to speed up one class of query only, and as such has some
+limitations on its use.</p>
+<p>The primary limitation is that it can currently
+only be used on a field that is of the type UNSIGNED INT or <code class="docutils literal notranslate"><span class="pre">DATE</span></code>.
+Inverted indexes can be used to speed up the ORDER BY operation in the
+case that you are ordering by the field that was indexed only. For
+maximum effect you should also have the indexed ordered in the same
+manner as the ORDER BY. In other words if you want a descending order,
+you should have a descending index.</p>
+<p>An inverted index can be created using this command:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="n">INVERTED</span> <span class="k">INDEX</span> <span class="n">SALINDEX</span>
+<span class="k">ON</span> <span class="n">EMPLOYEE</span> <span class="p">(</span><span class="n">SALARY</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="index-options">
+<h2>Index Options<a class="headerlink" href="#index-options" title="Permalink to this headline">¶</a></h2>
+<p>A series of index options may be specified using a <code class="docutils literal notranslate"><span class="pre">WITH</span></code> clause at the
+end of any <code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">[index-type]</span> <span class="pre">INDEX</span></code> statement:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="p">[</span><span class="k">index</span><span class="o">-</span><span class="k">type</span><span class="p">]</span> <span class="k">INDEX</span> <span class="k">index</span><span class="o">-</span><span class="n">name</span>
+<span class="k">ON</span> <span class="k">table</span><span class="o">-</span><span class="n">name</span> <span class="p">(</span><span class="k">column</span><span class="o">-</span><span class="n">name</span> <span class="p">[</span><span class="k">DESC</span><span class="p">]</span> <span class="p">[,</span> <span class="k">column</span><span class="o">-</span><span class="n">name</span> <span class="p">[</span><span class="k">DESC</span><span class="p">]]</span> <span class="p">...)</span>
+<span class="p">[</span><span class="k">WITH</span> <span class="k">option</span><span class="o">-</span><span class="n">name</span> <span class="p">[</span><span class="n">value</span><span class="p">]</span> <span class="p">[</span><span class="k">option</span><span class="o">-</span><span class="n">name</span> <span class="p">[</span><span class="n">value</span><span class="p">]</span> <span class="p">...]]</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>Index options control how the index is made, or what sub-type of index is
+created.  Many options are identical to global or server properties set with
+the <code class="docutils literal notranslate"><span class="pre">SET</span></code> statement (see <a class="reference internal" href="sql-set.html#server-properties"><span class="std std-ref">Server Properties</span></a>), but as options
+are set directly in the <code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">INDEX</span></code> statement, they override those
+server properties forthe statement in which they are set.  Thus,
+using index options allows modularization of <code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">INDEX</span></code> statements, making
+it clearer what settings apply to which index by directly specifying them in
+the <code class="docutils literal notranslate"><span class="pre">CREATE</span></code> statement, and avoiding side-effects on later statements.</p>
+<div class="section" id="available-options">
+<h3>Available Options<a class="headerlink" href="#available-options" title="Permalink to this headline">¶</a></h3>
+<p>The available index options are as follows. Note that some options are
+only applicable to certain index types, as noted; using a option that
+does not apply to the given index type will result in an error:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">counts</span> <span class="pre">'on'|'off'</span></code>
+For Metamorph or Metamorph counter index types only. If set to
+“<code class="docutils literal notranslate"><span class="pre">on</span></code>”, creates a Metamorph counter type index (useful for
+<code class="docutils literal notranslate"><span class="pre">LIKEIN</span></code> searches); if “<code class="docutils literal notranslate"><span class="pre">off</span></code>” (the default), a compact
+Metamorph or Metamorph inverted index is created.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">indexmaxsingle</span> <span class="pre">N</span></code>
+For Metamorph, Metamorph inverted, and Metamorph counter index
+types only. Same as the <a class="reference internal" href="sql-set.html#indexmaxsingle"><span class="std std-ref">indexMaxSingle</span></a> server property.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">indexmem</span> <span class="pre">N</span></code> - See <a class="reference internal" href="sql-set.html#indexmem"><span class="std std-ref">indexMem</span></a></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">indexmeter</span> <span class="pre">N|type</span></code> - See <a class="reference internal" href="sql-set.html#indexmeter"><span class="std std-ref">indexMeter</span></a></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">indexspace</span> <span class="pre">N</span></code> - See <a class="reference internal" href="sql-set.html#indexspace"><span class="std std-ref">indexSpace</span></a></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">indexvalues</span> <span class="pre">type</span></code> - See <a class="reference internal" href="sql-set.html#indexvalues"><span class="std std-ref">indexValues</span></a></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">keepnoise</span> <span class="pre">'on'|'off'</span></code> - See <a class="reference internal" href="sql-set.html#keepnoise"><span class="std std-ref">keepNoise</span></a></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">noiselist</span> <span class="pre">('word','word',...)</span></code> - See <a class="reference internal" href="sql-set.html#noiselist"><span class="std std-ref">noiseList</span></a></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">textsearchmode</span> <span class="pre">mode</span></code> - See <a class="reference internal" href="sql-set.html#textsearchmode"><span class="std std-ref">textSearchMode</span></a></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">wordexpressions</span> <span class="pre">('expr','expr',...)</span></code> - See <a class="reference internal" href="sql-set.html#addexp"><span class="std std-ref">addExp</span></a>
+and <a class="reference internal" href="sql-set.html#delexp"><span class="std std-ref">delExp</span></a></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">wordpositions</span> <span class="pre">'on'|'off'</span></code>
+For Metamorph and Metamorph inverted index types only. If “<code class="docutils literal notranslate"><span class="pre">on</span></code>”
+(the default)
+creates a full-inversion (Metamorph inverted) index; if “<code class="docutils literal notranslate"><span class="pre">off</span></code>”,
+creates a compact (Metamorph) index.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max_index_text</span> <span class="pre">N</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">stringcomparemode</span> <span class="pre">mode</span></code>  - See <a class="reference internal" href="sql-set.html#stringcomparemode"><span class="std std-ref">stringCompareMode</span></a> and
+<a class="reference internal" href="sql-set.html#stringcomparemode-textsearchmode-parameters"><span class="std std-ref">stringCompareMode/textSearchMode parameters</span></a>.</p></li>
+</ul>
+</div>
+</div>
+<div class="section" id="dropping-an-index">
+<h2>Dropping an Index<a class="headerlink" href="#dropping-an-index" title="Permalink to this headline">¶</a></h2>
+<p>Any index – unique or non-unique, sorted order or Metamorph – can be
+eliminated if it is no longer needed. The DROP INDEX command is used to
+remove an index. The format of this command is similar to the DROP TABLE
+command illustrated in <a class="reference internal" href="sql1.html#removing-a-table"><span class="std std-ref">Removing a Table</span></a>.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">DROP</span> <span class="n">INDEX</span>  <span class="n">index</span><span class="o">-</span><span class="n">name</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p><strong>Example:</strong> Let’s say the <code class="docutils literal notranslate"><span class="pre">DEPTINDEX</span></code> is no longer needed. Delete it
+with this statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">DROP</span> <span class="n">INDEX</span>  <span class="n">DEPTINDEX</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>The table on which the index was created would not be touched. However,
+the index created for it has been removed.</p>
+</div>
+</div>
+<div class="section" id="keeping-the-database-current">
+<span id="dbcurr"></span><h1>Keeping the Database Current<a class="headerlink" href="#keeping-the-database-current" title="Permalink to this headline">¶</a></h1>
+<p>To keep the data in your database current, three types of transactions
+must be performed on the data. These transactions are:</p>
+<ol class="arabic simple">
+<li><p>Adding new records.</p></li>
+<li><p>Changing existing records.</p></li>
+<li><p>Deleting records no longer needed.</p></li>
+</ol>
+<div class="section" id="adding-new-records">
+<h2>Adding New Records<a class="headerlink" href="#adding-new-records" title="Permalink to this headline">¶</a></h2>
+<p>Once a table has been defined and before any data can be retrieved, data
+must be entered into the table. Initially, data can be entered into the
+table in several ways:</p>
+<ul class="simple">
+<li><p>Batch mode: Data is loaded into the table from a file. See - e.g
+<a class="reference internal" href="rampart-sql.html#importcsv"><span class="std std-ref">importCsv()</span></a> and <a class="reference internal" href="rampart-sql.html#importcsvfile"><span class="std std-ref">importCsvFile()</span></a>.</p></li>
+<li><p>Interactive mode: Data for each record is added by interactive
+prompting of each column in a record. This can be done with the
+<a class="reference internal" href="tsql.html#tsql-command-line-utility"><span class="std std-ref">Tsql Command Line Utility</span></a>.</p></li>
+<li><p>Via scripting:  Using a combination of Rampart JavaScript functions such as
+<a class="reference internal" href="rampart-sql.html#exec"><span class="std std-ref">exec()</span></a>,
+<a class="reference internal" href="rampart-main.html#fread"><span class="std std-ref">fread</span></a>, <a class="reference internal" href="rampart-main.html#readline"><span class="std std-ref">readLine</span></a>,
+<a class="reference internal" href="rampart-main.html#readfile"><span class="std std-ref">readFile</span></a>, <code class="docutils literal notranslate"><span class="pre">rampart-curl:fetch</span></code>,
+<a class="reference internal" href="rampart-sql.html#rex"><span class="std std-ref">rex()</span></a> and others, text data in many arbitrary formats
+can be processed and inserted into Texis tables.</p></li>
+</ul>
+<p>Generally scripting would be used to load data into the tables at
+the outset. It would be unusual to use line input especially to get
+started, but it is used in the following examples so that the correct
+syntax can be clearly seen.</p>
+<div class="section" id="inserting-one-row-at-a-time">
+<h3>Inserting One Row at a Time<a class="headerlink" href="#inserting-one-row-at-a-time" title="Permalink to this headline">¶</a></h3>
+<p>In addition to initially loading data into tables, records can be added
+at any time to keep a table current. For example, if a new employee is
+hired, a new record, or row, would be added to the EMPLOYEE table. The
+<code class="docutils literal notranslate"><span class="pre">INSERT</span></code> command is used to enter a row into a table. The command has
+two formats:</p>
+<ol class="arabic simple">
+<li><p>Entering one row at a time.</p></li>
+<li><p>Entering multiple rows at a time.</p></li>
+</ol>
+<p>In the first format, the user enters values one row at a time, using the
+following version of the <code class="docutils literal notranslate"><span class="pre">INSERT</span></code> command:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">INSERT</span> <span class="k">INTO</span>  <span class="k">table</span><span class="o">-</span><span class="n">name</span> <span class="p">[(</span><span class="k">column</span><span class="o">-</span><span class="n">name1</span> <span class="p">[,</span><span class="k">column</span><span class="o">-</span><span class="n">name2</span><span class="p">]</span> <span class="p">...</span> <span class="p">)]</span>
+<span class="k">VALUES</span>  <span class="p">(</span><span class="n">value1</span><span class="p">,</span> <span class="n">value2</span> <span class="p">...</span> <span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id2">
+<h3>Command Discussion<a class="headerlink" href="#id2" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li><p>The <code class="docutils literal notranslate"><span class="pre">INSERT</span> <span class="pre">INTO</span></code> clause indicates that you intend to add a row to a
+table.</p></li>
+<li><p>Following the <code class="docutils literal notranslate"><span class="pre">INSERT</span> <span class="pre">INTO</span></code> clause, the user specifies the name of the
+table into which the data is to be inserted.</p></li>
+<li><p>When data values are being entered in the same order the columns were
+created in there is no need to list the column names following the
+<code class="docutils literal notranslate"><span class="pre">INSERT</span> <span class="pre">INTO</span></code> clause. However, sometimes when a row is added, the
+correct ordering of column values is not known. In those cases, the
+columns being added must be listed following the table name in the
+order that the values will be supplied.</p></li>
+<li><p>Following the keyword <code class="docutils literal notranslate"><span class="pre">VALUES</span></code> are the values to be added to one row of
+a table. The entire row of values is placed within parentheses. Each
+data value is separated from the next by a comma. The first value
+corresponds to the first column in the table; the second value
+corresponds to the second column in the table, and so on.</p></li>
+</ul>
+<p><strong>Example:</strong> When the EMPLOYEE table is first created, it has no
+employee data stored in it. Add the first record to the table, where the
+data values we have are as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">EID</span> <span class="o">=</span> <span class="mi">101</span>
+<span class="n">ENAME</span> <span class="o">=</span> <span class="n">Aster</span><span class="p">,</span> <span class="n">John</span> <span class="n">A</span><span class="o">.</span>
+<span class="n">DEPT</span> <span class="o">=</span> <span class="n">MKT</span>
+<span class="n">RANK</span> <span class="o">=</span> <span class="n">STAFF</span>
+<span class="n">BENEFITS</span> <span class="o">=</span> <span class="n">FULL</span>
+<span class="n">SALARY</span> <span class="o">=</span> <span class="mi">32000</span>
+</pre></div>
+</div>
+<p>You can create a record containing these values by entering this
+command:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">EMPLOYEE</span>
+<span class="k">VALUES</span> <span class="p">(</span><span class="mi">101</span><span class="p">,</span><span class="s1">&#39;Aster, John A.&#39;</span><span class="p">,</span><span class="s1">&#39;MKT&#39;</span><span class="p">,</span><span class="s1">&#39;STAFF&#39;</span><span class="p">,</span><span class="s1">&#39;FULL&#39;</span><span class="p">,</span><span class="mi">32000</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>Single Quotes are placed around character values so Texis can distinguish data
+values from column names.</p>
+<p>A new employee record gets added to the EMPLOYEE table, so that the
+table now looks like this, if this were the only row entered:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">EID</span>  <span class="n">ENAME</span>               <span class="n">DEPT</span>   <span class="n">RANK</span>   <span class="n">BENEFITS</span>   <span class="n">SALARY</span>
+
+<span class="mi">101</span>  <span class="n">Aster</span><span class="p">,</span> <span class="n">John</span> <span class="n">A</span><span class="o">.</span>      <span class="n">MKT</span>    <span class="n">STAFF</span>  <span class="n">FULL</span>       <span class="mi">32000</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="inserting-text">
+<h3>Inserting Text<a class="headerlink" href="#inserting-text" title="Permalink to this headline">¶</a></h3>
+<p>There are a few different ways to manage large quantities of text in a
+database. The previous examples given for the REPORT table concentrated
+on the VARCHAR (variable length character) column which held a filename
+as a character string; e.g., <code class="docutils literal notranslate"><span class="pre">'/data/rnd/ink.txt'</span></code> as stored in the
+FILENAME column. This column manages the filename only, not the text
+contained in that file.</p>
+<p>In the examples used in <a class="reference internal" href="sql1.html#table-definition"><span class="std std-ref">Table Definition</span></a>, a
+RESUME table is created which uses a VARCHAR field of around 2000
+characters to hold the text of the resumes. In this case, the job
+experience text of each resume is stored in the column EXP. A Load
+Program would be used to insert text of this length into the column of a
+table.</p>
+<p>Another way Texis has of managing text is to allow the files to remain
+outside the confines of the table. Where the INDIRECT data type is used,
+a filename can be entered as a value which points to an actual file,
+rather than treated as a character string. The INDIRECT type looks at
+the contents of the file when doing <code class="docutils literal notranslate"><span class="pre">LIKE</span></code>, and these contents can be
+retrieved using the API (Application Program Interface).</p>
+<p>The form of the <code class="docutils literal notranslate"><span class="pre">INSERT</span> <span class="pre">INTO</span></code> command is the same as above. Where a data
+type is defined as <code class="docutils literal notranslate"><span class="pre">INDIRECT</span></code>, a filename may be entered as the value
+of one or more columns.</p>
+<p><strong>Example:</strong> Let’s say we have the following information available for a
+resume to be entered into the RESUME table, and that the job experience
+column <code class="docutils literal notranslate"><span class="pre">EXP</span></code> has been defined as INDIRECT.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">RES_ID</span> <span class="o">=</span> <span class="n">R421</span>
+<span class="n">RNAME</span> <span class="o">=</span> <span class="n">Smith</span><span class="p">,</span> <span class="n">James</span>
+<span class="n">JOB</span> <span class="o">=</span> <span class="n">Jr</span> <span class="n">Analyst</span>
+<span class="n">EDUC</span> <span class="o">=</span> <span class="n">B</span><span class="o">.</span><span class="n">A</span><span class="o">.</span> <span class="mi">1982</span> <span class="n">Radford</span> <span class="n">University</span>
+<span class="n">EXP</span> <span class="o">=</span> <span class="n">contained</span> <span class="ow">in</span> <span class="n">the</span> <span class="n">resume</span> <span class="n">file</span> <span class="s2">&quot;/usr/local/resume/smith.res&quot;</span>
+</pre></div>
+</div>
+<p>Use this <code class="docutils literal notranslate"><span class="pre">INSERT</span> <span class="pre">INTO</span></code> statement to add a row containing this information
+to the RESUME table:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">INSERT</span> <span class="n">INTO</span> <span class="n">RESUME</span>
+<span class="n">VALUES</span> <span class="p">(</span><span class="s1">&#39;R421&#39;</span><span class="p">,</span><span class="s1">&#39;Smith, James&#39;</span><span class="p">,</span><span class="s1">&#39;Jr Analyst&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;B.A. 1982 Radford University&#39;</span><span class="p">,</span>
+        <span class="s1">&#39;/usr/local/resume/smith.res&#39;</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">EXP</span></code> column acts as a pointer to the full text files containing the
+resumes. As such, the text in those files responds to all
+<code class="docutils literal notranslate"><span class="pre">SELECT</span></code>-<code class="docutils literal notranslate"><span class="pre">FROM</span></code>-<code class="docutils literal notranslate"><span class="pre">WHERE</span></code> statements. Thus Metamorph queries used
+after <code class="docutils literal notranslate"><span class="pre">LIKE</span></code> can be done on the text content manipulated by Texis in
+this table.</p>
+</div>
+<div class="section" id="inserting-multiple-rows-at-a-time">
+<h3>Inserting Multiple Rows at a Time<a class="headerlink" href="#inserting-multiple-rows-at-a-time" title="Permalink to this headline">¶</a></h3>
+<p>In addition to adding values to a table one row at a time, you can also
+use a variation of the <code class="docutils literal notranslate"><span class="pre">INSERT</span></code> command to load some or all data from
+one table into another table. The second form of the <code class="docutils literal notranslate"><span class="pre">INSERT</span></code> command
+is used when you want to create a new table based on the results of a
+query against an existing table. The form of this <code class="docutils literal notranslate"><span class="pre">INSERT</span></code> command is:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">INSERT</span> <span class="n">INTO</span> <span class="n">table</span><span class="o">-</span><span class="n">name</span>
+  <span class="n">SELECT</span>  <span class="n">expression1</span> <span class="p">[,</span><span class="n">expression2</span><span class="p">]</span> <span class="o">...</span>
+  <span class="n">FROM</span>    <span class="n">table</span><span class="o">-</span><span class="n">name</span>
+  <span class="p">[</span><span class="n">WHERE</span>  <span class="n">search</span><span class="o">-</span><span class="n">condition</span><span class="p">]</span> <span class="p">;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id3">
+<h3>Command Discussion<a class="headerlink" href="#id3" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li><p>The <code class="docutils literal notranslate"><span class="pre">INSERT</span> <span class="pre">INTO</span></code> clause indicates that you intend to add a row or rows
+to a table.</p></li>
+<li><p>Following the <code class="docutils literal notranslate"><span class="pre">INSERT</span> <span class="pre">INTO</span></code> clause, the user specifies the name of the
+table to be updated.</p></li>
+<li><p>The query is evaluated, and a copy of the results from the query is
+stored in the table specified after the <code class="docutils literal notranslate"><span class="pre">INSERT</span> <span class="pre">INTO</span></code> clause. If rows
+already exist in the table being copied to, then the new rows are
+added to the end of the table.</p></li>
+<li><p>Block inserts of text columns using <code class="docutils literal notranslate"><span class="pre">INDIRECT</span></code> respond just as any
+other column.</p></li>
+</ul>
+<p><strong>Example:</strong> Finance wants to do an analysis by department of the
+consequences of a company wide 10% raise in salaries, as it would affect
+overall departmental budgets. We want to manipulate the relational
+information stored in the database without affecting the actual table in
+use.</p>
+<p><em>Step 1:</em> Create a new table named <code class="docutils literal notranslate"><span class="pre">EMP_RAISE</span></code>, where the projected
+results can be studied without affecting the live stored information.
+Use this <code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">TABLE</span></code> statement, which defines data types as in the
+original table, <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code>, creating an empty table.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">CREATE</span> <span class="n">TABLE</span>  <span class="n">EMP_RAISE</span>
+  <span class="p">(</span><span class="n">EID</span>       <span class="n">INTEGER</span>
+   <span class="n">ENAME</span>     <span class="n">CHAR</span><span class="p">(</span><span class="mi">15</span><span class="p">)</span>
+   <span class="n">DEPT</span>      <span class="n">CHAR</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+   <span class="n">RANK</span>      <span class="n">CHAR</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+   <span class="n">BENEFITS</span>  <span class="n">CHAR</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span>
+   <span class="n">SALARY</span>    <span class="n">INTEGER</span><span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p><em>Step 2:</em> Copy the data in the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table to the <code class="docutils literal notranslate"><span class="pre">EMP_RAISE</span></code> table.
+We will later change salaries to the projected new salaries using the
+<code class="docutils literal notranslate"><span class="pre">UPDATE</span></code> command. For now, the new table must be loaded as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">INSERT</span> <span class="n">INTO</span>  <span class="n">EMP_RAISE</span>
+  <span class="n">SELECT</span>  <span class="o">*</span>
+  <span class="n">FROM</span>    <span class="n">EMPLOYEE</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>The number of records which exist in the EMPLOYEE table at the time this
+<code class="docutils literal notranslate"><span class="pre">INSERT</span> <span class="pre">INTO</span></code> command is done is the number of records which will be
+created in the new <code class="docutils literal notranslate"><span class="pre">EMP_RAISE`</span> <span class="pre">table.</span> <span class="pre">Now</span> <span class="pre">that</span> <span class="pre">the</span> <span class="pre">new</span> <span class="pre">table</span> <span class="pre">has</span> <span class="pre">data</span>
+<span class="pre">values,</span> <span class="pre">it</span> <span class="pre">can</span> <span class="pre">be</span> <span class="pre">queried</span> <span class="pre">and</span> <span class="pre">updated,</span> <span class="pre">without</span> <span class="pre">affecting</span> <span class="pre">the</span> <span class="pre">data</span> <span class="pre">in</span> <span class="pre">the</span>
+<span class="pre">``EMPLOYEE</span></code> table.</p>
+<p>An easier way to create a copy of the table is to use the following
+syntax:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">CREATE</span> <span class="n">TABLE</span>  <span class="n">EMP_RAISE</span> <span class="n">AS</span>
+  <span class="n">SELECT</span>  <span class="o">*</span>
+  <span class="n">FROM</span>    <span class="n">EMPLOYEE</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>which creates the table, and copies it in one statement. Any indexes on
+the original table will not be created on the new one.</p>
+</div>
+</div>
+<div class="section" id="updating-records">
+<h2>Updating Records<a class="headerlink" href="#updating-records" title="Permalink to this headline">¶</a></h2>
+<p>Very often data currently stored in a table needs to be corrected or
+changed. For example, a name may be misspelled or a salary figure
+increased. To modify the values of one or more columns in one or more
+records of a table, the user specifies the <code class="docutils literal notranslate"><span class="pre">UPDATE</span></code> command. The
+general form of this statement is:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">UPDATE</span>  <span class="k">table</span><span class="o">-</span><span class="n">name</span>
+<span class="k">SET</span>     <span class="k">column</span><span class="o">-</span><span class="n">name1</span> <span class="o">=</span> <span class="n">expression1</span>
+        <span class="p">[,</span><span class="k">column</span><span class="o">-</span><span class="n">name2</span> <span class="o">=</span> <span class="n">expression2</span><span class="p">]</span> <span class="p">...</span>
+<span class="p">[</span><span class="k">WHERE</span>  <span class="k">search</span><span class="o">-</span><span class="n">condition</span><span class="p">]</span> <span class="p">;</span>
+</pre></div>
+</div>
+<div class="section" id="id4">
+<h3>Command Discussion<a class="headerlink" href="#id4" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li><p>The <code class="docutils literal notranslate"><span class="pre">UPDATE</span></code> clause indicates which table is to be modified.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">SET</span></code> clause is followed by the column or columns to be modified.
+The expression represents the new value to be assigned to the column.
+The expression can contain constants, column names, or arithmetic
+expressions.</p></li>
+<li><p>The record or records being modified are found by using a search
+condition. All rows that satisfy the search condition are updated. If
+no search condition is supplied, all rows in the table are updated.</p></li>
+</ul>
+<p><strong>Example:</strong> Change the benefits for the librarian Margaret Chapman from
+partial to full with this statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">UPDATE</span> <span class="n">EMPLOYEE</span>
+<span class="n">SET</span>    <span class="n">BENEFITS</span> <span class="o">=</span> <span class="s1">&#39;FULL&#39;</span>
+<span class="n">WHERE</span>  <span class="n">EID</span> <span class="o">=</span> <span class="mi">103</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>The value <code class="docutils literal notranslate"><span class="pre">'FULL'</span></code> is the change being made. It will replace the
+current value <code class="docutils literal notranslate"><span class="pre">'PART'</span></code> listed in the BENEFITS column for Margaret
+Chapman, whose employee ID number is <code class="docutils literal notranslate"><span class="pre">103</span></code>. A change is made for all
+records that satisfy the search condition; in this example, only one row
+is updated.</p>
+<p><strong>Example:</strong> The finance analysis needs to include the effects of a 10%
+pay raise to all staff; i.e., to all employees whose RANK is STAFF.</p>
+<p>Use this statement to update all staff salaries with the intended raise:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">UPDATE</span>  <span class="n">EMP_RAISE</span>
+<span class="n">SET</span>     <span class="n">SALARY</span> <span class="o">=</span> <span class="n">SALARY</span> <span class="o">*</span> <span class="mf">1.1</span>
+<span class="n">WHERE</span>   <span class="n">RANK</span> <span class="o">=</span> <span class="s1">&#39;STAFF&#39;</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>If a portion of the <code class="docutils literal notranslate"><span class="pre">EMP_RAISE</span></code> table looked like this before the update:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">EID</span>  <span class="n">ENAME</span>               <span class="n">DEPT</span>   <span class="n">RANK</span>   <span class="n">BENEFITS</span>   <span class="n">SALARY</span>
+<span class="mi">101</span>  <span class="n">Aster</span><span class="p">,</span> <span class="n">John</span> <span class="n">A</span><span class="o">.</span>      <span class="n">MKT</span>    <span class="n">STAFF</span>  <span class="n">FULL</span>       <span class="mi">32000</span>
+<span class="mi">102</span>  <span class="n">Barrington</span><span class="p">,</span> <span class="n">Kyle</span>    <span class="n">MGT</span>    <span class="n">DHEAD</span>  <span class="n">FULL</span>       <span class="mi">45000</span>
+<span class="mi">103</span>  <span class="n">Chapman</span><span class="p">,</span> <span class="n">Margaret</span>   <span class="n">LIB</span>    <span class="n">STAFF</span>  <span class="n">PART</span>       <span class="mi">22000</span>
+<span class="mi">104</span>  <span class="n">Jackson</span><span class="p">,</span> <span class="n">Herbert</span>    <span class="n">RND</span>    <span class="n">STAFF</span>  <span class="n">FULL</span>       <span class="mi">30000</span>
+<span class="mi">105</span>  <span class="n">Price</span><span class="p">,</span> <span class="n">Stella</span>       <span class="n">FIN</span>    <span class="n">DHEAD</span>  <span class="n">FULL</span>       <span class="mi">42000</span>
+<span class="mi">106</span>  <span class="n">Sanchez</span><span class="p">,</span> <span class="n">Carla</span>      <span class="n">MKT</span>    <span class="n">STAFF</span>  <span class="n">FULL</span>       <span class="mi">35000</span>
+<span class="mi">107</span>  <span class="n">Smith</span><span class="p">,</span> <span class="n">Roberta</span>      <span class="n">RND</span>    <span class="n">STAFF</span>  <span class="n">PART</span>       <span class="mi">25000</span>
+</pre></div>
+</div>
+<p>It would look like this after the update operation:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">EID</span>  <span class="n">ENAME</span>               <span class="n">DEPT</span>   <span class="n">RANK</span>   <span class="n">BENEFITS</span>   <span class="n">SALARY</span>
+<span class="mi">101</span>  <span class="n">Aster</span><span class="p">,</span> <span class="n">John</span> <span class="n">A</span><span class="o">.</span>      <span class="n">MKT</span>    <span class="n">STAFF</span>  <span class="n">FULL</span>       <span class="mi">35200</span>
+<span class="mi">102</span>  <span class="n">Barrington</span><span class="p">,</span> <span class="n">Kyle</span>    <span class="n">MGT</span>    <span class="n">DHEAD</span>  <span class="n">FULL</span>       <span class="mi">45000</span>
+<span class="mi">103</span>  <span class="n">Chapman</span><span class="p">,</span> <span class="n">Margaret</span>   <span class="n">LIB</span>    <span class="n">STAFF</span>  <span class="n">PART</span>       <span class="mi">24200</span>
+<span class="mi">104</span>  <span class="n">Jackson</span><span class="p">,</span> <span class="n">Herbert</span>    <span class="n">RND</span>    <span class="n">STAFF</span>  <span class="n">FULL</span>       <span class="mi">33000</span>
+<span class="mi">105</span>  <span class="n">Price</span><span class="p">,</span> <span class="n">Stella</span>       <span class="n">FIN</span>    <span class="n">DHEAD</span>  <span class="n">FULL</span>       <span class="mi">42000</span>
+<span class="mi">106</span>  <span class="n">Sanchez</span><span class="p">,</span> <span class="n">Carla</span>      <span class="n">MKT</span>    <span class="n">STAFF</span>  <span class="n">FULL</span>       <span class="mi">38500</span>
+<span class="mi">107</span>  <span class="n">Smith</span><span class="p">,</span> <span class="n">Roberta</span>      <span class="n">RND</span>    <span class="n">STAFF</span>  <span class="n">PART</span>       <span class="mi">27500</span>
+</pre></div>
+</div>
+<p>Notice that only the <code class="docutils literal notranslate"><span class="pre">STAFF</span></code> rows are changed to reflect the increase.
+<code class="docutils literal notranslate"><span class="pre">DHEAD</span></code> row salaries remain as they were. As a word of caution, it’s easy
+to “accidentally” modify all rows in a table. Check your statement
+carefully before executing it.</p>
+</div>
+</div>
+<div class="section" id="making-a-texis-owned-file">
+<h2>Making a Texis Owned File<a class="headerlink" href="#making-a-texis-owned-file" title="Permalink to this headline">¶</a></h2>
+<p>When a file is inserted into an INDIRECT column, the ownership and
+location of the file remains as it was when loaded. If the resume file
+called “<code class="docutils literal notranslate"><span class="pre">/usr/local/resume/smith.res</span></code>” was owned by the Library, it
+will remain so when pointed to by the INDIRECT column unless you take
+steps to make it otherwise. For example, if Personnel owns the <code class="docutils literal notranslate"><span class="pre">RESUME</span></code>
+table but not the files themselves, an attempt to update the resume
+files would not be successful. The management and handling of the resume
+files is still in the domain of the Library.</p>
+<p>The system of INDIRECT data types is a system of pointers to files. The
+file pointed to can either exist on the system already and remain where
+it is, or you can instruct Texis to create a copy of the file under its
+own ownership and control. In either case, the file still exists outside
+of Texis.</p>
+<p>Where you want Texis to own a copy of the data, a Texis owned file can be
+made with the <a class="reference internal" href="sql-server-funcs.html#toind"><span class="std std-ref">toind</span></a> function.  You can then do
+whatever you want with one version without affecting the other, including
+removing the original if that is appropriate.  The permissions on such Texis
+owned files will be the same as the ownership and permissions assigned to
+the Texis table which owns it.</p>
+<p>The file is copied into the table using an <code class="docutils literal notranslate"><span class="pre">UPDATE</span></code> statement. The
+form of <code class="docutils literal notranslate"><span class="pre">UPDATE</span></code> is the same, but with special use of the expression
+for the column name following SET. The form of this portion of the
+<code class="docutils literal notranslate"><span class="pre">UPDATE</span></code> statement would be:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">UPDATE</span>  <span class="k">table</span><span class="o">-</span><span class="n">name</span>
+<span class="k">SET</span>     <span class="k">column</span><span class="o">-</span><span class="n">name</span> <span class="o">=</span> <span class="n">toind</span> <span class="p">(</span><span class="n">fromfile</span> <span class="p">(</span><span class="s1">&#39;local-file&#39;</span><span class="p">)</span> <span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>The change you are making is to the named column. With SET, you are
+taking text from the file (“fromfile”) as it currently exists on the
+system (“local-file”), and copying it to an INDIRECT text column
+(“toind”) pointed to by the Texis table named by <code class="docutils literal notranslate"><span class="pre">UPDATE</span></code>. The name of
+the local file is in quotes, as it is a character string, and is in
+parentheses as the argument of the function “<code class="docutils literal notranslate"><span class="pre">fromfile</span></code>”. The whole
+“<code class="docutils literal notranslate"><span class="pre">fromfile</span></code>” function is in parentheses as the argument of the
+function “<code class="docutils literal notranslate"><span class="pre">toind</span></code>”.</p>
+<p><strong>Example:</strong> To make a Texis owned copy of the Smith resume file for the
+RESUME table, use this <code class="docutils literal notranslate"><span class="pre">UPDATE</span></code> statement:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">UPDATE</span>  <span class="n">RESUME</span>
+<span class="k">SET</span>     <span class="n">EXP</span> <span class="o">=</span> <span class="n">toind</span> <span class="p">(</span><span class="n">fromfile</span> <span class="p">(</span><span class="s1">&#39;/usr/local/resume/smith.res&#39;</span><span class="p">)</span> <span class="p">)</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>The “<code class="docutils literal notranslate"><span class="pre">smith.res</span></code>” file now exists as part of the Texis table RESUME,
+while still remaining outside it. Once you have made Texis owned copies
+of any such files, you can operate on the text in the table without
+affecting the originals. And you can decide whether it is prudent to
+retain the original copies of the files or whether that would now be an
+unnecessary use of space.</p>
+</div>
+<div class="section" id="deleting-records">
+<h2>Deleting Records<a class="headerlink" href="#deleting-records" title="Permalink to this headline">¶</a></h2>
+<p>Records are removed from the database when they are no longer relevant
+to the application. For example, if an employee leaves the company, data
+concerning that person can be removed. Or if we wish to remove the data
+from certain departments which are not of interest to the pay raise
+analysis, we can delete those records from the temporary analysis table.</p>
+<p>Deleting a record removes all data values in a row from a table. One or
+more rows from a table can be deleted with the use of the <code class="docutils literal notranslate"><span class="pre">DELETE</span></code>
+command. This command has the following form:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">DELETE</span> <span class="k">FROM</span>  <span class="k">table</span><span class="o">-</span><span class="n">name</span>
+<span class="p">[</span><span class="k">WHERE</span>  <span class="k">search</span><span class="o">-</span><span class="n">condition</span><span class="p">]</span> <span class="p">;</span>
+</pre></div>
+</div>
+<div class="section" id="id5">
+<h3>Command Discussion<a class="headerlink" href="#id5" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li><p>The <code class="docutils literal notranslate"><span class="pre">DELETE</span> <span class="pre">FROM</span></code> clause indicates you want to remove a row from a
+table. Following this clause, the user specifies the name of the
+table from which data is to be deleted.</p></li>
+<li><p>To find the record or records being deleted, use a search condition
+similar to that used in the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> statement.</p></li>
+<li><p>Where INDIRECT text columns are concerned, such rows will be deleted
+just as any other when <code class="docutils literal notranslate"><span class="pre">DELETE</span> <span class="pre">FROM</span></code> is used. However, the files
+pointed to by INDIRECT will only be removed where managed by Texis,
+as defined in the previous section on Texis owned files.</p></li>
+</ul>
+<p>An employee whose ID number is 117 has quit his job. Use this statement
+to delete his record from the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">DELETE</span> <span class="k">FROM</span> <span class="n">EMPLOYEE</span>
+<span class="k">WHERE</span>  <span class="n">EID</span> <span class="o">=</span> <span class="mi">117</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>All records which satisfy the search condition are deleted. In this
+case, one record is deleted from the table. Note that the entire record:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">117</span>  <span class="n">Peters</span><span class="p">,</span> <span class="n">Robert</span>      <span class="n">SPI</span>    <span class="n">DHEAD</span>  <span class="n">FULL</span>       <span class="mi">34000</span>
+</pre></div>
+</div>
+<p>is deleted, not just the column specified in the <code class="docutils literal notranslate"><span class="pre">WHERE</span></code> clause.</p>
+<p>When you delete records, aim for consistency. For example, if you intend
+to delete Peters’ record in the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table, you must also delete the
+reference to Peters as department head in the <code class="docutils literal notranslate"><span class="pre">DEPARTMENT</span></code> table and so
+on. This would involve two separate operations.</p>
+<p><strong>Example:</strong> Let’s say we want to delete all the department heads from
+the <code class="docutils literal notranslate"><span class="pre">EMP_RAISE</span></code> table as they are not really part of the analysis. Use
+this statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">DELETE</span> <span class="n">FROM</span> <span class="n">EMP_RAISE</span>
+<span class="n">WHERE</span>  <span class="n">RANK</span> <span class="o">=</span> <span class="s1">&#39;DHEAD&#39;</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>The block of all records of employees who are department heads are
+removed from the <code class="docutils literal notranslate"><span class="pre">EMP_RAISE</span></code> table, leaving the table with just these
+entries:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">EID</span>  <span class="n">ENAME</span>               <span class="n">DEPT</span>   <span class="n">RANK</span>   <span class="n">BENEFITS</span>   <span class="n">SALARY</span>
+<span class="mi">101</span>  <span class="n">Aster</span><span class="p">,</span> <span class="n">John</span> <span class="n">A</span><span class="o">.</span>      <span class="n">MKT</span>    <span class="n">STAFF</span>  <span class="n">FULL</span>       <span class="mi">32000</span>
+<span class="mi">103</span>  <span class="n">Chapman</span><span class="p">,</span> <span class="n">Margaret</span>   <span class="n">LIB</span>    <span class="n">STAFF</span>  <span class="n">PART</span>       <span class="mi">22000</span>
+<span class="mi">104</span>  <span class="n">Jackson</span><span class="p">,</span> <span class="n">Herbert</span>    <span class="n">RND</span>    <span class="n">STAFF</span>  <span class="n">FULL</span>       <span class="mi">30000</span>
+<span class="mi">106</span>  <span class="n">Sanchez</span><span class="p">,</span> <span class="n">Carla</span>      <span class="n">MKT</span>    <span class="n">STAFF</span>  <span class="n">FULL</span>       <span class="mi">35000</span>
+<span class="mi">107</span>  <span class="n">Smith</span><span class="p">,</span> <span class="n">Roberta</span>      <span class="n">RND</span>    <span class="n">STAFF</span>  <span class="n">PART</span>       <span class="mi">25000</span>
+</pre></div>
+</div>
+<p>If the finance analyst wanted to empty the table of existing entries and
+perhaps load in new ones from a different part of the organization, this
+could be done with this statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">DELETE</span> <span class="n">FROM</span>  <span class="n">EMP_RAISE</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>All rows of <code class="docutils literal notranslate"><span class="pre">EMP_RAISE</span></code> would be deleted, leaving an empty table.
+However, the definition of the table has not been deleted; it still
+exists even though it has no data values, so rows can be added to the
+table at any time.</p>
+<p>It is important to note the difference between the <code class="docutils literal notranslate"><span class="pre">DELETE</span></code> command
+and the <code class="docutils literal notranslate"><span class="pre">DROP</span> <span class="pre">TABLE</span></code> command. In the former, you eliminate one or more
+rows from the indicated table. However, the structure of the table is
+still defined, and rows can be added to the table at any time. In the
+case of the <code class="docutils literal notranslate"><span class="pre">DROP</span> <span class="pre">TABLE</span></code> command, the table definition is removed from the
+system catalog. You have removed not only access to the data in the
+table, but also access to the table itself. Thus, to add data to a
+“dropped” table, you must first create the table again.</p>
+</div>
+</div>
+</div>
+<div class="section" id="security">
+<h1>Security<a class="headerlink" href="#security" title="Permalink to this headline">¶</a></h1>
+<p>Many people have access to a database: managers, analysts, data-entry
+clerks, programmers, temporary workers, and so on. Each individual or
+group needs different access to the data in the database. For example,
+the Finance Director needs access to salary data, while the receptionist
+needs access only to names and departments. R&amp;D needs access to the
+library’s research reports, while Legal needs access to depositions in
+pertinent court cases.</p>
+<p>Texis maintains permissions which work in conjunction with the operating
+system security. Texis will not change the operating system permissions
+on a table, but it will change the permissions on the indices to match
+those on the table.</p>
+<p>This scheme allows the operating system to give a broad class of
+security, while Texis maintains finer detail. The reason for the
+combination is that Texis can not control what the user does with the
+operating system, and the operating system does not have the detailed
+permissions required for a database.</p>
+<p>When a table is created it initially has full permissions for the
+creator, and read/write operating system permissions for the creator
+only.</p>
+<p>When using Texis permissions the operating system can still deny access
+which Texis believes is proper. To prevent this from happening Texis
+should always be run as one user id, which owns the database. The
+easiest way of doing this on Unix is to set the suid bit on all the
+programs that form the Texis package, as well as any user programs
+written with the direct library, and change the user to a common user,
+for example texis. Alternative methods may exist for other operating
+systems.</p>
+<div class="section" id="creating-users-and-logging-in">
+<h2>Creating Users and Logging In<a class="headerlink" href="#creating-users-and-logging-in" title="Permalink to this headline">¶</a></h2>
+<p>When a database is created there are two users created by default. The
+default users are PUBLIC and _SYSTEM. PUBLIC has the minimal
+permissions possible in Texis, and _SYSTEM has the maximum permissions
+in Texis. When these are created they are created without any password.
+You should change the password on _SYSTEM to prevent security issues.
+The password on PUBLIC can be left blank to allow anonymous access to
+the database, or it can be set to restrict access.</p>
+<p>When logging into Texis the username will default to PUBLIC if none is
+specified. This means that tables will be created owned by PUBLIC, and
+all users will have permissions to use the tables. It is possible to use
+only the PUBLIC user while developing a database, although if multiple
+people are working on the database you should see the previous comments
+about operating system permissions.</p>
+<p>To create new users in the database you must may either use the program
+<code class="docutils literal notranslate"><span class="pre">tsql</span> <span class="pre">-a</span> <span class="pre">add</span></code>, and you will be prompted for the user’s information, or you
+can user the <code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">USER</span> <span class="pre">SQL</span></code> statement. You must log in as _SYSTEM to
+add or delete users.</p>
+<p>The syntax for the user administration command in SQL are as follows:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CREATE</span> <span class="k">USER</span> <span class="n">username</span> <span class="n">IDENTIFIED</span> <span class="k">BY</span> <span class="n">password</span> <span class="p">;</span>
+
+<span class="k">ALTER</span>  <span class="k">USER</span> <span class="n">username</span> <span class="n">IDENTIFIED</span> <span class="k">BY</span> <span class="n">password</span> <span class="p">;</span>
+
+<span class="k">DROP</span>   <span class="k">USER</span> <span class="n">username</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>You may issue the <code class="docutils literal notranslate"><span class="pre">ALTER</span></code> <code class="docutils literal notranslate"><span class="pre">USER</span></code> command if you are logged in as the
+same user that is given in the statement, or if you are _SYSTEM. The
+password should be given as a string in single quotes. The <code class="docutils literal notranslate"><span class="pre">ALTER</span></code>
+<code class="docutils literal notranslate"><span class="pre">USER</span></code> statement is used to change a user’s password; the new password
+being specified in the command. Dropping a user will not remove any
+tables owned by that user.</p>
+</div>
+<div class="section" id="granting-privileges">
+<h2>Granting Privileges<a class="headerlink" href="#granting-privileges" title="Permalink to this headline">¶</a></h2>
+<p>In Texis, the creator of the database would be the automatic
+administrator of security. This individual can grant to other users
+different powers, such as the ability to read only, to modify, or to
+delete data in the database. Through the authorization subsystem, user
+names and password control which users can see what data. Each user
+signs onto the computer system with his or her own user name and
+password (i.e., user identification) and cannot access without
+permission tables created by some other user with a different user name.</p>
+<p>The person who creates a table is considered the “owner” of the table.
+Initially, that person is the only one who can access, update, and
+destroy the table. The owner, however, can grant to other users the
+right, or privilege, to do the following:</p>
+<ul class="simple">
+<li><p>Access the tables created by the owner.</p></li>
+<li><p>Add, change, or delete values in a table.</p></li>
+<li><p>Grant rights the user receives from the owner to other users.</p></li>
+</ul>
+<p>The owner of the table can grant to other users privileges that include
+the following:</p>
+<p><code class="docutils literal notranslate"><span class="pre">SELECT</span></code>: Retrieve rows without changing values in a table.</p>
+<p><code class="docutils literal notranslate"><span class="pre">INSERT</span></code>: Add new rows to a table.</p>
+<p><code class="docutils literal notranslate"><span class="pre">UPDATE</span></code>: Change values in a table.</p>
+<p><code class="docutils literal notranslate"><span class="pre">DELETE</span></code>: Remove rows from a table.</p>
+<p>The authorization subsystem of Texis is based on privileges that are
+controlled by the statements <code class="docutils literal notranslate"><span class="pre">GRANT</span></code> and <code class="docutils literal notranslate"><span class="pre">REVOKE</span></code>. The <code class="docutils literal notranslate"><span class="pre">GRANT</span></code> command allows
+the “owner” of a table to specify the operations, or privileges, that
+other users may perform on a table. The format of the command is:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">GRANT</span>  <span class="p">[</span><span class="k">ALL</span><span class="p">]</span>
+       <span class="n">privilege1</span> <span class="p">[,</span><span class="n">privilege2</span><span class="p">]</span> <span class="p">...</span>
+<span class="k">ON</span>     <span class="k">table</span><span class="o">-</span><span class="n">name1</span>
+<span class="k">TO</span>     <span class="k">PUBLIC</span>
+       <span class="n">userid1</span> <span class="p">[,</span><span class="n">userid2</span><span class="p">]</span> <span class="p">...</span>
+<span class="p">[</span><span class="k">WITH</span> <span class="k">GRANT</span> <span class="k">OPTION</span><span class="p">]</span> <span class="p">;</span>
+</pre></div>
+</div>
+<div class="section" id="id6">
+<h3>Command Discussion<a class="headerlink" href="#id6" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">GRANT</span></code> is a required keyword that indicates you are granting access to
+tables to other users.</p></li>
+<li><p>Privilege refers to the type of privilege or privileges you are
+granting. One or more of the following privileges can be granted:
+<code class="docutils literal notranslate"><span class="pre">SELECT</span></code>, <code class="docutils literal notranslate"><span class="pre">INSERT</span></code>, <code class="docutils literal notranslate"><span class="pre">UPDATE</span></code>, <code class="docutils literal notranslate"><span class="pre">DELETE</span></code>, and <code class="docutils literal notranslate"><span class="pre">ALTER</span></code>.
+Alternatively, <code class="docutils literal notranslate"><span class="pre">ALL</span></code> can be specified if all of the above actions are
+to be granted to the user.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ON</span></code> indicates the table(s) to which these privileges are being
+assigned.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PUBLIC</span></code> is used if the privileges are to granted to all users. If you
+want only certain users to have privileges assigned to this table,
+you must list the user identifications (“<code class="docutils literal notranslate"><span class="pre">userid's</span></code>”) of all those
+who will be allowed to share the table.</p></li>
+<li><p>If the clause <code class="docutils literal notranslate"><span class="pre">WITH</span> <span class="pre">GRANT</span> <span class="pre">OPTION</span></code> is specified, the recipient of the
+privileges specified can grant these privileges to other users.</p></li>
+</ul>
+<p><strong>Example:</strong> The Systems Administrator in the Information Systems
+Management Department created the EMPLOYEE table, and is therefore its
+owner. As owner of the EMPLOYEE table, he grants the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code>
+privilege to the firm’s CPA in Accounting. As owner of the table he
+issues the following command:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">GRANT</span>   <span class="k">SELECT</span>
+<span class="k">ON</span>      <span class="n">EMPLOYEE</span>
+<span class="k">TO</span>      <span class="n">CPA</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p><strong>Syntax Notes:</strong></p>
+<ul class="simple">
+<li><p>When the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> privilege is granted, it is done so with
+read-only access. Therefore the person granted the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code>
+privilege can read the data in the table, but cannot write to it, or
+in other words, cannot change it with <code class="docutils literal notranslate"><span class="pre">UPDATE</span></code> or other such
+privileges.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ON</span></code> refers to the table these privileges are being granted on; in this
+case, the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table.</p></li>
+<li><p>What follows TO is the user ID (<code class="docutils literal notranslate"><span class="pre">userid</span></code>) of the person to whom the
+privilege is granted. In this case the <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> privilege is
+granted to the person in accounting whose user ID is “CPA”.</p></li>
+</ul>
+<p><strong>Example:</strong> The owner of the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table allows the clerks in
+Personnel to add and modify employee data with this command:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">GRANT</span>   <span class="k">UPDATE</span><span class="p">,</span> <span class="k">INSERT</span>
+<span class="k">ON</span>      <span class="n">EMPLOYEE</span>
+<span class="k">TO</span>      <span class="n">CLERK1</span><span class="p">,</span> <span class="n">CLERK2</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>In this case there are two clerks with two separate user ID’s, “CLERK1”
+and “CLERK2”. Both are granted privileges to <code class="docutils literal notranslate"><span class="pre">UPDATE</span></code> and <code class="docutils literal notranslate"><span class="pre">INSERT</span></code>
+new information into the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table.</p>
+<p><strong>Example:</strong> The owner of the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table, the System Administrator,
+gives the Director of Personnel complete access (<code class="docutils literal notranslate"><span class="pre">SELECT</span></code>, <code class="docutils literal notranslate"><span class="pre">INSERT</span></code>,
+<code class="docutils literal notranslate"><span class="pre">UPDATE</span></code>, <code class="docutils literal notranslate"><span class="pre">DELETE</span></code>, <code class="docutils literal notranslate"><span class="pre">ALTER</span></code>) to the <code class="docutils literal notranslate"><span class="pre">EMPLOYEE</span></code> table, along with
+permission to assign these privileges to others. This statement is used:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">GRANT</span>   <span class="k">ALL</span>
+<span class="k">ON</span>      <span class="n">EMPLOYEE</span>
+<span class="k">TO</span>      <span class="n">PERS</span>
+<span class="k">WITH</span> <span class="k">GRANT</span> <span class="k">OPTION</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">ALL</span></code> following <code class="docutils literal notranslate"><span class="pre">GRANT</span></code> includes all 5 of the privileges. <code class="docutils literal notranslate"><span class="pre">PERS</span></code> is the user
+ID of the Director of Personnel. <code class="docutils literal notranslate"><span class="pre">WITH</span> <span class="pre">GRANT</span> <span class="pre">OPTION</span></code> allows the Director
+of Personnel to grant these privileges to other users.</p>
+<p><strong>Example:</strong> A systems analyst in the Strategic Planning and
+Intelligence Department has created and is owner of the <code class="docutils literal notranslate"><span class="pre">NEWS</span></code> table in
+which they are daily archiving online news articles of interest. It is
+decided to give all employees read-only access to this database. Owner
+of the table can do so with this command:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">GRANT</span>   <span class="k">SELECT</span>
+<span class="k">ON</span>      <span class="n">NEWS</span>
+<span class="k">TO</span>      <span class="k">PUBLIC</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>Anyone with access to the server on which the news table is stored will
+have permission to read the articles in the <code class="docutils literal notranslate"><span class="pre">NEWS</span></code> table, since the
+<code class="docutils literal notranslate"><span class="pre">SELECT</span></code> privilege has been granted to <code class="docutils literal notranslate"><span class="pre">PUBLIC</span></code>.</p>
+</div>
+</div>
+<div class="section" id="removing-privileges">
+<h2>Removing Privileges<a class="headerlink" href="#removing-privileges" title="Permalink to this headline">¶</a></h2>
+<p>Privileges assigned to other users can be taken away by the person who
+granted them. In Texis, the <code class="docutils literal notranslate"><span class="pre">REVOKE</span></code> statement would be used to remove
+privileges granted by the <code class="docutils literal notranslate"><span class="pre">GRANT</span></code> command. The general form of this
+statement is:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">REVOKE</span>  <span class="p">[</span><span class="k">ALL</span><span class="p">]</span>
+        <span class="n">privilege1</span> <span class="p">[,</span><span class="n">privilege2</span><span class="p">]</span> <span class="p">...</span>
+<span class="k">ON</span>      <span class="k">table</span><span class="o">-</span><span class="n">name1</span>
+<span class="k">TO</span>      <span class="k">PUBLIC</span>
+        <span class="n">userid1</span> <span class="p">[,</span><span class="n">userid2</span><span class="p">]</span> <span class="p">...</span> <span class="p">;</span>
+</pre></div>
+</div>
+<div class="section" id="id7">
+<h3>Command Discussion<a class="headerlink" href="#id7" title="Permalink to this headline">¶</a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">REVOKE</span></code> is a required keyword that indicates you are removing access
+to tables .</p></li>
+<li><p>Privilege refers to the type of privilege or privileges you are
+revoking. One or more of the following privileges can be revoked:
+<code class="docutils literal notranslate"><span class="pre">SELECT</span></code>, <code class="docutils literal notranslate"><span class="pre">INSERT</span></code>, <code class="docutils literal notranslate"><span class="pre">UPDATE</span></code>, <code class="docutils literal notranslate"><span class="pre">DELETE</span></code>, and <code class="docutils literal notranslate"><span class="pre">ALTER</span></code>.
+Alternatively, <code class="docutils literal notranslate"><span class="pre">ALL</span></code> can be specified if all of the above actions are
+to be taken away from the user.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">ON</span></code> clause indicates the table(s) from which these privileges are
+being removed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PUBLIC</span></code> is used if the privileges are taken away from all users of the
+indicated table(s). Otherwise, you list the user names of only those
+who are no longer allowed to share the table.</p></li>
+</ul>
+<p><strong>Example:</strong> The Personnel clerks no longer need to access the EMPLOYEE
+table. Revoke their privileges as follows:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">REVOKE</span>  <span class="k">UPDATE</span><span class="p">,</span> <span class="k">INSERT</span>
+<span class="k">ON</span>      <span class="n">EMPLOYEE</span>
+<span class="k">FROM</span>    <span class="n">CLERK1</span><span class="p">,</span> <span class="n">CLERK2</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>This completes the discussion of security features in Texis. In the next
+chapter, you will be introduced to certain other administrative features
+that can be implemented in Texis.</p>
+</div>
+</div>
+</div>
+<div class="section" id="administration-of-the-database">
+<h1>Administration of the Database<a class="headerlink" href="#administration-of-the-database" title="Permalink to this headline">¶</a></h1>
+<p>This chapter covers topics related to the administration of the
+database. The topics include the following:</p>
+<ul class="simple">
+<li><p>Accessing information about the database by using Texis’s system
+catalog.</p></li>
+<li><p>Texis reserved words to avoid in naming tables and columns.</p></li>
+</ul>
+<div class="section" id="system-catalog">
+<h2>System Catalog<a class="headerlink" href="#system-catalog" title="Permalink to this headline">¶</a></h2>
+<p>In Texis, information about the database, such as the names of tables,
+columns, and indexes, is maintained within a set of tables referred to
+as the <em>system catalog</em>. Texis automatically maintains these tables in
+the system catalog in response to commands issued by users. For example,
+the catalog tables are updated automatically when a new table is defined
+using the <code class="docutils literal notranslate"><span class="pre">CREATE</span> <span class="pre">TABLE</span></code> command.</p>
+<p>Database administrators and end users can access data in the system
+catalog just as they access data in other Texis tables by using the
+<code class="docutils literal notranslate"><span class="pre">SELECT</span></code> statement. This enables a user to inquire about data in the
+database and serves as a useful reference tool when developing queries.</p>
+<p>The Table below lists the tables that make up the system catalog for
+Texis.</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 26%" />
+<col style="width: 74%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Table Name</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">SYSTABLES</span></code></p></td>
+<td><p>Contains one row per table in the database.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">SYSCOLUMNS</span></code></p></td>
+<td><p>Contains one row per column for each database table.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">SYSINDEX</span></code></p></td>
+<td><p>Contains one row per canonical index in the database.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">SYSPERMS</span></code></p></td>
+<td><p>Holds the permissions information.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">SYSUSERS</span></code></p></td>
+<td><p>Contains information about users known to the system.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">SYSTRIG</span></code></p></td>
+<td><p>Contains one row per trigger defined to the system.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">SYSMETAINDEX</span></code></p></td>
+<td><p>Contains one row per Metamorph index in the database.</p></td>
+</tr>
+</tbody>
+</table>
+<p>One commonly referenced table, <code class="docutils literal notranslate"><span class="pre">SYSTABLES</span></code>, contains a row for each table
+that has been defined. For each table, the name of the table, authorized
+ID of the user who created the table, type of table, and so on is
+maintained. When users access <code class="docutils literal notranslate"><span class="pre">SYSTABLES</span></code>, they see data pertaining to
+tables that they can access.</p>
+<p>Texis’s system catalog table, <code class="docutils literal notranslate"><span class="pre">SYSTABLES</span></code> has these columns, defined
+with the following data types:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">NAME</span>     <span class="o">-</span>  <span class="n">CHAR</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+<span class="n">TYPE</span>     <span class="o">-</span>  <span class="n">CHAR</span>
+<span class="n">WHAT</span>     <span class="o">-</span>  <span class="n">CHAR</span><span class="p">(</span><span class="mi">255</span><span class="p">)</span>
+<span class="n">FC</span>       <span class="o">-</span>  <span class="n">BYTE</span>
+<span class="n">CREATOR</span>  <span class="o">-</span>  <span class="n">CHAR</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+<span class="n">REMARK</span>   <span class="o">-</span>  <span class="n">CHAR</span><span class="p">(</span><span class="mi">80</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Each field is fixed length rather than variable length, so the
+designated size limits do apply.</p>
+<dl>
+<dt>NAME</dt><dd><p>is the name of the table. Each of the tables comprising the system
+catalog are entered here, as well as each of the other database
+relations existing as “normal” tables.</p>
+</dd>
+<dt>TYPE</dt><dd><p>indicates the type of table.</p>
+<dl class="simple">
+<dt>T</dt><dd><p>indicates a normal Table.</p>
+</dd>
+<dt>B</dt><dd><p>indicates a Btree table. A Btree is a special type of table that
+can be created through the API only, that contains all the data
+in the index. It is of limited special purpose use. It is
+somewhat quicker and more space efficient if you have a few,
+small fields, and if you will never need to index on the fields
+in a different order. Use of the API is covered in
+Part V, Chapter [Part:V:Chp:Embed].</p>
+</dd>
+<dt>t</dt><dd><p>indicates a temporary table. These are not directly accessible,
+and exist only briefly. They are used when a temporary table is
+needed by the system – for example when compacting a table – and
+may have the same name as another, normal table. They are
+automatically removed when no longer needed.</p>
+</dd>
+</dl>
+</dd>
+</dl>
+<dl class="simple">
+<dt>WHAT</dt><dd><p>is the filename designating where the table actually exists on the
+system.</p>
+</dd>
+<dt>FC</dt><dd><p>stands for Field Count. It shows how many columns have been defined
+for each table entered.</p>
+</dd>
+<dt>CREATOR</dt><dd><p>is a User ID and shows who created the table.</p>
+</dd>
+<dt>REMARK</dt><dd><p>is reserved for any explanatory comments regarding the table.</p>
+</dd>
+</dl>
+<p><strong>Example:</strong> Provide a list of all tables in the database with this
+statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>  <span class="n">NAME</span><span class="p">,</span> <span class="n">TYPE</span><span class="p">,</span> <span class="n">CREATOR</span>
+<span class="n">FROM</span>    <span class="n">SYSTABLES</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>The result will be a listing of the available tables, as follows:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">NAME</span>         <span class="n">TYPE</span>         <span class="n">CREATOR</span>
+
+<span class="n">SYSCOLUMNS</span>   <span class="n">T</span>            <span class="n">_SYSTEM</span>
+<span class="n">SYSTABLES</span>    <span class="n">T</span>            <span class="n">_SYSTEM</span>
+<span class="n">SYSINDEX</span>     <span class="n">T</span>            <span class="n">_SYSTEM</span>
+<span class="n">SYSUSERS</span>     <span class="n">T</span>            <span class="n">_SYSTEM</span>
+<span class="n">SYSPERMS</span>     <span class="n">T</span>            <span class="n">_SYSTEM</span>
+<span class="n">SYSTRIG</span>      <span class="n">T</span>            <span class="n">_SYSTEM</span>
+<span class="n">SYSMETAINDEX</span> <span class="n">T</span>            <span class="n">_SYSTEM</span>
+<span class="n">EMPLOYEE</span>     <span class="n">T</span>            <span class="n">PUBLIC</span>
+<span class="n">NEWS</span>         <span class="n">T</span>            <span class="n">PUBLIC</span>
+<span class="n">REPORT</span>       <span class="n">T</span>            <span class="n">PUBLIC</span>
+<span class="n">RESUME</span>       <span class="n">T</span>            <span class="n">PUBLIC</span>
+</pre></div>
+</div>
+<p>In the above example, the first four tables: SYSCOLUMNS, SYSINDEX,
+SYSMETAINDEX, and SYSTABLES, comprise the system catalog and are owned
+by the _SYSTEM user account.</p>
+<p>The next six in the list are the tables which have been used for
+examples throughout this manual: CODES, DEPARTMENT, EMPLOYEE, NEWS,
+REPORT, and RESUME. These are owned by the “PUBLIC” user account.</p>
+<p>The table SYSCOLUMNS contains a row for every column of every table in
+the database. For each column, its name, name of the table to which it
+belongs, data type, length, position in the table, and whether NULL is
+permitted in the columns is maintained information. Users querying
+SYSCOLUMNS can retrieve data on columns in tables to which they have
+access.</p>
+<p>Texis’s system catalog table “SYSCOLUMNS” has the following columns, defined
+with the following data types, as can be seen from executing this
+statement:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span> <span class="n">NAME</span><span class="p">,</span> <span class="k">TYPE</span><span class="p">,</span> <span class="k">SIZE</span> <span class="k">FROM</span> <span class="n">SYSCOLUMNS</span>
+<span class="k">WHERE</span> <span class="n">TBNAME</span><span class="o">=</span><span class="s1">&#39;SYSCOLUMNS&#39;</span>
+</pre></div>
+</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">NAME</span>         <span class="n">TYPE</span>                 <span class="n">SIZE</span>
+
+<span class="n">NAME</span>         <span class="n">char</span>                   <span class="mi">35</span>
+<span class="n">TBNAME</span>       <span class="n">char</span>                   <span class="mi">35</span>
+<span class="n">TYPE</span>         <span class="n">char</span>                   <span class="mi">15</span>
+<span class="n">SIZE</span>         <span class="nb">int</span>                     <span class="mi">1</span>
+<span class="n">ORDINAL_POSITION</span> <span class="nb">int</span>                 <span class="mi">1</span>
+<span class="n">IDX</span>          <span class="n">char</span>                   <span class="mi">35</span>
+<span class="n">NULLABLE</span>     <span class="n">short</span>                   <span class="mi">1</span>
+<span class="n">SQLTYPE</span>      <span class="n">short</span>                   <span class="mi">1</span>
+<span class="n">PRECIS</span>       <span class="nb">int</span>                     <span class="mi">1</span>
+<span class="n">LENGTH</span>       <span class="nb">int</span>                     <span class="mi">1</span>
+<span class="n">SCALE</span>        <span class="n">short</span>                   <span class="mi">1</span>
+<span class="n">RADIX</span>        <span class="n">short</span>                   <span class="mi">1</span>
+<span class="n">REMARK</span>       <span class="n">char</span>                   <span class="mi">80</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>NAME</dt><dd><p>is the column name itself.</p>
+</dd>
+<dt>TBNAME</dt><dd><p>is the table the column is in.</p>
+</dd>
+<dt>TYPE</dt><dd><p>is the data type assigned to the column, defined as a string. TYPE
+might contain “char”, “varchar”, “integer”, “indirect”, and so on.</p>
+</dd>
+<dt>SIZE</dt><dd><p>is the size of the column.  If defined as <code class="docutils literal notranslate"><span class="pre">CHAR(16)</span></code> then the size
+would be 16.</p>
+</dd>
+<dt>ORDINAL_POSITION</dt><dd><p>The position of this column in the table.</p>
+</dd>
+<dt>IDX</dt><dd><p>is the name of an index created on this column. (This field is
+reserved for use in future versions of Texis.)</p>
+</dd>
+<dt>NULLABLE</dt><dd><p>indicates whether NULL fields should be allowed. (This field is
+reserved for use in future versions of Texis.)</p>
+</dd>
+</dl>
+<p>SQLTYPE</p>
+<p>PRECIS</p>
+<p>LENGTH</p>
+<p>SCALE</p>
+<p>RADIX</p>
+<dl class="simple">
+<dt>REMARK</dt><dd><p>is reserved for any user comment about the column.</p>
+</dd>
+</dl>
+<p><strong>Example:</strong> A user wants to obtain data about employees in the R&amp;D
+Department, but doesn’t know any of the column names in the EMPLOYEE
+table. Assume that the user does know there is a table named EMPLOYEE.</p>
+<p>This statement:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span>  <span class="n">NAME</span>
+<span class="n">FROM</span>    <span class="n">SYSCOLUMNS</span>
+<span class="n">WHERE</span>   <span class="n">TBNAME</span> <span class="o">=</span> <span class="s1">&#39;EMPLOYEE&#39;</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>would result in the following:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">NAME</span>
+
+<span class="n">EID</span>
+<span class="n">ENAME</span>
+<span class="n">DEPT</span>
+<span class="n">RANK</span>
+<span class="n">BENEFITS</span>
+<span class="n">SALARY</span>
+</pre></div>
+</div>
+<p>In this way one can find out what kind of data is stored, so as to
+better formulate queries which will reveal what you actually want to
+know.</p>
+<p>Texis has two other system catalog tables called “SYSINDEX” and
+“SYSMETAINDEX”. Texis’s system catalog table “SYSINDEX” has these
+columns, defined with the following data types:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">NAME</span>       <span class="o">-</span>  <span class="n">CHAR</span><span class="p">(</span><span class="mi">35</span><span class="p">)</span>
+<span class="n">TBNAME</span>     <span class="o">-</span>  <span class="n">CHAR</span><span class="p">(</span><span class="mi">35</span><span class="p">)</span>
+<span class="n">COLLSEQ</span>    <span class="o">-</span>  <span class="n">CHAR</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">TYPE</span>       <span class="o">-</span>  <span class="n">BYTE</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">NON_UNIQUE</span> <span class="o">-</span>  <span class="n">BYTE</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">FNAME</span>      <span class="o">-</span>  <span class="n">CHAR</span><span class="p">(</span><span class="mi">255</span><span class="p">)</span>
+<span class="n">FIELDS</span>     <span class="o">-</span>  <span class="n">VARCHAR</span><span class="p">(</span><span class="mi">35</span><span class="p">)</span>
+<span class="n">PARAMS</span>     <span class="o">-</span>  <span class="n">VARCHAR</span><span class="p">(</span><span class="mi">35</span><span class="p">)</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>NAME</dt><dd><p>is the name of the index.</p>
+</dd>
+<dt>TBNAME</dt><dd><p>is the table the index is on.</p>
+</dd>
+<dt>FNAME</dt><dd><p>is the file name of the index.</p>
+</dd>
+<dt>COLLSEQ</dt><dd><p>indicates sort order. ‘A’ indicates <em>ascending</em>; ‘D’ indicates
+<em>descending</em>. This field is not currently used, but is planned for
+future releases.</p>
+</dd>
+<dt>TYPE</dt><dd><p>indicates the type of index, either <code class="docutils literal notranslate"><span class="pre">B</span></code> for Btree or <code class="docutils literal notranslate"><span class="pre">F</span></code> for
+Fulltext/Metamorph.</p>
+</dd>
+<dt>NON_UNIQUE</dt><dd><p>indicates whether the index was created with the <code class="docutils literal notranslate"><span class="pre">unique</span></code> keyword
+(<code class="docutils literal notranslate"><span class="pre">0</span></code> if unique). This field is
+not currently used, but is planned for future releases.</p>
+</dd>
+<dt>FIELDS</dt><dd><p>indicates the field or fields upon which the index was made.</p>
+</dd>
+<dt>PARAMS</dt><dd><p>indicates the <span class="xref std std-ref">sql-set:String Compare Mode</span> used to create the index.</p>
+</dd>
+</dl>
+<p>“SYSMETAINDEX” controls a demon that checks Metamorph indexes, those
+indexes used on text oriented columns. The demon waits a certain number
+of seconds between checks, and has a threshold in bytes at which size
+the update process is required to run.</p>
+<p>Texis’s system catalog table “SYSMETAINDEX” has these columns, defined
+with the following data types:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">NAME</span>     <span class="o">-</span>  <span class="n">CHAR</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+<span class="n">WAIT</span>     <span class="o">-</span>  <span class="n">INTEGER</span>
+<span class="n">THRESH</span>   <span class="o">-</span>  <span class="n">INTEGER</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>NAME</dt><dd><p>is the name of the Metamorph index.</p>
+</dd>
+<dt>WAIT</dt><dd><p>indicates how long to wait in seconds between index checks.</p>
+</dd>
+<dt>THRESH</dt><dd><p>is a number of bytes which have changed. This is the threshold
+required to re-index.</p>
+</dd>
+</dl>
+<p>The system catalog tables are a good place to start when initially
+becoming familiar with what a database has to offer.</p>
+</div>
+<div class="section" id="optimization">
+<h2>Optimization<a class="headerlink" href="#optimization" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="table-compaction">
+<h3>Table Compaction<a class="headerlink" href="#table-compaction" title="Permalink to this headline">¶</a></h3>
+<p>After a table has been extensively modified, its disk file(s) may
+accumulate a certain amount of unused free space, especially if a large
+number of rows have been deleted. This free space will be re-used as
+much as possible whenever new rows are inserted or updated, to try to
+avoid expanding the table’s disk footprint. However, if the table is no
+longer to be modified in the future – e.g. it is now a search-only
+archive – this free space will never be reclaimed. It is now wasted disk
+space, as well as a potential performance impairment, as larger seeks
+may be needed by the operating system to access actual payload data.</p>
+<p>Free space in a table may be reclaimed by compacting the table
+(retaining all payload data), with the following SQL:</p>
+<p><code class="docutils literal notranslate"><span class="pre">ALTER</span></code> <code class="docutils literal notranslate"><span class="pre">TABLE</span></code> <span class="math notranslate nohighlight">\(name\)</span> <code class="docutils literal notranslate"><span class="pre">COMPACT</span></code></p>
+<p>This will compact the table <span class="math notranslate nohighlight">\(name\)</span> to eliminate its free space.
+The process may take some time for a large table, or where there are
+many indexes on it. Also, while the end result will generally be less
+disk usage for the table, <em>during</em> the compaction disk usage will
+temporarily increase, as copies of the table and most of its index files
+are created. Therefore, before starting, ensure that there is free disk
+space (in the database’s partition) at least equal to the combined size
+of the table and its indexes.</p>
+<p>Because extensive modifications are needed, the table will not be
+modifiable during compaction: attempts to insert, delete or update rows
+will block until compaction is finished. The table is readable during
+compaction, however, so <code class="docutils literal notranslate"><span class="pre">SELECT</span></code>s are possible. Progress meters may
+be printed during compaction by setting the SQL property <code class="docutils literal notranslate"><span class="pre">meter</span></code> to
+<code class="docutils literal notranslate"><span class="pre">'compact'</span></code>.</p>
+<p>Note that compacting a table is generally only useful when the table
+will no longer be modified, or has undergone a large amount of deletions
+that will not be replaced by inserts. Conversely, a “steady-state”
+continuously-modified table rarely benefits from compaction, because it
+will merely accumulate free space again: the short-term gains of
+compaction are outweighed by the significant cost and delay of
+repeatedly runnning the compaction.</p>
+</div>
+<div class="section" id="index-maintenance">
+<h3>Index Maintenance<a class="headerlink" href="#index-maintenance" title="Permalink to this headline">¶</a></h3>
+<p>B-tree (regular) and inverted indexes never require explicit
+optimization by the database administrator, as they are automatically
+kept up-to-date (optimized) at every table modification (<code class="docutils literal notranslate"><span class="pre">INSERT</span></code>,
+<code class="docutils literal notranslate"><span class="pre">DELETE</span></code> or <code class="docutils literal notranslate"><span class="pre">UPDATE</span></code>).</p>
+<p>However, this is not possible for Metamorph indexes due to their
+fundamentally different nature. Instead, table changes are logged for
+incorporation into the index at the next optimization (index update),
+and Texis must linearly search the changed data until then. Thus, the
+more a table has been modified since a Metamorph index’s last
+optimization, the more its search performance potentially degrades. When
+the index is re-optimized, those changes are indexed and merged into the
+Metamorph index, restoring its performance. A Metamorph index may be
+optimized in one of several ways, as follows.</p>
+</div>
+<div class="section" id="manual-index-optimization-via-create-metamorph-index">
+<h3>Manual Index Optimization via CREATE METAMORPH INDEX<a class="headerlink" href="#manual-index-optimization-via-create-metamorph-index" title="Permalink to this headline">¶</a></h3>
+<p>A Metamorph index may be optimized manually simply by re-issuing the
+same <code class="docutils literal notranslate"><span class="pre">CREATE</span></code> <code class="docutils literal notranslate"><span class="pre">METAMORPH</span></code>
+<span class="math notranslate nohighlight">\([\)</span><code class="docutils literal notranslate"><span class="pre">INVERTED</span></code><span class="math notranslate nohighlight">\(|\)</span><code class="docutils literal notranslate"><span class="pre">COUNTER</span></code><span class="math notranslate nohighlight">\(]\)</span> <code class="docutils literal notranslate"><span class="pre">INDEX</span></code>
+<span class="math notranslate nohighlight">\(...\)</span> statement that was used to create it. Instead of producing
+an error noting that the index already exists – as would happen with
+regular or inverted indexes – the Metamorph index is re-optimized. (If
+the index is already fully optimized, the statement returns success
+immediately.)</p>
+<p>Note that the ALTER INDEX statement (p. ) is an easier method of
+optimizing indexes.</p>
+</div>
+<div class="section" id="manual-index-optimization-via-alter-index">
+<h3>Manual Index Optimization via ALTER INDEX<a class="headerlink" href="#manual-index-optimization-via-alter-index" title="Permalink to this headline">¶</a></h3>
+<p>Since the full syntax of the original <code class="docutils literal notranslate"><span class="pre">CREATE</span></code> statement may not be
+known, or may be cumbersome to remember and re-enter, a Metamorph index
+may also be optimized with an <code class="docutils literal notranslate"><span class="pre">ALTER</span> <span class="pre">INDEX</span></code> statement:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">ALTER</span> <span class="k">INDEX</span> <span class="n">indexName</span><span class="o">|</span><span class="k">ALL</span> <span class="p">[</span><span class="k">ON</span> <span class="n">tableName</span><span class="p">]</span>
+<span class="n">OPTIMIZE</span><span class="o">|</span><span class="n">REBUILD</span>
+</pre></div>
+</div>
+<p>This will optimize the index named <code class="docutils literal notranslate"><span class="pre">indexName</span></code>, or all indexes in
+the database if <code class="docutils literal notranslate"><span class="pre">ALL</span></code> is given. Adding the optional <code class="docutils literal notranslate"><span class="pre">ON</span></code>
+<code class="docutils literal notranslate"><span class="pre">tableName</span></code> clause will limit the index(es) optimized to only
+those on the table named <code class="docutils literal notranslate"><span class="pre">tableName</span></code>. If a non-Metamorph index is
+specified, it will be silently ignored, as non-Metamorph indexes are
+always in an optimized state.</p>
+<p>If the keyword <code class="docutils literal notranslate"><span class="pre">REBUILD</span></code> is given instead of <code class="docutils literal notranslate"><span class="pre">OPTIMIZE</span></code>, the index
+is rebuilt from scratch instead. This usually takes more time, as it is
+the same action as the initial creation of the index, and thus the whole
+table must be indexed, not just changes since last optimization. Any
+index type may be rebuilt, not just Metamorph indexes. During
+rebuilding, the original index is still available for search use;
+however inserts, deletes and updates may be postponed until the rebuild
+completes. Rebuilding is not generally needed, but may be useful if the
+index is suspected to be corrupt.</p>
+</div>
+</div>
+<div class="section" id="reserved-words">
+<h2>Reserved Words<a class="headerlink" href="#reserved-words" title="Permalink to this headline">¶</a></h2>
+<p>The following words are reserved words in SQL. Texis makes use of many
+of them, and future versions may make use of others. These words should
+not be used as ordinary identifiers in forming names.</p>
+<p>Allowances will be made in future versions of Texis so that the words
+may be used as delimited identifiers if deemed vital, by enclosing them
+between double quotation marks.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>ADA                 DELETE              INTO                REFERENCES
+ADD                 DESC                IS                  REVOKE
+ALL                 DESCRIPTOR          KEY                 ROLLBACK
+ALTER               DISTINCT            LANGUAGE            SCHEMA
+AND                 DOUBLE              LIKE                SECQTY
+ANY                 DROP                LIKE3               SELECT
+AS                  EDITPROC            LOCKSIZE            SET
+ASC                 END-EXEC            MATCHES             SMALLINT
+AUTHORIZATION       ERASE               MAX                 SOME
+AVG                 ESCAPE              METAMORPH           SQLCODE
+BETWEEN             EXECUTE             MIN                 STOGROUP
+BLOB                EXISTS              MODULE              SUM
+BUFFERPOOL          FETCH               NOT                 SYNONYM
+BY                  FIELDPROC           NULL                TABLE
+C                   FLOAT               NUMERIC             TABLESPACE
+CHAR(ACTER)?        FOR                 NUMPARTS            TO
+CHECK               FOREIGN             OF                  UNION
+CLOSE               FORTRAN             ON                  UNIQUE
+CLUSTER             FOUND               OPEN                UPDATE
+COBOL               FROM                OPTION              USER
+COLUMN              GO                  OR                  USING
+COMMIT              GO[ \t]*TO          ORDER               VALIDPROC
+COMPACT             GOTO                PART                VALUES
+CONTINUE            GRANT               PASCAL              VARCHAR
+COUNT               GROUP               PLAN                VCAT
+CREATE              HAVING              PLI                 VIEW
+CTIME               IMMEDIATE           PRECISION           VOLUMES
+CURRENT             IN                  PRIMARY             WHENEVER
+CURSOR              INDEX               PRIQTY              WHERE
+DATABASE            INDICATOR           PRIVILEGES          WITH
+DATE                INDIRECT            PROCEDURE           WORK
+DECIMAL             INSERT              PUBLIC
+DECLARE             INT(EGER)?          REAL
+DEFAULT
+</pre></div>
+</div>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="sql-set.html" class="btn btn-neutral float-right" title="Server Properties" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="sql-server-funcs.html" class="btn btn-neutral" title="Server functions" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

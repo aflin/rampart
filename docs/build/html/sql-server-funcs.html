@@ -1,0 +1,2091 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Server functions &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
+        <link rel="up" title="The rampart-sql module" href="sqltoc.html"/>
+        <link rel="next" title="Indexing for Increased Performance" href="sql4.html"/>
+        <link rel="prev" title="Intelligent Text Search Queries" href="sql3.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart Javascript</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html">Preface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#loading-the-javascript-module">Loading the Javascript Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#database-functions">Database Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#string-functions">String Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html">Introduction to Texis SQL</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#creating-a-database">Creating a Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#table-definition">Table Definition</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql1.html#a-first-look-at-queries">A First Look at Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql2.html">Queries Involving Calculated Values</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql2.html#advanced-queries">Advanced Queries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql3.html">Intelligent Text Search Queries</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Server functions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#general-functions">General Functions</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#exec">exec</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#mminfo">mminfo</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#convert">convert</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#seq">seq</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#random">random</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#bintohex">bintohex</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#hextobin">hextobin</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#identifylanguage">identifylanguage</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#lookup">lookup</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#lookupcanonicalizeranges">lookupCanonicalizeRanges</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#lookupparserange">lookupParseRange</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#ifnull">ifNull</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#isnull">isNull</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#file-functions">File functions</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#fromfile-fromfiletext">fromfile, fromfiletext</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#toind">toind</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#canonpath">canonpath</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#pathcmp">pathcmp</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#basename">basename</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dirname">dirname</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#fileext">fileext</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#joinpath">joinpath</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#joinpathabsolute">joinpathabsolute</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#string-functions">String Functions</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#abstract">abstract</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#text2mm">text2mm</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#keywords">keywords</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#length">length</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#lower">lower</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#upper">upper</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#initcap">initcap</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#sandr">sandr</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#separator">separator</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#stringcompare">stringcompare</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#stringformat">stringformat</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#math-functions">Math functions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#date-functions">Date functions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#bit-manipulation-functions">Bit manipulation functions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#internet-ip-address-functions">Internet/IP address functions</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#urlcanonicalize">urlcanonicalize</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#geographical-coordinate-functions">Geographical coordinate functions</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#azimuth2compass">azimuth2compass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#azimuthgeocode">azimuthgeocode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#azimuthlatlon">azimuthlatlon</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dms2dec-dec2dms">dms2dec, dec2dms</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#distgeocode">distgeocode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#distlatlon">distlatlon</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#latlon2geocode-latlon2geocodearea">latlon2geocode, latlon2geocodearea</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#geocode2lat-geocode2lon">geocode2lat, geocode2lon</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#parselatitude-parselongitude">parselatitude, parselongitude</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#json-functions">JSON functions</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#json-path-syntax">JSON Path Syntax</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#json-field-syntax">JSON Field Syntax</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#isjson">isjson</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#json-format">json_format</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#json-type">json_type</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#json-value">json_value</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#json-query">json_query</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#json-modify">json_modify</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#json-merge-patch">json_merge_patch</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#json-merge-preserve">json_merge_preserve</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html">Indexing for Increased Performance</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html#keeping-the-database-current">Keeping the Database Current</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html#security">Security</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql4.html#administration-of-the-database">Administration of the Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-set.html">Server Properties</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tsql.html">Tsql Command Line Utility</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm2.html">Metamorph: The Program Inside the Program</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm2.html#hits-intersections-and-sets">Hits, Intersections and Sets</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm3.html">Thesaurus Customization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm4.html">Tailoring Metamorph’s Linguistics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm5.html">Types of Searches in Metamorph</a></li>
+<li class="toctree-l2"><a class="reference internal" href="mm6.html">REX On Its Own</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="sqltoc.html">The rampart-sql module</a> &raquo;</li>
+        
+      <li>Server functions</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/sql-server-funcs.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="server-functions">
+<h1>Server functions<a class="headerlink" href="#server-functions" title="Permalink to this headline">¶</a></h1>
+<p>The Texis server has a number of functions built into it which can
+operate on fields. This can occur anywhere an expression can occur in a
+SQL statement. It is possible that the server at your site has been
+extended with additional functions. Each of the arguments can be either
+a single field name, or another expression.</p>
+<div class="section" id="general-functions">
+<h2>General Functions<a class="headerlink" href="#general-functions" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="exec">
+<h3>exec<a class="headerlink" href="#exec" title="Permalink to this headline">¶</a></h3>
+<p>Execute an external command. The syntax is</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">exec</span><span class="p">(</span><span class="n">commandline</span><span class="p">[,</span> <span class="k">INPUT</span><span class="p">[,</span> <span class="k">INPUT</span><span class="p">[,</span> <span class="k">INPUT</span><span class="p">[,</span> <span class="k">INPUT</span><span class="p">]]]]);</span>
+</pre></div>
+</div>
+<p>Allows execution of an external command. The first argument is the
+command to execute. Any subsequent arguments are written to the standard
+input of the process. The standard output of the command is read as the
+return from the function.</p>
+<p>This function allows unlimited extensibility of Texis, although if a
+particular function is being used often then it should be linked into
+the Texis server to avoid the overhead of invoking another process.</p>
+<p>For example this could be used to OCR text. If you have a program which
+will take an image filename on the command line, and return the text on
+standard out you could issue SQL as follows:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">UPDATE</span>     <span class="n">DOCUMENTS</span>
+<span class="k">SET</span>        <span class="nb">TEXT</span> <span class="o">=</span> <span class="k">exec</span><span class="p">(</span><span class="s1">&#39;ocr &#39;</span><span class="o">+</span><span class="n">IMGFILE</span><span class="p">)</span>
+<span class="k">WHERE</span>      <span class="nb">TEXT</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>Another example would be if you wanted to print envelopes from names and
+addresses in a table you might use the following SQL:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span> <span class="k">exec</span><span class="p">(</span><span class="s1">&#39;envelope &#39;</span><span class="p">,</span> <span class="n">FIRST_NAME</span><span class="o">+</span><span class="s1">&#39; &#39;</span><span class="o">+</span><span class="n">LAST_NAME</span><span class="o">+</span><span class="s1">&#39;</span>
+<span class="s1">&#39;</span><span class="p">,</span> <span class="n">STREET</span> <span class="o">+</span> <span class="s1">&#39;</span>
+<span class="s1">&#39;</span><span class="p">,</span> <span class="n">CITY</span> <span class="o">+</span> <span class="s1">&#39;, &#39;</span> <span class="o">+</span> <span class="k">STATE</span> <span class="o">+</span> <span class="s1">&#39; &#39;</span> <span class="o">+</span> <span class="n">ZIP</span><span class="p">)</span>
+<span class="k">FROM</span> <span class="n">ADDRESSES</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>Notice in this example the addition of spaces and line-breaks between
+the fields. Texis does not add any delimiters between fields or
+arguments itself.</p>
+</div>
+<div class="section" id="mminfo">
+<h3>mminfo<a class="headerlink" href="#mminfo" title="Permalink to this headline">¶</a></h3>
+<p>This function lets you obtain Metamorph info. You have the choice of
+either just getting the portions of the document which were the hits, or
+you can also get messages which describe each hit and subhits.</p>
+<p>The SQL to use is as follows:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span> <span class="n">mminfo</span><span class="p">(</span><span class="n">query</span><span class="p">,</span><span class="k">data</span><span class="p">[,</span><span class="n">nhits</span><span class="p">,[</span><span class="mi">0</span><span class="p">,</span><span class="n">msgs</span><span class="p">]])</span> <span class="k">from</span> <span class="k">TABLE</span>
+       <span class="p">[</span><span class="k">where</span> <span class="n">CONDITION</span><span class="p">];</span>
+</pre></div>
+</div>
+<dl>
+<dt>query</dt><dd><p>Query should be a string containing a metamorph query.</p>
+</dd>
+<dt>data</dt><dd><p>The text to search. May be literal data or a field from the table.</p>
+</dd>
+<dt>nhits</dt><dd><p>The maximum number of hits to return. If it is 0, which is the
+default, you will get all the hits.</p>
+</dd>
+<dt>msgs</dt><dd><p>An integer; controls what information is returned. A bit-wise OR of
+any combination of the following values:</p>
+<ul class="simple">
+<li><p>1 to get matches and offset/length information</p></li>
+<li><p>2 to suppress text from <code class="docutils literal notranslate"><span class="pre">data</span></code> which matches; printed by
+default</p></li>
+<li><p>4 to get a count of hits (up to <code class="docutils literal notranslate"><span class="pre">nhits</span></code>)</p></li>
+<li><p>8 to get the hit count in a numeric parseable format</p></li>
+<li><p>16 to get the offset/length in the original query of each search
+set</p></li>
+</ul>
+<p>Set offset/length information (value 16) is of the form:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Set</span> <span class="n">N</span> <span class="n">offset</span><span class="o">/</span><span class="nb">len</span> <span class="ow">in</span> <span class="n">query</span><span class="p">:</span> <span class="n">setoff</span> <span class="n">setlen</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">N</span></code> is the set number (starting with 1), <code class="docutils literal notranslate"><span class="pre">setoff</span></code> is the
+byte offset from the start of the query where set <code class="docutils literal notranslate"><span class="pre">N</span></code> is, and
+<code class="docutils literal notranslate"><span class="pre">setlen</span></code> is the length of the set.</p>
+<p>Hit offset/length information is of the form:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">300</span> <span class="o">&lt;</span><span class="n">Data</span> <span class="kn">from</span> <span class="nn">Texis</span><span class="o">&gt;</span> <span class="n">offset</span> <span class="n">length</span> <span class="n">suboff</span> <span class="n">sublen</span> <span class="p">[</span><span class="n">suboff</span> <span class="n">sublen</span><span class="p">]</span><span class="o">..</span>
+<span class="mi">301</span> <span class="n">End</span> <span class="n">of</span> <span class="n">Metamorph</span> <span class="n">hit</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><p>offset is the offset within the data of the overall hit context
+(sentence, paragraph, etc…)</p></li>
+<li><p>length is the length of the overall hit context</p></li>
+<li><p>suboff is the offset within the hit of a matching term</p></li>
+<li><p>sublen is the length of the matching term</p></li>
+<li><p>suboff and sublen will be repeated for as many terms as are
+required to satisfy the query.</p></li>
+</ul>
+<p>Example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">select</span> <span class="n">mminfo</span><span class="p">(</span><span class="s1">&#39;power struggle @0 w/.&#39;</span><span class="p">,</span><span class="n">Body</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="mi">1</span><span class="p">)</span> <span class="n">inf</span> <span class="kn">from</span> <span class="nn">html</span>
+       <span class="n">where</span> <span class="n">Title</span>\<span class="n">Meta</span>\<span class="n">Body</span> <span class="n">like</span> <span class="s1">&#39;power struggle&#39;</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>Would give something of the form:</p>
+</dd>
+</dl>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">300</span> <span class="o">&lt;</span><span class="n">Data</span> <span class="kn">from</span> <span class="nn">Texis</span><span class="o">&gt;</span> <span class="mi">62</span> <span class="mi">5</span> <span class="mi">0</span> <span class="mi">5</span>
+<span class="n">power</span>
+<span class="mi">301</span> <span class="n">End</span> <span class="n">of</span> <span class="n">Metamorph</span> <span class="n">hit</span>
+<span class="mi">300</span> <span class="o">&lt;</span><span class="n">Data</span> <span class="kn">from</span> <span class="nn">Texis</span><span class="o">&gt;</span> <span class="mi">2042</span> <span class="mi">5</span> <span class="mi">0</span> <span class="mi">5</span>
+<span class="n">power</span>
+<span class="mi">301</span> <span class="n">End</span> <span class="n">of</span> <span class="n">Metamorph</span> <span class="n">hit</span>
+<span class="mi">300</span> <span class="o">&lt;</span><span class="n">Data</span> <span class="kn">from</span> <span class="nn">Texis</span><span class="o">&gt;</span> <span class="mi">2331</span> <span class="mi">5</span> <span class="mi">0</span> <span class="mi">5</span>
+<span class="n">POWER</span>
+<span class="mi">301</span> <span class="n">End</span> <span class="n">of</span> <span class="n">Metamorph</span> <span class="n">hit</span>
+<span class="mi">300</span> <span class="o">&lt;</span><span class="n">Data</span> <span class="kn">from</span> <span class="nn">Texis</span><span class="o">&gt;</span> <span class="mi">2892</span> <span class="mi">8</span> <span class="mi">0</span> <span class="mi">8</span>
+<span class="n">STRUGGLE</span>
+<span class="mi">301</span> <span class="n">End</span> <span class="n">of</span> <span class="n">Metamorph</span> <span class="n">hit</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="convert">
+<h3>convert<a class="headerlink" href="#convert" title="Permalink to this headline">¶</a></h3>
+<p>The convert function allows you to change the type of an expression. The
+syntax is</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">CONVERT</span><span class="p">(</span><span class="n">expression</span><span class="p">,</span> <span class="s1">&#39;type-name&#39;</span><span class="p">[,</span> <span class="s1">&#39;mode&#39;</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>The type name should in general be in lower case.</p>
+<p>This can be useful in a number of situations. Some cases where you might
+want to use convert are</p>
+<ul>
+<li><p>The display format for a different format is more useful. For example
+you might want to convert a field of type COUNTER to a DATE field, so
+you can see when the record was inserted, for example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SELECT</span> <span class="n">convert</span><span class="p">(</span><span class="nb">id</span><span class="p">,</span> <span class="s1">&#39;date&#39;</span><span class="p">)</span>
+<span class="n">FROM</span>   <span class="n">LOG</span><span class="p">;</span>
+</pre></div>
+</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">CONVERT</span><span class="p">(</span><span class="nb">id</span><span class="p">,</span> <span class="s1">&#39;date&#39;</span><span class="p">)</span>
+<span class="mi">1995</span><span class="o">-</span><span class="mi">01</span><span class="o">-</span><span class="mi">27</span> <span class="mi">22</span><span class="p">:</span><span class="mi">43</span><span class="p">:</span><span class="mi">48</span>
+</pre></div>
+</div>
+</li>
+</ul>
+<ul class="simple">
+<li><p>If you have an application which is expecting data in a particular
+type you can use convert to make sure you will receive the correct
+type.</p></li>
+<li><p>The optional third argument given to <code class="docutils literal notranslate"><span class="pre">convert()</span></code> is a
+<a class="reference internal" href="sql-set.html#varchartostrlstmode"><span class="std std-ref">varcharToStrlstMode</span></a> mode value.  This third argument may
+only be supplied when converting to type <code class="docutils literal notranslate"><span class="pre">strlst</span></code> or <code class="docutils literal notranslate"><span class="pre">varstrlst</span></code>.  It
+allows the separator character or mode to be conveniently specified
+locally to the conversion, instead of having to alter the global
+<a class="reference internal" href="sql-set.html#varchartostrlstmode"><span class="std std-ref">varcharToStrlstMode</span></a> mode.</p></li>
+<li><p>Note that <code class="docutils literal notranslate"><span class="pre">convert()</span></code>ing data
+from/to <code class="docutils literal notranslate"><span class="pre">varbyte</span></code>/<code class="docutils literal notranslate"><span class="pre">varchar</span></code> does not convert the data to/from
+hexadecimal by default in programs
+other than <code class="docutils literal notranslate"><span class="pre">tsql</span></code>; it is preserved as-is (though truncated at nul
+for <code class="docutils literal notranslate"><span class="pre">varchar</span></code>). See the <a class="reference internal" href="#bintohex">bintohex</a>() and <a class="reference internal" href="#hextobin">hextobin</a>() functions
+for hexadecimal conversion, and the <a class="reference internal" href="sql-set.html#hexifybytes"><span class="std std-ref">hexifyBytes</span></a> SQL property
+for controlling automatic hex conversion.</p></li>
+</ul>
+</div>
+<div class="section" id="seq">
+<h3>seq<a class="headerlink" href="#seq" title="Permalink to this headline">¶</a></h3>
+<p>Returns a sequence number. The number can be initialized to any value,
+and the increment can be defined for each call. The syntax is:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">seq</span><span class="p">(</span><span class="k">increment</span> <span class="p">[,</span> <span class="n">init</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>If init is given then the sequence number is initialized to that value,
+which will be the value returned. It is then incremented by increment.
+If init is not specified then the current value will be retained. The
+initial value will be zero if init has not been specified.</p>
+<p>Examples of typical use:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>  <span class="n">NAME</span><span class="p">,</span> <span class="n">seq</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="k">FROM</span>    <span class="n">SYSTABLES</span>
+</pre></div>
+</div>
+<p>The results are:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span> <span class="n">NAME</span>                <span class="n">seq</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">SYSTABLES</span>               <span class="mi">0</span>
+<span class="n">SYSCOLUMNS</span>              <span class="mi">1</span>
+<span class="n">SYSINDEX</span>                <span class="mi">2</span>
+<span class="n">SYSUSERS</span>                <span class="mi">3</span>
+<span class="n">SYSPERMS</span>                <span class="mi">4</span>
+<span class="n">SYSTRIG</span>                 <span class="mi">5</span>
+<span class="n">SYSMETAINDEX</span>            <span class="mi">6</span>
+</pre></div>
+</div>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>  <span class="n">seq</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+<span class="k">FROM</span>    <span class="n">SYSDUMMY</span><span class="p">;</span>
+
+<span class="k">SELECT</span>  <span class="n">NAME</span><span class="p">,</span> <span class="n">seq</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="k">FROM</span>    <span class="n">SYSTABLES</span>
+</pre></div>
+</div>
+<p>The results are:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span> <span class="n">seq</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+    <span class="mi">100</span>
+
+ <span class="n">NAME</span>                <span class="n">seq</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">SYSTABLES</span>             <span class="mi">100</span>
+<span class="n">SYSCOLUMNS</span>            <span class="mi">101</span>
+<span class="n">SYSINDEX</span>              <span class="mi">102</span>
+<span class="n">SYSUSERS</span>              <span class="mi">103</span>
+<span class="n">SYSPERMS</span>              <span class="mi">104</span>
+<span class="n">SYSTRIG</span>               <span class="mi">105</span>
+<span class="n">SYSMETAINDEX</span>          <span class="mi">106</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="random">
+<h3>random<a class="headerlink" href="#random" title="Permalink to this headline">¶</a></h3>
+<p>Returns a random int. The syntax is:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">random</span><span class="p">(</span><span class="k">max</span> <span class="p">[,</span> <span class="n">seed</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>If seed is given then the random number generator is seeded to that
+value. The random number generator will only be seeded once in each
+session, and will be randomly seeded on the first call if no seed is
+supplied. The seed parameter is ignored in the second and later calls to
+random in a process.</p>
+<p>The returned number is always non-negative, and never larger than the
+limit of the C lib’s random number generator (typically either 32767 or
+2147483647). If max is non-zero, then the returned number will also be
+less than max.</p>
+<p>This function is typically used to either generate a random number for
+later use, or to generate a random ordering of result records by adding
+random to the ORDER BY clause.</p>
+<p>Examples of typical use:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>  <span class="n">NAME</span><span class="p">,</span> <span class="n">random</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
+<span class="k">FROM</span>    <span class="n">SYSTABLES</span>
+</pre></div>
+</div>
+<p>The results might be:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span> <span class="n">NAME</span>                <span class="n">random</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
+<span class="n">SYSTABLES</span>               <span class="mi">90</span>
+<span class="n">SYSCOLUMNS</span>              <span class="mi">16</span>
+<span class="n">SYSINDEX</span>                <span class="mi">94</span>
+<span class="n">SYSUSERS</span>                <span class="mi">96</span>
+<span class="n">SYSPERMS</span>                 <span class="mi">1</span>
+<span class="n">SYSTRIG</span>                 <span class="mi">84</span>
+<span class="n">SYSMETAINDEX</span>            <span class="mi">96</span>
+</pre></div>
+</div>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>  <span class="n">ENAME</span>
+<span class="k">FROM</span>    <span class="n">EMPLOYEE</span>
+<span class="k">ORDER</span> <span class="k">BY</span> <span class="n">random</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>The results would be a list of employees in a random order.</p>
+</div>
+<div class="section" id="bintohex">
+<h3>bintohex<a class="headerlink" href="#bintohex" title="Permalink to this headline">¶</a></h3>
+<p>Converts a binary (<code class="docutils literal notranslate"><span class="pre">varbyte</span></code>) value into a hexadecimal string.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">bintohex</span><span class="p">(</span><span class="n">varbyteData</span><span class="p">[,</span> <span class="s1">&#39;stream|pretty&#39;</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>A string (<code class="docutils literal notranslate"><span class="pre">varchar</span></code>) hexadecimal representation of the <code class="docutils literal notranslate"><span class="pre">varbyteData</span></code>
+parameter is returned. This can be useful to visually examine binary
+data that may contain non-printable or nul bytes. The optional second
+argument is one of the following flags:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">stream</span></code>: Use the default output mode: a continuous stream of
+hexadecimal bytes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pretty</span></code>: Return a “pretty” version of the data: print 16 byte per
+line, space-separate the hexadecimal bytes, and print an ASCII dump
+on the right side.</p></li>
+</ul>
+</div>
+<div class="section" id="hextobin">
+<h3>hextobin<a class="headerlink" href="#hextobin" title="Permalink to this headline">¶</a></h3>
+<p>Converts a hexadecimal stream to its binary representation.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">hextobin</span><span class="p">(</span><span class="n">hexString</span><span class="p">[,</span> <span class="s1">&#39;stream|pretty&#39;</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>The hexadecimal <code class="docutils literal notranslate"><span class="pre">varchar</span></code> string <code class="docutils literal notranslate"><span class="pre">hexString</span></code> is converted to its
+binary representation, and the <code class="docutils literal notranslate"><span class="pre">varbyte</span></code> result returned. The optional
+second argument is one of the following flags:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">stream</span></code>: Only accept the <code class="docutils literal notranslate"><span class="pre">stream</span></code> format of <code class="docutils literal notranslate"><span class="pre">bintohex()</span></code>, i.e.
+a stream of hexadecimal bytes, the same format that
+<code class="docutils literal notranslate"><span class="pre">bintohex(varbyteData,</span> <span class="pre">'stream')</span></code> returns.
+Whitespace is acceptable, but only between
+(not within) hexadecimal bytes. Case-insensitive. Non-conforming data
+will result in an error message and the function failing.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pretty</span></code>: Accept either <code class="docutils literal notranslate"><span class="pre">stream</span></code> or <code class="docutils literal notranslate"><span class="pre">pretty</span></code> <a class="reference internal" href="#bintohex">bintohex</a> formatted data;
+if the latter, only the hexadecimal bytes are parsed (e.g. ASCII column
+is ignored). Parsing is more liberal, but may be confused if the data
+deviates significantly from either format.</p></li>
+</ul>
+</div>
+<div class="section" id="identifylanguage">
+<h3>identifylanguage<a class="headerlink" href="#identifylanguage" title="Permalink to this headline">¶</a></h3>
+<p>Tries to identify the predominant language of a given string. By
+returning a probability in addition to the identified language, this
+function can also serve as a test of whether the given string is really
+natural-language text, or perhaps binary/encoded data instead. Syntax:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">identifylanguage</span><span class="p">(</span><span class="nb">text</span><span class="p">[,</span> <span class="k">language</span><span class="p">[,</span> <span class="n">samplesize</span><span class="p">]])</span>
+</pre></div>
+</div>
+<p>The return value is a two-element <code class="docutils literal notranslate"><span class="pre">strlst</span></code>: a probability and a
+language code. The probability is a value from 0.000 to 1.000 that the
+text argument is composed in the language named by the returned language
+code. The language code is a two-letter ISO-639-1 code.</p>
+<p>If an ISO-639-1 code is given for the optional language argument, the
+probability for that particular language is returned, instead of for the
+highest-probability language of the known/built-in languages (currently
+de, es, fr, ja, pl, tr, da, en, eu, it, ko, ru).</p>
+<p>The optional third argument samplesize is the initial integer size in
+bytes of the text to sample when determining language; it defaults to
+16384.</p>
+<p>Note that since a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> value is returned, the probability is
+returned as a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> element, not a <code class="docutils literal notranslate"><span class="pre">double</span></code> value, and thus
+should be cast to <code class="docutils literal notranslate"><span class="pre">double</span></code> during comparisons.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">identifylanguage()</span></code> function is experimental, and its behavior,
+syntax, name and/or existence are subject to change.</p>
+</div>
+<div class="section" id="lookup">
+<h3>lookup<a class="headerlink" href="#lookup" title="Permalink to this headline">¶</a></h3>
+<p>By combining the <code class="docutils literal notranslate"><span class="pre">lookup()</span></code> function with a <code class="docutils literal notranslate"><span class="pre">GROUP</span> <span class="pre">BY</span></code>, a column may
+be grouped into bins or ranges – e.g. for price-range grouping – instead
+of distinct individual values. Syntax:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">lookup</span><span class="p">(</span><span class="n">keys</span><span class="p">,</span> <span class="n">ranges</span><span class="p">[,</span> <span class="k">names</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>The keys argument is one (or more, e.g. <code class="docutils literal notranslate"><span class="pre">strlst</span></code>) values to look up;
+each is searched for in the ranges argument, which is one (or more, e.g.
+<code class="docutils literal notranslate"><span class="pre">strlst</span></code>) ranges. All range(s) that the given key(s) match will be
+returned. If the names argument is given, the corresponding names
+value(s) are returned instead; this allows ranges to be renamed into
+human-readable values. If names is given, the number of its values must
+equal the number of ranges.</p>
+<p>Each range is a pair of values (lower and upper bounds) separated by
+“..” (two periods). The range is optionally surrounded by square (bound
+included) or curly (bound excluded) brackets. E.g.:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="mf">10.</span><span class="o">.</span><span class="mi">20</span><span class="p">}</span>
+</pre></div>
+</div>
+<p>denotes the range 10 to 20: including 10 (“[”) but not including (“}”)
+20. Both an upper and lower bracket must be given if either is present
+(though they need not be the same type). The default if no brackets are
+given is to include the lower bound but exclude the upper bound; this
+makes consecutive ranges non-overlapping, if they have the same upper
+and lower bound and no brackets (e.g. “0..10,10..20”). Either bound may
+be omitted, in which case that bound is unlimited. Each range’s lower
+bound must not be greater than its upper bound, nor equal if either
+bound is exclusive.</p>
+<p>If a ranges value is not varchar/char, or does not contain “..”, its
+entire value is taken as a single inclusive lower bound, and the
+exclusive upper bound will be the next ranges value’s lower bound (or
+unlimited if no next value). E.g. the <code class="docutils literal notranslate"><span class="pre">varint</span></code> lower-bound list:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">0</span><span class="p">,</span><span class="mi">10</span><span class="p">,</span><span class="mi">20</span><span class="p">,</span><span class="mi">30</span>
+</pre></div>
+</div>
+<p>is equivalent to the <code class="docutils literal notranslate"><span class="pre">strlst</span></code> range list:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">[</span><span class="mf">0.</span><span class="o">.</span><span class="mi">10</span><span class="p">},[</span><span class="mf">10.</span><span class="o">.</span><span class="mi">20</span><span class="p">},[</span><span class="mf">20.</span><span class="o">.</span><span class="mi">30</span><span class="p">},[</span><span class="mf">30.</span><span class="o">.</span><span class="p">]</span>
+</pre></div>
+</div>
+<p>By using the <code class="docutils literal notranslate"><span class="pre">lookup()</span></code> function in a <code class="docutils literal notranslate"><span class="pre">GROUP</span> <span class="pre">BY</span></code>, a column may be
+grouped into ranges. For example, given a table Products with the
+following SKUs and <code class="docutils literal notranslate"><span class="pre">float</span></code> prices:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">SKU</span>    <span class="n">Price</span>
+<span class="o">------------</span>
+<span class="mi">1234</span>   <span class="mf">12.95</span>
+<span class="mi">1235</span>    <span class="mf">5.99</span>
+<span class="mi">1236</span>   <span class="mf">69.88</span>
+<span class="mi">1237</span>   <span class="mf">39.99</span>
+<span class="mi">1238</span>   <span class="mf">29.99</span>
+<span class="mi">1239</span>   <span class="mf">25.00</span>
+<span class="mi">1240</span>   <span class="mf">50.00</span>
+<span class="mi">1241</span>   <span class="o">-</span><span class="mf">2.00</span>
+<span class="mi">1242</span>  <span class="mf">499.95</span>
+<span class="mi">1243</span>   <span class="mf">19.95</span>
+<span class="mi">1244</span>    <span class="mf">9.99</span>
+<span class="mi">1245</span>  <span class="mf">125.00</span>
+</pre></div>
+</div>
+<p>they may be grouped into price ranges (with most-products first) with
+this SQL:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>   <span class="n">lookup</span><span class="p">(</span><span class="n">Price</span><span class="p">,</span> <span class="k">convert</span><span class="p">(</span><span class="s1">&#39;0..25,25..50,50..,&#39;</span><span class="p">,</span> <span class="s1">&#39;strlst&#39;</span><span class="p">,</span> <span class="s1">&#39;lastchar&#39;</span><span class="p">),</span>
+     <span class="k">convert</span><span class="p">(</span><span class="s1">&#39;Under $25,$25-49.99,$50 and up,&#39;</span><span class="p">,</span> <span class="s1">&#39;strlst&#39;</span><span class="p">,</span> <span class="s1">&#39;lastchar&#39;</span><span class="p">))</span>
+       <span class="n">PriceRange</span><span class="p">,</span> <span class="k">count</span><span class="p">(</span><span class="n">SKU</span><span class="p">)</span> <span class="n">NumberOfProducts</span>
+<span class="k">FROM</span> <span class="n">Products</span>
+<span class="k">GROUP</span> <span class="k">BY</span> <span class="n">lookup</span><span class="p">(</span><span class="n">Price</span><span class="p">,</span> <span class="k">convert</span><span class="p">(</span><span class="s1">&#39;0..25,25..50,50..,&#39;</span><span class="p">,</span> <span class="s1">&#39;strlst&#39;</span><span class="p">,</span> <span class="s1">&#39;lastchar&#39;</span><span class="p">),</span>
+     <span class="k">convert</span><span class="p">(</span><span class="s1">&#39;Under $25,$25-49.99,$50 and up,&#39;</span><span class="p">,</span> <span class="s1">&#39;strlst&#39;</span><span class="p">,</span> <span class="s1">&#39;lastchar&#39;</span><span class="p">))</span>
+<span class="k">ORDER</span> <span class="k">BY</span> <span class="mi">2</span> <span class="k">DESC</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>or this in Rampart JavaScript:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Sql</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">sql</span><span class="o">=</span><span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;/path/to/database&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">range</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;0..25&#39;</span><span class="p">,</span><span class="s1">&#39;25..50&#39;</span><span class="p">,</span><span class="s1">&#39;50..&#39;</span><span class="p">];</span>
+<span class="kd">var</span> <span class="nx">rangenames</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;Under $25&#39;</span><span class="p">,</span><span class="s1">&#39;$25-$49&#39;</span><span class="p">,</span><span class="s1">&#39;$50 and up&#39;</span><span class="p">];</span>
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
+    <span class="s2">&quot;SELECT lookup( Price, convert(?,&#39;strlst&#39;,&#39;json&#39;), convert(?,&#39;strlst&#39;,&#39;json&#39;) ) PriceRange,&quot;</span><span class="o">+</span>
+    <span class="s2">&quot;count(SKU) NumberOfProducts FROM Products &quot;</span> <span class="o">+</span>
+    <span class="s2">&quot;GROUP BY lookup(Price, convert(?,&#39;strlst&#39;,&#39;json&#39;), convert(?,&#39;strlst&#39;,&#39;json&#39;) )&quot;</span> <span class="o">+</span>
+    <span class="s2">&quot;ORDER BY 2 DESC&quot;</span><span class="p">,</span>
+    <span class="p">[</span><span class="nx">range</span><span class="p">,</span><span class="nx">rangenames</span><span class="p">,</span><span class="nx">range</span><span class="p">,</span><span class="nx">rangenames</span><span class="p">],</span>
+    <span class="p">{</span><span class="nx">returnType</span><span class="o">:</span><span class="s2">&quot;array&quot;</span><span class="p">}</span>
+<span class="p">);</span>
+
+<span class="nx">rows</span><span class="o">=</span><span class="nx">res</span><span class="p">.</span><span class="nx">results</span><span class="p">;</span>
+<span class="nx">cols</span><span class="o">=</span><span class="nx">res</span><span class="p">.</span><span class="nx">columns</span><span class="p">;</span>
+<span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="nx">i</span><span class="o">&lt;</span><span class="nx">rows</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span><span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="nx">i</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%-12s %16s\n&quot;</span><span class="p">,</span> <span class="nx">cols</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="p">,</span> <span class="nx">cols</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span>
+            <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;------------+----------------\n&quot;</span><span class="p">);</span>
+        <span class="p">}</span>
+
+        <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%-12s %16s\n&quot;</span><span class="p">,</span> <span class="nx">rows</span><span class="p">[</span><span class="nx">i</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span> <span class="nx">rows</span><span class="p">[</span><span class="nx">i</span><span class="p">][</span><span class="mi">1</span><span class="p">]);</span>
+
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>which would give these results:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>PriceRange   NumberOfProducts
+------------+----------------
+$50 and up                  4
+Under $25                   4
+$25-$49                     3
+                            1
+</pre></div>
+</div>
+<p>Note that:</p>
+<ul class="simple">
+<li><p>In the <code class="docutils literal notranslate"><span class="pre">tsql</span></code> example, the trailing commas in the <code class="docutils literal notranslate"><span class="pre">PriceRange</span></code> values are used
+to converted to <code class="docutils literal notranslate"><span class="pre">strlst</span></code> values via the <code class="docutils literal notranslate"><span class="pre">convert(..,</span> <span class="pre">..,</span> <span class="pre">'lastchar')</span></code>
+function.  In the Rampart JavaScript version, the array of strings are
+converted into a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> using <code class="docutils literal notranslate"><span class="pre">convert(..,</span> <span class="pre">..,</span> <span class="pre">'json')</span></code> function.
+See <a class="reference internal" href="#convert">convert</a> () mode above for details.</p></li>
+<li><p>The empty PriceRange for the fourth row: the -2 Price matched no ranges, and hence an
+empty PriceRange was returned for it.</p></li>
+</ul>
+<p>See also: <a class="reference internal" href="#lookupcanonicalizeranges">lookupCanonicalizeRanges</a>, <a class="reference internal" href="#lookupparserange">lookupParseRange</a></p>
+</div>
+<div class="section" id="lookupcanonicalizeranges">
+<h3>lookupCanonicalizeRanges<a class="headerlink" href="#lookupcanonicalizeranges" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">lookupCanonicalizeRanges()</span></code> function returns the canonical
+version(s) of its ranges argument, which is zero or more ranges of the
+syntaxes acceptable to <span class="xref std std-ref">lookup()</span>:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">lookupCanonicalizeRanges</span><span class="p">(</span><span class="n">ranges</span><span class="p">,</span> <span class="n">keyType</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The canonical version always includes both a lower and upper
+inclusive/exclusive bracket/brace, both lower and upper bounds (unless
+unlimited), the “..” range operator, and is independent of other ranges
+that may be in the sequence.</p>
+<p>The keyType parameter is a <code class="docutils literal notranslate"><span class="pre">varchar</span></code> string denoting the SQL type of
+the key field that would be looked up in the given range(s). This
+ensures that comparisons are done correctly. E.g. for a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> range
+list of “0,500,1000”, keyType should be “integer”, so that “500” is not
+compared alphabetically with “1000” and considered invalid (greater
+than).</p>
+<p>This function can be used to verify the syntax of a range, or to
+transform it into a standard form for <a class="reference internal" href="#lookupparserange">lookupParseRange</a>().</p>
+<p>For an implicit-upper-bound range, the upper bound is determined by the
+<em>next</em> range’s lower bound. Thus the full list of ranges (if multiple)
+should be given to <code class="docutils literal notranslate"><span class="pre">lookupCanonicalizeRanges()</span></code> – even if only one
+range needs to be canonicalized – so that each range gets its proper
+bounds.</p>
+<p>See also: <a class="reference internal" href="#lookup">lookup</a>, <a class="reference internal" href="#lookupparserange">lookupParseRange</a></p>
+</div>
+<div class="section" id="lookupparserange">
+<h3>lookupParseRange<a class="headerlink" href="#lookupparserange" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">lookupParseRange()</span></code> function parses a single <span class="xref std std-ref">lookup()</span>-style
+range into its constituent parts, returning them as strings in one
+<code class="docutils literal notranslate"><span class="pre">strlst</span></code> value. This can be used by scripts to edit a range.
+Syntax:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">lookupParseRange</span><span class="p">(</span><span class="n">range</span><span class="p">,</span> <span class="n">parts</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The parts argument is zero or more of the following part tokens as
+strings:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">lowerInclusivity</span></code>: Returns the inclusive/exclusive operator for
+the lower bound, e.g. “{” or “”</p></li>
+</ul>
+<p>If a requested part is not present, an empty string is returned for that
+part. The concatenation of the above listed parts, in the above order,
+should equal the given range. Non-string range arguments are not
+supported.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">lookupParseRange</span><span class="p">(</span><span class="s1">&#39;10..20&#39;</span><span class="p">,</span> <span class="s1">&#39;lowerInclusivity&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>would return a single empty-string <code class="docutils literal notranslate"><span class="pre">strlst</span></code>, as there is no
+lower-bound inclusive/exclusive operator in the range “10..20”.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">lookupParseRange</span><span class="p">(</span><span class="s1">&#39;10..20&#39;</span><span class="p">,</span> <span class="s1">&#39;lowerBound&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>would return a <code class="docutils literal notranslate"><span class="pre">strlst</span></code> with the single value “10”.</p>
+<p>For an implicit-upper-bound range, the upper bound is determined by the
+<em>next</em> range’s lower bound. Since <code class="docutils literal notranslate"><span class="pre">lookupParseRange()</span></code> only takes one
+range, passing such a range to it may result in an incorrect (unlimited)
+upper bound. Thus the full list of ranges (if multiple) should always be
+given to <a class="reference internal" href="#lookupcanonicalizeranges">lookupCanonicalizeRanges</a>() first, and only then the desired
+canonicalized range passed to <code class="docutils literal notranslate"><span class="pre">lookupParseRange()</span></code>.</p>
+<p>See also: <a class="reference internal" href="#lookup">lookup</a>, <a class="reference internal" href="#lookupcanonicalizeranges">lookupCanonicalizeRanges</a></p>
+</div>
+<div class="section" id="ifnull">
+<h3>ifNull<a class="headerlink" href="#ifnull" title="Permalink to this headline">¶</a></h3>
+<p>Substitute another value for NULL values. Syntax:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">ifNull</span><span class="p">(</span><span class="n">testVal</span><span class="p">,</span> <span class="n">replaceVal</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>If <code class="docutils literal notranslate"><span class="pre">testVal</span></code> is a SQL NULL value, then <code class="docutils literal notranslate"><span class="pre">replaceVal</span></code> (cast to the
+type of <code class="docutils literal notranslate"><span class="pre">testVal</span></code>) is returned; otherwise <code class="docutils literal notranslate"><span class="pre">testVal</span></code> is returned.
+This function can be used to ensure that NULL value(s) in a column are
+replaced with a non-NULL value, if a non-NULL value is required:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span> <span class="n">ifNull</span><span class="p">(</span><span class="n">myColumn</span><span class="p">,</span> <span class="s1">&#39;Unknown&#39;</span><span class="p">)</span> <span class="k">FROM</span> <span class="n">myTable</span><span class="p">;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="isnull">
+<h3>isNull<a class="headerlink" href="#isnull" title="Permalink to this headline">¶</a></h3>
+<p>Tests a value, and returns a <code class="docutils literal notranslate"><span class="pre">long</span></code> value of 1 if NULL, 0 if not.
+Syntax:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">isNull</span><span class="p">(</span><span class="n">testVal</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span> <span class="k">isNull</span><span class="p">(</span><span class="n">myColumn</span><span class="p">)</span> <span class="k">FROM</span> <span class="n">myTable</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>Note that Texis <code class="docutils literal notranslate"><span class="pre">isNull</span></code> behavior differs from some other SQL implementations; see
+also <a class="reference internal" href="#ifnull">ifNull</a>.</p>
+</div>
+</div>
+<div class="section" id="file-functions">
+<h2>File functions<a class="headerlink" href="#file-functions" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="fromfile-fromfiletext">
+<h3>fromfile, fromfiletext<a class="headerlink" href="#fromfile-fromfiletext" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">fromfile</span></code> and <code class="docutils literal notranslate"><span class="pre">fromfiletext</span></code> functions read a file. The syntax
+is</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">fromfile</span><span class="p">(</span><span class="n">filename</span><span class="p">[,</span> <span class="k">offset</span><span class="p">[,</span> <span class="k">length</span><span class="p">]])</span>
+<span class="n">fromfiletext</span><span class="p">(</span><span class="n">filename</span><span class="p">[,</span> <span class="k">offset</span><span class="p">[,</span> <span class="k">length</span><span class="p">]])</span>
+</pre></div>
+</div>
+<p>These functions take one required, and two optional arguments. The first
+argument is the filename. The second argument is an offset into the
+file, and the third argument is the length of data to read. If the
+second argument is omitted then the file will be read from the
+beginning. If the third argument is omitted then the file will be read
+to the end. The result is the contents of the file. This can be used to
+load data into a table. For example if you have an indirect field and
+you wish to see the contents of the file you can issue SQL similar to
+the following.</p>
+<p>The difference between the two functions is the type of data that is
+returned. <code class="docutils literal notranslate"><span class="pre">fromfile</span></code> will return varbyte data, and <code class="docutils literal notranslate"><span class="pre">fromfiletext</span></code>
+will return varchar data. If you are using the functions to insert data
+into a field you should make sure that you use the appropriate function
+for the type of field you are inserting into.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>  <span class="n">FILENAME</span><span class="p">,</span> <span class="n">fromfiletext</span><span class="p">(</span><span class="n">FILENAME</span><span class="p">)</span>
+<span class="k">FROM</span>    <span class="n">DOCUMENTS</span>
+<span class="k">WHERE</span>   <span class="n">DOCID</span> <span class="o">=</span> <span class="s1">&#39;JT09113&#39;</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>The results are:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">FILENAME</span>            <span class="n">fromfiletext</span><span class="p">(</span><span class="n">FILENAME</span><span class="p">)</span>
+<span class="o">/</span><span class="n">docs</span><span class="o">/</span><span class="n">JT09113</span><span class="p">.</span><span class="n">txt</span>   <span class="n">This</span> <span class="k">is</span> <span class="n">the</span> <span class="nb">text</span> <span class="n">contained</span> <span class="k">in</span> <span class="n">the</span> <span class="n">document</span>
+<span class="n">that</span> <span class="n">has</span> <span class="n">an</span> <span class="n">id</span> <span class="k">of</span> <span class="n">JT09113</span><span class="p">.</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="toind">
+<h3>toind<a class="headerlink" href="#toind" title="Permalink to this headline">¶</a></h3>
+<p>Create a Texis managed indirect file. The syntax is</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">toind</span><span class="p">(</span><span class="k">data</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>This function takes the argument, stores it into a file, and returns the
+filename as an <code class="docutils literal notranslate"><span class="pre">indirect</span></code> type. This is most often used in combination
+with <code class="docutils literal notranslate"><span class="pre">fromfile</span></code> to create a Texis managed file. For example:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">INSERT</span>  <span class="k">INTO</span> <span class="n">DOCUMENTS</span>
+<span class="k">VALUES</span><span class="p">(</span><span class="s1">&#39;JT09114&#39;</span><span class="p">,</span> <span class="n">toind</span><span class="p">(</span><span class="n">fromfile</span><span class="p">(</span><span class="s1">&#39;srcfile&#39;</span><span class="p">)))</span>
+</pre></div>
+</div>
+<p>The database will now contain a pointer to a copy of <code class="docutils literal notranslate"><span class="pre">srcfile</span></code>, which
+will remain searchable even if the original is changed or removed. An
+important point to note is that any changes to <code class="docutils literal notranslate"><span class="pre">srcfile</span></code> will not be
+reflected in the database, unless the table row’s <code class="docutils literal notranslate"><span class="pre">indirect</span></code> column is
+modified (even to the save value, this just tells Texis to re-index it).</p>
+</div>
+<div class="section" id="canonpath">
+<h3>canonpath<a class="headerlink" href="#canonpath" title="Permalink to this headline">¶</a></h3>
+<p>Returns canonical version of a file path, i.e. fully-qualified and
+without symbolic links:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">canonpath</span><span class="p">(</span><span class="n">path</span><span class="p">[,</span> <span class="n">flags</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>The optional <code class="docutils literal notranslate"><span class="pre">flags</span></code> is a set of bit flags: bit 0 set if error
+messages should be issued, bit 1 set if the return value should be empty
+instead of <code class="docutils literal notranslate"><span class="pre">path</span></code> on error.</p>
+</div>
+<div class="section" id="pathcmp">
+<h3>pathcmp<a class="headerlink" href="#pathcmp" title="Permalink to this headline">¶</a></h3>
+<p>File path comparison function; like C function <code class="docutils literal notranslate"><span class="pre">strcmp()</span></code> but for
+paths:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">pathcmp</span><span class="p">(</span><span class="n">pathA</span><span class="p">,</span> <span class="n">pathB</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Returns an integer indicating the sort order of <code class="docutils literal notranslate"><span class="pre">pathA</span></code> relative to
+<code class="docutils literal notranslate"><span class="pre">pathB</span></code>: 0 if <code class="docutils literal notranslate"><span class="pre">pathA</span></code> is the same as <code class="docutils literal notranslate"><span class="pre">pathB</span></code>, less than 0 if
+<code class="docutils literal notranslate"><span class="pre">pathA</span></code> is less than <code class="docutils literal notranslate"><span class="pre">pathB</span></code>, greater than 0 if <code class="docutils literal notranslate"><span class="pre">pathA</span></code> is greater
+than <code class="docutils literal notranslate"><span class="pre">pathB</span></code>. Paths are compared case-insensitively if and only if the
+OS is case-insensitive for paths, and OS-specific alternate directory
+separators are considered the same (e.g. “<code class="docutils literal notranslate"><span class="pre">\</span></code>” and “<code class="docutils literal notranslate"><span class="pre">/</span></code>” in
+Windows). Multiple consecutive directory separators are considered the
+same as one. A trailing directory separator (if not also a leading
+separator) is ignored. Directory separators sort lexically before any
+other character.</p>
+<p>Note that the paths are only compared lexically: no attempt is made to
+resolve symbolic links, “..” path components, etc. Note also that no
+inference should be made about the magnitude of negative or positive
+return values: greater magnitude does not necessarily indicate greater
+lexical “separation”, nor should it be assumed that comparing the same
+two paths will always yield the same-magnitude value in future versions.
+Only the sign of the return value is significant.</p>
+</div>
+<div class="section" id="basename">
+<h3>basename<a class="headerlink" href="#basename" title="Permalink to this headline">¶</a></h3>
+<p>Returns the base filename of a given file path.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">basename</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The basename is the contents of <code class="docutils literal notranslate"><span class="pre">path</span></code> after the last path separator.
+No filesystem checks are performed, as this is a text/parsing function;
+thus “<code class="docutils literal notranslate"><span class="pre">.</span></code>” and “<code class="docutils literal notranslate"><span class="pre">..</span></code>” are not significant.</p>
+</div>
+<div class="section" id="dirname">
+<h3>dirname<a class="headerlink" href="#dirname" title="Permalink to this headline">¶</a></h3>
+<p>Returns the directory part of a given file path.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">dirname</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The directory is the contents of <code class="docutils literal notranslate"><span class="pre">path</span></code> before the last path separator
+(unless it is significant – e.g. for the root directory – in which case
+it is retained). No filesystem checks are performed, as this is a text/parsing function;
+thus “<code class="docutils literal notranslate"><span class="pre">.</span></code>” and “<code class="docutils literal notranslate"><span class="pre">..</span></code>” are not significant.</p>
+</div>
+<div class="section" id="fileext">
+<h3>fileext<a class="headerlink" href="#fileext" title="Permalink to this headline">¶</a></h3>
+<p>Returns the file extension of a given file path.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">fileext</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The file extension starts with and includes a dot. The file extension is
+only considered present in the basename of the path, i.e. after the last
+path separator.</p>
+</div>
+<div class="section" id="joinpath">
+<h3>joinpath<a class="headerlink" href="#joinpath" title="Permalink to this headline">¶</a></h3>
+<p>Joins one or more file/directory path arguments into a merged path,
+inserting/removing a path separator between arguments as needed. Takes
+one to 5 path component arguments. E.g.:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">joinpath</span><span class="p">(</span><span class="s1">&#39;one&#39;</span><span class="p">,</span> <span class="s1">&#39;two/&#39;</span><span class="p">,</span> <span class="s1">&#39;/three/four&#39;</span><span class="p">,</span> <span class="s1">&#39;five&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>yields</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">one</span><span class="o">/</span><span class="n">two</span><span class="o">/</span><span class="n">three</span><span class="o">/</span><span class="n">four</span><span class="o">/</span><span class="n">five</span>
+</pre></div>
+</div>
+<p>Redundant path separators internal to an argument are not removed,
+nor are “.” and “ ..” path components removed.</p>
+</div>
+<div class="section" id="joinpathabsolute">
+<h3>joinpathabsolute<a class="headerlink" href="#joinpathabsolute" title="Permalink to this headline">¶</a></h3>
+<p>Like <code class="docutils literal notranslate"><span class="pre">joinpath</span></code>, except that a second or later argument that is an
+absolute path will overwrite the previously-merged path. E.g.:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">joinpathabsolute</span><span class="p">(</span><span class="s1">&#39;one&#39;</span><span class="p">,</span> <span class="s1">&#39;two&#39;</span><span class="p">,</span> <span class="s1">&#39;/three/four&#39;</span><span class="p">,</span> <span class="s1">&#39;five&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>yields</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">/</span><span class="n">three</span><span class="o">/</span><span class="n">four</span><span class="o">/</span><span class="n">five</span>
+</pre></div>
+</div>
+<p>Under Windows, partially absolute path arguments – e.g. “ /dir”
+where the drive or dir is still relative – are considered
+absolute for the sake of overwriting the merge.</p>
+<p>Redundant path separators
+internal to an argument are not removed, nor are “.” and “..” path
+components removed.</p>
+</div>
+</div>
+<div class="section" id="string-functions">
+<h2>String Functions<a class="headerlink" href="#string-functions" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="abstract">
+<h3>abstract<a class="headerlink" href="#abstract" title="Permalink to this headline">¶</a></h3>
+<p>Generate an abstract of a given portion of text. The syntax is</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">abstract</span><span class="p">(</span><span class="nb">text</span><span class="p">[,</span> <span class="n">maxsize</span><span class="p">[,</span> <span class="n">style</span><span class="p">[,</span> <span class="n">query</span><span class="p">]]])</span>
+</pre></div>
+</div>
+<p>The abstract will be less than <code class="docutils literal notranslate"><span class="pre">maxsize</span></code> characters long, and will
+attempt to end at a word boundary. If <code class="docutils literal notranslate"><span class="pre">maxsize</span></code> is not specified (or
+is less than or equal to 0) then a default size of 230 characters is
+used.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">style</span></code> argument is a string or integer, and allows a choice
+between several different ways of creating the abstract. Note that some
+of these styles require the <code class="docutils literal notranslate"><span class="pre">query</span></code> argument as well, which is a
+Metamorph query to look for:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">dumb</span></code> (0) - Start the abstract at the top of the document.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">smart</span></code> (1) - This style will look for the first meaningful
+chunk of text, skipping over any headers at the top of the text.  This
+is the default if neither <code class="docutils literal notranslate"><span class="pre">style</span></code> nor <code class="docutils literal notranslate"><span class="pre">query</span></code> is given.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">querysingle</span></code> (2) -
+Center the abstract contiguously on the best occurence of <code class="docutils literal notranslate"><span class="pre">query</span></code>
+in the document.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">querymultiple</span></code> (3) -
+Like <code class="docutils literal notranslate"><span class="pre">querysingle</span></code>, but also break up the abstract into multiple
+sections (separated with “<code class="docutils literal notranslate"><span class="pre">...</span></code>”) if needed to help ensure all
+terms are visible. Also take care with URLs to try to show the
+start and end.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">querybest</span></code> -
+An alias for the best available query-based style; currently the
+same as <code class="docutils literal notranslate"><span class="pre">querymultiple</span></code>. Using <code class="docutils literal notranslate"><span class="pre">querybest</span></code> in a script ensures
+that if improved styles become available in future releases, the
+script will automatically “upgrade” to the best style.</p></li>
+</ul>
+<p>If no <code class="docutils literal notranslate"><span class="pre">query</span></code> is given for the <code class="docutils literal notranslate"><span class="pre">query</span></code><span class="math notranslate nohighlight">\(...\)</span> modes, they fall
+back to <code class="docutils literal notranslate"><span class="pre">dumb</span></code> mode. If a <code class="docutils literal notranslate"><span class="pre">query</span></code> is given with a
+<em>non-</em><code class="docutils literal notranslate"><span class="pre">query</span></code><span class="math notranslate nohighlight">\(...\)</span> mode (<code class="docutils literal notranslate"><span class="pre">dumb</span></code>/<code class="docutils literal notranslate"><span class="pre">smart</span></code>), the mode is
+promoted to <code class="docutils literal notranslate"><span class="pre">querybest</span></code>. The current locale and index expressions also
+have an effect on the abstract in the <code class="docutils literal notranslate"><span class="pre">query</span></code><span class="math notranslate nohighlight">\(...\)</span> modes, so
+that it more closely reflects an index-obtained hit.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>     <span class="n">abstract</span><span class="p">(</span><span class="n">STORY</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="s1">&#39;power struggle&#39;</span><span class="p">)</span>
+<span class="k">FROM</span>       <span class="n">ARTICLES</span>
+<span class="k">WHERE</span>      <span class="n">ARTID</span> <span class="o">=</span> <span class="s1">&#39;JT09115&#39;</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>See also the Rampart JavaScript <a class="reference internal" href="rampart-sql.html#abstract"><span class="std std-ref">abstract()</span></a> function.</p>
+</div>
+<div class="section" id="text2mm">
+<h3>text2mm<a class="headerlink" href="#text2mm" title="Permalink to this headline">¶</a></h3>
+<p>Generate <code class="docutils literal notranslate"><span class="pre">LIKEP</span></code> query. The syntax is</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">text2mm</span><span class="p">(</span><span class="nb">text</span><span class="p">[,</span> <span class="n">maxwords</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>This function will take a text expression, and produce a list of words
+that can be given to <code class="docutils literal notranslate"><span class="pre">LIKER</span></code> or <code class="docutils literal notranslate"><span class="pre">LIKEP</span></code> to find similar documents.
+<code class="docutils literal notranslate"><span class="pre">text2mm</span></code> takes an optional second argument which specifies how many
+words should be returned. If this is not specified then 10 words are
+returned. Most commonly <code class="docutils literal notranslate"><span class="pre">text2mm</span></code> will be given the name of a field.
+If it is an <code class="docutils literal notranslate"><span class="pre">indirect</span></code> field you will need to call <code class="docutils literal notranslate"><span class="pre">fromfile</span></code> as
+shown below:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>     <span class="n">text2mm</span><span class="p">(</span><span class="n">fromfile</span><span class="p">(</span><span class="n">FILENAME</span><span class="p">))</span>
+<span class="k">FROM</span>       <span class="n">DOCUMENTS</span>
+<span class="k">WHERE</span>      <span class="n">DOCID</span> <span class="o">=</span> <span class="s1">&#39;JT09115&#39;</span> <span class="p">;</span>
+</pre></div>
+</div>
+<p>You may also call it as <code class="docutils literal notranslate"><span class="pre">texttomm()</span></code> instead of <code class="docutils literal notranslate"><span class="pre">text2mm()</span></code> .</p>
+</div>
+<div class="section" id="keywords">
+<h3>keywords<a class="headerlink" href="#keywords" title="Permalink to this headline">¶</a></h3>
+<p>Generate list of keywords. The syntax is</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">keywords</span><span class="p">(</span><span class="nb">text</span><span class="p">[,</span> <span class="n">maxwords</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>keywords is similar to text2mm but produces a list of phrases, with a
+linefeed separating them.  The difference between text2mm and keywords is
+that keywords will maintain the phrases.  The keywords function also takes
+an optional second argument which indicates how many words or phrases should
+be returned.</p>
+</div>
+<div class="section" id="length">
+<h3>length<a class="headerlink" href="#length" title="Permalink to this headline">¶</a></h3>
+<p>Returns the length in characters of a <code class="docutils literal notranslate"><span class="pre">char</span></code> or <code class="docutils literal notranslate"><span class="pre">varchar</span></code>
+expression, or number of strings/items in other types. The syntax is</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">length</span><span class="p">(</span><span class="n">value</span><span class="p">[,</span> <span class="k">mode</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>For example:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>  <span class="n">NAME</span><span class="p">,</span> <span class="k">length</span><span class="p">(</span><span class="n">NAME</span><span class="p">)</span>
+<span class="k">FROM</span>    <span class="n">SYSTABLES</span>
+</pre></div>
+</div>
+<p>The results are:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span> <span class="n">NAME</span>                <span class="n">length</span><span class="p">(</span><span class="n">NAME</span><span class="p">)</span>
+<span class="n">SYSTABLES</span>               <span class="mi">9</span>
+<span class="n">SYSCOLUMNS</span>             <span class="mi">10</span>
+<span class="n">SYSINDEX</span>                <span class="mi">8</span>
+<span class="n">SYSUSERS</span>                <span class="mi">8</span>
+<span class="n">SYSPERMS</span>                <span class="mi">8</span>
+<span class="n">SYSTRIG</span>                 <span class="mi">7</span>
+<span class="n">SYSMETAINDEX</span>           <span class="mi">12</span>
+</pre></div>
+</div>
+<p>The optional <code class="docutils literal notranslate"><span class="pre">mode</span></code> argument is a <a class="reference internal" href="sql-set.html#stringcomparemode"><span class="std std-ref">stringCompareMode</span></a>-style compare
+mode to use. If <code class="docutils literal notranslate"><span class="pre">mode</span></code> is not given, the current apicp
+<a class="reference internal" href="sql-set.html#stringcomparemode"><span class="std std-ref">stringCompareMode</span></a>
+is used. Currently the only pertinent <code class="docutils literal notranslate"><span class="pre">mode</span></code> flag is “iso-8859-1”,
+which determines whether to interpret <code class="docutils literal notranslate"><span class="pre">value</span></code> as ISO-8859-1 or UTF-8.
+This can alter how many characters long the string appears to be, as
+UTF-8 characters are variable-byte-sized, whereas ISO-8859-1 characters
+are always mono-byte.</p>
+<p>Note that if given a <code class="docutils literal notranslate"><span class="pre">strlst</span></code>
+type <code class="docutils literal notranslate"><span class="pre">value</span></code>, <code class="docutils literal notranslate"><span class="pre">length()</span></code> returns the number of string values in the
+list. For other types, it returns the number of values (e.g. for
+<code class="docutils literal notranslate"><span class="pre">varint</span></code> it returns the number of integer values).</p>
+</div>
+<div class="section" id="lower">
+<h3>lower<a class="headerlink" href="#lower" title="Permalink to this headline">¶</a></h3>
+<p>Returns the text expression with all letters in lower-case. The syntax
+is</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">lower</span><span class="p">(</span><span class="nb">text</span><span class="p">[,</span> <span class="k">mode</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>For example:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>  <span class="n">NAME</span><span class="p">,</span> <span class="k">lower</span><span class="p">(</span><span class="n">NAME</span><span class="p">)</span>
+<span class="k">FROM</span>    <span class="n">SYSTABLES</span>
+</pre></div>
+</div>
+<p>The results are:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span> <span class="n">NAME</span>                <span class="n">lower</span><span class="p">(</span><span class="n">NAME</span><span class="p">)</span>
+<span class="n">SYSTABLES</span>            <span class="n">systables</span>
+<span class="n">SYSCOLUMNS</span>           <span class="n">syscolumns</span>
+<span class="n">SYSINDEX</span>             <span class="n">sysindex</span>
+<span class="n">SYSUSERS</span>             <span class="n">sysusers</span>
+<span class="n">SYSPERMS</span>             <span class="n">sysperms</span>
+<span class="n">SYSTRIG</span>              <span class="n">systrig</span>
+<span class="n">SYSMETAINDEX</span>         <span class="n">sysmetaindex</span>
+</pre></div>
+</div>
+<p>The optional <code class="docutils literal notranslate"><span class="pre">mode</span></code> argument is a string-folding mode in the same
+format as ; see the Vortex manual for details on the syntax and default.
+If <code class="docutils literal notranslate"><span class="pre">mode</span></code> is unspecified, the current apicp <a class="reference internal" href="sql-set.html#stringcomparemode"><span class="std std-ref">stringCompareMode</span></a>
+setting – with “+lowercase” aded – is used.</p>
+</div>
+<div class="section" id="upper">
+<h3>upper<a class="headerlink" href="#upper" title="Permalink to this headline">¶</a></h3>
+<p>Returns the text expression with all letters in upper-case. The sytax is</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">upper</span><span class="p">(</span><span class="nb">text</span><span class="p">[,</span> <span class="k">mode</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>For example:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>  <span class="n">NAME</span><span class="p">,</span> <span class="k">upper</span><span class="p">(</span><span class="n">NAME</span><span class="p">)</span>
+<span class="k">FROM</span>    <span class="n">SYSTABLES</span>
+</pre></div>
+</div>
+<p>The results are:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span> <span class="n">NAME</span>                <span class="n">upper</span><span class="p">(</span><span class="n">NAME</span><span class="p">)</span>
+<span class="n">SYSTABLES</span>            <span class="n">SYSTABLES</span>
+<span class="n">SYSCOLUMNS</span>           <span class="n">SYSCOLUMNS</span>
+<span class="n">SYSINDEX</span>             <span class="n">SYSINDEX</span>
+<span class="n">SYSUSERS</span>             <span class="n">SYSUSERS</span>
+<span class="n">SYSPERMS</span>             <span class="n">SYSPERMS</span>
+<span class="n">SYSTRIG</span>              <span class="n">SYSTRIG</span>
+<span class="n">SYSMETAINDEX</span>         <span class="n">SYSMETAINDEX</span>
+</pre></div>
+</div>
+<p>The optional <code class="docutils literal notranslate"><span class="pre">mode</span></code> argument is a string-folding mode in the same
+format as ; see the Vortex manual for details on the syntax and default.
+If <code class="docutils literal notranslate"><span class="pre">mode</span></code> is unspecified, the current apicp <a class="reference internal" href="sql-set.html#stringcomparemode"><span class="std std-ref">stringCompareMode</span></a>
+setting – with “+uppercase” added – is used.</p>
+</div>
+<div class="section" id="initcap">
+<h3>initcap<a class="headerlink" href="#initcap" title="Permalink to this headline">¶</a></h3>
+<p>Capitalizes text. The syntax is</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">initcap</span><span class="p">(</span><span class="nb">text</span><span class="p">[,</span> <span class="k">mode</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>Returns the text expression with the first letter of each word in title
+case (i.e. upper case), and all other letters in lower-case. For
+example:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>  <span class="n">NAME</span><span class="p">,</span> <span class="n">initcap</span><span class="p">(</span><span class="n">NAME</span><span class="p">)</span>
+<span class="k">FROM</span>    <span class="n">SYSTABLES</span>
+</pre></div>
+</div>
+<p>The results are:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span> <span class="n">NAME</span>                <span class="n">initcap</span><span class="p">(</span><span class="n">NAME</span><span class="p">)</span>
+<span class="n">SYSTABLES</span>            <span class="n">Systables</span>
+<span class="n">SYSCOLUMNS</span>           <span class="n">Syscolumns</span>
+<span class="n">SYSINDEX</span>             <span class="n">Sysindex</span>
+<span class="n">SYSUSERS</span>             <span class="n">Sysusers</span>
+<span class="n">SYSPERMS</span>             <span class="n">Sysperms</span>
+<span class="n">SYSTRIG</span>              <span class="n">Systrig</span>
+<span class="n">SYSMETAINDEX</span>         <span class="n">Sysmetaindex</span>
+</pre></div>
+</div>
+<p>The optional <code class="docutils literal notranslate"><span class="pre">mode</span></code> argument is a string-folding mode in the same
+format as <a class="reference internal" href="sql-set.html#stringcomparemode"><span class="std std-ref">stringCompareMode</span></a>.
+If <code class="docutils literal notranslate"><span class="pre">mode</span></code> is unspecified, the current <a class="reference internal" href="sql-set.html#stringcomparemode"><span class="std std-ref">stringCompareMode</span></a> setting
+– with “+titlecase” added – is used.</p>
+</div>
+<div class="section" id="sandr">
+<h3>sandr<a class="headerlink" href="#sandr" title="Permalink to this headline">¶</a></h3>
+<p>Search and replace text.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">sandr</span><span class="p">(</span><span class="k">search</span><span class="p">,</span> <span class="k">replace</span><span class="p">,</span> <span class="nb">text</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Returns the text expression with the search REX expression replaced with
+the replace expression. See the Rampart Sql.<a class="reference internal" href="rampart-sql.html#rex"><span class="std std-ref">rex()</span></a>  and
+the Rampart Sql.<a class="reference internal" href="rampart-sql.html#sandr"><span class="std std-ref">sandr()</span></a> function documentation for
+complete syntax of the search and replace expressions.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span>  <span class="n">NAME</span><span class="p">,</span> <span class="n">sandr</span><span class="p">(</span><span class="s1">&#39;&gt;&gt;=SYS=&#39;</span><span class="p">,</span> <span class="s1">&#39;SYSTEM TABLE &#39;</span><span class="p">,</span> <span class="n">NAME</span><span class="p">)</span> <span class="n">DESCR</span>
+<span class="k">FROM</span>    <span class="n">SYSTABLES</span>
+</pre></div>
+</div>
+<p>The results are:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span> <span class="n">NAME</span>                <span class="n">DESCR</span>
+<span class="n">SYSTABLES</span>            <span class="n">SYSTEM</span> <span class="n">TABLE</span> <span class="n">TABLES</span>
+<span class="n">SYSCOLUMNS</span>           <span class="n">SYSTEM</span> <span class="n">TABLE</span> <span class="n">COLUMNS</span>
+<span class="n">SYSINDEX</span>             <span class="n">SYSTEM</span> <span class="n">TABLE</span> <span class="n">INDEX</span>
+<span class="n">SYSUSERS</span>             <span class="n">SYSTEM</span> <span class="n">TABLE</span> <span class="n">USERS</span>
+<span class="n">SYSPERMS</span>             <span class="n">SYSTEM</span> <span class="n">TABLE</span> <span class="n">PERMS</span>
+<span class="n">SYSTRIG</span>              <span class="n">SYSTEM</span> <span class="n">TABLE</span> <span class="n">TRIG</span>
+<span class="n">SYSMETAINDEX</span>         <span class="n">SYSTEM</span> <span class="n">TABLE</span> <span class="n">METAINDEX</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="separator">
+<h3>separator<a class="headerlink" href="#separator" title="Permalink to this headline">¶</a></h3>
+<p>Returns the separator character from its <code class="docutils literal notranslate"><span class="pre">strlst</span></code> argument, as a
+<code class="docutils literal notranslate"><span class="pre">varchar</span></code> string:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">separator</span><span class="p">(</span><span class="n">strlstValue</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>This can be used in situations where the <code class="docutils literal notranslate"><span class="pre">strlstValue</span></code> argument may
+have a nul character as the separator, in which case simply converting
+<code class="docutils literal notranslate"><span class="pre">strlstValue</span></code> to <code class="docutils literal notranslate"><span class="pre">varchar</span></code> and looking at the last character would
+be incorrect.</p>
+</div>
+<div class="section" id="stringcompare">
+<h3>stringcompare<a class="headerlink" href="#stringcompare" title="Permalink to this headline">¶</a></h3>
+<p>Compares its string (<code class="docutils literal notranslate"><span class="pre">varchar</span></code>) arguments <code class="docutils literal notranslate"><span class="pre">a</span></code> and <code class="docutils literal notranslate"><span class="pre">b</span></code>, returning
+-1 if <code class="docutils literal notranslate"><span class="pre">a</span></code> is less than <code class="docutils literal notranslate"><span class="pre">b</span></code>, 0 if they are equal, or 1 if <code class="docutils literal notranslate"><span class="pre">a</span></code> is
+greater than <code class="docutils literal notranslate"><span class="pre">b</span></code>:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">stringcompare</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">[,</span> <span class="k">mode</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>The strings are compared using the optional <code class="docutils literal notranslate"><span class="pre">mode</span></code> argument, which is
+a string-folding mode in the same format as ; see the Vortex manual for
+details on the syntax and default. If <code class="docutils literal notranslate"><span class="pre">mode</span></code> is unspecified, the
+current apicp <a class="reference internal" href="sql-set.html#stringcomparemode"><span class="std std-ref">stringCompareMode</span></a> setting is used.</p>
+</div>
+<div class="section" id="stringformat">
+<h3>stringformat<a class="headerlink" href="#stringformat" title="Permalink to this headline">¶</a></h3>
+<p>Returns its arguments formatted into a string (<code class="docutils literal notranslate"><span class="pre">varchar</span></code>), like the
+equivalent Vortex function <code class="docutils literal notranslate"><span class="pre">&lt;strfmt&gt;</span></code> (based on the C function
+<code class="docutils literal notranslate"><span class="pre">sprintf()</span></code>):</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">stringformat</span><span class="p">(</span><span class="n">format</span><span class="p">[,</span> <span class="n">arg</span><span class="p">[,</span> <span class="n">arg</span><span class="p">[,</span> <span class="n">arg</span><span class="p">[,</span> <span class="n">arg</span><span class="p">]]]])</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">format</span></code> argument is a <code class="docutils literal notranslate"><span class="pre">varchar</span></code> string that describes how to
+print the following argument(s), if any.</p>
+</div>
+</div>
+<div class="section" id="math-functions">
+<h2>Math functions<a class="headerlink" href="#math-functions" title="Permalink to this headline">¶</a></h2>
+<p>The following basic math functions are available in Texis: <code class="docutils literal notranslate"><span class="pre">acos</span></code>,
+<code class="docutils literal notranslate"><span class="pre">asin</span></code>, <code class="docutils literal notranslate"><span class="pre">atan</span></code>, <code class="docutils literal notranslate"><span class="pre">atan2</span></code>, <code class="docutils literal notranslate"><span class="pre">ceil</span></code>, <code class="docutils literal notranslate"><span class="pre">cos</span></code>, <code class="docutils literal notranslate"><span class="pre">cosh</span></code>, <code class="docutils literal notranslate"><span class="pre">exp</span></code>,
+<code class="docutils literal notranslate"><span class="pre">fabs</span></code>, <code class="docutils literal notranslate"><span class="pre">floor</span></code>, <code class="docutils literal notranslate"><span class="pre">fmod</span></code>, <code class="docutils literal notranslate"><span class="pre">log</span></code>, <code class="docutils literal notranslate"><span class="pre">log10</span></code>, <code class="docutils literal notranslate"><span class="pre">pow</span></code>, <code class="docutils literal notranslate"><span class="pre">sin</span></code>,
+<code class="docutils literal notranslate"><span class="pre">sinh</span></code>, <code class="docutils literal notranslate"><span class="pre">sqrt</span></code>, <code class="docutils literal notranslate"><span class="pre">tan</span></code>, <code class="docutils literal notranslate"><span class="pre">tanh</span></code>.</p>
+<p>All of the above functions call the ANSI C math library function of the
+same name, and return a result of type <code class="docutils literal notranslate"><span class="pre">double</span></code>. <code class="docutils literal notranslate"><span class="pre">pow</span></code>, <code class="docutils literal notranslate"><span class="pre">atan2</span></code>
+and <code class="docutils literal notranslate"><span class="pre">fmod</span></code> take two double arguments, the remainder take one double
+argument.</p>
+<p>In addition, the following math-related functions are available:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">isNaN(x)</span></code>
+Returns 1 if <code class="docutils literal notranslate"><span class="pre">x</span></code> is a float or double NaN (Not a Number) value, 0
+if not. This function should be used to test for NaN, rather than
+using the equality operator (e.g. <code class="docutils literal notranslate"><span class="pre">x</span> <span class="pre">=</span> <span class="pre">'NaN'</span></code>), because the IEEE
+standard defines <code class="docutils literal notranslate"><span class="pre">NaN</span> <span class="pre">==</span> <span class="pre">NaN</span></code> to be false, not true as might be
+expected.</p></li>
+</ul>
+</div>
+<div class="section" id="date-functions">
+<h2>Date functions<a class="headerlink" href="#date-functions" title="Permalink to this headline">¶</a></h2>
+<p>The following date functions are available in Texis: <code class="docutils literal notranslate"><span class="pre">dayname</span></code>,
+<code class="docutils literal notranslate"><span class="pre">month</span></code>, <code class="docutils literal notranslate"><span class="pre">monthname</span></code>, <code class="docutils literal notranslate"><span class="pre">dayofmonth</span></code>, <code class="docutils literal notranslate"><span class="pre">dayofweek</span></code>, <code class="docutils literal notranslate"><span class="pre">dayofyear</span></code>,
+<code class="docutils literal notranslate"><span class="pre">quarter</span></code>, <code class="docutils literal notranslate"><span class="pre">week</span></code>, <code class="docutils literal notranslate"><span class="pre">year</span></code>, <code class="docutils literal notranslate"><span class="pre">hour</span></code>, <code class="docutils literal notranslate"><span class="pre">minute</span></code>, <code class="docutils literal notranslate"><span class="pre">second</span></code>.</p>
+<p>All the functions take a date as an argument. <code class="docutils literal notranslate"><span class="pre">dayname</span></code> and
+<code class="docutils literal notranslate"><span class="pre">monthname</span></code> will return a string with the full day or month name based
+on the current locale, and the others return a number.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">dayofweek</span></code> function returns 1 for Sunday. The quarter is based on
+months, so April 1st is the first day of quarter 2. Week 1 begins with
+the first Sunday of the year.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">monthseq</span></code>, <code class="docutils literal notranslate"><span class="pre">weekseq</span></code> and <code class="docutils literal notranslate"><span class="pre">dayseq</span></code> functions will return the number of
+months, weeks and days since an arbitrary past date. These can be used
+when comparing dates to see how many months, weeks or days separate
+them.</p>
+</div>
+<div class="section" id="bit-manipulation-functions">
+<h2>Bit manipulation functions<a class="headerlink" href="#bit-manipulation-functions" title="Permalink to this headline">¶</a></h2>
+<p>These functions are used to manipulate integers as bit fields. This can
+be useful for efficient set operations (e.g. set membership,
+intersection, etc.). For example, categories could be mapped to
+sequential bit numbers, and a row’s category membership stored compactly
+as bits of an <code class="docutils literal notranslate"><span class="pre">int</span></code> or <code class="docutils literal notranslate"><span class="pre">varint</span></code>, instead of using a string list.
+Category membership can then be quickly determined with <code class="docutils literal notranslate"><span class="pre">bitand</span></code> on
+the integer.</p>
+<p>In the following functions, bit field arguments <code class="docutils literal notranslate"><span class="pre">a</span></code> and <code class="docutils literal notranslate"><span class="pre">b</span></code> are
+<code class="docutils literal notranslate"><span class="pre">int</span></code> or <code class="docutils literal notranslate"><span class="pre">varint</span></code> (32 bits per integer, all platforms). Argument
+<code class="docutils literal notranslate"><span class="pre">n</span></code> is any integer type. Bits are numbered starting with 0 as the
+least-significant bit of the first integer. 31 is the most-significant
+bit of the first integer, 32 is the least-significant bit of the second
+integer (if a multi-value <code class="docutils literal notranslate"><span class="pre">varint</span></code>), etc.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">bitand(a,</span> <span class="pre">b)</span></code>
+Returns the bit-wise AND of <code class="docutils literal notranslate"><span class="pre">a</span></code> and <code class="docutils literal notranslate"><span class="pre">b</span></code>. If one argument is
+shorter than the other, it will be expanded with 0-value integers.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bitor(a,</span> <span class="pre">b)</span></code>
+Returns the bit-wise OR of <code class="docutils literal notranslate"><span class="pre">a</span></code> and <code class="docutils literal notranslate"><span class="pre">b</span></code>. If one argument is
+shorter than the other, it will be expanded with 0-value integers.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bitxor(a,</span> <span class="pre">b)</span></code>
+Returns the bit-wise XOR (exclusive OR) of <code class="docutils literal notranslate"><span class="pre">a</span></code> and <code class="docutils literal notranslate"><span class="pre">b</span></code>. If one
+argument is shorter than the other, it will be expanded with
+0-value integers.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bitnot(a)</span></code>
+Returns the bit-wise NOT of <code class="docutils literal notranslate"><span class="pre">a</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bitsize(a)</span></code>
+Returns the total number of bits in <code class="docutils literal notranslate"><span class="pre">a</span></code>, i.e. the highest bit
+number plus 1.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bitcount(a)</span></code>
+Returns the number of bits in <code class="docutils literal notranslate"><span class="pre">a</span></code> that are set to 1.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bitmin(a)</span></code>
+Returns the lowest bit number in <code class="docutils literal notranslate"><span class="pre">a</span></code> that is set to 1. If none
+are set to 1, returns -1.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bitmax(a)</span></code>
+Returns the highest bit number in <code class="docutils literal notranslate"><span class="pre">a</span></code> that is set to 1. If none
+are set to 1, returns -1.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bitlist(a)</span></code>
+Returns the list of bit numbers of <code class="docutils literal notranslate"><span class="pre">a</span></code>, in ascending order, that
+are set to 1, as a <code class="docutils literal notranslate"><span class="pre">varint</span></code>. Returns a single -1 if no bits are
+set to 1.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bitshiftleft(a,</span> <span class="pre">n)</span></code>
+Returns <code class="docutils literal notranslate"><span class="pre">a</span></code> shifted <code class="docutils literal notranslate"><span class="pre">n</span></code> bits to the left, with 0s padded for
+bits on the right. If <code class="docutils literal notranslate"><span class="pre">n</span></code> is negative, shifts right instead.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bitshiftright(a,</span> <span class="pre">n)</span></code>
+Returns <code class="docutils literal notranslate"><span class="pre">a</span></code> shifted <code class="docutils literal notranslate"><span class="pre">n</span></code> bits to the right, with 0s padded for
+bits on the left (i.e. an unsigned shift). If <code class="docutils literal notranslate"><span class="pre">n</span></code> is negative,
+shifts left instead.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bitrotateleft(a,</span> <span class="pre">n)</span></code>
+Returns <code class="docutils literal notranslate"><span class="pre">a</span></code> rotated <code class="docutils literal notranslate"><span class="pre">n</span></code> bits to the left, with left
+(most-significant) bits wrapping around to the right. If <code class="docutils literal notranslate"><span class="pre">n</span></code> is
+negative, rotates right instead.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bitrotateright(a,</span> <span class="pre">n)</span></code>
+Returns <code class="docutils literal notranslate"><span class="pre">a</span></code> rotated <code class="docutils literal notranslate"><span class="pre">n</span></code> bits to the right, with right
+(least-significant) bits wrapping around to the left. If <code class="docutils literal notranslate"><span class="pre">n</span></code> is
+negative, rotates left instead.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bitset(a,</span> <span class="pre">n)</span></code>
+Returns <code class="docutils literal notranslate"><span class="pre">a</span></code> with bit number <code class="docutils literal notranslate"><span class="pre">n</span></code> set to 1. <code class="docutils literal notranslate"><span class="pre">a</span></code> will be padded
+with 0-value integers if needed to reach <code class="docutils literal notranslate"><span class="pre">n</span></code> (e.g.
+<code class="docutils literal notranslate"><span class="pre">bitset(5,</span> <span class="pre">40)</span></code> will return a <code class="docutils literal notranslate"><span class="pre">varint(2)</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bitclear(a,</span> <span class="pre">n)</span></code>
+Returns <code class="docutils literal notranslate"><span class="pre">a</span></code> with bit number <code class="docutils literal notranslate"><span class="pre">n</span></code> set to 0. <code class="docutils literal notranslate"><span class="pre">a</span></code> will be padded
+with 0-value integers if needed to reach <code class="docutils literal notranslate"><span class="pre">n</span></code> (e.g.
+<code class="docutils literal notranslate"><span class="pre">bitclear(5,</span> <span class="pre">40)</span></code> will return a <code class="docutils literal notranslate"><span class="pre">varint(2)</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bitisset(a,</span> <span class="pre">n)</span></code>
+Returns 1 if bit number <code class="docutils literal notranslate"><span class="pre">n</span></code> is set to 1 in <code class="docutils literal notranslate"><span class="pre">a</span></code>, 0 if not.</p></li>
+</ul>
+</div>
+<div class="section" id="internet-ip-address-functions">
+<h2>Internet/IP address functions<a class="headerlink" href="#internet-ip-address-functions" title="Permalink to this headline">¶</a></h2>
+<p>The following functions manipulate IP network and/or host addresses;
+most take <code class="docutils literal notranslate"><span class="pre">inet</span></code> style argument(s). This is an IPv4 address string,
+optionally followed by a netmask.</p>
+<p>For IPv4, the format is dotted-decimal, i.e.
+<span class="math notranslate nohighlight">\(N\)</span>[.<span class="math notranslate nohighlight">\(N\)</span>[.<span class="math notranslate nohighlight">\([N\)</span>.<span class="math notranslate nohighlight">\(N\)</span>]]] where
+<span class="math notranslate nohighlight">\(N\)</span> is a decimal, octal or hexadecimal integer from 0 to 255. If
+<span class="math notranslate nohighlight">\(x &lt; 4\)</span> values of <span class="math notranslate nohighlight">\(N\)</span> are given, the last <span class="math notranslate nohighlight">\(N\)</span> is taken
+as the last <span class="math notranslate nohighlight">\(5-x\)</span> bytes instead of 1 byte, with missing bytes
+padded to the right. E.g. 192.258 is valid and equivalent to 192.1.2.0:
+the last <span class="math notranslate nohighlight">\(N\)</span> is 2 bytes in size, and covers 5 - 2 = 3 needed
+bytes, including 1 zero pad to the right. Conversely, 192.168.4.1027 is
+not valid: the last <span class="math notranslate nohighlight">\(N\)</span> is too large.</p>
+<p>An IPv4 address may optionally be followed by a netmask, either of the
+form /<span class="math notranslate nohighlight">\(B\)</span> or :<span class="math notranslate nohighlight">\(IPv4\)</span>, where <span class="math notranslate nohighlight">\(B\)</span> is a decimal,
+octal or hexadecimal netmask integer from 0 to 32, and <span class="math notranslate nohighlight">\(IPv4\)</span> is a
+dotted-decimal IPv4 address of the same format described above. If an
+:<span class="math notranslate nohighlight">\(IPv4\)</span> netmask is given, only the largest contiguous set of
+most-significant 1 bits are used (because netmasks are contiguous). If
+no netmask is given, it will be calculated from standard IPv4 class
+A/B/C/D/E rules, but will be large enough to include all given bytes of
+the IP. E.g. 1.2.3.4 is Class A which has a netmask of 8, but the
+netmask will be extended to 32 to include all 4 given bytes.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">inetabbrev(inet)</span></code>
+Returns a possibly shorter-than-canonical representation of
+<code class="docutils literal notranslate"><span class="pre">$inet</span></code>, where trailing zero byte(s) of an IPv4 address may be
+omitted. All bytes of the network, and leading non-zero bytes of
+the host, will be included. E.g. returns 192.100.0/24. The
+/<span class="math notranslate nohighlight">\(B\)</span> netmask is included, except if the network is host-only
+(i.e.netmask is the full size of the IP address). Empty string is
+returned on error.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">inetcanon(inet)</span></code>
+Returns canonical representation of <code class="docutils literal notranslate"><span class="pre">$inet</span></code>. For IPv4, this is
+dotted-decimal with all 4 bytes. The /<span class="math notranslate nohighlight">\(B\)</span> netmask is
+included, except if
+the network is host-only (i.e. netmask is the full size of the IP
+address). Empty string is returned on error.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">inetnetwork(inet)</span></code>
+Returns string IP address with the network bits of <code class="docutils literal notranslate"><span class="pre">inet</span></code>, and
+the host bits set to 0. Empty string is returned on error.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">inethost(inet)</span></code>
+Returns string IP address with the host bits of <code class="docutils literal notranslate"><span class="pre">inet</span></code>, and the
+network bits set to 0. Empty string is returned on error.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">inetbroadcast(inet)</span></code>
+Returns string IP broadcast address for <code class="docutils literal notranslate"><span class="pre">inet</span></code>, i.e. with the
+network bits, and host bits set to 1. Empty string is returned on
+error.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">inetnetmask(inet)</span></code>
+Returns string IP netmask for <code class="docutils literal notranslate"><span class="pre">inet</span></code>, i.e. with the network bits
+set to 1, and host bits set to 0. Empty string is returned on
+error.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">inetnetmasklen(inet)</span></code>
+Returns integer netmask length of <code class="docutils literal notranslate"><span class="pre">inet</span></code>. -1 is returned on
+error.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">inetcontains(inetA,</span> <span class="pre">inetB)</span></code>
+Returns 1 if <code class="docutils literal notranslate"><span class="pre">inetA</span></code> contains <code class="docutils literal notranslate"><span class="pre">inetB</span></code>, i.e. every address in
+<code class="docutils literal notranslate"><span class="pre">inetB</span></code> occurs within the <code class="docutils literal notranslate"><span class="pre">inetA</span></code> network. 0 is returned if
+not, or -1 on error.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">inetclass(inet)</span></code>
+Returns class of <code class="docutils literal notranslate"><span class="pre">inet</span></code>, e.g. A, B, C, D, E or classless if a
+different netmask is used (or the address is IPv6). Empty string is
+returned on error.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">inet2int(inet)</span></code>
+Returns integer representation of IP network/host bits of <code class="docutils literal notranslate"><span class="pre">$inet</span></code>
+(i.e. without netmask); useful for compact storage of address as
+integer(s) instead of string. Returns -1 is returned on error (note
+that -1 may also be returned for an all-ones IP address, e.g.
+255.255.255.255).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">int2inet(i)</span></code>
+Returns <code class="docutils literal notranslate"><span class="pre">inet</span></code> string for 1- or 4-value varint <code class="docutils literal notranslate"><span class="pre">$i</span></code> taken as an
+IP address. Since no netmask can be stored in the integer form of
+an IP address, the returned IP string will not have a netmask.
+Empty string is returned on error.</p></li>
+</ul>
+<div class="section" id="urlcanonicalize">
+<h3>urlcanonicalize<a class="headerlink" href="#urlcanonicalize" title="Permalink to this headline">¶</a></h3>
+<p>Canonicalize a URL. Usage:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">urlcanonicalize</span><span class="p">(</span><span class="n">url</span><span class="p">[,</span> <span class="n">flags</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>Returns a copy of <code class="docutils literal notranslate"><span class="pre">url</span></code>, canonicalized according to case-insensitive
+comma-separated <code class="docutils literal notranslate"><span class="pre">flags</span></code>, which are zero or more of:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">lowerProtocol</span></code>
+Lower-cases the protocol.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lowerHost</span></code>
+Lower-cases the hostname.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">removeTrailingDot</span></code>
+Removes trailing dot(s) in hostname.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">reverseHost</span></code>
+Reverse the host/domains in the hostname. E.g.
+<a class="reference external" href="http://host.example.com/">http://host.example.com/</a> becomes <a class="reference external" href="http://com.example.host/">http://com.example.host/</a>. This can
+be used to put the most-significant part of the hostname leftmost.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">removeStandardPort</span></code>
+Remove the port number if it is the standard port for the protocol.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">decodeSafeBytes</span></code>
+URL-decode safe bytes, where semantics are unlikely to change. E.g.
+“<code class="docutils literal notranslate"><span class="pre">%41</span></code>” becomes “<code class="docutils literal notranslate"><span class="pre">A</span></code>”, but “<code class="docutils literal notranslate"><span class="pre">%2F</span></code>” remains encoded, because
+it would decode to “<code class="docutils literal notranslate"><span class="pre">/</span></code>”.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">upperEncoded</span></code>
+Upper-case the hex characters of encoded bytes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lowerPath</span></code>
+Lower-case the (non-encoded) characters in the path. May be used
+for URLs known to point to case-insensitive filesystems, e.g.
+Windows.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">addTrailingSlash</span></code>
+Adds a trailing slash to the path, if no path is present.</p></li>
+</ul>
+<p>Default flags are all but <code class="docutils literal notranslate"><span class="pre">reverseHost</span></code>, <code class="docutils literal notranslate"><span class="pre">lowerPath</span></code>. A flag may be
+prefixed with the operator <code class="docutils literal notranslate"><span class="pre">+</span></code> to append the flag to existing flags;
+<code class="docutils literal notranslate"><span class="pre">-</span></code> to remove the flag from existing flags; or <code class="docutils literal notranslate"><span class="pre">=</span></code> (default) to
+clear existing flags first and then set the flag. Operators remain in
+effect for subsequent flags until the next operator (if any) is used.</p>
+</div>
+</div>
+<div class="section" id="geographical-coordinate-functions">
+<h2>Geographical coordinate functions<a class="headerlink" href="#geographical-coordinate-functions" title="Permalink to this headline">¶</a></h2>
+<p>The geographical coordinate functions allow for efficient processing of
+latitude / longitude operations. They allow for the conversion of a
+latitude/longitude pair into a single “geocode”, which is a single
+<code class="docutils literal notranslate"><span class="pre">long</span></code> value that contains both values. This can be used to easily
+compare it to other geocodes (for distance calculations) or for finding
+other geocodes that are within a certain distance.</p>
+<div class="section" id="azimuth2compass">
+<h3>azimuth2compass<a class="headerlink" href="#azimuth2compass" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">azimuth2compass</span><span class="p">(</span><span class="n">double</span> <span class="n">azimuth</span> <span class="p">[,</span> <span class="nb">int</span> <span class="n">resolution</span> <span class="p">[,</span> <span class="nb">int</span> <span class="n">verbosity</span><span class="p">]])</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">azimuth2compass</span></code> function converts a numerical azimuth value
+(degrees of rotation from 0 degrees north) and converts it into a
+compass heading, such as <code class="docutils literal notranslate"><span class="pre">N</span></code> or <code class="docutils literal notranslate"><span class="pre">Southeast</span></code>. The exact text returned
+is controlled by two optional parameters, <code class="docutils literal notranslate"><span class="pre">resolution</span></code> and
+<code class="docutils literal notranslate"><span class="pre">verbosity</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">Resolution</span></code> determines how fine-grained the values returned are.
+There are 4 possible values:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">1</span></code> - Only the four cardinal directions are used (N, E, S, W)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">2</span></code> <em>(default) - Inter-cardinal directions (N, NE, E, etc.)</em></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">3</span></code> - In-between inter-cardinal directions (N, NNE, NE, ENE, E,
+etc.)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">4</span></code> - “by” values (N, NbE, NNE, NEbN, NE, NEbE, ENE, EbN, E, etc.)</p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">Verbosity</span></code> affects how verbose the resulting text is. There are two
+possible values:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">1</span></code> <em>(default) - Use initials for direction values (N, NbE, NNE,
+etc.)</em></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">2</span></code> - Use full text for direction values (North, North by east,
+North-northeast, etc.)</p></li>
+</ul>
+<p>For an azimuth value of <code class="docutils literal notranslate"><span class="pre">105</span></code>, here are some example results of
+<code class="docutils literal notranslate"><span class="pre">azimuth2compass</span></code>:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">azimuth2compass</span><span class="p">(</span><span class="mi">105</span><span class="p">):</span> <span class="n">E</span>
+<span class="n">azimuth2compass</span><span class="p">(</span><span class="mi">105</span><span class="p">,</span> <span class="mi">3</span><span class="p">):</span> <span class="n">ESE</span>
+<span class="n">azimuth2compass</span><span class="p">(</span><span class="mi">105</span><span class="p">,</span> <span class="mi">4</span><span class="p">):</span> <span class="n">EbS</span>
+<span class="n">azimuth2compass</span><span class="p">(</span><span class="mi">105</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">):</span> <span class="n">East</span>
+<span class="n">azimuth2compass</span><span class="p">(</span><span class="mi">105</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">):</span> <span class="n">East</span><span class="o">-</span><span class="n">southeast</span>
+<span class="n">azimuth2compass</span><span class="p">(</span><span class="mi">105</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">2</span><span class="p">):</span> <span class="n">East</span> <span class="n">by</span> <span class="n">south</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="azimuthgeocode">
+<h3>azimuthgeocode<a class="headerlink" href="#azimuthgeocode" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">azimuthgeocode</span><span class="p">(</span><span class="n">geocode1</span><span class="p">,</span> <span class="n">geocode2</span> <span class="p">[,</span> <span class="k">method</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">azimuthgeocode</span></code> function calculates the directional heading going
+from one geocode to another. It returns a number between 0-360 where 0
+is north, 90 east, etc., up to 360 being north again.</p>
+<p>The third, optional <code class="docutils literal notranslate"><span class="pre">method</span></code> parameter can be used to specify which
+mathematical method is used to calculate the direction. There are two
+possible values:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">greatcircle</span></code> <em>(default)</em> - The “Great Circle” method is a highly
+accurate tool for calculating distances and directions on a sphere.
+It is used by default.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pythagorean</span></code> - Calculations based on the pythagorean method can
+also be used. They’re faster, but less accurate as the core formulas
+don’t take the curvature of the earth into consideration. Some
+internal adjustments are made, but the values are less accurate than
+the <code class="docutils literal notranslate"><span class="pre">greatcircle</span></code> method, especially over long distances and with
+paths that approach the poles.</p></li>
+</ul>
+</div>
+<div class="section" id="azimuthlatlon">
+<h3>azimuthlatlon<a class="headerlink" href="#azimuthlatlon" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">azimuthlatlon</span><span class="p">(</span><span class="n">lat1</span><span class="p">,</span> <span class="n">lon1</span><span class="p">,</span> <span class="n">lat2</span><span class="p">,</span> <span class="n">lon2</span><span class="p">,</span> <span class="p">[,</span> <span class="k">method</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">azimuthlatlon</span></code> function calculates the directional heading going
+from one latitude-longitude point to another. It operates identically to
+<a class="reference internal" href="#azimuthgeocode">azimuthgeocode</a>, except azimuthlatlon takes its parameters in a pair
+of latitude-longitude points instead of geocode values.</p>
+<p>The third, optional <code class="docutils literal notranslate"><span class="pre">method</span></code> parameter can be used to specify which
+mathematical method is used to calculate the direction. There are two
+possible values:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">greatcircle</span></code> <em>(default)</em> - The “Great Circle” method is a highly
+accurate tool for calculating distances and directions on a sphere.
+It is used by default.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pythagorean</span></code> - Calculations based on the pythagorean method can
+also be used. They’re faster, but less accurate as the core formulas
+don’t take the curvature of the earth into consideration. Some
+internal adjustments are made, but the values are less accurate than
+the <code class="docutils literal notranslate"><span class="pre">greatcircle</span></code> method, especially over long distances and with
+paths that approach the poles.</p></li>
+</ul>
+</div>
+<div class="section" id="dms2dec-dec2dms">
+<span id="dms-dec"></span><h3>dms2dec, dec2dms<a class="headerlink" href="#dms2dec-dec2dms" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">dms2dec</span><span class="p">(</span><span class="n">dms</span><span class="p">)</span>
+<span class="n">dec2dms</span><span class="p">(</span><span class="nb">dec</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">dms2dec</span></code> and <code class="docutils literal notranslate"><span class="pre">dec2dms</span></code> functions are for changing back and
+forth between the “degrees minutes seconds”
+(DMS) format (west-positive) and “decimal degree” format for latitude
+and longitude coordinates. All SQL geographical functions expect decimal
+degree parameters.</p>
+<p>DMS values are of the format <span class="math notranslate nohighlight">\(DDDMMSS\)</span>. For example,
+3515’ would be represented as 351500.</p>
+<p>In decimal degrees, a degree is a whole digit, and minutes &amp; seconds are
+represented as fractions of a degree. Therefore, 3515’ would be 35.25 in
+decimal degrees.</p>
+<p>Note that the Texis DMS format has <em>west</em>-positive longitudes
+(unlike ISO 6709 DMS format), and decimal degrees have <em>east</em>-positive
+longitudes. It is up to the caller to flip the sign of longitudes where
+needed.</p>
+</div>
+<div class="section" id="distgeocode">
+<h3>distgeocode<a class="headerlink" href="#distgeocode" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">distgeocode</span><span class="p">(</span><span class="n">geocode1</span><span class="p">,</span> <span class="n">geocode2</span> <span class="p">[,</span> <span class="k">method</span><span class="p">]</span> <span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">distgeocode</span></code> function calculates the distance, in miles, between
+two given geocodes. It uses the “Great Circle” method for calculation by
+default, which is very accurate. A faster, but less accurate,
+calculation can be done with the Pythagorean theorem. It is not designed
+for distances on a sphere, however, and becomes somewhat inaccurate at
+larger distances and on paths that approach the poles. To use the
+Pythagorean theorem, pass a third string parameter, “<code class="docutils literal notranslate"><span class="pre">pythagorean</span></code>”,
+to force that method. “<code class="docutils literal notranslate"><span class="pre">greatcircle</span></code>” can also be specified as a
+method.</p>
+<p>For example:</p>
+<ul class="simple">
+<li><p>New York (JFK) to Cleveland (CLE), the Pythagorean method is off by
+.8 miles (.1%)</p></li>
+<li><p>New York (JFK) to Los Angeles (LAX), the Pythagorean method is off by
+22.2 miles (.8%)</p></li>
+<li><p>New York (JFK) to South Africa (PLZ), the Pythagorean method is off
+by 430 miles (5.2%)</p></li>
+</ul>
+<p>See Also: <a class="reference internal" href="#distlatlon">distlatlon</a></p>
+</div>
+<div class="section" id="distlatlon">
+<h3>distlatlon<a class="headerlink" href="#distlatlon" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">distlatlon</span><span class="p">(</span><span class="n">lat1</span><span class="p">,</span> <span class="n">lon1</span><span class="p">,</span> <span class="n">lat2</span><span class="p">,</span> <span class="n">lon2</span> <span class="p">[,</span> <span class="k">method</span><span class="p">]</span> <span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">distlatlon</span></code> function calculates the distance, in miles, between
+two points, represented in latitude/longitude pairs in decimal degree
+format.</p>
+<p>Like <a class="reference internal" href="#distgeocode">distgeocode</a>, it uses the “Great Circle” method by default, but
+can be overridden to use the faster, less accurate Pythagorean method if
+“<code class="docutils literal notranslate"><span class="pre">pythagorean</span></code>” is passed as the optional <code class="docutils literal notranslate"><span class="pre">method</span></code> parameter.</p>
+<p>For example:</p>
+<ul class="simple">
+<li><p>New York (JFK) to Cleveland (CLE), the Pythagorean method is off by
+.8 miles (.1%)</p></li>
+<li><p>New York (JFK) to Los Angeles (LAX), the Pythagorean method is off by
+22.2 miles (.8%)</p></li>
+<li><p>New York (JFK) to South Africa (PLZ), the Pythagorean method is off
+by 430 miles (5.2%)</p></li>
+</ul>
+<p>See Also: <a class="reference internal" href="#distgeocode">distgeocode</a></p>
+</div>
+<div class="section" id="latlon2geocode-latlon2geocodearea">
+<span id="latlon2x"></span><h3>latlon2geocode, latlon2geocodearea<a class="headerlink" href="#latlon2geocode-latlon2geocodearea" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">latlon2geocode</span><span class="p">(</span><span class="n">lat</span><span class="p">[,</span> <span class="n">lon</span><span class="p">])</span>
+<span class="n">latlon2geocodearea</span><span class="p">(</span><span class="n">lat</span><span class="p">[,</span> <span class="n">lon</span><span class="p">],</span> <span class="n">radius</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">latlon2geocode</span></code> function encodes a given latitude/longitude
+coordinate into one <code class="docutils literal notranslate"><span class="pre">long</span></code> return value. This encoded value – a
+“geocode” value – can be indexed and used with a special variant of
+Texis’ <code class="docutils literal notranslate"><span class="pre">BETWEEN</span></code> operator for bounded-area searches of a geographical
+region.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">latlon2geocodearea</span></code> function generates a bounding area centered
+on the coordinate. It encodes a given latitude/longitude coordinate into
+a <em>two-</em> value <code class="docutils literal notranslate"><span class="pre">varlong</span></code>. The returned geocode value pair represents
+the southwest and northeast corners of a square box centered on the
+latitude/longitude coordinate, with sides of length two times <code class="docutils literal notranslate"><span class="pre">radius</span></code>
+(in decimal degrees). This bounding area can be used with the Texis
+<code class="docutils literal notranslate"><span class="pre">BETWEEN</span></code> operator for fast geographical searches.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">lat</span></code> and <code class="docutils literal notranslate"><span class="pre">lon</span></code> parameters are <code class="docutils literal notranslate"><span class="pre">double</span></code>s in the decimal
+degrees format. (To pass <span class="math notranslate nohighlight">\(DDDMMSS\)</span> “degrees minutes seconds” (DMS)
+format values, convert them first with <a class="reference internal" href="#dms-dec"><span class="std std-ref">dms2dec</span></a> or
+<a class="reference internal" href="#parselatitude-parselongitude">parselatitude, parselongitude</a>.). Negative numbers represent
+south latitudes and west longitudes, i.e. these functions are
+east-positive, and decimal format.</p>
+<p>Valid values for latitude are -90 to 90 inclusive. Valid values for
+longitude are -360 to 360 inclusive. A longitude value less than -180
+will have 360 added to it, and a longitude value greater than 180 will
+have 360 subtracted from it. This allows longitude values to continue to
+increase or decrease when crossing the International Dateline, and thus
+avoid a non-linear “step function”. Passing invalid <code class="docutils literal notranslate"><span class="pre">lat</span></code> or <code class="docutils literal notranslate"><span class="pre">lon</span></code>
+values to <code class="docutils literal notranslate"><span class="pre">latlon2geocode</span></code> will return -1.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">lon</span></code> parameter is optional: both latitude and longitude (in that
+order) may be given in a single space- or comma-separated text (<code class="docutils literal notranslate"><span class="pre">varchar</span></code>)
+value for <code class="docutils literal notranslate"><span class="pre">lat</span></code>. Also, a <code class="docutils literal notranslate"><span class="pre">N</span></code>/<code class="docutils literal notranslate"><span class="pre">S</span></code> suffix (for latitude) or <code class="docutils literal notranslate"><span class="pre">E</span></code>/<code class="docutils literal notranslate"><span class="pre">W</span></code>
+suffix (for longitude) may be given; <code class="docutils literal notranslate"><span class="pre">S</span></code> or <code class="docutils literal notranslate"><span class="pre">W</span></code> will negate the value.</p>
+<p>The latitude and/or longitude may also have just about any of the formats
+supported by <a class="reference internal" href="#parselatitude-parselongitude">parselatitude, parselongitude</a>, provided they are
+disambiguated (e.g. separate parameters; or if one parameter, separated
+by a comma and/or fully specified with degrees/minutes/seconds).</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="c1">-- Populate a table with latitude/longitude information:</span>
+<span class="k">create</span> <span class="k">table</span> <span class="n">geotest</span><span class="p">(</span><span class="n">city</span> <span class="nb">varchar</span><span class="p">(</span><span class="mi">64</span><span class="p">),</span> <span class="n">lat</span> <span class="n">double</span><span class="p">,</span> <span class="n">lon</span> <span class="n">double</span><span class="p">,</span> <span class="n">geocode</span> <span class="n">long</span><span class="p">);</span>
+<span class="k">insert</span> <span class="k">into</span> <span class="n">geotest</span> <span class="k">values</span><span class="p">(</span><span class="s1">&#39;Cleveland, OH, USA&#39;</span><span class="p">,</span> <span class="mi">41</span><span class="p">.</span><span class="mi">4</span><span class="p">,</span>  <span class="o">-</span><span class="mi">81</span><span class="p">.</span><span class="mi">5</span><span class="p">,</span>  <span class="o">-</span><span class="mi">1</span><span class="p">);</span>
+<span class="k">insert</span> <span class="k">into</span> <span class="n">geotest</span> <span class="k">values</span><span class="p">(</span><span class="s1">&#39;San Francisco, CA, USA&#39;</span><span class="p">,</span>   <span class="mi">37</span><span class="p">.</span><span class="mi">78</span><span class="p">,</span> <span class="o">-</span><span class="mi">122</span><span class="p">.</span><span class="mi">42</span><span class="p">,</span>  <span class="o">-</span><span class="mi">1</span><span class="p">);</span>
+<span class="k">insert</span> <span class="k">into</span> <span class="n">geotest</span> <span class="k">values</span><span class="p">(</span><span class="s1">&#39;Davis, Ca, USA&#39;</span><span class="p">,</span>    <span class="mi">38</span><span class="p">.</span><span class="mi">55</span><span class="p">,</span> <span class="o">-</span><span class="mi">121</span><span class="p">.</span><span class="mi">74</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">);</span>
+<span class="k">insert</span> <span class="k">into</span> <span class="n">geotest</span> <span class="k">values</span><span class="p">(</span><span class="s1">&#39;New York, NY, USA&#39;</span><span class="p">,</span>  <span class="mi">40</span><span class="p">.</span><span class="mi">81</span><span class="p">,</span> <span class="o">-</span><span class="mi">73</span><span class="p">.</span><span class="mi">96</span><span class="p">,</span>  <span class="o">-</span><span class="mi">1</span><span class="p">);</span>
+
+<span class="c1">-- Prepare for geographic searches:</span>
+<span class="k">update</span> <span class="n">geotest</span> <span class="k">set</span> <span class="n">geocode</span> <span class="o">=</span> <span class="n">latlon2geocode</span><span class="p">(</span><span class="n">lat</span><span class="p">,</span> <span class="n">lon</span><span class="p">);</span>
+<span class="k">create</span> <span class="k">index</span> <span class="n">xgeotest_geocode</span> <span class="k">on</span> <span class="n">geotest</span><span class="p">(</span><span class="n">geocode</span><span class="p">);</span>
+
+<span class="c1">-- Search for cities within a 3-degree-radius &quot;circle&quot; (box)</span>
+<span class="c1">-- of Cleveland, nearest first:</span>
+<span class="k">select</span> <span class="n">city</span><span class="p">,</span> <span class="n">lat</span><span class="p">,</span> <span class="n">lon</span><span class="p">,</span> <span class="n">distlatlon</span><span class="p">(</span><span class="mi">41</span><span class="p">.</span><span class="mi">4</span><span class="p">,</span> <span class="o">-</span><span class="mi">81</span><span class="p">.</span><span class="mi">5</span><span class="p">,</span> <span class="n">lat</span><span class="p">,</span> <span class="n">lon</span><span class="p">)</span> <span class="n">MilesAway</span> <span class="k">from</span> <span class="n">geotest</span>
+   <span class="k">where</span> <span class="n">geocode</span> <span class="k">between</span> <span class="p">(</span><span class="k">select</span> <span class="n">latlon2geocodearea</span><span class="p">(</span><span class="mi">41</span><span class="p">.</span><span class="mi">4</span><span class="p">,</span> <span class="o">-</span><span class="mi">81</span><span class="p">.</span><span class="mi">5</span><span class="p">,</span> <span class="mi">3</span><span class="p">.</span><span class="mi">0</span><span class="p">))</span> <span class="k">order</span> <span class="k">by</span> <span class="mi">4</span> <span class="k">asc</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>The geocode values returned by <code class="docutils literal notranslate"><span class="pre">latlon2geocode</span></code> and
+<code class="docutils literal notranslate"><span class="pre">latlon2geocodearea</span></code> are platform-dependent in format and accuracy,
+and should not be copied across platforms. On platforms with 32-bit
+<code class="docutils literal notranslate"><span class="pre">long</span></code>s a geocode value is accurate to about 32 seconds (around half
+a mile, depending on latitude). <code class="docutils literal notranslate"><span class="pre">-1</span></code> is returned for invalid input values.</p>
+<p>See Also: <a class="reference internal" href="#geocode2lat-geocode2lon">geocode2lat, geocode2lon</a></p>
+</div>
+<div class="section" id="geocode2lat-geocode2lon">
+<h3>geocode2lat, geocode2lon<a class="headerlink" href="#geocode2lat-geocode2lon" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">geocode2lat</span><span class="p">(</span><span class="n">geocode</span><span class="p">)</span>
+<span class="n">geocode2lon</span><span class="p">(</span><span class="n">geocode</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">geocode2lat</span></code> and <code class="docutils literal notranslate"><span class="pre">geocode2lon</span></code> functions decode a geocode into
+a latitude or longitude coordinate, respectively. The returned
+coordinate is in the decimal degrees format. An invalid geocode value
+(e.g. -1) will return NaN (Not a Number).</p>
+<p>If you want <span class="math notranslate nohighlight">\(DDDMMSS\)</span> “degrees minutes seconds” (DMS) format, you
+can use <a class="reference internal" href="#dms-dec"><span class="std std-ref">dec2dms</span></a> to convert it.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">select</span> <span class="n">city</span><span class="p">,</span> <span class="n">geocode2lat</span><span class="p">(</span><span class="n">geocode</span><span class="p">),</span> <span class="n">geocode2lon</span><span class="p">(</span><span class="n">geocode</span><span class="p">)</span> <span class="k">from</span> <span class="n">geotest</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>As with <a class="reference internal" href="#latlon2x"><span class="std std-ref">latlon2geocode</span></a>, the <code class="docutils literal notranslate"><span class="pre">geocode</span></code> value is platform-dependent
+in accuracy and format, so it should not be copied across platforms, and
+the returned coordinates from <code class="docutils literal notranslate"><span class="pre">geocode2lat</span></code> and <code class="docutils literal notranslate"><span class="pre">geocode2lon</span></code> may
+differ up to about half a minute from the original coordinates (due to
+the finite resolution of a <code class="docutils literal notranslate"><span class="pre">long</span></code>). An invalid geocode value (e.g. -1)
+will return <code class="docutils literal notranslate"><span class="pre">NaN</span></code> (Not a Number).</p>
+<p>See Also: <a class="reference internal" href="#latlon2x"><span class="std std-ref">latlon2geocode</span></a></p>
+</div>
+<div class="section" id="parselatitude-parselongitude">
+<h3>parselatitude, parselongitude<a class="headerlink" href="#parselatitude-parselongitude" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">parselatitude</span><span class="p">(</span><span class="n">latitudeText</span><span class="p">)</span>
+<span class="n">parselongitude</span><span class="p">(</span><span class="n">longitudeText</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">parselatitude</span></code> and <code class="docutils literal notranslate"><span class="pre">parselongitude</span></code> functions parse a text
+(<code class="docutils literal notranslate"><span class="pre">varchar</span></code>) latitude or longitude coordinate, respectively, and return
+its value in decimal degrees as a <code class="docutils literal notranslate"><span class="pre">double</span></code>. The coordinate should be
+in one of the following forms (optional parts in square brackets):</p>
+<ul class="simple">
+<li><p>[<span class="math notranslate nohighlight">\(H\)</span>] <span class="math notranslate nohighlight">\(nnn\)</span> [<span class="math notranslate nohighlight">\(U\)</span>] [:] [<span class="math notranslate nohighlight">\(H\)</span>] [<span class="math notranslate nohighlight">\(nnn\)</span>
+[<span class="math notranslate nohighlight">\(U\)</span>] [:] [<span class="math notranslate nohighlight">\(nnn\)</span> [<span class="math notranslate nohighlight">\(U\)</span>]]] [<span class="math notranslate nohighlight">\(H\)</span>]</p></li>
+<li><p><span class="math notranslate nohighlight">\(DDMM\)</span>[<span class="math notranslate nohighlight">\(.MMM\)</span>…]</p></li>
+<li><p><span class="math notranslate nohighlight">\(DDMMSS\)</span>[<span class="math notranslate nohighlight">\(.SSS\)</span>…]</p></li>
+</ul>
+<p>where the terms are:</p>
+<ul>
+<li><p><span class="math notranslate nohighlight">\(nnn\)</span>
+A number (integer or decimal) with optional plus/minus sign. Only
+the first number may be negative, in which case it is a south
+latitude or west longitude. Note that this is true even for
+<span class="math notranslate nohighlight">\(DDDMMSS\)</span> (DMS) longitudes – i.e. the ISO 6709 east-positive
+standard is followed, not the deprecated Texis/Vortex west-positive
+standard.</p></li>
+<li><p><span class="math notranslate nohighlight">\(U\)</span>
+A unit (case-insensitive):</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">d</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">deg</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">deg.</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">degrees</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">'</span></code> (single quote) for minutes</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">m</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">min</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">min.</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">minutes</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;</span></code> (double quote) for seconds</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">s</span></code> (iff <code class="docutils literal notranslate"><span class="pre">d</span></code>/<code class="docutils literal notranslate"><span class="pre">m</span></code> also used for degrees/minutes)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sec</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sec.</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">seconds</span></code></p></li>
+<li><p>Unicode degree-sign (U+00B0), in ISO-8559-1 or UTF-8</p></li>
+</ul>
+<p>If no unit is given, the first number is assumed to be degrees, the
+second minutes, the third seconds. Note that “<code class="docutils literal notranslate"><span class="pre">s</span></code>” may only be used
+for seconds if “<code class="docutils literal notranslate"><span class="pre">d</span></code>” and/or “<code class="docutils literal notranslate"><span class="pre">m</span></code>” was also used for an earlier
+degrees/minutes value; this is to help disambiguate “seconds” vs.
+“southern hemisphere”.</p>
+</div></blockquote>
+</li>
+<li><p><span class="math notranslate nohighlight">\(H\)</span>
+A hemisphere (case-insensitive):</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">N</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">north</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">S</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">south</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">E</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">east</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">W</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">west</span></code></p></li>
+</ul>
+<p>A longitude hemisphere may not be given for a latitude, and
+vice-versa.</p>
+</div></blockquote>
+</li>
+<li><p><span class="math notranslate nohighlight">\(DD\)</span>
+A two- or three-digit degree value, with optional sign. Note that
+longitudes are east-positive ala ISO 6709, not west-positive like
+the deprecated Texis standard.</p></li>
+<li><p><span class="math notranslate nohighlight">\(MM\)</span>
+A two-digit minutes value, with leading zero if needed to make two
+digits.</p></li>
+<li><p><span class="math notranslate nohighlight">\(.MMM\)</span>…
+A zero or more digit fractional minute value.</p></li>
+<li><p><span class="math notranslate nohighlight">\(SS\)</span>
+A two-digit seconds value, with leading zero if needed to make two
+digits.</p></li>
+<li><p><span class="math notranslate nohighlight">\(.SSS\)</span>…
+A zero or more digit fractional seconds value.</p></li>
+</ul>
+<p>Whitespace is generally not required between terms in the first format.
+A hemisphere token may only occur once. Degrees/minutes/seconds numbers
+need not be in that order, if units are given after each number. If a
+5-integer-digit <span class="math notranslate nohighlight">\(DDDMM\)</span>[<span class="math notranslate nohighlight">\(.MMM\)</span>…] format is given and the
+degree value is out of range (e.g. more than 90 degrees latitude), it is
+interpreted as a <span class="math notranslate nohighlight">\(DMMSS\)</span>[<span class="math notranslate nohighlight">\(.SSS\)</span>…] value instead. To
+force <span class="math notranslate nohighlight">\(DDDMMSS\)</span>[<span class="math notranslate nohighlight">\(.SSS\)</span>…] for small numbers, pad with
+leading zeros to 6 or 7 digits.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">insert</span> <span class="k">into</span> <span class="n">geotest</span><span class="p">(</span><span class="n">lat</span><span class="p">,</span> <span class="n">lon</span><span class="p">)</span>
+  <span class="k">values</span><span class="p">(</span><span class="n">parselatitude</span><span class="p">(</span><span class="s1">&#39;54d 40m 10&quot;&#39;</span><span class="p">),</span>
+         <span class="n">parselongitude</span><span class="p">(</span><span class="s1">&#39;W90 10.2&#39;</span><span class="p">));</span>
+</pre></div>
+</div>
+<p>An invalid or unparseable latitude or longitude value will return
+<code class="docutils literal notranslate"><span class="pre">NaN</span></code> (Not a Number). Extra unparsed/unparsable text may be allowed
+(and ignored) after the coordinate in most instances. Out-of-range
+values (e.g. latitudes greater than 90 degrees) are accepted; it is up
+to the caller to bounds-check the result.</p>
+</div>
+</div>
+<div class="section" id="json-functions">
+<h2>JSON functions<a class="headerlink" href="#json-functions" title="Permalink to this headline">¶</a></h2>
+<p>The JSON functions allow for the manipulation of <code class="docutils literal notranslate"><span class="pre">varchar</span></code> fields and
+literals as JSON objects.</p>
+<div class="section" id="json-path-syntax">
+<h3>JSON Path Syntax<a class="headerlink" href="#json-path-syntax" title="Permalink to this headline">¶</a></h3>
+<p>The JSON Path syntax is standard Javascript object access, using <code class="docutils literal notranslate"><span class="pre">$</span></code>
+to represent the entire document. If the document is an object the path
+must start <code class="docutils literal notranslate"><span class="pre">$.</span></code>, and if an array <code class="docutils literal notranslate"><span class="pre">$[</span></code>.</p>
+</div>
+<div class="section" id="json-field-syntax">
+<h3>JSON Field Syntax<a class="headerlink" href="#json-field-syntax" title="Permalink to this headline">¶</a></h3>
+<p>In addition to using the JSON functions it is possible to access
+elements in a <code class="docutils literal notranslate"><span class="pre">varchar</span></code> field that holds JSON as if it was a field
+itself. This allows for creation of indexes, searching and sorting
+efficiently. Arrays can also be fetched as <code class="docutils literal notranslate"><span class="pre">strlst</span></code> to make use of
+those features, e.g.
+<code class="docutils literal notranslate"><span class="pre">SELECT</span> <span class="pre">Json.$.name</span> <span class="pre">FROM</span> <span class="pre">tablename</span> <span class="pre">WHERE</span> <span class="pre">'SQL'</span> <span class="pre">IN</span> <span class="pre">Json.$.skills[*];</span></code></p>
+</div>
+<div class="section" id="isjson">
+<h3>isjson<a class="headerlink" href="#isjson" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">isjson</span><span class="p">(</span><span class="n">JsonDocument</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">isjson</span></code> function returns 1 if the document is valid JSON, 0
+otherwise.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">isjson</span><span class="p">(</span><span class="s1">&#39;{ &quot;type&quot; : 1 }&#39;</span><span class="p">):</span> <span class="mi">1</span>
+<span class="n">isjson</span><span class="p">(</span><span class="s1">&#39;{}&#39;</span><span class="p">):</span> <span class="mi">1</span>
+<span class="n">isjson</span><span class="p">(</span><span class="s1">&#39;json this is not&#39;</span><span class="p">):</span> <span class="mi">0</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="json-format">
+<h3>json_format<a class="headerlink" href="#json-format" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">json_format</span><span class="p">(</span><span class="n">JsonDocument</span><span class="p">,</span> <span class="n">FormatOptions</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">json_format</span></code> formats the <code class="docutils literal notranslate"><span class="pre">JsonDocument</span></code> according to
+<code class="docutils literal notranslate"><span class="pre">FormatOptions</span></code>. Multiple options can be provided either space or
+comma separated.</p>
+<p>Valid <code class="docutils literal notranslate"><span class="pre">FormatOptions</span></code> are:</p>
+<ul class="simple">
+<li><p>COMPACT - remove all unnecessary whitespace</p></li>
+<li><p>INDENT(N) - print the JSON with each object or array member on a new
+line, indented by N spaces to show structure</p></li>
+<li><p>SORT-KEYS - sort the keys in the object. By default the order is
+preserved</p></li>
+<li><p>EMBED - omit the enclosing <code class="docutils literal notranslate"><span class="pre">{}</span></code> or <code class="docutils literal notranslate"><span class="pre">[]</span></code> is using the snippet in
+another object</p></li>
+<li><p>ENSURE_ASCII - encode all Unicode characters outside the ASCII range</p></li>
+<li><p>ENCODE_ANY - if not a valid JSON document then encode into a JSON
+literal, e.g. to encode a string.</p></li>
+<li><p>ESCAPE_SLASH - escape forward slash <code class="docutils literal notranslate"><span class="pre">/</span></code> as <code class="docutils literal notranslate"><span class="pre">\/</span></code></p></li>
+</ul>
+</div>
+<div class="section" id="json-type">
+<h3>json_type<a class="headerlink" href="#json-type" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">json_type</span><span class="p">(</span><span class="n">JsonDocument</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">json_type</span></code> function returns the type of the JSON object or
+element. Valid responses are:</p>
+<ul class="simple">
+<li><p>OBJECT</p></li>
+<li><p>ARRAY</p></li>
+<li><p>STRING</p></li>
+<li><p>INTEGER</p></li>
+<li><p>DOUBLE</p></li>
+<li><p>NULL</p></li>
+<li><p>BOOLEAN</p></li>
+</ul>
+<p>Assuming a field <code class="docutils literal notranslate"><span class="pre">Json</span></code> containing:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="s2">&quot;items&quot;</span><span class="p">:</span>
+  <span class="p">[</span>
+   <span class="p">{</span><span class="s2">&quot;myNum&quot;</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;myText&quot;</span><span class="p">:</span> <span class="s2">&quot;Some text&quot;</span><span class="p">,</span> <span class="s2">&quot;myBool&quot;</span><span class="p">:</span> <span class="n">true</span><span class="p">},</span>
+   <span class="p">{</span><span class="s2">&quot;myNum&quot;</span><span class="p">:</span><span class="mf">2.0</span><span class="p">,</span> <span class="s2">&quot;myText&quot;</span><span class="p">:</span> <span class="s2">&quot;Some more text&quot;</span><span class="p">,</span> <span class="s2">&quot;myBool&quot;</span><span class="p">:</span> <span class="n">false</span><span class="p">},</span>
+   <span class="n">null</span>
+  <span class="p">]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span>json_type(Json): OBJECT
+json_type(Json.$.items[0]): OBJECT
+json_type(Json.$.items): ARRAY
+json_type(Json.$.items[0].myNum): INTEGER
+json_type(Json.$.items[1].myNum): DOUBLE
+json_type(Json.$.items[0].myText): STRING
+json_type(Json.$.items[0].myBool): BOOLEAN
+json_type(Json.$.items[2]): NULL
+</pre></div>
+</div>
+</div>
+<div class="section" id="json-value">
+<h3>json_value<a class="headerlink" href="#json-value" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">json_value</span><span class="p">(</span><span class="n">JsonDocument</span><span class="p">,</span> <span class="n">Path</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">json_value</span></code> extracts the value identified by <code class="docutils literal notranslate"><span class="pre">Path</span></code> from
+<code class="docutils literal notranslate"><span class="pre">JsonDocument</span></code>. <code class="docutils literal notranslate"><span class="pre">Path</span></code> is a varchar in the JSON Path Syntax. This
+will return a scalar value. If <code class="docutils literal notranslate"><span class="pre">Path</span></code> refers to an array, object, or
+invalid path no value is returned.</p>
+<p>Assuming the same Json field from the previous examples:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">json_value</span><span class="p">(</span><span class="n">Json</span><span class="p">,</span> <span class="s1">&#39;$&#39;</span><span class="p">):</span>
+<span class="n">json_value</span><span class="p">(</span><span class="n">Json</span><span class="p">,</span> <span class="s1">&#39;$.items[0]&#39;</span><span class="p">):</span>
+<span class="n">json_value</span><span class="p">(</span><span class="n">Json</span><span class="p">,</span> <span class="s1">&#39;$.items&#39;</span><span class="p">):</span>
+<span class="n">json_value</span><span class="p">(</span><span class="n">Json</span><span class="p">,</span> <span class="s1">&#39;$.items[0].myNum&#39;</span><span class="p">):</span> <span class="mi">1</span>
+<span class="n">json_value</span><span class="p">(</span><span class="n">Json</span><span class="p">,</span> <span class="s1">&#39;$.items[1].myNum&#39;</span><span class="p">):</span> <span class="mf">2.0</span>
+<span class="n">json_value</span><span class="p">(</span><span class="n">Json</span><span class="p">,</span> <span class="s1">&#39;$.items[0].myText&#39;</span><span class="p">):</span> <span class="n">Some</span> <span class="n">Text</span>
+<span class="n">json_value</span><span class="p">(</span><span class="n">Json</span><span class="p">,</span> <span class="s1">&#39;$.items[0].myBool&#39;</span><span class="p">):</span> <span class="n">true</span>
+<span class="n">json_value</span><span class="p">(</span><span class="n">Json</span><span class="p">,</span> <span class="s1">&#39;$.items[2]&#39;</span><span class="p">):</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="json-query">
+<h3>json_query<a class="headerlink" href="#json-query" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">json_query</span><span class="p">(</span><span class="n">JsonDocument</span><span class="p">,</span> <span class="n">Path</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">json_query</span></code> extracts the object or array identified by <code class="docutils literal notranslate"><span class="pre">Path</span></code>
+from <code class="docutils literal notranslate"><span class="pre">JsonDocument</span></code>. <code class="docutils literal notranslate"><span class="pre">Path</span></code> is a varchar in the JSON Path Syntax.
+This will return either an object or an array value. If <code class="docutils literal notranslate"><span class="pre">Path</span></code> refers
+to a scalar no value is returned.</p>
+<p>Assuming the same Json field from the previous examples:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>json_query(Json, &#39;$&#39;)
+---------------------
+{&quot;items&quot;:[{&quot;myNum&quot;:1,&quot;myText&quot;:&quot;Some text&quot;,&quot;myBool&quot;:true},{&quot;myNum&quot;:2.0,&quot;myText&quot;:&quot;Some more text&quot;,&quot;myBool&quot;:false},null]}
+
+json_query(Json, &#39;$.items[0]&#39;)
+------------------------------
+{&quot;myNum&quot;:1,&quot;myText&quot;:&quot;Some text&quot;,&quot;myBool&quot;:true}
+
+json_query(Json, &#39;$.items&#39;)``
+---------------------------
+[{&quot;myNum&quot;:1,&quot;myText&quot;:&quot;Some text&quot;,&quot;myBool&quot;:true},{&quot;myNum&quot;:2.0,&quot;myText&quot;:&quot;Some more text&quot;,&quot;myBool&quot;:false},null]
+</pre></div>
+</div>
+<p>The following will return an empty string as they refer to scalars or
+non-existent keys.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">json_query</span><span class="p">(</span><span class="n">Json</span><span class="p">,</span> <span class="s1">&#39;$.items[0].myNum&#39;</span><span class="p">)</span>
+<span class="n">json_query</span><span class="p">(</span><span class="n">Json</span><span class="p">,</span> <span class="s1">&#39;$.items[1].myNum&#39;</span><span class="p">)</span>
+<span class="n">json_query</span><span class="p">(</span><span class="n">Json</span><span class="p">,</span> <span class="s1">&#39;$.items[0].myText&#39;</span><span class="p">)</span>
+<span class="n">json_query</span><span class="p">(</span><span class="n">Json</span><span class="p">,</span> <span class="s1">&#39;$.items[0].myBool&#39;</span><span class="p">)</span>
+<span class="n">json_query</span><span class="p">(</span><span class="n">Json</span><span class="p">,</span> <span class="s1">&#39;$.items[2]&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="json-modify">
+<h3>json_modify<a class="headerlink" href="#json-modify" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">json_modify</span><span class="p">(</span><span class="n">JsonDocument</span><span class="p">,</span> <span class="n">Path</span><span class="p">,</span> <span class="n">NewValue</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">json_modify</span></code> function returns a modified version of JsonDocument
+with the key at Path replaced by NewValue.</p>
+<p>If <code class="docutils literal notranslate"><span class="pre">Path</span></code> starts with append then the NewValue is appended to the
+array referenced by Path. It is an error it Path refers to anything
+other than an array.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">json_modify</span><span class="p">(</span><span class="s1">&#39;</span><span class="si">{}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="s1">&#39;$.foo&#39;</span><span class="p">,</span> <span class="s1">&#39;Some &quot;quote&quot;&#39;</span><span class="p">)</span>
+<span class="o">------------------------------------------</span>
+<span class="p">{</span><span class="s2">&quot;foo&quot;</span><span class="p">:</span><span class="s2">&quot;Some </span><span class="se">\&quot;</span><span class="s2">quote</span><span class="se">\&quot;</span><span class="s2">&quot;</span><span class="p">}</span>
+
+<span class="n">json_modify</span><span class="p">(</span><span class="s1">&#39;{ &quot;foo&quot; : { &quot;bar&quot;: [40, 42] } }&#39;</span><span class="p">,</span> <span class="s1">&#39;append $.foo.bar&#39;</span><span class="p">,</span> <span class="mi">99</span><span class="p">)</span>
+<span class="o">----------------------------------------------------------------------</span>
+<span class="p">{</span><span class="s2">&quot;foo&quot;</span><span class="p">:{</span><span class="s2">&quot;bar&quot;</span><span class="p">:[</span><span class="mi">40</span><span class="p">,</span><span class="mi">42</span><span class="p">,</span><span class="mi">99</span><span class="p">]}}</span>
+
+<span class="n">json_modify</span><span class="p">(</span><span class="s1">&#39;{ &quot;foo&quot; : { &quot;bar&quot;: [40, 42] } }&#39;</span><span class="p">,</span> <span class="s1">&#39;$.foo.bar&#39;</span><span class="p">,</span> <span class="mi">99</span><span class="p">)</span>
+<span class="o">---------------------------------------------------------------</span>
+<span class="p">{</span><span class="s2">&quot;foo&quot;</span><span class="p">:{</span><span class="s2">&quot;bar&quot;</span><span class="p">:</span><span class="mi">99</span><span class="p">}}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="json-merge-patch">
+<h3>json_merge_patch<a class="headerlink" href="#json-merge-patch" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">json_merge_patch</span><span class="p">(</span><span class="n">JsonDocument</span><span class="p">,</span> <span class="n">Patch</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">json_merge_patch</span></code> function provides a way to patch a target JSON
+document with another JSON document. The patch function conforms to
+<span class="target" id="index-0"></span><a class="rfc reference external" href="https://tools.ietf.org/html/rfc7386.html"><strong>RFC 7386</strong></a>.</p>
+<p>Keys in <code class="docutils literal notranslate"><span class="pre">JsonDocument</span></code> are replaced if found in <code class="docutils literal notranslate"><span class="pre">Patch</span></code>. If the
+value in <code class="docutils literal notranslate"><span class="pre">Patch</span></code> is <code class="docutils literal notranslate"><span class="pre">null</span></code> then the key will be removed in the
+target document.</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span>json_merge_patch(&#39;{&quot;a&quot;:&quot;b&quot;}&#39;, &#39;{&quot;a&quot;:&quot;c&quot;}&#39;)
+------------------------------------------
+{&quot;a&quot;:&quot;c&quot;}
+
+json_merge_patch(&#39;{&quot;a&quot;: [{&quot;b&quot;:&quot;c&quot;}]}&#39;, &#39;{&quot;a&quot;: [1]}&#39;)
+----------------------------------------------------
+{&quot;a&quot;:[1]}
+
+json_merge_patch(&#39;[1,2]&#39;, &#39;{&quot;a&quot;:&quot;b&quot;, &quot;c&quot;:null}&#39;)
+------------------------------------------------
+{&quot;a&quot;:&quot;b&quot;}
+</pre></div>
+</div>
+</div>
+<div class="section" id="json-merge-preserve">
+<h3>json_merge_preserve<a class="headerlink" href="#json-merge-preserve" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">json_merge_preserve</span><span class="p">(</span><span class="n">JsonDocument</span><span class="p">,</span> <span class="n">Patch</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">json_merge_preserve</span></code> function provides a way to patch a target
+JSON document with another JSON document while preserving the content
+that exists in the target document.</p>
+<p>Keys in <code class="docutils literal notranslate"><span class="pre">JsonDocument</span></code> are merged if found in <code class="docutils literal notranslate"><span class="pre">Patch</span></code>. If the same
+key exists in both the target and patch file the result will be an array
+with the values from both target and patch.</p>
+<p>If the value in <code class="docutils literal notranslate"><span class="pre">Patch</span></code> is <code class="docutils literal notranslate"><span class="pre">null</span></code> then the key will be removed in
+the target document.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">json_merge_preserve</span><span class="p">(</span><span class="s1">&#39;{&quot;a&quot;:&quot;b&quot;}&#39;</span><span class="p">,</span> <span class="s1">&#39;{&quot;a&quot;:&quot;c&quot;}&#39;</span><span class="p">)</span>
+<span class="o">---------------------------------------------</span>
+<span class="p">{</span><span class="s2">&quot;a&quot;</span><span class="p">:[</span><span class="s2">&quot;b&quot;</span><span class="p">,</span><span class="s2">&quot;c&quot;</span><span class="p">]}</span>
+
+<span class="n">json_merge_preserve</span><span class="p">(</span><span class="s1">&#39;{&quot;a&quot;: [{&quot;b&quot;:&quot;c&quot;}]}&#39;</span><span class="p">,</span> <span class="s1">&#39;{&quot;a&quot;: [1]}&#39;</span><span class="p">)</span>
+<span class="o">-------------------------------------------------------</span>
+<span class="p">{</span><span class="s2">&quot;a&quot;</span><span class="p">:[{</span><span class="s2">&quot;b&quot;</span><span class="p">:</span><span class="s2">&quot;c&quot;</span><span class="p">},</span><span class="mi">1</span><span class="p">]}</span>
+
+<span class="n">json_merge_preserve</span><span class="p">(</span><span class="s1">&#39;{&quot;a&quot;: [{&quot;b&quot;:&quot;c&quot;}]}&#39;</span><span class="p">,</span> <span class="s1">&#39;{&quot;a&quot;: 1}&#39;</span><span class="p">)</span>
+<span class="o">-----------------------------------------------------</span>
+<span class="p">{</span><span class="s2">&quot;a&quot;</span><span class="p">:[{</span><span class="s2">&quot;b&quot;</span><span class="p">:</span><span class="s2">&quot;c&quot;</span><span class="p">},</span><span class="mi">1</span><span class="p">]}</span>
+
+<span class="n">json_merge_preserve</span><span class="p">(</span><span class="s1">&#39;{&quot;a&quot;: [{&quot;b&quot;:&quot;c&quot;}]}&#39;</span><span class="p">,</span> <span class="s1">&#39;{&quot;a&quot;: [1,2]}&#39;</span><span class="p">)</span>
+<span class="o">---------------------------------------------------------</span>
+<span class="p">{</span><span class="s2">&quot;a&quot;</span><span class="p">:[{</span><span class="s2">&quot;b&quot;</span><span class="p">:</span><span class="s2">&quot;c&quot;</span><span class="p">},</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">]}</span>
+
+<span class="n">json_merge_preserve</span><span class="p">(</span><span class="s1">&#39;{&quot;a&quot;: [{&quot;b&quot;:&quot;c&quot;}]}&#39;</span><span class="p">,</span> <span class="s1">&#39;{&quot;a&quot;: {&quot;d&quot;:1,&quot;e&quot;:2} }&#39;</span><span class="p">)</span>
+<span class="o">------------------------------------------------------------------</span>
+<span class="p">{</span><span class="s2">&quot;a&quot;</span><span class="p">:[{</span><span class="s2">&quot;b&quot;</span><span class="p">:</span><span class="s2">&quot;c&quot;</span><span class="p">},{</span><span class="s2">&quot;d&quot;</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="s2">&quot;e&quot;</span><span class="p">:</span><span class="mi">2</span><span class="p">}]}</span>
+
+<span class="n">json_merge_preserve</span><span class="p">(</span><span class="s1">&#39;{&quot;a&quot;: {&quot;b&quot;:&quot;c&quot;}}&#39;</span><span class="p">,</span> <span class="s1">&#39;{&quot;a&quot;: {&quot;d&quot;:1, &quot;e&quot;:2} }&#39;</span><span class="p">)</span>
+<span class="o">-----------------------------------------------------------------</span>
+<span class="p">{</span><span class="s2">&quot;a&quot;</span><span class="p">:{</span><span class="s2">&quot;b&quot;</span><span class="p">:</span><span class="s2">&quot;c&quot;</span><span class="p">,</span><span class="s2">&quot;d&quot;</span><span class="p">:</span><span class="mi">1</span><span class="p">,</span><span class="s2">&quot;e&quot;</span><span class="p">:</span><span class="mi">2</span><span class="p">}}</span>
+
+<span class="n">json_merge_preserve</span><span class="p">(</span><span class="s1">&#39;[1,2]&#39;</span><span class="p">,</span> <span class="s1">&#39;{&quot;a&quot;:&quot;b&quot;, &quot;c&quot;:null}&#39;</span><span class="p">)</span>
+<span class="o">---------------------------------------------------</span>
+<span class="p">[</span><span class="mi">1</span><span class="p">,</span><span class="mi">2</span><span class="p">,{</span><span class="s2">&quot;a&quot;</span><span class="p">:</span><span class="s2">&quot;b&quot;</span><span class="p">,</span><span class="s2">&quot;c&quot;</span><span class="p">:</span><span class="n">null</span><span class="p">}]</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="sql4.html" class="btn btn-neutral float-right" title="Indexing for Increased Performance" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="sql3.html" class="btn btn-neutral" title="Intelligent Text Search Queries" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>
