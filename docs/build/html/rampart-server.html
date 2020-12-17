@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>The rampart-server module &mdash; Rampart 0.1.0 documentation</title>
+  <title>The rampart-server HTTP module &mdash; Rampart 0.1.0 documentation</title>
   
 
   
@@ -164,7 +164,7 @@
     
       <li><a href="index.html">Docs</a> &raquo;</li>
         
-      <li>The rampart-server module</li>
+      <li>The rampart-server HTTP module</li>
     
     
       <li class="wy-breadcrumbs-aside">
@@ -183,8 +183,8 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
             
-  <div class="section" id="the-rampart-server-module">
-<h1>The rampart-server module<a class="headerlink" href="#the-rampart-server-module" title="Permalink to this headline">¶</a></h1>
+  <div class="section" id="the-rampart-server-http-module">
+<h1>The rampart-server HTTP module<a class="headerlink" href="#the-rampart-server-http-module" title="Permalink to this headline">¶</a></h1>
 <div class="section" id="preface">
 <h2>Preface<a class="headerlink" href="#preface" title="Permalink to this headline">¶</a></h2>
 <div class="section" id="acknowledgment">
@@ -270,7 +270,8 @@ Options are passed to the function in a single <span class="green">Object</span>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">bind</span></code> - An <span class="green">Array</span> of <span class="green">Strings</span>, with each <span class="green">String</span>
 representing an ip address and port.  If not specified, the server will
-bind to port 8088 on the loopback device, using the following default value:</p>
+bind to port 8088 on the loopback device (i.e. 127.0.0.1, which is only
+accessible from the same machine), using the following default value:</p>
 <p><code class="docutils literal notranslate"><span class="pre">[</span> <span class="pre">&quot;[::1]:8088&quot;,</span> <span class="pre">&quot;127.0.0.1:8088&quot;</span> <span class="pre">]</span></code>.</p>
 <p>When specifying an Ipv6 address, bracket notation is required (e.g.
 <code class="docutils literal notranslate"><span class="pre">[2001:db8::1111:2222]:80</span></code>) while a dot-decimal notation is used for
@@ -333,6 +334,28 @@ to after binding to the specified ip address and port.  Only valid if
 server is started as <code class="docutils literal notranslate"><span class="pre">root</span></code>.  This setting is used for binding to
 privileged ports as <code class="docutils literal notranslate"><span class="pre">root</span></code> and then dropping privileges.  If the server
 is started as root, <code class="docutils literal notranslate"><span class="pre">user</span></code> must be set.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mimeMap</span></code>: An <span class="green">Object</span>, additions or changes to the standart extension
+to mime mappings.  Normally, if, e.g., <code class="docutils literal notranslate"><span class="pre">return</span> <span class="pre">{</span> <span class="pre">&quot;m4v&quot;:</span> <span class="pre">mymovie</span> <span class="pre">};</span></code> is
+set as <a class="reference internal" href="#the-return-object">The Return Object</a> to a mapped function, the header
+<code class="docutils literal notranslate"><span class="pre">content-type:</span> <span class="pre">video/x-m4v</span></code> is sent.  If it is necessary to
+change the “content-type” for both <a class="reference internal" href="#mapped-functions">Mapped Functions</a> and files served
+from <a class="reference internal" href="#mapped-directories">Mapped Directories</a>, they may be set as follows:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">({</span>
+    <span class="p">...,</span>
+    <span class="nx">mimeMap</span><span class="o">:</span> <span class="p">{</span>
+            <span class="cm">/* make these movies play as mp4s */</span>
+            <span class="s2">&quot;m4v&quot;</span><span class="o">:</span> <span class="s2">&quot;video/mp4&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;mov&quot;</span><span class="o">:</span> <span class="s2">&quot;video/mp4&quot;</span>
+    <span class="p">},</span>
+            <span class="nx">map</span><span class="o">:</span> <span class="p">{</span>
+               <span class="s2">&quot;/&quot;</span><span class="o">:</span> <span class="s2">&quot;/var/www/html&quot;</span><span class="p">,</span>
+               <span class="p">...,</span>
+            <span class="p">}</span>
+    <span class="p">});</span>
+</pre></div>
+</div>
+<p>For a complete list of defaults, see <a class="reference internal" href="#key-to-mime-mappings">Key to Mime Mappings</a> below.</p>
+</li>
 <li><p><code class="docutils literal notranslate"><span class="pre">mapSort</span></code>: A <span class="green">Boolean</span>, whether to automatically sort the
 mapped paths given as keys to the <span class="green">Object</span> passed to <code class="docutils literal notranslate"><span class="pre">map</span></code> below.
 Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.  If <code class="docutils literal notranslate"><span class="pre">false</span></code>, paths from the <code class="docutils literal notranslate"><span class="pre">map</span></code> <span class="green">Object</span>
@@ -369,7 +392,7 @@ to the filesystem.  Example:</p>
 </pre></div>
 </div>
 <p>In the above example, the <code class="docutils literal notranslate"><span class="pre">&quot;/search.html&quot;</span></code> key will have priority over
-<code class="docutils literal notranslate"><span class="pre">&quot;/&quot;</span></code> key, so that a request “<a class="reference external" href="http://example.com/search.html">http://example.com/search.html</a>” will
+<code class="docutils literal notranslate"><span class="pre">&quot;/&quot;</span></code> key, so that a request <code class="docutils literal notranslate"><span class="pre">http://example.com/search.html</span></code> will
 cause the function to be run while anything else will match <code class="docutils literal notranslate"><span class="pre">&quot;/&quot;</span></code>
 (assuming <code class="docutils literal notranslate"><span class="pre">mapSort</span></code> is not set to <code class="docutils literal notranslate"><span class="pre">false</span></code>).</p>
 <p>Keys/paths used for mapping a <span class="green">Function</span> may be given in one of
@@ -382,7 +405,7 @@ Perl Regular Expression following the <code class="docutils literal notranslate"
 <code class="docutils literal notranslate"><span class="pre">map:</span> <span class="pre">{&quot;~/.*/myfile.html&quot;:</span> <span class="pre">myfunction</span> <span class="pre">}</span></code> will match any path ending
 in <code class="docutils literal notranslate"><span class="pre">myfile.html</span></code> and run the named function <code class="docutils literal notranslate"><span class="pre">myfunction</span></code>.</p></li>
 <li><p>Glob Paths - A glob path will have the last priority for matching the
-requested url.  Example: <code class="docutils literal notranslate"><span class="pre">map:</span> <span class="pre">{&quot;~/*/myfile.html&quot;:</span> <span class="pre">myfunction2</span> <span class="pre">}</span></code> will
+requested url.  Example: <code class="docutils literal notranslate"><span class="pre">map:</span> <span class="pre">{&quot;/*/myfile.html&quot;:</span> <span class="pre">myfunction2</span> <span class="pre">}</span></code> will
 match the same as the example above, but would have lower priority.  If
 both these examples were present, <code class="docutils literal notranslate"><span class="pre">myfunction2</span></code> would never match.</p></li>
 </ul>
@@ -859,7 +882,8 @@ new one:</p>
 </div>
 <p>The specified mime-type can also be overwritten using the
 <code class="docutils literal notranslate"><span class="pre">content-type</span></code> header.  This way, any arbitrary mime-type can be
-set regardless of the name of the key:</p>
+set regardless of the name of the key (though the name of the key
+must be a known extension):</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">jpg</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">readFile</span><span class="p">(</span><span class="s2">&quot;/path/to/my/jpeg.jpg&quot;</span><span class="p">);</span>
 <span class="cm">/* overwrite the bin -&gt; &quot;application/octet-stream&quot; header */</span>
 <span class="k">return</span> <span class="p">{</span>
@@ -868,6 +892,7 @@ set regardless of the name of the key:</p>
 <span class="p">};</span>
 </pre></div>
 </div>
+<p>See also <code class="docutils literal notranslate"><span class="pre">mimeMap</span></code> in <a class="reference internal" href="#start">start()</a> above.</p>
 </div></blockquote>
 </div>
 <div class="section" id="built-in-directory-function">
@@ -934,7 +959,7 @@ parameter <code class="docutils literal notranslate"><span class="pre">fsPath</s
 <span class="cm">        spaces are ignored (i.e. &quot; [ 2001:db8::1111:2222 ] : 80&quot; is ok)</span>
 <span class="cm">    */</span>
     <span class="cm">/* bind to all */</span>
-    <span class="nx">bind</span><span class="o">:</span> <span class="p">[</span> <span class="s2">&quot;[::]:8088&quot;</span><span class="p">,</span> <span class="s2">&quot;0.0.0.0:8088&quot;</span> <span class="p">],</span> <span class="cm">/* bind to all */</span>
+    <span class="nx">bind</span><span class="o">:</span> <span class="p">[</span> <span class="s2">&quot;[::]:8088&quot;</span><span class="p">,</span> <span class="s2">&quot;0.0.0.0:8088&quot;</span> <span class="p">],</span>
 
     <span class="cm">/* if started as root, set user here.</span>
 <span class="cm">       If not root, option &quot;user&quot; is ignored. */</span>
@@ -1000,6 +1025,12 @@ parameter <code class="docutils literal notranslate"><span class="pre">fsPath</s
 
     <span class="nx">directoryFunc</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span> <span class="c1">//use default directory list function</span>
 
+            <span class="cm">/* remap a few extensions -&gt; mimetypes */</span>
+    <span class="nx">mimeMap</span><span class="o">:</span> <span class="p">{</span>
+              <span class="s2">&quot;m4v&quot;</span><span class="o">:</span> <span class="s2">&quot;video/mp4&quot;</span><span class="p">,</span>
+              <span class="s2">&quot;mov&quot;</span><span class="o">:</span> <span class="s2">&quot;video/mp4&quot;</span>
+    <span class="p">},</span>
+
     <span class="cm">/* **********************************************************</span>
 <span class="cm">       map urls to functions or paths on the filesystem</span>
 <span class="cm">       If it ends in a &#39;/&#39; then matches everything in that path</span>
@@ -1047,453 +1078,506 @@ parameter <code class="docutils literal notranslate"><span class="pre">fsPath</s
 then <code class="docutils literal notranslate"><span class="pre">return</span> <span class="pre">{jpeg:jpg};</span></code> at the end of a mapped function would send
 the contents of the file <code class="docutils literal notranslate"><span class="pre">/path/to/my/jpeg.jpg</span></code> with the
 mime-type <code class="docutils literal notranslate"><span class="pre">image/jpeg</span></code> to the client.</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="s2">&quot;3dm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;x-world/x-3dmf&quot;</span>
-<span class="s2">&quot;3dmf&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;x-world/x-3dmf&quot;</span>
-<span class="s2">&quot;a&quot;</span>         <span class="o">-&gt;</span>       <span class="s2">&quot;application/octet-stream&quot;</span>
-<span class="s2">&quot;aab&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-authorware-bin&quot;</span>
-<span class="s2">&quot;aam&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-authorware-map&quot;</span>
-<span class="s2">&quot;aas&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-authorware-seg&quot;</span>
-<span class="s2">&quot;abc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/vnd.abc&quot;</span>
-<span class="s2">&quot;acgi&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;text/html&quot;</span>
-<span class="s2">&quot;afl&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/animaflex&quot;</span>
-<span class="s2">&quot;ai&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/postscript&quot;</span>
-<span class="s2">&quot;aif&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/aiff&quot;</span>
-<span class="s2">&quot;aifc&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;audio/aiff&quot;</span>
-<span class="s2">&quot;aiff&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;audio/aiff&quot;</span>
-<span class="s2">&quot;aim&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-aim&quot;</span>
-<span class="s2">&quot;aip&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-audiosoft-intra&quot;</span>
-<span class="s2">&quot;ani&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-navi-animation&quot;</span>
-<span class="s2">&quot;aos&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-nokia-9000-communicator-add-on-software&quot;</span>
-<span class="s2">&quot;aps&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/mime&quot;</span>
-<span class="s2">&quot;arc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/octet-stream&quot;</span>
-<span class="s2">&quot;arj&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/arj&quot;</span>
-<span class="s2">&quot;art&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-jg&quot;</span>
-<span class="s2">&quot;asf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-ms-asf&quot;</span>
-<span class="s2">&quot;asm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-asm&quot;</span>
-<span class="s2">&quot;asp&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/asp&quot;</span>
-<span class="s2">&quot;asx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-ms-asf&quot;</span>
-<span class="s2">&quot;au&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-au&quot;</span>
-<span class="s2">&quot;avi&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-msvideo&quot;</span>
-<span class="s2">&quot;avs&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/avs-video&quot;</span>
-<span class="s2">&quot;bcpio&quot;</span>     <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-bcpio&quot;</span>
-<span class="s2">&quot;bin&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/octet-stream&quot;</span>
-<span class="s2">&quot;bm&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;image/bmp&quot;</span>
-<span class="s2">&quot;bmp&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/bmp&quot;</span>
-<span class="s2">&quot;boo&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/book&quot;</span>
-<span class="s2">&quot;book&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/book&quot;</span>
-<span class="s2">&quot;boz&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-bzip2&quot;</span>
-<span class="s2">&quot;bsh&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-bsh&quot;</span>
-<span class="s2">&quot;bz&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-bzip&quot;</span>
-<span class="s2">&quot;bz2&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-bzip2&quot;</span>
-<span class="s2">&quot;c&quot;</span>         <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;c++&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;cat&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/vnd.ms-pki.seccat&quot;</span>
-<span class="s2">&quot;cc&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;ccad&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/clariscad&quot;</span>
-<span class="s2">&quot;cco&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-cocoa&quot;</span>
-<span class="s2">&quot;cdf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-cdf&quot;</span>
-<span class="s2">&quot;cer&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-x509-ca-cert&quot;</span>
-<span class="s2">&quot;cha&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-chat&quot;</span>
-<span class="s2">&quot;chat&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-chat&quot;</span>
-<span class="s2">&quot;class&quot;</span>     <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-java-class&quot;</span>
-<span class="s2">&quot;com&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/octet-stream&quot;</span>
-<span class="s2">&quot;conf&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;cpio&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-cpio&quot;</span>
-<span class="s2">&quot;cpp&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-c&quot;</span>
-<span class="s2">&quot;cpt&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-cpt&quot;</span>
-<span class="s2">&quot;crl&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/pkix-crl&quot;</span>
-<span class="s2">&quot;crt&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-x509-ca-cert&quot;</span>
-<span class="s2">&quot;csh&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-script.csh&quot;</span>
-<span class="s2">&quot;css&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/css&quot;</span>
-<span class="s2">&quot;cxx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;data&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/octet-stream&quot;</span>
-<span class="s2">&quot;dcr&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-director&quot;</span>
-<span class="s2">&quot;deepv&quot;</span>     <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-deepv&quot;</span>
-<span class="s2">&quot;def&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;der&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-x509-ca-cert&quot;</span>
-<span class="s2">&quot;dif&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-dv&quot;</span>
-<span class="s2">&quot;dir&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-director&quot;</span>
-<span class="s2">&quot;dl&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-dl&quot;</span>
-<span class="s2">&quot;doc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/msword&quot;</span>
-<span class="s2">&quot;dot&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/msword&quot;</span>
-<span class="s2">&quot;dp&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/commonground&quot;</span>
-<span class="s2">&quot;drw&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/drafting&quot;</span>
-<span class="s2">&quot;dump&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/octet-stream&quot;</span>
-<span class="s2">&quot;dv&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-dv&quot;</span>
-<span class="s2">&quot;dvi&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-dvi&quot;</span>
-<span class="s2">&quot;dwf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;model/vnd.dwf&quot;</span>
-<span class="s2">&quot;dwg&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-dwg&quot;</span>
-<span class="s2">&quot;dxf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-dwg&quot;</span>
-<span class="s2">&quot;dxr&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-director&quot;</span>
-<span class="s2">&quot;el&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-script.elisp&quot;</span>
-<span class="s2">&quot;elc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-elc&quot;</span>
-<span class="s2">&quot;env&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-envoy&quot;</span>
-<span class="s2">&quot;eps&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/postscript&quot;</span>
-<span class="s2">&quot;es&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-esrehber&quot;</span>
-<span class="s2">&quot;etx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-setext&quot;</span>
-<span class="s2">&quot;evy&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-envoy&quot;</span>
-<span class="s2">&quot;exe&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/octet-stream&quot;</span>
-<span class="s2">&quot;f&quot;</span>         <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;f77&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;f90&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;fdf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/vnd.fdf&quot;</span>
-<span class="s2">&quot;fif&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/fif&quot;</span>
-<span class="s2">&quot;fli&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-fli&quot;</span>
-<span class="s2">&quot;flo&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/florian&quot;</span>
-<span class="s2">&quot;flx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/vnd.fmi.flexstor&quot;</span>
-<span class="s2">&quot;fmf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-atomic3d-feature&quot;</span>
-<span class="s2">&quot;for&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;fpx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/vnd.fpx&quot;</span>
-<span class="s2">&quot;frl&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/freeloader&quot;</span>
-<span class="s2">&quot;funk&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;audio/make&quot;</span>
-<span class="s2">&quot;g&quot;</span>         <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;g3&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;image/g3fax&quot;</span>
-<span class="s2">&quot;gif&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/gif&quot;</span>
-<span class="s2">&quot;gl&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-gl&quot;</span>
-<span class="s2">&quot;gsd&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-gsm&quot;</span>
-<span class="s2">&quot;gsm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-gsm&quot;</span>
-<span class="s2">&quot;gsp&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-gsp&quot;</span>
-<span class="s2">&quot;gss&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-gss&quot;</span>
-<span class="s2">&quot;gtar&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-gtar&quot;</span>
-<span class="s2">&quot;gz&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-gzip&quot;</span>
-<span class="s2">&quot;gzip&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-gzip&quot;</span>
-<span class="s2">&quot;h&quot;</span>         <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;hdf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-hdf&quot;</span>
-<span class="s2">&quot;help&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-helpfile&quot;</span>
-<span class="s2">&quot;hgl&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/vnd.hp-hpgl&quot;</span>
-<span class="s2">&quot;hh&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;hlb&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-script&quot;</span>
-<span class="s2">&quot;hlp&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-helpfile&quot;</span>
-<span class="s2">&quot;hpg&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/vnd.hp-hpgl&quot;</span>
-<span class="s2">&quot;hpgl&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/vnd.hp-hpgl&quot;</span>
-<span class="s2">&quot;hqx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-binhex40&quot;</span>
-<span class="s2">&quot;hta&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/hta&quot;</span>
-<span class="s2">&quot;htc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-component&quot;</span>
-<span class="s2">&quot;htm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/html&quot;</span>
-<span class="s2">&quot;html&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;text/html&quot;</span>
-<span class="s2">&quot;htmls&quot;</span>     <span class="o">-&gt;</span>       <span class="s2">&quot;text/html&quot;</span>
-<span class="s2">&quot;htt&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/webviewhtml&quot;</span>
-<span class="s2">&quot;htx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/html&quot;</span>
-<span class="s2">&quot;ice&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;x-conference/x-cooltalk&quot;</span>
-<span class="s2">&quot;ico&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-icon&quot;</span>
-<span class="s2">&quot;idc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;ief&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/ief&quot;</span>
-<span class="s2">&quot;iefs&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;image/ief&quot;</span>
-<span class="s2">&quot;iges&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/iges&quot;</span>
-<span class="s2">&quot;igs&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/iges&quot;</span>
-<span class="s2">&quot;ima&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-ima&quot;</span>
-<span class="s2">&quot;imap&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-httpd-imap&quot;</span>
-<span class="s2">&quot;inf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/inf&quot;</span>
-<span class="s2">&quot;ins&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-internett-signup&quot;</span>
-<span class="s2">&quot;ip&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-ip2&quot;</span>
-<span class="s2">&quot;isu&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-isvideo&quot;</span>
-<span class="s2">&quot;it&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;audio/it&quot;</span>
-<span class="s2">&quot;iv&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-inventor&quot;</span>
-<span class="s2">&quot;ivr&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;i-world/i-vrml&quot;</span>
-<span class="s2">&quot;ivy&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-livescreen&quot;</span>
-<span class="s2">&quot;jam&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-jam&quot;</span>
-<span class="s2">&quot;jav&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;java&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;jcm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-java-commerce&quot;</span>
-<span class="s2">&quot;jfif&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;image/jpeg&quot;</span>
-<span class="s2">&quot;jfif-tbnl&quot;</span> <span class="o">-&gt;</span>       <span class="s2">&quot;image/jpeg&quot;</span>
-<span class="s2">&quot;jpe&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/jpeg&quot;</span>
-<span class="s2">&quot;jpeg&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;image/jpeg&quot;</span>
-<span class="s2">&quot;jpg&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/jpeg&quot;</span>
-<span class="s2">&quot;jps&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-jps&quot;</span>
-<span class="s2">&quot;js&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/javascript&quot;</span>
-<span class="s2">&quot;json&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/json&quot;</span>
-<span class="s2">&quot;jut&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/jutvision&quot;</span>
-<span class="s2">&quot;kar&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;music/x-karaoke&quot;</span>
-<span class="s2">&quot;ksh&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-ksh&quot;</span>
-<span class="s2">&quot;la&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-nspaudio&quot;</span>
-<span class="s2">&quot;lam&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-liveaudio&quot;</span>
-<span class="s2">&quot;latex&quot;</span>     <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-latex&quot;</span>
-<span class="s2">&quot;lha&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-lha&quot;</span>
-<span class="s2">&quot;lhx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/octet-stream&quot;</span>
-<span class="s2">&quot;list&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;lma&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/nspaudio&quot;</span>
-<span class="s2">&quot;log&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;lst&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;lsx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-la-asf&quot;</span>
-<span class="s2">&quot;ltx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-latex&quot;</span>
-<span class="s2">&quot;lzh&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-lzh&quot;</span>
-<span class="s2">&quot;lzx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-lzx&quot;</span>
-<span class="s2">&quot;m&quot;</span>         <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;m1v&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/mpeg&quot;</span>
-<span class="s2">&quot;m2a&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/mpeg&quot;</span>
-<span class="s2">&quot;m2v&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/mpeg&quot;</span>
-<span class="s2">&quot;m3u&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-mpequrl&quot;</span>
-<span class="s2">&quot;man&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-troff-man&quot;</span>
-<span class="s2">&quot;map&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-navimap&quot;</span>
-<span class="s2">&quot;mar&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;mbd&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/mbedlet&quot;</span>
-<span class="s2">&quot;mc$&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-magic-cap-package-1.0&quot;</span>
-<span class="s2">&quot;mcd&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-mathcad&quot;</span>
-<span class="s2">&quot;mcf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/mcf&quot;</span>
-<span class="s2">&quot;mcp&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/netmc&quot;</span>
-<span class="s2">&quot;me&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-troff-me&quot;</span>
-<span class="s2">&quot;mht&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;message/rfc822&quot;</span>
-<span class="s2">&quot;mhtml&quot;</span>     <span class="o">-&gt;</span>       <span class="s2">&quot;message/rfc822&quot;</span>
-<span class="s2">&quot;mid&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/midi&quot;</span>
-<span class="s2">&quot;midi&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;audio/midi&quot;</span>
-<span class="s2">&quot;mif&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-frame&quot;</span>
-<span class="s2">&quot;mime&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;message/rfc822&quot;</span>
-<span class="s2">&quot;mjf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-vnd.audioexplosion.mjuicemediafile&quot;</span>
-<span class="s2">&quot;mjpg&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-motion-jpeg&quot;</span>
-<span class="s2">&quot;mm&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-meme&quot;</span>
-<span class="s2">&quot;mme&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/base64&quot;</span>
-<span class="s2">&quot;mod&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-mod&quot;</span>
-<span class="s2">&quot;moov&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;video/quicktime&quot;</span>
-<span class="s2">&quot;mov&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/quicktime&quot;</span>
-<span class="s2">&quot;movie&quot;</span>     <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-sgi-movie&quot;</span>
-<span class="s2">&quot;mp2&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/mpeg&quot;</span>
-<span class="s2">&quot;mp3&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/mpeg3&quot;</span>
-<span class="s2">&quot;mp4&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/mp4&quot;</span>
-<span class="s2">&quot;mpa&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/mpeg&quot;</span>
-<span class="s2">&quot;mpc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-project&quot;</span>
-<span class="s2">&quot;mpe&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/mpeg&quot;</span>
-<span class="s2">&quot;mpeg&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;video/mpeg&quot;</span>
-<span class="s2">&quot;mpg&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/mpeg&quot;</span>
-<span class="s2">&quot;mpga&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;audio/mpeg&quot;</span>
-<span class="s2">&quot;mpp&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/vnd.ms-project&quot;</span>
-<span class="s2">&quot;mpt&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-project&quot;</span>
-<span class="s2">&quot;mpv&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-project&quot;</span>
-<span class="s2">&quot;mpx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-project&quot;</span>
-<span class="s2">&quot;mrc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/marc&quot;</span>
-<span class="s2">&quot;ms&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-troff-ms&quot;</span>
-<span class="s2">&quot;mv&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-sgi-movie&quot;</span>
-<span class="s2">&quot;my&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;audio/make&quot;</span>
-<span class="s2">&quot;mzz&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-vnd.audioexplosion.mzz&quot;</span>
-<span class="s2">&quot;nap&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/naplps&quot;</span>
-<span class="s2">&quot;naplps&quot;</span>    <span class="o">-&gt;</span>       <span class="s2">&quot;image/naplps&quot;</span>
-<span class="s2">&quot;nc&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-netcdf&quot;</span>
-<span class="s2">&quot;ncm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/vnd.nokia.configuration-message&quot;</span>
-<span class="s2">&quot;nif&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-niff&quot;</span>
-<span class="s2">&quot;niff&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-niff&quot;</span>
-<span class="s2">&quot;nix&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-mix-transfer&quot;</span>
-<span class="s2">&quot;nsc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-conference&quot;</span>
-<span class="s2">&quot;nvd&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-navidoc&quot;</span>
-<span class="s2">&quot;o&quot;</span>         <span class="o">-&gt;</span>       <span class="s2">&quot;application/octet-stream&quot;</span>
-<span class="s2">&quot;oda&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/oda&quot;</span>
-<span class="s2">&quot;omc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-omc&quot;</span>
-<span class="s2">&quot;omcd&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-omcdatamaker&quot;</span>
-<span class="s2">&quot;omcr&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-omcregerator&quot;</span>
-<span class="s2">&quot;p&quot;</span>         <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-pascal&quot;</span>
-<span class="s2">&quot;p10&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-pkcs10&quot;</span>
-<span class="s2">&quot;p12&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-pkcs12&quot;</span>
-<span class="s2">&quot;p7c&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-pkcs7-mime&quot;</span>
-<span class="s2">&quot;p7m&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-pkcs7-mime&quot;</span>
-<span class="s2">&quot;p7r&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-pkcs7-certreqresp&quot;</span>
-<span class="s2">&quot;p7s&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/pkcs7-signature&quot;</span>
-<span class="s2">&quot;part&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/pro_eng&quot;</span>
-<span class="s2">&quot;pas&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/pascal&quot;</span>
-<span class="s2">&quot;pbm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-portable-bitmap&quot;</span>
-<span class="s2">&quot;pcl&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-pcl&quot;</span>
-<span class="s2">&quot;pct&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-pict&quot;</span>
-<span class="s2">&quot;pcx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-pcx&quot;</span>
-<span class="s2">&quot;pdb&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;chemical/x-pdb&quot;</span>
-<span class="s2">&quot;pdf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/pdf&quot;</span>
-<span class="s2">&quot;pfunk&quot;</span>     <span class="o">-&gt;</span>       <span class="s2">&quot;audio/make&quot;</span>
-<span class="s2">&quot;pgm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-portable-graymap&quot;</span>
-<span class="s2">&quot;pic&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/pict&quot;</span>
-<span class="s2">&quot;pict&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;image/pict&quot;</span>
-<span class="s2">&quot;pkg&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-newton-compatible-pkg&quot;</span>
-<span class="s2">&quot;pko&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/vnd.ms-pki.pko&quot;</span>
-<span class="s2">&quot;pl&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;plx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-pixclscript&quot;</span>
-<span class="s2">&quot;pm&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-xpixmap&quot;</span>
-<span class="s2">&quot;pm4&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-pagemaker&quot;</span>
-<span class="s2">&quot;pm5&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-pagemaker&quot;</span>
-<span class="s2">&quot;png&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/png&quot;</span>
-<span class="s2">&quot;pnm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-portable-anymap&quot;</span>
-<span class="s2">&quot;pot&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/mspowerpoint&quot;</span>
-<span class="s2">&quot;pov&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;model/x-pov&quot;</span>
-<span class="s2">&quot;ppa&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/vnd.ms-powerpoint&quot;</span>
-<span class="s2">&quot;ppm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-portable-pixmap&quot;</span>
-<span class="s2">&quot;pps&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/mspowerpoint&quot;</span>
-<span class="s2">&quot;ppt&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/powerpoint&quot;</span>
-<span class="s2">&quot;ppz&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/mspowerpoint&quot;</span>
-<span class="s2">&quot;pre&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-freelance&quot;</span>
-<span class="s2">&quot;prt&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/pro_eng&quot;</span>
-<span class="s2">&quot;ps&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/postscript&quot;</span>
-<span class="s2">&quot;psd&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/octet-stream&quot;</span>
-<span class="s2">&quot;pvu&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;paleovu/x-pv&quot;</span>
-<span class="s2">&quot;pwz&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/vnd.ms-powerpoint&quot;</span>
-<span class="s2">&quot;py&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-script.phyton&quot;</span>
-<span class="s2">&quot;pyc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-bytecode.python&quot;</span>
-<span class="s2">&quot;qcp&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/vnd.qcelp&quot;</span>
-<span class="s2">&quot;qd3&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;x-world/x-3dmf&quot;</span>
-<span class="s2">&quot;qd3d&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;x-world/x-3dmf&quot;</span>
-<span class="s2">&quot;qif&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-quicktime&quot;</span>
-<span class="s2">&quot;qt&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;video/quicktime&quot;</span>
-<span class="s2">&quot;qtc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-qtc&quot;</span>
-<span class="s2">&quot;qti&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-quicktime&quot;</span>
-<span class="s2">&quot;qtif&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-quicktime&quot;</span>
-<span class="s2">&quot;ra&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-realaudio&quot;</span>
-<span class="s2">&quot;ram&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-pn-realaudio&quot;</span>
-<span class="s2">&quot;ras&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-cmu-raster&quot;</span>
-<span class="s2">&quot;rast&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;image/cmu-raster&quot;</span>
-<span class="s2">&quot;rexx&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-script.rexx&quot;</span>
-<span class="s2">&quot;rf&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;image/vnd.rn-realflash&quot;</span>
-<span class="s2">&quot;rgb&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-rgb&quot;</span>
-<span class="s2">&quot;rm&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-pn-realaudio&quot;</span>
-<span class="s2">&quot;rmi&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/mid&quot;</span>
-<span class="s2">&quot;rmm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-pn-realaudio&quot;</span>
-<span class="s2">&quot;rmp&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-pn-realaudio&quot;</span>
-<span class="s2">&quot;rng&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/ringing-tones&quot;</span>
-<span class="s2">&quot;rnx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/vnd.rn-realplayer&quot;</span>
-<span class="s2">&quot;roff&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-troff&quot;</span>
-<span class="s2">&quot;rp&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;image/vnd.rn-realpix&quot;</span>
-<span class="s2">&quot;rpm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-pn-realaudio-plugin&quot;</span>
-<span class="s2">&quot;rt&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;text/richtext&quot;</span>
-<span class="s2">&quot;rtf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/richtext&quot;</span>
-<span class="s2">&quot;rtx&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/richtext&quot;</span>
-<span class="s2">&quot;rv&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;video/vnd.rn-realvideo&quot;</span>
-<span class="s2">&quot;s&quot;</span>         <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-asm&quot;</span>
-<span class="s2">&quot;s3m&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/s3m&quot;</span>
-<span class="s2">&quot;saveme&quot;</span>    <span class="o">-&gt;</span>       <span class="s2">&quot;application/octet-stream&quot;</span>
-<span class="s2">&quot;sbk&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-tbook&quot;</span>
-<span class="s2">&quot;scm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-script.scheme&quot;</span>
-<span class="s2">&quot;sdml&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;sdp&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-sdp&quot;</span>
-<span class="s2">&quot;sdr&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/sounder&quot;</span>
-<span class="s2">&quot;sea&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-sea&quot;</span>
-<span class="s2">&quot;set&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/set&quot;</span>
-<span class="s2">&quot;sgm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/sgml&quot;</span>
-<span class="s2">&quot;sgml&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;text/sgml&quot;</span>
-<span class="s2">&quot;sh&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-script.sh&quot;</span>
-<span class="s2">&quot;shar&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-shar&quot;</span>
-<span class="s2">&quot;shtml&quot;</span>     <span class="o">-&gt;</span>       <span class="s2">&quot;text/html&quot;</span>
-<span class="s2">&quot;sid&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-psid&quot;</span>
-<span class="s2">&quot;sit&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-sit&quot;</span>
-<span class="s2">&quot;skd&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-koan&quot;</span>
-<span class="s2">&quot;skm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-koan&quot;</span>
-<span class="s2">&quot;skp&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-koan&quot;</span>
-<span class="s2">&quot;skt&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-koan&quot;</span>
-<span class="s2">&quot;sl&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-seelogo&quot;</span>
-<span class="s2">&quot;smi&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/smil&quot;</span>
-<span class="s2">&quot;smil&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/smil&quot;</span>
-<span class="s2">&quot;snd&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/basic&quot;</span>
-<span class="s2">&quot;sol&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/solids&quot;</span>
-<span class="s2">&quot;spc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-speech&quot;</span>
-<span class="s2">&quot;spl&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/futuresplash&quot;</span>
-<span class="s2">&quot;spr&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-sprite&quot;</span>
-<span class="s2">&quot;sprite&quot;</span>    <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-sprite&quot;</span>
-<span class="s2">&quot;src&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-wais-source&quot;</span>
-<span class="s2">&quot;ssi&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-server-parsed-html&quot;</span>
-<span class="s2">&quot;ssm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/streamingmedia&quot;</span>
-<span class="s2">&quot;sst&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/vnd.ms-pki.certstore&quot;</span>
-<span class="s2">&quot;step&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/step&quot;</span>
-<span class="s2">&quot;stl&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/sla&quot;</span>
-<span class="s2">&quot;stp&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/step&quot;</span>
-<span class="s2">&quot;sv4cpio&quot;</span>   <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-sv4cpio&quot;</span>
-<span class="s2">&quot;sv4crc&quot;</span>    <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-sv4crc&quot;</span>
-<span class="s2">&quot;svf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-dwg&quot;</span>
-<span class="s2">&quot;svr&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-world&quot;</span>
-<span class="s2">&quot;swf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-shockwave-flash&quot;</span>
-<span class="s2">&quot;t&quot;</span>         <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-troff&quot;</span>
-<span class="s2">&quot;talk&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-speech&quot;</span>
-<span class="s2">&quot;tar&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-tar&quot;</span>
-<span class="s2">&quot;tbk&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-tbook&quot;</span>
-<span class="s2">&quot;tcl&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-script.tcl&quot;</span>
-<span class="s2">&quot;tcsh&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-script.tcsh&quot;</span>
-<span class="s2">&quot;tex&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-tex&quot;</span>
-<span class="s2">&quot;texi&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-texinfo&quot;</span>
-<span class="s2">&quot;texinfo&quot;</span>   <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-texinfo&quot;</span>
-<span class="s2">&quot;text&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;tgz&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/gnutar&quot;</span>
-<span class="s2">&quot;tif&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/tiff&quot;</span>
-<span class="s2">&quot;tiff&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;image/tiff&quot;</span>
-<span class="s2">&quot;tr&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-troff&quot;</span>
-<span class="s2">&quot;tsi&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/tsp-audio&quot;</span>
-<span class="s2">&quot;tsp&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/tsplayer&quot;</span>
-<span class="s2">&quot;tsv&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/tab-separated-values&quot;</span>
-<span class="s2">&quot;turbot&quot;</span>    <span class="o">-&gt;</span>       <span class="s2">&quot;image/florian&quot;</span>
-<span class="s2">&quot;txt&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/plain&quot;</span>
-<span class="s2">&quot;uni&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/uri-list&quot;</span>
-<span class="s2">&quot;unis&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;text/uri-list&quot;</span>
-<span class="s2">&quot;unv&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/i-deas&quot;</span>
-<span class="s2">&quot;uri&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/uri-list&quot;</span>
-<span class="s2">&quot;uris&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;text/uri-list&quot;</span>
-<span class="s2">&quot;ustar&quot;</span>     <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-ustar&quot;</span>
-<span class="s2">&quot;uu&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-uuencode&quot;</span>
-<span class="s2">&quot;uue&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-uuencode&quot;</span>
-<span class="s2">&quot;vcd&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-cdlink&quot;</span>
-<span class="s2">&quot;vcs&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-vcalendar&quot;</span>
-<span class="s2">&quot;vda&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/vda&quot;</span>
-<span class="s2">&quot;vdo&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/vdo&quot;</span>
-<span class="s2">&quot;vew&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/groupwise&quot;</span>
-<span class="s2">&quot;viv&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/vivo&quot;</span>
-<span class="s2">&quot;vivo&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;video/vivo&quot;</span>
-<span class="s2">&quot;vmd&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/vocaltec-media-desc&quot;</span>
-<span class="s2">&quot;vmf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/vocaltec-media-file&quot;</span>
-<span class="s2">&quot;voc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/voc&quot;</span>
-<span class="s2">&quot;vos&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/vosaic&quot;</span>
-<span class="s2">&quot;vox&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/voxware&quot;</span>
-<span class="s2">&quot;vqe&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-twinvq-plugin&quot;</span>
-<span class="s2">&quot;vqf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-twinvq&quot;</span>
-<span class="s2">&quot;vql&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/x-twinvq-plugin&quot;</span>
-<span class="s2">&quot;vrml&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-vrml&quot;</span>
-<span class="s2">&quot;vrt&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;x-world/x-vrt&quot;</span>
-<span class="s2">&quot;vsd&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-visio&quot;</span>
-<span class="s2">&quot;vst&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-visio&quot;</span>
-<span class="s2">&quot;vsw&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-visio&quot;</span>
-<span class="s2">&quot;w60&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/wordperfect6.0&quot;</span>
-<span class="s2">&quot;w61&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/wordperfect6.1&quot;</span>
-<span class="s2">&quot;w6w&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/msword&quot;</span>
-<span class="s2">&quot;wav&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;audio/wav&quot;</span>
-<span class="s2">&quot;wb1&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-qpro&quot;</span>
-<span class="s2">&quot;wbmp&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;image/vnd.wap.wbmp&quot;</span>
-<span class="s2">&quot;web&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/vnd.xara&quot;</span>
-<span class="s2">&quot;wiz&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/msword&quot;</span>
-<span class="s2">&quot;wk1&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-123&quot;</span>
-<span class="s2">&quot;wmf&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;windows/metafile&quot;</span>
-<span class="s2">&quot;wml&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/vnd.wap.wml&quot;</span>
-<span class="s2">&quot;wmlc&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/vnd.wap.wmlc&quot;</span>
-<span class="s2">&quot;wmls&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;text/vnd.wap.wmlscript&quot;</span>
-<span class="s2">&quot;wmlsc&quot;</span>     <span class="o">-&gt;</span>       <span class="s2">&quot;application/vnd.wap.wmlscriptc&quot;</span>
-<span class="s2">&quot;word&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/msword&quot;</span>
-<span class="s2">&quot;wp&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/wordperfect&quot;</span>
-<span class="s2">&quot;wp5&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/wordperfect&quot;</span>
-<span class="s2">&quot;wp6&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/wordperfect&quot;</span>
-<span class="s2">&quot;wpd&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/wordperfect&quot;</span>
-<span class="s2">&quot;wq1&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-lotus&quot;</span>
-<span class="s2">&quot;wri&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-wri&quot;</span>
-<span class="s2">&quot;wrl&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-world&quot;</span>
-<span class="s2">&quot;wrz&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;model/vrml&quot;</span>
-<span class="s2">&quot;wsc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/scriplet&quot;</span>
-<span class="s2">&quot;wsrc&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-wais-source&quot;</span>
-<span class="s2">&quot;wtk&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-wintalk&quot;</span>
-<span class="s2">&quot;x-png&quot;</span>     <span class="o">-&gt;</span>       <span class="s2">&quot;image/png&quot;</span>
-<span class="s2">&quot;xbm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-xbitmap&quot;</span>
-<span class="s2">&quot;xdr&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-amt-demorun&quot;</span>
-<span class="s2">&quot;xgz&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;xgl/drawing&quot;</span>
-<span class="s2">&quot;xif&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/vnd.xiff&quot;</span>
-<span class="s2">&quot;xl&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;application/excel&quot;</span>
-<span class="s2">&quot;xla&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/excel&quot;</span>
-<span class="s2">&quot;xlb&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/excel&quot;</span>
-<span class="s2">&quot;xlc&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/excel&quot;</span>
-<span class="s2">&quot;xld&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/excel&quot;</span>
-<span class="s2">&quot;xlk&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/excel&quot;</span>
-<span class="s2">&quot;xll&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/excel&quot;</span>
-<span class="s2">&quot;xlm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/excel&quot;</span>
-<span class="s2">&quot;xls&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/excel&quot;</span>
-<span class="s2">&quot;xlt&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/excel&quot;</span>
-<span class="s2">&quot;xlv&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/excel&quot;</span>
-<span class="s2">&quot;xlw&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/excel&quot;</span>
-<span class="s2">&quot;xm&quot;</span>        <span class="o">-&gt;</span>       <span class="s2">&quot;audio/xm&quot;</span>
-<span class="s2">&quot;xml&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/xml&quot;</span>
-<span class="s2">&quot;xmz&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;xgl/movie&quot;</span>
-<span class="s2">&quot;xpix&quot;</span>      <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-vnd.ls-xpix&quot;</span>
-<span class="s2">&quot;xpm&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/xpm&quot;</span>
-<span class="s2">&quot;xsr&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;video/x-amt-showrun&quot;</span>
-<span class="s2">&quot;xwd&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;image/x-xwd&quot;</span>
-<span class="s2">&quot;xyz&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;chemical/x-pdb&quot;</span>
-<span class="s2">&quot;z&quot;</span>         <span class="o">-&gt;</span>       <span class="s2">&quot;application/x-compressed&quot;</span>
-<span class="s2">&quot;zip&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/zip&quot;</span>
-<span class="s2">&quot;zoo&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;application/octet-stream&quot;</span>
-<span class="s2">&quot;zsh&quot;</span>       <span class="o">-&gt;</span>       <span class="s2">&quot;text/x-script.zsh&quot;</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="s2">&quot;3dm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;x-world/x-3dmf&quot;</span>
+<span class="s2">&quot;3dmf&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;x-world/x-3dmf&quot;</span>
+<span class="s2">&quot;3gp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/3gpp&quot;</span>
+<span class="s2">&quot;3gpp&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;video/3gpp&quot;</span>
+<span class="s2">&quot;7z&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-7z-compressed&quot;</span>
+<span class="s2">&quot;a&quot;</span>         <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;aab&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-authorware-bin&quot;</span>
+<span class="s2">&quot;aam&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-authorware-map&quot;</span>
+<span class="s2">&quot;aas&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-authorware-seg&quot;</span>
+<span class="s2">&quot;abc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/vnd.abc&quot;</span>
+<span class="s2">&quot;acgi&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;text/html&quot;</span>
+<span class="s2">&quot;afl&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/animaflex&quot;</span>
+<span class="s2">&quot;ai&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/postscript&quot;</span>
+<span class="s2">&quot;aif&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/aiff&quot;</span>
+<span class="s2">&quot;aifc&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;audio/aiff&quot;</span>
+<span class="s2">&quot;aiff&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;audio/aiff&quot;</span>
+<span class="s2">&quot;aim&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-aim&quot;</span>
+<span class="s2">&quot;aip&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-audiosoft-intra&quot;</span>
+<span class="s2">&quot;ani&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-navi-animation&quot;</span>
+<span class="s2">&quot;aos&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-nokia-9000-communicator-add-on-software&quot;</span>
+<span class="s2">&quot;aps&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/mime&quot;</span>
+<span class="s2">&quot;arc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;arj&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/arj&quot;</span>
+<span class="s2">&quot;art&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-jg&quot;</span>
+<span class="s2">&quot;asf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-ms-asf&quot;</span>
+<span class="s2">&quot;asm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-asm&quot;</span>
+<span class="s2">&quot;asp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/asp&quot;</span>
+<span class="s2">&quot;asx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-ms-asf&quot;</span>
+<span class="s2">&quot;atom&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/atom+xml&quot;</span>
+<span class="s2">&quot;au&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-au&quot;</span>
+<span class="s2">&quot;avi&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-msvideo&quot;</span>
+<span class="s2">&quot;avs&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/avs-video&quot;</span>
+<span class="s2">&quot;bcpio&quot;</span>     <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-bcpio&quot;</span>
+<span class="s2">&quot;bin&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;bm&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;image/bmp&quot;</span>
+<span class="s2">&quot;bmp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-ms-bmp&quot;</span>
+<span class="s2">&quot;boo&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/book&quot;</span>
+<span class="s2">&quot;book&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/book&quot;</span>
+<span class="s2">&quot;boz&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-bzip2&quot;</span>
+<span class="s2">&quot;bsh&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-bsh&quot;</span>
+<span class="s2">&quot;bz&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-bzip&quot;</span>
+<span class="s2">&quot;bz2&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-bzip2&quot;</span>
+<span class="s2">&quot;c&quot;</span>         <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;c++&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;cat&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.ms-pki.seccat&quot;</span>
+<span class="s2">&quot;cc&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;ccad&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/clariscad&quot;</span>
+<span class="s2">&quot;cco&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-cocoa&quot;</span>
+<span class="s2">&quot;cdf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-cdf&quot;</span>
+<span class="s2">&quot;cer&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-x509-ca-cert&quot;</span>
+<span class="s2">&quot;cha&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-chat&quot;</span>
+<span class="s2">&quot;chat&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-chat&quot;</span>
+<span class="s2">&quot;class&quot;</span>     <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-java-class&quot;</span>
+<span class="s2">&quot;com&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;conf&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;cpio&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-cpio&quot;</span>
+<span class="s2">&quot;cpp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-c&quot;</span>
+<span class="s2">&quot;cpt&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-cpt&quot;</span>
+<span class="s2">&quot;crl&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/pkix-crl&quot;</span>
+<span class="s2">&quot;crt&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-x509-ca-cert&quot;</span>
+<span class="s2">&quot;csh&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-script.csh&quot;</span>
+<span class="s2">&quot;css&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/css&quot;</span>
+<span class="s2">&quot;cxx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;data&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;dcr&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-director&quot;</span>
+<span class="s2">&quot;deb&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;deepv&quot;</span>     <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-deepv&quot;</span>
+<span class="s2">&quot;def&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;der&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-x509-ca-cert&quot;</span>
+<span class="s2">&quot;dif&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-dv&quot;</span>
+<span class="s2">&quot;dir&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-director&quot;</span>
+<span class="s2">&quot;dl&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-dl&quot;</span>
+<span class="s2">&quot;dll&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;dmg&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;doc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/msword&quot;</span>
+<span class="s2">&quot;docx&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.openxmlformats-officedocument.wordprocessingml.document&quot;</span>
+<span class="s2">&quot;dot&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/msword&quot;</span>
+<span class="s2">&quot;dp&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/commonground&quot;</span>
+<span class="s2">&quot;drw&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/drafting&quot;</span>
+<span class="s2">&quot;dump&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;dv&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-dv&quot;</span>
+<span class="s2">&quot;dvi&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-dvi&quot;</span>
+<span class="s2">&quot;dwf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;model/vnd.dwf&quot;</span>
+<span class="s2">&quot;dwg&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-dwg&quot;</span>
+<span class="s2">&quot;dxf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-dwg&quot;</span>
+<span class="s2">&quot;dxr&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-director&quot;</span>
+<span class="s2">&quot;ear&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/java-archive&quot;</span>
+<span class="s2">&quot;el&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-script.elisp&quot;</span>
+<span class="s2">&quot;elc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-elc&quot;</span>
+<span class="s2">&quot;env&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-envoy&quot;</span>
+<span class="s2">&quot;eot&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.ms-fontobject&quot;</span>
+<span class="s2">&quot;eps&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/postscript&quot;</span>
+<span class="s2">&quot;es&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-esrehber&quot;</span>
+<span class="s2">&quot;etx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-setext&quot;</span>
+<span class="s2">&quot;evy&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-envoy&quot;</span>
+<span class="s2">&quot;exe&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;f&quot;</span>         <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;f77&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;f90&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;fdf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.fdf&quot;</span>
+<span class="s2">&quot;fif&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/fif&quot;</span>
+<span class="s2">&quot;fli&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-fli&quot;</span>
+<span class="s2">&quot;flo&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/florian&quot;</span>
+<span class="s2">&quot;flv&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-flv&quot;</span>
+<span class="s2">&quot;flx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/vnd.fmi.flexstor&quot;</span>
+<span class="s2">&quot;fmf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-atomic3d-feature&quot;</span>
+<span class="s2">&quot;for&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;fpx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/vnd.fpx&quot;</span>
+<span class="s2">&quot;frl&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/freeloader&quot;</span>
+<span class="s2">&quot;funk&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;audio/make&quot;</span>
+<span class="s2">&quot;g&quot;</span>         <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;g3&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;image/g3fax&quot;</span>
+<span class="s2">&quot;gif&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/gif&quot;</span>
+<span class="s2">&quot;gl&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-gl&quot;</span>
+<span class="s2">&quot;gsd&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-gsm&quot;</span>
+<span class="s2">&quot;gsm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-gsm&quot;</span>
+<span class="s2">&quot;gsp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-gsp&quot;</span>
+<span class="s2">&quot;gss&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-gss&quot;</span>
+<span class="s2">&quot;gtar&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-gtar&quot;</span>
+<span class="s2">&quot;gz&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-gzip&quot;</span>
+<span class="s2">&quot;gzip&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-gzip&quot;</span>
+<span class="s2">&quot;h&quot;</span>         <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;hdf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-hdf&quot;</span>
+<span class="s2">&quot;help&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-helpfile&quot;</span>
+<span class="s2">&quot;hgl&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.hp-hpgl&quot;</span>
+<span class="s2">&quot;hh&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;hlb&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-script&quot;</span>
+<span class="s2">&quot;hlp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-helpfile&quot;</span>
+<span class="s2">&quot;hpg&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.hp-hpgl&quot;</span>
+<span class="s2">&quot;hpgl&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.hp-hpgl&quot;</span>
+<span class="s2">&quot;hqx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/mac-binhex40&quot;</span>
+<span class="s2">&quot;hta&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/hta&quot;</span>
+<span class="s2">&quot;htc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-component&quot;</span>
+<span class="s2">&quot;htm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/html&quot;</span>
+<span class="s2">&quot;html&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;text/html&quot;</span>
+<span class="s2">&quot;htmls&quot;</span>     <span class="o">-&gt;</span>      <span class="s2">&quot;text/html&quot;</span>
+<span class="s2">&quot;htt&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/webviewhtml&quot;</span>
+<span class="s2">&quot;htx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/html&quot;</span>
+<span class="s2">&quot;ice&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;x-conference/x-cooltalk&quot;</span>
+<span class="s2">&quot;ico&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-icon&quot;</span>
+<span class="s2">&quot;idc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;ief&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/ief&quot;</span>
+<span class="s2">&quot;iefs&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;image/ief&quot;</span>
+<span class="s2">&quot;iges&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/iges&quot;</span>
+<span class="s2">&quot;igs&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/iges&quot;</span>
+<span class="s2">&quot;ima&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-ima&quot;</span>
+<span class="s2">&quot;imap&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-httpd-imap&quot;</span>
+<span class="s2">&quot;img&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;inf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/inf&quot;</span>
+<span class="s2">&quot;ins&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-internett-signup&quot;</span>
+<span class="s2">&quot;ip&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-ip2&quot;</span>
+<span class="s2">&quot;iso&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;isu&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-isvideo&quot;</span>
+<span class="s2">&quot;it&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;audio/it&quot;</span>
+<span class="s2">&quot;iv&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-inventor&quot;</span>
+<span class="s2">&quot;ivr&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;i-world/i-vrml&quot;</span>
+<span class="s2">&quot;ivy&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-livescreen&quot;</span>
+<span class="s2">&quot;jad&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/vnd.sun.j2me.app-descriptor&quot;</span>
+<span class="s2">&quot;jam&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-jam&quot;</span>
+<span class="s2">&quot;jar&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/java-archive&quot;</span>
+<span class="s2">&quot;jardiff&quot;</span>   <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-java-archive-diff&quot;</span>
+<span class="s2">&quot;jav&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;java&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;jcm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-java-commerce&quot;</span>
+<span class="s2">&quot;jfif&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;image/jpeg&quot;</span>
+<span class="s2">&quot;jfif-tbnl&quot;</span> <span class="o">-&gt;</span>      <span class="s2">&quot;image/jpeg&quot;</span>
+<span class="s2">&quot;jng&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-jng&quot;</span>
+<span class="s2">&quot;jnlp&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-java-jnlp-file&quot;</span>
+<span class="s2">&quot;jpe&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/jpeg&quot;</span>
+<span class="s2">&quot;jpeg&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;image/jpeg&quot;</span>
+<span class="s2">&quot;jpg&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/jpeg&quot;</span>
+<span class="s2">&quot;jps&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-jps&quot;</span>
+<span class="s2">&quot;js&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/javascript&quot;</span>
+<span class="s2">&quot;json&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/json&quot;</span>
+<span class="s2">&quot;jut&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/jutvision&quot;</span>
+<span class="s2">&quot;kar&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;music/x-karaoke&quot;</span>
+<span class="s2">&quot;kml&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.google-earth.kml+xml&quot;</span>
+<span class="s2">&quot;kmz&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.google-earth.kmz&quot;</span>
+<span class="s2">&quot;ksh&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-ksh&quot;</span>
+<span class="s2">&quot;la&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-nspaudio&quot;</span>
+<span class="s2">&quot;lam&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-liveaudio&quot;</span>
+<span class="s2">&quot;latex&quot;</span>     <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-latex&quot;</span>
+<span class="s2">&quot;lha&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-lha&quot;</span>
+<span class="s2">&quot;lhx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;list&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;lma&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/nspaudio&quot;</span>
+<span class="s2">&quot;log&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;lst&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;lsx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-la-asf&quot;</span>
+<span class="s2">&quot;ltx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-latex&quot;</span>
+<span class="s2">&quot;lzh&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-lzh&quot;</span>
+<span class="s2">&quot;lzx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-lzx&quot;</span>
+<span class="s2">&quot;m&quot;</span>         <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;m1v&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/mpeg&quot;</span>
+<span class="s2">&quot;m2a&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/mpeg&quot;</span>
+<span class="s2">&quot;m2v&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/mpeg&quot;</span>
+<span class="s2">&quot;m3u&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-mpequrl&quot;</span>
+<span class="s2">&quot;m3u8&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.apple.mpegurl&quot;</span>
+<span class="s2">&quot;m4a&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-m4a&quot;</span>
+<span class="s2">&quot;m4v&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-m4v&quot;</span>
+<span class="s2">&quot;man&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-troff-man&quot;</span>
+<span class="s2">&quot;map&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-navimap&quot;</span>
+<span class="s2">&quot;mar&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;mbd&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/mbedlet&quot;</span>
+<span class="s2">&quot;mc$&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-magic-cap-package-1.0&quot;</span>
+<span class="s2">&quot;mcd&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-mathcad&quot;</span>
+<span class="s2">&quot;mcf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/mcf&quot;</span>
+<span class="s2">&quot;mcp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/netmc&quot;</span>
+<span class="s2">&quot;me&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-troff-me&quot;</span>
+<span class="s2">&quot;mht&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;message/rfc822&quot;</span>
+<span class="s2">&quot;mhtml&quot;</span>     <span class="o">-&gt;</span>      <span class="s2">&quot;message/rfc822&quot;</span>
+<span class="s2">&quot;mid&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/midi&quot;</span>
+<span class="s2">&quot;midi&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;audio/midi&quot;</span>
+<span class="s2">&quot;mif&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-frame&quot;</span>
+<span class="s2">&quot;mime&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;message/rfc822&quot;</span>
+<span class="s2">&quot;mjf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-vnd.audioexplosion.mjuicemediafile&quot;</span>
+<span class="s2">&quot;mjpg&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-motion-jpeg&quot;</span>
+<span class="s2">&quot;mm&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-meme&quot;</span>
+<span class="s2">&quot;mme&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/base64&quot;</span>
+<span class="s2">&quot;mml&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/mathml&quot;</span>
+<span class="s2">&quot;mng&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-mng&quot;</span>
+<span class="s2">&quot;mod&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-mod&quot;</span>
+<span class="s2">&quot;moov&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;video/quicktime&quot;</span>
+<span class="s2">&quot;mov&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/quicktime&quot;</span>
+<span class="s2">&quot;movie&quot;</span>     <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-sgi-movie&quot;</span>
+<span class="s2">&quot;mp2&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/mpeg&quot;</span>
+<span class="s2">&quot;mp3&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/mpeg&quot;</span>
+<span class="s2">&quot;mp4&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/mp4&quot;</span>
+<span class="s2">&quot;mpa&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/mpeg&quot;</span>
+<span class="s2">&quot;mpc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-project&quot;</span>
+<span class="s2">&quot;mpe&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/mpeg&quot;</span>
+<span class="s2">&quot;mpeg&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;video/mpeg&quot;</span>
+<span class="s2">&quot;mpg&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/mpeg&quot;</span>
+<span class="s2">&quot;mpga&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;audio/mpeg&quot;</span>
+<span class="s2">&quot;mpp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.ms-project&quot;</span>
+<span class="s2">&quot;mpt&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-project&quot;</span>
+<span class="s2">&quot;mpv&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-project&quot;</span>
+<span class="s2">&quot;mpx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-project&quot;</span>
+<span class="s2">&quot;mrc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/marc&quot;</span>
+<span class="s2">&quot;ms&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-troff-ms&quot;</span>
+<span class="s2">&quot;msi&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;msm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;msp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;mv&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-sgi-movie&quot;</span>
+<span class="s2">&quot;my&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;audio/make&quot;</span>
+<span class="s2">&quot;mzz&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-vnd.audioexplosion.mzz&quot;</span>
+<span class="s2">&quot;nap&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/naplps&quot;</span>
+<span class="s2">&quot;naplps&quot;</span>    <span class="o">-&gt;</span>      <span class="s2">&quot;image/naplps&quot;</span>
+<span class="s2">&quot;nc&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-netcdf&quot;</span>
+<span class="s2">&quot;ncm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.nokia.configuration-message&quot;</span>
+<span class="s2">&quot;nif&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-niff&quot;</span>
+<span class="s2">&quot;niff&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-niff&quot;</span>
+<span class="s2">&quot;nix&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-mix-transfer&quot;</span>
+<span class="s2">&quot;nsc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-conference&quot;</span>
+<span class="s2">&quot;nvd&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-navidoc&quot;</span>
+<span class="s2">&quot;o&quot;</span>         <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;oda&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/oda&quot;</span>
+<span class="s2">&quot;odg&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.oasis.opendocument.graphics&quot;</span>
+<span class="s2">&quot;odp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.oasis.opendocument.presentation&quot;</span>
+<span class="s2">&quot;ods&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.oasis.opendocument.spreadsheet&quot;</span>
+<span class="s2">&quot;odt&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.oasis.opendocument.text&quot;</span>
+<span class="s2">&quot;ogg&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/ogg&quot;</span>
+<span class="s2">&quot;omc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-omc&quot;</span>
+<span class="s2">&quot;omcd&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-omcdatamaker&quot;</span>
+<span class="s2">&quot;omcr&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-omcregerator&quot;</span>
+<span class="s2">&quot;p&quot;</span>         <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-pascal&quot;</span>
+<span class="s2">&quot;p10&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-pkcs10&quot;</span>
+<span class="s2">&quot;p12&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-pkcs12&quot;</span>
+<span class="s2">&quot;p7c&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-pkcs7-mime&quot;</span>
+<span class="s2">&quot;p7m&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-pkcs7-mime&quot;</span>
+<span class="s2">&quot;p7r&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-pkcs7-certreqresp&quot;</span>
+<span class="s2">&quot;p7s&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/pkcs7-signature&quot;</span>
+<span class="s2">&quot;part&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/pro_eng&quot;</span>
+<span class="s2">&quot;pas&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/pascal&quot;</span>
+<span class="s2">&quot;pbm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-portable-bitmap&quot;</span>
+<span class="s2">&quot;pcl&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-pcl&quot;</span>
+<span class="s2">&quot;pct&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-pict&quot;</span>
+<span class="s2">&quot;pcx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-pcx&quot;</span>
+<span class="s2">&quot;pdb&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-pilot&quot;</span>
+<span class="s2">&quot;pdf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/pdf&quot;</span>
+<span class="s2">&quot;pem&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-x509-ca-cert&quot;</span>
+<span class="s2">&quot;pfunk&quot;</span>     <span class="o">-&gt;</span>      <span class="s2">&quot;audio/make&quot;</span>
+<span class="s2">&quot;pgm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-portable-graymap&quot;</span>
+<span class="s2">&quot;pic&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/pict&quot;</span>
+<span class="s2">&quot;pict&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;image/pict&quot;</span>
+<span class="s2">&quot;pkg&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-newton-compatible-pkg&quot;</span>
+<span class="s2">&quot;pko&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.ms-pki.pko&quot;</span>
+<span class="s2">&quot;pl&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-perl&quot;</span>
+<span class="s2">&quot;plx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-pixclscript&quot;</span>
+<span class="s2">&quot;pm&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-perl&quot;</span>
+<span class="s2">&quot;pm4&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-pagemaker&quot;</span>
+<span class="s2">&quot;pm5&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-pagemaker&quot;</span>
+<span class="s2">&quot;png&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/png&quot;</span>
+<span class="s2">&quot;pnm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-portable-anymap&quot;</span>
+<span class="s2">&quot;pot&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/mspowerpoint&quot;</span>
+<span class="s2">&quot;pov&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;model/x-pov&quot;</span>
+<span class="s2">&quot;ppa&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.ms-powerpoint&quot;</span>
+<span class="s2">&quot;ppm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-portable-pixmap&quot;</span>
+<span class="s2">&quot;pps&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/mspowerpoint&quot;</span>
+<span class="s2">&quot;ppt&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.ms-powerpoint&quot;</span>
+<span class="s2">&quot;pptx&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.openxmlformats-officedocument.presentationml.presentation&quot;</span>
+<span class="s2">&quot;ppz&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/mspowerpoint&quot;</span>
+<span class="s2">&quot;prc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-pilot&quot;</span>
+<span class="s2">&quot;pre&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-freelance&quot;</span>
+<span class="s2">&quot;prt&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/pro_eng&quot;</span>
+<span class="s2">&quot;ps&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/postscript&quot;</span>
+<span class="s2">&quot;psd&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;pvu&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;paleovu/x-pv&quot;</span>
+<span class="s2">&quot;pwz&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.ms-powerpoint&quot;</span>
+<span class="s2">&quot;py&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-script.phyton&quot;</span>
+<span class="s2">&quot;pyc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-bytecode.python&quot;</span>
+<span class="s2">&quot;qcp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/vnd.qcelp&quot;</span>
+<span class="s2">&quot;qd3&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;x-world/x-3dmf&quot;</span>
+<span class="s2">&quot;qd3d&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;x-world/x-3dmf&quot;</span>
+<span class="s2">&quot;qif&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-quicktime&quot;</span>
+<span class="s2">&quot;qt&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;video/quicktime&quot;</span>
+<span class="s2">&quot;qtc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-qtc&quot;</span>
+<span class="s2">&quot;qti&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-quicktime&quot;</span>
+<span class="s2">&quot;qtif&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-quicktime&quot;</span>
+<span class="s2">&quot;ra&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-realaudio&quot;</span>
+<span class="s2">&quot;ram&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-pn-realaudio&quot;</span>
+<span class="s2">&quot;rar&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-rar-compressed&quot;</span>
+<span class="s2">&quot;ras&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-cmu-raster&quot;</span>
+<span class="s2">&quot;rast&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;image/cmu-raster&quot;</span>
+<span class="s2">&quot;rexx&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-script.rexx&quot;</span>
+<span class="s2">&quot;rf&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;image/vnd.rn-realflash&quot;</span>
+<span class="s2">&quot;rgb&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-rgb&quot;</span>
+<span class="s2">&quot;rm&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-pn-realaudio&quot;</span>
+<span class="s2">&quot;rmi&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/mid&quot;</span>
+<span class="s2">&quot;rmm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-pn-realaudio&quot;</span>
+<span class="s2">&quot;rmp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-pn-realaudio&quot;</span>
+<span class="s2">&quot;rng&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/ringing-tones&quot;</span>
+<span class="s2">&quot;rnx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.rn-realplayer&quot;</span>
+<span class="s2">&quot;roff&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-troff&quot;</span>
+<span class="s2">&quot;rp&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;image/vnd.rn-realpix&quot;</span>
+<span class="s2">&quot;rpm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-redhat-package-manager&quot;</span>
+<span class="s2">&quot;rss&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/rss+xml&quot;</span>
+<span class="s2">&quot;rt&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;text/richtext&quot;</span>
+<span class="s2">&quot;rtf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/rtf&quot;</span>
+<span class="s2">&quot;rtx&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/richtext&quot;</span>
+<span class="s2">&quot;run&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-makeself&quot;</span>
+<span class="s2">&quot;rv&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;video/vnd.rn-realvideo&quot;</span>
+<span class="s2">&quot;s&quot;</span>         <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-asm&quot;</span>
+<span class="s2">&quot;s3m&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/s3m&quot;</span>
+<span class="s2">&quot;saveme&quot;</span>    <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;sbk&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-tbook&quot;</span>
+<span class="s2">&quot;scm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-script.scheme&quot;</span>
+<span class="s2">&quot;sdml&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;sdp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-sdp&quot;</span>
+<span class="s2">&quot;sdr&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/sounder&quot;</span>
+<span class="s2">&quot;sea&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-sea&quot;</span>
+<span class="s2">&quot;set&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/set&quot;</span>
+<span class="s2">&quot;sgm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/sgml&quot;</span>
+<span class="s2">&quot;sgml&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;text/sgml&quot;</span>
+<span class="s2">&quot;sh&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-script.sh&quot;</span>
+<span class="s2">&quot;shar&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-shar&quot;</span>
+<span class="s2">&quot;shtml&quot;</span>     <span class="o">-&gt;</span>      <span class="s2">&quot;text/html&quot;</span>
+<span class="s2">&quot;sid&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-psid&quot;</span>
+<span class="s2">&quot;sit&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-stuffit&quot;</span>
+<span class="s2">&quot;skd&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-koan&quot;</span>
+<span class="s2">&quot;skm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-koan&quot;</span>
+<span class="s2">&quot;skp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-koan&quot;</span>
+<span class="s2">&quot;skt&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-koan&quot;</span>
+<span class="s2">&quot;sl&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-seelogo&quot;</span>
+<span class="s2">&quot;smi&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/smil&quot;</span>
+<span class="s2">&quot;smil&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/smil&quot;</span>
+<span class="s2">&quot;snd&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/basic&quot;</span>
+<span class="s2">&quot;sol&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/solids&quot;</span>
+<span class="s2">&quot;spc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-speech&quot;</span>
+<span class="s2">&quot;spl&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/futuresplash&quot;</span>
+<span class="s2">&quot;spr&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-sprite&quot;</span>
+<span class="s2">&quot;sprite&quot;</span>    <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-sprite&quot;</span>
+<span class="s2">&quot;src&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-wais-source&quot;</span>
+<span class="s2">&quot;ssi&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-server-parsed-html&quot;</span>
+<span class="s2">&quot;ssm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/streamingmedia&quot;</span>
+<span class="s2">&quot;sst&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.ms-pki.certstore&quot;</span>
+<span class="s2">&quot;step&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/step&quot;</span>
+<span class="s2">&quot;stl&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/sla&quot;</span>
+<span class="s2">&quot;stp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/step&quot;</span>
+<span class="s2">&quot;sv4cpio&quot;</span>   <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-sv4cpio&quot;</span>
+<span class="s2">&quot;sv4crc&quot;</span>    <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-sv4crc&quot;</span>
+<span class="s2">&quot;svf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-dwg&quot;</span>
+<span class="s2">&quot;svg&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/svg+xml&quot;</span>
+<span class="s2">&quot;svgz&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;image/svg+xml&quot;</span>
+<span class="s2">&quot;svr&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-world&quot;</span>
+<span class="s2">&quot;swf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-shockwave-flash&quot;</span>
+<span class="s2">&quot;t&quot;</span>         <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-troff&quot;</span>
+<span class="s2">&quot;talk&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-speech&quot;</span>
+<span class="s2">&quot;tar&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-tar&quot;</span>
+<span class="s2">&quot;tbk&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-tbook&quot;</span>
+<span class="s2">&quot;tcl&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-tcl&quot;</span>
+<span class="s2">&quot;tcsh&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-script.tcsh&quot;</span>
+<span class="s2">&quot;tex&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-tex&quot;</span>
+<span class="s2">&quot;texi&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-texinfo&quot;</span>
+<span class="s2">&quot;texinfo&quot;</span>   <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-texinfo&quot;</span>
+<span class="s2">&quot;text&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;tgz&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/gnutar&quot;</span>
+<span class="s2">&quot;tif&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/tiff&quot;</span>
+<span class="s2">&quot;tiff&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;image/tiff&quot;</span>
+<span class="s2">&quot;tk&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-tcl&quot;</span>
+<span class="s2">&quot;tr&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-troff&quot;</span>
+<span class="s2">&quot;ts&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;video/mp2t&quot;</span>
+<span class="s2">&quot;tsi&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/tsp-audio&quot;</span>
+<span class="s2">&quot;tsp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/tsplayer&quot;</span>
+<span class="s2">&quot;tsv&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/tab-separated-values&quot;</span>
+<span class="s2">&quot;turbot&quot;</span>    <span class="o">-&gt;</span>      <span class="s2">&quot;image/florian&quot;</span>
+<span class="s2">&quot;txt&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/plain&quot;</span>
+<span class="s2">&quot;uni&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/uri-list&quot;</span>
+<span class="s2">&quot;unis&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;text/uri-list&quot;</span>
+<span class="s2">&quot;unv&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/i-deas&quot;</span>
+<span class="s2">&quot;uri&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/uri-list&quot;</span>
+<span class="s2">&quot;uris&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;text/uri-list&quot;</span>
+<span class="s2">&quot;ustar&quot;</span>     <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-ustar&quot;</span>
+<span class="s2">&quot;uu&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-uuencode&quot;</span>
+<span class="s2">&quot;uue&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-uuencode&quot;</span>
+<span class="s2">&quot;vcd&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-cdlink&quot;</span>
+<span class="s2">&quot;vcs&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-vcalendar&quot;</span>
+<span class="s2">&quot;vda&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vda&quot;</span>
+<span class="s2">&quot;vdo&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/vdo&quot;</span>
+<span class="s2">&quot;vew&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/groupwise&quot;</span>
+<span class="s2">&quot;viv&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/vivo&quot;</span>
+<span class="s2">&quot;vivo&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;video/vivo&quot;</span>
+<span class="s2">&quot;vmd&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vocaltec-media-desc&quot;</span>
+<span class="s2">&quot;vmf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vocaltec-media-file&quot;</span>
+<span class="s2">&quot;voc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/voc&quot;</span>
+<span class="s2">&quot;vos&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/vosaic&quot;</span>
+<span class="s2">&quot;vox&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/voxware&quot;</span>
+<span class="s2">&quot;vqe&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-twinvq-plugin&quot;</span>
+<span class="s2">&quot;vqf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-twinvq&quot;</span>
+<span class="s2">&quot;vql&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/x-twinvq-plugin&quot;</span>
+<span class="s2">&quot;vrml&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-vrml&quot;</span>
+<span class="s2">&quot;vrt&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;x-world/x-vrt&quot;</span>
+<span class="s2">&quot;vsd&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-visio&quot;</span>
+<span class="s2">&quot;vst&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-visio&quot;</span>
+<span class="s2">&quot;vsw&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-visio&quot;</span>
+<span class="s2">&quot;w60&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/wordperfect6.0&quot;</span>
+<span class="s2">&quot;w61&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/wordperfect6.1&quot;</span>
+<span class="s2">&quot;w6w&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/msword&quot;</span>
+<span class="s2">&quot;war&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/java-archive&quot;</span>
+<span class="s2">&quot;wav&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;audio/wav&quot;</span>
+<span class="s2">&quot;wb1&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-qpro&quot;</span>
+<span class="s2">&quot;wbmp&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;image/vnd.wap.wbmp&quot;</span>
+<span class="s2">&quot;web&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.xara&quot;</span>
+<span class="s2">&quot;webm&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;video/webm&quot;</span>
+<span class="s2">&quot;webp&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;image/webp&quot;</span>
+<span class="s2">&quot;wiz&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/msword&quot;</span>
+<span class="s2">&quot;wk1&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-123&quot;</span>
+<span class="s2">&quot;wmf&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;windows/metafile&quot;</span>
+<span class="s2">&quot;wml&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/vnd.wap.wml&quot;</span>
+<span class="s2">&quot;wmlc&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.wap.wmlc&quot;</span>
+<span class="s2">&quot;wmls&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;text/vnd.wap.wmlscript&quot;</span>
+<span class="s2">&quot;wmlsc&quot;</span>     <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.wap.wmlscriptc&quot;</span>
+<span class="s2">&quot;wmv&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-ms-wmv&quot;</span>
+<span class="s2">&quot;woff&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;font/woff&quot;</span>
+<span class="s2">&quot;woff2&quot;</span>     <span class="o">-&gt;</span>      <span class="s2">&quot;font/woff2&quot;</span>
+<span class="s2">&quot;word&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/msword&quot;</span>
+<span class="s2">&quot;wp&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/wordperfect&quot;</span>
+<span class="s2">&quot;wp5&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/wordperfect&quot;</span>
+<span class="s2">&quot;wp6&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/wordperfect&quot;</span>
+<span class="s2">&quot;wpd&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/wordperfect&quot;</span>
+<span class="s2">&quot;wq1&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-lotus&quot;</span>
+<span class="s2">&quot;wri&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-wri&quot;</span>
+<span class="s2">&quot;wrl&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-world&quot;</span>
+<span class="s2">&quot;wrz&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;model/vrml&quot;</span>
+<span class="s2">&quot;wsc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/scriplet&quot;</span>
+<span class="s2">&quot;wsrc&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-wais-source&quot;</span>
+<span class="s2">&quot;wtk&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-wintalk&quot;</span>
+<span class="s2">&quot;x-png&quot;</span>     <span class="o">-&gt;</span>      <span class="s2">&quot;image/png&quot;</span>
+<span class="s2">&quot;xbm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-xbitmap&quot;</span>
+<span class="s2">&quot;xdr&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-amt-demorun&quot;</span>
+<span class="s2">&quot;xgz&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;xgl/drawing&quot;</span>
+<span class="s2">&quot;xhtml&quot;</span>     <span class="o">-&gt;</span>      <span class="s2">&quot;application/xhtml+xml&quot;</span>
+<span class="s2">&quot;xif&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/vnd.xiff&quot;</span>
+<span class="s2">&quot;xl&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;application/excel&quot;</span>
+<span class="s2">&quot;xla&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/excel&quot;</span>
+<span class="s2">&quot;xlb&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/excel&quot;</span>
+<span class="s2">&quot;xlc&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/excel&quot;</span>
+<span class="s2">&quot;xld&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/excel&quot;</span>
+<span class="s2">&quot;xlk&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/excel&quot;</span>
+<span class="s2">&quot;xll&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/excel&quot;</span>
+<span class="s2">&quot;xlm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/excel&quot;</span>
+<span class="s2">&quot;xls&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.ms-excel&quot;</span>
+<span class="s2">&quot;xlsx&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/vnd.openxmlformats-officedocument.spreadsheetml.sheet&quot;</span>
+<span class="s2">&quot;xlt&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/excel&quot;</span>
+<span class="s2">&quot;xlv&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/excel&quot;</span>
+<span class="s2">&quot;xlw&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/excel&quot;</span>
+<span class="s2">&quot;xm&quot;</span>        <span class="o">-&gt;</span>      <span class="s2">&quot;audio/xm&quot;</span>
+<span class="s2">&quot;xml&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/xml&quot;</span>
+<span class="s2">&quot;xmz&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;xgl/movie&quot;</span>
+<span class="s2">&quot;xpi&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-xpinstall&quot;</span>
+<span class="s2">&quot;xpix&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-vnd.ls-xpix&quot;</span>
+<span class="s2">&quot;xpm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/xpm&quot;</span>
+<span class="s2">&quot;xspf&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;application/xspf+xml&quot;</span>
+<span class="s2">&quot;xsr&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/x-amt-showrun&quot;</span>
+<span class="s2">&quot;xwd&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;image/x-xwd&quot;</span>
+<span class="s2">&quot;xyz&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;chemical/x-pdb&quot;</span>
+<span class="s2">&quot;z&quot;</span>         <span class="o">-&gt;</span>      <span class="s2">&quot;application/x-compressed&quot;</span>
+<span class="s2">&quot;zip&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/zip&quot;</span>
+<span class="s2">&quot;zoo&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;application/octet-stream&quot;</span>
+<span class="s2">&quot;zsh&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;text/x-script.zsh&quot;</span>
 </pre></div>
 </div>
 </div>

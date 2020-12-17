@@ -33,6 +33,9 @@
 //#define RP_TIMEO_DEBUG
 #define COMBINE_EVLOOPS 1
 
+RP_MTYPES *allmimes=rp_mimetypes;
+int n_allmimes =nRpMtypes;
+
 extern int RP_TX_isforked;
 
 uid_t unprivu=0;
@@ -928,7 +931,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
         {
             m.ext = ext + 1;
             /* look for proper mime type listed in mime.h */
-            mres = bsearch(m_p, rp_mimetypes, nRpMtypes, sizeof(RP_MTYPES), compare_mtypes);
+            mres = bsearch(m_p, allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
             if (mres)
                 evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", mres->mime, 0, 0));
             else
@@ -964,6 +967,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                      (int)filesize);
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Range", reprange, 0, 1));
         }
+        //range is no longer malloc'd
         //free(range); /* chicken 🐣 */
     }
     else 
@@ -1153,7 +1157,7 @@ static evhtp_res sendobj(DHS *dhs)
             goto opterr;
 
         m.ext = (char *)duk_to_string(ctx, -2);
-        mres = bsearch(&m, rp_mimetypes, nRpMtypes, sizeof(RP_MTYPES), compare_mtypes);
+        mres = bsearch(&m, allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
         if (mres)
         {
             const char *d;
@@ -3074,6 +3078,104 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
     }
 }
 
+static void proc_mimes(duk_context *ctx)
+{
+    // are we adding or just replacing?
+    int must_add=0;
+
+    if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1))
+    {
+        duk_enum(ctx, -1, 0);
+        while (duk_next(ctx, -1, 1))
+        {
+            const char *key, *val;
+            RP_MTYPES m;
+            RP_MTYPES *mres, *m_p = &m;
+
+            key=duk_get_string(ctx, -2);
+
+            val=REQUIRE_STRING(ctx, -1, "server.start: mime - value (mimetype) must be a string");
+
+            if(*key == '.') key++;
+            if(!strlen(key))
+                RP_THROW(ctx, "server.start: mime - extension '%s' is not valid", duk_get_string(ctx, -2) );
+
+            m.ext = key;
+            /* look for proper mime type listed in mime.h */
+
+            mres = bsearch(m_p, allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
+            if (mres)
+                mres->mime=val;
+            else
+                must_add++;
+
+            duk_pop_2(ctx);
+        }
+            
+        duk_pop(ctx); /* pop enum */
+
+    }
+    else
+    {
+        duk_pop(ctx); /* get rid of 'headers' non object */
+        RP_THROW(ctx, "server.start: mime - value must be an object (extension to mime-type mappings)");
+    }
+
+    /* need to add some more */
+    if (must_add)
+    {
+        int i=0;
+        
+        allmimes=NULL;
+        n_allmimes += must_add;
+
+        REMALLOC(allmimes, n_allmimes * sizeof (RP_MTYPES) );
+        for (;i< nRpMtypes; i++)
+        {
+            allmimes[i].ext = rp_mimetypes[i].ext;
+            allmimes[i].mime= rp_mimetypes[i].mime;
+        }
+
+        duk_enum(ctx, -1, 0);
+        while (duk_next(ctx, -1, 1))
+        {
+            const char *key, *val;
+            RP_MTYPES m;
+            RP_MTYPES *mres, *m_p = &m;
+
+            key=duk_get_string(ctx, -2);
+
+            val=duk_get_string(ctx, -1);
+
+            if(*key == '.') key++;
+
+            m.ext = key;
+            /* look for proper mime type listed in mime.h */
+
+            mres = bsearch(m_p, rp_mimetypes, nRpMtypes, sizeof(RP_MTYPES), compare_mtypes);
+            if (!mres)
+            {
+                allmimes[i].ext = key;
+                allmimes[i].mime= val;
+                i++;
+            }
+
+            duk_pop_2(ctx);
+        }
+            
+        duk_pop(ctx); /* pop enum */
+
+        qsort(allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
+        
+        
+    }
+    /*
+    int i=0;
+    for (i=0; i<n_allmimes; i++)
+        printf("    \"%s\"\t->\t\"%s\"\n",allmimes[i].ext, allmimes[i].mime);
+    */
+}
+
 #define getipport(sfn) do {\
      char *p, *e;\
      char ibuf[INET6_ADDRSTRLEN]={0};\
@@ -3202,6 +3304,12 @@ duk_ret_t duk_server_start(duk_context *ctx)
         if (duk_rp_GPS_icase(ctx, ob_idx, "daemon"))
         {
             daemon = REQUIRE_BOOL(ctx, -1, "server.start: parameter \"daemon\" requires a boolean (true|false)");
+        }
+        duk_pop(ctx);
+
+        if (duk_rp_GPS_icase(ctx, ob_idx, "mimeMap"))
+        {
+            proc_mimes(ctx);
         }
         duk_pop(ctx);
     }
@@ -3479,11 +3587,12 @@ duk_ret_t duk_server_start(duk_context *ctx)
 #else
     htp = evhtp_new(evbase, NULL);
 #endif
-    /* testing for pure c benchmarking*/
+    /* testing for pure c benchmarking*
     evhtp_set_cb(htp, "/test", testcb, NULL);
 
-    /* testing, quick semi clean exit */
+    * testing, quick semi clean exit *
     evhtp_set_cb(htp, "/exit", exitcb, ctx);
+    */
 
     /* file system and function mapping */
     if (ob_idx != -1)
