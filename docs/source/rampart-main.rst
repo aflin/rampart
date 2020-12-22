@@ -22,7 +22,7 @@ What does it do?
 Rampart uses a low memory footprint JavaScript interpreter to bring together
 several high performance tools and useful utilities for use in Web
 and information management applications.  At its core is the Duktape
-javascript library and added to it is a SQL database, full text search
+JavaScript library and added to it is a SQL database, full text search
 engine, a fast and innovative NOSQL Mmap database, a fast multithreaded 
 webserver, client functionality via the Curl and crypto functions via
 Openssl.  It attempts to provide performance, maximum flexibility and 
@@ -84,10 +84,10 @@ Rampart philosophy
 ~~~~~~~~~~~~~~~~~~
 Though Rampart supports ``setTimeout()`` (and other async functions via
 babel), the functions added to `Duktape <https://duktape.org>`_ 
-via modules as well as the built-in functions are syncronous.  Raw javascript
+via modules as well as the built-in functions are syncronous.  Raw JavaScript
 execution is more memory efficient, but far slower than with, e.g., node.js.
 However, the functionality and speed of the available C functions provide
-comparable efficacy and are a viable alternative to 
+comparable efficacy, excellent performance and are a viable alternative to 
 `LAMP <https://en.wikipedia.org/wiki/LAMP_(software_bundle)>`_, 
 `MEAN <https://en.wikipedia.org/wiki/MEAN_(solution_stack)>`_ or other
 stacks, all in a single product, while consuming considerably less resources
@@ -96,8 +96,9 @@ than the aforementioned.
 Rampart Global Variable and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-There are two global variables beyond what is provided by Duktape:
-``rampart`` and ``process``, as well as the ``require`` function.
+Rampart provieds global variables beyond what is available in Duktape:
+``rampart`` and ``process``, as well as the ``require`` function.  Below is
+a listing of these added functions.
 
 rampart.globalize
 """""""""""""""""
@@ -108,15 +109,15 @@ Put all or named properties of an :green:`Object` in the global namespace.
 
     rampart.globalize(var_obj [, prop_names]);
 
-+------------+----------------+---------------------------------------------------+
-|Argument    |Type            |Description                                        |
-+============+================+===================================================+
-|var_obj     |:green:`Object` | The path to the directory containing the database |
-+------------+----------------+---------------------------------------------------+
-|prop_names  |:green:`Array`  | optional :green:`Array` of property names to be   |
-|            |                | put into the global namespace.  If specified, only|
-|            |                | the named properties will be exported.            |
-+------------+----------------+---------------------------------------------------+
++------------+----------------+-----------------------------------------------------------+
+|Argument    |Type            |Description                                                |
++============+================+===========================================================+
+|var_obj     |:green:`Object` | The :green:`Object` with the properties to be globalized  |
++------------+----------------+-----------------------------------------------------------+
+|prop_names  |:green:`Array`  | optional :green:`Array` of property names to be           |
+|            |                | put into the global namespace.  If specified, only        |
+|            |                | the named properties will be exported.                    |
++------------+----------------+-----------------------------------------------------------+
 
 
 Return value: 
@@ -138,7 +139,7 @@ rampart.utils
 """""""""""""
 
 Utility functions are provided by the global ``rampart.utils`` :green:`Object`.
-These functions bring file io and other functionality to Duktape javascript.
+These functions bring file io and other functionality to Duktape JavaScript.
 
 `fprintf`_ (), `fseek`_\ (), `rewind`_\ (), `ftell`_\ (), `fflush`_\ (),
 `fread`_\ () and `fwrite`_\ () take a filehandle, which may be obtained
@@ -186,29 +187,59 @@ See standard formats and flags from
 Extended (non-standard) formats:
 
    * ``%s`` - corresponding argument is treated as a :green:`String`
-     (converted/coerced if necessary).
+     (converted/coerced if necessary; :green:`Objects` and :green:`Buffers`
+     are converted the same as for ``%J`` and ``%B`` below).
 
    * ``%S`` - same as ``%s`` except an error is thrown if corresponding argument is
      not a :green:`String`.
 
    * ``%J`` - print :green:`Object` as JSON.  An optional width (i.e.
      ``printf("%4J", obj);``) may be given which will print with new lines and 
-     indentation of the specified amount (equivalent to 
-     ``printf("%s", JSON.stringify(obj, null, 4) );``). 
+     indentation of the specified amount. Thus ``printf("%4J", obj);`` is 
+     equivalent to ``printf("%s", JSON.stringify(obj, null, 4) );``. 
 
    * ``%B`` - print contents of a :green:`Buffer` as is.
 
    * ``%U`` - url encode (or if ``!`` flag present, decode) a :green:`String`. 
+
+   * ``%H`` - html encode (or if ``!`` flag present, decode) a :green:`String`. 
+
+   * ``%P`` - pretty print a :green:`String` or :green:`Buffer`.  Expects
+     text with white space.  Format is ``%i.wP`` where ``i`` is the level of
+     indentation and ``w`` is the length of each line (default ``80`` if not
+     specified).  If format ``%!i.wP`` is given, newlines are not converted
+     to spaces (but text after newlines is still indented).
 
 Example:
 
 .. code-block:: javascript
 
    var uenc = "a+url+encoded+string.+%27%23%24%3f%27";
+
    rampart.utils.printf("Encoded: %s\nDecoded: %!U\n", uenc, uenc);
+
    /* expected output:
    Encoded: a+url+encoded+string.+%27%23%24%3f%27
    Decoded: a url encoded string. '#$?'
+   */
+
+   var getty = "Four score and seven years ago our fathers\n" + 
+            "brought forth on this continent, a new nation,\n" +
+            "conceived in Liberty, and dedicated to the proposition\n" +
+            "that all men are created equal."
+
+   rampart.utils.printf("%5.40P\n", getty);
+   /* or 
+        rampart.utils.printf("%*.*P\n", 5, 40, getty);
+   */
+
+   /* expected output:
+        Four score and seven years ago our
+        fathers brought forth on this
+        continent, a new nation, conceived
+        in Liberty, and dedicated to the
+        proposition that all men are
+        created equal.
    */
 
 sprintf
@@ -289,6 +320,8 @@ a :green:`String` or filehandle :green:`Object` opened and returned from `fopen`
 Usage:
 
 .. code-block:: javascript
+
+   var filename = "/home/user/myfile.txt";
 
    var output = rampart.utils.fopen(filename, mode);
    rampart.utils.fprintf(output, fmt, ...);
@@ -756,28 +789,28 @@ Usage:
    var contents = rampart.utils.readFile(filename [, offsetPos [, rLength]] [, return_str]);
 
 
-Where ``optsObj`` is an :green:`Object` with the key ``filename`` and optional keys
-``offset``, ``length`` and/or ``retString``.
+Where values ``filename`` and optional values
+``offsetPos``, ``rLength`` and/or ``return_str`` are:
 
 
-+------------+-----------------+-----------------------------------------------------+
-|Argument    |Type             |Description                                          |
-+============+=================+=====================================================+
-|filename    |:green:`String`  | Path to the file to be read                         |
-+------------+-----------------+-----------------------------------------------------+
-|offsetPos   |:green:`Number`  | If positive, offset from beginning of file          |
-|            |                 +-----------------------------------------------------+
-|            |                 | If negative, offset from end of file                |
-+------------+-----------------+-----------------------------------------------------+
-|rLength     |:green:`Number`  | If greater than zero, amount in bytes to be read.   |
-|            |                 +-----------------------------------------------------+
-|            |                 |Otherwise, position from end of file to stop reading.|
-+------------+-----------------+-----------------------------------------------------+
-|return_str  |:green:`Boolean` | If not set, or ``false``, return a :green:`Buffer`. |
-|            |                 +-----------------------------------------------------+
-|            |                 | If ``true``, return contents as a :green:`String`.  |
-|            |                 | May be truncated if file contains null characters.  |
-+------------+-----------------+-----------------------------------------------------+
++------------+-----------------+--------------------------------------------------------------+
+|Argument    |Type             |Description                                                   |
++============+=================+==============================================================+
+|filename    |:green:`String`  | Path to the file to be read                                  |
++------------+-----------------+--------------------------------------------------------------+
+|offsetPos   |:green:`Number`  | If positive, start position to read from beginning of file.  |
+|            |                 +--------------------------------------------------------------+
+|            |                 | If negative, start position to read from end of file.        |
++------------+-----------------+--------------------------------------------------------------+
+|rLength     |:green:`Number`  | If greater than zero, amount in bytes to be read.            |
+|            |                 +--------------------------------------------------------------+
+|            |                 | If 0 or negative, position from end of file to stop reading. |
++------------+-----------------+--------------------------------------------------------------+
+|return_str  |:green:`Boolean` | If not set, or ``false``, return a :green:`Buffer`.          |
+|            |                 +--------------------------------------------------------------+
+|            |                 | If ``true``, return contents as a :green:`String`.           |
+|            |                 | May be truncated if file contains null characters.           |
++------------+-----------------+--------------------------------------------------------------+
 
 Return Value:
    :green:`Buffer` or :green:`String`.  The contents of the file.
@@ -825,7 +858,7 @@ Example:
 .. code-block:: javascript
 
    var str = "\n a line of text \n";
-   rampart.utils.printf("'%s'\n", rampart.utils.trim(str));
+   rampart.utils.printf("'%s'", rampart.utils.trim(str));
    /* expected output:
    'a line of text'
    */
@@ -1452,7 +1485,7 @@ Return Value:
 	:green:`Number`/:green:`Object`.
 
         With no callback, an :green:`Object` is returned.  The :green:`Object` contains
-	three or four key/value pairs.  
+	three key/value pairs.  
 	
 	Key: ``results``; Value: an :green:`Array` of :green:`Arrays`. 
 	Each outer :green:`Array` corresponds to a row in the csv file
@@ -1604,9 +1637,9 @@ Using the require Function to Import Modules
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Scripts may reference function stored in external files.  These files are
-known as modules.  A module is a C or JavaScript file which exports
-an :green:`Object` or :green:`Function` when the ``require("scriptname")``
-syntax is used. 
+known as modules.  A module is a compiled C program or a JavaScript file
+which exports an :green:`Object` or :green:`Function` when the
+``require("scriptname")`` syntax is used.
 
 Example for the SQL C Module:
 
@@ -1650,6 +1683,22 @@ In another script, the exported ``timestwo`` function could be accessed as such:
 
   /* res == 10 */
 
+Modules are searched for in the following order:
+
+#. As given.  If ``/path/to/module.js`` is given, it is checked first.
+
+#. In `scriptPath`_\ .
+
+#. In the ``.rampart/modules`` directory of current user's home directory 
+   as provided by the ``$HOME`` environment variable.
+
+#. In the ``-DRP_INST_PATH`` + "/modules" set when Rampart was compiled.  The default 
+   is ``/usr/local/rampart/modules``, or, if set, the path pointed to by
+   the envirnonment variable ``$RAMPART_PATH`` + "/modules".
+
+#. In the current working directory.
+
+
 Additional Global Variables and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -1674,8 +1723,8 @@ ECMAScript 2015+ and Babel.js
 Babel Acknowledgement
 """""""""""""""""""""
 
-Rampart experimentally uses `Babel.js <https://babeljs.io/>`_ to support a
-greater breath of javascript syntax and functionality.  Babel.js is a
+Rampart **experimentally** uses `Babel.js <https://babeljs.io/>`_ to support a
+greater breath of JavaScript syntax and functionality.  Babel.js is a
 toolchain that converts ECMAScript 2015+ (and optionally TypeScript) code
 into a version of JavaScript compatible with Duktape.  The authors of
 Rampart are extremely grateful to the 
@@ -1770,9 +1819,9 @@ the original script was named ``myfile.js``, the transpiled version will be
 named ``myfile.babel.js``.
 
 When the original script is run again, Rampart will check the date on the
-script, and if it was not modified after the creation of the ``*.babel.js``
-file, the transpile stage will be skipped and the cached, transpiled script
-will be run directly.
+script, and if it was not modified after the modification date of the
+``*.babel.js`` file, the transpile stage will be skipped and the cached,
+transpiled script will be run directly.
 
 Caveats
 """""""

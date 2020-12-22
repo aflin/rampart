@@ -175,7 +175,7 @@ RPPATH rp_find_path(char *file, char *subdir)
     
     home_accessok:
     strcpy(homedir,home);
-    strcat(homedir,homesubdir);
+    strcat(homedir,homesubdir); /* ~/.rampart */
 
     /* this should only happen if /tmp is not writable */
     if(skiphome)

@@ -96,6 +96,17 @@ SET(CMAKE_SKIP_BUILD_RPATH FALSE)
 SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 SET(CMAKE_INSTALL_RPATH "./;${CMAKE_INSTALL_PREFIX}/modules/")
 
+###HTML###
+add_library(rampart-html SHARED
+	duktape/modules/rampart-html.c
+)
+target_link_libraries(rampart-html
+	${PROJECT_BINARY_DIR}/extern/tidy-html5/libtidys.a
+)
+target_include_directories(rampart-html PRIVATE
+	${PROJECT_SOURCE_DIR}/extern/tidy-html5/include/
+	${PROJECT_SOURCE_DIR}/extern/tidy-html5/src/
+)
 
 ###SQL###
 add_library(rampart-sql SHARED
@@ -201,14 +212,14 @@ target_include_directories(rampart-curl PRIVATE
 ##############  ADD MODULE NAMES HERE  ##############
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto #example_name
+set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html #example_name
 	PROPERTIES 
 	LINK_FLAGS   "-undefined dynamic_lookup" 
 	SUFFIX       ".so"
 	PREFIX ""
 )
 else()
-set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto #example_name
+set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html #example_name
 	PROPERTIES 
 	SUFFIX       ".so"
 	PREFIX ""
@@ -222,6 +233,7 @@ install(TARGETS
 	rampart-curl
 	rampart-sql
 	rampart-redis
+	rampart-html
 	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
 

@@ -252,7 +252,7 @@ ease of use of this library.</p>
 <p>Rampart uses a low memory footprint JavaScript interpreter to bring together
 several high performance tools and useful utilities for use in Web
 and information management applications.  At its core is the Duktape
-javascript library and added to it is a SQL database, full text search
+JavaScript library and added to it is a SQL database, full text search
 engine, a fast and innovative NOSQL Mmap database, a fast multithreaded
 webserver, client functionality via the Curl and crypto functions via
 Openssl.  It attempts to provide performance, maximum flexibility and
@@ -303,10 +303,10 @@ JavaScript transpiler.</p></li>
 <h2>Rampart philosophy<a class="headerlink" href="#rampart-philosophy" title="Permalink to this headline">¶</a></h2>
 <p>Though Rampart supports <code class="docutils literal notranslate"><span class="pre">setTimeout()</span></code> (and other async functions via
 babel), the functions added to <a class="reference external" href="https://duktape.org">Duktape</a>
-via modules as well as the built-in functions are syncronous.  Raw javascript
+via modules as well as the built-in functions are syncronous.  Raw JavaScript
 execution is more memory efficient, but far slower than with, e.g., node.js.
 However, the functionality and speed of the available C functions provide
-comparable efficacy and are a viable alternative to
+comparable efficacy, excellent performance and are a viable alternative to
 <a class="reference external" href="https://en.wikipedia.org/wiki/LAMP_(software_bundle)">LAMP</a>,
 <a class="reference external" href="https://en.wikipedia.org/wiki/MEAN_(solution_stack)">MEAN</a> or other
 stacks, all in a single product, while consuming considerably less resources
@@ -314,8 +314,9 @@ than the aforementioned.</p>
 </div>
 <div class="section" id="rampart-global-variable-and-functions">
 <h2>Rampart Global Variable and Functions<a class="headerlink" href="#rampart-global-variable-and-functions" title="Permalink to this headline">¶</a></h2>
-<p>There are two global variables beyond what is provided by Duktape:
-<code class="docutils literal notranslate"><span class="pre">rampart</span></code> and <code class="docutils literal notranslate"><span class="pre">process</span></code>, as well as the <code class="docutils literal notranslate"><span class="pre">require</span></code> function.</p>
+<p>Rampart provieds global variables beyond what is available in Duktape:
+<code class="docutils literal notranslate"><span class="pre">rampart</span></code> and <code class="docutils literal notranslate"><span class="pre">process</span></code>, as well as the <code class="docutils literal notranslate"><span class="pre">require</span></code> function.  Below is
+a listing of these added functions.</p>
 <div class="section" id="rampart-globalize">
 <h3>rampart.globalize<a class="headerlink" href="#rampart-globalize" title="Permalink to this headline">¶</a></h3>
 <p>Put all or named properties of an <span class="green">Object</span> in the global namespace.</p>
@@ -324,9 +325,9 @@ than the aforementioned.</p>
 </div>
 <table class="docutils align-default">
 <colgroup>
-<col style="width: 15%" />
-<col style="width: 20%" />
-<col style="width: 65%" />
+<col style="width: 14%" />
+<col style="width: 18%" />
+<col style="width: 68%" />
 </colgroup>
 <thead>
 <tr class="row-odd"><th class="head"><p>Argument</p></th>
@@ -337,7 +338,7 @@ than the aforementioned.</p>
 <tbody>
 <tr class="row-even"><td><p>var_obj</p></td>
 <td><p><span class="green">Object</span></p></td>
-<td><p>The path to the directory containing the database</p></td>
+<td><p>The <span class="green">Object</span> with the properties to be globalized</p></td>
 </tr>
 <tr class="row-odd"><td><p>prop_names</p></td>
 <td><p><span class="green">Array</span></p></td>
@@ -365,7 +366,7 @@ the named properties will be exported.</p></td>
 <div class="section" id="rampart-utils">
 <h3>rampart.utils<a class="headerlink" href="#rampart-utils" title="Permalink to this headline">¶</a></h3>
 <p>Utility functions are provided by the global <code class="docutils literal notranslate"><span class="pre">rampart.utils</span></code> <span class="green">Object</span>.
-These functions bring file io and other functionality to Duktape javascript.</p>
+These functions bring file io and other functionality to Duktape JavaScript.</p>
 <p><a class="reference internal" href="#fprintf">fprintf</a> (), <a class="reference internal" href="#fseek">fseek</a>(), <a class="reference internal" href="#rewind">rewind</a>(), <a class="reference internal" href="#ftell">ftell</a>(), <a class="reference internal" href="#fflush">fflush</a>(),
 <a class="reference internal" href="#fread">fread</a>() and <a class="reference internal" href="#fwrite">fwrite</a>() take a filehandle, which may be obtained
 using <a class="reference internal" href="#fopen">fopen</a>(), or by using one of the following:</p>
@@ -405,23 +406,51 @@ See standard formats and flags from
 <blockquote>
 <div><ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">%s</span></code> - corresponding argument is treated as a <span class="green">String</span>
-(converted/coerced if necessary).</p></li>
+(converted/coerced if necessary; <span class="green">Objects</span> and <span class="green">Buffers</span>
+are converted the same as for <code class="docutils literal notranslate"><span class="pre">%J</span></code> and <code class="docutils literal notranslate"><span class="pre">%B</span></code> below).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%S</span></code> - same as <code class="docutils literal notranslate"><span class="pre">%s</span></code> except an error is thrown if corresponding argument is
 not a <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%J</span></code> - print <span class="green">Object</span> as JSON.  An optional width (i.e.
 <code class="docutils literal notranslate"><span class="pre">printf(&quot;%4J&quot;,</span> <span class="pre">obj);</span></code>) may be given which will print with new lines and
-indentation of the specified amount (equivalent to
-<code class="docutils literal notranslate"><span class="pre">printf(&quot;%s&quot;,</span> <span class="pre">JSON.stringify(obj,</span> <span class="pre">null,</span> <span class="pre">4)</span> <span class="pre">);</span></code>).</p></li>
+indentation of the specified amount. Thus <code class="docutils literal notranslate"><span class="pre">printf(&quot;%4J&quot;,</span> <span class="pre">obj);</span></code> is
+equivalent to <code class="docutils literal notranslate"><span class="pre">printf(&quot;%s&quot;,</span> <span class="pre">JSON.stringify(obj,</span> <span class="pre">null,</span> <span class="pre">4)</span> <span class="pre">);</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%B</span></code> - print contents of a <span class="green">Buffer</span> as is.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%U</span></code> - url encode (or if <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, decode) a <span class="green">String</span>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">%H</span></code> - html encode (or if <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, decode) a <span class="green">String</span>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">%P</span></code> - pretty print a <span class="green">String</span> or <span class="green">Buffer</span>.  Expects
+text with white space.  Format is <code class="docutils literal notranslate"><span class="pre">%i.wP</span></code> where <code class="docutils literal notranslate"><span class="pre">i</span></code> is the level of
+indentation and <code class="docutils literal notranslate"><span class="pre">w</span></code> is the length of each line (default <code class="docutils literal notranslate"><span class="pre">80</span></code> if not
+specified).  If format <code class="docutils literal notranslate"><span class="pre">%!i.wP</span></code> is given, newlines are not converted
+to spaces (but text after newlines is still indented).</p></li>
 </ul>
 </div></blockquote>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">uenc</span> <span class="o">=</span> <span class="s2">&quot;a+url+encoded+string.+%27%23%24%3f%27&quot;</span><span class="p">;</span>
+
 <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;Encoded: %s\nDecoded: %!U\n&quot;</span><span class="p">,</span> <span class="nx">uenc</span><span class="p">,</span> <span class="nx">uenc</span><span class="p">);</span>
+
 <span class="cm">/* expected output:</span>
 <span class="cm">Encoded: a+url+encoded+string.+%27%23%24%3f%27</span>
 <span class="cm">Decoded: a url encoded string. &#39;#$?&#39;</span>
+<span class="cm">*/</span>
+
+<span class="kd">var</span> <span class="nx">getty</span> <span class="o">=</span> <span class="s2">&quot;Four score and seven years ago our fathers\n&quot;</span> <span class="o">+</span>
+         <span class="s2">&quot;brought forth on this continent, a new nation,\n&quot;</span> <span class="o">+</span>
+         <span class="s2">&quot;conceived in Liberty, and dedicated to the proposition\n&quot;</span> <span class="o">+</span>
+         <span class="s2">&quot;that all men are created equal.&quot;</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%5.40P\n&quot;</span><span class="p">,</span> <span class="nx">getty</span><span class="p">);</span>
+<span class="cm">/* or</span>
+<span class="cm">     rampart.utils.printf(&quot;%*.*P\n&quot;, 5, 40, getty);</span>
+<span class="cm">*/</span>
+
+<span class="cm">/* expected output:</span>
+<span class="cm">     Four score and seven years ago our</span>
+<span class="cm">     fathers brought forth on this</span>
+<span class="cm">     continent, a new nation, conceived</span>
+<span class="cm">     in Liberty, and dedicated to the</span>
+<span class="cm">     proposition that all men are</span>
+<span class="cm">     created equal.</span>
 <span class="cm">*/</span>
 </pre></div>
 </div>
@@ -490,7 +519,9 @@ file.</p></li>
 <p>Same as <code class="docutils literal notranslate"><span class="pre">printf()</span></code> except output is sent to the file provided by
 a <span class="green">String</span> or filehandle <span class="green">Object</span> opened and returned from <a class="reference internal" href="#fopen">fopen</a>().</p>
 <p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">output</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fopen</span><span class="p">(</span><span class="nx">filename</span><span class="p">,</span> <span class="nx">mode</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">filename</span> <span class="o">=</span> <span class="s2">&quot;/home/user/myfile.txt&quot;</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">output</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fopen</span><span class="p">(</span><span class="nx">filename</span><span class="p">,</span> <span class="nx">mode</span><span class="p">);</span>
 <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fprintf</span><span class="p">(</span><span class="nx">output</span><span class="p">,</span> <span class="nx">fmt</span><span class="p">,</span> <span class="p">...);</span>
 <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fclose</span><span class="p">(</span><span class="nx">output</span><span class="p">);</span>
 
@@ -951,13 +982,13 @@ separated values will occur and the entire value will be returned as a <span cla
 <span class="kd">var</span> <span class="nx">contents</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">readFile</span><span class="p">(</span><span class="nx">filename</span> <span class="p">[,</span> <span class="nx">offsetPos</span> <span class="p">[,</span> <span class="nx">rLength</span><span class="p">]]</span> <span class="p">[,</span> <span class="nx">return_str</span><span class="p">]);</span>
 </pre></div>
 </div>
-<p>Where <code class="docutils literal notranslate"><span class="pre">optsObj</span></code> is an <span class="green">Object</span> with the key <code class="docutils literal notranslate"><span class="pre">filename</span></code> and optional keys
-<code class="docutils literal notranslate"><span class="pre">offset</span></code>, <code class="docutils literal notranslate"><span class="pre">length</span></code> and/or <code class="docutils literal notranslate"><span class="pre">retString</span></code>.</p>
+<p>Where values <code class="docutils literal notranslate"><span class="pre">filename</span></code> and optional values
+<code class="docutils literal notranslate"><span class="pre">offsetPos</span></code>, <code class="docutils literal notranslate"><span class="pre">rLength</span></code> and/or <code class="docutils literal notranslate"><span class="pre">return_str</span></code> are:</p>
 <table class="docutils align-default">
 <colgroup>
-<col style="width: 15%" />
-<col style="width: 21%" />
-<col style="width: 65%" />
+<col style="width: 13%" />
+<col style="width: 19%" />
+<col style="width: 68%" />
 </colgroup>
 <thead>
 <tr class="row-odd"><th class="head"><p>Argument</p></th>
@@ -972,15 +1003,15 @@ separated values will occur and the entire value will be returned as a <span cla
 </tr>
 <tr class="row-odd"><td rowspan="2"><p>offsetPos</p></td>
 <td rowspan="2"><p><span class="green">Number</span></p></td>
-<td><p>If positive, offset from beginning of file</p></td>
+<td><p>If positive, start position to read from beginning of file.</p></td>
 </tr>
-<tr class="row-even"><td><p>If negative, offset from end of file</p></td>
+<tr class="row-even"><td><p>If negative, start position to read from end of file.</p></td>
 </tr>
 <tr class="row-odd"><td rowspan="2"><p>rLength</p></td>
 <td rowspan="2"><p><span class="green">Number</span></p></td>
 <td><p>If greater than zero, amount in bytes to be read.</p></td>
 </tr>
-<tr class="row-even"><td><p>Otherwise, position from end of file to stop reading.</p></td>
+<tr class="row-even"><td><p>If 0 or negative, position from end of file to stop reading.</p></td>
 </tr>
 <tr class="row-odd"><td rowspan="2"><p>return_str</p></td>
 <td rowspan="2"><p><span class="green">Boolean</span></p></td>
@@ -1029,7 +1060,7 @@ May be truncated if file contains null characters.</p></td>
 </dl>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">str</span> <span class="o">=</span> <span class="s2">&quot;\n a line of text \n&quot;</span><span class="p">;</span>
-<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;&#39;%s&#39;\n&quot;</span><span class="p">,</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">trim</span><span class="p">(</span><span class="nx">str</span><span class="p">));</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;&#39;%s&#39;&quot;</span><span class="p">,</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">trim</span><span class="p">(</span><span class="nx">str</span><span class="p">));</span>
 <span class="cm">/* expected output:</span>
 <span class="cm">&#39;a line of text&#39;</span>
 <span class="cm">*/</span>
@@ -1575,7 +1606,7 @@ aliases selected and returned in results.</p></li>
 <dl id="returnval">
 <dt>Return Value:</dt><dd><p><span class="green">Number</span>/<span class="green">Object</span>.</p>
 <p>With no callback, an <span class="green">Object</span> is returned.  The <span class="green">Object</span> contains
-three or four key/value pairs.</p>
+three key/value pairs.</p>
 <p>Key: <code class="docutils literal notranslate"><span class="pre">results</span></code>; Value: an <span class="green">Array</span> of <span class="green">Arrays</span>.
 Each outer <span class="green">Array</span> corresponds to a row in the csv file
 and eac inner <span class="green">Array</span> corresponds to the columns in that row.
@@ -1709,9 +1740,9 @@ found (e.g.  if <code class="docutils literal notranslate"><span class="pre">ram
 <div class="section" id="using-the-require-function-to-import-modules">
 <h2>Using the require Function to Import Modules<a class="headerlink" href="#using-the-require-function-to-import-modules" title="Permalink to this headline">¶</a></h2>
 <p>Scripts may reference function stored in external files.  These files are
-known as modules.  A module is a C or JavaScript file which exports
-an <span class="green">Object</span> or <span class="green">Function</span> when the <code class="docutils literal notranslate"><span class="pre">require(&quot;scriptname&quot;)</span></code>
-syntax is used.</p>
+known as modules.  A module is a compiled C program or a JavaScript file
+which exports an <span class="green">Object</span> or <span class="green">Function</span> when the
+<code class="docutils literal notranslate"><span class="pre">require(&quot;scriptname&quot;)</span></code> syntax is used.</p>
 <p>Example for the SQL C Module:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
 </pre></div>
@@ -1723,7 +1754,7 @@ module and its functions will be usable via the named variable <code class="docu
 e.g, <a class="reference internal" href="rampart-sql.html#loading-the-javascript-module"><span class="std std-ref">Loading the Javascript Module</span></a> for full details.</p>
 <p>Example using a JavaScript module:</p>
 <p>If you have an often used function, or a function used for serving web pages
-with <a class="reference internal" href="rampart-server.html#the-rampart-server-module"><span class="std std-ref">The rampart-server module</span></a>, it can be placed in a
+with <span class="xref std std-ref">rampart-server:The rampart-server module</span>, it can be placed in a
 separate file (here the file is named <code class="docutils literal notranslate"><span class="pre">times2.js</span></code>):</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">function</span> <span class="nx">timestwo</span> <span class="p">(</span><span class="nx">num</span><span class="p">)</span> <span class="p">{</span>
    <span class="k">return</span> <span class="nx">num</span> <span class="o">*</span><span class="mi">2</span><span class="p">;</span>
@@ -1745,6 +1776,17 @@ separate file (here the file is named <code class="docutils literal notranslate"
 <span class="cm">/* res == 10 */</span>
 </pre></div>
 </div>
+<p>Modules are searched for in the following order:</p>
+<ol class="arabic simple">
+<li><p>As given.  If <code class="docutils literal notranslate"><span class="pre">/path/to/module.js</span></code> is given, it is checked first.</p></li>
+<li><p>In <a class="reference internal" href="#scriptpath">scriptPath</a>.</p></li>
+<li><p>In the <code class="docutils literal notranslate"><span class="pre">.rampart/modules</span></code> directory of current user’s home directory
+as provided by the <code class="docutils literal notranslate"><span class="pre">$HOME</span></code> environment variable.</p></li>
+<li><p>In the <code class="docutils literal notranslate"><span class="pre">-DRP_INST_PATH</span></code> + “/modules” set when Rampart was compiled.  The default
+is <code class="docutils literal notranslate"><span class="pre">/usr/local/rampart/modules</span></code>, or, if set, the path pointed to by
+the envirnonment variable <code class="docutils literal notranslate"><span class="pre">$RAMPART_PATH</span></code> + “/modules”.</p></li>
+<li><p>In the current working directory.</p></li>
+</ol>
 </div>
 <div class="section" id="additional-global-variables-and-functions">
 <h2>Additional Global Variables and Functions<a class="headerlink" href="#additional-global-variables-and-functions" title="Permalink to this headline">¶</a></h2>
@@ -1766,8 +1808,8 @@ experimental and is mainly included to support asynchronous functions in
 <h2>ECMAScript 2015+ and Babel.js<a class="headerlink" href="#ecmascript-2015-and-babel-js" title="Permalink to this headline">¶</a></h2>
 <div class="section" id="babel-acknowledgement">
 <h3>Babel Acknowledgement<a class="headerlink" href="#babel-acknowledgement" title="Permalink to this headline">¶</a></h3>
-<p>Rampart experimentally uses <a class="reference external" href="https://babeljs.io/">Babel.js</a> to support a
-greater breath of javascript syntax and functionality.  Babel.js is a
+<p>Rampart <strong>experimentally</strong> uses <a class="reference external" href="https://babeljs.io/">Babel.js</a> to support a
+greater breath of JavaScript syntax and functionality.  Babel.js is a
 toolchain that converts ECMAScript 2015+ (and optionally TypeScript) code
 into a version of JavaScript compatible with Duktape.  The authors of
 Rampart are extremely grateful to the
@@ -1849,9 +1891,9 @@ the original script name and replacing it with <code class="docutils literal not
 the original script was named <code class="docutils literal notranslate"><span class="pre">myfile.js</span></code>, the transpiled version will be
 named <code class="docutils literal notranslate"><span class="pre">myfile.babel.js</span></code>.</p>
 <p>When the original script is run again, Rampart will check the date on the
-script, and if it was not modified after the creation of the <code class="docutils literal notranslate"><span class="pre">*.babel.js</span></code>
-file, the transpile stage will be skipped and the cached, transpiled script
-will be run directly.</p>
+script, and if it was not modified after the modification date of the
+<code class="docutils literal notranslate"><span class="pre">*.babel.js</span></code> file, the transpile stage will be skipped and the cached,
+transpiled script will be run directly.</p>
 </div>
 <div class="section" id="caveats">
 <h3>Caveats<a class="headerlink" href="#caveats" title="Permalink to this headline">¶</a></h3>

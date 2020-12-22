@@ -337,9 +337,11 @@ is started as root, <code class="docutils literal notranslate"><span class="pre"
 <li><p><code class="docutils literal notranslate"><span class="pre">mimeMap</span></code>: An <span class="green">Object</span>, additions or changes to the standart extension
 to mime mappings.  Normally, if, e.g., <code class="docutils literal notranslate"><span class="pre">return</span> <span class="pre">{</span> <span class="pre">&quot;m4v&quot;:</span> <span class="pre">mymovie</span> <span class="pre">};</span></code> is
 set as <a class="reference internal" href="#the-return-object">The Return Object</a> to a mapped function, the header
-<code class="docutils literal notranslate"><span class="pre">content-type:</span> <span class="pre">video/x-m4v</span></code> is sent.  If it is necessary to
-change the “content-type” for both <a class="reference internal" href="#mapped-functions">Mapped Functions</a> and files served
-from <a class="reference internal" href="#mapped-directories">Mapped Directories</a>, they may be set as follows:</p>
+<code class="docutils literal notranslate"><span class="pre">content-type:</span> <span class="pre">video/x-m4v</span></code> is sent.  Thought the ‘’content-type” header
+can be changed using the <code class="docutils literal notranslate"><span class="pre">headers</span></code> object in <a class="reference internal" href="#the-return-object">The Return Object</a>, it
+does not affect files served from the filesystem. If it is necessary to change
+the “content-type” for both <a class="reference internal" href="#mapped-functions">Mapped Functions</a> and files served from
+<a class="reference internal" href="#mapped-directories">Mapped Directories</a>, extension:mime-types mappings may be set or changed as follows:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">({</span>
     <span class="p">...,</span>
     <span class="nx">mimeMap</span><span class="o">:</span> <span class="p">{</span>
@@ -1073,11 +1075,16 @@ parameter <code class="docutils literal notranslate"><span class="pre">fsPath</s
 </div>
 <div class="section" id="key-to-mime-mappings">
 <h2>Key to Mime Mappings<a class="headerlink" href="#key-to-mime-mappings" title="Permalink to this headline">¶</a></h2>
-<p>Key to mime-type mappings are shown below.  As an example, if the variable
-<code class="docutils literal notranslate"><span class="pre">var</span> <span class="pre">jpg</span> <span class="pre">=</span> <span class="pre">rampart.utils.readFile(&quot;/path/to/my/jpeg.jpg&quot;);</span></code> is set,
+<p>Key/extension to mime-type mappings are shown below. They apply to both the
+return value of <a class="reference internal" href="#mapped-functions">Mapped Functions</a> as well as the extension of files served
+from <a class="reference internal" href="#mapped-directories">Mapped Directories</a>. This list of defaults can be appended or modified
+using the <code class="docutils literal notranslate"><span class="pre">mimeMap</span></code> property in the <span class="green">Object</span> passed to <a class="reference internal" href="#start">start()</a> .</p>
+<p>An example: If the variable <code class="docutils literal notranslate"><span class="pre">jpg</span></code> is set
+(e.g. <code class="docutils literal notranslate"><span class="pre">var</span> <span class="pre">jpg</span> <span class="pre">=</span> <span class="pre">rampart.utils.readFile(&quot;/path/to/my/jpeg.jpg&quot;);</span></code>),
 then <code class="docutils literal notranslate"><span class="pre">return</span> <span class="pre">{jpeg:jpg};</span></code> at the end of a mapped function would send
 the contents of the file <code class="docutils literal notranslate"><span class="pre">/path/to/my/jpeg.jpg</span></code> with the
-mime-type <code class="docutils literal notranslate"><span class="pre">image/jpeg</span></code> to the client.</p>
+mime-type <code class="docutils literal notranslate"><span class="pre">image/jpeg</span></code> to the client.  The same applies to files served
+from the filesystem which end in <code class="docutils literal notranslate"><span class="pre">.jpeg</span></code> or <code class="docutils literal notranslate"><span class="pre">.jpg</span></code>.</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="s2">&quot;3dm&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;x-world/x-3dmf&quot;</span>
 <span class="s2">&quot;3dmf&quot;</span>      <span class="o">-&gt;</span>      <span class="s2">&quot;x-world/x-3dmf&quot;</span>
 <span class="s2">&quot;3gp&quot;</span>       <span class="o">-&gt;</span>      <span class="s2">&quot;video/3gpp&quot;</span>

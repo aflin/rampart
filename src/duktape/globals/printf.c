@@ -38,7 +38,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <errno.h>
+#include <ctype.h>
 #include "printf.h"
+#include "entities.h"
+#include "entities.c"
 // 'ntoa' conversion buffer size, this must be big enough to hold one converted
 // numeric number including padded zeros (dynamically created on stack)
 // default: 32 byte
@@ -874,7 +877,92 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             duk_replace(ctx, fidx);
             goto string;
         }
+
+        /* pretty print text */
+#define printindent if(width) do{\
+    unsigned int i=0;\
+    while (i++ < width) \
+        out(' ', buffer, idx++, maxlen);\
+} while(0);
+
+        case 'P':
+        {
+            unsigned int l = 80, lpos = 0;
+            const char *p;
+            int lastwasn=0, respectnl=0;
+
+            if (flags & FLAGS_BANG)
+                respectnl=1;
+
+            if(duk_is_buffer(ctx, fidx))
+                p = duk_buffer_to_string(ctx, fidx);
+            else
+                p = PF_REQUIRE_STRING(ctx, fidx);                
+
+            fidx++;
+
+            if (flags & FLAGS_PRECISION)
+                l = precision;
+
+            l-=width;
+
+            /* skip beginning spaces */
+            while(isspace(*p)) p++;
+
+            while (*p)
+            {
+                const char *rp=p;
+                unsigned int wlen=0;
+                
+                if(!lpos)
+                    printindent;
+
+                if(isspace(*p))
+                {
+                    if(lpos < l && !(respectnl && *p=='\n') )
+                    {
+                        out(' ', buffer, idx++, maxlen);
+                        lpos++;
+                        p++;
+                        lastwasn=0;
+                    }
+                    else
+                    /* space coincides with end of line */ 
+                    {
+                        out('\n', buffer, idx++, maxlen);
+                        p++;
+                        lpos=0;
+                        lastwasn=1;
+                    }
+                }
+                else
+                {
+                    /* get word length */
+                    while(  *rp && !isspace( *(rp++) )  ) wlen++;
+                    /*if it doesn't fits */
+                    if(l < lpos+wlen)
+                    {
+                        /* newline might be already printed above */
+                        if(!lastwasn)
+                        {
+                            out('\n', buffer, idx++, maxlen);
+                            lpos=0;
+                            printindent;
+                        }
+                    }
+                    lpos+=wlen;
+                    /* output word */
+                    while (wlen--)
+                        out(*(p++), buffer, idx++, maxlen);
+                    lastwasn=0;
+                }
+            }
+            format++;
+        }
+        break;
+        /* handle JSON */
         case 'J':
+            json:
             if (!duk_is_string(ctx, fidx))
             {
                 if ( !duk_is_function(ctx, fidx) )
@@ -942,10 +1030,10 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             format++;
             break;
         }
-        /* 's' == with coersion */
-        case 's':
+        /* html esc/unesc */
+        case 'H':
         {
-            const char *p = duk_safe_to_string(ctx, fidx++);
+            const char *p = PF_REQUIRE_STRING(ctx, fidx++);
             unsigned int l = _strnlen_s(p, precision ? precision : (size_t)-1);
             // pre padding
             if (flags & FLAGS_PRECISION)
@@ -960,9 +1048,72 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                 }
             }
             // string output
-            while ((*p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
+            if (flags & FLAGS_BANG)
             {
-                out(*(p++), buffer, idx++, maxlen);
+                char *u_p, *free_p;
+
+                u_p = free_p = strdup(p);
+                
+                decode_html_entities_utf8(u_p, NULL);
+                while ((*u_p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
+                {
+                    out(*(u_p++), buffer, idx++, maxlen);
+                }
+                free(free_p);
+            }
+            else
+            {
+                while ((*p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
+                {
+                    switch(*p)
+                    {
+                        case '&':
+                            out('&', buffer, idx++, maxlen);
+                            out('a', buffer, idx++, maxlen);
+                            out('m', buffer, idx++, maxlen);
+                            out('p', buffer, idx++, maxlen);
+                            out(';', buffer, idx++, maxlen);
+                            break;
+                        case '<':
+                            out('&', buffer, idx++, maxlen);
+                            out('l', buffer, idx++, maxlen);
+                            out('t', buffer, idx++, maxlen);
+                            out(';', buffer, idx++, maxlen);
+                            break;
+                        case '>':
+                            out('&', buffer, idx++, maxlen);
+                            out('g', buffer, idx++, maxlen);
+                            out('t', buffer, idx++, maxlen);
+                            out(';', buffer, idx++, maxlen);
+                            break;
+                        case '"':
+                            out('&', buffer, idx++, maxlen);
+                            out('q', buffer, idx++, maxlen);
+                            out('u', buffer, idx++, maxlen);
+                            out('o', buffer, idx++, maxlen);
+                            out('t', buffer, idx++, maxlen);
+                            out(';', buffer, idx++, maxlen);
+                            break;
+                        case '\'':
+                            out('&', buffer, idx++, maxlen);
+                            out('#', buffer, idx++, maxlen);
+                            out('3', buffer, idx++, maxlen);
+                            out('9', buffer, idx++, maxlen);
+                            out(';', buffer, idx++, maxlen);
+                            break;
+                        case '/':
+                            out('&', buffer, idx++, maxlen);
+                            out('#', buffer, idx++, maxlen);
+                            out('4', buffer, idx++, maxlen);
+                            out('7', buffer, idx++, maxlen);
+                            out(';', buffer, idx++, maxlen);
+                            break;
+                        default:
+                            out(*(p), buffer, idx++, maxlen);
+                            break;
+                    }
+                    p++;
+                }
             }
             // post padding
             if (flags & FLAGS_LEFT)
@@ -972,6 +1123,74 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                     out(' ', buffer, idx++, maxlen);
                 }
             }
+
+            format++;
+            break;
+        }
+        /* 's' == with coersion/conversion */
+        case 's':
+        {
+            const char *p;
+            unsigned int l, max=-1;
+            
+            /* convert buffers and print as is */
+            if (duk_is_buffer_data(ctx, fidx))
+            {
+                duk_size_t ln;
+                p = duk_get_buffer_data(ctx, fidx++, &ln);
+                l = max = (unsigned int) ln;
+            }
+            /* convert json as above in '%J' */
+            else if (duk_is_object(ctx, fidx) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1))
+            {
+                goto json;
+            }
+            else
+            /* everything else is coerced */
+            {
+                p = duk_safe_to_string(ctx, fidx++);
+                l = _strnlen_s(p, precision ? precision : (size_t)-1);
+            }
+            // pre padding
+            if (flags & FLAGS_PRECISION)
+            {
+                l = (l < precision ? l : precision);
+            }
+            if (!(flags & FLAGS_LEFT))
+            {
+                while (l++ < width)
+                {
+                    out(' ', buffer, idx++, maxlen);
+                }
+            }
+
+            // string output
+            if (max==-1)
+            {
+                while (*p != 0  && (!(flags & FLAGS_PRECISION) || precision--))
+                {
+                    out(*(p++), buffer, idx++, maxlen);
+                }
+            }
+            else
+            {
+                unsigned int oc=0;
+
+                while (oc<max && (!(flags & FLAGS_PRECISION) || precision--))
+                {
+                    out(*(p++), buffer, idx++, maxlen);
+                    oc++;
+                }
+            }
+            // post padding
+            if (flags & FLAGS_LEFT)
+            {
+                while (l++ < width)
+                {
+                    out(' ', buffer, idx++, maxlen);
+                }
+            }
+
             format++;
             break;
         }

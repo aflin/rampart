@@ -189,9 +189,11 @@ Where:
 * ``mimeMap``: An :green:`Object`, additions or changes to the standart extension
   to mime mappings.  Normally, if, e.g., ``return { "m4v": mymovie };`` is
   set as `The Return Object`_ to a mapped function, the header
-  ``content-type: video/x-m4v`` is sent.  If it is necessary to
-  change the "content-type" for both `Mapped Functions`_ and files served
-  from `Mapped Directories`_, they may be set as follows:
+  ``content-type: video/x-m4v`` is sent.  Thought the ''content-type" header
+  can be changed using the ``headers`` object in `The Return Object`_\ , it
+  does not affect files served from the filesystem. If it is necessary to change
+  the "content-type" for both `Mapped Functions`_ and files served from
+  `Mapped Directories`_\ , extension:mime-types mappings may be set or changed as follows:
   
   .. code-block:: javascript
   
@@ -957,11 +959,17 @@ Below is a full example:
 Key to Mime Mappings
 --------------------
 
-Key to mime-type mappings are shown below.  As an example, if the variable 
-``var jpg = rampart.utils.readFile("/path/to/my/jpeg.jpg");`` is set, 
+Key/extension to mime-type mappings are shown below. They apply to both the
+return value of `Mapped Functions`_ as well as the extension of files served
+from `Mapped Directories`_\ . This list of defaults can be appended or modified
+using the ``mimeMap`` property in the :green:`Object` passed to `start()`_ \.
+
+An example: If the variable ``jpg`` is set
+(e.g. ``var jpg = rampart.utils.readFile("/path/to/my/jpeg.jpg");``), 
 then ``return {jpeg:jpg};`` at the end of a mapped function would send 
 the contents of the file ``/path/to/my/jpeg.jpg`` with the 
-mime-type ``image/jpeg`` to the client.
+mime-type ``image/jpeg`` to the client.  The same applies to files served
+from the filesystem which end in ``.jpeg`` or ``.jpg``.
 
 ::
 
