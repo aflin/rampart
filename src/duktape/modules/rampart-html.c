@@ -14,11 +14,24 @@
 #include "../../rp.h"
 #include "../core/duktape.h"
 
+#include "tidy-int.h"
+#include "clean.h"
+#include "lexer.h"
+#include "parser.h"
+#include "attrs.h"
+#include "message.h"
+#include "tmbstr.h"
+#include "utf8.h"
+
+
 
 duk_ret_t duk_rp_html_finalizer(duk_context *ctx)
 {
     TidyBuffer *errbuf;
     TidyDoc tdoc;
+    int i=0, len;
+    Node* node;
+    TidyDocImpl* doc;
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("errbuf"));
     errbuf=duk_get_pointer(ctx, -1);
@@ -29,7 +42,20 @@ duk_ret_t duk_rp_html_finalizer(duk_context *ctx)
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("tdoc"));
     tdoc=duk_get_pointer(ctx, -1);
+    doc = tidyDocToImpl( tdoc );
     duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("dnodes"));    
+    len=duk_get_length(ctx, -1);
+    
+    for (i=0; i<len; i++)
+    {
+        duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+        node=(Node*)duk_get_pointer(ctx, -1);        
+        duk_pop(ctx);
+        TY_(FreeNode)( doc, node);
+    }
+
     tidyRelease( tdoc );
     return 0;
 }
@@ -118,113 +144,22 @@ int isSingletonTag(TidyTagId id)
     }
 }
 
-/*
-TidyTag_UNKNOWN
-TidyTag_A
-TidyTag_ABBR
-TidyTag_ACRONYM
-TidyTag_ALIGN
-TidyTag_APPLET
-TidyTag_AREA
-TidyTag_AUDIO
-TidyTag_B
-TidyTag_BASE
-TidyTag_BASEFONT
-TidyTag_BDO
-TidyTag_BGSOUND
-TidyTag_BIG
-TidyTag_BLINK
-TidyTag_BODY
-TidyTag_BUTTON
-TidyTag_CAPTION
-TidyTag_CENTER
-TidyTag_CITE
-TidyTag_CODE
-TidyTag_COL
-TidyTag_COLGROUP
-TidyTag_COMMENT
-TidyTag_DEL
-TidyTag_DFN
-TidyTag_DIR
-TidyTag_EM
-TidyTag_EMBED
-TidyTag_FONT
-TidyTag_FRAME
-TidyTag_FRAMESET
-TidyTag_HEAD
-TidyTag_HTML
-TidyTag_I
-TidyTag_IFRAME
-TidyTag_ILAYER
-TidyTag_IMG
-TidyTag_INPUT
-TidyTag_INS
-TidyTag_ISINDEX
-TidyTag_KBD
-TidyTag_KEYGEN
-TidyTag_LABEL
-TidyTag_LAYER
-TidyTag_LEGEND
-TidyTag_LINK
-TidyTag_LISTING
-TidyTag_MAP
-TidyTag_MATHML
-TidyTag_MARQUEE
-TidyTag_MENU
-TidyTag_META
-TidyTag_MULTICOL
-TidyTag_NOBR
-TidyTag_NOEMBED
-TidyTag_NOFRAMES
-TidyTag_NOLAYER
-TidyTag_NOSAVE
-TidyTag_OBJECT
-TidyTag_OPTGROUP
-TidyTag_OPTION
-TidyTag_PARAM
-TidyTag_PICTURE
-TidyTag_PLAINTEXT
-TidyTag_Q
-TidyTag_RB
-TidyTag_RBC
-TidyTag_RP
-TidyTag_RT
-TidyTag_RTC
-TidyTag_RUBY
-TidyTag_S
-TidyTag_SAMP
-TidyTag_SCRIPT
-TidyTag_SELECT
-TidyTag_SERVER
-TidyTag_SERVLET
-TidyTag_SMALL
-TidyTag_SPACER
-TidyTag_SPAN
-TidyTag_STRIKE
-TidyTag_STRONG
-TidyTag_STYLE
-TidyTag_SUB
-TidyTag_SUP
-TidyTag_SVG
-TidyTag_TT
-TidyTag_U
-TidyTag_VAR
-TidyTag_WBR
-TidyTag_XMP
-TidyTag_NEXTID
-TidyTag_BDI
-TidyTag_COMMAND
-TidyTag_DATALIST
-TidyTag_MARK
-TidyTag_MENUITEM
-TidyTag_METER
-TidyTag_OUTPUT
-TidyTag_PROGRESS
-TidyTag_SOURCE
-TidyTag_SUMMARY
-TidyTag_TEMPLATE
-TidyTag_TIME
-TidyTag_TRACK
+
+/* other non-block tags for reference:
+TidyTag_UNKNOWN TidyTag_A TidyTag_ABBR TidyTag_ACRONYM TidyTag_ALIGN TidyTag_APPLET TidyTag_AREA TidyTag_AUDIO
+TidyTag_B TidyTag_BASE TidyTag_BASEFONT TidyTag_BDO TidyTag_BGSOUND TidyTag_BIG TidyTag_BLINK TidyTag_BODY
+TidyTag_BUTTON TidyTag_CAPTION TidyTag_CENTER TidyTag_CITE TidyTag_CODE TidyTag_COL TidyTag_COLGROUP TidyTag_COMMENT
+TidyTag_DEL TidyTag_DFN TidyTag_DIR TidyTag_EM TidyTag_EMBED TidyTag_FONT TidyTag_FRAME TidyTag_FRAMESET
+TidyTag_HEAD TidyTag_HTML TidyTag_I TidyTag_IFRAME TidyTag_ILAYER TidyTag_IMG TidyTag_INPUT TidyTag_INS
+TidyTag_ISINDEX TidyTag_KBD TidyTag_KEYGEN TidyTag_LABEL TidyTag_LAYER TidyTag_LEGEND TidyTag_LINK TidyTag_LISTING
+TidyTag_MAP TidyTag_MATHML TidyTag_MARQUEE TidyTag_MENU TidyTag_META TidyTag_MULTICOL TidyTag_NOBR TidyTag_NOEMBED
+TidyTag_NOFRAMES TidyTag_NOLAYER TidyTag_NOSAVE TidyTag_OBJECT TidyTag_OPTGROUP TidyTag_OPTION TidyTag_PARAM TidyTag_PICTURE
+TidyTag_PLAINTEXT TidyTag_Q TidyTag_RB TidyTag_RBC TidyTag_RP TidyTag_RT TidyTag_RTC TidyTag_RUBY
+TidyTag_S TidyTag_SAMP TidyTag_SCRIPT TidyTag_SELECT TidyTag_SERVER TidyTag_SERVLET TidyTag_SMALL TidyTag_SPACER
+TidyTag_SPAN TidyTag_STRIKE TidyTag_STRONG TidyTag_STYLE TidyTag_SUB TidyTag_SUP TidyTag_SVG TidyTag_TT
+TidyTag_U TidyTag_VAR TidyTag_WBR TidyTag_XMP TidyTag_NEXTID TidyTag_BDI TidyTag_COMMAND TidyTag_DATALIST
+TidyTag_MARK TidyTag_MENUITEM TidyTag_METER TidyTag_OUTPUT TidyTag_PROGRESS TidyTag_SOURCE TidyTag_SUMMARY TidyTag_TEMPLATE
+TidyTag_TIME TidyTag_TRACK
 */
 
 #define optAltText  1 << 0
@@ -236,12 +171,300 @@ TidyTag_TRACK
 
 #define testOpt(optOption) ( (optOption) & opts) 
 
+static void AddByte( Lexer *lexer, tmbchar ch )
+{
+    if ( lexer->lexsize + 2 >= lexer->lexlength )
+    {
+        tmbstr buf = NULL;
+        uint allocAmt = lexer->lexlength;
+        uint prev = allocAmt; /* Is. #761 */
+        while ( lexer->lexsize + 2 >= allocAmt )
+        {
+            if ( allocAmt == 0 )
+                allocAmt = 8192;
+            else
+                allocAmt *= 2;
+            if (allocAmt < prev) /* Is. #761 - watch for wrap - and */
+                TidyPanic(lexer->allocator, "\nPanic: out of internal memory!\nDocument input too big!\n");
+        }
+        buf = (tmbstr) TidyRealloc( lexer->allocator, lexer->lexbuf, allocAmt );
+        if ( buf )
+        {
+          TidyClearMemory( buf + lexer->lexlength, 
+                           allocAmt - lexer->lexlength );
+          lexer->lexbuf = buf;
+          lexer->lexlength = allocAmt;
+        }
+    }
+
+    lexer->lexbuf[ lexer->lexsize++ ] = ch;
+    lexer->lexbuf[ lexer->lexsize ]   = '\0';  /* debug */
+}
+
+
+static uint addStringToLex(TidyDocImpl *doc, tmbstr str, uint len)
+{
+    Lexer *lexer = doc->lexer;
+    uint c, ret=lexer->lexsize;
+
+    /* need to skip translation in TY_(AddCharToLexer) */
+    while( len-- && (c = (unsigned char) *str++ ))
+        AddByte( lexer, c );
+
+    return ret;
+}
+
+
+static TidyNode detachNode(TidyDoc tdoc, TidyNode tnod, int freeNode)
+{
+    TidyDocImpl* doc = tidyDocToImpl( tdoc );
+    Node* node = tidyNodeToImpl( tnod );
+
+    if (node)
+    {
+        TY_(RemoveNode)(node);
+        if(freeNode)
+        {
+            TY_(FreeNode)( doc, node);
+            return NULL;
+        }
+    }
+
+    return tnod;
+}
+/*
+static TidyNode cloneNode(TidyDoc tdoc, TidyNode tnod)
+{
+    TidyDocImpl* doc = tidyDocToImpl( tdoc );
+    Node* node = tidyNodeToImpl( tnod );
+
+    return (TidyNode) TY_(CloneNode)(doc, node);
+}
+*/
+
+/* copy node from src into doc */
+
+static Node *cloneNodeTree_ext(TidyDocImpl *doc, TidyDocImpl *src, Node* node)
+{
+    Node *retn = TY_(CloneNode)(doc, node);
+    uint len = node->end - node->start;
+    
+    if(len>0)
+    {
+        uint offset = addStringToLex(doc, 
+              &(src->lexer->lexbuf[node->start]), 
+              len);
+
+        retn->start = offset;
+        retn->end = offset + len;
+    }
+
+    if(node->content != NULL)
+    {
+        Node *child = node->content;
+        Node *rchild;
+        
+        rchild = cloneNodeTree_ext(doc, src, child);
+
+        retn->content = rchild;
+        rchild->parent = retn;
+
+        child=child->next;
+        while(child)
+        {
+            rchild->next = cloneNodeTree_ext(doc, src, child);
+            rchild->next->parent=retn;
+            rchild->next->prev = rchild;            
+
+            rchild = rchild->next;
+            child = child->next;
+        }
+        
+        retn->last=rchild;
+    }
+
+    return retn;
+
+}
+
+static Node *cloneNodeTree(TidyDocImpl *doc, Node* node)
+{
+    Node *retn = TY_(CloneNode)(doc, node);
+    retn->start=node->start;
+    retn->end=node->end;
+    //printf("start=%d, end=%d\n",(int)retn->start, (int)retn->end);
+
+    if(node->content != NULL)
+    {
+        Node *child = node->content;
+        Node *rchild;
+        
+        rchild = cloneNodeTree(doc, child);
+
+        retn->content = rchild;
+        rchild->parent = retn;
+
+        child=child->next;
+        while(child)
+        {
+            rchild->next = cloneNodeTree(doc, child);
+            rchild->next->parent=retn;
+            rchild->next->prev = rchild;            
+
+            rchild = rchild->next;
+            child = child->next;
+        }
+        
+        retn->last=rchild;
+    }
+    return retn;
+}
+
+static TidyNode appendNode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
+{
+    Node *node = tidyNodeToImpl(tnod);
+    Node *anode = tidyNodeToImpl(anod);
+    Node *clone;
+    TidyDocImpl* doc = tidyDocToImpl(tdoc);
+
+    clone = cloneNodeTree(doc, anode);
+    TY_(InsertNodeAtEnd)(node, clone);
+    return (TidyNode)clone;
+} 
+
+static TidyNode prependNode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
+{
+    Node *node = tidyNodeToImpl(tnod);
+    Node *anode = tidyNodeToImpl(anod);
+    Node *clone;
+    TidyDocImpl* doc = tidyDocToImpl(tdoc);
+
+    clone = cloneNodeTree(doc, anode);
+    TY_(InsertNodeAtStart)(node, clone);
+    return (TidyNode)clone;
+} 
+
+static TidyNode afterNode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
+{
+    Node *node = tidyNodeToImpl(tnod);
+    Node *anode = tidyNodeToImpl(anod);
+    Node *clone;
+    TidyDocImpl* doc = tidyDocToImpl(tdoc);
+
+    clone = cloneNodeTree(doc, anode);
+    TY_(InsertNodeAfterElement)(node, clone);
+    return (TidyNode)clone;
+} 
+
+static TidyNode beforeNode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
+{
+    Node *node = tidyNodeToImpl(tnod);
+    Node *anode = tidyNodeToImpl(anod);
+    Node *clone;
+    TidyDocImpl* doc = tidyDocToImpl(tdoc);
+
+    clone = cloneNodeTree(doc, anode);
+    TY_(InsertNodeBeforeElement)(node, clone);
+    return (TidyNode)clone;
+} 
+
+static TidyNode replaceNode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
+{
+    Node *node = tidyNodeToImpl(tnod);
+    Node *anode = tidyNodeToImpl(anod);
+    Node *clone;
+    TidyDocImpl* doc = tidyDocToImpl(tdoc);
+
+    clone = cloneNodeTree(doc, anode);
+    TY_(InsertNodeAfterElement)(node, clone);
+    TY_(DiscardElement)(doc, node);
+    return (TidyNode)clone;
+} 
+
+static TidyNode appendNode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
+{
+    Node *node = tidyNodeToImpl(tnod);
+    Node *anode = tidyNodeToImpl(anod);
+    Node *clone;
+    TidyDocImpl* doc = tidyDocToImpl(tdoc);
+    TidyDocImpl* srcdoc = tidyDocToImpl(sdoc);
+
+    clone = cloneNodeTree_ext(doc, srcdoc, anode);
+    TY_(InsertNodeAtEnd)(node, clone);
+    return (TidyNode)clone;
+} 
+
+static TidyNode prependNode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
+{
+    Node *node = tidyNodeToImpl(tnod);
+    Node *anode = tidyNodeToImpl(anod);
+    Node *clone;
+    TidyDocImpl* doc = tidyDocToImpl(tdoc);
+    TidyDocImpl* srcdoc = tidyDocToImpl(sdoc);
+
+    clone = cloneNodeTree_ext(doc, srcdoc, anode);
+    TY_(InsertNodeAtStart)(node, clone);
+    return (TidyNode)clone;
+} 
+
+static TidyNode afterNode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
+{
+    Node *node = tidyNodeToImpl(tnod);
+    Node *anode = tidyNodeToImpl(anod);
+    Node *clone;
+    TidyDocImpl* doc = tidyDocToImpl(tdoc);
+    TidyDocImpl* srcdoc = tidyDocToImpl(sdoc);
+
+    clone = cloneNodeTree_ext(doc, srcdoc, anode);
+    TY_(InsertNodeAfterElement)(node, clone);
+    return (TidyNode)clone;
+} 
+
+static TidyNode beforeNode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
+{
+    Node *node = tidyNodeToImpl(tnod);
+    Node *anode = tidyNodeToImpl(anod);
+    Node *clone;
+    TidyDocImpl* doc = tidyDocToImpl(tdoc);
+    TidyDocImpl* srcdoc = tidyDocToImpl(sdoc);
+
+    clone = cloneNodeTree_ext(doc, srcdoc, anode);
+    TY_(InsertNodeBeforeElement)(node, clone);
+    return (TidyNode)clone;
+} 
+
+static TidyNode replaceNode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
+{
+    Node *node = tidyNodeToImpl(tnod);
+    Node *anode = tidyNodeToImpl(anod);
+    Node *clone;
+    TidyDocImpl* doc = tidyDocToImpl(tdoc);
+    TidyDocImpl* srcdoc = tidyDocToImpl(sdoc);
+
+    clone = cloneNodeTree_ext(doc, srcdoc, anode);
+    TY_(InsertNodeAfterElement)(node, clone);
+    TY_(DiscardElement)(doc, node);
+    return (TidyNode)clone;
+} 
+
+typedef TidyNode (*pendfunc)(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod);
+
+static pendfunc pfunc[5][2] = {
+    { &appendNode,  &appendNode_ext  },
+    { &prependNode, &prependNode_ext },
+    { &afterNode,   &afterNode_ext   },
+    { &beforeNode,  &beforeNode_ext  },
+    { &replaceNode, &replaceNode_ext }
+};
+
+
 const char *getAttr(TidyNode node, const char *name)
 {
     TidyAttr attr;
     ctmbstr key;
 
-    for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) ) {
+    for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) ) 
+    {
         key=tidyAttrName(attr);
         if (!strcasecmp(key, name))
             return (const char *)tidyAttrValue(attr);
@@ -254,12 +477,37 @@ const char *getnAttr(TidyNode node, const char *name, size_t len)
     TidyAttr attr;
     ctmbstr key;
 
-    for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) ) {
+    for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) ) 
+    {
         key=tidyAttrName(attr);
         if (!strncasecmp(key, name, len))
             return (const char *)tidyAttrValue(attr);
     }
     return (const char *)NULL;
+}
+
+static void addAttr( TidyDoc tdoc, TidyNode tnod, const char *attkey, const char *attval )
+{
+    TidyDocImpl* doc = tidyDocToImpl( tdoc );
+    Node* node = tidyNodeToImpl( tnod );
+    AttVal *av;
+
+    for ( av = node->attributes; av != NULL; av = av->next )
+    {
+        if (!strcasecmp(av->attribute, attkey))
+        {
+            tmbstr newval;
+
+            newval = (tmbstr) TidyDocAlloc(doc, strlen(attval)+1); 
+            TidyDocFree(doc, av->value);
+            strcpy (newval, attval);
+            av->value=newval;
+            return;
+        }
+    }
+
+    av = TY_(NewAttributeEx)( doc, attkey, attval, '"');
+    TY_(InsertAttributeAtStart)( node, av );
 }
 
 TidyBuffer *dumpTag(TidyNode node, TidyBuffer *buf)
@@ -291,9 +539,16 @@ TidyBuffer *dumpTag(TidyNode node, TidyBuffer *buf)
         tidyBufAppend(buf, (void*)k, strlen(k));
         if (vlen)
         {
-            tidyBufAppend(buf, "=\"", 2);
-            tidyBufAppend(buf, (void*)v, vlen);
-            tidyBufAppend(buf, "\"", 1);
+            if ( strchr(v,'"') )
+            {
+                tidyBufAppend(buf, "='", 2);
+                tidyBufAppend(buf, (void*)v, vlen);
+                tidyBufAppend(buf, "'", 1);
+            } else {
+                tidyBufAppend(buf, "=\"", 2);
+                tidyBufAppend(buf, (void*)v, vlen);
+                tidyBufAppend(buf, "\"", 1);
+            }
         }
     }
     if(child || !isSingletonTag(id))
@@ -1083,14 +1338,25 @@ duk_ret_t duk_rp_html_filterclass(duk_context *ctx);
 duk_ret_t duk_rp_html_hastag(duk_context *ctx);
 duk_ret_t duk_rp_html_hasattr(duk_context *ctx);
 duk_ret_t duk_rp_html_hasclass(duk_context *ctx);
+duk_ret_t duk_rp_html_addclass(duk_context *ctx);
+duk_ret_t duk_rp_html_delclass(duk_context *ctx);
 duk_ret_t duk_rp_html_slice(duk_context *ctx);
 duk_ret_t duk_rp_html_eq(duk_context *ctx);
 duk_ret_t duk_rp_html_getattr(duk_context *ctx);
+duk_ret_t duk_rp_html_attr(duk_context *ctx);
+duk_ret_t duk_rp_html_delattr(duk_context *ctx);
 duk_ret_t duk_rp_html_parent(duk_context *ctx);
 duk_ret_t duk_rp_html_children(duk_context *ctx);
 duk_ret_t duk_rp_html_next(duk_context *ctx);
 duk_ret_t duk_rp_html_prev(duk_context *ctx);
 duk_ret_t duk_rp_html_gettag(duk_context *ctx);
+duk_ret_t duk_rp_html_detach(duk_context *ctx);
+duk_ret_t duk_rp_html_delete(duk_context *ctx);
+duk_ret_t duk_rp_html_append(duk_context *ctx);
+duk_ret_t duk_rp_html_prepend(duk_context *ctx);
+duk_ret_t duk_rp_html_after(duk_context *ctx);
+duk_ret_t duk_rp_html_before(duk_context *ctx);
+duk_ret_t duk_rp_html_replace(duk_context *ctx);
 
 static void pushfuncs(duk_context *ctx)
 {
@@ -1111,6 +1377,12 @@ static void pushfuncs(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_rp_html_getattr, 1);
     duk_put_prop_string(ctx, -2, "getAttr");
+
+    duk_push_c_function(ctx, duk_rp_html_attr, 2);
+    duk_put_prop_string(ctx, -2, "attr");
+
+    duk_push_c_function(ctx, duk_rp_html_delattr, 2);
+    duk_put_prop_string(ctx, -2, "removeAttr");
 
     duk_push_c_function(ctx, duk_rp_html_findtag, 1);
     duk_put_prop_string(ctx, -2, "findTag");
@@ -1139,6 +1411,12 @@ static void pushfuncs(duk_context *ctx)
     duk_push_c_function(ctx, duk_rp_html_hasclass, 1);
     duk_put_prop_string(ctx, -2, "hasClass");
 
+    duk_push_c_function(ctx, duk_rp_html_addclass, 1);
+    duk_put_prop_string(ctx, -2, "addClass");
+
+    duk_push_c_function(ctx, duk_rp_html_delclass, 1);
+    duk_put_prop_string(ctx, -2, "removeClass");
+
     duk_push_c_function(ctx, duk_rp_html_parent, 0);
     duk_put_prop_string(ctx, -2, "parent");
 
@@ -1150,6 +1428,28 @@ static void pushfuncs(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_rp_html_prev, 0);
     duk_put_prop_string(ctx, -2, "prev");
+
+    duk_push_c_function(ctx, duk_rp_html_detach, 0);
+    duk_put_prop_string(ctx, -2, "detach");
+
+    duk_push_c_function(ctx, duk_rp_html_delete, 0);
+    duk_put_prop_string(ctx, -2, "delete");
+
+    duk_push_c_function(ctx, duk_rp_html_append, 1);
+    duk_put_prop_string(ctx, -2, "append");
+
+    duk_push_c_function(ctx, duk_rp_html_prepend, 1);
+    duk_put_prop_string(ctx, -2, "prepend");
+
+    duk_push_c_function(ctx, duk_rp_html_after, 1);
+    duk_put_prop_string(ctx, -2, "after");
+
+    duk_push_c_function(ctx, duk_rp_html_before, 1);
+    duk_put_prop_string(ctx, -2, "before");
+
+    duk_push_c_function(ctx, duk_rp_html_replace, 1);
+    duk_put_prop_string(ctx, -2, "replace");
+
 }
 
 static void new_ret_object(duk_context *ctx, duk_idx_t arr_idx)
@@ -1179,6 +1479,542 @@ static void new_ret_object(duk_context *ctx, duk_idx_t arr_idx)
     duk_put_prop_string(ctx, -2, "root");
 
 }
+
+
+
+// [\-_a-zA-Z0-9\x80-\xff]
+static const char VALID_CLASS_TABLE[] = {
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 
+	0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 
+	0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+};
+/* not exactly proper for css, but will keep us out of trouble */
+static int isvalname(const char *n)
+{
+    while ( (*n) && VALID_CLASS_TABLE[(unsigned char)*n]) 
+	n++;
+    return !(int)(*n);
+}
+
+/* check if node has class.  If class attribute exists, set classattr to it 
+   If classpos is not NULL, a pointer to position of classname in classattr is set
+*/
+
+static int hasclass (TidyNode node, const char *classname, const char **classattr, const char **classpos){
+    const char 
+        *classes=getAttr(node,"class"), 
+        *class, *end;
+
+    if(!classes)
+    {
+        *classattr=NULL;
+        return 0;
+    }
+
+    *classattr=classes;
+    if(classpos)
+        *classpos=NULL;
+
+    class = strstr(classes, classname);
+        
+    while (class)
+    {
+        end = class+strlen(classname);
+        /* check begin of string */
+        if(class == classes || *(class-1) == ' ')
+        {
+            //* check end of string */
+            if(*end=='\0' || *end==' ')
+            {
+                if(classpos)
+                    *classpos=class;
+                return 1;
+            }
+        }
+        class = strstr(end, classname); 
+    }
+
+    return 0;
+}
+
+duk_ret_t duk_rp_html_addclass(duk_context *ctx)
+{
+    const char *classattr, 
+        *cname = REQUIRE_STRING(ctx, 0, "html.addClass - first argument must be a string (attr name)");
+    int i=0, len;
+    TidyNode node;
+    TidyDoc tdoc;
+
+    if(!isvalname(cname))
+	RP_THROW(ctx, "html.addClass - '%s' invalid class name\n", cname);
+
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("tdoc"));
+    tdoc=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("nodes"));
+    len=duk_get_length(ctx, -1);
+
+    for(;i<len;i++)
+    {
+        duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+        node=(TidyNode)duk_get_pointer(ctx, -1);        
+        duk_pop(ctx);
+
+        if(!hasclass(node, cname, &classattr, NULL))
+        {
+            if(classattr)
+            {
+                char newattr[strlen(classattr) + strlen(cname) + 2];
+
+                strcpy(newattr, classattr);
+                strcat(newattr, " ");
+                strcat(newattr, cname);
+                addAttr(tdoc, node, "class", newattr);
+            }
+            else
+            {
+                addAttr(tdoc, node, "class", cname);
+            }
+        }
+        
+    }
+    return 0;
+}
+
+duk_ret_t duk_rp_html_delclass(duk_context *ctx)
+{
+    const char *classattr, *cpos,
+        *cname = REQUIRE_STRING(ctx, 0, "html.Attr - first argument must be a string (attr name)");
+    int i=0, len;
+    TidyNode node;
+    TidyDoc tdoc;
+
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("tdoc"));
+    tdoc=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("nodes"));
+    len=duk_get_length(ctx, -1);
+
+    for(;i<len;i++)
+    {
+        duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+        node=(TidyNode)duk_get_pointer(ctx, -1);        
+        duk_pop(ctx);
+
+        if(hasclass(node, cname, &classattr, &cpos))
+        {
+            /* check if it is the only class */
+            if(strlen(cname) == strlen(classattr))
+            {
+                addAttr(tdoc, node, "class", "");
+            }
+            else
+            {
+                int npos = cpos - classattr,
+                    epos = npos + strlen(cname);
+
+                char newattr[strlen(classattr) + 1];                
+                /* if the to be removed class is first */
+                if(!npos)
+                    strcpy(newattr, classattr + epos +1);
+                else
+                {
+                    /* copy what comes after over it*/
+                    strcpy(newattr, classattr);
+                    if(*(classattr + epos))
+                        strcpy(newattr + npos, classattr + epos +1);
+                    else
+                        newattr[npos-1]='\0';
+                }
+                
+                addAttr(tdoc, node, "class", newattr);
+            }
+        }
+        
+    }
+    return 0;
+}
+
+/* html tidy makes anything parsed into a document
+   parse html, select body, then select elements in
+   in body and put it on duktape stack in format
+   understood by _pend below
+*/
+static void _htmlparsefrag(duk_context *ctx, const char *html)
+{
+    TidyDoc tdoc;
+    TidyNode root, body, head, child;
+    const char *tagbody="body", *taghead="head";
+    duk_uarridx_t i=0;
+    TidyBuffer errbuf = {0};
+
+    duk_push_object(ctx);
+
+    tdoc = tidyCreate();
+    tidyOptSetBool(tdoc, TidyForceOutput, yes);
+    tidyOptSetBool(tdoc, TidyMark, no);
+
+    tidySetErrorBuffer( tdoc, &errbuf );
+
+    tidyParseString(tdoc, html);
+    tidyCleanAndRepair(tdoc);
+    
+    duk_push_pointer(ctx, (void *)tdoc);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("tdoc"));
+
+    root=tidyGetRoot(tdoc);
+    duk_push_array(ctx);
+    
+    _find_(ctx, tdoc, root, duk_get_top_index(ctx),
+        &taghead, NULL, 1, findTag, 0); 
+    _find_(ctx, tdoc, root, duk_get_top_index(ctx),
+        &tagbody, NULL, 1, findTag, 0); 
+
+    duk_get_prop_index(ctx, -1, 0);
+    head=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    duk_get_prop_index(ctx, -1, 1);
+    body=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    duk_push_array(ctx);
+    duk_replace(ctx, -2);
+
+    /* get head elements */
+    child = tidyGetChild(head);
+    while(child)
+    {
+        TidyTagId id= tidyNodeGetId(child);
+
+        /* skip empty title */
+        if( id != TidyTag_TITLE || tidyGetChild(child) )
+        {
+            duk_push_pointer(ctx, (void*)child);
+            duk_put_prop_index(ctx, -2, i++);
+        }
+        child=tidyGetNext(child);
+    }
+
+    /* get body elements */
+    child = tidyGetChild(body);
+    while(child)
+    {
+        duk_push_pointer(ctx, (void*)child);
+        duk_put_prop_index(ctx, -2, i++);
+        child=tidyGetNext(child);
+    }
+
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("nodes"));
+    tidyBufFree( &errbuf );
+}
+#define pendappend  0 
+#define pendprepend 1
+#define pendafter   2
+#define pendbefore  3
+#define pendreplace 4
+
+static duk_ret_t _pend(duk_context *ctx, int type)
+{
+    int i=0, j=0, len, ilen, fromstring=0, src_is_ext=0;
+    duk_uarridx_t rep_idx=0;
+    TidyNode node, insert_node, ret_node, last_ret_node=NULL;
+    TidyDoc tdoc, srcdoc;
+    pendfunc pf;
+    if(duk_is_string(ctx, 0))
+    {
+        const char *str=duk_get_string(ctx,0);
+
+        _htmlparsefrag(ctx, str);
+        fromstring=1;
+        duk_remove(ctx, 0);        
+    }    
+    /* the nodes to insert */
+    if( !duk_is_object(ctx,0) || !duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("nodes")))
+        RP_THROW(ctx, "html.append - first argument must be an html object");
+
+    /* get the doc pointer from the source nodes */
+    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("tdoc"));
+    srcdoc=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    duk_remove(ctx, 0);
+
+    ilen=duk_get_length(ctx, 0);
+
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, 1, DUK_HIDDEN_SYMBOL("tdoc"));
+    tdoc=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("nodes"));
+    len=duk_get_length(ctx, -1);
+
+    /* stack = [ object_nodes this nodes_to_insert ] */
+
+    /* if replacing, replace node list too */
+    if(type==pendreplace)
+        duk_push_array(ctx); /* stack = [ object_nodes this nodes_to_insert replacement_nodes ] */
+
+    /* if coming from another TidyDoc, use _ext function */
+    if( tdoc != srcdoc)
+        src_is_ext=1;
+
+
+    for(i=0;i<len;i++)
+    {
+        TidyTagId id;
+        int ilen2=ilen;
+
+        duk_get_prop_index(ctx, 2, (duk_uarridx_t)i);
+        node=(TidyNode)duk_get_pointer(ctx, -1);        
+        duk_pop(ctx);
+
+        /* set here because it will change for pendrepace below */
+        pf = pfunc[type][src_is_ext];
+
+        /* br et al can't have children but can have siblings*/
+        id = tidyNodeGetId(node);
+        if(isSingletonTag(id) && (type==pendappend || type==pendprepend) )
+            continue;
+
+        /* 
+           when replacing:
+             replace the node with last, 
+             then pendbefore the rest to that node 
+        */
+        if(type==pendreplace)
+        {
+            ilen2--;
+            /* get the last node in list */
+            duk_get_prop_index(ctx, 0, (duk_uarridx_t)ilen2);
+            insert_node=(TidyNode)duk_get_pointer(ctx, -1);
+            duk_pop(ctx);
+            if( node && insert_node) /* paranoid? */
+            {
+                node=(pf)(tdoc, srcdoc, node, insert_node);
+                last_ret_node=node; /* this goes last into node list */
+            }
+            pf=pfunc[pendbefore][src_is_ext];
+        }
+        
+        for (j=0; j<ilen2; j++) 
+        {
+            /* prepend/after/replace in reverse order
+               so they come out in regular order
+            */
+            if(type==pendprepend || type == pendafter)
+                duk_get_prop_index(ctx, 0, (duk_uarridx_t)(ilen2-(j+1)));
+            else
+                duk_get_prop_index(ctx, 0, (duk_uarridx_t)j);
+            insert_node=(TidyNode)duk_get_pointer(ctx, -1);
+            duk_pop(ctx);
+
+            if( node && insert_node) /* paranoid? */
+            {
+                ret_node = (pf)(tdoc, srcdoc, node, insert_node);
+                if(ret_node && type==pendreplace) /* yes paranoid */
+                {
+                    duk_push_pointer(ctx, (void*)ret_node);
+                    duk_put_prop_index(ctx, 3, rep_idx++);
+                }
+            }
+        }
+        if(type==pendreplace && last_ret_node)
+        {
+            duk_push_pointer(ctx, (void*)last_ret_node);
+            duk_put_prop_index(ctx, 3, rep_idx++); 
+        }
+    }
+
+    if(fromstring)
+        tidyRelease(srcdoc);
+    duk_pull(ctx, 1);
+    /* replace node list */
+    if(type==pendreplace)
+    {
+        int len = (int) duk_get_length(ctx, 2);
+        duk_pull(ctx, 2);
+        
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("nodes"));
+        duk_push_int(ctx, len);
+        duk_put_prop_string(ctx, -2, "length");
+    }
+    return 1;
+}
+
+duk_ret_t duk_rp_html_replace(duk_context *ctx)
+{
+    return _pend(ctx, pendreplace);
+}
+
+duk_ret_t duk_rp_html_before(duk_context *ctx)
+{
+    return _pend(ctx, pendbefore);
+}
+
+duk_ret_t duk_rp_html_after(duk_context *ctx)
+{
+    return _pend(ctx, pendafter);
+}
+
+duk_ret_t duk_rp_html_prepend(duk_context *ctx)
+{
+    return _pend(ctx, pendprepend);
+}
+
+duk_ret_t duk_rp_html_append(duk_context *ctx)
+{
+    return _pend(ctx, pendappend);
+}
+
+static duk_ret_t _detach_delete(duk_context *ctx, int delete)
+{
+    int i=0, len, dlen;
+    TidyNode node;
+    TidyDoc tdoc;
+
+    duk_push_this(ctx);
+    if(!duk_get_prop_string(ctx, -1, "root"))
+        RP_THROW(ctx, "html: error - document root not found");
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("dnodes"));
+    dlen=duk_get_length(ctx, -1);
+
+    duk_get_prop_string(ctx, -3, DUK_HIDDEN_SYMBOL("tdoc"));
+    tdoc=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -3, DUK_HIDDEN_SYMBOL("nodes"));
+    len=duk_get_length(ctx, -1);
+
+    /* stack = [ this, root, dnodes nodes ] */
+
+    for(;i<len;i++)
+    {
+        duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+        node=(TidyNode)duk_get_pointer(ctx, -1);        
+
+        detachNode(tdoc, node, delete);
+        if(!delete)
+        {
+            duk_put_prop_index(ctx, -3, (duk_uarridx_t)dlen++);
+        }
+        else
+            duk_pop(ctx);
+    }
+    if(!delete)
+    {
+        duk_pull(ctx, 0);
+        return 1;
+    }
+    return 0;
+}
+
+duk_ret_t duk_rp_html_detach(duk_context *ctx)
+{
+    return _detach_delete(ctx, 0);
+}
+
+duk_ret_t duk_rp_html_delete(duk_context *ctx)
+{
+    return _detach_delete(ctx, 1);
+}
+
+
+duk_ret_t duk_rp_html_delattr(duk_context *ctx)
+{
+    const char *aname = REQUIRE_STRING(ctx, 0, "html.delAttr - first argument must be a string (attr name)");
+    int i=0, len;
+    TidyNode node;
+    TidyDoc tdoc;
+    TidyAttr attr;
+    ctmbstr key;
+
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("tdoc"));
+    tdoc=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("nodes"));
+    len=duk_get_length(ctx, -1);
+
+    for(;i<len;i++)
+    {
+        duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+        node=(TidyNode)duk_get_pointer(ctx, -1);        
+        duk_pop(ctx);
+
+        for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) ) 
+        {
+            key=tidyAttrName(attr);
+            if (!strcasecmp(key, aname))
+            {
+                tidyAttrDiscard( tdoc, node, attr);
+                break;
+            }
+        }
+    }
+    return 0;
+}
+
+duk_ret_t duk_rp_html_attr(duk_context *ctx)
+{
+    const char *val, *aname = REQUIRE_STRING(ctx, 0, "html.attr - first argument must be a string (attr name)");
+    int i=0, len;
+    TidyNode node;
+    TidyDoc tdoc;
+
+    if (duk_is_undefined(ctx, 1) )
+    {
+        duk_pop(ctx);
+        return duk_rp_html_getattr(ctx);
+    }
+
+    val = REQUIRE_STRING(ctx, 1, "html.attr - second argument must be a string (attr value)");
+
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("tdoc"));
+    tdoc=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("nodes"));
+    len=duk_get_length(ctx, -1);
+
+    for(;i<len;i++)
+    {
+        duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+        node=(TidyNode)duk_get_pointer(ctx, -1);        
+        duk_pop(ctx);
+        addAttr( tdoc, node, aname, val);
+    }
+
+    return 0;
+}
+
+
 duk_ret_t duk_rp_html_gettag(duk_context *ctx)
 {
     TidyNode node;
@@ -1457,6 +2293,25 @@ duk_ret_t duk_rp_html_hasclass(duk_context *ctx)
     return duk_rp_html_find_(ctx, findClass, 2);
 }
 
+duk_ret_t duk_rp_html_pp(duk_context *ctx)
+{
+    TidyBuffer output = {0};
+    TidyDoc tdoc;
+    
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("tdoc"));
+    tdoc=duk_get_pointer(ctx, -1);
+    tidySaveBuffer(tdoc, &output);
+
+    duk_push_string(ctx, (char *)output.bp);
+
+    if (output.bp)
+        tidyBufFree( &output );
+
+    return 1;
+}
+
 duk_ret_t duk_rp_htmlparse(duk_context *ctx)
 {
 //    const char *html = REQUIRE_STRING(ctx, 0, "html.parse: first argument must be a string (html document)");
@@ -1464,7 +2319,6 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
     int Terr=0;    
     duk_idx_t err_idx;
     TidyDoc tdoc;
-    TidyBuffer output = {0};
     TidyBuffer *tidy_errbuf = NULL;
     TidyNode root;
     duk_size_t size=0;
@@ -1522,12 +2376,8 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
     Terr=tidyCleanAndRepair(tdoc);
     htmlSetErr(Terr);
     
-    tidySaveBuffer(tdoc, &output);    
-
     duk_put_prop_string(ctx, -2, "errMsg");
 
-    duk_push_string(ctx, (char *)output.bp);
-    duk_put_prop_string(ctx, -2, "prettyHtml");
 
     duk_push_pointer(ctx, (void *)tdoc);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("tdoc"));
@@ -1535,6 +2385,9 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
     duk_push_pointer(ctx, (void *)tidy_errbuf);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("errbuf"));
     
+    duk_push_c_function(ctx, duk_rp_html_pp, 0);
+    duk_put_prop_string(ctx, -2, "prettyPrint");
+
     root=tidyGetRoot(tdoc);
 
     duk_push_array(ctx);
@@ -1542,9 +2395,9 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
     duk_put_prop_index(ctx, -2, 0);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("nodes"));
 
-    if (output.bp)
-        tidyBufFree( &output );
-    
+    duk_push_array(ctx);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("dnodes"));
+
     duk_push_c_function(ctx, duk_rp_html_finalizer, 1);
     duk_set_finalizer(ctx, -2);
 

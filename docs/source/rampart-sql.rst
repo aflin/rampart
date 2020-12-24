@@ -2029,15 +2029,16 @@ Callback:
 
 .. code-block:: javascript
 
-   var ret = Sql.rex(search, txt, function(match, submatches, index)
+   var ret = Sql.rex(search, txt, 
+      function(match, submatches, index)
       {
       	console.log(index,  'matched string "' + match +'"')   
       	console.log("    ", 'submatches: ', submatches);
       }
    );
 
-   var ret = Sql.rex(search, txt, function(match, index)
-      {submatches:false},
+   var ret = Sql.rex(search, txt, {submatches:false}, 
+      function(match, index)
       {
       	console.log(index, 'matched string "' + match +'"')   
       }

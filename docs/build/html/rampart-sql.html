@@ -2132,15 +2132,16 @@ other.</p></li>
 <dt>Callback:</dt><dd><p>The callback function will be passed the following:</p>
 </dd>
 </dl>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">rex</span><span class="p">(</span><span class="nx">search</span><span class="p">,</span> <span class="nx">txt</span><span class="p">,</span> <span class="kd">function</span><span class="p">(</span><span class="nx">match</span><span class="p">,</span> <span class="nx">submatches</span><span class="p">,</span> <span class="nx">index</span><span class="p">)</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">rex</span><span class="p">(</span><span class="nx">search</span><span class="p">,</span> <span class="nx">txt</span><span class="p">,</span>
+   <span class="kd">function</span><span class="p">(</span><span class="nx">match</span><span class="p">,</span> <span class="nx">submatches</span><span class="p">,</span> <span class="nx">index</span><span class="p">)</span>
    <span class="p">{</span>
      <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">index</span><span class="p">,</span>  <span class="s1">&#39;matched string &quot;&#39;</span> <span class="o">+</span> <span class="nx">match</span> <span class="o">+</span><span class="s1">&#39;&quot;&#39;</span><span class="p">)</span>
      <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;    &quot;</span><span class="p">,</span> <span class="s1">&#39;submatches: &#39;</span><span class="p">,</span> <span class="nx">submatches</span><span class="p">);</span>
    <span class="p">}</span>
 <span class="p">);</span>
 
-<span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">rex</span><span class="p">(</span><span class="nx">search</span><span class="p">,</span> <span class="nx">txt</span><span class="p">,</span> <span class="kd">function</span><span class="p">(</span><span class="nx">match</span><span class="p">,</span> <span class="nx">index</span><span class="p">)</span>
-   <span class="p">{</span><span class="nx">submatches</span><span class="o">:</span><span class="kc">false</span><span class="p">},</span>
+<span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">rex</span><span class="p">(</span><span class="nx">search</span><span class="p">,</span> <span class="nx">txt</span><span class="p">,</span> <span class="p">{</span><span class="nx">submatches</span><span class="o">:</span><span class="kc">false</span><span class="p">},</span>
+   <span class="kd">function</span><span class="p">(</span><span class="nx">match</span><span class="p">,</span> <span class="nx">index</span><span class="p">)</span>
    <span class="p">{</span>
      <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">index</span><span class="p">,</span> <span class="s1">&#39;matched string &quot;&#39;</span> <span class="o">+</span> <span class="nx">match</span> <span class="o">+</span><span class="s1">&#39;&quot;&#39;</span><span class="p">)</span>
    <span class="p">}</span>
