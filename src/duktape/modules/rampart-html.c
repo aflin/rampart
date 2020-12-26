@@ -23,7 +23,7 @@
 #include "tmbstr.h"
 #include "utf8.h"
 
-
+static void uniq_array_nodes(duk_context *ctx, duk_idx_t arr_idx);
 
 duk_ret_t duk_rp_html_finalizer(duk_context *ctx)
 {
@@ -45,13 +45,15 @@ duk_ret_t duk_rp_html_finalizer(duk_context *ctx)
     doc = tidyDocToImpl( tdoc );
     duk_pop(ctx);
 
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("dnodes"));    
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("dnodes"));
+// if we need this, we have bigger problems
+//    uniq_array_nodes(ctx, -1);
     len=duk_get_length(ctx, -1);
-    
+
     for (i=0; i<len; i++)
     {
         duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
-        node=(Node*)duk_get_pointer(ctx, -1);        
+        node=(Node*)duk_get_pointer(ctx, -1);
         duk_pop(ctx);
         TY_(FreeNode)( doc, node);
     }
@@ -169,7 +171,7 @@ TidyTag_TIME TidyTag_TRACK
 #define optTitleTxt 1 << 4
 #define optALinks   1 << 5
 
-#define testOpt(optOption) ( (optOption) & opts) 
+#define testOpt(optOption) ( (optOption) & opts)
 
 static void AddByte( Lexer *lexer, tmbchar ch )
 {
@@ -190,7 +192,7 @@ static void AddByte( Lexer *lexer, tmbchar ch )
         buf = (tmbstr) TidyRealloc( lexer->allocator, lexer->lexbuf, allocAmt );
         if ( buf )
         {
-          TidyClearMemory( buf + lexer->lexlength, 
+          TidyClearMemory( buf + lexer->lexlength,
                            allocAmt - lexer->lexlength );
           lexer->lexbuf = buf;
           lexer->lexlength = allocAmt;
@@ -214,20 +216,30 @@ static uint addStringToLex(TidyDocImpl *doc, tmbstr str, uint len)
     return ret;
 }
 
+/* either we need to have a list of invalidated nodes
+   or we need to never invalidate them until finalizer
+   otherwise we could possibly end up inserting a valid
+   node into a freed one.
+
+   Here we take the easy way out and will just keep them
+   around until finalizer is run
+*/
 
 static TidyNode detachNode(TidyDoc tdoc, TidyNode tnod, int freeNode)
 {
-    TidyDocImpl* doc = tidyDocToImpl( tdoc );
+//    TidyDocImpl* doc = tidyDocToImpl( tdoc );
     Node* node = tidyNodeToImpl( tnod );
 
     if (node)
     {
         TY_(RemoveNode)(node);
+/*
         if(freeNode)
         {
             TY_(FreeNode)( doc, node);
             return NULL;
         }
+*/
     }
 
     return tnod;
@@ -248,13 +260,12 @@ static Node *cloneNodeTree_ext(TidyDocImpl *doc, TidyDocImpl *src, Node* node)
 {
     Node *retn = TY_(CloneNode)(doc, node);
     uint len = node->end - node->start;
-    
+
     if(len>0)
     {
-        uint offset = addStringToLex(doc, 
-              &(src->lexer->lexbuf[node->start]), 
+        uint offset = addStringToLex(doc,
+              &(src->lexer->lexbuf[node->start]),
               len);
-
         retn->start = offset;
         retn->end = offset + len;
     }
@@ -263,7 +274,7 @@ static Node *cloneNodeTree_ext(TidyDocImpl *doc, TidyDocImpl *src, Node* node)
     {
         Node *child = node->content;
         Node *rchild;
-        
+
         rchild = cloneNodeTree_ext(doc, src, child);
 
         retn->content = rchild;
@@ -274,17 +285,26 @@ static Node *cloneNodeTree_ext(TidyDocImpl *doc, TidyDocImpl *src, Node* node)
         {
             rchild->next = cloneNodeTree_ext(doc, src, child);
             rchild->next->parent=retn;
-            rchild->next->prev = rchild;            
+            rchild->next->prev = rchild;
 
             rchild = rchild->next;
             child = child->next;
         }
-        
+
         retn->last=rchild;
     }
 
     return retn;
 
+}
+
+static TidyNode dupnode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod)
+{
+    TidyDocImpl* doc = tidyDocToImpl( tdoc );
+    TidyDocImpl* srcdoc = tidyDocToImpl( sdoc );
+    Node* node = tidyNodeToImpl( tnod );
+
+    return (TidyNode) cloneNodeTree_ext(doc, srcdoc, node);
 }
 
 static Node *cloneNodeTree(TidyDocImpl *doc, Node* node)
@@ -298,7 +318,7 @@ static Node *cloneNodeTree(TidyDocImpl *doc, Node* node)
     {
         Node *child = node->content;
         Node *rchild;
-        
+
         rchild = cloneNodeTree(doc, child);
 
         retn->content = rchild;
@@ -309,16 +329,45 @@ static Node *cloneNodeTree(TidyDocImpl *doc, Node* node)
         {
             rchild->next = cloneNodeTree(doc, child);
             rchild->next->parent=retn;
-            rchild->next->prev = rchild;            
+            rchild->next->prev = rchild;
 
             rchild = rchild->next;
             child = child->next;
         }
-        
+
         retn->last=rchild;
     }
     return retn;
 }
+/*
+static TidyNode dupnode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod)
+{
+    TidyDocImpl* doc = tidyDocToImpl( tdoc );
+    TidyDocImpl* srcdoc = tidyDocToImpl( sdoc );
+    Node* node = tidyNodeToImpl( tnod );
+
+    return (TidyNode) cloneNodeTree(doc, srcdoc, node);
+}
+*/
+
+static void InsertNodeBeforeElement(Node *element, Node *node)
+{
+    Node *parent;
+
+    parent = element->parent;
+    node->parent = parent;
+    node->next = element;
+    node->prev = element->prev;
+    element->prev = node;
+
+    if (node->prev)
+        node->prev->next = node;
+
+    /* added parent NULL check */
+    if (parent && parent->content == element)
+        parent->content = node;
+}
+
 
 static TidyNode appendNode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
 {
@@ -330,7 +379,7 @@ static TidyNode appendNode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode a
     clone = cloneNodeTree(doc, anode);
     TY_(InsertNodeAtEnd)(node, clone);
     return (TidyNode)clone;
-} 
+}
 
 static TidyNode prependNode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
 {
@@ -342,7 +391,7 @@ static TidyNode prependNode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode 
     clone = cloneNodeTree(doc, anode);
     TY_(InsertNodeAtStart)(node, clone);
     return (TidyNode)clone;
-} 
+}
 
 static TidyNode afterNode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
 {
@@ -354,7 +403,7 @@ static TidyNode afterNode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode an
     clone = cloneNodeTree(doc, anode);
     TY_(InsertNodeAfterElement)(node, clone);
     return (TidyNode)clone;
-} 
+}
 
 static TidyNode beforeNode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
 {
@@ -364,9 +413,9 @@ static TidyNode beforeNode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode a
     TidyDocImpl* doc = tidyDocToImpl(tdoc);
 
     clone = cloneNodeTree(doc, anode);
-    TY_(InsertNodeBeforeElement)(node, clone);
+    InsertNodeBeforeElement(node, clone);
     return (TidyNode)clone;
-} 
+}
 
 static TidyNode replaceNode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
 {
@@ -377,9 +426,10 @@ static TidyNode replaceNode(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode 
 
     clone = cloneNodeTree(doc, anode);
     TY_(InsertNodeAfterElement)(node, clone);
-    TY_(DiscardElement)(doc, node);
+    TY_(RemoveNode)(node);
+    //TY_(DiscardElement)(doc, node);
     return (TidyNode)clone;
-} 
+}
 
 static TidyNode appendNode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
 {
@@ -392,7 +442,7 @@ static TidyNode appendNode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNo
     clone = cloneNodeTree_ext(doc, srcdoc, anode);
     TY_(InsertNodeAtEnd)(node, clone);
     return (TidyNode)clone;
-} 
+}
 
 static TidyNode prependNode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
 {
@@ -405,7 +455,7 @@ static TidyNode prependNode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyN
     clone = cloneNodeTree_ext(doc, srcdoc, anode);
     TY_(InsertNodeAtStart)(node, clone);
     return (TidyNode)clone;
-} 
+}
 
 static TidyNode afterNode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
 {
@@ -418,7 +468,7 @@ static TidyNode afterNode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNod
     clone = cloneNodeTree_ext(doc, srcdoc, anode);
     TY_(InsertNodeAfterElement)(node, clone);
     return (TidyNode)clone;
-} 
+}
 
 static TidyNode beforeNode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
 {
@@ -429,9 +479,9 @@ static TidyNode beforeNode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNo
     TidyDocImpl* srcdoc = tidyDocToImpl(sdoc);
 
     clone = cloneNodeTree_ext(doc, srcdoc, anode);
-    TY_(InsertNodeBeforeElement)(node, clone);
+    InsertNodeBeforeElement(node, clone);
     return (TidyNode)clone;
-} 
+}
 
 static TidyNode replaceNode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod)
 {
@@ -443,9 +493,10 @@ static TidyNode replaceNode_ext(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyN
 
     clone = cloneNodeTree_ext(doc, srcdoc, anode);
     TY_(InsertNodeAfterElement)(node, clone);
-    TY_(DiscardElement)(doc, node);
+    TY_(RemoveNode)(node);
+    //TY_(DiscardElement)(doc, node);
     return (TidyNode)clone;
-} 
+}
 
 typedef TidyNode (*pendfunc)(TidyDoc tdoc, TidyDoc sdoc, TidyNode tnod, TidyNode anod);
 
@@ -463,7 +514,7 @@ const char *getAttr(TidyNode node, const char *name)
     TidyAttr attr;
     ctmbstr key;
 
-    for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) ) 
+    for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) )
     {
         key=tidyAttrName(attr);
         if (!strcasecmp(key, name))
@@ -477,7 +528,7 @@ const char *getnAttr(TidyNode node, const char *name, size_t len)
     TidyAttr attr;
     ctmbstr key;
 
-    for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) ) 
+    for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) )
     {
         key=tidyAttrName(attr);
         if (!strncasecmp(key, name, len))
@@ -498,7 +549,7 @@ static void addAttr( TidyDoc tdoc, TidyNode tnod, const char *attkey, const char
         {
             tmbstr newval;
 
-            newval = (tmbstr) TidyDocAlloc(doc, strlen(attval)+1); 
+            newval = (tmbstr) TidyDocAlloc(doc, strlen(attval)+1);
             TidyDocFree(doc, av->value);
             strcpy (newval, attval);
             av->value=newval;
@@ -517,7 +568,7 @@ TidyBuffer *dumpTag(TidyNode node, TidyBuffer *buf)
     TidyNodeType type = tidyNodeGetType(node);
     TidyTagId id;
     ctmbstr name;
-    
+
     if(type != TidyNode_Start && type != TidyNode_StartEnd)
         return buf;
 
@@ -527,10 +578,10 @@ TidyBuffer *dumpTag(TidyNode node, TidyBuffer *buf)
 
     tidyBufAppend(buf, "<", 1);
     tidyBufAppend(buf, (void*)name, strlen(name) );
-    for (attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr)) 
+    for (attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr))
     {
         const char *k = (const char *) tidyAttrName(attr);
-        const char *v = (const char *) tidyAttrValue(attr); 
+        const char *v = (const char *) tidyAttrValue(attr);
         size_t vlen=0;
 
         if(v) vlen=strlen(v);
@@ -574,13 +625,13 @@ TidyBuffer *dumpNode(TidyNode node, TidyDoc doc, TidyBuffer *buf, int indent, in
     ctmbstr name = tidyNodeGetName(node);
 /*
     char indtext[indented+1];
-    
+
     if(indent)
     {
         int i=0;
         for(;i<indented;i++)
             indtext[i]=' ';
-        indtext[i]='\0';  
+        indtext[i]='\0';
     }
 */
     switch(type)
@@ -589,17 +640,17 @@ TidyBuffer *dumpNode(TidyNode node, TidyDoc doc, TidyBuffer *buf, int indent, in
         case TidyNode_StartEnd:
         {
             TidyAttr attr;
-            
+
             //if(indent)
             //    tidyBufAppend(buf, indtext, indented);
 
             child = tidyGetChild(node);
             tidyBufAppend(buf, "<", 1);
             tidyBufAppend(buf, (void*)name, strlen(name) );
-            for (attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr)) 
+            for (attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr))
             {
                 const char *k = (const char *) tidyAttrName(attr);
-                const char *v = (const char *) tidyAttrValue(attr); 
+                const char *v = (const char *) tidyAttrValue(attr);
                 size_t vlen=0;
 
                 if(v) vlen=strlen(v);
@@ -648,10 +699,10 @@ TidyBuffer *dumpNode(TidyNode node, TidyDoc doc, TidyBuffer *buf, int indent, in
             tidyBufInit(&tbuf);
             tidyNodeGetText(doc, node, &tbuf);
             tidyBufAppend(
-                buf, 
-                tbuf.bp, 
+                buf,
+                tbuf.bp,
                 tbuf.size - (tbuf.bp[tbuf.size-1]=='\n' ? 1 : 0)
-            ); 
+            );
             tidyBufFree (&tbuf);
             break;
         }
@@ -714,7 +765,7 @@ TidyBuffer *dumpNode(TidyNode node, TidyDoc doc, TidyBuffer *buf, int indent, in
 */
             break;
     }
-    return buf;        
+    return buf;
 }
 
 TidyBuffer *dumpHtml(TidyDoc doc, TidyNode start, TidyBuffer *buf, int indent, int indented, int printself)
@@ -737,13 +788,13 @@ revisit indentation later
 
             buf=dumpNode(child, doc, buf, 0, 0);
             if(
-                indent && 
-                next && 
+                indent &&
+                next &&
                 tidyNodeGetType(next) !=  TidyNode_Text &&
                 isBlockTag(tidyNodeGetId(next))
             )
                 tidyBufAppend(buf, "\n", 1);
-                
+
         }
         else
 */
@@ -762,7 +813,7 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
     for ( child = tidyGetChild(start); child; child = tidyGetNext(child) )
     {
         type = tidyNodeGetType( child );
-        switch (type) 
+        switch (type)
         {
             case TidyNode_Text:
             {
@@ -770,10 +821,10 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                 tidyBufInit(&tbuf);
                 tidyNodeGetValue(doc, child, &tbuf);
                 tidyBufAppend(
-                    buf, 
-                    tbuf.bp, 
+                    buf,
+                    tbuf.bp,
                     tbuf.size- (tbuf.bp[tbuf.size-1]=='\n' ? 1 : 0)
-                ); 
+                );
                 tidyBufFree (&tbuf);
                 tag_start_addnl=0; /* flag that last round ended in text */
                 break;
@@ -802,7 +853,7 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
 
                     if (tag_start_addnl && buf->size>0 && buf->bp[buf->size -1] != '\n')
                         tidyBufAppend(buf, "\n", 1);
-                    
+
                     /* mark next round as ending with a tag */
                     tag_start_addnl=addnl;
 
@@ -853,7 +904,7 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                         const char *name=getAttr(child, "name");
                         if (name)
                         {
-                            if( 
+                            if(
                                 (testOpt(optMetaDesc) && !strcasecmp(name,"description"))
                                 ||
                                 (testOpt(optMetaKeyw) && !strcasecmp(name,"keywords"))
@@ -868,7 +919,7 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                                     sprintf(lbuf, "\n%s\n", cont);
                                     tidyBufAppend(buf, lbuf, len-1);
                                 }
-                                
+
                             }
                         }
                     }
@@ -912,7 +963,7 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                             tidyBufAppend(buf, lbuf, len-1);
                         }
                     }
-                    
+
                     if (addnl && buf->size>0 && buf->bp[buf->size -1] != '\n')
                         tidyBufAppend(buf, "\n", 1);
 
@@ -981,7 +1032,7 @@ static duk_ret_t _tohtml(duk_context *ctx)
     if(makearray==-1)
     {
         int len;
-        
+
         duk_get_prop_string(ctx, this_idx, "length");
         len=duk_get_int(ctx, -1);
         duk_pop(ctx);
@@ -1022,7 +1073,7 @@ static duk_ret_t _tohtml(duk_context *ctx)
         i++;
     }
     duk_pop_2(ctx);
-    
+
     if(!makearray)
     {
         if(ret->size)
@@ -1064,7 +1115,7 @@ duk_ret_t duk_rp_html_totext(duk_context *ctx)
                 makearray=1;
         }
         duk_pop(ctx);
-        
+
     }
 
     duk_push_this(ctx);
@@ -1077,7 +1128,7 @@ duk_ret_t duk_rp_html_totext(duk_context *ctx)
     if(makearray==-1)
     {
         int len;
-        
+
         duk_get_prop_string(ctx, this_idx, "length");
         len=duk_get_int(ctx, -1);
         duk_pop(ctx);
@@ -1119,7 +1170,7 @@ duk_ret_t duk_rp_html_totext(duk_context *ctx)
         i++;
     }
     duk_pop_2(ctx);
-    
+
     if(!makearray)
     {
         if(ret->size)
@@ -1162,20 +1213,24 @@ static int findfunc_tag (TidyNode node, const char **txt, const char **txt2, int
 
 static int findfunc_attr (TidyNode node, const char **txt, const char **txt2, int ntxt){
     int i=0;
-    
+
     for (;i<ntxt;i++)
     {
         size_t len;
         const char *s;
-        
+
         s = strchr(txt[i], '=');
+
+        /* backup to non-whitespace before '=' */
+        while ( s>txt[i] && isspace(*(s-1)) ) s--;
+
         if(s)
             len=(size_t) ( s - txt[i]);
         else
             len=strlen(txt[i]);
 
         s = getnAttr(node, txt[i], len);
-        
+
         if(s)
         {
             if( txt2[i] )
@@ -1187,7 +1242,7 @@ static int findfunc_attr (TidyNode node, const char **txt, const char **txt2, in
                 return 1;
         }
     }
-    
+
     return 0;
 }
 
@@ -1201,7 +1256,7 @@ static int findfunc_class (TidyNode node, const char **txt, const char **txt2, i
     for (;i<ntxt;i++)
     {
         const char *class = strstr(classes, txt[i]);
-        
+
         while (class)
         {
             const char *end = class+strlen(txt[i]);
@@ -1212,11 +1267,10 @@ static int findfunc_class (TidyNode node, const char **txt, const char **txt2, i
                 if(*end=='\0' || *end==' ')
                     return 1;
             }
-            class = strstr(end, txt[i]); 
+            class = strstr(end, txt[i]);
         }
     }
-    
-     
+
     return 0;
 }
 
@@ -1230,14 +1284,14 @@ static findfunc ffunc[3] = {
 };
 
 static void _find_(
-    duk_context *ctx, 
+    duk_context *ctx,
     TidyDoc doc,
     TidyNode start,
-    duk_idx_t arr_idx, 
-    const char **txt, 
+    duk_idx_t arr_idx,
+    const char **txt,
     const char **txt2,
     int ntxt,
-    int findType , 
+    int findType ,
     int filter    )
 {
     TidyNode child;
@@ -1246,7 +1300,7 @@ static void _find_(
     if(filter)
     {
         type = tidyNodeGetType(start);
-        if(type == TidyNode_Start) 
+        if(type == TidyNode_Start)
         {
             if( (ffunc[findType])(start, txt, txt2, ntxt) )
             {
@@ -1264,7 +1318,6 @@ static void _find_(
                 duk_push_false(ctx);
                 duk_put_prop_index(ctx, arr_idx, len);
             }
-            
         }
         return;
     }
@@ -1272,7 +1325,7 @@ static void _find_(
     for ( child = tidyGetChild(start); child; child = tidyGetNext(child) )
     {
         type = tidyNodeGetType(child);
-        if(type == TidyNode_Start) 
+        if(type == TidyNode_Start)
         {
             if( (ffunc[findType])(child, txt, txt2, ntxt) )
             {
@@ -1294,7 +1347,7 @@ static void _findtxts(duk_context *ctx, duk_idx_t arr_idx, const char **txts, in
     const char **txt2=NULL;
 
     duk_push_this(ctx);
-    
+
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("tdoc"));
     doc=duk_get_pointer(ctx, -1);
     duk_pop(ctx);
@@ -1306,13 +1359,18 @@ static void _findtxts(duk_context *ctx, duk_idx_t arr_idx, const char **txts, in
     {
         int i=0;
         DUKREMALLOC(ctx, txt2, ntxts * sizeof(const char *));
-        
+
         for(;i<ntxts;i++)
         {
             const char *val = strchr(txts[i], '=');
-            
-            if(val) val++;
-            txt2[i] = val;
+            txt2[i]=NULL;
+
+            if(val)
+            {
+                val++;
+                while (isspace(*val)) val++;
+                txt2[i] = val;
+            }
         }
     }
 
@@ -1357,6 +1415,8 @@ duk_ret_t duk_rp_html_prepend(duk_context *ctx);
 duk_ret_t duk_rp_html_after(duk_context *ctx);
 duk_ret_t duk_rp_html_before(duk_context *ctx);
 duk_ret_t duk_rp_html_replace(duk_context *ctx);
+duk_ret_t duk_rp_html_add(duk_context *ctx);
+duk_ret_t duk_rp_html_getdocument(duk_context *ctx);
 
 static void pushfuncs(duk_context *ctx)
 {
@@ -1450,6 +1510,48 @@ static void pushfuncs(duk_context *ctx)
     duk_push_c_function(ctx, duk_rp_html_replace, 1);
     duk_put_prop_string(ctx, -2, "replace");
 
+    duk_push_c_function(ctx, duk_rp_html_add, 1);
+    duk_put_prop_string(ctx, -2, "add");
+
+    duk_push_c_function(ctx, duk_rp_html_getdocument, 0);
+    duk_put_prop_string(ctx, -2, "getDocument");
+
+}
+
+/* push new array of the unique nodes
+   in array at arr_idx            */
+static void uniq_array_nodes(duk_context *ctx, duk_idx_t arr_idx)
+{
+    int len = (int)duk_get_length(ctx, arr_idx);
+
+    duk_push_array(ctx);
+
+    if(len)
+    {
+        TidyNode node[len], cur;
+        int i=0, j=0, ulen=0, newi=0;
+
+        for(;i<len;i++)
+        {
+            duk_get_prop_index(ctx, arr_idx, (duk_uarridx_t)i);
+            cur=duk_get_pointer(ctx, -1);
+
+            for(j=0;j<ulen;j++)
+            {
+                if(cur == node[j])
+                    break;
+            }
+
+            if(j==ulen)
+            {
+                node[ulen++]=cur;
+                duk_put_prop_index(ctx, -2, (duk_uarridx_t)newi++);
+            }
+            else
+                duk_pop(ctx);
+
+        }
+    }
 }
 
 static void new_ret_object(duk_context *ctx, duk_idx_t arr_idx)
@@ -1465,18 +1567,19 @@ static void new_ret_object(duk_context *ctx, duk_idx_t arr_idx)
 
 //    duk_get_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("errbuf"));
 //    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("errbuf"));
-    
+
     duk_push_number(ctx, (double) duk_get_length(ctx, arr_idx));
     duk_put_prop_string(ctx, -2, "length");
 
     pushfuncs(ctx);
 
-    duk_pull(ctx, arr_idx);
+//    duk_pull(ctx, arr_idx);
+    uniq_array_nodes(ctx, arr_idx);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("nodes"));
 
 
-    duk_get_prop_string(ctx, -2, "root");
-    duk_put_prop_string(ctx, -2, "root");
+    duk_get_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("root"));
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("root"));
 
 }
 
@@ -1484,12 +1587,12 @@ static void new_ret_object(duk_context *ctx, duk_idx_t arr_idx)
 
 // [\-_a-zA-Z0-9\x80-\xff]
 static const char VALID_CLASS_TABLE[] = {
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1,
 	0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1,
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -1504,18 +1607,28 @@ static const char VALID_CLASS_TABLE[] = {
 /* not exactly proper for css, but will keep us out of trouble */
 static int isvalname(const char *n)
 {
-    while ( (*n) && VALID_CLASS_TABLE[(unsigned char)*n]) 
+    while ( (*n) && VALID_CLASS_TABLE[(unsigned char)*n])
 	n++;
     return !(int)(*n);
 }
 
-/* check if node has class.  If class attribute exists, set classattr to it 
+duk_ret_t duk_rp_html_getdocument(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("root")))
+        RP_THROW(ctx, "html.getDocument: error - document root not found");
+
+    return 1;
+}
+
+
+/* check if node has class.  If class attribute exists, set classattr to it
    If classpos is not NULL, a pointer to position of classname in classattr is set
 */
 
 static int hasclass (TidyNode node, const char *classname, const char **classattr, const char **classpos){
-    const char 
-        *classes=getAttr(node,"class"), 
+    const char
+        *classes=getAttr(node,"class"),
         *class, *end;
 
     if(!classes)
@@ -1529,7 +1642,7 @@ static int hasclass (TidyNode node, const char *classname, const char **classatt
         *classpos=NULL;
 
     class = strstr(classes, classname);
-        
+
     while (class)
     {
         end = class+strlen(classname);
@@ -1544,7 +1657,7 @@ static int hasclass (TidyNode node, const char *classname, const char **classatt
                 return 1;
             }
         }
-        class = strstr(end, classname); 
+        class = strstr(end, classname);
     }
 
     return 0;
@@ -1552,7 +1665,7 @@ static int hasclass (TidyNode node, const char *classname, const char **classatt
 
 duk_ret_t duk_rp_html_addclass(duk_context *ctx)
 {
-    const char *classattr, 
+    const char *classattr,
         *cname = REQUIRE_STRING(ctx, 0, "html.addClass - first argument must be a string (attr name)");
     int i=0, len;
     TidyNode node;
@@ -1573,7 +1686,7 @@ duk_ret_t duk_rp_html_addclass(duk_context *ctx)
     for(;i<len;i++)
     {
         duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
-        node=(TidyNode)duk_get_pointer(ctx, -1);        
+        node=(TidyNode)duk_get_pointer(ctx, -1);
         duk_pop(ctx);
 
         if(!hasclass(node, cname, &classattr, NULL))
@@ -1592,7 +1705,7 @@ duk_ret_t duk_rp_html_addclass(duk_context *ctx)
                 addAttr(tdoc, node, "class", cname);
             }
         }
-        
+
     }
     return 0;
 }
@@ -1617,7 +1730,7 @@ duk_ret_t duk_rp_html_delclass(duk_context *ctx)
     for(;i<len;i++)
     {
         duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
-        node=(TidyNode)duk_get_pointer(ctx, -1);        
+        node=(TidyNode)duk_get_pointer(ctx, -1);
         duk_pop(ctx);
 
         if(hasclass(node, cname, &classattr, &cpos))
@@ -1632,7 +1745,7 @@ duk_ret_t duk_rp_html_delclass(duk_context *ctx)
                 int npos = cpos - classattr,
                     epos = npos + strlen(cname);
 
-                char newattr[strlen(classattr) + 1];                
+                char newattr[strlen(classattr) + 1];
                 /* if the to be removed class is first */
                 if(!npos)
                     strcpy(newattr, classattr + epos +1);
@@ -1645,16 +1758,16 @@ duk_ret_t duk_rp_html_delclass(duk_context *ctx)
                     else
                         newattr[npos-1]='\0';
                 }
-                
+
                 addAttr(tdoc, node, "class", newattr);
             }
         }
-        
+
     }
     return 0;
 }
 
-/* html tidy makes anything parsed into a document
+/* html tidy makes anything parsed into a document.
    parse html, select body, then select elements in
    in body and put it on duktape stack in format
    understood by _pend below
@@ -1677,17 +1790,17 @@ static void _htmlparsefrag(duk_context *ctx, const char *html)
 
     tidyParseString(tdoc, html);
     tidyCleanAndRepair(tdoc);
-    
+
     duk_push_pointer(ctx, (void *)tdoc);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("tdoc"));
 
     root=tidyGetRoot(tdoc);
     duk_push_array(ctx);
-    
+
     _find_(ctx, tdoc, root, duk_get_top_index(ctx),
-        &taghead, NULL, 1, findTag, 0); 
+        &taghead, NULL, 1, findTag, 0);
     _find_(ctx, tdoc, root, duk_get_top_index(ctx),
-        &tagbody, NULL, 1, findTag, 0); 
+        &tagbody, NULL, 1, findTag, 0);
 
     duk_get_prop_index(ctx, -1, 0);
     head=duk_get_pointer(ctx, -1);
@@ -1727,17 +1840,25 @@ static void _htmlparsefrag(duk_context *ctx, const char *html)
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("nodes"));
     tidyBufFree( &errbuf );
 }
-#define pendappend  0 
+
+#define pendappend  0
 #define pendprepend 1
 #define pendafter   2
 #define pendbefore  3
 #define pendreplace 4
+#define pendadd     5
+
+#define INSERTNODES 0
+#define THISOBJECT  1
+#define THISNODES   2
+#define RETNODES    3
+#define DELNODES    4
 
 static duk_ret_t _pend(duk_context *ctx, int type)
 {
-    int i=0, j=0, len, ilen, fromstring=0, src_is_ext=0;
+    int i=0, j=0, len, ilen, fromstring=0, src_is_ext=0, dlen=0;
     duk_uarridx_t rep_idx=0;
-    TidyNode node, insert_node, ret_node, last_ret_node=NULL;
+    TidyNode node, ret_node;
     TidyDoc tdoc, srcdoc;
     pendfunc pf;
     if(duk_is_string(ctx, 0))
@@ -1746,8 +1867,8 @@ static duk_ret_t _pend(duk_context *ctx, int type)
 
         _htmlparsefrag(ctx, str);
         fromstring=1;
-        duk_remove(ctx, 0);        
-    }    
+        duk_remove(ctx, 0);
+    }
     /* the nodes to insert */
     if( !duk_is_object(ctx,0) || !duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("nodes")))
         RP_THROW(ctx, "html.append - first argument must be an html object");
@@ -1769,98 +1890,206 @@ static duk_ret_t _pend(duk_context *ctx, int type)
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("nodes"));
     len=duk_get_length(ctx, -1);
+    /* stack = [ nodes_to_insert this object_nodes ] */
 
-    /* stack = [ object_nodes this nodes_to_insert ] */
+    duk_push_array(ctx);
+    /* stack = [ nodes_to_insert this object_nodes return_nodes ] */
 
-    /* if replacing, replace node list too */
-    if(type==pendreplace)
-        duk_push_array(ctx); /* stack = [ object_nodes this nodes_to_insert replacement_nodes ] */
+    if(ilen==0)
+    {
+        /* nothing to do, return a copy */
+        for(i=0;i<len;i++)
+        {
+            duk_get_prop_index(ctx, THISNODES, (duk_uarridx_t)i);
+            duk_put_prop_index(ctx, RETNODES, (duk_uarridx_t)i);
+        }
+        new_ret_object(ctx, RETNODES);
+        return 1;
+    }
+
+    if(!duk_get_prop_string(ctx, 1, DUK_HIDDEN_SYMBOL("root")))
+        RP_THROW(ctx, "html: error - document root not found");
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("dnodes"));
+    dlen=duk_get_length(ctx, -1);
+    /* stack = [ nodes_to_insert this object_nodes return_nodes root dnodes ] */
+
+    duk_remove(ctx, -2);
+    /*                0            1      2              3         4
+     * stack = [ nodes_to_insert this object_nodes return_nodes dnodes ] */
 
     /* if coming from another TidyDoc, use _ext function */
     if( tdoc != srcdoc)
         src_is_ext=1;
 
-
-    for(i=0;i<len;i++)
+    /* appending list of nodes
+       done here. no pfunc.    */
+    if(type==pendadd)
     {
-        TidyTagId id;
-        int ilen2=ilen;
 
-        duk_get_prop_index(ctx, 2, (duk_uarridx_t)i);
-        node=(TidyNode)duk_get_pointer(ctx, -1);        
-        duk_pop(ctx);
-
-        /* set here because it will change for pendrepace below */
-        pf = pfunc[type][src_is_ext];
-
-        /* br et al can't have children but can have siblings*/
-        id = tidyNodeGetId(node);
-        if(isSingletonTag(id) && (type==pendappend || type==pendprepend) )
-            continue;
-
-        /* 
-           when replacing:
-             replace the node with last, 
-             then pendbefore the rest to that node 
-        */
-        if(type==pendreplace)
+        /* push current nodes into new list */
+        for (i=0;i<len;i++)
         {
-            ilen2--;
-            /* get the last node in list */
-            duk_get_prop_index(ctx, 0, (duk_uarridx_t)ilen2);
-            insert_node=(TidyNode)duk_get_pointer(ctx, -1);
-            duk_pop(ctx);
-            if( node && insert_node) /* paranoid? */
-            {
-                node=(pf)(tdoc, srcdoc, node, insert_node);
-                last_ret_node=node; /* this goes last into node list */
-            }
-            pf=pfunc[pendbefore][src_is_ext];
+            duk_get_prop_index(ctx, THISNODES, (duk_uarridx_t)i);
+            duk_put_prop_index(ctx, RETNODES, (duk_uarridx_t)i);
         }
-        
-        for (j=0; j<ilen2; j++) 
+
+        if(src_is_ext)
         {
-            /* prepend/after/replace in reverse order
-               so they come out in regular order
-            */
-            if(type==pendprepend || type == pendafter)
-                duk_get_prop_index(ctx, 0, (duk_uarridx_t)(ilen2-(j+1)));
-            else
-                duk_get_prop_index(ctx, 0, (duk_uarridx_t)j);
-            insert_node=(TidyNode)duk_get_pointer(ctx, -1);
+            /* copy nodes from another doc into new list*/
+            for (j=0;j<ilen;j++)
+            {
+                duk_get_prop_index(ctx, INSERTNODES, (duk_uarridx_t)j);
+                node=duk_get_pointer(ctx, -1);
+                duk_pop(ctx);
+                node=dupnode_ext(tdoc, srcdoc, node);
+
+                /* the nodes are detached, so must go in the dnodes list */
+                duk_push_pointer(ctx, (void*)node);
+                duk_dup(ctx, -1);
+                duk_put_prop_index(ctx, RETNODES, (duk_uarridx_t)i++);
+                /* the dnodes array */
+                duk_put_prop_index(ctx, DELNODES, (duk_uarridx_t)dlen++);
+            }
+
+        }
+        else
+        {
+            /* push node pointers from this doc into new list*/
+            for (j=0;j<ilen;j++)
+            {
+                duk_get_prop_index(ctx, INSERTNODES, (duk_uarridx_t)j);
+                duk_put_prop_index(ctx, RETNODES, (duk_uarridx_t)i++);
+            }
+        }
+
+        if(fromstring)
+            tidyRelease(srcdoc);
+
+        new_ret_object(ctx, RETNODES);
+        return 1;
+    }
+
+    /* for everything not pendadd */
+
+#define addtodelnodes(node) do { \
+    duk_push_pointer(ctx, (void*)(node));\
+    duk_put_prop_index(ctx, DELNODES, (duk_uarridx_t)dlen++);\
+}while(0)
+
+#define addtoretnodes(node) do { \
+    duk_push_pointer(ctx, (void*)(node));\
+    duk_put_prop_index(ctx, RETNODES, rep_idx++);\
+}while(0)
+
+    {
+        TidyNode ins_nodes[ilen];
+
+        for (j=0; j<ilen; j++)
+        {
+            duk_get_prop_index(ctx, INSERTNODES, (duk_uarridx_t)j);
+            ins_nodes[j]=(TidyNode)duk_get_pointer(ctx, -1);
+            duk_pop(ctx);
+        }
+
+        for(i=0;i<len;i++)
+        {
+            duk_get_prop_index(ctx, THISNODES, (duk_uarridx_t)i);
+            node=(TidyNode)duk_get_pointer(ctx, -1);
             duk_pop(ctx);
 
-            if( node && insert_node) /* paranoid? */
+            /* set here because it will change for pendrepace below */
+            pf = pfunc[type][src_is_ext];
+
+            /* for append, prepend - only current node gets copied to ret list*/
+            if(type==pendappend || type==pendprepend)
             {
-                ret_node = (pf)(tdoc, srcdoc, node, insert_node);
-                if(ret_node && type==pendreplace) /* yes paranoid */
+                /* br et al can't have children but can have siblings*/
+                if(isSingletonTag(tidyNodeGetId(node)))
+                    continue;
+
+                addtoretnodes(node);
+
+                for (j=0; j<ilen; j++)
                 {
-                    duk_push_pointer(ctx, (void*)ret_node);
-                    duk_put_prop_index(ctx, 3, rep_idx++);
+                    /* if appending/prepending, always insert node regardless of isdetached,
+                       since "node" will be the parent */
+                    ret_node = (pf)(tdoc, srcdoc, node, ins_nodes[j]);
+
+                    /* after first one is in place, the rest are appended after it*/
+                    if (!j)
+                        pf=pfunc[pendafter][src_is_ext];
+
+                    node=ret_node;
                 }
             }
-        }
-        if(type==pendreplace && last_ret_node)
-        {
-            duk_push_pointer(ctx, (void*)last_ret_node);
-            duk_put_prop_index(ctx, 3, rep_idx++); 
+            else
+            /* after, before, replace */
+            /* - for after, current node gets copied to new list next, and ins_nodes
+                 subsequently get copied in j loop below.
+               - for before, insert current node below, and insert ins_nodes
+                 in j loop below
+               - Don't copy current for replace */
+            {
+                TidyNode orignode=node, dnode;
+                int isdetached=0;
+                /* check if the current node is on the dnodes list */
+                for (j=0; j<dlen; j++)
+                {
+                    duk_get_prop_index(ctx, DELNODES, (duk_uarridx_t)j);
+                    dnode=(TidyNode)duk_get_pointer(ctx, -1);
+                    if(dnode == node)
+                    {
+                        isdetached=1;
+                        break;
+                    }
+                }
+                if(type==pendafter)
+                    addtoretnodes(node);
+                else if(type==pendreplace && !isdetached)
+                    addtodelnodes(node);
+
+                for (j=0; j<ilen; j++)
+                {
+                    /* only insert if not detached
+                       if putting before/after/replacing and is detached, there is no parent */
+                    if(!isdetached)
+                        ret_node = (pf)(tdoc, srcdoc, node, ins_nodes[j]);
+
+                    else if (src_is_ext)
+                    /* if detached and ins_nodes[j] is from another tree,
+                       copy here because not doing (pf)() above             */
+                    {
+                        ret_node = dupnode_ext(tdoc, srcdoc, ins_nodes[j]);
+                        /*if to a detached node, make new node detached too */
+                        addtodelnodes(ret_node);
+                    }
+
+                    else
+                        ret_node=ins_nodes[j];
+
+                    /* after first one is in place, the rest are appended after it*/
+                    if (!j)
+                        pf=pfunc[pendafter][src_is_ext];
+
+                    addtoretnodes(ret_node);
+                    node=ret_node;
+                }
+                if(type==pendbefore)
+                    addtoretnodes(orignode);
+            }
         }
     }
 
     if(fromstring)
         tidyRelease(srcdoc);
-    duk_pull(ctx, 1);
-    /* replace node list */
-    if(type==pendreplace)
-    {
-        int len = (int) duk_get_length(ctx, 2);
-        duk_pull(ctx, 2);
-        
-        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("nodes"));
-        duk_push_int(ctx, len);
-        duk_put_prop_string(ctx, -2, "length");
-    }
+
+    new_ret_object(ctx, RETNODES);
     return 1;
+}
+
+duk_ret_t duk_rp_html_add(duk_context *ctx)
+{
+    return _pend(ctx, pendadd);
 }
 
 duk_ret_t duk_rp_html_replace(duk_context *ctx)
@@ -1895,7 +2124,7 @@ static duk_ret_t _detach_delete(duk_context *ctx, int delete)
     TidyDoc tdoc;
 
     duk_push_this(ctx);
-    if(!duk_get_prop_string(ctx, -1, "root"))
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("root")))
         RP_THROW(ctx, "html: error - document root not found");
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("dnodes"));
@@ -1913,15 +2142,19 @@ static duk_ret_t _detach_delete(duk_context *ctx, int delete)
     for(;i<len;i++)
     {
         duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
-        node=(TidyNode)duk_get_pointer(ctx, -1);        
+        node=(TidyNode)duk_get_pointer(ctx, -1);
 
         detachNode(tdoc, node, delete);
-        if(!delete)
-        {
+/* detach and delete now do the same thing
+   except that detach returns the nodes
+   cleanup of deleted nodes now happens in finalizer
+*/
+//        if(!delete)
+//        {
             duk_put_prop_index(ctx, -3, (duk_uarridx_t)dlen++);
-        }
-        else
-            duk_pop(ctx);
+//        }
+//        else
+//            duk_pop(ctx);
     }
     if(!delete)
     {
@@ -1963,10 +2196,10 @@ duk_ret_t duk_rp_html_delattr(duk_context *ctx)
     for(;i<len;i++)
     {
         duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
-        node=(TidyNode)duk_get_pointer(ctx, -1);        
+        node=(TidyNode)duk_get_pointer(ctx, -1);
         duk_pop(ctx);
 
-        for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) ) 
+        for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) )
         {
             key=tidyAttrName(attr);
             if (!strcasecmp(key, aname))
@@ -2006,12 +2239,14 @@ duk_ret_t duk_rp_html_attr(duk_context *ctx)
     for(;i<len;i++)
     {
         duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
-        node=(TidyNode)duk_get_pointer(ctx, -1);        
+        node=(TidyNode)duk_get_pointer(ctx, -1);
         duk_pop(ctx);
         addAttr( tdoc, node, aname, val);
     }
 
-    return 0;
+    duk_pull(ctx, 2);
+
+    return 1;
 }
 
 
@@ -2052,7 +2287,7 @@ duk_ret_t duk_rp_html_gettag(duk_context *ctx)
         i++;
     }
     duk_pop_2(ctx);
-    
+
     return 1;
 }
 
@@ -2069,7 +2304,7 @@ duk_ret_t duk_rp_html_children(duk_context *ctx)
     duk_push_array(ctx);
     duk_get_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("nodes"));
     len=duk_get_length(ctx, -1);
-    
+
     for(;i<len;i++)
     {
         duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
@@ -2116,7 +2351,7 @@ static duk_ret_t _nextprevpar(duk_context *ctx, int type)
             case typeprev: retnode=tidyGetPrev(node); break;
             case typeparent: retnode=tidyGetParent(node); break;
         }
-        
+
         if(retnode)
         {
             duk_push_pointer(ctx, (void*)retnode);
@@ -2129,17 +2364,17 @@ static duk_ret_t _nextprevpar(duk_context *ctx, int type)
 
 duk_ret_t duk_rp_html_parent(duk_context *ctx)
 {
-    return _nextprevpar(ctx, typeparent); 
+    return _nextprevpar(ctx, typeparent);
 }
 
 duk_ret_t duk_rp_html_next(duk_context *ctx)
 {
-    return _nextprevpar(ctx, typenext); 
+    return _nextprevpar(ctx, typenext);
 }
 
 duk_ret_t duk_rp_html_prev(duk_context *ctx)
 {
-    return _nextprevpar(ctx, typeprev); 
+    return _nextprevpar(ctx, typeprev);
 }
 
 
@@ -2153,11 +2388,11 @@ duk_ret_t duk_rp_html_getattr(duk_context *ctx)
     duk_push_array(ctx);
     duk_get_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("nodes"));
     len=duk_get_length(ctx, -1);
-    
+
     for(;i<len;i++)
     {
         duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
-        node=(TidyNode)duk_get_pointer(ctx, -1);        
+        node=(TidyNode)duk_get_pointer(ctx, -1);
         duk_pop(ctx);
 
         val=getAttr(node, aname);
@@ -2165,7 +2400,7 @@ duk_ret_t duk_rp_html_getattr(duk_context *ctx)
             duk_push_string(ctx,val);
         else
             duk_push_string(ctx,"");
-        
+
         duk_put_prop_index(ctx, 2, (duk_uarridx_t)i);
     }
     duk_pull(ctx, 2);
@@ -2297,7 +2532,7 @@ duk_ret_t duk_rp_html_pp(duk_context *ctx)
 {
     TidyBuffer output = {0};
     TidyDoc tdoc;
-    
+
     duk_push_this(ctx);
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("tdoc"));
@@ -2316,7 +2551,7 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
 {
 //    const char *html = REQUIRE_STRING(ctx, 0, "html.parse: first argument must be a string (html document)");
     const char *html=NULL;
-    int Terr=0;    
+    int Terr=0;
     duk_idx_t err_idx;
     TidyDoc tdoc;
     TidyBuffer *tidy_errbuf = NULL;
@@ -2350,7 +2585,7 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
             const char *val=duk_safe_to_string(ctx, -1);
             int ret=tidyOptParseValue(tdoc, (ctmbstr)key, (ctmbstr)val);
             if(!ret)
-                RP_THROW(ctx, "html.parse - error setting '%s' to '%s' - %s", key, val,tidy_errbuf->bp);            
+                RP_THROW(ctx, "html.parse - error setting '%s' to '%s' - %s", key, val,tidy_errbuf->bp);
             duk_pop_2(ctx);
         }
         duk_pop(ctx);
@@ -2361,7 +2596,7 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
     if (size)
     {
         TidyBuffer hbuf;
-        
+
         tidyBufInit(&hbuf);
         tidyBufAttach(&hbuf, (byte *)html, (uint)size);
         Terr=tidyParseBuffer(tdoc, &hbuf);
@@ -2375,7 +2610,7 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
 
     Terr=tidyCleanAndRepair(tdoc);
     htmlSetErr(Terr);
-    
+
     duk_put_prop_string(ctx, -2, "errMsg");
 
 
@@ -2384,7 +2619,7 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
 
     duk_push_pointer(ctx, (void *)tidy_errbuf);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("errbuf"));
-    
+
     duk_push_c_function(ctx, duk_rp_html_pp, 0);
     duk_put_prop_string(ctx, -2, "prettyPrint");
 
@@ -2407,15 +2642,15 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
     pushfuncs(ctx);
 
     duk_dup(ctx, -1);
-    duk_put_prop_string(ctx, -2, "root");
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("root"));
     return 1;
-    
+
 }
 
 
 
 /* **************************************************
-   Initialize module 
+   Initialize module
    ************************************************** */
 duk_ret_t duk_open_module(duk_context *ctx)
 {
