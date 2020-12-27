@@ -1,4 +1,5 @@
 set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_CXX_STANDARD 11)
 
 if(${CMAKE_INSTALL_PREFIX})
 	message("install = ${CMAKE_INSTALL_PREFIX}")
@@ -98,8 +99,8 @@ SET(CMAKE_INSTALL_RPATH "./;${CMAKE_INSTALL_PREFIX}/modules/")
 
 ###ROBOTS###
 add_library(rampart-robots SHARED
-	duktape/modules/robot-wrapper.cc
-	duktape/modules/rampart-robots.c
+   duktape/modules/robot-wrapper.cc
+   duktape/modules/rampart-robots.c
 )
 
 target_link_libraries(rampart-robots
@@ -109,7 +110,6 @@ target_link_libraries(rampart-robots
     ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_base.a
     ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_spinlock_wait.a 
     pthread 
-    rt
     ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/strings/libabsl_strings_internal.a
     ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/numeric/libabsl_int128.a
     ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_throw_delegate.a
