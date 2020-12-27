@@ -48,12 +48,13 @@ function testFeature(name,test)
 }
 
 
-try {
-    stat("sample-cert.pem");
-    stat("sample-key.pem");
-} catch (e)
+if(
+    !(stat("sample-cert.pem") &&
+      stat("sample-key.pem") )
+)
 {
-    shell("openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout sample-key.pem -out sample-cert.pem -config sample-cert.conf");
+    var ret = shell("openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout sample-key.pem -out sample-cert.pem -config sample-cert.conf");
+    //console.log(ret);
 }
 
 var pid=server.start(
