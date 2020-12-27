@@ -883,13 +883,14 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
     unsigned int i=0;\
     while (i++ < width) \
         out(' ', buffer, idx++, maxlen);\
+    lpos+=width;\
 } while(0);
 
         case 'P':
         {
             unsigned int l = 80, lpos = 0;
             const char *p;
-            int lastwasn=0, respectnl=0;
+            int lastwasn=0, respectnl=0, useleadingindent=0;
 
             if (flags & FLAGS_BANG)
                 respectnl=1;
@@ -904,10 +905,13 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             if (flags & FLAGS_PRECISION)
                 l = precision;
 
-            l-=width;
-
-            /* skip beginning spaces */
-            while(isspace(*p)) p++;
+            /* get width from current indent if not specified */
+            if(!width)
+            {
+                useleadingindent=1;
+                while(isspace(*p))
+                    width++,p++;
+            }
 
             while (*p)
             {
@@ -919,7 +923,24 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
 
                 if(isspace(*p))
                 {
-                    if(lpos < l && !(respectnl && *p=='\n') )
+                    /* always respect double newline */
+                    if(*p=='\n' && *(p+1)=='\n')
+                    {
+                        out('\n', buffer, idx++, maxlen);
+                        out('\n', buffer, idx++, maxlen);
+                        lpos=0;
+                        p++;
+                        p++;
+                        lastwasn=1;
+                        if(useleadingindent)
+                        {
+                            /* calculate a new indent level */
+                            width=0;
+                            while(isspace(*p))
+                                width++,p++;
+                        }
+                    }
+                    else if(lpos < l && !(respectnl && *p=='\n') )
                     {
                         out(' ', buffer, idx++, maxlen);
                         lpos++;

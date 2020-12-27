@@ -169,6 +169,7 @@
 </li>
 <li class="toctree-l1"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-html.html">The rampart-html module</a></li>
 </ul>
 
             
@@ -418,10 +419,19 @@ equivalent to <code class="docutils literal notranslate"><span class="pre">print
 <li><p><code class="docutils literal notranslate"><span class="pre">%U</span></code> - url encode (or if <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, decode) a <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%H</span></code> - html encode (or if <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, decode) a <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%P</span></code> - pretty print a <span class="green">String</span> or <span class="green">Buffer</span>.  Expects
-text with white space.  Format is <code class="docutils literal notranslate"><span class="pre">%i.wP</span></code> where <code class="docutils literal notranslate"><span class="pre">i</span></code> is the level of
-indentation and <code class="docutils literal notranslate"><span class="pre">w</span></code> is the length of each line (default <code class="docutils literal notranslate"><span class="pre">80</span></code> if not
-specified).  If format <code class="docutils literal notranslate"><span class="pre">%!i.wP</span></code> is given, newlines are not converted
-to spaces (but text after newlines is still indented).</p></li>
+text with white space.  Format is <code class="docutils literal notranslate"><span class="pre">%[!][i][.w]P</span></code> where:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">i</span></code> is the optional level of indentation.  Each output line will be indented
+by this amount.  Default is <code class="docutils literal notranslate"><span class="pre">0</span></code>.  If <code class="docutils literal notranslate"><span class="pre">0</span></code>, the indent level for
+each paragraph will match the indentation of the first line of the corresponding
+paragraph in the input text (number of spaces at beginning of the paragraph).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">.w</span></code> where <code class="docutils literal notranslate"><span class="pre">w</span></code> is the optional length of each line (default <code class="docutils literal notranslate"><span class="pre">80</span></code> if not
+specified).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">!</span></code> specifies, if present, that newlines are not converted to spaces (but text
+after newlines is still indented).  In all cases, a double newline
+(“\n\n”) is considered a separator of paragraphs and is respected.</p></li>
+</ul>
+</li>
 </ul>
 </div></blockquote>
 <p>Example:</p>
@@ -1782,9 +1792,10 @@ separate file (here the file is named <code class="docutils literal notranslate"
 <li><p>In <a class="reference internal" href="#scriptpath">scriptPath</a>.</p></li>
 <li><p>In the <code class="docutils literal notranslate"><span class="pre">.rampart/modules</span></code> directory of current user’s home directory
 as provided by the <code class="docutils literal notranslate"><span class="pre">$HOME</span></code> environment variable.</p></li>
-<li><p>In the <code class="docutils literal notranslate"><span class="pre">-DRP_INST_PATH</span></code> + “/modules” set when Rampart was compiled.  The default
-is <code class="docutils literal notranslate"><span class="pre">/usr/local/rampart/modules</span></code>, or, if set, the path pointed to by
-the envirnonment variable <code class="docutils literal notranslate"><span class="pre">$RAMPART_PATH</span></code> + “/modules”.</p></li>
+<li><p>In the “/modules” directory of the <code class="docutils literal notranslate"><span class="pre">-DRP_INST_PATH</span></code> path set when Rampart
+was compiled.  The default is <code class="docutils literal notranslate"><span class="pre">/usr/local/rampart/modules</span></code>. Or
+preferentially, if set, the path pointed to by the envirnonment variable
+<code class="docutils literal notranslate"><span class="pre">$RAMPART_PATH</span></code> + “/modules”.</p></li>
 <li><p>In the current working directory.</p></li>
 </ol>
 </div>

@@ -63,7 +63,7 @@ duk_ret_t duk_rp_html_finalizer(duk_context *ctx)
 }
 
 #define htmlSetErr(e) do{\
-    if(e<0) RP_THROW(ctx, "html.parse - %s", strerror(-e));\
+    if(e<0) RP_THROW(ctx, "html.newDocument() - %s", strerror(-e));\
     if(tidy_errbuf->size && e>0) {\
         duk_push_string(ctx, (char *)tidy_errbuf->bp);\
         duk_replace(ctx, err_idx);\
@@ -997,7 +997,8 @@ static duk_ret_t _tohtml(duk_context *ctx)
     TidyDoc doc;
     TidyBuffer buf, *ret;
     int i=0, indent=0;
-    int makearray=-1;
+//    int makearray=-1;
+    int makearray=1;
     duk_idx_t this_idx;
 
     ret=&buf;
@@ -1028,7 +1029,7 @@ static duk_ret_t _tohtml(duk_context *ctx)
     duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("tdoc"));
     doc=duk_get_pointer(ctx, -1);
     duk_pop(ctx);
-
+    /*
     if(makearray==-1)
     {
         int len;
@@ -1041,6 +1042,7 @@ static duk_ret_t _tohtml(duk_context *ctx)
         else
             makearray=0;
     }
+    */
     if(makearray)
         duk_push_array(ctx);
 
@@ -1059,6 +1061,9 @@ static duk_ret_t _tohtml(duk_context *ctx)
 
         start=duk_get_pointer(ctx, -1);
         duk_pop_2(ctx);
+        if(tidyNodeGetType(start) == TidyNode_DocType)
+            continue;
+
         ret=dumpHtml(doc, start, ret, indent, 0, 1);
 
         if(makearray)
@@ -1069,8 +1074,10 @@ static duk_ret_t _tohtml(duk_context *ctx)
                 duk_push_string(ctx, "");
             duk_put_prop_index(ctx, -4, i);
             tidyBufFree(ret);
+            i++;
         }
-        i++;
+        else
+            i++;
     }
     duk_pop_2(ctx);
 
@@ -1091,7 +1098,8 @@ duk_ret_t duk_rp_html_totext(duk_context *ctx)
     TidyDoc doc;
     TidyBuffer buf, *ret;
     int i=0, opts=optAltText|optMetaDesc|optMetaKeyw|optEnumLsts;
-    int makearray=-1;
+//    int makearray=-1;
+    int makearray=1;
     duk_idx_t this_idx;
 
     ret=&buf;
@@ -1125,6 +1133,7 @@ duk_ret_t duk_rp_html_totext(duk_context *ctx)
     doc=duk_get_pointer(ctx, -1);
     duk_pop(ctx);
 
+    /*
     if(makearray==-1)
     {
         int len;
@@ -1137,6 +1146,7 @@ duk_ret_t duk_rp_html_totext(duk_context *ctx)
         else
             makearray=0;
     }
+    */
     if(makearray)
         duk_push_array(ctx);
 
@@ -1155,6 +1165,10 @@ duk_ret_t duk_rp_html_totext(duk_context *ctx)
 
         start=duk_get_pointer(ctx, -1);
         duk_pop_2(ctx);
+
+        if(tidyNodeGetType(start) == TidyNode_DocType)
+            continue;
+
         ret=dumpText(doc, start, ret, 0, 0, opts);
 
         if(makearray)
@@ -1401,13 +1415,15 @@ duk_ret_t duk_rp_html_delclass(duk_context *ctx);
 duk_ret_t duk_rp_html_slice(duk_context *ctx);
 duk_ret_t duk_rp_html_eq(duk_context *ctx);
 duk_ret_t duk_rp_html_getattr(duk_context *ctx);
+duk_ret_t duk_rp_html_getallattr(duk_context *ctx);
 duk_ret_t duk_rp_html_attr(duk_context *ctx);
 duk_ret_t duk_rp_html_delattr(duk_context *ctx);
 duk_ret_t duk_rp_html_parent(duk_context *ctx);
 duk_ret_t duk_rp_html_children(duk_context *ctx);
 duk_ret_t duk_rp_html_next(duk_context *ctx);
 duk_ret_t duk_rp_html_prev(duk_context *ctx);
-duk_ret_t duk_rp_html_gettag(duk_context *ctx);
+duk_ret_t duk_rp_html_getelem(duk_context *ctx);
+duk_ret_t duk_rp_html_getelemname(duk_context *ctx);
 duk_ret_t duk_rp_html_detach(duk_context *ctx);
 duk_ret_t duk_rp_html_delete(duk_context *ctx);
 duk_ret_t duk_rp_html_append(duk_context *ctx);
@@ -1426,8 +1442,11 @@ static void pushfuncs(duk_context *ctx)
     duk_push_c_function(ctx, duk_rp_html_tohtml, 1);
     duk_put_prop_string(ctx, -2, "toHtml");
 
-    duk_push_c_function(ctx, duk_rp_html_gettag, 0);
-    duk_put_prop_string(ctx, -2, "getTag");
+    duk_push_c_function(ctx, duk_rp_html_getelem, 0);
+    duk_put_prop_string(ctx, -2, "getElement");
+
+    duk_push_c_function(ctx, duk_rp_html_getelemname, 0);
+    duk_put_prop_string(ctx, -2, "getElementName");
 
     duk_push_c_function(ctx, duk_rp_html_slice, 2);
     duk_put_prop_string(ctx, -2, "slice");
@@ -1437,6 +1456,9 @@ static void pushfuncs(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_rp_html_getattr, 1);
     duk_put_prop_string(ctx, -2, "getAttr");
+
+    duk_push_c_function(ctx, duk_rp_html_getallattr, 1);
+    duk_put_prop_string(ctx, -2, "getAllAttr");
 
     duk_push_c_function(ctx, duk_rp_html_attr, 2);
     duk_put_prop_string(ctx, -2, "attr");
@@ -2250,7 +2272,7 @@ duk_ret_t duk_rp_html_attr(duk_context *ctx)
 }
 
 
-duk_ret_t duk_rp_html_gettag(duk_context *ctx)
+duk_ret_t duk_rp_html_getelem(duk_context *ctx)
 {
     TidyNode node;
     TidyBuffer buf, *ret;
@@ -2283,6 +2305,75 @@ duk_ret_t duk_rp_html_gettag(duk_context *ctx)
 
         duk_put_prop_index(ctx, -4, i);
         tidyBufFree(ret);
+
+        i++;
+    }
+    duk_pop_2(ctx);
+
+    return 1;
+}
+
+duk_ret_t duk_rp_html_getelemname(duk_context *ctx)
+{
+    TidyNode node;
+    int i=0;
+    duk_idx_t this_idx;
+
+    duk_push_this(ctx);
+    this_idx=duk_get_top_index(ctx);
+
+    duk_push_array(ctx);
+
+    /* loop over nodes, create tag, append to array */
+    duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("nodes"));
+    duk_enum(ctx, -1, DUK_ENUM_ARRAY_INDICES_ONLY);
+    while(duk_next(ctx, -1, 1))
+    {
+
+        node=duk_get_pointer(ctx, -1);
+        duk_pop_2(ctx);
+
+        duk_push_string(ctx, (const char *)tidyNodeGetName(node));
+
+        duk_put_prop_index(ctx, -4, i);
+
+        i++;
+    }
+    duk_pop_2(ctx);
+
+    return 1;
+}
+
+duk_ret_t duk_rp_html_getallattr(duk_context *ctx)
+{
+    TidyNode node;
+    int i=0;
+    duk_idx_t this_idx;
+
+    duk_push_this(ctx);
+    this_idx=duk_get_top_index(ctx);
+
+    duk_push_array(ctx);
+
+    /* loop over nodes, create tag, append to array */
+    duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("nodes"));
+    duk_enum(ctx, -1, DUK_ENUM_ARRAY_INDICES_ONLY);
+    while(duk_next(ctx, -1, 1))
+    {
+        TidyAttr attr;
+
+        node=duk_get_pointer(ctx, -1);
+        duk_pop_2(ctx);
+
+        duk_push_object(ctx);
+
+        for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) )
+        {
+            duk_push_string(ctx, (const char *) tidyAttrValue(attr));
+            duk_put_prop_string(ctx, -2, (const char *) tidyAttrName(attr));
+        }
+
+        duk_put_prop_index(ctx, -4, i);
 
         i++;
     }
@@ -2549,7 +2640,7 @@ duk_ret_t duk_rp_html_pp(duk_context *ctx)
 
 duk_ret_t duk_rp_htmlparse(duk_context *ctx)
 {
-//    const char *html = REQUIRE_STRING(ctx, 0, "html.parse: first argument must be a string (html document)");
+//    const char *html = REQUIRE_STRING(ctx, 0, "html.newDocument: first argument must be a string (html document)");
     const char *html=NULL;
     int Terr=0;
     duk_idx_t err_idx;
@@ -2563,7 +2654,7 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
     else if (duk_is_string(ctx, 0) )
         html = duk_get_string(ctx, 0);
     else
-        RP_THROW(ctx, "html.parse: first argument must be a string or buffer(html document)");
+        RP_THROW(ctx, "html.newDocument: first argument must be a string or buffer(html document)");
 
     tidy_errbuf = calloc( 1, sizeof(TidyBuffer));
 
@@ -2574,6 +2665,7 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
     tdoc = tidyCreate();
     tidyOptSetBool(tdoc, TidyForceOutput, yes);
     tidyOptSetBool(tdoc, TidyMark, no);
+    tidyOptSetBool(tdoc, TidyDropEmptyElems, no);
     tidySetErrorBuffer( tdoc, tidy_errbuf );
 
     if(duk_is_object(ctx, 1) && !duk_is_function(ctx, 1) && !duk_is_array(ctx, 1) )
@@ -2585,13 +2677,13 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
             const char *val=duk_safe_to_string(ctx, -1);
             int ret=tidyOptParseValue(tdoc, (ctmbstr)key, (ctmbstr)val);
             if(!ret)
-                RP_THROW(ctx, "html.parse - error setting '%s' to '%s' - %s", key, val,tidy_errbuf->bp);
+                RP_THROW(ctx, "html.newDocument - error setting '%s' to '%s' - %s", key, val,tidy_errbuf->bp);
             duk_pop_2(ctx);
         }
         duk_pop(ctx);
     }
     else if (!duk_is_undefined(ctx, 1))
-        RP_THROW(ctx, "html.parse - second argument must be an object (tidy options)");
+        RP_THROW(ctx, "html.newDocument - second argument must be an object (tidy options)");
 
     if (size)
     {
@@ -2658,7 +2750,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
   duk_push_c_function(ctx, duk_rp_htmlparse, 2);
 
-  duk_put_prop_string(ctx, -2, "parse");
+  duk_put_prop_string(ctx, -2, "newDocument");
 
   return 1;
 }

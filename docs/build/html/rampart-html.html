@@ -1,0 +1,764 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>The rampart-server HTTP module &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
+        <link rel="prev" title="The rampart-server HTTP module" href="rampart-server.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart Javascript</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">The rampart-html module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#preface">Preface</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#acknowledgment">Acknowledgment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#license">License</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#what-does-it-do">What does it do?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#how-does-it-work">How does it work?</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#loading-and-using-the-module">Loading and Using the Module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#loading">Loading</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#usage">Usage</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#newdocument">newDocument</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#prettyprint">prettyPrint</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#manipulating-the-html">Manipulating the HTML</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#selecting-elements">Selecting Elements</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#findtag">findTag</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#findattr">findAttr</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#findclass">findClass</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#traversing-html-tree">Traversing HTML tree</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#next">next</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#prev">prev</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#children">children</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#parent">parent</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#getdocument">getDocument</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#filtering-list-of-elements">Filtering List of Elements</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#filtertag">filterTag</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#filterattr">filterAttr</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#filterclass">filterClass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#slice">slice</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#eq">eq</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#add">add</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#testing-elements">Testing Elements</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#hastag">hasTag</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#hasattr">hasAttr</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#hasclass">hasClass</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#manipulating-elements">Manipulating Elements</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#attr">attr</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#removeattr">removeAttr</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#addclass">addClass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#removeclass">removeClass</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#detach">detach</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#delete">delete</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#append">append</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#prepend">prepend</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#after">after</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#before">before</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#replace">replace</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#output-from-elements">Output from Elements</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#getelement">getElement</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#getelementname">getElementName</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#getattr">getAttr</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#getallattr">getAllAttr</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#tohtml">toHtml</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#totext">toText</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>The rampart-server HTTP module</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/rampart-html.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="the-rampart-server-http-module">
+<h1>The rampart-server HTTP module<a class="headerlink" href="#the-rampart-server-http-module" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="preface">
+<h2>Preface<a class="headerlink" href="#preface" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="acknowledgment">
+<h3>Acknowledgment<a class="headerlink" href="#acknowledgment" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-html module uses the
+<a class="reference external" href="http://www.html-tidy.org/">Tidy-HTML5</a> library
+to parse, fix-up, and manipulate html formatted documents.
+The developers of Rampart are extremely grateful for the excellent api and ease
+of use of the <a class="reference external" href="http://www.html-tidy.org/">Tidy-HTML5</a> library.</p>
+</div>
+<div class="section" id="license">
+<h3>License<a class="headerlink" href="#license" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-html module is released under the MIT license.
+The <a class="reference external" href="http://www.html-tidy.org/">Tidy-HTML5</a> library is
+<a class="reference external" href="https://github.com/htacg/tidy-html5/blob/next/README/LICENSE.md">licensed</a>
+with a <a class="reference external" href="https://opensource.org/licenses/Zlib">zlib</a>-like license.</p>
+</div>
+<div class="section" id="what-does-it-do">
+<h3>What does it do?<a class="headerlink" href="#what-does-it-do" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-html module provides methods to import, parse, alter and
+pretty-print HTML documents.  It is meant to be familiar to those with
+experience using jQuery, but has different syntax, fewer functions and more
+restrictions.</p>
+</div>
+<div class="section" id="how-does-it-work">
+<h3>How does it work?<a class="headerlink" href="#how-does-it-work" title="Permalink to this headline">¶</a></h3>
+<p>After the module is loaded, HTML document may be created or parsed by
+passing a <span class="green">String</span> or <span class="green">Buffer</span> to the <code class="docutils literal notranslate"><span class="pre">newDocument</span></code>
+function.  The parsed document may then be manipulated using functions
+to select, add or delete to specific elements in the document.
+It then may be printed to a new string using the <code class="docutils literal notranslate"><span class="pre">prettyPrint</span></code> function.</p>
+</div>
+</div>
+<div class="section" id="loading-and-using-the-module">
+<h2>Loading and Using the Module<a class="headerlink" href="#loading-and-using-the-module" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="loading">
+<h3>Loading<a class="headerlink" href="#loading" title="Permalink to this headline">¶</a></h3>
+<p>Loading the module is a simple matter of using the <code class="docutils literal notranslate"><span class="pre">require()</span></code> function:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Configuring and Parsing.</p>
+<p>Loading the rampart-html module returns an object with the property/function
+<code class="docutils literal notranslate"><span class="pre">newDocument()</span></code>.  This function can be used to create a blank HTML
+document or import and parse from an existing one.</p>
+</div>
+<div class="section" id="usage">
+<h3>Usage<a class="headerlink" href="#usage" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="newdocument">
+<h4>newDocument<a class="headerlink" href="#newdocument" title="Permalink to this headline">¶</a></h4>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">mydoc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span><span class="nb">document</span><span class="p">,</span> <span class="nx">options</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>where:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">document</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span> containing the
+HTML text to be parsed, or optionally a blank string to create an
+empty document with the <code class="docutils literal notranslate"><span class="pre">html</span></code>, <code class="docutils literal notranslate"><span class="pre">head</span></code>, <code class="docutils literal notranslate"><span class="pre">title</span></code> and <code class="docutils literal notranslate"><span class="pre">body</span></code>
+tags in place.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> is an <span class="green">Object</span> of key/value pairs that correspond
+to the <a class="reference external" href="https://api.html-tidy.org/tidy/tidylib_api_5.6.0/tidy_quickref.html">standard command line</a>
+options for <a class="reference external" href="http://www.html-tidy.org/">Tidy-HTML5</a>.
+Some of these options apply to the rules for parsing the document, while
+others apply to the appearance of the document (such as indentation and
+line wrapping) when it is output is <cite>prettyPrint</cite>ed.  Other options
+that deal with file i/o are ignored.</p>
+<p>A small subset of these options include:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">indent</span></code> - a <span class="green">Boolean</span>, whether to add indentation and word wrapping
+to the output when using <a class="reference internal" href="#prettyprint">prettyPrint</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">indent-spaces</span></code> - a <span class="green">Number</span> indicating the number of spaces
+to indent the output when using <a class="reference internal" href="#prettyprint">prettyPrint</a> and <code class="docutils literal notranslate"><span class="pre">indent</span></code> above
+is set <code class="docutils literal notranslate"><span class="pre">true</span></code>. The default is <code class="docutils literal notranslate"><span class="pre">2</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">wrap</span></code> - a <span class="green">Number</span> indicating the maximum length of a
+line of text or html used when using <a class="reference internal" href="#prettyprint">prettyPrint</a> and <code class="docutils literal notranslate"><span class="pre">indent</span></code>
+above is set <code class="docutils literal notranslate"><span class="pre">true</span></code>.  The default is <code class="docutils literal notranslate"><span class="pre">68</span></code>.  There may be some
+circumstances where it is not possible to wrap a line.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">drop-empty-elements</span></code> - a <span class="green">Boolean</span>, whether to drop empty
+elements. <strong>In Rampart</strong> the default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tidy-mark</span></code> - a <span class="green">Boolean</span>, whether to insert a <code class="docutils literal notranslate"><span class="pre">meta</span></code> tag
+in the head of the document indicating that the
+<a class="reference external" href="http://www.html-tidy.org/">Tidy-HTML5</a> library was used to process
+the document.  <strong>In Rampart</strong> the default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
+<li><p>See the <a class="reference external" href="https://api.html-tidy.org/tidy/tidylib_api_5.6.0/tidy_quickref.html">HTML Tidy Options Quick Reference</a>
+for more options.</p></li>
+</ul>
+</li>
+</ul>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>An <em>html object</em> with all the functions for manipulating the HTML document.  In
+addition, this top level <em>html object</em> will also return the
+<code class="docutils literal notranslate"><span class="pre">prettyPrint()</span></code> function.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="prettyprint">
+<h4>prettyPrint<a class="headerlink" href="#prettyprint" title="Permalink to this headline">¶</a></h4>
+<p>The top level <em>html object</em> includes an additional function which will
+output the text of the printed document</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">mydoc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&#39;</span><span class="p">,</span>
+    <span class="p">{</span> <span class="nx">indent</span><span class="o">:</span> <span class="kc">true</span> <span class="p">}</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">output</span> <span class="o">=</span> <span class="nx">mydoc</span><span class="p">.</span><span class="nx">prettyPrint</span><span class="p">();</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">output</span><span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+<span class="cm">&lt;!DOCTYPE html&gt;</span>
+<span class="cm">&lt;html&gt;</span>
+<span class="cm">  &lt;head&gt;</span>
+<span class="cm">    &lt;title&gt;&lt;/title&gt;</span>
+<span class="cm">  &lt;/head&gt;</span>
+<span class="cm">  &lt;body&gt;</span>
+<span class="cm">  &lt;/body&gt;</span>
+<span class="cm">&lt;/html&gt;</span>
+<span class="cm">*/</span>
+
+<span class="nx">mydoc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;title&gt;My Page&lt;/title&gt;&lt;h1&gt;Welcome to my page&lt;/h2&gt;&#39;</span><span class="p">,</span>
+    <span class="p">{</span> <span class="nx">indent</span><span class="o">:</span> <span class="kc">true</span> <span class="p">}</span>
+<span class="p">);</span>
+
+<span class="nx">output</span> <span class="o">=</span> <span class="nx">mydoc</span><span class="p">.</span><span class="nx">prettyPrint</span><span class="p">();</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">output</span><span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+<span class="cm">&lt;!DOCTYPE html&gt;</span>
+<span class="cm">&lt;html&gt;</span>
+<span class="cm">  &lt;head&gt;</span>
+<span class="cm">    &lt;title&gt;</span>
+<span class="cm">      My Page</span>
+<span class="cm">    &lt;/title&gt;</span>
+<span class="cm">  &lt;/head&gt;</span>
+<span class="cm">  &lt;body&gt;</span>
+<span class="cm">    &lt;h1&gt;</span>
+<span class="cm">      Welcome to my page</span>
+<span class="cm">    &lt;/h1&gt;</span>
+<span class="cm">  &lt;/body&gt;</span>
+<span class="cm">&lt;/html&gt;</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+</div>
+</div>
+<div class="section" id="manipulating-the-html">
+<h2>Manipulating the HTML<a class="headerlink" href="#manipulating-the-html" title="Permalink to this headline">¶</a></h2>
+<p>An <em>html object</em> is an object which contains an opaque list of elements in
+the HTML document parsed with <a class="reference internal" href="#newdocument">newDocument</a> above.  The top level
+<em>html object</em> is the one returned from <a class="reference internal" href="#newdocument">newDocument</a>, and it is the same
+as any other <em>html object</em>, except that it additionally includes the
+<a class="reference internal" href="#prettyprint">prettyPrint</a> function as well.</p>
+<p>An <em>html object</em> with a new list of elements can be created using the
+functions below by searching for or selecting elements in another <em>html
+object</em>.  The elements in the <em>html object</em> represent the actual content in
+the html document, and if manipulated, will change the contents returned
+from <a class="reference internal" href="#prettyprint">prettyPrint</a>.</p>
+<p>Elements selected in lists can be detached, moved, copied, deleted and have
+their attributes and classes changed with the functions below.</p>
+<div class="section" id="selecting-elements">
+<h3>Selecting Elements<a class="headerlink" href="#selecting-elements" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="findtag">
+<h4>findTag<a class="headerlink" href="#findtag" title="Permalink to this headline">¶</a></h4>
+<p>Find all the element that are descendents of the current list
+of elements which have a given tag.  If no elements are found, a
+<em>html object</em> with an empty list of elements is returned.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">list</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="nx">tagname</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">tagname</span></code> is the name of the HTML tag to be selected (e.g. “div”).</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">mydoc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span><span class="nb">document</span><span class="p">,</span> <span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* get a list of all the divs in the document */</span>
+<span class="kd">var</span> <span class="nx">alldivs</span> <span class="o">=</span> <span class="nx">mydoc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s2">&quot;div&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="findattr">
+<h4>findAttr<a class="headerlink" href="#findattr" title="Permalink to this headline">¶</a></h4>
+<p>Find all the element that are descendents of the current list
+of elements which have a given attribute.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">list</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findAttr</span><span class="p">(</span><span class="nx">attrname</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">attrname</span></code> is the name of the attribute in the element to be selected (e.g. “id”).</p>
+<p>Additionally, the attribute can specify a value by using <code class="docutils literal notranslate"><span class="pre">attr=val</span></code>
+syntax.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">mydoc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span><span class="nb">document</span><span class="p">,</span> <span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* get a list of all the elements with a href in the element */</span>
+<span class="kd">var</span> <span class="nx">allhrefs</span> <span class="o">=</span> <span class="nx">mydoc</span><span class="p">.</span><span class="nx">findAttr</span><span class="p">(</span><span class="s2">&quot;href&quot;</span><span class="p">);</span>
+
+<span class="cm">/* get a list consisting of the element(s) with the attr &#39;id = &quot;maindiv&quot;` */</span>
+<span class="kd">var</span> <span class="nx">maindiv</span> <span class="o">=</span> <span class="nx">mydoc</span><span class="p">.</span><span class="nx">findAttr</span><span class="p">(</span><span class="s2">&quot;id=maindiv&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="findclass">
+<h4>findClass<a class="headerlink" href="#findclass" title="Permalink to this headline">¶</a></h4>
+<p>Find all the element that are descendents of the current list
+of elements which belong to the named class.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">list</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findClass</span><span class="p">(</span><span class="nx">classname</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">classname</span></code> is the name of the HTML tag to be selected
+(e.g. if an element has the attribute <code class="docutils literal notranslate"><span class="pre">class=&quot;foo1</span> <span class="pre">bar2&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">classname</span></code>
+of <code class="docutils literal notranslate"><span class="pre">bar2</span></code> would select the element).</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">mydoc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span><span class="nb">document</span><span class="p">,</span> <span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* get a list of all the elements in the document</span>
+<span class="cm">   which belong to the &quot;foo1&quot; class              */</span>
+<span class="kd">var</span> <span class="nx">alldivs</span> <span class="o">=</span> <span class="nx">mydoc</span><span class="p">.</span><span class="nx">findClass</span><span class="p">(</span><span class="s2">&quot;foo1&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="traversing-html-tree">
+<h3>Traversing HTML tree<a class="headerlink" href="#traversing-html-tree" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="next">
+<h4>next<a class="headerlink" href="#next" title="Permalink to this headline">¶</a></h4>
+<p>Given the current list of elements, return a new list consisting of the next
+sibling element of each, if one exists.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div class=&quot;myclass&quot;&gt;one&lt;/div&gt;&lt;div&gt;two&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div class=&quot;myclass&quot;&gt;three&lt;/div&gt;&lt;div&gt;four&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div class=&quot;myclass&quot;&gt;five&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">mydivs</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findClass</span><span class="p">(</span><span class="s2">&quot;myclass&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">nextdivs</span> <span class="o">=</span> <span class="nx">mydivs</span><span class="p">.</span><span class="nx">next</span><span class="p">();</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">nextdivs</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[&quot;&lt;div&gt;two&lt;/div&gt;&quot;,&quot;&lt;div&gt;four&lt;/div&gt;&quot;]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="prev">
+<h4>prev<a class="headerlink" href="#prev" title="Permalink to this headline">¶</a></h4>
+<p>Given the current list of elements, return a new list consisting of the
+previous sibling element of each, if one exists.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;span&gt;one&lt;/span&gt;&lt;div class=&quot;myclass&quot;&gt;two&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span&gt;three&lt;/span&gt;&lt;div class=&quot;myclass&quot;&gt;four&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">mydivs</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findClass</span><span class="p">(</span><span class="s2">&quot;myclass&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">prevels</span> <span class="o">=</span> <span class="nx">mydivs</span><span class="p">.</span><span class="nx">prev</span><span class="p">();</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">prevels</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[&quot;&lt;span&gt;one&lt;/span&gt;&quot;,&quot;&lt;span&gt;three&lt;/span&gt;&quot;]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="children">
+<h4>children<a class="headerlink" href="#children" title="Permalink to this headline">¶</a></h4>
+<p>Given the current list of elements, return a new list consisting of the
+direct descendent elements of each, if any exists.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div class=&quot;myclass&quot;&gt;&lt;span&gt;one&lt;/span&gt;&lt;span&gt;two&lt;/span&gt;&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div class=&quot;myclass&quot;&gt;&lt;span&gt;three&lt;/span&gt;&lt;span&gt;four&lt;/span&gt;&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">mydivs</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findClass</span><span class="p">(</span><span class="s2">&quot;myclass&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">children</span> <span class="o">=</span> <span class="nx">mydivs</span><span class="p">.</span><span class="nx">children</span><span class="p">();</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">children</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output</span>
+
+<span class="cm">[&quot;&lt;span&gt;one&lt;/span&gt;&quot;,&quot;&lt;span&gt;two&lt;/span&gt;&quot;,&quot;&lt;span&gt;three&lt;/span&gt;&quot;,&quot;&lt;span&gt;four&lt;/span&gt;&quot;]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="parent">
+<h4>parent<a class="headerlink" href="#parent" title="Permalink to this headline">¶</a></h4>
+<p>Given the current list of elements, return a new list consisting of the
+direct ancester elements of each, if any exists.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div class=&quot;myclass&quot;&gt;&lt;span&gt;one&lt;/span&gt;&lt;span&gt;two&lt;/span&gt;&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div class=&quot;myclass&quot;&gt;&lt;span&gt;three&lt;/span&gt;&lt;span&gt;four&lt;/span&gt;&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">myspans</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s2">&quot;span&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">parents</span> <span class="o">=</span> <span class="nx">myspans</span><span class="p">.</span><span class="nx">parent</span><span class="p">();</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">parents</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+<span class="cm">   &quot;&lt;div class=\&quot;myclass\&quot;&gt;&lt;span&gt;one&lt;/span&gt;&lt;span&gt;two&lt;/span&gt;&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div class=\&quot;myclass\&quot;&gt;&lt;span&gt;three&lt;/span&gt;&lt;span&gt;four&lt;/span&gt;&lt;/div&gt;&quot;</span>
+<span class="cm">]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+<p>Note that even though there are four elements in <code class="docutils literal notranslate"><span class="pre">myspans</span></code>, <code class="docutils literal notranslate"><span class="pre">parent()</span></code>,
+like all <em>html object</em> function, returns a unique list.</p>
+</div>
+<div class="section" id="getdocument">
+<h4>getDocument<a class="headerlink" href="#getdocument" title="Permalink to this headline">¶</a></h4>
+<p>Given an <em>html object</em> containing any number of elements, return the top
+level document.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;span&gt;one&lt;/span&gt;&lt;div class=&quot;myclass&quot;&gt;two&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span&gt;three&lt;/span&gt;&lt;div class=&quot;myclass&quot;&gt;four&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">spans</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s2">&quot;span&quot;</span><span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span> <span class="p">(</span><span class="nx">doc</span> <span class="o">==</span> <span class="nx">spans</span><span class="p">),</span> <span class="p">(</span><span class="nx">doc</span> <span class="o">==</span> <span class="nx">spans</span><span class="p">.</span><span class="nx">getDocument</span><span class="p">())</span> <span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">false true</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+<p>In the above example, the <a class="reference internal" href="#prettyprint">prettyPrint</a> function could be accessed from
+<code class="docutils literal notranslate"><span class="pre">spans</span></code> with the following: <code class="docutils literal notranslate"><span class="pre">spans.getDocument().prettyPrint()</span></code>.</p>
+</div>
+</div>
+<div class="section" id="filtering-list-of-elements">
+<h3>Filtering List of Elements<a class="headerlink" href="#filtering-list-of-elements" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="filtertag">
+<h4>filterTag<a class="headerlink" href="#filtertag" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="filterattr">
+<h4>filterAttr<a class="headerlink" href="#filterattr" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="filterclass">
+<h4>filterClass<a class="headerlink" href="#filterclass" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="slice">
+<h4>slice<a class="headerlink" href="#slice" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="eq">
+<h4>eq<a class="headerlink" href="#eq" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="add">
+<h4>add<a class="headerlink" href="#add" title="Permalink to this headline">¶</a></h4>
+</div>
+</div>
+<div class="section" id="testing-elements">
+<h3>Testing Elements<a class="headerlink" href="#testing-elements" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="hastag">
+<h4>hasTag<a class="headerlink" href="#hastag" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="hasattr">
+<h4>hasAttr<a class="headerlink" href="#hasattr" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="hasclass">
+<h4>hasClass<a class="headerlink" href="#hasclass" title="Permalink to this headline">¶</a></h4>
+</div>
+</div>
+<div class="section" id="manipulating-elements">
+<h3>Manipulating Elements<a class="headerlink" href="#manipulating-elements" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="attr">
+<h4>attr<a class="headerlink" href="#attr" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="removeattr">
+<h4>removeAttr<a class="headerlink" href="#removeattr" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="addclass">
+<h4>addClass<a class="headerlink" href="#addclass" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="removeclass">
+<h4>removeClass<a class="headerlink" href="#removeclass" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="detach">
+<h4>detach<a class="headerlink" href="#detach" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="delete">
+<h4>delete<a class="headerlink" href="#delete" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="append">
+<h4>append<a class="headerlink" href="#append" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="prepend">
+<h4>prepend<a class="headerlink" href="#prepend" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="after">
+<h4>after<a class="headerlink" href="#after" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="before">
+<h4>before<a class="headerlink" href="#before" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="replace">
+<h4>replace<a class="headerlink" href="#replace" title="Permalink to this headline">¶</a></h4>
+</div>
+</div>
+<div class="section" id="output-from-elements">
+<h3>Output from Elements<a class="headerlink" href="#output-from-elements" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="getelement">
+<h4>getElement<a class="headerlink" href="#getelement" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="getelementname">
+<h4>getElementName<a class="headerlink" href="#getelementname" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="getattr">
+<h4>getAttr<a class="headerlink" href="#getattr" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="getallattr">
+<h4>getAllAttr<a class="headerlink" href="#getallattr" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="tohtml">
+<h4>toHtml<a class="headerlink" href="#tohtml" title="Permalink to this headline">¶</a></h4>
+</div>
+<div class="section" id="totext">
+<h4>toText<a class="headerlink" href="#totext" title="Permalink to this headline">¶</a></h4>
+</div>
+</div>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+      
+        <a href="rampart-server.html" class="btn btn-neutral" title="The rampart-server HTTP module" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

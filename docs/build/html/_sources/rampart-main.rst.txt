@@ -205,10 +205,19 @@ Extended (non-standard) formats:
    * ``%H`` - html encode (or if ``!`` flag present, decode) a :green:`String`. 
 
    * ``%P`` - pretty print a :green:`String` or :green:`Buffer`.  Expects
-     text with white space.  Format is ``%i.wP`` where ``i`` is the level of
-     indentation and ``w`` is the length of each line (default ``80`` if not
-     specified).  If format ``%!i.wP`` is given, newlines are not converted
-     to spaces (but text after newlines is still indented).
+     text with white space.  Format is ``%[!][i][.w]P`` where:
+
+     * ``i`` is the optional level of indentation.  Each output line will be indented
+       by this amount.  Default is ``0``.  If ``0``, the indent level for
+       each paragraph will match the indentation of the first line of the corresponding
+       paragraph in the input text (number of spaces at beginning of the paragraph).
+
+     * ``.w`` where ``w`` is the optional length of each line (default ``80`` if not
+       specified).
+
+     * ``!`` specifies, if present, that newlines are not converted to spaces (but text
+       after newlines is still indented).  In all cases, a double newline
+       ("\\n\\n") is considered a separator of paragraphs and is respected.
 
 Example:
 
@@ -1692,9 +1701,10 @@ Modules are searched for in the following order:
 #. In the ``.rampart/modules`` directory of current user's home directory 
    as provided by the ``$HOME`` environment variable.
 
-#. In the ``-DRP_INST_PATH`` + "/modules" set when Rampart was compiled.  The default 
-   is ``/usr/local/rampart/modules``, or, if set, the path pointed to by
-   the envirnonment variable ``$RAMPART_PATH`` + "/modules".
+#. In the "/modules" directory of the ``-DRP_INST_PATH`` path set when Rampart 
+   was compiled.  The default is ``/usr/local/rampart/modules``. Or
+   preferentially, if set, the path pointed to by the envirnonment variable
+   ``$RAMPART_PATH`` + "/modules".
 
 #. In the current working directory.
 
