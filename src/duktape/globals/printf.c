@@ -855,7 +855,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             if (duk_is_number(ctx, fidx))
             {
                 uint64_t n=(uint64_t)duk_get_number(ctx, fidx);
-                if(n<0 || n>4294967295)
+                if(n>4294967295)
                      RP_THROW(ctx, "number (0-4294967295) required in format string argument %d", fidx);
                 c=(uint32_t)n;
                 fidx++;
