@@ -7,7 +7,7 @@ Welcome to Rampart's documentation.
    :hidden:
    :maxdepth: 0
    
-   Rampart Javascript <rampart-main>
+   Rampart JavaScript <rampart-main>
    The rampart-sql module <sqltoc>
    The rampart-server module <rampart-server>
    The rampart-html module <rampart-html>

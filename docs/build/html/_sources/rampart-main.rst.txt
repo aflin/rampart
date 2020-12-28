@@ -7,7 +7,7 @@ Preface
 Acknowledgement
 """""""""""""""
 
-Rampart uses the `Duktape Javascript Engine <https://duktape.org>`_. Duktape is an 
+Rampart uses the `Duktape JavaScript Engine <https://duktape.org>`_. Duktape is an 
 embeddable JavaScript engine, with a focus on portability and compact footprint.
 The developers of Rampart are extremely grateful for the excellent api and
 ease of use of this library.
@@ -23,7 +23,7 @@ Rampart uses a low memory footprint JavaScript interpreter to bring together
 several high performance tools and useful utilities for use in Web
 and information management applications.  At its core is the Duktape
 JavaScript library and added to it is a SQL database, full text search
-engine, a fast and innovative NOSQL Mmap database, a fast multithreaded 
+engine, a fast and innovative NOSQL Mmap database, a fast multi-threaded 
 webserver, client functionality via the Curl and crypto functions via
 Openssl.  It attempts to provide performance, maximum flexibility and 
 ease of use through the marriage of C code and JavaScript scripting.
@@ -57,7 +57,7 @@ Rampart additions
 In addition to the standard features in Duktape JavaScript, Rampart adds the
 following:
 
-* Standard module support for ``C`` and ``Javascript`` modules via the
+* Standard module support for ``C`` and ``JavaScript`` modules via the
   ``require()`` function.
 
 * File and C-functions utilities such as ``printf``, ``fseek``, and ``exec``.
@@ -74,7 +74,7 @@ following:
 
 * Fast NOSQL database via ``rampart-ramis``.
 
-* Multithreaded http(s) server from libevhtp via ``rampart-server``.
+* Multi-threaded http(s) server from libevhtp via ``rampart-server``.
 
 * http, ftp, etc. client functionality via ``rampart-curl``.
 
@@ -84,7 +84,7 @@ Rampart philosophy
 ~~~~~~~~~~~~~~~~~~
 Though Rampart supports ``setTimeout()`` (and other async functions via
 babel), the functions added to `Duktape <https://duktape.org>`_ 
-via modules as well as the built-in functions are syncronous.  Raw JavaScript
+via modules as well as the built-in functions are synchronous.  Raw JavaScript
 execution is more memory efficient, but far slower than with, e.g., node.js.
 However, the functionality and speed of the available C functions provide
 comparable efficacy, excellent performance and are a viable alternative to 
@@ -96,7 +96,7 @@ than the aforementioned.
 Rampart Global Variable and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Rampart provieds global variables beyond what is available in Duktape:
+Rampart provides global variables beyond what is available in Duktape:
 ``rampart`` and ``process``, as well as the ``require`` function.  Below is
 a listing of these added functions.
 
@@ -190,7 +190,7 @@ Extended (non-standard) formats:
      (converted/coerced if necessary; :green:`Objects` and :green:`Buffers`
      are converted the same as for ``%J`` and ``%B`` below).
 
-   * ``%S`` - same as ``%s`` except an error is thrown if corresponding argument is
+   * ``%S`` - same as ``%s`` except an error is thrown if the corresponding argument is
      not a :green:`String`.
 
    * ``%J`` - print :green:`Object` as JSON.  An optional width (i.e.
@@ -386,7 +386,7 @@ Usage:
 +------------+----------------+---------------------------------------------------+
 |whence      |:green:`String` | "seek_set" - measure offset from start of file    |
 +            +                +---------------------------------------------------+
-|            |                | "seek_cur" - measure offsef from current position |
+|            |                | "seek_cur" - measure offset from current position |
 +            +                +---------------------------------------------------+
 |            |                | "seek_end" - measure offset from end of file.     |
 +------------+----------------+---------------------------------------------------+
@@ -499,7 +499,7 @@ Usage:
 |handle      |:green:`Object`  | A handle opened with `fopen`_\ ()                 |
 +------------+-----------------+---------------------------------------------------+
 |chunk_size  |:green:`Number`  | Initial size of return :green:`Buffer` and number |
-|            |                 | of bytes to read at a time. If total number of    |
+|            |                 | of bytes to read at a time. If the total number of|
 |            |                 | bytes read is greater, the buffer grows as needed.|
 |            |                 | If total bytes read is less, the returned buffer  |
 |            |                 | will be reduced in size to match. Default is 4096 |
@@ -699,7 +699,7 @@ Caveats:
 *  If ``comma`` was used to create the query string, no separation of comma
    separated values will occur and the entire value will be returned as a :green:`String`.
 
-*  If ``json`` was used, numeric values will be preserves as :green:`Numbers`.
+*  If ``json`` was used, numeric values will be preserved as :green:`Numbers`.
 
 Example:
 
@@ -818,7 +818,7 @@ Where values ``filename`` and optional values
 |return_str  |:green:`Boolean` | If not set, or ``false``, return a :green:`Buffer`.          |
 |            |                 +--------------------------------------------------------------+
 |            |                 | If ``true``, return contents as a :green:`String`.           |
-|            |                 | May be truncated if file contains null characters.           |
+|            |                 | May be truncated if the file contains null characters.       |
 +------------+-----------------+--------------------------------------------------------------+
 
 Return Value:
@@ -954,7 +954,7 @@ Return Value:
 
    }
 
-See `stat (2) <https://man7.org/linux/man-pages/man2/stat.2.html>`_ for
+See `stat (2) <https://man7.org/linux/man-pages/man2/stat.2.html>`_ for the
 meaning of each property.  The ``is*()`` functions return ``true`` if the
 corresponding file property is true.
 
@@ -1022,8 +1022,8 @@ Return Value:
 
    * ``exitStatus`` - :green:`Number`.  The returned exit status of the command.
 
-   * ``timedOut`` - :green:`Boolean`.  Set true if program was killed after
-     ``timeout`` milliseconds elapsed.
+   * ``timedOut`` - :green:`Boolean`.  Set true if the program was killed after
+     ``timeout`` milliseconds has elapsed.
 
    * ``pid`` - :green:`Number`. Process id of the executed command.
 
@@ -1080,7 +1080,7 @@ signals, which may vary by platform.  Setting ``signal`` to ``0`` sends no
 signal, but checks for the existence of the process identified by ``pid``.
 
 Return Value:
-   :green:`Boolean`.  ``true`` if signal successfully sent.  ``false`` if there was
+   :green:`Boolean`.  ``true`` if the signal was successfully sent.  ``false`` if there was
    an error or process does not exist.
 
 Example:
@@ -1117,7 +1117,7 @@ Usage:
 Where ``path`` is a :green:`String`, the directory to be created and ``mode`` is a
 :green:`Number` or :green:`String`, the octal permissions mode. Any parent directories which
 do not exist will also be created.  Throws error if lacking permissions or
-if another error encountered.
+if another error was encountered.
 
 Note that ``mode`` is normally given as an octal.  As such it can be, e.g.,
 ``0755`` (octal number) or ``"755"`` (:green:`String` representation of an octal
@@ -1140,7 +1140,7 @@ Usage:
    rampart.utils.rmdir(path [, recurse]);
 
 Where ``path`` is a :green:`String`, the directory to be removed and ``recurse`` is an
-optional :green:`Boolean`, which if ``true``, parent directories explicitely present in
+optional :green:`Boolean`, which if ``true``, parent directories explicitly present in
 ``path`` will also be removed.  Throws an error if the directory cannot be
 removed (.e.g., not empty or lacking permission).
 
@@ -1272,7 +1272,7 @@ Usage:
 Where ``path`` is a :green:`String`, the file or directory upon which to be operated
 and ``mode`` is a :green:`Number` or :green:`String`, the octal permissions mode.  Any parent
 directories which do not exist will also be created.  Throws error if
-lacking permissions or if another error encountered.
+lacking permissions or if another error was encountered.
 
 Note that ``mode`` is normally given as an octal.  As such it can be, e.g.,
 ``0755`` (octal number) or ``"755"`` (:green:`String` representation of an octal
@@ -1284,7 +1284,7 @@ Return Value:
 touch
 '''''
 
-Create an empty file, or update the access time stamp of an existing file.
+Create an empty file, or update the access timestamp of an existing file.
 
 Usage:
 
@@ -1307,17 +1307,17 @@ Where:
 * ``file`` is a :green:`String`, the name of the file upon which to operate, 
 
 * ``noCreate`` is a :green:`Boolean` (default ``false``) which, if ``true``
-  will only update the time stamp, and will no create non-existing
+  will only update the timestamp, and will not create a non-existing
   ``file``.
 
 * ``setAccess`` is a :green:`Boolean` (default ``true``).  Whether to update
-  access time stamp of file.
+  access timestamp of file.
 
 * ``setModify`` is a :green:`Boolean` (default ``true``).  Whether to update
-  modification time stamp of file.
+  modification timestamp of file.
 
 * ``referenceFile`` is a :green:`String`.  If specified, the named file's access and
-  modification time stamps will be used rather than the current time/date.
+  modification timestamps will be used rather than the current time/date.
 
 Return Value:
    ``undefined``.
@@ -1452,7 +1452,7 @@ options:
         character of string as a column delimiter (e.g ``\t``).
 
       * ``timeFormat`` -  :green:`String` (default ``"%Y-%m-%d %H:%M:%S"``):
-        Set the format for parsing a date/time. See manpage for 
+        Set the format for parsing a date/time. See man page for 
         `strptime() <https://man7.org/linux/man-pages/man3/strptime.3p.html>`_.
 
       * ``returnType``-  :green:`String` (default ``"array"``, optionally
@@ -1473,7 +1473,7 @@ options:
       * ``includeRawString`` :green:`Boolean` (default ``false``): if
         ``true``, return each cell as an object containing 
 	``{value: normalized value, raw: originalString}``.  If false, each
-	cell value is the primative normalized value.
+	cell value is the primitive normalized value.
 
 callback:
    A :green:`Function` taking as parameters (``result_row``, ``index``, ``columns``).
@@ -1498,7 +1498,7 @@ Return Value:
 	
 	Key: ``results``; Value: an :green:`Array` of :green:`Arrays`. 
 	Each outer :green:`Array` corresponds to a row in the csv file
-	and eac inner :green:`Array` corresponds to the columns in that row.
+	and each inner :green:`Array` corresponds to the columns in that row.
 	If ``returnType`` is set to ``"object"``, an :green:`Array` of
 	:green:`Objects` with keys set to the corresponding column names 
 	and the values set to the corresponding column values  of the
@@ -1703,7 +1703,7 @@ Modules are searched for in the following order:
 
 #. In the "/modules" directory of the ``-DRP_INST_PATH`` path set when Rampart 
    was compiled.  The default is ``/usr/local/rampart/modules``. Or
-   preferentially, if set, the path pointed to by the envirnonment variable
+   preferentially, if set, the path pointed to by the environment variable
    ``$RAMPART_PATH`` + "/modules".
 
 #. In the current working directory.
@@ -1773,7 +1773,7 @@ Example:
 
    "use babel" /* a comment on this line is ok */
 
-   console.log(`a multiline string
+   console.log(`a multi-line string
    using backticks is much easier than
    using 
    console.log( 

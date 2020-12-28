@@ -84,7 +84,7 @@
             
                 <p class="caption"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Rampart Javascript</a><ul>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Rampart JavaScript</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#preface">Preface</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#acknowledgement">Acknowledgement</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#license">License</a></li>
@@ -239,7 +239,7 @@
 <h2>Preface<a class="headerlink" href="#preface" title="Permalink to this headline">¶</a></h2>
 <div class="section" id="acknowledgement">
 <h3>Acknowledgement<a class="headerlink" href="#acknowledgement" title="Permalink to this headline">¶</a></h3>
-<p>Rampart uses the <a class="reference external" href="https://duktape.org">Duktape Javascript Engine</a>. Duktape is an
+<p>Rampart uses the <a class="reference external" href="https://duktape.org">Duktape JavaScript Engine</a>. Duktape is an
 embeddable JavaScript engine, with a focus on portability and compact footprint.
 The developers of Rampart are extremely grateful for the excellent api and
 ease of use of this library.</p>
@@ -254,7 +254,7 @@ ease of use of this library.</p>
 several high performance tools and useful utilities for use in Web
 and information management applications.  At its core is the Duktape
 JavaScript library and added to it is a SQL database, full text search
-engine, a fast and innovative NOSQL Mmap database, a fast multithreaded
+engine, a fast and innovative NOSQL Mmap database, a fast multi-threaded
 webserver, client functionality via the Curl and crypto functions via
 Openssl.  It attempts to provide performance, maximum flexibility and
 ease of use through the marriage of C code and JavaScript scripting.</p>
@@ -284,7 +284,7 @@ ease of use through the marriage of C code and JavaScript scripting.</p>
 <p>In addition to the standard features in Duktape JavaScript, Rampart adds the
 following:</p>
 <ul class="simple">
-<li><p>Standard module support for <code class="docutils literal notranslate"><span class="pre">C</span></code> and <code class="docutils literal notranslate"><span class="pre">Javascript</span></code> modules via the
+<li><p>Standard module support for <code class="docutils literal notranslate"><span class="pre">C</span></code> and <code class="docutils literal notranslate"><span class="pre">JavaScript</span></code> modules via the
 <code class="docutils literal notranslate"><span class="pre">require()</span></code> function.</p></li>
 <li><p>File and C-functions utilities such as <code class="docutils literal notranslate"><span class="pre">printf</span></code>, <code class="docutils literal notranslate"><span class="pre">fseek</span></code>, and <code class="docutils literal notranslate"><span class="pre">exec</span></code>.</p></li>
 <li><p>Included <code class="docutils literal notranslate"><span class="pre">C</span></code> modules (<code class="docutils literal notranslate"><span class="pre">rampart-ramis</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-curl</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-sql</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-server</span></code> and
@@ -294,7 +294,7 @@ following:</p>
 JavaScript transpiler.</p></li>
 <li><p>Full Text Search and SQL databasing via <code class="docutils literal notranslate"><span class="pre">rampart-sql</span></code>.</p></li>
 <li><p>Fast NOSQL database via <code class="docutils literal notranslate"><span class="pre">rampart-ramis</span></code>.</p></li>
-<li><p>Multithreaded http(s) server from libevhtp via <code class="docutils literal notranslate"><span class="pre">rampart-server</span></code>.</p></li>
+<li><p>Multi-threaded http(s) server from libevhtp via <code class="docutils literal notranslate"><span class="pre">rampart-server</span></code>.</p></li>
 <li><p>http, ftp, etc. client functionality via <code class="docutils literal notranslate"><span class="pre">rampart-curl</span></code>.</p></li>
 <li><p>Cryptography functions from Openssl via <code class="docutils literal notranslate"><span class="pre">rampart-crypto</span></code>.</p></li>
 </ul>
@@ -304,7 +304,7 @@ JavaScript transpiler.</p></li>
 <h2>Rampart philosophy<a class="headerlink" href="#rampart-philosophy" title="Permalink to this headline">¶</a></h2>
 <p>Though Rampart supports <code class="docutils literal notranslate"><span class="pre">setTimeout()</span></code> (and other async functions via
 babel), the functions added to <a class="reference external" href="https://duktape.org">Duktape</a>
-via modules as well as the built-in functions are syncronous.  Raw JavaScript
+via modules as well as the built-in functions are synchronous.  Raw JavaScript
 execution is more memory efficient, but far slower than with, e.g., node.js.
 However, the functionality and speed of the available C functions provide
 comparable efficacy, excellent performance and are a viable alternative to
@@ -315,7 +315,7 @@ than the aforementioned.</p>
 </div>
 <div class="section" id="rampart-global-variable-and-functions">
 <h2>Rampart Global Variable and Functions<a class="headerlink" href="#rampart-global-variable-and-functions" title="Permalink to this headline">¶</a></h2>
-<p>Rampart provieds global variables beyond what is available in Duktape:
+<p>Rampart provides global variables beyond what is available in Duktape:
 <code class="docutils literal notranslate"><span class="pre">rampart</span></code> and <code class="docutils literal notranslate"><span class="pre">process</span></code>, as well as the <code class="docutils literal notranslate"><span class="pre">require</span></code> function.  Below is
 a listing of these added functions.</p>
 <div class="section" id="rampart-globalize">
@@ -409,7 +409,7 @@ See standard formats and flags from
 <li><p><code class="docutils literal notranslate"><span class="pre">%s</span></code> - corresponding argument is treated as a <span class="green">String</span>
 (converted/coerced if necessary; <span class="green">Objects</span> and <span class="green">Buffers</span>
 are converted the same as for <code class="docutils literal notranslate"><span class="pre">%J</span></code> and <code class="docutils literal notranslate"><span class="pre">%B</span></code> below).</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">%S</span></code> - same as <code class="docutils literal notranslate"><span class="pre">%s</span></code> except an error is thrown if corresponding argument is
+<li><p><code class="docutils literal notranslate"><span class="pre">%S</span></code> - same as <code class="docutils literal notranslate"><span class="pre">%s</span></code> except an error is thrown if the corresponding argument is
 not a <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%J</span></code> - print <span class="green">Object</span> as JSON.  An optional width (i.e.
 <code class="docutils literal notranslate"><span class="pre">printf(&quot;%4J&quot;,</span> <span class="pre">obj);</span></code>) may be given which will print with new lines and
@@ -596,7 +596,7 @@ overwrite an existing file.</p></li>
 <td rowspan="3"><p><span class="green">String</span></p></td>
 <td><p>“seek_set” - measure offset from start of file</p></td>
 </tr>
-<tr class="row-odd"><td><p>“seek_cur” - measure offsef from current position</p></td>
+<tr class="row-odd"><td><p>“seek_cur” - measure offset from current position</p></td>
 </tr>
 <tr class="row-even"><td><p>“seek_end” - measure offset from end of file.</p></td>
 </tr>
@@ -708,7 +708,7 @@ write of buffered data.</p>
 <tr class="row-odd"><td><p>chunk_size</p></td>
 <td><p><span class="green">Number</span></p></td>
 <td><p>Initial size of return <span class="green">Buffer</span> and number
-of bytes to read at a time. If total number of
+of bytes to read at a time. If the total number of
 bytes read is greater, the buffer grows as needed.
 If total bytes read is less, the returned buffer
 will be reduced in size to match. Default is 4096
@@ -900,7 +900,7 @@ query string, all values will be returned as strings (even if an <span class="gr
 <span class="green">Numbers</span> was given to <a class="reference internal" href="#objecttoquery">objectToQuery</a>().</p></li>
 <li><p>If <code class="docutils literal notranslate"><span class="pre">comma</span></code> was used to create the query string, no separation of comma
 separated values will occur and the entire value will be returned as a <span class="green">String</span>.</p></li>
-<li><p>If <code class="docutils literal notranslate"><span class="pre">json</span></code> was used, numeric values will be preserves as <span class="green">Numbers</span>.</p></li>
+<li><p>If <code class="docutils literal notranslate"><span class="pre">json</span></code> was used, numeric values will be preserved as <span class="green">Numbers</span>.</p></li>
 </ul>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">obj</span><span class="o">=</span> <span class="p">{</span>
@@ -1028,7 +1028,7 @@ separated values will occur and the entire value will be returned as a <span cla
 <td><p>If not set, or <code class="docutils literal notranslate"><span class="pre">false</span></code>, return a <span class="green">Buffer</span>.</p></td>
 </tr>
 <tr class="row-even"><td><p>If <code class="docutils literal notranslate"><span class="pre">true</span></code>, return contents as a <span class="green">String</span>.
-May be truncated if file contains null characters.</p></td>
+May be truncated if the file contains null characters.</p></td>
 </tr>
 </tbody>
 </table>
@@ -1149,7 +1149,7 @@ properties:</p>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>See <a class="reference external" href="https://man7.org/linux/man-pages/man2/stat.2.html">stat (2)</a> for
+<p>See <a class="reference external" href="https://man7.org/linux/man-pages/man2/stat.2.html">stat (2)</a> for the
 meaning of each property.  The <code class="docutils literal notranslate"><span class="pre">is*()</span></code> functions return <code class="docutils literal notranslate"><span class="pre">true</span></code> if the
 corresponding file property is true.</p>
 <p>Example:</p>
@@ -1206,8 +1206,8 @@ Otherwise <code class="docutils literal notranslate"><span class="pre">null</spa
 <li><p><code class="docutils literal notranslate"><span class="pre">stderr</span></code> - <span class="green">String</span>. stderr output of command if <code class="docutils literal notranslate"><span class="pre">background</span></code> is not set <code class="docutils literal notranslate"><span class="pre">false</span></code>.
 Otherwise <code class="docutils literal notranslate"><span class="pre">null</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">exitStatus</span></code> - <span class="green">Number</span>.  The returned exit status of the command.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">timedOut</span></code> - <span class="green">Boolean</span>.  Set true if program was killed after
-<code class="docutils literal notranslate"><span class="pre">timeout</span></code> milliseconds elapsed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">timedOut</span></code> - <span class="green">Boolean</span>.  Set true if the program was killed after
+<code class="docutils literal notranslate"><span class="pre">timeout</span></code> milliseconds has elapsed.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">pid</span></code> - <span class="green">Number</span>. Process id of the executed command.</p></li>
 </ul>
 </dd>
@@ -1256,7 +1256,7 @@ passed to bash.</p>
 signals, which may vary by platform.  Setting <code class="docutils literal notranslate"><span class="pre">signal</span></code> to <code class="docutils literal notranslate"><span class="pre">0</span></code> sends no
 signal, but checks for the existence of the process identified by <code class="docutils literal notranslate"><span class="pre">pid</span></code>.</p>
 <dl class="simple">
-<dt>Return Value:</dt><dd><p><span class="green">Boolean</span>.  <code class="docutils literal notranslate"><span class="pre">true</span></code> if signal successfully sent.  <code class="docutils literal notranslate"><span class="pre">false</span></code> if there was
+<dt>Return Value:</dt><dd><p><span class="green">Boolean</span>.  <code class="docutils literal notranslate"><span class="pre">true</span></code> if the signal was successfully sent.  <code class="docutils literal notranslate"><span class="pre">false</span></code> if there was
 an error or process does not exist.</p>
 </dd>
 </dl>
@@ -1288,7 +1288,7 @@ an error or process does not exist.</p>
 <p>Where <code class="docutils literal notranslate"><span class="pre">path</span></code> is a <span class="green">String</span>, the directory to be created and <code class="docutils literal notranslate"><span class="pre">mode</span></code> is a
 <span class="green">Number</span> or <span class="green">String</span>, the octal permissions mode. Any parent directories which
 do not exist will also be created.  Throws error if lacking permissions or
-if another error encountered.</p>
+if another error was encountered.</p>
 <p>Note that <code class="docutils literal notranslate"><span class="pre">mode</span></code> is normally given as an octal.  As such it can be, e.g.,
 <code class="docutils literal notranslate"><span class="pre">0755</span></code> (octal number) or <code class="docutils literal notranslate"><span class="pre">&quot;755&quot;</span></code> (<span class="green">String</span> representation of an octal
 number), but <code class="docutils literal notranslate"><span class="pre">755</span></code>, as a decimal number may not work as intended.</p>
@@ -1305,7 +1305,7 @@ number), but <code class="docutils literal notranslate"><span class="pre">755</s
 </pre></div>
 </div>
 <p>Where <code class="docutils literal notranslate"><span class="pre">path</span></code> is a <span class="green">String</span>, the directory to be removed and <code class="docutils literal notranslate"><span class="pre">recurse</span></code> is an
-optional <span class="green">Boolean</span>, which if <code class="docutils literal notranslate"><span class="pre">true</span></code>, parent directories explicitely present in
+optional <span class="green">Boolean</span>, which if <code class="docutils literal notranslate"><span class="pre">true</span></code>, parent directories explicitly present in
 <code class="docutils literal notranslate"><span class="pre">path</span></code> will also be removed.  Throws an error if the directory cannot be
 removed (.e.g., not empty or lacking permission).</p>
 <dl class="simple">
@@ -1415,7 +1415,7 @@ the to-be-created symlink.</p>
 <p>Where <code class="docutils literal notranslate"><span class="pre">path</span></code> is a <span class="green">String</span>, the file or directory upon which to be operated
 and <code class="docutils literal notranslate"><span class="pre">mode</span></code> is a <span class="green">Number</span> or <span class="green">String</span>, the octal permissions mode.  Any parent
 directories which do not exist will also be created.  Throws error if
-lacking permissions or if another error encountered.</p>
+lacking permissions or if another error was encountered.</p>
 <p>Note that <code class="docutils literal notranslate"><span class="pre">mode</span></code> is normally given as an octal.  As such it can be, e.g.,
 <code class="docutils literal notranslate"><span class="pre">0755</span></code> (octal number) or <code class="docutils literal notranslate"><span class="pre">&quot;755&quot;</span></code> (<span class="green">String</span> representation of an octal
 number), but <code class="docutils literal notranslate"><span class="pre">755</span></code>, as a decimal number may not work as intended.</p>
@@ -1426,7 +1426,7 @@ number), but <code class="docutils literal notranslate"><span class="pre">755</s
 </div>
 <div class="section" id="touch">
 <h4>touch<a class="headerlink" href="#touch" title="Permalink to this headline">¶</a></h4>
-<p>Create an empty file, or update the access time stamp of an existing file.</p>
+<p>Create an empty file, or update the access timestamp of an existing file.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">touch</span><span class="p">(</span><span class="nx">file</span><span class="p">);</span>
 
@@ -1445,14 +1445,14 @@ number), but <code class="docutils literal notranslate"><span class="pre">755</s
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">file</span></code> is a <span class="green">String</span>, the name of the file upon which to operate,</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">noCreate</span></code> is a <span class="green">Boolean</span> (default <code class="docutils literal notranslate"><span class="pre">false</span></code>) which, if <code class="docutils literal notranslate"><span class="pre">true</span></code>
-will only update the time stamp, and will no create non-existing
+will only update the timestamp, and will not create a non-existing
 <code class="docutils literal notranslate"><span class="pre">file</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">setAccess</span></code> is a <span class="green">Boolean</span> (default <code class="docutils literal notranslate"><span class="pre">true</span></code>).  Whether to update
-access time stamp of file.</p></li>
+access timestamp of file.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">setModify</span></code> is a <span class="green">Boolean</span> (default <code class="docutils literal notranslate"><span class="pre">true</span></code>).  Whether to update
-modification time stamp of file.</p></li>
+modification timestamp of file.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">referenceFile</span></code> is a <span class="green">String</span>.  If specified, the named file’s access and
-modification time stamps will be used rather than the current time/date.</p></li>
+modification timestamps will be used rather than the current time/date.</p></li>
 </ul>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
@@ -1580,7 +1580,7 @@ anything quoted is a string.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">delimiter</span></code> - <span class="green">String</span> (default <code class="docutils literal notranslate"><span class="pre">&quot;,&quot;</span></code>):  Use the first
 character of string as a column delimiter (e.g <code class="docutils literal notranslate"><span class="pre">\t</span></code>).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">timeFormat</span></code> -  <span class="green">String</span> (default <code class="docutils literal notranslate"><span class="pre">&quot;%Y-%m-%d</span> <span class="pre">%H:%M:%S&quot;</span></code>):
-Set the format for parsing a date/time. See manpage for
+Set the format for parsing a date/time. See man page for
 <a class="reference external" href="https://man7.org/linux/man-pages/man3/strptime.3p.html">strptime()</a>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">returnType</span></code>-  <span class="green">String</span> (default <code class="docutils literal notranslate"><span class="pre">&quot;array&quot;</span></code>, optionally
 <code class="docutils literal notranslate"><span class="pre">&quot;object&quot;</span></code>): Whether to
@@ -1597,7 +1597,7 @@ unable to do so. If <code class="docutils literal notranslate"><span class="pre"
 <li><p><code class="docutils literal notranslate"><span class="pre">includeRawString</span></code> <span class="green">Boolean</span> (default <code class="docutils literal notranslate"><span class="pre">false</span></code>): if
 <code class="docutils literal notranslate"><span class="pre">true</span></code>, return each cell as an object containing
 <code class="docutils literal notranslate"><span class="pre">{value:</span> <span class="pre">normalized</span> <span class="pre">value,</span> <span class="pre">raw:</span> <span class="pre">originalString}</span></code>.  If false, each
-cell value is the primative normalized value.</p></li>
+cell value is the primitive normalized value.</p></li>
 </ul>
 </div></blockquote>
 </dd>
@@ -1619,7 +1619,7 @@ aliases selected and returned in results.</p></li>
 three key/value pairs.</p>
 <p>Key: <code class="docutils literal notranslate"><span class="pre">results</span></code>; Value: an <span class="green">Array</span> of <span class="green">Arrays</span>.
 Each outer <span class="green">Array</span> corresponds to a row in the csv file
-and eac inner <span class="green">Array</span> corresponds to the columns in that row.
+and each inner <span class="green">Array</span> corresponds to the columns in that row.
 If <code class="docutils literal notranslate"><span class="pre">returnType</span></code> is set to <code class="docutils literal notranslate"><span class="pre">&quot;object&quot;</span></code>, an <span class="green">Array</span> of
 <span class="green">Objects</span> with keys set to the corresponding column names
 and the values set to the corresponding column values  of the
@@ -1794,7 +1794,7 @@ separate file (here the file is named <code class="docutils literal notranslate"
 as provided by the <code class="docutils literal notranslate"><span class="pre">$HOME</span></code> environment variable.</p></li>
 <li><p>In the “/modules” directory of the <code class="docutils literal notranslate"><span class="pre">-DRP_INST_PATH</span></code> path set when Rampart
 was compiled.  The default is <code class="docutils literal notranslate"><span class="pre">/usr/local/rampart/modules</span></code>. Or
-preferentially, if set, the path pointed to by the envirnonment variable
+preferentially, if set, the path pointed to by the environment variable
 <code class="docutils literal notranslate"><span class="pre">$RAMPART_PATH</span></code> + “/modules”.</p></li>
 <li><p>In the current working directory.</p></li>
 </ol>
@@ -1851,7 +1851,7 @@ also should be the only text on the line, other than an optional comment.</p>
 
 <span class="s2">&quot;use babel&quot;</span> <span class="cm">/* a comment on this line is ok */</span>
 
-<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="sb">`a multiline string</span>
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="sb">`a multi-line string</span>
 <span class="sb">using backticks is much easier than</span>
 <span class="sb">using</span>
 <span class="sb">console.log(</span>

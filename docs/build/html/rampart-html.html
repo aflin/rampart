@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>The rampart-server HTTP module &mdash; Rampart 0.1.0 documentation</title>
+  <title>The rampart-server HTML module &mdash; Rampart 0.1.0 documentation</title>
   
 
   
@@ -83,7 +83,7 @@
             
                 <p class="caption"><span class="caption-text">Contents:</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart Javascript</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart JavaScript</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">The rampart-html module</a><ul>
@@ -104,10 +104,20 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#manipulating-the-html">Manipulating the HTML</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#the-html-object">The html object</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#selecting-elements">Selecting Elements</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#findtag">findTag</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#findattr">findAttr</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#findclass">findClass</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#output-from-elements">Output from Elements</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#getelement">getElement</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#getelementname">getElementName</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#getattr">getAttr</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#getallattr">getAllAttr</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#tohtml">toHtml</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#totext">toText</a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#traversing-html-tree">Traversing HTML tree</a><ul>
@@ -145,15 +155,6 @@
 <li class="toctree-l4"><a class="reference internal" href="#after">after</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#before">before</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#replace">replace</a></li>
-</ul>
-</li>
-<li class="toctree-l3"><a class="reference internal" href="#output-from-elements">Output from Elements</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#getelement">getElement</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#getelementname">getElementName</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#getattr">getAttr</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#getallattr">getAllAttr</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#tohtml">toHtml</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#totext">toText</a></li>
 </ul>
 </li>
 </ul>
@@ -204,7 +205,7 @@
     
       <li><a href="index.html">Docs</a> &raquo;</li>
         
-      <li>The rampart-server HTTP module</li>
+      <li>The rampart-server HTML module</li>
     
     
       <li class="wy-breadcrumbs-aside">
@@ -223,8 +224,8 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
             
-  <div class="section" id="the-rampart-server-http-module">
-<h1>The rampart-server HTTP module<a class="headerlink" href="#the-rampart-server-http-module" title="Permalink to this headline">¶</a></h1>
+  <div class="section" id="the-rampart-server-html-module">
+<h1>The rampart-server HTML module<a class="headerlink" href="#the-rampart-server-html-module" title="Permalink to this headline">¶</a></h1>
 <div class="section" id="preface">
 <h2>Preface<a class="headerlink" href="#preface" title="Permalink to this headline">¶</a></h2>
 <div class="section" id="acknowledgment">
@@ -251,7 +252,7 @@ restrictions.</p>
 </div>
 <div class="section" id="how-does-it-work">
 <h3>How does it work?<a class="headerlink" href="#how-does-it-work" title="Permalink to this headline">¶</a></h3>
-<p>After the module is loaded, HTML document may be created or parsed by
+<p>After the module is loaded, an HTML document may be created or parsed by
 passing a <span class="green">String</span> or <span class="green">Buffer</span> to the <code class="docutils literal notranslate"><span class="pre">newDocument</span></code>
 function.  The parsed document may then be manipulated using functions
 to select, add or delete to specific elements in the document.
@@ -277,16 +278,16 @@ document or import and parse from an existing one.</p>
 <h4>newDocument<a class="headerlink" href="#newdocument" title="Permalink to this headline">¶</a></h4>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
 
-<span class="kd">var</span> <span class="nx">mydoc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span><span class="nb">document</span><span class="p">,</span> <span class="nx">options</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">mydoc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">([</span><span class="nx">document_text</span><span class="p">][,</span> <span class="nx">options</span><span class="p">]);</span>
 </pre></div>
 </div>
 <p>where:</p>
 <ul>
-<li><p><code class="docutils literal notranslate"><span class="pre">document</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span> containing the
-HTML text to be parsed, or optionally a blank string to create an
-empty document with the <code class="docutils literal notranslate"><span class="pre">html</span></code>, <code class="docutils literal notranslate"><span class="pre">head</span></code>, <code class="docutils literal notranslate"><span class="pre">title</span></code> and <code class="docutils literal notranslate"><span class="pre">body</span></code>
-tags in place.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> is an <span class="green">Object</span> of key/value pairs that correspond
+<li><p><code class="docutils literal notranslate"><span class="pre">document_text</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span> containing the
+HTML text to be parsed. If not specified or a blank string,
+an empty document with the <code class="docutils literal notranslate"><span class="pre">html</span></code>, <code class="docutils literal notranslate"><span class="pre">head</span></code>, <code class="docutils literal notranslate"><span class="pre">title</span></code> and
+<code class="docutils literal notranslate"><span class="pre">body</span></code> tags in place will be created.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> is an optional <span class="green">Object</span> of key/value pairs that correspond
 to the <a class="reference external" href="https://api.html-tidy.org/tidy/tidylib_api_5.6.0/tidy_quickref.html">standard command line</a>
 options for <a class="reference external" href="http://www.html-tidy.org/">Tidy-HTML5</a>.
 Some of these options apply to the rules for parsing the document, while
@@ -325,20 +326,18 @@ addition, this top level <em>html object</em> will also return the
 <div class="section" id="prettyprint">
 <h4>prettyPrint<a class="headerlink" href="#prettyprint" title="Permalink to this headline">¶</a></h4>
 <p>The top level <em>html object</em> includes an additional function which will
-output the text of the printed document</p>
+output the entire text of the document with optional indentation.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
 
-<span class="kd">var</span> <span class="nx">mydoc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
-    <span class="s1">&#39;&#39;</span><span class="p">,</span>
-    <span class="p">{</span> <span class="nx">indent</span><span class="o">:</span> <span class="kc">true</span> <span class="p">}</span>
-<span class="p">);</span>
+<span class="kd">var</span> <span class="nx">mydoc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">({</span> <span class="nx">indent</span><span class="o">:</span> <span class="kc">true</span> <span class="p">});</span>
 
 <span class="kd">var</span> <span class="nx">output</span> <span class="o">=</span> <span class="nx">mydoc</span><span class="p">.</span><span class="nx">prettyPrint</span><span class="p">();</span>
 
 <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">output</span><span class="p">);</span>
 
 <span class="cm">/* expected output:</span>
+
 <span class="cm">&lt;!DOCTYPE html&gt;</span>
 <span class="cm">&lt;html&gt;</span>
 <span class="cm">  &lt;head&gt;</span>
@@ -347,6 +346,7 @@ output the text of the printed document</p>
 <span class="cm">  &lt;body&gt;</span>
 <span class="cm">  &lt;/body&gt;</span>
 <span class="cm">&lt;/html&gt;</span>
+
 <span class="cm">*/</span>
 
 <span class="nx">mydoc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
@@ -392,18 +392,30 @@ the html document, and if manipulated, will change the contents returned
 from <a class="reference internal" href="#prettyprint">prettyPrint</a>.</p>
 <p>Elements selected in lists can be detached, moved, copied, deleted and have
 their attributes and classes changed with the functions below.</p>
+<div class="section" id="the-html-object">
+<h3>The html object<a class="headerlink" href="#the-html-object" title="Permalink to this headline">¶</a></h3>
+<p>The <em>html object</em> is an <span class="green">Object</span> representing a list of elements in an HTML
+document.  An element is a single parsed html tag (such as “<code class="docutils literal notranslate"><span class="pre">&lt;br</span> <span class="pre">/&gt;</span></code>”)
+with links to its descendant tags, if any.  The list of elements are kept in
+a hidden array and can be accessed or manipulated using the functions/methods
+of the <em>html object</em> (see below).</p>
+<p>The object also includes the <code class="docutils literal notranslate"><span class="pre">length</span></code> property (number of elements in
+the current list) and the <code class="docutils literal notranslate"><span class="pre">prettyPrint</span></code> function if it is the “root” of the
+document (as returned from <code class="docutils literal notranslate"><span class="pre">newDocument()</span></code>).</p>
+</div>
 <div class="section" id="selecting-elements">
 <h3>Selecting Elements<a class="headerlink" href="#selecting-elements" title="Permalink to this headline">¶</a></h3>
 <div class="section" id="findtag">
 <h4>findTag<a class="headerlink" href="#findtag" title="Permalink to this headline">¶</a></h4>
-<p>Find all the element that are descendents of the current list
-of elements which have a given tag.  If no elements are found, a
-<em>html object</em> with an empty list of elements is returned.</p>
+<p>Find all the elements that are descendants of the current list of elements
+which have a given tag name and return a new <em>html object</em>.  If no elements
+are found, a <em>html object</em> with an empty list of elements is returned.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">list</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="nx">tagname</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>Where <code class="docutils literal notranslate"><span class="pre">tagname</span></code> is the name of the HTML tag to be selected (e.g. “div”).</p>
+<p>Where <code class="docutils literal notranslate"><span class="pre">tagname</span></code> is the name of the HTML tag of the element to be selected
+(e.g.  “div”).</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
 
@@ -416,14 +428,14 @@ of elements which have a given tag.  If no elements are found, a
 </div>
 <div class="section" id="findattr">
 <h4>findAttr<a class="headerlink" href="#findattr" title="Permalink to this headline">¶</a></h4>
-<p>Find all the element that are descendents of the current list
-of elements which have a given attribute.</p>
+<p>Find all the elements that are descendants of the current list
+of elements which have a given attribute and return a new <em>html object</em>.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">list</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findAttr</span><span class="p">(</span><span class="nx">attrname</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>Where <code class="docutils literal notranslate"><span class="pre">attrname</span></code> is the name of the attribute in the element to be selected (e.g. “id”).</p>
-<p>Additionally, the attribute can specify a value by using <code class="docutils literal notranslate"><span class="pre">attr=val</span></code>
+<p>Additionally, <code class="docutils literal notranslate"><span class="pre">attrname</span></code> can specify a value by using <code class="docutils literal notranslate"><span class="pre">attr=val</span></code>
 syntax.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
@@ -440,8 +452,8 @@ syntax.</p>
 </div>
 <div class="section" id="findclass">
 <h4>findClass<a class="headerlink" href="#findclass" title="Permalink to this headline">¶</a></h4>
-<p>Find all the element that are descendents of the current list
-of elements which belong to the named class.</p>
+<p>Find all the elements that are descendants of the current list of elements
+which belong to the named class and return a new <em>html object</em>.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">list</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findClass</span><span class="p">(</span><span class="nx">classname</span><span class="p">);</span>
 </pre></div>
@@ -461,12 +473,256 @@ of <code class="docutils literal notranslate"><span class="pre">bar2</span></cod
 </div>
 </div>
 </div>
+<div class="section" id="output-from-elements">
+<h3>Output from Elements<a class="headerlink" href="#output-from-elements" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="getelement">
+<h4>getElement<a class="headerlink" href="#getelement" title="Permalink to this headline">¶</a></h4>
+<p>Return an array of strings containing the opening tag for each of the given
+elements in the <em>html object</em>.  No children are returned.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div class=&quot;myclass&quot;&gt;one&lt;/div&gt;&lt;div&gt;two&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div class=&quot;myclass&quot;&gt;three&lt;/div&gt;&lt;div&gt;four&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div class=&quot;myclass&quot;&gt;five&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">mytags</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s2">&quot;div&quot;</span><span class="p">).</span><span class="nx">getElement</span><span class="p">();</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">mytags</span><span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+<span class="cm">   &quot;&lt;div class=\&quot;myclass\&quot;&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div class=\&quot;myclass\&quot;&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div class=\&quot;myclass\&quot;&gt;&quot;</span>
+<span class="cm">]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="getelementname">
+<h4>getElementName<a class="headerlink" href="#getelementname" title="Permalink to this headline">¶</a></h4>
+<p>Return an array of <span class="green">Strings</span> containing the opening tag <strong>name</strong> for each of the given
+elements in the <em>html object</em>.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div class=&quot;myclass&quot;&gt;one&lt;/div&gt;&lt;div&gt;two&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div class=&quot;myclass&quot;&gt;three&lt;/div&gt;&lt;div&gt;four&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div class=&quot;myclass&quot;&gt;five&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">mytags</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s2">&quot;div&quot;</span><span class="p">).</span><span class="nx">getElementName</span><span class="p">();</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">mytags</span><span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+<span class="cm">   &quot;div&quot;,</span>
+<span class="cm">   &quot;div&quot;,</span>
+<span class="cm">   &quot;div&quot;,</span>
+<span class="cm">   &quot;div&quot;,</span>
+<span class="cm">   &quot;div&quot;</span>
+<span class="cm">]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="getattr">
+<h4>getAttr<a class="headerlink" href="#getattr" title="Permalink to this headline">¶</a></h4>
+<p>Return an array of <span class="green">Strings</span> containing the attribute value of the provided
+attribute name for each of the given elements in the <em>html object</em>.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div title=&quot;div1&quot;&gt;one&lt;/div&gt;&lt;div&gt;two&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div title=&quot;div3&quot;&gt;three&lt;/div&gt;&lt;div&gt;four&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div title=&quot;div5&quot;&gt;five&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">mytags</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s2">&quot;div&quot;</span><span class="p">).</span><span class="nx">getAttr</span><span class="p">(</span><span class="s1">&#39;title&#39;</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">mytags</span><span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+<span class="cm">   &quot;div1&quot;,</span>
+<span class="cm">   &quot;&quot;,</span>
+<span class="cm">   &quot;div3&quot;,</span>
+<span class="cm">   &quot;&quot;,</span>
+<span class="cm">   &quot;div5&quot;</span>
+<span class="cm">]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="getallattr">
+<h4>getAllAttr<a class="headerlink" href="#getallattr" title="Permalink to this headline">¶</a></h4>
+<p>Return an array of objects, each containing attribute name/value pairs,
+for each of the given elements in the <em>html object</em>.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div title=&quot;div1&quot;&gt;one&lt;/div&gt;&lt;div class=&quot;myclass&quot;&gt;two&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div title=&quot;div3&quot; class=&quot;myclass&quot;&gt;three&lt;/div&gt;&lt;div&gt;four&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div title=&quot;div5&quot;&gt;five&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">mytags</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s2">&quot;div&quot;</span><span class="p">).</span><span class="nx">getAllAttr</span><span class="p">();</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">mytags</span><span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+<span class="cm">   {</span>
+<span class="cm">      &quot;title&quot;: &quot;div1&quot;</span>
+<span class="cm">   },</span>
+<span class="cm">   {</span>
+<span class="cm">      &quot;class&quot;: &quot;myclass&quot;</span>
+<span class="cm">   },</span>
+<span class="cm">   {</span>
+<span class="cm">      &quot;title&quot;: &quot;div3&quot;,</span>
+<span class="cm">      &quot;class&quot;: &quot;myclass&quot;</span>
+<span class="cm">   },</span>
+<span class="cm">   {},</span>
+<span class="cm">   {</span>
+<span class="cm">      &quot;title&quot;: &quot;div5&quot;</span>
+<span class="cm">   }</span>
+<span class="cm">]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="tohtml">
+<h4>toHtml<a class="headerlink" href="#tohtml" title="Permalink to this headline">¶</a></h4>
+<p>Return an array of <span class="green">Strings</span>, each string the HTML of each of the given
+elements and their children.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div title=&quot;div1&quot;&gt;one&lt;/div&gt;&lt;div&gt;two&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div title=&quot;div3&quot;&gt;three&lt;/div&gt;&lt;div&gt;four&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div title=&quot;div5&quot;&gt;five &lt;span&gt;six&lt;/span&gt;&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">mytags</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s2">&quot;div&quot;</span><span class="p">).</span><span class="nx">toHtml</span><span class="p">();</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">mytags</span><span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+<span class="cm">   &quot;&lt;div title=\&quot;div1\&quot;&gt;one&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div&gt;two&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div title=\&quot;div3\&quot;&gt;three&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div&gt;four&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div title=\&quot;div5\&quot;&gt;five &lt;span&gt;six&lt;/span&gt;&lt;/div&gt;&quot;</span>
+<span class="cm">]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="totext">
+<h4>toText<a class="headerlink" href="#totext" title="Permalink to this headline">¶</a></h4>
+<p>Return an array of <span class="green">Strings</span>, each string the plain text of each of the given
+elements and their children.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">tags</span> <span class="o">=</span> <span class="nx">hobj</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">([</span><span class="nx">options</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">tags</span></code> is the return value.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hobj</span></code> is an <em>html object</em> with 0 or more elements.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> is an <span class="green">Object</span> with the following setting:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">concatenate</span></code> - a <span class="green">Boolean</span> if true, <code class="docutils literal notranslate"><span class="pre">tags</span></code> will be returned as a
+<span class="green">String</span> consisting of the concatenated output from
+each given element.  Default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">imageAltText</span></code> - a <span class="green">Boolean</span> if true, alt text from images
+will also be output.  Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">metaDescription</span></code> - a <span class="green">Boolean</span> if true, text from the
+<code class="docutils literal notranslate"><span class="pre">content</span></code> of an existing <code class="docutils literal notranslate"><span class="pre">&lt;meta</span> <span class="pre">name=&quot;description&quot;</span> <span class="pre">content=&quot;text&quot;&gt;</span></code>
+will also be output.  Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">metaKeywords</span></code> - a <span class="green">Boolean</span> if true, text from the
+<code class="docutils literal notranslate"><span class="pre">content</span></code> of an existing <code class="docutils literal notranslate"><span class="pre">&lt;meta</span> <span class="pre">name=&quot;keywords&quot;</span> <span class="pre">content=&quot;text&quot;&gt;</span></code>
+will also be output.  Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">titleText</span></code> - a <span class="green">Boolean</span> if true, text from any element
+which contains a <code class="docutils literal notranslate"><span class="pre">title</span></code> attribute will also be output.
+Default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">aLinks</span></code> - a <span class="green">Boolean</span> if true, the <code class="docutils literal notranslate"><span class="pre">href</span></code> value from
+<code class="docutils literal notranslate"><span class="pre">&lt;a&gt;</span></code> tags will be output after the enclosed text in parentheses.
+Default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">enumerateLists</span></code> - a <span class="green">Boolean</span> if true, text in <code class="docutils literal notranslate"><span class="pre">&lt;li&gt;</span></code> tags
+will be prepended with an asterisk <code class="docutils literal notranslate"><span class="pre">*</span></code> for unordered lists
+(<code class="docutils literal notranslate"><span class="pre">&lt;ul&gt;</span></code>) or a sequential number followed by a period (e.g. <code class="docutils literal notranslate"><span class="pre">1.</span></code>) for ordered
+lists (<code class="docutils literal notranslate"><span class="pre">&lt;ol&gt;</span></code>). Text following <code class="docutils literal notranslate"><span class="pre">&lt;dd&gt;</span></code> tags will also be indented four spaces.
+Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</p></li>
+</ul>
+</div></blockquote>
+</li>
+</ul>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;meta name=&quot;description&quot; content=&quot;my awesome story as told by me&quot;&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;meta name=&quot;keywords&quot; content=&quot;awesome adventure love happiness redemption&quot;&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;title&gt;My Awesome Story&lt;/title&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;h1&gt;Table of Contents&lt;/h1&gt;&lt;ol&gt;&lt;li&gt;Chapter 1&lt;/li&gt;&lt;li&gt;Chapter 2&lt;/li&gt;&lt;/ol&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;h2 title=&quot;Chapter 1&quot;&gt;I was born&lt;/h2&gt;&lt;img src=&quot;myimage.jpg&quot; alt=&quot;me as a baby&quot;&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div&gt;I was born a poor ...&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;h2 title=&quot;Chapter 2&quot;&gt;I left home&lt;/h2&gt;&lt;img src=&quot;myimage2.jpg&quot; alt=&quot;me at 21&quot;&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div&gt;I got a job guessing weights at &lt;a href=&quot;http://example.com/&quot;&gt;a carnival&lt;/a&gt;...&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">doc</span><span class="p">.</span><span class="nx">toText</span><span class="p">({</span><span class="nx">aLinks</span><span class="o">:</span><span class="kc">true</span><span class="p">,</span> <span class="nx">titleText</span><span class="o">:</span><span class="kc">true</span><span class="p">})[</span><span class="mi">0</span><span class="p">]);</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">my awesome story as told by me</span>
+
+<span class="cm">awesome adventure love happiness redemption</span>
+<span class="cm">My Awesome Story</span>
+<span class="cm">Table of Contents</span>
+<span class="cm">1. Chapter 1</span>
+<span class="cm">2. Chapter 2</span>
+<span class="cm"> Chapter 1 I was born</span>
+<span class="cm"> me as a baby</span>
+<span class="cm">I was born a poor ...</span>
+<span class="cm"> Chapter 2 I left home</span>
+<span class="cm"> me at 21</span>
+<span class="cm">I got a job guessing weights at a carnival  (http://example.com/)...</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+</div>
 <div class="section" id="traversing-html-tree">
 <h3>Traversing HTML tree<a class="headerlink" href="#traversing-html-tree" title="Permalink to this headline">¶</a></h3>
 <div class="section" id="next">
 <h4>next<a class="headerlink" href="#next" title="Permalink to this headline">¶</a></h4>
-<p>Given the current list of elements, return a new list consisting of the next
-sibling element of each, if one exists.</p>
+<p>Given the current list of elements, return a new <em>html object</em> with a list
+consisting of the next sibling element of each, if one exists.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
 
@@ -492,8 +748,8 @@ sibling element of each, if one exists.</p>
 </div>
 <div class="section" id="prev">
 <h4>prev<a class="headerlink" href="#prev" title="Permalink to this headline">¶</a></h4>
-<p>Given the current list of elements, return a new list consisting of the
-previous sibling element of each, if one exists.</p>
+<p>Given the current list of elements, return a new <em>html object</em> with a list
+consisting of the previous sibling element of each, if one exists.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
 
@@ -518,8 +774,8 @@ previous sibling element of each, if one exists.</p>
 </div>
 <div class="section" id="children">
 <h4>children<a class="headerlink" href="#children" title="Permalink to this headline">¶</a></h4>
-<p>Given the current list of elements, return a new list consisting of the
-direct descendent elements of each, if any exists.</p>
+<p>Given the current list of elements, return a new <em>html object</em> with a list
+consisting of the direct descendant elements of each, if any exists.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
 
@@ -534,7 +790,7 @@ direct descendent elements of each, if any exists.</p>
 
 <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">children</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
 
-<span class="cm">/* expected output</span>
+<span class="cm">/* expected output:</span>
 
 <span class="cm">[&quot;&lt;span&gt;one&lt;/span&gt;&quot;,&quot;&lt;span&gt;two&lt;/span&gt;&quot;,&quot;&lt;span&gt;three&lt;/span&gt;&quot;,&quot;&lt;span&gt;four&lt;/span&gt;&quot;]</span>
 
@@ -544,8 +800,8 @@ direct descendent elements of each, if any exists.</p>
 </div>
 <div class="section" id="parent">
 <h4>parent<a class="headerlink" href="#parent" title="Permalink to this headline">¶</a></h4>
-<p>Given the current list of elements, return a new list consisting of the
-direct ancester elements of each, if any exists.</p>
+<p>Given the current list of elements, return a new <em>html object</em> with a list
+consisting of the direct ancestor elements of each, if any exists.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
 
@@ -571,12 +827,13 @@ direct ancester elements of each, if any exists.</p>
 </pre></div>
 </div>
 <p>Note that even though there are four elements in <code class="docutils literal notranslate"><span class="pre">myspans</span></code>, <code class="docutils literal notranslate"><span class="pre">parent()</span></code>,
-like all <em>html object</em> function, returns a unique list.</p>
+like all <em>html object</em> functions, returns a unique list.</p>
 </div>
 <div class="section" id="getdocument">
 <h4>getDocument<a class="headerlink" href="#getdocument" title="Permalink to this headline">¶</a></h4>
 <p>Given an <em>html object</em> containing any number of elements, return the top
 level document.</p>
+<p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
 
 <span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
@@ -603,90 +860,657 @@ level document.</p>
 <h3>Filtering List of Elements<a class="headerlink" href="#filtering-list-of-elements" title="Permalink to this headline">¶</a></h3>
 <div class="section" id="filtertag">
 <h4>filterTag<a class="headerlink" href="#filtertag" title="Permalink to this headline">¶</a></h4>
+<p>Reduce the current list of elements to only include elements which have a
+given tag name and return a new <em>html object</em>.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div  class=&quot;myclass&quot;&gt;one&lt;/div&gt;&lt;span&gt;two&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span class=&quot;myclass&quot;&gt;three&lt;/span&gt;&lt;div&gt;four&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">els</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;body&#39;</span><span class="p">).</span><span class="nx">children</span><span class="p">();</span>
+
+<span class="kd">var</span> <span class="nx">divs</span> <span class="o">=</span> <span class="nx">els</span><span class="p">.</span><span class="nx">filterTag</span><span class="p">(</span><span class="s1">&#39;div&#39;</span><span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">divs</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[&quot;&lt;div class=\&quot;myclass\&quot;&gt;one&lt;/div&gt;&quot;,&quot;&lt;div&gt;four&lt;/div&gt;&quot;]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="filterattr">
 <h4>filterAttr<a class="headerlink" href="#filterattr" title="Permalink to this headline">¶</a></h4>
+<p>Reduce the current list of elements to only include elements which have a
+given attribute and return a new <em>html object</em>.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div id=&quot;mydiv&quot; class=&quot;myclass&quot;&gt;one&lt;/div&gt;&lt;span&gt;two&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span class=&quot;myclass&quot;&gt;three&lt;/span&gt;&lt;div&gt;four&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">els</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;body&#39;</span><span class="p">).</span><span class="nx">children</span><span class="p">();</span>
+
+<span class="kd">var</span> <span class="nx">mydiv</span> <span class="o">=</span> <span class="nx">els</span><span class="p">.</span><span class="nx">filterAttr</span><span class="p">(</span><span class="s1">&#39;id=mydiv&#39;</span><span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">mydiv</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[&quot;&lt;div id=\&quot;mydiv\&quot; class=\&quot;myclass\&quot;&gt;one&lt;/div&gt;&quot;]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="filterclass">
 <h4>filterClass<a class="headerlink" href="#filterclass" title="Permalink to this headline">¶</a></h4>
+<p>Reduce the current list of elements to only include elements which belong to
+a given class and return a new <em>html object</em>.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div id=&quot;mydiv&quot; class=&quot;myclass&quot;&gt;one&lt;/div&gt;&lt;span&gt;two&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span class=&quot;myclass&quot;&gt;three&lt;/span&gt;&lt;div&gt;four&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">els</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;body&#39;</span><span class="p">).</span><span class="nx">children</span><span class="p">();</span>
+
+<span class="nx">els</span> <span class="o">=</span> <span class="nx">els</span><span class="p">.</span><span class="nx">filterClass</span><span class="p">(</span><span class="s1">&#39;myclass&#39;</span><span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">els</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[&quot;&lt;div id=\&quot;mydiv\&quot; class=\&quot;myclass\&quot;&gt;one&lt;/div&gt;&quot;,&quot;&lt;span class=\&quot;myclass\&quot;&gt;three&lt;/span&gt;&quot;]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="slice">
 <h4>slice<a class="headerlink" href="#slice" title="Permalink to this headline">¶</a></h4>
+<p>Reduce the current list of elements to only include a subset of the list
+and return a new <em>html object</em>. Arguments are the same as
+<a class="reference external" href="https://www.w3schools.com/jsref/jsref_slice_array.asp">Array.slice</a></p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;span&gt;zero&lt;/span&gt;&lt;span&gt;one&lt;/span&gt;&lt;span&gt;two&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span&gt;three&lt;/span&gt;&lt;span&gt;four&lt;/span&gt;&lt;span&gt;five&lt;/span&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">els</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;body&#39;</span><span class="p">).</span><span class="nx">children</span><span class="p">();</span>
+
+<span class="nx">els</span> <span class="o">=</span> <span class="nx">els</span><span class="p">.</span><span class="nx">slice</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="mi">4</span><span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">els</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[&quot;&lt;span&gt;two&lt;/span&gt;&quot;,&quot;&lt;span&gt;three&lt;/span&gt;&quot;]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="eq">
 <h4>eq<a class="headerlink" href="#eq" title="Permalink to this headline">¶</a></h4>
+<p>Reduce the current list of elements to only include a single element
+at the given index and return a new <em>html object</em>.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;span&gt;zero&lt;/span&gt;&lt;span&gt;one&lt;/span&gt;&lt;span&gt;two&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span&gt;three&lt;/span&gt;&lt;span&gt;four&lt;/span&gt;&lt;span&gt;five&lt;/span&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">els</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;body&#39;</span><span class="p">).</span><span class="nx">children</span><span class="p">();</span>
+
+<span class="kd">var</span> <span class="nx">el</span> <span class="o">=</span> <span class="nx">els</span><span class="p">.</span><span class="nx">eq</span><span class="p">(</span><span class="mi">2</span><span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">els</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[&quot;&lt;span&gt;two&lt;/span&gt;&quot;]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="add">
 <h4>add<a class="headerlink" href="#add" title="Permalink to this headline">¶</a></h4>
+<p>Add to the current list of elements the items given and return a new
+<em>html object</em>.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">newlist</span> <span class="o">=</span> <span class="nx">oldlist</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="nx">additions</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">newlist</span></code> is the returned <em>html object</em>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">oldlist</span></code> is the <em>html object</em> with an array of elements to be appended.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">additions</span></code> is an <em>html object</em> or a <span class="green">String</span> of text or html
+to be added to the list.</p></li>
+</ul>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;span&gt;one&lt;/span&gt;&lt;span&gt;two&lt;/span&gt;&lt;span&gt;three&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div&gt;four&lt;/div&gt;&lt;div&gt;five&lt;/div&gt;&lt;div&gt;six&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">spans</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;span&#39;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">divs</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;div&#39;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">newlist</span> <span class="o">=</span> <span class="nx">spans</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="nx">divs</span><span class="p">);</span>
+
+<span class="nx">newlist</span> <span class="o">=</span> <span class="nx">newlist</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="s2">&quot;&lt;div&gt;seven&lt;/div&gt;&lt;div&gt;eight&lt;/div&gt;&quot;</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">newlist</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+<span class="cm">   &quot;&lt;span&gt;one&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span&gt;two&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span&gt;three&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div&gt;four&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div&gt;five&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div&gt;six&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div&gt;seven&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div&gt;eight&lt;/div&gt;&quot;</span>
+<span class="cm">]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 </div>
 <div class="section" id="testing-elements">
 <h3>Testing Elements<a class="headerlink" href="#testing-elements" title="Permalink to this headline">¶</a></h3>
 <div class="section" id="hastag">
 <h4>hasTag<a class="headerlink" href="#hastag" title="Permalink to this headline">¶</a></h4>
+<p>Test each element in the current list for a tag name. Returns an array of
+<span class="green">Booleans</span>, one for each element.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div  class=&quot;myclass&quot;&gt;one&lt;/div&gt;&lt;span&gt;two&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span class=&quot;myclass&quot;&gt;three&lt;/span&gt;&lt;div&gt;four&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">els</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;body&#39;</span><span class="p">).</span><span class="nx">children</span><span class="p">();</span>
+
+<span class="kd">var</span> <span class="nx">isdiv</span> <span class="o">=</span> <span class="nx">els</span><span class="p">.</span><span class="nx">hasTag</span><span class="p">(</span><span class="s1">&#39;div&#39;</span><span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">isdiv</span><span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[true,false,false,true]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="hasattr">
 <h4>hasAttr<a class="headerlink" href="#hasattr" title="Permalink to this headline">¶</a></h4>
+<p>Test each element in the current list for the presence of an attribute.
+Returns an array of booleans, one for each element.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div id=&quot;someid&quot; class=&quot;myclass&quot;&gt;one&lt;/div&gt;&lt;span&gt;two&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span class=&quot;myclass&quot;&gt;three&lt;/span&gt;&lt;div id=&quot;myid&quot;&gt;four&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">els</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;body&#39;</span><span class="p">).</span><span class="nx">children</span><span class="p">();</span>
+
+<span class="kd">var</span> <span class="nx">hasanid</span> <span class="o">=</span> <span class="nx">els</span><span class="p">.</span><span class="nx">hasAttr</span><span class="p">(</span><span class="s1">&#39;id&#39;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">hasmyid</span> <span class="o">=</span> <span class="nx">els</span><span class="p">.</span><span class="nx">hasAttr</span><span class="p">(</span><span class="s1">&#39;id=myid&#39;</span><span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">hasanid</span><span class="p">);</span>
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">hasmyid</span><span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[true,false,false,true]</span>
+<span class="cm">[false,false,false,true]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="hasclass">
 <h4>hasClass<a class="headerlink" href="#hasclass" title="Permalink to this headline">¶</a></h4>
+<p>Test each element in the current list for a tag name. Returns an array of
+booleans, one for each element.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div  class=&quot;myclass&quot;&gt;one&lt;/div&gt;&lt;span&gt;two&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span class=&quot;myclass&quot;&gt;three&lt;/span&gt;&lt;div id=&quot;myid&quot;&gt;four&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">els</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;body&#39;</span><span class="p">).</span><span class="nx">children</span><span class="p">();</span>
+
+<span class="kd">var</span> <span class="nx">hasmyclass</span> <span class="o">=</span> <span class="nx">els</span><span class="p">.</span><span class="nx">hasClass</span><span class="p">(</span><span class="s1">&#39;myclass&#39;</span><span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">hasmyclass</span><span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[true,false,true,false]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 </div>
 <div class="section" id="manipulating-elements">
 <h3>Manipulating Elements<a class="headerlink" href="#manipulating-elements" title="Permalink to this headline">¶</a></h3>
 <div class="section" id="attr">
 <h4>attr<a class="headerlink" href="#attr" title="Permalink to this headline">¶</a></h4>
+<p>Given a list of elements, change the named attribute to the specified value,
+or, if not present add the attribute with the specified value.  Returns
+itself.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div title=&quot;My Div&quot;&gt;one&lt;/div&gt;&lt;span&gt;two&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span&gt;three&lt;/span&gt;&lt;div title=&quot;Another Div&quot;&gt;four&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">els</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;body&#39;</span><span class="p">).</span><span class="nx">children</span><span class="p">();</span>
+
+<span class="nx">els</span><span class="p">.</span><span class="nx">attr</span><span class="p">(</span><span class="s2">&quot;title&quot;</span><span class="p">,</span> <span class="s2">&quot;I&#39;m an element&quot;</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">els</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+<span class="cm">   &quot;&lt;div title=\&quot;I&#39;m an element\&quot;&gt;one&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span title=\&quot;I&#39;m an element\&quot;&gt;two&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span title=\&quot;I&#39;m an element\&quot;&gt;three&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div title=\&quot;I&#39;m an element\&quot;&gt;four&lt;/div&gt;&quot;</span>
+<span class="cm">]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="removeattr">
 <h4>removeAttr<a class="headerlink" href="#removeattr" title="Permalink to this headline">¶</a></h4>
+<p>Given a list of elements, remove the named attribute.  If not present no
+changes are made.  Returns itself.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div title=&quot;My Div&quot;&gt;one&lt;/div&gt;&lt;span title&gt;two&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span&gt;three&lt;/span&gt;&lt;div title=&quot;Another Div&quot;&gt;four&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">els</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;body&#39;</span><span class="p">).</span><span class="nx">children</span><span class="p">();</span>
+
+<span class="nx">els</span><span class="p">.</span><span class="nx">removeAttr</span><span class="p">(</span><span class="s2">&quot;title&quot;</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">els</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+<span class="cm">   &quot;&lt;div&gt;one&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span&gt;two&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span&gt;three&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div&gt;four&lt;/div&gt;&quot;</span>
+<span class="cm">]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="addclass">
 <h4>addClass<a class="headerlink" href="#addclass" title="Permalink to this headline">¶</a></h4>
+<p>Given a list of elements, add the named class to each.
+Returns itself.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div  class=&quot;myclass&quot;&gt;one&lt;/div&gt;&lt;span&gt;two&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span class=&quot;myclass&quot;&gt;three&lt;/span&gt;&lt;div id=&quot;myid&quot;&gt;four&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">els</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;body&#39;</span><span class="p">).</span><span class="nx">children</span><span class="p">();</span>
+
+<span class="nx">els</span><span class="p">.</span><span class="nx">addClass</span><span class="p">(</span><span class="s1">&#39;mycolor&#39;</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">els</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+<span class="cm">   &quot;&lt;div class=\&quot;myclass mycolor\&quot;&gt;one&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span class=\&quot;mycolor\&quot;&gt;two&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span class=\&quot;myclass mycolor\&quot;&gt;three&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div class=\&quot;mycolor\&quot; id=\&quot;myid\&quot;&gt;four&lt;/div&gt;&quot;</span>
+<span class="cm">]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="removeclass">
 <h4>removeClass<a class="headerlink" href="#removeclass" title="Permalink to this headline">¶</a></h4>
+<p>Given a list of elements, remove the named class from each.
+Returns itself.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div  class=&quot;myclass&quot;&gt;one&lt;/div&gt;&lt;span&gt;two&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span class=&quot;myclass&quot;&gt;three&lt;/span&gt;&lt;div id=&quot;myid&quot;&gt;four&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">els</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;body&#39;</span><span class="p">).</span><span class="nx">children</span><span class="p">();</span>
+
+<span class="nx">els</span><span class="p">.</span><span class="nx">removeClass</span><span class="p">(</span><span class="s1">&#39;myclass&#39;</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">els</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+<span class="cm">   &quot;&lt;div class&gt;one&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span&gt;two&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span class&gt;three&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div id=\&quot;myid\&quot;&gt;four&lt;/div&gt;&quot;</span>
+<span class="cm">]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="detach">
 <h4>detach<a class="headerlink" href="#detach" title="Permalink to this headline">¶</a></h4>
+<p>Detach the list of elements from the document and return a new <em>html object</em>
+with the detached elements.</p>
+<p>See <a class="reference internal" href="#append">append</a> below for an example.</p>
 </div>
 <div class="section" id="delete">
 <h4>delete<a class="headerlink" href="#delete" title="Permalink to this headline">¶</a></h4>
+<p>Same as detach, but no new list is created and nothing is returned (returns
+<code class="docutils literal notranslate"><span class="pre">undefined</span></code>).</p>
 </div>
 <div class="section" id="append">
 <h4>append<a class="headerlink" href="#append" title="Permalink to this headline">¶</a></h4>
+<p>Append the provided list of elements to each of the given elements as
+child(ren) of the given elements.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">newlist</span> <span class="o">=</span> <span class="nx">oldlist</span><span class="p">.</span><span class="nx">attach</span><span class="p">(</span><span class="nx">elems</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">newlist</span></code> is a new <em>html object</em> containing the elements from
+<code class="docutils literal notranslate"><span class="pre">oldlist</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">oldlist</span></code> contains the given elements to append.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">elems</span></code> is an <em>html object</em> or a <span class="green">String</span>  of text or html
+to be appended to the given elements.</p></li>
+</ul>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div&gt;one&lt;/div&gt;&lt;span&gt;two&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span&gt;three&lt;/span&gt;&lt;span&gt;four&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div&gt;five&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="cm">/* find all spans and detach them from the document */</span>
+<span class="kd">var</span> <span class="nx">spans</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;span&#39;</span><span class="p">).</span><span class="nx">detach</span><span class="p">();</span>
+
+<span class="kd">var</span> <span class="nx">divs</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;div&#39;</span><span class="p">);</span>
+
+<span class="cm">/* add the spans back to document as children of the divs */</span>
+<span class="kd">var</span> <span class="nx">newlist</span> <span class="o">=</span> <span class="nx">divs</span><span class="p">.</span><span class="nx">append</span><span class="p">(</span><span class="nx">spans</span><span class="p">);</span>
+
+<span class="cm">/* add some text to the divs */</span>
+
+<span class="nx">newlist</span> <span class="o">=</span> <span class="nx">divs</span><span class="p">.</span><span class="nx">append</span><span class="p">(</span><span class="s2">&quot;...&quot;</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">newlist</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+<span class="cm">   &quot;&lt;div&gt;one&lt;span&gt;two&lt;/span&gt;&lt;span&gt;three&lt;/span&gt;&lt;span&gt;four&lt;/span&gt;...&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div&gt;five&lt;span&gt;two&lt;/span&gt;&lt;span&gt;three&lt;/span&gt;&lt;span&gt;four&lt;/span&gt;...&lt;/div&gt;&quot;</span>
+<span class="cm">]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="prepend">
 <h4>prepend<a class="headerlink" href="#prepend" title="Permalink to this headline">¶</a></h4>
+<p>Similar to <a class="reference internal" href="#append">append</a> above, except that the provided elements are added to
+the beginning of the list of children of the given elements.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div&gt;one&lt;/div&gt;&lt;span&gt;two&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;span&gt;three&lt;/span&gt;&lt;span&gt;four&lt;/span&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div&gt;five&lt;/div&gt;&#39;</span>
+<span class="p">);</span>
+
+<span class="cm">/* find all spans and detach them from the document */</span>
+<span class="kd">var</span> <span class="nx">spans</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;span&#39;</span><span class="p">).</span><span class="nx">detach</span><span class="p">();</span>
+
+<span class="kd">var</span> <span class="nx">divs</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;div&#39;</span><span class="p">);</span>
+
+<span class="cm">/* add a space before the contents of each span.</span>
+<span class="cm">   Note also that &#39;&amp;nbsp;&#39; is used as leading white space</span>
+<span class="cm">   is automatically trimmed.</span>
+<span class="cm">*/</span>
+
+<span class="nx">spans</span> <span class="o">=</span> <span class="nx">spans</span><span class="p">.</span><span class="nx">prepend</span><span class="p">(</span><span class="s2">&quot;&amp;nbsp;&quot;</span><span class="p">);</span>
+
+<span class="cm">/* add the spans back to document as children of the divs</span>
+<span class="cm">   BUT before any existing children                      */</span>
+
+<span class="kd">var</span> <span class="nx">newlist</span> <span class="o">=</span> <span class="nx">divs</span><span class="p">.</span><span class="nx">prepend</span><span class="p">(</span><span class="nx">spans</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">newlist</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+
+<span class="cm">&quot;&lt;div&gt;&lt;span&gt;&amp;nbsp;two&lt;/span&gt;&lt;span&gt;&amp;nbsp;three&lt;/span&gt;&lt;span&gt;&amp;nbsp;four&lt;/span&gt;one&lt;/div&gt;&quot;,</span>
+<span class="cm">&quot;&lt;div&gt;&lt;span&gt;&amp;nbsp;two&lt;/span&gt;&lt;span&gt;&amp;nbsp;three&lt;/span&gt;&lt;span&gt;&amp;nbsp;four&lt;/span&gt;five&lt;/div&gt;&quot;</span>
+<span class="cm">]</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="after">
 <h4>after<a class="headerlink" href="#after" title="Permalink to this headline">¶</a></h4>
+<p>Place the provided list of elements <strong>after</strong> each of the given elements.
+Return a new <em>html object</em> with the given elements, each followed by the
+provided elements.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">newlist</span> <span class="o">=</span> <span class="nx">oldlist</span><span class="p">.</span><span class="nx">after</span><span class="p">(</span><span class="nx">elems</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">newlist</span></code> is a new <em>html object</em> containing the elements from
+<code class="docutils literal notranslate"><span class="pre">oldlist</span></code> and <code class="docutils literal notranslate"><span class="pre">elems</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">oldlist</span></code> contains the given elements which provide a reference for placement.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">elems</span></code> is an <em>html object</em> or a <span class="green">String</span>  of text or html
+to be placed after to the given elements.</p></li>
+</ul>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div&gt;one&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div&gt;two&lt;/div&gt;&#39;</span><span class="p">,</span>
+    <span class="p">{</span><span class="nx">indent</span><span class="o">:</span> <span class="kc">true</span><span class="p">}</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">divs</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;div&#39;</span><span class="p">);</span>
+
+<span class="nx">newlist</span> <span class="o">=</span> <span class="nx">divs</span><span class="p">.</span><span class="nx">after</span><span class="p">(</span><span class="s1">&#39;&lt;span&gt;3&lt;/span&gt;&lt;span&gt;4&lt;/span&gt;&#39;</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">newlist</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">doc</span><span class="p">.</span><span class="nx">prettyPrint</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+<span class="cm">   &quot;&lt;div&gt;one&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span&gt;3&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span&gt;4&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div&gt;two&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span&gt;3&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span&gt;4&lt;/span&gt;&quot;</span>
+<span class="cm">]</span>
+<span class="cm">&lt;!DOCTYPE html&gt;</span>
+<span class="cm">&lt;html&gt;</span>
+<span class="cm">  &lt;head&gt;</span>
+<span class="cm">    &lt;title&gt;&lt;/title&gt;</span>
+<span class="cm">  &lt;/head&gt;</span>
+<span class="cm">  &lt;body&gt;</span>
+<span class="cm">    &lt;div&gt;</span>
+<span class="cm">      one</span>
+<span class="cm">    &lt;/div&gt;&lt;span&gt;3&lt;/span&gt;&lt;span&gt;4&lt;/span&gt;</span>
+<span class="cm">    &lt;div&gt;</span>
+<span class="cm">      two</span>
+<span class="cm">    &lt;/div&gt;&lt;span&gt;3&lt;/span&gt;&lt;span&gt;4&lt;/span&gt;</span>
+<span class="cm">  &lt;/body&gt;</span>
+<span class="cm">&lt;/html&gt;</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="before">
 <h4>before<a class="headerlink" href="#before" title="Permalink to this headline">¶</a></h4>
+<p>Similar to <a class="reference internal" href="#after">after</a> except the provided list of elements are placed <strong>before</strong> each of the given elements.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div&gt;one&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div&gt;two&lt;/div&gt;&#39;</span><span class="p">,</span>
+    <span class="p">{</span><span class="nx">indent</span><span class="o">:</span> <span class="kc">true</span><span class="p">}</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">divs</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;div&#39;</span><span class="p">);</span>
+
+<span class="nx">newlist</span> <span class="o">=</span> <span class="nx">divs</span><span class="p">.</span><span class="nx">before</span><span class="p">(</span><span class="s1">&#39;&lt;span&gt;3&lt;/span&gt;&lt;span&gt;4&lt;/span&gt;&#39;</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">newlist</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">doc</span><span class="p">.</span><span class="nx">prettyPrint</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+<span class="cm">   &quot;&lt;span&gt;3&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span&gt;4&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div&gt;one&lt;/div&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span&gt;3&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span&gt;4&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;div&gt;two&lt;/div&gt;&quot;</span>
+<span class="cm">]</span>
+<span class="cm">&lt;!DOCTYPE html&gt;</span>
+<span class="cm">&lt;html&gt;</span>
+<span class="cm">  &lt;head&gt;</span>
+<span class="cm">    &lt;title&gt;&lt;/title&gt;</span>
+<span class="cm">  &lt;/head&gt;</span>
+<span class="cm">  &lt;body&gt;</span>
+<span class="cm">    &lt;span&gt;3&lt;/span&gt;&lt;span&gt;4&lt;/span&gt;</span>
+<span class="cm">    &lt;div&gt;</span>
+<span class="cm">      one</span>
+<span class="cm">    &lt;/div&gt;&lt;span&gt;3&lt;/span&gt;&lt;span&gt;4&lt;/span&gt;</span>
+<span class="cm">    &lt;div&gt;</span>
+<span class="cm">      two</span>
+<span class="cm">    &lt;/div&gt;</span>
+<span class="cm">  &lt;/body&gt;</span>
+<span class="cm">&lt;/html&gt;</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="replace">
 <h4>replace<a class="headerlink" href="#replace" title="Permalink to this headline">¶</a></h4>
+<p>Similar to <a class="reference internal" href="#after">after</a> and <a class="reference internal" href="#before">before</a> above, except that the given elements are
+replaced.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
+    <span class="s1">&#39;&lt;div&gt;one&lt;/div&gt;&#39;</span> <span class="o">+</span>
+    <span class="s1">&#39;&lt;div&gt;two&lt;/div&gt;&#39;</span><span class="p">,</span>
+    <span class="p">{</span><span class="nx">indent</span><span class="o">:</span> <span class="kc">true</span><span class="p">}</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">divs</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s1">&#39;div&#39;</span><span class="p">);</span>
+
+<span class="nx">newlist</span> <span class="o">=</span> <span class="nx">divs</span><span class="p">.</span><span class="nx">replace</span><span class="p">(</span><span class="s1">&#39;&lt;span&gt;3&lt;/span&gt;&lt;span&gt;4&lt;/span&gt;&#39;</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">newlist</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">());</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">doc</span><span class="p">.</span><span class="nx">prettyPrint</span><span class="p">());</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">[</span>
+<span class="cm">   &quot;&lt;span&gt;3&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span&gt;4&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span&gt;3&lt;/span&gt;&quot;,</span>
+<span class="cm">   &quot;&lt;span&gt;4&lt;/span&gt;&quot;</span>
+<span class="cm">]</span>
+<span class="cm">&lt;!DOCTYPE html&gt;</span>
+<span class="cm">&lt;html&gt;</span>
+<span class="cm">  &lt;head&gt;</span>
+<span class="cm">    &lt;title&gt;&lt;/title&gt;</span>
+<span class="cm">  &lt;/head&gt;</span>
+<span class="cm">  &lt;body&gt;</span>
+<span class="cm">    &lt;span&gt;3&lt;/span&gt;&lt;span&gt;4&lt;/span&gt;&lt;span&gt;3&lt;/span&gt;&lt;span&gt;4&lt;/span&gt;</span>
+<span class="cm">  &lt;/body&gt;</span>
+<span class="cm">&lt;/html&gt;</span>
+
+<span class="cm">*/</span>
+</pre></div>
 </div>
-</div>
-<div class="section" id="output-from-elements">
-<h3>Output from Elements<a class="headerlink" href="#output-from-elements" title="Permalink to this headline">¶</a></h3>
-<div class="section" id="getelement">
-<h4>getElement<a class="headerlink" href="#getelement" title="Permalink to this headline">¶</a></h4>
-</div>
-<div class="section" id="getelementname">
-<h4>getElementName<a class="headerlink" href="#getelementname" title="Permalink to this headline">¶</a></h4>
-</div>
-<div class="section" id="getattr">
-<h4>getAttr<a class="headerlink" href="#getattr" title="Permalink to this headline">¶</a></h4>
-</div>
-<div class="section" id="getallattr">
-<h4>getAllAttr<a class="headerlink" href="#getallattr" title="Permalink to this headline">¶</a></h4>
-</div>
-<div class="section" id="tohtml">
-<h4>toHtml<a class="headerlink" href="#tohtml" title="Permalink to this headline">¶</a></h4>
-</div>
-<div class="section" id="totext">
-<h4>toText<a class="headerlink" href="#totext" title="Permalink to this headline">¶</a></h4>
 </div>
 </div>
 </div>
