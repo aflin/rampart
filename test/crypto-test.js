@@ -24,11 +24,26 @@ function testFeature(name,test)
     if(error) console.log(error);
 }
 
-testFeature( "sha256 hash of 'hello world'", function(){
-  var res=crypto.sha256("hello world");
-  return res=='b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9';
-});
+var hashes = [
+"2aae6c35c94fcfb415dbe95f408b9ce91ee846ed", "2f05477fc24bb4faefd86517156dafdecec45b8ad3cf2522a563582b", "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9", "fdbd8e75a67f29f701a4e040385e2e23986303ea10239211af907fcbb83578b3e417cb71ce646efd0819dd8c088de1bd", "309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f", "aa010fbc1d14c795d86ef98c95479d17", "5eb63bbbe01eeed093cb22bb8f5acdc3", "dfb7f18c77e928bb56faeb2da27291bd790bc1045cde45f3210bb6c5", "644bcc7e564373040999aac89e7622f3ca71fba1d972fd94a31c3bfbf24e3938", "83bff28dde1b1bf5810071c6643c08e5b05bdb836effd70b403ea8ea0a634dc4997eb1053aa3593f590f9c63630dd90b", "840006653e9ac9e95117a15c915caab81662918e925de9e004f774ff82d7079a40d4d27b1b372657c61d46d470304c88c788b3a4527ad074d1dccbee5dbaa99a", "021ced8799296ceca557832ab941a50b4a11f83478cf141f51f933f653ab9fbcc05a037cddbed06e309bf334942c4e58cdf1a46e237911ccd7fcf9787cbc7fd0", "9aec6806794561107e594b1f6a8a6b0c92a0cba9acf5e5e93cca06f781813b0b", "9ce411cc3449bf73a54568d783b5900d", "98c615784ccb5fe5936fbc0cbe9dfdb408d92f0f", "22e0d52336f64a998085078b05a6e37b26f8120f43bf4db4c43a64ee", "0ac561fac838104e3f2e4ad107b4bee3e938bf15f2b15f009ccccd61a913f017", "3a9159f071e4dd1c8c4f968607c30942", "369771bb2cb9d2b04c1d54cca487e372d9f187f73f7ba3f65b95c8ee7798c527", "44f0061e69fa6fdfc290c494654a05dc0c053da7e5c52b84ef93a9d67d3fff88"
+];
+var hfuncs =  [
+    "sha1", "sha224", "sha256", "sha384", "sha512", "md4", "md5",
+    "sha3_224", "sha3_256", "sha3_384", "sha3_512",
+    "blake2b512",        "blake2s256",
+    "mdc2", "rmd160",
+    "sha512_224", "sha512_256", "shake128", 'shake256',
+    'sm3'
+];
+var i;
 
+for (i=0;i<hfuncs.length;i++)
+{
+  testFeature( hfuncs[i]+" hash of 'hello world'", function(){
+    var res=crypto[hfuncs[i]]("hello world");
+    return res==hashes[i];
+  });
+}
 
 testFeature("hexify of crypto.rand(32):",function(){
   var res=hexify(crypto.rand(32));

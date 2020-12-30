@@ -295,9 +295,10 @@ Return Value:
      :ref:`aggregates <sql2:Summarizing Values: GROUP BY Clause and Aggregate Functions>` or
      :ref:`sql-set:multivaluetomultirow` are applied.
 
-  If a callback :green:`Function` is specified, a :green:`Number`,the number of rows fetched is
-  returned.  The callback is given the above values as arguments in the
-  following order: ``cbfunc(result_row, index, columns, countInfo)``.
+  If a callback :green:`Function` is specified, a :green:`Number` (the
+  number of rows retrieved) is returned.  The callback is given the above
+  values as arguments in the following order: ``cbfunc(result_row, index,
+  columns, countInfo)``.
 
 Error Messages:
    Errors may or may not throw a JavaScript exception depending on the
@@ -793,7 +794,7 @@ Example:
          hasHeaderRow: true, /* first row of csv are column names */
       },
 
-      /* reorder csv rows switching second and third */
+      /* reorder csv columns switching second and third */
       [0,2,1],
 
       /* print progress */

@@ -119,6 +119,7 @@ Put all or named properties of an :green:`Object` in the global namespace.
 |            |                | the named properties will be exported.                    |
 +------------+----------------+-----------------------------------------------------------+
 
+Without ``prop_names``, this is equivalent to ``Object.assign(global, var_obj);``.
 
 Return value: 
    ``undefined``.
@@ -1654,24 +1655,25 @@ Example for the SQL C Module:
 
 .. code-block:: javascript
 
-   var sql = require("rampart-sql");
+   var Sql = require("rampart-sql");
 
 This will search the current directory and the rampart modules directories
 for a module named ``rampart-sql.so`` or ``rampart-sql.js`` and use the
 first one found.  In this case ``rampart-sql.so`` will be found and the SQL
-module and its functions will be usable via the named variable ``sql``.  See,
+module and its functions will be usable via the named variable ``Sql``.  See,
 e.g, :ref:`rampart-sql:Loading the Javascript Module` for full details.
 
-Example using a JavaScript module:
+Example creating a JavaScript module
+""""""""""""""""""""""""""""""""""""
 
 If you have an often used function, or a function used for serving web pages 
-with :ref:`rampart-server:The rampart-server module`, it can be placed in a
+with :ref:`rampart-server:The rampart-server HTTP module`, it can be placed in a
 separate file (here the file is named ``times2.js``):
 
 .. code-block:: javascript
 
    function timestwo (num) {
-      return num *2;
+      return num * 2;
    }
 
    module.exports=timestwo;
@@ -1691,6 +1693,61 @@ In another script, the exported ``timestwo`` function could be accessed as such:
   var res = x2(5);
 
   /* res == 10 */
+
+Example creating a C module
+"""""""""""""""""""""""""""
+
+A module can also be written in C.  When exporting from C, the module should
+return a :green:`Function` or an :green:`Object` which may contain functions
+and/or other JavaScript variables.
+
+Example (where filename is ``times3.c``):
+
+.. code-block:: C
+
+   #include "duktape.h"
+
+   static duk_ret_t timesthree(duk_context *ctx)
+   {
+       double num = duk_get_number_default(ctx, 0, 0.0);
+
+       duk_push_number(ctx, num * 3.0 );
+
+       return 1;
+   }
+
+
+   /* **************************************************
+      Initialize module
+      ************************************************** */
+   duk_ret_t duk_open_module(duk_context *ctx)
+   {
+     duk_push_c_function(ctx, timesthree, 1);
+
+     return 1;
+   }
+
+The following could be compiled with GCC as follows:
+
+``cc -I/usr/local/rampart/include -fPIC -shared -Wl,-soname,times3.so -o times3.so times3.c``
+
+The module could then be imported using the ``require()`` function.
+
+.. code-block:: javascript
+
+   var x3 = require("times3");
+
+   var res = x3(5);
+
+   /* res == 15 */
+
+
+
+See `The Duktape API Documentation <https://duktape.org/api.html>`_
+for a full listing of functions available.
+
+Module Search Path
+""""""""""""""""""
 
 Modules are searched for in the following order:
 

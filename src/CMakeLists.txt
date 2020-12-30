@@ -227,6 +227,7 @@ set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis ramp
 endif()
 
 install(TARGETS rampart DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
+
 install(TARGETS
 	rampart-server
 	rampart-crypto
@@ -255,6 +256,18 @@ install(CODE "execute_process( \
     \"${PROJECT_BINARY_DIR}/src/babel.js\" \
     \"${PROJECT_BINARY_DIR}/src/babel-polyfill.js\" \
     \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
+    )"
+)
+
+# include files
+
+install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/include")
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_SOURCE_DIR}/src/duktape/core/duktape.h\" \
+    \"${PROJECT_SOURCE_DIR}/src/duktape/core/duk_config.h\" \
+    \"${PROJECT_SOURCE_DIR}/src/rp.h\" \
+    \"${CMAKE_INSTALL_PREFIX}/include\"   \
     )"
 )
 

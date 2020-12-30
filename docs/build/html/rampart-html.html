@@ -38,6 +38,7 @@
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
     <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
+        <link rel="next" title="The rampart-crypto module" href="rampart-crypto.html"/>
         <link rel="prev" title="The rampart-server HTTP module" href="rampart-server.html"/> 
 
   
@@ -96,11 +97,11 @@
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#loading-and-using-the-module">Loading and Using the Module</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#loading">Loading</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#usage">Usage</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#newdocument">newDocument</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#prettyprint">prettyPrint</a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#configuring-and-parsing">Configuring and Parsing</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#newdocument">newDocument</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#prettyprint">prettyPrint</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#manipulating-the-html">Manipulating the HTML</a><ul>
@@ -128,7 +129,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#getdocument">getDocument</a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#filtering-list-of-elements">Filtering List of Elements</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#manipulating-the-list-of-elements">Manipulating the List of Elements</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#filtertag">filterTag</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#filterattr">filterAttr</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#filterclass">filterClass</a></li>
@@ -161,6 +162,7 @@
 </li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-crypto.html">The rampart-crypto module</a></li>
 </ul>
 
             
@@ -255,8 +257,8 @@ restrictions.</p>
 <p>After the module is loaded, an HTML document may be created or parsed by
 passing a <span class="green">String</span> or <span class="green">Buffer</span> to the <code class="docutils literal notranslate"><span class="pre">newDocument</span></code>
 function.  The parsed document may then be manipulated using functions
-to select, add or delete to specific elements in the document.
-It then may be printed to a new string using the <code class="docutils literal notranslate"><span class="pre">prettyPrint</span></code> function.</p>
+to select, add or delete specific elements.
+It then may be written to a new string using the <code class="docutils literal notranslate"><span class="pre">prettyPrint</span></code> function.</p>
 </div>
 </div>
 <div class="section" id="loading-and-using-the-module">
@@ -267,15 +269,16 @@ It then may be printed to a new string using the <code class="docutils literal n
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>Configuring and Parsing.</p>
+</div>
+</div>
+<div class="section" id="configuring-and-parsing">
+<h2>Configuring and Parsing<a class="headerlink" href="#configuring-and-parsing" title="Permalink to this headline">¶</a></h2>
 <p>Loading the rampart-html module returns an object with the property/function
 <code class="docutils literal notranslate"><span class="pre">newDocument()</span></code>.  This function can be used to create a blank HTML
 document or import and parse from an existing one.</p>
-</div>
-<div class="section" id="usage">
-<h3>Usage<a class="headerlink" href="#usage" title="Permalink to this headline">¶</a></h3>
 <div class="section" id="newdocument">
-<h4>newDocument<a class="headerlink" href="#newdocument" title="Permalink to this headline">¶</a></h4>
+<h3>newDocument<a class="headerlink" href="#newdocument" title="Permalink to this headline">¶</a></h3>
+<p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
 
 <span class="kd">var</span> <span class="nx">mydoc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">([</span><span class="nx">document_text</span><span class="p">][,</span> <span class="nx">options</span><span class="p">]);</span>
@@ -292,7 +295,7 @@ to the <a class="reference external" href="https://api.html-tidy.org/tidy/tidyli
 options for <a class="reference external" href="http://www.html-tidy.org/">Tidy-HTML5</a>.
 Some of these options apply to the rules for parsing the document, while
 others apply to the appearance of the document (such as indentation and
-line wrapping) when it is output is <cite>prettyPrint</cite>ed.  Other options
+line wrapping) when it is output is <a class="reference internal" href="#prettyprint">prettyPrint</a>ed.  Other options
 that deal with file i/o are ignored.</p>
 <p>A small subset of these options include:</p>
 <ul class="simple">
@@ -317,15 +320,15 @@ for more options.</p></li>
 </li>
 </ul>
 <dl class="simple">
-<dt>Return Value:</dt><dd><p>An <em>html object</em> with all the functions for manipulating the HTML document.  In
-addition, this top level <em>html object</em> will also return the
-<code class="docutils literal notranslate"><span class="pre">prettyPrint()</span></code> function.</p>
+<dt>Return Value:</dt><dd><p>An <em>html object</em> with all the functions for manipulating the HTML
+document.  In addition, this <em>top level html object</em>
+will also contain the <code class="docutils literal notranslate"><span class="pre">prettyPrint()</span></code> function.</p>
 </dd>
 </dl>
 </div>
 <div class="section" id="prettyprint">
-<h4>prettyPrint<a class="headerlink" href="#prettyprint" title="Permalink to this headline">¶</a></h4>
-<p>The top level <em>html object</em> includes an additional function which will
+<h3>prettyPrint<a class="headerlink" href="#prettyprint" title="Permalink to this headline">¶</a></h3>
+<p>The <em>top level html object</em> includes an additional function which will
 output the entire text of the document with optional indentation.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
@@ -377,31 +380,27 @@ output the entire text of the document with optional indentation.</p>
 </div>
 </div>
 </div>
-</div>
 <div class="section" id="manipulating-the-html">
 <h2>Manipulating the HTML<a class="headerlink" href="#manipulating-the-html" title="Permalink to this headline">¶</a></h2>
-<p>An <em>html object</em> is an object which contains an opaque list of elements in
-the HTML document parsed with <a class="reference internal" href="#newdocument">newDocument</a> above.  The top level
-<em>html object</em> is the one returned from <a class="reference internal" href="#newdocument">newDocument</a>, and it is the same
-as any other <em>html object</em>, except that it additionally includes the
-<a class="reference internal" href="#prettyprint">prettyPrint</a> function as well.</p>
-<p>An <em>html object</em> with a new list of elements can be created using the
-functions below by searching for or selecting elements in another <em>html
-object</em>.  The elements in the <em>html object</em> represent the actual content in
-the html document, and if manipulated, will change the contents returned
-from <a class="reference internal" href="#prettyprint">prettyPrint</a>.</p>
-<p>Elements selected in lists can be detached, moved, copied, deleted and have
-their attributes and classes changed with the functions below.</p>
 <div class="section" id="the-html-object">
 <h3>The html object<a class="headerlink" href="#the-html-object" title="Permalink to this headline">¶</a></h3>
-<p>The <em>html object</em> is an <span class="green">Object</span> representing a list of elements in an HTML
-document.  An element is a single parsed html tag (such as “<code class="docutils literal notranslate"><span class="pre">&lt;br</span> <span class="pre">/&gt;</span></code>”)
-with links to its descendant tags, if any.  The list of elements are kept in
-a hidden array and can be accessed or manipulated using the functions/methods
-of the <em>html object</em> (see below).</p>
-<p>The object also includes the <code class="docutils literal notranslate"><span class="pre">length</span></code> property (number of elements in
-the current list) and the <code class="docutils literal notranslate"><span class="pre">prettyPrint</span></code> function if it is the “root” of the
-document (as returned from <code class="docutils literal notranslate"><span class="pre">newDocument()</span></code>).</p>
+<p>An <em>html object</em> is an <span class="green">Object</span> which contains an opaque list of elements in
+the HTML document parsed with <a class="reference internal" href="#newdocument">newDocument</a> above.
+An element is a single parsed html tag (such as “<code class="docutils literal notranslate"><span class="pre">&lt;br</span> <span class="pre">/&gt;</span></code>”)
+with links to its descendant elements and/or plain text content, if any.</p>
+<p>The <em>top level html object</em> is the <span class="green">Object</span> returned from
+<a class="reference internal" href="#newdocument">newDocument</a>.  It is identical to other <em>html objects</em>, except that it
+additionally includes the <a class="reference internal" href="#prettyprint">prettyPrint</a> function.</p>
+<p>In addition to the <em>top level html object</em>, new ones can be created.
+A new list of elements is returned in an <em>html object</em> when they are
+selected, detached, moved, copied or have their attributes and
+classes changed with the functions below.</p>
+<p>Each <em>html object</em> created from any other <em>html object</em> will refer
+to elements in the same document.  These elements represent the actual
+content in the html document, and if manipulated, will change the contents
+returned from <a class="reference internal" href="#prettyprint">prettyPrint</a>.</p>
+<p>Additionally, the <em>html object</em> includes the <code class="docutils literal notranslate"><span class="pre">length</span></code> property (number of elements in
+the current list).</p>
 </div>
 <div class="section" id="selecting-elements">
 <h3>Selecting Elements<a class="headerlink" href="#selecting-elements" title="Permalink to this headline">¶</a></h3>
@@ -477,8 +476,8 @@ of <code class="docutils literal notranslate"><span class="pre">bar2</span></cod
 <h3>Output from Elements<a class="headerlink" href="#output-from-elements" title="Permalink to this headline">¶</a></h3>
 <div class="section" id="getelement">
 <h4>getElement<a class="headerlink" href="#getelement" title="Permalink to this headline">¶</a></h4>
-<p>Return an array of strings containing the opening tag for each of the given
-elements in the <em>html object</em>.  No children are returned.</p>
+<p>Return an <span class="green">Array</span> of <span class="green">Strings</span> containing the opening tag for
+each of the given elements in the <em>html object</em>.  No children are returned.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
 
@@ -508,8 +507,8 @@ elements in the <em>html object</em>.  No children are returned.</p>
 </div>
 <div class="section" id="getelementname">
 <h4>getElementName<a class="headerlink" href="#getelementname" title="Permalink to this headline">¶</a></h4>
-<p>Return an array of <span class="green">Strings</span> containing the opening tag <strong>name</strong> for each of the given
-elements in the <em>html object</em>.</p>
+<p>Return an <span class="green">Array</span> of <span class="green">Strings</span> containing the opening tag
+<strong>name</strong> for each of the given elements in the <em>html object</em>.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
 
@@ -539,7 +538,7 @@ elements in the <em>html object</em>.</p>
 </div>
 <div class="section" id="getattr">
 <h4>getAttr<a class="headerlink" href="#getattr" title="Permalink to this headline">¶</a></h4>
-<p>Return an array of <span class="green">Strings</span> containing the attribute value of the provided
+<p>Return an <span class="green">Array</span> of <span class="green">Strings</span> containing the attribute value of the provided
 attribute name for each of the given elements in the <em>html object</em>.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
@@ -570,7 +569,7 @@ attribute name for each of the given elements in the <em>html object</em>.</p>
 </div>
 <div class="section" id="getallattr">
 <h4>getAllAttr<a class="headerlink" href="#getallattr" title="Permalink to this headline">¶</a></h4>
-<p>Return an array of objects, each containing attribute name/value pairs,
+<p>Return an <span class="green">Array</span> of <span class="green">Objects</span>, each containing attribute name/value pairs,
 for each of the given elements in the <em>html object</em>.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
@@ -610,7 +609,7 @@ for each of the given elements in the <em>html object</em>.</p>
 </div>
 <div class="section" id="tohtml">
 <h4>toHtml<a class="headerlink" href="#tohtml" title="Permalink to this headline">¶</a></h4>
-<p>Return an array of <span class="green">Strings</span>, each string the HTML of each of the given
+<p>Return an <span class="green">Array</span> of <span class="green">Strings</span>, each string the HTML of each of the given
 elements and their children.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
@@ -641,7 +640,7 @@ elements and their children.</p>
 </div>
 <div class="section" id="totext">
 <h4>toText<a class="headerlink" href="#totext" title="Permalink to this headline">¶</a></h4>
-<p>Return an array of <span class="green">Strings</span>, each string the plain text of each of the given
+<p>Return an <span class="green">Array</span> of <span class="green">Strings</span>, each string the plain text of each of the given
 elements and their children.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">tags</span> <span class="o">=</span> <span class="nx">hobj</span><span class="p">.</span><span class="nx">toHtml</span><span class="p">([</span><span class="nx">options</span><span class="p">]);</span>
@@ -654,9 +653,9 @@ elements and their children.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> is an <span class="green">Object</span> with the following setting:</p>
 <blockquote>
 <div><ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">concatenate</span></code> - a <span class="green">Boolean</span> if true, <code class="docutils literal notranslate"><span class="pre">tags</span></code> will be returned as a
-<span class="green">String</span> consisting of the concatenated output from
-each given element.  Default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">concatenate</span></code> - a <span class="green">Boolean</span> if true, the function will return
+a <span class="green">String</span> consisting of the concatenated output from each given
+element.  Default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">imageAltText</span></code> - a <span class="green">Boolean</span> if true, alt text from images
 will also be output.  Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">metaDescription</span></code> - a <span class="green">Boolean</span> if true, text from the
@@ -831,11 +830,11 @@ like all <em>html object</em> functions, returns a unique list.</p>
 </div>
 <div class="section" id="getdocument">
 <h4>getDocument<a class="headerlink" href="#getdocument" title="Permalink to this headline">¶</a></h4>
-<p>Given an <em>html object</em> containing any number of elements, return the top
-level document.</p>
+<p>Given an <em>html object</em> return the <em>top level html object</em>.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-html&quot;</span><span class="p">);</span>
 
+<span class="cm">/* var doc is our top level object */</span>
 <span class="kd">var</span> <span class="nx">doc</span> <span class="o">=</span> <span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span>
     <span class="s1">&#39;&lt;span&gt;one&lt;/span&gt;&lt;div class=&quot;myclass&quot;&gt;two&lt;/div&gt;&#39;</span> <span class="o">+</span>
     <span class="s1">&#39;&lt;span&gt;three&lt;/span&gt;&lt;div class=&quot;myclass&quot;&gt;four&lt;/div&gt;&#39;</span>
@@ -843,11 +842,12 @@ level document.</p>
 
 <span class="kd">var</span> <span class="nx">spans</span> <span class="o">=</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s2">&quot;span&quot;</span><span class="p">);</span>
 
-<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span> <span class="p">(</span><span class="nx">doc</span> <span class="o">==</span> <span class="nx">spans</span><span class="p">),</span> <span class="p">(</span><span class="nx">doc</span> <span class="o">==</span> <span class="nx">spans</span><span class="p">.</span><span class="nx">getDocument</span><span class="p">())</span> <span class="p">);</span>
+<span class="cm">/* demonstrate that getDocument returns the top level object */</span>
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span> <span class="p">(</span><span class="nx">doc</span> <span class="o">==</span> <span class="nx">spans</span><span class="p">.</span><span class="nx">getDocument</span><span class="p">())</span> <span class="p">);</span>
 
 <span class="cm">/* expected output:</span>
 
-<span class="cm">false true</span>
+<span class="cm">true</span>
 
 <span class="cm">*/</span>
 </pre></div>
@@ -856,8 +856,8 @@ level document.</p>
 <code class="docutils literal notranslate"><span class="pre">spans</span></code> with the following: <code class="docutils literal notranslate"><span class="pre">spans.getDocument().prettyPrint()</span></code>.</p>
 </div>
 </div>
-<div class="section" id="filtering-list-of-elements">
-<h3>Filtering List of Elements<a class="headerlink" href="#filtering-list-of-elements" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="manipulating-the-list-of-elements">
+<h3>Manipulating the List of Elements<a class="headerlink" href="#manipulating-the-list-of-elements" title="Permalink to this headline">¶</a></h3>
 <div class="section" id="filtertag">
 <h4>filterTag<a class="headerlink" href="#filtertag" title="Permalink to this headline">¶</a></h4>
 <p>Reduce the current list of elements to only include elements which have a
@@ -991,8 +991,8 @@ at the given index and return a new <em>html object</em>.</p>
 </div>
 <div class="section" id="add">
 <h4>add<a class="headerlink" href="#add" title="Permalink to this headline">¶</a></h4>
-<p>Add to the current list of elements the items given and return a new
-<em>html object</em>.</p>
+<p>Add to the given list of elements the elements in the provided <em>html object</em>
+or <span class="green">String</span> and return a new <em>html object</em>.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">newlist</span> <span class="o">=</span> <span class="nx">oldlist</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="nx">additions</span><span class="p">);</span>
 </pre></div>
@@ -1522,6 +1522,8 @@ replaced.</p>
           <footer>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="rampart-crypto.html" class="btn btn-neutral float-right" title="The rampart-crypto module" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
       
       
         <a href="rampart-server.html" class="btn btn-neutral" title="The rampart-server HTTP module" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>

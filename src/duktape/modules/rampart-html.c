@@ -2727,8 +2727,8 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
         str_idx = 0;
     }
 
-    if(duk_is_buffer(ctx, str_idx))
-        html = (const char *) duk_get_buffer(ctx, str_idx, &size);
+    if(duk_is_buffer_data(ctx, str_idx))
+        html = (const char *) duk_get_buffer_data(ctx, str_idx, &size);
     else if (duk_is_string(ctx, str_idx) )
         html = duk_get_string(ctx, str_idx);
     else if (!duk_is_undefined(ctx, str_idx))

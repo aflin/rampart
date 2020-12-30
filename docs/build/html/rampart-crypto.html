@@ -1,0 +1,690 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>The rampart-crypto module &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
+        <link rel="prev" title="The rampart-server HTML module" href="rampart-html.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart JavaScript</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-html.html">The rampart-html module</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">The rampart-crypto module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#preface">Preface</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#acknowledgment">Acknowledgment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#license">License</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#what-does-it-do">What does it do?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#how-does-it-work">How does it work?</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#loading-and-using-the-module">Loading and Using the Module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#loading">Loading</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#encryption-and-decryption">Encryption and Decryption</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#encrypt">encrypt</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#decrypt">decrypt</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#supported-modes">Supported Modes</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#hashing">Hashing</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#hash">hash</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#alias-functions">alias functions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#hmac">hmac</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#random">Random</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#rand">rand</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#randnum">randnum</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#gaussrand">gaussrand</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#normrand">normrand</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#seed">seed</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>The rampart-crypto module</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/rampart-crypto.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="the-rampart-crypto-module">
+<h1>The rampart-crypto module<a class="headerlink" href="#the-rampart-crypto-module" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="preface">
+<h2>Preface<a class="headerlink" href="#preface" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="acknowledgment">
+<h3>Acknowledgment<a class="headerlink" href="#acknowledgment" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-crypto module uses the <a class="reference external" href="https://www.openssl.org/">OpenSSL</a>
+library.  We extend our thanks to the developers for this indispensable
+tool.</p>
+</div>
+<div class="section" id="license">
+<h3>License<a class="headerlink" href="#license" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-crypto module is released under the MIT license.
+The <a class="reference external" href="https://www.openssl.org/">OpenSSL</a> library is released under the
+<a class="reference external" href="https://github.com/openssl/openssl/blob/master/LICENSE.txt">Apache 2.0 License</a>.</p>
+</div>
+<div class="section" id="what-does-it-do">
+<h3>What does it do?<a class="headerlink" href="#what-does-it-do" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-crypto module provides methods to encrypt, decrypt, hash and
+generate HMACs from within Rampart JavaScript.
+It also includes the full libssl and libcrypto libraries and is needed for
+the rampart-curl and rampart-server modules to operate using the https
+protocol.</p>
+</div>
+<div class="section" id="how-does-it-work">
+<h3>How does it work?<a class="headerlink" href="#how-does-it-work" title="Permalink to this headline">¶</a></h3>
+<p>After the module is loaded, functions are provided to perform crypto
+operations on JavaScript <span class="green">Strings</span> or <span class="green">Buffers</span>.</p>
+</div>
+</div>
+<div class="section" id="loading-and-using-the-module">
+<h2>Loading and Using the Module<a class="headerlink" href="#loading-and-using-the-module" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="loading">
+<h3>Loading<a class="headerlink" href="#loading" title="Permalink to this headline">¶</a></h3>
+<p>Loading the module is a simple matter of using the <code class="docutils literal notranslate"><span class="pre">require()</span></code> function:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="encryption-and-decryption">
+<h2>Encryption and Decryption<a class="headerlink" href="#encryption-and-decryption" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="encrypt">
+<h3>encrypt<a class="headerlink" href="#encrypt" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">encrypt()</span></code> function encrypts the contents of a <span class="green">String</span> or
+<span class="green">Buffer</span>.  Encryption can be done by providing a key/iv pair or by
+providing a password.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="nx">crypto</span><span class="p">.</span><span class="nx">encrypt</span><span class="p">(</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* or */</span>
+
+<span class="nx">crypto</span><span class="p">.</span><span class="nx">encrypt</span><span class="p">(</span><span class="nx">pass</span><span class="p">,</span> <span class="nx">data</span><span class="p">[,</span> <span class="nx">cipher_mode</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">pass</span></code> is a password used to encrypt the data.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">data</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span>, the data to be
+encrypted.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cipher_mode</span></code> is one of the modes listed below.  If not specified,
+the default is <code class="docutils literal notranslate"><span class="pre">aes-256-cbc</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> is an <span class="green">Object</span> which may contain the following:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">data</span></code> - same as <code class="docutils literal notranslate"><span class="pre">data</span></code> above.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key</span></code> - if not using a password, a key of the appropriate</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cipher</span></code> - same as <code class="docutils literal notranslate"><span class="pre">cipher_mode</span></code> above.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pass</span></code> - a password used to generate a key/iv pair and encrypt the
+data</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key</span></code> - required if not using a password - a key of the appropriate length for
+the chosen cipher.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">iv</span></code> - required if not using a password - an initialization vector of
+the appropriate length to be used for encrypting the data.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">iter</span></code> - number of iterations for generating a key from <code class="docutils literal notranslate"><span class="pre">pass</span></code>.
+Default is <code class="docutils literal notranslate"><span class="pre">10000</span></code>.  If provided, the same must be passed to</p></li>
+</ul>
+<blockquote>
+<div><p><a class="reference internal" href="#decrypt">decrypt</a> below in order to decrypt the ciphertext.</p>
+</div></blockquote>
+</li>
+</ul>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Buffer</span> containing the ciphertext (encrypted data).</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">ciphertext</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">encrypt</span><span class="p">(</span><span class="s2">&quot;mypass&quot;</span><span class="p">,</span> <span class="s2">&quot;my data&quot;</span><span class="p">,</span> <span class="s2">&quot;aes-128-cbc&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="decrypt">
+<h3>decrypt<a class="headerlink" href="#decrypt" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">decrypt()</span></code> function takes the same arguments as <a class="reference internal" href="#encrypt">encrypt</a> above, but decrypts
+the data.  Data is returned in a <span class="green">Buffer</span>.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">ciphertext</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">encrypt</span><span class="p">({</span>
+    <span class="nx">pass</span><span class="o">:</span> <span class="s2">&quot;mypass&quot;</span><span class="p">,</span>
+    <span class="nx">data</span><span class="o">:</span> <span class="s2">&quot;my data&quot;</span>
+<span class="p">});</span>
+
+<span class="kd">var</span> <span class="nx">plaintext</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">decrypt</span><span class="p">({</span>
+    <span class="nx">pass</span><span class="o">:</span> <span class="s2">&quot;mypass&quot;</span><span class="p">,</span>
+    <span class="nx">data</span><span class="o">:</span> <span class="nx">ciphertext</span>
+<span class="p">});</span>
+
+<span class="nx">printf</span><span class="p">(</span><span class="s1">&#39;The decrypted data: &quot;%B&quot;\n&#39;</span><span class="p">,</span> <span class="nx">plaintext</span><span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">The decrypted data: &quot;my data&quot;</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="supported-modes">
+<h3>Supported Modes<a class="headerlink" href="#supported-modes" title="Permalink to this headline">¶</a></h3>
+<p>The following cipher/modes are supported in rampart:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 36%" />
+<col style="width: 64%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>mode name</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>bf-cbc</p></td>
+<td><p>Blowfish in CBC mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>bf-cfb</p></td>
+<td><p>Blowfish in CFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>bf-ecb</p></td>
+<td><p>Blowfish in ECB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>bf-ofb</p></td>
+<td><p>Blowfish in OFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>cast-cbc</p></td>
+<td><p>CAST in CBC mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>cast5-cbc</p></td>
+<td><p>CAST5 in CBC mode</p></td>
+</tr>
+<tr class="row-even"><td><p>cast5-cfb</p></td>
+<td><p>CAST5 in CFB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>cast5-ecb</p></td>
+<td><p>CAST5 in ECB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>cast5-ofb</p></td>
+<td><p>CAST5 in OFB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>des-cbc</p></td>
+<td><p>DES in CBC mode</p></td>
+</tr>
+<tr class="row-even"><td><p>des-cfb</p></td>
+<td><p>DES in CBC mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>des-ofb</p></td>
+<td><p>DES in OFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>des-ecb</p></td>
+<td><p>DES in ECB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>des-ede-cbc</p></td>
+<td><p>Two key triple DES EDE in CBC mode</p></td>
+</tr>
+<tr class="row-even"><td><p>des-ede</p></td>
+<td><p>Two key triple DES EDE in ECB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>des-ede-cfb</p></td>
+<td><p>Two key triple DES EDE in CFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>des-ede-ofb</p></td>
+<td><p>Two key triple DES EDE in OFB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>des-ede3-cbc</p></td>
+<td><p>Three key triple DES EDE in CBC mode</p></td>
+</tr>
+<tr class="row-even"><td><p>des-ede3</p></td>
+<td><p>Three key triple DES EDE in ECB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>des-ede3-cfb</p></td>
+<td><p>Three key triple DES EDE CFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>des-ede3-ofb</p></td>
+<td><p>Three key triple DES EDE in OFB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>desx</p></td>
+<td><p>DESX algorithm.</p></td>
+</tr>
+<tr class="row-even"><td><p>idea-cbc</p></td>
+<td><p>IDEA algorithm in CBC mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>idea-cfb</p></td>
+<td><p>IDEA in CFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>idea-ecb</p></td>
+<td><p>IDEA in ECB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>idea-ofb</p></td>
+<td><p>IDEA in OFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>rc2-cbc</p></td>
+<td><p>128 bit RC2 in CBC mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>rc2-cfb</p></td>
+<td><p>128 bit RC2 in CFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>rc2-ecb</p></td>
+<td><p>128 bit RC2 in ECB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>rc2-ofb</p></td>
+<td><p>128 bit RC2 in OFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>rc2-64-cbc</p></td>
+<td><p>64 bit RC2 in CBC mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>rc2-40-cbc</p></td>
+<td><p>40 bit RC2 in CBC mode</p></td>
+</tr>
+<tr class="row-even"><td><p>rc4</p></td>
+<td><p>128 bit RC4</p></td>
+</tr>
+<tr class="row-odd"><td><p>rc4-40</p></td>
+<td><p>40 bit RC4</p></td>
+</tr>
+<tr class="row-even"><td><p>aes-256-cbc</p></td>
+<td><p>256 bit AES in CBC mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>aes-256-cfb</p></td>
+<td><p>256 bit AES in 128 bit CFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>aes-256-cfb1</p></td>
+<td><p>256 bit AES in 1 bit CFB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>aes-256-cfb8</p></td>
+<td><p>256 bit AES in 8 bit CFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>aes-256-ecb</p></td>
+<td><p>256 bit AES in ECB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>aes-256-ofb</p></td>
+<td><p>256 bit AES in OFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>aes-192-cbc</p></td>
+<td><p>192 bit AES in CBC mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>aes-192-cfb</p></td>
+<td><p>192 bit AES in 128 bit CFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>aes-192-cfb1</p></td>
+<td><p>192 bit AES in 1 bit CFB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>aes-192-cfb8</p></td>
+<td><p>192 bit AES in 8 bit CFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>aes-192-ecb</p></td>
+<td><p>192 bit AES in ECB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>aes-192-ofb</p></td>
+<td><p>192 bit AES in OFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>aes-128-cbc</p></td>
+<td><p>128 bit AES in CBC mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>aes-128-cfb</p></td>
+<td><p>128 bit AES in 128 bit CFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>aes-128-cfb1</p></td>
+<td><p>128 bit AES in 1 bit CFB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>aes-128-cfb8</p></td>
+<td><p>128 bit AES in 8 bit CFB mode</p></td>
+</tr>
+<tr class="row-even"><td><p>aes-128-ecb</p></td>
+<td><p>128 bit AES in ECB mode</p></td>
+</tr>
+<tr class="row-odd"><td><p>aes-128-ofb</p></td>
+<td><p>128 bit AES in OFB mode</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="section" id="hashing">
+<h2>Hashing<a class="headerlink" href="#hashing" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="hash">
+<h3>hash<a class="headerlink" href="#hash" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">hash()</span></code> function calculates a hash of the data in a <span class="green">String</span> or
+<span class="green">Buffer</span> and returns it in a hex encoded <span class="green">String</span> or as
+binary data in a <span class="green">Buffer</span>.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">hash</span><span class="p">(</span><span class="nx">data</span><span class="p">[,</span> <span class="nx">hash_func</span><span class="p">][,</span> <span class="nx">return_buffer</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">data</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span>, the data to be
+hashed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hash_func</span></code> is an optional <span class="green">String</span>, one of the following:</p>
+<p><code class="docutils literal notranslate"><span class="pre">sha1</span></code>, <code class="docutils literal notranslate"><span class="pre">sha224</span></code>, <code class="docutils literal notranslate"><span class="pre">sha256</span></code>, <code class="docutils literal notranslate"><span class="pre">sha384</span></code>, <code class="docutils literal notranslate"><span class="pre">sha512</span></code>, <code class="docutils literal notranslate"><span class="pre">md4</span></code>, <code class="docutils literal notranslate"><span class="pre">md5</span></code>, <code class="docutils literal notranslate"><span class="pre">sha3-224</span></code>,
+<code class="docutils literal notranslate"><span class="pre">sha3-256</span></code>, <code class="docutils literal notranslate"><span class="pre">sha3-384</span></code>, <code class="docutils literal notranslate"><span class="pre">sha3-512</span></code>, <code class="docutils literal notranslate"><span class="pre">blake2b512</span></code>, <code class="docutils literal notranslate"><span class="pre">blake2s256</span></code>, <code class="docutils literal notranslate"><span class="pre">mdc2</span></code>,
+<code class="docutils literal notranslate"><span class="pre">rmd160</span></code>, <code class="docutils literal notranslate"><span class="pre">sha512-224</span></code>, <code class="docutils literal notranslate"><span class="pre">sha512-256</span></code>, <code class="docutils literal notranslate"><span class="pre">shake128</span></code>, <code class="docutils literal notranslate"><span class="pre">shake256</span></code>,
+<code class="docutils literal notranslate"><span class="pre">sm3</span></code>. Default is <code class="docutils literal notranslate"><span class="pre">sha256</span></code>.</p>
+</li>
+<li><p>return_buffer is a <span class="green">Boolean</span>, if <code class="docutils literal notranslate"><span class="pre">true</span></code>, the output will be
+binary data in a <span class="green">Buffer</span>, and not hex encoded.</p></li>
+</ul>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">hash</span><span class="p">(</span><span class="s2">&quot;hello world&quot;</span><span class="p">,</span> <span class="s2">&quot;sha256&quot;</span><span class="p">);</span>
+
+<span class="cm">/*</span>
+<span class="cm">    res == &#39;b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9&#39;</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="alias-functions">
+<h3>alias functions<a class="headerlink" href="#alias-functions" title="Permalink to this headline">¶</a></h3>
+<p>The hash function has an alias for each of the possible <code class="docutils literal notranslate"><span class="pre">hash_func</span></code>
+value above.  Thus, using <code class="docutils literal notranslate"><span class="pre">crypto.hash(&quot;hello</span> <span class="pre">world&quot;,</span> <span class="pre">&quot;sha256&quot;)</span></code> is equivalent to
+<code class="docutils literal notranslate"><span class="pre">crypto.sha256(&quot;hello</span> <span class="pre">world&quot;)</span></code>.  For <code class="docutils literal notranslate"><span class="pre">hash_func</span></code> names with a dash
+(<code class="docutils literal notranslate"><span class="pre">-</span></code>), an underscore (<code class="docutils literal notranslate"><span class="pre">_</span></code>) is used instead.  Thus
+<code class="docutils literal notranslate"><span class="pre">crypto.hash(&quot;hello</span> <span class="pre">world&quot;,</span> <span class="pre">&quot;sha3-256&quot;)</span></code> is equivalent to
+<code class="docutils literal notranslate"><span class="pre">crypto.sha3_256(&quot;hello</span> <span class="pre">world&quot;)</span></code>.</p>
+</div>
+<div class="section" id="hmac">
+<h3>hmac<a class="headerlink" href="#hmac" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">hmac()</span></code> function computes a HMAC from the provided data and key.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">hmac</span><span class="p">(</span><span class="nx">secret</span><span class="p">,</span> <span class="nx">data</span><span class="p">[,</span> <span class="nx">hash_func</span><span class="p">][,</span> <span class="nx">return_buffer</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">secret</span></code> is the HMAC function key.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">data</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span>, the data to be
+hashed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hash_func</span></code> is an optional <span class="green">String</span>, one of the following:</p>
+<p><code class="docutils literal notranslate"><span class="pre">sha1</span></code>, <code class="docutils literal notranslate"><span class="pre">sha224</span></code>, <code class="docutils literal notranslate"><span class="pre">sha256</span></code>, <code class="docutils literal notranslate"><span class="pre">sha384</span></code>, <code class="docutils literal notranslate"><span class="pre">sha512</span></code>, <code class="docutils literal notranslate"><span class="pre">md4</span></code>, <code class="docutils literal notranslate"><span class="pre">md5</span></code>, <code class="docutils literal notranslate"><span class="pre">sha3-224</span></code>,
+<code class="docutils literal notranslate"><span class="pre">sha3-256</span></code>, <code class="docutils literal notranslate"><span class="pre">sha3-384</span></code>, <code class="docutils literal notranslate"><span class="pre">sha3-512</span></code>, <code class="docutils literal notranslate"><span class="pre">blake2b512</span></code>, <code class="docutils literal notranslate"><span class="pre">blake2s256</span></code>, <code class="docutils literal notranslate"><span class="pre">mdc2</span></code>,
+<code class="docutils literal notranslate"><span class="pre">rmd160</span></code>, <code class="docutils literal notranslate"><span class="pre">sha512-224</span></code>, <code class="docutils literal notranslate"><span class="pre">sha512-256</span></code>,
+<code class="docutils literal notranslate"><span class="pre">sm3</span></code>. Default is <code class="docutils literal notranslate"><span class="pre">sha256</span></code>.</p>
+</li>
+<li><p>return_buffer is a <span class="green">Boolean</span>, if <code class="docutils literal notranslate"><span class="pre">true</span></code>, the output will be
+binary data in a <span class="green">Buffer</span>, and not hex encoded.</p></li>
+</ul>
+</div>
+</div>
+<div class="section" id="random">
+<h2>Random<a class="headerlink" href="#random" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="rand">
+<h3>rand<a class="headerlink" href="#rand" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">rand()</span></code> function returns random generated bytes in a buffer.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">rand</span><span class="p">(</span><span class="nx">nBytes</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">nBytes</span></code> is the number of bytes to return.</p>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>a <span class="green">Buffer</span> with <code class="docutils literal notranslate"><span class="pre">nBytes</span></code> bytes of random data.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="randnum">
+<h3>randnum<a class="headerlink" href="#randnum" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">randnum()</span></code> function returns a random <span class="green">Number</span>
+between <code class="docutils literal notranslate"><span class="pre">0.0</span></code> and <code class="docutils literal notranslate"><span class="pre">1.0</span></code>.</p>
+</div>
+<div class="section" id="gaussrand">
+<h3>gaussrand<a class="headerlink" href="#gaussrand" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">gaussrand([sigma])</span></code> function returns a random <span class="green">Number</span> based on
+a normal distribution centered at zero (<code class="docutils literal notranslate"><span class="pre">0.0</span></code>), where <code class="docutils literal notranslate"><span class="pre">sigma</span></code> is one
+standard deviation.  <code class="docutils literal notranslate"><span class="pre">sigma</span></code> is optional, defaulting to <code class="docutils literal notranslate"><span class="pre">1.0</span></code>.</p>
+</div>
+<div class="section" id="normrand">
+<h3>normrand<a class="headerlink" href="#normrand" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">normrand([scale])</span></code> function returns a random <span class="green">Number</span> based on
+a normal distribution centered at zero (<code class="docutils literal notranslate"><span class="pre">0.0</span></code>) and clamped between <code class="docutils literal notranslate"><span class="pre">-scale</span></code>
+and <code class="docutils literal notranslate"><span class="pre">scale</span></code>.</p>
+<p>Similar to the <a class="reference internal" href="#gaussrand">gaussrand</a> above.  It is equivelant to:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">nrand</span> <span class="o">=</span> <span class="nx">scale</span> <span class="o">*</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">gaussrand</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span><span class="o">/</span><span class="mf">5.0</span><span class="p">;</span>
+
+<span class="k">if</span><span class="p">(</span><span class="nx">nrand</span><span class="o">&gt;</span><span class="nx">scale</span><span class="p">)</span>
+    <span class="nx">nrand</span><span class="o">=</span><span class="nx">scale</span><span class="p">;</span>
+<span class="k">else</span> <span class="k">if</span> <span class="p">(</span><span class="nx">nrand</span> <span class="o">&lt;</span> <span class="o">-</span><span class="nx">scale</span><span class="p">)</span>
+    <span class="nx">nrand</span> <span class="o">=</span> <span class="o">-</span><span class="nx">scale</span><span class="p">;</span>
+</pre></div>
+</div>
+<p>With a <code class="docutils literal notranslate"><span class="pre">scale</span></code> of <code class="docutils literal notranslate"><span class="pre">1.0</span></code> (the default), the distribution of numbers has a
+standard deviation of <code class="docutils literal notranslate"><span class="pre">0.2</span></code>.</p>
+</div>
+<div class="section" id="seed">
+<h3>seed<a class="headerlink" href="#seed" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">seed()</span></code> function seeds the random number generator from a file.
+There is no return value.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">seed</span><span class="p">([</span><span class="nx">options</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where options is an <span class="green">Object</span>, if provided, and contains the following
+properties:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">file</span></code> - a <span class="green">String</span> - location of the file.  Default is
+<code class="docutils literal notranslate"><span class="pre">/dev/random</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bytes</span></code> - a <span class="green">Number</span> - Number of bytes to retrieve from <code class="docutils literal notranslate"><span class="pre">file</span></code>.
+Default is <code class="docutils literal notranslate"><span class="pre">32</span></code>.</p></li>
+</ul>
+</div>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+      
+        <a href="rampart-html.html" class="btn btn-neutral" title="The rampart-server HTML module" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

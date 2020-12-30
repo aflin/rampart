@@ -35,9 +35,8 @@ How does it work?
 After the module is loaded, an HTML document may be created or parsed by
 passing a :green:`String` or :green:`Buffer` to the ``newDocument`` 
 function.  The parsed document may then be manipulated using functions
-to select, add or delete to specific elements in the document.
-It then may be printed to a new string using the ``prettyPrint`` function.
-
+to select, add or delete specific elements.
+It then may be written to a new string using the ``prettyPrint`` function.
 
 Loading and Using the Module
 ----------------------------
@@ -51,17 +50,17 @@ Loading the module is a simple matter of using the ``require()`` function:
 
     var html = require("rampart-html");
 
-Configuring and Parsing.
+Configuring and Parsing
+-----------------------
 
 Loading the rampart-html module returns an object with the property/function
 ``newDocument()``.  This function can be used to create a blank HTML
 document or import and parse from an existing one.
 
-Usage
-~~~~~
-
 newDocument
-"""""""""""
+~~~~~~~~~~~
+
+Usage:
 
 .. code-block:: javascript
 
@@ -81,7 +80,7 @@ where:
   options for `Tidy-HTML5 <http://www.html-tidy.org/>`_\ .
   Some of these options apply to the rules for parsing the document, while
   others apply to the appearance of the document (such as indentation and
-  line wrapping) when it is output is `prettyPrint`\ ed.  Other options
+  line wrapping) when it is output is `prettyPrint`_\ ed.  Other options
   that deal with file i/o are ignored.
 
   A small subset of these options include:
@@ -110,14 +109,14 @@ where:
      for more options.
 
 Return Value:
-  An *html object* with all the functions for manipulating the HTML document.  In
-  addition, this top level *html object* will also return the
-  ``prettyPrint()`` function. 
+  An *html object* with all the functions for manipulating the HTML
+  document.  In addition, this *top level html object*
+  will also contain the ``prettyPrint()`` function.
 
 prettyPrint
-"""""""""""
+~~~~~~~~~~~
 
-The top level *html object* includes an additional function which will
+The *top level html object* includes an additional function which will
 output the entire text of the document with optional indentation.
 
 Example:
@@ -173,33 +172,30 @@ Example:
 Manipulating the HTML
 ---------------------
 
-An *html object* is an object which contains an opaque list of elements in
-the HTML document parsed with `newDocument`_ above.  The top level
-*html object* is the one returned from `newDocument`_\ , and it is the same
-as any other *html object*, except that it additionally includes the 
-`prettyPrint`_ function as well.
-
-An *html object* with a new list of elements can be created using the
-functions below by searching for or selecting elements in another *html
-object*.  The elements in the *html object* represent the actual content in
-the html document, and if manipulated, will change the contents returned
-from `prettyPrint`_\ .
-
-Elements selected in lists can be detached, moved, copied, deleted and have
-their attributes and classes changed with the functions below.
-
 The html object
 ~~~~~~~~~~~~~~~
 
-The *html object* is an :green:`Object` representing a list of elements in an HTML
-document.  An element is a single parsed html tag (such as "``<br />``")
-with links to its descendant tags, if any.  The list of elements are kept in
-a hidden array and can be accessed or manipulated using the functions/methods
-of the *html object* (see below).
+An *html object* is an :green:`Object` which contains an opaque list of elements in
+the HTML document parsed with `newDocument`_ above.
+An element is a single parsed html tag (such as "``<br />``")
+with links to its descendant elements and/or plain text content, if any.
 
-The object also includes the ``length`` property (number of elements in
-the current list) and the ``prettyPrint`` function if it is the "root" of the
-document (as returned from ``newDocument()``).
+The *top level html object* is the :green:`Object` returned from
+`newDocument`_\ .  It is identical to other *html objects*, except that it
+additionally includes the `prettyPrint`_ function.
+
+In addition to the *top level html object*, new ones can be created.  
+A new list of elements is returned in an *html object* when they are
+selected, detached, moved, copied or have their attributes and
+classes changed with the functions below.
+
+Each *html object* created from any other *html object* will refer
+to elements in the same document.  These elements represent the actual
+content in the html document, and if manipulated, will change the contents
+returned from `prettyPrint`_\ .
+
+Additionally, the *html object* includes the ``length`` property (number of elements in
+the current list).
 
 Selecting Elements
 ~~~~~~~~~~~~~~~~~~
@@ -296,8 +292,8 @@ Output from Elements
 getElement
 """"""""""
 
-Return an array of strings containing the opening tag for each of the given
-elements in the *html object*.  No children are returned.
+Return an :green:`Array` of :green:`Strings` containing the opening tag for
+each of the given elements in the *html object*.  No children are returned.
 
 Example:
 
@@ -331,8 +327,8 @@ Example:
 getElementName
 """"""""""""""
 
-Return an array of :green:`Strings` containing the opening tag **name** for each of the given
-elements in the *html object*.
+Return an :green:`Array` of :green:`Strings` containing the opening tag
+**name** for each of the given elements in the *html object*.
 
 Example:
 
@@ -367,7 +363,7 @@ Example:
 getAttr
 """""""
 
-Return an array of :green:`Strings` containing the attribute value of the provided
+Return an :green:`Array` of :green:`Strings` containing the attribute value of the provided
 attribute name for each of the given elements in the *html object*.
 
 Example:
@@ -402,7 +398,7 @@ Example:
 getAllAttr
 """"""""""
 
-Return an array of objects, each containing attribute name/value pairs,
+Return an :green:`Array` of :green:`Objects`, each containing attribute name/value pairs,
 for each of the given elements in the *html object*.
 
 Example:
@@ -446,7 +442,7 @@ Example:
 toHtml
 """"""
 
-Return an array of :green:`Strings`, each string the HTML of each of the given
+Return an :green:`Array` of :green:`Strings`, each string the HTML of each of the given
 elements and their children.
 
 .. skip this.  the concatenate is dangerous as <span> will get newlines
@@ -500,7 +496,7 @@ Example:
 toText
 """"""
 
-Return an array of :green:`Strings`, each string the plain text of each of the given
+Return an :green:`Array` of :green:`Strings`, each string the plain text of each of the given
 elements and their children.
 
 Usage:
@@ -517,9 +513,9 @@ Where:
 
 *  ``options`` is an :green:`Object` with the following setting:
    
-    * ``concatenate`` - a :green:`Boolean` if true, ``tags`` will be returned as a
-      :green:`String` consisting of the concatenated output from
-      each given element.  Default is ``false``.
+    * ``concatenate`` - a :green:`Boolean` if true, the function will return
+      a :green:`String` consisting of the concatenated output from each given
+      element.  Default is ``false``.
 
     * ``imageAltText`` - a :green:`Boolean` if true, alt text from images
       will also be output.  Default is ``true``.
@@ -711,8 +707,8 @@ like all *html object* functions, returns a unique list.
 
 getDocument
 """""""""""
-Given an *html object* containing any number of elements, return the top
-level document.
+
+Given an *html object* return the *top level html object*.
 
 Example:
 
@@ -720,6 +716,7 @@ Example:
 
     var html = require("rampart-html");
  
+    /* var doc is our top level object */
     var doc = html.newDocument(
         '<span>one</span><div class="myclass">two</div>' +
         '<span>three</span><div class="myclass">four</div>'
@@ -727,19 +724,20 @@ Example:
 
     var spans = doc.findTag("span");
 
-    console.log( (doc == spans), (doc == spans.getDocument()) );
+    /* demonstrate that getDocument returns the top level object */
+    console.log( (doc == spans.getDocument()) );
 
     /* expected output:
 
-    false true
+    true
 
     */
 
 In the above example, the `prettyPrint`_ function could be accessed from
 ``spans`` with the following: ``spans.getDocument().prettyPrint()``.
 
-Filtering List of Elements
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+Manipulating the List of Elements
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 filterTag
 """""""""
@@ -892,8 +890,8 @@ Example:
 add
 """
 
-Add to the current list of elements the items given and return a new
-*html object*.
+Add to the given list of elements the elements in the provided *html object*
+or :green:`String` and return a new *html object*.
 
 Usage:
 

@@ -155,7 +155,12 @@
 <li class="toctree-l3"><a class="reference internal" href="#scriptpath">scriptPath</a></li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="#using-the-require-function-to-import-modules">Using the require Function to Import Modules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#using-the-require-function-to-import-modules">Using the require Function to Import Modules</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#example-creating-a-javascript-module">Example creating a JavaScript module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#example-creating-a-c-module">Example creating a C module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#module-search-path">Module Search Path</a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="#additional-global-variables-and-functions">Additional Global Variables and Functions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#ecmascript-2015-and-babel-js">ECMAScript 2015+ and Babel.js</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#babel-acknowledgement">Babel Acknowledgement</a></li>
@@ -170,6 +175,7 @@
 <li class="toctree-l1"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-html.html">The rampart-html module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-crypto.html">The rampart-crypto module</a></li>
 </ul>
 
             
@@ -349,6 +355,7 @@ the named properties will be exported.</p></td>
 </tr>
 </tbody>
 </table>
+<p>Without <code class="docutils literal notranslate"><span class="pre">prop_names</span></code>, this is equivalent to <code class="docutils literal notranslate"><span class="pre">Object.assign(global,</span> <span class="pre">var_obj);</span></code>.</p>
 <dl class="simple">
 <dt>Return value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
 </dd>
@@ -1754,20 +1761,21 @@ known as modules.  A module is a compiled C program or a JavaScript file
 which exports an <span class="green">Object</span> or <span class="green">Function</span> when the
 <code class="docutils literal notranslate"><span class="pre">require(&quot;scriptname&quot;)</span></code> syntax is used.</p>
 <p>Example for the SQL C Module:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>This will search the current directory and the rampart modules directories
 for a module named <code class="docutils literal notranslate"><span class="pre">rampart-sql.so</span></code> or <code class="docutils literal notranslate"><span class="pre">rampart-sql.js</span></code> and use the
 first one found.  In this case <code class="docutils literal notranslate"><span class="pre">rampart-sql.so</span></code> will be found and the SQL
-module and its functions will be usable via the named variable <code class="docutils literal notranslate"><span class="pre">sql</span></code>.  See,
+module and its functions will be usable via the named variable <code class="docutils literal notranslate"><span class="pre">Sql</span></code>.  See,
 e.g, <a class="reference internal" href="rampart-sql.html#loading-the-javascript-module"><span class="std std-ref">Loading the Javascript Module</span></a> for full details.</p>
-<p>Example using a JavaScript module:</p>
+<div class="section" id="example-creating-a-javascript-module">
+<h3>Example creating a JavaScript module<a class="headerlink" href="#example-creating-a-javascript-module" title="Permalink to this headline">¶</a></h3>
 <p>If you have an often used function, or a function used for serving web pages
-with <span class="xref std std-ref">rampart-server:The rampart-server module</span>, it can be placed in a
+with <a class="reference internal" href="rampart-server.html#the-rampart-server-http-module"><span class="std std-ref">The rampart-server HTTP module</span></a>, it can be placed in a
 separate file (here the file is named <code class="docutils literal notranslate"><span class="pre">times2.js</span></code>):</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">function</span> <span class="nx">timestwo</span> <span class="p">(</span><span class="nx">num</span><span class="p">)</span> <span class="p">{</span>
-   <span class="k">return</span> <span class="nx">num</span> <span class="o">*</span><span class="mi">2</span><span class="p">;</span>
+   <span class="k">return</span> <span class="nx">num</span> <span class="o">*</span> <span class="mi">2</span><span class="p">;</span>
 <span class="p">}</span>
 
 <span class="nx">module</span><span class="p">.</span><span class="nx">exports</span><span class="o">=</span><span class="nx">timestwo</span><span class="p">;</span>
@@ -1786,6 +1794,51 @@ separate file (here the file is named <code class="docutils literal notranslate"
 <span class="cm">/* res == 10 */</span>
 </pre></div>
 </div>
+</div>
+<div class="section" id="example-creating-a-c-module">
+<h3>Example creating a C module<a class="headerlink" href="#example-creating-a-c-module" title="Permalink to this headline">¶</a></h3>
+<p>A module can also be written in C.  When exporting from C, the module should
+return a <span class="green">Function</span> or an <span class="green">Object</span> which may contain functions
+and/or other JavaScript variables.</p>
+<p>Example (where filename is <code class="docutils literal notranslate"><span class="pre">times3.c</span></code>):</p>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span> <span class="cpf">&quot;duktape.h&quot;</span><span class="cp"></span>
+
+<span class="k">static</span> <span class="n">duk_ret_t</span> <span class="nf">timesthree</span><span class="p">(</span><span class="n">duk_context</span> <span class="o">*</span><span class="n">ctx</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="kt">double</span> <span class="n">num</span> <span class="o">=</span> <span class="n">duk_get_number_default</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">);</span>
+
+    <span class="n">duk_push_number</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">num</span> <span class="o">*</span> <span class="mf">3.0</span> <span class="p">);</span>
+
+    <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+<span class="p">}</span>
+
+
+<span class="cm">/* **************************************************</span>
+<span class="cm">   Initialize module</span>
+<span class="cm">   ************************************************** */</span>
+<span class="n">duk_ret_t</span> <span class="nf">duk_open_module</span><span class="p">(</span><span class="n">duk_context</span> <span class="o">*</span><span class="n">ctx</span><span class="p">)</span>
+<span class="p">{</span>
+  <span class="n">duk_push_c_function</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">timesthree</span><span class="p">,</span> <span class="mi">1</span><span class="p">);</span>
+
+  <span class="k">return</span> <span class="mi">1</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>The following could be compiled with GCC as follows:</p>
+<p><code class="docutils literal notranslate"><span class="pre">cc</span> <span class="pre">-I/usr/local/rampart/include</span> <span class="pre">-fPIC</span> <span class="pre">-shared</span> <span class="pre">-Wl,-soname,times3.so</span> <span class="pre">-o</span> <span class="pre">times3.so</span> <span class="pre">times3.c</span></code></p>
+<p>The module could then be imported using the <code class="docutils literal notranslate"><span class="pre">require()</span></code> function.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">x3</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;times3&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">x3</span><span class="p">(</span><span class="mi">5</span><span class="p">);</span>
+
+<span class="cm">/* res == 15 */</span>
+</pre></div>
+</div>
+<p>See <a class="reference external" href="https://duktape.org/api.html">The Duktape API Documentation</a>
+for a full listing of functions available.</p>
+</div>
+<div class="section" id="module-search-path">
+<h3>Module Search Path<a class="headerlink" href="#module-search-path" title="Permalink to this headline">¶</a></h3>
 <p>Modules are searched for in the following order:</p>
 <ol class="arabic simple">
 <li><p>As given.  If <code class="docutils literal notranslate"><span class="pre">/path/to/module.js</span></code> is given, it is checked first.</p></li>
@@ -1798,6 +1851,7 @@ preferentially, if set, the path pointed to by the environment variable
 <code class="docutils literal notranslate"><span class="pre">$RAMPART_PATH</span></code> + “/modules”.</p></li>
 <li><p>In the current working directory.</p></li>
 </ol>
+</div>
 </div>
 <div class="section" id="additional-global-variables-and-functions">
 <h2>Additional Global Variables and Functions<a class="headerlink" href="#additional-global-variables-and-functions" title="Permalink to this headline">¶</a></h2>

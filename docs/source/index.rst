@@ -11,6 +11,7 @@ Welcome to Rampart's documentation.
    The rampart-sql module <sqltoc>
    The rampart-server module <rampart-server>
    The rampart-html module <rampart-html>
+   The rampart-crypto module <rampart-crypto>
 
 
 
