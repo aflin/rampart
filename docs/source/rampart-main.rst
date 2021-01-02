@@ -220,6 +220,12 @@ Extended (non-standard) formats:
        after newlines is still indented).  In all cases, a double newline
        ("\\n\\n") is considered a separator of paragraphs and is respected.
 
+   * ``%C`` - like ``%c`` but prints multi-byte character.  Example:
+     
+     ``rampart.utils.printf("%C", 0xf09f9983);`` prints ``🙃``. 
+
+     Requires a number, 1-4 bytes (``0``-``4294967295``, or ``0x0``-``0xffffffff``).
+
 Example:
 
 .. code-block:: javascript

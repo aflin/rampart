@@ -83,12 +83,10 @@ Where
 
   * ``data`` - same as ``data`` above.
 
-  * ``key`` - if not using a password, a key of the appropriate
-
   * ``cipher`` - same as ``cipher_mode`` above.
 
   *  ``pass`` - a password used to generate a key/iv pair and encrypt the
-     data
+     data.
 
   * ``key`` - required if not using a password - a key of the appropriate length for
     the chosen cipher.

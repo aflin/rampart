@@ -1,0 +1,56 @@
+The rampart-crypto module
+==============================
+
+Preface
+-------
+
+Acknowledgment
+~~~~~~~~~~~~~~
+
+The rampart-curl module uses the ` <>`_
+library.  
+t
+
+License
+~~~~~~~
+
+The rampart-curl module is released under the MIT license. 
+The `OpenSSL <https://www.openssl.org/>`_ library is released under the
+`Apache 2.0 License <https://github.com/openssl/openssl/blob/master/LICENSE.txt>`_\ .
+
+What does it do?
+~~~~~~~~~~~~~~~~
+
+The rampart-crypto module provides methods to encrypt, decrypt, hash and
+generate HMACs from within Rampart JavaScript.
+It also includes the full libssl and libcrypto libraries and is needed for
+the rampart-curl and rampart-server modules to operate using the https
+protocol.
+
+
+How does it work?
+~~~~~~~~~~~~~~~~~
+
+After the module is loaded, functions are provided to perform crypto
+operations on JavaScript :green:`Strings` or :green:`Buffers`.
+
+Loading and Using the Module
+----------------------------
+
+Loading
+~~~~~~~
+
+Loading the module is a simple matter of using the ``require()`` function:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+
+
+^C
+root@serenity:/zfs3/rampart/rampart/docs/source# pop
+
+Command 'pop' not found, but there are 17 similar ones.
+
+root@serenity:/zfs3/rampart/rampart/docs/source# ^C
+root@serenity:/zfs3/rampart/rampart/docs/source# 

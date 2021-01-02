@@ -176,6 +176,7 @@
 <li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-html.html">The rampart-html module</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-crypto.html">The rampart-crypto module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-curl.html">The rampart-curl module</a></li>
 </ul>
 
             
@@ -412,7 +413,7 @@ See standard formats and flags from
 <a class="reference external" href="https://man7.org/linux/man-pages/man3/printf.3.html">printf(3)</a>.</p>
 <p>Extended (non-standard) formats:</p>
 <blockquote>
-<div><ul class="simple">
+<div><ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">%s</span></code> - corresponding argument is treated as a <span class="green">String</span>
 (converted/coerced if necessary; <span class="green">Objects</span> and <span class="green">Buffers</span>
 are converted the same as for <code class="docutils literal notranslate"><span class="pre">%J</span></code> and <code class="docutils literal notranslate"><span class="pre">%B</span></code> below).</p></li>
@@ -427,7 +428,7 @@ equivalent to <code class="docutils literal notranslate"><span class="pre">print
 <li><p><code class="docutils literal notranslate"><span class="pre">%H</span></code> - html encode (or if <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, decode) a <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%P</span></code> - pretty print a <span class="green">String</span> or <span class="green">Buffer</span>.  Expects
 text with white space.  Format is <code class="docutils literal notranslate"><span class="pre">%[!][i][.w]P</span></code> where:</p>
-<ul>
+<ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">i</span></code> is the optional level of indentation.  Each output line will be indented
 by this amount.  Default is <code class="docutils literal notranslate"><span class="pre">0</span></code>.  If <code class="docutils literal notranslate"><span class="pre">0</span></code>, the indent level for
 each paragraph will match the indentation of the first line of the corresponding
@@ -438,6 +439,10 @@ specified).</p></li>
 after newlines is still indented).  In all cases, a double newline
 (“\n\n”) is considered a separator of paragraphs and is respected.</p></li>
 </ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">%C</span></code> - like <code class="docutils literal notranslate"><span class="pre">%c</span></code> but prints multi-byte character.  Example:</p>
+<p><code class="docutils literal notranslate"><span class="pre">rampart.utils.printf(&quot;%C&quot;,</span> <span class="pre">0xf09f9983);</span></code> prints <code class="docutils literal notranslate"><span class="pre">🙃</span></code>.</p>
+<p>Requires a number, 1-4 bytes (<code class="docutils literal notranslate"><span class="pre">0</span></code>-<code class="docutils literal notranslate"><span class="pre">4294967295</span></code>, or <code class="docutils literal notranslate"><span class="pre">0x0</span></code>-<code class="docutils literal notranslate"><span class="pre">0xffffffff</span></code>).</p>
 </li>
 </ul>
 </div></blockquote>

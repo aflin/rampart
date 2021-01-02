@@ -12,6 +12,6 @@ Welcome to Rampart's documentation.
    The rampart-server module <rampart-server>
    The rampart-html module <rampart-html>
    The rampart-crypto module <rampart-crypto>
-
+   The rampart-curl module <rampart-curl>
 
 
