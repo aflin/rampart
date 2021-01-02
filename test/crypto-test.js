@@ -105,17 +105,25 @@ testFeature("en/decrypt with password, with options", function(){
   return comphash==hash;
 });
 
+hashes = [
+  "89ddafb4017e0e33cb6c0f9e9ddd6539c5f1d3cc", "9e167b536cb7ae1fdb972f9ef5ad84eccb3b4171c5fd84235b5f364d", "f49cf057cd4de7c1a4cb0b051570372892674487333ac5ab3ea603f29aec9ffe", "262495541c88f3dd303e8a89e27ba0f0c5972afd088b424aed1998d795d6bb4e4fb78e5df1e0ef8b62e3d977d28bef58", "7f416275882395b49071c91caebc4d300b7aed08cb891680371154b61d867428271d3d00425ea7728b91344e442846db66b15b9043160c9a95d02aac6f514dd7", "480b381bb47c3e1dea3dad104b794619", "f91fd9d43fbe61a3134e8236d0fa1af8", "443c63decab0ce41e6f7887a10cb686371e213c7a7d5e1352b47c0fa", "091664f38388f580ef0a50d49b817a6821a80d5615ee3627b31c60befaf788a0", "26f8e3d1eaf49fd9ca4527dc701274b7dcc9e5eb3fb75eea26f637aeee5012fc48b6cf0352022a60552def4bcc2a89bf", "96273b35615d55b7ccadf3ce13757ca31ec239ebdae27d7bb671260eb6da26ffb229ddde669dd5d3914c9a1d1620a018d2586a1573034a489bf4fc3711137a2b", "60d0230e31c53e0b618e4fc4a3a5004bbfd8636ba1dbfbcb6eb092f7a75872abf41d613da998459e59fc68f9608838d75fb89976825a8dd9783f8e6d884c7fc2", "88e4a650a34aa66abbc32d6a14a2f130e98752f0429fb7bcb74fcc4510a4b57f", "664766b7d92b3c863bf0f9251e4fb7ba", "847d6acf7649d46b1b52fc801208f5ab3c2446fb", "b608f565216e5bb60a597b8b9b4304e3cfb977bdc3bd001fad0fef94", "459f266ae1a2dbc0f994fadea6acb24786653f6e56a86427d3d3a7c218042beb", "d89fe1c144685fd7f3004ae1b8d0cb8b0aa3ac489eb2878860e0ba70d0725733"
+];
+hfuncs =  [
+    "sha1", "sha224", "sha256", "sha384", "sha512", "md4", "md5",
+    "sha3-224", "sha3-256", "sha3-384", "sha3-512",
+    "blake2b512",        "blake2s256",
+    "mdc2", "rmd160",
+    "sha512-224", "sha512-256",
+    'sm3'
+];
 
-testFeature("hmac sha256", function(){
-  var ret=crypto.hmac("mysecret","mydata");
-  return ret=="f49cf057cd4de7c1a4cb0b051570372892674487333ac5ab3ea603f29aec9ffe";
-});
-
-testFeature("hmac sha512", function(){
-  var ret=crypto.hmac("mysecret","mydata","sha512");
-  return ret=="7f416275882395b49071c91caebc4d300b7aed08cb891680371154b61d867428271d3d00425ea7728b91344e442846db66b15b9043160c9a95d02aac6f514dd7";
-});
-
+for (i=0;i<hfuncs.length;i++)
+{
+  testFeature("hmac "+ hfuncs[i], function(){
+    var ret=crypto.hmac("mysecret","mydata", hfuncs[i]);
+    return ret==hashes[i];
+  });
+}
 /*
 printf("\ncrypt of this file with aes-256-cbc (sha512 hashes before and after):\n%s\n%s\n",hash,comphash);
 fprintf("crypto-copy.js.enc","%B",encBuffer);
