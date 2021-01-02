@@ -2722,6 +2722,61 @@ void duk_misc_init(duk_context *ctx)
 
 /************  PRINT/READ/WRITE FUNCTIONS ***************/
 
+char *to_utf8(const char *in_str)
+{
+    unsigned char *out, *buf = NULL;
+    size_t len = strlen(in_str) + 1;
+    unsigned const char 
+            *in = (unsigned const char*) in_str,
+            *five_before_end = in+len-5;
+
+    REMALLOC(buf,len);
+    out=buf;
+    /* https://github.com/svaarala/duktape-wiki/pull/137/commits/3e653e3e45be930924cd4167788b1f65b414a2ac */    
+    while (*in) {
+        // next six bytes represent a codepoint encoded as UTF-16 surrogate pair
+        if ( in < five_before_end
+            && (in[0] == 0xED) 
+            && (in[1] & 0xF0) == 0xA0
+            && (in[2] & 0xC0) == 0x80
+            && (in[3] == 0xED)
+            && (in[4] & 0xF0) == 0xB0
+            && (in[5] & 0xC0) == 0x80) 
+        {
+          // push coding parts of 6 bytes of UTF-16 surrogate pair into a 4 byte UTF-8 codepoint
+          // adding 1 to in[1] adds 0x10000 to code-point that was subtracted for UTF-16 encoding
+          out[0] = 0xF0 | ((in[1]+1) & 0x1C) >> 2;
+          out[1] = 0x80 | ((in[1]+1) & 0x03) << 4 | (in[2] & 0x3C) >> 2;
+          out[2] = 0x80 | (in[2] & 0x03) << 4 | (in[4] & 0x0F);
+          out[3] = in[5];
+          in += 6; out += 4; 
+        } else {
+          // copy anything else as is
+          *out++ = *in++;
+      }
+    }
+    *out = '\0';    
+    return (char *)buf;
+}
+
+#define TO_UTF8(s) ({\
+    char *ret=NULL;\
+    if(s){\
+        if(strchr(s,0xED)) {\
+            ret=to_utf8(s);\
+            REMALLOC(free_ptr, ++nfree * sizeof(char *) );\
+            free_ptr[nfree-1]=ret;\
+        } else ret=(char*)s;\
+    }\
+    ret;\
+})
+
+#define FREE_PTRS do{\
+    int i=0;\
+    for(;i<nfree;i++) free(free_ptr[i]);\
+    free(free_ptr);\
+} while (0)
+
 #define PF_REQUIRE_STRING(ctx,idx) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_string((ctx),i)) {\
@@ -2729,6 +2784,7 @@ void duk_misc_init(duk_context *ctx)
         RP_THROW(ctx, "string required in format string argument %d",i);\
     }\
     const char *r=duk_get_string((ctx),i);\
+    r=TO_UTF8(r);\
     r;\
 })
 
@@ -2738,7 +2794,9 @@ void duk_misc_init(duk_context *ctx)
         if(lock_p) pthread_mutex_unlock(lock_p);\
         RP_THROW(ctx, "string required in format string argument %d",i);\
     }\
-    const char *r=duk_get_lstring((ctx),i,(len));\
+    const char *s=duk_get_lstring((ctx),i,(len));\
+    const char *r=TO_UTF8(s);\
+    if(r != s) *(len) = strlen(r);\
     r;\
 })
 

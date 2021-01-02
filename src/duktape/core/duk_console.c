@@ -10,7 +10,7 @@
 #include <stdarg.h>
 #include "duktape.h"
 #include "duk_console.h"
-
+#include "../../rp.h"
 /* XXX: Add some form of log level filtering. */
 
 /* XXX: Should all output be written via e.g. console.write(formattedMsg)?
@@ -23,6 +23,7 @@
 static duk_ret_t duk__console_log_helper(duk_context *ctx, const char *error_name) {
 	duk_uint_t flags = (duk_uint_t) duk_get_current_magic(ctx);
 	FILE *output = (flags & DUK_CONSOLE_STDOUT_ONLY) ? stdout : stderr;
+	const char *out;
 	duk_idx_t n = duk_get_top(ctx);
 	duk_idx_t i;
 
@@ -52,8 +53,13 @@ static duk_ret_t duk__console_log_helper(duk_context *ctx, const char *error_nam
 		duk_def_prop(ctx, -3, DUK_DEFPROP_FORCE | DUK_DEFPROP_HAVE_VALUE);  /* to get e.g. 'Trace: 1 2 3' */
 		duk_get_prop_string(ctx, -1, "stack");
 	}
-
-	fprintf(output, "%s\n", duk_to_string(ctx, -1));
+	out=duk_to_string(ctx, -1);
+	if(strchr(out,0xED)) {
+		char *utf8_out = to_utf8(out);
+		fprintf(output, "%s\n", utf8_out);
+		free(utf8_out);
+	} else
+		fprintf(output, "%s\n", out);
 	if (flags & DUK_CONSOLE_FLUSH) {
 		fflush(output);
 	}

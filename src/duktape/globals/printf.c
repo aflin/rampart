@@ -568,6 +568,8 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
     size_t idx = 0U;
     duk_size_t len=0;
     int preserveUfmt = 0;
+    char **free_ptr=NULL;
+    int nfree=0;
     const char	*format = PF_REQUIRE_LSTRING(ctx, fidx++, &len),
                 *format_end=format+len;
     if (!buffer)
@@ -844,6 +846,49 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             format++;
             break;
         }
+        case 'C':
+        {
+            unsigned int l = 1U;
+            uint32_t c={0};
+            
+            if (duk_is_number(ctx, fidx))
+            {
+                uint64_t n=(uint64_t)duk_get_number(ctx, fidx);
+                if(n<0 || n>4294967295)
+                     RP_THROW(ctx, "number (0-4294967295) required in format string argument %d", fidx);
+                c=(uint32_t)n;
+                fidx++;
+            }
+            else
+                RP_THROW(ctx, "number (0-4294967295) required in format string argument %d", fidx);
+                            
+            // pre padding
+            if (!(flags & FLAGS_LEFT))
+            {
+                while (l++ < width)
+                {
+                    out(' ', buffer, idx++, maxlen);
+                }
+            }
+            // multi-char output
+            if(c>>24)
+                out(c>>24, buffer, idx++, maxlen);
+            if(c>>16&0xff)
+                out(c>>16&0xff, buffer, idx++, maxlen);
+            if(c>>8&0xff)
+                out(c>>8&0xff, buffer, idx++, maxlen);
+            out(c&0xff, buffer, idx++, maxlen);
+            // post padding
+            if (flags & FLAGS_LEFT)
+            {
+                while (l++ < width)
+                {
+                    out(' ', buffer, idx++, maxlen);
+                }
+            }
+            format++;
+            break;
+        }
         /* -AJF: added B, U and J for buffer, urlencode and JSON.stringify */
         case 'B':
         {
@@ -1007,7 +1052,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                 {
                     duk_push_string(ctx,"{_func:true}");
                     duk_replace(ctx,fidx);
-                }    
+                }
             }
             //no ++
             //no break
@@ -1072,7 +1117,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             if (flags & FLAGS_BANG)
             {
                 char *u_p, *free_p;
-
+                if(!p) p="null";
                 u_p = free_p = strdup(p);
                 
                 decode_html_entities_utf8(u_p, NULL);
@@ -1152,6 +1197,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
         case 's':
         {
             const char *p;
+            char *freeme=NULL;
             unsigned int l, max=-1;
             
             /* convert buffers and print as is */
@@ -1184,7 +1230,8 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                     out(' ', buffer, idx++, maxlen);
                 }
             }
-
+            if(strchr(p,0xED))
+                p=freeme=to_utf8(p);
             // string output
             if (max==-1)
             {
@@ -1211,7 +1258,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                     out(' ', buffer, idx++, maxlen);
                 }
             }
-
+            free(freeme);
             format++;
             break;
         }
@@ -1225,6 +1272,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             break;
         }
     }
+    FREE_PTRS;
     // termination
     //out((char)0, buffer, idx < maxlen ? idx : maxlen - 1U, maxlen);
     // return written chars without terminating \0
