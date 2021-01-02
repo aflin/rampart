@@ -13,6 +13,7 @@
 #include <ctype.h>
 #include <inttypes.h>
 #include <curl/curl.h>
+#include <time.h>
 #include "../core/duktape.h"
 #include "../../rp.h"
 
@@ -20,6 +21,22 @@
 RETTXT
 {
     char *text;
+    size_t size;
+};
+
+#define READTXT struct curl_readStr
+READTXT
+{
+    char *text;
+    size_t size;
+    size_t read;
+};
+
+#define BRETTXT struct curl_bresStr
+BRETTXT
+{
+    duk_context *ctx;
+    duk_uarridx_t index;
     size_t size;
 };
 
@@ -38,6 +55,8 @@ CSOS
     struct curl_slist *slists[MAXSLISTS]; /* keep track of slists to free later. currently there are only 9 options with slist */
     int nslists;                          /* number of lists actually used */
     int headerlist;                       /* the index of the slists[] above that contains headers.  Headers set at the end so we can continually add during options */
+    int ret_text;			  /* whether to return results as .text (string) as well as .body (buffer)*/
+    READTXT readdata;
 };
 
 #define CURLREQ struct curl_req
@@ -45,7 +64,7 @@ CSOS
 CURLREQ
 {
     CURL *curl;
-    RETTXT body;
+    BRETTXT body;
     RETTXT header;
     CSOS sopts;
     char *errbuf;
@@ -69,9 +88,9 @@ void duk_curl_copy_errors(duk_context *ctx, duk_idx_t idx)
     duk_pop(ctx); /* pop [..,this] */
 }
 
-/* push a blank return object on top of stack with 
+/* push a blank return object on top of stack with
   ok: false
-  and 
+  and
   errMsg: [array of, collected, errors]
 */
 void duk_curl_ret_blank(duk_context *ctx)
@@ -122,7 +141,7 @@ void duk_curl_push_err(duk_context *ctx)
 
 /* **************************************************************************
    curl_easy_escape requires a new curl object. That appears to be overkill.
-   Use the one is public domain from https://www.geekhideout.com/urlcode.shtml 
+   Use the one is public domain from https://www.geekhideout.com/urlcode.shtml
    in misc.c
    ************************************************************************** */
 
@@ -172,14 +191,12 @@ duk_ret_t duk_curl_global_cleanup(duk_context *ctx)
     return 0;
 }
 
-void addheader(CSOS *sopts, char *h)
+void addheader(CSOS *sopts, const char *h)
 {
-    struct curl_slist *l;
+    struct curl_slist *l=NULL;
 
     if (sopts->headerlist > -1)
         l = sopts->slists[sopts->headerlist];
-    else
-        l = NULL;
 
     l = curl_slist_append(l, h);
     if (sopts->headerlist == -1)
@@ -311,6 +328,369 @@ long prototonum(long *val, const char *str)
 
 typedef int (*copt_ptr)(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option);
 
+static size_t mail_read_callback(char *ptr, size_t size, size_t nmemb, void *userdata)
+{
+    READTXT *rdata = (READTXT *)userdata;
+    size_t rlen= size*nmemb, toread=rdata->size - rdata->read;
+    if(toread == 0)
+        return 0;
+
+    if(rlen < toread)
+	    toread = rlen;
+//printf("send '%.*s\n", (int)toread, &(rdata->text[rdata->read]) );
+    memcpy(ptr, &(rdata->text[rdata->read]), toread);
+
+    rdata->read += toread;
+
+    return(toread);
+
+}
+
+#define SKIPARRAY 1
+#define ENCODEARRAY 0
+
+/* set the mimepart data from a file
+   Should we use the curl_mime_data_cb??  Or is this equivalent?
+*/
+void duk_curl_set_datafile(curl_mimepart *part, const char *fn)
+{
+    curl_mime_filedata(part, fn);
+}
+
+/* sets mimepart data if buffer_data, string, string="@filename", or object => json()
+   stack will remain the same
+*/
+int duk_curl_set_data(duk_context *ctx, curl_mimepart *part, int skiparrays)
+{
+    if (duk_is_buffer_data(ctx, -1))
+    {
+        duk_size_t l = 0;
+        const char *data = duk_get_buffer_data(ctx, -1, &l);
+        curl_mime_data(part, data, (size_t)l);
+        return (1);
+    }
+    else if (duk_is_string(ctx, -1))
+    {
+        const char *s = duk_get_string(ctx, -1);
+        if (*s == '@')
+        {
+            duk_curl_set_datafile(part, s + 1);
+            return (1);
+        }
+        else if (*s == '\\' && *(s + 1) == '@')
+            s++;
+        curl_mime_data(part, s, CURL_ZERO_TERMINATED);
+        return (1);
+    }
+    else if (duk_is_primitive(ctx, -1))
+    /* otherwise a variable */
+    {
+        curl_mime_data(part, duk_to_string(ctx, -1), CURL_ZERO_TERMINATED);
+        return (1);
+    }
+
+    if (duk_is_array(ctx, -1) && skiparrays == SKIPARRAY)
+        return (0);
+
+    if (duk_is_object(ctx, -1))
+    /* json encode all objects, including arrays if skiparrays=0 */
+    {
+        duk_dup(ctx, -1);
+        curl_mime_data(part, duk_json_encode(ctx, -1), CURL_ZERO_TERMINATED);
+        duk_pop(ctx);
+        return (1);
+    }
+
+    return (-1); /* shouldn't get here */
+}
+
+
+static int mailmime(duk_context *ctx, CURL *curl, CSOS *sopts)
+{
+    /* mail-msg obj = -3 */
+    /* header arr = -2 */
+    /* message -1 */
+    const char *html=NULL, *text=NULL, *line=NULL;
+    curl_mime *mime=NULL;
+    curl_mime *alt=NULL;
+    duk_uarridx_t i=0, len=(duk_uarridx_t)duk_get_length(ctx, -2);
+
+    /* headers */
+    for (;i<len;i++)
+    {
+        duk_get_prop_index(ctx, -2, i);
+        line=duk_get_string(ctx, -1);
+        duk_pop(ctx);
+        addheader(sopts, line);
+    }
+
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, sopts->slists[sopts->headerlist]);
+
+    if(duk_get_prop_string(ctx, -1, "html"))
+        html=REQUIRE_STRING(ctx, -1, "curl - mail-msg - message - html requires a string\n");
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, -1, "text"))
+        text=REQUIRE_STRING(ctx, -1, "curl - mail-msg - message - text requires a string\n");
+    duk_pop(ctx);
+
+    if(html && text)
+    {
+        curl_mimepart *part;
+        struct curl_slist *slist = NULL;
+
+        mime = curl_mime_init(curl);
+        alt = curl_mime_init(curl);
+
+        part = curl_mime_addpart(alt);
+        curl_mime_data(part, text, CURL_ZERO_TERMINATED);
+        curl_mime_type(part, "text/plain; charset=\"UTF-8\"");
+
+        part = curl_mime_addpart(alt);
+        curl_mime_data(part, html, CURL_ZERO_TERMINATED);
+        curl_mime_type(part, "text/html; charset=\"UTF-8\"");
+        curl_mime_encoder(part, "quoted-printable");
+
+        /* Create the inline part. */
+        part = curl_mime_addpart(mime);
+        curl_mime_subparts(part, alt);
+        curl_mime_type(part, "multipart/alternative");
+        slist = curl_slist_append(NULL, "Content-Disposition: inline");
+        curl_mime_headers(part, slist, 1);
+
+    }
+    else if (html)
+    {
+        curl_mimepart *part;
+        struct curl_slist *slist = NULL;
+
+        mime = curl_mime_init(curl);
+
+        part = curl_mime_addpart(mime);
+        curl_mime_data(part, html, CURL_ZERO_TERMINATED);
+        curl_mime_type(part, "text/html; charset=\"UTF-8\"");
+        curl_mime_encoder(part, "quoted-printable");
+        slist = curl_slist_append(NULL, "Content-Disposition: inline");
+        curl_mime_headers(part, slist, 1);
+    }
+    else if(text)
+    {
+        curl_mimepart *part;
+        struct curl_slist *slist = NULL;
+
+        mime = curl_mime_init(curl);
+
+        part = curl_mime_addpart(mime);
+        curl_mime_data(part, text, CURL_ZERO_TERMINATED);
+        curl_mime_type(part, "text/plain; charset=\"UTF-8\"");
+        curl_mime_encoder(part, "quoted-printable");
+        slist = curl_slist_append(NULL, "Content-Disposition: inline");
+        curl_mime_headers(part, slist, 1);
+
+    }
+    else
+        RP_THROW(ctx, "curl - mail-msg - message object must have property text and/or html set");
+
+    /* slist belongs to mime and mime is freed in clean_req */
+    sopts->mime=mime;
+
+    /* check for attachments */
+    if(duk_get_prop_string(ctx, -1, "attach"))
+    {
+        curl_mimepart *part;
+        struct curl_slist *slist = NULL;
+
+        if(!duk_is_array(ctx, -1))
+            RP_THROW(ctx, "curl - mail-msg - message - attach requires an array of objects ([{data:...}])");
+
+        i = 0;
+        /* should have array of objects, return error if not */
+        while (duk_has_prop_index(ctx, -1, i))
+        {
+            duk_get_prop_index(ctx, -1, i);
+            /* object must have a data prop and optionally a filename and/or type prop */
+            if (duk_is_object(ctx, -1) && duk_has_prop_string(ctx, -1, "data"))
+            {
+                const char *name=NULL;
+                part = curl_mime_addpart(mime);
+
+                duk_get_prop_string(ctx, -1, "data");
+                (void)duk_curl_set_data(ctx, part, ENCODEARRAY);
+                duk_pop(ctx);
+                curl_mime_encoder(part, "base64");
+
+                if (duk_get_prop_string(ctx, -1, "name"))
+                {
+                    name = duk_get_string(ctx, -1);
+                    curl_mime_name(part, name);
+                }
+                duk_pop(ctx);
+
+                /* optional, default is text/plain */
+                if (duk_get_prop_string(ctx, -1, "type"))
+                    curl_mime_type(part, duk_get_string(ctx, -1));
+                duk_pop(ctx);
+
+                if(name)
+                {
+                    char s[20+strlen(name)];
+
+                    strcpy(s, "X-Attachment-Id: ");
+                    strcat(s, name);
+                    slist = curl_slist_append(NULL, s);
+
+                    strcpy(s, "Content-ID: <");
+                    strcat(s,name);
+                    strcat(s,">");
+                    slist = curl_slist_append(slist,s);
+
+                    curl_mime_headers(part, slist, 1);
+                }
+            }
+            else
+                RP_THROW(ctx, "curl - mail-msg - message - attach requires an array of objects ([{data:...}])");
+
+            duk_pop(ctx);
+            i++;
+        }
+    }
+    duk_pop(ctx);
+
+
+    curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
+    duk_pop_2(ctx); /* headers & message */
+    return 0;
+}
+
+
+int copt_mailmsg(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+{
+    const char *msg;
+    duk_size_t len;
+    duk_uarridx_t i=0;
+
+    if (duk_is_string(ctx, -1))
+        msg = duk_get_lstring(ctx, -1, &len);
+    else if (duk_is_buffer_data(ctx, -1))
+        msg = duk_get_buffer_data(ctx, -1, &len);
+    else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1) )
+    {
+        const char  *pdate=NULL, *body="";
+        char date[64];
+        struct tm dtime, *dtime_p;
+        time_t rawtime;
+
+        if(duk_get_prop_string(ctx, -1, "date"))
+        {
+            if(duk_is_string(ctx, -1))
+            {
+                pdate = duk_get_string(ctx, -1);
+            }
+            else if(duk_is_object(ctx, -1))
+            {
+                if(duk_has_prop_string(ctx, -1, "getTime"))
+                {
+                    duk_push_string(ctx, "getTime");
+                    duk_call_prop(ctx, -2, 0);
+                    rawtime = (time_t) duk_get_number(ctx, -1) / 1000.0;
+                    duk_pop(ctx);
+                }
+                else
+                    return(1);
+            }
+        }
+        else
+        {
+            time( &rawtime );
+        }
+        duk_pop(ctx);
+
+        if(!pdate)
+        {
+            dtime_p=gmtime_r(&rawtime, &dtime);
+            strftime(date,64,"%a, %d %b %Y %H:%M:%S +0000", dtime_p);
+            pdate=date;
+        }
+
+        duk_push_array(ctx); /* an array of headers */
+        duk_enum(ctx, -2, 0);
+        while(duk_next(ctx, -1, 1))
+        {
+            char *k=NULL, *key=NULL;
+            const char *ckey = duk_get_string(ctx, -2);
+            const char *val=NULL;
+
+            if(!strcmp("date",ckey) || !strcmp("message",ckey) )
+            {
+                duk_pop_2(ctx);
+                continue;
+            }
+            val=REQUIRE_STRING(ctx, -1, "curl mail-msg: property/header '%s' requires a string\n", key);
+            duk_pop_2(ctx);
+
+            key=strdup(ckey);
+
+            /* init cap */
+            k=&key[0];
+
+            k[0]=toupper((unsigned char)k[0]);
+            /*
+            k++;
+            while(*k)
+            {
+                k[0]=tolower((unsigned char)k[0]);
+                k++;
+            }
+            */
+            duk_push_sprintf(ctx, "%s: %s", key, val);
+            duk_put_prop_index(ctx, -3, i++);
+            free(key);
+        }
+        duk_pop(ctx); /*enum*/
+        duk_push_sprintf(ctx, "Date: %s", pdate);
+        duk_put_prop_index(ctx, -2, i++);
+
+        if(duk_get_prop_string(ctx, -2, "message"))
+        {
+            /* if message is an object, expect mime parts */
+            if(duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1) )
+                return mailmime(ctx, handle, sopts);
+
+            body=REQUIRE_STRING(ctx, -1, "curl - opt 'mail-msg' message must be a string (email message body)");
+        }
+        duk_pop(ctx);
+
+        /*
+           push message with \r\n preceeding
+           then join all together with \r\n
+        */
+        duk_push_sprintf(ctx, "\r\n%s", body);
+        duk_put_prop_index(ctx, -2, i++);
+        duk_push_string(ctx, "join");
+        duk_push_string(ctx, "\r\n");
+        duk_call_prop(ctx, -3, 1);
+
+        msg=duk_get_lstring(ctx, -1, &len);
+        /* make sure it isn't garbage collected when popped*/
+        /* mail-msg-obj, header-body-array, header-body-string */
+        duk_put_prop_string(ctx, -3, "mail-msg-tmp");
+        duk_pop(ctx);
+    }
+    else
+        return (1);
+
+    sopts->readdata.text=(char *)msg;
+    sopts->readdata.size=(size_t)len;
+    sopts->readdata.read=0;
+    //curl_easy_setopt(handle, CURLOPT_VERBOSE, 1);
+    curl_easy_setopt(handle, CURLOPT_UPLOAD, 1L);
+    curl_easy_setopt(handle, CURLOPT_READFUNCTION, mail_read_callback);
+    curl_easy_setopt(handle, CURLOPT_READDATA, (void *)&(sopts->readdata));
+
+    return(0);
+}
+
+
 int copt_get(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
 {
     duk_idx_t qsidx = -1;
@@ -345,10 +725,14 @@ int copt_post(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoptio
 {
     duk_idx_t qsidx = -1;
     char *postdata;
+    duk_size_t len;
 
     /* it's a string, use as is */
     if (duk_is_string(ctx, -1))
-        sopts->postdata = postdata = strdup((char *)duk_to_string(ctx, -1));
+        postdata = (char *)duk_get_lstring(ctx, -1, &len);
+
+    else if (duk_is_buffer_data(ctx, -1))
+        postdata = duk_get_buffer_data(ctx, -1, &len);
 
     /* it's an object, check for prop "data" and "arrayType", then convert to querystring */
     else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && duk_get_prop_string(ctx, -1, "data"))
@@ -367,11 +751,12 @@ int copt_post(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoptio
         /* save this to be freed after transaction is finished */
         postdata = sopts->postdata = duk_rp_object2querystring(ctx, qsidx);
         duk_pop(ctx);
+        len = (duk_size_t) strlen(postdata);
     }
     else
         return (1);
 
-    curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE, strlen(postdata));
+    curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE, (long)len);
     curl_easy_setopt(handle, CURLOPT_POSTFIELDS, postdata);
     return (0);
 }
@@ -379,18 +764,12 @@ int copt_post(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoptio
 size_t read_callback(void *ptr, size_t size, size_t nmemb, void *userdata)
 {
     FILE *fh = (FILE *)userdata;
-    curl_off_t nread;
 
     /* copy as much data as possible into the 'ptr' buffer, but no more than
      'size' * 'nmemb' bytes! */
-    size_t retcode = fread(ptr, size, nmemb, fh);
+    size_t read = fread(ptr, size, nmemb, fh);
 
-    nread = (curl_off_t)retcode;
-
-    printf("*** We read %" CURL_FORMAT_CURL_OFF_T
-           " bytes from file\n",
-           nread);
-    return retcode;
+    return read;
 }
 
 int post_from_file(duk_context *ctx, CURL *handle, CSOS *sopts, char *fn)
@@ -447,8 +826,8 @@ int copt_postbin(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLop
     else
         return (1);
 
-    /* when copt_* functions return, a pop_2 removes top two off the stack.  We want 
-     this one to stay somewhere on the stack (no gc), and we also want our 
+    /* when copt_* functions return, a pop_2 removes top two off the stack.  We want
+     this one to stay somewhere on the stack (no gc), and we also want our
      duk_next loop to be in the right spot, so we'll move the data to 0 and add a blank string
      to be removed instead.  Agreed, it's not pretty.  But if postdata is large, this prevents
      an unnecessary and potentially large copy of the post data.
@@ -462,66 +841,9 @@ int copt_postbin(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLop
     return (0);
 }
 
-#define SKIPARRAY 1
-#define ENCODEARRAY 0
-
-/* set the mimepart data from a file 
-   Should we use the curl_mime_data_cb??  Or is this equivalent?
-*/
-void duk_curl_set_datafile(curl_mimepart *part, const char *fn)
-{
-    curl_mime_filedata(part, fn);
-}
-
-/* sets mimepart data if buffer_data, string, string="@filename", or object => json() 
-   stack will remain the same
-*/
-int duk_curl_set_data(duk_context *ctx, curl_mimepart *part, int skiparrays)
-{
-    if (duk_is_buffer_data(ctx, -1))
-    {
-        duk_size_t l = 0;
-        const char *data = duk_get_buffer_data(ctx, -1, &l);
-        curl_mime_data(part, data, (size_t)l);
-        return (1);
-    }
-    else if (duk_is_string(ctx, -1))
-    {
-        const char *s = duk_get_string(ctx, -1);
-        if (*s == '@')
-        {
-            duk_curl_set_datafile(part, s + 1);
-            return (1);
-        }
-        else if (*s == '\\' && *(s + 1) == '@')
-            s++;
-        curl_mime_data(part, s, CURL_ZERO_TERMINATED);
-        return (1);
-    }
-    else if (duk_is_primitive(ctx, -1))
-    /* otherwise a variable */
-    {
-        curl_mime_data(part, duk_to_string(ctx, -1), CURL_ZERO_TERMINATED);
-        return (1);
-    }
-
-    if (duk_is_array(ctx, -1) && skiparrays == SKIPARRAY)
-        return (0);
-
-    if (duk_is_object(ctx, -1))
-    /* json encode all objects, including arrays if skiparrays=0 */
-    {
-        duk_dup(ctx, -1);
-        curl_mime_data(part, duk_json_encode(ctx, -1), CURL_ZERO_TERMINATED);
-        duk_pop(ctx);
-        return (1);
-    }
-
-    return (-1); /* shouldn't get here */
-}
 
 /* post multipart mime form data.
-   Objects only   -   {"var1":"data1", "var2"="data2"}
+   Objects only   -   {"var1":"data1", "var2":"data2"}
    and for files  -   { "var1":"data1",
                         "FileFieldName": [
                           {"filename":"myfile1.txt" ,"type": "text/plain", "data":"..."},
@@ -536,11 +858,13 @@ int duk_curl_set_data(duk_context *ctx, curl_mimepart *part, int skiparrays)
 */
 
 char *operrors[] =
-    {"",
-     "invalid parameter",
-     "boolean (true or false) required",
-     "object required",
-     "array must contain objects with {data:...}"};
+{
+    "",
+    "invalid parameter",
+    "boolean (true or false) required",
+    "object required",
+    "array must contain objects with {data:...}"
+};
 
 int copt_postform(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
 {
@@ -968,36 +1292,36 @@ int copt_httpv(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLopti
         subopt = 21;
     switch (subopt)
     {
-    case 0:
-    {
-        curl_easy_setopt(handle, option, CURL_HTTP_VERSION_NONE);
-        break;
-    }
-    case 10:
-    {
-        curl_easy_setopt(handle, option, CURL_HTTP_VERSION_1_0);
-        break;
-    }
-    case 11:
-    {
-        curl_easy_setopt(handle, option, CURL_HTTP_VERSION_1_1);
-        break;
-    }
-    case 20:
-    {
-        curl_easy_setopt(handle, option, CURL_HTTP_VERSION_2_0);
-        break;
-    }
-    case 21:
-    {
-        curl_easy_setopt(handle, option, CURL_HTTP_VERSION_2TLS);
-        break;
-    }
-    case 22:
-    {
-        curl_easy_setopt(handle, option, CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE);
-        break;
-    }
+        case 0:
+        {
+            curl_easy_setopt(handle, option, CURL_HTTP_VERSION_NONE);
+            break;
+        }
+        case 10:
+        {
+            curl_easy_setopt(handle, option, CURL_HTTP_VERSION_1_0);
+            break;
+        }
+        case 11:
+        {
+            curl_easy_setopt(handle, option, CURL_HTTP_VERSION_1_1);
+            break;
+        }
+        case 20:
+        {
+            curl_easy_setopt(handle, option, CURL_HTTP_VERSION_2_0);
+            break;
+        }
+        case 21:
+        {
+            curl_easy_setopt(handle, option, CURL_HTTP_VERSION_2TLS);
+            break;
+        }
+        case 22:
+        {
+            curl_easy_setopt(handle, option, CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE);
+            break;
+        }
         /*case 30: { url_easy_setopt(handle,option,CURL_HTTP_VERSION_3); break;} */
     }
     return (0);
@@ -1056,7 +1380,7 @@ int copt_limit(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLopti
 /*
 int copt_oauth(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option) {
   copt_string(ctx,handle,subopt,sopts,option);
-  
+
   sopts->httpauth |= CURLAUTH_BEARER;
   curl_easy_setopt(handle,CURLOPT_HTTPAUTH,sopts->httpauth);
 }
@@ -1211,6 +1535,7 @@ CURL_OPTS curl_options[] = {
     {"m", CURLOPT_TIMEOUT_MS, 0, &copt_1000},
     {"mail-auth", CURLOPT_MAIL_AUTH, 0, &copt_string},
     {"mail-from", CURLOPT_MAIL_FROM, 0, &copt_string},
+    {"mail-msg", 0, 0, &copt_mailmsg},
     {"mail-rcpt", CURLOPT_MAIL_RCPT, 0, &copt_array_slist},
     {"max-filesize", CURLOPT_MAXFILESIZE_LARGE, 0, &copt_64},
     {"max-redirs", CURLOPT_MAXREDIRS, 0, &copt_long},
@@ -1490,7 +1815,7 @@ void duk_curl_parse_headers(duk_context *ctx, char *header)
                 start = end;
             }
         }
-        end++;
+        if(*end) end++;
     }
 }
 
@@ -1503,7 +1828,6 @@ int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     long d;
     struct curl_slist *cookies = NULL;
     double total;
-    size_t bsz;
 
     duk_push_object(ctx);
 
@@ -1532,31 +1856,16 @@ int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     }
 
     /* the doc */
-    if ((req->body).text == NULL || !(req->body).size)
+    duk_get_prop_index(ctx, 0, (req->body).index);
+    if((req->sopts).ret_text)
     {
-        duk_push_string(ctx, "");
-        duk_put_prop_string(ctx, -2, "text");
+        duk_dup(ctx, -1);
+        duk_buffer_to_string(ctx, -1);
+        duk_put_prop_string(ctx, -3, "text");
     }
-    else
-    {
-        bsz = strlen((req->body).text);
-        if (bsz == (req->body).size)
-        {
-            duk_push_string(ctx, (req->body).text);
-            duk_put_prop_string(ctx, -2, "text");
-        }
-        else
-        /* it's binary */
-        {
-            unsigned char *b;
-            duk_push_fixed_buffer(ctx, (req->body).size);
-            b = (unsigned char *)duk_require_buffer_data(ctx, -1, &bsz);
-            memcpy(b, (req->body).text, bsz);
-            duk_put_prop_string(ctx, -2, "binary");
-            duk_push_string(ctx, "binary");
-            duk_put_prop_string(ctx, -2, "text");
-        }
-    }
+    duk_put_prop_string(ctx, -2, "body");
+
+
     /* the actual url, in case of redirects */
     curl_easy_getinfo(req->curl, CURLINFO_EFFECTIVE_URL, &s);
     duk_push_string(ctx, s);
@@ -1579,12 +1888,12 @@ int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     /* primary IP address */
     curl_easy_getinfo(req->curl, CURLINFO_PRIMARY_IP, &s);
     duk_push_string(ctx, s);
-    duk_put_prop_string(ctx, -2, "primaryIP");
+    duk_put_prop_string(ctx, -2, "serverIP");
 
     /* primary port */
     curl_easy_getinfo(req->curl, CURLINFO_PRIMARY_PORT, &d);
     duk_push_int(ctx, d);
-    duk_put_prop_string(ctx, -2, "primaryPort");
+    duk_put_prop_string(ctx, -2, "serverPort");
 
     /* headers, unparsed */
     if ((req->header).text == (char *)NULL)
@@ -1602,27 +1911,28 @@ int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     curl_easy_getinfo(req->curl, CURLINFO_HTTP_VERSION, &d);
     switch (d)
     {
-    case CURL_HTTP_VERSION_1_0:
-    {
-        duk_push_string(ctx, "HTTP 1.0");
-        break;
-    }
-    case CURL_HTTP_VERSION_1_1:
-    {
-        duk_push_string(ctx, "HTTP 1.1");
-        break;
-    }
-    case CURL_HTTP_VERSION_2_0:
-    {
-        duk_push_string(ctx, "HTTP 2.0");
-        break;
-    }
-    /* case CURL_HTTP_VERSION_3:   {duk_push_string(ctx,"HTTP 3.0");break;} */
-    case 0:
-    {
-        duk_push_string(ctx, "");
-        break;
-    }
+        case CURL_HTTP_VERSION_1_0:
+        {
+            //duk_push_string(ctx, "HTTP 1.0");
+            duk_push_number(ctx,1.0);
+            break;
+        }
+        case CURL_HTTP_VERSION_1_1:
+        {
+            duk_push_number(ctx, 1.1);
+            break;
+        }
+        case CURL_HTTP_VERSION_2_0:
+        {
+            duk_push_number(ctx, 2.0);
+            break;
+        }
+        /* case CURL_HTTP_VERSION_3:   {duk_push_string(ctx,"HTTP 3.0");break;} */
+        default:
+        {
+            duk_push_number(ctx, -1);
+            break;
+        }
     }
     duk_put_prop_string(ctx, -2, "httpVersion");
 
@@ -1655,20 +1965,18 @@ static size_t
 WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
 {
     size_t realsize = size * nmemb;
-    RETTXT *mem = (RETTXT *)userp;
+    duk_size_t out_sz;
+    BRETTXT *mem = (BRETTXT *)userp;
+    duk_context *ctx = mem->ctx;
+    byte *buf = NULL;
 
-    char *ptr = realloc(mem->text, mem->size + realsize + 1);
-    if (ptr == NULL)
-    {
-        /* out of memory! */
-        printf("not enough memory (realloc returned NULL)\n");
-        return 0;
-    }
+    duk_get_prop_index(ctx, 0, mem->index);
+    duk_resize_buffer(ctx, -1, (duk_size_t) mem->size + realsize);
+    buf=duk_get_buffer(ctx, -1, &out_sz);
+    duk_pop(ctx);
 
-    mem->text = ptr;
-    memcpy(&(mem->text[mem->size]), contents, realsize);
+    memcpy(&(buf[mem->size]), contents, realsize);
     mem->size += realsize;
-    mem->text[mem->size] = 0;
 
     return realsize;
 }
@@ -1698,6 +2006,14 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CSOS *sopts)
     CURL_OPTS *ores, *opts_p = &opts;
     int funcerr = 0;
 
+    if( duk_get_prop_string(ctx, idx, "returnText") )
+    {
+        if(!REQUIRE_BOOL(ctx, -1, "curl - option returnText requires a Boolean"))
+            sopts->ret_text=0;
+        duk_del_prop_string(ctx, idx, "returnText");
+    }
+    duk_pop(ctx);
+
     duk_enum(ctx, (duk_idx_t)idx, DUK_ENUM_SORT_ARRAY_INDICES);
     while (duk_next(ctx, -1 /* index */, 1 /* get_value also */))
     {
@@ -1706,7 +2022,7 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CSOS *sopts)
         ores = bsearch(opts_p, curl_options, nCurlOpts, sizeof(CURL_OPTS), compare_copts);
 
         /* if we find a function for the javascript option, call the appropriate function
-       with the appropriate option from curl_options.  The value (if used) will be on 
+       with the appropriate option from curl_options.  The value (if used) will be on
        top of the ctx stack and accessed from within the function
     */
         if (ores != (CURL_OPTS *)NULL)
@@ -1714,20 +2030,22 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CSOS *sopts)
             funcerr = (ores->func)(ctx, curl, ores->subopt, sopts, ores->option);
             if (funcerr)
             {
-                duk_push_sprintf(ctx, "option '%s': %s", op, operrors[funcerr]);
-                duk_curl_push_err(ctx);
+                //duk_push_sprintf(ctx, "option '%s': %s", op, operrors[funcerr]);
+                //duk_curl_push_err(ctx);
+                RP_THROW(ctx, "curl option '%s': %s", op, operrors[funcerr]);
             }
         }
         else
         {
-            duk_push_sprintf(ctx, "unknown option '%s'", op);
-            duk_curl_push_err(ctx);
+            //duk_push_sprintf(ctx, "unknown option '%s'", op);
+            //duk_curl_push_err(ctx);
+            RP_THROW(ctx, "curl option '%s': unknown option", op);
         }
         duk_pop_2(ctx);
     }
 }
 
-void clean_req(CURLREQ *req)
+static void clean_req(CURLREQ *req)
 {
     int i;
     CSOS *sopts = &(req->sopts);
@@ -1743,13 +2061,13 @@ void clean_req(CURLREQ *req)
     }
     curl_easy_cleanup(req->curl);
     free(sopts->url);
-    free((req->body).text);
+//    free((req->body).text);
     free((req->header).text);
     free(req->errbuf);
     free(req);
 }
 
-CURLREQ *new_curlreq(char *url)
+CURLREQ *new_curlreq(duk_context *ctx, char *url)
 {
     CURLREQ *ret = (CURLREQ *)NULL;
 
@@ -1767,19 +2085,27 @@ CURLREQ *new_curlreq(char *url)
     (ret->sopts).postdata = (char *)NULL;
     (ret->sopts).url = url;
     (ret->sopts).mime = (curl_mime *)NULL;
+    (ret->sopts).ret_text = 1;
+    (ret->sopts).readdata.size=0;
+    (ret->sopts).readdata.text=NULL;
 
-    (ret->body).size = (ret->header).size = 0;
-    (ret->body).text = (ret->header).text = (char *)NULL;
+    (ret->body).size = 0;
+    (ret->body).ctx=ctx;
+    (ret->body).index =  duk_get_length(ctx, 0);
+    duk_push_dynamic_buffer(ctx, 0);
+    duk_put_prop_index(ctx, 0, (ret->body).index );
+
+    (ret->header).size = 0;
+    (ret->header).text = (char *)NULL;
 
     REMALLOC(ret->errbuf, CURL_ERROR_SIZE);
     *(ret->errbuf) = '\0';
-
     return (ret);
 }
 
 CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, int options_idx)
 {
-    CURLREQ *req = new_curlreq(url);
+    CURLREQ *req = new_curlreq(ctx, url);
 
     if (cloner != (CURLREQ *)NULL)
     {
@@ -1866,7 +2192,7 @@ duk_ret_t addurl(duk_context *ctx)
     return 1;
 }
 
-duk_ret_t duk_curl_exe(duk_context *ctx)
+duk_ret_t duk_curl_fetch(duk_context *ctx)
 {
     int i, options_idx = -1, func_idx = -1, array_idx = -1;
     char *url = (char *)NULL;
@@ -1880,32 +2206,36 @@ duk_ret_t duk_curl_exe(duk_context *ctx)
 
     duk_curl_check_global(ctx);
 
-    for (i = 0; i < 4; i++)
+    /* an array to hold buffers for return text */
+    duk_push_array(ctx);
+    duk_insert(ctx, 0);
+
+    for (i = 1; i < 5; i++)
     {
         int vtype = duk_get_type(ctx, i);
         switch (vtype)
         {
-        case DUK_TYPE_STRING:
-        {
-            url = strdup(duk_get_string(ctx, i));
-            break;
-        }
-        case DUK_TYPE_OBJECT:
-        {
-            /* array of parameters*/
-            if (duk_is_array(ctx, i))
-                array_idx = i;
+            case DUK_TYPE_STRING:
+            {
+                url = strdup(duk_get_string(ctx, i));
+                break;
+            }
+            case DUK_TYPE_OBJECT:
+            {
+                /* array of parameters*/
+                if (duk_is_array(ctx, i))
+                    array_idx = i;
 
-            /* argument is a function */
-            else if (duk_is_function(ctx, i))
-                func_idx = i;
+                /* argument is a function */
+                else if (duk_is_function(ctx, i))
+                    func_idx = i;
 
-            /* object of settings */
-            else
-                options_idx = i;
+                /* object of settings */
+                else
+                    options_idx = i;
 
-            break;
-        } /* case */
+                break;
+            } /* case */
         } /* switch */
     }     /* for */
 
@@ -1920,9 +2250,7 @@ duk_ret_t duk_curl_exe(duk_context *ctx)
 
         if (func_idx == -1)
         {
-            duk_push_string(ctx, "Called with array (implying parallel fetch) but no callback function supplied");
-            duk_curl_push_err(ctx);
-            return 1;
+            RP_THROW(ctx, "curl - error: Called with array (implying parallel fetch) but no callback function supplied");
         }
 
         i = 0;
@@ -2080,15 +2408,15 @@ duk_ret_t duk_curl_exe(duk_context *ctx)
 }
 
 /* **************************************************
-   Initialize Curl into global object. 
+   Initialize Curl into global object.
    ************************************************** */
 //void duk_curl_init(duk_context *ctx) {
-//  duk_push_c_function(ctx, duk_curl_exe, 4 /*nargs*/);  /* [ Sql proto fn_query ] */
+//  duk_push_c_function(ctx, duk_curl_fetch, 4 /*nargs*/);  /* [ Sql proto fn_query ] */
 //  duk_put_global_string(ctx, "curl");  /* -> stack: [ ] */
 //}
 
 static const duk_function_list_entry curl_funcs[] = {
-    {"fetch", duk_curl_exe, 4 /*nargs*/},
+    {"fetch", duk_curl_fetch, 4 /*nargs*/},
     {"objectToQuery", duk_rp_object2q, 2},
     {"encode", duk_curl_encode, 1},
     {"decode", duk_curl_decode, 1},
