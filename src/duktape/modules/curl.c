@@ -71,29 +71,12 @@ CURLREQ
     char isclone;
 };
 
-/* copy this.errors to object at idx */
-void duk_curl_copy_errors(duk_context *ctx, duk_idx_t idx)
-{
-    duk_push_this(ctx); /* [.., this] */
-    duk_get_prop_string(ctx, -1, "errors");
-    if (duk_is_array(ctx, -1))
-    {
-        /* [...,this,array] */
-        duk_put_prop_string(ctx, idx - 2, "errMsg"); /* [...,this] */
-    }
-    /* [...,this,notAnArray] */
-    else
-        duk_pop(ctx); /* get rid of non array from duk_get_prop_string above */
-
-    duk_pop(ctx); /* pop [..,this] */
-}
-
 /* push a blank return object on top of stack with
   ok: false
   and
   errMsg: [array of, collected, errors]
 */
-void duk_curl_ret_blank(duk_context *ctx)
+void duk_curl_ret_blank(duk_context *ctx, const char *url)
 {
 
     duk_push_object(ctx);
@@ -103,40 +86,12 @@ void duk_curl_ret_blank(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "status");
     duk_push_string(ctx, "");
     duk_put_prop_string(ctx, -2, "text");
-
-    /* copy errors to return.errMsg */
-    duk_curl_copy_errors(ctx, -1);
-}
-
-void duk_curl_push_err(duk_context *ctx)
-{
-
-    duk_idx_t top = duk_get_top(ctx) - 1; /* where our error string is at */
-
-    //printf("adding error %s\n",duk_to_string(ctx,-1));
-
-    duk_push_this(ctx); /* [errmsg(idx=top), this ] */
-
-    if (duk_get_prop_string(ctx, -1, "errors") && duk_is_array(ctx, -1))
-    {
-        //printf("array exists\n");
-        /* [errmsg(idx=top), this,array ] */
-        duk_size_t l = duk_get_length(ctx, -1);
-        duk_dup(ctx, top);                      /* [errmsg(idx=top), this,array,errmsg(dup) ] */
-        duk_put_prop_index(ctx, -2, l);         /* [errmsg(idx=top), this,array] */
-        duk_put_prop_string(ctx, -2, "errors"); /* array popped [errmsg(idx=top), this] */
-    }
-    else
-    {
-        //printf("creating array\n");
-        duk_pop(ctx); /* undefined from get_prop_string */
-        duk_push_array(ctx);
-        duk_dup(ctx, top);
-        duk_put_prop_index(ctx, -2, 0);
-        duk_put_prop_string(ctx, -2, "errors"); /* put array into this.errors */
-                                                /* array is gone, have [errmsg(idx=top), this] */
-    }
-    duk_pop_2(ctx); /* pop  [errmsg(idx=top), this] */
+    duk_push_fixed_buffer(ctx, 0);
+    duk_put_prop_string(ctx, -2, "body");
+    duk_push_string(ctx, url);
+    duk_dup(ctx, -1);
+    duk_put_prop_string(ctx, -3, "url");
+    duk_put_prop_string(ctx, -2, "effectiveUrl");
 }
 
 /* **************************************************************************
@@ -215,7 +170,7 @@ void addheader(CSOS *sopts, const char *h)
         (ptr) = NULL;      \
     } while (0)
 
-/* from curl/src/tool_paramhlp.c */
+/* from curl/src/tool_paramhlp.c *
 long prototonum(long *val, const char *str)
 {
     char *buffer;
@@ -255,12 +210,12 @@ long prototonum(long *val, const char *str)
     if (!str)
         return 1;
 
-    buffer = strdup(str); /* because strtok corrupts it */
+    buffer = strdup(str); // because strtok corrupts it 
     if (!buffer)
         return 1;
 
-    /* Allow strtok() here since this isn't used threaded */
-    /* !checksrc! disable BANNEDFUNC 2 */
+    // Allow strtok() here since this isn't used threaded
+    // !checksrc! disable BANNEDFUNC 2
     for (token = strtok(buffer, sep);
          token;
          token = strtok(NULL, sep))
@@ -274,9 +229,9 @@ long prototonum(long *val, const char *str)
 
         struct sprotos const *pp;
 
-        /* Process token modifiers */
+        // Process token modifiers
         while (!ISALNUM(*token))
-        { /* may be NULL if token is all modifiers */
+        { // may be NULL if token is all modifiers
             switch (*token++)
             {
             case '=':
@@ -288,7 +243,7 @@ long prototonum(long *val, const char *str)
             case '+':
                 action = allow;
                 break;
-            default: /* Includes case of terminating NULL */
+            default: // Includes case of terminating NULL
                 Curl_safefree(buffer);
                 return 1;
             }
@@ -315,9 +270,9 @@ long prototonum(long *val, const char *str)
         }
 
         if (!(pp->name))
-        { /* unknown protocol */
-            /* If they have specified only this protocol, we say treat it as
-         if no protocols are allowed */
+        { // unknown protocol
+            // If they have specified only this protocol, we say treat it as
+            //if no protocols are allowed 
             if (action == set)
                 *val = 0;
         }
@@ -325,6 +280,7 @@ long prototonum(long *val, const char *str)
     Curl_safefree(buffer);
     return 0;
 }
+*/
 
 typedef int (*copt_ptr)(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option);
 
@@ -427,11 +383,32 @@ static int mailmime(duk_context *ctx, CURL *curl, CSOS *sopts)
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, sopts->slists[sopts->headerlist]);
 
     if(duk_get_prop_string(ctx, -1, "html"))
+    {
         html=REQUIRE_STRING(ctx, -1, "curl - mail-msg - message - html requires a string\n");
+        if (strchr(html,0xED))
+        {
+            html=(const char *)to_utf8(html);
+            duk_push_string(ctx, html);
+            free((char*)html);
+            html=duk_get_string(ctx, -1);
+            /* keep it on stack and let duktape garbage collect */
+            duk_put_prop_string(ctx, -3, "html");
+        }
+    }
     duk_pop(ctx);
 
     if(duk_get_prop_string(ctx, -1, "text"))
+    {
         text=REQUIRE_STRING(ctx, -1, "curl - mail-msg - message - text requires a string\n");
+        if (strchr(text,0xED))
+        {
+            text=(const char *)to_utf8(text);
+            duk_push_string(ctx, text);
+            free((char*)text);
+            text=duk_get_string(ctx, -1);
+            duk_put_prop_string(ctx, -3, "text");
+        }
+    }
     duk_pop(ctx);
 
     if(html && text)
@@ -489,7 +466,7 @@ static int mailmime(duk_context *ctx, CURL *curl, CSOS *sopts)
 
     }
     else
-        RP_THROW(ctx, "curl - mail-msg - message object must have property text and/or html set");
+        RP_THROW(ctx, "curl - mail-msg - message object must have property \"text\" and/or \"html\" set");
 
     /* slist belongs to mime and mime is freed in clean_req */
     sopts->mime=mime;
@@ -531,6 +508,17 @@ static int mailmime(duk_context *ctx, CURL *curl, CSOS *sopts)
                     curl_mime_type(part, duk_get_string(ctx, -1));
                 duk_pop(ctx);
 
+                if(duk_get_prop_string(ctx, -1, "cid"))
+                {
+                    /* if cid == false - don't set content-id */
+                    if(duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1) )
+                        name=NULL;
+                    else if (duk_is_string(ctx, -1))
+                        name=duk_get_string(ctx, -1);
+                }
+                duk_pop(ctx);
+
+                /* content-id is set to "name" or if "cid" is set and not false, "cid" */
                 if(name)
                 {
                     char s[20+strlen(name)];
@@ -626,6 +614,16 @@ int copt_mailmsg(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLop
                 continue;
             }
             val=REQUIRE_STRING(ctx, -1, "curl mail-msg: property/header '%s' requires a string\n", key);
+            if (strchr(val,0xED))
+            {
+                /* replace property/string with utf-8 encoded version */
+                val=(const char *)to_utf8(val);
+                duk_push_string(ctx, val);
+                free((char*)val);
+                val=duk_get_string(ctx, -1);
+                duk_put_prop_string(ctx, -6, ckey);
+            }
+
             duk_pop_2(ctx);
 
             key=strdup(ckey);
@@ -656,7 +654,7 @@ int copt_mailmsg(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLop
             if(duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1) )
                 return mailmime(ctx, handle, sopts);
 
-            body=REQUIRE_STRING(ctx, -1, "curl - opt 'mail-msg' message must be a string (email message body)");
+            body=REQUIRE_STRING(ctx, -1, "curl - opt 'mail-msg' message must be a string (email message body) or object");
         }
         duk_pop(ctx);
 
@@ -922,7 +920,7 @@ int copt_postform(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLo
                 i++;
             }
         }
-        printf("[%s, %s]\n", duk_to_string(ctx, -2), duk_to_string(ctx, -1));
+        //printf("[%s, %s]\n", duk_to_string(ctx, -2), duk_to_string(ctx, -1));
         duk_pop_2(ctx);
     }
     duk_pop(ctx);
@@ -998,13 +996,14 @@ int copt_long(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoptio
     return (0);
 }
 
-/* TODO: fix this function */
+/* TODO: fix or delete
 int copt_proto(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
 {
     long b;
     long res = prototonum(&b, duk_to_string(ctx, -1));
     return (0);
 }
+*/
 
 int copt_64(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
 {
@@ -1563,7 +1562,7 @@ CURL_OPTS curl_options[] = {
     {"postform", 0, /* not used */ 0, &copt_postform},
     {"postredir", CURLOPT_POSTREDIR, 3, &copt_postr},
     {"preproxy", CURLOPT_PRE_PROXY, 0, &copt_string},
-    {"proto", CURLOPT_PROTOCOLS, 0, &copt_proto},
+    //{"proto", CURLOPT_PROTOCOLS, 0, &copt_proto}, no need to limit protocols in scripting that I can see.
     {"proto-default", CURLOPT_DEFAULT_PROTOCOL, 0, &copt_string},
     {"proto-redir", CURLOPT_REDIR_PROTOCOLS, 0, &copt_string},
     {"proxy", CURLOPT_PROXY, 0, &copt_string},
@@ -1848,13 +1847,6 @@ int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     duk_push_int(ctx, (int)d);
     duk_put_prop_string(ctx, -2, "status");
 
-    /* add to errors if 400 or above */
-    if (d > 399)
-    {
-        duk_push_sprintf(ctx, "%d %s", d, (cres != (HTTP_CODE *)NULL) ? cres->msg : "Unknown Status Code");
-        duk_curl_push_err(ctx);
-    }
-
     /* the doc */
     duk_get_prop_index(ctx, 0, (req->body).index);
     if((req->sopts).ret_text)
@@ -1969,7 +1961,13 @@ WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
     BRETTXT *mem = (BRETTXT *)userp;
     duk_context *ctx = mem->ctx;
     byte *buf = NULL;
-
+/*
+if(realsize)
+   printf("body (%d chars) = '%.*s'\n", (int)realsize, (int)realsize, (char *)contents);
+else
+   printf("END BODY\n");
+printf("index=%d, body=%p\n", (int)mem->index, mem);
+*/
     duk_get_prop_index(ctx, 0, mem->index);
     duk_resize_buffer(ctx, -1, (duk_size_t) mem->size + realsize);
     buf=duk_get_buffer(ctx, -1, &out_sz);
@@ -1990,7 +1988,12 @@ WriteHeaderCallback(void *contents, size_t size, size_t nmemb, void *userp)
     /* overwrite old headers if we get more due to redirect */
     if (!strncmp(contents, "HTTP/", 5))
         mem->size = 0;
-
+/*
+if(realsize)
+   printf("header (%d chars) = '%.*s'\n", (int)realsize, (int)realsize, (char *)contents);
+else
+   printf("END HEADER\n");
+*/
     REMALLOC(mem->text, (mem->size + realsize + 1));
 
     memcpy(&(mem->text[mem->size]), contents, realsize);
@@ -2018,6 +2021,11 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CSOS *sopts)
     while (duk_next(ctx, -1 /* index */, 1 /* get_value also */))
     {
         const char *op = duk_to_string(ctx, -2);
+        if(!strcmp(op,"url")) 
+        {
+            duk_pop_2(ctx);
+            continue;
+        }
         opts.optionName = (char *)op;
         ores = bsearch(opts_p, curl_options, nCurlOpts, sizeof(CURL_OPTS), compare_copts);
 
@@ -2029,18 +2037,11 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CSOS *sopts)
         {
             funcerr = (ores->func)(ctx, curl, ores->subopt, sopts, ores->option);
             if (funcerr)
-            {
-                //duk_push_sprintf(ctx, "option '%s': %s", op, operrors[funcerr]);
-                //duk_curl_push_err(ctx);
                 RP_THROW(ctx, "curl option '%s': %s", op, operrors[funcerr]);
-            }
         }
         else
-        {
-            //duk_push_sprintf(ctx, "unknown option '%s'", op);
-            //duk_curl_push_err(ctx);
             RP_THROW(ctx, "curl option '%s': unknown option", op);
-        }
+
         duk_pop_2(ctx);
     }
 }
@@ -2111,7 +2112,6 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, int options_i
     {
         req->curl = curl_easy_duphandle(cloner->curl);
         curl_easy_setopt(req->curl, CURLOPT_ERRORBUFFER, req->errbuf);
-
         curl_easy_setopt(req->curl, CURLOPT_WRITEDATA, (void *)&(req->body));
         curl_easy_setopt(req->curl, CURLOPT_HEADERDATA, (void *)&(req->header));
         curl_easy_setopt(req->curl, CURLOPT_URL, (req->sopts).url);
@@ -2127,20 +2127,17 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, int options_i
 
     if (req->curl)
     {
-
         /* send all body data to this function  */
         curl_easy_setopt(req->curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-
-        /* we pass our RETTXT struct to the callback function */
+        /* we pass our BRETTXT struct to the callback function */
         curl_easy_setopt(req->curl, CURLOPT_WRITEDATA, (void *)&(req->body));
 
         /* send all header data to this function  */
         curl_easy_setopt(req->curl, CURLOPT_HEADERFUNCTION, WriteHeaderCallback);
-
         /* we pass our RETTXT struct to the callback function */
         curl_easy_setopt(req->curl, CURLOPT_HEADERDATA, (void *)&(req->header));
 
-        curl_easy_setopt(req->curl, CURLOPT_USERAGENT, "libcurl-duktape/0.1");
+        curl_easy_setopt(req->curl, CURLOPT_USERAGENT, "libcurl-rampart/0.1");
 
         /* provide a buffer to store errors in */
         curl_easy_setopt(req->curl, CURLOPT_ERRORBUFFER, req->errbuf);
@@ -2167,6 +2164,7 @@ duk_ret_t addurl(duk_context *ctx)
     CURLM *cm;
     char *u = strdup(duk_to_string(ctx, 0));
 
+    duk_pop(ctx);
     duk_push_this(ctx);
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("req"));
     req = (CURLREQ *)duk_get_pointer(ctx, -1);
@@ -2174,16 +2172,10 @@ duk_ret_t addurl(duk_context *ctx)
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("cm"));
     cm = (CURLM *)duk_get_pointer(ctx, -1);
     duk_pop(ctx);
-
     preq = new_request(u, req, ctx, 0 /*0 not used when cloning*/);
 
     if (!preq)
-    {
-        duk_push_sprintf(ctx, "Failed to get new curl handle while getting %s", u);
-        duk_curl_push_err(ctx);
-        duk_push_boolean(ctx, 0);
-        return 1;
-    }
+        RP_THROW(ctx, "Failed to get new curl handle while getting %s", u);
 
     curl_easy_setopt(preq->curl, CURLOPT_PRIVATE, preq);
     curl_multi_add_handle(cm, preq->curl);
@@ -2280,12 +2272,7 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
                 preq = new_request(u, req, ctx, options_idx);
 
             if (!preq)
-            {
-                duk_push_sprintf(ctx, "Failed to get new curl handle while getting %s", u);
-                duk_curl_push_err(ctx);
-                duk_push_boolean(ctx, 0);
-                return 1;
-            }
+                RP_THROW(ctx, "Failed to get new curl handle while getting %s", u);
 
             curl_easy_setopt(preq->curl, CURLOPT_PRIVATE, preq);
             curl_multi_add_handle(cm, preq->curl);
@@ -2309,9 +2296,9 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
 
                     if (res != CURLE_OK)
                     {
+                        duk_curl_ret_blank(ctx, (preq->sopts).url);
                         duk_push_sprintf(ctx, "curl failed for '%s': %s", (preq->sopts).url, curl_easy_strerror(res));
-                        duk_curl_push_err(ctx);
-                        duk_curl_ret_blank(ctx);
+                        duk_put_prop_string(ctx, -2, "errMsg");
                     }
                     else
                     {
@@ -2319,8 +2306,7 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
                         duk_curl_push_res(ctx, preq);
                         /* add error strings, if any */
                         duk_push_string(ctx, preq->errbuf);
-                        duk_curl_push_err(ctx);
-                        duk_curl_copy_errors(ctx, -1);
+                        duk_put_prop_string(ctx, -2, "errMsg");
 
                     } /* if CURLE_OK */
 
@@ -2336,17 +2322,12 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
 
         clean_req(req); /* free the original */
         curl_multi_cleanup(cm);
-        duk_push_boolean(ctx, 1);
-        return (1);
+        //duk_push_boolean(ctx, 1);
+        return 0;
     }
     /* end parallel requests */
     else if (url == (char *)NULL)
-    {
-        duk_push_string(ctx, "No url provided");
-        duk_curl_push_err(ctx);
-        duk_curl_ret_blank(ctx);
-        return 1;
-    }
+        RP_THROW(ctx, "curl fetch - no url provided");
 
     /* single request */
 
@@ -2363,10 +2344,9 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
         }
         if (res != CURLE_OK)
         {
+            duk_curl_ret_blank(ctx, url);
             duk_push_sprintf(ctx, "curl failed: %s", curl_easy_strerror(res));
-            duk_curl_push_err(ctx);
-            duk_curl_ret_blank(ctx);
-
+            duk_put_prop_string(ctx, -2, "errMsg");
             /* cleanup */
             clean_req(req);
             if (func_idx > -1)
@@ -2383,19 +2363,13 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
         }
         /* add error strings, if any */
         duk_push_string(ctx, req->errbuf);
-        duk_curl_push_err(ctx);
-        duk_curl_copy_errors(ctx, -1);
+        duk_put_prop_string(ctx, -2, "errMsg");
 
         /* cleanup */
         clean_req(req);
     }
     else
-    {
-        i = 0; /* return false */
-        duk_push_string(ctx, "could not get curl handle");
-        duk_curl_push_err(ctx);
-        duk_curl_ret_blank(ctx);
-    }
+        RP_THROW(ctx, "Failed to get new curl handle while getting %s", url);
 
     //  curl_global_cleanup();
     if (func_idx > -1)
@@ -2405,6 +2379,198 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
     }
 
     return 1;
+}
+
+duk_ret_t duk_curl_submit(duk_context *ctx)
+{
+    int i, nreq=0; 
+    duk_idx_t func_idx = -1, opts_idx=-1;
+    char *url = (char *)NULL;
+    CURLREQ *req=NULL;
+    CURLcode res;
+
+    /* clear any previous errors */
+    duk_push_this(ctx);
+    duk_del_prop_string(ctx, -1, "errors");
+    duk_pop(ctx);
+
+    duk_curl_check_global(ctx);
+
+    /* an array to hold buffers for return text */
+    duk_push_array(ctx);
+    duk_insert(ctx, 0);
+
+    if(duk_is_function(ctx, 1))
+    {
+        func_idx=1;
+        opts_idx=2;
+    }
+    else if(duk_is_function(ctx, 2))
+    {
+        func_idx=2;
+        opts_idx=1;
+    }
+    else
+        RP_THROW(ctx, "curl - submit requires an object of options and a function");
+
+    if (duk_is_array(ctx, opts_idx))
+    {
+        nreq = duk_get_length(ctx, opts_idx);
+        if(nreq == 1)
+        {
+            duk_get_prop_index(ctx, opts_idx, 0);
+            opts_idx=duk_get_top_index(ctx);
+        }
+    }
+    else if (duk_is_object(ctx, opts_idx) && !duk_is_function(ctx, opts_idx))
+        nreq=1;
+    else
+        RP_THROW(ctx, "curl - submit requires an object of options and a function");
+
+    /* parallel requests */
+    if (nreq > 1)
+    /* array of urls, do parallel search */
+    {
+        CURLM *cm = curl_multi_init();
+        CURLMsg *msg;
+        int still_alive = 1, msgs_left = -1;
+
+        i = 0;
+        while (duk_has_prop_index(ctx, opts_idx, (duk_uarridx_t)i))
+        {
+            char *u=NULL;
+            CURLREQ *preq;
+            duk_idx_t opts_obj_idx=-1;
+
+            duk_get_prop_index(ctx, opts_idx, (duk_uarridx_t)i);
+            if(!duk_is_object(ctx, 1) || duk_is_array(ctx, -1) || duk_is_function(ctx, -1) )
+                RP_THROW(ctx, "curl - submit requires an object (or array of objects) of options");
+
+            opts_obj_idx=duk_get_top_index(ctx);
+
+            if(duk_get_prop_string(ctx, opts_obj_idx, "url"))
+            {
+                u = strdup(duk_to_string(ctx, -1));
+            }
+            else
+                RP_THROW(ctx, "curl - submit requires an object with the key/property 'url' set");
+            duk_pop(ctx);
+            preq = new_request(u, NULL, ctx, opts_obj_idx);
+
+            if (!preq)
+                RP_THROW(ctx, "Failed to get new curl handle while getting %s", u);
+
+            curl_easy_setopt(preq->curl, CURLOPT_PRIVATE, preq);
+            curl_multi_add_handle(cm, preq->curl);
+
+            duk_pop(ctx); /* opts_obj */
+            i++;
+
+        } /* while */
+
+        do
+        {
+            CURLREQ *preq;
+            curl_multi_perform(cm, &still_alive);
+
+            while ((msg = curl_multi_info_read(cm, &msgs_left)))
+            {
+                if (msg->msg == CURLMSG_DONE)
+                {
+                    curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &preq);
+                    res = msg->data.result;
+                    duk_dup(ctx, func_idx);
+                    duk_push_this(ctx);
+
+                    if (res != CURLE_OK)
+                    {
+                        duk_curl_ret_blank(ctx, (preq->sopts).url);
+                        duk_push_sprintf(ctx, "curl failed for '%s': %s", (preq->sopts).url, curl_easy_strerror(res));
+                        duk_put_prop_string(ctx, -2, "errMsg");
+                    }
+                    else
+                    {
+                        /* assemble our response */
+                        duk_curl_push_res(ctx, preq);
+                        /* add error strings, if any */
+                        duk_push_string(ctx, preq->errbuf);
+                        duk_put_prop_string(ctx, -2, "errMsg");
+
+                    } /* if CURLE_OK */
+
+                    /* call the callback */
+                    duk_call_method(ctx, 1);
+
+                    /* clean up */
+                    //if (preq != req) /* need to free original req last */
+                        clean_req(preq);
+                }              /* CURLMSG_DONE */
+            }                  /* while */
+        } while (still_alive); /* do */
+
+        //clean_req(req); /* free the original */
+        curl_multi_cleanup(cm);
+        duk_push_boolean(ctx, 1);
+        return (1);
+    }
+    /* end parallel requests */
+
+    /* single request */
+
+    if(duk_get_prop_string(ctx, opts_idx, "url"))
+    {
+        url = strdup(duk_to_string(ctx, -1));
+    }
+    else
+        RP_THROW(ctx, "curl - submit requires an object with the key/property 'url' set");
+    duk_pop(ctx);
+
+    req = new_request(url, NULL, ctx, opts_idx);
+
+    if (req)
+    {
+        /* Perform the request, res will get the return code */
+        res = curl_easy_perform(req->curl);
+        /* Check for errors */
+        //if (func_idx > -1)
+        //{
+            duk_dup(ctx, func_idx);
+            duk_push_this(ctx);
+        //}
+        if (res != CURLE_OK)
+        {
+            duk_curl_ret_blank(ctx, url);
+            duk_push_sprintf(ctx, "curl failed: %s", curl_easy_strerror(res));
+            duk_put_prop_string(ctx, -2, "errMsg");
+
+            /* cleanup */
+            clean_req(req);
+
+            duk_call_method(ctx, 1);
+            duk_push_boolean(ctx, 0);
+
+            return (1);
+        }
+        else
+        {
+            /* if http res code 400 or greater, and using callback function, return false */
+            i = (duk_curl_push_res(ctx, req) > 399) ? 0 : 1;
+        }
+        /* add error strings, if any */
+        duk_push_string(ctx, req->errbuf);
+        duk_put_prop_string(ctx, -2, "errMsg");
+
+        /* cleanup */
+        clean_req(req);
+    }
+    else
+        RP_THROW(ctx, "Failed to get new curl handle while getting %s", url);
+
+    duk_call_method(ctx, 1);
+    //duk_push_boolean(ctx, i); /* return bool */
+
+    //return 1;
+    return 0;
 }
 
 /* **************************************************
@@ -2417,6 +2583,7 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
 
 static const duk_function_list_entry curl_funcs[] = {
     {"fetch", duk_curl_fetch, 4 /*nargs*/},
+    {"submit", duk_curl_submit, 2 /*nargs*/},
     {"objectToQuery", duk_rp_object2q, 2},
     {"encode", duk_curl_encode, 1},
     {"decode", duk_curl_decode, 1},

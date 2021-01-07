@@ -10,9 +10,9 @@ Acknowledgment
 The rampart-server module uses the 
 `libevhtp <https://github.com/criticalstack/libevhtp>`_ library,
 a fast, embedded, event driven http/https server 
-which itself uses `libevent2 <https://libevent.org/>`_ library.
+which itself uses the `libevent2 <https://libevent.org/>`_ library.
  
-The developers of Rampart are extremely grateful for the excellent api and ease
+The developers of Rampart are extremely grateful for the excellent APIs and ease
 of use of these libraries.
 
 License
@@ -37,8 +37,10 @@ How does it work?
 
 Once the module is loaded and configuration parameters are passed to the
 `start()`_ function, the server maps paths to the filesystem, JavaScript
-functions, JavaScript Modules and/or directories containing JavaScript
-modules.  Modules allow scripts and functions to reside in separate files.  
+functions, :ref:`JavaScript Modules <rampart-main:Using the require Function to Import Modules>` 
+and/or directories containing 
+:ref:`JavaScript Modules <rampart-main:Using the require Function to Import Modules>`.
+Modules allow scripts and functions to reside in separate files.  
 If changes are made to a module, the server does not need to be 
 restarted for the changes to take effect.
 
@@ -100,179 +102,178 @@ Usage:
    server.start(Options);  
 
 Where:
-   ``Options`` is an object with the following properties:
+   ``Options`` is an :green:`Object` with the following properties:
 
-* ``bind`` - An :green:`Array` of :green:`Strings`, with each :green:`String`
-  representing an ip address and port.  If not specified, the server will 
-  bind to port 8088 on the loopback device (i.e. 127.0.0.1, which is only
-  accessible from the same machine), using the following default value:
-  
-  ``[ "[::1]:8088", "127.0.0.1:8088" ]``. 
-  
-  When specifying an Ipv6 address, bracket notation is required (e.g. 
-  ``[2001:db8::1111:2222]:80``) while a dot-decimal notation is used for
-  ipv4 (e.g. ``172.16.254.1:80``).  To bind to all ip addresses using port 80,
-  the following may be used: 
-  
-  ``[ "[::]:80", "0.0.0.0:80" ]``.
+    * ``bind`` - An :green:`Array` of :green:`Strings`, with each :green:`String`
+      representing an ip address and port.  If not specified, the server will 
+      bind to port 8088 on the loopback device (i.e. 127.0.0.1, which is only
+      accessible from the same machine), using the following default value:
+      
+      ``[ "[::1]:8088", "127.0.0.1:8088" ]``. 
+      
+      When specifying an Ipv6 address, bracket notation is required (e.g. 
+      ``[2001:db8::1111:2222]:80``) while a dot-decimal notation is used for
+      ipv4 (e.g. ``172.16.254.1:80``).  To bind to all ip addresses using port 80,
+      the following may be used: 
+      
+      ``[ "[::]:80", "0.0.0.0:80" ]``.
 
-* ``scriptTimeout``: A :green:`Number`, amount of time in seconds (or fraction
-  thereof) to wait for a script to run before cancelling the request and
-  returning a ``500 Internal Server Error`` timeout message to the
-  connecting client.  Default is no timeout/unlimited.
+    * ``scriptTimeout``: A :green:`Number`, amount of time in seconds (or fraction
+      thereof) to wait for a script to run before cancelling the request and
+      returning a ``500 Internal Server Error`` timeout message to the
+      connecting client.  Default is no timeout/unlimited.
 
-* ``connectTimeout``: A :green:`Number`, amount of time in seconds (or fraction
-  thereof) to wait for a connected client to send a request. Default is no
-  timeout/unlimited.
+    * ``connectTimeout``: A :green:`Number`, amount of time in seconds (or fraction
+      thereof) to wait for a connected client to send a request. Default is no
+      timeout/unlimited.
 
-* ``log``: A :green:`Boolean`, whether to log each request.  Access requests
-  are logged to ``stdout`` and errors are logged to ``stderr`` unless
-  ``accessLog`` and/or ``errorLog`` below are set.
+    * ``log``: A :green:`Boolean`, whether to log each request.  Access requests
+      are logged to ``stdout`` and errors are logged to ``stderr`` unless
+      ``accessLog`` and/or ``errorLog`` below are set.
 
-* ``accessLog``: A :green:`String`, the location of the access log.  The
-  default, if not specified is to log to ``stdout``.
-  
-* ``errorLog``: A :green:`String`, the location of the error log.  The
-  default, if not specified is to log to ``stderr``.
+    * ``accessLog``: A :green:`String`, the location of the access log.  The
+      default, if not specified is to log to ``stdout``.
+      
+    * ``errorLog``: A :green:`String`, the location of the error log.  The
+      default, if not specified is to log to ``stderr``.
 
-* ``daemon``: A :green:`Boolean`, whether to fork and detach from the
-  controlling terminal.  If ``true``, the ``start()`` function will return
-  the pid of the server. Otherwise the pid of the current process is
-  returned. The default is ``false``.
+    * ``daemon``: A :green:`Boolean`, whether to fork and detach from the
+      controlling terminal.  If ``true``, the ``start()`` function will return
+      the pid of the server. Otherwise the pid of the current process is
+      returned. The default is ``false``.
 
-* ``useThreads``: A :green:`Boolean`, whether the server is multi-threaded. 
-  If ``true`` and ``threads`` below is not set, the server will create a
-  threadpool consisting of one thread per cpu core.  If set ``false``, it is
-  equivalent to setting ``useThreads`` to ``true`` and ``threads`` to ``1``.
-  The default is ``true``.
+    * ``useThreads``: A :green:`Boolean`, whether the server is multi-threaded. 
+      If ``true`` and ``threads`` below is not set, the server will create a
+      threadpool consisting of one thread per cpu core.  If set ``false``, it is
+      equivalent to setting ``useThreads`` to ``true`` and ``threads`` to ``1``.
+      The default is ``true``.
 
-* ``threads``: A :green:`Number`, the number of threads to create for the
-  server thread pool.  The default, if ``useThreads`` is ``true``, is the
-  number of cpu cores on the current system.
+    * ``threads``: A :green:`Number`, the number of threads to create for the
+      server thread pool.  The default, if ``useThreads`` is ``true``, is the
+      number of cpu cores on the current system.
 
-* ``secure``: A :green:`Boolean`, whether to use SSL/TLS layer for serving
-  via the ``https`` protocol.  Default is ``false``.  If ``true``, the
-  ``sslKeyFile`` and ``sslCertFile`` parameters must also be set.
+    * ``secure``: A :green:`Boolean`, whether to use SSL/TLS layer for serving
+      via the ``https`` protocol.  Default is ``false``.  If ``true``, the
+      ``sslKeyFile`` and ``sslCertFile`` parameters must also be set.
 
-* ``sslKeyFile``: A :green:`String`, the location of the ssl key file for
-  serving via the ``https`` protocol.  An example, if using 
-  `letsencrypt <https://letsencrypt.org/>`_ for "example.com" might be
-  ``"/etc/letsencrypt/live/example.com/privkey.pem"``.  This setting has
-  no effect unless ``secure`` is ``true``.
+    * ``sslKeyFile``: A :green:`String`, the location of the ssl key file for
+      serving via the ``https`` protocol.  An example, if using 
+      `letsencrypt <https://letsencrypt.org/>`_ for "example.com" might be
+      ``"/etc/letsencrypt/live/example.com/privkey.pem"``.  This setting has
+      no effect unless ``secure`` is ``true``.
 
-* ``sslCertFile``: A :green:`String`, the location of the ssl cert file for
-  serving via the ``https`` protocol.  An example, if using 
-  `letsencrypt <https://letsencrypt.org/>`_ for "example.com" might be
-  ``"/etc/letsencrypt/live/example.com/fullchain.pem"``.  This setting has
-  no effect unless ``secure`` is ``true``.
+    * ``sslCertFile``: A :green:`String`, the location of the ssl cert file for
+      serving via the ``https`` protocol.  An example, if using 
+      `letsencrypt <https://letsencrypt.org/>`_ for "example.com" might be
+      ``"/etc/letsencrypt/live/example.com/fullchain.pem"``.  This setting has
+      no effect unless ``secure`` is ``true``.
 
-* ``sslMinVersion``:  A :green:`String`, the minimum SSL/TLS version to use. 
-  Possible values are ``ssl3``, ``tls1``, ``tls1.1`` or ``tls1.2``.  The
-  default is ``tls1.2``. This setting has no effect unless ``secure`` is ``true``.
+    * ``sslMinVersion``:  A :green:`String`, the minimum SSL/TLS version to use. 
+      Possible values are ``ssl3``, ``tls1``, ``tls1.1`` or ``tls1.2``.  The
+      default is ``tls1.2``. This setting has no effect unless ``secure`` is ``true``.
 
-* ``notFoundFunc``: A :green:`Function` to handle ``404 Not Found`` responses.
-  See `Mapped Functions`_ below.
+    * ``notFoundFunc``: A :green:`Function` to handle ``404 Not Found`` responses.
+      See `Mapped Functions`_ below.
 
-* ``directoryFunc``: A :green:`Function` to handle directory listings from
-  the filesystem, if no ``index.html`` file exists in the requested
-  directory.  May also be set to ``true`` to use the built-in function.
-  If set ``false`` (the default), a "404 Forbidden" response is sent
-  where a directory listing is requested and no index.html file exists.
-  See `Built-in Directory Function`_ below for more information.
+    * ``directoryFunc``: A :green:`Function` to handle directory listings from
+      the filesystem, if no ``index.html`` file exists in the requested
+      directory.  May also be set to ``true`` to use the built-in function.
+      If set ``false`` (the default), a "404 Forbidden" response is sent
+      where a directory listing is requested and no index.html file exists.
+      See `Built-in Directory Function`_ below for more information.
 
-* ``user``: A :green:`String`, the user account which the server will switch 
-  to after binding to the specified ip address and port.  Only valid if
-  server is started as ``root``.  This setting is used for binding to
-  privileged ports as ``root`` and then dropping privileges.  If the server
-  is started as root, ``user`` must be set.
+    * ``user``: A :green:`String`, the user account which the server will switch 
+      to after binding to the specified ip address and port.  Only valid if
+      server is started as ``root``.  This setting is used for binding to
+      privileged ports as ``root`` and then dropping privileges.  If the server
+      is started as root, ``user`` must be set.
 
-* ``mimeMap``: An :green:`Object`, additions or changes to the standart extension
-  to mime mappings.  Normally, if, e.g., ``return { "m4v": mymovie };`` is
-  set as `The Return Object`_ to a mapped function, the header
-  ``content-type: video/x-m4v`` is sent.  Thought the ''content-type" header
-  can be changed using the ``headers`` object in `The Return Object`_\ , it
-  does not affect files served from the filesystem. If it is necessary to change
-  the "content-type" for both `Mapped Functions`_ and files served from
-  `Mapped Directories`_\ , extension:mime-types mappings may be set or changed as follows:
-  
-  .. code-block:: javascript
-  
-      server.start({
-          ...,
-          mimeMap: {
-          	  /* make these movies play as mp4s */
-          	  "m4v": "video/mp4",
-          	  "mov": "video/mp4"
-          },
-		  map: {
-		     "/": "/var/www/html",
-		     ...,
-		  }
-	  });
+    * ``mimeMap``: An :green:`Object`, additions or changes to the standart extension
+      to mime mappings.  Normally, if, e.g., ``return { "m4v": mymovie };`` is
+      set as `The Return Object`_ to a mapped function, the header
+      ``content-type: video/x-m4v`` is sent.  Thought the ''content-type" header
+      can be changed using the ``headers`` object in `The Return Object`_\ , it
+      does not affect files served from the filesystem. If it is necessary to change
+      the "content-type" for both `Mapped Functions`_ and files served from
+      `Mapped Directories`_\ , extension:mime-types mappings may be set or changed as follows:
+      
+      .. code-block:: javascript
+      
+          server.start({
+              ...,
+              mimeMap: {
+                      /* make these movies play as mp4s */
+                      "m4v": "video/mp4",
+                      "mov": "video/mp4"
+              },
+                      map: {
+                         "/": "/var/www/html",
+                         ...,
+                      }
+              });
 
-  For a complete list of defaults, see `Key to Mime Mappings`_ below.
+      For a complete list of defaults, see `Key to Mime Mappings`_ below.
 
-* ``mapSort``: A :green:`Boolean`, whether to automatically sort the
-  mapped paths given as keys to the :green:`Object` passed to ``map`` below. 
-  Default is ``true``.  If ``false``, paths from the ``map`` :green:`Object`
-  will be matched in the order they are given.  
+    * ``mapSort``: A :green:`Boolean`, whether to automatically sort the
+      mapped paths given as keys to the :green:`Object` passed to ``map`` below. 
+      Default is ``true``.  If ``false``, paths from the ``map`` :green:`Object`
+      will be matched in the order they are given.  
 
-  Note that regardless of this setting, paths are match by type of path (see
-  below) with Exact paths tested first, then regular expression paths and
-  lastly glob paths.  However, it is usually desirable for longer paths to
-  have priority over shorter ones.  For example, if ``/`` and
-  ``/search.html`` are both specified (both are "Exact" paths),
-  ``/search.html`` should be checked first, otherwise ``/`` will match and
-  ``/search.html`` will never match.  When ``mapSort`` is ``true``,
-  key/paths are automatically sorted by length.
-  
-* ``map``: An :green:`Object` of url to function or filesystem mapping.
-  The keys of the object are regular expressions, full, partial or globbed
-  paths to be matched against incoming requests.  For example, a key
-  ``/myscript.html`` would match an incoming request for
-  ``http://example.com/myscript.html``.  The value to which the key is set
-  controls which function, module or filesystem path will be used.  If the
-  value is a :green:`Function` or an :green:`Object`, it is assumed to be a
-  script.  If the value is a :green:`String`, it is assumed to be a mapping
-  to the filesystem.  Example:
+      Note that regardless of this setting, paths are match by type of path (see
+      below) with Exact paths tested first, then regular expression paths and
+      lastly glob paths.  However, it is usually desirable for longer paths to
+      have priority over shorter ones.  For example, if ``/`` and
+      ``/search.html`` are both specified (both are "Exact" paths),
+      ``/search.html`` should be checked first, otherwise ``/`` will match and
+      ``/search.html`` will never match.  When ``mapSort`` is ``true``,
+      key/paths are automatically sorted by length.
+      
+    * ``map``: An :green:`Object` of url to function or filesystem mapping.
+      The keys of the object are regular expressions, full, partial or globbed
+      paths to be matched against incoming requests.  For example, a key
+      ``/myscript.html`` would match an incoming request for
+      ``http://example.com/myscript.html``.  The value to which the key is set
+      controls which function, module or filesystem path will be used.  If the
+      value is a :green:`Function` or an :green:`Object`, it is assumed to be a
+      script.  If the value is a :green:`String`, it is assumed to be a mapping
+      to the filesystem.  Example:
 
-  .. code-block:: javascript
+      .. code-block:: javascript
 
-    var server = require("rampart-server");
+        var server = require("rampart-server");
 
-    var pid = server.start({
-        bind: [ "[::]:8088", "0.0.0.0:8088" ], /* bind to all */
-        map : 
-        {
-            "/":            "/usr/local/etc/httpd/htdocs"  /* map all file requests */
-            "/search.html": function (req) { ... }         /* search function */
-        }
-	}
-    });
+        var pid = server.start({
+            bind: [ "[::]:8088", "0.0.0.0:8088" ], /* bind to all */
+            map : 
+            {
+                "/":            "/usr/local/etc/httpd/htdocs"  /* map all file requests */
+                "/search.html": function (req) { ... }         /* search function */
+            }
+        });
 
-  In the above example, the ``"/search.html"`` key will have priority over
-  ``"/"`` key, so that a request ``http://example.com/search.html`` will
-  cause the function to be run while anything else will match ``"/"``
-  (assuming ``mapSort`` is not set to ``false``).
+      In the above example, the ``"/search.html"`` key will have priority over
+      ``"/"`` key, so that a request ``http://localhost:8088/search.html`` will
+      cause the function to be executed while anything else will match ``"/"``
+      (assuming ``mapSort`` is not set to ``false``).
 
-  Keys/paths used for mapping a :green:`Function` may be given in one of
-  four different formats, which are tested for a match in the following order:
-   
-  * Exact Paths - Paths starting with a "/" and having no unescaped ``*`` characters
-    will be matched exactly with the incoming request.
+      Keys/paths used for mapping a :green:`Function` may be given in one of
+      four different formats, which are tested for a match in the following order:
+       
+      * Exact Paths - Paths starting with a "/" and having no unescaped ``*`` characters
+        will be matched exactly with the incoming request.
 
-  * Regular Expression paths - A path/key that starts with ``~`` will match the
-    Perl Regular Expression following the ``~``.  Example: 
-    ``map: {"~/.*/myfile.html": myfunction }`` will match any path ending
-    in ``myfile.html`` and run the named function ``myfunction``.
-   
-  * Glob Paths - A glob path will have the last priority for matching the
-    requested url.  Example: ``map: {"/*/myfile.html": myfunction2 }`` will
-    match the same as the example above, but would have lower priority.  If
-    both these examples were present, ``myfunction2`` would never match.
+      * Regular Expression paths - A path/key that starts with ``~`` will match the
+        Perl Regular Expression following the ``~``.  Example: 
+        ``map: {"~/.*/myfile.html": myfunction }`` will match any path ending
+        in ``myfile.html`` and run the named function ``myfunction``.
+       
+      * Glob Paths - A glob path will have the last priority for matching the
+        requested url.  Example: ``map: {"/*/myfile.html": myfunction2 }`` will
+        match the same as the example above, but would have lower priority.  If
+        both these examples were present, ``myfunction2`` would never match.
 
-  Keys/paths used for mapping to the **filesystem** are always taken as an Exact path. 
-  Regular expressions and globs are not allowed.
+      Keys/paths used for mapping to the **filesystem** are always taken as an Exact path. 
+      Regular expressions and globs are not allowed.
 
 Return Value
   A :green:`Number`, the pid of the current process, or if ``daemon`` is
@@ -515,12 +516,13 @@ Posting Form Data
 """""""""""""""""
 
     When posting form data, the request object will include an additional
-    property ``postData``, which will contain the parsed contents of the
-    posted form.  The ``postData`` properties will also be copied to
-    ``params``, so long as there are no name collisions between those keys and
-    variables set from cookies, headers or query parameters.  The raw posted
-    content will be returned in the property ``body`` as a :green:`Buffer`. 
-    Example:
+    property ``postData``, which will contain the parsed content of the
+    posted form as well as the ``Content-Type`` which will be set to
+    ``"application/x-www-form-urlencoded"``.  The ``postData`` ``content``
+    will also be copied to ``params``, so long as there are no name
+    collisions between those keys and variables set from cookies, headers or
+    query parameters.  The raw posted content will be returned in the
+    property ``body`` as a :green:`Buffer`.  Example:
 
     .. code-block:: javascript
 
@@ -530,7 +532,7 @@ Posting Form Data
             map : {
 
                 "post.html": function(){
-                    var html = '<html><body><form action="/showreq.html" method="POST">'+
+                    var html = '<html><body><form action="/showreq.txt" method="POST">'+
                         '<label for="fname">First name:</label><br>' +
                         '<input type="text" id="fname" name="fname"><br>' +
                         '<label for="lname">Last name:</label><br>' +
@@ -541,7 +543,7 @@ Posting Form Data
                      return {html:html};
                 },
 
-                "/showreq.html" : function(req) {
+                "/showreq.txt" : function(req) {
 
                     /* convert "body" to text so we can print it out */
                     req.body=rampart.utils.bufferToString(req.body);
@@ -573,9 +575,12 @@ Posting Form Data
                 ...,
 
                "postData": {
-                  "fname": "Joe",
-                  "lname": "Public",
-                  "go": "Submit"
+                  "Content-Type": "application/x-www-form-urlencoded",
+                  "content": {
+                       "fname": "Joe",
+                       "lname": "Public",
+                       "go": "Submit"
+                  }
                },
                "params": {
                   "fname": "Joe",
@@ -591,9 +596,13 @@ Posting Form Data
 Posting Multipart Form Data
 """""""""""""""""""""""""""
 
-    Multipart form data will also be returned in the property ``formData``.
-    It will be similarly parsed, except that the value of each key will be
-    an object providing details for each part.  Example:
+    Multipart form data will also be returned in the property ``formData``
+    and will have the ``Content-Type`` property set to
+    ``"multipart/form-data"``.  The ``content`` property will contain an
+    array of objects, one object for each "part" of the form data.  The key
+    and values of an object provides details and the content for each part. 
+
+    Example:
     
     .. code-block:: javascript
 
@@ -603,7 +612,7 @@ Posting Multipart Form Data
             map : {
 
                 "postfile.html": function(){
-                    var html = '<html><body><form action="/showreq.html" enctype="multipart/form-data" method="POST">'+
+                    var html = '<html><body><form action="/showreq.txt" enctype="multipart/form-data" method="POST">'+
                         'File: <input type="FILE" name="file"/>' +
                         '<input type="submit" name="Upload" value="Upload" />' +
                     '</form></body></html>';
@@ -611,7 +620,7 @@ Posting Multipart Form Data
                     return {html: html};    
                 },
 
-                "/showreq.html" : function(req) {
+                "/showreq.txt" : function(req) {
 
                     /* convert "body" to text so we can print it out */
                     req.body=rampart.utils.bufferToString(req.body);
@@ -622,9 +631,10 @@ Posting Multipart Form Data
         });
     
         /* posting a small file called "helloWorld.txt with the contents "Hello World!"
+
         {
            "ip": "::1",
-           "port": 47362,
+           "port": 39004,
            "method": "POST",
            "path": {
               "file": "showreq.html",
@@ -635,92 +645,186 @@ Posting Multipart Form Data
               "url": "http://localhost:8088/showreq.html"
            },
            "query": {},
-           "body": "------WebKitFormBoundaryVF2DDClCAAwjrcth\r\nContent-Disposition: form-data; name=\"file\"; filename=\"helloWorld.txt\"\r\nContent-Type: text/plain\r\n\r\nHello World!\r\n------WebKitFormBoundaryVF2DDClCAAwjrcth\r\nContent-Disposition: form-data; name=\"Upload\"\r\n\r\nUpload\r\n------WebKitFormBoundaryVF2DDClCAAwjrcth--\r\n",
+           "body": "------WebKitFormBoundaryB4UZ3AZ5kFBUZpR6\r\nContent-Disposition: form-data; name=\"file\"; filename=\"helloWorld.txt\"\r\nContent-Type: text/plain\r\n\r\nHello World!\r\n------WebKitFormBoundaryB4UZ3AZ5kFBUZpR6\r\nContent-Disposition: form-data; name=\"Upload\"\r\n\r\nUpload\r\n------WebKitFormBoundaryB4UZ3AZ5kFBUZpR6--\r\n",
            "query_raw": "",
-
-            ...,
-
+           "cookies": {
+              "mycookie": "cookietext",
+              "cookiewquote": "my\"cookie\""
+           },
            "headers": {
-              ...,
+              "Host": "localhost:8088",
               "Content-Length": "299",
-              "Content-Type": "multipart/form-data; boundary=----WebKitFormBoundaryVF2DDClCAAwjrcth",
               ...,
            },
            "postData": {
-              "file": {
-                 "Content-Disposition": "form-data",
-                 "name": "file",
-                 "filename": "helloWorld.txt",
-                 "Content-Type": "text/plain",
-                 "contents": {
-                    "0": 72,
-                    "1": 101,
-                    "2": 108,
-                    "3": 108,
-                    "4": 111,
-                    "5": 32,
-                    "6": 87,
-                    "7": 111,
-                    "8": 114,
-                    "9": 108,
-                    "10": 100,
-                    "11": 33
+              "Content-Type": "multipart/form-data",
+              "content": [
+                 {
+                    "Content-Disposition": "form-data",
+                    "name": "file",
+                    "filename": "helloWorld.txt",
+                    "Content-Type": "text/plain",
+                    "content": {
+                       "0": 72,
+                       "1": 101,
+                       "2": 108,
+                       "3": 108,
+                       "4": 111,
+                       "5": 32,
+                       "6": 87,
+                       "7": 111,
+                       "8": 114,
+                       "9": 108,
+                       "10": 100,
+                       "11": 33
+                    }
+                 },
+                 {
+                    "Content-Disposition": "form-data",
+                    "name": "Upload",
+                    "content": {
+                       "0": 85,
+                       "1": 112,
+                       "2": 108,
+                       "3": 111,
+                       "4": 97,
+                       "5": 100
+                    }
                  }
-              },
-              "Upload": {
-                 "Content-Disposition": "form-data",
-                 "name": "Upload",
-                 "contents": {
-                    "0": 85,
-                    "1": 112,
-                    "2": 108,
-                    "3": 111,
-                    "4": 97,
-                    "5": 100
-                 }
-              }
+              ]
            },
            "params": {
-              "file": {
-                 "Content-Disposition": "form-data",
-                 "name": "file",
-                 "filename": "helloWorld.txt",
-                 "Content-Type": "text/plain",
-                 "contents": {
-                    "0": 72,
-                    "1": 101,
-                    "2": 108,
-                    "3": 108,
-                    "4": 111,
-                    "5": 32,
-                    "6": 87,
-                    "7": 111,
-                    "8": 114,
-                    "9": 108,
-                    "10": 100,
-                    "11": 33
-                 }
+              "helloWorld.txt": {
+                 "0": 72,
+                 "1": 101,
+                 "2": 108,
+                 "3": 108,
+                 "4": 111,
+                 "5": 32,
+                 "6": 87,
+                 "7": 111,
+                 "8": 114,
+                 "9": 108,
+                 "10": 100,
+                 "11": 33
               },
               "Upload": {
-                 "Content-Disposition": "form-data",
-                 "name": "Upload",
-                 "contents": {
-                    "0": 85,
-                    "1": 112,
-                    "2": 108,
-                    "3": 111,
-                    "4": 97,
-                    "5": 100
-                 }
+                 "0": 85,
+                 "1": 112,
+                 "2": 108,
+                 "3": 111,
+                 "4": 97,
+                 "5": 100
               },
-
+              "Host": "localhost:8088",
+              "Connection": "keep-alive",
+              "Content-Length": "299",
+              "Cache-Control": "max-age=0",
               ...,
-
            }
         }
         */
     
     Note that like ``body``, the ``contents`` property of each uploaded part is a :green:`Buffer`.
+
+Posting JSON Data
+"""""""""""""""""
+
+    JSON data, sent with ``Content-Type`` set to ``"application/json"`` will also be parsed in 
+    a manner similar to `Posting Form Data`_.
+
+    .. code-block:: javascript
+
+        var server=require("rampart-server");
+
+        server.start(
+        {
+            user:"root",
+            map : {
+                "post.html": function(){
+                    var html = '<html><head><script>\n'+
+                           'function senddata(){\n' +
+                             'var first= document.querySelector("#fname");\n' +
+                             'var last = document.querySelector("#lname");\n' +
+                             'var res  = document.querySelector("#res");\n' +
+                             'var xhr = new XMLHttpRequest();\n' +
+                             'xhr.open("POST", "/showreq.json");\n' +
+                             'xhr.setRequestHeader("Content-Type", "application/json");\n' +
+                             'xhr.onreadystatechange = function () { \n' +
+                               'if (xhr.readyState === 4 && xhr.status === 200) {\n' + 
+                                  'res.innerHTML = "<pre>"+ this.responseText +"</pre>";\n' +
+                               '} \n' +
+                             '};\n' +
+                             'xhr.send( JSON.stringify({first:first.value, last:last.value}) );\n'+
+                             'return false;'+
+                           '}\n'+
+                        '</script></head><body>'+
+                        '<label for="fname">First name:</label><br>' +
+                        '<input type="text" id="fname" name="fname"><br>' +
+                        '<label for="lname">Last name:</label><br>' +
+                        '<input type="text" id="lname" name="lname">'+
+                        '<button onclick="return senddata()">Submit</button>'+
+                    '<div id="res"></div></body></html>';
+
+                     return {html:html};
+                },
+
+                "/showreq.json" : function(req) {
+                    /* convert "body" to text so we can send */
+                    req.body=rampart.utils.bufferToString(req.body);
+
+                    return( { json: rampart.utils.sprintf("%3J",req) } );
+                }
+            }
+        });
+
+        /* results might be:
+        {
+           "ip": "::1",
+           "port": 46586,
+           "method": "POST",
+           "path": {
+              "file": "showreq.json",
+              "path": "/showreq.json",
+              "base": "/",
+              "scheme": "http://",
+              "host": "localhost:8088",
+              "url": "http://localhost:8088/showreq.json"
+           },
+           "query": {},
+           "body": "{\"first\":\"Joe\",\"last\":\"Public\"}",
+           "query_raw": "",
+           "headers": {
+              "Host": "localhost:8088",
+              "Connection": "keep-alive",
+              "Content-Length": "31",
+              "Content-Type": "application/json",
+              ...,
+           },
+           "postData": {
+              "Content-Type": "application/json",
+              "content": {
+                 "first": "Joe",
+                 "last": "Public"
+              }
+           },
+           "params": {
+              "first": "Joe",
+              "last": "Public",
+              "Content-Length": "31",
+              "Content-Type": "application/json",
+              "Referer": "http://localhost:8088/post.html",
+              ...,
+           }
+        }
+        */
+
+Posting Other Types
+"""""""""""""""""""
+
+  Posting with a ``Content-Type`` other than the three above will return
+  ``postData`` with the provided ``Content-Type`` set, and ``contents``
+  will be the same as the unparsed :green:`Buffer` ``body``.
 
 The Return Object
 ~~~~~~~~~~~~~~~~~

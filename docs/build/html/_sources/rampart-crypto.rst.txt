@@ -131,7 +131,7 @@ Example:
         data: ciphertext
     });
 
-    printf('The decrypted data: "%B"\n', plaintext);
+    printf('The decrypted data: "%s"\n', plaintext);
 
     /* expected output:
 

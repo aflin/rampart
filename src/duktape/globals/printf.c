@@ -846,6 +846,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             format++;
             break;
         }
+        /* -AJF: added C, B, U, P and J for multi-char, base64, urlencode, prettyprint and JSON.stringify */
         case 'C':
         {
             unsigned int l = 1U;
@@ -889,7 +890,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             format++;
             break;
         }
-        /* -AJF: added B, U and J for buffer, urlencode and JSON.stringify */
+        /* %B is now base64 
         case 'B':
         {
             duk_size_t sz;
@@ -900,6 +901,53 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                 out(*(b++), buffer, idx++, maxlen);
             }
             format++;
+            break;
+        }
+        */
+        case 'B':
+        {
+            duk_size_t sz;
+            const char *s;
+            const char *p;
+            if (duk_is_buffer_data(ctx, fidx))
+            {
+                s=(const char *)duk_get_buffer_data(ctx, fidx, &sz);
+            }
+            else
+                s=PF_REQUIRE_LSTRING(ctx, fidx, &sz);
+
+            if (flags & FLAGS_BANG)
+            {
+                size_t i=0;
+                duk_dup(ctx, fidx);
+                if(duk_is_buffer_data(ctx, -1))
+                    duk_buffer_to_string(ctx, -1);
+                duk_base64_decode(ctx, -1);
+                p = duk_get_buffer_data(ctx, -1, &sz);
+                for (;i<sz;i++)
+                {
+                    out(*(p++), buffer, idx++, maxlen);
+                }
+            }
+            else
+            {
+                if (duk_is_string(ctx, fidx))
+                {
+                    /* push it again - PF_REQUIRE_STRING may have performed to_utf8() */
+                    duk_push_string(ctx, s);
+                }
+                else /* buffer */
+                    duk_dup(ctx, fidx);
+
+                p = duk_base64_encode(ctx, -1);
+                while ((*p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
+                {
+                    out(*(p++), buffer, idx++, maxlen);
+                }
+            }
+            duk_pop(ctx);
+            format++;
+            fidx++;
             break;
         }
         case 'U':
@@ -1056,6 +1104,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             }
             //no ++
             //no break
+
         /* NO COERSION for upper case 'S' */
         case 'S':
         string:

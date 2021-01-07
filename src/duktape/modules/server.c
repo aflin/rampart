@@ -330,7 +330,7 @@ void parseheadline(duk_context *ctx, char *line, size_t linesz)
             sz=e-p;
             prop=p; 
             propsz=sz;
-            //printf("'%.*s'=",sz,p);
+            //printf("'%.*s'=",(int)sz,p);
         }
         else return;
         
@@ -348,7 +348,7 @@ void parseheadline(duk_context *ctx, char *line, size_t linesz)
                 if(*e=='"')
                 {
                     sz=e-p;
-                    //printf("'%.*s'\n",sz,p);
+                    //printf("'%.*s'\n",(int)sz,p);
                     duk_push_lstring(ctx,p,(duk_size_t)sz);
                     duk_put_prop_lstring(ctx,-2,prop,(duk_size_t)propsz);
                 }
@@ -359,7 +359,7 @@ void parseheadline(duk_context *ctx, char *line, size_t linesz)
                  e=p;
                  while(rem>0 && !isspace(*e) ) e++,rem--;
                  sz=e-p;
-                 //printf("'%.*s'\n",sz,p);
+                 //printf("'%.*s'\n",(int)sz,p);
                  duk_push_lstring(ctx,p,(duk_size_t)sz);
                  duk_put_prop_lstring(ctx,-2,prop,(duk_size_t)propsz);
             }
@@ -411,7 +411,8 @@ void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
 {
     size_t remaining=(size_t)bsz, bound_sz=strlen(bound);
     void *b=buf;
-    int i=0;
+    //int i=0;
+    //const char *name=NULL;
     
     b=memmem(b,remaining,bound,bound_sz);
     while (b)
@@ -464,12 +465,18 @@ void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
                 sz=(n-begin)+1;
                 //printf("Part is %d long:\n%.*s\n",(int)sz,(int)sz,(char*)begin);
                 //share buffer with body/evbuffer
+                /*
                 if( !duk_get_prop_string(ctx,-1,"name") )
                 {
+                    duk_pop(ctx); * undefined *
                     duk_push_sprintf(ctx,"data-%s",i);
                     i++;
                 }
+                * name is on stack *
+                name=duk_get_string(ctx, -1);
+                
                 duk_pull(ctx,-2);
+                */
                 duk_push_external_buffer(ctx);
                 duk_config_buffer(ctx, -1, begin, sz);
                 /*
@@ -477,8 +484,9 @@ void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
                 pushbuf = duk_push_fixed_buffer(ctx, sz);
                 memcpy(pushbuf,begin,sz);
                 */
-                duk_put_prop_string(ctx,-2,"contents");
-                duk_put_prop(ctx,-3);
+                duk_put_prop_string(ctx,-2,"content");
+
+                duk_put_prop_index(ctx,-2, (duk_uarridx_t)duk_get_length(ctx, -2));
                 //duk_put_prop_index(ctx,-2,(duk_uarridx_t)i);
                 //i++;
             }
@@ -486,7 +494,62 @@ void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
         else
             break;
     }
+}
+
+static void copy_post_vars(duk_context *ctx)
+{
+    if (!duk_get_prop_string(ctx, -1, "postData"))
+    {
+        duk_pop(ctx);
+        return;
+    }
     
+    if( !duk_get_prop_string(ctx, -1, "content") )
+    {
+        duk_pop_2(ctx);
+        return;
+    }
+    duk_remove(ctx, -2); /* discard postData ref */
+
+    /* multipart data */
+    if(duk_is_array(ctx, -1))
+    {
+        duk_uarridx_t len, i=0;
+        const char *name=NULL;
+
+        len=duk_get_length(ctx, -1);
+
+        for (;i<len;i++) 
+        {
+            duk_get_prop_index(ctx, -1, i);
+            if(duk_get_prop_string(ctx, -1, "filename"))
+            {
+                name=duk_get_string(ctx, -1);
+                duk_pop(ctx);
+            }
+            else
+            {
+                duk_pop(ctx); /* undefined from filename */
+                duk_get_prop_string(ctx, -1, "name");
+                name=duk_get_string(ctx, -1);
+                duk_pop(ctx);
+            }
+            duk_get_prop_string(ctx, -1, "content");
+            duk_put_prop_string(ctx, -5, name);
+            duk_pop(ctx);
+        }
+    }
+    else if (duk_is_object(ctx, -1))
+    {
+        duk_enum(ctx,-1,DUK_ENUM_OWN_PROPERTIES_ONLY);
+        while (duk_next(ctx,-1,1))
+        {
+            duk_put_prop(ctx,-6);
+        }
+        duk_pop(ctx);
+    }    
+
+    duk_pop(ctx);
 }
 
 #define copy_req_vars(prop) \
@@ -512,7 +575,7 @@ static void flatten_vars(duk_context *ctx)
     duk_dup(ctx,-2);
 
     /* lowest priority first */
-    copy_req_vars("postData")
+    copy_post_vars(ctx);
     copy_req_vars("query")
     copy_req_vars("cookies")
     copy_req_vars("headers")
@@ -702,43 +765,68 @@ void push_req_vars(DHS *dhs)
             {
                 bound+=9;
                 duk_push_object(ctx);
+                duk_push_string(ctx,"multipart/form-data");
+                duk_put_prop_string(ctx, -2, "Content-Type");
+                duk_push_array(ctx);
                 push_multipart(ctx,bound,buf,bsz);
+                duk_put_prop_string(ctx,-2,"content");
                 duk_put_prop_string(ctx,-2,"postData");
             }
         } else 
-        if(strcmp("application/json",ct)==0)
+        if(strncmp("application/json",ct,16)==0)
         {
-            duk_push_array(ctx);
+            //duk_push_array(ctx);
             duk_push_object(ctx);
-            duk_push_string(ctx,"application/json");
-            duk_put_prop_string(ctx,-2,"Content-Type");
-
-            duk_get_global_string(ctx,"JSON");
-            duk_get_prop_string(ctx,-1,"parse");
+            duk_push_string(ctx, "application/json");
+            duk_put_prop_string(ctx, -2, "Content-Type");
+            duk_get_global_string(ctx, "JSON");
+            duk_get_prop_string(ctx, -1, "parse");
             duk_remove(ctx,-2);
-            duk_get_prop_string(ctx, -4, "body");
-            duk_buffer_to_string(ctx,-1);
-            if(duk_pcall(ctx,1) != 0)
+            //duk_get_prop_string(ctx, -4, "body");
+            duk_get_prop_string(ctx, -3, "body");
+            if (!duk_is_undefined(ctx,-1))
             {
-                duk_push_object(ctx);
-                duk_safe_to_string(ctx,-2);
-                duk_pull(ctx,-2);
-                duk_put_prop_string(ctx,-2,"error");
+                duk_buffer_to_string(ctx, -1);
+                if(duk_pcall(ctx,1) != 0)
+                {
+                    duk_push_object(ctx);
+                    duk_safe_to_string(ctx,-2);
+                    duk_pull(ctx,-2);
+                    duk_put_prop_string(ctx,-2,"error parsing JSON content");
+                }
+                duk_put_prop_string(ctx,-2,"content");
+                //duk_put_prop_index(ctx,-2,0);
+                //duk_put_prop_string(ctx,-2,"postData");
             }
-            duk_put_prop_string(ctx,-2,"contents");
-            duk_put_prop_index(ctx,-2,0);
+            else
+                duk_pop_2(ctx); /*parse() and undefined */
+
             duk_put_prop_string(ctx,-2,"postData");
-            
+
         } else
-        if(strcmp("application/x-www-form-urlencoded",ct)==0)
+        if(strncmp("application/x-www-form-urlencoded",ct,33)==0)
         {
             char *s;
-            duk_get_prop_string(ctx, -1, "body");
+            duk_push_object(ctx);
+            duk_push_string(ctx, "application/x-www-form-urlencoded");
+            duk_put_prop_string(ctx, -2, "Content-Type");
+            duk_get_prop_string(ctx, -2, "body");
             duk_buffer_to_string(ctx,-1);
             s=(char *)duk_get_string(ctx,-1);
             duk_rp_querystring2object(ctx, s);
-            duk_put_prop_string(ctx,-3,"postData");
+            duk_put_prop_string(ctx, -3, "content");
             duk_pop(ctx);
+            duk_put_prop_string(ctx, -2, "postData");
+        }
+        else
+        /* unknown type -- report type and reference body as content */
+        {
+            duk_push_object(ctx);
+            duk_push_string(ctx, ct);
+            duk_put_prop_string(ctx, -2, "Content-Type");
+            duk_get_prop_string(ctx, -2, "body");
+            duk_put_prop_string(ctx, -2, "content");
+            duk_put_prop_string(ctx, -2, "postData");
         }
     }
     else
@@ -2963,6 +3051,9 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
 */
 }
 
+/* just like duk_get_prop_string, except that the prop string compare is
+   case insensitive */
+
 static int duk_rp_GPS_icase(duk_context *ctx, duk_idx_t idx, const char * prop)
 {
     const char *realprop=NULL, *compprop=NULL;
@@ -3249,6 +3340,7 @@ static void proc_mimes(duk_context *ctx)
 "    }\n"
 
 
+/* TODO: turn this function from hell into something readable */
 
 #ifdef COMBINE_EVLOOPS
 extern struct event_base *elbase;
@@ -3448,7 +3540,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     RP_THROW(ctx, "server.start: error getting user '%s' in start()\n",user);
 
                 if( !strcmp("root",user) )
-                    fprintf(stderr,"\n******* WARNING: YOU ARE RUNNING SERVER AS ROOT. NOT A GOOD IDEA. YOU'VE BEEN WARNED!!!! ********\n\n");
+                    fprintf(stderr,"\n******* WARNING: YOU ARE RUNNING SERVER AS ROOT. NOT A GOOD IDEA UNLESS YOU ARE DOING LIMITED TESTING. YOU'VE BEEN WARNED!!!! ********\n\n");
                 else
                     fprintf(access_fh,"setting unprivileged user '%s'\n",user);
                 unprivu=pwd->pw_uid;

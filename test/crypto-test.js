@@ -126,7 +126,7 @@ for (i=0;i<hfuncs.length;i++)
 }
 /*
 printf("\ncrypt of this file with aes-256-cbc (sha512 hashes before and after):\n%s\n%s\n",hash,comphash);
-fprintf("crypto-copy.js.enc","%B",encBuffer);
+fprintf("crypto-copy.js.enc","%s",encBuffer);
 printf("using openssl 1.1, you can decode the written file with this:\n%s\n",
         '    openssl aes-256-cbc -d -in crypto-copy.js.enc -out crypto-copy.js -p -pbkdf2 -iter 50000 -k "whodathunk"');
 */

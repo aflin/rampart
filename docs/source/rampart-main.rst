@@ -188,8 +188,9 @@ See standard formats and flags from
 Extended (non-standard) formats:
 
    * ``%s`` - corresponding argument is treated as a :green:`String`
-     (converted/coerced if necessary; :green:`Objects` and :green:`Buffers`
-     are converted the same as for ``%J`` and ``%B`` below).
+     (converted/coerced if necessary; :green:`Objects` are converted the
+     same as for ``%J`` and :green:`Buffers`
+     are printed as is).
 
    * ``%S`` - same as ``%s`` except an error is thrown if the corresponding argument is
      not a :green:`String`.
@@ -199,7 +200,10 @@ Extended (non-standard) formats:
      indentation of the specified amount. Thus ``printf("%4J", obj);`` is 
      equivalent to ``printf("%s", JSON.stringify(obj, null, 4) );``. 
 
-   * ``%B`` - print contents of a :green:`Buffer` as is.
+   * ``%B`` - print contents of a :green:`Buffer` or :green:`String` as
+     base64. If ``!`` flag present, it decodes a :green:`Buffer` or
+     :green:`String` containing base64 (throws an error if not valid 
+     base64).
 
    * ``%U`` - url encode (or if ``!`` flag present, decode) a :green:`String`. 
 
@@ -420,7 +424,7 @@ Example
 
    var out=fread(handle);
 
-   printf("%B", out);
+   printf("%s", out);
    /* expect output: "abcdef" */
 
    fclose(handle);
@@ -575,7 +579,7 @@ Usage:
 
 .. code-block:: javascript
 
-   var data = rampart.utils.hexify(hexstring);
+   var data = rampart.utils.dehexify(hexstring);
 
 Return Value:
    :green:`Buffer`.  Each two character hex representation converted to a
@@ -591,7 +595,7 @@ Example:
    var s=sprintf("%c%c%c%c",0xF0, 0x9F, 0x98, 0x8A);
 
    printf("0x%s\n", hexify(s) );
-   printf("%B\n", dehexify(hexify(s)) );
+   printf("%s\n", dehexify(hexify(s)) );
 
    /* expected output:
    0xf09f988a
@@ -888,7 +892,7 @@ Usage:
 
 .. code-block:: javascript
 
-   var rl = readLine(file);
+   var rl = rampart.utils.readLine(file);
    var line=rl.next();
 
 Where ``file`` is a :green:`String` (name of file to be read) and return :green:`Object`
@@ -1904,14 +1908,9 @@ the script has not changed since last run, the execution speed will be
 normal as the cached/transpiled code will be used and thus no traspiling
 will occur.
 
-Also note that nearly all Rampart functions are synchronous, and therefore
-will be executed before any babel transpiled asynchronous code
-regardless of its position in the script.  This is normal behavior for
-JavaScript, but may be counterintuitive if coming from, e.g. Node.js
-where most functions are asynchronous.
-
-As an example, the following code produces the same output in Rampart and
-Node.js.
+Though nearly all rampart functions are synchronous, asynchronous code may
+also be used with babel.  For example, the following code produces the same
+output in Rampart and Node.js.
 
 .. code-block:: javascript
 

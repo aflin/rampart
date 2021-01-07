@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>The rampart-crypto module &mdash; Rampart 0.1.0 documentation</title>
+  <title>The rampart-curl module &mdash; Rampart 0.1.0 documentation</title>
   
 
   
@@ -100,6 +100,16 @@
 <li class="toctree-l3"><a class="reference internal" href="#loading">Loading</a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#main-functions">Main Functions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#fetch">fetch()</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#fetch-results">fetch() Results</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#adding-more-requests">Adding More Requests</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#submit">submit()</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#curl-options">Curl Options</a></li>
 </ul>
 </li>
 </ul>
@@ -146,7 +156,7 @@
     
       <li><a href="index.html">Docs</a> &raquo;</li>
         
-      <li>The rampart-crypto module</li>
+      <li>The rampart-curl module</li>
     
     
       <li class="wy-breadcrumbs-aside">
@@ -165,34 +175,38 @@
           <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
            <div itemprop="articleBody">
             
-  <div class="section" id="the-rampart-crypto-module">
-<h1>The rampart-crypto module<a class="headerlink" href="#the-rampart-crypto-module" title="Permalink to this headline">¶</a></h1>
+  <div class="section" id="the-rampart-curl-module">
+<h1>The rampart-curl module<a class="headerlink" href="#the-rampart-curl-module" title="Permalink to this headline">¶</a></h1>
 <div class="section" id="preface">
 <h2>Preface<a class="headerlink" href="#preface" title="Permalink to this headline">¶</a></h2>
 <div class="section" id="acknowledgment">
 <h3>Acknowledgment<a class="headerlink" href="#acknowledgment" title="Permalink to this headline">¶</a></h3>
-<p>The rampart-curl module uses the ` &lt;&gt;`_
-library.
-t</p>
+<p>The rampart-curl module uses the <a class="reference external" href="https://curl.se/libcurl/">libcurl</a>
+library.  Libcurl is a multi-protocol file transfer library with a long
+history of feature rich and stable performance.  It also has an exceptionally
+well written and documented API.  The authors of Rampart extend our thanks
+to  Daniel Stenberg, et. al. for providing this library.</p>
 </div>
 <div class="section" id="license">
 <h3>License<a class="headerlink" href="#license" title="Permalink to this headline">¶</a></h3>
 <p>The rampart-curl module is released under the MIT license.
-The <a class="reference external" href="https://www.openssl.org/">OpenSSL</a> library is released under the
-<a class="reference external" href="https://github.com/openssl/openssl/blob/master/LICENSE.txt">Apache 2.0 License</a>.</p>
+<a class="reference external" href="https://curl.se/libcurl/">Libcurl</a> is custom licensed with an
+<a class="reference external" href="https://curl.se/docs/copyright.html">MIT-like license</a>.</p>
 </div>
 <div class="section" id="what-does-it-do">
 <h3>What does it do?<a class="headerlink" href="#what-does-it-do" title="Permalink to this headline">¶</a></h3>
-<p>The rampart-crypto module provides methods to encrypt, decrypt, hash and
-generate HMACs from within Rampart JavaScript.
-It also includes the full libssl and libcrypto libraries and is needed for
-the rampart-curl and rampart-server modules to operate using the https
-protocol.</p>
+<p>The rampart-curl module proviedss network client capabilities for the
+<code class="docutils literal notranslate"><span class="pre">http</span></code>, <code class="docutils literal notranslate"><span class="pre">https</span></code>, <code class="docutils literal notranslate"><span class="pre">ftp</span></code>, <code class="docutils literal notranslate"><span class="pre">smtp</span></code>, <code class="docutils literal notranslate"><span class="pre">pop3</span></code> and <code class="docutils literal notranslate"><span class="pre">imap</span></code> protocols.
+For the <code class="docutils literal notranslate"><span class="pre">ftp</span></code>, <code class="docutils literal notranslate"><span class="pre">http</span></code> and <code class="docutils literal notranslate"><span class="pre">https</span></code> protocols, an asynchronous parallel fetch is
+also provided.</p>
 </div>
 <div class="section" id="how-does-it-work">
 <h3>How does it work?<a class="headerlink" href="#how-does-it-work" title="Permalink to this headline">¶</a></h3>
-<p>After the module is loaded, functions are provided to perform crypto
-operations on JavaScript <span class="green">Strings</span> or <span class="green">Buffers</span>.</p>
+<p>The main functions <code class="docutils literal notranslate"><span class="pre">fetch()</span></code> and <code class="docutils literal notranslate"><span class="pre">submit</span></code> take a url (or several) and options in a
+manner which is similar to the
+<a class="reference external" href="https://linux.die.net/man/1/curl">curl command line tool</a>.  Results are
+returned in an object, which includes status, headers and body text as
+appropriate for the protocol being used.</p>
 </div>
 </div>
 <div class="section" id="loading-and-using-the-module">
@@ -200,15 +214,357 @@ operations on JavaScript <span class="green">Strings</span> or <span class="gree
 <div class="section" id="loading">
 <h3>Loading<a class="headerlink" href="#loading" title="Permalink to this headline">¶</a></h3>
 <p>Loading the module is a simple matter of using the <code class="docutils literal notranslate"><span class="pre">require()</span></code> function:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>^C
-<a class="reference external" href="mailto:root&#37;&#52;&#48;serenity">root<span>&#64;</span>serenity</a>:/zfs3/rampart/rampart/docs/source# pop</p>
-<p>Command ‘pop’ not found, but there are 17 similar ones.</p>
-<p><a class="reference external" href="mailto:root&#37;&#52;&#48;serenity">root<span>&#64;</span>serenity</a>:/zfs3/rampart/rampart/docs/source# ^C
-<a class="reference external" href="mailto:root&#37;&#52;&#48;serenity">root<span>&#64;</span>serenity</a>:/zfs3/rampart/rampart/docs/source#</p>
 </div>
+</div>
+<div class="section" id="main-functions">
+<h2>Main Functions<a class="headerlink" href="#main-functions" title="Permalink to this headline">¶</a></h2>
+<p>The rampart-curl module is capable of posting to or retrieving data from
+network resources as addressed by a URL.  The module exports two functions
+which may be used for transfering data over the network: <code class="docutils literal notranslate"><span class="pre">fetch()</span></code> and
+<code class="docutils literal notranslate"><span class="pre">submit</span></code>.  These two functions differ only in the format of the request
+and how options are passed.  For retrieving a list of URLs where each
+request uses one group of settings that do not change, and where new URLs
+can be added to the list at any time, <code class="docutils literal notranslate"><span class="pre">fetch()</span></code> is the prefered tool.
+However for retrieving a list of URLs where each has separate settings or
+post content <code class="docutils literal notranslate"><span class="pre">submit()</span></code> is the appropriate function.</p>
+<div class="section" id="fetch">
+<h3>fetch()<a class="headerlink" href="#fetch" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>The <code class="docutils literal notranslate"><span class="pre">fetch</span></code> function takes a <span class="green">String</span> or an :green`Array` of
+<span class="green">Strings</span>, each a URL, and an optional <span class="green">Object</span> of options and an
+optional callback <span class="green">Function</span>.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">curl</span><span class="p">.</span><span class="nx">fetch</span><span class="p">(</span> <span class="nx">url</span><span class="o">|</span><span class="nx">url_list</span><span class="p">[,</span> <span class="nx">options</span><span class="p">][,</span> <span class="nx">callback</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">url</span></code> is a <span class="green">String</span>, the URL of the resource to be accessed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">url_list</span></code> is an :green`Array` of <span class="green">Strings</span>, with each</p></li>
+</ul>
+<blockquote>
+<div><p><span class="green">String</span> being an individual URL to fetch.</p>
+</div></blockquote>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> is an <span class="green">Object</span> of options, which correspond to the
+<a class="reference external" href="https://linux.die.net/man/1/curl">command line options</a>  (without
+the preceding <code class="docutils literal notranslate"><span class="pre">-</span></code> or <code class="docutils literal notranslate"><span class="pre">--</span></code>) of the curl command line program.
+See <a class="reference internal" href="#curl-options">Curl Options</a> below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">callback</span></code> is a <span class="green">Function</span>, a function which takes as its
+sole argument, an <span class="green">Object</span> which will be set to the result and
+related information for each request.  The callback <span class="green">Function</span>
+is called once for each URL retrieved, asynchronously and in the
+order of completion (not necessarily in the order in <code class="docutils literal notranslate"><span class="pre">url_list</span></code>.
+When a single <code class="docutils literal notranslate"><span class="pre">url</span></code> is provided, the callback is optional.  If a
+<code class="docutils literal notranslate"><span class="pre">url_list</span></code> :green`Array` is given, a callback must be provided.</p></li>
+</ul>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>If a callback is provided, returns undefined.  Otherwise the return
+value is an <span class="green">Object</span> containing the <a class="reference internal" href="#fetch-results">fetch() Results</a>.</p>
+</dd>
+</dl>
+</div></blockquote>
+<div class="section" id="fetch-results">
+<h4>fetch() Results<a class="headerlink" href="#fetch-results" title="Permalink to this headline">¶</a></h4>
+<blockquote>
+<div><p>Results are either passed to the callback each time a URL request is
+returned, or if no callback and only one URL is provided, as the return
+value of the <a class="reference internal" href="#fetch">fetch()</a> function.</p>
+<p>The results <span class="green">Object</span> contains minimally:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">body</span></code> - a <span class="green">Buffer</span> with the contents of the body of the
+reply.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">status</span></code> - if successful <code class="docutils literal notranslate"><span class="pre">0</span></code> or for the “http” or “https”
+protocols, the status code returned from the server.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">statusText</span></code> - The corresponding message for the <code class="docutils literal notranslate"><span class="pre">status</span></code> code (
+-i.e. for <code class="docutils literal notranslate"><span class="pre">status</span></code> 301, statusText is set to “Moved Permanently”)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">url</span></code> - the request url as given to the <a class="reference internal" href="#fetch">fetch()</a> function.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">effectiveUrl</span></code> - the url as returned from the server, possibly
+different from <code class="docutils literal notranslate"><span class="pre">url</span></code> if <code class="docutils literal notranslate"><span class="pre">location</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code> (see
+<a class="reference internal" href="#curl-options">Curl Options</a> below).</p></li>
+</ul>
+<p>Other possible properties of the results <span class="green">Object</span> are (not all
+apply to non-http requests):</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">text</span></code> - a <span class="green">String</span> copy of the <code class="docutils literal notranslate"><span class="pre">body</span></code> contents if
+<code class="docutils literal notranslate"><span class="pre">returnText</span></code> is set <code class="docutils literal notranslate"><span class="pre">true</span></code> in <a class="reference internal" href="#curl-options">Curl Options</a>.  Same as
+<code class="docutils literal notranslate"><span class="pre">rampart.utils.bufferToString(result.body)</span></code>.  Note, internally this
+requires a copy of data, whereas the <code class="docutils literal notranslate"><span class="pre">body</span></code> green:<cite>Buffer</cite> is directly
+written to by the Curl library.  If the return data is large, it is
+far more efficient to have <code class="docutils literal notranslate"><span class="pre">returnText</span></code> set <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">localIp</span></code> - a <span class="green">String</span>, the IP address used to connect to the remote server.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">localPort</span></code> - a <span class="green">Number</span>, the port used to connect to the remote server.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">serverIp</span></code> - a <span class="green">String</span>, the IP address of the remote server.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">serverPort</span></code> -  a <span class="green">Number</span>, the remote server’s port used for the connection.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">rawHeader</span></code> - a <span class="green">String</span>, the raw text of the header section of the reply.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">headers</span></code> - an <span class="green">Object</span>, the parsed header keys and values,
+if available.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">httpVersion</span></code> - a <span class="green">Number</span>, (<code class="docutils literal notranslate"><span class="pre">1.0</span></code>, <code class="docutils literal notranslate"><span class="pre">1.1</span></code> or <code class="docutils literal notranslate"><span class="pre">2.0</span></code>).
+The http version used by the server.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">totalTime</span></code> - a <span class="green">Number</span>, the total time the Curl Library spend fetching the
+requested URL.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cookies</span></code> - an <span class="green">Array</span>, a list of cookies sent from the
+remote server.</p></li>
+</ul>
+<p>Example of a single URL request with no callback:</p>
+<p>Example of a multiple URL request with a callback:</p>
+</div></blockquote>
+</div>
+<div class="section" id="adding-more-requests">
+<h4>Adding More Requests<a class="headerlink" href="#adding-more-requests" title="Permalink to this headline">¶</a></h4>
+<blockquote>
+<div><p>The fetch callback <span class="green">Function</span> takes a single argument (the
+<a class="reference internal" href="#fetch-results">fetch() Results</a> <span class="green">Object</span> above).  In addition, more requests
+can be added to the list of URLs to be fetched inside the callback. This
+is accomplished by calling <code class="docutils literal notranslate"><span class="pre">this.addurl(&quot;http://example.com/&quot;)</span></code> from
+within the callback.</p>
+<p>Example:</p>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="submit">
+<h3>submit()<a class="headerlink" href="#submit" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>The <code class="docutils literal notranslate"><span class="pre">submit()</span></code> function operates in a similar manner to the <code class="docutils literal notranslate"><span class="pre">fetch()</span></code>
+function, with the following exceptions:</p>
+<ul class="simple">
+<li><p>A callback function is required.</p></li>
+<li><p>An <span class="green">Array</span> of <span class="green">Objects</span>, containing the property <code class="docutils literal notranslate"><span class="pre">url</span></code></p></li>
+</ul>
+<blockquote>
+<div><p>and any optional post data and <a class="reference internal" href="#curl-options">Curl Options</a> per request is provided.</p>
+</div></blockquote>
+<ul class="simple">
+<li><p>New URLs cannot be added from within the callback.</p></li>
+</ul>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">curl</span><span class="p">.</span><span class="nx">submit</span><span class="p">(</span><span class="nx">urls</span><span class="p">,</span> <span class="nx">callback</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">urls</span></code> is an <span class="green">Object</span> or an <span class="green">Array</span> of
+<span class="green">Objects</span>, one for each request with the property <code class="docutils literal notranslate"><span class="pre">url</span></code> set
+to the URL to be retrieved and other properties set as described in
+<a class="reference internal" href="#curl-options">Curl Options</a> below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">callback</span></code> is a <span class="green">Function</span>, which takes as an argument the
+same <span class="green">Object</span> as returned in <a class="reference internal" href="#fetch-results">fetch() Results</a> above.</p></li>
+</ul>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="curl-options">
+<h2>Curl Options<a class="headerlink" href="#curl-options" title="Permalink to this headline">¶</a></h2>
+<p>The following Curl Options are supported in rampart-curl. See
+<a class="reference external" href="https://linux.die.net/man/1/curl">curl command line tool</a>
+for a full description of each.</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">0</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> forces curl to issue its requests using HTTP 1.0</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">1</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> forces curl to use TLS version 1.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">2</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> forces curl to use SSL version 2.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">3</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> forces curl to use SSL version 3</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">4</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> forces curl to resolve names to IPv4 addresses only.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">6</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> forces curl to resolve names to IPv6 addresses only.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">A</span></code> - same as <code class="docutils literal notranslate"><span class="pre">user-agent</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">C</span></code> - same as <code class="docutils literal notranslate"><span class="pre">continue-at</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">E</span></code> - same as <code class="docutils literal notranslate"><span class="pre">cert</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">H</span></code> - same as <code class="docutils literal notranslate"><span class="pre">header</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">L</span></code> - same as <code class="docutils literal notranslate"><span class="pre">location</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">P</span></code> - same as <code class="docutils literal notranslate"><span class="pre">ftp-port</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Q</span></code> - same as <code class="docutils literal notranslate"><span class="pre">quote</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">X</span></code> - same as <code class="docutils literal notranslate"><span class="pre">request</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">Y</span></code> - same as <code class="docutils literal notranslate"><span class="pre">speed-limit</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">anyauth</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> tells curl to figure out authentication method by itself, and use the most secure one.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">b</span></code> - same as <code class="docutils literal notranslate"><span class="pre">cookie</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">basic</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> tells curl to use HTTP Basic authentication</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">c</span></code> -</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cacert</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">capath</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cert</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cert-status</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cert-type</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ciphers</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">compressed</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">compressed-ssh</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">connect-timeout</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">connect-to</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">continue-at</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cookie</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cookie-jar</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">crlf</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">crlfile</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">delegation</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">digest</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">digest-ie</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">disable-eprt</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">disable-epsv</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dns-interface</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dns-ipv4-addr</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dns-ipv6-addr</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dns-servers</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">e</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">expect100_timeout</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">false-start</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-account</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-alternative-to-user</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-create-dirs</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-method</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-port</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-pret</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-skip-pasv-ip</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-ssl-ccc</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-ssl-ccc-mode</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">get</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">header</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">headers</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hostpubmd5</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">http-any</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">http1.0</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">http1.0</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">http1.1</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">http2</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">http2-prior-knowledge</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ignore-content-length</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">insecure</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">interface</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ipv4</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ipv6</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">j</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">junk-session-cookies</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">k</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">keepalive-time</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key-type</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">krb</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">l</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">limit-rate</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">list-only</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">local-port</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">location</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">location-trusted</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">login-options</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">m</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mail-auth</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mail-from</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mail-msg</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mail-rcpt</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max-filesize</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max-redirs</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max-time</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">n</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">negotiate</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">netrc</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">netrc-file</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">netrc-optional</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">no-alpn</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">no-keepalive</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">no-npn</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">no-sessionid</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">noproxy</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ntlm</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ntlm-wb</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pass</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">path-as-is</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pinnedpubkey</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">post</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">post301</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">post302</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">post303</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">postbin</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">postform</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">postredir</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">preproxy</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proto-default</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proto-redir</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-anyauth</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-basic</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-cacert</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-capath</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-cert</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-cert-type</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-ciphers</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-crlfile</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-digest</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-digest-ie</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-header</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-insecure</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-key</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-key-type</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-negotiate</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-ntlm</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-ntlm-wb</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-pass</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-service-name</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-ssl-allow-beast</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-ssl-no-revoke</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-tlspassword</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-tlsuser</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-tlsv1</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-user</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy1.0</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxytunnel</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pubkey</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">quote</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">r</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">random-file</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">range</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">referer</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">request</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">request-target</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">resolve</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sasl-ir</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">service-name</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks4</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks4a</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks5</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks5-basic</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks5-gssapi</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks5-gssapi-nec</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks5-gssapi-service</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks5-hostname</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">speed-limit</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">speed-time</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ssl</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ssl-allow-beast</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ssl-no-revoke</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ssl-reqd</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sslv2</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sslv3</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">suppress-connect-headers</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">t</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tcp-fastopen</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tcp-nodelay</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">telnet-option</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tftp-blksize</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tftp-no-options</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">time-cond</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tls-max</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tlspassword</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tlsuser</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tlsv1</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tlsv1.0</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tlsv1.1</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tlsv1.2</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tlsv1.3</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tr-encoding</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">u</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">unix-socket</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">user</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">user-agent</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">x</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">y</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">z</span></code></p></li>
+</ul>
+</div></blockquote>
 </div>
 </div>
 

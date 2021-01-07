@@ -111,6 +111,8 @@
 <li class="toctree-l3"><a class="reference internal" href="#the-request-object">The Request Object</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#posting-form-data">Posting Form Data</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#posting-multipart-form-data">Posting Multipart Form Data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#posting-json-data">Posting JSON Data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#posting-other-types">Posting Other Types</a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#the-return-object">The Return Object</a></li>
@@ -123,6 +125,7 @@
 </li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-html.html">The rampart-html module</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-crypto.html">The rampart-crypto module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-curl.html">The rampart-curl module</a></li>
 </ul>
 
             
@@ -195,8 +198,8 @@
 <p>The rampart-server module uses the
 <a class="reference external" href="https://github.com/criticalstack/libevhtp">libevhtp</a> library,
 a fast, embedded, event driven http/https server
-which itself uses <a class="reference external" href="https://libevent.org/">libevent2</a> library.</p>
-<p>The developers of Rampart are extremely grateful for the excellent api and ease
+which itself uses the <a class="reference external" href="https://libevent.org/">libevent2</a> library.</p>
+<p>The developers of Rampart are extremely grateful for the excellent APIs and ease
 of use of these libraries.</p>
 </div>
 <div class="section" id="license">
@@ -217,8 +220,10 @@ It also can be configured to serve files from the filesystem.</p>
 <h3>How does it work?<a class="headerlink" href="#how-does-it-work" title="Permalink to this headline">¶</a></h3>
 <p>Once the module is loaded and configuration parameters are passed to the
 <a class="reference internal" href="#start">start()</a> function, the server maps paths to the filesystem, JavaScript
-functions, JavaScript Modules and/or directories containing JavaScript
-modules.  Modules allow scripts and functions to reside in separate files.
+functions, <a class="reference internal" href="rampart-main.html#using-the-require-function-to-import-modules"><span class="std std-ref">JavaScript Modules</span></a>
+and/or directories containing
+<a class="reference internal" href="rampart-main.html#using-the-require-function-to-import-modules"><span class="std std-ref">JavaScript Modules</span></a>.
+Modules allow scripts and functions to reside in separate files.
 If changes are made to a module, the server does not need to be
 restarted for the changes to take effect.</p>
 <p>The server can operate from a pool of threads, taking advantage of systems
@@ -266,11 +271,10 @@ Options are passed to the function in a single <span class="green">Object</span>
 <span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">(</span><span class="nx">Options</span><span class="p">);</span>
 </pre></div>
 </div>
-<dl class="simple">
-<dt>Where:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">Options</span></code> is an object with the following properties:</p>
-</dd>
-</dl>
-<ul>
+<dl>
+<dt>Where:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">Options</span></code> is an <span class="green">Object</span> with the following properties:</p>
+<blockquote>
+<div><ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">bind</span></code> - An <span class="green">Array</span> of <span class="green">Strings</span>, with each <span class="green">String</span>
 representing an ip address and port.  If not specified, the server will
 bind to port 8088 on the loopback device (i.e. 127.0.0.1, which is only
@@ -392,13 +396,12 @@ to the filesystem.  Example:</p>
         <span class="s2">&quot;/&quot;</span><span class="o">:</span>            <span class="s2">&quot;/usr/local/etc/httpd/htdocs&quot;</span>  <span class="cm">/* map all file requests */</span>
         <span class="s2">&quot;/search.html&quot;</span><span class="o">:</span> <span class="kd">function</span> <span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span> <span class="p">...</span> <span class="p">}</span>         <span class="cm">/* search function */</span>
     <span class="p">}</span>
-    <span class="p">}</span>
 <span class="p">});</span>
 </pre></div>
 </div>
 <p>In the above example, the <code class="docutils literal notranslate"><span class="pre">&quot;/search.html&quot;</span></code> key will have priority over
-<code class="docutils literal notranslate"><span class="pre">&quot;/&quot;</span></code> key, so that a request <code class="docutils literal notranslate"><span class="pre">http://example.com/search.html</span></code> will
-cause the function to be run while anything else will match <code class="docutils literal notranslate"><span class="pre">&quot;/&quot;</span></code>
+<code class="docutils literal notranslate"><span class="pre">&quot;/&quot;</span></code> key, so that a request <code class="docutils literal notranslate"><span class="pre">http://localhost:8088/search.html</span></code> will
+cause the function to be executed while anything else will match <code class="docutils literal notranslate"><span class="pre">&quot;/&quot;</span></code>
 (assuming <code class="docutils literal notranslate"><span class="pre">mapSort</span></code> is not set to <code class="docutils literal notranslate"><span class="pre">false</span></code>).</p>
 <p>Keys/paths used for mapping a <span class="green">Function</span> may be given in one of
 four different formats, which are tested for a match in the following order:</p>
@@ -418,7 +421,8 @@ both these examples were present, <code class="docutils literal notranslate"><sp
 Regular expressions and globs are not allowed.</p>
 </li>
 </ul>
-<dl class="simple">
+</div></blockquote>
+</dd>
 <dt>Return Value</dt><dd><p>A <span class="green">Number</span>, the pid of the current process, or if <code class="docutils literal notranslate"><span class="pre">daemon</span></code> is
 set to <code class="docutils literal notranslate"><span class="pre">true</span></code>, the pid of the forked server.</p>
 </dd>
@@ -643,19 +647,20 @@ as a cookie, the cookie value will override the the query parameter.</p>
 <h4>Posting Form Data<a class="headerlink" href="#posting-form-data" title="Permalink to this headline">¶</a></h4>
 <blockquote>
 <div><p>When posting form data, the request object will include an additional
-property <code class="docutils literal notranslate"><span class="pre">postData</span></code>, which will contain the parsed contents of the
-posted form.  The <code class="docutils literal notranslate"><span class="pre">postData</span></code> properties will also be copied to
-<code class="docutils literal notranslate"><span class="pre">params</span></code>, so long as there are no name collisions between those keys and
-variables set from cookies, headers or query parameters.  The raw posted
-content will be returned in the property <code class="docutils literal notranslate"><span class="pre">body</span></code> as a <span class="green">Buffer</span>.
-Example:</p>
+property <code class="docutils literal notranslate"><span class="pre">postData</span></code>, which will contain the parsed content of the
+posted form as well as the <code class="docutils literal notranslate"><span class="pre">Content-Type</span></code> which will be set to
+<code class="docutils literal notranslate"><span class="pre">&quot;application/x-www-form-urlencoded&quot;</span></code>.  The <code class="docutils literal notranslate"><span class="pre">postData</span></code> <code class="docutils literal notranslate"><span class="pre">content</span></code>
+will also be copied to <code class="docutils literal notranslate"><span class="pre">params</span></code>, so long as there are no name
+collisions between those keys and variables set from cookies, headers or
+query parameters.  The raw posted content will be returned in the
+property <code class="docutils literal notranslate"><span class="pre">body</span></code> as a <span class="green">Buffer</span>.  Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">(</span>
 <span class="p">{</span>
     <span class="p">...,</span>
     <span class="nx">map</span> <span class="o">:</span> <span class="p">{</span>
 
         <span class="s2">&quot;post.html&quot;</span><span class="o">:</span> <span class="kd">function</span><span class="p">(){</span>
-            <span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="s1">&#39;&lt;html&gt;&lt;body&gt;&lt;form action=&quot;/showreq.html&quot; method=&quot;POST&quot;&gt;&#39;</span><span class="o">+</span>
+            <span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="s1">&#39;&lt;html&gt;&lt;body&gt;&lt;form action=&quot;/showreq.txt&quot; method=&quot;POST&quot;&gt;&#39;</span><span class="o">+</span>
                 <span class="s1">&#39;&lt;label for=&quot;fname&quot;&gt;First name:&lt;/label&gt;&lt;br&gt;&#39;</span> <span class="o">+</span>
                 <span class="s1">&#39;&lt;input type=&quot;text&quot; id=&quot;fname&quot; name=&quot;fname&quot;&gt;&lt;br&gt;&#39;</span> <span class="o">+</span>
                 <span class="s1">&#39;&lt;label for=&quot;lname&quot;&gt;Last name:&lt;/label&gt;&lt;br&gt;&#39;</span> <span class="o">+</span>
@@ -666,7 +671,7 @@ Example:</p>
              <span class="k">return</span> <span class="p">{</span><span class="nx">html</span><span class="o">:</span><span class="nx">html</span><span class="p">};</span>
         <span class="p">},</span>
 
-        <span class="s2">&quot;/showreq.html&quot;</span> <span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+        <span class="s2">&quot;/showreq.txt&quot;</span> <span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
 
             <span class="cm">/* convert &quot;body&quot; to text so we can print it out */</span>
             <span class="nx">req</span><span class="p">.</span><span class="nx">body</span><span class="o">=</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">bufferToString</span><span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">body</span><span class="p">);</span>
@@ -698,9 +703,12 @@ Example:</p>
 <span class="cm">        ...,</span>
 
 <span class="cm">       &quot;postData&quot;: {</span>
-<span class="cm">          &quot;fname&quot;: &quot;Joe&quot;,</span>
-<span class="cm">          &quot;lname&quot;: &quot;Public&quot;,</span>
-<span class="cm">          &quot;go&quot;: &quot;Submit&quot;</span>
+<span class="cm">          &quot;Content-Type&quot;: &quot;application/x-www-form-urlencoded&quot;,</span>
+<span class="cm">          &quot;content&quot;: {</span>
+<span class="cm">               &quot;fname&quot;: &quot;Joe&quot;,</span>
+<span class="cm">               &quot;lname&quot;: &quot;Public&quot;,</span>
+<span class="cm">               &quot;go&quot;: &quot;Submit&quot;</span>
+<span class="cm">          }</span>
 <span class="cm">       },</span>
 <span class="cm">       &quot;params&quot;: {</span>
 <span class="cm">          &quot;fname&quot;: &quot;Joe&quot;,</span>
@@ -719,16 +727,19 @@ Example:</p>
 <div class="section" id="posting-multipart-form-data">
 <h4>Posting Multipart Form Data<a class="headerlink" href="#posting-multipart-form-data" title="Permalink to this headline">¶</a></h4>
 <blockquote>
-<div><p>Multipart form data will also be returned in the property <code class="docutils literal notranslate"><span class="pre">formData</span></code>.
-It will be similarly parsed, except that the value of each key will be
-an object providing details for each part.  Example:</p>
+<div><p>Multipart form data will also be returned in the property <code class="docutils literal notranslate"><span class="pre">formData</span></code>
+and will have the <code class="docutils literal notranslate"><span class="pre">Content-Type</span></code> property set to
+<code class="docutils literal notranslate"><span class="pre">&quot;multipart/form-data&quot;</span></code>.  The <code class="docutils literal notranslate"><span class="pre">content</span></code> property will contain an
+array of objects, one object for each “part” of the form data.  The key
+and values of an object provides details and the content for each part.</p>
+<p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">(</span>
 <span class="p">{</span>
     <span class="p">...,</span>
     <span class="nx">map</span> <span class="o">:</span> <span class="p">{</span>
 
         <span class="s2">&quot;postfile.html&quot;</span><span class="o">:</span> <span class="kd">function</span><span class="p">(){</span>
-            <span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="s1">&#39;&lt;html&gt;&lt;body&gt;&lt;form action=&quot;/showreq.html&quot; enctype=&quot;multipart/form-data&quot; method=&quot;POST&quot;&gt;&#39;</span><span class="o">+</span>
+            <span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="s1">&#39;&lt;html&gt;&lt;body&gt;&lt;form action=&quot;/showreq.txt&quot; enctype=&quot;multipart/form-data&quot; method=&quot;POST&quot;&gt;&#39;</span><span class="o">+</span>
                 <span class="s1">&#39;File: &lt;input type=&quot;FILE&quot; name=&quot;file&quot;/&gt;&#39;</span> <span class="o">+</span>
                 <span class="s1">&#39;&lt;input type=&quot;submit&quot; name=&quot;Upload&quot; value=&quot;Upload&quot; /&gt;&#39;</span> <span class="o">+</span>
             <span class="s1">&#39;&lt;/form&gt;&lt;/body&gt;&lt;/html&gt;&#39;</span><span class="p">;</span>
@@ -736,7 +747,7 @@ an object providing details for each part.  Example:</p>
             <span class="k">return</span> <span class="p">{</span><span class="nx">html</span><span class="o">:</span> <span class="nx">html</span><span class="p">};</span>
         <span class="p">},</span>
 
-        <span class="s2">&quot;/showreq.html&quot;</span> <span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+        <span class="s2">&quot;/showreq.txt&quot;</span> <span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
 
             <span class="cm">/* convert &quot;body&quot; to text so we can print it out */</span>
             <span class="nx">req</span><span class="p">.</span><span class="nx">body</span><span class="o">=</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">bufferToString</span><span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">body</span><span class="p">);</span>
@@ -747,9 +758,10 @@ an object providing details for each part.  Example:</p>
 <span class="p">});</span>
 
 <span class="cm">/* posting a small file called &quot;helloWorld.txt with the contents &quot;Hello World!&quot;</span>
+
 <span class="cm">{</span>
 <span class="cm">   &quot;ip&quot;: &quot;::1&quot;,</span>
-<span class="cm">   &quot;port&quot;: 47362,</span>
+<span class="cm">   &quot;port&quot;: 39004,</span>
 <span class="cm">   &quot;method&quot;: &quot;POST&quot;,</span>
 <span class="cm">   &quot;path&quot;: {</span>
 <span class="cm">      &quot;file&quot;: &quot;showreq.html&quot;,</span>
@@ -760,93 +772,188 @@ an object providing details for each part.  Example:</p>
 <span class="cm">      &quot;url&quot;: &quot;http://localhost:8088/showreq.html&quot;</span>
 <span class="cm">   },</span>
 <span class="cm">   &quot;query&quot;: {},</span>
-<span class="cm">   &quot;body&quot;: &quot;------WebKitFormBoundaryVF2DDClCAAwjrcth\r\nContent-Disposition: form-data; name=\&quot;file\&quot;; filename=\&quot;helloWorld.txt\&quot;\r\nContent-Type: text/plain\r\n\r\nHello World!\r\n------WebKitFormBoundaryVF2DDClCAAwjrcth\r\nContent-Disposition: form-data; name=\&quot;Upload\&quot;\r\n\r\nUpload\r\n------WebKitFormBoundaryVF2DDClCAAwjrcth--\r\n&quot;,</span>
+<span class="cm">   &quot;body&quot;: &quot;------WebKitFormBoundaryB4UZ3AZ5kFBUZpR6\r\nContent-Disposition: form-data; name=\&quot;file\&quot;; filename=\&quot;helloWorld.txt\&quot;\r\nContent-Type: text/plain\r\n\r\nHello World!\r\n------WebKitFormBoundaryB4UZ3AZ5kFBUZpR6\r\nContent-Disposition: form-data; name=\&quot;Upload\&quot;\r\n\r\nUpload\r\n------WebKitFormBoundaryB4UZ3AZ5kFBUZpR6--\r\n&quot;,</span>
 <span class="cm">   &quot;query_raw&quot;: &quot;&quot;,</span>
-
-<span class="cm">    ...,</span>
-
+<span class="cm">   &quot;cookies&quot;: {</span>
+<span class="cm">      &quot;mycookie&quot;: &quot;cookietext&quot;,</span>
+<span class="cm">      &quot;cookiewquote&quot;: &quot;my\&quot;cookie\&quot;&quot;</span>
+<span class="cm">   },</span>
 <span class="cm">   &quot;headers&quot;: {</span>
-<span class="cm">      ...,</span>
+<span class="cm">      &quot;Host&quot;: &quot;localhost:8088&quot;,</span>
 <span class="cm">      &quot;Content-Length&quot;: &quot;299&quot;,</span>
-<span class="cm">      &quot;Content-Type&quot;: &quot;multipart/form-data; boundary=----WebKitFormBoundaryVF2DDClCAAwjrcth&quot;,</span>
 <span class="cm">      ...,</span>
 <span class="cm">   },</span>
 <span class="cm">   &quot;postData&quot;: {</span>
-<span class="cm">      &quot;file&quot;: {</span>
-<span class="cm">         &quot;Content-Disposition&quot;: &quot;form-data&quot;,</span>
-<span class="cm">         &quot;name&quot;: &quot;file&quot;,</span>
-<span class="cm">         &quot;filename&quot;: &quot;helloWorld.txt&quot;,</span>
-<span class="cm">         &quot;Content-Type&quot;: &quot;text/plain&quot;,</span>
-<span class="cm">         &quot;contents&quot;: {</span>
-<span class="cm">            &quot;0&quot;: 72,</span>
-<span class="cm">            &quot;1&quot;: 101,</span>
-<span class="cm">            &quot;2&quot;: 108,</span>
-<span class="cm">            &quot;3&quot;: 108,</span>
-<span class="cm">            &quot;4&quot;: 111,</span>
-<span class="cm">            &quot;5&quot;: 32,</span>
-<span class="cm">            &quot;6&quot;: 87,</span>
-<span class="cm">            &quot;7&quot;: 111,</span>
-<span class="cm">            &quot;8&quot;: 114,</span>
-<span class="cm">            &quot;9&quot;: 108,</span>
-<span class="cm">            &quot;10&quot;: 100,</span>
-<span class="cm">            &quot;11&quot;: 33</span>
+<span class="cm">      &quot;Content-Type&quot;: &quot;multipart/form-data&quot;,</span>
+<span class="cm">      &quot;content&quot;: [</span>
+<span class="cm">         {</span>
+<span class="cm">            &quot;Content-Disposition&quot;: &quot;form-data&quot;,</span>
+<span class="cm">            &quot;name&quot;: &quot;file&quot;,</span>
+<span class="cm">            &quot;filename&quot;: &quot;helloWorld.txt&quot;,</span>
+<span class="cm">            &quot;Content-Type&quot;: &quot;text/plain&quot;,</span>
+<span class="cm">            &quot;content&quot;: {</span>
+<span class="cm">               &quot;0&quot;: 72,</span>
+<span class="cm">               &quot;1&quot;: 101,</span>
+<span class="cm">               &quot;2&quot;: 108,</span>
+<span class="cm">               &quot;3&quot;: 108,</span>
+<span class="cm">               &quot;4&quot;: 111,</span>
+<span class="cm">               &quot;5&quot;: 32,</span>
+<span class="cm">               &quot;6&quot;: 87,</span>
+<span class="cm">               &quot;7&quot;: 111,</span>
+<span class="cm">               &quot;8&quot;: 114,</span>
+<span class="cm">               &quot;9&quot;: 108,</span>
+<span class="cm">               &quot;10&quot;: 100,</span>
+<span class="cm">               &quot;11&quot;: 33</span>
+<span class="cm">            }</span>
+<span class="cm">         },</span>
+<span class="cm">         {</span>
+<span class="cm">            &quot;Content-Disposition&quot;: &quot;form-data&quot;,</span>
+<span class="cm">            &quot;name&quot;: &quot;Upload&quot;,</span>
+<span class="cm">            &quot;content&quot;: {</span>
+<span class="cm">               &quot;0&quot;: 85,</span>
+<span class="cm">               &quot;1&quot;: 112,</span>
+<span class="cm">               &quot;2&quot;: 108,</span>
+<span class="cm">               &quot;3&quot;: 111,</span>
+<span class="cm">               &quot;4&quot;: 97,</span>
+<span class="cm">               &quot;5&quot;: 100</span>
+<span class="cm">            }</span>
 <span class="cm">         }</span>
-<span class="cm">      },</span>
-<span class="cm">      &quot;Upload&quot;: {</span>
-<span class="cm">         &quot;Content-Disposition&quot;: &quot;form-data&quot;,</span>
-<span class="cm">         &quot;name&quot;: &quot;Upload&quot;,</span>
-<span class="cm">         &quot;contents&quot;: {</span>
-<span class="cm">            &quot;0&quot;: 85,</span>
-<span class="cm">            &quot;1&quot;: 112,</span>
-<span class="cm">            &quot;2&quot;: 108,</span>
-<span class="cm">            &quot;3&quot;: 111,</span>
-<span class="cm">            &quot;4&quot;: 97,</span>
-<span class="cm">            &quot;5&quot;: 100</span>
-<span class="cm">         }</span>
-<span class="cm">      }</span>
+<span class="cm">      ]</span>
 <span class="cm">   },</span>
 <span class="cm">   &quot;params&quot;: {</span>
-<span class="cm">      &quot;file&quot;: {</span>
-<span class="cm">         &quot;Content-Disposition&quot;: &quot;form-data&quot;,</span>
-<span class="cm">         &quot;name&quot;: &quot;file&quot;,</span>
-<span class="cm">         &quot;filename&quot;: &quot;helloWorld.txt&quot;,</span>
-<span class="cm">         &quot;Content-Type&quot;: &quot;text/plain&quot;,</span>
-<span class="cm">         &quot;contents&quot;: {</span>
-<span class="cm">            &quot;0&quot;: 72,</span>
-<span class="cm">            &quot;1&quot;: 101,</span>
-<span class="cm">            &quot;2&quot;: 108,</span>
-<span class="cm">            &quot;3&quot;: 108,</span>
-<span class="cm">            &quot;4&quot;: 111,</span>
-<span class="cm">            &quot;5&quot;: 32,</span>
-<span class="cm">            &quot;6&quot;: 87,</span>
-<span class="cm">            &quot;7&quot;: 111,</span>
-<span class="cm">            &quot;8&quot;: 114,</span>
-<span class="cm">            &quot;9&quot;: 108,</span>
-<span class="cm">            &quot;10&quot;: 100,</span>
-<span class="cm">            &quot;11&quot;: 33</span>
-<span class="cm">         }</span>
+<span class="cm">      &quot;helloWorld.txt&quot;: {</span>
+<span class="cm">         &quot;0&quot;: 72,</span>
+<span class="cm">         &quot;1&quot;: 101,</span>
+<span class="cm">         &quot;2&quot;: 108,</span>
+<span class="cm">         &quot;3&quot;: 108,</span>
+<span class="cm">         &quot;4&quot;: 111,</span>
+<span class="cm">         &quot;5&quot;: 32,</span>
+<span class="cm">         &quot;6&quot;: 87,</span>
+<span class="cm">         &quot;7&quot;: 111,</span>
+<span class="cm">         &quot;8&quot;: 114,</span>
+<span class="cm">         &quot;9&quot;: 108,</span>
+<span class="cm">         &quot;10&quot;: 100,</span>
+<span class="cm">         &quot;11&quot;: 33</span>
 <span class="cm">      },</span>
 <span class="cm">      &quot;Upload&quot;: {</span>
-<span class="cm">         &quot;Content-Disposition&quot;: &quot;form-data&quot;,</span>
-<span class="cm">         &quot;name&quot;: &quot;Upload&quot;,</span>
-<span class="cm">         &quot;contents&quot;: {</span>
-<span class="cm">            &quot;0&quot;: 85,</span>
-<span class="cm">            &quot;1&quot;: 112,</span>
-<span class="cm">            &quot;2&quot;: 108,</span>
-<span class="cm">            &quot;3&quot;: 111,</span>
-<span class="cm">            &quot;4&quot;: 97,</span>
-<span class="cm">            &quot;5&quot;: 100</span>
-<span class="cm">         }</span>
+<span class="cm">         &quot;0&quot;: 85,</span>
+<span class="cm">         &quot;1&quot;: 112,</span>
+<span class="cm">         &quot;2&quot;: 108,</span>
+<span class="cm">         &quot;3&quot;: 111,</span>
+<span class="cm">         &quot;4&quot;: 97,</span>
+<span class="cm">         &quot;5&quot;: 100</span>
 <span class="cm">      },</span>
-
+<span class="cm">      &quot;Host&quot;: &quot;localhost:8088&quot;,</span>
+<span class="cm">      &quot;Connection&quot;: &quot;keep-alive&quot;,</span>
+<span class="cm">      &quot;Content-Length&quot;: &quot;299&quot;,</span>
+<span class="cm">      &quot;Cache-Control&quot;: &quot;max-age=0&quot;,</span>
 <span class="cm">      ...,</span>
-
 <span class="cm">   }</span>
 <span class="cm">}</span>
 <span class="cm">*/</span>
 </pre></div>
 </div>
 <p>Note that like <code class="docutils literal notranslate"><span class="pre">body</span></code>, the <code class="docutils literal notranslate"><span class="pre">contents</span></code> property of each uploaded part is a <span class="green">Buffer</span>.</p>
+</div></blockquote>
+</div>
+<div class="section" id="posting-json-data">
+<h4>Posting JSON Data<a class="headerlink" href="#posting-json-data" title="Permalink to this headline">¶</a></h4>
+<blockquote>
+<div><p>JSON data, sent with <code class="docutils literal notranslate"><span class="pre">Content-Type</span></code> set to <code class="docutils literal notranslate"><span class="pre">&quot;application/json&quot;</span></code> will also be parsed in
+a manner similar to <a class="reference internal" href="#posting-form-data">Posting Form Data</a>.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">server</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-server&quot;</span><span class="p">);</span>
+
+<span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">(</span>
+<span class="p">{</span>
+    <span class="nx">user</span><span class="o">:</span><span class="s2">&quot;root&quot;</span><span class="p">,</span>
+    <span class="nx">map</span> <span class="o">:</span> <span class="p">{</span>
+        <span class="s2">&quot;post.html&quot;</span><span class="o">:</span> <span class="kd">function</span><span class="p">(){</span>
+            <span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span> <span class="s1">&#39;&lt;html&gt;&lt;head&gt;&lt;script&gt;\n&#39;</span><span class="o">+</span>
+                   <span class="s1">&#39;function senddata(){\n&#39;</span> <span class="o">+</span>
+                     <span class="s1">&#39;var first= document.querySelector(&quot;#fname&quot;);\n&#39;</span> <span class="o">+</span>
+                     <span class="s1">&#39;var last = document.querySelector(&quot;#lname&quot;);\n&#39;</span> <span class="o">+</span>
+                     <span class="s1">&#39;var res  = document.querySelector(&quot;#res&quot;);\n&#39;</span> <span class="o">+</span>
+                     <span class="s1">&#39;var xhr = new XMLHttpRequest();\n&#39;</span> <span class="o">+</span>
+                     <span class="s1">&#39;xhr.open(&quot;POST&quot;, &quot;/showreq.json&quot;);\n&#39;</span> <span class="o">+</span>
+                     <span class="s1">&#39;xhr.setRequestHeader(&quot;Content-Type&quot;, &quot;application/json&quot;);\n&#39;</span> <span class="o">+</span>
+                     <span class="s1">&#39;xhr.onreadystatechange = function () { \n&#39;</span> <span class="o">+</span>
+                       <span class="s1">&#39;if (xhr.readyState === 4 &amp;&amp; xhr.status === 200) {\n&#39;</span> <span class="o">+</span>
+                          <span class="s1">&#39;res.innerHTML = &quot;&lt;pre&gt;&quot;+ this.responseText +&quot;&lt;/pre&gt;&quot;;\n&#39;</span> <span class="o">+</span>
+                       <span class="s1">&#39;} \n&#39;</span> <span class="o">+</span>
+                     <span class="s1">&#39;};\n&#39;</span> <span class="o">+</span>
+                     <span class="s1">&#39;xhr.send( JSON.stringify({first:first.value, last:last.value}) );\n&#39;</span><span class="o">+</span>
+                     <span class="s1">&#39;return false;&#39;</span><span class="o">+</span>
+                   <span class="s1">&#39;}\n&#39;</span><span class="o">+</span>
+                <span class="s1">&#39;&lt;/script&gt;&lt;/head&gt;&lt;body&gt;&#39;</span><span class="o">+</span>
+                <span class="s1">&#39;&lt;label for=&quot;fname&quot;&gt;First name:&lt;/label&gt;&lt;br&gt;&#39;</span> <span class="o">+</span>
+                <span class="s1">&#39;&lt;input type=&quot;text&quot; id=&quot;fname&quot; name=&quot;fname&quot;&gt;&lt;br&gt;&#39;</span> <span class="o">+</span>
+                <span class="s1">&#39;&lt;label for=&quot;lname&quot;&gt;Last name:&lt;/label&gt;&lt;br&gt;&#39;</span> <span class="o">+</span>
+                <span class="s1">&#39;&lt;input type=&quot;text&quot; id=&quot;lname&quot; name=&quot;lname&quot;&gt;&#39;</span><span class="o">+</span>
+                <span class="s1">&#39;&lt;button onclick=&quot;return senddata()&quot;&gt;Submit&lt;/button&gt;&#39;</span><span class="o">+</span>
+            <span class="s1">&#39;&lt;div id=&quot;res&quot;&gt;&lt;/div&gt;&lt;/body&gt;&lt;/html&gt;&#39;</span><span class="p">;</span>
+
+             <span class="k">return</span> <span class="p">{</span><span class="nx">html</span><span class="o">:</span><span class="nx">html</span><span class="p">};</span>
+        <span class="p">},</span>
+
+        <span class="s2">&quot;/showreq.json&quot;</span> <span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+            <span class="cm">/* convert &quot;body&quot; to text so we can send */</span>
+            <span class="nx">req</span><span class="p">.</span><span class="nx">body</span><span class="o">=</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">bufferToString</span><span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">body</span><span class="p">);</span>
+
+            <span class="k">return</span><span class="p">(</span> <span class="p">{</span> <span class="nx">json</span><span class="o">:</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">sprintf</span><span class="p">(</span><span class="s2">&quot;%3J&quot;</span><span class="p">,</span><span class="nx">req</span><span class="p">)</span> <span class="p">}</span> <span class="p">);</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">});</span>
+
+<span class="cm">/* results might be:</span>
+<span class="cm">{</span>
+<span class="cm">   &quot;ip&quot;: &quot;::1&quot;,</span>
+<span class="cm">   &quot;port&quot;: 46586,</span>
+<span class="cm">   &quot;method&quot;: &quot;POST&quot;,</span>
+<span class="cm">   &quot;path&quot;: {</span>
+<span class="cm">      &quot;file&quot;: &quot;showreq.json&quot;,</span>
+<span class="cm">      &quot;path&quot;: &quot;/showreq.json&quot;,</span>
+<span class="cm">      &quot;base&quot;: &quot;/&quot;,</span>
+<span class="cm">      &quot;scheme&quot;: &quot;http://&quot;,</span>
+<span class="cm">      &quot;host&quot;: &quot;localhost:8088&quot;,</span>
+<span class="cm">      &quot;url&quot;: &quot;http://localhost:8088/showreq.json&quot;</span>
+<span class="cm">   },</span>
+<span class="cm">   &quot;query&quot;: {},</span>
+<span class="cm">   &quot;body&quot;: &quot;{\&quot;first\&quot;:\&quot;Joe\&quot;,\&quot;last\&quot;:\&quot;Public\&quot;}&quot;,</span>
+<span class="cm">   &quot;query_raw&quot;: &quot;&quot;,</span>
+<span class="cm">   &quot;headers&quot;: {</span>
+<span class="cm">      &quot;Host&quot;: &quot;localhost:8088&quot;,</span>
+<span class="cm">      &quot;Connection&quot;: &quot;keep-alive&quot;,</span>
+<span class="cm">      &quot;Content-Length&quot;: &quot;31&quot;,</span>
+<span class="cm">      &quot;Content-Type&quot;: &quot;application/json&quot;,</span>
+<span class="cm">      ...,</span>
+<span class="cm">   },</span>
+<span class="cm">   &quot;postData&quot;: {</span>
+<span class="cm">      &quot;Content-Type&quot;: &quot;application/json&quot;,</span>
+<span class="cm">      &quot;content&quot;: {</span>
+<span class="cm">         &quot;first&quot;: &quot;Joe&quot;,</span>
+<span class="cm">         &quot;last&quot;: &quot;Public&quot;</span>
+<span class="cm">      }</span>
+<span class="cm">   },</span>
+<span class="cm">   &quot;params&quot;: {</span>
+<span class="cm">      &quot;first&quot;: &quot;Joe&quot;,</span>
+<span class="cm">      &quot;last&quot;: &quot;Public&quot;,</span>
+<span class="cm">      &quot;Content-Length&quot;: &quot;31&quot;,</span>
+<span class="cm">      &quot;Content-Type&quot;: &quot;application/json&quot;,</span>
+<span class="cm">      &quot;Referer&quot;: &quot;http://localhost:8088/post.html&quot;,</span>
+<span class="cm">      ...,</span>
+<span class="cm">   }</span>
+<span class="cm">}</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="posting-other-types">
+<h4>Posting Other Types<a class="headerlink" href="#posting-other-types" title="Permalink to this headline">¶</a></h4>
+<blockquote>
+<div><p>Posting with a <code class="docutils literal notranslate"><span class="pre">Content-Type</span></code> other than the three above will return
+<code class="docutils literal notranslate"><span class="pre">postData</span></code> with the provided <code class="docutils literal notranslate"><span class="pre">Content-Type</span></code> set, and <code class="docutils literal notranslate"><span class="pre">contents</span></code>
+will be the same as the unparsed <span class="green">Buffer</span> <code class="docutils literal notranslate"><span class="pre">body</span></code>.</p>
 </div></blockquote>
 </div>
 </div>

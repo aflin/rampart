@@ -415,15 +415,19 @@ See standard formats and flags from
 <blockquote>
 <div><ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">%s</span></code> - corresponding argument is treated as a <span class="green">String</span>
-(converted/coerced if necessary; <span class="green">Objects</span> and <span class="green">Buffers</span>
-are converted the same as for <code class="docutils literal notranslate"><span class="pre">%J</span></code> and <code class="docutils literal notranslate"><span class="pre">%B</span></code> below).</p></li>
+(converted/coerced if necessary; <span class="green">Objects</span> are converted the
+same as for <code class="docutils literal notranslate"><span class="pre">%J</span></code> and <span class="green">Buffers</span>
+are printed as is).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%S</span></code> - same as <code class="docutils literal notranslate"><span class="pre">%s</span></code> except an error is thrown if the corresponding argument is
 not a <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%J</span></code> - print <span class="green">Object</span> as JSON.  An optional width (i.e.
 <code class="docutils literal notranslate"><span class="pre">printf(&quot;%4J&quot;,</span> <span class="pre">obj);</span></code>) may be given which will print with new lines and
 indentation of the specified amount. Thus <code class="docutils literal notranslate"><span class="pre">printf(&quot;%4J&quot;,</span> <span class="pre">obj);</span></code> is
 equivalent to <code class="docutils literal notranslate"><span class="pre">printf(&quot;%s&quot;,</span> <span class="pre">JSON.stringify(obj,</span> <span class="pre">null,</span> <span class="pre">4)</span> <span class="pre">);</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">%B</span></code> - print contents of a <span class="green">Buffer</span> as is.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">%B</span></code> - print contents of a <span class="green">Buffer</span> or <span class="green">String</span> as
+base64. If <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, it decodes a <span class="green">Buffer</span> or
+<span class="green">String</span> containing base64 (throws an error if not valid
+base64).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%U</span></code> - url encode (or if <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, decode) a <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%H</span></code> - html encode (or if <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, decode) a <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%P</span></code> - pretty print a <span class="green">String</span> or <span class="green">Buffer</span>.  Expects
@@ -634,7 +638,7 @@ overwrite an existing file.</p></li>
 
 <span class="kd">var</span> <span class="nx">out</span><span class="o">=</span><span class="nx">fread</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
 
-<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%B&quot;</span><span class="p">,</span> <span class="nx">out</span><span class="p">);</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%s&quot;</span><span class="p">,</span> <span class="nx">out</span><span class="p">);</span>
 <span class="cm">/* expect output: &quot;abcdef&quot; */</span>
 
 <span class="nx">fclose</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
@@ -799,7 +803,7 @@ to be converted and <code class="docutils literal notranslate"><span class="pre"
 <h4>dehexify<a class="headerlink" href="#dehexify" title="Permalink to this headline">¶</a></h4>
 <p>Convert a hex string to a string of bytes.</p>
 <p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">data</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">hexify</span><span class="p">(</span><span class="nx">hexstring</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">data</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">dehexify</span><span class="p">(</span><span class="nx">hexstring</span><span class="p">);</span>
 </pre></div>
 </div>
 <dl class="simple">
@@ -813,7 +817,7 @@ byte in the binary string.</p>
 <span class="kd">var</span> <span class="nx">s</span><span class="o">=</span><span class="nx">sprintf</span><span class="p">(</span><span class="s2">&quot;%c%c%c%c&quot;</span><span class="p">,</span><span class="mh">0xF0</span><span class="p">,</span> <span class="mh">0x9F</span><span class="p">,</span> <span class="mh">0x98</span><span class="p">,</span> <span class="mh">0x8A</span><span class="p">);</span>
 
 <span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;0x%s\n&quot;</span><span class="p">,</span> <span class="nx">hexify</span><span class="p">(</span><span class="nx">s</span><span class="p">)</span> <span class="p">);</span>
-<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%B\n&quot;</span><span class="p">,</span> <span class="nx">dehexify</span><span class="p">(</span><span class="nx">hexify</span><span class="p">(</span><span class="nx">s</span><span class="p">))</span> <span class="p">);</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%s\n&quot;</span><span class="p">,</span> <span class="nx">dehexify</span><span class="p">(</span><span class="nx">hexify</span><span class="p">(</span><span class="nx">s</span><span class="p">))</span> <span class="p">);</span>
 
 <span class="cm">/* expected output:</span>
 <span class="cm">0xf09f988a</span>
@@ -1093,7 +1097,7 @@ May be truncated if the file contains null characters.</p></td>
 <h4>readLine<a class="headerlink" href="#readline" title="Permalink to this headline">¶</a></h4>
 <p>Read a text file line-by-line.</p>
 <p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">rl</span> <span class="o">=</span> <span class="nx">readLine</span><span class="p">(</span><span class="nx">file</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">rl</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">readLine</span><span class="p">(</span><span class="nx">file</span><span class="p">);</span>
 <span class="kd">var</span> <span class="nx">line</span><span class="o">=</span><span class="nx">rl</span><span class="p">.</span><span class="nx">next</span><span class="p">();</span>
 </pre></div>
 </div>
@@ -1971,13 +1975,9 @@ transpiled script will be run directly.</p>
 the script has not changed since last run, the execution speed will be
 normal as the cached/transpiled code will be used and thus no traspiling
 will occur.</p>
-<p>Also note that nearly all Rampart functions are synchronous, and therefore
-will be executed before any babel transpiled asynchronous code
-regardless of its position in the script.  This is normal behavior for
-JavaScript, but may be counterintuitive if coming from, e.g. Node.js
-where most functions are asynchronous.</p>
-<p>As an example, the following code produces the same output in Rampart and
-Node.js.</p>
+<p>Though nearly all rampart functions are synchronous, asynchronous code may
+also be used with babel.  For example, the following code produces the same
+output in Rampart and Node.js.</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="s2">&quot;use babel&quot;</span> <span class="cm">/* ignored in node */</span>
 
 <span class="kd">function</span> <span class="nx">resolveme</span><span class="p">()</span> <span class="p">{</span>
