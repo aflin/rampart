@@ -1054,12 +1054,16 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                      (int)((len == -1) ? (filesize - 1) : endval),
                      (int)filesize);
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Range", reprange, 0, 1));
+            snprintf(reprange, 128, "%d", (int)(filesize - beg) );
+            evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", reprange, 0, 1)); 
         }
         //range is no longer malloc'd
         //free(range); /* chicken 🐣 */
     }
     else 
         len=filesize;
+
+    if(len<0) len = filesize - beg;
 
     rp_evbuffer_add_file(req->buffer_out, fd, beg, len);
     sendresp(req, rescode);
