@@ -305,9 +305,9 @@ Mapped Functions
 
   * A directory of modules where the directory contains one or more modules
     with ``module.exports`` set to functions.  Example:
-    ``map: {"/scripts/": {modulePath: "./myscriptsdir/"[, ...]} }``.  In this
-    case, if ``./myscriptsdir/mymod.js`` script exists, it might be
-    available from the path ``http://localhost:8088/scripts/mymod.ext`` 
+    ``map: {"/scripts/": {modulePath: "/path/to/myscriptsdir/"} }``.  In this
+    case, if ``/path/to/myscriptsdir/mymod.js`` script exists, it might be
+    available from the URL ``http://localhost:8088/scripts/mymod.ext`` 
     where ``.ext`` can be ``.html``, ``.txt`` or any other extension desired.
     Note that regardless of the extension used, the mime-type is set
     in `The Return Object`_\ .
@@ -322,14 +322,14 @@ Mapped Functions
 
   It is also important to note that only global variables and functions, and
   inline functions are copied to each JavaScript context for each server
-  thread. Any variable or function that might otherwise appear to be in scope
-  when ``server.start()`` is executed will not be available from within each
-  server thread.  This is true regardless of the ``useThreads`` setting
-  above.  Any semantic confusion that might be caused by this
-  limitation can be mostly avoided by placing functions in separate scripts as 
-  modules, since variables declared in the module will be available and properly
-  scoped (though separately and distintly; variables are not shared between 
-  threads).
+  thread.  Any other variable or function that might otherwise appear to be
+  in scope when ``server.start()`` is executed will not be available from
+  within each server thread.  This is true regardless of the state of ``useThreads``
+  setting above.  Any semantic confusion that might be caused by this
+  limitation can be mostly avoided by placing functions in separate scripts
+  as modules, since variables declared in the module will be available and
+  properly scoped (though separately and distintly; variables are not shared
+  between threads).
 
   Example of a scoped variable that would not be available:
   

@@ -244,8 +244,15 @@ extern int   rampart_argc;
 
 /* func from rampart-utils.c */
 extern void duk_misc_init(duk_context *ctx);
-char *duk_rp_object2querystring(duk_context *ctx, duk_idx_t qsidx);
+
+#define ARRAYREPEAT 0
+#define ARRAYBRACKETREPEAT 1
+#define ARRAYCOMMA 2
+#define ARRAYJSON 3
+char *duk_rp_object2querystring(duk_context *ctx, duk_idx_t qsidx, int atype);
+
 void  duk_rp_querystring2object(duk_context *ctx, char *q);
+
 duk_ret_t duk_rp_object2q(duk_context *ctx);
 char *strcatdup(char *s, char *adds);
 char *strjoin(char *s, char *adds, char c);

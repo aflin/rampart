@@ -693,47 +693,15 @@ const char *duk_curl_to_strOrJSON(duk_context *ctx, duk_idx_t idx)
 }
 
 
-#define ARRAYREPEAT 0
-#define ARRAYBRACKETREPEAT 1
-#define ARRAYCOMMA 2
-#define ARRAYJSON 3
 /* *****************************************************
    serialize object to query string 
    return val needs to be freed
    ***************************************************** */
-char *duk_rp_object2querystring(duk_context *ctx, duk_idx_t qsidx)
+char *duk_rp_object2querystring(duk_context *ctx, duk_idx_t qsidx, int atype)
 {
-    int i = 0, atype = ARRAYREPEAT, end = qsidx + 2;
-    const char *arraytype;
+    int i = 0;
     char *ret = (char *)NULL, *s;
 
-    /* 
-     look at next two stack items for a string,
-     if i is -1, assume no string and don't wrap 
-     around and go to 0 
-  */
-    if (qsidx != -1)
-    {
-        for (i = qsidx; i < end; i++)
-        {
-            if (duk_is_string(ctx, i))
-            {
-                arraytype = duk_get_string(ctx, i);
-
-                if (!strncmp("bracket", arraytype, 7))
-                    atype = ARRAYBRACKETREPEAT;
-                else if (!strncmp("comma", arraytype, 5))
-                    atype = ARRAYCOMMA;
-                else if (!strcmp("json", arraytype))
-                    atype = ARRAYJSON;
-
-                duk_remove(ctx, i);
-                /* consequence of counting backwards and removing string */
-                if (qsidx < 0 && i != qsidx)
-                    qsidx++;
-            }
-        }
-    }
     i = 0;
     if (duk_is_object(ctx, qsidx) && !duk_is_array(ctx, qsidx))
     {
@@ -820,10 +788,7 @@ char *duk_rp_object2querystring(duk_context *ctx, duk_idx_t qsidx)
             duk_pop_2(ctx);
         } /* while */
     }
-    //else error?
-    duk_remove(ctx, qsidx);
 
-    //  curl_easy_cleanup(curl);
     return (ret);
 }
 
@@ -866,8 +831,7 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
 
         keyl=strlen(key);
         vall=strlen(val);
-
-        if( keyl > 3 && *(key+keyl-1)==']' && *(key+keyl-2)=='[')
+        if( keyl > 2 && *(key+keyl-1)==']' && *(key+keyl-2)=='[')
         {   /* its an array with brackets */
             keyl-=2;
             duk_size_t arrayi;
@@ -929,7 +893,6 @@ void duk_rp_querystring2object(duk_context *ctx, char *q)
             size_t l=e-s;
             
             pushqelem(ctx,s,l);
-            //printf("%.*s\n",(int)l,s);
             if(!*e)
                 break;
             s=e+1;
@@ -950,7 +913,34 @@ duk_ret_t duk_rp_query2o(duk_context *ctx)
 ******************************************** */
 duk_ret_t duk_rp_object2q(duk_context *ctx)
 {
-    char *s = duk_rp_object2querystring(ctx, 0);
+    char *s;
+    const char *arraytype=NULL;
+    duk_idx_t obj_idx=0, str_idx;
+    int atype=ARRAYREPEAT;
+    
+    if(duk_is_object(ctx, 0) && !duk_is_function(ctx, 0))
+        obj_idx=0;
+    else if (duk_is_object(ctx, 1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, 1))
+        obj_idx=1;
+    else
+        RP_THROW(ctx, "objectToQuery - object required but not provided");
+
+    str_idx =!obj_idx;
+    
+    if(duk_is_string(ctx, str_idx))
+        arraytype=duk_get_string(ctx, str_idx);
+
+    if (arraytype)
+    {
+        if (!strcmp("bracket", arraytype))
+            atype = ARRAYBRACKETREPEAT;
+        else if (!strcmp("comma", arraytype))
+            atype = ARRAYCOMMA;
+        else if (!strcmp("json", arraytype))
+            atype = ARRAYJSON;
+    }
+
+    s = duk_rp_object2querystring(ctx, obj_idx, atype);
     duk_push_string(ctx, s);
     free(s);
     return 1;
@@ -3259,6 +3249,42 @@ duk_ret_t duk_bprintf(duk_context *ctx)
     return 1;
 }
 
+duk_ret_t duk_getType(duk_context *ctx)
+{
+    if (duk_is_string(ctx, 0))
+        duk_push_string(ctx, "String");
+    else if (duk_is_array(ctx, 0))
+        duk_push_string(ctx, "Array");
+    else if (duk_is_nan(ctx, 0))
+        duk_push_string(ctx, "Nan");
+    else if (duk_is_number(ctx, 0))
+        duk_push_string(ctx, "Number");
+    else if (duk_is_function(ctx, 0))
+        duk_push_string(ctx, "Function");
+    else if (duk_is_boolean(ctx, 0))
+        duk_push_string(ctx, "Boolean");
+    else if (duk_is_buffer_data(ctx, 0))
+        duk_push_string(ctx, "Buffer");
+    else if (duk_is_null(ctx, 0))
+        duk_push_string(ctx, "Null");
+    else if (duk_is_undefined(ctx, 0))
+        duk_push_string(ctx, "Undefined");
+    else if (duk_is_symbol(ctx, 0))
+        duk_push_string(ctx, "Symbol");
+    else if (duk_is_object(ctx, 0))
+    {
+        if(duk_has_prop_string(ctx, 0, "getMilliseconds") && duk_has_prop_string(ctx, 0, "getUTCDay") )
+            duk_push_string(ctx, "Date");
+        else
+            duk_push_string(ctx, "Object");
+    }
+    else
+        duk_push_string(ctx, "Unknown");
+
+    return 1;
+}
+
+
 void duk_printf_init(duk_context *ctx)
 {
     if (!duk_get_global_string(ctx, "rampart"))
@@ -3306,6 +3332,9 @@ void duk_printf_init(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_fwrite, 3);
     duk_put_prop_string(ctx, -2, "fwrite");
+
+    duk_push_c_function(ctx, duk_getType, 1);
+    duk_put_prop_string(ctx, -2, "getType");
 
     duk_push_object(ctx);
     duk_push_string(ctx,"accessLog");

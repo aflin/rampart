@@ -109,7 +109,26 @@
 <li class="toctree-l3"><a class="reference internal" href="#submit">submit()</a></li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="#curl-options">Curl Options</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#curl-options">Curl Options</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#curl-long-options">Curl long options</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#supported-options">Supported Options</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#unsupported-extras">Unsupported Extras</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#additional-options">Additional options</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#curl-short-options">Curl short options</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#examples">Examples</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#simple-http-get-request">Simple HTTP Get request</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#multiple-http-get-requests">Multiple HTTP Get Requests</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#multiple-http-request-with-addurl">Multiple HTTP request with addurl()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#posting-multipart-form-data">Posting Multipart-Form Data</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#multiple-http-post-with-submit">Multiple HTTP Post with Submit()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sending-email-with-smpt">Sending Email with SMPT</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sending-email-with-attachments">Sending Email with Attachments</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
@@ -195,14 +214,14 @@ to  Daniel Stenberg, et. al. for providing this library.</p>
 </div>
 <div class="section" id="what-does-it-do">
 <h3>What does it do?<a class="headerlink" href="#what-does-it-do" title="Permalink to this headline">¶</a></h3>
-<p>The rampart-curl module proviedss network client capabilities for the
+<p>The rampart-curl module provides network client capabilities for the
 <code class="docutils literal notranslate"><span class="pre">http</span></code>, <code class="docutils literal notranslate"><span class="pre">https</span></code>, <code class="docutils literal notranslate"><span class="pre">ftp</span></code>, <code class="docutils literal notranslate"><span class="pre">smtp</span></code>, <code class="docutils literal notranslate"><span class="pre">pop3</span></code> and <code class="docutils literal notranslate"><span class="pre">imap</span></code> protocols.
 For the <code class="docutils literal notranslate"><span class="pre">ftp</span></code>, <code class="docutils literal notranslate"><span class="pre">http</span></code> and <code class="docutils literal notranslate"><span class="pre">https</span></code> protocols, an asynchronous parallel fetch is
 also provided.</p>
 </div>
 <div class="section" id="how-does-it-work">
 <h3>How does it work?<a class="headerlink" href="#how-does-it-work" title="Permalink to this headline">¶</a></h3>
-<p>The main functions <code class="docutils literal notranslate"><span class="pre">fetch()</span></code> and <code class="docutils literal notranslate"><span class="pre">submit</span></code> take a url (or several) and options in a
+<p>The main functions <code class="docutils literal notranslate"><span class="pre">fetch()</span></code> and <code class="docutils literal notranslate"><span class="pre">submit()</span></code> take a URL (or several) and options in a
 manner which is similar to the
 <a class="reference external" href="https://linux.die.net/man/1/curl">curl command line tool</a>.  Results are
 returned in an object, which includes status, headers and body text as
@@ -223,17 +242,17 @@ appropriate for the protocol being used.</p>
 <h2>Main Functions<a class="headerlink" href="#main-functions" title="Permalink to this headline">¶</a></h2>
 <p>The rampart-curl module is capable of posting to or retrieving data from
 network resources as addressed by a URL.  The module exports two functions
-which may be used for transfering data over the network: <code class="docutils literal notranslate"><span class="pre">fetch()</span></code> and
+which may be used for transferring data over the network: <code class="docutils literal notranslate"><span class="pre">fetch()</span></code> and
 <code class="docutils literal notranslate"><span class="pre">submit</span></code>.  These two functions differ only in the format of the request
 and how options are passed.  For retrieving a list of URLs where each
 request uses one group of settings that do not change, and where new URLs
-can be added to the list at any time, <code class="docutils literal notranslate"><span class="pre">fetch()</span></code> is the prefered tool.
+can be added to the list at any time, <code class="docutils literal notranslate"><span class="pre">fetch()</span></code> is the preferred tool.
 However for retrieving a list of URLs where each has separate settings or
 post content <code class="docutils literal notranslate"><span class="pre">submit()</span></code> is the appropriate function.</p>
 <div class="section" id="fetch">
 <h3>fetch()<a class="headerlink" href="#fetch" title="Permalink to this headline">¶</a></h3>
 <blockquote>
-<div><p>The <code class="docutils literal notranslate"><span class="pre">fetch</span></code> function takes a <span class="green">String</span> or an :green`Array` of
+<div><p>The <code class="docutils literal notranslate"><span class="pre">fetch</span></code> function takes a <span class="green">String</span> or an <span class="green">Array</span> of
 <span class="green">Strings</span>, each a URL, and an optional <span class="green">Object</span> of options and an
 optional callback <span class="green">Function</span>.</p>
 <p>Usage:</p>
@@ -245,15 +264,11 @@ optional callback <span class="green">Function</span>.</p>
 <p>Where:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">url</span></code> is a <span class="green">String</span>, the URL of the resource to be accessed.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">url_list</span></code> is an :green`Array` of <span class="green">Strings</span>, with each</p></li>
-</ul>
-<blockquote>
-<div><p><span class="green">String</span> being an individual URL to fetch.</p>
-</div></blockquote>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> is an <span class="green">Object</span> of options, which correspond to the
-<a class="reference external" href="https://linux.die.net/man/1/curl">command line options</a>  (without
-the preceding <code class="docutils literal notranslate"><span class="pre">-</span></code> or <code class="docutils literal notranslate"><span class="pre">--</span></code>) of the curl command line program.
+<li><p><code class="docutils literal notranslate"><span class="pre">url_list</span></code> is an <span class="green">Array</span> of <span class="green">Strings</span>, with each
+<span class="green">String</span> being an individual URL to fetch.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> is an <span class="green">Object</span> of options, which correspond to
+<a class="reference external" href="https://linux.die.net/man/1/curl">curl command line options</a>  (without
+the preceding <code class="docutils literal notranslate"><span class="pre">-</span></code> or <code class="docutils literal notranslate"><span class="pre">--</span></code>).
 See <a class="reference internal" href="#curl-options">Curl Options</a> below.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">callback</span></code> is a <span class="green">Function</span>, a function which takes as its
 sole argument, an <span class="green">Object</span> which will be set to the result and
@@ -261,10 +276,10 @@ related information for each request.  The callback <span class="green">Function
 is called once for each URL retrieved, asynchronously and in the
 order of completion (not necessarily in the order in <code class="docutils literal notranslate"><span class="pre">url_list</span></code>.
 When a single <code class="docutils literal notranslate"><span class="pre">url</span></code> is provided, the callback is optional.  If a
-<code class="docutils literal notranslate"><span class="pre">url_list</span></code> :green`Array` is given, a callback must be provided.</p></li>
+<code class="docutils literal notranslate"><span class="pre">url_list</span></code> <span class="green">Array</span> is given, a callback must be provided.</p></li>
 </ul>
 <dl class="simple">
-<dt>Return Value:</dt><dd><p>If a callback is provided, returns undefined.  Otherwise the return
+<dt>Return Value:</dt><dd><p>If a callback is provided, returns <code class="docutils literal notranslate"><span class="pre">undefined</span></code>.  Otherwise the return
 value is an <span class="green">Object</span> containing the <a class="reference internal" href="#fetch-results">fetch() Results</a>.</p>
 </dd>
 </dl>
@@ -294,9 +309,9 @@ apply to non-http requests):</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">text</span></code> - a <span class="green">String</span> copy of the <code class="docutils literal notranslate"><span class="pre">body</span></code> contents if
 <code class="docutils literal notranslate"><span class="pre">returnText</span></code> is set <code class="docutils literal notranslate"><span class="pre">true</span></code> in <a class="reference internal" href="#curl-options">Curl Options</a>.  Same as
 <code class="docutils literal notranslate"><span class="pre">rampart.utils.bufferToString(result.body)</span></code>.  Note, internally this
-requires a copy of data, whereas the <code class="docutils literal notranslate"><span class="pre">body</span></code> green:<cite>Buffer</cite> is directly
+requires a copy of data, whereas the <code class="docutils literal notranslate"><span class="pre">body</span></code> <span class="green">Buffer</span> is directly
 written to by the Curl library.  If the return data is large, it is
-far more efficient to have <code class="docutils literal notranslate"><span class="pre">returnText</span></code> set <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
+more efficient to have <code class="docutils literal notranslate"><span class="pre">returnText</span></code> set <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">localIp</span></code> - a <span class="green">String</span>, the IP address used to connect to the remote server.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">localPort</span></code> - a <span class="green">Number</span>, the port used to connect to the remote server.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">serverIp</span></code> - a <span class="green">String</span>, the IP address of the remote server.</p></li>
@@ -305,7 +320,7 @@ far more efficient to have <code class="docutils literal notranslate"><span clas
 <li><p><code class="docutils literal notranslate"><span class="pre">headers</span></code> - an <span class="green">Object</span>, the parsed header keys and values,
 if available.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">httpVersion</span></code> - a <span class="green">Number</span>, (<code class="docutils literal notranslate"><span class="pre">1.0</span></code>, <code class="docutils literal notranslate"><span class="pre">1.1</span></code> or <code class="docutils literal notranslate"><span class="pre">2.0</span></code>).
-The http version used by the server.</p></li>
+The http version used by the server if URL is an http request.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">totalTime</span></code> - a <span class="green">Number</span>, the total time the Curl Library spend fetching the
 requested URL.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">cookies</span></code> - an <span class="green">Array</span>, a list of cookies sent from the
@@ -334,26 +349,23 @@ within the callback.</p>
 function, with the following exceptions:</p>
 <ul class="simple">
 <li><p>A callback function is required.</p></li>
-<li><p>An <span class="green">Array</span> of <span class="green">Objects</span>, containing the property <code class="docutils literal notranslate"><span class="pre">url</span></code></p></li>
-</ul>
-<blockquote>
-<div><p>and any optional post data and <a class="reference internal" href="#curl-options">Curl Options</a> per request is provided.</p>
-</div></blockquote>
-<ul class="simple">
+<li><p>An <span class="green">Object</span> or an <span class="green">Array</span> of <span class="green">Objects</span>, containing
+the property <code class="docutils literal notranslate"><span class="pre">url</span></code> and any <a class="reference internal" href="#curl-options">Curl Options</a> per
+request must be provided.</p></li>
 <li><p>New URLs cannot be added from within the callback.</p></li>
 </ul>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
 
-<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">curl</span><span class="p">.</span><span class="nx">submit</span><span class="p">(</span><span class="nx">urls</span><span class="p">,</span> <span class="nx">callback</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">curl</span><span class="p">.</span><span class="nx">submit</span><span class="p">(</span><span class="nx">request</span><span class="p">,</span> <span class="nx">callback</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>Where:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">urls</span></code> is an <span class="green">Object</span> or an <span class="green">Array</span> of
-<span class="green">Objects</span>, one for each request with the property <code class="docutils literal notranslate"><span class="pre">url</span></code> set
-to the URL to be retrieved and other properties set as described in
-<a class="reference internal" href="#curl-options">Curl Options</a> below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">request</span></code> is an <span class="green">Object</span> or an <span class="green">Array</span> of
+<span class="green">Objects</span>, one <span class="green">Object</span> for each request with the
+property <code class="docutils literal notranslate"><span class="pre">url</span></code> set to the URL to be retrieved and other properties
+set as described in <a class="reference internal" href="#curl-options">Curl Options</a> below.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">callback</span></code> is a <span class="green">Function</span>, which takes as an argument the
 same <span class="green">Object</span> as returned in <a class="reference internal" href="#fetch-results">fetch() Results</a> above.</p></li>
 </ul>
@@ -362,17 +374,323 @@ same <span class="green">Object</span> as returned in <a class="reference intern
 </div>
 <div class="section" id="curl-options">
 <h2>Curl Options<a class="headerlink" href="#curl-options" title="Permalink to this headline">¶</a></h2>
-<p>The following Curl Options are supported in rampart-curl. See
-<a class="reference external" href="https://linux.die.net/man/1/curl">curl command line tool</a>
-for a full description of each.</p>
+<p>The following Options are available in rampart-curl.</p>
+<div class="section" id="curl-long-options">
+<h3>Curl long options<a class="headerlink" href="#curl-long-options" title="Permalink to this headline">¶</a></h3>
+<p>Some of the options below have not been fully tested. The descriptions below are an
+abbreviated version of the man page (written by Daniel Stenberg, et. al.).
+See <a class="reference external" href="https://linux.die.net/man/1/curl">curl command line tool</a> for a full
+description of each.</p>
+<div class="section" id="supported-options">
+<h4>Supported Options<a class="headerlink" href="#supported-options" title="Permalink to this headline">¶</a></h4>
 <blockquote>
 <div><ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">0</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> forces curl to issue its requests using HTTP 1.0</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">1</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> forces curl to use TLS version 1.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">2</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> forces curl to use SSL version 2.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">3</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> forces curl to use SSL version 3</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">4</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> forces curl to resolve names to IPv4 addresses only.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">6</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> forces curl to resolve names to IPv6 addresses only.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">anyauth</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> tells curl to figure out authentication method by itself, and use the most secure one.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">basic</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> tells curl to use HTTP Basic authentication</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cacert</span></code> - <span class="green">String</span> - Tells curl to use the specified certificate file to verify the peer.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">capath</span></code> - <span class="green">String</span> - Tells curl to use the specified certificate directory to verify the peer.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cert</span></code> - <span class="green">String</span> - Tells curl to use the specified certificate file when getting a file with HTTPS or FTPS.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cert-status</span></code> - <span class="green">Boolean</span> - Tells  curl to verify the status of the server certificate by using the Certificate Status Request (aka. OCSP stapling) TLS extension.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cert-type</span></code> - Tells curl what certificate type the provided certificate is in. PEM, DER and ENG are recognized types.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ciphers</span></code> - <span class="green">String</span> - Specifies  which ciphers to use in the connection. See <a class="reference external" href="https://curl.se/docs/ssl-ciphers.html">SSL Ciphers</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">compressed</span></code> - <span class="green">Boolean</span> - Request  a compressed response using one of the algorithms curl supports (<code class="docutils literal notranslate"><span class="pre">br</span></code>, <code class="docutils literal notranslate"><span class="pre">gzip</span></code> or <code class="docutils literal notranslate"><span class="pre">deflate</span></code>), and return the uncompressed document.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">connect-timeout</span></code> - <span class="green">Number</span> - Maximum time to spend in the connection phase of a transaction.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">connect-to</span></code> - <span class="green">String</span> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">continue-at</span></code> - <span class="green">Number</span> - Skip this number of bytes from the beginning of the source file.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cookie</span></code> - <span class="green">String</span> - Send cookie with request. Provided in format <code class="docutils literal notranslate"><span class="pre">NAME1=VALUE1;</span> <span class="pre">NAME2=VALUE2</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cookie-jar</span></code> - <span class="green">String</span> - File from which to save and retrieve cookies.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">crlf</span></code> - <span class="green">Boolean</span> - For FTP and STMP -  Convert LF to CRLF in upload.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">crlfile</span></code> - <span class="green">String</span> - Provide a file using PEM format with a Certificate Revocation List that may specify peer certificates that are to be considered revoked.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">digest</span></code> - <span class="green">Boolean</span> - Enables HTTP Digest authentication.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">digest-ie</span></code> - <span class="green">Boolean</span> - Same as <code class="docutils literal notranslate"><span class="pre">digest</span></code>, except curl will use a special “quirk” that IE is known to have used before version 7 and that some servers require the client to use.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">disable-eprt</span></code> - <span class="green">Boolean</span> - For FTP - Disable the use of the EPRT an LPRT commands.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">disable-epsv</span></code> - <span class="green">Boolean</span> - For FTP - Disable the use of the  EPSV Command.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">expect100_timeout</span></code> - <span class="green">Number</span> - Maximum time in seconds that you allow curl to wait for a 100-continue response.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-account</span></code> - <span class="green">String</span> - <code class="docutils literal notranslate"><span class="pre">ACCT</span></code> data to send when an FTP server asks for “account data”.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-alternative-to-user</span></code> - <span class="green">String</span> - Authentication using using “SITE AUTH” command. See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-create-dirs</span></code> - <span class="green">Boolean</span> -Tells curl to attempt to create missing directories rather than fail.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-method</span></code> - <span class="green">String</span> - One of <code class="docutils literal notranslate"><span class="pre">multicwd</span></code>, <code class="docutils literal notranslate"><span class="pre">nocwd</span></code> or <code class="docutils literal notranslate"><span class="pre">singlecwd</span></code>.  See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-port</span></code> - <span class="green">String</span> - Interface name, IP address or host name for FTP active mode.  See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-pret</span></code> - <span class="green">Boolean</span> - Tell curl to send a PRET command before PASV (and EPSV). Certain FTP servers, mainly drftpd, require this.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-skip-pasv-ip</span></code> - <span class="green">Boolean</span> - Tell curl to not use the IP address the server suggests in its response to curl’s PASV command.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">header</span></code> - same as <code class="docutils literal notranslate"><span class="pre">headers</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">headers</span></code> - <span class="green">Array</span> or <span class="green">String</span> - a header or list of headers to send with the request.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">http-any</span></code> - <span class="green">Boolean</span> - When set <code class="docutils literal notranslate"><span class="pre">true</span></code>, curl will use whatever http version it thinks fit.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">http1.0</span></code> - <span class="green">Boolean</span> - Tell curl to use HTTP 1.0 requests.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">http1.1</span></code> - <span class="green">Boolean</span> - Tell curl to use HTTP 1.1 requests.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">http2</span></code> - <span class="green">Boolean</span> - Tell curl to use HTTP 2.0 requests.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">http2-prior-knowledge</span></code> - <span class="green">Boolean</span> - Issue non-TLS HTTP requests using HTTP/2 without HTTP/1.1 Upgrade. It requires prior knowledge that the server supports HTTP/2 straight away.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ignore-content-length</span></code> - <span class="green">Boolean</span> - Ignore the Content-Length header.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">insecure</span></code> - <span class="green">Boolean</span> - Skip server certificate check. See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">interface</span></code> - <span class="green">String</span> - Perform an operation using a specified interface. You can enter interface name, IP address or host name. See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ipv4</span></code> - <span class="green">Boolean</span> - Tell curl to resolve IPv4 addresses only.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ipv6</span></code> - <span class="green">Boolean</span> - Tell curl to resolve IPv6 addresses only.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">junk-session-cookies</span></code> - When using <code class="docutils literal notranslate"><span class="pre">cookie</span></code> or <code class="docutils literal notranslate"><span class="pre">cookie-jar</span></code>, discard all session cookies.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">keepalive-time</span></code> - <span class="green">Number</span> - The  time  a  connection needs to remain idle before sending keepalive probes and the time between individual keepalive probes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">limit-rate</span></code> - <span class="green">Number</span> - Specify  the  maximum transfer rate you want curl to use.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">list-only</span></code> - <span class="green">Boolean</span> - When listing an FTP directory, this switch forces a name-only view.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">local-port</span></code>  <span class="green">Number</span>  or <span class="green">Array</span> of two <span class="green">Numbers</span> - set a preferred single number or range (FROM-TO) of local port numbers to use for the connection.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">location</span></code> - <span class="green">Boolean</span> - Tell curl to follow <code class="docutils literal notranslate"><span class="pre">3xx</span></code> redirect requests.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">location-trusted</span></code> - Like  <code class="docutils literal notranslate"><span class="pre">location</span></code>, but will allow sending the name + password to all hosts that
+the site may redirect to.  See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a> for security ramifications.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mail-auth</span></code> - <span class="green">String</span> - For SMTP - an address to be used to specify the  authentication address
+(identity) of a submitted message that is being relayed to another server</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mail-from</span></code> - <span class="green">String</span> - For SMTP - Specify a single address that the given mail should get sent from.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mail-rcpt</span></code> - a <span class="green">String</span> or an <span class="green">Array</span> of <span class="green">Strings</span> - Recipient email address or addresses.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max-filesize</span></code> - a <span class="green">Number</span> - the maximum size (in bytes) of a file to download.  If the size is exceeded, the <code class="docutils literal notranslate"><span class="pre">errMsg:</span></code>
+property in the return value will be set to <code class="docutils literal notranslate"><span class="pre">&quot;curl</span> <span class="pre">failed:</span> <span class="pre">Maximum</span> <span class="pre">file</span> <span class="pre">size</span> <span class="pre">exceeded&quot;</span></code> and <code class="docutils literal notranslate"><span class="pre">text</span></code>/<code class="docutils literal notranslate"><span class="pre">body</span></code> will be empty.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max-redirs</span></code> - a <span class="green">Number</span> - if <code class="docutils literal notranslate"><span class="pre">location</span></code> above is set true, the maximum number of redirects to follow.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max-time</span></code> - a <span class="green">Number</span> - the maximum time in seconds that the whole operation is allowed to take.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">no-keepalive</span></code> - a <span class="green">Boolean</span> - Disables  the use of keepalive messages on the TCP connection.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">noproxy</span></code> - a <span class="green">String</span> - a comma-separated list of hosts which do not use a proxy, if one is specified in <code class="docutils literal notranslate"><span class="pre">proxy</span></code> below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pass</span></code> - a <span class="green">String</span> - Password for authentication.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">path-as-is</span></code> - a <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code>, tells curl to not squash or merge <code class="docutils literal notranslate"><span class="pre">/../</span></code> or <code class="docutils literal notranslate"><span class="pre">/./</span></code> in the given URL path.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">post301</span></code> - a <span class="green">Boolean</span> - For HTTP with <code class="docutils literal notranslate"><span class="pre">location</span></code> set <code class="docutils literal notranslate"><span class="pre">true</span></code>. If <code class="docutils literal notranslate"><span class="pre">true</span></code> do not  convert  POST  requests  into  GET
+requests  when  following  a  301  redirection.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">post302</span></code> - a <span class="green">Boolean</span> - Same as <code class="docutils literal notranslate"><span class="pre">post301</span></code> but for 302 redirection.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">post303</span></code> - a <span class="green">Boolean</span> - Same as <code class="docutils literal notranslate"><span class="pre">post301</span></code> but for 303 redirection.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">postredir</span></code> - Set (or clear if <code class="docutils literal notranslate"><span class="pre">false</span></code>) all of <code class="docutils literal notranslate"><span class="pre">post301</span></code>, <code class="docutils literal notranslate"><span class="pre">post302</span></code> and <code class="docutils literal notranslate"><span class="pre">post303</span></code>.  Options are taken in order, so that
+<code class="docutils literal notranslate"><span class="pre">{&quot;postredir&quot;:</span> <span class="pre">true,</span> <span class="pre">&quot;post303&quot;:</span> <span class="pre">false}</span></code> will set <code class="docutils literal notranslate"><span class="pre">post301</span></code> and <code class="docutils literal notranslate"><span class="pre">post302</span></code> <code class="docutils literal notranslate"><span class="pre">true</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proto-default</span></code> - a <span class="green">String</span> - Tells curl to use protocol for any URL missing a scheme name.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proto-redir</span></code> - a <span class="green">String</span> - Tells curl to limit what protocols it may use on redirect. See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy</span></code> - a <span class="green">String</span> - set the name of a proxy server to use (<code class="docutils literal notranslate"><span class="pre">[protocol://]host[:port]</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">range</span></code> - a <span class="green">String</span> - Retrieve a byte range (i.e a partial document). See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a> for examples.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">referer</span></code> - a <span class="green">String</span> - Set the “Referer” header.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">request</span></code> - a <span class="green">String</span> - Specify a custom request for HTTP (i.e. <code class="docutils literal notranslate"><span class="pre">GET</span></code>, <code class="docutils literal notranslate"><span class="pre">PUT</span></code>, <code class="docutils literal notranslate"><span class="pre">DELETE</span></code>, etc.).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">request-target</span></code> - a <span class="green">String</span> - Specify an alternative “target” (path) instead of using the path as provided in the URL.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">resolve</span></code> - a <span class="green">String</span> or an <span class="green">Array</span> of <span class="green">Strings</span> - Provide custom resolve mappings of host/port to ip.  Format is <code class="docutils literal notranslate"><span class="pre">host:port:address</span></code>.
+See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a> for details.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">speed-limit</span></code> - a <span class="green">Number</span> - If a download is slower than this given speed (in bytes per second) for speed-time seconds it gets aborted.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">speed-time</span></code> - a <span class="green">Number</span> - If a download is slower than speed-limit bytes per second during a speed-time period,  the
+download gets aborted.  If limit is reached, the return value will contain <code class="docutils literal notranslate"><span class="pre">errMsg:</span> <span class="pre">&quot;curl</span> <span class="pre">failed:</span> <span class="pre">Timeout</span> <span class="pre">was</span> <span class="pre">reached&quot;</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ssl</span></code> - a <span class="green">Boolean</span> - Try to use SSL/TLS for the connection.  Reverts to a non-secure  connection  if the server doesn’t support SSL/TLS.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ssl-reqd</span></code> - a <span class="green">Boolean</span> - For FTP IMAP POP3 SMTP, require SSL/TLS for the connection.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sslv2</span></code> - a <span class="green">Boolean</span> - Forces  curl  to use SSL version 2 when negotiating with a remote SSL server. See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sslv3</span></code> - a <span class="green">Boolean</span> - Forces  curl  to use SSL version 3 when negotiating with a remote SSL server. See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">time-cond</span></code> - a <span class="green">Date</span> - <em>Differs from Command Line option</em> - date is used to set <code class="docutils literal notranslate"><span class="pre">&quot;If-Modified-Since&quot;</span></code> header.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tls-max</span></code> - a <span class="green">String</span> - Maximum  supported TLS version. May be one of <code class="docutils literal notranslate"><span class="pre">&quot;1.0&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;1.1&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;1.2&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;1.3&quot;</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tlsv1</span></code> - a <span class="green">Boolean</span> - Tells  curl  to use TLS version 1.x when negotiating with a remote TLS server.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tlsv1.0</span></code> - a <span class="green">Boolean</span> - Forces curl to use TLS version 1.0 when connecting to a remote TLS server.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tlsv1.1</span></code> - a <span class="green">Boolean</span> - Forces curl to use TLS version 1.1 when connecting to a remote TLS server.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tlsv1.2</span></code> - a <span class="green">Boolean</span> - Forces curl to use TLS version 1.2 when connecting to a remote TLS server.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tlsv1.3</span></code> - a <span class="green">Boolean</span> - Forces curl to use TLS version 1.3 when connecting to a remote TLS server.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tr-encoding</span></code> - a <span class="green">Boolean</span> - Request  a  compressed Transfer-Encoding response using one of the algorithms curl
+supports, and uncompress the data while receiving it.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">user</span></code> - a <span class="green">String</span> - Specify the user name and password to use for server authentication.  Specified as either a <code class="docutils literal notranslate"><span class="pre">username</span></code>
+(with password set in <code class="docutils literal notranslate"><span class="pre">pass</span></code> above), or as <code class="docutils literal notranslate"><span class="pre">username:password</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">user-agent</span></code> - a <span class="green">String</span> - Specify the User-Agent string to send to the HTTP server.  Default if not set is a <span class="green">String</span>
+specifying <code class="docutils literal notranslate"><span class="pre">libcurl-rampart/</span></code> + version number.</p></li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="unsupported-extras">
+<h4>Unsupported Extras<a class="headerlink" href="#unsupported-extras" title="Permalink to this headline">¶</a></h4>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-ssl-ccc</span></code> - <span class="green">Boolean</span> -  <em>Untested</em> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ftp-ssl-ccc-mode</span></code>  <span class="green">Boolean</span> -  <em>Untested</em> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">login-options</span></code> - <span class="green">String</span> - <em>Untested</em> - For IMAP, POP3 and SMTP.  See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">negotiate</span></code>- a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">netrc</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">netrc-file</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">netrc-optional</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">no-alpn</span></code>  - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">no-npn</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">no-sessionid</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ntlm</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - Enables NTLM authentication.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ntlm-wb</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pinnedpubkey</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">preproxy</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-anyauth</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-basic</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-cacert</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-capath</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-cert</span></code>  - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-cert-type</span></code>  - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-ciphers</span></code>  - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-crlfile</span></code>  - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-digest</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-digest-ie</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-header</span></code>  - a <span class="green">String</span> or a <span class="green">Array</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-insecure</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-key</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-key-type</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-negotiate</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-ntlm</span></code>  - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-ntlm-wb</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-pass</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-service-name</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-ssl-allow-beast</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-tlspassword</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-tlsuser</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-tlsv1</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy-user</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxy1.0</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">proxytunnel</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pubkey</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - Public key file name. Allows you to provide
+your public key  in  this  separate file.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">quote</span></code> - a <span class="green">String</span> or <span class="green">Array</span> of <span class="green">Strings</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">random-file</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sasl-ir</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - Enable initial response in SASL authentication.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">service-name</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks4</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks4a</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks5</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks5-basic</span></code>  - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks5-gssapi</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks5-gssapi-nec</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks5-gssapi-service</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">socks5-hostname</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ssl-allow-beast</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">suppress-connect-headers</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tcp-fastopen</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tcp-nodelay</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">telnet-option</span></code> - a <span class="green">String</span> or <span class="green">Array</span> of <span class="green">Strings</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tftp-blksize</span></code> - a <span class="green">Number</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tftp-no-options</span></code> - a <span class="green">Boolean</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tlspassword</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tlsuser</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">unix-socket</span></code> - a <span class="green">String</span> - <strong>Untested</strong> - See <a class="reference external" href="https://linux.die.net/man/1/curl">man page</a>.</p></li>
+</ul>
+</div></blockquote>
+</div>
+</div>
+<div class="section" id="additional-options">
+<h3>Additional options<a class="headerlink" href="#additional-options" title="Permalink to this headline">¶</a></h3>
+<p>The following are additional options provided by the JavaScript module and
+have no corresponding setting in the <a class="reference external" href="https://linux.die.net/man/1/curl">curl command line tool</a>.
+Note that <a class="reference internal" href="#examples">examples</a> are provided below.</p>
+<blockquote>
+<div><ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">arrayType</span></code> - <span class="green">String</span> - How to translate arrays into
+parameters for <code class="docutils literal notranslate"><span class="pre">get</span></code> and <code class="docutils literal notranslate"><span class="pre">post</span></code> below.  See
+<a class="reference internal" href="rampart-main.html#objecttoquery"><span class="std std-ref">objectToQuery</span></a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">get</span></code> - <span class="green">Object</span> or <span class="green">String</span> - <strong>THIS OPTION DIFFERS FROM CURL COMMAND LINE</strong>.
+If an <span class="green">Object</span> is provided, it is converted to a
+<span class="green">String</span> using <a class="reference internal" href="rampart-main.html#objecttoquery"><span class="std std-ref">objectToQuery</span></a> first.  The
+<span class="green">String</span> is then joined to the URL using a <code class="docutils literal notranslate"><span class="pre">?</span></code>.  See also
+<code class="docutils literal notranslate"><span class="pre">arrayType</span></code> above.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mail-msg</span></code> - <span class="green">String</span> or <span class="green">Object</span> - For SMTP, set
+content of a mail message.</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>If a <span class="green">String</span>, the string must be a pre-formatted email
+message with headers and body.</p></li>
+<li><p>If an <span class="green">Object</span>, The <span class="green">Object</span> will be used to create</p></li>
+</ul>
+<blockquote>
+<div><p>the message, using the following properties:</p>
+<blockquote>
+<div><ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">date</span></code>: a <span class="green">String</span> or a <span class="green">Date Object</span> - for the <code class="docutils literal notranslate"><span class="pre">Date</span></code> header value.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">to</span></code>: a <span class="green">String</span> - for the <code class="docutils literal notranslate"><span class="pre">To</span></code> header value.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">from</span></code>: a <span class="green">String</span> - for the <code class="docutils literal notranslate"><span class="pre">From</span></code> header value.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">subject</span></code>: a <span class="green">String</span> - for the <code class="docutils literal notranslate"><span class="pre">Subject</span></code> header value.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">xxx</span></code>: a <span class="green">String</span> - for any other desired header value (e.g. <code class="docutils literal notranslate"><span class="pre">cc</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">message</span></code>: a <span class="green">String</span> or an <span class="green">Object</span> - the content of the email message.</p>
+<blockquote>
+<div><p>If <code class="docutils literal notranslate"><span class="pre">message</span></code> is set to a <span class="green">String</span>, the content of the
+<span class="green">String</span> is sent as is.</p>
+<p>If <code class="docutils literal notranslate"><span class="pre">message</span></code> is set to an <span class="green">Object</span>, The following may
+be set (and one or both of <code class="docutils literal notranslate"><span class="pre">html</span></code> or <code class="docutils literal notranslate"><span class="pre">text</span></code> must be set):</p>
+<blockquote>
+<div><ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">html</span></code> send the <span class="green">String</span> in a multipart mime
+message with this part’s mime type set to <code class="docutils literal notranslate"><span class="pre">text/html</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">text</span></code> send the <span class="green">String</span> in a multipart mime
+message with this part’s mime type set to <code class="docutils literal notranslate"><span class="pre">text/plain</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">attach</span></code> - an <span class="green">Array</span> of <span class="green">Objects</span>.  Each
+object may have following properties (and must have
+<code class="docutils literal notranslate"><span class="pre">data</span></code>):</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">data</span></code> - a <span class="green">Buffer</span> or a <span class="green">String</span> set
+to the data to be sent as an attachment.  If a
+<span class="green">String</span> that starts with <code class="docutils literal notranslate"><span class="pre">&#64;</span></code>, the data will
+be read from a file (e.g.  <code class="docutils literal notranslate"><span class="pre">data:</span>
+<span class="pre">&quot;&#64;/path/to/my/pic.jpg&quot;</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> - optionally a <span class="green">String</span> which will be
+set in the <code class="docutils literal notranslate"><span class="pre">Content-Disposition:</span> <span class="pre">attachment;</span> <span class="pre">name=</span></code>
+header.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">type</span></code> - optionally a <span class="green">String</span> which will be
+set in the <code class="docutils literal notranslate"><span class="pre">Content-Type:</span></code> header.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cid</span></code> - optionally a <span class="green">String</span> or
+<span class="green">Boolean</span> which, if a <span class="green">String</span> will be
+set to the <code class="docutils literal notranslate"><span class="pre">Content-ID:</span></code>/<code class="docutils literal notranslate"><span class="pre">X-Attachment-Id:</span></code>
+headers.  If <code class="docutils literal notranslate"><span class="pre">cid</span></code> is not present or set to <code class="docutils literal notranslate"><span class="pre">true</span></code>,
+the <code class="docutils literal notranslate"><span class="pre">Content-ID</span></code> will be set to the value of
+<code class="docutils literal notranslate"><span class="pre">name</span></code>, or if <code class="docutils literal notranslate"><span class="pre">cid</span></code> is set to <code class="docutils literal notranslate"><span class="pre">false</span></code>, no
+<code class="docutils literal notranslate"><span class="pre">Content-ID</span></code> header is set.</p></li>
+</ul>
+</div></blockquote>
+</li>
+</ul>
+</div></blockquote>
+<p>Note that if <code class="docutils literal notranslate"><span class="pre">html</span></code> and <code class="docutils literal notranslate"><span class="pre">text</span></code> are both set, they are sent
+embedded in a <code class="docutils literal notranslate"><span class="pre">&quot;multipart/alternative&quot;</span></code> part.  Both <code class="docutils literal notranslate"><span class="pre">html</span></code>
+and <code class="docutils literal notranslate"><span class="pre">text</span></code> parts are encoded as <code class="docutils literal notranslate"><span class="pre">quoted-printable</span></code>.
+Attachment <code class="docutils literal notranslate"><span class="pre">data</span></code> is encoded as <code class="docutils literal notranslate"><span class="pre">base64</span></code>.</p>
+</div></blockquote>
+</li>
+</ul>
+</div></blockquote>
+</div></blockquote>
+</div></blockquote>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">post</span></code> - a <span class="green">String</span>, <span class="green">Buffer</span> or  <span class="green">Object</span>.
+For POSTing content to a server using HTTP or HTTPS.</p>
+<ul>
+<li><p>If an <span class="green">Object</span>, data is automatically converted and posted
+similar to <code class="docutils literal notranslate"><span class="pre">get</span></code> using <a class="reference internal" href="rampart-main.html#objecttoquery"><span class="std std-ref">objectToQuery</span></a>.</p></li>
+<li><p>If a <span class="green">String</span> or <span class="green">Buffer</span>, data is sent as is.  By
+default the header <code class="docutils literal notranslate"><span class="pre">Content-Type:</span> <span class="pre">application/x-www-form-urlencoded</span></code>
+is sent with the request.  If data is a <span class="green">String</span> or
+<span class="green">Buffer</span>, and is not pre-formatted, url-encoded data,
+<code class="docutils literal notranslate"><span class="pre">header</span></code> above should be used to set the appropriate content type.</p>
+<p>If data is a <span class="green">String</span>, and it starts with <code class="docutils literal notranslate"><span class="pre">&#64;</span></code>, the data
+will be read from a file (e.g.
+<code class="docutils literal notranslate"><span class="pre">{post:</span> <span class="pre">&quot;&#64;/path/to/my/pic.jpg&quot;,</span> <span class="pre">header:</span> <span class="pre">&quot;Content-Type:</span> <span class="pre">image/jpeg&quot;}</span></code>).</p>
+</li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">postform</span></code> - an <span class="green">Object</span>. For POSTing with <code class="docutils literal notranslate"><span class="pre">Content-Type:</span> <span class="pre">multipart/form-data</span></code>
+where each key/property sets the the name in each part of the posted data (i.e. -
+<code class="docutils literal notranslate"><span class="pre">Content-Disposition:</span> <span class="pre">form-data;</span> <span class="pre">name=</span></code>), and the value is a <span class="green">String</span>,
+<span class="green">Buffer</span>, <span class="green">Object</span> or <span class="green">Array</span> as follows:</p>
+<blockquote>
+<div><ul>
+<li><p>If a <span class="green">String</span> or <span class="green">Buffer</span>, data is sent as is.</p>
+<p>If data is a <span class="green">String</span>, and it starts with <code class="docutils literal notranslate"><span class="pre">&#64;</span></code>, the data
+will be read from a file (e.g.  <code class="docutils literal notranslate"><span class="pre">{myvarname:</span> <span class="pre">&quot;&#64;/path/to/my/pic.jpg&quot;}</span></code>).</p>
+</li>
+<li><p>If an <span class="green">Object</span>, and the <span class="green">Object</span> has the key/property
+<code class="docutils literal notranslate"><span class="pre">data</span></code> set, data will be sent as is (if value a <span class="green">String</span> or
+<span class="green">Buffer</span>), or if a <span class="green">String</span>, and it starts with <code class="docutils literal notranslate"><span class="pre">&#64;</span></code>
+it will be read from a file, or if it is an <span class="green">Object</span> or
+<span class="green">Array</span>, it will be sent as JSON.
+In addition to <code class="docutils literal notranslate"><span class="pre">data</span></code>, the properties <code class="docutils literal notranslate"><span class="pre">filename</span></code> (to set the filename
+header) and <code class="docutils literal notranslate"><span class="pre">type</span></code> (to set the <code class="docutils literal notranslate"><span class="pre">Content-Type</span></code> header) may also be set
+to an appropriate <span class="green">String</span>.</p></li>
+<li><p>If an <span class="green">Object</span>, and the <span class="green">Object</span> has the key/property
+<code class="docutils literal notranslate"><span class="pre">data</span></code> is <strong>NOT</strong> set, the Object is converted to JSON.</p></li>
+<li><p>If an <span class="green">Array</span>, it must be an <span class="green">Array</span> of green:<cite>Object</cite>
+with <code class="docutils literal notranslate"><span class="pre">data</span></code> and optionally <code class="docutils literal notranslate"><span class="pre">filename</span></code> and/or <code class="docutils literal notranslate"><span class="pre">type</span></code> set as above.</p></li>
+</ul>
+</div></blockquote>
+</li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="curl-short-options">
+<h3>Curl short options<a class="headerlink" href="#curl-short-options" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">0</span></code> - same as <code class="docutils literal notranslate"><span class="pre">http-1.0</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">1</span></code> - same as <code class="docutils literal notranslate"><span class="pre">tlsv1</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">2</span></code> - same as <code class="docutils literal notranslate"><span class="pre">sslv2</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">3</span></code> - same as <code class="docutils literal notranslate"><span class="pre">sslv3</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">4</span></code> - same as <code class="docutils literal notranslate"><span class="pre">ipv4</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">6</span></code> - same as <code class="docutils literal notranslate"><span class="pre">ipv6</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">A</span></code> - same as <code class="docutils literal notranslate"><span class="pre">user-agent</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">C</span></code> - same as <code class="docutils literal notranslate"><span class="pre">continue-at</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">E</span></code> - same as <code class="docutils literal notranslate"><span class="pre">cert</span></code>.</p></li>
@@ -382,189 +700,659 @@ for a full description of each.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">Q</span></code> - same as <code class="docutils literal notranslate"><span class="pre">quote</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">X</span></code> - same as <code class="docutils literal notranslate"><span class="pre">request</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">Y</span></code> - same as <code class="docutils literal notranslate"><span class="pre">speed-limit</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">anyauth</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> tells curl to figure out authentication method by itself, and use the most secure one.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">b</span></code> - same as <code class="docutils literal notranslate"><span class="pre">cookie</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">basic</span></code> - <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> tells curl to use HTTP Basic authentication</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">c</span></code> -</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">cacert</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">capath</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">cert</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">cert-status</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">cert-type</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ciphers</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">compressed</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">compressed-ssh</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">connect-timeout</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">connect-to</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">continue-at</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">cookie</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">cookie-jar</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">crlf</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">crlfile</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">delegation</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">digest</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">digest-ie</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">disable-eprt</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">disable-epsv</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">dns-interface</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">dns-ipv4-addr</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">dns-ipv6-addr</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">dns-servers</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">e</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">expect100_timeout</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">false-start</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ftp-account</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ftp-alternative-to-user</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ftp-create-dirs</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ftp-method</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ftp-port</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ftp-pret</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ftp-skip-pasv-ip</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ftp-ssl-ccc</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ftp-ssl-ccc-mode</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">get</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">header</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">headers</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">hostpubmd5</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">http-any</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">http1.0</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">http1.0</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">http1.1</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">http2</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">http2-prior-knowledge</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ignore-content-length</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">insecure</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">interface</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ipv4</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ipv6</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">j</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">junk-session-cookies</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">k</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">keepalive-time</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">key</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">key-type</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">krb</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">l</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">limit-rate</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">list-only</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">local-port</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">location</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">location-trusted</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">login-options</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">m</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">mail-auth</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">mail-from</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">mail-msg</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">mail-rcpt</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">max-filesize</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">max-redirs</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">max-time</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">n</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">negotiate</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">netrc</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">netrc-file</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">netrc-optional</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">no-alpn</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">no-keepalive</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">no-npn</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">no-sessionid</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">noproxy</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ntlm</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ntlm-wb</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">pass</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">path-as-is</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">pinnedpubkey</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">post</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">post301</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">post302</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">post303</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">postbin</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">postform</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">postredir</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">preproxy</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proto-default</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proto-redir</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-anyauth</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-basic</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-cacert</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-capath</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-cert</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-cert-type</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-ciphers</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-crlfile</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-digest</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-digest-ie</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-header</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-insecure</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-key</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-key-type</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-negotiate</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-ntlm</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-ntlm-wb</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-pass</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-service-name</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-ssl-allow-beast</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-ssl-no-revoke</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-tlspassword</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-tlsuser</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-tlsv1</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy-user</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxy1.0</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">proxytunnel</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">pubkey</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">quote</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">r</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">random-file</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">range</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">referer</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">request</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">request-target</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">resolve</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">sasl-ir</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">service-name</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">socks4</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">socks4a</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">socks5</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">socks5-basic</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">socks5-gssapi</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">socks5-gssapi-nec</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">socks5-gssapi-service</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">socks5-hostname</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">speed-limit</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">speed-time</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ssl</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ssl-allow-beast</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ssl-no-revoke</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ssl-reqd</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">sslv2</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">sslv3</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">suppress-connect-headers</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">t</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tcp-fastopen</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tcp-nodelay</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">telnet-option</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tftp-blksize</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tftp-no-options</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">time-cond</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tls-max</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tlspassword</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tlsuser</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tlsv1</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tlsv1.0</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tlsv1.1</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tlsv1.2</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tlsv1.3</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tr-encoding</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">u</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">unix-socket</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">user</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">user-agent</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">x</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">y</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">z</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">c</span></code> - same as <code class="docutils literal notranslate"><span class="pre">cookie-jar</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">e</span></code> - same as <code class="docutils literal notranslate"><span class="pre">referer</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">j</span></code> - same as <code class="docutils literal notranslate"><span class="pre">junk-session-cookies</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">k</span></code> - same as <code class="docutils literal notranslate"><span class="pre">insecure</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">l</span></code> - same as <code class="docutils literal notranslate"><span class="pre">list-only</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">m</span></code> - same as <code class="docutils literal notranslate"><span class="pre">max-time</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">n</span></code> - same as <code class="docutils literal notranslate"><span class="pre">netrc</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">r</span></code> - same as <code class="docutils literal notranslate"><span class="pre">range</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">u</span></code> - same as <code class="docutils literal notranslate"><span class="pre">user</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">x</span></code> - same as <code class="docutils literal notranslate"><span class="pre">proxy</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">y</span></code> - same as <code class="docutils literal notranslate"><span class="pre">speed-time</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">z</span></code> - same as <code class="docutils literal notranslate"><span class="pre">time-cond</span></code>.</p></li>
 </ul>
 </div></blockquote>
+</div>
+</div>
+<div class="section" id="examples">
+<h2>Examples<a class="headerlink" href="#examples" title="Permalink to this headline">¶</a></h2>
+<p>Each example with a request to <code class="docutils literal notranslate"><span class="pre">localhost:8088</span></code> below shows the output
+from requests made to the following script using the <a class="reference internal" href="rampart-server.html#the-rampart-server-http-module"><span class="std std-ref">rampart-server
+module</span></a>.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">);</span>
+
+<span class="cm">/* load the http server module */</span>
+<span class="kd">var</span> <span class="nx">server</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-server&quot;</span><span class="p">);</span>
+
+<span class="cm">/* echo the request back to the client */</span>
+<span class="kd">function</span> <span class="nx">echo</span><span class="p">(</span><span class="nx">res</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">keys</span><span class="p">,</span> <span class="nx">key</span><span class="p">,</span> <span class="nx">val</span><span class="p">,</span> <span class="nx">i</span><span class="p">;</span>
+
+    <span class="cm">/* convert the body to text for easy viewing */</span>
+    <span class="nx">res</span><span class="p">.</span><span class="nx">body</span><span class="o">=</span><span class="nx">bufferToString</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">body</span><span class="p">);</span>
+
+    <span class="cm">/* convert any params.* Buffers to text for easy viewing */</span>
+    <span class="nx">keys</span><span class="o">=</span><span class="nb">Object</span><span class="p">.</span><span class="nx">keys</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">params</span><span class="p">)</span>
+    <span class="k">for</span> <span class="p">(</span><span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="nx">i</span><span class="o">&lt;</span><span class="nx">keys</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span><span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">key</span><span class="o">=</span><span class="nx">keys</span><span class="p">[</span><span class="nx">i</span><span class="p">];</span>
+        <span class="nx">val</span><span class="o">=</span><span class="nx">res</span><span class="p">.</span><span class="nx">params</span><span class="p">[</span><span class="nx">key</span><span class="p">];</span>
+        <span class="k">if</span> <span class="p">(</span><span class="nx">getType</span><span class="p">(</span><span class="nx">val</span><span class="p">)</span> <span class="o">==</span> <span class="s2">&quot;Buffer&quot;</span><span class="p">)</span>
+            <span class="nx">res</span><span class="p">.</span><span class="nx">params</span><span class="p">[</span><span class="nx">key</span><span class="p">]</span><span class="o">=</span> <span class="nx">bufferToString</span><span class="p">(</span><span class="nx">val</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="cm">/* same for postData */</span>
+    <span class="k">if</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">postData</span> <span class="o">&amp;&amp;</span> <span class="nx">res</span><span class="p">.</span><span class="nx">postData</span><span class="p">.</span><span class="nx">content</span> <span class="o">&amp;&amp;</span> <span class="nx">getType</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">postData</span><span class="p">.</span><span class="nx">content</span><span class="p">)</span><span class="o">==</span><span class="s2">&quot;Array&quot;</span><span class="p">)</span>
+    <span class="p">{</span>
+        <span class="kd">var</span> <span class="nx">arr</span> <span class="o">=</span> <span class="nx">res</span><span class="p">.</span><span class="nx">postData</span><span class="p">.</span><span class="nx">content</span><span class="p">;</span>
+        <span class="k">for</span> <span class="p">(</span><span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="nx">i</span><span class="o">&lt;</span><span class="nx">arr</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span><span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+            <span class="k">if</span> <span class="p">(</span><span class="nx">arr</span><span class="p">[</span><span class="nx">i</span><span class="p">].</span><span class="nx">content</span> <span class="o">&amp;&amp;</span> <span class="nx">getType</span><span class="p">(</span><span class="nx">arr</span><span class="p">[</span><span class="nx">i</span><span class="p">].</span><span class="nx">content</span><span class="p">)</span><span class="o">==</span><span class="s2">&quot;Buffer&quot;</span><span class="p">)</span>
+                <span class="nx">arr</span><span class="p">[</span><span class="nx">i</span><span class="p">].</span><span class="nx">content</span> <span class="o">=</span> <span class="nx">bufferToString</span><span class="p">(</span><span class="nx">arr</span><span class="p">[</span><span class="nx">i</span><span class="p">].</span><span class="nx">content</span><span class="p">);</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">postData</span> <span class="o">&amp;&amp;</span> <span class="nx">getType</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">postData</span><span class="p">.</span><span class="nx">content</span><span class="p">)</span><span class="o">==</span><span class="s2">&quot;Buffer&quot;</span><span class="p">)</span>
+        <span class="nx">res</span><span class="p">.</span><span class="nx">postData</span><span class="p">.</span><span class="nx">content</span> <span class="o">=</span> <span class="nx">bufferToString</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">postData</span><span class="p">.</span><span class="nx">content</span><span class="p">);</span>
+
+    <span class="k">return</span> <span class="p">{</span><span class="nx">text</span><span class="o">:</span> <span class="nx">sprintf</span><span class="p">(</span><span class="s2">&quot;%4J\n&quot;</span><span class="p">,</span> <span class="nx">res</span><span class="p">)}</span> <span class="p">;</span>
+
+<span class="p">}</span>
+
+
+<span class="kd">var</span> <span class="nx">pid</span><span class="o">=</span><span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">(</span>
+<span class="p">{</span>
+    <span class="nx">user</span><span class="o">:</span> <span class="s2">&quot;nobody&quot;</span><span class="p">,</span>
+    <span class="nx">log</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span>
+    <span class="nx">map</span><span class="o">:</span>
+    <span class="p">{</span>
+        <span class="s2">&quot;/&quot;</span><span class="o">:</span> <span class="s2">&quot;/usr/local/rampart/examples/sample-server/mPurpose&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;/echo.txt&quot;</span> <span class="o">:</span> <span class="nx">echo</span>
+    <span class="p">}</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+<div class="section" id="simple-http-get-request">
+<h3>Simple HTTP Get request<a class="headerlink" href="#simple-http-get-request" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">ret</span><span class="o">=</span><span class="nx">curl</span><span class="p">.</span><span class="nx">fetch</span><span class="p">(</span><span class="s2">&quot;http://localhost:8088/echo.txt&quot;</span><span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">ret</span><span class="p">.</span><span class="nx">text</span><span class="p">);</span>
+<span class="cm">/* expected output:</span>
+<span class="cm">{</span>
+<span class="cm">    &quot;ip&quot;: &quot;127.0.0.1&quot;,</span>
+<span class="cm">    &quot;port&quot;: 41838,</span>
+<span class="cm">    &quot;method&quot;: &quot;GET&quot;,</span>
+<span class="cm">    &quot;path&quot;: {</span>
+<span class="cm">        &quot;file&quot;: &quot;echo.txt&quot;,</span>
+<span class="cm">        &quot;path&quot;: &quot;/echo.txt&quot;,</span>
+<span class="cm">        &quot;base&quot;: &quot;/&quot;,</span>
+<span class="cm">        &quot;scheme&quot;: &quot;http://&quot;,</span>
+<span class="cm">        &quot;host&quot;: &quot;localhost:8088&quot;,</span>
+<span class="cm">        &quot;url&quot;: &quot;http://localhost:8088/echo.txt&quot;</span>
+<span class="cm">    },</span>
+<span class="cm">    &quot;query&quot;: {},</span>
+<span class="cm">    &quot;body&quot;: &quot;&quot;,</span>
+<span class="cm">    &quot;query_raw&quot;: &quot;&quot;,</span>
+<span class="cm">    &quot;headers&quot;: {</span>
+<span class="cm">        &quot;Host&quot;: &quot;localhost:8088&quot;,</span>
+<span class="cm">        &quot;User-Agent&quot;: &quot;libcurl-rampart/0.1&quot;,</span>
+<span class="cm">        &quot;Accept&quot;: &quot;*/</span><span class="o">*</span><span class="s2">&quot;</span>
+<span class="s2">    },</span>
+<span class="s2">    &quot;</span><span class="nx">params</span><span class="s2">&quot;: {</span>
+<span class="s2">        &quot;</span><span class="nx">Host</span><span class="s2">&quot;: &quot;</span><span class="nx">localhost</span><span class="o">:</span><span class="mi">8088</span><span class="s2">&quot;,</span>
+<span class="s2">        &quot;</span><span class="nx">User</span><span class="o">-</span><span class="nx">Agent</span><span class="s2">&quot;: &quot;</span><span class="nx">libcurl</span><span class="o">-</span><span class="nx">rampart</span><span class="o">/</span><span class="mf">0.1</span><span class="s2">&quot;,</span>
+<span class="s2">        &quot;</span><span class="nx">Accept</span><span class="s2">&quot;: &quot;</span><span class="o">*</span><span class="cm">/*&quot;</span>
+<span class="cm">    }</span>
+<span class="cm">}</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="multiple-http-get-requests">
+<h3>Multiple HTTP Get Requests<a class="headerlink" href="#multiple-http-get-requests" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
+
+<span class="nx">curl</span><span class="p">.</span><span class="nx">fetch</span><span class="p">([</span><span class="s2">&quot;http://localhost:8088/echo.txt&quot;</span><span class="p">,</span><span class="s2">&quot;http://google.com/&quot;</span><span class="p">],</span>
+  <span class="kd">function</span><span class="p">(</span><span class="nx">res</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">res</span><span class="p">.</span><span class="nx">body</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">bufferToString</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">body</span><span class="p">);</span>
+    <span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%4J\n&quot;</span><span class="p">,</span> <span class="nx">res</span><span class="p">);</span>
+  <span class="p">}</span>
+<span class="p">);</span>
+
+<span class="cm">/* expected results:</span>
+<span class="cm">{</span>
+<span class="cm">    &quot;statusText&quot;: &quot;OK&quot;,</span>
+<span class="cm">    &quot;status&quot;: 200,</span>
+<span class="cm">    &quot;text&quot;: &quot;{\n    \&quot;ip\&quot;: \&quot;127.0.0.1\&quot;,\n    \&quot;port\&quot;: 41888,\n    \&quot;method\&quot;: \&quot;GET\&quot;,\n    \&quot;path\&quot;: {\n        \&quot;file\&quot;: \&quot;echo.txt\&quot;,\n        \&quot;path\&quot;: \&quot;/echo.txt\&quot;,\n        \&quot;base\&quot;: \&quot;/\&quot;,\n        \&quot;scheme\&quot;: \&quot;http://\&quot;,\n        \&quot;host\&quot;: \&quot;localhost:8088\&quot;,\n        \&quot;url\&quot;: \&quot;http://localhost:8088/echo.txt\&quot;\n    },\n    \&quot;query\&quot;: {},\n    \&quot;body\&quot;: \&quot;\&quot;,\n    \&quot;query_raw\&quot;: \&quot;\&quot;,\n    \&quot;headers\&quot;: {\n        \&quot;Host\&quot;: \&quot;localhost:8088\&quot;,\n        \&quot;User-Agent\&quot;: \&quot;libcurl-rampart/0.1\&quot;,\n    },\n    \&quot;params\&quot;: {\n        \&quot;Host\&quot;: \&quot;localhost:8088\&quot;,\n        \&quot;User-Agent\&quot;: \&quot;libcurl-rampart/0.1\&quot;,\n    }\n}\n&quot;,</span>
+<span class="cm">    &quot;body&quot;: &quot;{\n    \&quot;ip\&quot;: \&quot;127.0.0.1\&quot;,\n    \&quot;port\&quot;: 41888,\n    \&quot;method\&quot;: \&quot;GET\&quot;,\n    \&quot;path\&quot;: {\n        \&quot;file\&quot;: \&quot;echo.txt\&quot;,\n        \&quot;path\&quot;: \&quot;/echo.txt\&quot;,\n        \&quot;base\&quot;: \&quot;/\&quot;,\n        \&quot;scheme\&quot;: \&quot;http://\&quot;,\n        \&quot;host\&quot;: \&quot;localhost:8088\&quot;,\n        \&quot;url\&quot;: \&quot;http://localhost:8088/echo.txt\&quot;\n    },\n    \&quot;query\&quot;: {},\n    \&quot;body\&quot;: \&quot;\&quot;,\n    \&quot;query_raw\&quot;: \&quot;\&quot;,\n    \&quot;headers\&quot;: {\n        \&quot;Host\&quot;: \&quot;localhost:8088\&quot;,\n        \&quot;User-Agent\&quot;: \&quot;libcurl-rampart/0.1\&quot;,\n    },\n    \&quot;params\&quot;: {\n        \&quot;Host\&quot;: \&quot;localhost:8088\&quot;,\n        \&quot;User-Agent\&quot;: \&quot;libcurl-rampart/0.1\&quot;,\n    }\n}\n&quot;,</span>
+<span class="cm">    &quot;effectiveUrl&quot;: &quot;http://localhost:8088/echo.txt&quot;,</span>
+<span class="cm">    &quot;url&quot;: &quot;http://localhost:8088/echo.txt&quot;,</span>
+<span class="cm">    &quot;localIP&quot;: &quot;127.0.0.1&quot;,</span>
+<span class="cm">    &quot;localPort&quot;: 41888,</span>
+<span class="cm">    &quot;serverIP&quot;: &quot;127.0.0.1&quot;,</span>
+<span class="cm">    &quot;serverPort&quot;: 8088,</span>
+<span class="cm">    &quot;rawHeader&quot;: &quot;HTTP/1.1 200 OK\r\nDate: Mon, 11 Jan 2021 06:46:34 GMT\r\nContent-Type: text/plain\r\nContent-Length: 583\r\n\r\n&quot;,</span>
+<span class="cm">    &quot;headers&quot;: {</span>
+<span class="cm">        &quot;STATUS&quot;: &quot;HTTP/1.1 200 OK&quot;,</span>
+<span class="cm">        &quot;Date&quot;: &quot;Mon, 11 Jan 2021 06:46:34 GMT&quot;,</span>
+<span class="cm">        &quot;Content-Type&quot;: &quot;text/plain&quot;,</span>
+<span class="cm">        &quot;Content-Length&quot;: &quot;583&quot;</span>
+<span class="cm">    },</span>
+<span class="cm">    &quot;httpVersion&quot;: 1.1,</span>
+<span class="cm">    &quot;totalTime&quot;: 0.000979,</span>
+<span class="cm">    &quot;errMsg&quot;: &quot;&quot;</span>
+<span class="cm">}</span>
+<span class="cm">{</span>
+<span class="cm">    &quot;statusText&quot;: &quot;Moved Permanently&quot;,</span>
+<span class="cm">    &quot;status&quot;: 301,</span>
+<span class="cm">    &quot;text&quot;: &quot;&lt;HTML&gt;&lt;HEAD&gt;&lt;meta http-equiv=\&quot;content-type\&quot; content=\&quot;text/html;charset=utf-8\&quot;&gt;\n&lt;TITLE&gt;301 Moved&lt;/TITLE&gt;&lt;/HEAD&gt;&lt;BODY&gt;\n&lt;H1&gt;301 Moved&lt;/H1&gt;\nThe document has moved\n&lt;A HREF=\&quot;http://www.google.com/\&quot;&gt;here&lt;/A&gt;.\r\n&lt;/BODY&gt;&lt;/HTML&gt;\r\n&quot;,</span>
+<span class="cm">    &quot;body&quot;: &quot;&lt;HTML&gt;&lt;HEAD&gt;&lt;meta http-equiv=\&quot;content-type\&quot; content=\&quot;text/html;charset=utf-8\&quot;&gt;\n&lt;TITLE&gt;301 Moved&lt;/TITLE&gt;&lt;/HEAD&gt;&lt;BODY&gt;\n&lt;H1&gt;301 Moved&lt;/H1&gt;\nThe document has moved\n&lt;A HREF=\&quot;http://www.google.com/\&quot;&gt;here&lt;/A&gt;.\r\n&lt;/BODY&gt;&lt;/HTML&gt;\r\n&quot;,</span>
+<span class="cm">    &quot;effectiveUrl&quot;: &quot;http://google.com/&quot;,</span>
+<span class="cm">    &quot;url&quot;: &quot;http://google.com/&quot;,</span>
+<span class="cm">    &quot;localIP&quot;: &quot;2001:470:88:88:ec4:7aff:fe44:77d6&quot;,</span>
+<span class="cm">    &quot;localPort&quot;: 51186,</span>
+<span class="cm">    &quot;serverIP&quot;: &quot;2607:f8b0:4005:805::200e&quot;,</span>
+<span class="cm">    &quot;serverPort&quot;: 80,</span>
+<span class="cm">    &quot;rawHeader&quot;: &quot;HTTP/1.1 301 Moved Permanently\r\nLocation: http://www.google.com/\r\nContent-Type: text/html; charset=UTF-8\r\nDate: Mon, 11 Jan 2021 06:46:34 GMT\r\nExpires: Wed, 10 Feb 2021 06:46:34 GMT\r\nCache-Control: public, max-age=2592000\r\nServer: gws\r\nContent-Length: 219\r\nX-XSS-Protection: 0\r\nX-Frame-Options: SAMEORIGIN\r\n\r\n&quot;,</span>
+<span class="cm">    &quot;headers&quot;: {</span>
+<span class="cm">        &quot;STATUS&quot;: &quot;HTTP/1.1 301 Moved Permanently&quot;,</span>
+<span class="cm">        &quot;Location&quot;: &quot;http://www.google.com/&quot;,</span>
+<span class="cm">        &quot;Content-Type&quot;: &quot;text/html; charset=UTF-8&quot;,</span>
+<span class="cm">        &quot;Date&quot;: &quot;Mon, 11 Jan 2021 06:46:34 GMT&quot;,</span>
+<span class="cm">        &quot;Expires&quot;: &quot;Wed, 10 Feb 2021 06:46:34 GMT&quot;,</span>
+<span class="cm">        &quot;Cache-Control&quot;: &quot;public, max-age=2592000&quot;,</span>
+<span class="cm">        &quot;Server&quot;: &quot;gws&quot;,</span>
+<span class="cm">        &quot;Content-Length&quot;: &quot;219&quot;,</span>
+<span class="cm">        &quot;X-XSS-Protection&quot;: &quot;0&quot;,</span>
+<span class="cm">        &quot;X-Frame-Options&quot;: &quot;SAMEORIGIN&quot;</span>
+<span class="cm">    },</span>
+<span class="cm">    &quot;httpVersion&quot;: 1.1,</span>
+<span class="cm">    &quot;totalTime&quot;: 0.057215,</span>
+<span class="cm">    &quot;errMsg&quot;: &quot;&quot;</span>
+<span class="cm">}</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="multiple-http-request-with-addurl">
+<h3>Multiple HTTP request with addurl()<a class="headerlink" href="#multiple-http-request-with-addurl" title="Permalink to this headline">¶</a></h3>
+<p>There may be cases where, while fetching HTML pages, more resources are discovered and can be
+added to the list of URLs that <code class="docutils literal notranslate"><span class="pre">fetch()</span></code> will retrieve.  The following example uses
+<a class="reference internal" href="rampart-html.html#the-rampart-server-html-module"><span class="std std-ref">the rampart-html module</span></a> to extract
+links from the <code class="docutils literal notranslate"><span class="pre">index.html</span></code> page on the sample website in the <code class="docutils literal notranslate"><span class="pre">/usr/local/rampart/examples</span></code>
+directory, and “crawl” the rest of the site.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">http</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-http&quot;</span><span class="p">);</span>
+
+<span class="cm">/* use an object to keep a list of unique urls */</span>
+<span class="kd">var</span> <span class="nx">fetched</span> <span class="o">=</span> <span class="p">{</span> <span class="s2">&quot;http://localhost:8088/&quot;</span> <span class="o">:</span> <span class="kc">true</span> <span class="p">};</span>
+
+<span class="cm">/*</span>
+<span class="cm">   remove &quot;/index.html&quot; from link, return false if not html</span>
+<span class="cm">   or if html, but from another domain</span>
+<span class="cm">   or if we&#39;ve already put this one on the list</span>
+<span class="cm">*/</span>
+<span class="kd">function</span> <span class="nx">sanitize_link</span><span class="p">(</span><span class="nx">l</span><span class="p">)</span> <span class="p">{</span>
+
+  <span class="nx">l</span><span class="o">=</span><span class="nx">l</span><span class="p">.</span><span class="nx">replace</span><span class="p">(</span><span class="sr">/#.*/</span><span class="p">,</span> <span class="s1">&#39;&#39;</span><span class="p">);</span>
+  <span class="nx">l</span><span class="o">=</span><span class="nx">l</span><span class="p">.</span><span class="nx">replace</span><span class="p">(</span><span class="sr">/\/index.html?$/</span><span class="p">,</span> <span class="s2">&quot;/&quot;</span><span class="p">);</span>
+
+  <span class="k">if</span> <span class="p">(</span>
+       <span class="cm">/* if it starts with http://localhost, or if it doesnt have a &#39;://&#39; */</span>
+       <span class="p">(</span><span class="nx">l</span><span class="p">.</span><span class="nx">match</span><span class="p">(</span><span class="sr">/^https?:\/\/localhost:8088\//</span><span class="p">)</span> <span class="o">||</span> <span class="o">!</span><span class="nx">l</span><span class="p">.</span><span class="nx">match</span><span class="p">(</span><span class="sr">/:\/\//</span><span class="p">)</span> <span class="p">)</span>
+       <span class="o">&amp;&amp;</span>
+       <span class="cm">/* and if it ends in a &#39;/&#39; or a &#39;.html&#39; */</span>
+       <span class="p">(</span><span class="nx">l</span><span class="p">.</span><span class="nx">match</span><span class="p">(</span><span class="sr">/\/$/</span><span class="p">)</span> <span class="o">||</span> <span class="nx">l</span><span class="p">.</span><span class="nx">match</span><span class="p">(</span><span class="sr">/\.html?$/</span><span class="p">)</span> <span class="p">)</span>
+     <span class="p">)</span>
+  <span class="p">{</span>
+      <span class="cm">/* if not on the list */</span>
+      <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="nx">fetched</span><span class="p">[</span><span class="nx">l</span><span class="p">])</span>
+      <span class="p">{</span>
+        <span class="cm">/* add it to the list */</span>
+        <span class="nx">fetched</span><span class="p">[</span><span class="nx">l</span><span class="p">]</span><span class="o">=</span><span class="kc">true</span><span class="p">;</span>
+        <span class="cm">/* fix relative link */</span>
+        <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="nx">l</span><span class="p">.</span><span class="nx">match</span><span class="p">(</span><span class="sr">/https?:\/\//</span><span class="p">))</span>
+        <span class="p">{</span>
+          <span class="k">if</span><span class="p">(</span><span class="nx">l</span><span class="p">.</span><span class="nx">charAt</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="o">==</span> <span class="s1">&#39;/&#39;</span><span class="p">)</span>
+            <span class="nx">l</span> <span class="o">=</span> <span class="s2">&quot;http://localhost:8088&quot;</span> <span class="o">+</span> <span class="nx">l</span><span class="p">;</span>
+          <span class="k">else</span>
+            <span class="nx">l</span> <span class="o">=</span> <span class="s2">&quot;http://localhost:8088/&quot;</span> <span class="o">+</span> <span class="nx">l</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="k">return</span><span class="p">(</span><span class="nx">l</span><span class="p">);</span>
+      <span class="p">}</span>
+  <span class="p">}</span>
+  <span class="k">return</span> <span class="kc">false</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="kd">function</span> <span class="nx">savedoc</span><span class="p">(</span><span class="nx">doc</span><span class="p">,</span> <span class="nx">title</span><span class="p">)</span> <span class="p">{</span>
+  <span class="nx">printf</span> <span class="p">(</span><span class="s2">&quot;saving %s\n&quot;</span><span class="p">,</span> <span class="nx">doc</span><span class="p">.</span><span class="nx">effectiveUrl</span><span class="p">);</span>
+  <span class="cm">/* save code goes here */</span>
+<span class="p">}</span>
+
+<span class="nx">curl</span><span class="p">.</span><span class="nx">fetch</span><span class="p">(</span> <span class="s2">&quot;http://localhost:8088/&quot;</span><span class="p">,</span> <span class="kd">function</span><span class="p">(</span><span class="nx">res</span><span class="p">)</span> <span class="p">{</span>
+
+  <span class="cm">/* check if successful */</span>
+  <span class="k">if</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">status</span> <span class="o">==</span> <span class="mi">200</span><span class="p">)</span> <span class="p">{</span>
+    <span class="cm">/* parse document and extract &#39;a href=&#39; links */</span>
+    <span class="kd">var</span> <span class="nx">doc</span><span class="o">=</span><span class="nx">html</span><span class="p">.</span><span class="nx">newDocument</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">text</span><span class="p">);</span>
+    <span class="kd">var</span> <span class="nx">links</span><span class="o">=</span><span class="nx">doc</span><span class="p">.</span><span class="nx">findTag</span><span class="p">(</span><span class="s2">&quot;a&quot;</span><span class="p">).</span><span class="nx">filterAttr</span><span class="p">(</span><span class="s2">&quot;href&quot;</span><span class="p">).</span><span class="nx">getAttr</span><span class="p">(</span><span class="s2">&quot;href&quot;</span><span class="p">);</span>
+
+    <span class="cm">/* add any links not already retrieved */</span>
+    <span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="o">&lt;</span><span class="nx">links</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+      <span class="kd">var</span> <span class="nx">l</span> <span class="o">=</span> <span class="nx">sanitize_link</span><span class="p">(</span><span class="nx">links</span><span class="p">[</span><span class="nx">i</span><span class="p">]);</span>
+      <span class="k">if</span><span class="p">(</span><span class="nx">l</span><span class="p">){</span>
+        <span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;adding new link %s\n&quot;</span><span class="p">,</span> <span class="nx">l</span><span class="p">);</span>
+        <span class="k">this</span><span class="p">.</span><span class="nx">addurl</span><span class="p">(</span><span class="nx">l</span><span class="p">);</span>
+      <span class="p">}</span>
+    <span class="p">}</span>
+    <span class="nx">savedoc</span><span class="p">(</span><span class="nx">res</span><span class="p">);</span>
+  <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+    <span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;error getting %s (%d)\n&quot;</span><span class="p">,</span> <span class="nx">res</span><span class="p">.</span><span class="nx">url</span><span class="p">,</span> <span class="nx">res</span><span class="p">.</span><span class="nx">status</span><span class="p">);</span>
+  <span class="p">}</span>
+<span class="p">});</span>
+<span class="cm">/* expected output:</span>
+<span class="cm">adding new link http://localhost:8088/page-shopping-cart.html</span>
+<span class="cm">adding new link http://localhost:8088/page-login.html</span>
+<span class="cm">adding new link http://localhost:8088/index.html</span>
+<span class="cm">adding new link http://localhost:8088/features.html</span>
+<span class="cm">adding new link http://localhost:8088/page-homepage-sample.html</span>
+<span class="cm">adding new link http://localhost:8088/page-services-1-column.html</span>
+<span class="cm">adding new link http://localhost:8088/page-services-3-columns.html</span>
+<span class="cm">adding new link http://localhost:8088/page-services-4-columns.html</span>
+<span class="cm">adding new link http://localhost:8088/page-pricing.html</span>
+<span class="cm">adding new link http://localhost:8088/page-team.html</span>
+<span class="cm">adding new link http://localhost:8088/page-vacancies.html</span>
+<span class="cm">adding new link http://localhost:8088/page-job-details.html</span>
+<span class="cm">adding new link http://localhost:8088/page-portfolio-2-columns-1.html</span>
+<span class="cm">adding new link http://localhost:8088/page-portfolio-2-columns-2.html</span>
+<span class="cm">adding new link http://localhost:8088/page-portfolio-3-columns-1.html</span>
+<span class="cm">adding new link http://localhost:8088/page-portfolio-3-columns-2.html</span>
+<span class="cm">adding new link http://localhost:8088/page-portfolio-item.html</span>
+<span class="cm">adding new link http://localhost:8088/page-about-us.html</span>
+<span class="cm">adding new link http://localhost:8088/page-contact-us.html</span>
+<span class="cm">adding new link http://localhost:8088/page-faq.html</span>
+<span class="cm">adding new link http://localhost:8088/page-testimonials-clients.html</span>
+<span class="cm">adding new link http://localhost:8088/page-events.html</span>
+<span class="cm">adding new link http://localhost:8088/page-404.html</span>
+<span class="cm">adding new link http://localhost:8088/page-sitemap.html</span>
+<span class="cm">adding new link http://localhost:8088/page-register.html</span>
+<span class="cm">adding new link http://localhost:8088/page-password-reset.html</span>
+<span class="cm">adding new link http://localhost:8088/page-terms-privacy.html</span>
+<span class="cm">adding new link http://localhost:8088/page-coming-soon.html</span>
+<span class="cm">adding new link http://localhost:8088/page-products-3-columns.html</span>
+<span class="cm">adding new link http://localhost:8088/page-products-4-columns.html</span>
+<span class="cm">adding new link http://localhost:8088/page-products-slider.html</span>
+<span class="cm">adding new link http://localhost:8088/page-product-details.html</span>
+<span class="cm">adding new link http://localhost:8088/page-blog-posts.html</span>
+<span class="cm">adding new link http://localhost:8088/page-blog-post-right-sidebar.html</span>
+<span class="cm">adding new link http://localhost:8088/page-blog-post-left-sidebar.html</span>
+<span class="cm">adding new link http://localhost:8088/page-news.html</span>
+<span class="cm">adding new link http://localhost:8088/credits.html</span>
+<span class="cm">saving http://localhost:8088/</span>
+<span class="cm">saving http://localhost:8088/page-shopping-cart.html</span>
+<span class="cm">saving http://localhost:8088/page-login.html</span>
+<span class="cm">saving http://localhost:8088/page-services-1-column.html</span>
+<span class="cm">saving http://localhost:8088/page-pricing.html</span>
+<span class="cm">saving http://localhost:8088/page-vacancies.html</span>
+<span class="cm">saving http://localhost:8088/page-job-details.html</span>
+<span class="cm">saving http://localhost:8088/page-portfolio-2-columns-1.html</span>
+<span class="cm">saving http://localhost:8088/page-portfolio-2-columns-2.html</span>
+<span class="cm">saving http://localhost:8088/page-portfolio-3-columns-1.html</span>
+<span class="cm">saving http://localhost:8088/page-portfolio-3-columns-2.html</span>
+<span class="cm">saving http://localhost:8088/page-portfolio-item.html</span>
+<span class="cm">saving http://localhost:8088/page-about-us.html</span>
+<span class="cm">saving http://localhost:8088/page-contact-us.html</span>
+<span class="cm">saving http://localhost:8088/page-testimonials-clients.html</span>
+<span class="cm">saving http://localhost:8088/page-events.html</span>
+<span class="cm">saving http://localhost:8088/page-404.html</span>
+<span class="cm">saving http://localhost:8088/page-sitemap.html</span>
+<span class="cm">saving http://localhost:8088/page-register.html</span>
+<span class="cm">saving http://localhost:8088/page-password-reset.html</span>
+<span class="cm">saving http://localhost:8088/page-coming-soon.html</span>
+<span class="cm">saving http://localhost:8088/page-products-slider.html</span>
+<span class="cm">saving http://localhost:8088/page-product-details.html</span>
+<span class="cm">saving http://localhost:8088/page-blog-posts.html</span>
+<span class="cm">saving http://localhost:8088/page-news.html</span>
+<span class="cm">saving http://localhost:8088/credits.html</span>
+<span class="cm">saving http://localhost:8088/index.html</span>
+<span class="cm">saving http://localhost:8088/features.html</span>
+<span class="cm">saving http://localhost:8088/page-homepage-sample.html</span>
+<span class="cm">saving http://localhost:8088/page-services-3-columns.html</span>
+<span class="cm">saving http://localhost:8088/page-services-4-columns.html</span>
+<span class="cm">saving http://localhost:8088/page-team.html</span>
+<span class="cm">saving http://localhost:8088/page-faq.html</span>
+<span class="cm">saving http://localhost:8088/page-terms-privacy.html</span>
+<span class="cm">saving http://localhost:8088/page-products-3-columns.html</span>
+<span class="cm">saving http://localhost:8088/page-products-4-columns.html</span>
+<span class="cm">saving http://localhost:8088/page-blog-post-right-sidebar.html</span>
+<span class="cm">saving http://localhost:8088/page-blog-post-left-sidebar.html</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="posting-multipart-form-data">
+<h3>Posting Multipart-Form Data<a class="headerlink" href="#posting-multipart-form-data" title="Permalink to this headline">¶</a></h3>
+<p>This example shows how to send files using <code class="docutils literal notranslate"><span class="pre">postform</span></code>.  Each file is sent in
+the body as <code class="docutils literal notranslate"><span class="pre">form-data</span></code> with the top level <code class="docutils literal notranslate"><span class="pre">Content-Type</span></code> set to
+<code class="docutils literal notranslate"><span class="pre">multipart/form-data</span></code>.  Here, the file <code class="docutils literal notranslate"><span class="pre">myfile1.txt</span></code> and <code class="docutils literal notranslate"><span class="pre">myfile2.txt</span></code>
+each contain a single line of text (<code class="docutils literal notranslate"><span class="pre">contents</span> <span class="pre">of</span> <span class="pre">file</span> <span class="pre">#</span></code>).</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">curl</span><span class="p">.</span><span class="nx">fetch</span><span class="p">(</span><span class="s2">&quot;http://localhost:8088/echo.txt&quot;</span><span class="p">,</span>
+<span class="p">{</span>
+  <span class="nx">postform</span><span class="o">:</span> <span class="p">{</span>
+    <span class="nx">file1</span><span class="o">:</span> <span class="p">{</span><span class="s2">&quot;filename&quot;</span><span class="o">:</span><span class="s2">&quot;myfile1.txt&quot;</span> <span class="p">,</span><span class="s2">&quot;type&quot;</span><span class="o">:</span> <span class="s2">&quot;text/plain&quot;</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="o">:</span><span class="s2">&quot;@myfile1.txt&quot;</span><span class="p">},</span>
+    <span class="nx">file2</span><span class="o">:</span> <span class="p">{</span><span class="s2">&quot;filename&quot;</span><span class="o">:</span><span class="s2">&quot;myfile2.txt&quot;</span> <span class="p">,</span><span class="s2">&quot;type&quot;</span><span class="o">:</span> <span class="s2">&quot;text/plain&quot;</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="o">:</span><span class="s2">&quot;@myfile2.txt&quot;</span><span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">});</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">text</span><span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+<span class="cm">{</span>
+<span class="cm">    &quot;ip&quot;: &quot;127.0.0.1&quot;,</span>
+<span class="cm">    &quot;port&quot;: 49544,</span>
+<span class="cm">    &quot;method&quot;: &quot;POST&quot;,</span>
+<span class="cm">    &quot;path&quot;: {</span>
+<span class="cm">        &quot;file&quot;: &quot;echo.txt&quot;,</span>
+<span class="cm">        &quot;path&quot;: &quot;/echo.txt&quot;,</span>
+<span class="cm">        &quot;base&quot;: &quot;/&quot;,</span>
+<span class="cm">        &quot;scheme&quot;: &quot;http://&quot;,</span>
+<span class="cm">        &quot;host&quot;: &quot;localhost:8088&quot;,</span>
+<span class="cm">        &quot;url&quot;: &quot;http://localhost:8088/echo.txt&quot;</span>
+<span class="cm">    },</span>
+<span class="cm">    &quot;query&quot;: {},</span>
+<span class="cm">    &quot;body&quot;: &quot;--------------------------98b4d26c39da32e6\r\nContent-Disposition: form-data; name=\&quot;file1\&quot;; filename=\&quot;myfile1.txt\&quot;\r\nContent-Type: text/plain\r\n\r\ncontents of file 1\r\n--------------------------98b4d26c39da32e6\r\nContent-Disposition: form-data; name=\&quot;file2\&quot;; filename=\&quot;myfile2.txt\&quot;\r\nContent-Type: text/plain\r\n\r\ncontents of file 2\r\n--------------------------98b4d26c39da32e6--\r\n&quot;,</span>
+<span class="cm">    &quot;query_raw&quot;: &quot;&quot;,</span>
+<span class="cm">    &quot;headers&quot;: {</span>
+<span class="cm">        &quot;Host&quot;: &quot;localhost:8088&quot;,</span>
+<span class="cm">        &quot;User-Agent&quot;: &quot;libcurl-rampart/0.1&quot;,</span>
+<span class="cm">        &quot;Content-Length&quot;: &quot;370&quot;,</span>
+<span class="cm">        &quot;Content-Type&quot;: &quot;multipart/form-data; boundary=------------------------98b4d26c39da32e6&quot;</span>
+<span class="cm">    },</span>
+<span class="cm">    &quot;postData&quot;: {</span>
+<span class="cm">        &quot;Content-Type&quot;: &quot;multipart/form-data&quot;,</span>
+<span class="cm">        &quot;content&quot;: [</span>
+<span class="cm">            {</span>
+<span class="cm">                &quot;Content-Disposition&quot;: &quot;form-data&quot;,</span>
+<span class="cm">                &quot;name&quot;: &quot;file1&quot;,</span>
+<span class="cm">                &quot;filename&quot;: &quot;myfile1.txt&quot;,</span>
+<span class="cm">                &quot;Content-Type&quot;: &quot;text/plain&quot;,</span>
+<span class="cm">                &quot;content&quot;: &quot;contents of file 1&quot;</span>
+<span class="cm">            },</span>
+<span class="cm">            {</span>
+<span class="cm">                &quot;Content-Disposition&quot;: &quot;form-data&quot;,</span>
+<span class="cm">                &quot;name&quot;: &quot;file2&quot;,</span>
+<span class="cm">                &quot;filename&quot;: &quot;myfile2.txt&quot;,</span>
+<span class="cm">                &quot;Content-Type&quot;: &quot;text/plain&quot;,</span>
+<span class="cm">                &quot;content&quot;: &quot;contents of file 2&quot;</span>
+<span class="cm">            }</span>
+<span class="cm">        ]</span>
+<span class="cm">    },</span>
+<span class="cm">    &quot;params&quot;: {</span>
+<span class="cm">        &quot;myfile1.txt&quot;: &quot;contents of file 1&quot;,</span>
+<span class="cm">        &quot;myfile2.txt&quot;: &quot;contents of file 2&quot;,</span>
+<span class="cm">        &quot;Host&quot;: &quot;localhost:8088&quot;,</span>
+<span class="cm">        &quot;User-Agent&quot;: &quot;libcurl-rampart/0.1&quot;,</span>
+<span class="cm">        &quot;Content-Length&quot;: &quot;370&quot;,</span>
+<span class="cm">        &quot;Content-Type&quot;: &quot;multipart/form-data; boundary=------------------------98b4d26c39da32e6&quot;</span>
+<span class="cm">    }</span>
+<span class="cm">}</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="multiple-http-post-with-submit">
+<h3>Multiple HTTP Post with Submit()<a class="headerlink" href="#multiple-http-post-with-submit" title="Permalink to this headline">¶</a></h3>
+<p>The following example shows how different post data and settings can be submitted to different URLs
+in parallel using <code class="docutils literal notranslate"><span class="pre">submit()</span></code>.  In this example, the file <code class="docutils literal notranslate"><span class="pre">myfile1.txt</span></code> and <code class="docutils literal notranslate"><span class="pre">myfile2.txt</span></code> each contain
+a single line of text (<code class="docutils literal notranslate"><span class="pre">contents</span> <span class="pre">of</span> <span class="pre">file</span> <span class="pre">#</span></code>).</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">req1</span> <span class="o">=</span> <span class="p">{</span>
+  <span class="nx">url</span><span class="o">:</span> <span class="s2">&quot;http://localhost:8088/echo.txt&quot;</span><span class="p">,</span>
+  <span class="nx">postform</span><span class="o">:</span> <span class="p">{</span>
+    <span class="nx">myvar</span><span class="o">:</span> <span class="s2">&quot;myval&quot;</span><span class="p">,</span>
+    <span class="nx">myfile</span><span class="o">:</span> <span class="p">{</span><span class="s2">&quot;filename&quot;</span><span class="o">:</span><span class="s2">&quot;myfile1.txt&quot;</span> <span class="p">,</span><span class="s2">&quot;type&quot;</span><span class="o">:</span> <span class="s2">&quot;text/plain&quot;</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="o">:</span><span class="s2">&quot;@myfile1.txt&quot;</span><span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="kd">var</span> <span class="nx">req2</span> <span class="o">=</span> <span class="p">{</span>
+  <span class="nx">url</span><span class="o">:</span> <span class="s2">&quot;http://localhost:8088/echo.txt?getvar=getval&quot;</span><span class="p">,</span>
+  <span class="nx">header</span><span class="o">:</span> <span class="s2">&quot;Content-Type: text/plain&quot;</span><span class="p">,</span>
+  <span class="nx">post</span><span class="o">:</span> <span class="s2">&quot;@myfile2.txt&quot;</span>
+<span class="p">}</span>
+
+<span class="nx">curl</span><span class="p">.</span><span class="nx">submit</span><span class="p">([</span><span class="nx">req1</span><span class="p">,</span><span class="nx">req2</span><span class="p">]</span> <span class="p">,</span> <span class="kd">function</span><span class="p">(</span><span class="nx">res</span><span class="p">)</span> <span class="p">{</span>
+  <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">text</span><span class="p">);</span>
+<span class="p">});</span>
+
+<span class="cm">/* expected output:</span>
+<span class="cm">{</span>
+<span class="cm">    &quot;ip&quot;: &quot;127.0.0.1&quot;,</span>
+<span class="cm">    &quot;port&quot;: 49454,</span>
+<span class="cm">    &quot;method&quot;: &quot;POST&quot;,</span>
+<span class="cm">    &quot;path&quot;: {</span>
+<span class="cm">        &quot;file&quot;: &quot;echo.txt&quot;,</span>
+<span class="cm">        &quot;path&quot;: &quot;/echo.txt&quot;,</span>
+<span class="cm">        &quot;base&quot;: &quot;/&quot;,</span>
+<span class="cm">        &quot;scheme&quot;: &quot;http://&quot;,</span>
+<span class="cm">        &quot;host&quot;: &quot;localhost:8088&quot;,</span>
+<span class="cm">        &quot;url&quot;: &quot;http://localhost:8088/echo.txt&quot;</span>
+<span class="cm">    },</span>
+<span class="cm">    &quot;query&quot;: {},</span>
+<span class="cm">    &quot;body&quot;: &quot;--------------------------bd4bfd204892f559\r\nContent-Disposition: form-data; name=\&quot;myvar\&quot;\r\n\r\nmyval\r\n--------------------------bd4bfd204892f559\r\nContent-Disposition: form-data; name=\&quot;myfile\&quot;; filename=\&quot;myfile1.txt\&quot;\r\nContent-Type: text/plain\r\n\r\ncontents of file 1\r\n--------------------------bd4bfd204892f559--\r\n&quot;,</span>
+<span class="cm">    &quot;query_raw&quot;: &quot;&quot;,</span>
+<span class="cm">    &quot;headers&quot;: {</span>
+<span class="cm">        &quot;Host&quot;: &quot;localhost:8088&quot;,</span>
+<span class="cm">        &quot;User-Agent&quot;: &quot;libcurl-rampart/0.1&quot;,</span>
+<span class="cm">        &quot;Content-Length&quot;: &quot;308&quot;,</span>
+<span class="cm">        &quot;Content-Type&quot;: &quot;multipart/form-data; boundary=------------------------bd4bfd204892f559&quot;</span>
+<span class="cm">    },</span>
+<span class="cm">    &quot;postData&quot;: {</span>
+<span class="cm">        &quot;Content-Type&quot;: &quot;multipart/form-data&quot;,</span>
+<span class="cm">        &quot;content&quot;: [</span>
+<span class="cm">            {</span>
+<span class="cm">                &quot;Content-Disposition&quot;: &quot;form-data&quot;,</span>
+<span class="cm">                &quot;name&quot;: &quot;myvar&quot;,</span>
+<span class="cm">                &quot;content&quot;: &quot;myval&quot;</span>
+<span class="cm">            },</span>
+<span class="cm">            {</span>
+<span class="cm">                &quot;Content-Disposition&quot;: &quot;form-data&quot;,</span>
+<span class="cm">                &quot;name&quot;: &quot;myfile&quot;,</span>
+<span class="cm">                &quot;filename&quot;: &quot;myfile1.txt&quot;,</span>
+<span class="cm">                &quot;Content-Type&quot;: &quot;text/plain&quot;,</span>
+<span class="cm">                &quot;content&quot;: &quot;contents of file 1&quot;</span>
+<span class="cm">            }</span>
+<span class="cm">        ]</span>
+<span class="cm">    },</span>
+<span class="cm">    &quot;params&quot;: {</span>
+<span class="cm">        &quot;myvar&quot;: &quot;myval&quot;,</span>
+<span class="cm">        &quot;myfile1.txt&quot;: &quot;contents of file 1&quot;,</span>
+<span class="cm">        &quot;Host&quot;: &quot;localhost:8088&quot;,</span>
+<span class="cm">        &quot;User-Agent&quot;: &quot;libcurl-rampart/0.1&quot;,</span>
+<span class="cm">        &quot;Content-Length&quot;: &quot;308&quot;,</span>
+<span class="cm">        &quot;Content-Type&quot;: &quot;multipart/form-data; boundary=------------------------bd4bfd204892f559&quot;</span>
+<span class="cm">    }</span>
+<span class="cm">}</span>
+
+<span class="cm">{</span>
+<span class="cm">    &quot;ip&quot;: &quot;127.0.0.1&quot;,</span>
+<span class="cm">    &quot;port&quot;: 49456,</span>
+<span class="cm">    &quot;method&quot;: &quot;POST&quot;,</span>
+<span class="cm">    &quot;path&quot;: {</span>
+<span class="cm">        &quot;file&quot;: &quot;echo.txt&quot;,</span>
+<span class="cm">        &quot;path&quot;: &quot;/echo.txt&quot;,</span>
+<span class="cm">        &quot;base&quot;: &quot;/&quot;,</span>
+<span class="cm">        &quot;scheme&quot;: &quot;http://&quot;,</span>
+<span class="cm">        &quot;host&quot;: &quot;localhost:8088&quot;,</span>
+<span class="cm">        &quot;url&quot;: &quot;http://localhost:8088/echo.txt?getvar=getval&quot;</span>
+<span class="cm">    },</span>
+<span class="cm">    &quot;query&quot;: {</span>
+<span class="cm">        &quot;getvar&quot;: &quot;getval&quot;</span>
+<span class="cm">    },</span>
+<span class="cm">    &quot;body&quot;: &quot;contents of file 2&quot;,</span>
+<span class="cm">    &quot;query_raw&quot;: &quot;getvar=getval&quot;,</span>
+<span class="cm">    &quot;headers&quot;: {</span>
+<span class="cm">        &quot;Host&quot;: &quot;localhost:8088&quot;,</span>
+<span class="cm">        &quot;User-Agent&quot;: &quot;libcurl-rampart/0.1&quot;,</span>
+<span class="cm">        &quot;Transfer-Encoding&quot;: &quot;chunked&quot;,</span>
+<span class="cm">        &quot;Content-Type&quot;: &quot;text/plain&quot;,</span>
+<span class="cm">        &quot;Content-Length&quot;: &quot;18&quot;,</span>
+<span class="cm">        &quot;Expect&quot;: &quot;100-continue&quot;</span>
+<span class="cm">    },</span>
+<span class="cm">    &quot;postData&quot;: {</span>
+<span class="cm">        &quot;Content-Type&quot;: &quot;text/plain&quot;,</span>
+<span class="cm">        &quot;content&quot;: &quot;contents of file 2&quot;</span>
+<span class="cm">    },</span>
+<span class="cm">    &quot;params&quot;: {</span>
+<span class="cm">        &quot;getvar&quot;: &quot;getval&quot;,</span>
+<span class="cm">        &quot;Host&quot;: &quot;localhost:8088&quot;,</span>
+<span class="cm">        &quot;User-Agent&quot;: &quot;libcurl-rampart/0.1&quot;,</span>
+<span class="cm">        &quot;Transfer-Encoding&quot;: &quot;chunked&quot;,</span>
+<span class="cm">        &quot;Content-Type&quot;: &quot;text/plain&quot;,</span>
+<span class="cm">        &quot;Content-Length&quot;: &quot;18&quot;,</span>
+<span class="cm">        &quot;Expect&quot;: &quot;100-continue&quot;</span>
+<span class="cm">    }</span>
+<span class="cm">}</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="sending-email-with-smpt">
+<h3>Sending Email with SMPT<a class="headerlink" href="#sending-email-with-smpt" title="Permalink to this headline">¶</a></h3>
+<p>The following example sends a preformatted email through gmail.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">user</span> <span class="o">=</span> <span class="s2">&quot;example_user@gmail.com&quot;</span><span class="p">;</span>
+<span class="kd">var</span> <span class="nx">pass</span> <span class="o">=</span><span class="s1">&#39;xxxxxxxx&#39;</span><span class="p">;</span>
+<span class="kd">var</span> <span class="nx">to_email</span>  <span class="o">=</span> <span class="s2">&quot;example_recip@example.com&quot;</span>
+
+
+<span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span><span class="o">=</span><span class="nx">curl</span><span class="p">.</span><span class="nx">fetch</span><span class="p">(</span><span class="s2">&quot;smtps://smtp.gmail.com:465&quot;</span><span class="p">,</span>
+<span class="p">{</span>
+    <span class="s2">&quot;mail-rcpt&quot;</span><span class="o">:</span> <span class="nx">to_email</span><span class="p">,</span>
+    <span class="s2">&quot;mail-from&quot;</span><span class="o">:</span> <span class="nx">user</span><span class="p">,</span>
+    <span class="nx">user</span><span class="o">:</span> <span class="nx">user</span><span class="p">,</span>
+    <span class="nx">pass</span><span class="o">:</span><span class="nx">pass</span><span class="p">,</span>
+    <span class="s2">&quot;mail-msg&quot;</span><span class="o">:</span>
+        <span class="s2">&quot;To: &quot;</span> <span class="o">+</span> <span class="nx">to_email</span> <span class="o">+</span> <span class="s2">&quot;\r\n&quot;</span> <span class="o">+</span>
+        <span class="s2">&quot;From: &quot;</span> <span class="o">+</span> <span class="nx">user</span> <span class="o">+</span> <span class="s2">&quot;\r\n&quot;</span> <span class="o">+</span>
+        <span class="s2">&quot;Subject: My first Email using rampart-curl\r\n&quot;</span> <span class="o">+</span>
+        <span class="s2">&quot;\r\n&quot;</span> <span class="o">+</span>
+        <span class="s2">&quot;Hi &quot;</span> <span class="o">+</span> <span class="nx">to_email</span> <span class="o">+</span> <span class="s2">&quot;,\nWelcome to my first Email\n&quot;</span>
+<span class="p">});</span>
+
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%4J\n&quot;</span><span class="p">,</span> <span class="nx">res</span><span class="p">);</span>
+
+
+<span class="cm">/* expected output</span>
+<span class="cm">{</span>
+<span class="cm">    &quot;statusText&quot;: &quot;Unknown Status Code&quot;,</span>
+<span class="cm">    &quot;status&quot;: 250,</span>
+<span class="cm">    &quot;text&quot;: &quot;&quot;,</span>
+<span class="cm">    &quot;body&quot;: {},</span>
+<span class="cm">    &quot;effectiveUrl&quot;: &quot;smtps://smtp.gmail.com:465/&quot;,</span>
+<span class="cm">    &quot;url&quot;: &quot;smtps://smtp.gmail.com:465&quot;,</span>
+<span class="cm">    &quot;localIP&quot;: &quot;2001:db8::1&quot;,</span>
+<span class="cm">    &quot;localPort&quot;: 41312,</span>
+<span class="cm">    &quot;serverIP&quot;: &quot;2001:db8::2&quot;,</span>
+<span class="cm">    &quot;serverPort&quot;: 465,</span>
+<span class="cm">    &quot;rawHeader&quot;: &quot;220 smtp.gmail.com ESMTP d10xxxxxx.218 - gsmtp\r\n250-smtp.gmail.com at your service, ...&quot;</span>
+<span class="cm">    &quot;headers&quot;: {</span>
+<span class="cm">        &quot;STATUS&quot;: &quot;220 smtp.gmail.com ESMTP d10xxxxxxx.218 - gsmtp&quot;,</span>
+<span class="cm">        ...</span>
+<span class="cm">        &quot;HeaderLine_12&quot;: &quot;354  Go ahead d10xxxxxxxx.218 - gsmtp&quot;,</span>
+<span class="cm">        &quot;HeaderLine_13&quot;: &quot;250 2.0.0 OK  1610420924 d10xxxxxxxx.218 - gsmtp&quot;</span>
+<span class="cm">    },</span>
+<span class="cm">    &quot;httpVersion&quot;: -1,</span>
+<span class="cm">    &quot;totalTime&quot;: 2.67785,</span>
+<span class="cm">    &quot;errMsg&quot;: &quot;&quot;</span>
+<span class="cm">}</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="sending-email-with-attachments">
+<h3>Sending Email with Attachments<a class="headerlink" href="#sending-email-with-attachments" title="Permalink to this headline">¶</a></h3>
+<p>The following example sends a JPEG as an attachment and the message
+as both text and HTML (sent as <code class="docutils literal notranslate"><span class="pre">multipart/alternative</span></code>).  The HTML
+refers to the attachment in an <code class="docutils literal notranslate"><span class="pre">&lt;img&gt;</span></code> tag and displays the image
+inline in the HTML mail.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">user</span> <span class="o">=</span> <span class="s2">&quot;example_user@gmail.com&quot;</span><span class="p">;</span>
+<span class="kd">var</span> <span class="nx">pass</span> <span class="o">=</span><span class="s1">&#39;xxxxxxxx&#39;</span><span class="p">;</span>
+<span class="kd">var</span> <span class="nx">to_email</span>  <span class="o">=</span> <span class="s2">&quot;example_recip@example.com&quot;</span>
+
+
+<span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">img</span><span class="o">=</span><span class="nx">readFile</span><span class="p">(</span><span class="s2">&quot;/path/to/myimage.jpg&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span><span class="o">=</span><span class="nx">curl</span><span class="p">.</span><span class="nx">fetch</span><span class="p">(</span><span class="s2">&quot;smtps://smtp.gmail.com:465&quot;</span><span class="p">,</span>
+<span class="p">{</span>
+    <span class="s2">&quot;mail-rcpt&quot;</span><span class="o">:</span> <span class="nx">to_email</span><span class="p">,</span>
+    <span class="s2">&quot;mail-from&quot;</span><span class="o">:</span> <span class="nx">user</span><span class="p">,</span>
+    <span class="nx">user</span><span class="o">:</span> <span class="nx">user</span><span class="p">,</span>
+    <span class="nx">pass</span><span class="o">:</span><span class="nx">pass</span><span class="p">,</span>
+    <span class="s2">&quot;mail-msg&quot;</span><span class="o">:</span> <span class="p">{</span>
+        <span class="nx">from</span><span class="o">:</span> <span class="nx">user</span><span class="p">,</span>
+        <span class="nx">to</span><span class="o">:</span> <span class="nx">to_email</span><span class="p">,</span>
+        <span class="nx">subject</span><span class="o">:</span> <span class="s2">&quot;An email with html/text and attachment via rampart-curl&quot;</span><span class="p">,</span>
+        <span class="nx">date</span><span class="o">:</span> <span class="k">new</span> <span class="nb">Date</span><span class="p">(),</span>
+        <span class="nx">message</span><span class="o">:</span> <span class="p">{</span>
+            <span class="nx">html</span><span class="o">:</span> <span class="s1">&#39;&lt;p&gt;Dear &#39;</span> <span class="o">+</span> <span class="nx">to_email</span> <span class="o">+</span> <span class="s1">&#39;,&lt;/p&gt;&lt;p&gt;Here is a message in html&lt;/p&gt;&lt;img src=&quot;cid:myimage&quot;&gt;&lt;p&gt;An Image&lt;/p&gt;&#39;</span><span class="p">,</span>
+            <span class="nx">text</span><span class="o">:</span><span class="s1">&#39;Dear &#39;</span> <span class="o">+</span> <span class="nx">to_email</span> <span class="o">+</span> <span class="s1">&#39;,\nHere is a message in text.\n[image]\nAn Image\n&#39;</span><span class="p">,</span>
+            <span class="nx">attach</span><span class="o">:</span> <span class="p">[</span>
+                <span class="p">{</span> <span class="nx">data</span><span class="o">:</span><span class="nx">img</span><span class="p">,</span> <span class="nx">name</span><span class="o">:</span><span class="s2">&quot;img.jpg&quot;</span><span class="p">,</span> <span class="nx">type</span><span class="o">:</span><span class="s2">&quot;image/jpeg&quot;</span><span class="p">,</span> <span class="nx">cid</span><span class="o">:</span><span class="s2">&quot;myimage&quot;</span><span class="p">}</span>
+                <span class="cm">/* or</span>
+<span class="cm">                { data:&quot;@/path/to/myimage.jpg&quot;, name:&quot;img.jpg&quot;, type:&quot;image/jpeg&quot;, cid:&quot;myimage&quot;}</span>
+<span class="cm">                */</span>
+            <span class="p">]</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">});</span>
+
+<span class="cm">/* expected output</span>
+<span class="cm">{</span>
+<span class="cm">    &quot;statusText&quot;: &quot;Unknown Status Code&quot;,</span>
+<span class="cm">    &quot;status&quot;: 250,</span>
+<span class="cm">    &quot;text&quot;: &quot;&quot;,</span>
+<span class="cm">    &quot;body&quot;: {},</span>
+<span class="cm">    &quot;effectiveUrl&quot;: &quot;smtps://smtp.gmail.com:465/&quot;,</span>
+<span class="cm">    &quot;url&quot;: &quot;smtps://smtp.gmail.com:465&quot;,</span>
+<span class="cm">    &quot;localIP&quot;: &quot;2001:db8::1&quot;,</span>
+<span class="cm">    &quot;localPort&quot;: 41312,</span>
+<span class="cm">    &quot;serverIP&quot;: &quot;2001:db8::2&quot;,</span>
+<span class="cm">    &quot;serverPort&quot;: 465,</span>
+<span class="cm">    &quot;rawHeader&quot;: &quot;220 smtp.gmail.com ESMTP d10xxxxxx.218 - gsmtp\r\n250-smtp.gmail.com at your service, ...&quot;</span>
+<span class="cm">    &quot;headers&quot;: {</span>
+<span class="cm">        &quot;STATUS&quot;: &quot;220 smtp.gmail.com ESMTP d10xxxxxxx.218 - gsmtp&quot;,</span>
+<span class="cm">        ...</span>
+<span class="cm">        &quot;HeaderLine_12&quot;: &quot;354  Go ahead d10xxxxxxxx.218 - gsmtp&quot;,</span>
+<span class="cm">        &quot;HeaderLine_13&quot;: &quot;250 2.0.0 OK  1610420924 d10xxxxxxxx.218 - gsmtp&quot;</span>
+<span class="cm">    },</span>
+<span class="cm">    &quot;httpVersion&quot;: -1,</span>
+<span class="cm">    &quot;totalTime&quot;: 2.67785,</span>
+<span class="cm">    &quot;errMsg&quot;: &quot;&quot;</span>
+<span class="cm">}</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
 </div>
 </div>
 

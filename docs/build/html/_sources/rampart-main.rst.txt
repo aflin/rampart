@@ -62,8 +62,8 @@ following:
 
 * File and C-functions utilities such as ``printf``, ``fseek``, and ``exec``.
 
-* Included ``C`` modules (``rampart-ramis``, ``rampart-curl``, ``rampart-sql``, ``rampart-server`` and
-  ``rampart-crypto``).
+* Included ``C`` modules (``rampart-ramis``, ``rampart-curl``, ``rampart-sql``, ``rampart-server`` 
+  ``rampart-html`` and ``rampart-crypto``).
 
 * Minimal event loop using ``libevent2``
 
@@ -79,6 +79,8 @@ following:
 * http, ftp, etc. client functionality via ``rampart-curl``.
 
 * Cryptography functions from Openssl via ``rampart-crypto``.
+
+* Html parsing and and error correcting via ``rampart-html``. 
 
 Rampart philosophy
 ~~~~~~~~~~~~~~~~~~
@@ -179,7 +181,7 @@ Usage:
    rampart.utils.printf(fmt, ...)
    
 Return Value:
-   :green:`Number`. The length in characters of the printed string.
+   :green:`Number`. The length in bytes of the printed string.
 
 Standard formats:  Most of the normal flags and formats are respected.
 See standard formats and flags from
@@ -363,7 +365,7 @@ Where:
   overwrite an existing file.
 
 Return Value:
-   :green:`Number`. The length in characters of the printed string.
+   :green:`Number`. The length in bytes of the printed string.
 
 Example:
 
@@ -896,14 +898,14 @@ Usage:
    var line=rl.next();
 
 Where ``file`` is a :green:`String` (name of file to be read) and return :green:`Object`
-contains the property ``next``, a function to retrieve and return the next
+contains the property ``next``, a :green:`Function` to retrieve and return the next
 line of text in the file.
 
 Return Value:
-   :green:`Object`.  Property ``next`` of the return :green:`Object` is a function which
-   retrieves and returns the next line of text in the file.  After the last
-   line of ``file`` is returned, subsequent calls to ``next`` will return
-   ``null``.
+   :green:`Object`.  Property ``next`` of the return :green:`Object` is a
+   :green:`Function` which retrieves and returns the next line of text in
+   the file.  After the last line of ``file`` is returned, subsequent calls
+   to ``next`` will return ``null``.
 
 Example:
 
@@ -1060,13 +1062,13 @@ Example:
 
 .. code-block:: javascript
 
-   var ret = rampart.utils.shell('echo -n "hello"'); 
+   var ret = rampart.utils.shell('echo -n "hello"; echo "hi" 1>&2;'); 
    console.log(JSON.stringify(ret, null, 3)); 
 
    /* expected output:
    {
       "stdout": "hello",
-      "stderr": "",
+      "stderr": "hi\n",
       "timedOut": false,
       "exitStatus": 0,
       "pid": 24658
@@ -1400,6 +1402,23 @@ Usage:
 Return Value:
    :green:`Number`. The pid of the parent process.
 
+getType
+'''''''
+
+Get the type of variable. A simplified but more specific version of
+``typeof``.
+
+Usage:
+
+.. code-block:: javascript
+
+    var type = rampart.utils.getType(myvar);
+
+Return Value:
+  A :green:`String`, one of ``String``, ``Array``, ``Number``, ``Function``,
+  ``Boolean``, ``Buffer`` (any buffer type), ``Nan``, ``Null``, ``Undefined``,
+  ``Date`` or ``Object``.
+
 rampart.import
 """"""""""""""
 
@@ -1490,39 +1509,38 @@ callback:
    A :green:`Function` taking as parameters (``result_row``, ``index``, ``columns``).
    The callback is executed once for each row in the csv file:
 
-   * ``result_row``: (:green:`Array`/:green:`Object`): depending on the setting of ``returnType``
-     in ``Options`` above, a single row is passed to the callback as an
-     :green:`Object` or an :green:`Array`.
+       * ``result_row``: (:green:`Array`/:green:`Object`): depending on the setting of ``returnType``
+         in ``Options`` above, a single row is passed to the callback as an
+         :green:`Object` or an :green:`Array`.
 
-   * ``index``: (:green:`Number`) The ordinal number of the current search result.
+       * ``index``: (:green:`Number`) The ordinal number of the current search result.
 
-   * ``columns``: an :green:`Array` corresponding to the column names or
-     aliases selected and returned in results.
-   
+       * ``columns``: an :green:`Array` corresponding to the column names or
+         aliases selected and returned in results.
+
 .. _returnval:
 
 Return Value:
-	:green:`Number`/:green:`Object`.
+    :green:`Number`/:green:`Object`.
 
-        With no callback, an :green:`Object` is returned.  The :green:`Object` contains
-	three key/value pairs.  
-	
-	Key: ``results``; Value: an :green:`Array` of :green:`Arrays`. 
-	Each outer :green:`Array` corresponds to a row in the csv file
-	and each inner :green:`Array` corresponds to the columns in that row.
-	If ``returnType`` is set to ``"object"``, an :green:`Array` of
-	:green:`Objects` with keys set to the corresponding column names 
-	and the values set to the corresponding column values  of the
-	imported row.
-	
-	Key: ``rowCount``; Value: a :green:`Number` corresponding to the number of rows
-	returned.
+    With no callback, an :green:`Object` is returned.  The :green:`Object` contains
+    three key/value pairs:
 
-	Key:  ``columns``; Value: an :green:`Array` corresponding to the column names or
-	aliases selected and returned in results.
+        * Key: ``results`` - Value: an :green:`Array` of :green:`Arrays`. 
+          Each outer :green:`Array` corresponds to a row in the csv file
+          and each inner :green:`Array` corresponds to the columns in that row.
+          If ``returnType`` is set to ``"object"``, an :green:`Array` of
+          :green:`Objects` with keys set to the corresponding column names 
+          and the values set to the corresponding column values  of the
+          imported row.
+        
+        * Key: ``rowCount`` - Value: a :green:`Number` corresponding to the number of rows returned.
 
-	With a callback, the return value is set to number of rows in the
-        csv file (not including the Header if ``hasHeaderRow`` is ``true``).
+        * Key:  ``columns`` - Value: an :green:`Array` corresponding to the column names or
+          aliases selected and returned in results.
+
+    With a callback, the return value is set to number of rows in the
+    csv file (not including the Header if ``hasHeaderRow`` is ``true``).
 
 Note: In the callback, the loop can be cancelled at any point by returning
 ``false``.  The return value (number of rows) will still be the total number
@@ -1659,7 +1677,7 @@ Using the require Function to Import Modules
 Scripts may reference function stored in external files.  These files are
 known as modules.  A module is a compiled C program or a JavaScript file
 which exports an :green:`Object` or :green:`Function` when the
-``require("scriptname")`` syntax is used.
+``require("module-name")`` syntax is used.
 
 Example for the SQL C Module:
 

@@ -139,6 +139,7 @@
 <li class="toctree-l4"><a class="reference internal" href="#sleep">sleep</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#getpid">getpid</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#getppid">getppid</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#gettype">getType</a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#rampart-import">rampart.import</a><ul>
@@ -294,8 +295,8 @@ following:</p>
 <li><p>Standard module support for <code class="docutils literal notranslate"><span class="pre">C</span></code> and <code class="docutils literal notranslate"><span class="pre">JavaScript</span></code> modules via the
 <code class="docutils literal notranslate"><span class="pre">require()</span></code> function.</p></li>
 <li><p>File and C-functions utilities such as <code class="docutils literal notranslate"><span class="pre">printf</span></code>, <code class="docutils literal notranslate"><span class="pre">fseek</span></code>, and <code class="docutils literal notranslate"><span class="pre">exec</span></code>.</p></li>
-<li><p>Included <code class="docutils literal notranslate"><span class="pre">C</span></code> modules (<code class="docutils literal notranslate"><span class="pre">rampart-ramis</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-curl</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-sql</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-server</span></code> and
-<code class="docutils literal notranslate"><span class="pre">rampart-crypto</span></code>).</p></li>
+<li><p>Included <code class="docutils literal notranslate"><span class="pre">C</span></code> modules (<code class="docutils literal notranslate"><span class="pre">rampart-ramis</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-curl</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-sql</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-server</span></code>
+<code class="docutils literal notranslate"><span class="pre">rampart-html</span></code> and <code class="docutils literal notranslate"><span class="pre">rampart-crypto</span></code>).</p></li>
 <li><p>Minimal event loop using <code class="docutils literal notranslate"><span class="pre">libevent2</span></code></p></li>
 <li><p>ECMA 2015, 2016, 2017 and 2018 support using the <a class="reference external" href="https://babeljs.io/">Babel</a>
 JavaScript transpiler.</p></li>
@@ -304,6 +305,7 @@ JavaScript transpiler.</p></li>
 <li><p>Multi-threaded http(s) server from libevhtp via <code class="docutils literal notranslate"><span class="pre">rampart-server</span></code>.</p></li>
 <li><p>http, ftp, etc. client functionality via <code class="docutils literal notranslate"><span class="pre">rampart-curl</span></code>.</p></li>
 <li><p>Cryptography functions from Openssl via <code class="docutils literal notranslate"><span class="pre">rampart-crypto</span></code>.</p></li>
+<li><p>Html parsing and and error correcting via <code class="docutils literal notranslate"><span class="pre">rampart-html</span></code>.</p></li>
 </ul>
 </div>
 </div>
@@ -405,7 +407,7 @@ functionality in JavaScript.</p>
 </pre></div>
 </div>
 <dl class="simple">
-<dt>Return Value:</dt><dd><p><span class="green">Number</span>. The length in characters of the printed string.</p>
+<dt>Return Value:</dt><dd><p><span class="green">Number</span>. The length in bytes of the printed string.</p>
 </dd>
 </dl>
 <p>Standard formats:  Most of the normal flags and formats are respected.
@@ -566,7 +568,7 @@ a <span class="green">String</span> or filehandle <span class="green">Object</sp
 overwrite an existing file.</p></li>
 </ul>
 <dl class="simple">
-<dt>Return Value:</dt><dd><p><span class="green">Number</span>. The length in characters of the printed string.</p>
+<dt>Return Value:</dt><dd><p><span class="green">Number</span>. The length in bytes of the printed string.</p>
 </dd>
 </dl>
 <p>Example:</p>
@@ -1102,13 +1104,13 @@ May be truncated if the file contains null characters.</p></td>
 </pre></div>
 </div>
 <p>Where <code class="docutils literal notranslate"><span class="pre">file</span></code> is a <span class="green">String</span> (name of file to be read) and return <span class="green">Object</span>
-contains the property <code class="docutils literal notranslate"><span class="pre">next</span></code>, a function to retrieve and return the next
+contains the property <code class="docutils literal notranslate"><span class="pre">next</span></code>, a <span class="green">Function</span> to retrieve and return the next
 line of text in the file.</p>
 <dl class="simple">
-<dt>Return Value:</dt><dd><p><span class="green">Object</span>.  Property <code class="docutils literal notranslate"><span class="pre">next</span></code> of the return <span class="green">Object</span> is a function which
-retrieves and returns the next line of text in the file.  After the last
-line of <code class="docutils literal notranslate"><span class="pre">file</span></code> is returned, subsequent calls to <code class="docutils literal notranslate"><span class="pre">next</span></code> will return
-<code class="docutils literal notranslate"><span class="pre">null</span></code>.</p>
+<dt>Return Value:</dt><dd><p><span class="green">Object</span>.  Property <code class="docutils literal notranslate"><span class="pre">next</span></code> of the return <span class="green">Object</span> is a
+<span class="green">Function</span> which retrieves and returns the next line of text in
+the file.  After the last line of <code class="docutils literal notranslate"><span class="pre">file</span></code> is returned, subsequent calls
+to <code class="docutils literal notranslate"><span class="pre">next</span></code> will return <code class="docutils literal notranslate"><span class="pre">null</span></code>.</p>
 </dd>
 </dl>
 <p>Example:</p>
@@ -1244,13 +1246,13 @@ passed to bash.</p>
 </dd>
 </dl>
 <p>Example:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">shell</span><span class="p">(</span><span class="s1">&#39;echo -n &quot;hello&quot;&#39;</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">shell</span><span class="p">(</span><span class="s1">&#39;echo -n &quot;hello&quot;; echo &quot;hi&quot; 1&gt;&amp;2;&#39;</span><span class="p">);</span>
 <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">JSON</span><span class="p">.</span><span class="nx">stringify</span><span class="p">(</span><span class="nx">ret</span><span class="p">,</span> <span class="kc">null</span><span class="p">,</span> <span class="mi">3</span><span class="p">));</span>
 
 <span class="cm">/* expected output:</span>
 <span class="cm">{</span>
 <span class="cm">   &quot;stdout&quot;: &quot;hello&quot;,</span>
-<span class="cm">   &quot;stderr&quot;: &quot;&quot;,</span>
+<span class="cm">   &quot;stderr&quot;: &quot;hi\n&quot;,</span>
 <span class="cm">   &quot;timedOut&quot;: false,</span>
 <span class="cm">   &quot;exitStatus&quot;: 0,</span>
 <span class="cm">   &quot;pid&quot;: 24658</span>
@@ -1529,6 +1531,21 @@ is used.</p>
 </dd>
 </dl>
 </div>
+<div class="section" id="gettype">
+<h4>getType<a class="headerlink" href="#gettype" title="Permalink to this headline">¶</a></h4>
+<p>Get the type of variable. A simplified but more specific version of
+<code class="docutils literal notranslate"><span class="pre">typeof</span></code>.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">type</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">getType</span><span class="p">(</span><span class="nx">myvar</span><span class="p">);</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">String</span>, one of <code class="docutils literal notranslate"><span class="pre">String</span></code>, <code class="docutils literal notranslate"><span class="pre">Array</span></code>, <code class="docutils literal notranslate"><span class="pre">Number</span></code>, <code class="docutils literal notranslate"><span class="pre">Function</span></code>,
+<code class="docutils literal notranslate"><span class="pre">Boolean</span></code>, <code class="docutils literal notranslate"><span class="pre">Buffer</span></code> (any buffer type), <code class="docutils literal notranslate"><span class="pre">Nan</span></code>, <code class="docutils literal notranslate"><span class="pre">Null</span></code>, <code class="docutils literal notranslate"><span class="pre">Undefined</span></code>,
+<code class="docutils literal notranslate"><span class="pre">Date</span></code> or <code class="docutils literal notranslate"><span class="pre">Object</span></code>.</p>
+</dd>
+</dl>
+</div>
 </div>
 <div class="section" id="rampart-import">
 <h3>rampart.import<a class="headerlink" href="#rampart-import" title="Permalink to this headline">¶</a></h3>
@@ -1619,7 +1636,8 @@ cell value is the primitive normalized value.</p></li>
 </dd>
 <dt>callback:</dt><dd><p>A <span class="green">Function</span> taking as parameters (<code class="docutils literal notranslate"><span class="pre">result_row</span></code>, <code class="docutils literal notranslate"><span class="pre">index</span></code>, <code class="docutils literal notranslate"><span class="pre">columns</span></code>).
 The callback is executed once for each row in the csv file:</p>
-<ul class="simple">
+<blockquote>
+<div><ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">result_row</span></code>: (<span class="green">Array</span>/<span class="green">Object</span>): depending on the setting of <code class="docutils literal notranslate"><span class="pre">returnType</span></code>
 in <code class="docutils literal notranslate"><span class="pre">Options</span></code> above, a single row is passed to the callback as an
 <span class="green">Object</span> or an <span class="green">Array</span>.</p></li>
@@ -1627,23 +1645,27 @@ in <code class="docutils literal notranslate"><span class="pre">Options</span></
 <li><p><code class="docutils literal notranslate"><span class="pre">columns</span></code>: an <span class="green">Array</span> corresponding to the column names or
 aliases selected and returned in results.</p></li>
 </ul>
+</div></blockquote>
 </dd>
 </dl>
 <dl id="returnval">
 <dt>Return Value:</dt><dd><p><span class="green">Number</span>/<span class="green">Object</span>.</p>
 <p>With no callback, an <span class="green">Object</span> is returned.  The <span class="green">Object</span> contains
-three key/value pairs.</p>
-<p>Key: <code class="docutils literal notranslate"><span class="pre">results</span></code>; Value: an <span class="green">Array</span> of <span class="green">Arrays</span>.
+three key/value pairs:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>Key: <code class="docutils literal notranslate"><span class="pre">results</span></code> - Value: an <span class="green">Array</span> of <span class="green">Arrays</span>.
 Each outer <span class="green">Array</span> corresponds to a row in the csv file
 and each inner <span class="green">Array</span> corresponds to the columns in that row.
 If <code class="docutils literal notranslate"><span class="pre">returnType</span></code> is set to <code class="docutils literal notranslate"><span class="pre">&quot;object&quot;</span></code>, an <span class="green">Array</span> of
 <span class="green">Objects</span> with keys set to the corresponding column names
 and the values set to the corresponding column values  of the
-imported row.</p>
-<p>Key: <code class="docutils literal notranslate"><span class="pre">rowCount</span></code>; Value: a <span class="green">Number</span> corresponding to the number of rows
-returned.</p>
-<p>Key:  <code class="docutils literal notranslate"><span class="pre">columns</span></code>; Value: an <span class="green">Array</span> corresponding to the column names or
-aliases selected and returned in results.</p>
+imported row.</p></li>
+<li><p>Key: <code class="docutils literal notranslate"><span class="pre">rowCount</span></code> - Value: a <span class="green">Number</span> corresponding to the number of rows returned.</p></li>
+<li><p>Key:  <code class="docutils literal notranslate"><span class="pre">columns</span></code> - Value: an <span class="green">Array</span> corresponding to the column names or
+aliases selected and returned in results.</p></li>
+</ul>
+</div></blockquote>
 <p>With a callback, the return value is set to number of rows in the
 csv file (not including the Header if <code class="docutils literal notranslate"><span class="pre">hasHeaderRow</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code>).</p>
 </dd>
@@ -1768,7 +1790,7 @@ found (e.g.  if <code class="docutils literal notranslate"><span class="pre">ram
 <p>Scripts may reference function stored in external files.  These files are
 known as modules.  A module is a compiled C program or a JavaScript file
 which exports an <span class="green">Object</span> or <span class="green">Function</span> when the
-<code class="docutils literal notranslate"><span class="pre">require(&quot;scriptname&quot;)</span></code> syntax is used.</p>
+<code class="docutils literal notranslate"><span class="pre">require(&quot;module-name&quot;)</span></code> syntax is used.</p>
 <p>Example for the SQL C Module:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
 </pre></div>

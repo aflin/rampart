@@ -56,6 +56,7 @@ CSOS
     int nslists;                          /* number of lists actually used */
     int headerlist;                       /* the index of the slists[] above that contains headers.  Headers set at the end so we can continually add during options */
     int ret_text;			  /* whether to return results as .text (string) as well as .body (buffer)*/
+    int arraytype;		          /* when doing object2query, type of array to use */
     READTXT readdata;
 };
 
@@ -422,6 +423,7 @@ static int mailmime(duk_context *ctx, CURL *curl, CSOS *sopts)
         part = curl_mime_addpart(alt);
         curl_mime_data(part, text, CURL_ZERO_TERMINATED);
         curl_mime_type(part, "text/plain; charset=\"UTF-8\"");
+        curl_mime_encoder(part, "quoted-printable");
 
         part = curl_mime_addpart(alt);
         curl_mime_data(part, html, CURL_ZERO_TERMINATED);
@@ -691,24 +693,14 @@ int copt_mailmsg(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLop
 
 int copt_get(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
 {
-    duk_idx_t qsidx = -1;
-
     /* it's a string, add it to url => http://example.com/x.html?string */
     if (duk_is_string(ctx, -1))
         sopts->url = strjoin(sopts->url, (char *)duk_to_string(ctx, -1), '?');
 
-    /* it's an object, check for prop "data" and "arrayType", then convert to querystring */
-    else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && duk_get_prop_string(ctx, -1, "data"))
+    /* it's an object, convert to querystring */
+    else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1) )
     {
-        char *s;
-
-        if (duk_get_prop_string(ctx, -2, "arrayType"))
-            qsidx = -2;
-
-        else
-            duk_pop(ctx); /* get rid of undefined */
-
-        s = duk_rp_object2querystring(ctx, qsidx);
+        char *s = duk_rp_object2querystring(ctx, -1, sopts->arraytype);
         sopts->url = strjoin(sopts->url, (char *)s, '?');
         free(s);
     }
@@ -716,46 +708,6 @@ int copt_get(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption
         return (1);
 
     duk_pop(ctx);
-    return (0);
-}
-
-int copt_post(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
-{
-    duk_idx_t qsidx = -1;
-    char *postdata;
-    duk_size_t len;
-
-    /* it's a string, use as is */
-    if (duk_is_string(ctx, -1))
-        postdata = (char *)duk_get_lstring(ctx, -1, &len);
-
-    else if (duk_is_buffer_data(ctx, -1))
-        postdata = duk_get_buffer_data(ctx, -1, &len);
-
-    /* it's an object, check for prop "data" and "arrayType", then convert to querystring */
-    else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && duk_get_prop_string(ctx, -1, "data"))
-    {
-        if (duk_get_prop_string(ctx, -2, "expect100") && duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1))
-            addheader(sopts, "EXPECT:");
-
-        duk_pop(ctx);
-
-        if (duk_get_prop_string(ctx, -2, "arrayType"))
-            qsidx = -2;
-
-        else
-            duk_pop(ctx); /* get rid of undefined */
-
-        /* save this to be freed after transaction is finished */
-        postdata = sopts->postdata = duk_rp_object2querystring(ctx, qsidx);
-        duk_pop(ctx);
-        len = (duk_size_t) strlen(postdata);
-    }
-    else
-        return (1);
-
-    curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE, (long)len);
-    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, postdata);
     return (0);
 }
 
@@ -770,7 +722,7 @@ size_t read_callback(void *ptr, size_t size, size_t nmemb, void *userdata)
     return read;
 }
 
-int post_from_file(duk_context *ctx, CURL *handle, CSOS *sopts, char *fn)
+int post_from_file(duk_context *ctx, CURL *handle, CSOS *sopts, const char *fn)
 {
     FILE *file = fopen(fn, "r");
     size_t sz;
@@ -799,6 +751,48 @@ int post_from_file(duk_context *ctx, CURL *handle, CSOS *sopts, char *fn)
     return (0);
 }
 
+int copt_post(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+{
+    const char *postdata;
+    duk_size_t len;
+
+    /* it's a string, use as is */
+    if (duk_is_string(ctx, -1))
+    {
+        postdata = duk_get_lstring(ctx, -1, &len);
+        /* {post: "@filename"} - get from file*/
+        if (*postdata == '@')
+        {
+            return (post_from_file(ctx, handle, sopts, postdata + 1));
+        }
+        else if (*postdata == '\\' && *(postdata + 1) == '@')
+        {
+            postdata++;
+            len--;
+        }
+    }
+
+    else if (duk_is_buffer_data(ctx, -1))
+        postdata = duk_get_buffer_data(ctx, -1, &len);
+
+    /* it's an object, convert to querystring */
+    else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1))
+    {
+        /* save this to be freed after transaction is finished */
+        postdata = sopts->postdata = duk_rp_object2querystring(ctx, -1, sopts->arraytype);
+        duk_pop(ctx);
+        len = (duk_size_t) strlen(postdata);
+    }
+    else
+        return (1);
+
+    curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)len);
+    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, postdata);
+    return (0);
+}
+
+
+/* skip, duplicates post above
 int copt_postbin(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
 {
     void *postdata = NULL;
@@ -807,7 +801,7 @@ int copt_postbin(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLop
     if (duk_is_string(ctx, -1))
     {
         postdata = (void *)duk_to_string(ctx, -1);
-        /* {postbin: "@filename"} */
+        // {postbin: "@filename"}
         if (*((char *)postdata) == '@')
         {
             return (post_from_file(ctx, handle, sopts, postdata + 1));
@@ -824,20 +818,23 @@ int copt_postbin(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLop
     else
         return (1);
 
-    /* when copt_* functions return, a pop_2 removes top two off the stack.  We want
+    * when copt_* functions return, a pop_2 removes top two off the stack.  We want
      this one to stay somewhere on the stack (no gc), and we also want our
      duk_next loop to be in the right spot, so we'll move the data to 0 and add a blank string
      to be removed instead.  Agreed, it's not pretty.  But if postdata is large, this prevents
      an unnecessary and potentially large copy of the post data.
-  */
+
+    This is crap.  Not sure what I was thinking.  But just in case I'm missing something
+    Keeping it here for now.
 
     duk_insert(ctx, 0);
     duk_push_string(ctx, "");
-
+    *
     curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)sz);
     curl_easy_setopt(handle, CURLOPT_POSTFIELDS, postdata);
     return (0);
 }
+*/
 
 
 /* post multipart mime form data.
@@ -868,24 +865,46 @@ int copt_postform(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLo
 {
     curl_mimepart *part;
 
-    if (!duk_is_object(ctx, -1))
+    if (!duk_is_object(ctx, -1) || duk_is_array(ctx, -1) || duk_is_function(ctx, -1) )
         return (3); /* error: object required for postform */
 
     curl_easy_setopt(handle, CURLOPT_POST, 1L);
 
     sopts->mime = curl_mime_init(handle);
 
-    duk_enum(ctx, -1, DUK_ENUM_SORT_ARRAY_INDICES);
-    while (duk_next(ctx, -1 /* index */, 1 /* get_value also */))
+    duk_enum(ctx, -1, 0);
+    while (duk_next(ctx, -1, 1))
     {
         part = curl_mime_addpart(sopts->mime);
-        if (duk_curl_set_data(ctx, part, SKIPARRAY))
-        /*successfully added data, now set var name */
+
+        /* check for a single object with "data" */
+        if (duk_is_object(ctx, -1) && duk_has_prop_string(ctx, -1, "data") )
         {
             curl_mime_name(part, duk_to_string(ctx, -2));
+
+            duk_get_prop_string(ctx, -1, "data");
+            (void)duk_curl_set_data(ctx, part, ENCODEARRAY);
+            duk_pop(ctx);
+
+            if (duk_get_prop_string(ctx, -1, "filename"))
+                curl_mime_filename(part, duk_get_string(ctx, -1));
+            duk_pop(ctx);
+
+            /* optional, default is text/plain */
+            if (duk_get_prop_string(ctx, -1, "type"))
+                curl_mime_type(part, duk_get_string(ctx, -1));
+            duk_pop(ctx);
         }
+
+        /* check for primitives, buffers, strings, files, objects without "data", etc */
+        else if (duk_curl_set_data(ctx, part, SKIPARRAY))
+        {
+            /*successfully added data, now set var name */
+            curl_mime_name(part, duk_to_string(ctx, -2));
+        }
+
+        /* it's an array, check for array of objects with "data" */
         else
-        /* it's an array */
         {
             int i = 0;
             /* should have array of objects, return error if not */
@@ -996,6 +1015,23 @@ int copt_long(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoptio
     return (0);
 }
 
+int copt_timecond(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+{
+    long b;
+    if(!duk_is_object(ctx, -1) || !duk_has_prop_string(ctx, -1, "getMilliseconds"))
+        RP_THROW(ctx, "curl - option requires a date");
+
+    duk_push_string(ctx, "getTime");
+    duk_call_prop(ctx, -2, 0);
+
+    b = (long)duk_get_int_default(ctx, -1, (duk_int_t)0) / 1000;
+    duk_pop(ctx);
+
+    curl_easy_setopt(handle, CURLOPT_TIMEVALUE, b);
+    curl_easy_setopt(handle, CURLOPT_TIMECONDITION, CURL_TIMECOND_IFMODSINCE);
+    return (0);
+}
+
 /* TODO: fix or delete
 int copt_proto(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
 {
@@ -1088,7 +1124,7 @@ int copt_array_slist(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CU
     if (subopt == 1 && sopts->headerlist > -1)
     {
         list = sopts->slists[sopts->headerlist];
-        printf("using existing list at %d\n", sopts->headerlist);
+       // printf("using existing list at %d\n", sopts->headerlist);
     }
     if (duk_is_array(ctx, -1))
     {
@@ -1473,7 +1509,7 @@ CURL_OPTS curl_options[] = {
     {"cert-type", CURLOPT_SSLCERTTYPE, 0, &copt_string},
     {"ciphers", CURLOPT_SSL_CIPHER_LIST, 0, &copt_string},
     {"compressed", CURLOPT_ACCEPT_ENCODING, 0, &copt_compressed},
-    {"compressed-ssh", CURLOPT_SSH_COMPRESSION, 0, &copt_bool},
+    //{"compressed-ssh", CURLOPT_SSH_COMPRESSION, 0, &copt_bool}, // ssh not enabled.
     {"connect-timeout", CURLOPT_CONNECTTIMEOUT, 0, &copt_long},
     {"connect-to", CURLOPT_CONNECT_TO, 0, &copt_strings},
     {"continue-at", CURLOPT_RANGE, 0, &copt_continue},
@@ -1481,18 +1517,18 @@ CURL_OPTS curl_options[] = {
     {"cookie-jar", CURLOPT_COOKIEJAR, 0, &copt_string},
     {"crlf", CURLOPT_CRLF, 0, &copt_bool},
     {"crlfile", CURLOPT_CRLFILE, 0, &copt_string},
-    {"delegation", CURLOPT_GSSAPI_DELEGATION, 0, &copt_string},
+    // {"delegation", CURLOPT_GSSAPI_DELEGATION, 0, &copt_string},
     {"digest", CURLOPT_HTTPAUTH, 1, &copt_auth},
     {"digest-ie", CURLOPT_HTTPAUTH, 2, &copt_auth},
     {"disable-eprt", CURLOPT_FTP_USE_EPRT, -1, &copt_boolplus},
     {"disable-epsv", CURLOPT_FTP_USE_EPSV, -1, &copt_boolplus},
-    {"dns-interface", CURLOPT_DNS_INTERFACE, 0, &copt_string},
-    {"dns-ipv4-addr", CURLOPT_DNS_LOCAL_IP4, 0, &copt_string},
-    {"dns-ipv6-addr", CURLOPT_DNS_LOCAL_IP6, 0, &copt_string},
-    {"dns-servers", CURLOPT_DNS_SERVERS, 0, &copt_string},
+    //{"dns-interface", CURLOPT_DNS_INTERFACE, 0, &copt_string}, // requires c-ares lib, currently not compiled in libcurl
+    //{"dns-ipv4-addr", CURLOPT_DNS_LOCAL_IP4, 0, &copt_string},
+    //{"dns-ipv6-addr", CURLOPT_DNS_LOCAL_IP6, 0, &copt_string},
+    //{"dns-servers", CURLOPT_DNS_SERVERS, 0, &copt_string},
     {"e", CURLOPT_REFERER, 0, &copt_string},
     {"expect100_timeout", CURLOPT_EXPECT_100_TIMEOUT_MS, 0, &copt_1000},
-    {"false-start", CURLOPT_SSL_FALSESTART, 0, &copt_bool},
+    //{"false-start", CURLOPT_SSL_FALSESTART, 0, &copt_bool},
     {"ftp-account", CURLOPT_FTP_ACCOUNT, 0, &copt_string},
     {"ftp-alternative-to-user", CURLOPT_FTP_ALTERNATIVE_TO_USER, 0, &copt_string},
     {"ftp-create-dirs", CURLOPT_FTP_CREATE_MISSING_DIRS, 0, &copt_bool},
@@ -1505,9 +1541,8 @@ CURL_OPTS curl_options[] = {
     {"get", 0, /* not used */ 0, &copt_get},
     {"header", CURLOPT_HTTPHEADER, 1, &copt_array_slist},
     {"headers", CURLOPT_HTTPHEADER, 1, &copt_array_slist},
-    {"hostpubmd5", CURLOPT_SSH_HOST_PUBLIC_KEY_MD5, 0, &copt_string},
+//    {"hostpubmd5", CURLOPT_SSH_HOST_PUBLIC_KEY_MD5, 0, &copt_string}, //sftp/scp not enabled.
     {"http-any", CURLOPT_HTTP_VERSION, 0, &copt_httpv}, /* not a command line option (yet?)*/
-    {"http1.0", CURLOPT_HTTP_VERSION, 10, &copt_httpv},
     {"http1.0", CURLOPT_HTTP_VERSION, 10, &copt_httpv},
     {"http1.1", CURLOPT_HTTP_VERSION, 11, &copt_httpv},
     {"http2", CURLOPT_HTTP_VERSION, 20, &copt_httpv},
@@ -1521,9 +1556,9 @@ CURL_OPTS curl_options[] = {
     {"junk-session-cookies", CURLOPT_COOKIESESSION, 0, &copt_bool},
     {"k", CURLOPT_SSL_VERIFYPEER, 0, &copt_insecure},
     {"keepalive-time", CURLOPT_TCP_KEEPALIVE, 0, &copt_long},
-    {"key", CURLOPT_SSLKEY, 0, &copt_string},
-    {"key-type", CURLOPT_SSLKEYTYPE, 0, &copt_string},
-    {"krb", CURLOPT_KRBLEVEL, 0, &copt_string},
+    //{"key", CURLOPT_SSLKEY, 0, &copt_string},
+    //{"key-type", CURLOPT_SSLKEYTYPE, 0, &copt_string},
+    //{"krb", CURLOPT_KRBLEVEL, 0, &copt_string},
     {"l", CURLOPT_DIRLISTONLY, 0, &copt_bool},
     {"limit-rate", CURLOPT_MAX_SEND_SPEED_LARGE, 0, &copt_limit},
     {"list-only", CURLOPT_DIRLISTONLY, 0, &copt_bool},
@@ -1558,7 +1593,7 @@ CURL_OPTS curl_options[] = {
     {"post301", CURLOPT_POSTREDIR, 0, &copt_postr},
     {"post302", CURLOPT_POSTREDIR, 1, &copt_postr},
     {"post303", CURLOPT_POSTREDIR, 2, &copt_postr},
-    {"postbin", 0, /* not used */ 0, &copt_postbin},
+    //{"postbin", 0, /* not used */ 0, &copt_postbin},
     {"postform", 0, /* not used */ 0, &copt_postform},
     {"postredir", CURLOPT_POSTREDIR, 3, &copt_postr},
     {"preproxy", CURLOPT_PRE_PROXY, 0, &copt_string},
@@ -1586,7 +1621,7 @@ CURL_OPTS curl_options[] = {
     {"proxy-pass", CURLOPT_PROXYPASSWORD, 0, &copt_string},
     {"proxy-service-name", CURLOPT_PROXY_SERVICE_NAME, 0, &copt_string},
     {"proxy-ssl-allow-beast", CURLOPT_PROXY_SSL_OPTIONS, 0, &copt_sslopt},
-    {"proxy-ssl-no-revoke", CURLOPT_PROXY_SSL_OPTIONS, 1, &copt_sslopt},
+    //{"proxy-ssl-no-revoke", CURLOPT_PROXY_SSL_OPTIONS, 1, &copt_sslopt},
     {"proxy-tlspassword", CURLOPT_PROXY_TLSAUTH_PASSWORD, 0, &copt_string},
     {"proxy-tlsuser", CURLOPT_PROXY_TLSAUTH_USERNAME, 0, &copt_string},
     {"proxy-tlsv1", CURLOPT_PROXY_SSLVERSION, 1, &copt_sslver},
@@ -1616,7 +1651,7 @@ CURL_OPTS curl_options[] = {
     {"speed-time", CURLOPT_LOW_SPEED_TIME, 0, &copt_long},
     {"ssl", CURLOPT_USE_SSL, (int)CURLUSESSL_TRY, &copt_fromsub},
     {"ssl-allow-beast", CURLOPT_SSL_OPTIONS, 0, &copt_sslopt},
-    {"ssl-no-revoke", CURLOPT_SSL_OPTIONS, 1, &copt_sslopt},
+    //{"ssl-no-revoke", CURLOPT_SSL_OPTIONS, 1, &copt_sslopt},
     {"ssl-reqd", CURLOPT_USE_SSL, (int)CURLUSESSL_ALL, &copt_fromsub},
     {"sslv2", CURLOPT_SSLVERSION, 2, &copt_sslver},
     {"sslv3", CURLOPT_SSLVERSION, 3, &copt_sslver},
@@ -1627,7 +1662,7 @@ CURL_OPTS curl_options[] = {
     {"telnet-option", CURLOPT_TELNETOPTIONS, 0, &copt_array_slist},
     {"tftp-blksize", CURLOPT_TFTP_BLKSIZE, 0, &copt_long},
     {"tftp-no-options", CURLOPT_TFTP_NO_OPTIONS, 0, &copt_bool},
-    {"time-cond", CURLOPT_TIMECONDITION, 0, &copt_long},
+    {"time-cond", CURLOPT_TIMECONDITION, 0, &copt_timecond},
     {"tls-max", CURLOPT_SSLVERSION, 0, &copt_tlsmax},
     {"tlspassword", CURLOPT_TLSAUTH_PASSWORD, 0, &copt_string},
     {"tlsuser", CURLOPT_TLSAUTH_USERNAME, 0, &copt_string},
@@ -2017,12 +2052,46 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CSOS *sopts)
     }
     duk_pop(ctx);
 
+    if( duk_get_prop_string(ctx, idx, "arrayType") )
+    {
+        const char *arraytype = REQUIRE_STRING(ctx, -1, "curl - option 'arrayType' requires a String");
+
+        if (arraytype)
+        {
+            if (!strcmp("bracket", arraytype))
+                sopts->arraytype = ARRAYBRACKETREPEAT;
+            else if (!strcmp("comma", arraytype))
+                sopts->arraytype = ARRAYCOMMA;
+            else if (!strcmp("json", arraytype))
+                sopts->arraytype = ARRAYJSON;
+        }
+        duk_del_prop_string(ctx, idx, "arrayType");
+    }
+    duk_pop(ctx);
+
     duk_enum(ctx, (duk_idx_t)idx, DUK_ENUM_SORT_ARRAY_INDICES);
     while (duk_next(ctx, -1 /* index */, 1 /* get_value also */))
     {
         const char *op = duk_to_string(ctx, -2);
         if(!strcmp(op,"url")) 
         {
+            duk_pop_2(ctx);
+            continue;
+        }
+        if(!strcmp(op,"arrayType"))
+        {
+            const char *arraytype = REQUIRE_STRING(ctx, -1, "curl - option 'arrayType' requires a String");
+
+            if (arraytype)
+            {
+                if (!strcmp("bracket", arraytype))
+                    sopts->arraytype = ARRAYBRACKETREPEAT;
+                else if (!strcmp("comma", arraytype))
+                    sopts->arraytype = ARRAYCOMMA;
+                else if (!strcmp("json", arraytype))
+                    sopts->arraytype = ARRAYJSON;
+            }
+
             duk_pop_2(ctx);
             continue;
         }
@@ -2044,6 +2113,7 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CSOS *sopts)
 
         duk_pop_2(ctx);
     }
+    duk_pop(ctx);
 }
 
 static void clean_req(CURLREQ *req)
@@ -2087,6 +2157,7 @@ CURLREQ *new_curlreq(duk_context *ctx, char *url)
     (ret->sopts).url = url;
     (ret->sopts).mime = (curl_mime *)NULL;
     (ret->sopts).ret_text = 1;
+    (ret->sopts).arraytype=ARRAYREPEAT;
     (ret->sopts).readdata.size=0;
     (ret->sopts).readdata.text=NULL;
 
@@ -2172,6 +2243,7 @@ duk_ret_t addurl(duk_context *ctx)
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("cm"));
     cm = (CURLM *)duk_get_pointer(ctx, -1);
     duk_pop(ctx);
+    /* clone the original request with a new url */
     preq = new_request(u, req, ctx, 0 /*0 not used when cloning*/);
 
     if (!preq)
@@ -2186,7 +2258,7 @@ duk_ret_t addurl(duk_context *ctx)
 
 duk_ret_t duk_curl_fetch(duk_context *ctx)
 {
-    int i, options_idx = -1, func_idx = -1, array_idx = -1;
+    int i, options_idx = -1, func_idx = -1, array_idx = -1, url_idx=-1;
     char *url = (char *)NULL;
     CURLREQ *req=NULL;
     CURLcode res;
@@ -2210,6 +2282,7 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
             case DUK_TYPE_STRING:
             {
                 url = strdup(duk_get_string(ctx, i));
+                url_idx = i;
                 break;
             }
             case DUK_TYPE_OBJECT:
@@ -2232,6 +2305,20 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
     }     /* for */
 
     /* parallel requests */
+
+    /* if we have a single url in a string, and a callback, perform as if multi 
+       by sticking string into an array */
+    if( url_idx > -1 && func_idx >1)
+    {
+        free(url); /* no longer needed */
+        url=NULL;
+        duk_push_array(ctx);
+        duk_dup(ctx, url_idx);
+        duk_put_prop_index(ctx, -2, 0);
+        duk_replace(ctx, url_idx);
+        array_idx = url_idx;
+        url_idx = -1; 
+    }
 
     if (array_idx > -1)
     /* array of urls, do parallel search */
@@ -2269,6 +2356,7 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
                 /* end setup */
             }
             else
+                /* clone the original request with a new url */
                 preq = new_request(u, req, ctx, options_idx);
 
             if (!preq)
@@ -2284,9 +2372,11 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
         {
             CURLREQ *preq;
             curl_multi_perform(cm, &still_alive);
+            int gotdata=0;
 
             while ((msg = curl_multi_info_read(cm, &msgs_left)))
             {
+                gotdata=1;
                 if (msg->msg == CURLMSG_DONE)
                 {
                     curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &preq);
@@ -2314,10 +2404,19 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
                     duk_call_method(ctx, 1);
 
                     /* clean up */
-                    if (preq != req) /* need to free original req last */
+                    if (preq != req) /* need to free original req last as it has all the sopts needed by others */
                         clean_req(preq);
                 }              /* CURLMSG_DONE */
             }                  /* while */
+
+            /* if no data was retrieved, wait .05 secs */
+            if(!gotdata) usleep(50000);
+
+            /* check once more in case this.addurl() added one or more 
+               after the last one finished */
+            if(!still_alive)
+                curl_multi_perform(cm, &still_alive);
+
         } while (still_alive); /* do */
 
         clean_req(req); /* free the original */

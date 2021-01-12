@@ -452,9 +452,9 @@ function declared <strong>globally</strong> in the current script.</p></li>
 in the current directory or in the module’s search path.</p></li>
 <li><p>A directory of modules where the directory contains one or more modules
 with <code class="docutils literal notranslate"><span class="pre">module.exports</span></code> set to functions.  Example:
-<code class="docutils literal notranslate"><span class="pre">map:</span> <span class="pre">{&quot;/scripts/&quot;:</span> <span class="pre">{modulePath:</span> <span class="pre">&quot;./myscriptsdir/&quot;[,</span> <span class="pre">...]}</span> <span class="pre">}</span></code>.  In this
-case, if <code class="docutils literal notranslate"><span class="pre">./myscriptsdir/mymod.js</span></code> script exists, it might be
-available from the path <code class="docutils literal notranslate"><span class="pre">http://localhost:8088/scripts/mymod.ext</span></code>
+<code class="docutils literal notranslate"><span class="pre">map:</span> <span class="pre">{&quot;/scripts/&quot;:</span> <span class="pre">{modulePath:</span> <span class="pre">&quot;/path/to/myscriptsdir/&quot;}</span> <span class="pre">}</span></code>.  In this
+case, if <code class="docutils literal notranslate"><span class="pre">/path/to/myscriptsdir/mymod.js</span></code> script exists, it might be
+available from the URL <code class="docutils literal notranslate"><span class="pre">http://localhost:8088/scripts/mymod.ext</span></code>
 where <code class="docutils literal notranslate"><span class="pre">.ext</span></code> can be <code class="docutils literal notranslate"><span class="pre">.html</span></code>, <code class="docutils literal notranslate"><span class="pre">.txt</span></code> or any other extension desired.
 Note that regardless of the extension used, the mime-type is set
 in <a class="reference internal" href="#the-return-object">The Return Object</a>.</p></li>
@@ -467,14 +467,14 @@ have their scopes appropriately set.</p>
 for details on writing and using modules.</p>
 <p>It is also important to note that only global variables and functions, and
 inline functions are copied to each JavaScript context for each server
-thread. Any variable or function that might otherwise appear to be in scope
-when <code class="docutils literal notranslate"><span class="pre">server.start()</span></code> is executed will not be available from within each
-server thread.  This is true regardless of the <code class="docutils literal notranslate"><span class="pre">useThreads</span></code> setting
-above.  Any semantic confusion that might be caused by this
-limitation can be mostly avoided by placing functions in separate scripts as
-modules, since variables declared in the module will be available and properly
-scoped (though separately and distintly; variables are not shared between
-threads).</p>
+thread.  Any other variable or function that might otherwise appear to be
+in scope when <code class="docutils literal notranslate"><span class="pre">server.start()</span></code> is executed will not be available from
+within each server thread.  This is true regardless of the state of <code class="docutils literal notranslate"><span class="pre">useThreads</span></code>
+setting above.  Any semantic confusion that might be caused by this
+limitation can be mostly avoided by placing functions in separate scripts
+as modules, since variables declared in the module will be available and
+properly scoped (though separately and distintly; variables are not shared
+between threads).</p>
 <p>Example of a scoped variable that would not be available:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">server</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-server&quot;</span><span class="p">);</span>
 
