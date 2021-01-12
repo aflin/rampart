@@ -139,6 +139,21 @@ DHMAP
     char *val;
 };
 
+static void setdate_header(evhtp_request_t *req, time_t secs)
+{
+    if(!secs)
+        secs=time(NULL);
+    if(secs != -1)
+    {
+        struct tm *ptm = gmtime(&secs);
+        char buf[128];
+        /* Thu, 21 May 2020 01:41:20 GMT */
+        strftime(buf, 128, "%a, %d %b %Y %T GMT", ptm);
+        evhtp_headers_add_header(req->headers_out, evhtp_header_new("Date", buf, 0, 1));
+    }
+}
+
+/*
 static void setheaders(evhtp_request_t *req)
 {
     time_t now = time(NULL);
@@ -146,7 +161,7 @@ static void setheaders(evhtp_request_t *req)
     {
         struct tm *ptm = gmtime(&now);
         char buf[128];
-        /* Thu, 21 May 2020 01:41:20 GMT */
+        // Thu, 21 May 2020 01:41:20 GMT
         strftime(buf, 128, "%a, %d %b %Y %T GMT", ptm);
         evhtp_headers_add_header(req->headers_out, evhtp_header_new("Date", buf, 0, 1));
     }
@@ -155,7 +170,7 @@ static void setheaders(evhtp_request_t *req)
     //evhtp_headers_add_header(req->headers_out, evhtp_header_new("Connection","keep-alive", 0, 0));
     //evhtp_headers_add_header(req->headers_out, evhtp_header_new("Connection","close",0,0));
 }
-
+*/
 void sa_to_string(void *sa, char *buf, size_t bufsz)
 {
     if (((struct sockaddr *)sa)->sa_family == AF_INET6)
@@ -1005,6 +1020,8 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
 
     filesize=(ev_off_t) sb->st_size; 
 
+    setdate_header(req, sb->st_mtime);
+
     if (!haveCT)
     {
         RP_MTYPES m;
@@ -1057,8 +1074,6 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
             snprintf(reprange, 128, "%d", (int)(filesize - beg) );
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", reprange, 0, 1)); 
         }
-        //range is no longer malloc'd
-        //free(range); /* chicken 🐣 */
     }
     else 
         len=filesize;
@@ -1190,7 +1205,7 @@ static evhtp_res sendobj(DHS *dhs)
 {
     RP_MTYPES m;
     RP_MTYPES *mres;
-    int gotdata = 0, gotct = 0;
+    int gotdata = 0, gotct = 0, gotdate=0;
     duk_context *ctx = dhs->ctx;
     evhtp_res res = 200;
 
@@ -1217,6 +1232,8 @@ static evhtp_res sendobj(DHS *dhs)
 
                 if (!strcasecmp(key, "content-type"))
                     gotct = 1;
+                else if (!strcasecmp(key, "date"))
+                    gotdate=1;
 
                 duk_pop_2(ctx);
             }
@@ -1258,6 +1275,9 @@ static evhtp_res sendobj(DHS *dhs)
 
             if (!gotct)
                 evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new("Content-Type", mres->mime, 0, 0));
+
+            if(!gotdate)
+                setdate_header(dhs->req,0);
 
             /* if data is a string and starts with '@', its a filename */
             if (duk_is_string(ctx, -1) && ((d = duk_get_string(ctx, -1)) || 1) && *d == '@')
@@ -1867,7 +1887,7 @@ static void *http_dothread(void *arg)
     /* stack now has return value from duk function call */
 
     /* set some headers */
-    setheaders(req);
+    //setheaders(req);
 
     /* don't accept functions or arrays */
     if (duk_is_function(ctx, -1) || duk_is_array(ctx, -1))
@@ -2659,7 +2679,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
     /* stack now has return value from duk function call */
 
     /* set some headers */
-    setheaders(req);
+    //setheaders(req);
     /* don't accept arrays */
     if (duk_is_array(ctx, -1))
     {
