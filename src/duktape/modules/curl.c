@@ -1027,7 +1027,7 @@ int copt_timecond(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLo
     duk_push_string(ctx, "getTime");
     duk_call_prop(ctx, -2, 0);
 
-    b = duk_get_number_default(ctx, -1, (duk_int_t)0) / 1000.0;
+    b = duk_get_number_default(ctx, -1, 0) / 1000.0;
     duk_pop(ctx);
 
     curl_easy_setopt(handle, CURLOPT_TIMEVALUE, (long)b);
