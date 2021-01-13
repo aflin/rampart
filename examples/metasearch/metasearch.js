@@ -60,7 +60,13 @@ var pid=server.start(
     map:
       {
         "/":                  index,
+        //  BOTH OF THESE produce the same results
+
+        // an example using only rex regular expressions
         "/search*":           {module:"metamod"}
+
+        // an example using rampart-html parser
+        //"/search*":           {module:"metamod2"}
       }
 });
 
