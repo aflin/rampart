@@ -693,15 +693,18 @@ int copt_mailmsg(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLop
 
 int copt_get(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
 {
+    char *c = strchr(sopts->url, '?');
+    char joiner = c ? '&': '?';
+
     /* it's a string, add it to url => http://example.com/x.html?string */
     if (duk_is_string(ctx, -1))
-        sopts->url = strjoin(sopts->url, (char *)duk_to_string(ctx, -1), '?');
+        sopts->url = strjoin(sopts->url, (char *)duk_to_string(ctx, -1), joiner);
 
     /* it's an object, convert to querystring */
     else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1) )
     {
         char *s = duk_rp_object2querystring(ctx, -1, sopts->arraytype);
-        sopts->url = strjoin(sopts->url, (char *)s, '?');
+        sopts->url = strjoin(sopts->url, (char *)s, joiner);
         free(s);
     }
     else
@@ -1017,17 +1020,17 @@ int copt_long(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoptio
 
 int copt_timecond(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
 {
-    long b;
+    double b;
     if(!duk_is_object(ctx, -1) || !duk_has_prop_string(ctx, -1, "getMilliseconds"))
         RP_THROW(ctx, "curl - option requires a date");
 
     duk_push_string(ctx, "getTime");
     duk_call_prop(ctx, -2, 0);
 
-    b = (long)duk_get_int_default(ctx, -1, (duk_int_t)0) / 1000;
+    b = duk_get_number_default(ctx, -1, (duk_int_t)0) / 1000.0;
     duk_pop(ctx);
 
-    curl_easy_setopt(handle, CURLOPT_TIMEVALUE, b);
+    curl_easy_setopt(handle, CURLOPT_TIMEVALUE, (long)b);
     curl_easy_setopt(handle, CURLOPT_TIMECONDITION, CURL_TIMECOND_IFMODSINCE);
     return (0);
 }
