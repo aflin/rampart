@@ -161,10 +161,6 @@ fetch() Results
     * ``cookies`` - an :green:`Array`, a list of cookies sent from the
       remote server.
 
-    Example of a single URL request with no callback:
-    
-    Example of a multiple URL request with a callback:
-
 
 Adding More Requests
 """"""""""""""""""""
@@ -175,7 +171,7 @@ Adding More Requests
     is accomplished by calling ``this.addurl("http://example.com/")`` from
     within the callback.
     
-    Example:
+    See `Multiple HTTP request with addurl()`_ example below.
 
 
 submit()
@@ -1078,7 +1074,7 @@ a single line of text (``contents of file #``).
     */
 
 
-Sending Email with SMPT
+Sending Email with SMTP
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 The following example sends a preformatted email through gmail.

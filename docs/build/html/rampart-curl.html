@@ -125,7 +125,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#multiple-http-request-with-addurl">Multiple HTTP request with addurl()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#posting-multipart-form-data">Posting Multipart-Form Data</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#multiple-http-post-with-submit">Multiple HTTP Post with Submit()</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#sending-email-with-smpt">Sending Email with SMPT</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sending-email-with-smtp">Sending Email with SMTP</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#sending-email-with-attachments">Sending Email with Attachments</a></li>
 </ul>
 </li>
@@ -326,8 +326,6 @@ requested URL.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">cookies</span></code> - an <span class="green">Array</span>, a list of cookies sent from the
 remote server.</p></li>
 </ul>
-<p>Example of a single URL request with no callback:</p>
-<p>Example of a multiple URL request with a callback:</p>
 </div></blockquote>
 </div>
 <div class="section" id="adding-more-requests">
@@ -338,7 +336,7 @@ remote server.</p></li>
 can be added to the list of URLs to be fetched inside the callback. This
 is accomplished by calling <code class="docutils literal notranslate"><span class="pre">this.addurl(&quot;http://example.com/&quot;)</span></code> from
 within the callback.</p>
-<p>Example:</p>
+<p>See <a class="reference internal" href="#multiple-http-request-with-addurl">Multiple HTTP request with addurl()</a> example below.</p>
 </div></blockquote>
 </div>
 </div>
@@ -478,7 +476,7 @@ download gets aborted.  If limit is reached, the return value will contain <code
 supports, and uncompress the data while receiving it.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">user</span></code> - a <span class="green">String</span> - Specify the user name and password to use for server authentication.  Specified as either a <code class="docutils literal notranslate"><span class="pre">username</span></code>
 (with password set in <code class="docutils literal notranslate"><span class="pre">pass</span></code> above), or as <code class="docutils literal notranslate"><span class="pre">username:password</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">user-agent</span></code> - a <span class="green">String</span> - Specify the User-Agent string to send to the HTTP server.  Default if not set is a <span class="green">String</span>
+<li><p><code class="docutils literal notranslate"><span class="pre">user-agent</span></code> - a <span class="green">String</span> - Specify the User-Agent string to send to the HTTP server.  The default if not set is a <span class="green">String</span>
 specifying <code class="docutils literal notranslate"><span class="pre">libcurl-rampart/</span></code> + version number.</p></li>
 </ul>
 </div></blockquote>
@@ -1225,8 +1223,8 @@ a single line of text (<code class="docutils literal notranslate"><span class="p
 </pre></div>
 </div>
 </div>
-<div class="section" id="sending-email-with-smpt">
-<h3>Sending Email with SMPT<a class="headerlink" href="#sending-email-with-smpt" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="sending-email-with-smtp">
+<h3>Sending Email with SMTP<a class="headerlink" href="#sending-email-with-smtp" title="Permalink to this headline">¶</a></h3>
 <p>The following example sends a preformatted email through gmail.</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">);</span>
 
