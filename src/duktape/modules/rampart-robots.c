@@ -1,23 +1,7 @@
 #include "duktape.h"
-
+#include "rp.h"
 
 int rp_rbt_allowed(char *robots_txt, char *uagent, char *iurl );
-
-
-#define RP_THROW(ctx,...) do {\
-    duk_push_error_object(ctx, DUK_ERR_ERROR, __VA_ARGS__);\
-    (void) duk_throw(ctx);\
-} while(0)
-
-#define REQUIRE_STRING(ctx,idx,...) ({\
-    duk_idx_t i=(idx);\
-    if(!duk_is_string((ctx),i)) {\
-        RP_THROW((ctx), __VA_ARGS__ );\
-    }\
-    const char *r=duk_get_string((ctx),i);\
-    r;\
-})
-
 
 static duk_ret_t allowed(duk_context *ctx)
 {

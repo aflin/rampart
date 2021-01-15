@@ -120,6 +120,7 @@ target_link_libraries(rampart-robots
 target_include_directories(rampart-robots PRIVATE
      ${PROJECT_SOURCE_DIR}/extern/robotstxt/ 
      ${PROJECT_SOURCE_DIR}/src/duktape/core
+     ${PROJECT_SOURCE_DIR}/src
      ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-src/
 )
 set_target_properties(rampart-robots PROPERTIES LINKER_LANGUAGE CXX )
