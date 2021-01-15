@@ -96,6 +96,34 @@ SET(CMAKE_SKIP_BUILD_RPATH FALSE)
 SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 SET(CMAKE_INSTALL_RPATH "./;${CMAKE_INSTALL_PREFIX}/modules/")
 
+###ROBOTS###
+add_library(rampart-robots SHARED
+	duktape/modules/robot-wrapper.cc
+	duktape/modules/rampart-robots.c
+)
+
+target_link_libraries(rampart-robots
+
+    ${PROJECT_BINARY_DIR}/extern/robotstxt/librobots.a
+    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/strings/libabsl_strings.a
+    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_base.a
+    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_spinlock_wait.a 
+    pthread 
+    rt
+    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/strings/libabsl_strings_internal.a
+    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/numeric/libabsl_int128.a
+    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_throw_delegate.a
+    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_raw_logging_internal.a
+    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_log_severity.a
+)
+
+target_include_directories(rampart-robots PRIVATE
+     ${PROJECT_SOURCE_DIR}/extern/robotstxt/ 
+     ${PROJECT_SOURCE_DIR}/src/duktape/core
+     ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-src/
+)
+set_target_properties(rampart-robots PROPERTIES LINKER_LANGUAGE CXX )
+
 ###HTML###
 add_library(rampart-html SHARED
 	duktape/modules/rampart-html.c
@@ -212,14 +240,14 @@ target_include_directories(rampart-curl PRIVATE
 ##############  ADD MODULE NAMES HERE  ##############
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html #example_name
+set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-robots #example_name
 	PROPERTIES 
 	LINK_FLAGS   "-undefined dynamic_lookup" 
 	SUFFIX       ".so"
 	PREFIX ""
 )
 else()
-set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html #example_name
+set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-robots #example_name
 	PROPERTIES 
 	SUFFIX       ".so"
 	PREFIX ""
@@ -235,6 +263,7 @@ install(TARGETS
 	rampart-sql
 	rampart-redis
 	rampart-html
+	rampart-robots
 	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
 
