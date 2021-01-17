@@ -13,5 +13,5 @@ Welcome to Rampart's documentation.
    The rampart-html module <rampart-html>
    The rampart-crypto module <rampart-crypto>
    The rampart-curl module <rampart-curl>
-
+   The rampart-robots module <rampart-robots>
 

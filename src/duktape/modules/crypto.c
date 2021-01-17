@@ -1,5 +1,5 @@
-/* Copyright (C) 2020 Aaron Flin - All Rights Reserved
-   Copyright (C) 2020 Benjamin Flin - All Rights Reserved
+/* Copyright (C) 2021 Aaron Flin - All Rights Reserved
+   Copyright (C) 2021 Benjamin Flin - All Rights Reserved
  * You may use, distribute or alter this code under the
  * terms of the MIT license
  * see https://opensource.org/licenses/MIT
@@ -474,6 +474,7 @@ static duk_ret_t duk_hash(duk_context *ctx)
 
     return 1;
 }
+
 #define DUK_SHA_FUNC(md_type,md_name)               \
 static duk_ret_t duk_##md_type(duk_context *ctx)    \
 {                                                   \
@@ -530,6 +531,7 @@ static duk_ret_t duk_randnum(duk_context *ctx)
     duk_push_number(ctx, ret);
     return 1;
 }
+
 /* rand between -1.0 and 1.0 */
 #define rrand(ctx) ({\
     uint64_t randint=0;\
@@ -548,10 +550,10 @@ static double gaussrand(duk_context *ctx, double sigma)
       y=rrand(ctx);
 		/* see if it is in the unit circle */
 		r2 = x * x + y * y;
-   }
-   while (r2 > 1.0 || r2 == 0);
-	/* Box-Muller transform */
-	return ((sigma * y * sqrtf (-2.0 * logf (r2) / r2)));
+   } while (r2 > 1.0 || r2 == 0);
+
+   /* Box-Muller transform */
+   return ((sigma * y * sqrtf (-2.0 * logf (r2) / r2)));
 }
 
 static double normrand(duk_context *ctx, double scale)

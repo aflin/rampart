@@ -1,4 +1,5 @@
-/* Copyright (C) 2020 Aaron Flin - All Rights Reserved
+/* Copyright (C) 2021 Aaron Flin - All Rights Reserved
+ * Copyright (C) 2021 P. Barton Richards - All Rights Reserved
  * You may use, distribute or alter this code under the
  * terms of the MIT license
  * see https://opensource.org/licenses/MIT
@@ -20,7 +21,7 @@
 
 /* ************************************************************** 
 
-   RAMIS - redis compatible client functions 
+   rampart-redis - redis compatible client functions 
 
    ************************************************************** */
 
@@ -208,15 +209,15 @@ duk_ret_t duk_rp_ra_send(duk_context *ctx)
 }
 /* **********************************************************
 
-   SQL and RAMIS constructor functions &
-   SQL and RAMIS init function
+   constructor functions &
+   init function
 
    ********************************************************** */
 
 /* **************************************************
-   Ramis(host,port) constructor
-   var Ramis = require("rampart-redis");
-   var ra=new Ramis.init("127.0.0.1",6379);
+   Redis(host,port) constructor
+   var redis = require("rampart-redis");
+   var rd=new redis.init("127.0.0.1",6379);
 
    ************************************************** */
 duk_ret_t duk_rp_ra_constructor(duk_context *ctx)
@@ -705,9 +706,9 @@ duk_ret_t duk_rp_ramvar(duk_context *ctx)
 
 
 /* **************************************************
-   Ramis(host,port) constructor
-   var Ramis = require("rampart-redis");
-   var ra=new Ramis.createClient(6379, "127.0.0.1");
+   redis(host,port) constructor
+   var redis = require("rampart-redis");
+   var rd=new redis.createClient(6379, "127.0.0.1");
 
    ************************************************** */
 duk_ret_t duk_rp_cc_constructor(duk_context *ctx)

@@ -1,5 +1,5 @@
-/* Copyright (C) Thunderstone, LLC - All Rights Reserved
- * Copyright (C) 2020 Aaron Flin - All Rights Reserved
+/* Copyright (C) 2021 Thunderstone, LLC - All Rights Reserved
+ * Copyright (C) 2021 Aaron Flin - All Rights Reserved
  * You may use, distribute this code under the
  * terms of the Rampart Open Source License.
  * see rsal.txt for details
