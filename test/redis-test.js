@@ -138,5 +138,4 @@ testFeature("redis ramvar variables -- destroy", function() {
     return !set.length;
 });
 
-}
 
