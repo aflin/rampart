@@ -6,7 +6,7 @@ extern "C"
 {
 #endif
 
-#include "../core/duktape.h"
+#include "rampart.h"
   extern void duk_printf_init(duk_context *ctx);
 
 #if defined(__cplusplus)

@@ -8,7 +8,7 @@
 #include "core/duk_console.h"
 #include "core/module.h"
 #include "globals/printf.h"
-#include "../rp.h"
+#include "rampart.h"
 
 void duk_init_context(duk_context *ctx)
 {

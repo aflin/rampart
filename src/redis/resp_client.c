@@ -20,7 +20,7 @@
 #include <string.h>
 #include <errno.h>
 #ifdef RP_USING_DUKTAPE
-#include "../duktape/core/duktape.h"
+#include "rampart.h"
 #endif
 #include "rampart-redis.h"
 #include "resp_protocol.h"

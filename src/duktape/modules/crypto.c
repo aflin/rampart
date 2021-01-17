@@ -4,7 +4,6 @@
  * terms of the MIT license
  * see https://opensource.org/licenses/MIT
  */
-#include "../core/duktape.h"
 #include <openssl/conf.h>
 #include <openssl/evp.h>
 #include <openssl/err.h>
@@ -15,7 +14,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
-#include "../../rp.h"
+#include "rampart.h"
 
 #define OPENSSL_ERR_STRING_MAX_SIZE 1024
 #define DUK_OPENSSL_ERROR(ctx)                                                     \

@@ -142,5 +142,27 @@ void normalizeCSVColumn(CSV *csv,int columnN,int startRow);
   }\
 } while(0)
 
+/* csv parser */
+
+#define DCSV struct duk_csv_s
+
+DCSV {
+    CSV *csv;
+    char **hnames;
+    const char *tbname;
+    duk_idx_t obj_idx;
+    duk_idx_t str_idx;
+    duk_idx_t col_idx;
+    duk_idx_t func_idx;
+    duk_idx_t arr_idx;
+    int cbstep;
+    char retType;
+    char hasHeader;
+    char inplace;
+    char isfile;
+    char include_rawstring;
+};
+
+DCSV duk_rp_parse_csv(duk_context *ctx, int isfile, int normalize, const char *func_name);
 
 #endif /* csv_parser_h */

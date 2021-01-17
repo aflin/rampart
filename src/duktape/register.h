@@ -11,7 +11,7 @@ extern "C"
 {
 #endif
 
-#include "core/duktape.h"
+#include "rampart.h"
   extern void duk_init_context(duk_context *ctx);
   void duk_process_init(duk_context *ctx);
   void duk_import_init(duk_context *ctx);

@@ -4,8 +4,7 @@
  * see https://opensource.org/licenses/MIT
  */
 
-#include "duktape.h"
-#include "rp.h"
+#include "rampart.h"
 
 int rp_rbt_allowed(char *robots_txt, char *uagent, char *iurl );
 

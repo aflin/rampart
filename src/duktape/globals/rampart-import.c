@@ -9,9 +9,8 @@
 #include <errno.h>
 #include  <stdio.h>
 #include  <time.h>
+#include "rampart.h"
 #include "csv_parser.h"
-#include "../core/duktape.h"
-#include "../../rp.h"
 
 extern int csvErrNo;
 

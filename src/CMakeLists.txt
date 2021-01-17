@@ -79,6 +79,7 @@ target_link_libraries(rampart LINK_PUBLIC
 endif()
 
 include_directories(
+	${PROJECT_SOURCE_DIR}/src/include
 	${PROJECT_BINARY_DIR}/texis/texisapi 
 	${PROJECT_BINARY_DIR}/texis 
 	${PROJECT_SOURCE_DIR}/texis/include 

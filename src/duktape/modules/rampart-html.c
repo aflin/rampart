@@ -11,8 +11,7 @@
 #include <tidybuffio.h>
 //#include <forward.h>
 //#include <tidy-int.h>
-#include "../../rp.h"
-#include "../core/duktape.h"
+#include "rampart.h"
 
 #include "tidy-int.h"
 #include "clean.h"

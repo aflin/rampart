@@ -14,8 +14,9 @@
 #include <inttypes.h>
 #include <curl/curl.h>
 #include <time.h>
-#include "../core/duktape.h"
-#include "../../rp.h"
+#include "rampart.h"
+
+typedef uint8_t byte;
 
 #define RETTXT struct curl_resStr
 RETTXT

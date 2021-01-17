@@ -13,8 +13,7 @@
 #include <sys/socket.h>
 #include <netdb.h>
 #include <poll.h>
-#include "../../rp.h"
-#include "../core/duktape.h"
+#include "rampart.h"
 #include "../../redis/rampart-redis.h"
 #include "../../redis/resp_protocol.h"
 #include "../../redis/resp_client.h"

@@ -1,10 +1,10 @@
-/* Copyright (C) 2020 Aaron Flin - All Rights Reserved
-   Copyright (C) 2020 Benjamin Flin - All Rights Reserved
+/* Copyright (C) 2021 Aaron Flin - All Rights Reserved
+   Copyright (C) 2021 Benjamin Flin - All Rights Reserved
  * You may use, distribute or alter this code under the
  * terms of the MIT license
  * see https://opensource.org/licenses/MIT
  */
-#include "duktape/core/duktape.h"
+ #include "rampart.h"
 #include "duktape/register.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +16,6 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <errno.h>
-#include "rp.h"
 #include "event.h"
 #include "event2/thread.h"
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;

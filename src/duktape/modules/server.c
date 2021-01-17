@@ -23,12 +23,13 @@
 #include <uuid/uuid.h>
 #endif
 #include <pwd.h>
-#include "../core/duktape.h"
+
 #include "evhtp/evhtp.h"
-#include "../../rp.h"
+#include "rampart.h"
 #include "../core/module.h"
-#include "../../mime.h"
+#include "mime.h"
 #include "../register.h"
+
 //#define RP_TO_DEBUG
 //#define RP_TIMEO_DEBUG
 #define COMBINE_EVLOOPS 1

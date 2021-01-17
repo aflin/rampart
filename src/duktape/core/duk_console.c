@@ -10,7 +10,7 @@
 #include <stdarg.h>
 #include "duktape.h"
 #include "duk_console.h"
-#include "../../rp.h"
+#include "rampart.h"
 /* XXX: Add some form of log level filtering. */
 
 /* XXX: Should all output be written via e.g. console.write(formattedMsg)?

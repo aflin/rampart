@@ -18,9 +18,9 @@
 #include "texint.h"
 #include "texisapi.h"
 #include "cgi.h"
-#include "../../rp.h"
-#include "../core/duktape.h"
+#include "rampart.h"
 #include "api3.h"
+#include "../globals/csv_parser.h"
 
 extern int TXunneededRexEscapeWarning;
 int texis_resetparams(TEXIS *tx);

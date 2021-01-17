@@ -15,8 +15,7 @@
 #include <pwd.h>
 #include <grp.h>
 #include <signal.h>
-#include "../core/duktape.h"
-#include "../../rp.h"
+#include "rampart.h"
 extern char **environ;
 extern char *RP_script_path;
 

@@ -13,7 +13,7 @@
 #include <libgen.h>
 #include "duktape.h"
 #include "module.h"
-#include "../../rp.h"
+#include "rampart.h"
 
 static pthread_mutex_t modlock = PTHREAD_MUTEX_INITIALIZER;
 
