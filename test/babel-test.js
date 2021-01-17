@@ -24,7 +24,11 @@ function testFeature(name,test)
     if(test)
         printf("passed\n")
     else
+    {
         printf(">>>>> FAILED <<<<<\n");
+        if(error) console.log(error);
+        process.exit(1);
+    }
     if(error) console.log(error);
 }
 

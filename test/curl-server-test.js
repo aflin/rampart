@@ -43,7 +43,11 @@ function testFeature(name,test)
     if(test)
         printf("passed\n")
     else
+    {
         printf(">>>>> FAILED <<<<<\n");
+        if(error) console.log(error);
+        process.exit(1);
+    }
     if(error) console.log(error);
 }
 
@@ -53,15 +57,52 @@ if(
       stat("sample-key.pem") )
 )
 {
+    fprintf("sample-cert.conf", '%s',
+        "[CA_default]\n" +
+        "copy_extensions = copy\n" +
+        "\n" +
+        "[req]\n" +
+        "default_bits = 4096\n" +
+        "prompt = no\n" +
+        "default_md = sha256\n" +
+        "distinguished_name = req_distinguished_name\n" +
+        "x509_extensions = v3_ca\n" +
+        "\n" +
+        "[req_distinguished_name]\n" +
+        "C = US\n" +
+        "ST = Deleware\n" +
+        "L = Wilmington\n" +
+        "O = Sample Co\n" +
+        "OU = Sample Department\n" +
+        "emailAddress = sample@sample.none\n" +
+        "CN = sample.none\n" +
+        "\n" +
+        "[v3_ca]\n" +
+        "basicConstraints = CA:FALSE\n" +
+        "keyUsage = digitalSignature, keyEncipherment\n" +
+        "subjectAltName = @alternate_names\n" +
+        "\n" +
+        "[alternate_names]\n" +
+        "DNS.1 = localhost\n" +
+        "DNS.2 = *.localhost\n"
+    );
     var ret = shell("openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout sample-key.pem -out sample-cert.pem -config sample-cert.conf");
     //console.log(ret);
+}
+
+if(!stat("smods"))
+{
+    mkdir("smods");
+    fprintf("smods/testmod.js", '%s',
+        "module.exports=function(res){return {text:'test'} }\n");
 }
 
 var pid=server.start(
 {
     bind: "127.0.0.1:8087",
 
-    //user: "nobody",
+    /* only applies if starting as root */
+    user: "nobody",
 
     scriptTimeout: 1.0, /* max time to spend in JS */
     connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
@@ -94,9 +135,9 @@ var pid=server.start(
              "/tetris"    becomes  "/tetris/
              "./mPurpose" becomes  "./mPurpose/"
         */
-        "/":                "./mPurpose",
+        "/":                "./",
         "/sample":          function(req){return "test";},
-        "/modtest/":	    {modulePath:"./servermods/"},
+        "/modtest/":	    {modulePath:"./smods/"},
         "/timeout":         function(){
                                 for (var i=0;i<1000000000;i++);
                                 return("done");
@@ -141,9 +182,8 @@ testFeature("curl parallel fetch", function() {
 });
 
 testFeature("server modpath", function (){
-    var res=curl.fetch({insecure:true},"https://localhost:8087/modtest/simpledbtest.html");
-    var j=JSON.parse(res.text);
-    return res.status == 200;
+    var res=curl.fetch({insecure:true},"https://localhost:8087/modtest/testmod.txt");
+    return res.status == 200 && res.text == "test";
 });
 
 testFeature("server custom not found", function (){

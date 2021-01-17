@@ -1,4 +1,6 @@
 set(CMAKE_BUILD_TYPE Debug)
+
+# for robotstxt on macos
 set(CMAKE_CXX_STANDARD 11)
 
 if(${CMAKE_INSTALL_PREFIX})
@@ -35,10 +37,7 @@ add_definitions(
 	-DRP_INST_PATH="${CMAKE_INSTALL_PREFIX}/"
 )
 
-#this doesn't work: set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -g -pedantic -std=c99 -Wall -fstrict-aliasing -fomit-frame-pointer -rdynamic")
-# add_compile_options( -O2 -g -pedantic -std=c99 -fstrict-aliasing)
 add_compile_options(-Wall -g -O2)
-
 
 add_executable(rampart
 	duktape/register.c
@@ -140,7 +139,7 @@ target_include_directories(rampart-html PRIVATE
 
 ###SQL###
 add_library(rampart-sql SHARED
- duktape/modules/db.c
+ duktape/modules/rampart-sql.c
 )
 target_link_libraries(rampart-sql
 	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
@@ -165,7 +164,7 @@ add_library(rampart-redis SHARED
 
 ##CRYPTO##
 add_library(rampart-crypto SHARED 
-  duktape/modules/crypto.c  
+  duktape/modules/rampart-crypto.c  
 )
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
@@ -193,7 +192,7 @@ target_include_directories(rampart-crypto PRIVATE
 
 ###SERVER###
 add_library(rampart-server SHARED
- duktape/modules/server.c
+ duktape/modules/rampart-server.c
 )
 target_link_libraries(rampart-server 
 	${LIBEVHTP_TARGET_DIR}/libevhtp.a
@@ -214,7 +213,7 @@ target_include_directories(rampart-server PRIVATE
 
 ###CURL###
 add_library(rampart-curl SHARED
- duktape/modules/curl.c
+ duktape/modules/rampart-curl.c
 )
 target_link_libraries(rampart-curl PRIVATE
 	${CURL_TARGET_DIR}/lib/libcurl.a
@@ -256,6 +255,25 @@ set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis ramp
 )
 endif()
 
+## some examples into src temporarily 
+set(EXAMPLE_FILES
+	"sample-server"
+	"wikipedia_search"
+	"metasearch"
+)
+foreach(EXAMPLE_FILE ${EXAMPLE_FILES})
+  file(COPY ${CMAKE_SOURCE_DIR}/examples/${EXAMPLE_FILE} DESTINATION ${CMAKE_BINARY_DIR}/src)
+endforeach()
+
+## tests into build/src dir as well (temporary)
+file(GLOB TEST_FILES "${CMAKE_SOURCE_DIR}/test/*.js" "${CMAKE_SOURCE_DIR}/test/wiki_00")
+foreach(TEST_FILE ${TEST_FILES})
+file(COPY ${TEST_FILE} DESTINATION ${CMAKE_BINARY_DIR}/src)
+endforeach()
+
+
+
+
 install(TARGETS rampart DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
 
 install(TARGETS
@@ -291,55 +309,45 @@ install(CODE "execute_process( \
 )
 
 # include files
-
 install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/include")
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_SOURCE_DIR}/src/duktape/core/duktape.h\" \
-    \"${PROJECT_SOURCE_DIR}/src/duktape/core/duk_config.h\" \
-    \"${PROJECT_SOURCE_DIR}/src/rp.h\" \
+    \"${PROJECT_SOURCE_DIR}/src/include/duktape.h\" \
+    \"${PROJECT_SOURCE_DIR}/src/include/duk_config.h\" \
+    \"${PROJECT_SOURCE_DIR}/src/include/rampart.h\" \
     \"${CMAKE_INSTALL_PREFIX}/include\"   \
     )"
 )
 
-install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/examples/sample-server")
-
-set(INSTALL_EXAMPLE_DIRS
-        "mPurpose"
-        "tetris-tutorial"
-        "servermods"
-)
-
-foreach(INSTALL_EXAMPLE_DIR ${INSTALL_EXAMPLE_DIRS})
-install(CODE "execute_process( \
-    COMMAND ${CMAKE_COMMAND} -E copy_directory \
-    \"${PROJECT_BINARY_DIR}/src/${INSTALL_EXAMPLE_DIR}\" \
-    \"${CMAKE_INSTALL_PREFIX}/examples/sample-server/${INSTALL_EXAMPLE_DIR}\"   \
-    )"
-)
-endforeach()
-
+# test files
+install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/test")
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_BINARY_DIR}/src/server.js\" \
-    \"${PROJECT_BINARY_DIR}/src/servermod.js\" \
-    \"${CMAKE_INSTALL_PREFIX}/examples/sample-server\"   \
+    \"${PROJECT_SOURCE_DIR}/test/babel-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/crypto-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/combo-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/curl-server-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/math.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/redis-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/robots-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/rputils-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/sql-extras-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/wiki_00\" \
+    \"${CMAKE_INSTALL_PREFIX}/test\"   \
     )"
 )
 
-
-
-install(CODE "execute_process( \
-    COMMAND ${CMAKE_COMMAND} -E copy_directory \
-    \"${PROJECT_BINARY_DIR}/src/wikipedia_search\" \
-    \"${CMAKE_INSTALL_PREFIX}/examples/wikipedia_search\"   \
-    )"
+install(CODE "execute_process ( \
+    COMMAND bash -c \"chmod 777 ${CMAKE_INSTALL_PREFIX}/test\"
+ )"
 )
 
+# example dirs
+install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/examples")
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy_directory \
-    \"${PROJECT_BINARY_DIR}/src/metasearch\" \
-    \"${CMAKE_INSTALL_PREFIX}/examples/metasearch\"   \
+    \"${PROJECT_SOURCE_DIR}/examples\" \
+    \"${CMAKE_INSTALL_PREFIX}/examples\"   \
     )"
 )
 
@@ -350,11 +358,3 @@ install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-redis.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
 
-
-#this is good for later. Right now it interrupts work flow
-#set_target_properties(rampart-curl rampart-utils rampart-server rp
-#	PROPERTIES
-#	ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-#	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-#	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-#)

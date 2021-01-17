@@ -22,6 +22,20 @@ sleep(0.5);
 
 var rd=new redis.createClient(13287);
 
+function cleanup() {
+    kill(rpid, 15);
+    for (var i=0; i<50; i++) {
+        if(!kill(rpid, 0)) {
+            process.exit();
+        }
+        sleep(0.1);
+        kill(rpid, 15);
+    }
+
+    fprintf(stderr, "Failed to kill redis-server\n");
+    process.exit(1);
+}
+
 function testFeature(name,test)
 {
     var error=false;
@@ -37,7 +51,12 @@ function testFeature(name,test)
     if(test)
         printf("passed\n")
     else
+    {
         printf(">>>>> FAILED <<<<<\n");
+        if(error) console.log(error);
+        cleanup();
+        process.exit(1);
+    }
     if(error) console.log(error);
 }
 
@@ -119,15 +138,5 @@ testFeature("redis ramvar variables -- destroy", function() {
     return !set.length;
 });
 
-kill(rpid, 15);
-for (var i=0; i<50; i++) {
-    if(!kill(rpid, 0)) {
-        process.exit();
-    }
-    sleep(0.1);
-    kill(rpid, 15);
 }
-
-fprintf(stderr, "Failed to kill redis-server\n");
-process.exit(1);
 

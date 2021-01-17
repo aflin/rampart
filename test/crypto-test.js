@@ -20,7 +20,11 @@ function testFeature(name,test)
     if(test)
         rampart.utils.printf("passed\n")
     else
+    {
         rampart.utils.printf(">>>>> FAILED <<<<<\n");
+        if(error) console.log(error);
+        process.exit(1);
+    }
     if(error) console.log(error);
 }
 

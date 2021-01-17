@@ -12,8 +12,6 @@ include(extern/extern.cmake)
 message("######   CONFIGURING RAMPART    ######")
 
 add_subdirectory(src)
-add_subdirectory(examples)
-add_subdirectory(test)
 
 include(cmake/ExternalProject.cmake)
 ExternalProject_Add( texis

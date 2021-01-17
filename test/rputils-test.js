@@ -18,7 +18,11 @@ function testFeature(name,test)
     if(test)
         printf("passed\n")
     else
+    {
         printf(">>>>> FAILED <<<<<\n");
+        if(error) console.log(error);
+        process.exit(1);
+    }
     if(error) console.log(error);
 }
 
@@ -158,29 +162,31 @@ testFeature("symlink/delete/lstat",function(){
 });
 
 testFeature("hard link/delete",function(){
+    fprintf("myfile.txt","a message to nobody");
     link({
-        src:thisfile,
-        target:"test1.js"
+        src:"myfile.txt",
+        target:"test1.txt"
     });
-    var stat1=stat("test1.js");
-    var test=shell("if [ test1.js -ef "+thisfile+" ]; then echo yes; fi");
-    rmFile("test1.js");
-    var stat2=stat("test1.js");
+    var stat1=stat("test1.txt");
+    var test=shell("if [ test1.txt -ef myfile.txt ]; then echo yes; fi");
+    rmFile("test1.txt");
+    var stat2=stat("test1.txt");
     return stat1.mode && !stat2 && test.stdout == "yes\n";
 });
 
 testFeature("copy over hard/sym link throw",function(){
-    link(thisfile, "hardlink");
+    link("myfile.txt", "hardlink");
     symlink("hardlink", "symlink");
     var ret=false;
     try{
-        copyFile(thisfile, "symlink");
+        copyFile("myfile.txt", "symlink");
     } catch(e) {
         //console.log(e);
         ret=true;
     }
     rmFile("hardlink");
     rmFile("symlink");
+    rmFile("myfile.txt");
     return ret;
 });
 
