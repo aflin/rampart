@@ -22,6 +22,36 @@
 #include "api3.h"
 #include "../globals/csv_parser.h"
 
+/* settings */
+#define RESMAX_DEFAULT 10 /* default number of sql rows returned if max is not set */
+//#define PUTMSG_STDERR                  /* print texis error messages to stderr */
+#define USEHANDLECACHE    /* cache texis handles on a per db/query basis */
+/* end settings */
+
+#define QUERY_STRUCT struct rp_query_struct
+
+#define QS_ERROR_DB 1
+#define QS_ERROR_PARAM 2
+#define QS_SUCCESS 0
+
+QUERY_STRUCT
+{
+    const char *sql;    /* the sql statement (allocated by duk and on its stack) */
+    int arryi;          /* location of array of parameters in ctx, or -1 */
+    duk_idx_t callback; /* location of callback in ctx, or -1 */
+    int skip;           /* number of results to skip */
+    int max;            /* maximum number of results to return */
+    char rettype;       /* 0 for return object with key as column names, 
+                           1 for array
+                           2 for novars                                           */
+    char err;
+    char getCounts;     /* whether to include metamorph counts in return */
+};
+
+
+duk_ret_t duk_rp_sql_close(duk_context *ctx);
+
+
 extern int TXunneededRexEscapeWarning;
 int texis_resetparams(TEXIS *tx);
 int texis_cancel(TEXIS *tx);

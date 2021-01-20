@@ -21,6 +21,10 @@ extern "C"
 extern char **rampart_argv;
 extern int   rampart_argc;
 
+/* macros to help with require_* and throwing errors with 
+   a stack trace.
+*/
+
 #define RP_THROW(ctx,...) do {\
     duk_push_error_object(ctx, DUK_ERR_ERROR, __VA_ARGS__);\
     (void) duk_throw(ctx);\
@@ -86,7 +90,13 @@ extern int   rampart_argc;
     if(!duk_is_function((ctx),i)) {\
         RP_THROW((ctx), __VA_ARGS__ );\
     }\
-    duk_require_function((ctx),i);\
+})
+
+#define REQUIRE_OBJECT(ctx,idx,...) ({\
+    duk_idx_t i=(idx);\
+    if(!duk_is_object((ctx),i)) {\
+        RP_THROW((ctx), __VA_ARGS__ );\
+    }\
 })
 
 #define REQUIRE_BUFFER_DATA(ctx,idx,sz,...) ({\
@@ -110,25 +120,7 @@ extern int   rampart_argc;
     r;\
 })
 
-
-/* settings */
-#define nthreads 0        /* number of threads for evhtp, set to 0 to use num of cpu cores */
-#define RESMAX_DEFAULT 10 /* default number of sql rows returned if max is not set */
-//#define PUTMSG_STDERR                  /* print texis error messages to stderr */
-//#define SINGLETHREADED                 /* don't use threads (despite nthreads above) */
-#define USEHANDLECACHE    /* cache texis handles on a per db/query basis */
-                          /* end settings */
-#define RESMAX_DEFAULT 10 /* default number of sql rows returned if max is not set */
-//#define PUTMSG_STDERR     /* print texis error messages to stderr */
-/* end settings */
-
-
-/* 
-   Question: should we just exit
-   or allow users to catch a malloc
-   error?  
-*/
-
+/* this is almost certainly wrong */
 #define DUKREMALLOC(ctx, s, t)                 \
     (s) = realloc((s), (t));                   \
     if ((char *)(s) == (char *)NULL)           \
@@ -136,6 +128,7 @@ extern int   rampart_argc;
         duk_push_string((ctx), "alloc error"); \
         (void)duk_throw((ctx));                \
     }
+
 #define REMALLOC(s, t) /*printf("malloc=%d\n",(int)t);*/ \
     (s) = realloc((s), (t));                             \
     if ((char *)(s) == (char *)NULL)                     \
@@ -144,45 +137,24 @@ extern int   rampart_argc;
         exit(-1);                                        \
     }
 
-    pthread_mutex_t lock;
+pthread_mutex_t lock;
 
 #ifdef PUTMSG_STDERR
     pthread_mutex_t printlock;
 #endif
 
-    extern void rp_register_functions(duk_context *ctx);
+extern void rp_register_functions(duk_context *ctx);
 
-#define QUERY_STRUCT struct rp_query_struct
 
-#define QS_ERROR_DB 1
-#define QS_ERROR_PARAM 2
-#define QS_SUCCESS 0
-
-    QUERY_STRUCT
-    {
-        const char *sql;    /* the sql statement (allocated by duk and on its stack) */
-        int arryi;          /* location of array of parameters in ctx, or -1 */
-        duk_idx_t callback; /* location of callback in ctx, or -1 */
-        int skip;           /* number of results to skip */
-        int max;            /* maximum number of results to return */
-        char rettype;       /* 0 for return object with key as column names, 
-                               1 for array
-                               2 for novars                                           */
-        char err;
-        char getCounts;     /* whether to include metamorph counts in return */
-    };
-
-    duk_ret_t duk_rp_sql_close(duk_context *ctx);
-
-    char *duk_rp_url_encode(char *str, int len);
-    char *duk_rp_url_decode(char *str, int len);
+char *duk_rp_url_encode(char *str, int len);
+char *duk_rp_url_decode(char *str, int len);
 
 #define SET_THREAD_UNSAFE(ctx)                                       \
-    do                                                               \
-    {                                                                \
-        duk_push_false(ctx);                                         \
-        duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("threadsafe")); \
-    } while (0)
+do                                                               \
+{                                                                \
+    duk_push_false(ctx);                                         \
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("threadsafe")); \
+} while (0)
 
 #define RP_TIME_T_FOREVER 2147483647
 
@@ -195,10 +167,36 @@ extern int   rampart_argc;
         duk_pop((ctx));                           \
     } while (0)
 
+#define prettyprintstack(ctx)                       \
+    do                                              \
+    {                                               \
+        duk_push_context_dump((ctx));               \
+        duk_get_global_string((ctx), "Duktape");    \
+        duk_push_string((ctx), "dec");              \
+        duk_push_string((ctx), "jx");               \
+        duk_pull((ctx), -4);                        \
+        const char *res=duk_to_string(((ctx)), -1); \
+        char *ob=strstr(res,"stack=")+6;            \
+        printf("%.*s\n", (int)(ob-res), res);       \
+        duk_push_string((ctx), ob);                 \
+        duk_remove((ctx),-2);                       \
+        duk_call_prop((ctx), -4, 2);                \
+        duk_remove((ctx),-2);                       \
+        duk_get_global_string((ctx), "JSON");       \
+        duk_push_string((ctx), "stringify");        \
+        duk_pull((ctx), -3);                        \
+        duk_push_null((ctx));                       \
+        duk_push_int((ctx), 4);                     \
+        duk_call_prop((ctx), -5, 3);                \
+        printf("%s\n", duk_to_string((ctx), -1));   \
+        duk_pop_2((ctx));                           \
+    } while (0)
+
 #define printenum(ctx, idx)                                                                                          \
     do                                                                                                               \
     {                                                                                                                \
-        duk_enum((ctx), (idx), DUK_ENUM_NO_PROXY_BEHAVIOR | DUK_ENUM_INCLUDE_NONENUMERABLE | DUK_ENUM_INCLUDE_HIDDEN | DUK_ENUM_INCLUDE_SYMBOLS); \
+        duk_enum((ctx), (idx), DUK_ENUM_NO_PROXY_BEHAVIOR | DUK_ENUM_INCLUDE_NONENUMERABLE |                         \
+                               DUK_ENUM_INCLUDE_HIDDEN | DUK_ENUM_INCLUDE_SYMBOLS);                                  \
         while (duk_next((ctx), -1, 1))                                                                               \
         {                                                                                                            \
             printf("%s -> %s\n", duk_get_string((ctx), -2), duk_safe_to_string((ctx), -1));                          \
