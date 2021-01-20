@@ -940,9 +940,23 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                     duk_dup(ctx, fidx);
 
                 p = duk_base64_encode(ctx, -1);
-                while ((*p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
+                if(width)
                 {
-                    out(*(p++), buffer, idx++, maxlen);
+                    int i=0;
+                    while ((*p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
+                    {
+                        out(*(p++), buffer, idx++, maxlen);
+                        i++;
+                        if(!(i%width))
+                            out('\n', buffer, idx++, maxlen);
+                    }
+                }
+                else
+                {
+                    while ((*p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
+                    {
+                        out(*(p++), buffer, idx++, maxlen);
+                    }
                 }
             }
             duk_pop(ctx);
@@ -1248,13 +1262,14 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             const char *p;
             char *freeme=NULL;
             unsigned int l, max=-1;
-            
+            int isbuf = 0;
             /* convert buffers and print as is */
             if (duk_is_buffer_data(ctx, fidx))
             {
                 duk_size_t ln;
                 p = duk_get_buffer_data(ctx, fidx++, &ln);
                 l = max = (unsigned int) ln;
+                isbuf=1;
             }
             /* convert json as above in '%J' */
             else if (duk_is_object(ctx, fidx) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1))
@@ -1279,7 +1294,7 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                     out(' ', buffer, idx++, maxlen);
                 }
             }
-            if(strchr(p,0xED))
+            if(!isbuf && strchr(p,0xED))
                 p=freeme=to_utf8(p);
             // string output
             if (max==-1)
