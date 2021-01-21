@@ -100,6 +100,9 @@ Where
 
 Return Value:
   A :green:`Buffer` containing the ciphertext (encrypted data).
+  Using ``crypto.encrypt("password", data)`` produces the same results as
+  ``openssl enc -aes-256-cbc -d -pbkdf2  -pass pass:"password" -in myfile.enc``
+  using openssl version 1.1.1 from the command line.
 
 Example:
 
@@ -113,7 +116,13 @@ decrypt
 ~~~~~~~
 
 The ``decrypt()`` function takes the same arguments as `encrypt`_ above, but decrypts 
-the data.  Data is returned in a :green:`Buffer`.
+the data.
+
+Return Value:
+    A :green:`Buffer` containing the decrypted text.
+    Calling ``crypto.decrypt("password", data)`` produces the same results
+    as ``openssl enc -aes-256-cbc -d -pbkdf2  -pass pass:"password" -in mydatafile.enc``
+    using openssl version 1.1.1 from the command line.
 
 Example:
 
@@ -252,6 +261,297 @@ The following cipher/modes are supported in rampart:
 |aes-128-ofb          |128 bit AES in OFB mode               |
 +---------------------+--------------------------------------+
 
+RSA Encryption
+--------------
+
+rsa_gen_key
+~~~~~~~~~~~
+
+Generate an RSA key pair.
+
+Usage:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+
+    var key = crypto.rsa_gen_key([bits][, password]);
+
+Where:
+
+    * ``bits`` is a :green:`Number` such as ``1024``, ``2048``
+      ``4096`` or ``8192``.  The number of modulus bits.  Default
+      is ``4096`` if not specified.
+
+    * ``password`` is an optional :green:`String`, a password to
+      encrypt the private key.
+
+Return:
+    An :green:`Object` with the following properties:
+    
+      * ``public`` - the public key in ``pem`` format.
+      * ``private`` - the private key in ``pem`` format, encrypted if
+        ``password`` is given.
+
+Example:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+    
+    var key = crypto.rsa_gen_key(2048, "mypass");
+
+    rampart.utils.printf("%s\n%s\n", key.private, key.public);
+
+    /* expect output similar to the following:
+    -----BEGIN RSA PRIVATE KEY-----
+    Proc-Type: 4,ENCRYPTED
+    DEK-Info: AES-256-CBC,74913B77FF1C0212CB08E4B4969C0A42
+
+    YNsGbervXJcZzcQEJ+q+HKZ6usp/bEm+UaducORAcEKhOy259LKXCRw9N5kIPwOk
+    kAEpDjq64oy86g8Xid8eEXntK+QAJfd96MFBw4fzZxqRFl4rxCVuBy3m9ylGc92s
+    yN9wokMbjmk5dSNo7kCP6q6rjHovrk55aiM0GYY4oTMXHr9OWPFdE5ntJ9+E2s6t
+    181ePMyMOPFwvw4AwbS+6Ej5/hTGfYpufzWLWxvZC2yTpZybSkZv/SP0EkENEhGk
+    wJZiCYz3YwxpnHOc5oLmvZUmhUCxzz0SxSMUlkYfkURwhrp1vXrw8qioXLHV0Wjb
+    LK4cAEAmIFSDiitnk4azpMVzLFmIjNIoHD+WK38FqvXmGCqFH08jMPquIGEFtf0N
+    JL7Agc6PykRivXCeZtGifj3d5z0C/z1NxPlT2AU3fpSxBgaP31aVDTsF723Die7H
+    tH3vrv67Qbq8nVFw8DhkN1/K5vErVI9Cli5MWlZCNnozU1RpNMpQfNEcKpS1ZOGa
+    RgvMo7lD8rRECyeqJV0NKO3ENay5s/cV+RWRhpQ2VshQNYhw4XjAZwl3HD/1bVo6
+    P8aVbo2evoBpH1hOzpdzApAL2w6qQlhhupcRI009q5l2nmOJBOhCXoGEufHRzSB5
+    nFyidHzE0S3Fw9OyyFLGw7ZzZC4J9W5slRVZz+bUhfKWjqcQx6HzITRj/sxrkC1k
+    q2lV+hMuzhsZ+kBRPth28Eoo1H5ilLGH80nbKX+w3Rk7nsqlubDFrSdLn3Yq1g0h
+    NnjA0x67jjEPBPhQCwR7NPzzJB1Goz4WAmpDsbrtbMDhdaHQKrfduJO9orjbzUWh
+    JD+lbF3Hm8WEG653Ap4md7ZlgvhLQY8UZygv3BEyv9CLhwoqzc58q5oK8xtET7lD
+    e5aP4W/5UkGWarN02SJo+QQh6aR97UEJGzO25Xf9mYLk7s7dUBs2UJl46EuxZZe+
+    dYm6JgbJ7nQfTcrmnCHM3Te4FsB8P4NzDl5bl/TvbDrQ53s8QTsvA3FOTQvLvpLD
+    O+NnRHkj7FgwKoOU2/LDXgFQTnAtYv9RbQBUT15Us+dOxOVU58HxA6Y12oOfcie1
+    9c6I/40EIEjEBf7ONRfpXadQ1myybZageM+KCZveGhjKHRrD6SZ+JReEyiqRc5no
+    Escr1uNdur1b4ORIzCAGDO2PvZY/pHOwXnISeXsH4IBY3u8kx5aYF5JyJx0ny4v7
+    C27m98ZPAXyVIKM/bGU4JSjPFdLa0lmJvb/kltowf6Z94DtuIxV72sSptUGhjdBT
+    mmiDF+tqVLL/EZbSMeiQj/e1fU/Gtl3BKSygI5NYWGlONLH63sMHrIwe17vTVRmi
+    r7cOpayP7M9gdgVjh2fgsZPpdsw/Q0uVxUUI2vrqvoBA0cGl5ZvZX0iIQ3xlssK0
+    jj9SvGtFcVD32ZnXex1AKMK1sWErzZF6PEQmNvHwJ0RxxEyPIfXWTfXvC45g79ge
+    fh6DooT8V/xBwi2fdblLUyHjPA+WdMl/xKzPekyTsE/b/XVLln02T61MTA4oLAwZ
+    k7g8XxqdiSumdTxjA3Jhch+wlH0lD8r73o1zz46dHiz/5ffphuHGxU9Uel7Bekj5
+    -----END RSA PRIVATE KEY-----
+
+    -----BEGIN PUBLIC KEY-----
+    MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0V6jNd9YHBopOtk3Sfki
+    zcdVftQym5iGZm/C8frhzEG6TGDS9Wj9zijsEEbnxl60sHziaY1DdyEbGQTVvBcd
+    fSf2fn9arnWr5r13Gxqdn274Fbc7Ls8dllWhaMlCLsqhTgr83xK0QIR9I7KpyDrx
+    Qjyz4AM3jam5j8TR9Y9WyB6tXmWdVaiq0iLGiKJCu5F8rcIGEVcX/t52dKbIbj6j
+    X7j/Y+ayTWMNZHZk+ZHVTKsgKn2XFmPbQ6xs5bxTazmWmm7GRDtI5EbqQLMiZAy7
+    +P3o6amYz+k5Z9RgLYuNKEyHpOUh8wiNi/CdJ6ScaCoSRmozxqn2NrxdpQQMHBjA
+    VQIDAQAB
+    -----END PUBLIC KEY-----
+
+    */
+
+rsa_pub_encrypt
+~~~~~~~~~~~~~~~
+
+Encrypt data using an RSA public key.
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+
+    var res = crypto.rsa_pub_encrypt(data, pubkey[, paddingMode]);
+
+Where:
+
+    * ``data`` is a :green:`String` or :green:`Buffer` with the content to
+      encrypt.
+
+    * ``pubkey`` is a :green:`String` or :green:`Buffer` with the content of
+      the public key.
+
+    * ``paddingMode`` is an optiona :green:`String` that is one of the
+      following (as described 
+      `here <https://www.openssl.org/docs/man1.1.1/man3/RSA_public_encrypt.html>`_:
+
+        * ``"pkcs"`` - default if not specified.  Use PKCS #1 v1.5 padding.
+          This currently is the most widely used mode.
+          
+        * ``"oaep"`` - Use EME-OAEP as defined in PKCS #1 v2.0 with SHA-1,
+          MGF1 and an empty encoding parameter. This mode is recommended for
+          all new applications.
+          
+        * ``"ssl"`` - PKCS #1 v1.5 padding with an SSL-specific modification
+          that denotes that the server is SSL3 capable.
+          
+        * ``"raw"`` - Raw RSA encryption. This mode should only be used to
+          implement cryptographically sound padding modes in the application
+          code. Encrypting user data directly with RSA is insecure. 
+      
+      Note that Openssl Library includes this warning:
+      
+      "Decryption failures in the RSA_PKCS1_PADDING mode leak information
+      which can potentially be used to mount a Bleichenbacher padding oracle
+      attack. This is an inherent weakness in the PKCS #1 v1.5 padding
+      design. Prefer RSA_PKCS1_OAEP_PADDING."  - see 
+      `this document <https://www.openssl.org/docs/man1.1.1/man3/RSA_public_encrypt.html>`_.
+
+Note also that the length of ``data`` cannot be more than the number of bits of
+the modulus used to create the key pair minus 11 (or minus 42 in the case of
+``padding: "oaep``).
+
+Return Value:
+    A :green:`Buffer` containing the encrypted text.
+
+Example:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+
+    var data = ""
+    var str  = "contents of my potentially long data file...\n";
+
+    /* make content longer than can fit in rsa encrypted text */
+    for (i=0; i<100; i++)
+        data+=str;
+    
+    /* seed the random number generator before use */
+    crypto.seed();
+
+    /* generate random data and base64 encode for easy use*/
+    var symmetric_passwd = rampart.utils.sprintf("%B", crypto.rand(48));
+    
+    /* encrypt data using the random base64 data as the password */
+    var ciphertext = crypto.encrypt(symmetric_passwd, data);
+    
+    /* rsa encrypt the password with public key */
+    var encrypted_passwd = crypto.rsa_pub_encrypt(
+        symmetric_passwd,
+        rampart.utils.readFile("pubkey.pem")
+    ); 
+            
+    /* transmit ciphertext and encrypted password to
+       owner of the corresponding private key        */
+
+
+rsa_priv_decrypt
+~~~~~~~~~~~~~~~~
+Decrypt encrypted data using an RSA private key.
+
+Usage:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+
+    var res = crypto.rsa_priv_decrypt(data, privkey[, paddingMode][, password]);
+
+Where:
+
+    * ``data`` is a :green:`String` or :green:`Buffer` with the content to
+      decrypt.
+
+    * ``privkey`` is a :green:`String` or :green:`Buffer` with the contents of the 
+      private key.
+
+    * ``paddingMode`` - a :green:`String`. See above - the same padding mode used to encrypt
+      the data.
+
+    * ``password`` - a :green:`String`, if ``privkey`` is password
+      protected, the password used to encrypt the private key.
+
+Return Value:
+    A :green:`Buffer` containing the decrypted text.
+
+Example:
+
+.. code-block:: javascript
+
+    /* continuing example from above, owner of privatekey.pem can do this */
+    var crypto = require("rampart-crypto");
+
+    /* receive ciphertext and encrypted password from above */
+
+    symmetric_passwd = crypto.rsa_priv_decrypt(
+        encrypted_passwd,
+        rampart.utils.readFile("privatekey.pem"),
+        null, /* use default "pkcs" */
+        "mysecretpassword"
+    );
+
+    /* decrypt message
+       password must be a string */
+    var plaintext = crypto.decrypt(
+        rampart.utils.bufferToString(symmetric_passwd),
+        ciphertext
+    );
+
+    rampart.utils.printf("%s", plaintext);
+
+    /* expected output:
+    contents of my potentially long data file...
+    contents of my potentially long data file...
+    ...
+    contents of my potentially long data file...
+    */
+
+
+rsa_sign
+~~~~~~~~
+
+Sign a message with an RSA private key.
+
+Usage:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+
+    var signature = crypto.rsa_sign(message, privkey[, password]);
+
+Where:
+
+    * ``message`` is a :green:`String` or :green:`Buffer` with the content to
+      sign.
+
+    * ``privkey`` is a :green:`String` or :green:`Buffer` with the contents of the 
+      private key.
+
+    * ``password`` - a :green:`String`, if ``privkey`` is password
+      protected, the password used to encrypt the private key.
+
+Return Value:
+    A :green:`Buffer` with the content of the signature.  Same as 
+    ``openssl dgst -sha256 -sign privkey.pem -out sig msg.txt``
+
+
+rsa_verify
+~~~~~~~~~~
+
+Verify a signed message with an RSA public key.
+
+Usage:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+
+    var verified = crypto.rsa_verify(data, pubkey, signature);
+
+Where:
+
+    * ``data`` is a :green:`String` or :green:`Buffer` with the content to
+      sign.
+
+    * ``privkey`` is a :green:`String` or :green:`Buffer` with the contents of the 
+      public key.
+
+    * ``signature`` - a :green:`Buffer` containing the signature
+      generated with ``rsa_sign`` above, or with openssl.
+
+Return Value:
+    A :green:`Boolean` - ``true`` if verification succeeded.  Otherwise
+    ``false``. Same as 
+    `openssl dgst -sha256 -verify publickey.pem -signature sig msg.txt``.
+
+
 Hashing
 -------
 
@@ -310,6 +610,7 @@ value above.  Thus, using ``crypto.hash("hello world", "sha256")`` is equivalent
 ``crypto.hash("hello world", "sha3-256")`` is equivalent to 
 ``crypto.sha3_256("hello world")``.
 
+
 hmac
 ~~~~
 
@@ -321,7 +622,7 @@ Usage:
 
     var crypto = require("rampart-crypto");
 
-    var res = hmac(secret, data[, hash_func][, return_buffer]);
+    var res = crypto.hmac(secret, data[, hash_func][, return_buffer]);
 
 Where:
 

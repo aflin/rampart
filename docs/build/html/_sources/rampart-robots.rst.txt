@@ -49,8 +49,8 @@ Loading the module is a simple matter of using the ``require()`` function:
 
 
 
-Main Functions
---------------
+Main Function
+-------------
 
 The rampart-robots module exports a single function, which in this documentation 
 will be named and referred to as ``isAllowed()``.

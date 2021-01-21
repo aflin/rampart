@@ -11,10 +11,16 @@
 #include <openssl/md5.h>
 #include <openssl/rand.h>
 #include <openssl/hmac.h>
+#include <openssl/rsa.h>
+#include <openssl/pem.h>
+#include <openssl/bio.h>
+#include <openssl/bn.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdint.h>
 #include "rampart.h"
+
+
 
 #define OPENSSL_ERR_STRING_MAX_SIZE 1024
 #define DUK_OPENSSL_ERROR(ctx)                                                     \
@@ -23,6 +29,18 @@
         ERR_error_string_n(ERR_get_error(), err_buf, OPENSSL_ERR_STRING_MAX_SIZE); \
         (void)duk_error(ctx, DUK_ERR_ERROR, "OpenSSL Error (%d): %s", __LINE__,err_buf);        \
     }
+/* make sure when we use RAND_ functions, we've seeded at least once */
+static int seeded=0;
+void checkseed(duk_context *ctx)
+{
+    if(!seeded)
+    {
+        int rc = RAND_load_file("/dev/urandom", 32);
+        if (rc != 32)
+            DUK_OPENSSL_ERROR(ctx);
+        seeded=1;
+    }
+}
 
 static void rpcrypt(
   duk_context *ctx,
@@ -156,6 +174,7 @@ static KEYIV pw_to_keyiv(duk_context *ctx, const char *pass, const char *cipher_
 
     if(!salt_p)
     {
+        checkseed(ctx);
         if (RAND_bytes(salt, sizeof(salt)) <= 0)
             DUK_OPENSSL_ERROR(ctx)
         salt_p=salt;
@@ -513,6 +532,7 @@ static duk_ret_t duk_rand(duk_context *ctx)
     duk_size_t len = REQUIRE_UINT(ctx, -1, "crypto.rand requires a positive integer");
     void *buffer = duk_push_fixed_buffer(ctx, len);
     /* RAND_bytes may return 0 or -1 on error */
+    checkseed(ctx);
     if (RAND_bytes(buffer, len) != 1)
         DUK_OPENSSL_ERROR(ctx);
     return 1;
@@ -523,6 +543,7 @@ static duk_ret_t duk_randnum(duk_context *ctx)
     uint64_t randint=0;
     double ret=0;
     /* RAND_bytes may return 0 or -1 on error */
+    checkseed(ctx);
     if (RAND_bytes((unsigned char *)&randint, sizeof(uint64_t)) != 1)
         DUK_OPENSSL_ERROR(ctx);
 
@@ -534,6 +555,7 @@ static duk_ret_t duk_randnum(duk_context *ctx)
 /* rand between -1.0 and 1.0 */
 #define rrand(ctx) ({\
     uint64_t randint=0;\
+    checkseed(ctx);\
     if (RAND_bytes((unsigned char *)&randint, sizeof(uint64_t)) != 1)\
         DUK_OPENSSL_ERROR(ctx);\
     ( -1.0 + (2.0 * (double)randint/(double)UINT64_MAX) );\
@@ -601,7 +623,7 @@ static duk_ret_t duk_normrand(duk_context *ctx)
 static duk_ret_t duk_seed_rand(duk_context *ctx)
 {
     duk_uint_t bytes = 32;
-    const char *file = "/dev/random";
+    const char *file = "/dev/urandom";
     int rc;
 
     if(!duk_is_undefined(ctx,0))
@@ -622,7 +644,558 @@ static duk_ret_t duk_seed_rand(duk_context *ctx)
     if (rc != bytes)
         DUK_OPENSSL_ERROR(ctx);
 
+    seeded=1;
     return 0;
+}
+static int pass_cb(char *buf, int size, int rwflag, void *u)
+{
+    const char *p = (const char *)u;
+    size_t len = strlen(p);
+
+    if (len > size)
+         len = size;
+
+    memcpy(buf, p, len);
+    return len;
+}
+
+/*
+duk_ret_t duk_rsa_pub_encrypt_bak(duk_context *ctx)
+{
+    duk_size_t sz, psz;
+    unsigned char *plain=NULL;
+    const char *pubfile=NULL;
+    RSA *rsa;
+    int ret, rsasize, outsize, padding=RSA_PKCS1_PADDING;
+    BIO *pfile;
+    unsigned char *buf;
+
+    // data to be encrypted 
+    if(duk_is_string(ctx, 0) )
+        plain = (unsigned char *) duk_get_lstring(ctx, 0, &sz);
+    else if (duk_is_buffer_data(ctx, 0) )
+        plain = (unsigned char *) duk_get_buffer_data(ctx, 0, &sz);
+    else
+        RP_THROW(ctx, "crypt.rsa_pub_encrypt - first argument must be a string or buffer (data to encrypt)");
+
+    if(duk_is_string(ctx, 1) )
+        pubfile = duk_get_lstring(ctx, 1, &psz);
+    else if (duk_is_buffer_data(ctx, 1) )
+        pubfile = (const char *) duk_get_buffer_data(ctx, 1, &psz);
+    else
+        RP_THROW(ctx, "crypt.rsa_pub_encrypt - second argument must be a string or buffer (pem file)");
+
+    pfile = BIO_new_mem_buf((const void*)pubfile, (int)psz);
+
+    rsa = PEM_read_bio_RSA_PUBKEY(pfile, NULL, NULL, NULL);
+    if (!rsa)
+    {
+        if(BIO_reset(pfile)!=1)
+            RP_THROW(ctx, "crypt.rsa_pub_encrypt - internal error,  BIO_reset()");
+        rsa = PEM_read_bio_RSAPublicKey(pfile, NULL, NULL, NULL);
+    }
+
+    BIO_free(pfile);
+
+    if(!rsa)
+        RP_THROW(ctx, "Invalid public key file '%s'", pubfile);
+
+    rsasize = RSA_size(rsa);
+    outsize=rsasize;
+
+    if(duk_is_string(ctx, 2) )
+    {
+        const char *pad = duk_get_string(ctx, 2);
+        if (!strcmp ("pkcs", pad) )
+        {
+            padding=RSA_PKCS1_PADDING;
+            rsasize-=11;
+        }
+        else if (!strcmp ("oaep", pad) )
+        {
+            padding=RSA_PKCS1_OAEP_PADDING;
+            rsasize-=42;
+        }
+        else if (!strcmp ("ssl", pad) )
+        {
+            padding=RSA_SSLV23_PADDING;
+            rsasize-=11;
+        }
+        else if (!strcmp ("raw", pad) )
+            padding=RSA_NO_PADDING;
+        else
+            RP_THROW(ctx, "crypt.rsa_pub_encrypt - third optional argument (padding type) '%s' is invalid", pad);
+    }
+    else if (!duk_is_undefined(ctx, 2) && !duk_is_null(ctx, 2) )
+        RP_THROW(ctx, "crypt.rsa_pub_encrypt - third optional argument must be a string (padding type)");
+    else
+        rsasize -= 11; //default is RSA_PKCS1_PADDING
+
+    if((int)sz > rsasize )
+        RP_THROW(ctx, "crypt.rsa_pub_encrypt, input data is %d long, must be less than or equal to %d\n", sz, rsasize);
+    
+
+    buf = (unsigned char *) duk_push_fixed_buffer(ctx, (duk_size_t)outsize);
+    
+    ret = RSA_public_encrypt((int)sz, plain, buf, rsa, padding);
+
+    if (ret < 0)
+        DUK_OPENSSL_ERROR(ctx);
+
+    return 1;
+}
+*/
+#define DUK_GEN_OPENSSL_ERROR(ctx) do { \
+    if(rsa) RSA_free(rsa);              \
+    if(e)BN_free(e);                    \
+    BIO_free_all(priv);                 \
+    BIO_free_all(pub);                  \
+    DUK_OPENSSL_ERROR(ctx);             \
+} while(0)
+
+#define RP_GEN_THROW(ctx, ...) do {     \
+    if(rsa) RSA_free(rsa);              \
+    if(e)BN_free(e);                    \
+    BIO_free_all(priv);                 \
+    BIO_free_all(pub);                  \
+    RP_THROW( (ctx), __VA_ARGS__);      \
+} while(0)
+
+duk_ret_t duk_rsa_gen_key(duk_context *ctx)
+{
+    BIGNUM *e = NULL;
+    RSA *rsa=NULL;
+    int bits=4096;
+    const char *passwd=NULL;
+    BIO * priv = BIO_new(BIO_s_mem());
+    BIO * pub = BIO_new(BIO_s_mem());
+    void *buf;
+    EVP_PKEY *pubkey;
+    int ret=0;
+
+    e=BN_new();
+    if( BN_set_word(e, RSA_F4) !=1)
+        RP_GEN_THROW(ctx, "crypto.rsa_gen_key - erro generating key\n");
+
+    rsa = RSA_new();
+    if(!rsa)
+        RP_GEN_THROW(ctx, "crypto.rsa_gen_key - erro generating key\n");
+
+    if (duk_is_number(ctx,0))            
+        bits=duk_get_int(ctx, 0);
+    else if (!duk_is_undefined(ctx, 0) && !duk_is_null(ctx, 0))
+        RP_GEN_THROW(ctx, "crypto.rsa_gen_key - first argument must be a number (bits)");
+
+    if (duk_is_string(ctx,1))            
+        passwd=duk_get_string(ctx, 1);
+    else if (!duk_is_undefined(ctx, 1) && !duk_is_null(ctx, 1))
+        RP_GEN_THROW(ctx, "crypto.rsa_gen_key - second optional argument must be a string (password)");
+
+
+    if (RAND_load_file("/dev/urandom", 32) != 32)
+        DUK_GEN_OPENSSL_ERROR(ctx);
+
+    if (RSA_generate_key_ex(rsa, bits, e, NULL) != 1)
+        RP_GEN_THROW(ctx, "crypto.rsa_gen_key - erro generating key\n");
+
+    if(passwd)
+        ret=PEM_write_bio_RSAPrivateKey(priv, rsa, EVP_aes_256_cbc(), (unsigned char *)passwd, strlen(passwd), NULL, NULL);    
+    else
+        ret=PEM_write_bio_RSAPrivateKey(priv, rsa, NULL, NULL, 0, NULL, NULL);
+
+    if(ret !=1)
+        RP_GEN_THROW(ctx, "crypto.rsa_gen_key - erro generating key\n");
+
+    ret = BIO_get_mem_data(priv, &buf);
+    duk_push_object(ctx);
+    duk_push_lstring(ctx, (char *) buf, (duk_size_t)ret);
+    duk_put_prop_string (ctx, -2, "private");
+    
+    pubkey = EVP_PKEY_new();
+    EVP_PKEY_assign_RSA(pubkey, rsa);    
+    ret = PEM_write_bio_PUBKEY(pub, pubkey);
+    EVP_PKEY_free(pubkey);
+    rsa=NULL;
+    if(ret !=1)
+        RP_GEN_THROW(ctx, "crypto.rsa_gen_key - erro generating key\n");
+    
+    ret = BIO_get_mem_data(pub, &buf);
+    duk_push_lstring(ctx, (char *) buf, (duk_size_t)ret);
+    duk_put_prop_string (ctx, -2, "public");
+
+    RSA_free(rsa);
+    BN_free(e);
+    BIO_free_all(priv);
+    BIO_free_all(pub);
+
+    return 1;
+}
+
+
+#define DUK_EVP_OPENSSL_ERROR(ctx) do { \
+    EVP_PKEY_free(key);                 \
+    if(pctx)EVP_PKEY_CTX_free(pctx);    \
+    DUK_OPENSSL_ERROR(ctx);             \
+} while(0)
+
+#define RP_EVP_THROW(ctx, ...) do {     \
+    EVP_PKEY_free(key);                 \
+    if(pctx)EVP_PKEY_CTX_free(pctx);    \
+    RP_THROW( (ctx), __VA_ARGS__);      \
+} while(0)
+
+#define DUK_MD_OPENSSL_ERROR(ctx) do { \
+    EVP_PKEY_free(key);                 \
+    if(pctx)EVP_MD_CTX_free(pctx);      \
+    DUK_OPENSSL_ERROR(ctx);             \
+} while(0)
+
+#define RP_MD_THROW(ctx, ...) do {      \
+    EVP_PKEY_free(key);                 \
+    if(pctx)EVP_MD_CTX_free(pctx);      \
+    RP_THROW( (ctx), __VA_ARGS__);      \
+} while(0)
+
+duk_ret_t duk_rsa_sign(duk_context *ctx)
+{
+    duk_size_t sz, psz;
+    unsigned char *msg=NULL;
+    const char *privfile=NULL, *passwd=NULL;
+    RSA *rsa;
+    EVP_PKEY *key=EVP_PKEY_new();
+    size_t outsize;
+    BIO *pfile;
+    EVP_MD_CTX *pctx=NULL;
+    unsigned char *buf;
+
+    /* data to be encrypted */
+    if(duk_is_string(ctx, 0) )
+        msg = (unsigned char *) duk_get_lstring(ctx, 0, &sz);
+    else if (duk_is_buffer_data(ctx, 0) )
+        msg = (unsigned char *) duk_get_buffer_data(ctx, 0, &sz);
+    else
+        RP_MD_THROW(ctx, "crypt.rsa_sign - first argument must be a string or buffer (data to encrypt)");
+
+    if(duk_is_string(ctx, 1) )
+        privfile = duk_get_lstring(ctx, 1, &psz);
+    else if (duk_is_buffer_data(ctx, 1) )
+        privfile = (const char *) duk_get_buffer_data(ctx, 1, &psz);
+    else
+        RP_MD_THROW(ctx, "crypt.rsa_sign - second argument must be a string or buffer (pem file content)");
+
+    if(duk_is_string(ctx, 2))
+        passwd = duk_get_string(ctx, 2);
+    else if (!duk_is_null(ctx, 2) && !duk_is_undefined(ctx, 2) )
+        RP_MD_THROW(ctx, "crypt.rsa_sign - third optional argument must be a string (password)");
+
+    pfile = BIO_new_mem_buf((const void*)privfile, (int)psz);
+
+    if(!passwd)
+        rsa = PEM_read_bio_RSAPrivateKey(pfile, NULL, NULL, NULL);
+    else
+        rsa = PEM_read_bio_RSAPrivateKey(pfile, NULL, pass_cb, (void*)passwd);
+
+    BIO_free(pfile);
+
+    if(!rsa)
+        RP_MD_THROW(ctx, "Invalid public key file%s", passwd?" or bad password":"");
+
+    EVP_PKEY_assign_RSA(key, rsa);    
+
+    pctx = EVP_MD_CTX_new();
+    if (!pctx)
+        DUK_MD_OPENSSL_ERROR(ctx);
+    
+    if( EVP_DigestSignInit(pctx, NULL, EVP_sha256(), NULL, key) <= 0)
+        DUK_MD_OPENSSL_ERROR(ctx);
+
+    if( EVP_DigestSignUpdate(pctx, msg, (size_t)sz) <= 0)
+        DUK_MD_OPENSSL_ERROR(ctx);
+
+    if (EVP_DigestSignFinal(pctx, NULL, &outsize) <= 0)
+        DUK_MD_OPENSSL_ERROR(ctx);
+    
+    buf = (unsigned char *) duk_push_dynamic_buffer(ctx, (duk_size_t)outsize);
+
+    if (EVP_DigestSignFinal(pctx, buf, &outsize) <= 0)
+        DUK_MD_OPENSSL_ERROR(ctx);
+
+    duk_resize_buffer(ctx, -1, outsize);
+
+    EVP_PKEY_free(key);
+    EVP_MD_CTX_free(pctx);
+
+    return 1;
+}
+
+duk_ret_t duk_rsa_verify(duk_context *ctx)
+{
+    duk_size_t sz, psz, sigsz;
+    unsigned char *msg=NULL;
+    const char *pubfile=NULL;
+    RSA *rsa;
+    EVP_PKEY *key=EVP_PKEY_new();
+    BIO *pfile;
+    EVP_MD_CTX *pctx=NULL;
+    unsigned char *sig=NULL;
+
+    if(duk_is_string(ctx, 0) )
+        msg = (unsigned char *) duk_get_lstring(ctx, 0, &sz);
+    else if (duk_is_buffer_data(ctx, 0) )
+        msg = (unsigned char *) duk_get_buffer_data(ctx, 0, &sz);
+    else
+        RP_MD_THROW(ctx, "crypt.rsa_verify - first argument must be a string or buffer (data to encrypt)");
+
+    if(duk_is_string(ctx, 1) )
+        pubfile = duk_get_lstring(ctx, 1, &psz);
+    else if (duk_is_buffer_data(ctx, 1) )
+        pubfile = (const char *) duk_get_buffer_data(ctx, 1, &psz);
+    else
+        RP_MD_THROW(ctx, "crypt.rsa_verify - second argument must be a string or buffer (pem file content)");
+
+    if(duk_is_string(ctx, 2) )
+        sig = (unsigned char *)duk_get_lstring(ctx, 2, &sigsz);
+    else if (duk_is_buffer_data(ctx, 2) )
+        sig = (unsigned char *) duk_get_buffer_data(ctx, 2, &sigsz);
+    else
+        RP_MD_THROW(ctx, "crypt.rsa_verify - third argument must be a string or buffer (signature)");
+
+    pfile = BIO_new_mem_buf((const void*)pubfile, (int)psz);
+
+    rsa = PEM_read_bio_RSA_PUBKEY(pfile, NULL, NULL, NULL);
+    if (!rsa)
+    {
+        if(BIO_reset(pfile)!=1)
+            RP_MD_THROW(ctx, "crypt.rsa_verify - internal error,  BIO_reset()");
+        rsa = PEM_read_bio_RSAPublicKey(pfile, NULL, NULL, NULL);
+    }
+
+    BIO_free(pfile);
+
+    if(!rsa)
+        RP_MD_THROW(ctx, "Invalid public key file");
+
+    EVP_PKEY_assign_RSA(key, rsa);    
+
+    pctx = EVP_MD_CTX_new();
+    if (!pctx)
+        DUK_MD_OPENSSL_ERROR(ctx);
+    
+    if( EVP_DigestVerifyInit(pctx, NULL, EVP_sha256(), NULL, key) <= 0)
+        DUK_MD_OPENSSL_ERROR(ctx);
+
+    if( EVP_DigestVerifyUpdate(pctx, msg, (size_t)sz) <= 0)
+        DUK_MD_OPENSSL_ERROR(ctx);
+
+    if (EVP_DigestVerifyFinal(pctx, sig, (size_t)sigsz) == 1)
+        duk_push_true(ctx);
+    else
+        duk_push_false(ctx);
+
+    EVP_PKEY_free(key);
+    EVP_MD_CTX_free(pctx);
+
+    return 1;
+}
+
+duk_ret_t duk_rsa_priv_decrypt(duk_context *ctx)
+{
+    duk_size_t sz, psz;
+    unsigned char *enc=NULL;
+    const char *privfile=NULL, *passwd=NULL;
+    RSA *rsa;
+    EVP_PKEY *key=EVP_PKEY_new();
+    int rsasize, padding=RSA_PKCS1_PADDING;
+    size_t outsize;
+    BIO *pfile;
+    EVP_PKEY_CTX *pctx=NULL;
+    unsigned char *buf;
+
+    /* data to be encrypted */
+    if(duk_is_string(ctx, 0) )
+        enc = (unsigned char *) duk_get_lstring(ctx, 0, &sz);
+    else if (duk_is_buffer_data(ctx, 0) )
+        enc = (unsigned char *) duk_get_buffer_data(ctx, 0, &sz);
+    else
+        RP_EVP_THROW(ctx, "crypt.rsa_priv_decrypt - first argument must be a string or buffer (data to encrypt)");
+
+    if(duk_is_string(ctx, 1) )
+        privfile = duk_get_lstring(ctx, 1, &psz);
+    else if (duk_is_buffer_data(ctx, 1) )
+        privfile = (const char *) duk_get_buffer_data(ctx, 1, &psz);
+    else
+        RP_EVP_THROW(ctx, "crypt.rsa_priv_decrypt - second argument must be a string or buffer (pem file content)");
+
+    if(duk_is_string(ctx, 3))
+        passwd = duk_get_string(ctx, 3);
+    else if (!duk_is_null(ctx, 3) && !duk_is_undefined(ctx, 3) )
+        RP_EVP_THROW(ctx, "crypt.rsa_priv_decrypt - fourth optional argument must be a string (password)");
+
+    pfile = BIO_new_mem_buf((const void*)privfile, (int)psz);
+
+    if(!passwd)
+        rsa = PEM_read_bio_RSAPrivateKey(pfile, NULL, NULL, NULL);
+    else
+        rsa = PEM_read_bio_RSAPrivateKey(pfile, NULL, pass_cb, (void*)passwd);
+
+    BIO_free(pfile);
+
+    if(!rsa)
+        RP_EVP_THROW(ctx, "Invalid public key file%s", passwd?" or bad password":"");
+
+    rsasize = RSA_size(rsa);
+
+    if(duk_is_string(ctx, 2) )
+    {
+        const char *pad = duk_get_string(ctx, 2);
+        if (!strcmp ("pkcs", pad) )
+            padding=RSA_PKCS1_PADDING;
+        else if (!strcmp ("oaep", pad) )
+            padding=RSA_PKCS1_OAEP_PADDING;
+        else if (!strcmp ("ssl", pad) )
+            padding=RSA_SSLV23_PADDING;
+        else if (!strcmp ("raw", pad) )
+            padding=RSA_NO_PADDING;
+        else
+            RP_EVP_THROW(ctx, "crypt.rsa_priv_decrypt - third optional argument (padding type) '%s' is invalid", pad);
+    }
+    else if (!duk_is_undefined(ctx, 2) && !duk_is_null(ctx, 2) )
+        RP_EVP_THROW(ctx, "crypt.rsa_priv_decrypt - third optional argument must be a string (padding type)");
+
+    if((int)sz > rsasize )
+        RP_EVP_THROW(ctx, "crypt.rsa_priv_decrypt, input data is %d long, must be less than or equal to %d\n", sz, rsasize);
+
+    EVP_PKEY_assign_RSA(key, rsa);    
+
+    pctx = EVP_PKEY_CTX_new(key, NULL);
+    if (!pctx)
+        DUK_EVP_OPENSSL_ERROR(ctx);
+    
+    if( EVP_PKEY_decrypt_init(pctx) <= 0)
+        DUK_EVP_OPENSSL_ERROR(ctx);
+
+    if( EVP_PKEY_CTX_set_rsa_padding(pctx, padding) <= 0)
+        DUK_EVP_OPENSSL_ERROR(ctx);
+
+    if (EVP_PKEY_decrypt(pctx, NULL, &outsize, enc, (int)sz) <= 0)
+        DUK_EVP_OPENSSL_ERROR(ctx);
+
+    buf = (unsigned char *) duk_push_dynamic_buffer(ctx, (duk_size_t)outsize);
+
+    if (EVP_PKEY_decrypt(pctx, buf, &outsize, enc, (int)sz) <= 0)
+        DUK_EVP_OPENSSL_ERROR(ctx);
+
+    duk_resize_buffer(ctx, -1, outsize);
+
+    EVP_PKEY_free(key);
+    EVP_PKEY_CTX_free(pctx);
+    return 1;
+}
+
+
+
+duk_ret_t duk_rsa_pub_encrypt(duk_context *ctx)
+{
+    duk_size_t sz, psz;
+    unsigned char *plain=NULL;
+    const char *pubfile=NULL;
+    RSA *rsa;
+    EVP_PKEY *key=EVP_PKEY_new();
+    int rsasize, padding=RSA_PKCS1_PADDING;
+    size_t outsize;
+    BIO *pfile;
+    EVP_PKEY_CTX *pctx = NULL;
+    unsigned char *buf;
+
+    /* data to be encrypted */
+    if(duk_is_string(ctx, 0) )
+        plain = (unsigned char *) duk_get_lstring(ctx, 0, &sz);
+    else if (duk_is_buffer_data(ctx, 0) )
+        plain = (unsigned char *) duk_get_buffer_data(ctx, 0, &sz);
+    else
+        RP_EVP_THROW(ctx, "crypt.rsa_pub_encrypt - first argument must be a string or buffer (data to encrypt)");
+
+    if(duk_is_string(ctx, 1) )
+        pubfile = duk_get_lstring(ctx, 1, &psz);
+    else if (duk_is_buffer_data(ctx, 1) )
+        pubfile = (const char *) duk_get_buffer_data(ctx, 1, &psz);
+    else
+        RP_EVP_THROW(ctx, "crypt.rsa_pub_encrypt - second argument must be a string or buffer (pem file content)");
+
+    pfile = BIO_new_mem_buf((const void*)pubfile, (int)psz);
+
+    rsa = PEM_read_bio_RSA_PUBKEY(pfile, NULL, NULL, NULL);
+    if (!rsa)
+    {
+        if(BIO_reset(pfile)!=1)
+            RP_EVP_THROW(ctx, "crypt.rsa_pub_encrypt - internal error,  BIO_reset()");
+        rsa = PEM_read_bio_RSAPublicKey(pfile, NULL, NULL, NULL);
+    }
+
+    BIO_free(pfile);
+
+    if(!rsa)
+        RP_EVP_THROW(ctx, "Invalid public key file");
+
+    rsasize = RSA_size(rsa);
+
+    if(duk_is_string(ctx, 2) )
+    {
+        const char *pad = duk_get_string(ctx, 2);
+        if (!strcmp ("pkcs", pad) )
+        {
+            padding=RSA_PKCS1_PADDING;
+            rsasize-=11;
+        }
+        else if (!strcmp ("oaep", pad) )
+        {
+            padding=RSA_PKCS1_OAEP_PADDING;
+            rsasize-=42;
+        }
+        else if (!strcmp ("ssl", pad) )
+        {
+            padding=RSA_SSLV23_PADDING;
+            rsasize-=11;
+        }
+        else if (!strcmp ("raw", pad) )
+            padding=RSA_NO_PADDING;
+        else
+            RP_EVP_THROW(ctx, "crypt.rsa_pub_encrypt - third optional argument (padding type) '%s' is invalid", pad);
+    }
+    else if (!duk_is_undefined(ctx, 2) && !duk_is_null(ctx, 2) )
+        RP_EVP_THROW(ctx, "crypt.rsa_pub_encrypt - third optional argument must be a string (padding type)");
+    else
+        rsasize -= 11; //default is RSA_PKCS1_PADDING
+
+    if((int)sz > rsasize )
+        RP_EVP_THROW(ctx, "crypt.rsa_pub_encrypt, input data is %d long, must be less than or equal to %d\n", sz, rsasize);
+
+    EVP_PKEY_assign_RSA(key, rsa);    
+
+    pctx = EVP_PKEY_CTX_new(key, NULL);
+
+    if (!pctx)
+        DUK_EVP_OPENSSL_ERROR(ctx);
+    
+    if( EVP_PKEY_encrypt_init(pctx) <= 0)
+        DUK_EVP_OPENSSL_ERROR(ctx);
+
+    if( EVP_PKEY_CTX_set_rsa_padding(pctx, padding) <= 0)
+        DUK_EVP_OPENSSL_ERROR(ctx);
+
+    if (EVP_PKEY_encrypt(pctx, NULL, &outsize, plain, (int)sz) <= 0)
+        DUK_EVP_OPENSSL_ERROR(ctx);
+    
+    buf = (unsigned char *) duk_push_dynamic_buffer(ctx, (duk_size_t)outsize);
+
+    if (EVP_PKEY_encrypt(pctx, buf, &outsize, plain, (int)sz) <= 0)
+        DUK_EVP_OPENSSL_ERROR(ctx);
+
+    duk_resize_buffer(ctx, -1, outsize);
+
+    EVP_PKEY_free(key);
+    EVP_PKEY_CTX_free(pctx);
+    return 1;
 }
 
 const duk_function_list_entry crypto_funcs[] = {
@@ -655,6 +1228,11 @@ const duk_function_list_entry crypto_funcs[] = {
     {"seed", duk_seed_rand, 1},
     {"hmac", duk_hmac, 4},
     {"hash", duk_hash, 3},
+    {"rsa_pub_encrypt", duk_rsa_pub_encrypt, 3},
+    {"rsa_priv_decrypt", duk_rsa_priv_decrypt, 4},
+    {"rsa_sign", duk_rsa_sign, 3},
+    {"rsa_verify", duk_rsa_verify, 3},
+    {"rsa_gen_key", duk_rsa_gen_key, 2},
     {NULL, NULL, 0}};
 
 duk_ret_t duk_open_module(duk_context *ctx)

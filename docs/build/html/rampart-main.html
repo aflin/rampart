@@ -430,7 +430,8 @@ equivalent to <code class="docutils literal notranslate"><span class="pre">print
 <li><p><code class="docutils literal notranslate"><span class="pre">%B</span></code> - print contents of a <span class="green">Buffer</span> or <span class="green">String</span> as
 base64. If <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, it decodes a <span class="green">Buffer</span> or
 <span class="green">String</span> containing base64 (throws an error if not valid
-base64).</p></li>
+base64). If a width is given (e.g. <code class="docutils literal notranslate"><span class="pre">%80B</span></code>), a newline will be printed
+after every <code class="docutils literal notranslate"><span class="pre">width</span></code> characters.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%U</span></code> - url encode (or if <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, decode) a <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%H</span></code> - html encode (or if <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, decode) a <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%P</span></code> - pretty print a <span class="green">String</span> or <span class="green">Buffer</span>.  Expects
@@ -1833,7 +1834,7 @@ separate file (here the file is named <code class="docutils literal notranslate"
 return a <span class="green">Function</span> or an <span class="green">Object</span> which may contain functions
 and/or other JavaScript variables.</p>
 <p>Example (where filename is <code class="docutils literal notranslate"><span class="pre">times3.c</span></code>):</p>
-<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span> <span class="cpf">&quot;duktape.h&quot;</span><span class="cp"></span>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="cp">#include</span> <span class="cpf">&quot;rampart.h&quot;</span><span class="cp"></span>
 
 <span class="k">static</span> <span class="n">duk_ret_t</span> <span class="nf">timesthree</span><span class="p">(</span><span class="n">duk_context</span> <span class="o">*</span><span class="n">ctx</span><span class="p">)</span>
 <span class="p">{</span>

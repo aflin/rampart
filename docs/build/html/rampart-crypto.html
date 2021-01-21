@@ -106,6 +106,14 @@
 <li class="toctree-l3"><a class="reference internal" href="#supported-modes">Supported Modes</a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#rsa-encryption">RSA Encryption</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#rsa-gen-key">rsa_gen_key</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rsa-pub-encrypt">rsa_pub_encrypt</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rsa-priv-decrypt">rsa_priv_decrypt</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rsa-sign">rsa_sign</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rsa-verify">rsa_verify</a></li>
+</ul>
+</li>
 <li class="toctree-l2"><a class="reference internal" href="#hashing">Hashing</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#hash">hash</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#alias-functions">alias functions</a></li>
@@ -270,7 +278,10 @@ Default is <code class="docutils literal notranslate"><span class="pre">10000</s
 </li>
 </ul>
 <dl class="simple">
-<dt>Return Value:</dt><dd><p>A <span class="green">Buffer</span> containing the ciphertext (encrypted data).</p>
+<dt>Return Value:</dt><dd><p>A <span class="green">Buffer</span> containing the ciphertext (encrypted data).
+Using <code class="docutils literal notranslate"><span class="pre">crypto.encrypt(&quot;password&quot;,</span> <span class="pre">data)</span></code> produces the same results as
+<code class="docutils literal notranslate"><span class="pre">openssl</span> <span class="pre">enc</span> <span class="pre">-aes-256-cbc</span> <span class="pre">-d</span> <span class="pre">-pbkdf2</span>&#160; <span class="pre">-pass</span> <span class="pre">pass:&quot;password&quot;</span> <span class="pre">-in</span> <span class="pre">myfile.enc</span></code>
+using openssl version 1.1.1 from the command line.</p>
 </dd>
 </dl>
 <p>Example:</p>
@@ -283,7 +294,14 @@ Default is <code class="docutils literal notranslate"><span class="pre">10000</s
 <div class="section" id="decrypt">
 <h3>decrypt<a class="headerlink" href="#decrypt" title="Permalink to this headline">¶</a></h3>
 <p>The <code class="docutils literal notranslate"><span class="pre">decrypt()</span></code> function takes the same arguments as <a class="reference internal" href="#encrypt">encrypt</a> above, but decrypts
-the data.  Data is returned in a <span class="green">Buffer</span>.</p>
+the data.</p>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Buffer</span> containing the decrypted text.
+Calling <code class="docutils literal notranslate"><span class="pre">crypto.decrypt(&quot;password&quot;,</span> <span class="pre">data)</span></code> produces the same results
+as <code class="docutils literal notranslate"><span class="pre">openssl</span> <span class="pre">enc</span> <span class="pre">-aes-256-cbc</span> <span class="pre">-d</span> <span class="pre">-pbkdf2</span>&#160; <span class="pre">-pass</span> <span class="pre">pass:&quot;password&quot;</span> <span class="pre">-in</span> <span class="pre">mydatafile.enc</span></code>
+using openssl version 1.1.1 from the command line.</p>
+</dd>
+</dl>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
 
@@ -481,6 +499,280 @@ the data.  Data is returned in a <span class="green">Buffer</span>.</p>
 </table>
 </div>
 </div>
+<div class="section" id="rsa-encryption">
+<h2>RSA Encryption<a class="headerlink" href="#rsa-encryption" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="rsa-gen-key">
+<h3>rsa_gen_key<a class="headerlink" href="#rsa-gen-key" title="Permalink to this headline">¶</a></h3>
+<p>Generate an RSA key pair.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">key</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">rsa_gen_key</span><span class="p">([</span><span class="nx">bits</span><span class="p">][,</span> <span class="nx">password</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">bits</span></code> is a <span class="green">Number</span> such as <code class="docutils literal notranslate"><span class="pre">1024</span></code>, <code class="docutils literal notranslate"><span class="pre">2048</span></code>
+<code class="docutils literal notranslate"><span class="pre">4096</span></code> or <code class="docutils literal notranslate"><span class="pre">8192</span></code>.  The number of modulus bits.  Default
+is <code class="docutils literal notranslate"><span class="pre">4096</span></code> if not specified.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">password</span></code> is an optional <span class="green">String</span>, a password to
+encrypt the private key.</p></li>
+</ul>
+</div></blockquote>
+<dl>
+<dt>Return:</dt><dd><p>An <span class="green">Object</span> with the following properties:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">public</span></code> - the public key in <code class="docutils literal notranslate"><span class="pre">pem</span></code> format.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">private</span></code> - the private key in <code class="docutils literal notranslate"><span class="pre">pem</span></code> format, encrypted if
+<code class="docutils literal notranslate"><span class="pre">password</span></code> is given.</p></li>
+</ul>
+</div></blockquote>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">key</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">rsa_gen_key</span><span class="p">(</span><span class="mi">2048</span><span class="p">,</span> <span class="s2">&quot;mypass&quot;</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%s\n%s\n&quot;</span><span class="p">,</span> <span class="nx">key</span><span class="p">.</span><span class="kr">private</span><span class="p">,</span> <span class="nx">key</span><span class="p">.</span><span class="kr">public</span><span class="p">);</span>
+
+<span class="cm">/* expect output similar to the following:</span>
+<span class="cm">-----BEGIN RSA PRIVATE KEY-----</span>
+<span class="cm">Proc-Type: 4,ENCRYPTED</span>
+<span class="cm">DEK-Info: AES-256-CBC,74913B77FF1C0212CB08E4B4969C0A42</span>
+
+<span class="cm">YNsGbervXJcZzcQEJ+q+HKZ6usp/bEm+UaducORAcEKhOy259LKXCRw9N5kIPwOk</span>
+<span class="cm">kAEpDjq64oy86g8Xid8eEXntK+QAJfd96MFBw4fzZxqRFl4rxCVuBy3m9ylGc92s</span>
+<span class="cm">yN9wokMbjmk5dSNo7kCP6q6rjHovrk55aiM0GYY4oTMXHr9OWPFdE5ntJ9+E2s6t</span>
+<span class="cm">181ePMyMOPFwvw4AwbS+6Ej5/hTGfYpufzWLWxvZC2yTpZybSkZv/SP0EkENEhGk</span>
+<span class="cm">wJZiCYz3YwxpnHOc5oLmvZUmhUCxzz0SxSMUlkYfkURwhrp1vXrw8qioXLHV0Wjb</span>
+<span class="cm">LK4cAEAmIFSDiitnk4azpMVzLFmIjNIoHD+WK38FqvXmGCqFH08jMPquIGEFtf0N</span>
+<span class="cm">JL7Agc6PykRivXCeZtGifj3d5z0C/z1NxPlT2AU3fpSxBgaP31aVDTsF723Die7H</span>
+<span class="cm">tH3vrv67Qbq8nVFw8DhkN1/K5vErVI9Cli5MWlZCNnozU1RpNMpQfNEcKpS1ZOGa</span>
+<span class="cm">RgvMo7lD8rRECyeqJV0NKO3ENay5s/cV+RWRhpQ2VshQNYhw4XjAZwl3HD/1bVo6</span>
+<span class="cm">P8aVbo2evoBpH1hOzpdzApAL2w6qQlhhupcRI009q5l2nmOJBOhCXoGEufHRzSB5</span>
+<span class="cm">nFyidHzE0S3Fw9OyyFLGw7ZzZC4J9W5slRVZz+bUhfKWjqcQx6HzITRj/sxrkC1k</span>
+<span class="cm">q2lV+hMuzhsZ+kBRPth28Eoo1H5ilLGH80nbKX+w3Rk7nsqlubDFrSdLn3Yq1g0h</span>
+<span class="cm">NnjA0x67jjEPBPhQCwR7NPzzJB1Goz4WAmpDsbrtbMDhdaHQKrfduJO9orjbzUWh</span>
+<span class="cm">JD+lbF3Hm8WEG653Ap4md7ZlgvhLQY8UZygv3BEyv9CLhwoqzc58q5oK8xtET7lD</span>
+<span class="cm">e5aP4W/5UkGWarN02SJo+QQh6aR97UEJGzO25Xf9mYLk7s7dUBs2UJl46EuxZZe+</span>
+<span class="cm">dYm6JgbJ7nQfTcrmnCHM3Te4FsB8P4NzDl5bl/TvbDrQ53s8QTsvA3FOTQvLvpLD</span>
+<span class="cm">O+NnRHkj7FgwKoOU2/LDXgFQTnAtYv9RbQBUT15Us+dOxOVU58HxA6Y12oOfcie1</span>
+<span class="cm">9c6I/40EIEjEBf7ONRfpXadQ1myybZageM+KCZveGhjKHRrD6SZ+JReEyiqRc5no</span>
+<span class="cm">Escr1uNdur1b4ORIzCAGDO2PvZY/pHOwXnISeXsH4IBY3u8kx5aYF5JyJx0ny4v7</span>
+<span class="cm">C27m98ZPAXyVIKM/bGU4JSjPFdLa0lmJvb/kltowf6Z94DtuIxV72sSptUGhjdBT</span>
+<span class="cm">mmiDF+tqVLL/EZbSMeiQj/e1fU/Gtl3BKSygI5NYWGlONLH63sMHrIwe17vTVRmi</span>
+<span class="cm">r7cOpayP7M9gdgVjh2fgsZPpdsw/Q0uVxUUI2vrqvoBA0cGl5ZvZX0iIQ3xlssK0</span>
+<span class="cm">jj9SvGtFcVD32ZnXex1AKMK1sWErzZF6PEQmNvHwJ0RxxEyPIfXWTfXvC45g79ge</span>
+<span class="cm">fh6DooT8V/xBwi2fdblLUyHjPA+WdMl/xKzPekyTsE/b/XVLln02T61MTA4oLAwZ</span>
+<span class="cm">k7g8XxqdiSumdTxjA3Jhch+wlH0lD8r73o1zz46dHiz/5ffphuHGxU9Uel7Bekj5</span>
+<span class="cm">-----END RSA PRIVATE KEY-----</span>
+
+<span class="cm">-----BEGIN PUBLIC KEY-----</span>
+<span class="cm">MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0V6jNd9YHBopOtk3Sfki</span>
+<span class="cm">zcdVftQym5iGZm/C8frhzEG6TGDS9Wj9zijsEEbnxl60sHziaY1DdyEbGQTVvBcd</span>
+<span class="cm">fSf2fn9arnWr5r13Gxqdn274Fbc7Ls8dllWhaMlCLsqhTgr83xK0QIR9I7KpyDrx</span>
+<span class="cm">Qjyz4AM3jam5j8TR9Y9WyB6tXmWdVaiq0iLGiKJCu5F8rcIGEVcX/t52dKbIbj6j</span>
+<span class="cm">X7j/Y+ayTWMNZHZk+ZHVTKsgKn2XFmPbQ6xs5bxTazmWmm7GRDtI5EbqQLMiZAy7</span>
+<span class="cm">+P3o6amYz+k5Z9RgLYuNKEyHpOUh8wiNi/CdJ6ScaCoSRmozxqn2NrxdpQQMHBjA</span>
+<span class="cm">VQIDAQAB</span>
+<span class="cm">-----END PUBLIC KEY-----</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="rsa-pub-encrypt">
+<h3>rsa_pub_encrypt<a class="headerlink" href="#rsa-pub-encrypt" title="Permalink to this headline">¶</a></h3>
+<p>Encrypt data using an RSA public key.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">rsa_pub_encrypt</span><span class="p">(</span><span class="nx">data</span><span class="p">,</span> <span class="nx">pubkey</span><span class="p">[,</span> <span class="nx">paddingMode</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">data</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span> with the content to
+encrypt.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pubkey</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span> with the content of
+the public key.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">paddingMode</span></code> is an optiona <span class="green">String</span> that is one of the
+following (as described
+<a class="reference external" href="https://www.openssl.org/docs/man1.1.1/man3/RSA_public_encrypt.html">here</a>:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;pkcs&quot;</span></code> - default if not specified.  Use PKCS #1 v1.5 padding.
+This currently is the most widely used mode.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;oaep&quot;</span></code> - Use EME-OAEP as defined in PKCS #1 v2.0 with SHA-1,
+MGF1 and an empty encoding parameter. This mode is recommended for
+all new applications.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;ssl&quot;</span></code> - PKCS #1 v1.5 padding with an SSL-specific modification
+that denotes that the server is SSL3 capable.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;raw&quot;</span></code> - Raw RSA encryption. This mode should only be used to
+implement cryptographically sound padding modes in the application
+code. Encrypting user data directly with RSA is insecure.</p></li>
+</ul>
+</div></blockquote>
+<p>Note that Openssl Library includes this warning:</p>
+<p>“Decryption failures in the RSA_PKCS1_PADDING mode leak information
+which can potentially be used to mount a Bleichenbacher padding oracle
+attack. This is an inherent weakness in the PKCS #1 v1.5 padding
+design. Prefer RSA_PKCS1_OAEP_PADDING.”  - see
+<a class="reference external" href="https://www.openssl.org/docs/man1.1.1/man3/RSA_public_encrypt.html">this document</a>.</p>
+</li>
+</ul>
+</div></blockquote>
+<p>Note also that the length of <code class="docutils literal notranslate"><span class="pre">data</span></code> cannot be more than the number of bits of
+the modulus used to create the key pair minus 11 (or minus 42 in the case of
+<code class="docutils literal notranslate"><span class="pre">padding:</span> <span class="pre">&quot;oaep</span></code>).</p>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Buffer</span> containing the encrypted text.</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">data</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+<span class="kd">var</span> <span class="nx">str</span>  <span class="o">=</span> <span class="s2">&quot;contents of my potentially long data file...\n&quot;</span><span class="p">;</span>
+
+<span class="cm">/* make content longer than can fit in rsa encrypted text */</span>
+<span class="k">for</span> <span class="p">(</span><span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="o">&lt;</span><span class="mi">100</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span>
+    <span class="nx">data</span><span class="o">+=</span><span class="nx">str</span><span class="p">;</span>
+
+<span class="cm">/* seed the random number generator before use */</span>
+<span class="nx">crypto</span><span class="p">.</span><span class="nx">seed</span><span class="p">();</span>
+
+<span class="cm">/* generate random data and base64 encode for easy use*/</span>
+<span class="kd">var</span> <span class="nx">symmetric_passwd</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">sprintf</span><span class="p">(</span><span class="s2">&quot;%B&quot;</span><span class="p">,</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">rand</span><span class="p">(</span><span class="mi">48</span><span class="p">));</span>
+
+<span class="cm">/* encrypt data using the random base64 data as the password */</span>
+<span class="kd">var</span> <span class="nx">ciphertext</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">encrypt</span><span class="p">(</span><span class="nx">symmetric_passwd</span><span class="p">,</span> <span class="nx">data</span><span class="p">);</span>
+
+<span class="cm">/* rsa encrypt the password with public key */</span>
+<span class="kd">var</span> <span class="nx">encrypted_passwd</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">rsa_pub_encrypt</span><span class="p">(</span>
+    <span class="nx">symmetric_passwd</span><span class="p">,</span>
+    <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">readFile</span><span class="p">(</span><span class="s2">&quot;pubkey.pem&quot;</span><span class="p">)</span>
+<span class="p">);</span>
+
+<span class="cm">/* transmit ciphertext and encrypted password to</span>
+<span class="cm">   owner of the corresponding private key        */</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="rsa-priv-decrypt">
+<h3>rsa_priv_decrypt<a class="headerlink" href="#rsa-priv-decrypt" title="Permalink to this headline">¶</a></h3>
+<p>Decrypt encrypted data using an RSA private key.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">rsa_priv_decrypt</span><span class="p">(</span><span class="nx">data</span><span class="p">,</span> <span class="nx">privkey</span><span class="p">[,</span> <span class="nx">paddingMode</span><span class="p">][,</span> <span class="nx">password</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">data</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span> with the content to
+decrypt.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">privkey</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span> with the contents of the
+private key.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">paddingMode</span></code> - a <span class="green">String</span>. See above - the same padding mode used to encrypt
+the data.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">password</span></code> - a <span class="green">String</span>, if <code class="docutils literal notranslate"><span class="pre">privkey</span></code> is password
+protected, the password used to encrypt the private key.</p></li>
+</ul>
+</div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Buffer</span> containing the decrypted text.</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="cm">/* continuing example from above, owner of privatekey.pem can do this */</span>
+<span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="cm">/* receive ciphertext and encrypted password from above */</span>
+
+<span class="nx">symmetric_passwd</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">rsa_priv_decrypt</span><span class="p">(</span>
+    <span class="nx">encrypted_passwd</span><span class="p">,</span>
+    <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">readFile</span><span class="p">(</span><span class="s2">&quot;privatekey.pem&quot;</span><span class="p">),</span>
+    <span class="kc">null</span><span class="p">,</span> <span class="cm">/* use default &quot;pkcs&quot; */</span>
+    <span class="s2">&quot;mysecretpassword&quot;</span>
+<span class="p">);</span>
+
+<span class="cm">/* decrypt message</span>
+<span class="cm">   password must be a string */</span>
+<span class="kd">var</span> <span class="nx">plaintext</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">decrypt</span><span class="p">(</span>
+    <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">bufferToString</span><span class="p">(</span><span class="nx">symmetric_passwd</span><span class="p">),</span>
+    <span class="nx">ciphertext</span>
+<span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%s&quot;</span><span class="p">,</span> <span class="nx">plaintext</span><span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+<span class="cm">contents of my potentially long data file...</span>
+<span class="cm">contents of my potentially long data file...</span>
+<span class="cm">...</span>
+<span class="cm">contents of my potentially long data file...</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="rsa-sign">
+<h3>rsa_sign<a class="headerlink" href="#rsa-sign" title="Permalink to this headline">¶</a></h3>
+<p>Sign a message with an RSA private key.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">signature</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">rsa_sign</span><span class="p">(</span><span class="nx">message</span><span class="p">,</span> <span class="nx">privkey</span><span class="p">[,</span> <span class="nx">password</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">message</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span> with the content to
+sign.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">privkey</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span> with the contents of the
+private key.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">password</span></code> - a <span class="green">String</span>, if <code class="docutils literal notranslate"><span class="pre">privkey</span></code> is password
+protected, the password used to encrypt the private key.</p></li>
+</ul>
+</div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Buffer</span> with the content of the signature.  Same as
+<code class="docutils literal notranslate"><span class="pre">openssl</span> <span class="pre">dgst</span> <span class="pre">-sha256</span> <span class="pre">-sign</span> <span class="pre">privkey.pem</span> <span class="pre">-out</span> <span class="pre">sig</span> <span class="pre">msg.txt</span></code></p>
+</dd>
+</dl>
+</div>
+<div class="section" id="rsa-verify">
+<h3>rsa_verify<a class="headerlink" href="#rsa-verify" title="Permalink to this headline">¶</a></h3>
+<p>Verify a signed message with an RSA public key.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">verified</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">rsa_verify</span><span class="p">(</span><span class="nx">data</span><span class="p">,</span> <span class="nx">pubkey</span><span class="p">,</span> <span class="nx">signature</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">data</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span> with the content to
+sign.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">privkey</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span> with the contents of the
+public key.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">signature</span></code> - a <span class="green">Buffer</span> containing the signature
+generated with <code class="docutils literal notranslate"><span class="pre">rsa_sign</span></code> above, or with openssl.</p></li>
+</ul>
+</div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Boolean</span> - <code class="docutils literal notranslate"><span class="pre">true</span></code> if verification succeeded.  Otherwise
+<code class="docutils literal notranslate"><span class="pre">false</span></code>. Same as
+<cite>openssl dgst -sha256 -verify publickey.pem -signature sig msg.txt`</cite>.</p>
+</dd>
+</dl>
+</div>
+</div>
 <div class="section" id="hashing">
 <h2>Hashing<a class="headerlink" href="#hashing" title="Permalink to this headline">¶</a></h2>
 <div class="section" id="hash">
@@ -534,7 +826,7 @@ value above.  Thus, using <code class="docutils literal notranslate"><span class
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
 
-<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">hmac</span><span class="p">(</span><span class="nx">secret</span><span class="p">,</span> <span class="nx">data</span><span class="p">[,</span> <span class="nx">hash_func</span><span class="p">][,</span> <span class="nx">return_buffer</span><span class="p">]);</span>
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">hmac</span><span class="p">(</span><span class="nx">secret</span><span class="p">,</span> <span class="nx">data</span><span class="p">[,</span> <span class="nx">hash_func</span><span class="p">][,</span> <span class="nx">return_buffer</span><span class="p">]);</span>
 </pre></div>
 </div>
 <p>Where:</p>

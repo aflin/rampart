@@ -205,7 +205,8 @@ Extended (non-standard) formats:
    * ``%B`` - print contents of a :green:`Buffer` or :green:`String` as
      base64. If ``!`` flag present, it decodes a :green:`Buffer` or
      :green:`String` containing base64 (throws an error if not valid 
-     base64).
+     base64). If a width is given (e.g. ``%80B``), a newline will be printed
+     after every ``width`` characters.
 
    * ``%U`` - url encode (or if ``!`` flag present, decode) a :green:`String`. 
 
@@ -1733,7 +1734,7 @@ Example (where filename is ``times3.c``):
 
 .. code-block:: C
 
-   #include "duktape.h"
+   #include "rampart.h"
 
    static duk_ret_t timesthree(duk_context *ctx)
    {
