@@ -112,7 +112,7 @@ testFeature("en/decrypt with password, with options", function(){
 
 var key;
 testFeature("rsa create key", function(){
-    key = crypto.rsa_gen_key(4096, "password");
+    key = crypto.rsa_gen_key(2048, "password");
     return true;
 });
 
@@ -120,19 +120,25 @@ testFeature("rsa en/decrypt", function(){
     var txt="some text to encrypt";
 
     var out=crypto.rsa_pub_encrypt(txt, key.public);
+    var out2=crypto.rsa_pub_encrypt(txt, key.rsa_public); 
+    var dec  = bufferToString(crypto.rsa_priv_decrypt(out, key.private, null, "password"));
+    var dec2 = bufferToString(crypto.rsa_priv_decrypt(out, key.rsa_private, null, "password"));
+    var dec3 = bufferToString(crypto.rsa_priv_decrypt(out2, key.private, null, "password"));
+    var dec4 = bufferToString(crypto.rsa_priv_decrypt(out2, key.rsa_private, null, "password"));
 
-    var dec = bufferToString(crypto.rsa_priv_decrypt(out, key.private, null, "password"));
-
-    return (dec == txt);
+    return (dec == txt && dec2 == txt && dec3 == txt && dec4 == txt);
 });
 
 testFeature("rsa sign/verify", function(){
-    var txt="some text to encrypt";
+    var txt="some text to sign";
 
     var sig = crypto.rsa_sign(txt, key.private, "password");
+    var sig2= crypto.rsa_sign(txt, key.rsa_private, "password");
     var res = crypto.rsa_verify(txt, key.public, sig);
-
-    return res;
+    var res2= crypto.rsa_verify(txt, key.public, sig2); 
+    var res3= crypto.rsa_verify(txt, key.rsa_public, sig);
+    var res4= crypto.rsa_verify(txt, key.rsa_public, sig2); 
+    return (res && res2 && res3 && res4);
 });
 
 
