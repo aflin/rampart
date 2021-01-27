@@ -4,7 +4,8 @@
  * terms of the MIT license
  * see https://opensource.org/licenses/MIT
  */
- #include "rampart.h"
+#include "rampart.h"
+#include "./include/version.h"
 #include "duktape/register.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -786,6 +787,19 @@ int main(int argc, char *argv[])
         fprintf(stderr,"could not create duktape context\n");
         return 1;
     }
+
+    if (!duk_get_global_string(ctx, "rampart"))
+    {
+        duk_pop(ctx);
+        duk_push_object(ctx);
+    }
+    duk_push_sprintf(ctx, "%d.%d.%d", RAMPART_VERSION_MAJOR, RAMPART_VERSION_MINOR, RAMPART_VERSION_PATCH);
+    duk_put_prop_string(ctx, -2, "version");
+    duk_push_number(ctx, (double) RAMPART_VERSION_MAJOR*10000 +  RAMPART_VERSION_MINOR*100 + RAMPART_VERSION_PATCH);
+    duk_put_prop_string(ctx, -2, "versionNumber");
+
+
+    duk_put_global_string(ctx, "rampart");
 
     duk_init_context(ctx);
 
