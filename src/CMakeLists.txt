@@ -336,10 +336,17 @@ install(CODE "execute_process( \
     \"${CMAKE_INSTALL_PREFIX}/test\"   \
     )"
 )
-
 install(CODE "execute_process ( \
     COMMAND bash -c \"chmod 777 ${CMAKE_INSTALL_PREFIX}/test\"
  )"
+)
+
+#js modules
+install(CODE "execute_process( \
+   COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_SOURCE_DIR}/jsmodules/rampart-letsencrypt.js\" \
+    \"${CMAKE_INSTALL_PREFIX}/modules\"   \
+    )"
 )
 
 # example dirs
