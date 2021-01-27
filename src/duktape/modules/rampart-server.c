@@ -53,6 +53,7 @@ pthread_mutex_t ctxlock;
 
 volatile int gl_threadno = 0;
 int gl_singlethreaded = 0;
+int rampart_server_started=0;
 
 duk_context **thread_ctx = NULL, *main_ctx;
 
@@ -2338,6 +2339,8 @@ static void fork_read_request(evutil_socket_t fd_ignored, short flags, void *arg
     /* decode cbor message */
     duk_cbor_decode(ctx, -1, 0);
 
+    /* free old name, if any */
+    if(dhs->module_name) free(dhs->module_name);
     /* get the module name, if any */
     if( duk_get_prop_string(ctx, -1, "rp_module_name" ) )
     {
@@ -2895,7 +2898,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
         }
         else if (res==0)
         {
-            printf("sending 404\n");
+            //printf("sending 404\n");
             send404(dhs->req);
             free(dhs->module_name);
             return;
@@ -3385,7 +3388,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
 #ifndef COMBINE_EVLOOPS
     struct event_base *evbase;
 #endif
-    evhtp_ssl_cfg_t *ssl_config = calloc(1, sizeof(evhtp_ssl_cfg_t));
+    evhtp_ssl_cfg_t *ssl_config = NULL;
     int confThreads = -1, mthread = 1, daemon=0;
     struct stat f_stat;
     struct timeval ctimeout;
@@ -3395,6 +3398,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
     ctimeout.tv_sec = RP_TIME_T_FOREVER;
     ctimeout.tv_usec = 0;
     main_ctx = ctx;
+
+    if(rampart_server_started)
+        RP_THROW(ctx, "server.start - error- only one server per process may be running - use daemon:true to launch multiples");
 
     /*  an array at stack index 0 to hold all the callback function 
         This gets it off of an otherwise growing and shrink stack and makes
@@ -3529,6 +3535,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
 #ifndef COMBINE_EVLOOPS
     evbase = event_base_new();
 #endif
+    /* done with forking, now calloc */
+    ssl_config = calloc(1, sizeof(evhtp_ssl_cfg_t));
+    rampart_server_started=1;
+
     /* options from server({options},...) */
     if (ob_idx != -1)
     {
