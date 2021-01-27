@@ -31,6 +31,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // FROM: https://github.com/mpaland/printf - with gratitude!
 // MODIFIED BY Aaron Flin for use in duktape
+// and with 'B', 'J', 's', 'U' and 'P' new/altered % format codes
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -945,7 +946,28 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                     int i=0;
                     while ((*p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
                     {
-                        out(*(p++), buffer, idx++, maxlen);
+                        if( *p=='=' && (flags & FLAGS_ZEROPAD) )
+                        {
+                            p++;
+                            continue;
+                        }
+                        if(flags & FLAGS_LEFT)
+                        {
+                            if (*p=='+')
+                            {
+                                out('-', buffer, idx++, maxlen);
+                                p++;
+                            }
+                            else if (*p=='/')
+                            {
+                                out('_', buffer, idx++, maxlen);
+                                p++;
+                            }
+                            else
+                                out(*(p++), buffer, idx++, maxlen);
+                        }
+                        else
+                            out(*(p++), buffer, idx++, maxlen);
                         i++;
                         if(!(i%width))
                             out('\n', buffer, idx++, maxlen);
@@ -955,7 +977,28 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                 {
                     while ((*p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
                     {
-                        out(*(p++), buffer, idx++, maxlen);
+                        if( *p=='=' && (flags & FLAGS_ZEROPAD) )
+                        {
+                            p++;
+                            continue;
+                        }
+                        if(flags & FLAGS_LEFT)
+                        {
+                            if (*p=='+')
+                            {
+                                out('-', buffer, idx++, maxlen);
+                                p++;
+                            }
+                            else if (*p=='/')
+                            {
+                                out('_', buffer, idx++, maxlen);
+                                p++;
+                            }
+                            else
+                                out(*(p++), buffer, idx++, maxlen);
+                        }
+                        else
+                            out(*(p++), buffer, idx++, maxlen);
                     }
                 }
             }
@@ -1093,7 +1136,12 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             json:
             if (!duk_is_string(ctx, fidx))
             {
-                if ( !duk_is_function(ctx, fidx) )
+                if (duk_is_undefined(ctx, fidx))
+                {
+                    duk_push_string(ctx,"undefined");
+                    duk_replace(ctx,fidx);
+                }
+                else if ( !duk_is_function(ctx, fidx) )
                 {
                     if(width)
                     {
