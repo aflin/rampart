@@ -428,10 +428,22 @@ not a <span class="green">String</span>.</p></li>
 indentation of the specified amount. Thus <code class="docutils literal notranslate"><span class="pre">printf(&quot;%4J&quot;,</span> <span class="pre">obj);</span></code> is
 equivalent to <code class="docutils literal notranslate"><span class="pre">printf(&quot;%s&quot;,</span> <span class="pre">JSON.stringify(obj,</span> <span class="pre">null,</span> <span class="pre">4)</span> <span class="pre">);</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%B</span></code> - print contents of a <span class="green">Buffer</span> or <span class="green">String</span> as
-base64. If <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, it decodes a <span class="green">Buffer</span> or
+base64.</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>If <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, it decodes a <span class="green">Buffer</span> or
 <span class="green">String</span> containing base64 (throws an error if not valid
-base64). If a width is given (e.g. <code class="docutils literal notranslate"><span class="pre">%80B</span></code>), a newline will be printed
+base64).</p></li>
+<li><p>If a width is given (e.g. <code class="docutils literal notranslate"><span class="pre">%80B</span></code>), a newline will be printed
 after every <code class="docutils literal notranslate"><span class="pre">width</span></code> characters.</p></li>
+<li><p>If the <code class="docutils literal notranslate"><span class="pre">-</span></code> flag is present and <code class="docutils literal notranslate"><span class="pre">!</span></code> is not present, the output
+will be a modified url safe base64 (using <code class="docutils literal notranslate"><span class="pre">-</span></code> and <code class="docutils literal notranslate"><span class="pre">_</span></code> in place
+of <code class="docutils literal notranslate"><span class="pre">+</span></code> and <code class="docutils literal notranslate"><span class="pre">/</span></code>).</p></li>
+<li><p>If the <code class="docutils literal notranslate"><span class="pre">0</span></code> flag is given (e.g. <code class="docutils literal notranslate"><span class="pre">%0B</span></code> or <code class="docutils literal notranslate"><span class="pre">%-080B</span></code>), and <code class="docutils literal notranslate"><span class="pre">!</span></code>
+is not present, the output will not be padded with <code class="docutils literal notranslate"><span class="pre">=</span></code> characters.</p></li>
+</ul>
+</div></blockquote>
+</li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%U</span></code> - url encode (or if <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, decode) a <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%H</span></code> - html encode (or if <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, decode) a <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%P</span></code> - pretty print a <span class="green">String</span> or <span class="green">Buffer</span>.  Expects

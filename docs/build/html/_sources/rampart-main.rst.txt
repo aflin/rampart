@@ -203,10 +203,21 @@ Extended (non-standard) formats:
      equivalent to ``printf("%s", JSON.stringify(obj, null, 4) );``. 
 
    * ``%B`` - print contents of a :green:`Buffer` or :green:`String` as
-     base64. If ``!`` flag present, it decodes a :green:`Buffer` or
-     :green:`String` containing base64 (throws an error if not valid 
-     base64). If a width is given (e.g. ``%80B``), a newline will be printed
-     after every ``width`` characters.
+     base64.
+
+      * If ``!`` flag present, it decodes a :green:`Buffer` or
+        :green:`String` containing base64 (throws an error if not valid 
+        base64). 
+        
+      * If a width is given (e.g. ``%80B``), a newline will be printed
+        after every ``width`` characters.  
+        
+      * If the ``-`` flag is present and ``!`` is not present, the output 
+        will be a modified url safe base64 (using ``-`` and ``_`` in place 
+        of ``+`` and ``/``).
+
+      * If the ``0`` flag is given (e.g. ``%0B`` or ``%-080B``), and ``!``
+        is not present, the output will not be padded with ``=`` characters.
 
    * ``%U`` - url encode (or if ``!`` flag present, decode) a :green:`String`. 
 

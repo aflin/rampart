@@ -76,7 +76,7 @@ Where
 * ``data`` is a :green:`String` or :green:`Buffer`, the data to be
   encrypted.
 
-* ``cipher_mode`` is one of the modes listed below.  If not specified,
+* ``cipher_mode`` is one of the `Supported Modes`_ listed below.  If not specified,
   the default is ``aes-256-cbc``.
 
 * ``options`` is an :green:`Object` which may contain the following:
@@ -286,11 +286,15 @@ Where:
     * ``password`` is an optional :green:`String`, a password to
       encrypt the private key.
 
-Return:
+Return Value:
     An :green:`Object` with the following properties:
     
-      * ``public`` - the public key in ``pem`` format.
-      * ``private`` - the private key in ``pem`` format, encrypted if
+      * ``public`` - the public key in pkcs8 ``pem`` format.
+      * ``private`` - the private key in pkcs8 ``pem`` format, encrypted if
+        ``password`` is given.
+
+      * ``rsa_public`` - the public key in pkcs1 rsa public key ``pem`` format.
+      * ``rsa_private`` - the private key in pkcs1 rsa private key ``pem`` format, encrypted if
         ``password`` is given.
 
 Example:
@@ -298,77 +302,158 @@ Example:
 .. code-block:: javascript
 
     var crypto = require("rampart-crypto");
-    
-    var key = crypto.rsa_gen_key(2048, "mypass");
 
-    rampart.utils.printf("%s\n%s\n", key.private, key.public);
+    /* for demo - generally should be 2048 or greater */
+    var key = crypto.rsa_gen_key(1024, "mypass");
+
+    rampart.utils.printf( "%s\n%s\n%s\n%s\n", 
+       key.private, 
+       key.public,
+       key.rsa_private,
+       key.rsa_public
+    );
 
     /* expect output similar to the following:
-    -----BEGIN RSA PRIVATE KEY-----
-    Proc-Type: 4,ENCRYPTED
-    DEK-Info: AES-256-CBC,74913B77FF1C0212CB08E4B4969C0A42
-
-    YNsGbervXJcZzcQEJ+q+HKZ6usp/bEm+UaducORAcEKhOy259LKXCRw9N5kIPwOk
-    kAEpDjq64oy86g8Xid8eEXntK+QAJfd96MFBw4fzZxqRFl4rxCVuBy3m9ylGc92s
-    yN9wokMbjmk5dSNo7kCP6q6rjHovrk55aiM0GYY4oTMXHr9OWPFdE5ntJ9+E2s6t
-    181ePMyMOPFwvw4AwbS+6Ej5/hTGfYpufzWLWxvZC2yTpZybSkZv/SP0EkENEhGk
-    wJZiCYz3YwxpnHOc5oLmvZUmhUCxzz0SxSMUlkYfkURwhrp1vXrw8qioXLHV0Wjb
-    LK4cAEAmIFSDiitnk4azpMVzLFmIjNIoHD+WK38FqvXmGCqFH08jMPquIGEFtf0N
-    JL7Agc6PykRivXCeZtGifj3d5z0C/z1NxPlT2AU3fpSxBgaP31aVDTsF723Die7H
-    tH3vrv67Qbq8nVFw8DhkN1/K5vErVI9Cli5MWlZCNnozU1RpNMpQfNEcKpS1ZOGa
-    RgvMo7lD8rRECyeqJV0NKO3ENay5s/cV+RWRhpQ2VshQNYhw4XjAZwl3HD/1bVo6
-    P8aVbo2evoBpH1hOzpdzApAL2w6qQlhhupcRI009q5l2nmOJBOhCXoGEufHRzSB5
-    nFyidHzE0S3Fw9OyyFLGw7ZzZC4J9W5slRVZz+bUhfKWjqcQx6HzITRj/sxrkC1k
-    q2lV+hMuzhsZ+kBRPth28Eoo1H5ilLGH80nbKX+w3Rk7nsqlubDFrSdLn3Yq1g0h
-    NnjA0x67jjEPBPhQCwR7NPzzJB1Goz4WAmpDsbrtbMDhdaHQKrfduJO9orjbzUWh
-    JD+lbF3Hm8WEG653Ap4md7ZlgvhLQY8UZygv3BEyv9CLhwoqzc58q5oK8xtET7lD
-    e5aP4W/5UkGWarN02SJo+QQh6aR97UEJGzO25Xf9mYLk7s7dUBs2UJl46EuxZZe+
-    dYm6JgbJ7nQfTcrmnCHM3Te4FsB8P4NzDl5bl/TvbDrQ53s8QTsvA3FOTQvLvpLD
-    O+NnRHkj7FgwKoOU2/LDXgFQTnAtYv9RbQBUT15Us+dOxOVU58HxA6Y12oOfcie1
-    9c6I/40EIEjEBf7ONRfpXadQ1myybZageM+KCZveGhjKHRrD6SZ+JReEyiqRc5no
-    Escr1uNdur1b4ORIzCAGDO2PvZY/pHOwXnISeXsH4IBY3u8kx5aYF5JyJx0ny4v7
-    C27m98ZPAXyVIKM/bGU4JSjPFdLa0lmJvb/kltowf6Z94DtuIxV72sSptUGhjdBT
-    mmiDF+tqVLL/EZbSMeiQj/e1fU/Gtl3BKSygI5NYWGlONLH63sMHrIwe17vTVRmi
-    r7cOpayP7M9gdgVjh2fgsZPpdsw/Q0uVxUUI2vrqvoBA0cGl5ZvZX0iIQ3xlssK0
-    jj9SvGtFcVD32ZnXex1AKMK1sWErzZF6PEQmNvHwJ0RxxEyPIfXWTfXvC45g79ge
-    fh6DooT8V/xBwi2fdblLUyHjPA+WdMl/xKzPekyTsE/b/XVLln02T61MTA4oLAwZ
-    k7g8XxqdiSumdTxjA3Jhch+wlH0lD8r73o1zz46dHiz/5ffphuHGxU9Uel7Bekj5
-    -----END RSA PRIVATE KEY-----
+    -----BEGIN ENCRYPTED PRIVATE KEY-----
+    MIIC3TBXBgkqhkiG9w0BBQ0wSjApBgkqhkiG9w0BBQwwHAQI5x3aqPg9MqgCAggA
+    MAwGCCqGSIb3DQIJBQAwHQYJYIZIAWUDBAEqBBAoAyT6LBBnFh3Hd7HhQp+XBIIC
+    gHv1acYJPZeNkeTIVX2531fJXmRhWYC1CA6T6eb6fSTLo7ZEnX1kYA34kyhyhj0R
+    MOi1mkCZSkdsf8Z/emRCHycWcuJqtAscwpBfURHcTKTzOb2MwQ8hnNLc4lmLOwD2
+    Vp6TwqO1JRrR+xeoLuTas+vfzklaRX1c4zSfAU9S2GXdXHJbCtvnFY5HrpMnm0bb
+    5d9q0SuMXUFVQM5R5EcXwu7mwuVQbNFK1LZEggzBjdueq5mF3MDvLwaDvoOIffz1
+    dPKoj4YPwCFT/RCUhBFz16uHXKK2glPYVYQ2/LYpJK9+hKvWYLWg5veqNyu5TMjb
+    crLKvgKE0k/5eJb89hWkOTn00+pcP3b0jAF/iSSwbOokW0H7gZChjRy2CFuJf+t6
+    Gx0kndn2hV1722XDaPj+L3tQrjmatSdYEUPMLYfY8NED54GbXndBRY27zJ8ulSjS
+    GbMW6iwB2jdO5kKkZrjechLt3pJOC4W6BKlrZXESnZO9TIy1/erwMg3ppId0RtKT
+    HgC7b8q8Vw/+9rwi3ksyqWcsEC+CCOaCTjfr6JOiDG1EFQ+wBH4ysoojjo3AQGjY
+    mve01KNEBD14+SdLO1Tm6wJfHarUDV0EliSr9cXHHUTZPkFLa4n06C31GfD1McJM
+    ky9gSK59qP6n55YDEokVeT6Ei7Q+tgBftg+HisP5QUU2pzlmE5kBfb8lSizUW/Pj
+    uBoEVedCxAHQ3Yl3TrMv5URNkFhb3Prsb5YTm7lczEsmk80NAF+obl7iqii4X4Wn
+    E2QYpF370fhUmjYsA2G0xugYI+uOf6DepUUEan20SsLRWQk5cqrIFnJlNbnKzaRt
+    FaY/wG/NAIHOVONb87bu1Z4=
+    -----END ENCRYPTED PRIVATE KEY-----
 
     -----BEGIN PUBLIC KEY-----
-    MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0V6jNd9YHBopOtk3Sfki
-    zcdVftQym5iGZm/C8frhzEG6TGDS9Wj9zijsEEbnxl60sHziaY1DdyEbGQTVvBcd
-    fSf2fn9arnWr5r13Gxqdn274Fbc7Ls8dllWhaMlCLsqhTgr83xK0QIR9I7KpyDrx
-    Qjyz4AM3jam5j8TR9Y9WyB6tXmWdVaiq0iLGiKJCu5F8rcIGEVcX/t52dKbIbj6j
-    X7j/Y+ayTWMNZHZk+ZHVTKsgKn2XFmPbQ6xs5bxTazmWmm7GRDtI5EbqQLMiZAy7
-    +P3o6amYz+k5Z9RgLYuNKEyHpOUh8wiNi/CdJ6ScaCoSRmozxqn2NrxdpQQMHBjA
-    VQIDAQAB
+    MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC7lkrZ6gREJZT6ZWjvFxrm+lPY
+    dyE1uplaTbV87AirYHfQRTef3y87B/yL/Qud3brcPUePryqNz20wxZk8hDe0PAHC
+    IcM1c3STPxAvo+YJXbjt6DmoC+UK9nkIKXLg1lR9VMVYr9Gri8KWmyXAxHdmTSpf
+    njNlXdlur240f9negQIDAQAB
     -----END PUBLIC KEY-----
+
+    -----BEGIN RSA PRIVATE KEY-----
+    Proc-Type: 4,ENCRYPTED
+    DEK-Info: AES-256-CBC,19216181CEB7C4E59C2D9B8F1F8E4323
+
+    E+1namuNDSCDzRU2O5tq5t78zQ4EobMVNLXzy0yjA9IN1zW6IMxH5WE7wZ48/FZl
+    uRFokQrr1xMJB667U0ZtSMS0Ol3q1DZAZvOakpXV21LtKgVEO/E3XM+la5+O+hJ3
+    Nhzb58gJKnC3GfexxlxrLeFx+rXwtYNY0wZqAy9yo+QNHEE7JZgYqHipIfxhKlqx
+    hmYA5c3ztd7+j2aEq4boRWQdqL5GBzjhAOKYi7goic3SU/kQQmsu7bA7q4KqVn8P
+    l0aygNweimO9xkFuZrngdtVeZ/8nA6TsNVJOyI6NanA/iV7SuGYXczqP198P62m7
+    2sJkHGJwiR0X6tb95+0sjEofujbRv/6eFV1Tv8r42zEXkESet1XMjxOoEwBLWLbH
+    +5RThxkGLfAWDsssq6bo9ilgw2qI0xW9CEtcBmkn574+j0ScIk/2J69cyiIdJNZn
+    WNtC0mzKGHMEn+xpYsszyUbS7EgAg3LrV0irl2Kbjm3xTgtKhRXXC7lqbrBoAJF4
+    gwwfusEF9jNMoWBkl15oIuUK2/PIgd4IRVBDGX76pcjoTIeTRqulsXuxcl6GKHm9
+    KskhZBP08MlN7j4cXc7GmmO4MnzghHNUeqs3Aok2JV4ulimL/7IiaJFQvh01WVk+
+    hrQUPnjRVnSzHejBNFqCFCr9XKh72NbTr/6qvzJg8pIjNemb2Vo4rrc2ITzHcS/g
+    O88JtrnZjroB37Av6ELTrqJ/G02pdVs8i8FEb/Vnvd6MsTaSwSHJEAFMP6LqhPI0
+    ukVkqYB7E1HL0iWS3mgC7eLmWfrx6i0XSMQoWJFNKJAzOlo8K2+McluDl7x/3Cfz
+    -----END RSA PRIVATE KEY-----
+
+    -----BEGIN RSA PUBLIC KEY-----
+    MIGJAoGBALuWStnqBEQllPplaO8XGub6U9h3ITW6mVpNtXzsCKtgd9BFN5/fLzsH
+    /Iv9C53dutw9R4+vKo3PbTDFmTyEN7Q8AcIhwzVzdJM/EC+j5glduO3oOagL5Qr2
+    eQgpcuDWVH1UxViv0auLwpabJcDEd2ZNKl+eM2Vd2W6vbjR/2d6BAgMBAAE=
+    -----END RSA PUBLIC KEY-----
 
     */
 
-rsa_pub_encrypt
-~~~~~~~~~~~~~~~
+rsa_import_priv_key
+~~~~~~~~~~~~~~~~~~~
 
-Encrypt data using an RSA public key.
+Import an existing private key and generate a new public and private keys.
+
+Usage:
 
 .. code-block:: javascript
 
     var crypto = require("rampart-crypto");
 
-    var res = crypto.rsa_pub_encrypt(data, pubkey[, paddingMode]);
+    var key = crypto.rsa_import_priv_key(oldprivate_key[, opts]);
+    
+    /* or */
+    
+    var key = crypto.rsa_import_priv_key(oldprivate_key[, oldpass][, newpass]);
+    
+Where:
+
+    * ``oldprivate_key`` is an :green:`Object` or :green:`String`, the pem formatted private key.
+    * ``opts`` is an :green:`Object` with the properties ``{decryptPassword: "oldpass", encryptPassword: "newpass"}``.
+    * ``oldpass`` is a :green:`String`, the password to decrypt ``oldprivate_key``, if encrypted.
+    * ``newpass`` is a :green:`String`, an optional password to encrypt the return private keys.
+
+Return Value:
+    An :green:`Object` with the following properties:
+    
+      * ``public`` - the public key in pkcs8 ``pem`` format.
+      * ``private`` - the private key in pkcs8 ``pem`` format, encrypted if
+        ``newpass`` is given.
+
+      * ``rsa_public`` - the public key in pkcs1 rsa public key ``pem`` format.
+      * ``rsa_private`` - the private key in pkcs1 rsa private key ``pem`` format, encrypted if
+        ``newpass`` is given.
+
+rsa_components
+~~~~~~~~~~~~~~
+
+Get the component parts of an RSA public or private key.
+
+Usage:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+    
+    var components = crypto.rsa_components(key);
+
+Return Value:
+    An :green:`Object`.
+
+    If ``key`` is a public key, the following properties are set:
+
+        * ``exponent`` - a :green:`String` with the hex encoded value of the exponent.
+        * ``modulus`` - a :green:`String` with the hex encoded value of the modulus.
+
+    If ``key`` is a private key, in addition to the above:
+    
+        * ``privateExponent`` - a :green:`String` with the hex encoded value of the private exponent.
+        * ``privateFactorq``  - a :green:`String` with the hex encoded value of the private factor ``q``.
+        * ``privateFactorp``  - a :green:`String` with the hex encoded value of the private factor ``p``.
+
+rsa_pub_encrypt
+~~~~~~~~~~~~~~~
+
+Encrypt data using an RSA public key.  The public key can be in either 
+pem format generated by `rsa_gen_key`_\ ().
+
+Usage:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+
+    var res = crypto.rsa_pub_encrypt(data, public_key[, paddingMode]);
 
 Where:
 
     * ``data`` is a :green:`String` or :green:`Buffer` with the content to
       encrypt.
 
-    * ``pubkey`` is a :green:`String` or :green:`Buffer` with the content of
+    * ``public_key`` is a :green:`String` or :green:`Buffer` with the content of
       the public key.
 
     * ``paddingMode`` is an optiona :green:`String` that is one of the
       following (as described 
-      `here <https://www.openssl.org/docs/man1.1.1/man3/RSA_public_encrypt.html>`_:
+      `here <https://www.openssl.org/docs/man1.1.1/man3/RSA_public_encrypt.html>`_):
 
         * ``"pkcs"`` - default if not specified.  Use PKCS #1 v1.5 padding.
           This currently is the most widely used mode.
@@ -392,9 +477,9 @@ Where:
       design. Prefer RSA_PKCS1_OAEP_PADDING."  - see 
       `this document <https://www.openssl.org/docs/man1.1.1/man3/RSA_public_encrypt.html>`_.
 
-Note also that the length of ``data`` cannot be more than the number of bits of
-the modulus used to create the key pair minus 11 (or minus 42 in the case of
-``padding: "oaep``).
+      Note also that the length of ``data`` cannot be more than the number of bytes of
+      the modulus used to create the key pair minus 11 (or minus 42 in the case of
+      ``"oaep"``, or minus 0 in the case of ``raw``).
 
 Return Value:
     A :green:`Buffer` containing the encrypted text.
@@ -433,7 +518,8 @@ Example:
 
 rsa_priv_decrypt
 ~~~~~~~~~~~~~~~~
-Decrypt encrypted data using an RSA private key.
+Decrypt encrypted data using an RSA private key. The private key can be in either 
+pem format generated by `rsa_gen_key`_\ ().
 
 Usage:
 
@@ -441,20 +527,20 @@ Usage:
 
     var crypto = require("rampart-crypto");
 
-    var res = crypto.rsa_priv_decrypt(data, privkey[, paddingMode][, password]);
+    var res = crypto.rsa_priv_decrypt(data, private_key[, paddingMode][, password]);
 
 Where:
 
     * ``data`` is a :green:`String` or :green:`Buffer` with the content to
       decrypt.
 
-    * ``privkey`` is a :green:`String` or :green:`Buffer` with the contents of the 
+    * ``private_key`` is a :green:`String` or :green:`Buffer` with the contents of the 
       private key.
 
     * ``paddingMode`` - a :green:`String`. See above - the same padding mode used to encrypt
       the data.
 
-    * ``password`` - a :green:`String`, if ``privkey`` is password
+    * ``password`` - a :green:`String`, if ``private_key`` is password
       protected, the password used to encrypt the private key.
 
 Return Value:
@@ -496,7 +582,8 @@ Example:
 rsa_sign
 ~~~~~~~~
 
-Sign a message with an RSA private key.
+Sign a message with an RSA private key. The private key can be in either 
+pem format generated by `rsa_gen_key`_\ ().
 
 Usage:
 
@@ -504,28 +591,29 @@ Usage:
 
     var crypto = require("rampart-crypto");
 
-    var signature = crypto.rsa_sign(message, privkey[, password]);
+    var signature = crypto.rsa_sign(message, private_key[, password]);
 
 Where:
 
     * ``message`` is a :green:`String` or :green:`Buffer` with the content to
       sign.
 
-    * ``privkey`` is a :green:`String` or :green:`Buffer` with the contents of the 
+    * ``private_key`` is a :green:`String` or :green:`Buffer` with the contents of the 
       private key.
 
-    * ``password`` - a :green:`String`, if ``privkey`` is password
+    * ``password`` - a :green:`String`, if ``private_key`` is password
       protected, the password used to encrypt the private key.
 
 Return Value:
     A :green:`Buffer` with the content of the signature.  Same as 
-    ``openssl dgst -sha256 -sign privkey.pem -out sig msg.txt``
+    ``openssl dgst -sha256 -sign private_key.pem -out sig msg.txt``
 
 
 rsa_verify
 ~~~~~~~~~~
 
-Verify a signed message with an RSA public key.
+Verify a signed message with an RSA public key. The public key can be in either 
+pem format generated by `rsa_gen_key`_\ ().
 
 Usage:
 
@@ -533,14 +621,14 @@ Usage:
 
     var crypto = require("rampart-crypto");
 
-    var verified = crypto.rsa_verify(data, pubkey, signature);
+    var verified = crypto.rsa_verify(data, public_key, signature);
 
 Where:
 
     * ``data`` is a :green:`String` or :green:`Buffer` with the content to
-      sign.
+      verify.
 
-    * ``privkey`` is a :green:`String` or :green:`Buffer` with the contents of the 
+    * ``public_key`` is a :green:`String` or :green:`Buffer` with the contents of the 
       public key.
 
     * ``signature`` - a :green:`Buffer` containing the signature
@@ -549,7 +637,73 @@ Where:
 Return Value:
     A :green:`Boolean` - ``true`` if verification succeeded.  Otherwise
     ``false``. Same as 
-    `openssl dgst -sha256 -verify publickey.pem -signature sig msg.txt``.
+    ``openssl dgst -sha256 -verify public_key.pem -signature sig msg.txt``.
+
+gen_csr
+~~~~~~~
+
+Generate a certificate signing request.
+
+Usage:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+    
+    var csr = crypto.gen_csr(private_key, opts[, password]);
+
+Where:
+
+    * ``private_key`` is a :green:`String`, a pem formatted private key.
+    * ``opts`` is an :green:`Object`, with the following optional property :green:`Strings`:
+
+        * ``name`` - The "Common Name", usually the relevant domain name.
+        * ``country`` - A two letter country code (i.e. ``US`` or ``DE``).
+        * ``state`` - State or Province name.
+        * ``city`` - The locality or city of your organization.
+        * ``organization`` - The full legal name of your organization.
+        * ``organizationUnit`` - The department of your organization.
+        * ``email`` - Contact email.
+        * ``subjectAltName`` - text to be placed in the ``Attributes`` -> ``Requested Extensions`` -> ``X509v3 Subject Alternative Name``
+          section of the certificate request.  Also accepts an :green:`Array` of :green:`Strings` for multiple values.
+
+        * ``subjectAltNameType`` - The type used for values in ``subjectAltName``.  If, e.g., ``dns`` is set and ``subjectAltName`` is set to
+          ``["example.com", "www.example.com"]``, the certificate signing request will include the 
+          ``X509v3 Subject Alternative Name`` value of ``DNS:example.com, DNS:www.example.com``.  Possible values are ``dns`` (the
+          default if not specified), ``ip``, ``email``, ``uri``, ``x400``, ``dirname``, ``rid`` or ``othername`` (case insensitive).
+          See openssl documentation for meaning and usage of each.  For requesting an SSL/TLS certificate for a webserver, ``dns``
+          should be used, particularily where the requested certificate will cover more than one domain name.
+
+    * ``password`` - if ``private_key`` is password protected, the password to decrypt the private key.
+
+Return Value:
+    A :green:`Object` with the following properties:
+
+        * ``pem`` - A :green:`String` - the generated certificate signing request in pem format.
+        * ``der`` - A :green:`Buffer` - the generated certificate signing request in der binary format.
+
+Example:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+    
+    /* generate a server key */
+    var key = crypto.rsa_gen_key(4096 /* ,"password" */);
+
+    /* save it for use with webserver */
+    rampart.utils.fprintf("./server.key", '%s', key.private);
+
+    /* generate a signing request for current domains */
+    var csr = crypto.gen_csr(
+        key.private,
+        {
+            name: "example.com",
+            subjectAltName: ["example.com", "www.example.com"]
+        }
+        /* , "password" */
+    );
+    /* csr == {pem: pem_formatted_csr, der: der_formatted_csr} */ 
 
 
 Hashing
@@ -586,6 +740,9 @@ Where:
 * return_buffer is a :green:`Boolean`, if ``true``, the output will be
   binary data in a :green:`Buffer`, and not hex encoded.
 
+Return Value:
+    A :green:`String` or :green:`Buffer`, the hash of the data.
+
 
 Example:
 
@@ -597,7 +754,6 @@ Example:
 
     /* 
         res == 'b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9'
-
     */
 
 alias functions
@@ -626,20 +782,23 @@ Usage:
 
 Where:
 
-* ``secret`` is the HMAC function key.
+    * ``secret`` is the HMAC function key.
 
-* ``data`` is a :green:`String` or :green:`Buffer`, the data to be
-  hashed.
+    * ``data`` is a :green:`String` or :green:`Buffer`, the data to be
+      hashed.
 
-* ``hash_func`` is an optional :green:`String`, one of the following:
+    * ``hash_func`` is an optional :green:`String`, one of the following:
 
-  ``sha1``, ``sha224``, ``sha256``, ``sha384``, ``sha512``, ``md4``, ``md5``, ``sha3-224``,
-  ``sha3-256``, ``sha3-384``, ``sha3-512``, ``blake2b512``, ``blake2s256``, ``mdc2``,
-  ``rmd160``, ``sha512-224``, ``sha512-256``,
-  ``sm3``. Default is ``sha256``.
+      ``sha1``, ``sha224``, ``sha256``, ``sha384``, ``sha512``, ``md4``, ``md5``, ``sha3-224``,
+      ``sha3-256``, ``sha3-384``, ``sha3-512``, ``blake2b512``, ``blake2s256``, ``mdc2``,
+      ``rmd160``, ``sha512-224``, ``sha512-256``,
+      ``sm3``. Default is ``sha256``.
 
-* return_buffer is a :green:`Boolean`, if ``true``, the output will be
-  binary data in a :green:`Buffer`, and not hex encoded.
+    * return_buffer is a :green:`Boolean`, if ``true``, the output will be
+      binary data in a :green:`Buffer`, and not hex encoded.
+
+Return Value:
+    A :green:`String` or :green:`Buffer`, the hmac hash of the data.
 
 Random
 ------
@@ -715,7 +874,7 @@ Where options is an :green:`Object`, if provided, and contains the following
 properties:
 
 * ``file`` - a :green:`String` - location of the file.  Default is
-  ``/dev/random``.
+  ``/dev/urandom``.
 
 * ``bytes`` - a :green:`Number` - Number of bytes to retrieve from ``file``. 
   Default is ``32``.
