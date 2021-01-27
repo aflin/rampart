@@ -120,6 +120,18 @@ extern int   rampart_argc;
     r;\
 })
 
+#define REQUIRE_STR_OR_BUF(ctx, idx, sz, ...) ({\
+    const char *r=NULL;\
+    duk_idx_t i=(idx);\
+    if( duk_is_string( (ctx), i ) )\
+        r=duk_get_lstring( (ctx), i, (sz) );\
+    else if ( duk_is_buffer( (ctx), i ) )\
+        r=(const char *)duk_get_buffer( (ctx), i, (sz) );\
+    else\
+        RP_THROW( (ctx), __VA_ARGS__);\
+    r;\
+})
+
 /* this is almost certainly wrong */
 #define DUKREMALLOC(ctx, s, t)                 \
     (s) = realloc((s), (t));                   \
