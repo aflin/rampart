@@ -19,6 +19,8 @@
 #include <errno.h>
 #include "event.h"
 #include "event2/thread.h"
+#include "linenoise.h"
+
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 char *RP_script_path=NULL;
 
@@ -34,139 +36,191 @@ char *RP_script_path=NULL;
 
 #define RP_REPL_PREFIX "rampart> "
 #define RP_REPL_PREFIX_CONT "... "
-#define RP_REPL_MAX_LINE_SIZE 32768
-#define RP_REPL_HISTORY_LENGTH 256
-struct repl_history
-{
-    char *buffer[RP_REPL_HISTORY_LENGTH];
-    int size;
-};
 
-static void handle_input(struct repl_history *history, char *prefix)
-{
-    int cursor_pos = 0;
-    int buffer_end = 0;
-    int cur_char;
-    int pref_len=strlen(prefix);
-    int cur_history_idx = history->size - 1;
-    int history_idx=cur_history_idx;
-    char *curline = calloc(RP_REPL_MAX_LINE_SIZE, 1);
-
-    while ((cur_char = getchar()) != '\n')
-    {
-        if (cur_char == '\033')
-        {
-            getchar();
-            int esc_char = getchar();
-
-            switch (esc_char)
-            {
-            case 'A':
-            {
-                // arrow up
-                if (history_idx > 0)
-                {
-                    if(history_idx == cur_history_idx)
-                        strcpy(history->buffer[cur_history_idx], curline);
-
-                    history_idx--;
-                    strcpy(curline, history->buffer[history_idx]);
-                    buffer_end = strlen(curline);
-                    // clear line, move to col 1, print repl prefix
-                    printf("%s%s%s", "\033[2K", "\033[1G", prefix);
-                    // print out buffer from history
-                    printf("%s", curline);
-                    // move to correct position and update cursor pos
-                    cursor_pos=buffer_end;
-                    printf("\033[1G\033[%dC", pref_len + cursor_pos);
-                }
-                break;
-            }
-            case 'B':
-                // arrow down
-                if (history_idx < cur_history_idx)
-                {
-                    history_idx++;
-                    strcpy(curline, history->buffer[history_idx]);
-                    buffer_end = strlen(curline);
-                    // clear line, move to col 1, print repl prefix
-                    printf("%s%s%s", "\033[2K", "\033[1G", prefix);
-                    // print out buffer from history
-                    printf("%s", curline);
-                    // move to correct position and update cursor pos
-                    cursor_pos=buffer_end;
-                    printf("\033[1G\033[%dC", pref_len + cursor_pos);
-                }
-                break;
-            case 'C':
-                // arrow right
-                if (cursor_pos < buffer_end)
-                {
-                    printf("%s", "\033[1C");
-                    cursor_pos++;
-                }
-                break;
-            case 'D':
-                // arrow left
-                if (cursor_pos > 0)
-                {
-                    printf("%s", "\033[1D");
-                    cursor_pos--;
-                }
-                break;
-            }
+void completion(const char *buf, linenoiseCompletions *lc) {
+    switch(buf[0]) {
+        case 'A': {
+            linenoiseAddCompletion(lc,"Array");
+            break;
         }
-        else
-        {
-            curline[buffer_end] = cur_char;
-            if (cur_char == '\177')
-            {
-                // delete character
-                if (cursor_pos <= 0)
-                    continue;
-                printf("%s%s%s", "\033[2K", "\033[1G", prefix);
-                memmove(curline + cursor_pos - 1, curline + cursor_pos,
-                        buffer_end - cursor_pos + 1);
-                curline[buffer_end] = '\0';
-                buffer_end--;
-                printf("%.*s", buffer_end, curline);
-                cursor_pos--;
-                printf("\033[%dG", pref_len + cursor_pos + 1);
+        case 'C': {
+            linenoiseAddCompletion(lc,"CBOR");
+            break;
+        }
+        case 'D': {
+            linenoiseAddCompletion(lc,"Date");
+            linenoiseAddCompletion(lc,"Duktape");
+            break;
+        }
+        case 'M': {
+            linenoiseAddCompletion(lc,"Math");
+            break;
+        }
+        case 'N': {
+            linenoiseAddCompletion(lc,"NaN");
+            linenoiseAddCompletion(lc,"Number");
+            break;
+        }
+        case 'O': {
+            linenoiseAddCompletion(lc,"Object");
+            break;
+        }
+        case 'S': {
+            linenoiseAddCompletion(lc,"String");
+            break;
+        }
+        case 'T': {
+            linenoiseAddCompletion(lc,"TextDecoder");
+            linenoiseAddCompletion(lc,"TextEncoder");
+            break;
+        }
+        case 'a': {
+            linenoiseAddCompletion(lc,"abstract");
+            linenoiseAddCompletion(lc,"arguments");
+            break;
+        }
+        case 'b': {
+            linenoiseAddCompletion(lc,"boolean");
+            linenoiseAddCompletion(lc,"break");
+            linenoiseAddCompletion(lc,"byte");
+            break;
+        }
+        case 'c': {
+            switch(buf[1]) {
+                case 'a':{
+                    linenoiseAddCompletion(lc,"case");
+                    linenoiseAddCompletion(lc,"catch");
+                    goto compend;
+                }
             }
-            else
-            {
-                if (cursor_pos >= RP_REPL_MAX_LINE_SIZE-1)
-                    continue;
-
-                printf("%s%s%s", "\033[2K", "\033[1G", prefix);
-                memmove(curline + cursor_pos + 1, curline + cursor_pos,
-                        buffer_end - cursor_pos);
-                curline[cursor_pos] = cur_char;
-                buffer_end++;
-                printf("%.*s", buffer_end, curline);
-                cursor_pos++;
-                printf("\033[%dG", pref_len + cursor_pos + 1);
+            linenoiseAddCompletion(lc,"case");
+            linenoiseAddCompletion(lc,"catch");
+            linenoiseAddCompletion(lc,"continue");
+            break;
+        }
+        case 'd': {
+            linenoiseAddCompletion(lc,"delete");
+            linenoiseAddCompletion(lc,"do");
+            break;
+        }
+        case 'e': {
+            linenoiseAddCompletion(lc,"else");
+            linenoiseAddCompletion(lc,"eval");
+            break;
+        }
+        case 'f': {
+            linenoiseAddCompletion(lc,"false");
+            linenoiseAddCompletion(lc,"for");
+            linenoiseAddCompletion(lc,"function");
+            break;
+        }
+        case 'h': {
+            linenoiseAddCompletion(lc,"hasOwnProperty");
+            break;
+        }
+        case 'i': {
+            switch(buf[1]) {
+                case 'n':{
+                    linenoiseAddCompletion(lc,"in");
+                    linenoiseAddCompletion(lc,"instanceof");
+                    goto compend;
+                }
+                case 's':{
+                    linenoiseAddCompletion(lc,"isNaN");
+                    linenoiseAddCompletion(lc,"isPrototypeOf");
+                     goto compend;
+                }
             }
+            linenoiseAddCompletion(lc,"if");
+            linenoiseAddCompletion(lc,"in");
+            linenoiseAddCompletion(lc,"instanceof");
+            linenoiseAddCompletion(lc,"isNaN");
+            linenoiseAddCompletion(lc,"isPrototypeOf");
+            break;
+        }
+        case 'l': {
+            linenoiseAddCompletion(lc,"length");
+            break;
+        }
+        case 'n': {
+            linenoiseAddCompletion(lc,"new");
+            linenoiseAddCompletion(lc,"null");
+            break;
+        }
+        case 'p': {
+            linenoiseAddCompletion(lc,"performance");
+            linenoiseAddCompletion(lc,"prototype");
+            break;
+        }
+        case 'r': {
+            switch(buf[1]) {
+                case 'e':{
+                    linenoiseAddCompletion(lc,"require");
+                    linenoiseAddCompletion(lc,"return");
+                    goto compend;
+                }
+            }
+            linenoiseAddCompletion(lc,"rampart");
+            linenoiseAddCompletion(lc,"require");
+            linenoiseAddCompletion(lc,"return");
+            break;
+        }
+        case 's': {
+            linenoiseAddCompletion(lc,"switch");
+            break;
+        }
+        case 't': {
+            switch(buf[1]) {
+                case 'h':{
+                    linenoiseAddCompletion(lc,"this");
+                    linenoiseAddCompletion(lc,"throw");
+                    goto compend;
+                }
+            }
+            linenoiseAddCompletion(lc,"this");
+            linenoiseAddCompletion(lc,"throw");
+            linenoiseAddCompletion(lc,"toString");
+            linenoiseAddCompletion(lc,"true");
+            linenoiseAddCompletion(lc,"try");
+            linenoiseAddCompletion(lc,"typeof");
+            break;
+        }
+        case 'u': {
+            linenoiseAddCompletion(lc,"undefined");
+            break;
+        }
+        case 'v': {
+            switch(buf[1]) {
+                case 'a':{
+                    linenoiseAddCompletion(lc,"valueOf");
+                    linenoiseAddCompletion(lc,"var");
+                    goto compend;
+                }
+            }
+            linenoiseAddCompletion(lc,"valueOf");
+            linenoiseAddCompletion(lc,"var");
+            linenoiseAddCompletion(lc,"void");
+            linenoiseAddCompletion(lc,"volatile");
+            break;
+        }
+        case 'w': {
+            linenoiseAddCompletion(lc,"while");
+            break;
         }
     }
-    curline[buffer_end] = '\0';
-    
-    printf("\n");
-    // copy any changed history into current line
-    strcpy(history->buffer[cur_history_idx], curline);
-    free(curline);
+    compend:
+    return;
 }
 
 static int repl(duk_context *ctx)
 {
-    struct repl_history history;
-    history.size = 0;
-    char *prefix=RP_REPL_PREFIX;
-    size_t line_len=0;
+    printf("%s\n", RP_REPL_GREETING);
     int multiline=0;
+    char *line=NULL;
+    char *prefix=RP_REPL_PREFIX;
 
-    printf("%s", RP_REPL_GREETING);
-    putchar('\n');
+    linenoiseSetMultiLine(1);
+    linenoiseSetCompletionCallback(completion);
 
     while (1)
     {
@@ -175,49 +229,13 @@ static int repl(duk_context *ctx)
         else
             prefix=RP_REPL_PREFIX;
 
-        printf("%s", prefix);
-
-        char *line = calloc(RP_REPL_MAX_LINE_SIZE, 1);
-        if (history.size < RP_REPL_HISTORY_LENGTH)
-        {
-            history.buffer[history.size] = line;
-            history.size++;
-        }
-        else
-        {
-            // shift last from buffer
-            free(history.buffer[0]);
-            int i = 0;
-            for (i = 0; i < RP_REPL_HISTORY_LENGTH-1; i++)
-            {
-                history.buffer[i] = history.buffer[i + 1];
-            }
-            history.buffer[RP_REPL_HISTORY_LENGTH - 1] = line;
-        }
-
-        handle_input(&history, prefix);
-
-        // ignore empty input
-        while ((line_len=strlen(line)) == 0)
-        {
-            printf("%s", prefix);
-            handle_input(&history, prefix);
-        }
-
-/*        // line too long
-        if (line[RP_REPL_MAX_LINE_SIZE - 1] == '\n')
-        {
-            printf("Line too long. The max line size is %d", RP_REPL_MAX_LINE_SIZE);
-            continue;
-        }
-*/
-        // add line with nl.  remove it later to preserve single line history entry.
-        line[line_len]= '\n';
-        duk_push_lstring(ctx, line, line_len+1);
+        line = linenoise(prefix);
+        if(!line) return 0;
+       
+        duk_push_string(ctx, line);
 
         if(multiline) duk_concat(ctx,2);  //combine with last line if last loop set multiline=1
-
-        duk_dup(ctx, -1);// duplicate in case multiline
+        duk_dup(ctx, -1);// duplicate in case multiline condition discovered below
         multiline=0;
 
         // evaluate input
@@ -235,8 +253,6 @@ static int repl(duk_context *ctx)
         {
             printf("%s\n", duk_safe_to_stacktrace(ctx, -1));
         }
-        line[line_len]= '\0';
-
         duk_pop(ctx); //the results
 
         //if not multiline, get rid of extra copy of last line
@@ -244,6 +260,7 @@ static int repl(duk_context *ctx)
     }
     return 0;
 }
+
 
 static char *checkbabel(char *src)
 {

@@ -47,8 +47,8 @@ add_executable(rampart
 	duktape/globals/rampart-utils.c
 	duktape/globals/rampart-import.c
 	duktape/globals/csv_parser.c
-#	duktape/globals/printf.c
 
+	linenoise.c
 	cmdline.c
 )
 
