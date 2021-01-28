@@ -95,7 +95,10 @@ include_directories(
 ## allow linked rampart-crypto.so to be loaded from rampart-server.so in the same dir
 SET(CMAKE_SKIP_BUILD_RPATH FALSE)
 SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-SET(CMAKE_INSTALL_RPATH "./;${CMAKE_INSTALL_PREFIX}/modules/")
+SET(CMAKE_INSTALL_RPATH "")
+#SET(CMAKE_INSTALL_RPATH "./;${CMAKE_INSTALL_PREFIX}/modules/")
+
+
 
 ###ROBOTS###
 add_library(rampart-robots SHARED
@@ -124,7 +127,6 @@ target_include_directories(rampart-robots PRIVATE
      ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-src/
 )
 set_target_properties(rampart-robots PROPERTIES LINKER_LANGUAGE CXX )
-
 ###HTML###
 add_library(rampart-html SHARED
 	duktape/modules/rampart-html.c
@@ -243,13 +245,14 @@ target_include_directories(rampart-curl PRIVATE
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-robots #example_name
 	PROPERTIES 
-	LINK_FLAGS   "-undefined dynamic_lookup" 
+	LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath ./ -Wl,-rpath ${CMAKE_INSTALL_PREFIX}/modules/" 
 	SUFFIX       ".so"
 	PREFIX ""
 )
 else()
 set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-robots #example_name
 	PROPERTIES 
+	LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath ${CMAKE_INSTALL_PREFIX}/modules/"
 	SUFFIX       ".so"
 	PREFIX ""
 )
@@ -346,6 +349,16 @@ install(CODE "execute_process( \
    COMMAND ${CMAKE_COMMAND} -E copy \
     \"${PROJECT_SOURCE_DIR}/jsmodules/rampart-letsencrypt.js\" \
     \"${CMAKE_INSTALL_PREFIX}/modules\"   \
+    )"
+)
+
+#tsql etc
+install(CODE "execute_process( \
+   COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_BINARY_DIR}/texis/apps/tsql\" \
+    \"${PROJECT_BINARY_DIR}/texis/apps/metamorph\" \
+    \"${PROJECT_BINARY_DIR}/texis/apps/rex\" \
+    \"${CMAKE_INSTALL_PREFIX}/bin\"   \
     )"
 )
 

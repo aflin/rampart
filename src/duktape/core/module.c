@@ -90,9 +90,43 @@ static duk_ret_t load_so_module(duk_context *ctx)
     void *lib = dlopen(file, RTLD_NOW);
     if (lib == NULL)
     {
+        /* rampart-crypto is required by other moduels
+           if not found in install path, try manually
+           loading it from RAMPART_PATH                 */
         const char *dl_err = dlerror();
+        char *s=strstr(dl_err, "rampart-crypto.so");
+        if(s)
+        {
+            RPPATH rp;
+
+            rp=rp_find_path("rampart-crypto.so", "modules/");
+
+            if(!strlen(rp.path))
+            {
+                pthread_mutex_unlock(&modlock);
+                RP_THROW(ctx, "Error loading: %s\n%s\n%s\n",
+                    dl_err,
+                    "Try setting the environment variable RAMPART_PATH to the location of the rampart directory",
+                    "(the directory containing the 'bin' and 'modules' directories)");
+            }
+            else
+            {
+                lib = dlopen(rp.path, RTLD_NOW);
+                if (lib)
+                {
+                    lib = dlopen(file, RTLD_NOW);
+                    if (lib)
+                        goto libload_success;
+                    else
+                        dl_err = dlerror();
+                }
+            }
+        }
         pthread_mutex_unlock(&modlock);
         RP_THROW(ctx, "Error loading: %s", dl_err);
+
+        libload_success:
+        pthread_mutex_unlock(&modlock);
     }
     duk_c_function init = (duk_c_function)dlsym(lib, "duk_open_module");
     pthread_mutex_unlock(&modlock);
