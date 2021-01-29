@@ -15,6 +15,14 @@
 #include "module.h"
 #include "rampart.h"
 
+/* todo put tickify in its own .c and .h file */
+#define ST_NONE 0
+#define ST_DQ   1
+#define ST_SQ   2
+#define ST_BT   3
+#define ST_BS   4
+
+char * tickify(char *src, size_t sz, int *err, int *ln);
 static pthread_mutex_t modlock = PTHREAD_MUTEX_INITIALIZER;
 
 struct module_loader
@@ -59,7 +67,28 @@ static duk_ret_t load_js_module(duk_context *ctx)
     /* check for babel and push src to stack */
     if (! (bfn=duk_rp_babelize(ctx, (char *)id, buffer, sb.st_mtime)) )
     {
-        duk_push_lstring(ctx, buffer, sb.st_size);
+        /* No babel, normal compile */
+        int err, lineno;
+        char *tickified = tickify(buffer, sb.st_size, &err, &lineno);
+        free(buffer);
+        buffer = tickified;
+        if (err)
+        {
+            char *msg="";
+            switch (err) { 
+                case ST_BT:
+                    msg="unterminated or illegal template literal"; break;
+                case ST_SQ:
+                    msg="unterminated string"; break;
+                case ST_DQ:
+                    msg="unterminated string"; break;
+                case ST_BS:
+                    msg="invalid escape"; break;
+            }
+            RP_THROW(ctx, "SyntaxError: %s (line %d)\n", msg, lineno);
+        }
+
+        duk_push_string(ctx, buffer);
     }
     duk_push_string(ctx, "\n}");
     duk_concat(ctx, 3);

@@ -1125,7 +1125,24 @@ fileserver(evhtp_request_t *req, void *arg)
 
     strcpy(fn, map->val);
     s=duk_rp_url_decode( path->full, strlen(path->full) );
-    strcpy(&fn[strlen(map->val)], s + strlen(map->key) - 1);
+    /* redirect /mappeddir to /mappeddir/ */
+    if ( !strcmp (s, map->key))
+    {
+        strcpy(fn, path->full);
+        strcat(fn, "/");
+        sendredir(req, fn);
+        return;
+    }
+    /* don't look for /mappeddirEXTRAJUNK
+       the next char after /reqdir must be a '/'
+     */
+    if( *(s + strlen(map->key)) != '/')
+    {
+        send404(req);
+        return;
+    }
+    strcpy(&fn[strlen(map->val)], s + strlen(map->key) +1);
+
     free(s);
 
     if (stat(fn, &sb) == -1)
@@ -4016,17 +4033,16 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
                         DUKREMALLOC(ctx, s, strlen(path) + 4);
 
-                        if (*path != '/' || *(path + strlen(path) - 1) != '/')
-                        {
-                            if (*path != '/' && *(path + strlen(path) - 1) != '/')
-                                sprintf(s, "/%s/", path);
-                            else if (*path != '/')
-                                sprintf(s, "/%s", path);
-                            else
-                                sprintf(s, "%s/", path);
-                        }
+                        if (*path != '/')
+                            sprintf(s, "/%s", path);
                         else
                             sprintf(s, "%s", path);
+                        
+                        /* we need the libevhtp library to match /path as well as /path/
+                           We'll take care of the redirect in fileserver()
+                        */
+                        if(s[strlen(s)-1] == '/')
+                            s[strlen(s)-1] = '\0';
 
                         map->key = s;
                         map->dhs = dhs;
