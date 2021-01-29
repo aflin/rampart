@@ -751,7 +751,7 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
     /*if(getstate() != ST_BT && ! (sstack_no<2 || sstack[sstack_no-1]==ST_BT)  ){*/\
         if(out==outbeg+osz-1){\
             int pos = out - outbeg;\
-            osz+=4;\
+            osz+=1024;\
             REMALLOC(outbeg, osz);\
             out = outbeg + pos;\
         }\
@@ -1051,7 +1051,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
         }
     }
     char *db = getenv("RPDEBUG");
-    
+
     if( db && !strcmp (db, "preparser") )
         fprintf(stderr, "%s",outbeg);
     *err=getstate();
