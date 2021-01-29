@@ -728,7 +728,321 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
     
     return 0;
 }
+/* tickify (template literal parsing) section */
+#define ST_NONE 0
+#define ST_DQ   1
+#define ST_SQ   2
+#define ST_BT   3
+#define ST_BS   4
 
+#define adv ({in++;})
+
+#define pushstate(state) do{\
+    sstack_no++;\
+    sstack[sstack_no] = state;\
+}while(0)
+
+#define popstate() sstack_no--
+
+#define getstate() sstack[sstack_no]
+
+#define copy(input) do{\
+    if ( ! (getstate() == ST_BT || ( sstack_no>1 && sstack[sstack_no-1]==ST_BT) )){\
+    /*if(getstate() != ST_BT && ! (sstack_no<2 || sstack[sstack_no-1]==ST_BT)  ){*/\
+        if(out==outbeg+osz-1){\
+            int pos = out - outbeg;\
+            osz+=4;\
+            REMALLOC(outbeg, osz);\
+            out = outbeg + pos;\
+        }\
+        *out=(input);\
+        out++;\
+    }\
+}while(0)
+
+#define scopy(input) do{\
+    if(out==outbeg+osz-1){\
+        int pos = out - outbeg;\
+        osz+=4;\
+        REMALLOC(outbeg, osz);\
+        out = outbeg + pos;\
+    }\
+    *out=(input);\
+    out++;\
+}while(0)
+
+#define stringcopy(st) do{\
+    char *s=(st);\
+    while(*s) {\
+        scopy(*s);\
+        s++;\
+    }\
+}while(0)
+
+static int procbt(char *bt_start, char *bt_end, char **ob, char **o, size_t *osize)
+{
+//    int len = (int) (bt_end - bt_start);
+    char *out=*o;
+    char *in=bt_start;
+    char *outbeg = *ob;
+    int osz = *osize;
+    int lastwasbs=0;
+
+    scopy('"');
+    adv;
+    while(in < bt_end)
+    {
+        if(in>bt_start && *(in-1)=='\\')
+            lastwasbs=1;
+        else
+            lastwasbs=0;
+        switch(*in)
+        {
+            case '$':
+                if(in+1<bt_end && *(in+1)=='{')
+                {
+                    int isfmt=0;
+                    in+=2;
+                    if( *in == '%')
+                    {
+                        isfmt=1;
+                        stringcopy("\"+rampart.utils.sprintf('");
+                        while (in < bt_end && *in != ':')
+                        {
+                            scopy(*in);
+                            adv;
+                        }
+                        if(*in != ':')
+                        {
+                            *ob=outbeg;
+                            *o=out;
+                            *osize=osz;
+                            return 0;
+                        }
+                        adv;
+                        stringcopy("',(");
+                    }
+                    else
+                        stringcopy("\"+(");
+                    while (in < bt_end && *in != '}')
+                    {
+                        scopy(*in);
+                        adv;
+                    }
+                    if(*in != '}')
+                    {
+                        *ob=outbeg;
+                        *o=out;
+                        *osize=osz;
+                        return 0;
+                    }
+                    if(isfmt)
+                        scopy(')');
+                    stringcopy(")+\"");
+                        
+                }
+                else
+                    scopy(*in);
+                break;
+            case '\n':
+                stringcopy("\\n\"+\n\"");
+                break;
+            case '\r':
+                scopy('\\');
+                scopy('r');
+                break;
+            case '\t':
+                scopy('\\');
+                scopy('t');
+                break;
+            case '`':
+                if(!lastwasbs)
+                    scopy('\\');
+                scopy('`');
+                break;
+            case '"':
+                scopy('\\');
+                scopy('"');
+                break;
+            default:
+                scopy(*in);
+        }
+        adv;
+    }
+    scopy('"');
+
+    *ob=outbeg;
+    *o=out;
+    *osize=osz;
+    return 1;
+}
+
+char * tickify(char *src, size_t sz, int *err, int *ln)
+{
+    size_t osz=4;
+    char *out = NULL, *outbeg;
+    char *in=src, *end=src+sz;
+    char *bt_start=NULL;
+    int line=1, qline=0;
+    int sstack_no=0;
+    int sstack[8];// only need 3?
+    
+    *err=0;
+    *ln=0;
+    sstack[0]=ST_NONE;
+
+    REMALLOC(out, osz);
+    outbeg=out;
+    while(*in)
+    {
+        switch (*in)
+        {
+            /* skip over comments */
+            case '/' :
+                if(getstate()==ST_NONE)
+                {
+                    if( in+1<end && *(in+1) == '/')
+                    {
+                        while(*in != '\n')
+                        {
+                            copy(*in);
+                            adv;
+                        }
+                    }
+                    else if ( in+1<end && *(in+1) == '*') 
+                    {
+                        copy(*in);
+                        adv;
+                        copy(*in);
+                        adv;
+                        while(in<end)
+                        {
+                            if(*in=='\n')
+                                line++;
+                            copy(*in);
+                            adv;
+
+                            if(*in == '*' && in+1<end && *(in+1)=='/')
+                            {
+                                copy(*in);
+                                adv;
+                                copy(*in);
+                                adv;
+                                break;
+                            }
+                            if( in >= end )
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        copy(*in);
+                        adv;
+                    }
+                    break;
+                }
+                else
+                {
+                    if (getstate() == ST_BS)
+                        popstate();
+                    copy(*in);
+                    adv;
+                }
+                break;
+            case '\n':
+                if (getstate() == ST_BS)
+                    popstate();
+                copy(*in);
+                line++;
+                adv;
+                break;
+            case '\\':
+                copy(*in);
+                adv;
+                if (getstate() == ST_BS)
+                    popstate();
+                else
+                    pushstate(ST_BS);
+                qline=line;
+                break;
+            case '"':
+                if(getstate() == ST_NONE)
+                {
+                    qline=line;
+                    pushstate(ST_DQ);
+                }
+                else if (getstate() == ST_DQ)
+                    popstate();
+                else if (getstate() == ST_BS)
+                    popstate();
+
+                copy(*in);
+                adv;
+                break;
+            case '\'':
+                if(getstate() == ST_NONE)
+                {
+                    qline=line;
+                    pushstate(ST_SQ);
+                }
+                else if (getstate() == ST_SQ)
+                    popstate();
+                else if (getstate() == ST_BS)
+                    popstate();
+
+                copy(*in);
+                adv;
+                break;
+            case '`':
+                if(getstate() == ST_BT)
+                {
+                    int r;
+                    popstate();
+                    r=procbt(bt_start, in, &outbeg, &out, &osz);
+                    if(!r)
+                    {
+                        *err=ST_BT;
+                        *ln=qline;
+                        free(outbeg);
+                        return NULL;
+                    }
+                }
+                else if (getstate() == ST_NONE)
+                {
+                    qline=line;
+                    pushstate(ST_BT);
+                    bt_start=in;
+                }
+                else if (getstate() == ST_BS)
+                {
+                    popstate();
+                    copy(*in);
+                }
+                else
+                    copy(*in);
+
+                adv;
+                break;
+            default:
+                copy(*in);
+                if (getstate() == ST_BS)
+                    popstate();
+                adv;
+        }
+    }
+    //printf("%s",outbeg);
+    *err=getstate();
+    if(*err)
+    {
+        *ln=qline;
+        free(outbeg);
+        return NULL;
+    }
+
+    copy('\0');
+    return outbeg;
+}
+/* end tickify */
 
 char **rampart_argv;
 int   rampart_argc;
@@ -970,6 +1284,29 @@ int main(int argc, char *argv[])
             if (! (babel_source_filename=duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime)) )
             {
                 /* No babel, normal compile */
+                int err, lineno;
+                /* process basic template literals (backtics) */
+                char *tickified = tickify(file_src, src_sz, &err, &lineno);
+                free(free_file_src);
+                file_src = free_file_src = tickified;
+                if (err)
+                {
+                    char *msg;
+                    switch (err) { 
+                        case ST_BT:
+                            msg="unterminated or illegal template literal"; break;
+                        case ST_SQ:
+                            msg="unterminated string"; break;
+                        case ST_DQ:
+                            msg="unterminated string"; break;
+                        case ST_BS:
+                            msg="invalid escape"; break;
+                    }
+                    fprintf(stderr, "SyntaxError: %s (line %d)\n", msg, lineno);
+                    /* file_src is NULL*/
+                    return(1);
+                }
+
                 duk_push_string(ctx, file_src);
                 /* push filename */
                 duk_push_string(ctx, fn);

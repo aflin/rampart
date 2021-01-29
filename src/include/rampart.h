@@ -146,7 +146,7 @@ extern int   rampart_argc;
     if ((char *)(s) == (char *)NULL)                     \
     {                                                    \
         fprintf(stderr, "error: realloc() ");            \
-        exit(-1);                                        \
+        exit(1);                                         \
     }
 
 pthread_mutex_t lock;
