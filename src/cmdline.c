@@ -763,7 +763,7 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
 #define scopy(input) do{\
     if(out==outbeg+osz-1){\
         int pos = out - outbeg;\
-        osz+=4;\
+        osz+=1024;\
         REMALLOC(outbeg, osz);\
         out = outbeg + pos;\
     }\
@@ -801,15 +801,34 @@ static int procbt(char *bt_start, char *bt_end, char **ob, char **o, size_t *osi
             case '$':
                 if(in+1<bt_end && *(in+1)=='{')
                 {
-                    int isfmt=0;
+                    //int isfmt=0;
                     in+=2;
                     if( *in == '%')
                     {
-                        isfmt=1;
+                        //isfmt=1;
                         stringcopy("\"+rampart.utils.sprintf('");
-                        while (in < bt_end && *in != ':')
+                        while (in < bt_end && !(*in == ':' && *(in-1)!='\\') )
                         {
-                            scopy(*in);
+                            switch(*in)
+                            {
+                                case '\n':
+                                    stringcopy("\\n");
+                                    break;
+                                case '\'':
+                                    scopy('\\');
+                                    scopy('\'');
+                                    break;
+                                case '\r':
+                                    scopy('\\');
+                                    scopy('r');
+                                    break;
+                                case '\t':
+                                    scopy('\\');
+                                    scopy('t');
+                                    break;
+                                default:
+                                    scopy(*in);
+                            }
                             adv;
                         }
                         if(*in != ':')
@@ -820,7 +839,8 @@ static int procbt(char *bt_start, char *bt_end, char **ob, char **o, size_t *osi
                             return 0;
                         }
                         adv;
-                        stringcopy("',(");
+                        //stringcopy("',(");
+                        stringcopy("',");
                     }
                     else
                         stringcopy("\"+(");
@@ -836,8 +856,8 @@ static int procbt(char *bt_start, char *bt_end, char **ob, char **o, size_t *osi
                         *osize=osz;
                         return 0;
                     }
-                    if(isfmt)
-                        scopy(')');
+                    //if(isfmt)
+                    //    scopy(')');
                     stringcopy(")+\"");
                         
                 }
@@ -879,7 +899,7 @@ static int procbt(char *bt_start, char *bt_end, char **ob, char **o, size_t *osi
 
 char * tickify(char *src, size_t sz, int *err, int *ln)
 {
-    size_t osz=4;
+    size_t osz=sz;
     char *out = NULL, *outbeg;
     char *in=src, *end=src+sz;
     char *bt_start=NULL;
@@ -1030,7 +1050,10 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                 adv;
         }
     }
-    //printf("%s",outbeg);
+    char *db = getenv("RPDEBUG");
+    
+    if( db && !strcmp (db, "preparser") )
+        fprintf(stderr, "%s",outbeg);
     *err=getstate();
     if(*err)
     {
