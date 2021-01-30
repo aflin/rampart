@@ -790,6 +790,7 @@ static int procbt(char *bt_start, char *bt_end, char **ob, char **o, size_t *osi
 
     scopy('"');
     adv;
+//    printf("backtick quote = \"%.*s\"\n", len+1, bt_start);
     while(in < bt_end)
     {
         if(in>bt_start && *(in-1)=='\\')
@@ -799,7 +800,7 @@ static int procbt(char *bt_start, char *bt_end, char **ob, char **o, size_t *osi
         switch(*in)
         {
             case '$':
-                if(in+1<bt_end && *(in+1)=='{')
+                if(in+1<bt_end && *(in+1)=='{' && *(in-1) != '\\')
                 {
                     //int isfmt=0;
                     in+=2;
@@ -906,7 +907,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
     int line=1, qline=0;
     int sstack_no=0;
     int sstack[8];// only need 3?
-    
+    int startexp=0;
     *err=0;
     *ln=0;
     sstack[0]=ST_NONE;
@@ -917,13 +918,13 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
     {
         switch (*in)
         {
-            /* skip over comments */
             case '/' :
                 if(getstate()==ST_NONE)
                 {
+                    /* skip over comments */
                     if( in+1<end && *(in+1) == '/')
                     {
-                        while(*in != '\n')
+                        while(in<end && *in != '\n')
                         {
                             copy(*in);
                             adv;
@@ -954,8 +955,29 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                                 break;
                         }
                     }
+                    else if (startexp)
+                    {
+                        /* regular expression */
+                        copy(*in);
+                        adv;
+                        while (in<end)
+                        {
+                            copy(*in);
+                            if(*in == '/' && ( *(in-1) !='\\' || *(in-2) =='\\' ) )
+                                break;
+                            if(*in == '\n') /* did we mess up? */
+                                break;
+                            //if(*in == '\n' || *in == ';')
+                            //    break;
+                            //if( (*in == ')' && *(in-1) !='\\') )
+                            //    break;
+                            adv;
+                        }
+                        adv;
+                    }
                     else
                     {
+                        /* division */
                         copy(*in);
                         adv;
                     }
@@ -1044,6 +1066,20 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                 adv;
                 break;
             default:
+                /* for the "/regexp/" vs "var x = 2/3" cases, we need to know where we are */
+                if (getstate() == ST_NONE)
+                {
+                    if (strchr("{(=;+-/*", *in))
+                        startexp=1;
+                    else if (isalnum(*in) || *in =='}' || *in == ')')
+                        startexp=0;
+                    else if(
+                        (*in == '&' && in+1<end && *(in+1)=='&')
+                            ||
+                        (*in == '|' && in+1<end && *(in+1)=='|')
+                    )
+                        startexp=1;
+                }
                 copy(*in);
                 if (getstate() == ST_BS)
                     popstate();
@@ -1085,7 +1121,7 @@ int main(int argc, char *argv[])
     if(rampart_argc>1)
     {
         char p[PATH_MAX], *s;
-        
+
         strcpy(p, rampart_argv[1]);
         s=strrchr(p,'/');
         if (s)
@@ -1176,7 +1212,7 @@ int main(int argc, char *argv[])
         const char *babel_source_filename;
         FILE *entry_file;
         size_t src_sz=0;
-        
+
         if (argc == 0)
         {
             if(!isatty(fileno(stdin)))
@@ -1203,11 +1239,11 @@ int main(int argc, char *argv[])
 
             if (!strcmp("-",argv[0]))
                 isstdin=1;
-            
+
             if(isstdin)
             {
                 size_t read=0;
-                
+
                 fn="stdin";
                 REMALLOC(file_src,1024);
                 while( (read=fread(file_src+src_sz, 1, 1024, stdin)) > 0 )
@@ -1292,7 +1328,7 @@ int main(int argc, char *argv[])
             duk_push_object(ctx);//new object
             duk_put_prop_string(ctx, -2, "ev_callback_object");
             duk_pop(ctx);//global stash
-            
+
             /* set up event base */
             evthread_use_pthreads();
             elbase = event_base_new();
@@ -1315,7 +1351,7 @@ int main(int argc, char *argv[])
                 if (err)
                 {
                     char *msg;
-                    switch (err) { 
+                    switch (err) {
                         case ST_BT:
                             msg="unterminated or illegal template literal"; break;
                         case ST_SQ:

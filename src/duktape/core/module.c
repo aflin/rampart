@@ -69,23 +69,28 @@ static duk_ret_t load_js_module(duk_context *ctx)
     {
         /* No babel, normal compile */
         int err, lineno;
-        char *tickified = tickify(buffer, sb.st_size, &err, &lineno);
-        free(buffer);
-        buffer = tickified;
-        if (err)
+        char *isbabel = strstr(id, "/babel.js");
+        /* don't tickify actual babel.js source */
+        if ( !(isbabel && isbabel == id + strlen(id) - 9) )
         {
-            char *msg="";
-            switch (err) { 
-                case ST_BT:
-                    msg="unterminated or illegal template literal"; break;
-                case ST_SQ:
-                    msg="unterminated string"; break;
-                case ST_DQ:
-                    msg="unterminated string"; break;
-                case ST_BS:
-                    msg="invalid escape"; break;
+            char *tickified = tickify(buffer, sb.st_size, &err, &lineno);
+            free(buffer);
+            buffer = tickified;
+            if (err)
+            {
+                char *msg="";
+                switch (err) { 
+                    case ST_BT:
+                        msg="unterminated or illegal template literal"; break;
+                    case ST_SQ:
+                        msg="unterminated string"; break;
+                    case ST_DQ:
+                        msg="unterminated string"; break;
+                    case ST_BS:
+                        msg="invalid escape"; break;
+                }
+                RP_THROW(ctx, "SyntaxError: %s (line %d)\n    at %s:%d", msg, lineno, id, lineno);
             }
-            RP_THROW(ctx, "SyntaxError: %s (line %d)\n", msg, lineno);
         }
 
         duk_push_string(ctx, buffer);
