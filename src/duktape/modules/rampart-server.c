@@ -1209,7 +1209,10 @@ static void sendbuf(DHS *dhs)
     else
     /* duk_to_buffer does a copy on a string, so we'll just skip that and copy directly */
     {
-        s= duk_get_lstring(ctx, -1, &sz);
+        if(duk_is_string(ctx, -1) )
+            s = duk_get_lstring(ctx, -1, &sz);
+        else
+            s= duk_safe_to_lstring(ctx, -1, &sz);
         if(s)
         {
             if (*s == '\\' && *(s + 1) == '@')
@@ -1815,14 +1818,36 @@ DHR
 */
 
 /* get the function, whether its a function or a (module) object containing the function */
-#define getfunction(dhs) do {\
-    duk_get_prop_index( (dhs)->ctx, 0, (duk_uarridx_t)((dhs)->func_idx) );\
-    if( !duk_is_function( (dhs)->ctx, -1) ) {\
-        /* printf("getting %s from %d\n",(dhs)->module_name, (int)(dhs)->func_idx);printstack((dhs)->ctx);*/\
-        duk_get_prop_string( (dhs)->ctx, -1, (dhs)->module_name);\
-        duk_remove( (dhs)->ctx, -2); /* the module object */\
+#define getfunction(dhs) ({\
+    int ret=1;\
+    duk_context *ctx=(dhs)->ctx;\
+    duk_get_prop_index(ctx, 0, (duk_uarridx_t)((dhs)->func_idx) );\
+    if( !duk_is_function(ctx, -1) ) {\
+        /* printf("getting %s from %d\n",module_name, (int)func_idx);printstack(ctx);*/\
+        duk_get_prop_string(ctx, -1, (dhs)->module_name);\
+        duk_remove(ctx, -2); /* the module object */\
+        if(!duk_is_function(ctx, -1)) {\
+            if(duk_is_object(ctx, -1)){\
+                char *s = strrchr((dhs)->req->uri->path->full, '/');\
+                if (!s){\
+                    s = (dhs)->req->uri->path->full;\
+                    if(!duk_get_prop_string(ctx, -1, s)){\
+                        duk_pop(ctx);ret=0;\
+                    }\
+                } else if(duk_has_prop_string(ctx, -1, s)){\
+                    duk_get_prop_string(ctx, -1, s);\
+                    duk_remove(ctx, -2);\
+                } else if(duk_has_prop_string(ctx, -1, s+1)){\
+                    duk_get_prop_string(ctx, -1, s+1);\
+                    duk_remove(ctx, -2);\
+                } else {\
+                    duk_pop(ctx);ret=0;\
+                }\
+            } else {duk_pop(ctx);ret=0;}\
+        }\
     }\
-} while (0)
+    ret;\
+})
 
 static void *http_dothread(void *arg)
 {
@@ -1840,7 +1865,11 @@ static void *http_dothread(void *arg)
         pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
 
     /* copy function ref to top of stack */
-    getfunction(dhs);
+    if(!getfunction(dhs))
+    {
+        send404(req);
+        return NULL;    
+    };
     /* push an empty object */
     duk_push_object(ctx);
     /* populate object with details from client */
@@ -2268,6 +2297,12 @@ static void fork_exec_js(evutil_socket_t fd_ignored, short flags, void *arg)
         duk_json_decode(ctx, -1);
     }
     /* encode the result of duk_pcall (or the error message) */
+    if(duk_is_string(ctx, -1))
+    {
+        duk_push_object(ctx);
+        duk_pull(ctx, -2);
+        duk_put_prop_string(ctx, -2, "text");
+    }
     duk_cbor_encode(ctx, -1, 0);
     cbor = duk_get_buffer_data(ctx, -1, &bufsz);
     msgOutSz = (uint32_t)bufsz;
@@ -2289,7 +2324,8 @@ static void fork_exec_js(evutil_socket_t fd_ignored, short flags, void *arg)
         if (
             duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("threadsafe")) &&
             duk_is_boolean(ctx, -1) &&
-            duk_get_boolean(ctx, -1) == 0)
+            duk_get_boolean(ctx, -1) == 0
+        )
             childwrite(child2par, "F", 1); //message that thread safe==false
         else
             childwrite(child2par, "X", 1); //message that thread safe is not to be set one way or another
@@ -2393,7 +2429,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 
     cstart = stopwatch(0.0);
     tprintf("in fork\n");
-    /* use waitpid to eliminate the possibility of getting a process that isn't our child */
+    /* use waitpid to eliminate the very possibility of getting the same pid, but that isn't our child */
     if (finfo->childpid && !waitpid(finfo->childpid, &pidstatus, WNOHANG))
     {
         tprintf("module=%d\n",(int)dhs->module);
@@ -2635,6 +2671,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         if (waitpid(finfo->childpid, &pidstatus, WNOHANG))
         {
             send500(req, "Error in Child Process");
+            printerr( "server.c line %d: Error in Child Process\n", __LINE__);
             return;
         }
         {
@@ -2656,6 +2693,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                 printerr( "server.c line %d, errno=%d\n", __LINE__, errno);
                 killfork;
                 send500(req, "Error in Child Process");
+                printerr( "server.c line %d: Error in Child Process\n", __LINE__);
                 return;
             }
             memcpy(duk_push_fixed_buffer(ctx, (duk_size_t)bsize), jbuf, (size_t)bsize);
@@ -2728,7 +2766,6 @@ static int getmod(DHS *dhs)
     duk_idx_t idx=dhs->func_idx;
     duk_context *ctx=dhs->ctx;
     const char *modname = dhs->module_name;
-
     duk_get_prop_index(ctx, 0, (duk_uarridx_t) idx); // {module:...}
 
     /* is it already in the object? */
@@ -2791,6 +2828,12 @@ static int getmod(DHS *dhs)
     /* take mtime & id from "module" and put it in module.exports, 
         signal next run requires a refork by setting dhs->module=MODULE_FILE_RELOAD;
         then remove modules */
+    if(!duk_is_object(ctx, -1)) 
+    {
+        printerr("{module[Path]: _func}: module.exports must be set to a Function\n");
+        duk_pop_3(ctx);
+        return 0;
+    }
     duk_get_prop_string(ctx,-2,"mtime");
     duk_put_prop_string(ctx,-2,"mtime");
     duk_get_prop_string(ctx,-2,"id");
@@ -2841,9 +2884,8 @@ static int getmod_path(DHS *dhs)
         // remove the extension:
         s=strrchr(modname,'/');
         if (!s) s=modname;
-        s=strchr(s,'.');
+        s=strrchr(s,'.');
         if(s) *s='\0';
-
         dhs->module_name=strdup(modname);
         ret=getmod(dhs);
         return ret;
@@ -2924,8 +2966,15 @@ static void http_callback(evhtp_request_t *req, void *arg)
     /* fork until we know it is safe not to fork:
        function will have property threadsafe:true if forking not required 
        after the first time it is called in http_fork_callback              */
-//    duk_get_prop_index(dhs->ctx, 0, (duk_uarridx_t)dhs->func_idx);
-    getfunction(dhs);
+
+    if(!getfunction(dhs))
+    {
+        /* matching object key to url - fail = 404 (see getfunction() )*/
+        send404(dhs->req);
+        free(dhs->module_name);
+        return;
+    }
+
     if (duk_get_prop_string(dhs->ctx, -1, DUK_HIDDEN_SYMBOL("threadsafe")))
     {
         if (duk_is_boolean(dhs->ctx, -1) && duk_get_boolean(dhs->ctx, -1))

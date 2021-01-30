@@ -231,7 +231,8 @@ var pid=server.start(
              server restart, and thus should be the preferred
              method of url-to-function mapping.
         */
-        "/showreq*":          {module:"servermod"},
+        "/showreq*":          {module:"showreq"},
+        "/scripts/":          {module:"servermod"},
 
         /* regular expressions can also be used. prepend a '~' to
            your expression: e.g.:

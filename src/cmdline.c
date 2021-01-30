@@ -900,7 +900,7 @@ static int procbt(char *bt_start, char *bt_end, char **ob, char **o, size_t *osi
 
 char * tickify(char *src, size_t sz, int *err, int *ln)
 {
-    size_t osz=sz;
+    size_t osz=sz+1024;
     char *out = NULL, *outbeg;
     char *in=src, *end=src+sz;
     char *bt_start=NULL;

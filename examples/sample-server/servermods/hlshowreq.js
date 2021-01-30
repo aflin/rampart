@@ -56,4 +56,5 @@ function showreq_callback(req){
 }
 
 /* export the callback function */
+//module.exports=showreq_callback;
 module.exports=showreq_callback;

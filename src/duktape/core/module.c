@@ -95,6 +95,10 @@ static duk_ret_t load_js_module(duk_context *ctx)
 
         duk_push_string(ctx, buffer);
     }
+
+    fclose(f);
+    free(buffer);
+
     duk_push_string(ctx, "\n}");
     duk_concat(ctx, 3);
     if(bfn)
@@ -110,9 +114,6 @@ static duk_ret_t load_js_module(duk_context *ctx)
     duk_dup(ctx, module_idx);
     duk_get_prop_string(ctx, -1, "exports");
     duk_call(ctx, 2);
-
-    fclose(f);
-    free(buffer);
     return 0;
 }
 
@@ -145,8 +146,8 @@ static duk_ret_t load_so_module(duk_context *ctx)
             }
             else
             {
-                lib = dlopen(rp.path, RTLD_NOW);
-                if (lib)
+                void *lib2 = dlopen(rp.path, RTLD_NOW);
+                if (lib2)
                 {
                     lib = dlopen(file, RTLD_NOW);
                     if (lib)
