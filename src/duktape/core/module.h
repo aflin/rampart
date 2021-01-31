@@ -16,6 +16,7 @@ extern "C"
 #include "duktape.h"
     extern void duk_module_init(duk_context *ctx);
     extern duk_ret_t duk_resolve(duk_context *ctx);
+    extern int duk_rp_resolve(duk_context *ctx, const char *name);
     extern duk_ret_t duk_require(duk_context *ctx);
 #if defined(__cplusplus)
 }

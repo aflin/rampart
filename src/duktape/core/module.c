@@ -177,7 +177,7 @@ static duk_ret_t load_so_module(duk_context *ctx)
     return 0;
 }
 
-static void resolve_id(duk_context *ctx, const char *request_id)
+static int resolve_id(duk_context *ctx, const char *request_id)
 {
     char *id = NULL;
     int module_loader_idx;
@@ -205,7 +205,6 @@ static void resolve_id(duk_context *ctx, const char *request_id)
             id = (strlen(rppath.path))?rppath.path:NULL;
             duk_pop(ctx);
         }
-
         if (id != NULL)
         {
             break;
@@ -214,8 +213,7 @@ static void resolve_id(duk_context *ctx, const char *request_id)
 
     if (id == NULL)
     {
-        duk_push_null(ctx);
-        return;
+        return 0;
     }
 
     duk_push_object(ctx);
@@ -223,7 +221,7 @@ static void resolve_id(duk_context *ctx, const char *request_id)
     duk_put_prop_string(ctx, -2, "id");
     duk_push_int(ctx, module_loader_idx);
     duk_put_prop_string(ctx, -2, "module_loader_idx");
-    return;
+    return 1;
 }
 
 duk_ret_t duk_require(duk_context *ctx)
@@ -233,16 +231,29 @@ duk_ret_t duk_require(duk_context *ctx)
     return 1;
 }
 
-duk_ret_t duk_resolve(duk_context *ctx)
+
+static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
 {
-    int force_reload = duk_get_boolean_default(ctx, 1, 0);
+    int force_reload=1;
     int module_loader_idx;
     const char *id;
+    const char *fn;
 
-    resolve_id(ctx, duk_get_string(ctx,0));
+    if(!name)
+    {
+        force_reload = duk_get_boolean_default(ctx, 1, 0);
+        fn = duk_get_string(ctx,0);
+    }
+    else
+        fn = name;
 
-    if (duk_is_null(ctx, -1))
-        RP_THROW(ctx, "Could not resolve module id %s: %s\n", duk_get_string(ctx, 0), strerror(errno));
+    if(!resolve_id(ctx, fn))
+    {
+        if(!name)
+            RP_THROW(ctx, "Could not resolve module id %s: %s\n", duk_get_string(ctx, 0), strerror(errno));
+        else
+            return 0;
+    }
 
     duk_get_prop_string(ctx, -1, "module_loader_idx");
     module_loader_idx = duk_get_int(ctx, -1);
@@ -304,7 +315,10 @@ duk_ret_t duk_resolve(duk_context *ctx)
 
     if (duk_pcall(ctx, 3) != DUK_EXEC_SUCCESS)
     {
-        return duk_throw(ctx);
+        if(!name)
+            return duk_throw(ctx);
+        else
+            return -1;
     }
 
     // pop current module
@@ -316,6 +330,33 @@ duk_ret_t duk_resolve(duk_context *ctx)
     // return module
     duk_dup(ctx, module_idx);
     return 1;
+}
+
+duk_ret_t duk_resolve(duk_context *ctx)
+{
+    return _duk_resolve(ctx, NULL);
+}
+
+int duk_rp_resolve(duk_context *ctx, const char *name)
+{
+    duk_idx_t idx=duk_get_top_index(ctx) + 1;
+    int ret = (int)_duk_resolve(ctx, name);
+
+    /* always return start stack size + 1
+       for consistency in stack size
+    */
+    if (ret == 0)
+    {
+        duk_push_undefined(ctx);
+    }
+
+    duk_insert(ctx, idx);
+ 
+    while (duk_get_top_index(ctx) > idx)
+    {
+        duk_pop(ctx);
+    }
+    return ret;   
 }
 
 void duk_module_init(duk_context *ctx)

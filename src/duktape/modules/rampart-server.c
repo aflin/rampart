@@ -125,8 +125,9 @@ DHS
     uint16_t threadno;      // our current thread number
     uint16_t pathlen;       // length of the url path if module==MODULE_PATH
     char *module_name;      // name of the module 
+    char *reqpath;          // same as dhs->dhs->req->uri->path->full, but copied for fork
     void *aux;              // generic pointer - currently used for dirlist()
-    char module;            // is normal fuction if 0, 1 is js module, 2 js module needs reload.
+    char module;            // is 0 for normal fuction, 1 for js module, 2 for js module that needs reload.
 };
 
 DHS *dhs404 = NULL;
@@ -1818,36 +1819,78 @@ DHR
 */
 
 /* get the function, whether its a function or a (module) object containing the function */
-#define getfunction(dhs) ({\
-    int ret=1;\
-    duk_context *ctx=(dhs)->ctx;\
-    duk_get_prop_index(ctx, 0, (duk_uarridx_t)((dhs)->func_idx) );\
-    if( !duk_is_function(ctx, -1) ) {\
-        /* printf("getting %s from %d\n",module_name, (int)func_idx);printstack(ctx);*/\
-        duk_get_prop_string(ctx, -1, (dhs)->module_name);\
-        duk_remove(ctx, -2); /* the module object */\
-        if(!duk_is_function(ctx, -1)) {\
-            if(duk_is_object(ctx, -1)){\
-                char *s = strrchr((dhs)->req->uri->path->full, '/');\
-                if (!s){\
-                    s = (dhs)->req->uri->path->full;\
-                    if(!duk_get_prop_string(ctx, -1, s)){\
-                        duk_pop(ctx);ret=0;\
-                    }\
-                } else if(duk_has_prop_string(ctx, -1, s)){\
-                    duk_get_prop_string(ctx, -1, s);\
-                    duk_remove(ctx, -2);\
-                } else if(duk_has_prop_string(ctx, -1, s+1)){\
-                    duk_get_prop_string(ctx, -1, s+1);\
-                    duk_remove(ctx, -2);\
-                } else {\
-                    duk_pop(ctx);ret=0;\
-                }\
-            } else {duk_pop(ctx);ret=0;}\
-        }\
-    }\
-    ret;\
-})
+
+static int getfunction(DHS *dhs){
+    int ret=1;
+    duk_context *ctx=dhs->ctx;
+    duk_get_prop_index(ctx, 0, (duk_uarridx_t)(dhs->func_idx) );
+//printf("in getfunction() duk_get_prop_index(ctx, 0, %d)\n", (int) dhs->func_idx);
+//prettyprintstack(ctx);
+    if( !duk_is_function(ctx, -1) ) {
+//printf("duk_get_prop_string(ctx, -1, '%s') -- at stack:\n", dhs->module_name);
+//prettyprintstack(ctx);
+        duk_get_prop_string(ctx, -1, dhs->module_name);
+        duk_remove(ctx, -2); /* the module object */
+        if(!duk_is_function(ctx, -1)) {
+            if(duk_is_object(ctx, -1)){
+//printf("path = %s, ", dhs->reqpath);
+//printf("pathlen = %d, ", dhs->pathlen);
+//printf("subpath = '%s'\n", dhs->reqpath + dhs->pathlen);
+//                printf("path = %s, pathlen = %d, subpath = '%s'\n", dhs->reqpath, dhs->pathlen, dhs->reqpath + dhs->pathlen);
+                char *s;
+                /* if pathlen == 0, then the length is variable.  All we
+                   can do is go backwards to the last '/'.  This means
+                   for glob and regex, only '/file.html' can be matched.
+                   Otherwise '/path/file.html' can also be matched.
+                */
+                if(dhs->pathlen)
+                    s = dhs->reqpath + dhs->pathlen -1;
+                else
+                    s = strrchr(dhs->reqpath, '/');
+//printf("checking for key '%s'\n", s);
+//prettyprintstack(ctx);
+                if (!s)
+                /* this will never happen */
+                {
+//printf("NEVER WILL HAPPEN\n");
+                    s = dhs->reqpath;
+                    if(!duk_get_prop_string(ctx, -1, s))
+                    {
+                        duk_pop(ctx);
+                        ret=0;
+                    }
+                } 
+                else if(duk_has_prop_string(ctx, -1, s))
+                {
+                    duk_get_prop_string(ctx, -1, s);
+                    duk_remove(ctx, -2);
+//printf("got key '%s'\n", s);
+                } 
+                else if(duk_has_prop_string(ctx, -1, s+1))
+                {
+                    duk_get_prop_string(ctx, -1, s+1);
+                    duk_remove(ctx, -2);
+//printf("got key '%s'\n", s+1);
+                } 
+                else 
+                {
+                    duk_pop(ctx);
+                    ret=0;
+//printf("FAILED TO GET KEY %s\n", s);
+                }
+            } 
+            else 
+            {
+//printf("duk_is_object == false\n");
+                duk_pop(ctx);
+                ret=0;
+            }
+        }
+//else printf("getfunction: inner isfunction\n");
+    }
+//else printf("getfunction: outer isfunction\n");
+    return ret;
+}
 
 static void *http_dothread(void *arg)
 {
@@ -2227,6 +2270,7 @@ void rp_exit(int sig)
 */
 
 #define killfork do {\
+ /*printf("Killing Fork at %d\n", __LINE__);*/\
  kill(finfo->childpid, SIGTERM);\
  finfo->childpid=0;\
  close(finfo->child2par);\
@@ -2283,7 +2327,7 @@ static void fork_exec_js(evutil_socket_t fd_ignored, short flags, void *arg)
                 duk_get_prop_string(ctx, -1, "stack");
                 duk_remove(ctx,-2);
             }
-            printf("error in callback: %s\n",duk_get_string(ctx,-1));
+            printerr("error in callback: %s\n",duk_get_string(ctx,-1));
             err = (char *)duk_json_encode(ctx, -1);
             //get rid of quotes
             err[strlen(err) - 1] = '\0';
@@ -2311,8 +2355,9 @@ static void fork_exec_js(evutil_socket_t fd_ignored, short flags, void *arg)
     {
         /* on first loop, safe to close and free here */
         evutil_closesocket(data->conn->sock);
-        evhtp_connection_free(data->conn);
-        data->conn=NULL;
+        /* this apparently includes something needed later, don't free */
+        //evhtp_connection_free(data->conn);
+        //data->conn=NULL;
     }
 
     /* first: write the size of the message to parent */
@@ -2392,23 +2437,42 @@ static void fork_read_request(evutil_socket_t fd_ignored, short flags, void *arg
     /* decode cbor message */
     duk_cbor_decode(ctx, -1, 0);
 
-    /* free old name, if any */
+    /* free old names */
     if(dhs->module_name) free(dhs->module_name);
+    if(dhs->reqpath) free(dhs->reqpath);
+    dhs->reqpath=NULL;
+    dhs->module_name=NULL;
+
     /* get the module name, if any */
     if( duk_get_prop_string(ctx, -1, "rp_module_name" ) )
     {
-        dhs->module_name=(char *) duk_get_string(ctx,-1);
+        dhs->module_name = strdup(duk_get_string(ctx,-1));
         duk_del_prop_string(ctx, -2, "rp_module_name");
     }
     else
         dhs->module_name=NULL;
     duk_pop(ctx);
     
+    if (duk_get_prop_string(ctx, -1, "rp_reqpath"))
+    {
+        dhs->reqpath = strdup(duk_get_string(ctx,-1));
+        duk_del_prop_string(ctx, -2, "rp_reqpath");
+    } 
+    //else printf("WTF  -- this can't happen at duk_get_prop_string(ctx, -2, rp_reqpath)");
+    duk_pop(ctx);
+
+    dhs->pathlen=0;
+    if (duk_get_prop_string(ctx, -1, "rp_pathlen"))
+    {
+        dhs->pathlen=duk_get_int(ctx, -1);
+        duk_del_prop_string(ctx, -2, "rp_pathlen");
+    }
+    duk_pop(ctx);
+    
     /* pull function out of stash and prepare to call it with parameters from cbor decoded message */
     getfunction(dhs);
     /* move message/object to top */
     duk_pull(ctx,-2);
-
     fork_exec_js(-1,0,data);
     fcntl(par2child, F_SETFL, O_NONBLOCK);
 }
@@ -2478,7 +2542,6 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 
         /***** fork ******/
         finfo->childpid = fork();
-
         if (finfo->childpid < 0)
         {
             printerr( "fork failed");
@@ -2593,6 +2656,10 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                 duk_push_string(ctx,dhs->module_name);
                 duk_put_prop_string(ctx, -2, "rp_module_name" );
             }
+            duk_push_string(ctx, dhs->reqpath);
+            duk_put_prop_string(ctx, -2, "rp_reqpath" );
+            duk_push_number(ctx, dhs->pathlen);
+            duk_put_prop_string(ctx, -2, "rp_pathlen" );
 
             /* convert to cbor and send to child */
             duk_cbor_encode(ctx, -1, 0);
@@ -2668,8 +2735,12 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
            put message in a buffer for decoding      */
         tprintf("parent about to read %lld bytes\n", (long long)bsize);
         /* if child is dead here, bsize is bad, bad things will be read later, causing big boom */
-        if (waitpid(finfo->childpid, &pidstatus, WNOHANG))
+
+        /* confusion about which is correct */
+        //if (waitpid(finfo->childpid, &pidstatus, WNOHANG))
+        if (waitpid(finfo->childpid, &pidstatus, WNOHANG) == -1)
         {
+            fprintf(stderr, "Error in Child Process: %s, pid=%d\n", strerror(errno), finfo->childpid);
             send500(req, "Error in Child Process");
             printerr( "server.c line %d: Error in Child Process\n", __LINE__);
             return;
@@ -2767,7 +2838,7 @@ static int getmod(DHS *dhs)
     duk_context *ctx=dhs->ctx;
     const char *modname = dhs->module_name;
     duk_get_prop_index(ctx, 0, (duk_uarridx_t) idx); // {module:...}
-
+    int ret=0;
     /* is it already in the object? */
     if (duk_get_prop_string(ctx, -1, modname) )
     {
@@ -2802,11 +2873,15 @@ static int getmod(DHS *dhs)
     }
     duk_pop(ctx); //the module from duk_get_prop_string(ctx, -1, modname) or undefined
 
-    /* load module from file */
-    duk_push_sprintf(ctx,"module.resolve(\"%s\",true);", modname);
-    if(duk_peval(ctx) != 0)
-    {
+    ret = duk_rp_resolve(ctx, modname);
 
+    if (!ret)
+    {
+        duk_pop_2(ctx);
+        return 0;
+    }
+    else if(ret == -1)
+    {
         evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
         if (duk_is_error(ctx, -1) || duk_is_string(ctx, -1))
         {
@@ -2820,17 +2895,19 @@ static int getmod(DHS *dhs)
             evbuffer_add_printf(dhs->req->buffer_out, msg500, "unknown error");
         }
         sendresp(dhs->req, 500);
+        duk_pop_2(ctx);
         return -1;
-    }
-    // on stack is module.exports
+        
+    }        
 
+    // on stack is module.exports
     duk_get_prop_string(ctx,-1,"exports");
     /* take mtime & id from "module" and put it in module.exports, 
         signal next run requires a refork by setting dhs->module=MODULE_FILE_RELOAD;
         then remove modules */
     if(!duk_is_object(ctx, -1)) 
     {
-        printerr("{module[Path]: _func}: module.exports must be set to a Function\n");
+        printerr("{module[Path]: _func}: module.exports must be set to a Function or Object with {key:function}\n");
         duk_pop_3(ctx);
         return 0;
     }
@@ -2838,6 +2915,7 @@ static int getmod(DHS *dhs)
     duk_put_prop_string(ctx,-2,"mtime");
     duk_get_prop_string(ctx,-2,"id");
     duk_put_prop_string(ctx,-2,"module_id");
+    /* must reload/redo fork if mod is not recorded */
     dhs->module=MODULE_FILE_RELOAD;
     duk_remove(ctx,-2); // now stack is [ func_array, ..., {module:xxx}, func_exports ]
 
@@ -2867,27 +2945,63 @@ static int getmod_path(DHS *dhs)
 
     if(stat(modpath, &pathstat)== -1)
     {
+        send404(dhs->req);
         return 0;
     }
     else
     {
         int ret;
+        char *subpath, *spath;
         char modname[ strlen(path->full) + strlen(modpath) + 1 ], *s;
 
         strcpy(modname,modpath);
+//printf("1 modname=%s\n", modname);
 
         if( *(modname+strlen(modname)-1)=='/' )
             *(modname+strlen(modname)-1)='\0';
-        //printf("pathlen=%d modpath=%s modname=%s\n",dhs->pathlen,modpath,modname);
-        strcat(modname, (path->full) + dhs->pathlen -1);
+//printf("pathlen=%d modpath=%s modname=%s\n",dhs->pathlen,modpath,modname);
 
-        // remove the extension:
-        s=strrchr(modname,'/');
-        if (!s) s=modname;
-        s=strrchr(s,'.');
-        if(s) *s='\0';
+
+        spath = (path->full) + dhs->pathlen -1;
+        subpath = strdup(spath);
+
+//printf("2 subpath=%s\n", (path->full) + dhs->pathlen -1);
+
+
+        if(subpath[strlen(subpath)-1] == '/')
+            subpath[strlen(subpath)-1] = '\0';
+        else
+        {
+            // remove the extension:
+            s=strrchr(subpath,'/');
+            if (!s) s=subpath;
+            s=strrchr(s,'.');
+            if(s) *s='\0';
+        }
+        strcat(modname, subpath);
+
+//printf("3 modname=%s\n", modname);
+
         dhs->module_name=strdup(modname);
         ret=getmod(dhs);
+        if(!ret)
+        {
+            if(spath[strlen(spath)-1] != '/')
+            {
+                /* check if dir/filename.html is a function called dir */
+                s=strrchr(dhs->module_name, '/');
+                if(s)
+                {
+                    *s='\0';
+                    s=strrchr(subpath, '/');
+                    if(s) *s='\0';
+                    ret=getmod(dhs);
+                }
+            }
+        }
+//printf("subpath at end = '%s', len=%d\n", subpath, (int)strlen(subpath));
+        dhs->pathlen += strlen(subpath);
+        free(subpath);
         return ret;
     }
 }
@@ -2917,6 +3031,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
     newdhs.module=dhs->module;
     newdhs.module_name=NULL;
     newdhs.aux=dhs->aux;
+    newdhs.reqpath=strdup(req->uri->path->full);
     dhs = &newdhs;
     if(dhs->module==MODULE_FILE)
     {
@@ -2937,12 +3052,9 @@ static void http_callback(evhtp_request_t *req, void *arg)
             free(dhs->module_name);
             return;
         }
-        else if (res==0)
+        else if (res == 0)
         {
-            char submsg[64+strlen(dhs->module_name)];
-            snprintf(submsg,64+strlen(dhs->module_name),"Error: Could not resolve module id %s: No such file or directory",dhs->module_name);
-            evbuffer_add_printf(dhs->req->buffer_out, msg500, submsg);
-            sendresp(dhs->req, 500);
+            send404(dhs->req);
             free(dhs->module_name);
             return;
         }
@@ -2957,7 +3069,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
         }
         else if (res==0)
         {
-            //printf("sending 404\n");
+            //printf("sending 404 from http_callback\n");
             send404(dhs->req);
             free(dhs->module_name);
             return;
@@ -2988,6 +3100,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
         http_thread_callback(req, dhs, thrno);
 
     free(dhs->module_name);
+    free(dhs->reqpath);
 }
 
 /* bind to addr and port.  Return mallocd string of addr, which 
@@ -3095,6 +3208,7 @@ static DHS *new_dhs(duk_context *ctx, int idx)
     dhs->ctx = ctx;
     dhs->req = NULL;
     dhs->aux = NULL;
+    dhs->reqpath=NULL;
     dhs->pathlen=0;
     /* afaik there is no TIME_T_MAX */
     dhs->timeout.tv_sec = RP_TIME_T_FOREVER;
@@ -3913,7 +4027,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         {
             if (duk_is_object(ctx, -1) && !duk_is_function(ctx, -1) && !duk_is_array(ctx, -1))
             {
-                int mlen=0,j=0,pathlen=0;
+                int mlen=0,j=0;
                 static char *pathtypes[]= { "exact", "glob ", "regex", "dir  " };
 
                 if(mapsort)
@@ -3944,7 +4058,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 for (j=0; j<mlen; j++)
                 {
                     char *path, *fspath, *fs = (char *)NULL, *s = (char *)NULL;
-                    
+                    int pathlen=0;
                     duk_get_prop_index(ctx,-1,j);
                     path = (char*)duk_get_string(ctx,-1);
                     duk_get_prop_string(ctx,-3,path);
@@ -4004,13 +4118,20 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                 fprintf(access_fh, "mapping %s path to function   %-20s ->    module:%s\n", pathtypes[cbtype],s, fname);
                                 mod=MODULE_FILE;
                                 duk_pop(ctx);
+                                /* setting path length allows modules to return Objects with keys/urls
+                                   greater than one directory.  Can always be used for modulePath: modules,
+                                   but only for non glob/regex paths for module:
+                                */
+                                if(cbtype == 0 || cbtype == 3)
+                                    pathlen=strlen(s);
                                 goto copyfunction;
+
                             }
                             duk_pop(ctx);
                             if (duk_get_prop_string(ctx,-1, "modulePath") )
                             {
-                                if( *( s + strlen(s) -1) == '*' || *s=='*')
-                                    RP_THROW(ctx, "server.start: parameter \"map:modulePath\" -- glob not allowed in module path %s",s);
+                                if( cbtype == 2 || cbtype==1 )
+                                    RP_THROW(ctx, "server.start: parameter \"map:modulePath\" -- glob and regex not allowed in module path %s",s);
 
                                 fname = duk_get_string(ctx, -1);
                                 fprintf(access_fh, "mapping %s path to mod folder %-20s ->    module path:%s\n", pathtypes[cbtype], s, fname);
@@ -4045,6 +4166,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         
                         fpos++;
                         /* register callback with evhtp using the callback dhs struct */
+                        
                         if(cbtype==2)
                         {
                             req_callback =evhtp_set_regex_cb(htp, s, http_callback, cb_dhs);
