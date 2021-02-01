@@ -199,7 +199,7 @@ var pid=server.start(
                "/tetris"    becomes  "/tetris/
                "./mPurpose" becomes  "./mPurpose/"
         **************************************************** */
-        "/":                  process.scriptPath + "/mPurpose/",
+        "/":                  process.scriptPath + "/html/",
         "/tetris/":            process.scriptPath + "/tetris-tutorial",
 
         /* *************************************************
@@ -211,7 +211,7 @@ var pid=server.start(
            inline functions are set once and cannot be edited 
            while the server is running
         */
-        "/inlinefunc.html":  myinlinefunc,
+        "/inlinefunc.html":   myinlinefunc,
 
         /* 
             matching a glob to a function
@@ -223,36 +223,59 @@ var pid=server.start(
             all match this function
         
         */
+        "/showreq*":          {module: "/modules/showreq.js"},
+
+        /* also allowed:
+
+        "/showreq*":          {module: "/showreq"},
+
         /* 
             This example also uses the function from 
-             the module "servermod.js". Changes to a 
+             the module "single_function.js". Changes to a 
              {module: function} or files in {modulePath: path}
              while the server is running do not require a 
              server restart, and thus should be the preferred
              method of url-to-function mapping.
         */
-        "/showreq*":          {module:"showreq"},
-        "/scripts/":          {module:"servermod"},
 
-        /* regular expressions can also be used. prepend a '~' to
-           your expression: e.g.:
+        /* A module which returns a single function
+           module.exports=function(){}              */
+        "/single.html":       {module: "/modules/single_function.js"},
 
-        "~/show[rR]eq.*":    {module:"servermod"},
-
-          see https://github.com/kkos/oniguruma/blob/master/doc/RE
-          for full syntax
+        /* A module which returns an Object with values set to functions:
+           in modules/multi_function.js is
+                module.exports={
+                    "/"                  : indexpage,
+                    "/index.html"        : indexpage,
+                    "/page1.html"        : firstpage,
+                    "/page2.html"        : secondpage,
+                    "/virtdir/page3.html": thirdpage
+                };
+                which maps to:
+                    http://localhost:8088/multi/page1.html
+                    http://localhost:8088/multi/page2.html
+                    http://localhost:8088/multi/virtdir/page3.html
         */
+        "/multi/":            {module: "/modules/multi_function.js" },
 
         /* 
             Load modules dynamically from a path.
             **** File additions, deletions and changes do not 
              require a server restart. ****
 
-            see files in ./servermods/ directory.
+            see files in ./modules/mymodulespath directory.
             
         */
+        "/scripts/":	      {modulePath: "/modules/mymodulepath/"}
 
-        "/modtest/":	      {modulePath: process.scriptPath + "/servermods/"}
+        /* regular expressions can also be used. prepend a '~' to
+           your expression: e.g.:
+
+        "~/show[rR]eq.*":    {module:"mymodule.js"},
+
+          see https://github.com/kkos/oniguruma/blob/master/doc/RE
+          for full syntax
+        */
 
     }
 });

@@ -260,7 +260,7 @@ endif()
 
 ## some examples into src temporarily 
 set(EXAMPLE_FILES
-	"sample-server"
+	"web_server"
 	"wikipedia_search"
 	"metasearch"
 )

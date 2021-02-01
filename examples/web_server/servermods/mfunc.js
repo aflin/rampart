@@ -38,17 +38,29 @@ function secondpage(req) {
 }
 
 
+function indexpage(req) {
+    /* check req.params here and formulate your response */
+
+    return { html: `${htop}<h1>THIS IS THE INDEX PAGE</h1>${hend}` };
+}
+
+
 /* 
 since we have 
   map: {
-    "/scripts/":          {module:"servermod"},
+    "/modtest/":          {modulePath: process.scriptPath + "/servermods/"},
   }
+and this file is mfunc.js in servermods/
 in server.js, these map to
-http://localhost:8088/scripts/page1.html
-http://localhost:8088/scripts/page2.html
+http://localhost:8088/modtest/mfunc/page1.html
+http://localhost:8088/modtest/mfunc/page2.html
+http://localhost:8088/modtest/mfunc/
+http://localhost:8088/modtest/mfunc/index.html
 */
 
 module.exports={
     "/page1.html": firstpage,
     "/page2.html": secondpage,
+    "/": indexpage,
+    "index.html": indexpage
 };

@@ -150,6 +150,7 @@ RPPATH rp_find_path(char *file, char *subdir)
     strcpy(path,RP_script_path);
     strcat(path,"/");
     strcat(path,file);
+
     if (stat(path, &sb) != -1)
     {
         ret.stat=sb;

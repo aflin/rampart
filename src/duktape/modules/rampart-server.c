@@ -38,7 +38,7 @@ RP_MTYPES *allmimes=rp_mimetypes;
 int n_allmimes =nRpMtypes;
 
 extern int RP_TX_isforked;
-
+extern char *RP_script_path;
 uid_t unprivu=0;
 gid_t unprivg=0;
 //#define RP_TIMEO_DEBUG
@@ -1824,19 +1824,16 @@ static int getfunction(DHS *dhs){
     int ret=1;
     duk_context *ctx=dhs->ctx;
     duk_get_prop_index(ctx, 0, (duk_uarridx_t)(dhs->func_idx) );
-//printf("in getfunction() duk_get_prop_index(ctx, 0, %d)\n", (int) dhs->func_idx);
-//prettyprintstack(ctx);
+    //printf("in getfunction() duk_get_prop_index(ctx, 0, %d)\n", (int) dhs->func_idx);
+    //prettyprintstack(ctx);
     if( !duk_is_function(ctx, -1) ) {
-//printf("duk_get_prop_string(ctx, -1, '%s') -- at stack:\n", dhs->module_name);
-//prettyprintstack(ctx);
+    //printf("duk_get_prop_string(ctx, -1, '%s') -- at stack:\n", dhs->module_name);
+    //prettyprintstack(ctx);
         duk_get_prop_string(ctx, -1, dhs->module_name);
         duk_remove(ctx, -2); /* the module object */
         if(!duk_is_function(ctx, -1)) {
             if(duk_is_object(ctx, -1)){
-//printf("path = %s, ", dhs->reqpath);
-//printf("pathlen = %d, ", dhs->pathlen);
-//printf("subpath = '%s'\n", dhs->reqpath + dhs->pathlen);
-//                printf("path = %s, pathlen = %d, subpath = '%s'\n", dhs->reqpath, dhs->pathlen, dhs->reqpath + dhs->pathlen);
+                //printf("path = %s, pathlen = %d, subpath = '%s'\n", dhs->reqpath, dhs->pathlen, dhs->reqpath + dhs->pathlen);
                 char *s;
                 /* if pathlen == 0, then the length is variable.  All we
                    can do is go backwards to the last '/'.  This means
@@ -1847,12 +1844,10 @@ static int getfunction(DHS *dhs){
                     s = dhs->reqpath + dhs->pathlen -1;
                 else
                     s = strrchr(dhs->reqpath, '/');
-//printf("checking for key '%s'\n", s);
-//prettyprintstack(ctx);
+                //printf("checking for key '%s'\n", s);
                 if (!s)
                 /* this will never happen */
                 {
-//printf("NEVER WILL HAPPEN\n");
                     s = dhs->reqpath;
                     if(!duk_get_prop_string(ctx, -1, s))
                     {
@@ -1864,31 +1859,31 @@ static int getfunction(DHS *dhs){
                 {
                     duk_get_prop_string(ctx, -1, s);
                     duk_remove(ctx, -2);
-//printf("got key '%s'\n", s);
+                    //printf("got key '%s'\n", s);
                 } 
                 else if(duk_has_prop_string(ctx, -1, s+1))
                 {
                     duk_get_prop_string(ctx, -1, s+1);
                     duk_remove(ctx, -2);
-//printf("got key '%s'\n", s+1);
+                    //printf("got key '%s'\n", s+1);
                 } 
                 else 
                 {
                     duk_pop(ctx);
                     ret=0;
-//printf("FAILED TO GET KEY %s\n", s);
+                    //printf("FAILED TO GET KEY %s\n", s);
                 }
             } 
             else 
             {
-//printf("duk_is_object == false\n");
+                //printf("duk_is_object == false\n");
                 duk_pop(ctx);
                 ret=0;
             }
         }
-//else printf("getfunction: inner isfunction\n");
+        //else printf("getfunction: inner isfunction\n");
     }
-//else printf("getfunction: outer isfunction\n");
+    //else printf("getfunction: outer isfunction\n");
     return ret;
 }
 
@@ -2470,6 +2465,7 @@ static void fork_read_request(evutil_socket_t fd_ignored, short flags, void *arg
     duk_pop(ctx);
     
     /* pull function out of stash and prepare to call it with parameters from cbor decoded message */
+    /* this will not return 0, because we previously checked */
     getfunction(dhs);
     /* move message/object to top */
     duk_pull(ctx,-2);
@@ -2832,6 +2828,10 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 /* load module if not loaded, return position on stack
     if module file is newer than loaded version, reload 
 */
+
+/* kinda hidden, but visible from printstack */
+#define RP_HIDDEN_SYMBOL(s) " # " s
+
 static int getmod(DHS *dhs)
 {
     duk_idx_t idx=dhs->func_idx;
@@ -2845,7 +2845,7 @@ static int getmod(DHS *dhs)
         struct stat sb;
         const char *filename;
         
-        duk_get_prop_string(ctx, -1, "module_id");
+        duk_get_prop_string(ctx, -1, RP_HIDDEN_SYMBOL("module_id"));
         filename=duk_get_string(ctx,-1);
         duk_pop(ctx);
 
@@ -2853,15 +2853,17 @@ static int getmod(DHS *dhs)
         {
             time_t lmtime;
 
-            duk_get_prop_string(ctx,-1,"mtime");
+            duk_get_prop_string(ctx,-1,RP_HIDDEN_SYMBOL("mtime"));
             lmtime = (time_t)duk_get_number(ctx,-1);
             duk_pop(ctx); //mtime
-            //printf("%d >= %d?\n",(int)lmtime,(int)sb.st_mtime);
+            //printf("%d >= %d?",(int)lmtime,(int)sb.st_mtime);
             if(lmtime>=sb.st_mtime)
             {
+                //printf("  Yes\n");
                 duk_pop_2(ctx); //the module from duk_get_prop_string(ctx, -1, modname) and duk_get_prop_index(ctx, 0, (duk_uarridx_t) idx);
                 return 1; // it is there and up to date
             }
+            //printf("  No\n");
             /* else replace it below */
         }
         /* else file is gone?  Send error */
@@ -2872,7 +2874,6 @@ static int getmod(DHS *dhs)
         }
     }
     duk_pop(ctx); //the module from duk_get_prop_string(ctx, -1, modname) or undefined
-
     ret = duk_rp_resolve(ctx, modname);
 
     if (!ret)
@@ -2905,23 +2906,41 @@ static int getmod(DHS *dhs)
     /* take mtime & id from "module" and put it in module.exports, 
         signal next run requires a refork by setting dhs->module=MODULE_FILE_RELOAD;
         then remove modules */
-    if(!duk_is_object(ctx, -1)) 
+    if(duk_is_function(ctx, -1))
+    {
+        /* give the function a name for error reporting */
+        duk_push_sprintf(ctx,"module:%s",modname);
+        duk_put_prop_string(ctx,-2,"fname");
+    }
+    else if (duk_is_object(ctx, -1))
+    {
+        /* do the same, but for each function in object */
+        duk_enum(ctx, -1, 0);
+        while (duk_next(ctx,-1,1))
+        {
+            if(duk_is_function(ctx, -1))
+            {
+                duk_push_sprintf(ctx,"module:%s",modname);
+                duk_put_prop_string(ctx,-2,"fname");
+            }
+            duk_pop_2(ctx);
+        }
+        duk_pop(ctx);
+    }
+    else
     {
         printerr("{module[Path]: _func}: module.exports must be set to a Function or Object with {key:function}\n");
         duk_pop_3(ctx);
         return 0;
     }
     duk_get_prop_string(ctx,-2,"mtime");
-    duk_put_prop_string(ctx,-2,"mtime");
+    duk_put_prop_string(ctx,-2,RP_HIDDEN_SYMBOL("mtime"));
     duk_get_prop_string(ctx,-2,"id");
-    duk_put_prop_string(ctx,-2,"module_id");
+    duk_put_prop_string(ctx,-2,RP_HIDDEN_SYMBOL("module_id"));
     /* must reload/redo fork if mod is not recorded */
     dhs->module=MODULE_FILE_RELOAD;
     duk_remove(ctx,-2); // now stack is [ func_array, ..., {module:xxx}, func_exports ]
 
-    /* give the function a name for error reporting */
-    duk_push_sprintf(ctx,"module:%s",modname);
-    duk_put_prop_string(ctx,-2,"fname");
 
     /* {"module":modname, modname: mod_func} */
     duk_put_prop_string(ctx,-2,modname);
@@ -2937,22 +2956,25 @@ static int getmod_path(DHS *dhs)
     evhtp_path_t *path = dhs->req->uri->path;
     const char *modpath;
     struct stat pathstat;
+    int mplen=0, ret=0;
 
     duk_get_prop_index(ctx, 0, (duk_uarridx_t)idx);
     duk_get_prop_string(dhs->ctx,-1,"modulePath");
     modpath=duk_get_string(dhs->ctx,-1);
-    duk_pop_2(dhs->ctx);
 
+    mplen=strlen(modpath);
+    duk_pop(ctx);
     if(stat(modpath, &pathstat)== -1)
     {
         send404(dhs->req);
-        return 0;
+        ret=0;
     }
     else
     {
-        int ret;
-        char *subpath, *spath;
-        char modname[ strlen(path->full) + strlen(modpath) + 1 ], *s;
+        char *s;
+        char modname[ strlen(path->full) + strlen(modpath) + 1 ];
+        char tm[ strlen(path->full) + strlen(modpath) + 1 ];
+        char subpath[ strlen( (path->full) + dhs->pathlen -1 ) + 1 ];
 
         strcpy(modname,modpath);
 //printf("1 modname=%s\n", modname);
@@ -2962,10 +2984,9 @@ static int getmod_path(DHS *dhs)
 //printf("pathlen=%d modpath=%s modname=%s\n",dhs->pathlen,modpath,modname);
 
 
-        spath = (path->full) + dhs->pathlen -1;
-        subpath = strdup(spath);
+        strcpy(subpath, (path->full) + dhs->pathlen -1);
 
-//printf("2 subpath=%s\n", (path->full) + dhs->pathlen -1);
+//printf("1 subpath=%s\n", (path->full) + dhs->pathlen -1);
 
 
         if(subpath[strlen(subpath)-1] == '/')
@@ -2978,32 +2999,108 @@ static int getmod_path(DHS *dhs)
             s=strrchr(s,'.');
             if(s) *s='\0';
         }
+//printf("2 subpath=%s\n", (path->full) + dhs->pathlen -1);
         strcat(modname, subpath);
 
 //printf("3 modname=%s\n", modname);
 
-        dhs->module_name=strdup(modname);
-        ret=getmod(dhs);
+        strcpy(tm, modname);
+
+        /* search in object, will be found was found before in
+           the mod search below                               */
+//printf("looking for %s\n",tm);
+        if(!duk_get_prop_string(ctx, -1, tm))
+        {
+            duk_pop(ctx);
+            while (1)
+            {
+                s=strrchr(tm,'/');
+                if(s) *s='\0';
+                else { 
+                    *tm = '\0';
+                    break;
+                }
+                if (strlen(tm)<mplen)
+                {
+                    *tm = '\0';
+                    break;
+                }
+
+//printf("looking for %s\n",tm);
+                if(duk_get_prop_string(ctx, -1, tm))
+                {
+                    duk_pop(ctx);
+                    break;
+                }
+                duk_pop(ctx);
+            }
+        } 
+        else 
+        {
+            duk_pop(ctx);
+//printf("found it on first try\n");
+        }
+
+        if(*tm)
+        {
+//printf("short path! found %s\n", tm);
+            duk_pop(ctx);
+            dhs->module_name=strdup(tm);
+            ret=getmod(dhs);
+            dhs->pathlen += strlen(tm) - mplen + 1;
+            return ret;    
+        }
+        //search on fs
+
+        duk_pop(ctx);
+
+        strcpy(tm, modname);
+
+        //search in object,
+//printf("getmod: looking for %s\n",tm);
+        dhs->module_name=tm;
+        ret = getmod(dhs);
+
         if(!ret)
         {
-            if(spath[strlen(spath)-1] != '/')
+            while (1)
             {
-                /* check if dir/filename.html is a function called dir */
-                s=strrchr(dhs->module_name, '/');
-                if(s)
+                s=strrchr(tm,'/');
+                if(s) *s='\0';
+                else { 
+                    *tm = '\0';
+                    break;
+                }
+                if (strlen(tm)<mplen)
                 {
-                    *s='\0';
-                    s=strrchr(subpath, '/');
-                    if(s) *s='\0';
-                    ret=getmod(dhs);
+                    *tm = '\0';
+                    break;
+                }
+
+//printf("getmod: looking for %s\n",tm);
+                ret = getmod(dhs);
+                if(ret)
+                {
+                    break;
                 }
             }
+        } 
+        else 
+        {
+//printf("found it on first try\n");
         }
-//printf("subpath at end = '%s', len=%d\n", subpath, (int)strlen(subpath));
-        dhs->pathlen += strlen(subpath);
-        free(subpath);
-        return ret;
+
+        if(*tm)
+        {
+//printf("long path! found %s\n", tm);
+            dhs->module_name=strdup(tm);
+        //    ret=getmod(dhs);
+            dhs->pathlen += strlen(tm) - mplen + 1;
+            return ret;    
+        }
+        dhs->module_name=NULL;
     }
+    return ret;
 }
 
 static void http_callback(evhtp_request_t *req, void *arg)
@@ -3017,7 +3114,6 @@ static void http_callback(evhtp_request_t *req, void *arg)
         thrno = *((int *)evthr_get_aux(thread));
     }
     new_ctx = thread_ctx[thrno];
-
     /* ****************************
       setup duk function callback 
        **************************** */
@@ -3050,6 +3146,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
         if(res==-1)
         {
             free(dhs->module_name);
+            dhs->module_name=NULL;
             return;
         }
         else if (res == 0)
@@ -3082,6 +3179,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
     if(!getfunction(dhs))
     {
         /* matching object key to url - fail = 404 (see getfunction() )*/
+        /* doing fail here and we don't need to fork */
         send404(dhs->req);
         free(dhs->module_name);
         return;
@@ -3095,7 +3193,10 @@ static void http_callback(evhtp_request_t *req, void *arg)
     }
     duk_pop_2(dhs->ctx);
     if (dofork)
+    {
         http_fork_callback(req, dhs, have_threadsafe_val);
+//printf("do fork\n");
+    }
     else
         http_thread_callback(req, dhs, thrno);
 
@@ -3574,7 +3675,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
     struct timeval ctimeout;
     duk_uarridx_t fpos =0;
     pid_t dpid=0;
-
     ctimeout.tv_sec = RP_TIME_T_FOREVER;
     ctimeout.tv_usec = 0;
     main_ctx = ctx;
@@ -4134,6 +4234,24 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                     RP_THROW(ctx, "server.start: parameter \"map:modulePath\" -- glob and regex not allowed in module path %s",s);
 
                                 fname = duk_get_string(ctx, -1);
+                                /* relative to script path */ 
+                                if (*fname !='/')
+                                {
+                                    int l = strlen(RP_script_path) + strlen(fname) +2;
+                                    char np[l];
+                                    //printf("scriptpath='%s'\n",RP_script_path);
+                                    strcpy(np, RP_script_path);
+                                    strcat(np,"/");
+                                    strcat(np,fname);
+                                    duk_pop(ctx);
+                                    duk_push_string(ctx, np);
+                                    duk_put_prop_string(ctx, -2, "modulePath");
+                                    duk_get_prop_string(ctx,-1, "modulePath");
+                                    fname = duk_get_string(ctx, -1);
+                                    //printf("should be '%s' at %d\n",np,fpos);
+                                    //prettyprintstack(ctx);
+                                }
+                                
                                 fprintf(access_fh, "mapping %s path to mod folder %-20s ->    module path:%s\n", pathtypes[cbtype], s, fname);
                                 mod=MODULE_PATH;
                                 duk_pop(ctx);
