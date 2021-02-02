@@ -1126,6 +1126,7 @@ fileserver(evhtp_request_t *req, void *arg)
 
     strcpy(fn, map->val);
     s=duk_rp_url_decode( path->full, strlen(path->full) );
+
     /* redirect /mappeddir to /mappeddir/ */
     if ( !strcmp (s, map->key))
     {
@@ -1145,7 +1146,6 @@ fileserver(evhtp_request_t *req, void *arg)
     strcpy(&fn[strlen(map->val)], s + strlen(map->key) +1);
 
     free(s);
-
     if (stat(fn, &sb) == -1)
     {
         /* 404 goes here */
@@ -3463,6 +3463,7 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
         {
             printf("no accessLog specified, logging to stdout\n");
         }
+        duk_pop(ctx);
 
         if(duk_rp_GPS_icase(ctx, ob_idx, "errorLog") )
         {
@@ -3475,6 +3476,7 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
         {
             printf("no errorLog specified, logging to stderr\n");
         }
+        duk_pop(ctx);
     }
 }
 
@@ -3656,7 +3658,6 @@ extern struct event_base *elbase;
 #endif
 duk_ret_t duk_server_start(duk_context *ctx)
 {
-    int i = 0;
     DHS *dhs = new_dhs(ctx, -1);
     duk_idx_t ob_idx = -1;
     char *ipv6 = "ipv6:::1";
@@ -3670,7 +3671,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     struct event_base *evbase;
 #endif
     evhtp_ssl_cfg_t *ssl_config = NULL;
-    int confThreads = -1, mthread = 1, daemon=0;
+    int i=0, confThreads = -1, mthread = 1, daemon=0;
     struct stat f_stat;
     struct timeval ctimeout;
     duk_uarridx_t fpos =0;
@@ -3688,35 +3689,26 @@ duk_ret_t duk_server_start(duk_context *ctx)
     */
     duk_push_array(ctx);
     duk_insert(ctx,0);    
-    i = 1;
     if (
-        (duk_is_object(ctx, i) && !duk_is_array(ctx, i) && !duk_is_function(ctx, i)) ||
-        (duk_is_object(ctx, ++i) && !duk_is_array(ctx, i) && !duk_is_function(ctx, i)))
-        ob_idx = i;
-
-    if(i==2) i=1; /* get the other option. There are only 2 */
-    else i=2;
-
-    if (duk_is_function(ctx, i))
-        dhs->func_idx = i;
+        (duk_is_object(ctx, 1) && !duk_is_array(ctx, 1) && !duk_is_function(ctx, 1)) 
+       )
+            ob_idx = 1;
+    else
+        RP_THROW(ctx, "server.start - error - argument must be an object (options)");
 
     /* check if we are forking before doing any setup*/
-    if (ob_idx != -1)
+    /* daemon */
+    if (duk_rp_GPS_icase(ctx, ob_idx, "daemon"))
     {
-        /* daemon */
-        if (duk_rp_GPS_icase(ctx, ob_idx, "daemon"))
-        {
-            daemon = REQUIRE_BOOL(ctx, -1, "server.start: parameter \"daemon\" requires a boolean (true|false)");
-        }
-        duk_pop(ctx);
-
-        if (duk_rp_GPS_icase(ctx, ob_idx, "mimeMap"))
-        {
-            proc_mimes(ctx);
-        }
-        duk_pop(ctx);
+        daemon = REQUIRE_BOOL(ctx, -1, "server.start: parameter \"daemon\" requires a boolean (true|false)");
     }
+    duk_pop(ctx);
 
+    if (duk_rp_GPS_icase(ctx, ob_idx, "mimeMap"))
+    {
+        proc_mimes(ctx);
+    }
+    duk_pop(ctx);
     if (daemon)
     {
         int child2par[2]={0};
@@ -4000,7 +3992,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
     * testing, quick semi clean exit *
     evhtp_set_cb(htp, "/exit", exitcb, ctx);
     */
-
     /* file system and function mapping */
     if (ob_idx != -1)
     {
@@ -4046,14 +4037,13 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 }
                 else
                     copy_cb_func(dhs404, totnthreads);
-
                 fpos++;
             }
             else
                 RP_THROW(ctx, "server.start: Option for notFoundFunc must be a function or an object to load a module (e.g. {module:'mymodule'}");
 
         }
-        duk_pop(ctx);
+//        duk_pop(ctx);
 
         /* directory listing page/function */
         if (duk_rp_GPS_icase(ctx, ob_idx, "directoryFunc"))
@@ -4068,12 +4058,15 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 {
                     if(duk_get_boolean(ctx, -1))
                     {
-                        duk_pop(ctx);
                         duk_compile_string(ctx, DUK_COMPILE_FUNCTION, DIRLISTFUNC);
                         fname="defaultDirlist";
                         fprintf(access_fh, "mapping dir  list  to function   %-20s ->    function %s()\n", "Directory List", fname);
                     }
-                    else goto dfunc_end;
+                    else
+                    {
+                        duk_pop(ctx);
+                        goto dfunc_end;
+                    }
                 }
                 else if (duk_is_function(ctx, -1))
                 {
@@ -4091,13 +4084,12 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 }
                 else
                     RP_THROW(ctx, "server.start: Option for directoryFunc must be a boolean, a function or an object to load a module (e.g. {module:'mymodule'}");
-
                 /* copy function into array at pos 0 in stack and into index fpos in array */
+                /* SO NO NEED TO POP OFF STACK */
                 duk_put_prop_index(ctx, 0, fpos);
 
                 dhs_dirlist = new_dhs(ctx, fpos);
                 dhs_dirlist->module=mod;
-
                 dhs_dirlist->timeout.tv_sec = dhs->timeout.tv_sec;
                 dhs_dirlist->timeout.tv_usec = dhs->timeout.tv_usec;
                 /* copy function to all the heaps/ctxs */
@@ -4110,12 +4102,12 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     copy_cb_func(dhs_dirlist, totnthreads);
 
                 fpos++;
+
             }
             else
                 RP_THROW(ctx, "server.start: Option for directoryFunc must be a boolean, a function or an object to load a module (e.g. {module:'mymodule'}");
         }
         dfunc_end:
-        duk_pop(ctx);
 
         if (duk_rp_GPS_icase(ctx, ob_idx, "mapSort"))
         {
@@ -4284,7 +4276,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         
                         fpos++;
                         /* register callback with evhtp using the callback dhs struct */
-                        
                         if(cbtype==2)
                         {
                             req_callback =evhtp_set_regex_cb(htp, s, http_callback, cb_dhs);
@@ -4356,10 +4347,18 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         else
                             sprintf(fs, "%s", fspath);
 
-                        fprintf(access_fh, "mapping filesystem folder        %-20s ->    %s\n", s, fs);
                         map->val = fs;
-                        evhtp_set_cb(htp, s, fileserver, map);
 
+                        if(!*s)
+                        {
+                            fprintf(access_fh, "mapping filesystem folder        %-20s ->    %s\n", "/", fs);
+                            evhtp_set_cb(htp, "/", fileserver, map);
+                        }
+                        else
+                        {
+                            fprintf(access_fh, "mapping filesystem folder        %-20s ->    %s\n", s, fs);
+                            evhtp_set_cb(htp, s, fileserver, map);
+                        }
                         duk_pop_2(ctx);
                     }
                 }
@@ -4367,6 +4366,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
             else
                 RP_THROW(ctx, "server.start: value of parameter \"map\" requires an object");
         }
+        else
+            RP_THROW(ctx, "server.start: No \"map\" object provided, nothing to do");
         duk_pop(ctx);
     }
     duk_pop(ctx);
@@ -4468,120 +4469,64 @@ duk_ret_t duk_server_start(duk_context *ctx)
     else
         free(ssl_config);
 
-    if (dhs->func_idx != -1)
+    if (duk_rp_GPS_icase(ctx, ob_idx, "bind"))
     {
-        duk_pull(ctx, dhs->func_idx);
-        duk_put_prop_index(ctx, 0, fpos);
-        dhs->func_idx = fpos;
-        copy_cb_func(dhs, totnthreads);
-        evhtp_set_gencb(htp, http_callback, dhs);
-    }
-
-    if(ob_idx != -1)
-    {
-        if (duk_rp_GPS_icase(ctx, ob_idx, "bind"))
+        if ( duk_is_string(ctx, -1) )
         {
-            if ( duk_is_string(ctx, -1) )
+            getipport(duk_get_string(ctx,-1));
+            if (!(ip_addr = bind_sock_port(htp, ipany, port, 2048)))
             {
-                getipport(duk_get_string(ctx,-1));
-                if (!(ip_addr = bind_sock_port(htp, ipany, port, 2048)))
+                if (!strncmp("ipv6:",ipany,5))
                 {
-                    if (!strncmp("ipv6:",ipany,5))
-                    {
-                        RP_THROW(ctx, "server.start: could not bind to [%s] port %d", ipany+5, port);
-                    }
-                    else
-                    {
-                        RP_THROW(ctx, "server.start: could not bind to %s port %d", ipany, port);
-                    }
+                    RP_THROW(ctx, "server.start: could not bind to [%s] port %d", ipany+5, port);
                 }
-                free(ip_addr);
-                ip_addr=NULL;
-            }
-            else if ( duk_is_array(ctx, -1) )
-            {
-                int n=duk_get_length(ctx, -1);
-                for (i=0;i<n;i++)
+                else
                 {
-                    if(duk_get_prop_index(ctx,-1,(duk_uarridx_t)i))
+                    RP_THROW(ctx, "server.start: could not bind to %s port %d", ipany, port);
+                }
+            }
+            free(ip_addr);
+            ip_addr=NULL;
+        }
+        else if ( duk_is_array(ctx, -1) )
+        {
+            int n=duk_get_length(ctx, -1);
+            for (i=0;i<n;i++)
+            {
+                if(duk_get_prop_index(ctx,-1,(duk_uarridx_t)i))
+                {
+                    getipport(duk_get_string(ctx,-1));
+                    if (!(ip_addr = bind_sock_port(htp, ipany, port, 2048)))
                     {
-                        getipport(duk_get_string(ctx,-1));
-                        if (!(ip_addr = bind_sock_port(htp, ipany, port, 2048)))
+                        if (!strncmp("ipv6:",ipany,5))
                         {
-                            if (!strncmp("ipv6:",ipany,5))
-                            {
-                                RP_THROW(ctx, "server.start: could not bind to [%s] port %d", ipany+5, port);
-                            }
-                            else
-                            {
-                                RP_THROW(ctx, "server.start: could not bind to %s port %d", ipany, port);
-                            }
+                            RP_THROW(ctx, "server.start: could not bind to [%s] port %d", ipany+5, port);
                         }
-                        free(ip_addr);
-                        ip_addr=NULL;
+                        else
+                        {
+                            RP_THROW(ctx, "server.start: could not bind to %s port %d", ipany, port);
+                        }
                     }
-                    duk_pop(ctx);
+                    free(ip_addr);
+                    ip_addr=NULL;
                 }
+                duk_pop(ctx);
             }
-            else
-                RP_THROW(ctx,"server.start() - option bind requires a string or array of strings");
         }
         else
-        {
-            if (!(ip_addr = bind_sock_port(htp, ipv4, port, 2048)))
-                RP_THROW(ctx, "server.start: could not bind to %s port %d", ipv4, port);
-            if (!(ip_addr = bind_sock_port(htp, ipv6, port, 2048)))
-                RP_THROW(ctx, "server.start: could not bind to %s, %d", ipv6, port);
-        }
-        duk_pop(ctx);
+            RP_THROW(ctx,"server.start() - option bind requires a string or array of strings");
     }
     else
     {
-        /* default ip and port */
         if (!(ip_addr = bind_sock_port(htp, ipv4, port, 2048)))
             RP_THROW(ctx, "server.start: could not bind to %s port %d", ipv4, port);
         if (!(ip_addr = bind_sock_port(htp, ipv6, port, 2048)))
             RP_THROW(ctx, "server.start: could not bind to %s, %d", ipv6, port);
     }
+    duk_pop(ctx);
 
     //done with options, get rid of ob_idx
     duk_remove(ctx, ob_idx);
-
-    for (i = 0; i <= totnthreads; i++)
-    {
-        duk_context *tctx;
-        if (i == totnthreads)
-            tctx = ctx;
-        else
-            tctx = thread_ctx[i];
-
-        /* add more info */
-        if (!duk_get_global_string(tctx, "rampart"))
-        {
-            duk_pop(tctx);
-            duk_push_object(tctx);
-        }
-/*
-        duk_push_object(tctx);
-
-        if (usev4)
-        {
-            duk_push_string(tctx, ipv4_addr);
-            duk_put_prop_string(tctx, -2, "ipv4_addr");
-            duk_push_int(tctx, port);
-            duk_put_prop_string(tctx, -2, "ipv4_port");
-        }
-        if (usev6)
-        {
-            duk_push_string(tctx, ipv6_addr);
-            duk_put_prop_string(tctx, -2, "ipv6_addr");
-            duk_push_int(tctx, ipv6port);
-            duk_put_prop_string(tctx, -2, "ipv6_port");
-        }
-        duk_put_prop_string(tctx, -2, "server");
-*/
-        duk_put_global_string(tctx, "rampart");
-    }
 
     evhtp_set_timeouts(htp, &ctimeout, &ctimeout);
 
@@ -4648,7 +4593,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
 }
 
 static const duk_function_list_entry utils_funcs[] = {
-    {"start", duk_server_start, 2 /*nargs*/},
+    {"start", duk_server_start, 1 /*nargs*/},
     {NULL, NULL, 0}};
 
 static const duk_number_list_entry utils_consts[] = {
