@@ -23,6 +23,7 @@
 
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 char *RP_script_path=NULL;
+static duk_context *gl_ctx;
 
 #define RP_REPL_GREETING             \
     "         |>>            |>>\n"     \
@@ -37,178 +38,249 @@ char *RP_script_path=NULL;
 #define RP_REPL_PREFIX "rampart> "
 #define RP_REPL_PREFIX_CONT "... "
 
-void completion(const char *buf, linenoiseCompletions *lc) {
-    switch(buf[0]) {
-        case 'A': {
-            linenoiseAddCompletion(lc,"Array");
-            break;
-        }
-        case 'C': {
-            linenoiseAddCompletion(lc,"CBOR");
-            break;
-        }
-        case 'D': {
-            linenoiseAddCompletion(lc,"Date");
-            linenoiseAddCompletion(lc,"Duktape");
-            break;
-        }
-        case 'M': {
-            linenoiseAddCompletion(lc,"Math");
-            break;
-        }
-        case 'N': {
-            linenoiseAddCompletion(lc,"NaN");
-            linenoiseAddCompletion(lc,"Number");
-            break;
-        }
-        case 'O': {
-            linenoiseAddCompletion(lc,"Object");
-            break;
-        }
-        case 'S': {
-            linenoiseAddCompletion(lc,"String");
-            break;
-        }
-        case 'T': {
-            linenoiseAddCompletion(lc,"TextDecoder");
-            linenoiseAddCompletion(lc,"TextEncoder");
-            break;
-        }
-        case 'a': {
-            linenoiseAddCompletion(lc,"abstract");
-            linenoiseAddCompletion(lc,"arguments");
-            break;
-        }
-        case 'b': {
-            linenoiseAddCompletion(lc,"boolean");
-            linenoiseAddCompletion(lc,"break");
-            linenoiseAddCompletion(lc,"byte");
-            break;
-        }
-        case 'c': {
-            switch(buf[1]) {
-                case 'a':{
-                    linenoiseAddCompletion(lc,"case");
-                    linenoiseAddCompletion(lc,"catch");
-                    goto compend;
-                }
-            }
-            linenoiseAddCompletion(lc,"case");
-            linenoiseAddCompletion(lc,"catch");
-            linenoiseAddCompletion(lc,"continue");
-            break;
-        }
-        case 'd': {
-            linenoiseAddCompletion(lc,"delete");
-            linenoiseAddCompletion(lc,"do");
-            break;
-        }
-        case 'e': {
-            linenoiseAddCompletion(lc,"else");
-            linenoiseAddCompletion(lc,"eval");
-            break;
-        }
-        case 'f': {
-            linenoiseAddCompletion(lc,"false");
-            linenoiseAddCompletion(lc,"for");
-            linenoiseAddCompletion(lc,"function");
-            break;
-        }
-        case 'h': {
-            linenoiseAddCompletion(lc,"hasOwnProperty");
-            break;
-        }
-        case 'i': {
-            switch(buf[1]) {
-                case 'n':{
-                    linenoiseAddCompletion(lc,"in");
-                    linenoiseAddCompletion(lc,"instanceof");
-                    goto compend;
-                }
-                case 's':{
-                    linenoiseAddCompletion(lc,"isNaN");
-                    linenoiseAddCompletion(lc,"isPrototypeOf");
-                     goto compend;
-                }
-            }
-            linenoiseAddCompletion(lc,"if");
-            linenoiseAddCompletion(lc,"in");
-            linenoiseAddCompletion(lc,"instanceof");
-            linenoiseAddCompletion(lc,"isNaN");
-            linenoiseAddCompletion(lc,"isPrototypeOf");
-            break;
-        }
-        case 'l': {
-            linenoiseAddCompletion(lc,"length");
-            break;
-        }
-        case 'n': {
-            linenoiseAddCompletion(lc,"new");
-            linenoiseAddCompletion(lc,"null");
-            break;
-        }
-        case 'p': {
-            linenoiseAddCompletion(lc,"performance");
-            linenoiseAddCompletion(lc,"prototype");
-            break;
-        }
-        case 'r': {
-            switch(buf[1]) {
-                case 'e':{
-                    linenoiseAddCompletion(lc,"require");
-                    linenoiseAddCompletion(lc,"return");
-                    goto compend;
-                }
-            }
-            linenoiseAddCompletion(lc,"rampart");
-            linenoiseAddCompletion(lc,"require");
-            linenoiseAddCompletion(lc,"return");
-            break;
-        }
-        case 's': {
-            linenoiseAddCompletion(lc,"switch");
-            break;
-        }
-        case 't': {
-            switch(buf[1]) {
-                case 'h':{
-                    linenoiseAddCompletion(lc,"this");
-                    linenoiseAddCompletion(lc,"throw");
-                    goto compend;
-                }
-            }
-            linenoiseAddCompletion(lc,"this");
-            linenoiseAddCompletion(lc,"throw");
-            linenoiseAddCompletion(lc,"toString");
-            linenoiseAddCompletion(lc,"true");
-            linenoiseAddCompletion(lc,"try");
-            linenoiseAddCompletion(lc,"typeof");
-            break;
-        }
-        case 'u': {
-            linenoiseAddCompletion(lc,"undefined");
-            break;
-        }
-        case 'v': {
-            switch(buf[1]) {
-                case 'a':{
-                    linenoiseAddCompletion(lc,"valueOf");
-                    linenoiseAddCompletion(lc,"var");
-                    goto compend;
-                }
-            }
-            linenoiseAddCompletion(lc,"valueOf");
-            linenoiseAddCompletion(lc,"var");
-            linenoiseAddCompletion(lc,"void");
-            linenoiseAddCompletion(lc,"volatile");
-            break;
-        }
-        case 'w': {
-            linenoiseAddCompletion(lc,"while");
-            break;
+char *words[]={
+    "Array",
+    "Array.isArray",
+    "CBOR",
+    "CBOR.encode",
+    "CBOR.decode",
+    "Date",
+    "Date.now",
+    "Date.parse",
+    "Date.UTC",
+    "Duktape",
+    "Duktape.verion",
+    "Duktape.env",
+    "Duktape.fin",
+    "Duktape.enc",
+    "Duktape.dec",
+    "Duktape.info",
+    "Duktape.act",
+    "Duktape.gc",
+    "Duktape.compact",
+    "Duktape.errThrow",
+    "Duktape.Pointer",
+    "Duktape.Thread",
+    "Math",
+    "Math.E",
+    "Math.LN2",
+    "Math.LOG2E",
+    "Math.LOG10E",
+    "Math.PI",
+    "Math.SQRT1_2",
+    "Math.SQRT2",
+    "Math.abs",
+    "Math.acos",
+    "Math.acosh",
+    "Math.asin",
+    "Math.asinh",
+    "Math.atan",
+    "Math.atanh",
+    "Math.atan2",
+    "Math.cbrt",
+    "Math.ceil",
+    "Math.clz32",
+    "Math.cos",
+    "Math.cosh",
+    "Math.exp",
+    "Math.floor",
+    "Math.fround",
+    "Math.hypot",
+    "Math.imul",
+    "Math.log",
+    "Math.log1p",
+    "Math.log10",
+    "Math.log2",
+    "Math.max",
+    "Math.min",
+    "Math.pow",
+    "Math.random",
+    "Math.round",
+    "Math.sign",
+    "Math.sin",
+    "Math.sinh",
+    "Math.sqrt",
+    "Math.tan",
+    "Math.tanh",
+    "Math.trunc",
+    "NaN",
+    "Number",
+    "Object",
+    "Object.keys",
+    "Object.create",
+    "Object.getOwnPropertyNames",
+    "String",
+    "TextDecoder",
+    "TextDecoder.decode",
+    "TextEncoder",
+    "TextEncoder.encode",
+    "abstract",
+    "arguments",
+    "boolean",
+    "break",
+    "byte",
+    "case",
+    "catch",
+    "catch (e) {",
+    "console",
+    "console.log",
+    "continue",
+    "delete",
+    "do",
+    "else",
+    "eval",
+    "false",
+    "for",
+    "function",
+    "hasOwnProperty",
+    "if",
+    "in",
+    "instanceof",
+    "isNaN",
+    "isPrototypeOf",
+    "length",
+    "new",
+    "null",
+    "performance",
+    "performance.now",
+    "process",
+    "process.exit",
+    "process.env",
+    "process.argv",
+    "process.scriptPath",
+    "prototype",
+    "rampart",
+    "rampart.utils",
+    "rampart.utils.printf",
+    "rampart.utils.sprintf",
+    "rampart.utils.bprintf",
+    "rampart.utils.fopen",
+    "rampart.utils.fclose",
+    "rampart.utils.fprintf",
+    "rampart.utils.fseek",
+    "rampart.utils.rewind",
+    "rampart.utils.ftell",
+    "rampart.utils.fflush",
+    "rampart.utils.fread",
+    "rampart.utils.fwrite",
+    "rampart.utils.hexify",
+    "rampart.utils.dehexify",
+    "rampart.utils.stringToBuffer",
+    "rampart.utils.bufferToString",
+    "rampart.utils.objectToQuery",
+    "rampart.utils.queryToObject",
+    "rampart.utils.readFile",
+    "rampart.utils.stat",
+    "rampart.utils.lstat",
+    "rampart.utils.exec",
+    "rampart.utils.shell",
+    "rampart.utils.kill",
+    "rampart.utils.mkdir",
+    "rampart.utils.rmdir",
+    "rampart.utils.readdir",
+    "rampart.utils.copyFile",
+    "rampart.utils.rmFile",
+    "rampart.utils.link",
+    "rampart.utils.symlink",
+    "rampart.utils.chmod",
+    "rampart.utils.touch",
+    "rampart.utils.rename",
+    "rampart.utils.sleep",
+    "rampart.utils.getpid",
+    "rampart.utils.getppid",
+    "rampart.utils.getType",
+    "rampart.utils.stdout",
+    "rampart.utils.stderr",
+    "rampart.utils.stdin",
+    "rampart.globalize",
+    "rampart.import",
+    "rampart.import.csvFile",
+    "rampart.import.csv",
+    "require",
+    "return",
+    "switch",
+    "this",
+    "throw",
+    "true",
+    "try",
+    "try {",
+    "typeof",
+    "undefined",
+    "valueOf",
+    "var",
+    "while"
+};
+
+int nwords = sizeof(words)/sizeof(char*);
+
+void completion(const char *inbuf, linenoiseCompletions *lc) {
+    int i=0, indots=0, outdots=0;
+    char *buf=NULL;
+    char *s, c;
+    char *endchar = " (;{=<>/*-+|&!^?:[";
+
+    /* get last occurence of one of ' ', '(', etc */
+    /* and yes I know if this was meant to be efficient,
+       I'd start at the end of the string and search backwards for
+       each char in endchar.  Doesn't matter here in interactive setting.
+    */
+    while((c=endchar[i]))
+    {
+        s=strrchr(inbuf, c);
+        if(s>buf)
+            buf=s;
+        i++;
+    }
+    if(!buf)
+        buf=(char*)inbuf;
+    else
+        buf++;
+
+    s=(char *)buf;
+
+    while(s)
+    {
+        s=strchr(s,'.');
+        if(s)
+        {
+            indots++;
+            s++;
         }
     }
-    compend:
+    
+    for (i=0;i<nwords;i++)
+    {
+        char *sugg=words[i];
+        outdots=0;
+        if(!strncmp(sugg, buf, strlen(buf))){
+            s=sugg;
+            while(s)
+            {
+                s=strchr(s,'.');
+                if(s)
+                {
+                    outdots++;
+                    s++;
+                }
+            }
+            if (outdots == indots)
+            {
+                if(buf != inbuf)
+                {
+                    int l = strlen(inbuf) - strlen(buf);
+                    char *newsugg = NULL;
+                    REMALLOC(newsugg, strlen(inbuf) + strlen(sugg) + 1);
+                    strcpy(newsugg, inbuf);
+                    *(newsugg+l)='\0';
+                    strcat(newsugg, sugg);
+                    linenoiseAddCompletion(lc, newsugg);
+                    free(newsugg);
+                }
+                else
+                    linenoiseAddCompletion(lc, sugg);
+            }
+        }
+    }
     return;
 }
 
@@ -218,10 +290,20 @@ static int repl(duk_context *ctx)
     int multiline=0;
     char *line=NULL;
     char *prefix=RP_REPL_PREFIX;
+    char histfn[PATH_MAX];
+    char *hfn=NULL;
+    char *home = getenv("HOME");
 
     linenoiseSetMultiLine(1);
     linenoiseSetCompletionCallback(completion);
-
+    linenoiseHistorySetMaxLen(1024);
+    if(home){
+        strcpy(histfn, home);
+        strcat(histfn, "/.rampart_history");
+        hfn = histfn;
+        linenoiseHistoryLoad(hfn);
+    }                    
+        
     while (1)
     {
         if(multiline)
@@ -230,8 +312,13 @@ static int repl(duk_context *ctx)
             prefix=RP_REPL_PREFIX;
 
         line = linenoise(prefix);
-        if(!line) return 0;
-       
+        if(line)
+            linenoiseHistoryAdd(line);
+        if(!line) {
+            duk_destroy_heap(gl_ctx);
+            free(RP_script_path);
+            return 0;
+        }
         duk_push_string(ctx, line);
 
         if(multiline) duk_concat(ctx,2);  //combine with last line if last loop set multiline=1
@@ -257,6 +344,10 @@ static int repl(duk_context *ctx)
 
         //if not multiline, get rid of extra copy of last line
         if(!multiline) duk_pop(ctx);
+        linenoiseHistoryAdd(line);
+        if(hfn)
+            linenoiseHistorySave(hfn);
+        free(line);
     }
     return 0;
 }
@@ -761,13 +852,14 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
 }while(0)
 
 #define scopy(input) do{\
-    if(out==outbeg+osz-1){\
+    if(out==outbeg+*osize-1){\
         int pos = out - outbeg;\
-        osz+=1024;\
-        REMALLOC(outbeg, osz);\
+        *osize+=1024;\
+        REMALLOC(outbeg, *osize);\
         out = outbeg + pos;\
     }\
     *out=(input);\
+    if(input=='\n')(*lineno)++;\
     out++;\
 }while(0)
 
@@ -779,19 +871,18 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
     }\
 }while(0)
 
-static int procbt(char *bt_start, char *bt_end, char **ob, char **o, size_t *osize)
+static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t *osize, int *lineno)
 {
-//    int len = (int) (bt_end - bt_start);
+//    int len = (int) (end - bt_start);
     char *out=*o;
     char *in=bt_start;
     char *outbeg = *ob;
-    int osz = *osize;
     int lastwasbs=0;
 
     scopy('"');
     adv;
 //    printf("backtick quote = \"%.*s\"\n", len+1, bt_start);
-    while(in < bt_end)
+    while(in < end)
     {
         if(in>bt_start && *(in-1)=='\\')
             lastwasbs=1;
@@ -800,15 +891,16 @@ static int procbt(char *bt_start, char *bt_end, char **ob, char **o, size_t *osi
         switch(*in)
         {
             case '$':
-                if(in+1<bt_end && *(in+1)=='{' && *(in-1) != '\\')
+                if(in+1<end && *(in+1)=='{' && *(in-1) != '\\')
                 {
                     //int isfmt=0;
                     in+=2;
+                    /* special sprintf formatting */
                     if( *in == '%')
                     {
                         //isfmt=1;
                         stringcopy("\"+rampart.utils.sprintf('");
-                        while (in < bt_end && !(*in == ':' && *(in-1)!='\\') )
+                        while (in < end && !(*in == ':' && *(in-1)!='\\') )
                         {
                             switch(*in)
                             {
@@ -836,25 +928,38 @@ static int procbt(char *bt_start, char *bt_end, char **ob, char **o, size_t *osi
                         {
                             *ob=outbeg;
                             *o=out;
-                            *osize=osz;
                             return 0;
                         }
                         adv;
                         //stringcopy("',(");
                         stringcopy("',");
                     }
+                    /* end special sprintf formatting */
                     else
                         stringcopy("\"+(");
-                    while (in < bt_end && *in != '}')
+                    while (in < end && *in != '}')
                     {
-                        scopy(*in);
-                        adv;
+                        if(*in == '`' && *(in-1)!='\\' )
+                        {
+                            int r=proc_backtick(in, end, &outbeg, &out, osize, lineno);
+                            if(!r)
+                            {
+                                *ob=outbeg;
+                                *o=out;
+                                return 0;
+                            }
+                            in+=r;
+                        }
+                        else
+                        {
+                            scopy(*in);
+                            adv;
+                        }
                     }
                     if(*in != '}')
                     {
                         *ob=outbeg;
                         *o=out;
-                        *osize=osz;
                         return 0;
                     }
                     //if(isfmt)
@@ -877,9 +982,17 @@ static int procbt(char *bt_start, char *bt_end, char **ob, char **o, size_t *osi
                 scopy('t');
                 break;
             case '`':
-                if(!lastwasbs)
-                    scopy('\\');
-                scopy('`');
+                adv;
+                if(lastwasbs)
+                    scopy('`');
+                else
+                {
+                    scopy('"');
+
+                    *ob=outbeg;
+                    *o=out;
+                    return (int) (in - bt_start);
+                }
                 break;
             case '"':
                 scopy('\\');
@@ -890,12 +1003,10 @@ static int procbt(char *bt_start, char *bt_end, char **ob, char **o, size_t *osi
         }
         adv;
     }
-    scopy('"');
 
     *ob=outbeg;
     *o=out;
-    *osize=osz;
-    return 1;
+    return 0;
 }
 
 char * tickify(char *src, size_t sz, int *err, int *ln)
@@ -903,7 +1014,6 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
     size_t osz=sz+1024;
     char *out = NULL, *outbeg;
     char *in=src, *end=src+sz;
-    char *bt_start=NULL;
     int line=1, qline=0;
     int sstack_no=0;
     int sstack[8];// only need 3?
@@ -1036,11 +1146,11 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                 adv;
                 break;
             case '`':
-                if(getstate() == ST_BT)
+                if (getstate() == ST_NONE)
                 {
                     int r;
-                    popstate();
-                    r=procbt(bt_start, in, &outbeg, &out, &osz);
+                    qline=line;
+                    r=proc_backtick(in, end, &outbeg, &out, &osz, &line);
                     if(!r)
                     {
                         *err=ST_BT;
@@ -1048,12 +1158,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                         free(outbeg);
                         return NULL;
                     }
-                }
-                else if (getstate() == ST_NONE)
-                {
-                    qline=line;
-                    pushstate(ST_BT);
-                    bt_start=in;
+                    in+=r;
                 }
                 else if (getstate() == ST_BS)
                 {
@@ -1177,7 +1282,7 @@ int main(int argc, char *argv[])
         fprintf(stderr,"could not create duktape context\n");
         return 1;
     }
-
+    gl_ctx = ctx;
     if (!duk_get_global_string(ctx, "rampart"))
     {
         duk_pop(ctx);
