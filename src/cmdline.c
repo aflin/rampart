@@ -1164,11 +1164,13 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                 {
                     popstate();
                     copy(*in);
+                    adv;
                 }
                 else
+                {
                     copy(*in);
-
-                adv;
+                    adv;
+                }
                 break;
             default:
                 /* for the "/regexp/" vs "var x = 2/3" cases, we need to know where we are */
