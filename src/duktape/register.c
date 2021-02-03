@@ -10,6 +10,29 @@
 #include "globals/printf.h"
 #include "rampart.h"
 
+duk_ret_t duk_rp_json_parse(duk_context *ctx)
+{
+    if(duk_is_buffer_data(ctx,0))
+        duk_buffer_to_string(ctx,0);
+    duk_get_global_string(ctx, "JSON");
+    duk_get_prop_string(ctx, -1, "_parse_orig");
+    duk_insert(ctx, 0);
+    duk_pop(ctx);//"JSON"
+    duk_call(ctx,2);
+    return 1;
+}
+
+void fix_json_parse(duk_context *ctx)
+{
+    duk_get_global_string(ctx, "JSON");
+    duk_get_prop_string(ctx, -1, "parse");
+    duk_put_prop_string(ctx, -2, "_parse_orig");
+
+    duk_push_c_function(ctx, duk_rp_json_parse, 2);
+    duk_put_prop_string(ctx, -2, "parse");
+}
+
+
 void duk_init_context(duk_context *ctx)
 {
     /* https://wiki.duktape.org/howtoglobalobjectreference */
@@ -41,4 +64,5 @@ void duk_init_context(duk_context *ctx)
     duk_misc_init(ctx);                       /* register functions in rampart-utils.c */
     duk_import_init(ctx);                     /* register functions in rampart-import.c */
     duk_process_init(ctx);                    /* register process.* vars */
+    fix_json_parse(ctx);
 }
