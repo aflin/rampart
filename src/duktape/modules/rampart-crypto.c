@@ -44,6 +44,26 @@ void checkseed(duk_context *ctx)
         seeded=1;
     }
 }
+void printkiv(unsigned char *key,unsigned char *iv,unsigned char *salt,const EVP_CIPHER *cipher){
+  int i;
+
+  printf("key=");
+  for (i = 0; i < EVP_CIPHER_key_length(cipher); i++)
+    printf("%02X", key[i]);
+  printf("\n");
+  printf("iv =");
+  for (i = 0; i < EVP_CIPHER_iv_length(cipher); i++)
+    printf("%02X", iv[i]);
+  printf("\n");
+  printf("salt=");
+  if(salt)
+  {
+      for (i = 0; i < PKCS5_SALT_LEN; i++)
+          printf("%02X", salt[i]);
+      printf("\n");
+  }
+  else printf("NULL\n");
+}
 
 static void rpcrypt(
   duk_context *ctx,
@@ -76,14 +96,13 @@ static void rpcrypt(
         RP_THROW(ctx, "Cipher %s not found", cipher_name);
 
     out_buffer = duk_push_dynamic_buffer(ctx, in_len + EVP_CIPHER_block_size(cipher) + saltspace);
-
     if (decrypt)
     {
         /* Initialize the decryption operation with the found cipher, key and iv */
         if (!EVP_DecryptInit_ex(cipher_ctx, cipher, NULL, key, iv))
             DUK_OPENSSL_ERROR(ctx);
 
-        if (!EVP_DecryptUpdate(cipher_ctx, out_buffer, &current_len, in_buffer, in_len))
+        if (!EVP_DecryptUpdate(cipher_ctx, out_buffer, &current_len, in_buffer, (int)in_len))
                 DUK_OPENSSL_ERROR(ctx);
         out_len += current_len;
 
@@ -109,8 +128,10 @@ static void rpcrypt(
             out_len=saltspace;
         }
 
-        if (!EVP_EncryptUpdate(cipher_ctx, out_buffer + out_len, &current_len, in_buffer, in_len))
+        if (!EVP_EncryptUpdate(cipher_ctx, out_buffer + out_len, &current_len, in_buffer, (int)in_len))
+        {
             DUK_OPENSSL_ERROR(ctx);
+        }
         out_len += current_len;
 
         /*
@@ -138,26 +159,6 @@ KEYIV {
     unsigned char salt[PKCS5_SALT_LEN];
 };
 
-void printkiv(unsigned char *key,unsigned char *iv,unsigned char *salt,const EVP_CIPHER *cipher){
-  int i;
-
-  printf("key=");
-  for (i = 0; i < EVP_CIPHER_key_length(cipher); i++)
-    printf("%02X", key[i]);
-  printf("\n");
-  printf("iv =");
-  for (i = 0; i < EVP_CIPHER_iv_length(cipher); i++)
-    printf("%02X", iv[i]);
-  printf("\n");
-  printf("salt=");
-  if(salt)
-  {
-      for (i = 0; i < PKCS5_SALT_LEN; i++)
-          printf("%02X", salt[i]);
-      printf("\n");
-  }
-  else printf("NULL\n");
-}
 
 
 static KEYIV pw_to_keyiv(duk_context *ctx, const char *pass, const char *cipher_name, unsigned char *salt_p, int iter)
@@ -204,7 +205,6 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
     KEYIV kiv;
     int iter=10000;
     static const char magic[] = "Salted__";
-
     if(duk_is_object(ctx,0))
     {
         /* Get options */
@@ -215,11 +215,10 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
         duk_pop(ctx);
 
         if(!duk_get_prop_string(ctx, 0, "data"))
-            (void)duk_error(ctx, DUK_ERR_ERROR, "option 'data' missing from en/decrypt");
+            RP_THROW(ctx, "option 'data' missing from en/decrypt");
 
-        duk_to_buffer(ctx,-1,&in_len);
-        in_buffer = duk_get_buffer_data(ctx, -1, &in_len);
-        /* don't pop */
+        in_buffer = (void*)REQUIRE_STR_OR_BUF(ctx, -1, &in_len, "crypto.en/decrypt - 'data' must be a Buffer or String");
+        duk_pop(ctx);
 
         if(decrypt)
         {
@@ -240,21 +239,19 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
         {
             const char *pass=duk_require_string(ctx, -1);
 
-            duk_pop(ctx);
             if(!salt_p && decrypt)
                 (void)duk_error(ctx, DUK_ERR_ERROR, "decrypt: ciphertext was not encrypted with a password, use key and iv to decrypt");
 
             if(duk_get_prop_string(ctx, 0, "iter"))
             {
-                iter=(int)duk_require_number(ctx,-1);
-                duk_pop(ctx);
+                iter=(int)REQUIRE_NUMBER(ctx,-1,"crypto.[en|de]crypt option iter requires a number");
             }
+            duk_pop(ctx);
 
             kiv=pw_to_keyiv(ctx,pass,cipher_name,salt_p,iter); /* encrypting: salt_p is null, decrypting: must be set */
             key=kiv.key;
             iv=kiv.iv;
             salt_p=kiv.salt;
-            duk_pop(ctx);
         }
         else
         {
@@ -266,24 +263,19 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
                 iv = (unsigned char *)duk_get_string(ctx, -1);
             duk_pop(ctx);
         }
+        duk_pop(ctx);
     }
-    else if(duk_is_string(ctx,0))
+    else
     {
         const char *pass;
 
-        if(!duk_is_string(ctx,0))
-            (void)duk_error(ctx, DUK_ERR_ERROR, "first argument must be a password or an object with options");
+        pass=REQUIRE_STRING(ctx,0, "first argument must be a password or an object with options");
 
-        pass=duk_get_string(ctx,0);
+        in_buffer = (void *) REQUIRE_STR_OR_BUF(ctx, 1, &in_len, "crypto.en/decrypt - second argument must be data to en/decrypt (string or buffer)");
 
-        if( !duk_is_string(ctx,1) && !duk_is_buffer_data(ctx,1))
-            (void)duk_error(ctx, DUK_ERR_ERROR, "second argument must be data to en/decrypt (string or buffer)");
+        if( !duk_is_undefined(ctx, 2))
+            cipher_name=REQUIRE_STRING(ctx, 2, "crypto.en/decrypt - optional third argument must be a string (cipher name)");
 
-        if( duk_is_string(ctx, 2))
-            cipher_name=duk_get_string(ctx, 2);
-
-        duk_to_buffer(ctx,1,&in_len);
-        in_buffer = duk_get_buffer_data(ctx, 1, &in_len);
 
         if(decrypt)
         {
