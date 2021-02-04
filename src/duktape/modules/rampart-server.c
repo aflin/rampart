@@ -703,17 +703,6 @@ void push_req_vars(DHS *dhs)
     duk_put_prop_string(ctx, -2, "query");
 
     bsz = (duk_size_t)evbuffer_get_length(dhs->req->buffer_in);
-    if(bsz)
-    {
-        buf=evbuffer_pullup(dhs->req->buffer_in,-1); /* make contiguous and return pointer */
-        duk_push_external_buffer(ctx);
-        duk_config_buffer(ctx,-1,buf,bsz); /* add reference to buf for js buffer */
-    }
-    else
-    {
-        (void) duk_push_fixed_buffer(ctx, 0);
-    }
-    duk_put_prop_string(ctx, -2, "body");
 
     q = (char *)uri->query_raw;
     if (!q) q="";
@@ -857,6 +846,19 @@ void push_req_vars(DHS *dhs)
     //duk_put_prop_string(ctx, -2, "flatten");
     flatten_vars(ctx);
     duk_put_prop_string(ctx, -2, "params");
+
+    if(bsz)
+    {
+        buf=evbuffer_pullup(dhs->req->buffer_in,-1); /* make contiguous and return pointer */
+        duk_push_external_buffer(ctx);
+        duk_config_buffer(ctx,-1,buf,bsz); /* add reference to buf for js buffer */
+    }
+    else
+    {
+        (void) duk_push_fixed_buffer(ctx, 0);
+    }
+    duk_put_prop_string(ctx, -2, "body");
+
 }
 char msg500[] = "<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>%s</pre></p></body></html>";
 
@@ -1218,7 +1220,7 @@ static void sendbuf(DHS *dhs)
         {
             if (*s == '\\' && *(s + 1) == '@')
                 s++;
-            evbuffer_add(dhs->req->buffer_out,s,(size_t)sz);
+            evbuffer_add(dhs->req->buffer_out,s,(size_t)sz-1);
         }
     }
 }
