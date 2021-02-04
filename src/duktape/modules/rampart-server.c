@@ -1228,8 +1228,12 @@ static void sendbuf(DHS *dhs)
         if(s)
         {
             if (*s == '\\' && *(s + 1) == '@')
+            {
                 s++;
-            evbuffer_add(dhs->req->buffer_out,s,(size_t)sz-1);
+                evbuffer_add(dhs->req->buffer_out,s,(size_t)sz-1);
+            } 
+            else
+                evbuffer_add(dhs->req->buffer_out,s,(size_t)sz);
         }
     }
 }
