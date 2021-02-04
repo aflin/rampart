@@ -703,6 +703,10 @@ void push_req_vars(DHS *dhs)
     duk_put_prop_string(ctx, -2, "query");
 
     bsz = (duk_size_t)evbuffer_get_length(dhs->req->buffer_in);
+    if(bsz)
+    {
+        buf=evbuffer_pullup(dhs->req->buffer_in,-1); /* make contiguous and return pointer */
+    }
 
     q = (char *)uri->query_raw;
     if (!q) q="";
@@ -789,8 +793,9 @@ void push_req_vars(DHS *dhs)
             duk_get_global_string(ctx, "JSON");
             duk_get_prop_string(ctx, -1, "parse");
             duk_remove(ctx,-2);
-            //duk_get_prop_string(ctx, -4, "body");
-            duk_get_prop_string(ctx, -3, "body");
+            //duk_get_prop_string(ctx, -3, "body");
+            duk_push_external_buffer(ctx);
+            duk_config_buffer(ctx,-1,buf,bsz); /* add reference to buf for js buffer */
             if (!duk_is_undefined(ctx,-1))
             {
                 duk_buffer_to_string(ctx, -1);
@@ -817,7 +822,9 @@ void push_req_vars(DHS *dhs)
             duk_push_object(ctx);
             duk_push_string(ctx, "application/x-www-form-urlencoded");
             duk_put_prop_string(ctx, -2, "Content-Type");
-            duk_get_prop_string(ctx, -2, "body");
+            //duk_get_prop_string(ctx, -2, "body");
+            duk_push_external_buffer(ctx);
+            duk_config_buffer(ctx,-1,buf,bsz); /* add reference to buf for js buffer */
             duk_buffer_to_string(ctx,-1);
             s=(char *)duk_get_string(ctx,-1);
             duk_rp_querystring2object(ctx, s);
@@ -831,7 +838,9 @@ void push_req_vars(DHS *dhs)
             duk_push_object(ctx);
             duk_push_string(ctx, ct);
             duk_put_prop_string(ctx, -2, "Content-Type");
-            duk_get_prop_string(ctx, -2, "body");
+            //duk_get_prop_string(ctx, -2, "body");
+            duk_push_external_buffer(ctx);
+            duk_config_buffer(ctx,-1,buf,bsz); /* add reference to buf for js buffer */
             duk_put_prop_string(ctx, -2, "content");
             duk_put_prop_string(ctx, -2, "postData");
         }
@@ -847,9 +856,9 @@ void push_req_vars(DHS *dhs)
     flatten_vars(ctx);
     duk_put_prop_string(ctx, -2, "params");
 
+    /* we want body at the end for easy viewing */
     if(bsz)
     {
-        buf=evbuffer_pullup(dhs->req->buffer_in,-1); /* make contiguous and return pointer */
         duk_push_external_buffer(ctx);
         duk_config_buffer(ctx,-1,buf,bsz); /* add reference to buf for js buffer */
     }
