@@ -10,6 +10,7 @@
 #include "globals/printf.h"
 #include "rampart.h"
 
+/* allow JSON.parse to accept buffers */
 duk_ret_t duk_rp_json_parse(duk_context *ctx)
 {
     if(duk_is_buffer_data(ctx,0))
@@ -30,6 +31,55 @@ void fix_json_parse(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_rp_json_parse, 2);
     duk_put_prop_string(ctx, -2, "parse");
+    duk_pop(ctx);
+}
+
+static duk_ret_t duk_rp_object_values(duk_context *ctx)
+{
+    duk_uarridx_t i=0;
+
+    if (duk_is_array(ctx,0))
+        return 1;
+
+    duk_push_array(ctx);
+    if(duk_is_string(ctx, 0))
+    {
+        const char *s = duk_get_string(ctx, 0);
+        while(*s)
+        {
+            duk_push_lstring(ctx, s, 1);
+            duk_put_prop_index(ctx, -2, i);
+            s++;
+            i++; 
+        }
+        return 1;
+    }
+    if(duk_is_object(ctx, 0))
+    {
+        duk_enum(ctx, 0, DUK_ENUM_OWN_PROPERTIES_ONLY|DUK_ENUM_NO_PROXY_BEHAVIOR);
+        while (duk_next(ctx, -1 , 0 ))
+        {
+            duk_put_prop_index(ctx, -3, i);
+            i++;
+        }
+        duk_pop(ctx);
+        return 1;
+    }
+    if(duk_is_number(ctx, 0)|| duk_is_buffer_data(ctx,0))
+        return 1;
+    if( duk_is_undefined(ctx, 0) || duk_is_null(ctx, 0) )
+        RP_THROW(ctx, "Object.values - Cannot convert undefined or null to object");
+
+    RP_THROW(ctx, "Object.values - Cannot convert to object");
+    return 0;
+}
+
+static void add_object_values(duk_context *ctx)
+{
+    duk_get_global_string(ctx, "Object");    
+    duk_push_c_function(ctx, duk_rp_object_values, 1);
+    duk_put_prop_string(ctx, -2, "values");
+    duk_pop(ctx);
 }
 
 
@@ -53,7 +103,7 @@ void duk_init_context(duk_context *ctx)
     duk_pop(ctx);
     */
 
-    //maybe better to do this:
+    //maybe just do this?
     duk_push_global_object(ctx);
     duk_put_global_string(ctx,"global");
 
@@ -65,4 +115,5 @@ void duk_init_context(duk_context *ctx)
     duk_import_init(ctx);                     /* register functions in rampart-import.c */
     duk_process_init(ctx);                    /* register process.* vars */
     fix_json_parse(ctx);
+    add_object_values(ctx);
 }

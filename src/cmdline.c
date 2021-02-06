@@ -284,6 +284,26 @@ void completion(const char *inbuf, linenoiseCompletions *lc) {
     return;
 }
 
+static void duk_rp_exit(duk_context *ctx, int ec)
+{
+    int i=0,len=0;
+
+    duk_push_global_stash(ctx);
+    duk_get_prop_string(ctx, -1, "exitfuncs");
+    len=duk_get_length(ctx, -1);
+    for(;i<len;i++)
+    {
+        duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+        duk_call(ctx,0);
+        duk_pop(ctx);
+    }
+        
+    duk_destroy_heap(ctx);
+    free(RP_script_path);
+    exit(ec);
+}
+
+
 static int repl(duk_context *ctx)
 {
     printf("%s\n", RP_REPL_GREETING);
@@ -314,11 +334,9 @@ static int repl(duk_context *ctx)
         line = linenoise(prefix);
         if(line)
             linenoiseHistoryAdd(line);
-        if(!line) {
-            duk_destroy_heap(gl_ctx);
-            free(RP_script_path);
-            return 0;
-        }
+        if(!line)
+            duk_rp_exit(ctx, 0);
+
         duk_push_string(ctx, line);
 
         if(multiline) duk_concat(ctx,2);  //combine with last line if last loop set multiline=1
@@ -526,8 +544,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
     {
         fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-        duk_destroy_heap(ctx);
-        exit (1);
+        duk_rp_exit(ctx, 1);
     }
 
     /* write bytecode out */
@@ -561,8 +578,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
     {
         fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-        duk_destroy_heap(ctx);
-        exit(1);
+        duk_rp_exit(ctx, 1);
     }
     duk_pop(ctx);
     duk_eval_string(ctx,"global._babelPolyfill=true;");
@@ -627,15 +643,13 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     if (duk_pcompile(ctx, DUK_COMPILE_FUNCTION) == DUK_EXEC_ERROR)
     {
         fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-        duk_destroy_heap(ctx);
-        exit (1);
+        duk_rp_exit(ctx, 1);
     }
     duk_push_string(ctx,src);
     if (duk_pcall(ctx, 1) == DUK_EXEC_ERROR)
     {
         fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-        duk_destroy_heap(ctx);
-        exit(1);
+        duk_rp_exit(ctx, 1);
     }
     babelcode=(char *)duk_get_lstring(ctx,-1,&bsz);
     if(strcmp("stdin",fn) != 0 )
@@ -1285,6 +1299,13 @@ int main(int argc, char *argv[])
         return 1;
     }
     gl_ctx = ctx;
+    
+    /* for cleanup, an array of functions */
+    duk_push_global_stash(ctx);
+    duk_push_array(ctx);
+    duk_put_prop_string(ctx, -2, "exitfuncs");
+    duk_pop(ctx);
+
     if (!duk_get_global_string(ctx, "rampart"))
     {
         duk_pop(ctx);
@@ -1367,33 +1388,29 @@ int main(int argc, char *argv[])
                 {
                     duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not find entry file '%s': %s\n", argv[0], strerror(errno));
                     fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-                    duk_destroy_heap(ctx);
-                    return 1;
+                    duk_rp_exit(ctx, 1);
                 }
                 entry_file = fopen(argv[0], "r");
                 if (entry_file == NULL)
                 {
                     duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not open entry file '%s': %s\n", argv[0], strerror(errno));
                     fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-                    duk_destroy_heap(ctx);
-                    return 1;
+                    duk_rp_exit(ctx, 1);
                 }
                 src_sz=entry_file_stat.st_size + 1;
                 file_src = malloc(src_sz);
                 if(!file_src)
                 {
                     fprintf(stderr,"Error allocating memory for source file\n");
-                    duk_destroy_heap(ctx);
-                    return 1;
+                    duk_rp_exit(ctx, 1);
                 }
 
                 if (fread(file_src, 1, entry_file_stat.st_size, entry_file) != entry_file_stat.st_size)
                 {
                     duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read entry file '%s': %s\n", argv[0], strerror(errno));
                     fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-                    duk_destroy_heap(ctx);
                     free(free_file_src);
-                    return 1;
+                    duk_rp_exit(ctx, 1);
                 }
                 fn=argv[0];
                 fclose(entry_file);
@@ -1411,9 +1428,8 @@ int main(int argc, char *argv[])
                 {
                     duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read beyond first line in entry file '%s'\n", fn);
                     fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-                    duk_destroy_heap(ctx);
                     free(free_file_src);
-                    return 1;
+                    duk_rp_exit(ctx, 1);
                 }
                 file_src=s;
             }
@@ -1491,26 +1507,24 @@ int main(int argc, char *argv[])
             if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
             {
                 fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-                duk_destroy_heap(ctx);
-                return 1;
+                duk_rp_exit(ctx, 1);
             }
 
             if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
             {
                 fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
-                duk_destroy_heap(ctx);
-                return 1;
+                duk_rp_exit(ctx, 1);
             }
             if (!elbase)
             {
                 fprintf(stderr,"Eventloop error: could not initialize event base\n");
-                exit(1);
+                duk_rp_exit(ctx, 1);
             }
 
             /* start event loop */
             event_base_loop(elbase, 0);
         }
     }
-    duk_destroy_heap(ctx);
+    duk_rp_exit(ctx, 0);
     return 0;
 }

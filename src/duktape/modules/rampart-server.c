@@ -55,7 +55,7 @@ volatile int gl_threadno = 0;
 int gl_singlethreaded = 0;
 int rampart_server_started=0;
 
-duk_context **thread_ctx = NULL, *main_ctx;
+duk_context **thread_ctx = NULL;//, *main_ctx = NULL;
 
 int totnthreads = 0;
 int rp_using_ssl = 0;

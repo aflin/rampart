@@ -20,6 +20,7 @@ extern "C"
 
 extern char **rampart_argv;
 extern int   rampart_argc;
+duk_context *main_ctx;
 
 /* macros to help with require_* and throwing errors with 
    a stack trace.
