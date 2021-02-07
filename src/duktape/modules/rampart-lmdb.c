@@ -192,9 +192,9 @@ duk_ret_t duk_rp_lmdb_put(duk_context *ctx)
 
 
 
-duk_ret_t duk_rp_lmdb_get(duk_context *ctx)
+static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
 {
-    int rc, JSONValues=0;
+    int rc, JSONValues=0, max=-1;
     MDB_env *env;
     MDB_txn *txn;
     MDB_dbi dbi;
@@ -203,10 +203,16 @@ duk_ret_t duk_rp_lmdb_get(duk_context *ctx)
     int items=0, glob=0;
     const char *s=NULL;
     const char *endstr=NULL;
-    const char *db = REQUIRE_STRING(ctx, 0, "lmdb get - first argument must be a string (the database from the current database environment)");
+    const char *fname = "lmdb.get";
+    const char *db;
+    
+    if(del)
+        fname="lmdb.del";
+    
+    db = REQUIRE_STRING(ctx, 0, "%s - first argument must be a string (the database from the current database environment)", fname);
 
     if (!duk_is_string(ctx, 1))
-        RP_THROW(ctx, "lmdb get - second argument must be an string (keys to retrieve)");
+        RP_THROW(ctx, "%s - second argument must be a string (keys to retrieve)", fname);
 
     if (duk_is_number(ctx,2))
     {
@@ -219,6 +225,13 @@ duk_ret_t duk_rp_lmdb_get(duk_context *ctx)
             glob=1;
     }
 
+    if (endstr && duk_is_number(ctx,3))
+    {
+        max=duk_get_int(ctx, 3);
+        if(max <1) RP_THROW(ctx, "%s - fourth argument must be a number greater than 0 (maximum number of items to retrieve)", fname);
+    }
+
+
     if(envpid != getpid())
         redo_env(ctx);
 
@@ -229,7 +242,7 @@ duk_ret_t duk_rp_lmdb_get(duk_context *ctx)
     duk_push_this(ctx);
 
     if (!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("env")))
-        RP_THROW(ctx, "lmdb put - unknown error getting environment");
+        RP_THROW(ctx, "%s - unknown error getting environment", fname);
     env = duk_get_pointer(ctx, -1);
     duk_pop(ctx);
 
@@ -239,33 +252,36 @@ duk_ret_t duk_rp_lmdb_get(duk_context *ctx)
 
     duk_pop(ctx); //this
 
-    rc = mdb_txn_begin(env, NULL, MDB_RDONLY, &txn);
-//    rc = mdb_txn_begin(env, NULL, 0, &txn);
+    if(del)
+        rc = mdb_txn_begin(env, NULL, 0, &txn);
+    else
+        rc = mdb_txn_begin(env, NULL, MDB_RDONLY, &txn);
+
     if(rc)
     {
         //mdb_txn_abort(txn);
-        RP_THROW(ctx, "lmdb get - error beginning transaction - %s", mdb_strerror(rc));
+        RP_THROW(ctx, "%s - error beginning transaction - %s", fname, mdb_strerror(rc));
     }
 
     rc = mdb_dbi_open(txn, db, 0, &dbi);
     if(rc)
     {
         mdb_txn_abort(txn);
-        RP_THROW(ctx, "lmdb get - error opening %s - %s", db, mdb_strerror(rc));
+        RP_THROW(ctx, "%s - error opening %s - %s", db, fname, mdb_strerror(rc));
     }    
 
     rc = mdb_cursor_open(txn, dbi, &cursor);
     if(rc)
     {
         mdb_txn_abort(txn);
-        RP_THROW(ctx, "lmdb get - error opening cursor%s - %s", db, mdb_strerror(rc));
+        RP_THROW(ctx, "%s - error opening cursor%s - %s", db, fname, mdb_strerror(rc));
     }    
 
+    /* handle glob case */
     if(glob)
     {
         int len=strlen(s);
 
-        duk_push_object(ctx);
         rc = mdb_cursor_get(cursor, &key, &data, MDB_SET_RANGE);
         if(rc == MDB_NOTFOUND)
         {
@@ -274,21 +290,71 @@ duk_ret_t duk_rp_lmdb_get(duk_context *ctx)
             return 1;
         }
         else if (rc)
-            RP_THROW(ctx, "lmdb get - %s\n", mdb_strerror(rc));
+            RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
 
+        if(del)
+        {
+            rc = mdb_cursor_del(cursor, 0);
+            if(rc)
+                RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
+        }
+
+        if(!retvals)
+        {
+            while(1)
+            {
+                if(max>0)
+                {
+                    max--;
+                    if(!max)
+                        break;
+                }
+                rc = mdb_cursor_get(cursor, &key, &data, MDB_NEXT);
+                if(rc == MDB_NOTFOUND) 
+                    break;
+                else if(rc) 
+                    RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
+                if(strncmp(s, key.mv_data, len))
+                    break;
+                //if(del) currently always true if retvals is 0
+                //{
+                    rc = mdb_cursor_del(cursor, 0);
+                    if(rc)
+                        RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
+                //}
+            }
+            mdb_cursor_close(cursor);
+            mdb_txn_commit(txn);
+            return 0;
+        }
+
+        // implicit if (retvals)
+        duk_push_object(ctx);
         pushkey;
         pushval;
-
         duk_put_prop(ctx, -3);
+
         while(1)
         {
+            if(max>0)
+            {
+                max--;
+                if(!max)
+                    break;
+            }
             rc = mdb_cursor_get(cursor, &key, &data, MDB_NEXT);
             if(rc == MDB_NOTFOUND) 
                 break;
             else if(rc) 
-                RP_THROW(ctx, "lmdb get - %s\n", mdb_strerror(rc));
+                RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
             if(strncmp(s, key.mv_data, len))
                 break;
+            if(del)
+            {
+                rc = mdb_cursor_del(cursor, 0);
+                if(rc)
+                    RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
+            }
             pushkey;
             pushval;
             duk_put_prop(ctx, -3);
@@ -298,73 +364,192 @@ duk_ret_t duk_rp_lmdb_get(duk_context *ctx)
         return 1;
     }
 
+    /* non glob cases - start by retrieving the key as given */
+
     rc = mdb_cursor_get(cursor, &key, &data, MDB_SET);
     if(rc == MDB_NOTFOUND)
     {
         mdb_cursor_close(cursor);
         mdb_txn_abort(txn);
+        /* return empty object if we asked for more than a single */
         if(items || endstr)
         {
             duk_push_object(ctx);
             return 1;
         }
+        /* otherwise returned undefined */
         return 0;
     }
     else if (rc)
-        RP_THROW(ctx, "lmdb get - %s\n", mdb_strerror(rc));
+        RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
 
-    pushval;
-
-    if(items)
+    if(del)
     {
-        int i=1, flag=MDB_NEXT;
-        if(items<0)
+        /* found and delete requested, so delete */
+        rc = mdb_cursor_del(cursor, 0);
+        if(rc)
+            RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
+    }
+
+    /* now check for an end string or a range number */ 
+    if(retvals)
+    {
+        pushval;
+
+        if(items)
         {
-            flag = MDB_PREV;
-            items *= -1;
-        }
-        duk_push_object(ctx);
-        pushkey;
-        duk_pull(ctx, -3);
-        duk_put_prop(ctx, -3);
-        while(i<items)
-        {
-            rc = mdb_cursor_get(cursor, &key, &data, flag);
-            if(rc == MDB_NOTFOUND) 
-                break;
-            else if(rc) 
-                RP_THROW(ctx, "lmdb get - %s\n", mdb_strerror(rc));
+            int i=1, flag=MDB_NEXT;
+            if(items<0)
+            {
+                flag = MDB_PREV;
+                items *= -1;
+            }
+            duk_push_object(ctx);
             pushkey;
-            pushval;
+            duk_pull(ctx, -3);
             duk_put_prop(ctx, -3);
-            i++;                
+            while(i<items)
+            {
+                rc = mdb_cursor_get(cursor, &key, &data, flag);
+                if(rc == MDB_NOTFOUND) 
+                    break;
+                else if(rc) 
+                    RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
+                if(del)
+                {
+                    rc = mdb_cursor_del(cursor, 0);
+                    if(rc)
+                        RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
+                }
+                pushkey;
+                pushval;
+                duk_put_prop(ctx, -3);
+                i++;                
+            }
+        }
+        else if (endstr)
+        {
+            int flag=MDB_NEXT, direction=0;
+
+            duk_push_object(ctx);
+            pushkey;
+            duk_pull(ctx, -3);
+            duk_put_prop(ctx, -3);
+            direction = strcmp(endstr,s);
+            if (direction<0)
+                flag = MDB_PREV;            
+
+            while(1)
+            {
+                if(max>0)
+                {
+                    max--;
+                    if(!max)
+                        break;
+                }
+                rc = mdb_cursor_get(cursor, &key, &data, flag);
+                if(rc == MDB_NOTFOUND) 
+                    break;
+                else if(rc) 
+                    RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
+                if(direction * strncmp(endstr, key.mv_data, key.mv_size) < 0)
+                    break;
+                if(del)
+                {
+                    rc = mdb_cursor_del(cursor, 0);
+                    if(rc)
+                        RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
+                }
+                pushkey;
+                pushval;
+                duk_put_prop(ctx, -3);
+            }
         }
     }
-    else if (endstr)
+    else
     {
-        duk_push_object(ctx);
-        pushkey;
-        duk_pull(ctx, -3);
-        duk_put_prop(ctx, -3);
-        
-        while(1)
+        /* deleting without returning values */
+        if(items)
         {
-            rc = mdb_cursor_get(cursor, &key, &data, MDB_NEXT);
-            if(rc == MDB_NOTFOUND) 
-                break;
-            else if(rc) 
-                RP_THROW(ctx, "lmdb get - %s\n", mdb_strerror(rc));
-            if(strncmp(endstr, key.mv_data, key.mv_size) < 0)
-                break;
-            pushkey;
-            pushval;
-            duk_put_prop(ctx, -3);
+            int i=1, flag=MDB_NEXT;
+            if(items<0)
+            {
+                flag = MDB_PREV;
+                items *= -1;
+            }
+            while(i<items)
+            {
+                rc = mdb_cursor_get(cursor, &key, &data, flag);
+                if(rc == MDB_NOTFOUND) 
+                    break;
+                else if(rc) 
+                    RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
+                //if(del) currently can only ask for no retval from del
+                //{
+                    rc = mdb_cursor_del(cursor, 0);
+                    if(rc)
+                        RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
+                //}
+                i++;                
+            }
+        }
+        else if (endstr)
+        {
+            int flag=MDB_NEXT, direction=0;
+
+            direction = strcmp(endstr,s);
+            if (direction<0)
+                flag = MDB_PREV;            
+
+            while(1)
+            {
+                if(max>0)
+                {
+                    max--;
+                    if(!max)
+                        break;
+                }
+                rc = mdb_cursor_get(cursor, &key, &data, flag);
+                if(rc == MDB_NOTFOUND) 
+                    break;
+                else if(rc) 
+                    RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
+                if(direction * strncmp(endstr, key.mv_data, key.mv_size) < 0)
+                    break;
+                if(del)
+                {
+                    rc = mdb_cursor_del(cursor, 0);
+                    if(rc)
+                        RP_THROW(ctx, "%s - %s\n", fname, mdb_strerror(rc));
+                }
+            }
         }
     }
 
     mdb_cursor_close(cursor);
     mdb_txn_commit(txn);
-    return 1;
+    return (duk_ret_t)retvals;
+}
+
+duk_ret_t duk_rp_lmdb_get(duk_context *ctx)
+{
+    return get_del(ctx, 0, 1);
+}
+
+duk_ret_t duk_rp_lmdb_del(duk_context *ctx)
+{
+    duk_idx_t i=2;
+    int retvals=0;
+    for(;i<5;i++)
+    {
+        if(duk_is_boolean(ctx, i))
+        {
+            retvals=duk_get_boolean(ctx, i);
+            duk_remove(ctx, i);
+            break;
+        }
+    }
+    return get_del(ctx, 1, retvals);
 }
 
 int rp_mkdir_parent(const char *path, mode_t mode);
@@ -498,11 +683,14 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_object(ctx); /* -> stack: [ {}, Lmdb protoObj ] */
 
     /* Set Lmdb.prototype.exec. */
-    duk_push_c_function(ctx, duk_rp_lmdb_get, 3 /*nargs*/);
+    duk_push_c_function(ctx, duk_rp_lmdb_get, 4 /*nargs*/);
     duk_put_prop_string(ctx, -2, "get");
 
     duk_push_c_function(ctx, duk_rp_lmdb_put, 2 /*nargs*/);
     duk_put_prop_string(ctx, -2, "put");
+
+    duk_push_c_function(ctx, duk_rp_lmdb_del, 5 /*nargs*/);
+    duk_put_prop_string(ctx, -2, "del");
 
     /* Set Sql.prototype = protoObj */
     duk_put_prop_string(ctx, -2, "prototype"); /* -> stack: [ {}, Lmdb-->[prototype-->{exe=fn_exe,...}] ] */

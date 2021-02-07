@@ -140,12 +140,30 @@ target_include_directories(rampart-html PRIVATE
 )
 
 ###LMDB###
+
 add_library(rampart-lmdb SHARED
  duktape/modules/rampart-lmdb.c
 )
 target_link_libraries(rampart-lmdb
-	${PROJECT_SOURCE_DIR}/extern/lmdb/liblmdb.a
+	${PROJECT_BINARY_DIR}/extern/lmdb/liblmdb.a
 ) 
+
+add_custom_command(
+	OUTPUT ${PROJECT_BINARY_DIR}/extern/lmdb/liblmdb.a
+	COMMAND make
+	COMMAND mkdir -p ${PROJECT_BINARY_DIR}/extern/lmdb
+	COMMAND find './' -type f  -executable -exec mv {} "${PROJECT_BINARY_DIR}/extern/lmdb" "\;"
+	COMMAND mv liblmdb.a ${PROJECT_BINARY_DIR}/extern/lmdb/
+	COMMAND make clean
+	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/extern/lmdb/
+)
+
+add_custom_target(liblmdb
+	DEPENDS ${PROJECT_BINARY_DIR}/extern/lmdb/liblmdb.a
+)
+
+
+add_dependencies(rampart-lmdb liblmdb)
 
 ###SQL###
 add_library(rampart-sql SHARED
