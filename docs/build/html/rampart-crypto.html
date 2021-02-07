@@ -272,8 +272,8 @@ data.</p></li>
 the chosen cipher.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">iv</span></code> - required if not using a password - an initialization vector of
 the appropriate length to be used for encrypting the data.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">iter</span></code> - number of iterations for generating a key from <code class="docutils literal notranslate"><span class="pre">pass</span></code>.
-Default is <code class="docutils literal notranslate"><span class="pre">10000</span></code>.  If provided, the same must be passed to</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">iter</span></code> - number of iterations for generating a key and iv from <code class="docutils literal notranslate"><span class="pre">pass</span></code>.
+Default is <code class="docutils literal notranslate"><span class="pre">10000</span></code>.  If provided, the same value must be passed to</p></li>
 </ul>
 <blockquote>
 <div><p><a class="reference internal" href="#decrypt">decrypt</a> below in order to decrypt the ciphertext.</p>
@@ -293,6 +293,15 @@ using openssl version 1.1.1 from the command line.</p>
 <span class="kd">var</span> <span class="nx">ciphertext</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">encrypt</span><span class="p">(</span><span class="s2">&quot;mypass&quot;</span><span class="p">,</span> <span class="s2">&quot;my data&quot;</span><span class="p">,</span> <span class="s2">&quot;aes-128-cbc&quot;</span><span class="p">);</span>
 </pre></div>
 </div>
+<dl class="simple">
+<dt>Caveat:</dt><dd><p>The choice of <code class="docutils literal notranslate"><span class="pre">10000</span></code> iterations is the default used by both the command line
+<code class="docutils literal notranslate"><span class="pre">openssl</span></code> tool and rampart-crypto. It is purposefully slow, in order to make
+dictionary attacks on the password difficult.  If computational speed is a
+factor (e.g. in a HTTP server context), choosing a password of random characters
+and significantly lowering the <code class="docutils literal notranslate"><span class="pre">iter</span></code> value (or using the <code class="docutils literal notranslate"><span class="pre">key</span></code> and <code class="docutils literal notranslate"><span class="pre">iv</span></code>
+options instead of a password) will be more performant.</p>
+</dd>
+</dl>
 </div>
 <div class="section" id="decrypt">
 <h3>decrypt<a class="headerlink" href="#decrypt" title="Permalink to this headline">¶</a></h3>

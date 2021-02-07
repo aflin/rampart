@@ -94,8 +94,8 @@ Where
   * ``iv`` - required if not using a password - an initialization vector of
     the appropriate length to be used for encrypting the data.
 
-  * ``iter`` - number of iterations for generating a key from ``pass``. 
-    Default is ``10000``.  If provided, the same must be passed to
+  * ``iter`` - number of iterations for generating a key and iv from ``pass``. 
+    Default is ``10000``.  If provided, the same value must be passed to
    `decrypt`_ below in order to decrypt the ciphertext.
 
 Return Value:
@@ -111,6 +111,14 @@ Example:
     var crypto = require("rampart-crypto");
 
     var ciphertext = crypto.encrypt("mypass", "my data", "aes-128-cbc");
+
+Caveat:
+  The choice of ``10000`` iterations is the default used by both the command line
+  ``openssl`` tool and rampart-crypto. It is purposefully slow, in order to make
+  dictionary attacks on the password difficult.  If computational speed is a
+  factor (e.g. in a HTTP server context), choosing a password of random characters
+  and significantly lowering the ``iter`` value (or using the ``key`` and ``iv`` 
+  options instead of a password) will be more performant.
 
 decrypt
 ~~~~~~~

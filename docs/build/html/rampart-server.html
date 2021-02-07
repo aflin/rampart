@@ -1006,6 +1006,22 @@ must be a known extension):</p>
 </pre></div>
 </div>
 <p>See also <code class="docutils literal notranslate"><span class="pre">mimeMap</span></code> in <a class="reference internal" href="#start">start()</a> above.</p>
+<p>The content of a file may be sent by returning the file name prepended
+with an <code class="docutils literal notranslate"><span class="pre">&#64;</span></code> character.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="k">return</span> <span class="p">{</span>
+   <span class="nx">jpg</span><span class="o">:</span> <span class="s2">&quot;@/path/to/my/jpeg.jpg&quot;</span>
+<span class="p">};</span>
+</pre></div>
+</div>
+<p>This will be more efficient than reading the file and returing its
+content as shown in the previous example.</p>
+<p>Note that in order to send a string whose first character is <code class="docutils literal notranslate"><span class="pre">&#64;</span></code>, it
+must be escaped.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="k">return</span> <span class="p">{</span>
+   <span class="nx">txt</span><span class="o">:</span> <span class="s2">&quot;\\@home is a defunct internet service&quot;</span>
+<span class="p">};</span>
+</pre></div>
+</div>
 </div></blockquote>
 </div>
 <div class="section" id="built-in-directory-function">

@@ -1886,15 +1886,19 @@ for a full listing of functions available.</p>
 <h3>Module Search Path<a class="headerlink" href="#module-search-path" title="Permalink to this headline">¶</a></h3>
 <p>Modules are searched for in the following order:</p>
 <ol class="arabic simple">
-<li><p>As given.  If <code class="docutils literal notranslate"><span class="pre">/path/to/module.js</span></code> is given, it is checked first.</p></li>
-<li><p>In <a class="reference internal" href="#scriptpath">scriptPath</a>.</p></li>
+<li><p>As given.  If <code class="docutils literal notranslate"><span class="pre">/path/to/module.js</span></code> is given, the absolute path is checked first.
+If <code class="docutils literal notranslate"><span class="pre">path/to/module.js</span></code> or <code class="docutils literal notranslate"><span class="pre">module.js</span></code> is given
+<code class="docutils literal notranslate"><span class="pre">./path/to/module.js</span></code> or <code class="docutils literal notranslate"><span class="pre">./module.js</span></code> is checked
+first. Thus relative paths are checked from the current directory first.</p></li>
+<li><p>In <a class="reference internal" href="#scriptpath"><span class="std std-ref">process.scriptPath</span></a>.</p></li>
 <li><p>In the <code class="docutils literal notranslate"><span class="pre">.rampart/modules</span></code> directory of current user’s home directory
 as provided by the <code class="docutils literal notranslate"><span class="pre">$HOME</span></code> environment variable.</p></li>
 <li><p>In the “/modules” directory of the <code class="docutils literal notranslate"><span class="pre">-DRP_INST_PATH</span></code> path set when Rampart
 was compiled.  The default is <code class="docutils literal notranslate"><span class="pre">/usr/local/rampart/modules</span></code>. Or
 preferentially, if set, the path pointed to by the environment variable
 <code class="docutils literal notranslate"><span class="pre">$RAMPART_PATH</span></code> + “/modules”.</p></li>
-<li><p>In the current working directory.</p></li>
+<li><p>In the current working directory. If <code class="docutils literal notranslate"><span class="pre">/module.js</span></code> is given,
+<code class="docutils literal notranslate"><span class="pre">./module.js</span></code> is checked.</p></li>
 </ol>
 </div>
 </div>

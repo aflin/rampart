@@ -881,6 +881,27 @@ The Return Object
     };
     
   See also ``mimeMap`` in `start()`_ above.
+
+  The content of a file may be sent by returning the file name prepended
+  with an ``@`` character.
+
+  .. code-block:: javascript
+
+    return {
+       jpg: "@/path/to/my/jpeg.jpg"
+    };
+
+  This will be more efficient than reading the file and returing its
+  content as shown in the previous example.
+
+  Note that in order to send a string whose first character is ``@``, it 
+  must be escaped.
+
+  .. code-block:: javascript
+
+    return {
+       txt: "\\@home is a defunct internet service"
+    };
   
 Built-in Directory Function
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~

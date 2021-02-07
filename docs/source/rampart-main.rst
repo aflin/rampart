@@ -1791,9 +1791,12 @@ Module Search Path
 
 Modules are searched for in the following order:
 
-#. As given.  If ``/path/to/module.js`` is given, it is checked first.
+#. As given.  If ``/path/to/module.js`` is given, the absolute path is checked first.
+   If ``path/to/module.js`` or ``module.js`` is given
+   ``./path/to/module.js`` or ``./module.js`` is checked
+   first. Thus relative paths are checked from the current directory first.
 
-#. In `scriptPath`_\ .
+#. In :ref:`process.scriptPath <rampart-main:scriptPath>`\ .
 
 #. In the ``.rampart/modules`` directory of current user's home directory 
    as provided by the ``$HOME`` environment variable.
@@ -1803,7 +1806,8 @@ Modules are searched for in the following order:
    preferentially, if set, the path pointed to by the environment variable
    ``$RAMPART_PATH`` + "/modules".
 
-#. In the current working directory.
+#. In the current working directory. If ``/module.js`` is given, 
+   ``./module.js`` is checked.
 
 
 Additional Global Variables and Functions
