@@ -152,7 +152,7 @@ add_custom_command(
 	OUTPUT ${PROJECT_BINARY_DIR}/extern/lmdb/liblmdb.a
 	COMMAND make
 	COMMAND mkdir -p ${PROJECT_BINARY_DIR}/extern/lmdb
-	COMMAND find './' -type f  -executable -exec mv {} "${PROJECT_BINARY_DIR}/extern/lmdb" "\;"
+	COMMAND find './' -type f  -perm /+x -exec mv {} "${PROJECT_BINARY_DIR}/extern/lmdb" "\;"
 	COMMAND mv liblmdb.a ${PROJECT_BINARY_DIR}/extern/lmdb/
 	COMMAND make clean
 	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/extern/lmdb/
