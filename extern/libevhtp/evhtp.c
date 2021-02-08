@@ -900,11 +900,11 @@ htp__callback_find_(evhtp_callbacks_t * cbs,
         return NULL;
     }
     path_len = strlen(path);
-
     TAILQ_FOREACH(callback, cbs, next) {
         switch (callback->type) {
             /* added exact match type -ajf */
             case evhtp_callback_type_exact:
+                //printf("exact path=%s, cb_path=%s\n", path, callback->val.path);
                 if (strcmp(path, callback->val.path) == 0) {
                     *start_offset = 0;
                     *end_offset   = path_len;
@@ -914,6 +914,7 @@ htp__callback_find_(evhtp_callbacks_t * cbs,
 
                 break;
             case evhtp_callback_type_hash:
+                //printf("hash path=%s, cb_path=%s\n", path, callback->val.path);
                 if (strncmp(path, callback->val.path, callback->len) == 0) {
                     *start_offset = 0;
                     *end_offset   = path_len;
@@ -926,6 +927,7 @@ htp__callback_find_(evhtp_callbacks_t * cbs,
             case evhtp_callback_type_regex:
                 /* switched to normal onig calls (instead of the onigposix.h ones) -ajf */
                 {
+                    //printf("regex path=%s, cb_path=%s\n", path, callback->val.path);
                     int r;
                     OnigRegion *region= onig_region_new();
                     UChar *str=(UChar*)path;
@@ -946,6 +948,7 @@ htp__callback_find_(evhtp_callbacks_t * cbs,
 #endif
             case evhtp_callback_type_glob:
             {
+                //printf("glob path=%s, cb_path=%s\n", path, callback->val.path);
                 size_t glob_len = strlen(callback->val.glob);
 
                 if (htp__glob_match_(callback->val.glob,

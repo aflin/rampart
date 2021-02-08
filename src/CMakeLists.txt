@@ -398,6 +398,15 @@ install(CODE "execute_process( \
     )"
 )
 
+# docs dirs
+install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/docs")
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy_directory \
+    \"${PROJECT_SOURCE_DIR}//docs/build/html\" \
+    \"${CMAKE_INSTALL_PREFIX}/docs\"   \
+    )"
+)
+
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-server.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-crypto.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-curl.so\")")

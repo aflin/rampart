@@ -48,8 +48,6 @@ gid_t unprivg=0;
 #define debugf(...) /* Do nothing */
 #endif
 
-pthread_mutex_t ctxlock;
-
 
 volatile int gl_threadno = 0;
 int gl_singlethreaded = 0;
@@ -3693,7 +3691,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
     pid_t dpid=0;
     ctimeout.tv_sec = RP_TIME_T_FOREVER;
     ctimeout.tv_usec = 0;
-    main_ctx = ctx;
 
     if(rampart_server_started)
         RP_THROW(ctx, "server.start - error- only one server per process may be running - use daemon:true to launch multiples");

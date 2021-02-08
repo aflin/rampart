@@ -1,0 +1,552 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>The rampart-lmdb module &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
+        <link rel="next" title="The rampart-robots module" href="rampart-robots.html"/>
+        <link rel="prev" title="The rampart-curl module" href="rampart-curl.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart JavaScript</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-utils.html">Rampart Utility Functions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-html.html">The rampart-html module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-crypto.html">The rampart-crypto module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-curl.html">The rampart-curl module</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">The rampart-lmdb module</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#preface">Preface</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#acknowledgment">Acknowledgment</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#license">License</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#what-does-it-do">What does it do?</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#how-does-it-work">How does it work?</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#loading-and-using-the-module">Loading and Using the Module</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#loading">Loading</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#terminology">Terminology</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#main-function">Main Function</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#lmdb-functions">LMDB functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#get">get</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#put">put</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#del">del</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#drop">drop</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sync">sync</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#example">Example</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-robots.html">The rampart-robots module</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>The rampart-lmdb module</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/rampart-lmdb.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="the-rampart-lmdb-module">
+<h1>The rampart-lmdb module<a class="headerlink" href="#the-rampart-lmdb-module" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="preface">
+<h2>Preface<a class="headerlink" href="#preface" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="acknowledgment">
+<h3>Acknowledgment<a class="headerlink" href="#acknowledgment" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-lmdb module uses
+<a class="reference external" href="https://symas.com/lmdb/">Symas LMDB library</a>.
+The authors of Rampart extend our thanks to
+<a class="reference external" href="https://symas.com/">Symas</a>
+for this library.</p>
+</div>
+<div class="section" id="license">
+<h3>License<a class="headerlink" href="#license" title="Permalink to this headline">¶</a></h3>
+<p>The LMDB library is licensed under the
+<a class="reference external" href="https://github.com/LMDB/lmdb/blob/mdb.master/libraries/liblmdb/LICENSE">OpenLdap Public License</a>,
+which is a BSD-like license.
+The rampart-lmdb module is released under the MIT license.</p>
+</div>
+<div class="section" id="what-does-it-do">
+<h3>What does it do?<a class="headerlink" href="#what-does-it-do" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-lmdb module provides a key/value store database using the LMDB
+library.  For background information, see
+<a class="reference external" href="https://symas.com/lmdb/">Symas’ description here</a>.</p>
+</div>
+<div class="section" id="how-does-it-work">
+<h3>How does it work?<a class="headerlink" href="#how-does-it-work" title="Permalink to this headline">¶</a></h3>
+<p>The rampart-lmdb module exports a get and put function which allow a program
+to store data indexed by its key.  Data may be a <span class="green">String</span> or
+<span class="green">Buffer</span>, or optionally data can be converted to and from JSON
+automatically.</p>
+</div>
+</div>
+<div class="section" id="loading-and-using-the-module">
+<h2>Loading and Using the Module<a class="headerlink" href="#loading-and-using-the-module" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="loading">
+<h3>Loading<a class="headerlink" href="#loading" title="Permalink to this headline">¶</a></h3>
+<p>Loading the module is a simple matter of using the <code class="docutils literal notranslate"><span class="pre">require()</span></code> function:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="terminology">
+<h2>Terminology<a class="headerlink" href="#terminology" title="Permalink to this headline">¶</a></h2>
+<p>Within LMDB, a “database environment” is a single file which lives in its own
+directory, and has an accompanying lock file.  Within that file, data may be
+partitioned into “databases”.  Thus an LMDB “database environment” is
+organizationally similar to a SQL database and an LMDB “database” is similar
+to a SQL table.</p>
+</div>
+<div class="section" id="main-function">
+<h2>Main Function<a class="headerlink" href="#main-function" title="Permalink to this headline">¶</a></h2>
+<p>After loading, a new database environment can be opened (and optionally created) as
+follows:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">path</span></code> is a <span class="green">String</span>, the location of the database environment.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">create</span></code> is a :green:Boolean, whether to create a new database
+environment, if it doesn’t exist.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> is a <span class="green">Object</span>, a list of options for opening a new
+database environment.  Options include:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">mapSize</span></code> - a <span class="green">Number</span>, an integer to set the size of the memory map
+in megabytes to use for this environment. The size of the memory
+map is also the maximum size of the database. The value should be chosen as
+large as possible, to accommodate future growth of the database.
+It may be increased after the database is created.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">conversion</span></code> - <span class="green">String</span>, whether and what type of
+conversions should be performed before storing values.  One of
+these case-insensitive <span class="green">Strings</span>:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">Buffer</span></code> - the default if not specified.  Input values
+(<a class="reference internal" href="#put">put</a>) can be a <span class="green">String</span> or a <span class="green">Buffer</span> and are
+stored as is.  Output values (<a class="reference internal" href="#get">get</a>) will be a
+<span class="green">Buffer</span>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">String</span></code> - Input values (<a class="reference internal" href="#put">put</a>) can be a <span class="green">String</span>
+or a <span class="green">Buffer</span> and are stored as is.  Output values
+(<a class="reference internal" href="#get">get</a>) will be a <span class="green">String</span>.  If the output value
+includes NULL characters, the <span class="green">String</span> will be truncated.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">JSON</span></code> - Input values (<a class="reference internal" href="#put">put</a>) can be any type
+except a <span class="green">Buffer</span> or an <span class="green">Object</span> that contains a
+<span class="green">Buffer</span>.  Output values (<a class="reference internal" href="#get">get</a>) will be the same as
+the input value.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CBOR</span></code> - Input values
+(<a class="reference internal" href="#put">put</a>) can be any type including a <span class="green">Buffers</span> and
+<span class="green">Objects</span> that contains a <span class="green">Buffers</span>.  Output
+values (<a class="reference internal" href="#get">get</a>) will be the same as the input value. See
+<a class="reference external" href="https://duktape.org/guide.html#builtin-cbor">CBOR encoding description</a>
+for more information on CBOR encoding.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">noSync</span></code> - a <span class="green">Boolean</span>, whether to turn off the flushing
+of sy buffers to disk when committing a transaction.  This
+optimization means a system crash can corrupt the database or lose
+the last transactions if buffers are not yet flushed to disk.  The
+risk is governed by how often the system flushes dirty buffers to
+disk and how often <a class="reference internal" href="#sync">sync</a> is manually called.  However, if the
+filesystem preserves write order and the <code class="docutils literal notranslate"><span class="pre">writeMap</span></code> setting
+below is not set or set <code class="docutils literal notranslate"><span class="pre">false</span></code>, transactions exhibit ACI
+(atomicity, consistency, isolation) properties and only lose D
+(durability).  I.e.  database integrity is maintained, but a
+system crash may undo the final transactions.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">noMetaSync</span></code> - a <span class="green">Boolean</span>, whether flushing of the system buffers
+to disk happens only once per transaction, omitting the metadata
+flush.  If true, LMDB will defer that until the system flushes
+files to disk, or when <a class="reference internal" href="#sync">sync</a> below is called.
+This optimization maintains database integrity, but a system crash
+may undo the last committed transaction.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mapAsync</span></code> - a <span class="green">Boolean</span>, whether, when using
+<code class="docutils literal notranslate"><span class="pre">writeMap</span></code>, LMDB should use asynchronous flushes to disk. As with
+<code class="docutils literal notranslate"><span class="pre">noSync</span></code>, a system crash can then corrupt the database or lose
+the last transactions. Calling <a class="reference internal" href="#sync">sync</a> below ensures on-disk
+database integrity.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">noReadAhead</span></code> - a <span class="green">Boolean</span>, whether LMDB should Turn off
+readahead. Most operating systems perform readahead on read
+requests by default. This option turns it off if the OS supports
+it. Turning it off may help random read performance when the DB is
+larger than RAM and system RAM is full.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">writeMap</span></code> - a <span class="green">Boolean</span>, whether to write data directly
+to LMDB’s memory map of the database environment. This is faster
+and uses fewer mallocs, but loses protection from application bugs
+like wild pointer writes and other bad updates into the database.</p></li>
+</ul>
+</div></blockquote>
+</li>
+</ul>
+</div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A set of functions to operate on the database.  See below.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="lmdb-functions">
+<h2>LMDB functions<a class="headerlink" href="#lmdb-functions" title="Permalink to this headline">¶</a></h2>
+<p>After a database environment is opened, the following functions and
+flags are available in the return object:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span> <span class="nx">create</span><span class="p">,</span> <span class="nx">options</span><span class="p">);</span>
+<span class="cm">/* return value:</span>
+<span class="cm">    {</span>
+<span class="cm">        get:  {_func: true},</span>
+<span class="cm">        put:  {_func: true},</span>
+<span class="cm">        del:  {_func: true},</span>
+<span class="cm">        drop: {_func: true},</span>
+<span class="cm">        sync: {_func: true},</span>
+<span class="cm">    }</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="get">
+<h2>get<a class="headerlink" href="#get" title="Permalink to this headline">¶</a></h2>
+<p>Retrieve values from a database.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+
+<span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="nx">dbase</span><span class="p">,</span> <span class="nx">key</span><span class="p">[,</span> <span class="nx">nKeys</span><span class="p">]);</span>
+
+<span class="cm">/* or */</span>
+
+<span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="nx">dbase</span><span class="p">,</span> <span class="nx">key</span><span class="p">[,</span> <span class="nx">endkey</span><span class="p">][,</span> <span class="nx">max</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <span class="green">String</span>, the name of the database
+to be accessed.  If the database does not exist, an error
+will be thrown.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key</span></code> is a <span class="green">String</span>, the name of the key whose data
+will be retrieved.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nKeys</span></code> is an optional <span class="green">Number</span>, the total number of keys to
+retrieve.  If a positive number, the <code class="docutils literal notranslate"><span class="pre">key</span></code> will be returned
+along with the next <code class="docutils literal notranslate"><span class="pre">nKeys</span> <span class="pre">-</span> <span class="pre">1</span></code> keys that follow in lexical
+order.  If a negative number, the <code class="docutils literal notranslate"><span class="pre">key</span></code> will be returned
+along with the previous <code class="docutils literal notranslate"><span class="pre">nKeys</span> <span class="pre">-</span> <span class="pre">1</span></code> keys that preceed in lexical
+order. NOTE that if key is not found, no other keys will be returned.
+See the glob version in <code class="docutils literal notranslate"><span class="pre">endkey</span></code> below for that functionality.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">endkey</span></code> is an optional <span class="green">String</span>, the last key to retrieve, retrieving
+all keys between <code class="docutils literal notranslate"><span class="pre">key</span></code> and <code class="docutils literal notranslate"><span class="pre">endKey</span></code> (but no more than <code class="docutils literal notranslate"><span class="pre">max</span></code>, if given).  If
+<code class="docutils literal notranslate"><span class="pre">endKey</span></code> preceeds <code class="docutils literal notranslate"><span class="pre">key</span></code> in lexical order, the keys and values will
+be returned in reverse order (but no more than <code class="docutils literal notranslate"><span class="pre">max</span></code>, if given).</p>
+<p>If <code class="docutils literal notranslate"><span class="pre">endKey</span></code> is set to the special string “*”, all keys beginning
+with <code class="docutils literal notranslate"><span class="pre">key</span></code> will be returned.</p>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">max</span></code> is an optional positive <span class="green">Number</span> greater than 0 which may be specified
+to limit the number of key/value pairs returned when using <code class="docutils literal notranslate"><span class="pre">endkey</span></code>.</p></li>
+</ul>
+</div></blockquote>
+<dl>
+<dt>Return Value:</dt><dd><p>If neither <code class="docutils literal notranslate"><span class="pre">nKeys</span></code> nor <code class="docutils literal notranslate"><span class="pre">endkey</span></code> is specified, a single value is
+returned.  If <cite>JSONValues</cite> is set, the type will be the same type
+as given.</p>
+<p>If either <code class="docutils literal notranslate"><span class="pre">nKeys</span></code> or <code class="docutils literal notranslate"><span class="pre">endkey</span></code> is specified, an <span class="green">Object</span> of
+key/value pairs is returned with each key set to the name of the
+retrieved key and each value set as described above.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="put">
+<h2>put<a class="headerlink" href="#put" title="Permalink to this headline">¶</a></h2>
+<p>Put (store) values in a given <span class="green">Object</span> into a given database, indexed
+by the <span class="green">Object’s</span> keys.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="nx">lmdb</span><span class="p">.</span><span class="nx">put</span><span class="p">(</span><span class="nx">dbase</span><span class="p">,</span> <span class="nx">kvpairs</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <span class="green">String</span>, the name of the database
+to be accessed.  If the database does not exist, it will
+be created.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">kvpairs</span></code> is an <span class="green">Object</span> with each <span class="green">Object</span> key
+corresponding to a database key to be used and each <span class="green">Object</span>
+value corresponding to the database value to be stored.  Note: Values must
+be a <span class="green">String</span> or <span class="green">Buffer</span> unless <code class="docutils literal notranslate"><span class="pre">conversion</span></code> above is
+set to “JSON” or “CBOR”.</p></li>
+</ul>
+</div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="del">
+<h2>del<a class="headerlink" href="#del" title="Permalink to this headline">¶</a></h2>
+<p>Delete values in a database.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">del</span><span class="p">(</span><span class="nx">dbase</span><span class="p">,</span> <span class="nx">key</span><span class="p">[,</span> <span class="nx">nKeys</span><span class="p">][,</span> <span class="nx">retValues</span><span class="p">]);</span>
+
+<span class="cm">/* or */</span>
+
+<span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">del</span><span class="p">(</span><span class="nx">dbase</span><span class="p">,</span> <span class="nx">key</span><span class="p">[,</span> <span class="nx">endkey</span><span class="p">][,</span> <span class="nx">max</span><span class="p">][,</span> <span class="nx">retValues</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where options are the same as in <a class="reference internal" href="#get">get</a> above, with the addition of
+<code class="docutils literal notranslate"><span class="pre">retValues</span></code> (which, if provided, is a <span class="green">Boolean</span>).  If <code class="docutils literal notranslate"><span class="pre">retValues</span></code>
+is set <code class="docutils literal notranslate"><span class="pre">true</span></code>, the deleted values are returned in the same manner as get.
+Otherwise <code class="docutils literal notranslate"><span class="pre">undefined</span></code> is returned.</p>
+</div>
+<div class="section" id="drop">
+<h2>drop<a class="headerlink" href="#drop" title="Permalink to this headline">¶</a></h2>
+<p>Drop a database from the database environment.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="nx">lmdb</span><span class="p">.</span><span class="nx">drop</span><span class="p">(</span><span class="nx">dbase</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <span class="green">String</span>, the name of the database
+to be dropped.</p></li>
+</ul>
+</div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="sync">
+<h2>sync<a class="headerlink" href="#sync" title="Permalink to this headline">¶</a></h2>
+<p>Sync the database envirnoment.  Useful if <code class="docutils literal notranslate"><span class="pre">mapAsync</span></code> or <code class="docutils literal notranslate"><span class="pre">noSync</span></code>
+is set in order to manually sync data to disk.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="nx">lmdb</span><span class="p">.</span><span class="nx">sync</span><span class="p">();</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="example">
+<h2>Example<a class="headerlink" href="#example" title="Permalink to this headline">¶</a></h2>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span>
+</pre></div>
+</div>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="rampart-robots.html" class="btn btn-neutral float-right" title="The rampart-robots module" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="rampart-curl.html" class="btn btn-neutral" title="The rampart-curl module" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2020, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>

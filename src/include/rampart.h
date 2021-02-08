@@ -20,7 +20,9 @@ extern "C"
 
 extern char **rampart_argv;
 extern int   rampart_argc;
-duk_context *main_ctx;
+extern duk_context *main_ctx;
+/* mutex for locking main_ctx when in a thread with other duk stacks open */
+extern pthread_mutex_t ctxlock;
 
 /* macros to help with require_* and throwing errors with 
    a stack trace.

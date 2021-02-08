@@ -1,4 +1,4 @@
-The rampart-curl module
+The rampart-robots module
 ==============================
 
 Preface

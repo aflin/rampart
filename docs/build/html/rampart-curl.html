@@ -38,7 +38,7 @@
               href="genindex.html"/>
         <link rel="search" title="Search" href="search.html"/>
     <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
-        <link rel="next" title="The rampart-curl module" href="rampart-robots.html"/>
+        <link rel="next" title="The rampart-lmdb module" href="rampart-lmdb.html"/>
         <link rel="prev" title="The rampart-crypto module" href="rampart-crypto.html"/> 
 
   
@@ -85,6 +85,7 @@
                 <p class="caption"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart JavaScript</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-utils.html">Rampart Utility Functions</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-html.html">The rampart-html module</a></li>
@@ -132,6 +133,7 @@
 </li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-lmdb.html">The rampart-lmdb module</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-robots.html">The rampart-robots module</a></li>
 </ul>
 
@@ -564,10 +566,10 @@ Note that <a class="reference internal" href="#examples">examples</a> are provid
 <div><ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">arrayType</span></code> - <span class="green">String</span> - How to translate arrays into
 parameters for <code class="docutils literal notranslate"><span class="pre">get</span></code> and <code class="docutils literal notranslate"><span class="pre">post</span></code> below.  See
-<a class="reference internal" href="rampart-main.html#objecttoquery"><span class="std std-ref">objectToQuery</span></a>.</p></li>
+<span class="xref std std-ref">rampart-main:objectToQuery</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">get</span></code> - <span class="green">Object</span> or <span class="green">String</span> - <strong>THIS OPTION DIFFERS FROM CURL COMMAND LINE</strong>.
 If an <span class="green">Object</span> is provided, it is converted to a
-<span class="green">String</span> using <a class="reference internal" href="rampart-main.html#objecttoquery"><span class="std std-ref">objectToQuery</span></a> first.  The
+<span class="green">String</span> using <span class="xref std std-ref">rampart-main:objectToQuery</span> first.  The
 <span class="green">String</span> is then joined to the URL using a <code class="docutils literal notranslate"><span class="pre">?</span></code>.  See also
 <code class="docutils literal notranslate"><span class="pre">arrayType</span></code> above.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">mail-msg</span></code> - <span class="green">String</span> or <span class="green">Object</span> - For SMTP, set
@@ -641,7 +643,7 @@ Attachment <code class="docutils literal notranslate"><span class="pre">data</sp
 For POSTing content to a server using HTTP or HTTPS.</p>
 <ul>
 <li><p>If an <span class="green">Object</span>, data is automatically converted and posted
-similar to <code class="docutils literal notranslate"><span class="pre">get</span></code> using <a class="reference internal" href="rampart-main.html#objecttoquery"><span class="std std-ref">objectToQuery</span></a>.</p></li>
+similar to <code class="docutils literal notranslate"><span class="pre">get</span></code> using <span class="xref std std-ref">rampart-main:objectToQuery</span>.</p></li>
 <li><p>If a <span class="green">String</span> or <span class="green">Buffer</span>, data is sent as is.  By
 default the header <code class="docutils literal notranslate"><span class="pre">Content-Type:</span> <span class="pre">application/x-www-form-urlencoded</span></code>
 is sent with the request.  If data is a <span class="green">String</span> or
@@ -1363,7 +1365,7 @@ inline in the HTML mail.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="rampart-robots.html" class="btn btn-neutral float-right" title="The rampart-curl module" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+        <a href="rampart-lmdb.html" class="btn btn-neutral float-right" title="The rampart-lmdb module" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
       
       
         <a href="rampart-crypto.html" class="btn btn-neutral" title="The rampart-crypto module" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>

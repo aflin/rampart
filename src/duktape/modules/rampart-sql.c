@@ -37,7 +37,9 @@
 QUERY_STRUCT
 {
     const char *sql;    /* the sql statement (allocated by duk and on its stack) */
-    int arryi;          /* location of array of parameters in ctx, or -1 */
+    duk_idx_t arr_idx;          /* location of array of parameters in ctx, or -1 */
+    duk_idx_t obj_idx;
+    duk_idx_t str_idx;
     duk_idx_t callback; /* location of callback in ctx, or -1 */
     int skip;           /* number of results to skip */
     int max;            /* maximum number of results to return */
@@ -426,13 +428,9 @@ void duk_rp_log_error(duk_context *ctx, char *pbuf)
 #ifdef PUTMSG_STDERR
     if (pbuf && strlen(pbuf))
     {
-#ifdef NEVER_EVER_EVER
-        fprintf(stderr, "%s\n", pbuf);
-#else
         pthread_mutex_lock(&printlock);
         fprintf(stderr, "%s\n", pbuf);
         pthread_mutex_unlock(&printlock);
-#endif
     }
 #endif
     duk_put_prop_string(ctx, -2, "errMsg");
@@ -644,7 +642,9 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
 void duk_rp_init_qstruct(QUERY_STRUCT *q)
 {
     q->sql = (char *)NULL;
-    q->arryi = -1;
+    q->arr_idx = -1;
+    q->str_idx = -1;
+    q->obj_idx=-1;
     q->callback = -1;
     q->skip = 0;
     q->max = RESMAX_DEFAULT;
@@ -680,84 +680,91 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
         int vtype = duk_get_type(ctx, i);
         switch (vtype)
         {
-        case DUK_TYPE_STRING:
-        {
-            int l;
-            if (q->sql != (char *)NULL)
+            case DUK_TYPE_STRING:
             {
-                duk_rp_log_error(ctx, "Only one string may be passed as a parameter and must be a sql statement.\n");
-                duk_push_int(ctx, -1);
-                q->sql = (char *)NULL;
-                q->err = QS_ERROR_PARAM;
-                return (q_st);
-            }
-            q->sql = duk_get_string(ctx, i);
-            l = strlen(q->sql) - 1;
-            while (*(q->sql + l) == ' ' && l > 0)
-                l--;
-            if (*(q->sql + l) != ';')
-            {
-                duk_dup(ctx, i);
-                duk_push_string(ctx, ";");
-                duk_concat(ctx, 2);
-                duk_replace(ctx, i);
-                q->sql = (char *)duk_get_string(ctx, i);
-            }
-            break;
-        }
-        case DUK_TYPE_OBJECT:
-        {
-            /* array of parameters*/
-
-            if (duk_is_array(ctx, i) && q->arryi == -1)
-                q->arryi = i;
-
-            /* argument is a function, save where it is on the stack */
-            else if (duk_is_function(ctx, i))
-            {
-                q->callback = i;
-            }
-
-            /* object of settings */
-            else
-            {
-
-                if (duk_get_prop_string(ctx, i, "includeCounts"))
-                    q->getCounts = duk_get_boolean_default(ctx, -1, 1);
-
-                duk_pop(ctx);
-
-                if (duk_get_prop_string(ctx, i, "skip"))
-                    q->skip = duk_rp_get_int_default(ctx, -1, 0);
-
-                duk_pop(ctx);
-
-                if (duk_get_prop_string(ctx, i, "max"))
+                int l;
+                if (q->sql != (char *)NULL)
                 {
-                    q->max = duk_rp_get_int_default(ctx, -1, q->max);
-                    if (q->max < 0)
-                        q->max = INT_MAX;
+                    duk_rp_log_error(ctx, "Only one string may be passed as a parameter and must be a sql statement.\n");
+                    duk_push_int(ctx, -1);
+                    q->sql = (char *)NULL;
+                    q->err = QS_ERROR_PARAM;
+                    return (q_st);
+                }
+                q->sql = duk_get_string(ctx, i);
+                q->str_idx=i;
+                l = strlen(q->sql) - 1;
+                while (*(q->sql + l) == ' ' && l > 0)
+                    l--;
+                if (*(q->sql + l) != ';')
+                {
+                    duk_dup(ctx, i);
+                    duk_push_string(ctx, ";");
+                    duk_concat(ctx, 2);
+                    duk_replace(ctx, i);
+                    q->sql = (char *)duk_get_string(ctx, i);
+                }
+                break;
+            }
+            case DUK_TYPE_OBJECT:
+            {
+                /* array of parameters*/
+
+                if (duk_is_array(ctx, i) && q->arr_idx == -1)
+                    q->arr_idx = i;
+
+                /* argument is a function, save where it is on the stack */
+                else if (duk_is_function(ctx, i))
+                {
+                    q->callback = i;
                 }
 
-                if (duk_get_prop_string(ctx, i, "returnType"))
+                /* object of settings */
+                else
                 {
-                    const char *rt = duk_to_string(ctx, -1);
+                    /* first object, if no array before, is an object of parameters */
+                    if ( q->arr_idx == -1 && q->obj_idx == -1)
+                    {
+                        q->obj_idx = i;
+                        break;
+                    }
 
-                    if (!strcasecmp("array", rt))
+                    if (duk_get_prop_string(ctx, i, "includeCounts"))
+                        q->getCounts = duk_get_boolean_default(ctx, -1, 1);
+
+                    duk_pop(ctx);
+
+                    if (duk_get_prop_string(ctx, i, "skip"))
+                        q->skip = duk_rp_get_int_default(ctx, -1, 0);
+
+                    duk_pop(ctx);
+
+                    if (duk_get_prop_string(ctx, i, "max"))
                     {
-                        q->rettype = 1;
+                        q->max = duk_rp_get_int_default(ctx, -1, q->max);
+                        if (q->max < 0)
+                            q->max = INT_MAX;
                     }
-                    else if (!strcasecmp("novars", rt))
+
+                    if (duk_get_prop_string(ctx, i, "returnType"))
                     {
-                        q->rettype = 2;
+                        const char *rt = duk_to_string(ctx, -1);
+
+                        if (!strcasecmp("array", rt))
+                        {
+                            q->rettype = 1;
+                        }
+                        else if (!strcasecmp("novars", rt))
+                        {
+                            q->rettype = 2;
+                        }
                     }
+
+                    duk_pop(ctx);
                 }
 
-                duk_pop(ctx);
-            }
-
-            break;
-        } /* case */
+                break;
+            } /* case */
         } /* switch */
     }     /* for */
     if (q->sql == (char *)NULL)
@@ -769,6 +776,109 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
     return (q_st);
 }
 
+#define push_sql_param do{\
+    switch (duk_get_type(ctx, -1))\
+    {\
+        case DUK_TYPE_NUMBER:\
+        {\
+            double floord;\
+            d = duk_get_number(ctx, -1);\
+            floord = floor(d);\
+            if( (d - floord) > 0.0)\
+            {\
+                v = (double *)&d;\
+                plen = sizeof(double);\
+                in = SQL_C_DOUBLE;\
+                out = SQL_DOUBLE;\
+            }\
+            else\
+            {\
+                lval = (long) floord;\
+                v = (long *)&lval;\
+                plen = sizeof(long);\
+                in = SQL_C_LONG;\
+                out = SQL_INTEGER;\
+            }\
+            break;\
+        }\
+        /* all objects are converted to json string\
+           this works (or will work) for several datatypes (varchar,int(x),strlst,json varchar) */\
+        case DUK_TYPE_OBJECT:\
+        {\
+            char *e;\
+            char *s = v = (char *)duk_json_encode(ctx, -1);\
+            plen = strlen(v);\
+            e = s + plen - 1;\
+            /* a date (and presumably other single values returned from an object which returns a string)\
+             will end up in quotes upon conversion, we need to remove them */\
+            if (*s == '"' && *e == '"' && plen > 1)\
+            {\
+                /* duk functions return const char* */\
+                v = s + 1;\
+                plen -= 2;\
+            }\
+            in = SQL_C_CHAR;\
+            out = SQL_VARCHAR;\
+            break;\
+        }\
+        /* insert binary data from a buffer */\
+        case DUK_TYPE_BUFFER:\
+        {\
+            duk_size_t sz;\
+            v = duk_get_buffer_data(ctx, -1, &sz);\
+            plen = (long)sz;\
+            in = SQL_C_BINARY;\
+            out = SQL_BINARY;\
+            break;\
+        }\
+        /* default for strings (not converted)and\
+           booleans, null and undefined (converted to \
+           true/false, "null" and "undefined" respectively */\
+        default:\
+        {\
+            v = (char *)duk_to_string(ctx, -1);\
+            plen = strlen(v);\
+            in = SQL_C_CHAR;\
+            out = SQL_VARCHAR;\
+        }\
+    }\
+} while(0)
+
+
+int duk_rp_add_named_parameters(
+    duk_context *ctx, 
+    TEXIS *tx, 
+    duk_idx_t obj_loc, 
+    char **namedSqlParams, 
+    int nParams
+)
+{
+    int rc=0, i=0;
+
+    for(i=0;i<nParams;i++)
+    {
+        char *key = namedSqlParams[i];
+        void *v;   /* value to be passed to db */
+        long plen; /* lenght of value */
+        double d;  /* for numbers */
+        long lval;
+        int in, out;
+
+        if(!duk_get_prop_string(ctx, obj_loc, key))
+            RP_THROW(ctx, "sql - could not find named parameter '%s' in supplied object", key);
+        /* check the datatype of the array member */
+        push_sql_param;
+
+        /* texis_params is indexed starting at 1 */
+        rc = TEXIS_PARAM(tx, i+1, v, &plen, in, out);
+        duk_pop(ctx);
+
+        if (!rc)
+            return 0;
+    }
+    return 1;
+}
+
 /* **************************************************
    Push parameters to the database for parameter 
    substitution (?) is sql. 
@@ -778,85 +888,33 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
      arrayi is the place on the stack where the array lives.
    ************************************************** */
 
-int duk_rp_add_parameters(duk_context *ctx, TEXIS *tx, int arryi)
+int duk_rp_add_parameters(duk_context *ctx, TEXIS *tx, duk_idx_t arr_loc)
 {
-    int rc, arryn = 0;
+    int rc=0;
+    duk_uarridx_t arr_i = 0;
 
-    /* Array is at arryi. Iterate over members.
-       arryn is the index of the array we are examining */
-    while (duk_has_prop_index(ctx, arryi, arryn))
+    /* Array is at arr_loc. Iterate over members.
+       arr_i is the index of the array member we are examining */
+    while (duk_has_prop_index(ctx, arr_loc, arr_i))
     {
         void *v;   /* value to be passed to db */
         long plen; /* lenght of value */
         double d;  /* for numbers */
+        long lval;
         int in, out;
 
         /* push array member to top of stack */
-        duk_get_prop_index(ctx, arryi, arryn);
+        duk_get_prop_index(ctx, arr_loc, arr_i);
 
         /* check the datatype of the array member */
-        switch (duk_get_type(ctx, -1))
-        {
-        case DUK_TYPE_NUMBER:
-        {
-            d = duk_get_number(ctx, -1);
-            v = (double *)&d;
-            plen = sizeof(double);
-            in = SQL_C_DOUBLE;
-            out = SQL_DOUBLE;
-            break;
-        }
-        /* all objects are converted to json string
-           this works (or will work) for several datatypes (varchar,int(x),strlst,json varchar) */
-        case DUK_TYPE_OBJECT:
-        {
-            char *e;
-            char *s = v = (char *)duk_json_encode(ctx, -1);
-            plen = strlen(v);
-
-            e = s + plen - 1;
-            /* a date (and presumably other single values returned from an object which returns a string)
-             will end up in quotes upon conversion, we need to remove them */
-            if (*s == '"' && *e == '"' && plen > 1)
-            {
-                /* duk functions return const char* */
-                v = s + 1;
-                plen -= 2;
-            }
-            in = SQL_C_CHAR;
-            out = SQL_VARCHAR;
-            break;
-        }
-        /* insert binary data from a buffer */
-        case DUK_TYPE_BUFFER:
-        {
-            duk_size_t sz;
-            v = duk_get_buffer_data(ctx, -1, &sz);
-            plen = (long)sz;
-            in = SQL_C_BINARY;
-            out = SQL_BINARY;
-            break;
-        }
-        /* default for strings (not converted)and
-           booleans, null and undefined (converted to 
-           true/false, "null" and "undefined" respectively */
-        default:
-        {
-            v = (char *)duk_to_string(ctx, -1);
-            plen = strlen(v);
-            in = SQL_C_CHAR;
-            out = SQL_VARCHAR;
-        }
-        }
-        arryn++;
-        rc = TEXIS_PARAM(tx, arryn, v, &plen, in, out);
+        push_sql_param;
+        arr_i++;
+        rc = TEXIS_PARAM(tx, (int)arr_i, v, &plen, in, out);
         duk_pop(ctx);
         if (!rc)
-        {
-            return (0);
-        }
+            return 0;
     }
-    return (1);
+    return 1;
 }
 
 #define pushcounts do{\
@@ -1428,6 +1486,177 @@ duk_ret_t duk_rp_sql_import_csv_str(duk_context *ctx)
     return duk_rp_sql_import(ctx, 0);
 }
 
+/*
+   Finds the closing char c. Used for finding single and double quotes
+   Tries to deal with escapements
+   Returns a pointer to the end of string or the matching character
+   *pN is stuffed withe the number of characters it skipped
+*/
+static char * skip_until_c(char *s,int c,int *pN)
+{
+   *pN=0;                        // init the character counter to 0
+   while(*s)
+   {
+      if(*s=='\\' && *(s+1)==c)  // deal with escapement
+      {
+         ++s;
+         ++*pN;
+      }
+      else
+      if(*s==c)
+       return(s);
+      ++s;
+      ++*pN;
+   }
+  return(s);
+}
+
+// counts the number of ?'s in the sql string
+static int count_sql_parameters(char *s)
+{
+   int n_params=0;
+   int unused;
+   while(*s)
+   {
+      switch(*s)
+      {
+         case '"' :
+         case '\'': s=skip_until_c(s+1,*s,&unused);break;
+         case '\\': ++s; break;
+         case '?' : ++n_params;break;
+      }
+     ++s;
+   }
+   return (n_params);
+}
+
+/*
+   This parses parameter names out of SQL statements.
+   
+   Parameter names must be int the form of:
+      ?legal_SQL_variable_name   where legal is (\alpha || \digit || _)+
+      or
+      ?" almost anything "
+      or
+      ?' almost anything '
+      
+   Returns the number of parameters or -1 if there's syntax error involving parameters
+   It removes the names from the SQL and places the result in *new_sql
+   It places an array of pointers to the paramater names in names[] ( in order found )
+   it places a pointer to a buffer it uses for the name space in *free_me.
+   
+   Both names[] and free_me must be freed by the caller BUT ONLY IF return is >0
+   
+*/
+int parse_sql_parameters(char *old_sql,char **new_sql,char **names[],char **free_me)
+{
+  int    n_params=count_sql_parameters(old_sql);
+  char * my_copy  =NULL;
+  char * sql      =NULL;
+  char **my_names =NULL;
+  char * out_p    =NULL;
+  char * s        =NULL;
+  
+  int    name_index=0;
+  int    quote_len;
+
+   if(!n_params)                  // nothing to do
+      return(0);
+  
+   my_copy=strdup(old_sql);       // extract the names in place and mangle the sql copy
+   if(!my_copy)
+      return(-1);                 // malloc fail
+      
+   *free_me =my_copy;             // tell the caller what to free when they're done
+   s        =my_copy;             // we're going to trash our copy with nulls
+   
+   REMALLOC(sql, strlen(old_sql)+1); // the new_sql cant be bigger than the old
+   
+   *new_sql=sql;                 // give the caller the new SQL
+   out_p=sql;                    // init the sql output pointer
+   
+   REMALLOC(my_names, n_params*sizeof(char *));
+  
+   *names=my_names;
+  
+   while(*s)
+   {
+      switch(*s)
+      {
+         case '"' :
+         case '\'':
+            {
+               char *t=s;
+               s=skip_until_c(s+1,*s,&quote_len);
+               memcpy(out_p,t,quote_len+2);     // the plus 2 is for the quote characters
+               out_p+=quote_len+2;
+            }
+         case '\\': ++s; break;
+         case '?' :
+            {
+               ++s;
+               if(!(isalnum(*s) || *s=='_' || *s=='"' || *s=='\'')) // check for legal 1st char
+                  goto error_return;
+               if(*s=='"' || *s=='\'')          // handle ?"my var"
+               {
+                  int quote_type=*s;
+                  my_names[name_index++]=++s;
+                  s=skip_until_c(s,quote_type,&quote_len);
+                  if(!*s)           // we hit a null without an ending "
+                     goto error_return;
+                  *s='\0';          // terminate this variable name
+                  *out_p='?';
+                  ++out_p;
+                  ++s;
+                  continue;
+               }
+               else
+               {
+                  my_names[name_index++]=s++;
+                  while(*s && (isalnum(*s) || *s=='_'))
+                     ++s;
+                  *out_p='?';
+                  ++out_p;
+                   *out_p++=*s;
+                  if(!*s)           //  terminated at the end of the sql we're done
+                     return(n_params);
+                  else
+                  {
+                     *out_p=*s;
+                     *s='\0';
+                  }
+                  ++s;
+                continue;
+               }
+            } break;
+      }
+      
+     *out_p++=*s;
+     ++s;
+   }
+ *out_p='\0';
+ return(n_params);
+ 
+ error_return:
+ if(my_names)
+   free(my_names);
+ if(my_copy)
+   free(my_copy);
+ if(sql)
+   free(sql);
+ return(-1);
+}
+
+
+void
+check_parse(char *sql,char *new_sql,char **names,int n_names)
+{
+   int i;
+   printf("IN :%s\nOUT:%s\n%d names\n",sql,new_sql,n_names);
+   for(i=0;i<n_names;i++)
+      printf("%5d %s\n",i,names[i]);
+   printf("\n\n");
+}
 
 /* ************************************************** 
    Sql.prototype.exec 
@@ -1442,11 +1671,12 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
     const char *db;
     char pbuf[msgbufsz];
     struct sigaction sa = { {0} };
-
     sa.sa_flags = 0; //SA_NODEFER;
     sa.sa_handler = die_nicely;
     sigemptyset(&sa.sa_mask);
     sigaction(SIGUSR1, &sa, NULL);
+    int nParams=0;
+    char *newSql, **namedSqlParams, *freeme;
 
     //  signal(SIGUSR1, die_nicely);
 
@@ -1472,6 +1702,20 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
         goto end;
     }
 
+    nParams = parse_sql_parameters((char*)q->sql, &newSql, &namedSqlParams, &freeme);
+    if (nParams > 0)
+    {
+        duk_push_string(ctx, newSql);
+        duk_replace(ctx, q->str_idx);
+        q->sql = duk_get_string(ctx, q->str_idx);
+        free(newSql);
+    }
+    else
+    {
+        namedSqlParams=NULL;
+        freeme=NULL;
+    }
+
 #ifdef USEHANDLECACHE
     hcache = get_handle(db, q->sql);
     if(!hcache)
@@ -1483,20 +1727,35 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
     if (!tx)
         throw_tx_error(ctx,"open sql");
 
-
-    //DDIC *ddic=texis_getddic(tx);
-    //setprop(ddic, "likeprows", "2000");
-
     if (!TEXIS_PREP(tx, (char *)q->sql))
         throw_tx_error(ctx,"sql prep");
 
+    /* sql parameters are the parameters corresponding to "?key" in a sql statement
+       nd are provide by passing an object in JS call parameters */
+    if( namedSqlParams)
+    {
+        duk_idx_t idx=-1;
+        if(q->obj_idx != -1)
+            idx=q->obj_idx;
+        else if (q->arr_idx != -1)
+            idx = q->arr_idx;
+        else
+            RP_THROW(ctx, "sql.exec - parameters specified in sql statement, but no corresponding object or array\n");
+
+        if (!duk_rp_add_named_parameters(ctx, tx, idx, namedSqlParams, nParams))
+        {
+            free(namedSqlParams);
+            free(freeme);
+            throw_tx_error(ctx,"sql add parameters");
+        }
+        free(namedSqlParams);
+        free(freeme);
+    }
     /* sql parameters are the parameters corresponding to "?" in a sql statement
      and are provide by passing array in JS call parameters */
-
-    /* add sql parameters */
-    if (q->arryi != -1)
+    else if (q->arr_idx != -1)
     {
-        if (!duk_rp_add_parameters(ctx, tx, q->arryi))
+        if (!duk_rp_add_parameters(ctx, tx, q->arr_idx))
             throw_tx_error(ctx,"sql add parameters");
     }
     else
@@ -1539,7 +1798,7 @@ end:
 duk_ret_t duk_rp_sql_eval(duk_context *ctx)
 {
     char *stmt = (char *)NULL;
-    int arryi = -1;
+    duk_idx_t str_idx = -1;
     duk_idx_t i = 0, top=duk_get_top(ctx);;
 
     /* find the argument that is a string */
@@ -1548,7 +1807,7 @@ duk_ret_t duk_rp_sql_eval(duk_context *ctx)
         if ( duk_is_string(ctx, i) )
         {
             stmt = (char *)duk_get_string(ctx, i);
-            arryi = i;
+            str_idx = i;
         }
         else if( duk_is_object(ctx, i) && !duk_is_array(ctx, i) )
         {
@@ -1562,7 +1821,7 @@ duk_ret_t duk_rp_sql_eval(duk_context *ctx)
         }
     }
 
-    if (arryi == -1)
+    if (str_idx == -1)
     {
         duk_rp_log_error(ctx, "Error: Eval: No string to evaluate");
         duk_push_int(ctx, -1);
@@ -1570,7 +1829,7 @@ duk_ret_t duk_rp_sql_eval(duk_context *ctx)
     }
 
     duk_push_sprintf(ctx, "select %s;", stmt);
-    duk_replace(ctx, arryi);
+    duk_replace(ctx, str_idx);
     duk_rp_sql_exe(ctx);
     duk_get_prop_string(ctx, -1, "results");
     duk_get_prop_index(ctx, -1, 0);

@@ -25,6 +25,11 @@ int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 char *RP_script_path=NULL;
 static duk_context *gl_ctx;
 
+duk_context *main_ctx;
+/* mutex for locking main_ctx when in a thread with other duk stacks open */
+pthread_mutex_t ctxlock;
+
+
 #define RP_REPL_GREETING             \
     "         |>>            |>>\n"     \
     "       __|__          __|__\n"     \
@@ -1320,7 +1325,7 @@ int main(int argc, char *argv[])
     duk_put_global_string(ctx, "rampart");
 
     duk_init_context(ctx);
-
+    main_ctx = ctx;
     /* skip past process name */
     argc--;
     argv++;
