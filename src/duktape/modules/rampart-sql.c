@@ -465,6 +465,7 @@ static const char *get_exp(duk_context *ctx, duk_idx_t idx)
 
 #include "db_misc.c" /* copied and altered thunderstone code for stringformat and abstract */
 
+/* these are silly
 static duk_ret_t counter_to_string(duk_context *ctx)
 {
     duk_push_this(ctx);
@@ -485,6 +486,7 @@ static duk_ret_t counter_to_sequence(duk_context *ctx)
     duk_get_prop_string(ctx, -1, "counterSequence");
     return(1);
 }
+*/
 
 /* **************************************************
   push a single field from a row of the sql results
@@ -589,12 +591,12 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
     }
     case FTN_COUNTER:
     {
-        char s[32];
-        void *v=NULL;
+        char s[33];
+        //void *v=NULL;
         ft_counter *acounter = fl->data[i];
 
         duk_push_object(ctx);
-        snprintf(s, 32, "%lx%lx", acounter->date, acounter->seq);
+        snprintf(s, 33, "%lx%lx", acounter->date, acounter->seq);
         duk_push_string(ctx, s);
         duk_put_prop_string(ctx, -2, "counterString");
         
@@ -606,6 +608,7 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
         duk_push_number(ctx, (duk_double_t) acounter->seq);
         duk_put_prop_string(ctx, -2, "counterSequence");
 
+        /* these are redundant
         duk_push_c_function(ctx, counter_to_string, 0);
         duk_put_prop_string(ctx, -2, "toString");
 
@@ -615,9 +618,13 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
         duk_push_c_function(ctx, counter_to_sequence, 0);
         duk_put_prop_string(ctx, -2, "toSequence");
 
-        v=duk_push_fixed_buffer(ctx, 8);
-        memcpy(v, acounter, 8);
+        * this is not a format known by anyone.  do dehexify(counterString) instead
+
+        v=duk_push_fixed_buffer(ctx, sizeof(acounter->date) + sizeof(acounter->seq) );
+        memcpy(v, &(acounter->date), sizeof(acounter->date) );
+        memcpy(v+sizeof(acounter->date), &(acounter->seq), sizeof(acounter->seq));
         duk_put_prop_string(ctx, -2, "counterValue");
+        */
 
         break;
     }
@@ -784,7 +791,7 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
             double floord;\
             d = duk_get_number(ctx, -1);\
             floord = floor(d);\
-            if( (d - floord) > 0.0)\
+            if( (d - floord) > 0.0 || (d - floord) < 0.0)\
             {\
                 v = (double *)&d;\
                 plen = sizeof(double);\
@@ -1548,108 +1555,126 @@ static int count_sql_parameters(char *s)
    Both names[] and free_me must be freed by the caller BUT ONLY IF return is >0
    
 */
-int parse_sql_parameters(char *old_sql,char **new_sql,char **names[],char **free_me)
+static int parse_sql_parameters(char *old_sql,char **new_sql,char **names[],char **free_me)
 {
-  int    n_params=count_sql_parameters(old_sql);
-  char * my_copy  =NULL;
-  char * sql      =NULL;
-  char **my_names =NULL;
-  char * out_p    =NULL;
-  char * s        =NULL;
-  
-  int    name_index=0;
-  int    quote_len;
+    int    n_params=count_sql_parameters(old_sql);
+    char * my_copy  =NULL;
+    char * sql      =NULL;
+    char **my_names =NULL;
+    char * out_p    =NULL;
+    char * s        =NULL;
+    
+    int    name_index=0;
+    int    quote_len;
+    int    inlen = strlen(old_sql)+1;
+    int    qm_index=0;
+    /* width in chars of largest number + '\0' if all ? are treated as ?0, ?1, etc */
+    int    numwidth;
 
-   if(!n_params)                  // nothing to do
-      return(0);
-  
-   my_copy=strdup(old_sql);       // extract the names in place and mangle the sql copy
-   if(!my_copy)
-      return(-1);                 // malloc fail
-      
-   *free_me =my_copy;             // tell the caller what to free when they're done
-   s        =my_copy;             // we're going to trash our copy with nulls
+    if(!n_params)                  // nothing to do
+       return(0);
+
+    if(n_params < 10)
+        numwidth = 2;
+    else if (n_params < 100)
+        numwidth = 3;
+    else
+        numwidth = (int)(floor(log10((double)n_params))) + 2;
+
+    /* copy the string, and make room at the end for printing extra numbers */
+    REMALLOC(my_copy, inlen + n_params * numwidth +1);
+    strcpy(my_copy, old_sql);      // extract the names in place and mangle the sql copy
+
+    *free_me =my_copy;             // tell the caller what to free when they're done
+    s        =my_copy;             // we're going to trash our copy with nulls
+    
+    REMALLOC(sql, strlen(old_sql)+1); // the new_sql cant be bigger than the old
+    
+    *new_sql=sql;                 // give the caller the new SQL
+    out_p=sql;                    // init the sql output pointer
+    
+    REMALLOC(my_names, n_params*sizeof(char *));
    
-   REMALLOC(sql, strlen(old_sql)+1); // the new_sql cant be bigger than the old
+    *names=my_names;
    
-   *new_sql=sql;                 // give the caller the new SQL
-   out_p=sql;                    // init the sql output pointer
-   
-   REMALLOC(my_names, n_params*sizeof(char *));
-  
-   *names=my_names;
-  
-   while(*s)
-   {
-      switch(*s)
-      {
-         case '"' :
-         case '\'':
-            {
-               char *t=s;
-               s=skip_until_c(s+1,*s,&quote_len);
-               memcpy(out_p,t,quote_len+2);     // the plus 2 is for the quote characters
-               out_p+=quote_len+2;
-            }
-         case '\\': ++s; break;
-         case '?' :
-            {
-               ++s;
-               if(!(isalnum(*s) || *s=='_' || *s=='"' || *s=='\'')) // check for legal 1st char
-                  goto error_return;
-               if(*s=='"' || *s=='\'')          // handle ?"my var"
-               {
-                  int quote_type=*s;
-                  my_names[name_index++]=++s;
-                  s=skip_until_c(s,quote_type,&quote_len);
-                  if(!*s)           // we hit a null without an ending "
-                     goto error_return;
-                  *s='\0';          // terminate this variable name
-                  *out_p='?';
-                  ++out_p;
-                  ++s;
-                  continue;
-               }
-               else
-               {
-                  my_names[name_index++]=s++;
-                  while(*s && (isalnum(*s) || *s=='_'))
-                     ++s;
-                  *out_p='?';
-                  ++out_p;
-                   *out_p++=*s;
-                  if(!*s)           //  terminated at the end of the sql we're done
-                     return(n_params);
-                  else
-                  {
-                     *out_p=*s;
-                     *s='\0';
-                  }
-                  ++s;
-                continue;
-               }
-            } break;
-      }
-      
-     *out_p++=*s;
-     ++s;
-   }
- *out_p='\0';
- return(n_params);
- 
- error_return:
- if(my_names)
-   free(my_names);
- if(my_copy)
-   free(my_copy);
- if(sql)
-   free(sql);
- return(-1);
+    while(*s)
+    {
+       switch(*s)
+       {
+          case '"' :
+          case '\'':
+             {
+                char *t=s;
+                s=skip_until_c(s+1,*s,&quote_len);
+                memcpy(out_p,t,quote_len+2);     // the plus 2 is for the quote characters
+                out_p+=quote_len+2;
+             }
+          case '\\': ++s; break;
+          case '?' :
+             {
+                ++s;
+
+                if(!(isalnum(*s) || *s=='_' || *s=='"' || *s=='\'')) // check for legal 1st char
+                {
+                    my_names[name_index++] = my_copy + inlen;
+                    inlen += sprintf( my_copy + inlen, "%d", qm_index++) + 1;
+                    *out_p='?';
+                    ++out_p;
+                    break;
+                }
+
+                if(*s=='"' || *s=='\'')          // handle ?"my var"
+                {
+                   int quote_type=*s;
+                   my_names[name_index++]=++s;
+                   s=skip_until_c(s,quote_type,&quote_len);
+                   if(!*s)           // we hit a null without an ending "
+                      goto error_return;
+                   *s='\0';          // terminate this variable name
+                   *out_p='?';
+                   ++out_p;
+                   ++s;
+                   continue;
+                }
+                else
+                {
+                   my_names[name_index++]=s++;
+                   while(*s && (isalnum(*s) || *s=='_'))
+                      ++s;
+                   *out_p='?';
+                   ++out_p;
+                    *out_p++=*s;
+                   if(!*s)           //  terminated at the end of the sql we're done
+                      return(n_params);
+                   else
+                   {
+                      *out_p=*s;
+                      *s='\0';
+                   }
+                   ++s;
+                 continue;
+                }
+             } break;
+       }
+       
+      *out_p++=*s;
+      ++s;
+    }
+   *out_p='\0';
+   return(n_params);
+
+   error_return:
+   if(my_names)
+     free(my_names);
+   if(my_copy)
+     free(my_copy);
+   if(sql)
+     free(sql);
+   return(-1);
 }
 
-
-void
-check_parse(char *sql,char *new_sql,char **names,int n_names)
+/*
+void check_parse(char *sql,char *new_sql,char **names,int n_names)
 {
    int i;
    printf("IN :%s\nOUT:%s\n%d names\n",sql,new_sql,n_names);
@@ -1657,11 +1682,12 @@ check_parse(char *sql,char *new_sql,char **names,int n_names)
       printf("%5d %s\n",i,names[i]);
    printf("\n\n");
 }
+*/
 
 /* ************************************************** 
    Sql.prototype.exec 
    ************************************************** */
-duk_ret_t duk_rp_sql_exe(duk_context *ctx)
+duk_ret_t duk_rp_sql_exec(duk_context *ctx)
 {
     TEXIS *tx;
     QUERY_STRUCT *q, q_st;
@@ -1676,7 +1702,7 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
     sigemptyset(&sa.sa_mask);
     sigaction(SIGUSR1, &sa, NULL);
     int nParams=0;
-    char *newSql, **namedSqlParams, *freeme;
+    char *newSql=NULL, **namedSqlParams=NULL, *freeme=NULL;
 
     //  signal(SIGUSR1, die_nicely);
 
@@ -1703,6 +1729,8 @@ duk_ret_t duk_rp_sql_exe(duk_context *ctx)
     }
 
     nParams = parse_sql_parameters((char*)q->sql, &newSql, &namedSqlParams, &freeme);
+    //check_parse((char*)q->sql, newSql, namedSqlParams, nParams);
+    //return 0;
     if (nParams > 0)
     {
         duk_push_string(ctx, newSql);
@@ -1830,7 +1858,7 @@ duk_ret_t duk_rp_sql_eval(duk_context *ctx)
 
     duk_push_sprintf(ctx, "select %s;", stmt);
     duk_replace(ctx, str_idx);
-    duk_rp_sql_exe(ctx);
+    duk_rp_sql_exec(ctx);
     duk_get_prop_string(ctx, -1, "results");
     duk_get_prop_index(ctx, -1, 0);
     return (1);
@@ -2439,7 +2467,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_object(ctx); /* -> stack: [ {}, Sql protoObj ] */
 
     /* Set Sql.prototype.exec. */
-    duk_push_c_function(ctx, duk_rp_sql_exe, 4 /*nargs*/);   /* [ {}, Sql protoObj fn_exe ] */
+    duk_push_c_function(ctx, duk_rp_sql_exec, 4 /*nargs*/);   /* [ {}, Sql protoObj fn_exe ] */
     duk_put_prop_string(ctx, -2, "exec");                    /* [ {}, Sql protoObj-->{exe:fn_exe} ] */
 
     /* set Sql.prototype.eval */
