@@ -102,8 +102,6 @@
 #define FLAGS_ADAPT_EXP (1U << 11U)
 #define FLAGS_BANG (1U << 12U)
 #include <float.h>
-// output function type
-typedef void (*out_fct_type)(char character, void *buffer, size_t idx, size_t maxlen);
 // wrapper (used as buffer) for output function type
 typedef struct
 {
@@ -563,7 +561,7 @@ static size_t _etoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
     return idx;
 }
 
-static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *ctx, duk_idx_t fidx, pthread_mutex_t *lock_p)
+int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *ctx, duk_idx_t fidx, pthread_mutex_t *lock_p)
 {
     unsigned int flags, width, precision, n;
     size_t idx = 0U;
@@ -1035,13 +1033,18 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
         out(' ', buffer, idx++, maxlen);\
     lpos+=width;\
 } while(0);
-
+        case 'w':
+        {
+            width=0;
+            precision=UINT_MAX;
+            flags |= FLAGS_BANG|FLAGS_LEFT;
+            /* fall through to 'P' */
+        }
         case 'P':
         {
             unsigned int l = 80, lpos = 0;
             const char *p;
             int lastwasn=0, respectnl=0, useleadingindent=0;
-
             if (flags & FLAGS_BANG)
                 respectnl=1;
 
@@ -1059,10 +1062,16 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
             if(!width)
             {
                 useleadingindent=1;
-                while(isspace(*p))
+                while(isspace(*p) && *p!='\n')
                     width++,p++;
             }
-
+            if(flags & FLAGS_LEFT  && flags & FLAGS_BANG)
+            {
+                while(isspace(*p) && *p!='\n')
+                    p++;
+                useleadingindent=0;
+                width=0;
+            }
             while (*p)
             {
                 const char *rp=p;
@@ -1096,6 +1105,13 @@ static int _printf(out_fct_type out, char *buffer, const size_t maxlen, duk_cont
                         lpos++;
                         p++;
                         lastwasn=0;
+                    }
+                    else if(respectnl)
+                    {
+                        while(isspace(*p)) p++;
+                        out('\n', buffer, idx++, maxlen);
+                        lpos=0;
+                        lastwasn=1;
                     }
                     else
                     /* space coincides with end of line */ 
