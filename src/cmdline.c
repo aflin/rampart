@@ -1215,7 +1215,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
     char *db = getenv("RPDEBUG");
 
     if( db && !strcmp (db, "preparser") )
-        fprintf(stderr, "%s",outbeg);
+        fprintf(stderr, "BEGIN SCRIPT\n%s\nEND SCRIPT\n",outbeg);
     *err=getstate();
     if(*err)
     {
