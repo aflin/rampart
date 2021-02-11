@@ -100,7 +100,7 @@ if(!stat("smods"))
 var pid=server.start(
 {
     bind: "127.0.0.1:8087",
-
+    developerMode: true,
     /* only applies if starting as root */
     user: "nobody",
 
