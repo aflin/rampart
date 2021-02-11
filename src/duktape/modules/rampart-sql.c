@@ -471,28 +471,6 @@ static const char *get_exp(duk_context *ctx, duk_idx_t idx)
 
 #include "db_misc.c" /* copied and altered thunderstone code for stringformat and abstract */
 
-/* these are silly
-static duk_ret_t counter_to_string(duk_context *ctx)
-{
-    duk_push_this(ctx);
-    duk_get_prop_string(ctx, -1, "counterString");
-    return(1);
-}
-
-static duk_ret_t counter_to_date(duk_context *ctx)
-{
-    duk_push_this(ctx);
-    duk_get_prop_string(ctx, -1, "counterDate");
-    return(1);
-}
-
-static duk_ret_t counter_to_sequence(duk_context *ctx)
-{
-    duk_push_this(ctx);
-    duk_get_prop_string(ctx, -1, "counterSequence");
-    return(1);
-}
-*/
 
 /* **************************************************
   push a single field from a row of the sql results
@@ -601,9 +579,10 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
         //void *v=NULL;
         ft_counter *acounter = fl->data[i];
 
-        duk_push_object(ctx);
+        //duk_push_object(ctx);
         snprintf(s, 33, "%lx%lx", acounter->date, acounter->seq);
         duk_push_string(ctx, s);
+        /*
         duk_put_prop_string(ctx, -2, "counterString");
         
         (void)duk_get_global_string(ctx, "Date");
@@ -614,22 +593,6 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
         duk_push_number(ctx, (duk_double_t) acounter->seq);
         duk_put_prop_string(ctx, -2, "counterSequence");
 
-        /* these are redundant
-        duk_push_c_function(ctx, counter_to_string, 0);
-        duk_put_prop_string(ctx, -2, "toString");
-
-        duk_push_c_function(ctx, counter_to_date, 0);
-        duk_put_prop_string(ctx, -2, "toDate");
-
-        duk_push_c_function(ctx, counter_to_sequence, 0);
-        duk_put_prop_string(ctx, -2, "toSequence");
-
-        * this is not a format known by anyone.  do dehexify(counterString) instead
-
-        v=duk_push_fixed_buffer(ctx, sizeof(acounter->date) + sizeof(acounter->seq) );
-        memcpy(v, &(acounter->date), sizeof(acounter->date) );
-        memcpy(v+sizeof(acounter->date), &(acounter->seq), sizeof(acounter->seq));
-        duk_put_prop_string(ctx, -2, "counterValue");
         */
 
         break;
