@@ -88,7 +88,7 @@ function search(req) {
       sql.exec(
         "select Id, Title, stringformat('%mbH','@0 '+?,abstract(Doc,0,3,?)) Ab from wikitext where Doc likep ?",
         [q,q,q],
-        {max:10,skip:skip,includeCounts:true},
+        {maxRows:10,skipRows:skip,includeCounts:true},
         function(res,i,cols,info) {
             if(!i) {
                 icount=parseInt(info.indexCount);
