@@ -99,7 +99,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#database-functions">Database Functions</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#init-constructor">init() constructor</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#exec">exec()</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#eval">eval()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#one">one()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#set">set()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#importcsvfile">importCsvFile()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#importcsv">importCsv()</a></li>
@@ -296,7 +296,7 @@ of using the <code class="docutils literal notranslate"><span class="pre">requir
 <p>The <code class="docutils literal notranslate"><span class="pre">init</span></code> constructor function takes a <span class="green">String</span>, the path to the database
 and an optional <span class="green">Boolean</span> as parameters. It returns an <span class="green">Object</span> representing a
 new connection to the specified database.  The return <span class="green">Object</span> includes the
-following <span class="green">Functions</span>: <code class="docutils literal notranslate"><span class="pre">exec()</span></code>, <code class="docutils literal notranslate"><span class="pre">eval()</span></code>, <code class="docutils literal notranslate"><span class="pre">set()</span></code>,
+following <span class="green">Functions</span>: <code class="docutils literal notranslate"><span class="pre">exec()</span></code>, <code class="docutils literal notranslate"><span class="pre">one()</span></code>, <code class="docutils literal notranslate"><span class="pre">set()</span></code>,
 <code class="docutils literal notranslate"><span class="pre">importCsvFile()</span></code>, <code class="docutils literal notranslate"><span class="pre">importCsv</span></code> and <code class="docutils literal notranslate"><span class="pre">close()</span></code>.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">dbpath</span> <span class="p">[,</span><span class="nx">create</span><span class="p">]);</span>
@@ -333,7 +333,7 @@ the location specified.</p></td>
 </dl>
 <div class="highlight-none notranslate"><div class="highlight"><pre><span></span>{
     exec:          {_func:true},
-    eval:          {_func:true},
+    one:           {_func:true},
     set:           {_func:true},
     importCsvFile: {_func:true},
     importCsv:     {_func:true},
@@ -359,14 +359,14 @@ with <a class="reference internal" href="#initconst"><span class="std std-ref">i
 statement and an optional <span class="green">Array</span> of sql parameters, an optional
 <span class="green">Object</span> of options and an optional callback <span class="green">Function</span>.  The
 parameters may be specified in any order.</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="nx">statement</span> <span class="p">[,</span> <span class="nx">sql_parameters</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">options</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">callback</span><span class="p">])</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="nx">statement</span> <span class="p">[,</span> <span class="nx">options</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">sql_parameters</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">callback</span><span class="p">])</span>
 </pre></div>
 </div>
 <table class="docutils align-default">
 <colgroup>
-<col style="width: 17%" />
-<col style="width: 22%" />
-<col style="width: 61%" />
+<col style="width: 16%" />
+<col style="width: 20%" />
+<col style="width: 64%" />
 </colgroup>
 <thead>
 <tr class="row-odd"><th class="head"><p>Argument</p></th>
@@ -379,16 +379,19 @@ parameters may be specified in any order.</p>
 <td><p><span class="green">String</span></p></td>
 <td><p>The sql statement</p></td>
 </tr>
-<tr class="row-odd"><td><p>sql_parameters</p></td>
+<tr class="row-odd"><td><p>options</p></td>
+<td><p><span class="green">Object</span></p></td>
+<td><p>Options (skipRows, maxRows, returnType, includeCounts)
+<em>described below</em></p></td>
+</tr>
+<tr class="row-even"><td rowspan="2"><p>sql_parameters</p></td>
 <td><p><span class="green">Array</span></p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">?</span></code> substitution parameters</p></td>
 </tr>
-<tr class="row-even"><td><p>options</p></td>
-<td><p><span class="green">Object</span></p></td>
-<td><p>Options (skip, max, returnType, includeCounts)
-<em>described below</em></p></td>
+<tr class="row-odd"><td><p><span class="green">Object</span></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">?named</span></code> substution parameters</p></td>
 </tr>
-<tr class="row-odd"><td><p>callback</p></td>
+<tr class="row-even"><td><p>callback</p></td>
 <td><p><span class="green">Function</span></p></td>
 <td><p>a function to handle data one row at a time.</p></td>
 </tr>
@@ -416,6 +419,13 @@ correspond to each <code class="docutils literal notranslate"><span class="pre">
     <span class="s2">&quot;select * from employees where Salary &gt; ? and Start-date &lt; ?&quot;</span><span class="p">,</span>
     <span class="p">[</span><span class="mi">50000</span><span class="p">,</span> <span class="s2">&quot;2018-12-31&quot;</span><span class="p">]</span>
 <span class="p">);</span>
+
+<span class="cm">/* or */</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
+    <span class="s2">&quot;select * from employees where Salary &gt; ?salary and Start-date &lt; ?date&quot;</span><span class="p">,</span>
+    <span class="p">{</span> <span class="nx">salary</span><span class="o">:</span> <span class="mi">50000</span><span class="p">,</span> <span class="nx">date</span><span class="o">:</span> <span class="s2">&quot;2018-12-31&quot;</span><span class="p">}</span>
+<span class="p">);</span>
 </pre></div>
 </div>
 <p>The use of Parameters can make the handling of user input safe from sql injection.
@@ -425,8 +435,8 @@ Note that if there is only one parameter, it still must be contained in an
 <dt>Options:</dt><dd><p>The <code class="docutils literal notranslate"><span class="pre">options</span></code> <span class="green">Object</span> may contain any of the following:</p>
 <blockquote>
 <div><ul>
-<li><p><code class="docutils literal notranslate"><span class="pre">max</span></code> (<span class="green">Number</span>):  maximum number of rows to return (default: 10).</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">skip</span></code> (<span class="green">Number</span>): the number of rows to skip (default: 0).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">maxRows</span></code> (<span class="green">Number</span>):  maximum number of rows to return (default: 10).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">skipRows</span></code> (<span class="green">Number</span>): the number of rows to skip (default: 0).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">returnType</span></code> (<span class="green">String</span>): Determines the format of the <code class="docutils literal notranslate"><span class="pre">results</span></code> value
 in the return <span class="green">Object</span>.</p>
 <blockquote>
@@ -467,10 +477,10 @@ aliases selected and returned in results.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">countInfo</span></code>: an <span class="green">Object</span> as described above in <a class="reference internal" href="#countinfo">countinfo</a> if the
 <code class="docutils literal notranslate"><span class="pre">includeCounts</span></code> option is not set <code class="docutils literal notranslate"><span class="pre">false</span></code>.  Otherwise it will be
 <code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p></li>
-<li><p>Note: Regardless of <code class="docutils literal notranslate"><span class="pre">max</span></code> setting , returning <code class="docutils literal notranslate"><span class="pre">false</span></code> from the
+<li><p>Note: Regardless of <code class="docutils literal notranslate"><span class="pre">maxRows</span></code> setting , returning <code class="docutils literal notranslate"><span class="pre">false</span></code> from the
 <code class="docutils literal notranslate"><span class="pre">callback</span></code> will cancel the retreival of any remaining rows.
 Returning <code class="docutils literal notranslate"><span class="pre">undefined</span></code> or any other value will allow the next row to be
-retrieved up to <code class="docutils literal notranslate"><span class="pre">max</span></code> rows.</p></li>
+retrieved up to <code class="docutils literal notranslate"><span class="pre">maxRows</span></code> rows.</p></li>
 </ul>
 </dd>
 </dl>
@@ -716,7 +726,7 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
 
 <span class="nx">res</span><span class="o">=</span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
     <span class="s2">&quot;select Name, Age from employees&quot;</span><span class="p">,</span>
-    <span class="p">{</span><span class="nx">returnType</span><span class="o">:</span><span class="s1">&#39;array&#39;</span><span class="p">,</span> <span class="nx">max</span><span class="o">:</span><span class="mi">2</span><span class="p">}</span>
+    <span class="p">{</span><span class="nx">returnType</span><span class="o">:</span><span class="s1">&#39;array&#39;</span><span class="p">,</span> <span class="nx">maxRows</span><span class="o">:</span><span class="mi">2</span><span class="p">}</span>
 <span class="p">);</span>
 <span class="nx">pprint</span><span class="p">(</span><span class="nx">res</span><span class="p">);</span>
 <span class="cm">/* expected output:</span>
@@ -809,27 +819,20 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
 </pre></div>
 </div>
 </div>
-<div class="section" id="eval">
-<h2>eval()<a class="headerlink" href="#eval" title="Permalink to this headline">¶</a></h2>
-<p>The <code class="docutils literal notranslate"><span class="pre">eval</span></code> <span class="green">Function</span> is a shortcut for executing sql
-<a class="reference internal" href="sql-server-funcs.html#server-functions"><span class="std std-ref">Server functions</span></a> where
-only one computed result is desired.</p>
+<div class="section" id="one">
+<h2>one()<a class="headerlink" href="#one" title="Permalink to this headline">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">one</span></code> <span class="green">Function</span> is a shortcut for executing sql
+where only one row is desired and the extra information normally
+returned from <a class="reference internal" href="#exec">exec()</a> is not needed.</p>
 <p>With <code class="docutils literal notranslate"><span class="pre">exec()</span></code>, this:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
-
-<span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;/path/to/my/db&quot;</span><span class="p">,</span> <span class="kc">true</span><span class="p">);</span>
-
-<span class="kd">var</span> <span class="nx">res1</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select joinpath(&#39;one&#39;, &#39;two/&#39;, &#39;/three/four&#39;, &#39;five&#39;) newpath&quot;</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res1</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select email from Users where user=?&quot;</span><span class="p">,</span> <span class="p">{</span><span class="nx">maxRows</span><span class="o">:</span><span class="mi">1</span><span class="p">},</span> <span class="p">[</span><span class="nx">user_name</span><span class="p">]);</span>
 <span class="kd">var</span> <span class="nx">res</span><span class="o">=</span><span class="nx">res1</span><span class="p">.</span><span class="nx">results</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
-<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">res</span><span class="p">);</span> <span class="cm">/* {newpath:&quot;one/two/three/four/five&quot;} */</span>
+<span class="cm">/* res = { email : &quot;user@example.com&quot; } */</span>
 </pre></div>
 </div>
 <p>can be more easily written as:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
-<span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;/path/to/my/db&quot;</span><span class="p">,</span> <span class="kc">true</span><span class="p">);</span>
-
-<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nb">eval</span><span class="p">(</span><span class="s2">&quot;joinpath(&#39;one&#39;, &#39;two/&#39;, &#39;/three/four&#39;, &#39;five&#39;) newpath&quot;</span><span class="p">);</span>
-<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">res</span><span class="p">);</span> <span class="cm">/* {newpath:&quot;one/two/three/four/five&quot;} */</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">one</span><span class="p">(</span><span class="s2">&quot;select user from Users where user=?&quot;</span><span class="p">,[</span><span class="nx">user_name</span><span class="p">]);</span>
+<span class="cm">/* res = { email : &quot;user@example.com&quot; } */</span>
 </pre></div>
 </div>
 <p>See <a class="reference internal" href="sql-server-funcs.html#server-functions"><span class="std std-ref">Server functions</span></a> for a complete list of Server

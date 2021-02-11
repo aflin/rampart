@@ -80,7 +80,7 @@ init() constructor
 The ``init`` constructor function takes a :green:`String`, the path to the database
 and an optional :green:`Boolean` as parameters. It returns an :green:`Object` representing a
 new connection to the specified database.  The return :green:`Object` includes the
-following :green:`Functions`: ``exec()``, ``eval()``, ``set()``,
+following :green:`Functions`: ``exec()``, ``one()``, ``set()``,
 ``importCsvFile()``, ``importCsv`` and ``close()``.
 
 Usage:
@@ -106,7 +106,7 @@ Return Value:
 
     {
         exec:          {_func:true},
-        eval:          {_func:true},
+        one:           {_func:true},
         set:           {_func:true},
         importCsvFile: {_func:true},
         importCsv:     {_func:true},
@@ -138,20 +138,22 @@ parameters may be specified in any order.
 
 .. code-block:: javascript
 
-    var res = sql.exec(statement [, sql_parameters] [, options] [, callback])
+    var res = sql.exec(statement [, options] [, sql_parameters] [, callback])
 
-+--------------+------------------+---------------------------------------------------+
-|Argument      |Type              |Description                                        |
-+==============+==================+===================================================+
-|statement     |:green:`String`   | The sql statement                                 |
-+--------------+------------------+---------------------------------------------------+
-|sql_parameters|:green:`Array`    | ``?`` substitution parameters                     |
-+--------------+------------------+---------------------------------------------------+
-|options       |:green:`Object`   | Options (skip, max, returnType, includeCounts)    |
-|              |                  | *described below*                                 |
-+--------------+------------------+---------------------------------------------------+
-|callback      |:green:`Function` | a function to handle data one row at a time.      |
-+--------------+------------------+---------------------------------------------------+
++--------------+------------------+--------------------------------------------------------+
+|Argument      |Type              |Description                                             |
++==============+==================+========================================================+
+|statement     |:green:`String`   | The sql statement                                      |
++--------------+------------------+--------------------------------------------------------+
+|options       |:green:`Object`   | Options (skipRows, maxRows, returnType, includeCounts) |
+|              |                  | *described below*                                      |
++--------------+------------------+--------------------------------------------------------+
+|sql_parameters|:green:`Array`    | ``?`` substitution parameters                          |
++              +------------------+--------------------------------------------------------+
+|              |:green:`Object`   | ``?named`` substution parameters                       |
++--------------+------------------+--------------------------------------------------------+
+|callback      |:green:`Function` | a function to handle data one row at a time.           |
++--------------+------------------+--------------------------------------------------------+
 
 Statement:
     A statement is a :green:`String` containing a single sql statement to be
@@ -180,6 +182,13 @@ SQL Parameters:
         [50000, "2018-12-31"]
     );
 
+    /* or */
+
+    var res = sql.exec(
+        "select * from employees where Salary > ?salary and Start-date < ?date",
+        { salary: 50000, date: "2018-12-31"}
+    );
+
 The use of Parameters can make the handling of user input safe from sql injection.
 Note that if there is only one parameter, it still must be contained in an
 :green:`Array`.
@@ -189,8 +198,8 @@ Note that if there is only one parameter, it still must be contained in an
 Options:
  The ``options`` :green:`Object` may contain any of the following:
 
-   * ``max`` (:green:`Number`):  maximum number of rows to return (default: 10).
-   * ``skip`` (:green:`Number`): the number of rows to skip (default: 0).
+   * ``maxRows`` (:green:`Number`):  maximum number of rows to return (default: 10).
+   * ``skipRows`` (:green:`Number`): the number of rows to skip (default: 0).
    * ``returnType`` (:green:`String`): Determines the format of the ``results`` value
      in the return :green:`Object`.
 
@@ -233,10 +242,10 @@ Callback:
      ``includeCounts`` option is not set ``false``.  Otherwise it will be
      ``undefined``. 
 
-   * Note: Regardless of ``max`` setting , returning ``false`` from the
+   * Note: Regardless of ``maxRows`` setting , returning ``false`` from the
      ``callback`` will cancel the retreival of any remaining rows. 
      Returning ``undefined`` or any other value will allow the next row to be
-     retrieved up to ``max`` rows.
+     retrieved up to ``maxRows`` rows.
 
 .. _returnval:
 
@@ -493,7 +502,7 @@ Full Example:
 
    res=sql.exec(
        "select Name, Age from employees",
-       {returnType:'array', max:2}
+       {returnType:'array', maxRows:2}
    );
    pprint(res);
    /* expected output:
@@ -584,35 +593,60 @@ Full Example:
 
    console.log(res); // 2
 
+.. remove this?
+    eval()
+    ~~~~~~
 
-eval()
-~~~~~~
+    The ``eval`` :green:`Function` is a shortcut for executing sql
+    :ref:`sql-server-funcs:Server functions` where
+    only one computed result is desired.
 
-The ``eval`` :green:`Function` is a shortcut for executing sql
-:ref:`sql-server-funcs:Server functions` where
-only one computed result is desired.
+    With ``exec()``, this:
+
+    .. code-block:: javascript
+
+       var Sql = require("rampart-sql");
+
+       var sql = new Sql.init("/path/to/my/db", true);
+
+       var res1 = sql.exec("select joinpath('one', 'two/', '/three/four', 'five') newpath");
+       var res=res1.results[0];
+       console.log(res); /* {newpath:"one/two/three/four/five"} */
+
+    can be more easily written as:
+        
+    .. code-block:: javascript
+
+       var Sql = require("rampart-sql");
+       var sql = new Sql.init("/path/to/my/db", true);
+       
+       var res = sql.eval("joinpath('one', 'two/', '/three/four', 'five') newpath");
+       console.log(res); /* {newpath:"one/two/three/four/five"} */
+
+    See :ref:`sql-server-funcs:Server functions` for a complete list of Server
+    functions.
+
+one()
+~~~~~
+
+The ``one`` :green:`Function` is a shortcut for executing sql
+where only one row is desired and the extra information normally
+returned from `exec()`_ is not needed.
 
 With ``exec()``, this:
 
 .. code-block:: javascript
 
-   var Sql = require("rampart-sql");
-
-   var sql = new Sql.init("/path/to/my/db", true);
-
-   var res1 = sql.exec("select joinpath('one', 'two/', '/three/four', 'five') newpath");
+   var res1 = sql.exec("select email from Users where user=?", {maxRows:1}, [user_name]);
    var res=res1.results[0];
-   console.log(res); /* {newpath:"one/two/three/four/five"} */
+   /* res = { email : "user@example.com" } */
 
 can be more easily written as:
     
 .. code-block:: javascript
 
-   var Sql = require("rampart-sql");
-   var sql = new Sql.init("/path/to/my/db", true);
-   
-   var res = sql.eval("joinpath('one', 'two/', '/three/four', 'five') newpath");
-   console.log(res); /* {newpath:"one/two/three/four/five"} */
+   var res = sql.one("select user from Users where user=?",[user_name]);
+   /* res = { email : "user@example.com" } */
 
 See :ref:`sql-server-funcs:Server functions` for a complete list of Server
 functions.

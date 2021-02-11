@@ -270,12 +270,14 @@ is not present, the output will not be padded with <code class="docutils literal
 <li><p><code class="docutils literal notranslate"><span class="pre">%U</span></code> - url encode (or if <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, decode) a <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%H</span></code> - html encode (or if <code class="docutils literal notranslate"><span class="pre">!</span></code> flag present, decode) a <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%P</span></code> - pretty print a <span class="green">String</span> or <span class="green">Buffer</span>.  Expects
-text with white space.  Format is <code class="docutils literal notranslate"><span class="pre">%[!][i][.w]P</span></code> where:</p>
+text with white space.  Format is <code class="docutils literal notranslate"><span class="pre">%[!][-][i][.w]P</span></code> where:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">i</span></code> is the optional level of indentation.  Each output line will be indented
 by this amount.  Default is <code class="docutils literal notranslate"><span class="pre">0</span></code>.  If <code class="docutils literal notranslate"><span class="pre">0</span></code>, the indent level for
 each paragraph will match the indentation of the first line of the corresponding
 paragraph in the input text (number of spaces at beginning of the paragraph).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">-</span></code> when used with the <code class="docutils literal notranslate"><span class="pre">!</span></code> flag optionally sets indentation to 0
+on all lines regardless of <code class="docutils literal notranslate"><span class="pre">i</span></code> or leading white space on first line.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">.w</span></code> where <code class="docutils literal notranslate"><span class="pre">w</span></code> is the optional length of each line (default <code class="docutils literal notranslate"><span class="pre">80</span></code> if not
 specified).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">!</span></code> specifies, if present, that newlines are not converted to spaces (but text
@@ -283,6 +285,8 @@ after newlines is still indented).  In all cases, a double newline
 (“\n\n”) is considered a separator of paragraphs and is respected.</p></li>
 </ul>
 </li>
+<li><p><code class="docutils literal notranslate"><span class="pre">%w</span></code> - a shortcut format for <code class="docutils literal notranslate"><span class="pre">%!-.wP</span></code> - where <code class="docutils literal notranslate"><span class="pre">w</span></code> is effectively unlimited.
+Remove all leading white space from each line and don’t wrap lines.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">%C</span></code> - like <code class="docutils literal notranslate"><span class="pre">%c</span></code> but prints multi-byte character.  Example:</p>
 <p><code class="docutils literal notranslate"><span class="pre">rampart.utils.printf(&quot;%C&quot;,</span> <span class="pre">0xf09f9983);</span></code> prints <code class="docutils literal notranslate"><span class="pre">🙃</span></code>.</p>
 <p>Requires a number, 1-4 bytes (<code class="docutils literal notranslate"><span class="pre">0</span></code>-<code class="docutils literal notranslate"><span class="pre">4294967295</span></code>, or <code class="docutils literal notranslate"><span class="pre">0x0</span></code>-<code class="docutils literal notranslate"><span class="pre">0xffffffff</span></code>).</p>
@@ -317,6 +321,28 @@ after newlines is still indented).  In all cases, a double newline
 <span class="cm">     proposition that all men are</span>
 <span class="cm">     created equal.</span>
 <span class="cm">*/</span>
+
+ <span class="kd">var</span> <span class="nx">html</span> <span class="o">=</span>
+ <span class="s2">&quot;&lt;html&gt;\n&quot;</span><span class="o">+</span>
+ <span class="s2">&quot;  &lt;body&gt;\n&quot;</span><span class="o">+</span>
+ <span class="s2">&quot;    &lt;div&gt;\n&quot;</span><span class="o">+</span>
+ <span class="s2">&quot;      content\n&quot;</span><span class="o">+</span>
+ <span class="s2">&quot;    &lt;/div&gt;\n&quot;</span><span class="o">+</span>
+ <span class="s2">&quot;  &lt;/body&gt;\n&quot;</span><span class="o">+</span>
+ <span class="s2">&quot;&lt;/html&gt;\n&quot;</span><span class="o">+</span>
+
+ <span class="cm">/* remove leading white space */</span>
+ <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%!-.1000P&quot;</span><span class="p">,</span> <span class="nx">html</span><span class="p">);</span>
+
+ <span class="cm">/* expected output</span>
+<span class="cm"> &lt;html&gt;</span>
+<span class="cm"> &lt;body&gt;</span>
+<span class="cm"> &lt;div&gt;</span>
+<span class="cm"> content</span>
+<span class="cm"> &lt;/div&gt;</span>
+<span class="cm"> &lt;/body&gt;</span>
+<span class="cm"> &lt;/html&gt;</span>
+<span class="cm"> */</span>
 </pre></div>
 </div>
 </div>

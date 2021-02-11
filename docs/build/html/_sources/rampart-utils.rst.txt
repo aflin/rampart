@@ -84,12 +84,15 @@ Extended (non-standard) formats:
    * ``%H`` - html encode (or if ``!`` flag present, decode) a :green:`String`. 
 
    * ``%P`` - pretty print a :green:`String` or :green:`Buffer`.  Expects
-     text with white space.  Format is ``%[!][i][.w]P`` where:
+     text with white space.  Format is ``%[!][-][i][.w]P`` where:
 
      * ``i`` is the optional level of indentation.  Each output line will be indented
        by this amount.  Default is ``0``.  If ``0``, the indent level for
        each paragraph will match the indentation of the first line of the corresponding
        paragraph in the input text (number of spaces at beginning of the paragraph).
+
+     * ``-`` when used with the ``!`` flag optionally sets indentation to 0
+       on all lines regardless of ``i`` or leading white space on first line.
 
      * ``.w`` where ``w`` is the optional length of each line (default ``80`` if not
        specified).
@@ -97,6 +100,9 @@ Extended (non-standard) formats:
      * ``!`` specifies, if present, that newlines are not converted to spaces (but text
        after newlines is still indented).  In all cases, a double newline
        ("\\n\\n") is considered a separator of paragraphs and is respected.
+
+   * ``%w`` - a shortcut format for ``%!-.wP`` - where ``w`` is effectively unlimited. 
+     Remove all leading white space from each line and don't wrap lines.
 
    * ``%C`` - like ``%c`` but prints multi-byte character.  Example:
      
@@ -135,6 +141,29 @@ Example:
         proposition that all men are
         created equal.
    */
+
+    var html = 
+    "<html>\n"+
+    "  <body>\n"+
+    "    <div>\n"+
+    "      content\n"+      
+    "    </div>\n"+
+    "  </body>\n"+
+    "</html>\n"+
+
+    /* remove leading white space */
+    rampart.utils.printf("%!-.1000P", html);
+
+    /* expected output
+    <html>
+    <body>
+    <div>
+    content
+    </div>
+    </body>
+    </html>
+    */
+
 
 sprintf
 '''''''

@@ -149,8 +149,8 @@ Where:
       The default is ``true``.
 
     * ``threads``: A :green:`Number`, the number of threads to create for the
-      server thread pool.  The default, if ``useThreads`` is ``true``, is the
-      number of cpu cores on the current system.
+      server thread pool.  The default, if ``useThreads`` is ``true`` or is
+      unset, is the number of cpu cores on the current system.
 
     * ``secure``: A :green:`Boolean`, whether to use SSL/TLS layer for serving
       via the ``https`` protocol.  Default is ``false``.  If ``true``, the
@@ -175,6 +175,14 @@ Where:
     * ``notFoundFunc``: A :green:`Function` to handle ``404 Not Found`` responses.
       See `Mapped Functions`_ below.
 
+    * ``developerMode``: A :green:`Boolean`, whether to run the server in a
+      developer mode.  If ``true``, JavaScript and other errors will cause
+      the server to return a ``500 Internal Error`` message, with the error
+      and error line numbers printed.  If false, JavaScript errors will
+      result in the generic ``404 Not Found Page`` or alternatively, if set
+      ``directoryFunc`` will be called and the request object (``req``) will
+      contain the key ``errMsg`` (``req.errMsg``), with the error message. 
+
     * ``directoryFunc``: A :green:`Function` to handle directory listings from
       the filesystem, if no ``index.html`` file exists in the requested
       directory.  May also be set to ``true`` to use the built-in function.
@@ -187,6 +195,21 @@ Where:
       server is started as ``root``.  This setting is used for binding to
       privileged ports as ``root`` and then dropping privileges.  If the server
       is started as root, ``user`` must be set.
+
+    * ``bufferMem``: A positive :green:`Number`.  If equal to or below 100, 
+      the percent of system memory to use for buffers for printing
+      directly to the client.  If above 100, the amount in kilobytes of
+      system memory to use for buffers for printing directly to the client.
+      This amount is divided by the number of threads, with each thread
+      using a buffer of the resulting size.  The default, if not specified
+      is ``10`` (10% of the system's physical memory).  See 
+      `Advanced Functions`_ below.
+
+    * ``cacheControl``: A :green:`String` or a :green:`Boolean`.  If a
+      :green:`String - the text to set the "Cache-Control" header when
+      serving files off of the filesystem.  The default is "max-age=84600,
+      public", if not set or set ``true``.  If set ``false``, no header is
+      sent. 
 
     * ``mimeMap``: An :green:`Object`, additions or changes to the standart extension
       to mime mappings.  Normally, if, e.g., ``return { "m4v": mymovie };`` is
@@ -202,15 +225,15 @@ Where:
           server.start({
               ...,
               mimeMap: {
-                      /* make these movies play as mp4s */
-                      "m4v": "video/mp4",
-                      "mov": "video/mp4"
+                  /* make these movies play as mp4s */
+                  "m4v": "video/mp4",
+                  "mov": "video/mp4"
               },
-                      map: {
-                         "/": "/var/www/html",
-                         ...,
-                      }
-              });
+              map: {
+                  "/": "/var/www/html",
+                  ...,
+              }
+          });
 
       For a complete list of defaults, see `Key to Mime Mappings`_ below.
 
@@ -229,14 +252,23 @@ Where:
       key/paths are automatically sorted by length.
       
     * ``map``: An :green:`Object` of url to function or filesystem mapping.
-      The keys of the object are regular expressions, full, partial or globbed
-      paths to be matched against incoming requests.  For example, a key
-      ``/myscript.html`` would match an incoming request for
-      ``http://example.com/myscript.html``.  The value to which the key is set
-      controls which function, module or filesystem path will be used.  If the
-      value is a :green:`Function` or an :green:`Object`, it is assumed to be a
-      script.  If the value is a :green:`String`, it is assumed to be a mapping
-      to the filesystem.  Example:
+      The keys of the object are exact paths, regular expressions, partial
+      paths or globbed paths to be matched against incoming requests.  For
+      example, a key ``/myscript.html`` would match an incoming request for
+      ``http://example.com/myscript.html``.  The value to which the key is
+      set controls which function, module or filesystem path will be used.
+      
+      If the value is a :green:`Function` or an :green:`Object` with
+      ``module`` or ``modulePath`` key set, it is assumed to 
+      be a script name (the same as is used for 
+      :ref:`require() <rampart-main:using the require function to import modules>`)
+      or a path with scripts.
+      
+      If the value is a :green:`String`, or it is an :green:`Object` with
+      ``path`` set, it is assumed to be a mapping to the filesystem.  A
+      mapping to a filesystem path may also include headers.
+      
+      Example:
 
       .. code-block:: javascript
 
@@ -247,7 +279,14 @@ Where:
             map : 
             {
                 "/":            "/usr/local/etc/httpd/htdocs"  /* map all file requests */
-                "/search.html": function (req) { ... }         /* search function */
+                "/search.html": function (req) { ... },         /* search function */
+                "/images/":     {
+                                    path: "/path/to/my/jpgs/",
+                                    headers: {
+                                        "Content-Control": "max-age=31556952, public",
+                                        "X-Custom-Header": 1
+                                    }
+                                }
             }
         });
 
@@ -407,7 +446,26 @@ Mapped Directories
             /* trailing '/' in '/css' is implied */
             "/css": "/usr/local/etc/httpd/css"
           }
-               
+      });
+
+  Mapped directories may also be mapped using the following syntax, which allows for custom headers
+  to be sent with each file served:
+  
+  .. code-block:: javascript
+
+      var server = require("rampart-server");
+
+      var pid = server.start({
+          map: {
+            "/"   : {
+                path: "/var/www/html",
+                headers: {
+                    "X-Custom-Header-1": "myval1",
+                    "X-Custom-Header-2": "myval2"
+                }
+            },
+            "/css/": "/usr/local/etc/httpd/css"
+          }
       });
   
   In the above example, all the files in ``/var/www/html/*`` would be mapped
@@ -956,6 +1014,134 @@ Built-in Directory Function
             directoryFunc: dirlist
         });
 
+Advanced Functions
+~~~~~~~~~~~~~~~~~~
+
+The ``rampart-server`` module creates a ``mmap``\ ed buffer to efficiently store data
+that will be returned to the client by the webserver.  There is one buffer per thread
+and it is used from within each thread and shared with any child processes.  The size of
+this "server buffer" is controlled from the ``bufferMem`` setting in `start()`_ above.
+
+Though returning an object with, .e.g. ``{html: mydata}`` set is not limited by the size of 
+the server buffer, the functions below are so limited and will throw
+an error if the total size written to it is larger than the size allotted.
+ 
+The request object contains the functions to manipulate and print to the server buffer, 
+which will be directly sent to the client without extra copying.
+
+req.printf()
+""""""""""""
+
+The request object to a callback function includes the ``printf`` function
+which will print directly to the server buffer that will be sent to the client. 
+It uses the same formats as :ref:`rampart.utils.printf <rampart-utils:printf>`.
+The advantages of using ``req.printf`` rather than returning a string is that 
+content is not copied, but instead placed directly in the server buffer to be 
+returned to the client.
+
+Example from a normal server callback function:
+
+.. code-block:: javascript
+
+    function mycallback(req) {
+        var html;
+        ... add content to html ...
+        return {html: html};
+    }
+
+Example using ``req.printf`` from a server callback function:
+
+.. code-block:: javascript
+
+    function mycallback(req) {
+        var html;
+        var end_cont = "</body></html>";
+        // add content to html
+        req.printf("%s", content);
+        return {html: end_cont};
+    }
+
+Return Value:
+    The number of bytes written to the server buffer.
+
+Note: 
+    If ``content`` is large, it is more efficiently handled using
+    ``req.printf`` and/or ``req.put`` below than concatenating strings in
+    JavaScript.
+    
+    The one exception to this is if ``content`` is a :green:`Buffer` and is
+    the total content to be returned to the client without concatenation or
+    manipulation, doing ``return {html:content}`` is the most efficient
+    method.
+    
+    However, in nearly all cases, if a function needs to print many strings
+    that make up the totality of the data sent to the client, using
+    ``req.printf`` or ``req.put`` is preferable.
+    
+    When printing to the server buffer, each thread's buffer must be
+    large enough to hold all the data from every ``req.printf`` statement.
+    If the server buffer size is smaller than the data inserted, an error
+    will be thrown.
+
+req.put()
+"""""""""
+
+Put a :green:`String` or a :green:`Buffer` into the server buffer to be returned
+to the client.
+
+Example:
+
+.. code-block:: javascript
+
+    function mycallback(req) {
+        var html;
+        var end_cont = "</body></html>";
+        ... add content to html ...
+        req.put(content);
+        return {html: end_cont};
+    }
+                                                
+Return Value:
+    The number of bytes written to the server buffer.
+
+req.getpos()
+""""""""""""
+
+Get the current end position in the server buffer.
+
+Return Value
+    A :green:`Number` - the end position of the server buffer.
+
+req.setpos()
+""""""""""""
+
+Set the current end position in the server buffer.
+
+Usage:
+
+.. code-block:: javascript
+
+    function mycallback(req) {
+        ...
+        var pos = req.setpos(pos);
+        ...
+    }
+
+Where ``pos`` is the offset to position the end pointer in the server buffer.
+
+Return Value
+    ``undefined``.
+
+req.getBuffer()
+"""""""""""""""
+
+Get a copy of the contents of the server buffer and return it in a JavaScript
+buffer.
+
+Return Value:
+    A :green:`Buffer` - the contents of the server buffer.
+
+ 
 Full Example
 ~~~~~~~~~~~~
 

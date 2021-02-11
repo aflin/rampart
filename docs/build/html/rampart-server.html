@@ -118,6 +118,14 @@
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#the-return-object">The Return Object</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#built-in-directory-function">Built-in Directory Function</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#advanced-functions">Advanced Functions</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#req-printf">req.printf()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#req-put">req.put()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#req-getpos">req.getpos()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#req-setpos">req.setpos()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#req-getbuffer">req.getBuffer()</a></li>
+</ul>
+</li>
 <li class="toctree-l3"><a class="reference internal" href="#full-example">Full Example</a></li>
 </ul>
 </li>
@@ -313,8 +321,8 @@ threadpool consisting of one thread per cpu core.  If set <code class="docutils 
 equivalent to setting <code class="docutils literal notranslate"><span class="pre">useThreads</span></code> to <code class="docutils literal notranslate"><span class="pre">true</span></code> and <code class="docutils literal notranslate"><span class="pre">threads</span></code> to <code class="docutils literal notranslate"><span class="pre">1</span></code>.
 The default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">threads</span></code>: A <span class="green">Number</span>, the number of threads to create for the
-server thread pool.  The default, if <code class="docutils literal notranslate"><span class="pre">useThreads</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code>, is the
-number of cpu cores on the current system.</p></li>
+server thread pool.  The default, if <code class="docutils literal notranslate"><span class="pre">useThreads</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code> or is
+unset, is the number of cpu cores on the current system.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">secure</span></code>: A <span class="green">Boolean</span>, whether to use SSL/TLS layer for serving
 via the <code class="docutils literal notranslate"><span class="pre">https</span></code> protocol.  Default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.  If <code class="docutils literal notranslate"><span class="pre">true</span></code>, the
 <code class="docutils literal notranslate"><span class="pre">sslKeyFile</span></code> and <code class="docutils literal notranslate"><span class="pre">sslCertFile</span></code> parameters must also be set.</p></li>
@@ -333,6 +341,13 @@ Possible values are <code class="docutils literal notranslate"><span class="pre"
 default is <code class="docutils literal notranslate"><span class="pre">tls1.2</span></code>. This setting has no effect unless <code class="docutils literal notranslate"><span class="pre">secure</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">notFoundFunc</span></code>: A <span class="green">Function</span> to handle <code class="docutils literal notranslate"><span class="pre">404</span> <span class="pre">Not</span> <span class="pre">Found</span></code> responses.
 See <a class="reference internal" href="#mapped-functions">Mapped Functions</a> below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">developerMode</span></code>: A <span class="green">Boolean</span>, whether to run the server in a
+developer mode.  If <code class="docutils literal notranslate"><span class="pre">true</span></code>, JavaScript and other errors will cause
+the server to return a <code class="docutils literal notranslate"><span class="pre">500</span> <span class="pre">Internal</span> <span class="pre">Error</span></code> message, with the error
+and error line numbers printed.  If false, JavaScript errors will
+result in the generic <code class="docutils literal notranslate"><span class="pre">404</span> <span class="pre">Not</span> <span class="pre">Found</span> <span class="pre">Page</span></code> or alternatively, if set
+<code class="docutils literal notranslate"><span class="pre">directoryFunc</span></code> will be called and the request object (<code class="docutils literal notranslate"><span class="pre">req</span></code>) will
+contain the key <code class="docutils literal notranslate"><span class="pre">errMsg</span></code> (<code class="docutils literal notranslate"><span class="pre">req.errMsg</span></code>), with the error message.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">directoryFunc</span></code>: A <span class="green">Function</span> to handle directory listings from
 the filesystem, if no <code class="docutils literal notranslate"><span class="pre">index.html</span></code> file exists in the requested
 directory.  May also be set to <code class="docutils literal notranslate"><span class="pre">true</span></code> to use the built-in function.
@@ -344,6 +359,19 @@ to after binding to the specified ip address and port.  Only valid if
 server is started as <code class="docutils literal notranslate"><span class="pre">root</span></code>.  This setting is used for binding to
 privileged ports as <code class="docutils literal notranslate"><span class="pre">root</span></code> and then dropping privileges.  If the server
 is started as root, <code class="docutils literal notranslate"><span class="pre">user</span></code> must be set.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bufferMem</span></code>: A positive <span class="green">Number</span>.  If equal to or below 100,
+the percent of system memory to use for buffers for printing
+directly to the client.  If above 100, the amount in kilobytes of
+system memory to use for buffers for printing directly to the client.
+This amount is divided by the number of threads, with each thread
+using a buffer of the resulting size.  The default, if not specified
+is <code class="docutils literal notranslate"><span class="pre">10</span></code> (10% of the system’s physical memory).  See
+<a class="reference internal" href="#advanced-functions">Advanced Functions</a> below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">cacheControl</span></code>: A <span class="green">String</span> or a <span class="green">Boolean</span>.  If a
+<span class="green">String - the text to set the “Cache-Control” header when
+serving files off of the filesystem.  The default is “max-age=84600,
+public”, if not set or set ``true`</span>.  If set <code class="docutils literal notranslate"><span class="pre">false</span></code>, no header is
+sent.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">mimeMap</span></code>: An <span class="green">Object</span>, additions or changes to the standart extension
 to mime mappings.  Normally, if, e.g., <code class="docutils literal notranslate"><span class="pre">return</span> <span class="pre">{</span> <span class="pre">&quot;m4v&quot;:</span> <span class="pre">mymovie</span> <span class="pre">};</span></code> is
 set as <a class="reference internal" href="#the-return-object">The Return Object</a> to a mapped function, the header
@@ -355,15 +383,15 @@ the “content-type” for both <a class="reference internal" href="#mapped-func
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">({</span>
     <span class="p">...,</span>
     <span class="nx">mimeMap</span><span class="o">:</span> <span class="p">{</span>
-            <span class="cm">/* make these movies play as mp4s */</span>
-            <span class="s2">&quot;m4v&quot;</span><span class="o">:</span> <span class="s2">&quot;video/mp4&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;mov&quot;</span><span class="o">:</span> <span class="s2">&quot;video/mp4&quot;</span>
+        <span class="cm">/* make these movies play as mp4s */</span>
+        <span class="s2">&quot;m4v&quot;</span><span class="o">:</span> <span class="s2">&quot;video/mp4&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;mov&quot;</span><span class="o">:</span> <span class="s2">&quot;video/mp4&quot;</span>
     <span class="p">},</span>
-            <span class="nx">map</span><span class="o">:</span> <span class="p">{</span>
-               <span class="s2">&quot;/&quot;</span><span class="o">:</span> <span class="s2">&quot;/var/www/html&quot;</span><span class="p">,</span>
-               <span class="p">...,</span>
-            <span class="p">}</span>
-    <span class="p">});</span>
+    <span class="nx">map</span><span class="o">:</span> <span class="p">{</span>
+        <span class="s2">&quot;/&quot;</span><span class="o">:</span> <span class="s2">&quot;/var/www/html&quot;</span><span class="p">,</span>
+        <span class="p">...,</span>
+    <span class="p">}</span>
+<span class="p">});</span>
 </pre></div>
 </div>
 <p>For a complete list of defaults, see <a class="reference internal" href="#key-to-mime-mappings">Key to Mime Mappings</a> below.</p>
@@ -382,14 +410,20 @@ have priority over shorter ones.  For example, if <code class="docutils literal 
 key/paths are automatically sorted by length.</p>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">map</span></code>: An <span class="green">Object</span> of url to function or filesystem mapping.
-The keys of the object are regular expressions, full, partial or globbed
-paths to be matched against incoming requests.  For example, a key
-<code class="docutils literal notranslate"><span class="pre">/myscript.html</span></code> would match an incoming request for
-<code class="docutils literal notranslate"><span class="pre">http://example.com/myscript.html</span></code>.  The value to which the key is set
-controls which function, module or filesystem path will be used.  If the
-value is a <span class="green">Function</span> or an <span class="green">Object</span>, it is assumed to be a
-script.  If the value is a <span class="green">String</span>, it is assumed to be a mapping
-to the filesystem.  Example:</p>
+The keys of the object are exact paths, regular expressions, partial
+paths or globbed paths to be matched against incoming requests.  For
+example, a key <code class="docutils literal notranslate"><span class="pre">/myscript.html</span></code> would match an incoming request for
+<code class="docutils literal notranslate"><span class="pre">http://example.com/myscript.html</span></code>.  The value to which the key is
+set controls which function, module or filesystem path will be used.</p>
+<p>If the value is a <span class="green">Function</span> or an <span class="green">Object</span> with
+<code class="docutils literal notranslate"><span class="pre">module</span></code> or <code class="docutils literal notranslate"><span class="pre">modulePath</span></code> key set, it is assumed to
+be a script name (the same as is used for
+<a class="reference internal" href="rampart-main.html#using-the-require-function-to-import-modules"><span class="std std-ref">require()</span></a>)
+or a path with scripts.</p>
+<p>If the value is a <span class="green">String</span>, or it is an <span class="green">Object</span> with
+<code class="docutils literal notranslate"><span class="pre">path</span></code> set, it is assumed to be a mapping to the filesystem.  A
+mapping to a filesystem path may also include headers.</p>
+<p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">server</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-server&quot;</span><span class="p">);</span>
 
 <span class="kd">var</span> <span class="nx">pid</span> <span class="o">=</span> <span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">({</span>
@@ -397,7 +431,14 @@ to the filesystem.  Example:</p>
     <span class="nx">map</span> <span class="o">:</span>
     <span class="p">{</span>
         <span class="s2">&quot;/&quot;</span><span class="o">:</span>            <span class="s2">&quot;/usr/local/etc/httpd/htdocs&quot;</span>  <span class="cm">/* map all file requests */</span>
-        <span class="s2">&quot;/search.html&quot;</span><span class="o">:</span> <span class="kd">function</span> <span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span> <span class="p">...</span> <span class="p">}</span>         <span class="cm">/* search function */</span>
+        <span class="s2">&quot;/search.html&quot;</span><span class="o">:</span> <span class="kd">function</span> <span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span> <span class="p">...</span> <span class="p">},</span>         <span class="cm">/* search function */</span>
+        <span class="s2">&quot;/images/&quot;</span><span class="o">:</span>     <span class="p">{</span>
+                            <span class="nx">path</span><span class="o">:</span> <span class="s2">&quot;/path/to/my/jpgs/&quot;</span><span class="p">,</span>
+                            <span class="nx">headers</span><span class="o">:</span> <span class="p">{</span>
+                                <span class="s2">&quot;Content-Control&quot;</span><span class="o">:</span> <span class="s2">&quot;max-age=31556952, public&quot;</span><span class="p">,</span>
+                                <span class="s2">&quot;X-Custom-Header&quot;</span><span class="o">:</span> <span class="mi">1</span>
+                            <span class="p">}</span>
+                        <span class="p">}</span>
     <span class="p">}</span>
 <span class="p">});</span>
 </pre></div>
@@ -544,7 +585,24 @@ the current filesystem to use:</p>
       <span class="cm">/* trailing &#39;/&#39; in &#39;/css&#39; is implied */</span>
       <span class="s2">&quot;/css&quot;</span><span class="o">:</span> <span class="s2">&quot;/usr/local/etc/httpd/css&quot;</span>
     <span class="p">}</span>
+<span class="p">});</span>
+</pre></div>
+</div>
+<p>Mapped directories may also be mapped using the following syntax, which allows for custom headers
+to be sent with each file served:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">server</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-server&quot;</span><span class="p">);</span>
 
+<span class="kd">var</span> <span class="nx">pid</span> <span class="o">=</span> <span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">({</span>
+    <span class="nx">map</span><span class="o">:</span> <span class="p">{</span>
+      <span class="s2">&quot;/&quot;</span>   <span class="o">:</span> <span class="p">{</span>
+          <span class="nx">path</span><span class="o">:</span> <span class="s2">&quot;/var/www/html&quot;</span><span class="p">,</span>
+          <span class="nx">headers</span><span class="o">:</span> <span class="p">{</span>
+              <span class="s2">&quot;X-Custom-Header-1&quot;</span><span class="o">:</span> <span class="s2">&quot;myval1&quot;</span><span class="p">,</span>
+              <span class="s2">&quot;X-Custom-Header-2&quot;</span><span class="o">:</span> <span class="s2">&quot;myval2&quot;</span>
+          <span class="p">}</span>
+      <span class="p">},</span>
+      <span class="s2">&quot;/css/&quot;</span><span class="o">:</span> <span class="s2">&quot;/usr/local/etc/httpd/css&quot;</span>
+    <span class="p">}</span>
 <span class="p">});</span>
 </pre></div>
 </div>
@@ -1077,6 +1135,117 @@ parameter <code class="docutils literal notranslate"><span class="pre">fsPath</s
 </pre></div>
 </div>
 </div></blockquote>
+</div>
+<div class="section" id="advanced-functions">
+<h3>Advanced Functions<a class="headerlink" href="#advanced-functions" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">rampart-server</span></code> module creates a <code class="docutils literal notranslate"><span class="pre">mmap</span></code>ed buffer to efficiently store data
+that will be returned to the client by the webserver.  There is one buffer per thread
+and it is used from within each thread and shared with any child processes.  The size of
+this “server buffer” is controlled from the <code class="docutils literal notranslate"><span class="pre">bufferMem</span></code> setting in <a class="reference internal" href="#start">start()</a> above.</p>
+<p>Though returning an object with, .e.g. <code class="docutils literal notranslate"><span class="pre">{html:</span> <span class="pre">mydata}</span></code> set is not limited by the size of
+the server buffer, the functions below are so limited and will throw
+an error if the total size written to it is larger than the size allotted.</p>
+<p>The request object contains the functions to manipulate and print to the server buffer,
+which will be directly sent to the client without extra copying.</p>
+<div class="section" id="req-printf">
+<h4>req.printf()<a class="headerlink" href="#req-printf" title="Permalink to this headline">¶</a></h4>
+<p>The request object to a callback function includes the <code class="docutils literal notranslate"><span class="pre">printf</span></code> function
+which will print directly to the server buffer that will be sent to the client.
+It uses the same formats as <a class="reference internal" href="rampart-utils.html#printf"><span class="std std-ref">rampart.utils.printf</span></a>.
+The advantages of using <code class="docutils literal notranslate"><span class="pre">req.printf</span></code> rather than returning a string is that
+content is not copied, but instead placed directly in the server buffer to be
+returned to the client.</p>
+<p>Example from a normal server callback function:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">function</span> <span class="nx">mycallback</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">html</span><span class="p">;</span>
+    <span class="p">...</span> <span class="nx">add</span> <span class="nx">content</span> <span class="nx">to</span> <span class="nx">html</span> <span class="p">...</span>
+    <span class="k">return</span> <span class="p">{</span><span class="nx">html</span><span class="o">:</span> <span class="nx">html</span><span class="p">};</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Example using <code class="docutils literal notranslate"><span class="pre">req.printf</span></code> from a server callback function:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">function</span> <span class="nx">mycallback</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">html</span><span class="p">;</span>
+    <span class="kd">var</span> <span class="nx">end_cont</span> <span class="o">=</span> <span class="s2">&quot;&lt;/body&gt;&lt;/html&gt;&quot;</span><span class="p">;</span>
+    <span class="c1">// add content to html</span>
+    <span class="nx">req</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%s&quot;</span><span class="p">,</span> <span class="nx">content</span><span class="p">);</span>
+    <span class="k">return</span> <span class="p">{</span><span class="nx">html</span><span class="o">:</span> <span class="nx">end_cont</span><span class="p">};</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<dl>
+<dt>Return Value:</dt><dd><p>The number of bytes written to the server buffer.</p>
+</dd>
+<dt>Note:</dt><dd><p>If <code class="docutils literal notranslate"><span class="pre">content</span></code> is large, it is more efficiently handled using
+<code class="docutils literal notranslate"><span class="pre">req.printf</span></code> and/or <code class="docutils literal notranslate"><span class="pre">req.put</span></code> below than concatenating strings in
+JavaScript.</p>
+<p>The one exception to this is if <code class="docutils literal notranslate"><span class="pre">content</span></code> is a <span class="green">Buffer</span> and is
+the total content to be returned to the client without concatenation or
+manipulation, doing <code class="docutils literal notranslate"><span class="pre">return</span> <span class="pre">{html:content}</span></code> is the most efficient
+method.</p>
+<p>However, in nearly all cases, if a function needs to print many strings
+that make up the totality of the data sent to the client, using
+<code class="docutils literal notranslate"><span class="pre">req.printf</span></code> or <code class="docutils literal notranslate"><span class="pre">req.put</span></code> is preferable.</p>
+<p>When printing to the server buffer, each thread’s buffer must be
+large enough to hold all the data from every <code class="docutils literal notranslate"><span class="pre">req.printf</span></code> statement.
+If the server buffer size is smaller than the data inserted, an error
+will be thrown.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="req-put">
+<h4>req.put()<a class="headerlink" href="#req-put" title="Permalink to this headline">¶</a></h4>
+<p>Put a <span class="green">String</span> or a <span class="green">Buffer</span> into the server buffer to be returned
+to the client.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">function</span> <span class="nx">mycallback</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">html</span><span class="p">;</span>
+    <span class="kd">var</span> <span class="nx">end_cont</span> <span class="o">=</span> <span class="s2">&quot;&lt;/body&gt;&lt;/html&gt;&quot;</span><span class="p">;</span>
+    <span class="p">...</span> <span class="nx">add</span> <span class="nx">content</span> <span class="nx">to</span> <span class="nx">html</span> <span class="p">...</span>
+    <span class="nx">req</span><span class="p">.</span><span class="nx">put</span><span class="p">(</span><span class="nx">content</span><span class="p">);</span>
+    <span class="k">return</span> <span class="p">{</span><span class="nx">html</span><span class="o">:</span> <span class="nx">end_cont</span><span class="p">};</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>The number of bytes written to the server buffer.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="req-getpos">
+<h4>req.getpos()<a class="headerlink" href="#req-getpos" title="Permalink to this headline">¶</a></h4>
+<p>Get the current end position in the server buffer.</p>
+<dl class="simple">
+<dt>Return Value</dt><dd><p>A <span class="green">Number</span> - the end position of the server buffer.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="req-setpos">
+<h4>req.setpos()<a class="headerlink" href="#req-setpos" title="Permalink to this headline">¶</a></h4>
+<p>Set the current end position in the server buffer.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">function</span> <span class="nx">mycallback</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+    <span class="p">...</span>
+    <span class="kd">var</span> <span class="nx">pos</span> <span class="o">=</span> <span class="nx">req</span><span class="p">.</span><span class="nx">setpos</span><span class="p">(</span><span class="nx">pos</span><span class="p">);</span>
+    <span class="p">...</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">pos</span></code> is the offset to position the end pointer in the server buffer.</p>
+<dl class="simple">
+<dt>Return Value</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="req-getbuffer">
+<h4>req.getBuffer()<a class="headerlink" href="#req-getbuffer" title="Permalink to this headline">¶</a></h4>
+<p>Get a copy of the contents of the server buffer and return it in a JavaScript
+buffer.</p>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Buffer</span> - the contents of the server buffer.</p>
+</dd>
+</dl>
+</div>
 </div>
 <div class="section" id="full-example">
 <h3>Full Example<a class="headerlink" href="#full-example" title="Permalink to this headline">¶</a></h3>
