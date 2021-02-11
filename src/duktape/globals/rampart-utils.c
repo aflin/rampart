@@ -2835,7 +2835,7 @@ duk_ret_t duk_printf(duk_context *ctx)
     if (pthread_mutex_lock(&pflock) == EINVAL)
         RP_THROW(ctx, "printf(): error - could not obtain lock\n");
 
-    ret = _printf(_out_char, buffer, (size_t)-1, ctx,0,&pflock);
+    ret = rp_printf(_out_char, buffer, (size_t)-1, ctx,0,&pflock);
     pthread_mutex_unlock(&pflock);
     duk_push_int(ctx, ret);
     return 1;
@@ -3213,7 +3213,7 @@ duk_ret_t duk_fprintf(duk_context *ctx)
     if (pthread_mutex_lock(lock_p) == EINVAL)
         RP_THROW(ctx, "fprintf(): error - could not obtain lock\n");
 
-    ret = _printf(_fout_char, (void*)out, (size_t)-1, ctx, 1, lock_p);
+    ret = rp_printf(_fout_char, (void*)out, (size_t)-1, ctx, 1, lock_p);
     fflush(out);
     if(closefh)
         fclose(out);
@@ -3229,12 +3229,12 @@ duk_ret_t duk_fprintf(duk_context *ctx)
 duk_ret_t duk_sprintf(duk_context *ctx)
 {
     char *buffer;
-    int size = _printf(_out_null, NULL, (size_t)-1, ctx, 0, NULL);
+    int size = rp_printf(_out_null, NULL, (size_t)-1, ctx, 0, NULL);
     buffer = malloc((size_t)size + 1);
     if (!buffer)
         RP_THROW(ctx, "malloc error in sprintf");
 
-    (void)_printf(_out_buffer, buffer, (size_t)-1, ctx, 0, NULL);
+    (void)rp_printf(_out_buffer, buffer, (size_t)-1, ctx, 0, NULL);
     duk_push_lstring(ctx, buffer,(duk_size_t)size);
     free(buffer);
     return 1;
@@ -3243,9 +3243,9 @@ duk_ret_t duk_sprintf(duk_context *ctx)
 duk_ret_t duk_bprintf(duk_context *ctx)
 {
     char *buffer;
-    int size = _printf(_out_null, NULL, (size_t)-1, ctx, 0, NULL);
+    int size = rp_printf(_out_null, NULL, (size_t)-1, ctx, 0, NULL);
     buffer = (char *) duk_push_fixed_buffer(ctx, (duk_size_t)size);
-    (void)_printf(_out_buffer, buffer, (size_t)-1, ctx, 0, NULL);
+    (void)rp_printf(_out_buffer, buffer, (size_t)-1, ctx, 0, NULL);
     return 1;
 }
 
