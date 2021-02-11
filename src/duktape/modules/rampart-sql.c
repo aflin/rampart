@@ -401,16 +401,19 @@ duk_ret_t duk_rp_sql_close(duk_context *ctx)
     fseek(mmsgfh, 0, SEEK_SET);           \
 } while(0)
 
-#define msgtobuf(buf)  do {               \
-    size_t sz;                            \
-    int pos = ftell(mmsgfh);              \
-    fseek(mmsgfh, 0, SEEK_SET);           \
-    sz=fread(buf, 1, msgbufsz-1, mmsgfh); \
-    if(sz > 1 && sz != strlen(buf))       \
+/* sz and strlen(buf) vary by platform.
+   ignore for now
+*/
+#define msgtobuf(buf)  do {                       \
+    size_t sz;                                    \
+    int pos = ftell(mmsgfh);                      \
+    fseek(mmsgfh, 0, SEEK_SET);                   \
+    sz=fread(buf, 1, msgbufsz-1, mmsgfh);         \
+    if(0 & (sz>1) && sz != strlen(buf))           \
         fprintf(stderr, "msgtobuf read error\n"); \
-    fclose(mmsgfh);                       \
-    mmsgfh = fmemopen(NULL, 4096, "w+");  \
-    buf[pos]='\0';                        \
+    fclose(mmsgfh);                               \
+    mmsgfh = fmemopen(NULL, 4096, "w+");          \
+    buf[pos]='\0';                                \
 } while(0)
 
 /* **************************************************

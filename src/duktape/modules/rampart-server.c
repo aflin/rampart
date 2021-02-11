@@ -22,6 +22,7 @@
 #include <sys/mman.h>
 #ifdef __APPLE__
 #include <uuid/uuid.h>
+#include <sys/sysctl.h>
 #endif
 #include <pwd.h>
 
@@ -4387,7 +4388,14 @@ duk_ret_t duk_server_start(duk_context *ctx)
     /* set up info structs for mmap memory */
     {
         long pagesize = sysconf(_SC_PAGE_SIZE);
+#ifdef __APPLE__
+        uint64_t mem;
+        size_t len = sizeof(mem);
+        sysctlbyname("hw.memsize", &mem, &len, NULL, 0);
+        long physmem = mem/sysconf(_SC_PAGE_SIZE);
+#else
         long physmem  = sysconf(_SC_PHYS_PAGES);
+#endif
         long tmapsize = (bufmempct > 100) ? bufmempct/4 +1 : bufmempct * physmem / 100;
         long mapsize = tmapsize/((long)totnthreads);
         if(!mapsize) mapsize=1;
@@ -4399,7 +4407,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             mapinfos[i] = NULL;
             REMALLOC(mapinfos[i], sizeof(MAPINFO));
 
-            mapinfos[i]->mem = mmap(NULL, (size_t)pagesize * mapsize, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_SHARED, -1, 0);
+            mapinfos[i]->mem = mmap(NULL, (size_t)pagesize * mapsize, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);
             if(mapinfos[i]->mem == MAP_FAILED)
             {
                 fprintf(stderr, "mmap failed: %s\n",strerror(errno));
