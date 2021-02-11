@@ -382,13 +382,13 @@ duk_ret_t duk_rp_sql_close(duk_context *ctx)
 
 #ifdef USEHANDLECACHE
 #define throw_tx_error(ctx,pref) do{\
-    char pbuf[msgbufsz];\
+    char pbuf[msgbufsz] = {0};\
     duk_rp_log_tx_error(ctx,pbuf);\
     RP_THROW(ctx, "%s error: %s",pref,pbuf);\
 }while(0)
 #else
 #define throw_tx_error(ctx,pref) do{\
-    char pbuf[msgbufsz];\
+    char pbuf[msgbufsz] = {0};\
     if(tx) tx = TEXIS_CLOSE(tx);\
     duk_rp_log_tx_error(ctx,pbuf);\
     RP_THROW(ctx, "%s error: %s",pref,pbuf);\
@@ -403,11 +403,14 @@ duk_ret_t duk_rp_sql_close(duk_context *ctx)
 
 #define msgtobuf(buf)  do {               \
     size_t sz;                            \
+    int pos = ftell(mmsgfh);              \
     fseek(mmsgfh, 0, SEEK_SET);           \
     sz=fread(buf, 1, msgbufsz-1, mmsgfh); \
+    if(sz > 1 && sz != strlen(buf))       \
+        fprintf(stderr, "msgtobuf read error\n"); \
     fclose(mmsgfh);                       \
     mmsgfh = fmemopen(NULL, 4096, "w+");  \
-    buf[sz]='\0';                         \
+    buf[pos]='\0';                        \
 } while(0)
 
 /* **************************************************
@@ -676,7 +679,7 @@ void duk_rp_init_qstruct(QUERY_STRUCT *q)
 
 QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
 {
-    int i = 0;
+    int i = 0, gotsettings=0;
     QUERY_STRUCT q_st;
     QUERY_STRUCT *q = &q_st;
 
@@ -726,50 +729,61 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
                     q->callback = i;
                 }
 
-                /* object of settings */
+                /* object of settings or parameters*/
                 else
                 {
-                    /* first object, if no array before, is an object of parameters */
+
+                    /* the first object with these properties is our settings object */
+                    if(!gotsettings)
+                    {
+                        if (duk_get_prop_string(ctx, i, "includeCounts"))
+                        {
+                            q->getCounts = duk_get_boolean_default(ctx, -1, 1);
+                            gotsettings=1;
+                        }
+                        duk_pop(ctx);
+
+                        if (duk_get_prop_string(ctx, i, "skipRows"))
+                        {
+                            q->skip = duk_rp_get_int_default(ctx, -1, 0);
+                            gotsettings=1;
+                        }
+                        duk_pop(ctx);
+
+                        if (duk_get_prop_string(ctx, i, "maxRows"))
+                        {
+                            q->max = duk_rp_get_int_default(ctx, -1, q->max);
+                            if (q->max < 0)
+                                q->max = INT_MAX;
+                            gotsettings=1;
+                        }
+
+                        if (duk_get_prop_string(ctx, i, "returnType"))
+                        {
+                            const char *rt = duk_to_string(ctx, -1);
+
+                            if (!strcasecmp("array", rt))
+                            {
+                                q->rettype = 1;
+                            }
+                            else if (!strcasecmp("novars", rt))
+                            {
+                                q->rettype = 2;
+                            }
+                            gotsettings=1;
+                        }
+                        duk_pop(ctx);
+
+                        if(gotsettings)
+                            break;
+                    }
+                    
                     if ( q->arr_idx == -1 && q->obj_idx == -1)
                     {
                         q->obj_idx = i;
                         break;
                     }
-
-                    if (duk_get_prop_string(ctx, i, "includeCounts"))
-                        q->getCounts = duk_get_boolean_default(ctx, -1, 1);
-
-                    duk_pop(ctx);
-
-                    if (duk_get_prop_string(ctx, i, "skip"))
-                        q->skip = duk_rp_get_int_default(ctx, -1, 0);
-
-                    duk_pop(ctx);
-
-                    if (duk_get_prop_string(ctx, i, "max"))
-                    {
-                        q->max = duk_rp_get_int_default(ctx, -1, q->max);
-                        if (q->max < 0)
-                            q->max = INT_MAX;
-                    }
-
-                    if (duk_get_prop_string(ctx, i, "returnType"))
-                    {
-                        const char *rt = duk_to_string(ctx, -1);
-
-                        if (!strcasecmp("array", rt))
-                        {
-                            q->rettype = 1;
-                        }
-                        else if (!strcasecmp("novars", rt))
-                        {
-                            q->rettype = 2;
-                        }
-                    }
-
-                    duk_pop(ctx);
                 }
-
                 break;
             } /* case */
         } /* switch */
@@ -1756,8 +1770,9 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
         throw_tx_error(ctx,"open sql");
 
     if (!TEXIS_PREP(tx, (char *)q->sql))
+    {
         throw_tx_error(ctx,"sql prep");
-
+    }
     /* sql parameters are the parameters corresponding to "?key" in a sql statement
        nd are provide by passing an object in JS call parameters */
     if( namedSqlParams)
@@ -1858,6 +1873,38 @@ duk_ret_t duk_rp_sql_eval(duk_context *ctx)
 
     duk_push_sprintf(ctx, "select %s;", stmt);
     duk_replace(ctx, str_idx);
+    duk_rp_sql_exec(ctx);
+    duk_get_prop_string(ctx, -1, "results");
+    duk_get_prop_index(ctx, -1, 0);
+    return (1);
+}
+
+duk_ret_t duk_rp_sql_one(duk_context *ctx)
+{
+    duk_idx_t str_idx = -1, i = 0, obj_idx = -1;
+
+    for (i = 0; i < 2; i++)
+    {
+        if ( duk_is_string(ctx, i) )
+            str_idx = i;
+        else if( duk_is_object(ctx, i) && !duk_is_array(ctx, i) )
+            obj_idx=i;
+    }
+
+    if (str_idx == -1)
+    {
+        duk_rp_log_error(ctx, "sql.one: No string (sql statement) provided");
+        duk_push_int(ctx, -1);
+        return (1);
+    }
+
+    duk_push_object(ctx);
+    duk_push_number(ctx, 1.0);
+    duk_put_prop_string(ctx, -2, "maxRows");
+    
+    if( obj_idx != -1)
+        duk_pull(ctx, obj_idx);
+
     duk_rp_sql_exec(ctx);
     duk_get_prop_string(ctx, -1, "results");
     duk_get_prop_index(ctx, -1, 0);
@@ -2473,6 +2520,10 @@ duk_ret_t duk_open_module(duk_context *ctx)
     /* set Sql.prototype.eval */
     duk_push_c_function(ctx, duk_rp_sql_eval, 4 /*nargs*/);  /*[ {}, Sql protoObj-->{exe:fn_exe} fn_eval ]*/
     duk_put_prop_string(ctx, -2, "eval");                    /*[ {}, Sql protoObj-->{exe:fn_exe,eval:fn_eval} ]*/
+
+    /* set Sql.prototype.eval */
+    duk_push_c_function(ctx, duk_rp_sql_one, 2 /*nargs*/);  /*[ {}, Sql protoObj-->{exe:fn_exe} fn_eval ]*/
+    duk_put_prop_string(ctx, -2, "one");                    /*[ {}, Sql protoObj-->{exe:fn_exe,eval:fn_eval} ]*/
 
     /* set Sql.prototype.close */
     duk_push_c_function(ctx, duk_rp_sql_close, 0 /*nargs*/); /* [ {}, Sql protoObj-->{exe:fn_exe,...} fn_close ] */
