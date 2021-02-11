@@ -57,10 +57,11 @@ static duk_ret_t duk_rp_object_values(duk_context *ctx)
     if(duk_is_object(ctx, 0))
     {
         duk_enum(ctx, 0, DUK_ENUM_OWN_PROPERTIES_ONLY|DUK_ENUM_NO_PROXY_BEHAVIOR);
-        while (duk_next(ctx, -1 , 0 ))
+        while (duk_next(ctx, -1 , 1 ))
         {
-            duk_put_prop_index(ctx, -3, i);
+            duk_put_prop_index(ctx, -4, i);
             i++;
+            duk_pop(ctx);
         }
         duk_pop(ctx);
         return 1;

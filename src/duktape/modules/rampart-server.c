@@ -2591,7 +2591,7 @@ static size_t contents_to_mmap(DHS *dhs, FORKINFO *finfo)
             }
             else
             {
-                duk_size_t sz;
+                duk_size_t sz=0;
                 void *hdata;
 
                 if(duk_is_buffer_data(ctx, -1))
@@ -5121,7 +5121,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
 #endif
     }
 
-prettyprintstack(ctx);
 #ifdef COMBINE_EVLOOPS
 //    printstack(ctx);
     duk_push_global_stash(ctx);
