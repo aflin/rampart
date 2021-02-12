@@ -1485,17 +1485,36 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
                 else
                     key=duk_json_encode(ctx, -2);
 
-                if( duk_is_string(ctx, -1) )
-                    val=duk_get_string(ctx, -1);
-                else
-                    val=duk_json_encode(ctx, -1);
-
-                evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new(key, val, 1, 1));
 
                 if (!strcasecmp(key, "content-type"))
                     gotct = 1;
                 else if (!strcasecmp(key, "date"))
                     gotdate=1;
+
+                if( duk_is_string(ctx, -1) )
+                    val=duk_get_string(ctx, -1);
+                else if (duk_is_array(ctx, -1))
+                {
+                    duk_uarridx_t i=0,
+                        len = (duk_uarridx_t) duk_get_length(ctx, -1);
+
+                    for (;i<len;i++)
+                    {
+                        duk_get_prop_index(ctx, -1, i);
+                        if (duk_is_string(ctx, -1))
+                            val=duk_get_string(ctx, -1);
+                        else
+                            val=duk_json_encode(ctx, -1);
+                        evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new(key, val, 1, 1));
+                        duk_pop(ctx);
+                    }
+                    duk_pop_2(ctx);
+                    continue;
+                }
+                else
+                    val=duk_json_encode(ctx, -1);
+
+                evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new(key, val, 1, 1));
 
                 duk_pop_2(ctx);
             }
@@ -4055,7 +4074,9 @@ static void proc_mimes(duk_context *ctx)
 "    }\n"
 
 
-/* TODO: turn this function from hell into something readable */
+/* The godzilla function.  Big, Scary and you just don't know what it's gonna
+   step on next.
+   TODO: turn this function from hell into something readable */
 
 #ifdef COMBINE_EVLOOPS
 extern struct event_base *elbase;
@@ -4829,12 +4850,16 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                 int len=0, ix;
                                 REQUIRE_OBJECT(ctx, -1, "server.start: map '%s'- 'headers' must be an Object", path);
                                 duk_enum(ctx,-1,DUK_ENUM_OWN_PROPERTIES_ONLY);                                
-                                while (duk_next(ctx, -1, 0))
+                                while (duk_next(ctx, -1, 1))
                                 {
-                                    if( cache_control && !strcasecmp(duk_get_string(ctx, -1), "cache-control") )
+                                    if( cache_control && !strcasecmp(duk_get_string(ctx, -2), "cache-control") )
                                         map->nheaders=0; // overwrite the default cache-control
-                                    duk_pop(ctx);
                                     len++;
+                                    if (duk_is_array(ctx, -1))
+                                    {
+                                        len += (int)duk_get_length(ctx, -1) - 1;
+                                    }
+                                    duk_pop_2(ctx);
                                 }
                                 duk_pop(ctx);
 
@@ -4846,21 +4871,44 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                 duk_enum(ctx,-1,DUK_ENUM_OWN_PROPERTIES_ONLY);
                                 while (duk_next(ctx, -1, 1))
                                 {
-                                    map->hkeys[ix] = (char*) duk_get_string(ctx, -2);
-                                    if(duk_is_number(ctx, -1) || duk_is_boolean(ctx, -1))
-                                        duk_to_string(ctx, -1);
-                                    if(duk_is_string(ctx, -1))
+                                    if(!duk_is_array(ctx, -1))
                                     {
-                                        map->hvals[ix] = (char*) duk_get_string(ctx, -1);
+                                        map->hkeys[ix] = (char*) duk_get_string(ctx, -2);
+                                        if(duk_is_string(ctx, -1))
+                                            map->hvals[ix] = (char*) duk_get_string(ctx, -1);
+                                        else
+                                        {
+                                            map->hvals[ix] = (char*) duk_json_encode(ctx, -1);
+                                            /* save it so duktape doesn't free it */
+                                            duk_dup(ctx, -1);
+                                            duk_put_prop_string(ctx, -5, map->hkeys[ix]);
+                                        }
+                                        ix++;
                                     }
                                     else
                                     {
-                                        free(map->hkeys);
-                                        free(map->hvals);
-                                        RP_THROW(ctx, "server.start: map '%s'- 'headers' value must be a String/Number/Boolean", path);
+                                        duk_uarridx_t aidx=0,
+                                            len = (duk_uarridx_t) duk_get_length(ctx, -1);
+
+                                        for (;aidx<len;aidx++)
+                                        {
+                                            map->hkeys[ix] = (char*) duk_get_string(ctx, -2);
+                                            duk_get_prop_index(ctx, -1, aidx);
+                                            if (duk_is_string(ctx, -1))
+                                            {
+                                                map->hvals[ix] = (char*) duk_get_string(ctx, -1);
+                                                duk_pop(ctx);
+                                            }
+                                            else
+                                            {
+                                                map->hvals[ix] = (char*) duk_json_encode(ctx, -1);
+                                                /* save it so duktape doesn't free it */
+                                                duk_put_prop_index(ctx, -2, aidx);
+                                            }
+                                            ix++;
+                                        }
                                     }
                                     duk_pop_2(ctx);
-                                    ix++;
                                 }
                                 duk_pop(ctx);
                             }
