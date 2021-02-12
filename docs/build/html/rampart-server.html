@@ -1039,6 +1039,19 @@ the client.</p>
 <span class="p">}</span>
 </pre></div>
 </div>
+<p>To set more than one header with the same name, the value must be an <span class="green">Array</span>.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="k">return</span> <span class="p">{</span>
+   <span class="nx">html</span><span class="o">:</span> <span class="nx">myhtmltext</span><span class="p">,</span>
+   <span class="nx">headers</span><span class="o">:</span> <span class="p">{</span>
+       <span class="s2">&quot;X-Custom-Header&quot;</span><span class="o">:</span> <span class="s2">&quot;custom value&quot;</span><span class="p">,</span>
+       <span class="s2">&quot;Set-Cookie&quot;</span><span class="o">:</span> <span class="p">[</span>
+           <span class="s2">&quot;id=myid; Expires=Wed, 15 Oct 2025 10:28:00 GMT&quot;</span>
+           <span class="s2">&quot;session=ae0f78; Max-Age=86400&quot;</span>
+       <span class="p">]</span>
+   <span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
 <p>A Status Code may also be specified. For example, to redirect a url to a
 new one:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">newurl</span> <span class="o">=</span> <span class="s2">&quot;https://example.com/myNewLocation.html&quot;</span><span class="p">;</span>

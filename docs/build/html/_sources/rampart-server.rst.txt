@@ -908,6 +908,21 @@ The Return Object
         headers: { "X-Custom-Header": "custom value"}
      }
   				
+  To set more than one header with the same name, the value must be an :green:`Array`.
+  
+  .. code-block:: javascript
+  
+     return { 
+        html: myhtmltext,
+        headers: { 
+            "X-Custom-Header": "custom value",
+            "Set-Cookie": [
+                "id=myid; Expires=Wed, 15 Oct 2025 10:28:00 GMT"
+                "session=ae0f78; Max-Age=86400"
+            ]
+        }
+     }
+
   A Status Code may also be specified. For example, to redirect a url to a
   new one:
   

@@ -243,7 +243,7 @@ Callback:
      ``undefined``. 
 
    * Note: Regardless of ``maxRows`` setting , returning ``false`` from the
-     ``callback`` will cancel the retreival of any remaining rows. 
+     ``callback`` will cancel the retrieval of any remaining rows. 
      Returning ``undefined`` or any other value will allow the next row to be
      retrieved up to ``maxRows`` rows.
 
