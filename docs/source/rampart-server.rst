@@ -206,7 +206,7 @@ Where:
       `Advanced Functions`_ below.
 
     * ``cacheControl``: A :green:`String` or a :green:`Boolean`.  If a
-      :green:`String - the text to set the "Cache-Control" header when
+      :green:`String` - the text to set the "Cache-Control" header when
       serving files off of the filesystem.  The default is "max-age=84600,
       public", if not set or set ``true``.  If set ``false``, no header is
       sent. 
@@ -258,7 +258,8 @@ Where:
       ``http://example.com/myscript.html``.  The value to which the key is
       set controls which function, module or filesystem path will be used.
       
-      If the value is a :green:`Function` or an :green:`Object` with
+      If the value is a :green:`Function`, that function is used as
+      the callback function.  If the value is an :green:`Object` with
       ``module`` or ``modulePath`` key set, it is assumed to 
       be a script name (the same as is used for 
       :ref:`require() <rampart-main:using the require function to import modules>`)
@@ -917,8 +918,8 @@ The Return Object
         headers: { 
             "X-Custom-Header": "custom value",
             "Set-Cookie": [
-                "id=myid; Expires=Wed, 15 Oct 2025 10:28:00 GMT"
-                "session=ae0f78; Max-Age=86400"
+                rampart.utils.sprintf("id=%U; Expires=Wed, 15 Oct 2025 10:28:00 GMT", id),
+                rampart.utils.sprintf("session=%U; Max-Age=86400", session_id)
             ]
         }
      }

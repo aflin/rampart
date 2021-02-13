@@ -368,9 +368,9 @@ using a buffer of the resulting size.  The default, if not specified
 is <code class="docutils literal notranslate"><span class="pre">10</span></code> (10% of the system’s physical memory).  See
 <a class="reference internal" href="#advanced-functions">Advanced Functions</a> below.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">cacheControl</span></code>: A <span class="green">String</span> or a <span class="green">Boolean</span>.  If a
-<span class="green">String - the text to set the “Cache-Control” header when
+<span class="green">String</span> - the text to set the “Cache-Control” header when
 serving files off of the filesystem.  The default is “max-age=84600,
-public”, if not set or set ``true`</span>.  If set <code class="docutils literal notranslate"><span class="pre">false</span></code>, no header is
+public”, if not set or set <code class="docutils literal notranslate"><span class="pre">true</span></code>.  If set <code class="docutils literal notranslate"><span class="pre">false</span></code>, no header is
 sent.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">mimeMap</span></code>: An <span class="green">Object</span>, additions or changes to the standart extension
 to mime mappings.  Normally, if, e.g., <code class="docutils literal notranslate"><span class="pre">return</span> <span class="pre">{</span> <span class="pre">&quot;m4v&quot;:</span> <span class="pre">mymovie</span> <span class="pre">};</span></code> is
@@ -415,7 +415,8 @@ paths or globbed paths to be matched against incoming requests.  For
 example, a key <code class="docutils literal notranslate"><span class="pre">/myscript.html</span></code> would match an incoming request for
 <code class="docutils literal notranslate"><span class="pre">http://example.com/myscript.html</span></code>.  The value to which the key is
 set controls which function, module or filesystem path will be used.</p>
-<p>If the value is a <span class="green">Function</span> or an <span class="green">Object</span> with
+<p>If the value is a <span class="green">Function</span>, that function is used as
+the callback function.  If the value is an <span class="green">Object</span> with
 <code class="docutils literal notranslate"><span class="pre">module</span></code> or <code class="docutils literal notranslate"><span class="pre">modulePath</span></code> key set, it is assumed to
 be a script name (the same as is used for
 <a class="reference internal" href="rampart-main.html#using-the-require-function-to-import-modules"><span class="std std-ref">require()</span></a>)
@@ -1045,8 +1046,8 @@ the client.</p>
    <span class="nx">headers</span><span class="o">:</span> <span class="p">{</span>
        <span class="s2">&quot;X-Custom-Header&quot;</span><span class="o">:</span> <span class="s2">&quot;custom value&quot;</span><span class="p">,</span>
        <span class="s2">&quot;Set-Cookie&quot;</span><span class="o">:</span> <span class="p">[</span>
-           <span class="s2">&quot;id=myid; Expires=Wed, 15 Oct 2025 10:28:00 GMT&quot;</span>
-           <span class="s2">&quot;session=ae0f78; Max-Age=86400&quot;</span>
+           <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">sprintf</span><span class="p">(</span><span class="s2">&quot;id=%U; Expires=Wed, 15 Oct 2025 10:28:00 GMT&quot;</span><span class="p">,</span> <span class="nx">id</span><span class="p">),</span>
+           <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">sprintf</span><span class="p">(</span><span class="s2">&quot;session=%U; Max-Age=86400&quot;</span><span class="p">,</span> <span class="nx">session_id</span><span class="p">)</span>
        <span class="p">]</span>
    <span class="p">}</span>
 <span class="p">}</span>

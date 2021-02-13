@@ -435,7 +435,7 @@ Usage:
 
 .. code-block:: javascript
 
-    var nbytes = rampart.utils.frwrite(handle, data [, max_bytes]);
+    var nbytes = rampart.utils.fwrite(handle, data [, max_bytes]);
 
 +------------+-----------------+---------------------------------------------------+
 |Argument    |Type             |Description                                        |
