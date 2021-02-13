@@ -96,7 +96,7 @@ static const char *scheme_strmap[] = {
 };
 */
 
-/* 
+/*
    info for shared memory
    which is used BOTH for thread and fork versions
    in order to keep it simple
@@ -135,6 +135,7 @@ FORKINFO **forkinfo = NULL;
 #define MODULE_FILE_RELOAD 2
 #define MODULE_PATH 3
 
+#define AUX_BUF_CHUNK 16384
 #define DHS struct duk_rp_http_s
 DHS
 {
@@ -145,10 +146,13 @@ DHS
     struct timeval timeout; // timeout for the duk script
     uint16_t threadno;      // our current thread number
     uint16_t pathlen;       // length of the url path if module==MODULE_PATH
-    char *module_name;      // name of the module 
+    char *module_name;      // name of the module
     char *reqpath;          // same as dhs->dhs->req->uri->path->full, but copied for fork
     void *aux;              // generic pointer - currently used for dirlist()
     char module;            // is 0 for normal fuction, 1 for js module, 2 for js module that needs reload.
+    void * auxbuf;          // aux buffer for req.printf when mmap is not present or too small.
+    size_t bufsz;           // size of aux buffer.
+    size_t bufpos;          // end position of data in aux buffer.
 };
 
 DHS *dhs404 = NULL;
@@ -222,7 +226,7 @@ void sa_to_string(void *sa, char *buf, size_t bufsz)
     fprintf(error_fh, args);\
     fflush(error_fh);\
     pthread_mutex_unlock(&errlock);\
-} while(0)    
+} while(0)
 
 
 static void writelog(evhtp_request_t *req, int code)
@@ -231,12 +235,12 @@ static void writelog(evhtp_request_t *req, int code)
     void *sa = (void *)conn->saddr;
     time_t now = time(NULL);
     struct tm ti_s, *timeinfo;
-    char address[INET6_ADDRSTRLEN], date[32], 
-        *q="", *qm="", *proto=""; 
+    char address[INET6_ADDRSTRLEN], date[32],
+        *q="", *qm="", *proto="";
     const char *length, *ua, *ref;
     int method = evhtp_request_get_method(req);
     evhtp_path_t *path = req->uri->path;
-   
+
     sa_to_string(sa, address, sizeof(address));
 
     timeinfo = localtime_r(&now,&ti_s);
@@ -258,19 +262,19 @@ static void writelog(evhtp_request_t *req, int code)
 
     if( !(length=evhtp_kv_find(req->headers_out,"Content-Length")) )
         length="-";
-    
+
     if( !(ref=evhtp_kv_find(req->headers_in,"Referer")) )
         ref="-";
 
     if( !(ua=evhtp_kv_find(req->headers_in,"User-Agent")) )
         ua="-";
-    
+
     if (pthread_mutex_lock(&loglock) == EINVAL)
     {
         printerr( "could not obtain lock in http_callback\n");
         exit(1);
     }
-    
+
     fprintf(access_fh,"%s - - [%s] \"%s %s%s%s %s\" %d %s \"%s\" \"%s\"\n",
         address,date,method_strmap[method],
         path->full, qm, q, proto,
@@ -329,16 +333,16 @@ void parseheadline(duk_context *ctx, char *line, size_t linesz)
     size_t sz,rem=linesz,propsz;
 
     e=(char*)memmem(p,rem,":",1);
-    
+
     sz=e-line;
     prop=p;
     propsz=sz;
 //    printf("'%.*s'=",sz,p);
-    
+
     p=e;
     p++;rem--;
     if( rem>0 && isspace(*p) ) p++,rem--;
-    
+
     while(rem>0 && *e!=';' && *e!='\r' && *e!='\n')
         e++,rem--;
     sz=e-p;
@@ -355,7 +359,7 @@ void parseheadline(duk_context *ctx, char *line, size_t linesz)
         return;
     p++;rem--;
     while( rem>0 && isspace(*p) ) p++,rem--;
-    
+
     // get extra attributes after ';'
     while(rem>0)
     {
@@ -370,12 +374,12 @@ void parseheadline(duk_context *ctx, char *line, size_t linesz)
         if(*e=='=')
         {
             sz=e-p;
-            prop=p; 
+            prop=p;
             propsz=sz;
             //printf("'%.*s'=",(int)sz,p);
         }
         else return;
-        
+
         e++;rem--;
         p=e;
 
@@ -413,7 +417,7 @@ void parseheadline(duk_context *ctx, char *line, size_t linesz)
             duk_put_prop_lstring(ctx,-2,prop,(duk_size_t)propsz);
             return;
         }
-        
+
         p=e;
         while( rem>0 && isspace(*p) ) p++,rem--;
         if(*p!=';' || !rem)
@@ -421,7 +425,7 @@ void parseheadline(duk_context *ctx, char *line, size_t linesz)
         p++;rem--;
         while( rem>0 && isspace(*p) ) p++,rem--;
     }
-    
+
 }
 
 
@@ -430,11 +434,11 @@ void parsehead(duk_context *ctx,void *head, size_t headsz)
     size_t remaining=headsz;
     char * line=(char *)head;
     char * eol = (char*) memmem(line,remaining,"\r\n",2) + 2;
-    
+
     while(eol)
     {
         size_t lsz=eol-line;
-        
+
         //printf("LINE='%.*s'\n",(int)lsz,line);
         parseheadline(ctx,line,lsz);
         remaining=headsz-(eol-(char*)head);
@@ -455,7 +459,7 @@ void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
     void *b=buf;
     //int i=0;
     //const char *name=NULL;
-    
+
     b=memmem(b,remaining,bound,bound_sz);
     while (b)
     {
@@ -488,7 +492,7 @@ void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
                 void *headend=memmem(begin,remaining,"\r\n\r\n",4);
                 size_t headsz;
                 //void *pushbuf;
-                
+
                 if(headend)
                 {
                     duk_push_object(ctx);
@@ -516,7 +520,7 @@ void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
                 }
                 * name is on stack *
                 name=duk_get_string(ctx, -1);
-                
+
                 duk_pull(ctx,-2);
                 */
                 duk_push_external_buffer(ctx);
@@ -545,7 +549,7 @@ static void copy_post_vars(duk_context *ctx)
         duk_pop(ctx);
         return;
     }
-    
+
     if( !duk_get_prop_string(ctx, -1, "content") )
     {
         duk_pop_2(ctx);
@@ -561,7 +565,7 @@ static void copy_post_vars(duk_context *ctx)
 
         len=duk_get_length(ctx, -1);
 
-        for (;i<len;i++) 
+        for (;i<len;i++)
         {
             duk_get_prop_index(ctx, -1, i);
             if(duk_get_prop_string(ctx, -1, "filename"))
@@ -589,7 +593,7 @@ static void copy_post_vars(duk_context *ctx)
             duk_put_prop(ctx,-6);
         }
         duk_pop(ctx);
-    }    
+    }
 
     duk_pop(ctx);
 }
@@ -647,6 +651,14 @@ static inline void rp_out_buffer(char character, void *buffer, size_t idx, size_
     }
 }
 
+static inline void rp_out_null(char character, void *buffer, size_t idx, size_t maxlen)
+{
+    (void)character;
+    (void)buffer;
+    (void)idx;
+    (void)maxlen;
+}
+
 #define getmapinfo do {\
     duk_push_this(ctx);\
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("dhs"));\
@@ -654,6 +666,97 @@ static inline void rp_out_buffer(char character, void *buffer, size_t idx, size_
     duk_pop_2(ctx);\
     mapinfo=dhs->mapinfo;\
 } while(0)
+
+#define checkauxsize(dhs, size) do{\
+    size_t required = dhs->bufpos + size;\
+    if(dhs->bufsz < required)\
+    {\
+        while (dhs->bufsz < required)\
+            dhs->bufsz += AUX_BUF_CHUNK;\
+        REMALLOC(dhs->auxbuf, dhs->bufsz);\
+    }\
+} while(0)
+
+/* TODO: make this work with forking
+duk_ret_t duk_server_add_cookie(duk_context *ctx)
+{
+    DHS *dhs;
+    const char *cookie = NULL;
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("dhs"));
+    dhs=duk_get_pointer(ctx, -1);
+    duk_pop_2(ctx);
+
+    if(duk_is_string(ctx, 0))
+    {
+        cookie = duk_get_string(ctx, 0);
+        evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new("Set-Cookie", cookie, 0, 1));
+    }
+    else if (duk_is_array(ctx, 0))
+    {
+        duk_uarridx_t i = 0, len=(duk_uarridx_t) duk_get_length(ctx, 0);
+        for(; i<len; i++)
+        {
+            duk_get_prop_index(ctx, 0, i);
+            cookie = REQUIRE_STRING(ctx, -1, "req.addCookie requires a String or array of Strings (cookie values)");
+            evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new("Set-Cookie", cookie, 0, 1));
+            duk_pop(ctx);
+        }
+    }
+    else
+        RP_THROW(ctx, "req.addCookie requires a String (cookie value)");
+    return 0;
+}
+
+duk_ret_t duk_server_add_header(duk_context *ctx)
+{
+    DHS *dhs;
+
+    duk_push_this(ctx);\
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("dhs"));\
+    dhs=duk_get_pointer(ctx, -1);\
+    duk_pop_2(ctx);\
+
+    if(duk_is_string(ctx, 0))
+    {
+        const char *key = duk_get_string(ctx, 0);
+        const char *val = REQUIRE_STRING(ctx, 1, "req.addHeader - second argument must be a string");
+        evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new(key, val, 1, 1));
+    }
+    else if (duk_is_object(ctx, 0) && !duk_is_array(ctx, 0) && !duk_is_function(ctx, 0) )
+    {
+        const char *key, *val;
+        duk_enum(ctx, 0, DUK_ENUM_OWN_PROPERTIES_ONLY);
+        while(duk_next(ctx, -1, 1))
+        {
+            key = duk_get_string(ctx, -2);
+            if (duk_is_array(ctx, -1))
+            {
+                duk_uarridx_t i = 0, len=(duk_uarridx_t) duk_get_length(ctx, -1);
+                for(; i<len; i++)
+                {
+                    duk_get_prop_index(ctx, -1, i);
+                    val = REQUIRE_STRING(ctx, -1, "req.addHeader(object) requires values that are a String or array of Strings");
+                    evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new(key, val, 1, 1));
+                    duk_pop(ctx);
+                }
+            }
+            else
+            {
+                val = REQUIRE_STRING(ctx, -1, "req.addHeader(object) requires values that are a String or array of Strings");
+                evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new(key, val, 1, 1));
+            }
+            duk_pop_2(ctx);
+        }
+        duk_pop(ctx);
+    }
+    else
+        RP_THROW(ctx, "req.addHeader requires a String or Object as its first argument");
+
+    return 0;
+}
+*/
 
 duk_ret_t duk_server_printf(duk_context *ctx)
 {
@@ -663,12 +766,19 @@ duk_ret_t duk_server_printf(duk_context *ctx)
 
     getmapinfo;
 
-    size = rp_printf(rp_out_buffer, mapinfo->pos, mmap_rem, ctx, 0, NULL);
+    size = rp_printf(rp_out_null, NULL, 0, ctx, 0, NULL);
+    if(size < mmap_rem)
+    {
+        size = rp_printf(rp_out_buffer, mapinfo->pos, mmap_rem, ctx, 0, NULL);
+        mapinfo->pos += size;
+    }
+    else
+    {
+        checkauxsize(dhs, size);
+        size = rp_printf(rp_out_buffer, (char*)dhs->auxbuf + dhs->bufpos, size, ctx, 0, NULL);
+        dhs->bufpos += size;
+    }
 
-    if(size > mmap_rem)
-        RP_THROW(ctx, "req.printf: Buffer too small for printing given format\n");
-
-    mapinfo->pos += size;
     duk_push_int(ctx, (int) size);
 
     return 1;
@@ -693,8 +803,11 @@ duk_ret_t duk_server_put(duk_context *ctx)
         mapinfo->pos += size;
     }
     else
-        RP_THROW(ctx, "req.put: Buffer too small to store given string or buffer\n");
-
+    {
+        checkauxsize(dhs, size);
+        memcpy(dhs->auxbuf + dhs->bufpos, s, size);
+        dhs->bufpos += size;
+    }
     duk_push_int(ctx, (int) size);
 
     return 1;
@@ -708,25 +821,60 @@ duk_ret_t duk_server_getbuffer(duk_context *ctx)
 
     getmapinfo;
 
-    buf = duk_push_fixed_buffer(ctx, mmap_used);
-    memcpy(buf, mapinfo->mem, mmap_used);  
+    buf = duk_push_fixed_buffer(ctx, mmap_used + dhs->bufpos);
+    memcpy(buf, mapinfo->mem, mmap_used);
+    memcpy(buf+mmap_used, dhs->auxbuf, dhs->bufpos);
 
     return 1;
 }
 
-duk_ret_t duk_server_setpos(duk_context *ctx)
+duk_ret_t duk_server_rewind(duk_context *ctx)
 {
     DHS *dhs;
     MAPINFO *mapinfo;
-    int position = REQUIRE_INT(ctx, 0, "req.setpos requires a number greater than 0 as its argument");
+    size_t curpos;
+    int position = REQUIRE_INT(ctx, 0, "req.rewind requires a number greater than 0 as its argument");
 
     if(position<0)
-        RP_THROW(ctx, "req.setpos requires a number greater than 0 as its argument");
+        RP_THROW(ctx, "req.rewind requires a number greater than 0 as its argument");
 
     getmapinfo;
 
-    mapinfo->pos = mapinfo->mem + position;
+    curpos = mmap_used + dhs->bufpos;
 
+    /* order of buffers: mmap | auxbuf */
+    if( position <= curpos)
+    {
+        if(position == mmap_used)
+        {
+            //wherever you go, there you are, especially if you never left
+            return 0;
+        }
+        /* is the requested position within the mmap? */
+        if(position < mmap_used)
+        {
+            mapinfo->pos = mapinfo->mem + position;
+            /* did we have data in the auxbuf? */
+            if(dhs->bufpos)
+            {
+                dhs->bufpos=0;
+                dhs->bufsz=0;
+                free(dhs->auxbuf);
+                dhs->auxbuf=NULL;
+            }
+        }
+        else
+        {
+            position -= mmap_used;
+            dhs->bufpos=position;
+        }
+    }
+    else
+        RP_THROW(
+            ctx,
+            "req.rewind - cannot set a position past the end of buffer (position:%d > bufsize:%d)\n",
+            position, (int) curpos
+        );
     return 0;
 }
 
@@ -737,7 +885,7 @@ duk_ret_t duk_server_getpos(duk_context *ctx)
 
     getmapinfo;
 
-    duk_push_number(ctx, (double)mmap_used);
+    duk_push_number(ctx, (double)mmap_used + (double)dhs->bufpos);
 
     return 1;
 }
@@ -762,16 +910,23 @@ void push_req_vars(DHS *dhs)
 
     duk_push_pointer(ctx, (void*) dhs);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("dhs"));
+
     duk_push_c_function(ctx, duk_server_printf, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "printf");
-    duk_push_c_function(ctx, duk_server_getpos, 0);
-    duk_put_prop_string(ctx, -2, "getpos");
-    duk_push_c_function(ctx, duk_server_setpos, 1);
-    duk_put_prop_string(ctx, -2, "setpos");
     duk_push_c_function(ctx, duk_server_put, 1);
     duk_put_prop_string(ctx, -2, "put");
+    duk_push_c_function(ctx, duk_server_getpos, 0);
+    duk_put_prop_string(ctx, -2, "getpos");
+    duk_push_c_function(ctx, duk_server_rewind, 1);
+    duk_put_prop_string(ctx, -2, "rewind");
     duk_push_c_function(ctx, duk_server_getbuffer, 0);
     duk_put_prop_string(ctx, -2, "getBuffer");
+    /*
+    duk_push_c_function(ctx, duk_server_add_header, 2);
+    duk_put_prop_string(ctx, -2, "addHeader");
+    duk_push_c_function(ctx, duk_server_add_cookie, 1);
+    duk_put_prop_string(ctx, -2, "addCookie");
+    */
 
     /* aux is the local filesystem path for directory listing */
     /* or the error message set to 404 if developer_mode == 0 */
@@ -839,7 +994,7 @@ void push_req_vars(DHS *dhs)
     /* fragment -- portion after # */
     putval("fragment", (char *)uri->fragment);
 
-    /* query string * 
+    /* query string *
      ****** now handled with duk_rp_querystring2object() ********
     duk_push_object(ctx);
     evhtp_kvs_for_each(uri->query, putkvs, ctx);
@@ -929,7 +1084,7 @@ void push_req_vars(DHS *dhs)
                 duk_put_prop_string(ctx,-2,"content");
                 duk_put_prop_string(ctx,-2,"postData");
             }
-        } else 
+        } else
         if(strncmp("application/json",ct,16)==0)
         {
             //duk_push_array(ctx);
@@ -1077,7 +1232,7 @@ static void dirlist(evhtp_request_t *req, char *fn)
         send403(req);
         return;
     }
-    
+
     DHS newdhs;
 
     newdhs.func_idx = dhs_dirlist->func_idx;
@@ -1096,7 +1251,7 @@ CTXFREER
     int threadno;
 };
 
-/* free the data after evbuffer is done with it, but check that it hasn't 
+/* free the data after evbuffer is done with it, but check that it hasn't
    been freed already */
 static void refcb(const void *data, size_t datalen, void *val)
 {
@@ -1117,7 +1272,7 @@ static void frefcb(const void *data, size_t datalen, void *val)
 }
 
 /*
-   Because of this: https://github.com/criticalstack/libevhtp/issues/160 
+   Because of this: https://github.com/criticalstack/libevhtp/issues/160
    when ssl, we can't use evbuffer_add_file() since evbuffer_pullup()
    was added to libevhtp.
 
@@ -1133,7 +1288,7 @@ static int rp_evbuffer_add_file(struct evbuffer *outbuf, int fd, ev_off_t offset
     /* if not ssl, or if size of file is "big", use evbuffer_add_file */
     if( !rp_using_ssl || length-offset > 5242880 )
         return evbuffer_add_file(outbuf, fd, offset, length);
-    /* FIXME: it is going to be pullup'd anyway, why not just add it (not by reference) */    
+    /* FIXME: it is going to be pullup'd anyway, why not just add it (not by reference) */
     {
         size_t off=0;
         ssize_t nbytes=0;
@@ -1201,7 +1356,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
         return;
     }
 
-    filesize=(ev_off_t) sb->st_size; 
+    filesize=(ev_off_t) sb->st_size;
 
     setdate_header(req, sb->st_mtime);
 
@@ -1255,10 +1410,10 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                      (int)filesize);
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Range", reprange, 0, 1));
             snprintf(reprange, 128, "%d", (int)(filesize - beg) );
-            evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", reprange, 0, 1)); 
+            evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", reprange, 0, 1));
         }
     }
-    else 
+    else
         len=filesize;
 
     if(len<0) len = filesize - beg;
@@ -1339,7 +1494,7 @@ fileserver(evhtp_request_t *req, void *arg)
         int i=0;
         for (;i<map->nheaders; i++)
         {
-            evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new(map->hkeys[i], map->hvals[i], 0, 0));    
+            evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new(map->hkeys[i], map->hvals[i], 0, 0));
         }
         rp_sendfile(req, fn, 0, &sb);
     }
@@ -1402,16 +1557,44 @@ static int attachfile(evhtp_request_t *req, char *fn)
         return 0;
     }
 
-    filesize=(ev_off_t) sb->st_size; 
+    filesize=(ev_off_t) sb->st_size;
 
     rp_evbuffer_add_file(req->buffer_out, fd, 0, filesize);
-    return 1;    
+    return 1;
 }
 
+
+
+static void attachauxbuf(DHS *dhs)
+{
+    evbuffer_add_reference(dhs->req->buffer_out, dhs->auxbuf, dhs->bufpos, frefcb, NULL);
+    dhs->auxbuf=NULL;
+    dhs->bufpos=0;
+    dhs->bufsz=0;
+}
+
+/* no check done, idx must be a duktape buffer*/
+static void attachbuf(DHS *dhs, duk_idx_t idx)
+{
+    duk_size_t sz;
+    const char *s;
+    CTXFREER *freeme = NULL;
+    duk_context *ctx = dhs->ctx;
+    REMALLOC(freeme, sizeof(CTXFREER));
+
+    duk_to_dynamic_buffer(ctx, idx, &sz);
+    s = duk_steal_buffer(ctx, idx, &sz);
+    freeme->ctx = ctx;
+    freeme->threadno = (int)dhs->threadno;
+    evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, refcb, freeme);
+}
 
 /* send the shared memory buffer.
    if mmapSz is set, use it
    if 0, calculate it
+
+   after, send auxbuf if exists
+   in whatever form
 */
 static void sendmem(DHS *dhs, size_t mmapSz)
 {
@@ -1419,28 +1602,39 @@ static void sendmem(DHS *dhs, size_t mmapSz)
 
     if(!mmapSz)
         mmapSz = mmap_used;
-         
+
     if(mmapSz)
+    {
         evbuffer_add_reference(dhs->req->buffer_out, mapinfo->mem, mmapSz, NULL, NULL);
+    }
+    /* our object should be at -4
+       if we forked, buf is in object key="auxbuf"
+       otherwise it is in dhs->auxbuf             */
+    if(duk_get_prop_string(dhs->ctx, -4, "auxbuf"))
+    {
+        attachbuf(dhs, -1);
+    }
+    else if (dhs->bufpos)
+    {
+        attachauxbuf(dhs);
+    }
+    duk_pop(dhs->ctx);
 }
 
 static void sendbuf(DHS *dhs, size_t mmapSz)
 {
-    duk_size_t sz;
     const char *s;
     duk_context *ctx = dhs->ctx;
+    duk_size_t sz;
 
     sendmem(dhs, mmapSz);
+    if(duk_is_null(ctx, -1))
+    {
+        return;
+    }
     if ( duk_is_buffer_data(ctx, -1) )
     {
-        CTXFREER *freeme = NULL;
-        REMALLOC(freeme, sizeof(CTXFREER));
-
-        duk_to_dynamic_buffer(ctx, -1, &sz);
-        s = duk_steal_buffer(ctx, -1, &sz);
-        freeme->ctx = ctx;
-        freeme->threadno = (int)dhs->threadno;
-        evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, refcb, freeme);
+        attachbuf(dhs, -1);
     }
     else
     /* duk_to_buffer does a copy on a string, so we'll just skip that and copy directly */
@@ -1455,7 +1649,7 @@ static void sendbuf(DHS *dhs, size_t mmapSz)
             {
                 s++;
                 evbuffer_add(dhs->req->buffer_out,s,(size_t)sz-1);
-            } 
+            }
             else
                 evbuffer_add(dhs->req->buffer_out,s,(size_t)sz);
         }
@@ -1470,6 +1664,7 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
     int gotdata = 0, gotct = 0, gotdate=0;
     duk_context *ctx = dhs->ctx;
     evhtp_res res = 200;
+    const char *setkey=NULL;
 
     if (duk_get_prop_string(ctx, -1, "headers"))
     {
@@ -1479,7 +1674,7 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
             while (duk_next(ctx, -1, 1))
             {
                 const char *key, *val;
-                
+
                 if( duk_is_string(ctx, -2) )
                     key=duk_get_string(ctx, -2);
                 else
@@ -1543,17 +1738,24 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
     duk_enum(ctx, -1, 0);
     while (duk_next(ctx, -1, 1))
     {
+        m.ext = (char *)duk_to_string(ctx, -2);
+
+        if( !strcmp(m.ext,"auxbuf"))
+        {
+            duk_pop_2(ctx);
+            continue;
+        }
+
         if (gotdata)
             goto opterr;
 
-        m.ext = (char *)duk_to_string(ctx, -2);
         mres = bsearch(&m, allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
         if (mres)
         {
             const char *d;
 
             gotdata = 1;
-
+            setkey=m.ext;
             if (!gotct)
                 evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new("Content-Type", mres->mime, 0, 0));
 
@@ -1565,12 +1767,12 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
             {
                 MAPINFO *mapinfo = dhs->mapinfo; /* for mmap_used macro */
 
-                if( mmapSz || mmap_used > 0)
+                if( mmapSz || mmap_used > 0 )
                 {
                     sendmem(dhs, mmapSz);
                     attachfile(dhs->req, (char *)d+1);
-                } 
-                else            
+                }
+                else
                 {
                     rp_sendfile(dhs->req, (char *)d+1, 1, NULL);
                     return (0);
@@ -1594,8 +1796,8 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
         }
 
         opterr:
-            //printerr( "Data already set from '%s', '%s=\"%s\"' is redundant.\n", m.ext, duk_to_string(ctx, -2), duk_to_string(ctx, -1));
-            RP_THROW(ctx, "Data already set from '%s', \"%s\" is redundant.\n", m.ext, duk_get_string(ctx, -2));
+            printerr( "WARNING: Data already set from '%s', '%s=\"%s\"' is redundant.\n", setkey, m.ext, duk_to_string(ctx, -1));
+            //RP_THROW(ctx, "Data already set from '%s', \"%s\" is redundant.\n", m.ext, duk_get_string(ctx, -2));
             duk_pop_2(ctx);
             return (res);
     }
@@ -1618,8 +1820,8 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
 static int copy_obj(duk_context *ctx, duk_context *tctx, int objid);
 static void clean_obj(duk_context *ctx, duk_context *tctx);
 
-/* copy a single function given as callback to all stacks 
-   To be called multiple times for each function on the 
+/* copy a single function given as callback to all stacks
+   To be called multiple times for each function on the
    stack, and must be called in order of functions appearance
    on main_ctx stack
 */
@@ -1688,7 +1890,7 @@ static void copy_cb_func(DHS *dhs, int nt)
     duk_remove(ctx,fidx);
 }
 
-/* get bytecode from stash and execute it with 
+/* get bytecode from stash and execute it with
    js arguments to this function                */
 duk_ret_t duk_rp_bytefunc(duk_context *ctx)
 {
@@ -1712,7 +1914,7 @@ duk_ret_t duk_rp_bytefunc(duk_context *ctx)
 /* copy function compiled from bytecode to stash
    create a function with the proper name that will
    call duk_rp_bytefunc() to execute.
-   
+
    duktape does not allow bytecode compiled function
    to be pushed to global object afaik
 */
@@ -1866,7 +2068,7 @@ static int copy_obj(duk_context *ctx, duk_context *tctx, int objid)
         duk_pop(tctx);                             //[ [par obj], [global stash] ]
         duk_push_object(tctx);                     //[ [par obj], [global stash], [new_stash_obj] ]
     }
-    /* copy the object on the top of stack before 
+    /* copy the object on the top of stack before
        entering copy_obj */
     cprintf("assigning object id=%d\n", objid);
     duk_push_sprintf(tctx, "%d", objid);      //[ [par obj], [global stash], [stash_obj], [objid] ]
@@ -1881,9 +2083,9 @@ static int copy_obj(duk_context *ctx, duk_context *tctx, int objid)
 
 enum_object:
 
-    /*  get keys,vals inside ctx object on top of the stack 
+    /*  get keys,vals inside ctx object on top of the stack
         and copy to the tctx object on top of the stack     */
-    
+
 
     duk_enum(ctx, -1, DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS);
     while (duk_next(ctx, -1, 1))
@@ -1929,7 +2131,7 @@ enum_object:
             if (duk_get_prop_string(ctx, -1, "length"))
             {
                 length = (duk_idx_t)duk_get_int(ctx, -1);
-                if(!length) length = DUK_VARARGS; 
+                if(!length) length = DUK_VARARGS;
             }
             else
                 length = DUK_VARARGS;
@@ -2063,7 +2265,7 @@ DHR
 /*  CALLBACK LOGIC:
 
     First call of any js function:
-      http_callback 
+      http_callback
          |-> http_fork_callback -> check for threadsafe
 
     Subsequent callbacks:
@@ -2074,9 +2276,9 @@ DHR
       |-> http_fork_callback -> currently just for sql js functions
 
     The first callback of any function is run through http_fork_callback.
-    If not marked as thread-unsafe (by setting a global variable in the forked child), 
+    If not marked as thread-unsafe (by setting a global variable in the forked child),
     it will subsequently be run in a thread and the child/fork will be idle.
-    Otherwise, if the global variable is set upon calling the function, it will always be 
+    Otherwise, if the global variable is set upon calling the function, it will always be
     run through the forked child. Currently only the sql engine does this.
 
     Forking is used because although the sql engine can be safely run with mutexes,
@@ -2126,27 +2328,27 @@ static int getfunction(DHS *dhs){
                         duk_pop(ctx);
                         ret=0;
                     }
-                } 
+                }
                 else if(duk_has_prop_string(ctx, -1, s))
                 {
                     duk_get_prop_string(ctx, -1, s);
                     duk_remove(ctx, -2);
                     //printf("got key '%s'\n", s);
-                } 
+                }
                 else if(duk_has_prop_string(ctx, -1, s+1))
                 {
                     duk_get_prop_string(ctx, -1, s+1);
                     duk_remove(ctx, -2);
                     //printf("got key '%s'\n", s+1);
-                } 
-                else 
+                }
+                else
                 {
                     duk_pop(ctx);
                     ret=0;
                     //printf("FAILED TO GET KEY %s\n", s);
                 }
-            } 
-            else 
+            }
+            else
             {
                 //printf("duk_is_object == false\n");
                 duk_pop(ctx);
@@ -2178,7 +2380,7 @@ static void *http_dothread(void *arg)
     if(!getfunction(dhs))
     {
         send404(req);
-        return NULL;    
+        return NULL;
     };
     /* push an empty object */
     duk_push_object(ctx);
@@ -2234,7 +2436,7 @@ static void *http_dothread(void *arg)
         duk_pop(ctx);
     }
     duk_pop(ctx);
-    
+
     if (dhr->have_timeout)
     {
         debugf("0x%x, LOCKING in thread_cb\n", (int)x);
@@ -2254,10 +2456,13 @@ static void *http_dothread(void *arg)
     }
 
     /* object has reply data and options in it */
-    if (duk_is_object(ctx, -1))
-        res = sendobj(dhs, 0);
-     else /* send string or buffer to client */
-        sendbuf(dhs, 0);
+    if (!duk_is_object(ctx, -1))
+    {
+        duk_push_object(ctx);
+        duk_pull(ctx, -2);
+        duk_put_prop_string(ctx, -2, "text");
+    }
+    res = sendobj(dhs, 0);
 
     if (res)
         sendresp(req, res);
@@ -2289,8 +2494,8 @@ static duk_context *redo_ctx(int thrno)
     }
 
 #ifdef COMBINE_EVLOOPS
-    /* 
-        in this case server.start() has returned 
+    /*
+        in this case server.start() has returned
         deleting the stack which would have our functions
         and our array of functions have instead been stashed
     */
@@ -2300,7 +2505,7 @@ static duk_context *redo_ctx(int thrno)
     duk_pop(main_ctx);
 #endif
     copy_all(main_ctx, thr_ctx);
-        
+
     duk_get_prop_index(main_ctx,0,fno);
     while(!duk_is_undefined(main_ctx,-1))
     {
@@ -2311,16 +2516,16 @@ static duk_context *redo_ctx(int thrno)
             copy_obj(main_ctx,thr_ctx,0);
             clean_obj(main_ctx,thr_ctx);
             duk_put_prop_index(thr_ctx,0,fno); //put object in same position as was in main_ctx
-            
+
             duk_pop(main_ctx); // object from array[fno]
             duk_get_prop_index(main_ctx,0, ++fno); // for next loop in while()
             continue;
         }
 
         if (
-            duk_get_prop_string(main_ctx, -1, DUK_HIDDEN_SYMBOL("is_global")) 
-                && 
-            duk_get_boolean_default(main_ctx, -1, 0)  
+            duk_get_prop_string(main_ctx, -1, DUK_HIDDEN_SYMBOL("is_global"))
+                &&
+            duk_get_boolean_default(main_ctx, -1, 0)
            )
         {
             const char *name;
@@ -2463,7 +2668,7 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
         pthread_cancel(script_runner);
         debugf("%d, cancelled\n", (int)x);
         fflush(stdout);
-        
+
         dhs->ctx = redo_ctx(thrno);
         debugf("0x%x, context recreated after timeout\n", (int)x);
         fflush(stdout);
@@ -2474,7 +2679,7 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
                 printerr( "timeout in module:%s()\n", duk_to_string(dhs->ctx, -1));
             else
                 printerr( "timeout in callback\n");
-        
+
             duk_pop_2(dhs->ctx);
         }
         else
@@ -2529,11 +2734,11 @@ void rp_exit(int sig)
 #define tprintf(...) /*nada */
 
 /* a callback must be run once before we can tell if it is thread safe.
-   So to be safe, run every callback in a fork the first time.  If it is 
+   So to be safe, run every callback in a fork the first time.  If it is
    thread safe, mark it as so and next time we know not to fork.
    A c function that is not thread safe must set the hidden global symbol
    "threadsafe"=false.  After that runs in a thread, the "threadsafe" global
-   will be checked and will be set as a property on that function, with the 
+   will be checked and will be set as a property on that function, with the
    default being true (safe) if not present.
 */
 
@@ -2587,7 +2792,7 @@ static size_t contents_to_mmap(DHS *dhs, FORKINFO *finfo)
         }
 
         m.ext = (char *)duk_to_string(ctx, -2);
-        if( !strcmp(m.ext,"headers") || !strcmp(m.ext,"status") )        
+        if( !strcmp(m.ext,"headers") || !strcmp(m.ext,"status") )
         {
             duk_pop_2(ctx);
             continue;
@@ -2600,7 +2805,7 @@ static size_t contents_to_mmap(DHS *dhs, FORKINFO *finfo)
 
             gotdata = 1;
 
-            /* if data is a string and starts with '@', its a filename 
+            /* if data is a string and starts with '@', its a filename
                no need to put that in the buffer */
             if (duk_is_string(ctx, -1) && ((d = duk_get_string(ctx, -1)) || 1) && *d == '@')
             {
@@ -2618,7 +2823,7 @@ static size_t contents_to_mmap(DHS *dhs, FORKINFO *finfo)
                 else if (duk_is_string(ctx, -1))
                     hdata = (void *)duk_get_lstring(ctx, -1, &sz);
 
-                if ( sz > mmap_rem ) 
+                if ( sz > mmap_rem )
                 {
                     /* we'll just pipe it instead */
                     duk_pop_2(ctx);
@@ -2704,15 +2909,30 @@ static void fork_exec_js(evutil_socket_t fd_ignored, short flags, void *arg)
             duk_put_prop_string(ctx, -2, "text");
         }
 
-        /* put the main content in mmaped memory 
+        /* put the main content in mmaped memory
            replace content with ""              */
         mmapOutSz = contents_to_mmap(dhs, data->finfo);
     }
 
+    if(dhs->bufpos > 0)
+    {
+        /* attach buffer to a duktape buffer (without copy)
+           so it can be copied in cbor below
+        */
+        duk_push_external_buffer(ctx);
+        duk_config_buffer(ctx, -1, dhs->auxbuf, (duk_size_t) dhs->bufpos);
+        duk_put_prop_string(ctx, -2, "auxbuf");
+    }
     duk_cbor_encode(ctx, -1, 0);
     cbor = duk_get_buffer_data(ctx, -1, &bufsz);
     msgOutSz = (uint32_t)bufsz;
-
+    if(dhs->bufpos > 0)
+    {
+        dhs->bufpos = 0;
+        dhs->bufsz = 0;
+        free(dhs->auxbuf);
+        dhs->auxbuf = NULL;
+    }
     if(data->conn)
     {
         /* on first loop, safe to close and free here */
@@ -2757,7 +2977,7 @@ static void fork_exec_js(evutil_socket_t fd_ignored, short flags, void *arg)
     tprintf("child sent message %d long. Waiting for input\n", (int)msgOutSz);
 
     duk_pop(ctx); //buffer
-} 
+}
 
 static void fork_read_request(evutil_socket_t fd_ignored, short flags, void *arg)
 {
@@ -2772,15 +2992,15 @@ static void fork_read_request(evutil_socket_t fd_ignored, short flags, void *arg
     childread(par2child, &msgOutSz, sizeof(uint32_t));
     tprintf("child to receive message %d long on %d\n", (int)msgOutSz, par2child);
 
-    /* whether we already know the thread-safe status */ 
+    /* whether we already know the thread-safe status */
     childread(par2child, &data->have_threadsafe_val, sizeof(int));
 
     /* the index of the function we will use for javascript callback */
-    childread(par2child, &(dhs->func_idx), sizeof(duk_idx_t)); 
+    childread(par2child, &(dhs->func_idx), sizeof(duk_idx_t));
     /* now get the cbor message from parent */
     {
         char *jbuf=NULL, *p;
-        
+
         /* buffer to hold cbor data, sized appropriately */
         REMALLOC(jbuf,(size_t)msgOutSz);
         p=jbuf;
@@ -2806,15 +3026,20 @@ static void fork_read_request(evutil_socket_t fd_ignored, short flags, void *arg
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("dhs"));
     duk_push_c_function(ctx, duk_server_printf, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "printf");
-    duk_push_c_function(ctx, duk_server_getpos, 0);
-    duk_put_prop_string(ctx, -2, "getpos");
-    duk_push_c_function(ctx, duk_server_setpos, 1);
-    duk_put_prop_string(ctx, -2, "setpos");
     duk_push_c_function(ctx, duk_server_put, 1);
     duk_put_prop_string(ctx, -2, "put");
+    duk_push_c_function(ctx, duk_server_getpos, 0);
+    duk_put_prop_string(ctx, -2, "getpos");
+    duk_push_c_function(ctx, duk_server_rewind, 1);
+    duk_put_prop_string(ctx, -2, "rewind");
     duk_push_c_function(ctx, duk_server_getbuffer, 0);
     duk_put_prop_string(ctx, -2, "getBuffer");
-
+    /*
+    duk_push_c_function(ctx, duk_server_add_header, 2);
+    duk_put_prop_string(ctx, -2, "addHeader");
+    duk_push_c_function(ctx, duk_server_add_cookie, 1);
+    duk_put_prop_string(ctx, -2, "addCookie");
+    */
     /* free old names */
     if(dhs->module_name) free(dhs->module_name);
     if(dhs->reqpath) free(dhs->reqpath);
@@ -2830,12 +3055,12 @@ static void fork_read_request(evutil_socket_t fd_ignored, short flags, void *arg
     else
         dhs->module_name=NULL;
     duk_pop(ctx);
-    
+
     if (duk_get_prop_string(ctx, -1, "rp_reqpath"))
     {
         dhs->reqpath = strdup(duk_get_string(ctx,-1));
         duk_del_prop_string(ctx, -2, "rp_reqpath");
-    } 
+    }
     //else printf("WTF  -- this can't happen at duk_get_prop_string(ctx, -2, rp_reqpath)");
     duk_pop(ctx);
 
@@ -2846,7 +3071,7 @@ static void fork_read_request(evutil_socket_t fd_ignored, short flags, void *arg
         duk_del_prop_string(ctx, -2, "rp_pathlen");
     }
     duk_pop(ctx);
-    
+
     /* pull function out of stash and prepare to call it with parameters from cbor decoded message */
     /* this will not return 0, because we previously checked */
     getfunction(dhs);
@@ -2931,9 +3156,9 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         }
     }
 
-    /* *************** CHILD PROCESS ************* */ 
+    /* *************** CHILD PROCESS ************* */
     if (!preforked && finfo->childpid == 0)
-    { /* child is forked once then talks over pipes. 
+    { /* child is forked once then talks over pipes.
            and is killed if timed out                  */
 
         RP_TX_isforked=1; /* mutex locking not necessary in fork */
@@ -3133,7 +3358,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
         {
             char jbuf[bsize + 1], *p = jbuf, c;
             int toread = (int)bsize;
-            
+
             parentread(finfo->child2par, &mmapSz, sizeof(size_t));
             /*
             if(mmapSz)
@@ -3226,10 +3451,8 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
     }
 
     /* object has reply data and options in it */
-    if (duk_is_object(ctx, -1))
-        res = sendobj(dhs, mmapSz);
-    else /* send string or buffer to client */
-        sendbuf(dhs, 0);
+    res = sendobj(dhs, mmapSz);
+
 
     if (res)
         sendresp(req, res);
@@ -3238,7 +3461,7 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
 }
 
 /* load module if not loaded, return position on stack
-    if module file is newer than loaded version, reload 
+    if module file is newer than loaded version, reload
 */
 
 /* kinda hidden, but visible from printstack */
@@ -3256,7 +3479,7 @@ static int getmod(DHS *dhs)
     {
         struct stat sb;
         const char *filename;
-        
+
         duk_get_prop_string(ctx, -1, RP_HIDDEN_SYMBOL("module_id"));
         filename=duk_get_string(ctx,-1);
         duk_pop(ctx);
@@ -3279,7 +3502,7 @@ static int getmod(DHS *dhs)
             /* else replace it below */
         }
         /* else file is gone?  Send error */
-        else 
+        else
         {
             duk_pop_2(ctx);
             return 0;
@@ -3314,11 +3537,11 @@ static int getmod(DHS *dhs)
         }
         duk_pop_2(ctx);
         return -1;
-    }        
+    }
 
     // on stack is module.exports
     duk_get_prop_string(ctx,-1,"exports");
-    /* take mtime & id from "module" and put it in module.exports, 
+    /* take mtime & id from "module" and put it in module.exports,
         signal next run requires a refork by setting dhs->module=MODULE_FILE_RELOAD;
         then remove modules */
     if(duk_is_function(ctx, -1))
@@ -3431,7 +3654,7 @@ static int getmod_path(DHS *dhs)
             {
                 s=strrchr(tm,'/');
                 if(s) *s='\0';
-                else { 
+                else {
                     *tm = '\0';
                     break;
                 }
@@ -3449,8 +3672,8 @@ static int getmod_path(DHS *dhs)
                 }
                 duk_pop(ctx);
             }
-        } 
-        else 
+        }
+        else
         {
             duk_pop(ctx);
 //printf("found it on first try\n");
@@ -3463,7 +3686,7 @@ static int getmod_path(DHS *dhs)
             dhs->module_name=strdup(tm);
             ret=getmod(dhs);
             dhs->pathlen += strlen(tm) - mplen + 1;
-            return ret;    
+            return ret;
         }
         //search on fs
 
@@ -3482,7 +3705,7 @@ static int getmod_path(DHS *dhs)
             {
                 s=strrchr(tm,'/');
                 if(s) *s='\0';
-                else { 
+                else {
                     *tm = '\0';
                     break;
                 }
@@ -3499,8 +3722,8 @@ static int getmod_path(DHS *dhs)
                     break;
                 }
             }
-        } 
-        else 
+        }
+        else
         {
 //printf("found it on first try\n");
         }
@@ -3511,7 +3734,7 @@ static int getmod_path(DHS *dhs)
             dhs->module_name=strdup(tm);
         //    ret=getmod(dhs);
             dhs->pathlen += strlen(tm) - mplen + 1;
-            return ret;    
+            return ret;
         }
         dhs->module_name=NULL;
     }
@@ -3530,7 +3753,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
     }
     new_ctx = thread_ctx[thrno];
     /* ****************************
-      setup duk function callback 
+      setup duk function callback
        **************************** */
 
     newdhs.ctx = new_ctx;
@@ -3544,6 +3767,9 @@ static void http_callback(evhtp_request_t *req, void *arg)
     newdhs.aux=dhs->aux;
     newdhs.reqpath=strdup(req->uri->path->full);
     newdhs.mapinfo = mapinfos[thrno];
+    newdhs.bufsz = 0;
+    newdhs.bufpos = 0;
+    newdhs.auxbuf= NULL;
     dhs = &newdhs;
 
     /* reset position in mmap memory to start */
@@ -3553,7 +3779,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
     {
         int res=0;
         /* format for the module_file object in array at position dhs->func_idx:
-            { 
+            {
                 "module"   : "mymodule",
                 "mymodule" : cb_func     //if loaded
             }
@@ -3593,7 +3819,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
         }
     }
     /* fork until we know it is safe not to fork:
-       function will have property threadsafe:true if forking not required 
+       function will have property threadsafe:true if forking not required
        after the first time it is called in http_fork_callback              */
 
     if(!getfunction(dhs))
@@ -3624,7 +3850,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
     free(dhs->reqpath);
 }
 
-/* bind to addr and port.  Return mallocd string of addr, which 
+/* bind to addr and port.  Return mallocd string of addr, which
    in the case of ipv6 may differ from ip passed to function */
 
 char *bind_sock_port(evhtp_t *htp, const char *ip, uint16_t port, int backlog)
@@ -3677,7 +3903,7 @@ char *bind_sock_port(evhtp_t *htp, const char *ip, uint16_t port, int backlog)
 void testcb(evhtp_request_t *req, void *arg)
 {
     char rep[] = "hello world";
-    /*  
+    /*
     TODO: figure out keepalive problem
     evhtp_request_set_keepalive(req, 1);
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Connection","keep-alive", 0, 0));
@@ -3736,7 +3962,7 @@ static DHS *new_dhs(duk_context *ctx, int idx)
     dhs->timeout.tv_sec = RP_TIME_T_FOREVER;
     dhs->timeout.tv_usec = 0;
     dhs->mapinfo = NULL;
-
+    dhs->auxbuf = NULL;
     dhsa.n++;
     DUKREMALLOC(ctx, dhsa.dhs_pa, sizeof(DHS *) * dhsa.n);
     dhsa.dhs_pa[dhsa.n - 1] = dhs;
@@ -3761,10 +3987,10 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     /* drop privileges here, after binding port */
     if(unprivu && !gl_threadno)
     {
-        if (setgid(unprivg) == -1) 
+        if (setgid(unprivg) == -1)
             RP_THROW(main_ctx, "error setting group, setgid() failed");
 
-        if (setuid(unprivu) == -1) 
+        if (setuid(unprivu) == -1)
             RP_THROW(main_ctx, "error setting user, setuid() failed");
 
     }
@@ -3789,7 +4015,7 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
 static int duk_rp_GPS_icase(duk_context *ctx, duk_idx_t idx, const char * prop)
 {
     const char *realprop=NULL, *compprop=NULL;
-    
+
     duk_enum(ctx, idx, 0);
     while (duk_next(ctx, -1 , 0 ))
     {
@@ -3936,7 +4162,7 @@ static void proc_mimes(duk_context *ctx)
 
             duk_pop_2(ctx);
         }
-            
+
         duk_pop(ctx); /* pop enum */
 
     }
@@ -3950,7 +4176,7 @@ static void proc_mimes(duk_context *ctx)
     if (must_add)
     {
         int i=0;
-        
+
         allmimes=NULL;
         n_allmimes += must_add;
 
@@ -3987,12 +4213,12 @@ static void proc_mimes(duk_context *ctx)
 
             duk_pop_2(ctx);
         }
-            
+
         duk_pop(ctx); /* pop enum */
 
         qsort(allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
-        
-        
+
+
     }
     /*
     int i=0;
@@ -4103,20 +4329,20 @@ duk_ret_t duk_server_start(duk_context *ctx)
     pid_t dpid=0;
     ctimeout.tv_sec = RP_TIME_T_FOREVER;
     ctimeout.tv_usec = 0;
-    long bufmempct = 10;
+    long bufmempct = -1;
     const char *cache_control="max-age=84600, public";
 
     if(rampart_server_started)
         RP_THROW(ctx, "server.start - error- only one server per process may be running - use daemon:true to launch multiples");
 
-    /*  an array at stack index 0 to hold all the callback function 
+    /*  an array at stack index 0 to hold all the callback function
         This gets it off of an otherwise growing and shrink stack and makes
         managment of their locations less error prone in the thread stacks.
     */
     duk_push_array(ctx);
-    duk_insert(ctx,0);    
+    duk_insert(ctx,0);
     if (
-        (duk_is_object(ctx, 1) && !duk_is_array(ctx, 1) && !duk_is_function(ctx, 1)) 
+        (duk_is_object(ctx, 1) && !duk_is_array(ctx, 1) && !duk_is_function(ctx, 1))
        )
             ob_idx = 1;
     else
@@ -4144,7 +4370,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             fprintf(error_fh, "child2par pipe failed\n");
             exit (1);
         }
-        
+
         signal(SIGHUP,SIG_IGN);
         dpid=fork();
         if(dpid==-1)
@@ -4167,7 +4393,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             }
             /* need to double fork, and need to write back the pid of grandchild to parent. */
             dpid2=fork();
-            
+
             if(dpid==-1)
             {
                 fprintf(stderr, "server.start: fork failed\n");
@@ -4243,11 +4469,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
         //const char *s;
 
         /* logging */
-        if(!daemon) 
+        if(!daemon)
         {
             logging(ctx, ob_idx);
             //stderr=error_fh;
-            //stdout=access_fh;            
+            //stdout=access_fh;
 
             /* port */
             if (duk_rp_GPS_icase(ctx, ob_idx, "port"))
@@ -4268,7 +4494,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             {
                 const char *user=REQUIRE_STRING(ctx, -1, "server.start: parameter \"user\" requires a string (username)");
                 struct passwd  *pwd;
-                
+
                 if(! (pwd = getpwnam(user)) )
                     RP_THROW(ctx, "server.start: error getting user '%s' in start()\n",user);
 
@@ -4310,9 +4536,19 @@ duk_ret_t duk_server_start(duk_context *ctx)
         /* buffer memory percent */
         if (duk_rp_GPS_icase(ctx, ob_idx, "bufferMem"))
         {
-            bufmempct = (long) (1000 * REQUIRE_NUMBER(ctx, -1, "server.start: bufferMem requires a number greater than 0.01" ));
-            if(bufmempct < 1)
-                RP_THROW(ctx, "server.start: bufferMem requires a number greater than 0" );
+            if( duk_is_boolean(ctx, -1) )
+            {
+                if(duk_get_boolean(ctx, -1))
+                    bufmempct = -1;
+                else
+                    bufmempct = 0;
+            }
+            else
+            {
+                bufmempct = (long) (1000 * REQUIRE_NUMBER(ctx, -1, "server.start: bufferMem requires a number greater than 0.001" ));
+                if(bufmempct < 1)
+                    RP_THROW(ctx, "server.start: bufferMem requires a number greater than 0.001" );
+            }
         }
         duk_pop(ctx);
 
@@ -4417,25 +4653,55 @@ duk_ret_t duk_server_start(duk_context *ctx)
 #else
         long physmem  = sysconf(_SC_PHYS_PAGES);
 #endif
-        long tmapsize = (bufmempct > 100) ? bufmempct/4 +1 : bufmempct * physmem / 100;
+        long tmapsize = (bufmempct > 100000) ? bufmempct/4000 +1 : bufmempct * physmem / 100000;
         long mapsize = tmapsize/((long)totnthreads);
-        if(!mapsize) mapsize=1;
 
-        printf("using %2fmb for buffers (%2fmb per thread)\n", ((double)tmapsize/250.0), ((double)mapsize/250.0) ); 
+        //default case
+        if(bufmempct == -1)
+        {
+            /* 20mb per thread by default */
+            mapsize = 5120;
+            tmapsize = mapsize * (long)totnthreads;
+            if(tmapsize > 5 * physmem / 100)
+            {
+                tmapsize = 5 * physmem / 100;
+                mapsize = tmapsize / (long)totnthreads;
+            }
+        }
+
+        if ((double)tmapsize/250.0 < 1.0)
+            printf("using %.2fkb for buffers ", (double)tmapsize/0.250);
+        else
+            printf("using %.2fmb for buffers ", (double)tmapsize/250.0);
+
+        if ((double)mapsize/250.0 < 1.0)
+            printf("(%.2fkb per thread)\n", (double)mapsize/0.250 );
+        else
+            printf("(%.2fmb per thread)\n", (double)mapsize/250.0 );
+
         REMALLOC(mapinfos, (totnthreads * sizeof(MAPINFO *)));
         for (i = 0; i < totnthreads; i++)
         {
             mapinfos[i] = NULL;
             REMALLOC(mapinfos[i], sizeof(MAPINFO));
 
-            mapinfos[i]->mem = mmap(NULL, (size_t)pagesize * mapsize, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);
-            if(mapinfos[i]->mem == MAP_FAILED)
+            if( mapsize)
             {
-                fprintf(stderr, "mmap failed: %s\n",strerror(errno));
-                exit(1);
+                mapinfos[i]->mem = mmap(NULL, (size_t)pagesize * mapsize, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);
+                if(mapinfos[i]->mem == MAP_FAILED)
+                {
+                    fprintf(stderr, "mmap failed: %s\n",strerror(errno));
+                    exit(1);
+                }
+                mapinfos[i]->memsz = (size_t)pagesize * mapsize;
+                mapinfos[i]->pos = mapinfos[i]->mem;
             }
-            mapinfos[i]->memsz = (size_t)pagesize * mapsize;
-            mapinfos[i]->pos = mapinfos[i]->mem;
+            else
+            {
+                mapinfos[i]->mem = NULL;
+                mapinfos[i]->memsz = 0;
+                mapinfos[i]->pos = NULL;
+            }
         }
     }
 
@@ -4615,7 +4881,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 if(mapsort)
                 {
                     /* longer == more specific/match first */
-                    //duk_push_string(ctx,"function(map) { return Object.keys(map).sort(function(a, b){  return b.length - a.length; }); }"); 
+                    //duk_push_string(ctx,"function(map) { return Object.keys(map).sort(function(a, b){  return b.length - a.length; }); }");
                     /* priority to exact, regex, path, then by length */
                     duk_push_string(ctx, "function(map){return Object.keys(map).sort(function(a, b){\n\
                                      var blen=b.length, alen=a.length;\n\
@@ -4628,7 +4894,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     duk_push_string(ctx, "function(map){return Object.keys(map)}");
                 }
 
-                /* FIXME:  Allow \* in filesystem mappings and remove the 
+                /* FIXME:  Allow \* in filesystem mappings and remove the
                    \ from both
                 */
                 duk_push_string(ctx,"mapsort");
@@ -4703,7 +4969,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             fprintf(access_fh, "mapping %s path to function   %-20s ->    function %s()\n", pathtypes[cbtype], s, fname);
                             goto copyfunction;
                         }
-                        else 
+                        else
                         {
                             if (duk_get_prop_string(ctx,-1, "module") )
                             {
@@ -4727,7 +4993,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                     RP_THROW(ctx, "server.start: parameter \"map:modulePath\" -- glob and regex not allowed in module path %s",s);
 
                                 fname = duk_get_string(ctx, -1);
-                                /* relative to script path */ 
+                                /* relative to script path */
                                 if (*fname !='/')
                                 {
                                     int l = strlen(RP_script_path) + strlen(fname) +2;
@@ -4744,7 +5010,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                     //printf("should be '%s' at %d\n",np,fpos);
                                     //prettyprintstack(ctx);
                                 }
-                                
+
                                 fprintf(access_fh, "mapping %s path to mod folder %-20s ->    module path:%s\n", pathtypes[cbtype], s, fname);
                                 mod=MODULE_PATH;
                                 duk_pop(ctx);
@@ -4754,11 +5020,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             duk_pop(ctx);
                             RP_THROW(ctx, "server.start - map '%s' - Object must contain a key named 'module', 'modulePath' or 'path'", path);
                         }
-                        
+
                         duk_push_error_object(ctx, DUK_ERR_ERROR, "server.start: parameter \"map\" -- Option for path %s must be a function or an object to load a module (e.g. {module:'mymodule'}",s);
                         free(s);
                         (void)duk_throw(ctx);
-                        
+
                         copyfunction:
                         /* copy function into array at pos 0 in stack and into index fpos in array */
                         duk_put_prop_index(ctx,0,fpos);
@@ -4775,15 +5041,15 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         }
                         else
                             copy_cb_func(cb_dhs, totnthreads);
-                        
+
                         fpos++;
                         /* register callback with evhtp using the callback dhs struct */
                         if(cbtype==2)
                         {
                             req_callback =evhtp_set_regex_cb(htp, s, http_callback, cb_dhs);
-                            if(!req_callback) 
+                            if(!req_callback)
                                 RP_THROW(ctx, "server.start - parameter \"map\": Bad regular expression");
-                        } 
+                        }
                         else if (cbtype==1)
                             evhtp_set_glob_cb(htp, s, http_callback, cb_dhs);
                         else if (cbtype==3)
@@ -4819,7 +5085,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             sprintf(s, "/%s", path);
                         else
                             sprintf(s, "%s", path);
-                        
+
                         /* we need the libevhtp library to match /path as well as /path/
                            We'll take care of the redirect in fileserver()
                         */
@@ -4849,7 +5115,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             if(duk_get_prop_string(ctx, -1, "headers")){
                                 int len=0, ix;
                                 REQUIRE_OBJECT(ctx, -1, "server.start: map '%s'- 'headers' must be an Object", path);
-                                duk_enum(ctx,-1,DUK_ENUM_OWN_PROPERTIES_ONLY);                                
+                                duk_enum(ctx,-1,DUK_ENUM_OWN_PROPERTIES_ONLY);
                                 while (duk_next(ctx, -1, 1))
                                 {
                                     if( cache_control && !strcasecmp(duk_get_string(ctx, -2), "cache-control") )
@@ -4926,7 +5192,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
                         if (mode != S_IFDIR)
                             RP_THROW(ctx, "server.start: parameter \"map\" -- Fileserver path '%s' requires a directory",fspath);
-                        
+
                         DUKREMALLOC(ctx, fs, strlen(fspath) + 2)
 
                         if (*(fspath + strlen(fspath) - 1) != '/')
@@ -5054,7 +5320,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         duk_pop(ctx);
 
         scheme="https://";
-    } 
+    }
     else
         free(ssl_config);
 
@@ -5158,7 +5424,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             exit(1);
         }
         stderr=error_fh;
-        stdout=access_fh;            
+        stdout=access_fh;
 #ifdef COMBINE_EVLOOPS
         duk_push_global_stash(ctx);
         duk_pull(ctx,0);
@@ -5178,7 +5444,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     //never return
     event_base_loop(evbase, 0);
 #endif
-    duk_push_int(ctx, (int) getpid() );    
+    duk_push_int(ctx, (int) getpid() );
     return 1;
 }
 
