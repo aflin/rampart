@@ -1721,7 +1721,7 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
         {
             duk_pop(ctx); /* get rid of 'headers' non object */
             duk_del_prop_string(ctx, -1, "headers");
-            RP_THROW(ctx, "server.start: callback -- \"headers\" parameter in return value must be set to an object (headers:{...})");
+            printerr("server.start: callback -- \"headers\" parameter in return value must be set to an object (headers:{...})");
         }
     }
     duk_pop(ctx);
