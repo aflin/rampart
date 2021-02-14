@@ -1719,9 +1719,8 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
         }
         else
         {
-            duk_pop(ctx); /* get rid of 'headers' non object */
-            duk_del_prop_string(ctx, -1, "headers");
-            printerr("server.start: callback -- \"headers\" parameter in return value must be set to an object (headers:{...})");
+            duk_del_prop_string(ctx, -2, "headers");
+            printerr("server.start: callback -- \"headers\" parameter in return value must be set to an object (headers:{...})\n");
         }
     }
     duk_pop(ctx);
@@ -3510,7 +3509,6 @@ static int getmod(DHS *dhs)
     }
     duk_pop(ctx); //the module from duk_get_prop_string(ctx, -1, modname) or undefined
     ret = duk_rp_resolve(ctx, modname);
-
     if (!ret)
     {
         duk_pop_2(ctx);
