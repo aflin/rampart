@@ -62,8 +62,7 @@ static duk_ret_t load_js_module(duk_context *ctx)
         RP_THROW(ctx, "Error loading file %s: %s\n", id, strerror(errno));
 
     buffer[sb.st_size]='\0';
-
-    duk_push_string(ctx, "function (module, exports) { ");
+    duk_push_string(ctx, "(function (module, exports) { ");
     /* check for babel and push src to stack */
     if (! (bfn=duk_rp_babelize(ctx, (char *)id, buffer, sb.st_mtime)) )
     {
@@ -99,7 +98,7 @@ static duk_ret_t load_js_module(duk_context *ctx)
     fclose(f);
     free(buffer);
 
-    duk_push_string(ctx, "\n}");
+    duk_push_string(ctx, "\n})");
     duk_concat(ctx, 3);
     if(bfn)
     {
@@ -109,8 +108,13 @@ static duk_ret_t load_js_module(duk_context *ctx)
     else
         duk_push_string(ctx, id);
 
-    duk_compile(ctx, DUK_COMPILE_FUNCTION);
-
+    /* 
+       DO NOT CALL duk_compile(ctx, DUK_COMPILE_FUNCTION)
+       It will miss errors like unbalanced {} where
+       there is a missing {
+    */
+    duk_compile(ctx, DUK_COMPILE_EVAL);
+    duk_call(ctx,0);
     duk_dup(ctx, module_idx);
     duk_get_prop_string(ctx, -1, "exports");
     duk_call(ctx, 2);
