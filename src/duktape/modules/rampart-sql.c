@@ -1761,7 +1761,10 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
         free(freeme);
     }
     /* sql parameters are the parameters corresponding to "?" in a sql statement
-     and are provide by passing array in JS call parameters */
+     and are provide by passing array in JS call parameters 
+     TODO: check that this is indeed dead code given that parse_sql_parameters now
+           turns "?, ?" into "?0, ?1"
+     */
     else if (q->arr_idx != -1)
     {
         if (!duk_rp_add_parameters(ctx, tx, q->arr_idx))
@@ -1874,6 +1877,8 @@ duk_ret_t duk_rp_sql_one(duk_context *ctx)
     duk_rp_sql_exec(ctx);
     duk_get_prop_string(ctx, -1, "results");
     duk_get_prop_index(ctx, -1, 0);
+    if(duk_is_undefined(ctx, -1))
+        duk_push_object(ctx);
     return (1);
 }
 
