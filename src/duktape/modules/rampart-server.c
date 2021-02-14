@@ -1059,8 +1059,11 @@ void push_req_vars(DHS *dhs)
         duk_put_prop_string(ctx,-3,"cookies");
     }
     else
+    {
         duk_pop(ctx);
-
+        duk_push_object(ctx);
+        duk_put_prop_string(ctx,-3,"cookies");
+    }
     /* examine headers for content-type */
     if(duk_get_prop_string(ctx, -1, "Content-Type"))
     {
