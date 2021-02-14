@@ -1760,7 +1760,6 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
 
             if(!gotdate)
                 setdate_header(dhs->req,0);
-
             /* if data is a string and starts with '@', its a filename */
             if (duk_is_string(ctx, -1) && ((d = duk_get_string(ctx, -1)) || 1) && *d == '@')
             {
@@ -1777,6 +1776,11 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
                     return (0);
                 }
             }
+            else if (duk_is_object(ctx, -1))
+            {
+                duk_json_encode(ctx, -1);
+                sendbuf(dhs,mmapSz);
+            }
             else
                 sendbuf(dhs,mmapSz); /* send buffer or string contents at idx=-1 */
 
@@ -1786,12 +1790,13 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
         else
         {
             const char *bad_option = duk_to_string(ctx, -2);
-            char estr[20 + strlen(bad_option)];
-            printerr( "unknown option '%s'\n", bad_option);
-            sprintf(estr, "unknown option '%s'", bad_option);
-            send500(dhs->req, estr);
+            //char estr[20 + strlen(bad_option)];
+            printerr( "WARNING: Invalid key in return object '%s'\n", bad_option);
+            //sprintf(estr, "unknown option '%s'", bad_option);
+            //send500(dhs->req, estr);
             duk_pop_2(ctx);
-            return (0);
+            continue;
+            //return (0);
         }
 
         opterr:
@@ -2779,6 +2784,7 @@ static size_t contents_to_mmap(DHS *dhs, FORKINFO *finfo)
     duk_context *ctx = dhs->ctx;
     MAPINFO *mapinfo = dhs->mapinfo;
     size_t ret = 0;
+    //const char *setkey=NULL;
 
     /* find the key which is a known mime-type extension */
     duk_enum(ctx, -1, 0);
@@ -2803,7 +2809,9 @@ static size_t contents_to_mmap(DHS *dhs, FORKINFO *finfo)
             const char *d;
 
             gotdata = 1;
-
+            //setkey=m.ext;
+            if (duk_is_object(ctx, -1))
+                duk_json_encode(ctx, -1);
             /* if data is a string and starts with '@', its a filename
                no need to put that in the buffer */
             if (duk_is_string(ctx, -1) && ((d = duk_get_string(ctx, -1)) || 1) && *d == '@')
@@ -2842,9 +2850,9 @@ static size_t contents_to_mmap(DHS *dhs, FORKINFO *finfo)
         }
         else
         {
-            ret = 0;
-            RP_THROW(ctx, "Data already set from '%s', \"%s\" is redundant.\n", m.ext, duk_get_string(ctx, -2));
-            //duk_pop_2(ctx);
+            //ret = 0;
+            //printerr( "key '%s' in return object is invalid\n", m.ext);
+            duk_pop_2(ctx);
             //goto err_end;
         }
     }
@@ -2907,7 +2915,6 @@ static void fork_exec_js(evutil_socket_t fd_ignored, short flags, void *arg)
             duk_pull(ctx, -2);
             duk_put_prop_string(ctx, -2, "text");
         }
-
         /* put the main content in mmaped memory
            replace content with ""              */
         mmapOutSz = contents_to_mmap(dhs, data->finfo);
@@ -3753,6 +3760,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
     /* ****************************
       setup duk function callback
        **************************** */
+printf("new req\n");
 
     newdhs.ctx = new_ctx;
     newdhs.req = req;
