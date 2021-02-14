@@ -661,11 +661,11 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
                 int l;
                 if (q->sql != (char *)NULL)
                 {
-                    duk_rp_log_error(ctx, "Only one string may be passed as a parameter and must be a sql statement.\n");
-                    duk_push_int(ctx, -1);
-                    q->sql = (char *)NULL;
-                    q->err = QS_ERROR_PARAM;
-                    return (q_st);
+                    RP_THROW(ctx, "Only one string may be passed as a parameter and must be a sql statement.\n");
+                    //duk_push_int(ctx, -1);
+                    //q->sql = (char *)NULL;
+                    //q->err = QS_ERROR_PARAM;
+                    //return (q_st);
                 }
                 q->sql = duk_get_string(ctx, i);
                 q->str_idx=i;
@@ -756,9 +756,8 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
     }     /* for */
     if (q->sql == (char *)NULL)
     {
-        q->err = QS_ERROR_PARAM;
-        duk_rp_log_error(ctx, "No sql statement present.\n");
-        duk_push_int(ctx, -1);
+        //q->err = QS_ERROR_PARAM;
+        RP_THROW(ctx, "sql - No sql statement present.\n");
     }
     return (q_st);
 }
@@ -1683,7 +1682,6 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
     sigaction(SIGUSR1, &sa, NULL);
     int nParams=0;
     char *newSql=NULL, **namedSqlParams=NULL, *freeme=NULL;
-
     //  signal(SIGUSR1, die_nicely);
 
     SET_THREAD_UNSAFE(ctx);
