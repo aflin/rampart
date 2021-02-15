@@ -37,7 +37,7 @@ add_definitions(
 	-DRP_INST_PATH="${CMAKE_INSTALL_PREFIX}/"
 )
 
-add_compile_options(-Wall -g -O2)
+add_compile_options(-Wall -g -O2 -std=c99)
 
 add_executable(rampart
 	duktape/register.c
@@ -99,7 +99,7 @@ SET(CMAKE_INSTALL_RPATH "")
 #SET(CMAKE_INSTALL_RPATH "./;${CMAKE_INSTALL_PREFIX}/modules/")
 
 
-
+if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
 ###ROBOTS###
 add_library(rampart-robots SHARED
    duktape/modules/robot-wrapper.cc
@@ -127,6 +127,9 @@ target_include_directories(rampart-robots PRIVATE
      ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-src/
 )
 set_target_properties(rampart-robots PROPERTIES LINKER_LANGUAGE CXX )
+endif()
+
+
 ###HTML###
 add_library(rampart-html SHARED
 	duktape/modules/rampart-html.c
@@ -269,19 +272,28 @@ target_include_directories(rampart-curl PRIVATE
 ##############  ADD MODULE NAMES HERE  ##############
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-robots rampart-lmdb #example_name
-	PROPERTIES 
-	LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath ./ -Wl,-rpath ${CMAKE_INSTALL_PREFIX}/modules/" 
-	SUFFIX       ".so"
-	PREFIX ""
-)
+  set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-robots rampart-lmdb #example_name
+          PROPERTIES 
+          LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath ./ -Wl,-rpath ${CMAKE_INSTALL_PREFIX}/modules/" 
+          SUFFIX       ".so"
+          PREFIX ""
+  )
 else()
-set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-robots rampart-lmdb #example_name
-	PROPERTIES 
-	LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath ${CMAKE_INSTALL_PREFIX}/modules/"
-	SUFFIX       ".so"
-	PREFIX ""
-)
+  if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
+    set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-robots rampart-lmdb #example_name
+            PROPERTIES 
+            LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath ${CMAKE_INSTALL_PREFIX}/modules/"
+            SUFFIX       ".so"
+            PREFIX ""
+    )
+  else()
+    set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-lmdb #example_name
+            PROPERTIES 
+            LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath ${CMAKE_INSTALL_PREFIX}/modules/"
+            SUFFIX       ".so"
+            PREFIX ""
+    )
+  endif()
 endif()
 
 ## some examples into src temporarily 
@@ -305,6 +317,7 @@ endforeach()
 
 install(TARGETS rampart DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
 
+if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
 install(TARGETS
 	rampart-server
 	rampart-crypto
@@ -316,6 +329,18 @@ install(TARGETS
 	rampart-lmdb
 	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
+else()
+install(TARGETS
+	rampart-server
+	rampart-crypto
+	rampart-curl
+	rampart-sql
+	rampart-redis
+	rampart-html
+	rampart-lmdb
+	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
+)
+endif()
 
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E create_symlink \
@@ -351,6 +376,7 @@ install(CODE "execute_process( \
 
 # test files
 install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/test")
+if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
     \"${PROJECT_SOURCE_DIR}/test/babel-test.js\" \
@@ -366,6 +392,23 @@ install(CODE "execute_process( \
     \"${CMAKE_INSTALL_PREFIX}/test\"   \
     )"
 )
+else()
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_SOURCE_DIR}/test/babel-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/crypto-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/combo-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/curl-server-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/math.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/redis-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/rputils-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/sql-extras-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/wiki_00\" \
+    \"${CMAKE_INSTALL_PREFIX}/test\"   \
+    )"
+)
+endif()
+
 install(CODE "execute_process ( \
     COMMAND bash -c \"chmod 777 ${CMAKE_INSTALL_PREFIX}/test\"
  )"
