@@ -14,6 +14,8 @@ add_subdirectory(${EXTERN_DIR}/libevhtp)
 
 add_subdirectory(${EXTERN_DIR}/tidy-html5)
 
+add_subdirectory(${EXTERN_DIR}/cmark)
+
 if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
 
 include(cmake/ExternalProject.cmake)

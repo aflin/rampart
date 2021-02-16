@@ -130,6 +130,18 @@ set_target_properties(rampart-robots PROPERTIES LINKER_LANGUAGE CXX )
 endif()
 
 
+###CMARK###
+add_library(rampart-cmark SHARED
+	duktape/modules/rampart-cmark.c
+)
+target_link_libraries(rampart-cmark
+	${PROJECT_BINARY_DIR}/extern/cmark/src/libcmark.a
+)
+target_include_directories(rampart-cmark PRIVATE
+	${PROJECT_SOURCE_DIR}/extern/cmark/src/
+	${PROJECT_BINARY_DIR}/extern/cmark/src/
+)
+
 ###HTML###
 add_library(rampart-html SHARED
 	duktape/modules/rampart-html.c
@@ -272,7 +284,7 @@ target_include_directories(rampart-curl PRIVATE
 ##############  ADD MODULE NAMES HERE  ##############
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-  set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-robots rampart-lmdb #example_name
+  set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb #example_name
           PROPERTIES 
           LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath ./ -Wl,-rpath ${CMAKE_INSTALL_PREFIX}/modules/" 
           SUFFIX       ".so"
@@ -280,14 +292,14 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
   )
 else()
   if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
-    set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-robots rampart-lmdb #example_name
+    set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb #example_name
             PROPERTIES 
             LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath ${CMAKE_INSTALL_PREFIX}/modules/"
             SUFFIX       ".so"
             PREFIX ""
     )
   else()
-    set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-lmdb #example_name
+    set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-lmdb #example_name
             PROPERTIES 
             LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath ${CMAKE_INSTALL_PREFIX}/modules/"
             SUFFIX       ".so"
@@ -325,6 +337,7 @@ install(TARGETS
 	rampart-sql
 	rampart-redis
 	rampart-html
+	rampart-cmark
 	rampart-robots
 	rampart-lmdb
 	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
@@ -337,6 +350,7 @@ install(TARGETS
 	rampart-sql
 	rampart-redis
 	rampart-html
+	rampart-cmark
 	rampart-lmdb
 	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
