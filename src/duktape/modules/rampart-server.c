@@ -3765,7 +3765,6 @@ static void http_callback(evhtp_request_t *req, void *arg)
     /* ****************************
       setup duk function callback
        **************************** */
-printf("new req\n");
 
     newdhs.ctx = new_ctx;
     newdhs.req = req;
