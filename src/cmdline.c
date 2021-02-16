@@ -900,7 +900,6 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
 
     scopy('"');
     adv;
-//    printf("backtick quote = \"%.*s\"\n", len+1, bt_start);
     while(in < end)
     {
         if(in>bt_start && *(in-1)=='\\')
@@ -1001,13 +1000,15 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                 scopy('t');
                 break;
             case '`':
-                adv;
                 if(lastwasbs)
+                {
+                    out--;
                     scopy('`');
+                }
                 else
                 {
                     scopy('"');
-
+                    adv;
                     *ob=outbeg;
                     *o=out;
                     return (int) (in - bt_start);

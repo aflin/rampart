@@ -641,22 +641,24 @@ char *duk_rp_url_encode(char *str, int len)
     return buf;
 }
 
-/* Returns a url-decoded version of str */
+/* Returns a url-decoded version of str.  New length is put in *len */
 /* IMPORTANT: be sure to free() the returned string after use */
-char *duk_rp_url_decode(char *str, int len)
+char *duk_rp_url_decode(char *str, int *len)
 {
     char *pstr = str, *buf = malloc(strlen(str) + 1), *pbuf = buf;
+    int i=*len;
 
-    if (len < 0)
-        len = strlen(str);
+    if (i < 0)
+        i = strlen(str);
 
-    while (len)
+    *len=0;
+    while (i)
     {
-        if (*pstr == '%' && len > 2)
+        if (*pstr == '%' && i > 2)
         {
             *pbuf++ = from_hex(pstr[1]) << 4 | from_hex(pstr[2]);
             pstr += 2;
-            len -= 2;
+            i -= 2;
         }
         else if (*pstr == '+')
         {
@@ -667,7 +669,8 @@ char *duk_rp_url_decode(char *str, int len)
             *pbuf++ = *pstr;
         }
         pstr++;
-        len--;
+        (*len)++;
+        i--;
     }
     *pbuf = '\0';
     return buf;
@@ -823,14 +826,14 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
 
     if (eq)
     {
-        size_t keyl=eq-s;
-        size_t vall=l-(keyl+1);
-        char *key=duk_rp_url_decode(s,keyl);
-        char *val=duk_rp_url_decode(eq+1,vall);
+        int keyl=eq-s;
+        int vall=l-(keyl+1);
+        char *key=duk_rp_url_decode(s,&keyl);
+        char *val=duk_rp_url_decode(eq+1,&vall);
         duk_size_t arrayi;
 
-        keyl=strlen(key);
-        vall=strlen(val);
+        //keyl=strlen(key);
+        //vall=strlen(val);
         if( keyl > 2 && *(key+keyl-1)==']' && *(key+keyl-2)=='[')
         {   /* its an array with brackets */
             keyl-=2;
@@ -873,7 +876,6 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
                 duk_put_prop_index(ctx,-2,(duk_uarridx_t)arrayi);
             }
             duk_put_prop_lstring(ctx,-2,key,keyl);
-            //printf("maybe array: '%.*s'='%.*s'\n", keyl,key,vall,val);
         }
         free(key);
         free(val);
@@ -2786,6 +2788,23 @@ char *to_utf8(const char *in_str)
     }\
     const char *s=duk_get_lstring((ctx),i,(len));\
     const char *r=TO_UTF8(s);\
+    if(r != s) *(len) = strlen(r);\
+    r;\
+})
+
+#define PF_REQUIRE_BUF_OR_STRING(ctx,idx,len) ({\
+    duk_idx_t i=(idx);\
+    const char *s=NULL, *r=NULL;\
+    if(duk_is_buffer_data((ctx), i)){\
+        s=(const char *)duk_get_buffer_data((ctx),i,(len));\
+        r=s;\
+    } else if(duk_is_string((ctx),i)){\
+        s=duk_get_lstring((ctx),i,(len));\
+        r=TO_UTF8(s);\
+    } else {\
+        if(lock_p) pthread_mutex_unlock(lock_p);\
+        RP_THROW(ctx, "string or buffer required in format string argument %d",i);\
+    }\
     if(r != s) *(len) = strlen(r);\
     r;\
 })

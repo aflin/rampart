@@ -161,9 +161,6 @@ pthread_mutex_t lock;
 extern void rp_register_functions(duk_context *ctx);
 
 
-char *duk_rp_url_encode(char *str, int len);
-char *duk_rp_url_decode(char *str, int len);
-
 #define SET_THREAD_UNSAFE(ctx)                                       \
 do                                                               \
 {                                                                \
@@ -269,7 +266,7 @@ duk_ret_t duk_rp_object2q(duk_context *ctx);
 char *strcatdup(char *s, char *adds);
 char *strjoin(char *s, char *adds, char c);
 char *duk_rp_url_encode(char *str, int len);
-char *duk_rp_url_decode(char *str, int len);
+char *duk_rp_url_decode(char *str, int *len);
 void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase);
 int duk_rp_get_int_default(duk_context *ctx, duk_idx_t i, int def);
 char *to_utf8(const char *in_str);

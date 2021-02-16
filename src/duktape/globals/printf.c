@@ -569,7 +569,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
     int preserveUfmt = 0;
     char **free_ptr=NULL;
     int nfree=0;
-    const char	*format = PF_REQUIRE_LSTRING(ctx, fidx++, &len),
+    const char	*format = PF_REQUIRE_BUF_OR_STRING(ctx, fidx++, &len),
                 *format_end=format+len;
     if (!buffer)
     {
@@ -906,21 +906,30 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         case 'B':
         {
             duk_size_t sz;
-            const char *s;
             const char *p;
-            if (duk_is_buffer_data(ctx, fidx))
-            {
-                s=(const char *)duk_get_buffer_data(ctx, fidx, &sz);
-            }
-            else
-                s=PF_REQUIRE_LSTRING(ctx, fidx, &sz);
 
             if (flags & FLAGS_BANG)
             {
                 size_t i=0;
+                char *s;
+
+                s=(char*)PF_REQUIRE_BUF_OR_STRING(ctx, fidx, &sz);
                 duk_dup(ctx, fidx);
-                if(duk_is_buffer_data(ctx, -1))
-                    duk_buffer_to_string(ctx, -1);
+
+                /* make it a buffer so we can translate '_' and '-' */
+                if(duk_is_string(ctx, -1))
+                    duk_to_fixed_buffer(ctx, -1, &sz);
+                s=duk_get_buffer_data(ctx, -1, &sz);
+                
+                while(sz--)
+                {
+                    switch(*s){
+                        case '_': *s = '/';break;
+                        case '-': *s = '+';break;
+                    }
+                    s++;
+                }
+                
                 duk_base64_decode(ctx, -1);
                 p = duk_get_buffer_data(ctx, -1, &sz);
                 for (;i<sz;i++)
@@ -930,8 +939,13 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             }
             else
             {
+                const char *s;
+                if(duk_is_object(ctx, fidx))
+                    duk_json_encode(ctx, fidx);
+
                 if (duk_is_string(ctx, fidx))
                 {
+                    s=PF_REQUIRE_LSTRING(ctx, fidx, &sz);
                     /* push it again - PF_REQUIRE_STRING may have performed to_utf8() */
                     duk_push_string(ctx, s);
                 }
@@ -1008,19 +1022,30 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         case 'U':
         {
             duk_size_t sz;
-            const char *s = PF_REQUIRE_LSTRING(ctx, fidx, &sz);
+            const char *s;
             char *u;
+            int len=0;
             if (flags & FLAGS_BANG)
-                u = duk_rp_url_decode((char *)s, (int)sz);
+            {
+                s = PF_REQUIRE_LSTRING(ctx, fidx, &sz);
+                len = (int)sz;
+                u = duk_rp_url_decode((char *)s, &len);
+            }
             else
+            {
+                if(duk_is_object(ctx, -1))
+                    duk_json_encode(ctx, -1);
+                s = PF_REQUIRE_LSTRING(ctx, fidx, &sz);
                 u = duk_rp_url_encode((char *)s, (int)sz);
+                len = (int) strlen(u);
+            }
             /* prevent double url encoding on second pass in sprintf*/
             if (!buffer)
             {
                 preserveUfmt = 1;
                 duk_dup(ctx, fidx);
             }
-            duk_push_string(ctx, u);
+            duk_push_lstring(ctx, u, (duk_size_t) len);
             free(u);
             duk_replace(ctx, fidx);
             goto string;
@@ -1187,13 +1212,16 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         case 'S':
         string:
         {
-            const char *p = PF_REQUIRE_STRING(ctx, fidx++);
-            unsigned int l = _strnlen_s(p, precision ? precision : (size_t)-1);
+            duk_size_t len;
+            const char *p = PF_REQUIRE_LSTRING(ctx, fidx++, &len);
+            //unsigned int l = _strnlen_s(p, precision ? precision : (size_t)-1);
+            unsigned int l = (unsigned int) len;
             // pre padding
             if (flags & FLAGS_PRECISION)
-            {
                 l = (l < precision ? l : precision);
-            }
+            else
+                precision = l;
+            
             if (!(flags & FLAGS_LEFT))
             {
                 while (l++ < width)
@@ -1202,7 +1230,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 }
             }
             // string output
-            while ((*p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
+            while (precision--)
             {
                 out(*(p++), buffer, idx++, maxlen);
             }

@@ -98,8 +98,8 @@ void duk_curl_ret_blank(duk_context *ctx, const char *url)
 
 /* **************************************************************************
    curl_easy_escape requires a new curl object. That appears to be overkill.
-   Use the one is public domain from https://www.geekhideout.com/urlcode.shtml
-   in misc.c
+   Using the public domain code from https://www.geekhideout.com/urlcode.shtml
+   in rampart-utils.c
    ************************************************************************** */
 
 duk_ret_t duk_curl_encode(duk_context *ctx)
@@ -114,8 +114,9 @@ duk_ret_t duk_curl_encode(duk_context *ctx)
 duk_ret_t duk_curl_decode(duk_context *ctx)
 {
     char *s = (char *)duk_to_string(ctx, 0);
-    s = duk_rp_url_decode(s,-1);
-    duk_push_string(ctx, s);
+    int len = (int) strlen(s);
+    s = duk_rp_url_decode(s, &len);
+    duk_push_lstring(ctx, s, (duk_size_t)len);
     free(s);
     return (1);
 }

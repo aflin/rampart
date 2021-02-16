@@ -302,6 +302,7 @@ static void sendresp(evhtp_request_t *request, evhtp_res code)
     }                                              \
 } while(0)
 
+/*
 int putkvs(evhtp_kv_t *kv, void *arg)
 {
     char *v, *k;
@@ -316,6 +317,7 @@ int putkvs(evhtp_kv_t *kv, void *arg)
 
     return 0;
 }
+*/
 
 static int putheaders(evhtp_kv_t *kv, void *arg)
 {
@@ -1458,12 +1460,12 @@ fileserver(evhtp_request_t *req, void *arg)
     /* take 2 off of key for the slash and * and add 1 for '\0' and one more for a potential '/' */
     char *s, fn[strlen(map->val) + strlen(path->full) + 4 - strlen(map->key)];
     mode_t mode;
-    int i = 0;
+    int i = 0, len = (int) strlen(path->full);
 
     dhs->req = req;
 
     strcpy(fn, map->val);
-    s=duk_rp_url_decode( path->full, strlen(path->full) );
+    s=duk_rp_url_decode( path->full, &len );
 
     /* redirect /mappeddir to /mappeddir/ */
     if ( !strcmp (s, map->key))
