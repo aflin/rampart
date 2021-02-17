@@ -20,6 +20,8 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
+#include <sys/param.h>
+#include <grp.h>
 #ifdef __APPLE__
 #include <uuid/uuid.h>
 #include <sys/sysctl.h>
@@ -32,6 +34,8 @@
 #include "mime.h"
 #include "../register.h"
 #include "../globals/printf.h"
+#include "libdeflate.h"
+
 
 //#define RP_TO_DEBUG
 //#define RP_TIMEO_DEBUG
@@ -184,24 +188,55 @@ static void setdate_header(evhtp_request_t *req, time_t secs)
     }
 }
 
-/*
-static void setheaders(evhtp_request_t *req)
+/* free the data after evbuffer is done with it */
+static void frefcb(const void *data, size_t datalen, void *val)
 {
-    time_t now = time(NULL);
-    if (now != -1)
-    {
-        struct tm *ptm = gmtime(&now);
-        char buf[128];
-        // Thu, 21 May 2020 01:41:20 GMT
-        strftime(buf, 128, "%a, %d %b %Y %T GMT", ptm);
-        evhtp_headers_add_header(req->headers_out, evhtp_header_new("Date", buf, 0, 1));
-    }
-    //TODO: Discover why this breaks everything.
-    //evhtp_request_set_keepalive(req, 1);
-    //evhtp_headers_add_header(req->headers_out, evhtp_header_new("Connection","keep-alive", 0, 0));
-    //evhtp_headers_add_header(req->headers_out, evhtp_header_new("Connection","close",0,0));
+    if(val)
+        free((void *)val);
+    else
+        free((void *)data);
 }
-*/
+
+static int comp_min_size=1000;
+static int compress_scripts = 0;
+
+static int compress_resp(evhtp_request_t *req, int level, void **outbuf)
+{
+    struct libdeflate_compressor *compressor;
+    size_t inlen=0, outlen=0;
+    void *outgz = NULL;
+    void *in = NULL;
+    struct evbuffer *buf = req->buffer_out;
+
+    inlen = evbuffer_get_length(buf);
+    if (inlen < comp_min_size)
+    {
+        return 0;
+    }
+    in = (void*) evbuffer_pullup(buf, -1);
+
+    compressor=libdeflate_alloc_compressor(level);
+    if(!compressor)
+        return 0;
+
+    outlen = libdeflate_gzip_compress_bound(compressor, inlen);
+    REMALLOC(outgz, outlen);
+    outlen = libdeflate_gzip_compress(compressor, in, inlen, outgz, outlen); 
+
+    libdeflate_free_compressor(compressor);
+
+    if (outlen == 0)
+        return 0;
+
+    // error check this. -1 return is an error - but then what?  Is the buffer still good?
+    evbuffer_drain(buf, inlen);
+    evbuffer_add_reference(buf, outgz, outlen, frefcb, outgz);
+    if(outbuf)
+        *outbuf = outgz;
+
+    return outlen;
+}
+
 void sa_to_string(void *sa, char *buf, size_t bufsz)
 {
     if (((struct sockaddr *)sa)->sa_family == AF_INET6)
@@ -1270,11 +1305,6 @@ static void refcb(const void *data, size_t datalen, void *val)
     free(fp);
 }
 
-/* free the data after evbuffer is done with it */
-static void frefcb(const void *data, size_t datalen, void *val)
-{
-    free((void *)data);
-}
 
 /*
    Because of this: https://github.com/criticalstack/libevhtp/issues/160
@@ -1321,6 +1351,20 @@ static int rp_evbuffer_add_file(struct evbuffer *outbuf, int fd, ev_off_t offset
     return 0;
 }
 
+static int compress_level = 1;
+static char *_compressibles[] =
+{
+    "html",
+    "json",
+    "xml",
+    "js",
+    "css",
+    "txt",
+    NULL
+};
+
+static char **compressibles = _compressibles;
+static char *cachedir = ".gzipcache/";
 /*
     Send a file, whole or partial with range if requested
       haveCT - non-zero if content-type is already set
@@ -1333,14 +1377,47 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
     ev_off_t filesize;
     evhtp_res rescode = EVHTP_RES_OK;
     struct stat newstat, *sb=&newstat;
-    const char *range = NULL;
+    const char *range = NULL, *accept=NULL;
     mode_t mode;
+    char *ext=NULL;
+    char gzipfile[ strlen(fn) + strlen(cachedir) + 4 ];
+    char *p, slen[64];
+
+    if (compressibles)
+    {
+        /* turn /my/path/to/file.html into /my/path/to/.gzipcache/file.html.gz */
+        strcpy(gzipfile, fn);
+        p=strrchr(gzipfile, '/');
+        if(!p)
+            p=gzipfile;
+        else
+            p++;
+        strcpy(p,cachedir);
+        p=strrchr(fn,'/');
+        if(!p)
+            p=fn;
+        else
+            p++;
+        strcat(gzipfile,p);
+        strcat(gzipfile,".gz");
+    }
 
     if (filestat)
     {
         sb=filestat;
     }
     else if (stat(fn, sb) == -1)
+    {
+        if(compressibles && stat(gzipfile, sb) != -1)
+        {
+            if(unlink(gzipfile)==-1)
+                printerr("error removing cache file %s: %s\n", gzipfile, strerror(errno));
+        }
+        send404(req);
+        return;
+    }
+    // the path name cannot have /.gzipcache/ in it.
+    if(strstr(fn, "/.gzipcache/"))
     {
         send404(req);
         return;
@@ -1369,7 +1446,6 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
     {
         RP_MTYPES m;
         RP_MTYPES *mres, *m_p = &m;
-        char *ext;
 
         ext = strrchr(fn, '.');
 
@@ -1377,7 +1453,8 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "application/octet-stream", 0, 0));
         else
         {
-            m.ext = ext + 1;
+            ext++;
+            m.ext = ext;
             /* look for proper mime type listed in mime.h */
             mres = bsearch(m_p, allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
             if (mres)
@@ -1386,6 +1463,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                 evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "application/octet-stream", 0, 0));
         }
     }
+
 
     /* http range - give back partial file, set 206 */
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Accept-Ranges", "bytes", 0, 0));
@@ -1414,16 +1492,121 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                      (int)((len == -1) ? (filesize - 1) : endval),
                      (int)filesize);
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Range", reprange, 0, 1));
-            snprintf(reprange, 128, "%d", (int)(filesize - beg) );
-            evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", reprange, 0, 1));
+            len = filesize - beg;
         }
     }
     else
+    {
         len=filesize;
+    }
 
-    if(len<0) len = filesize - beg;
 
-    rp_evbuffer_add_file(req->buffer_out, fd, beg, len);
+    accept = evhtp_kv_find(req->headers_in,"Accept-Encoding");
+    if (compressibles && accept && strcasestr(accept, "gzip"))
+    {
+        char **comps = compressibles;
+        while( *comps && strcmp(*comps, ext) )
+            comps++;
+
+        if( *comps )
+        {
+            // check cache
+            struct stat cstat;
+            int makecache=0, cfd=-1;
+            char *p = strrchr(gzipfile,'/');
+            
+            if (stat(gzipfile, &cstat) == -1)
+            {
+                //file doesn't exist.  Check for directory.
+                *p='\0';
+                if (stat(gzipfile, &cstat) == -1)
+                {
+                    // make it
+                    mode_t old_umask=umask(0);
+
+                    if (mkdir(gzipfile, 0775) != 0)
+                        makecache=0;
+                    else
+                        makecache=1;
+                    (void)umask(old_umask);
+                }
+                else
+                {
+                    //check that it is a dir and is writable
+                    makecache=1;
+                    //if( cstat.st_mode & S_IFMT != S_IFDIR)
+                    if(!S_ISDIR(cstat.st_mode) || (!( S_IRWXU | cstat.st_mode)) )
+                        makecache=0;
+                }
+                *p='/';
+            }
+            else
+            {
+                // exists, check the date.
+                if(sb->st_mtime > cstat.st_mtime)
+                    makecache=1;
+                else
+                {
+                    mode = sb->st_mode & S_IFMT;
+                    if (mode != S_IFREG)
+                        makecache=0;
+                    else if ((cfd = open(gzipfile, O_RDONLY)) == -1)
+                        makecache=0;
+                    else
+                    {
+                        //its a normal file and we can read it.
+                        len = (ev_off_t) cstat.st_size;
+                        if(len)
+                        {
+                            evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Encoding", "gzip", 0, 0));
+                            snprintf(slen, 64, "%d", (int)len);
+                            evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
+                            rp_evbuffer_add_file(req->buffer_out, cfd, 0, len);
+                            sendresp(req, rescode);
+                            return;
+                        }
+                    }
+                    
+                }
+            }
+            /* the actual compression */
+            {
+                void *buf=NULL;
+                rp_evbuffer_add_file(req->buffer_out, fd, beg, len);
+                int tlen = compress_resp(req, compress_level, &buf);
+                if(tlen)
+                {
+                    len = (ev_off_t) tlen;
+                    evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Encoding", "gzip", 0, 0));
+                    /* save the gz file */
+                    if(makecache)
+                    {
+                        FILE *f = fopen(gzipfile,"w");
+                        if(f)
+                        {
+                            size_t wrote=fwrite(buf,1,(size_t)len,f);
+                            if (wrote != (size_t)len)
+                            {
+                                printerr("error writing to %s: %s\n", gzipfile, strerror(errno));
+                                unlink(gzipfile);
+                            }
+                            fclose(f);
+                        }
+                        else
+                            printerr("error opening %s: %s\n", gzipfile, strerror(errno));
+                    }
+                }
+            }
+        }
+        else
+            rp_evbuffer_add_file(req->buffer_out, fd, beg, len);
+    }
+    else
+        rp_evbuffer_add_file(req->buffer_out, fd, beg, len);
+
+    snprintf(slen, 64, "%d", (int)len);
+    evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
+
     sendresp(req, rescode);
 }
 
@@ -1488,8 +1671,12 @@ fileserver(evhtp_request_t *req, void *arg)
     free(s);
     if (stat(fn, &sb) == -1)
     {
-        /* 404 goes here */
-        send404(req);
+        //need to send to rp_sendfile to remove any cached gz files
+        if (compressibles)
+            rp_sendfile(req, fn, 0, NULL);
+        else
+            send404(req);
+
         return;
     }
     mode = sb.st_mode & S_IFMT;
@@ -1669,7 +1856,9 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
     int gotdata = 0, gotct = 0, gotdate=0;
     duk_context *ctx = dhs->ctx;
     evhtp_res res = 200;
-    const char *setkey=NULL;
+    const char *setkey=NULL, *accept=NULL;
+    int docompress = compress_scripts;
+    int complev=1;
 
     if (duk_get_prop_string(ctx, -1, "headers"))
     {
@@ -1736,6 +1925,36 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
         if (res < 100)
             res = 200;
         duk_del_prop_string(ctx, -2, "status");
+    }
+    duk_pop(ctx);
+
+    if (duk_get_prop_string(ctx, -1, "compress"))
+    {
+        if (duk_is_boolean(ctx, -1))
+        {
+            if(duk_get_boolean(ctx, -1))
+                docompress=1;
+            else
+                docompress=0;
+        }
+        else if (duk_is_number(ctx, -1))
+        {
+            complev = duk_get_int(ctx, -1);
+            docompress=1;
+            if (complev == 0)
+                docompress=0;
+            if (complev>10)
+            {
+                printerr("server.start: callback -- \"compress\" must be a boolean or an Integer 1-10 (compression level)\n");
+                complev=10;
+            }
+            else if (complev<0)
+            {
+                printerr("server.start: callback -- \"compress\" must be a boolean or an Integer 1-10 (compression level)\n");
+                docompress=0;
+            }
+        }
+        duk_del_prop_string(ctx, -2, "compress");
     }
     duk_pop(ctx);
 
@@ -1819,6 +2038,16 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
         return 0;
     }
 
+    if(docompress)
+    {
+        accept = evhtp_kv_find(dhs->req->headers_in,"Accept-Encoding");
+        if(accept && strcasestr(accept, "gzip"))
+        {
+            int len = compress_resp(dhs->req, complev, NULL);
+            if(len)
+                evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new("Content-Encoding", "gzip", 0, 0));
+        }
+    }
     return (res);
 }
 
@@ -2802,7 +3031,7 @@ static size_t contents_to_mmap(DHS *dhs, FORKINFO *finfo)
         }
 
         m.ext = (char *)duk_to_string(ctx, -2);
-        if( !strcmp(m.ext,"headers") || !strcmp(m.ext,"status") )
+        if( !strcmp(m.ext,"headers") || !strcmp(m.ext,"status") || !strcmp(m.ext,"compress"))
         {
             duk_pop_2(ctx);
             continue;
@@ -3980,6 +4209,7 @@ static DHS *new_dhs(duk_context *ctx, int idx)
     return (dhs);
 }
 
+   
 void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
 {
     int *thrno = NULL;
@@ -4002,7 +4232,6 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
 
         if (setuid(unprivu) == -1)
             RP_THROW(main_ctx, "error setting user, setuid() failed");
-
     }
 
     *thrno = gl_threadno++;
@@ -4543,6 +4772,65 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         duk_pop(ctx);
 
+        /* fileserver compression */
+        if (duk_rp_GPS_icase(ctx, ob_idx, "compressFiles"))
+        {
+            if(duk_is_boolean(ctx, -1))
+            {
+                if(!duk_get_boolean(ctx, -1))
+                    compressibles=NULL;
+            }
+            else if (duk_is_array(ctx, -1))
+            {
+                size_t i=0, members = (size_t)duk_get_length(ctx, -1);
+
+                compressibles=NULL;
+                REMALLOC(compressibles, (members+1)*sizeof(char*));
+                for (;i<members;i++)
+                {
+                    duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+                    compressibles[(int)i] = strdup(REQUIRE_STRING(ctx, -1, "server.start compressFiles - requires a Boolean or an array of strings (file extensions)"));
+                    duk_pop(ctx);
+                }
+                compressibles[members]=NULL;
+            }
+            else
+                RP_THROW(ctx, "server.start compressFiles - requires a Boolean or an array of strings (file extensions)");
+        }
+        else
+        {   //turn off gzip compression by default
+            compressibles=NULL;
+        }
+        duk_pop(ctx);
+
+        /* compress scripts */
+        if (duk_rp_GPS_icase(ctx, ob_idx, "compressScripts"))
+        {
+            compress_scripts = REQUIRE_BOOL(ctx, -1, "server.start compressScripts - requires a Boolean");
+        }
+        duk_pop(ctx);
+
+
+        /* compress level */
+        if (duk_rp_GPS_icase(ctx, ob_idx, "compressLevel"))
+        {
+            int cl = REQUIRE_INT(ctx, -1, "server.start compressLevel - requires an Integer 1-10");
+            if (cl < 1 || cl > 10)
+                RP_THROW(ctx, "server.start compressLevel - requires an Integer 1-10");
+            compress_level=cl;
+        }
+        duk_pop(ctx);
+
+        /* compress min size */
+        if (duk_rp_GPS_icase(ctx, ob_idx, "compressMinSize"))
+        {
+            int cs = REQUIRE_INT(ctx, -1, "server.start compressMinSize - requires an Integer greater than 0");
+            if (cs < 1)
+                RP_THROW(ctx, "server.start compressMinSize - requires an Integer greater than 0");
+            comp_min_size=cs;
+        }
+        duk_pop(ctx);
+
         /* buffer memory percent */
         if (duk_rp_GPS_icase(ctx, ob_idx, "bufferMem"))
         {
@@ -4555,9 +4843,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
             }
             else
             {
-                bufmempct = (long) (1000 * REQUIRE_NUMBER(ctx, -1, "server.start: bufferMem requires a number greater than 0.001" ));
+                bufmempct = (long) (1000 * REQUIRE_NUMBER(ctx, -1, "server.start: bufferMem requires a Number greater than 0.001" ));
                 if(bufmempct < 1)
-                    RP_THROW(ctx, "server.start: bufferMem requires a number greater than 0.001" );
+                    RP_THROW(ctx, "server.start: bufferMem requires a Number greater than 0.001" );
             }
         }
         duk_pop(ctx);

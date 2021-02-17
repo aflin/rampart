@@ -373,6 +373,23 @@ is <code class="docutils literal notranslate"><span class="pre">10</span></code>
 serving files off of the filesystem.  The default is “max-age=84600,
 public”, if not set or set <code class="docutils literal notranslate"><span class="pre">true</span></code>.  If set <code class="docutils literal notranslate"><span class="pre">false</span></code>, no header is
 sent.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">compressFiles</span></code>: A <span class="green">Boolean</span> or <span class="green">Array</span>.  Whether to
+use gzip compression for files served from the filesystem.  Default is
+<code class="docutils literal notranslate"><span class="pre">false</span></code>.  If an <span class="green">Array</span>. is given, it is a list of file
+extension which will be compressed.  If <code class="docutils literal notranslate"><span class="pre">true</span></code> - the following default
+<span class="green">Array</span> of extensions will be used:
+<code class="docutils literal notranslate"><span class="pre">[&quot;html&quot;,</span> <span class="pre">&quot;css&quot;,</span> <span class="pre">&quot;js&quot;,</span> <span class="pre">&quot;xml&quot;,</span> <span class="pre">&quot;&quot;json&quot;&quot;]</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">compressScripts</span></code>:  A <span class="green">Boolean</span>. Whether to compress the
+output from scripts by default.  If not set, the default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.
+This can be overridden in the return value from a script using the key
+<code class="docutils literal notranslate"><span class="pre">compress</span></code> set to a <span class="green">Boolean</span> or a compression level (1-10).
+See the last example in <a class="reference internal" href="#the-return-object">The Return Object</a> below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">compressLevel</span></code>: A <span class="green">Number</span>. The default level of compression
+used for files and scripts.  Must be an integer between 1 and 10. The
+default, if not specified, is <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">compressMinSize</span></code>: A <span class="green">Number</span>. The minimum size in bytes any file or
+script output must be in order for the content to be compressed.  The default,
+if not specified, is <code class="docutils literal notranslate"><span class="pre">1000</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">mimeMap</span></code>: An <span class="green">Object</span>, additions or changes to the standart extension
 to mime mappings.  Normally, if, e.g., <code class="docutils literal notranslate"><span class="pre">return</span> <span class="pre">{</span> <span class="pre">&quot;m4v&quot;:</span> <span class="pre">mymovie</span> <span class="pre">};</span></code> is
 set as <a class="reference internal" href="#the-return-object">The Return Object</a> to a mapped function, the header
@@ -1095,6 +1112,15 @@ must be escaped.</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="k">return</span> <span class="p">{</span>
    <span class="nx">txt</span><span class="o">:</span> <span class="s2">&quot;\\@home is a defunct internet service&quot;</span>
 <span class="p">};</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">compressScripts</span></code> setting in server.<a class="reference internal" href="#start">start()</a> above can be
+overridden with the key <code class="docutils literal notranslate"><span class="pre">compress</span></code>.  It may be set to <code class="docutils literal notranslate"><span class="pre">true</span></code>/<code class="docutils literal notranslate"><span class="pre">false</span></code>
+or to a compression level (1-10).</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="k">return</span> <span class="p">{</span>
+   <span class="nx">html</span><span class="o">:</span> <span class="nx">myhtmltext</span><span class="p">,</span>
+   <span class="nx">compress</span><span class="o">:</span> <span class="mi">5</span> <span class="c1">// gzip compress output at medium level</span>
+<span class="p">}</span>
 </pre></div>
 </div>
 </div></blockquote>

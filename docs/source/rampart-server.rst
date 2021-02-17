@@ -211,6 +211,30 @@ Where:
       public", if not set or set ``true``.  If set ``false``, no header is
       sent. 
 
+    * ``compressFiles``: A :green:`Boolean` or :green:`Array`.  Whether to
+      use gzip compression for files served from the filesystem.  Default is
+      ``false``.  If an :green:`Array`. is given, it is a list of file
+      extension which will be compressed.  If ``true`` - the following default
+      :green:`Array` of extensions will be used: 
+      ``["html", "css", "js", "xml", ""json""]``.
+      
+      Note that compressed files will be cached in a directory named ".gzipcache/"
+      in the directory in which the files are located.
+
+    * ``compressScripts``:  A :green:`Boolean`. Whether to compress the
+      output from scripts by default.  If not set, the default is ``false``. 
+      This can be overridden in the return value from a script using the key
+      ``compress`` set to a :green:`Boolean` or a compression level (1-10). 
+      See the last example in `The Return Object`_ below.
+
+    * ``compressLevel``: A :green:`Number`. The default level of compression
+      used for files and scripts.  Must be an integer between 1 and 10. The
+      default, if not specified, is ``1``.
+
+    * ``compressMinSize``: A :green:`Number`. The minimum size in bytes any file or
+      script output must be in order for the content to be compressed.  The default,
+      if not specified, is ``1000``.
+
     * ``mimeMap``: An :green:`Object`, additions or changes to the standart extension
       to mime mappings.  Normally, if, e.g., ``return { "m4v": mymovie };`` is
       set as `The Return Object`_ to a mapped function, the header
@@ -977,6 +1001,19 @@ The Return Object
        txt: "\\@home is a defunct internet service"
     };
   
+  The ``compressScripts`` setting in server.\ `start()`_ above can be
+  overridden with the key ``compress``.  It may be set to ``true``/``false``
+  or to a compression level (1-10).
+
+  .. code-block:: javascript
+  
+     return { 
+        html: myhtmltext,
+        compress: 5 // gzip compress output at medium level 
+     }
+
+
+
 Built-in Directory Function
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

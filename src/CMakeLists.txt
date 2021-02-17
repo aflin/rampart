@@ -242,6 +242,7 @@ target_link_libraries(rampart-server
 	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a
   	rampart-crypto
 	${ONIGURUMA_TARGET_DIR}/libonig.a
+	${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
 ) 
 
 set_property(TARGET rampart-server PROPERTY IMPORTED_LOCATION "./rampart-crypto.so") 
@@ -252,7 +253,27 @@ target_include_directories(rampart-server PRIVATE
 	${PROJECT_BINARY_DIR}/extern/libevent/include/
 	${PROJECT_SOURCE_DIR}/extern/libevhtp/include/
 	${PROJECT_BINARY_DIR}/extern/libevhtp/include/
+	${PROJECT_BINARY_DIR}/extern/libdeflate/
 )
+
+add_custom_command(
+	OUTPUT ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
+	COMMAND make
+	COMMAND mkdir -p ${PROJECT_BINARY_DIR}/extern/libdeflate
+	COMMAND find './' -type f  -perm 0755 -exec mv {} "${PROJECT_BINARY_DIR}/extern/libdeflate" "\;"
+	COMMAND mv libdeflate.a ${PROJECT_BINARY_DIR}/extern/libdeflate/
+	COMMAND cp libdeflate.h ${PROJECT_BINARY_DIR}/extern/libdeflate/
+	COMMAND make clean
+	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/extern/libdeflate/
+)
+
+add_custom_target(libdeflate
+	DEPENDS ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
+)
+
+add_dependencies(rampart-server libdeflate)
+
+
 
 ###CURL###
 add_library(rampart-curl SHARED
