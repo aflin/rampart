@@ -289,6 +289,7 @@ extern FILE *access_fh;
 extern FILE *error_fh;
 extern int duk_rp_server_logging;
 
+void duk_rp_exit(duk_context *ctx, int ec);
 #if defined(__cplusplus)
 }
 #endif /* end 'extern "C"' wrapper */

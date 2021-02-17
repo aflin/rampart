@@ -289,7 +289,7 @@ void completion(const char *inbuf, linenoiseCompletions *lc) {
     return;
 }
 
-static void duk_rp_exit(duk_context *ctx, int ec)
+void duk_rp_exit(duk_context *ctx, int ec)
 {
     int i=0,len=0;
 

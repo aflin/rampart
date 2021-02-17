@@ -414,8 +414,7 @@ duk_ret_t duk_rp_bufToStr(duk_context *ctx)
 duk_ret_t duk_process_exit(duk_context *ctx)
 {
     int exitval=duk_get_int_default(ctx,0,0);
-    duk_destroy_heap(ctx);
-    exit(exitval);
+    duk_rp_exit(ctx, exitval);
     return 0;
 }
 

@@ -89,7 +89,7 @@ static MDB_env *redo_env(duk_context *ctx, const char *dbpath, MDB_env *env, int
     if((rc=mdb_env_open(env, dbpath, oflags, 0644)))
     {
         mdb_env_close(env);
-        RP_THROW(ctx, "lmdb.init - failed to open %s%s", dbpath, mdb_strerror(rc));
+        RP_THROW(ctx, "lmdb.init - failed to open %s %s", dbpath, mdb_strerror(rc));
     }
     /* get the object with previously opened lmdb environments */
     if(!duk_get_global_string(main_ctx, DUK_HIDDEN_SYMBOL("lmdbenvs")))
@@ -202,16 +202,16 @@ duk_ret_t duk_rp_lmdb_drop(duk_context *ctx)
     rc = mdb_drop(txn, dbi, 1);
     if(rc)
     {
+        mdb_dbi_close(env,dbi);
         mdb_txn_abort(txn);
         RP_THROW(ctx, "lmdb.drop - error dropping %s - %s", db, mdb_strerror(rc));
     }
     rc = mdb_txn_commit(txn);
+    mdb_dbi_close(env,dbi);
     if (rc)
     {
-            mdb_txn_abort(txn);
-            RP_THROW(ctx, "lmdb.put - error committing data: (%d) %s\n", rc, mdb_strerror(rc));
+            RP_THROW(ctx, "lmdb.drop - error dropping db %s: (%d) %s\n", db, rc, mdb_strerror(rc));
     }
-
     return 0;
 }
 
@@ -731,14 +731,18 @@ int duk_rp_lmdb_exitset = 0;
 
 duk_ret_t duk_rp_lmdb_cleanup(duk_context *ctx)
 {
+    ctx = main_ctx;
     if(duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("lmdbenvs")))
     {
         duk_enum(ctx, -1, 0);
         while (duk_next(ctx, -1, 1))
         {
-            MDB_env *env = (MDB_env *) duk_get_pointer(main_ctx, -1);
+            duk_get_prop_string(ctx, -1, "env");
+            MDB_env *env = (MDB_env *) duk_get_pointer(ctx, -1);
+            duk_pop(ctx);
+            mdb_env_sync(env, 1);
             mdb_env_close(env);
-            duk_pop_2(main_ctx);
+            duk_pop_2(ctx);
         }
     }
     return 0;
