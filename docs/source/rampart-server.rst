@@ -513,7 +513,7 @@ The Request Object
   Mapped :green:`Functions` are passed a single :green:`Object` which contains the details
   of the request.  For example, if the url
   ``http://localhost:8088/showreq.html?q=search+terms`` is requested 
-  (with a couple of cookies set), the
+  (with a cookie set), the
   object passed to the function might look something like this:
   
   .. code-block::  javascript
@@ -537,7 +537,6 @@ The Request Object
            "query_raw": "q=search+terms",
            "cookies": {
               "mycookie": "cookietext",
-              "cookiewquote": "my\"cookie\""
            },
            "headers": {
               "Host": "localhost:8088",
@@ -552,12 +551,11 @@ The Request Object
               "Sec-Fetch-Dest": "document",
               "Accept-Encoding": "gzip, deflate, br",
               "Accept-Language": "en-US,en;q=0.9",
-              "Cookie": "mycookie=cookietext; cookiewquote=my\"cookie\""
+              "Cookie": "mycookie=cookietext"
            },
            "params": {
               "q": "search terms",
               "mycookie": "cookietext",
-              "cookiewquote": "my\"cookie\"",
               "Host": "localhost:8088",
               "Connection": "keep-alive",
               "DNT": "1",

@@ -1820,7 +1820,8 @@ static void sendbuf(DHS *dhs, size_t mmapSz)
     duk_size_t sz;
 
     sendmem(dhs, mmapSz);
-    if(duk_is_null(ctx, -1))
+    /* null or empty string */
+    if(!duk_get_length(ctx, -1) )
     {
         return;
     }

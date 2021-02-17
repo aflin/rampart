@@ -378,7 +378,10 @@ use gzip compression for files served from the filesystem.  Default is
 <code class="docutils literal notranslate"><span class="pre">false</span></code>.  If an <span class="green">Array</span>. is given, it is a list of file
 extension which will be compressed.  If <code class="docutils literal notranslate"><span class="pre">true</span></code> - the following default
 <span class="green">Array</span> of extensions will be used:
-<code class="docutils literal notranslate"><span class="pre">[&quot;html&quot;,</span> <span class="pre">&quot;css&quot;,</span> <span class="pre">&quot;js&quot;,</span> <span class="pre">&quot;xml&quot;,</span> <span class="pre">&quot;&quot;json&quot;&quot;]</span></code>.</p></li>
+<code class="docutils literal notranslate"><span class="pre">[&quot;html&quot;,</span> <span class="pre">&quot;css&quot;,</span> <span class="pre">&quot;js&quot;,</span> <span class="pre">&quot;xml&quot;,</span> <span class="pre">&quot;&quot;json&quot;&quot;]</span></code>.</p>
+<p>Note that compressed files will be cached in a directory named “.gzipcache/”
+in the directory in which the files are located.</p>
+</li>
 <li><p><code class="docutils literal notranslate"><span class="pre">compressScripts</span></code>:  A <span class="green">Boolean</span>. Whether to compress the
 output from scripts by default.  If not set, the default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.
 This can be overridden in the return value from a script using the key
@@ -646,7 +649,7 @@ from <code class="docutils literal notranslate"><span class="pre">/my/dir/</span
 <div><p>Mapped <span class="green">Functions</span> are passed a single <span class="green">Object</span> which contains the details
 of the request.  For example, if the url
 <code class="docutils literal notranslate"><span class="pre">http://localhost:8088/showreq.html?q=search+terms</span></code> is requested
-(with a couple of cookies set), the
+(with a cookie set), the
 object passed to the function might look something like this:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
    <span class="s2">&quot;ip&quot;</span><span class="o">:</span> <span class="s2">&quot;::1&quot;</span><span class="p">,</span>
@@ -667,7 +670,6 @@ object passed to the function might look something like this:</p>
    <span class="s2">&quot;query_raw&quot;</span><span class="o">:</span> <span class="s2">&quot;q=search+terms&quot;</span><span class="p">,</span>
    <span class="s2">&quot;cookies&quot;</span><span class="o">:</span> <span class="p">{</span>
       <span class="s2">&quot;mycookie&quot;</span><span class="o">:</span> <span class="s2">&quot;cookietext&quot;</span><span class="p">,</span>
-      <span class="s2">&quot;cookiewquote&quot;</span><span class="o">:</span> <span class="s2">&quot;my\&quot;cookie\&quot;&quot;</span>
    <span class="p">},</span>
    <span class="s2">&quot;headers&quot;</span><span class="o">:</span> <span class="p">{</span>
       <span class="s2">&quot;Host&quot;</span><span class="o">:</span> <span class="s2">&quot;localhost:8088&quot;</span><span class="p">,</span>
@@ -682,12 +684,11 @@ object passed to the function might look something like this:</p>
       <span class="s2">&quot;Sec-Fetch-Dest&quot;</span><span class="o">:</span> <span class="s2">&quot;document&quot;</span><span class="p">,</span>
       <span class="s2">&quot;Accept-Encoding&quot;</span><span class="o">:</span> <span class="s2">&quot;gzip, deflate, br&quot;</span><span class="p">,</span>
       <span class="s2">&quot;Accept-Language&quot;</span><span class="o">:</span> <span class="s2">&quot;en-US,en;q=0.9&quot;</span><span class="p">,</span>
-      <span class="s2">&quot;Cookie&quot;</span><span class="o">:</span> <span class="s2">&quot;mycookie=cookietext; cookiewquote=my\&quot;cookie\&quot;&quot;</span>
+      <span class="s2">&quot;Cookie&quot;</span><span class="o">:</span> <span class="s2">&quot;mycookie=cookietext&quot;</span>
    <span class="p">},</span>
    <span class="s2">&quot;params&quot;</span><span class="o">:</span> <span class="p">{</span>
       <span class="s2">&quot;q&quot;</span><span class="o">:</span> <span class="s2">&quot;search terms&quot;</span><span class="p">,</span>
       <span class="s2">&quot;mycookie&quot;</span><span class="o">:</span> <span class="s2">&quot;cookietext&quot;</span><span class="p">,</span>
-      <span class="s2">&quot;cookiewquote&quot;</span><span class="o">:</span> <span class="s2">&quot;my\&quot;cookie\&quot;&quot;</span><span class="p">,</span>
       <span class="s2">&quot;Host&quot;</span><span class="o">:</span> <span class="s2">&quot;localhost:8088&quot;</span><span class="p">,</span>
       <span class="s2">&quot;Connection&quot;</span><span class="o">:</span> <span class="s2">&quot;keep-alive&quot;</span><span class="p">,</span>
       <span class="s2">&quot;DNT&quot;</span><span class="o">:</span> <span class="s2">&quot;1&quot;</span><span class="p">,</span>
