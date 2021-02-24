@@ -846,6 +846,9 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
 #define ST_BT   3
 #define ST_BS   4
 
+#define ST_PM   20
+#define ST_PN   21
+
 #define adv ({in++;})
 
 #define pushstate(state) do{\
@@ -871,16 +874,27 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
     }\
 }while(0)
 
-#define scopy(input) do{\
-    if(out==outbeg+*osize-1){\
-        int pos = out - outbeg;\
-        *osize+=1024;\
-        REMALLOC(outbeg, *osize);\
-        out = outbeg + pos;\
+#define stringcopy2(st) do{\
+    char *s=(st);\
+    while(*s) {\
+        copy(*s);\
+        s++;\
     }\
-    *out=(input);\
-    if(input=='\n')(*lineno)++;\
-    out++;\
+}while(0)
+
+
+#define scopy(input) do{\
+    if(!mute) {\
+        if(out==outbeg+*osize-1){\
+            int pos = out - outbeg;\
+            *osize+=4096;\
+            REMALLOC(outbeg, *osize);\
+            out = outbeg + pos;\
+        }\
+        *out=(input);\
+        out++;\
+    }\
+    if(input=='\n' && type < 2)(*lineno)++;\
 }while(0)
 
 #define stringcopy(st) do{\
@@ -891,40 +905,145 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
     }\
 }while(0)
 
-static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t *osize, int *lineno)
+/* 
+    type==0 - template literal
+    type==1 - tag function first pass
+    type==2 - tag function second pass
+*/
+
+static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t *osize, int *lineno, int type)
 {
-//    int len = (int) (end - bt_start);
     char *out=*o;
     char *in=bt_start;
     char *outbeg = *ob;
-    int lastwasbs=0;
+    int lastwasbs=0, mute = 0;
 
+    if(type==2)
+        mute=1;
+    scopy('(');
+    /* tag function */
+    if(type ==1)
+        scopy('[');
     scopy('"');
     adv;
     while(in < end)
     {
-        if(in>bt_start && *(in-1)=='\\')
-            lastwasbs=1;
-        else
-            lastwasbs=0;
         switch(*in)
         {
+            case '\\':
+                scopy('\\');
+                lastwasbs = !lastwasbs;
+                break;
             case '$':
                 if(in+1<end && *(in+1)=='{' && *(in-1) != '\\')
                 {
-                    //int isfmt=0;
-                    in+=2;
-                    /* special sprintf formatting */
-                    if( *in == '%')
+                    char *s, c, *startquote=NULL, *endquote=NULL;
+                    in++;
+                    if(*in == '\n') (*lineno)++;
+                    in++;
+                    if(*in == '\n') (*lineno)++;
+                    if (type == 1)
                     {
-                        //isfmt=1;
-                        stringcopy("\"+rampart.utils.sprintf('");
+                        stringcopy("\",\"");
+                        mute=1;
+                    }
+                    else
+                        mute=0;
+                    s=in;
+                    while (isspace(*s)) { if (*s=='\n')(*lineno)++; s++;}
+                    /* a quoted string followed by ':' */
+                    if(s<end && (*s =='\'' || *s == '"') )
+                    {
+                        startquote=s+1;
+                        c=*s;
+                        s++;
+                        while (  s<end && (*s != c || ( *(s-1)=='\\' && *(s-2)!='\\')  ) )
+                        {
+                            s++;
+                        }
+                        if(*s == c)
+                        {
+                            endquote=s;
+                            s++;
+                            while (isspace(*s)) { if (*s=='\n')(*lineno)++; s++;}
+                            if(*s == ':')
+                            {
+                                char *p;
+                                int inbs=0;
+                                if(type == 2)
+                                    scopy(',');
+                                else
+                                    stringcopy("\"+");
+                                stringcopy("rampart.utils.sprintf('");
+                                p=startquote;
+                                while(p<endquote)
+                                {
+                                    inbs=0;
+                                    switch(*p)
+                                    {
+                                        case '\\':
+                                            inbs= !inbs;
+                                            p++;
+                                            if(*p=='\\')
+                                            {
+                                                inbs=0;
+                                                scopy('\\');
+                                                scopy('\\');
+                                                break;
+                                            }
+                                        case '\'':
+                                            /* possible fall through from above */
+                                            if(*p=='\'' && (inbs || c == '"') )
+                                            {
+                                                inbs=0;
+                                                scopy('\\');
+                                            }
+                                            scopy(*p);
+                                            break;
+                                        case '"':
+                                            scopy('"');
+                                            break;
+                                        case '\n':
+                                            (*lineno)++;
+                                            stringcopy("\\n");
+                                            break;
+                                        case '\r':
+                                            scopy('\\');
+                                            scopy('r');
+                                            break;
+                                        case '\t':
+                                            scopy('\\');
+                                            scopy('t');
+                                            break;
+                                        default:
+                                            scopy(*p);
+                                    }
+                                    p++;
+                                }
+                                stringcopy("',");
+                                in = s+1;
+                            }
+                            else
+                                stringcopy("\"+(");
+                        }
+                        else
+                            stringcopy("\"+(");
+                    }
+                    /* starts with % and unquoted */
+                    else if (*s == '%')
+                    {
+                        if(type == 2)
+                            scopy(',');
+                        else
+                            stringcopy("\"+");
+                        stringcopy("rampart.utils.sprintf('");
                         while (in < end && !(*in == ':' && *(in-1)!='\\') )
                         {
                             switch(*in)
                             {
                                 case '\n':
                                     stringcopy("\\n");
+                                    (*lineno)++;
                                     break;
                                 case '\'':
                                     scopy('\\');
@@ -950,17 +1069,20 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                             return 0;
                         }
                         adv;
-                        //stringcopy("',(");
                         stringcopy("',");
                     }
                     /* end special sprintf formatting */
+                    else if(type == 2)
+                        stringcopy(",(");
                     else
                         stringcopy("\"+(");
+
+                    /* FIXME: properly this should go back to tickify somehow */
                     while (in < end && *in != '}')
                     {
                         if(*in == '`' && *(in-1)!='\\' )
                         {
-                            int r=proc_backtick(in, end, &outbeg, &out, osize, lineno);
+                            int r=proc_backtick(in, end, &outbeg, &out, osize, lineno, 0);
                             if(!r)
                             {
                                 *ob=outbeg;
@@ -971,6 +1093,7 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                         }
                         else
                         {
+                            if(*in=='\n') (*lineno)++;
                             scopy(*in);
                             adv;
                         }
@@ -981,10 +1104,16 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                         *o=out;
                         return 0;
                     }
-                    //if(isfmt)
-                    //    scopy(')');
-                    stringcopy(")+\"");
-                        
+                    if(type==2)
+                    {
+                        scopy(')');
+                        mute=1;
+                    }
+                    else
+                    {
+                        stringcopy(")+\"");
+                        mute=0;
+                    }
                 }
                 else
                     scopy(*in);
@@ -1005,10 +1134,26 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                 {
                     out--;
                     scopy('`');
+                    lastwasbs=0;
                 }
                 else
                 {
                     scopy('"');
+                    if(type == 1)
+                    {
+                        int r;
+                        mute=0;
+                        scopy(']');
+                        /* second pass, get ${} and comma separate */
+                        r=proc_backtick(bt_start, end, &outbeg, &out, osize, lineno, 2);
+                        if(!r)
+                        {
+                            *ob=outbeg;
+                            *o=out;
+                            return 0;
+                        }
+                    }
+                    scopy(')');
                     adv;
                     *ob=outbeg;
                     *o=out;
@@ -1020,6 +1165,8 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                 scopy('"');
                 break;
             default:
+                if(lastwasbs)
+                    lastwasbs=0;
                 scopy(*in);
         }
         adv;
@@ -1039,6 +1186,8 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
     int sstack_no=0;
     int sstack[8];// only need 3?
     int startexp=0;
+    int infuncp=0;
+
     *err=0;
     *ln=0;
     sstack[0]=ST_NONE;
@@ -1171,7 +1320,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                 {
                     int r;
                     qline=line;
-                    r=proc_backtick(in, end, &outbeg, &out, &osz, &line);
+                    r=proc_backtick(in, end, &outbeg, &out, &osz, &line, !startexp);
                     if(!r)
                     {
                         *err=ST_BT;
@@ -1194,12 +1343,134 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                 }
                 break;
             default:
-                /* for the "/regexp/" vs "var x = 2/3" cases, we need to know where we are */
+#define islegitchar(x) ( ((unsigned char)(x)) > 0x79 || (x) == '$' || (x) == '_' || isalnum((x)) )
                 if (getstate() == ST_NONE)
                 {
-                    if (strchr("{(=;+-/*", *in))
+                    /* looking for ...var in function(x, ...var) */
+                    if( infuncp )
+                    {
+                        if(*in == ',' || infuncp==1)
+                        {
+                            char *s = in +1;
+
+                            infuncp++;
+                            while (isspace(*s))
+                                s++;
+                            if( *s=='.' && *(s+1)=='.' && *(s+2)=='.' )
+                            {
+                                s+=3;
+                                while (islegitchar(*s)) s++;
+
+                                if( !isspace(*s) && *s!=')' )
+                                {
+                                    if(*s==',')
+                                        *err=ST_PM;
+                                    else
+                                        *err=ST_PN;
+                                    *ln=line;
+                                    free(outbeg);
+                                    return NULL;
+                                }
+                                while (isspace(*s))s++;
+                                if(*s != ')')
+                                {
+                                    *err=ST_PM;
+                                    *ln=line;
+                                    free(outbeg);
+                                    return NULL;
+                                } 
+                                else
+                                {
+                                    /* check for '{', if not bail and let duktape report error */
+                                    s++;
+                                    while(isspace(*s))
+                                    {
+                                        s++;
+                                    }
+                                    if(*s=='{')
+                                    {
+                                        //good to go, write altered function
+                                        char *varname, nbuf[16];
+                                        in++; // skip ','
+                                        while(isspace(*in))
+                                        {
+                                            copy(*in);
+                                            if(*in=='\n') line++;
+                                            adv;
+                                        }
+                                        varname=in+3; //advance past the "..."
+                                        while( *in != ')')
+                                        {
+                                            /* only copy white space here */
+                                            if(isspace(*in))
+                                            {
+                                                copy(*in);
+                                                if(*in=='\n') line++;
+                                            }
+                                            adv;
+                                        }
+                                        copy(*in);// ')'
+                                        adv;
+                                        while( *in != '{')
+                                        {
+                                            copy(*in);
+                                            if(*in=='\n') line++;
+                                            adv;
+                                        }
+                                        copy(*in);// '{'
+                                        adv;
+                                        stringcopy2("var ");
+                                        while(*varname!=')' && !isspace(*varname) )
+                                        {
+                                            copy(*varname);
+                                            varname++; 
+                                        }
+                                        stringcopy2("=Object.values(arguments).slice(");
+                                        snprintf(nbuf,16,"%d",infuncp-2);
+                                        stringcopy2(nbuf);
+                                        stringcopy2(");");
+                                    }
+                                }
+                                infuncp=0;
+                            }
+                        }
+                        else if (*in ==')')
+                            infuncp=0;
+                    }
+
+                    if (!startexp && *in == '(')
+                    {
+                        char *s = in -1;
+                        while (s>src && isspace(*s))s--;
+                        while (s>src && islegitchar(*s) )s--;
+                        s++;
+                        /* anonymous function */
+                        if (!strncmp(s,"function",8))
+                        {
+                            infuncp=1;
+                        }
+                        else
+                        {
+                            s--;
+                            if( isspace(*s) )
+                            {
+                                while (s>src && isspace(*s))s--;
+                                while ( s>src && islegitchar(*s) )s--;
+                                s++;
+                                if (!strncmp(s,"function",8))
+                                {
+                                    infuncp=1;
+                                }
+                            }
+                        }
+                    }
+                    /* end function(...var) processing */
+                    
+                    /* for the "/regexp/" vs "var x = 2/3" cases, we need to know where we are 
+                       this is a horrible hack, but it seems to work                             */
+                    if (strchr("{([=;+-/*", *in))
                         startexp=1;
-                    else if (isalnum(*in) || *in =='}' || *in == ')')
+                    else if (isalnum(*in) || *in =='}' || *in == ')' || *in == ']')
                         startexp=0;
                     else if(
                         (*in == '&' && in+1<end && *(in+1)=='&')
@@ -1490,6 +1761,10 @@ int main(int argc, char *argv[])
                             msg="unterminated string"; break;
                         case ST_BS:
                             msg="invalid escape"; break;
+                        case ST_PM:
+                            msg="Rest parameter must be last formal parameter";break;
+                        case ST_PN:
+                            msg="Illegal parameter name";break;
                     }
                     fprintf(stderr, "SyntaxError: %s (line %d)\n", msg, lineno);
                     /* file_src is NULL*/
