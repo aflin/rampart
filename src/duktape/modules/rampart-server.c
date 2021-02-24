@@ -29,6 +29,7 @@
 #include <pwd.h>
 
 #include "evhtp/evhtp.h"
+#include "../ws/evhtp_ws.h"
 #include "rampart.h"
 #include "../core/module.h"
 #include "mime.h"
@@ -63,7 +64,6 @@ int developer_mode=0;
 
 duk_context **thread_ctx = NULL;//, *main_ctx = NULL;
 
-int totnthreads = 0;
 int rp_using_ssl = 0;
 static char *scheme="http://";
 
@@ -161,6 +161,44 @@ DHS
 
 DHS *dhs404 = NULL;
 DHS *dhs_dirlist = NULL;
+
+/* TODO: revisit whether DHSA is necessary */
+#define DHSA struct dhs_array
+DHSA
+{
+    int n;
+    DHS **dhs_pa;
+};
+
+DHSA dhsa = {0, NULL};
+
+static DHS *new_dhs(duk_context *ctx, int idx)
+{
+    DHS *dhs = NULL;
+
+    DUKREMALLOC(ctx, dhs, sizeof(DHS));
+    dhs->func_idx = (duk_idx_t)idx;
+    dhs->module=MODULE_NONE;
+    dhs->module_name=NULL;
+    dhs->ctx = ctx;
+    dhs->req = NULL;
+    dhs->aux = NULL;
+    dhs->reqpath=NULL;
+    dhs->pathlen=0;
+    /* afaik there is no TIME_T_MAX */
+    dhs->timeout.tv_sec = RP_TIME_T_FOREVER;
+    dhs->timeout.tv_usec = 0;
+    dhs->mapinfo = NULL;
+    dhs->auxbuf = NULL;
+    dhs->bufsz = 0;
+    dhs->bufpos = 0;
+    dhsa.n++;
+    DUKREMALLOC(ctx, dhsa.dhs_pa, sizeof(DHS *) * dhsa.n);
+    dhsa.dhs_pa[dhsa.n - 1] = dhs;
+
+    return (dhs);
+}
+
 
 /* mapping for url to filesystem */
 #define DHMAP struct fsmap_s
@@ -696,13 +734,6 @@ static inline void rp_out_null(char character, void *buffer, size_t idx, size_t 
     (void)maxlen;
 }
 
-#define getmapinfo do {\
-    duk_push_this(ctx);\
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("dhs"));\
-    dhs=duk_get_pointer(ctx, -1);\
-    duk_pop_2(ctx);\
-    mapinfo=dhs->mapinfo;\
-} while(0)
 
 #define checkauxsize(dhs, size) do{\
     size_t required = dhs->bufpos + size;\
@@ -794,6 +825,68 @@ duk_ret_t duk_server_add_header(duk_context *ctx)
     return 0;
 }
 */
+
+static void sendws(DHS *dhs, size_t mmapSz);
+
+/* in case of websockets, the dhs may have disappeared
+   when http_callback returns.  We'll create a new one
+   here as necessary for use in printf, put, wsSend, etc.  */
+static DHS *get_dhs(duk_context *ctx)
+{
+    DHS *dhs=NULL;
+    int thrno;
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
+    dhs=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+    if(dhs)
+        return dhs;
+
+    dhs=new_dhs(ctx, -1);
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("req"));
+    dhs->req = duk_get_pointer(ctx, -1);
+    duk_pop_2(ctx);
+
+    duk_get_global_string(ctx, "rampart");
+    duk_get_prop_string(ctx, -1, "thread_id");
+    thrno = duk_get_int(ctx, -1);
+    duk_pop_2(ctx);
+
+    dhs->threadno = thrno;
+    dhs->mapinfo = mapinfos[thrno];
+    dhs->mapinfo->pos = dhs->mapinfo->mem;
+
+    duk_push_pointer(ctx, (void*)dhs);
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
+    return dhs;
+}
+
+#define getmapinfo do {\
+    dhs=get_dhs(ctx);\
+    mapinfo=dhs->mapinfo;\
+} while(0)
+
+duk_ret_t duk_server_ws_end(duk_context *ctx)
+{
+    DHS *dhs = get_dhs(ctx);
+    evhtp_ws_disconnect(dhs->req);
+    dhs->req = NULL;
+    duk_push_this(ctx);
+    duk_push_pointer(ctx, (void*)NULL);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("req"));
+    return 0;
+}
+
+duk_ret_t duk_server_ws_send(duk_context *ctx)
+{
+    DHS *dhs = get_dhs(ctx);
+    sendws(dhs, 0);
+    free(dhs);
+    duk_push_pointer(ctx, (void*)NULL);
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
+    return 0;
+}
 
 duk_ret_t duk_server_printf(duk_context *ctx)
 {
@@ -945,9 +1038,6 @@ void push_req_vars(DHS *dhs)
     duk_size_t bsz;
     void *buf=NULL;
 
-    duk_push_pointer(ctx, (void*) dhs);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("dhs"));
-
     duk_push_c_function(ctx, duk_server_printf, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "printf");
     duk_push_c_function(ctx, duk_server_put, 1);
@@ -958,6 +1048,17 @@ void push_req_vars(DHS *dhs)
     duk_put_prop_string(ctx, -2, "rewind");
     duk_push_c_function(ctx, duk_server_getbuffer, 0);
     duk_put_prop_string(ctx, -2, "getBuffer");
+
+    if(dhs->req->cb_has_websock)
+    {
+        duk_push_pointer(ctx, (void*) dhs->req);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("req"));
+        duk_push_c_function(ctx, duk_server_ws_send,1);
+        duk_put_prop_string(ctx, -2, "wsSend");
+        duk_push_c_function(ctx, duk_server_ws_end,0);
+        duk_put_prop_string(ctx, -2, "wsEnd");
+    }
+
     /*
     duk_push_c_function(ctx, duk_server_add_header, 2);
     duk_put_prop_string(ctx, -2, "addHeader");
@@ -1802,15 +1903,16 @@ static void sendmem(DHS *dhs, size_t mmapSz)
     /* our object should be at -4
        if we forked, buf is in object key="auxbuf"
        otherwise it is in dhs->auxbuf             */
-    if(duk_get_prop_string(dhs->ctx, -4, "auxbuf"))
+    if(duk_get_top_index(dhs->ctx) > 3)
     {
-        attachbuf(dhs, -1);
+        if( duk_get_prop_string(dhs->ctx, -4, "auxbuf"))
+            attachbuf(dhs, -1);
+        else if (dhs->bufpos)
+            attachauxbuf(dhs);
+        duk_pop(dhs->ctx);
     }
-    else if (dhs->bufpos)
-    {
+    else
         attachauxbuf(dhs);
-    }
-    duk_pop(dhs->ctx);
 }
 
 static void sendbuf(DHS *dhs, size_t mmapSz)
@@ -1849,6 +1951,31 @@ static void sendbuf(DHS *dhs, size_t mmapSz)
     }
 }
 
+static void sendws(DHS *dhs, size_t mmapSz)
+{
+    void               * data;
+    evhtp_ws_data      * ws_data;
+    unsigned char      * outbuf;
+    size_t               outlen = 0;
+    struct evbuffer    * resp;
+    evhtp_request_t *req = dhs->req;
+    if(!req)
+        return;
+    /* put everything into buffer_out */
+    sendbuf(dhs, mmapSz);
+    data = evbuffer_pullup(req->buffer_out, -1);
+    ws_data = evhtp_ws_data_new(data, evbuffer_get_length(req->buffer_out));
+    outbuf  = evhtp_ws_data_pack(ws_data, &outlen);
+    free(ws_data);
+    resp    = evbuffer_new();
+
+    evbuffer_add_reference(resp, outbuf, outlen, frefcb, NULL);
+
+    evhtp_send_reply_body(req, resp);
+    evbuffer_free(resp);
+    evbuffer_drain(req->buffer_out, evbuffer_get_length(req->buffer_out));
+    
+}
 
 static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
 {
@@ -1860,6 +1987,25 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
     const char *setkey=NULL, *accept=NULL;
     int docompress = compress_scripts;
     int complev=1;
+
+    if(!dhs->req)
+        return 0;
+    /* for websockets */
+    if( dhs->req->cb_has_websock)
+    {
+        if (duk_get_prop_string(ctx, -1, "ws"))
+        {
+            /* functions above expect [ obj, enum, key, val ]
+               enum and key are unused */
+            duk_push_undefined(ctx);
+            duk_push_string(ctx, "ws");
+            duk_pull(ctx, -3);
+            sendws(dhs, mmapSz);
+            duk_pop_3(ctx);
+            return 0;
+        }
+        duk_pop(ctx);
+    }
 
     if (duk_get_prop_string(ctx, -1, "headers"))
     {
@@ -2621,6 +2767,7 @@ static void *http_dothread(void *arg)
         send404(req);
         return NULL;
     };
+
     /* push an empty object */
     duk_push_object(ctx);
     /* populate object with details from client */
@@ -2630,7 +2777,6 @@ static void *http_dothread(void *arg)
     duk_push_global_object(ctx);
     duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("threadsafe"));
     duk_pop(ctx);
-
     /* execute function "myfunc({object});" */
     if ((eno = duk_pcall(ctx, 1)))
     {
@@ -3025,6 +3171,8 @@ static size_t contents_to_mmap(DHS *dhs, FORKINFO *finfo)
     duk_enum(ctx, -1, 0);
     while (duk_next(ctx, -1, 1))
     {
+        int isws=0;
+        mres=NULL;
         if (gotdata)
         {
             duk_pop_2(ctx);
@@ -3038,11 +3186,13 @@ static size_t contents_to_mmap(DHS *dhs, FORKINFO *finfo)
             continue;
         }
 
-        mres = bsearch(&m, allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
-        if (mres)
+        if( !strcmp(m.ext, "ws"))
+            isws=1;
+        else
+            mres = bsearch(&m, allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
+        if (isws || mres)
         {
             const char *d;
-
             gotdata = 1;
             //setkey=m.ext;
             if (duk_is_object(ctx, -1))
@@ -3275,6 +3425,11 @@ static void fork_read_request(evutil_socket_t fd_ignored, short flags, void *arg
     duk_put_prop_string(ctx, -2, "rewind");
     duk_push_c_function(ctx, duk_server_getbuffer, 0);
     duk_put_prop_string(ctx, -2, "getBuffer");
+    if(0 && dhs->req->cb_has_websock)
+    {
+        duk_push_c_function(ctx, duk_server_ws_send,1);
+        duk_put_prop_string(ctx, -2, "wsSend");
+    }
     /*
     duk_push_c_function(ctx, duk_server_add_header, 2);
     duk_put_prop_string(ctx, -2, "addHeader");
@@ -3597,9 +3752,11 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
             return;
         }
         {
-            char jbuf[bsize + 1], *p = jbuf, c;
+            char *jbuf=NULL, *p, c;
             int toread = (int)bsize;
-
+            
+            REMALLOC(jbuf, bsize);
+            p=jbuf;
             parentread(finfo->child2par, &mmapSz, sizeof(size_t));
             /*
             if(mmapSz)
@@ -3625,11 +3782,13 @@ http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
                 printerr( "server.c line %d: Error in Child Process\n", __LINE__);
                 return;
             }
-            memcpy(duk_push_fixed_buffer(ctx, (duk_size_t)bsize), jbuf, (size_t)bsize);
+            //memcpy(duk_push_fixed_buffer(ctx, (duk_size_t)bsize), jbuf, (size_t)bsize);
+            duk_push_external_buffer(ctx);
+            duk_config_buffer(ctx, -1, jbuf, (duk_size_t)bsize);
+            /* decode message */
+            duk_cbor_decode(ctx, -1, 0);
+            free(jbuf);
         }
-        /* decode message */
-        duk_cbor_decode(ctx, -1, 0);
-
         /* if we don't already have it, set the threadsafe info on the function */
         if (!have_threadsafe_val)
         {
@@ -4011,10 +4170,16 @@ static void http_callback(evhtp_request_t *req, void *arg)
     newdhs.bufpos = 0;
     newdhs.auxbuf= NULL;
     dhs = &newdhs;
-
     /* reset position in mmap memory to start */
     dhs->mapinfo->pos = dhs->mapinfo->mem;
 
+    if(req->cb_has_websock)
+    {
+        struct timeval tv;
+        tv.tv_sec = RP_TIME_T_FOREVER;
+        tv.tv_usec  = 0;
+        evhtp_connection_set_timeouts(evhtp_request_get_connection(req), &tv, &tv);
+    }
     if(dhs->module==MODULE_FILE)
     {
         int res=0;
@@ -4031,6 +4196,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
         res=getmod(dhs);
         if(res==-1)
         {
+            free(dhs->reqpath);
             free(dhs->module_name);
             dhs->module_name=NULL;
             return;
@@ -4038,6 +4204,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
         else if (res == 0)
         {
             send404(dhs->req);
+            free(dhs->reqpath);
             free(dhs->module_name);
             return;
         }
@@ -4047,6 +4214,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
         int res=getmod_path(dhs);
         if(res==-1)
         {
+            free(dhs->reqpath);
             free(dhs->module_name);
             return;
         }
@@ -4054,6 +4222,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
         {
             //printf("sending 404 from http_callback\n");
             send404(dhs->req);
+            free(dhs->reqpath);
             free(dhs->module_name);
             return;
         }
@@ -4067,6 +4236,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
         /* matching object key to url - fail = 404 (see getfunction() )*/
         /* doing fail here and we don't need to fork */
         send404(dhs->req);
+        free(dhs->reqpath);
         free(dhs->module_name);
         return;
     }
@@ -4078,16 +4248,33 @@ static void http_callback(evhtp_request_t *req, void *arg)
         have_threadsafe_val = 1;
     }
     duk_pop_2(dhs->ctx);
-    if (dofork)
+
+    // there are places where we need to know what dhs is
+    // and if dhs exists
+    if(duk_get_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("dhs")))
     {
-        http_fork_callback(req, dhs, have_threadsafe_val);
-//printf("do fork\n");
+        //if not NULL, it is the old one from websock functions, if wsSend was never called */
+        duk_context *fdhs = duk_get_pointer(dhs->ctx, -1);
+        if(fdhs)
+            free(fdhs);
     }
+    duk_pop(dhs->ctx);
+
+    duk_push_pointer(dhs->ctx, (void*) dhs);
+    duk_put_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("dhs"));
+
+    if (dofork)
+        http_fork_callback(req, dhs, have_threadsafe_val);
     else
         http_thread_callback(req, dhs, thrno);
 
     free(dhs->module_name);
     free(dhs->reqpath);
+
+    //dhs is gone at end of this function
+    //so we mark it as such
+    duk_push_pointer(dhs->ctx, (void*) NULL);
+    duk_put_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("dhs"));
 }
 
 /* bind to addr and port.  Return mallocd string of addr, which
@@ -4173,41 +4360,6 @@ void exitcb(evhtp_request_t *req, void *arg)
     duk_destroy_heap(main_ctx);
     free(thread_ctx);
     exit(0);
-}
-
-/* TODO: revisit whether DHSA is necessary */
-#define DHSA struct dhs_array
-DHSA
-{
-    int n;
-    DHS **dhs_pa;
-};
-
-DHSA dhsa = {0, NULL};
-
-static DHS *new_dhs(duk_context *ctx, int idx)
-{
-    DHS *dhs = NULL;
-
-    DUKREMALLOC(ctx, dhs, sizeof(DHS));
-    dhs->func_idx = idx;
-    dhs->module=MODULE_NONE;
-    dhs->module_name=NULL;
-    dhs->ctx = ctx;
-    dhs->req = NULL;
-    dhs->aux = NULL;
-    dhs->reqpath=NULL;
-    dhs->pathlen=0;
-    /* afaik there is no TIME_T_MAX */
-    dhs->timeout.tv_sec = RP_TIME_T_FOREVER;
-    dhs->timeout.tv_usec = 0;
-    dhs->mapinfo = NULL;
-    dhs->auxbuf = NULL;
-    dhsa.n++;
-    DUKREMALLOC(ctx, dhsa.dhs_pa, sizeof(DHS *) * dhsa.n);
-    dhsa.dhs_pa[dhsa.n - 1] = dhs;
-
-    return (dhs);
 }
 
    
@@ -5183,6 +5335,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                     //duk_push_string(ctx,"function(map) { return Object.keys(map).sort(function(a, b){  return b.length - a.length; }); }");
                     /* priority to exact, regex, path, then by length */
                     duk_push_string(ctx, "function(map){return Object.keys(map).sort(function(a, b){\n\
+                                     a=a.replace(/^ws:/, ''); b=b.replace(/^ws:/, '');\n\
                                      var blen=b.length, alen=a.length;\n\
                                      if(a.charAt(0) == '~') alen+=1000; else if(a.charAt(0) == '/') alen+=1000000;\n\
                                      if(b.charAt(0) == '~') blen+=1000; else if(b.charAt(0) == '/') blen+=1000000;\n\
@@ -5200,22 +5353,22 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 duk_compile(ctx,DUK_COMPILE_FUNCTION);
                 duk_dup(ctx,-2);
                 duk_call(ctx,1);
-
                 /* Object.keys - sorted is on top of stack */
+                duk_idx_t mapobj=duk_get_top_index(ctx);
                 mlen=(int)duk_get_length(ctx, -1);
                 for (j=0; j<mlen; j++)
                 {
                     char *path, *fspath, *fs = (char *)NULL, *s = (char *)NULL;
                     int pathlen=0, isobject=0, isfsobject=0;
 
-                    duk_get_prop_index(ctx,-1,j);
+                    duk_get_prop_index(ctx,mapobj,j);
                     path = (char*)duk_get_string(ctx,-1);
                     duk_get_prop_string(ctx,-3,path);
 
                     if(duk_is_object(ctx, -1))
                     {
                         isobject=1;
-                        if (duk_has_prop_string(ctx,-1, "path") )
+                        if (!duk_is_function(ctx, -1) && duk_has_prop_string(ctx,-1, "path") )
                         {
                             isfsobject=1;
                         }
@@ -5233,7 +5386,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         //path = (char *)duk_get_string(ctx, -2);
                         DUKREMALLOC(ctx, s, strlen(path) + 2);
 
-                        if (*path == '~')
+                        if(*path == 'w' && *(path+1) =='s' && *(path+2) ==':' &&  *(path+3) =='/')
+                        {
+                            sprintf(s, "%s", path);
+                        }
+                        else if (*path == '~')
                         {
                             cbtype=2;
                             path++;
@@ -5354,8 +5511,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         else if (cbtype==3)
                             evhtp_set_cb(htp, s, http_callback, cb_dhs);
                         else
+                        {
+                            //printf("setting exact path %s\n",s);
                             evhtp_set_exact_cb(htp, s, http_callback, cb_dhs);
-
+                        }
                         free(s);
                         duk_pop(ctx);
                     }
@@ -5477,6 +5636,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                 }
                                 duk_pop(ctx);
                             }
+                            duk_pop(ctx);
                         }
                         else
                         {

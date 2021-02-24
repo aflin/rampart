@@ -396,7 +396,7 @@ struct evhtp_path {
                                          *   mainly used for regex matching
                                          */
 };
-
+typedef struct evhtp_ws_parser_s    evhtp_ws_parser;
 
 /**
  * @brief a structure containing all information for a http request.
@@ -418,6 +418,11 @@ struct evhtp_request {
     #define EVHTP_REQ_FLAG_CHUNKED   (1 << 3)
     #define EVHTP_REQ_FLAG_ERROR     (1 << 4)
     uint16_t flags;
+
+    uint8_t           cb_has_websock;
+    uint8_t websock   : 1,
+            pad       : 3 ;
+    evhtp_ws_parser * ws_parser;
 
     evhtp_callback_cb cb;               /**< the function to call when fully processed */
     void            * cbarg;            /**< argument which is passed to the cb function */
@@ -1465,6 +1470,10 @@ EVHTP_EXPORT unsigned int evhtp_request_status(evhtp_request_t *);
         (_var) = NULL;                      \
 }  while (0)
 
+/**
+ * @brief disconnect from websocket client
+ */
+void * evhtp_ws_disconnect(evhtp_request_t  * req);
 
 #ifdef __cplusplus
 }

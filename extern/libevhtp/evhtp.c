@@ -37,7 +37,7 @@
 #include "evhtp/evhtp.h"
 #include "regint.h" /* def for oniguruma regex_t (aka 're_pattern_buffer')*/
 #include "oniguruma.h"
-
+#include "ws/evhtp_ws.h"
 /**
  * @brief structure containing a single callback and configuration
  *
@@ -56,6 +56,7 @@ struct evhtp_callback {
     evhtp_callback_type type;           /**< the type of callback (regex|path) */
     evhtp_callback_cb   cb;             /**< the actual callback function */
     void              * cbarg;          /**< user-defind arguments passed to the cb */
+    uint8_t             websock;        /**< if the path starts with 'ws:' it means we accept websockets */
     evhtp_hooks_t     * hooks;          /**< per-callback hooks */
     size_t              len;
 
@@ -901,14 +902,13 @@ htp__callback_find_(evhtp_callbacks_t * cbs,
     }
     path_len = strlen(path);
     TAILQ_FOREACH(callback, cbs, next) {
+        //printf("checking path=%s, cb_path=%s\n", path, callback->val.path);
         switch (callback->type) {
             /* added exact match type -ajf */
             case evhtp_callback_type_exact:
-                //printf("exact path=%s, cb_path=%s\n", path, callback->val.path);
                 if (strcmp(path, callback->val.path) == 0) {
                     *start_offset = 0;
                     *end_offset   = path_len;
-
                     return callback;
                 }
 
@@ -1647,6 +1647,7 @@ htp__request_set_callbacks_(evhtp_request_t * request)
 
     request->cb    = cb;
     request->cbarg = cbarg;
+    request->cb_has_websock = callback ? callback->websock : 0;
 
     return 0;
 } /* htp__request_set_callbacks_ */
@@ -1821,11 +1822,14 @@ static int
 htp__request_parse_headers_(htparser * p)
 {
     evhtp_connection_t * c;
+    evhtp_request_t  * req;
 
     if ((c = htparser_get_userdata(p)) == NULL) {
         return -1;
     }
 
+    req = c->request;
+    //printf("in parse headers %s %d\n", req->uri->path->path, (int) req->cb_has_websock);
     /* XXX proto should be set with htparsers on_hdrs_begin hook */
 
     if (htparser_should_keep_alive(p) == 1) {
@@ -1838,8 +1842,7 @@ htp__request_parse_headers_(htparser * p)
     if (c->cr_status != EVHTP_RES_OK) {
         return -1;
     }
-
-    if (c->type == evhtp_type_server
+    if (c->type == evhtp_type_server && !req->cb_has_websock
         && c->htp->flags & EVHTP_FLAG_ENABLE_100_CONT) {
         /* only send a 100 continue response if it hasn't been disabled via
          * evhtp_disable_100_continue.
@@ -1852,6 +1855,35 @@ htp__request_parse_headers_(htparser * p)
             "HTTP/%c.%c 100 Continue\r\n\r\n",
             evhtp_modp_uchartoa(htparser_get_major(p)),
             evhtp_modp_uchartoa(htparser_get_minor(p)));
+    }
+    if (req->cb && req->cb_has_websock) {
+        /* the callback that was set was enabled with websocket support, here we
+         * check the value of the Connection header, and if "Upgrade" is the
+         * value, we attempt to create the handshake. If the handshake fails for
+         * any reason, the entire request is dropped.
+         *
+         * On the other hand, if the handshake is a success, we must set the
+         * request 'websocket' value to 1, and start a response with a SWITCH
+         * PROTOCOL response. This lets the _evhtp_conn_readcb() function to
+         * process further data as websockets, instead of normal HTTP.
+         */
+        const char * conn_val;
+        if ((conn_val = evhtp_header_find(req->headers_in, "Connection"))) {
+            if (!strcmp(conn_val, "Upgrade")) {
+                int ws_hs_res;
+                ws_hs_res = evhtp_ws_gen_handshake(
+                    req->headers_in,
+                    req->headers_out);
+
+                if (ws_hs_res == -1) {
+                    return -1;
+                }
+
+                req->websock = 1;
+
+                evhtp_send_reply_start(req, EVHTP_RES_SWITCH_PROTO);
+            }
+        }
     }
 
     return 0;
@@ -2272,10 +2304,58 @@ static htparse_hooks request_psets = {
     .on_msg_complete    = htp__request_parse_fini_
 };
 
+static int
+_ws_msg_start(evhtp_ws_parser * p) {
+    evhtp_request_t * req;
+
+    req = evhtp_ws_parser_get_userdata(p);
+    evhtp_assert(req != NULL);
+
+    //printf("BEGIN!\n");
+
+    return 0;
+}
+
+static int
+_ws_msg_fini(evhtp_ws_parser * p) {
+    evhtp_request_t * req;
+
+    req = evhtp_ws_parser_get_userdata(p);
+    evhtp_assert(req != NULL);
+
+    if (req->cb) {
+        (req->cb)(req, req->cbarg);
+    }
+    //printf("COMPLETE!\n");
+
+    return 0;
+}
+
+static int
+_ws_msg_data(evhtp_ws_parser * p, const char * d, size_t l) {
+    evhtp_request_t * req;
+
+    req = evhtp_ws_parser_get_userdata(p);
+    evhtp_assert(req != NULL);
+
+    evbuffer_drain(req->buffer_in, evbuffer_get_length(req->buffer_in));
+    evbuffer_add(req->buffer_in, d, l);
+    //printf("Got %zu %.*s\n", l, (int)l, d);
+
+    return 0;
+}
+
+static evhtp_ws_hooks ws_hooks = {
+    .on_msg_start = _ws_msg_start,
+    .on_msg_data  = _ws_msg_data,
+    .on_msg_fini  = _ws_msg_fini
+};
+
 static void
 htp__connection_readcb_(struct bufferevent * bev, void * arg)
 {
     evhtp_connection_t * c = arg;
+    evhtp_request_t *req = c->request;
     void               * buf;
     size_t               nread;
     size_t               avail;
@@ -2303,8 +2383,25 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
 
     evhtp_assert(buf != NULL);
     evhtp_assert(c->parser != NULL);
+    if (req && req->websock) {
+        /* process this data as websocket data, if the websocket parser has not
+         * been allocated, we allocate it first.
+         */
+        if (req->ws_parser == NULL) {
+            req->ws_parser = evhtp_ws_parser_new();
 
-    nread = htparser_run(c->parser, &request_psets, (const char *)buf, avail);
+            evhtp_ws_parser_set_userdata(req->ws_parser, req);
+        }
+
+        //assert(req->ws_parser != NULL);
+
+        /* XXX need a parser_init / parser_set_userdata */
+        nread = evhtp_ws_parser_run(req->ws_parser,
+                                    &ws_hooks, buf, avail);
+    } else {
+        /* process as normal HTTP data. */
+        nread = htparser_run(c->parser, &request_psets, (const char *)buf, avail);
+    }
 
     log_debug("nread = %zu", nread);
 
@@ -2314,11 +2411,12 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
          * drain the input buffer that had been read up to this point.
          */
 
-        log_debug("EVHTP_CONN_FLAG_OWNER set, removing contexts");
+        log_debug("EVHTP_CONN_FLAG_OWNER not set, removing contexts");
 
         evbuffer_drain(bufferevent_get_input(bev), nread);
+        if (req->ws_parser)
+            free(req->ws_parser);
         evhtp_safe_free(c, evhtp_connection_free);
-
         return;
     }
 
@@ -2374,6 +2472,15 @@ htp__connection_writecb_(struct bufferevent * bev, void * arg)
     errstr = NULL;
     conn   = (evhtp_connection_t *)arg;
 
+    if (!(conn->flags & EVHTP_CONN_FLAG_OWNER)) {
+        log_debug("EVHTP_CONN_FLAG_OWNER not set, removing contexts");
+
+        if (conn->request->ws_parser)
+            free(conn->request->ws_parser);
+        evhtp_safe_free(conn, evhtp_connection_free);
+        return;
+    }
+
     do {
         if (evhtp_unlikely(conn->request == NULL)) {
             errstr = "no request associated with connection";
@@ -2399,7 +2506,6 @@ htp__connection_writecb_(struct bufferevent * bev, void * arg)
 
     if (evhtp_unlikely(errstr != NULL)) {
         log_error("shutting down connection: %s", errstr);
-
         evhtp_safe_free(conn, evhtp_connection_free);
         return;
     }
@@ -2588,8 +2694,13 @@ htp__connection_eventcb_(struct bufferevent * bev, short events, void * arg)
 
             return;
         }
-    }
 
+    }
+    if (c->request && c->request->cb_has_websock)
+    {
+        free(c->request->ws_parser);
+        c->request->ws_parser=NULL;
+    }
     /* set the error mask */
     HTP_FLAG_ON(c, EVHTP_CONN_FLAG_ERROR);
 
@@ -4255,6 +4366,11 @@ evhtp_callback_new(const char * path, evhtp_callback_type type, evhtp_callback_c
 
         return NULL;
     }
+    if (strncmp(path, "ws:", 3) == 0) {
+        hcb->websock = 1;
+        path        += 3;
+    }
+
     hcb->type  = type;
     hcb->cb    = cb;
     hcb->cbarg = arg;
@@ -4264,7 +4380,6 @@ evhtp_callback_new(const char * path, evhtp_callback_type type, evhtp_callback_c
         case evhtp_callback_type_exact: /* ajf */
         case evhtp_callback_type_hash:
             hcb->val.path = htp__strdup_(path);
-
             if (evhtp_unlikely(hcb->val.path == NULL)) {
                 evhtp_safe_free(hcb, evhtp_callback_free);
 

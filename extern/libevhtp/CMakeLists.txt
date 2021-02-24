@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.1)
+set(CMAKE_BUILD_TYPE Debug)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
@@ -52,7 +53,11 @@ set(LIBEVHTP_SOURCE_FILES
     evhtp.c
     numtoa.c
     parser.c
-    log.c)
+    log.c
+    ws/sha1.c
+    ws/base.c
+    ws/evhtp_ws.c
+)
 
 #find_package(LibEvent REQUIRED)
 #list(APPEND LIBEVHTP_EXTERNAL_LIBS ${LIBEVENT_LIBRARIES})
