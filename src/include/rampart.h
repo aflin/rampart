@@ -27,7 +27,7 @@ extern pthread_mutex_t ctxlock;
 /* macros to help with require_* and throwing errors with 
    a stack trace.
 */
-
+extern int totnthreads;
 #define RP_THROW(ctx,...) do {\
     duk_push_error_object(ctx, DUK_ERR_ERROR, __VA_ARGS__);\
     (void) duk_throw(ctx);\

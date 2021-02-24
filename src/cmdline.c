@@ -22,6 +22,7 @@
 #include "linenoise.h"
 
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
+int totnthreads=0;
 char *RP_script_path=NULL;
 static duk_context *gl_ctx;
 
