@@ -3662,12 +3662,10 @@ duk_ret_t duk_texis_set(duk_context *ctx)
             duk_pop_2(ctx);
         }
         duk_pop(ctx);
-printf("set in fork\n");
         ret = fork_set(ctx, hcache, errbuf);
     }
     else
     {
-printf("set in 0\n");
         ret = sql_set(ctx, hcache, errbuf);
     }
     h_close(hcache);
