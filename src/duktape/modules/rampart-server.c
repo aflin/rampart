@@ -62,7 +62,7 @@ int gl_singlethreaded = 0;
 int rampart_server_started=0;
 int developer_mode=0;
 
-duk_context **thread_ctx = NULL;//, *main_ctx = NULL;
+extern duk_context **thread_ctx;
 
 int rp_using_ssl = 0;
 static char *scheme="http://";
@@ -4230,17 +4230,17 @@ static void http_callback(evhtp_request_t *req, void *arg)
     /* fork until we know it is safe not to fork:
        function will have property threadsafe:true if forking not required
        after the first time it is called in http_fork_callback              */
+/*  TODO: Remove all forking from server
 
     if(!getfunction(dhs))
     {
-        /* matching object key to url - fail = 404 (see getfunction() )*/
-        /* doing fail here and we don't need to fork */
+        // matching object key to url - fail = 404 (see getfunction() )
+        // doing fail here and we don't need to fork *
         send404(dhs->req);
         free(dhs->reqpath);
         free(dhs->module_name);
         return;
     }
-
     if (duk_get_prop_string(dhs->ctx, -1, DUK_HIDDEN_SYMBOL("threadsafe")))
     {
         if (duk_is_boolean(dhs->ctx, -1) && duk_get_boolean(dhs->ctx, -1))
@@ -4253,7 +4253,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
     // and if dhs exists
     if(duk_get_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("dhs")))
     {
-        //if not NULL, it is the old one from websock functions, if wsSend was never called */
+        //if not NULL, it is the old one from websock functions, if wsSend was never called 
         duk_context *fdhs = duk_get_pointer(dhs->ctx, -1);
         if(fdhs)
             free(fdhs);
@@ -4266,7 +4266,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
     if (dofork)
         http_fork_callback(req, dhs, have_threadsafe_val);
     else
-        http_thread_callback(req, dhs, thrno);
+*/        http_thread_callback(req, dhs, thrno);
 
     free(dhs->module_name);
     free(dhs->reqpath);
@@ -4275,6 +4275,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
     //so we mark it as such
     duk_push_pointer(dhs->ctx, (void*) NULL);
     duk_put_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("dhs"));
+    
 }
 
 /* bind to addr and port.  Return mallocd string of addr, which
@@ -5003,7 +5004,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         duk_pop(ctx);
 
-        /* buffer memory percent */
+        /* developer's mode throws errors to client as 500 Internal Server Error
+           with the error message.  Otherwise a 404 is sent */
         if (duk_rp_GPS_icase(ctx, ob_idx, "developerMode"))
         {
             REQUIRE_BOOL(ctx, -1, "developerMode requires a boolean (true|false)");
@@ -5094,6 +5096,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
     }
 
     /* set up info structs for mmap memory */
+/*TODO: remove forking code */
+
+//for now, just this:
+bufmempct=0;
+
     {
         long pagesize = sysconf(_SC_PAGE_SIZE);
 #ifdef __APPLE__
@@ -5110,7 +5117,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         //default case
         if(bufmempct == -1)
         {
-            /* 20mb per thread by default */
+            // 20mb per thread by default
             mapsize = 5120;
             tmapsize = mapsize * (long)totnthreads;
             if(tmapsize > 5 * physmem / 100)
@@ -5119,7 +5126,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 mapsize = tmapsize / (long)totnthreads;
             }
         }
-
+/*
         if ((double)tmapsize/250.0 < 1.0)
             printf("using %.2fkb for buffers ", (double)tmapsize/0.250);
         else
@@ -5129,7 +5136,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             printf("(%.2fkb per thread)\n", (double)mapsize/0.250 );
         else
             printf("(%.2fmb per thread)\n", (double)mapsize/250.0 );
-
+*/
         REMALLOC(mapinfos, (totnthreads * sizeof(MAPINFO *)));
         for (i = 0; i < totnthreads; i++)
         {

@@ -2531,8 +2531,6 @@ duk_ret_t duk_rp_nsleep(duk_context *ctx)
     return 0;
 }
 
-/* TODO: shelve locks until can update with new lockserver */
-
 duk_ret_t duk_rp_mlock_constructor(duk_context *ctx)
 {
     pthread_mutex_t *newlock=NULL;
@@ -2579,6 +2577,8 @@ duk_ret_t duk_rp_mlock_unlock (duk_context *ctx)
         RP_THROW(ctx, "mlock(): error - could not obtain lock\n");
     return 0;
 }
+
+/* TODO: write finalizer for this */
 
 duk_ret_t duk_rp_mlock_destroy (duk_context *ctx)
 {

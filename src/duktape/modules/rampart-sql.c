@@ -160,17 +160,26 @@ extern int RP_TX_isforked;
 
 static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf);
 
-#define TXLOCK if(!RP_TX_isforked) pthread_mutex_lock(&lock);
-#define TXUNLOCK if(!RP_TX_isforked) pthread_mutex_unlock(&lock);
+//#define TXLOCK if(!RP_TX_isforked) {printf("lock from %d\n", thisfork);pthread_mutex_lock(&lock);}
+//#define TXLOCK if(!RP_TX_isforked) pthread_mutex_lock(&lock);
+//#define TXUNLOCK if(!RP_TX_isforked) pthread_mutex_unlock(&lock);
 
+#define TXLOCK
+#define TXUNLOCK
+
+#define HLOCK if(!RP_TX_isforked) pthread_mutex_lock(&lock);
+//#define HLOCK if(!RP_TX_isforked) {printf("lock from %d\n", thisfork);pthread_mutex_lock(&lock);}
+#define HUNLOCK if(!RP_TX_isforked) pthread_mutex_unlock(&lock);
 
 int db_is_init = 0;
 int tx_rp_cancelled = 0;
-
+/*
 #define EXIT_IF_CANCELLED \
     if (tx_rp_cancelled)  \
         exit(0);
+*/
 
+#define EXIT_IF_CANCELLED
 
 #ifdef DEBUG_TX_CALLS
 
@@ -307,20 +316,6 @@ pid_t parent_pid = 0;
     fseek(mmsgfh, 0, SEEK_SET);           \
 } while(0)
 
-/* sz and strlen(buf) vary by platform.
-   ignore for now
-*/
-#define msgtobufbak(buf)  do {                       \
-    size_t sz;                                    \
-    int pos = ftell(mmsgfh);                      \
-    fseek(mmsgfh, 0, SEEK_SET);                   \
-    sz=fread(buf, 1, msgbufsz-1, mmsgfh);         \
-    if(0 & (sz>1) && sz != strlen(buf))           \
-        fprintf(stderr, "msgtobuf read error\n"); \
-    clearmsgbuf();                                \
-    buf[pos]='\0';                                \
-} while(0)
-
 #define msgtobuf(buf)  do {                       \
     strcpy((buf), errmap[thisfork]);              \
     clearmsgbuf();                                \
@@ -355,10 +350,9 @@ void duk_rp_log_error(duk_context *ctx, char *pbuf)
 
 void duk_rp_log_tx_error(duk_context *ctx, DB_HANDLE *h, char *buf)
 {
-    TXLOCK
-    msgtobuf(buf);
-    TXUNLOCK
-    duk_rp_log_error(ctx, buf);
+    //msgtobuf(buf);
+    //duk_rp_log_error(ctx, buf);
+    duk_rp_log_error(ctx, errmap[thisfork]);
 }
 
 /* get the expression from a /pattern/ or a "string" */
@@ -377,12 +371,14 @@ static const char *get_exp(duk_context *ctx, duk_idx_t idx)
 
     return ret;
 }
-
+/* if in a child process, bail on error.  A new child will be forked
+   and hopefully everything will get back on track                    */
 #define forkwrite(b,c) ({\
     int r=0;\
     r=write(finfo->writer, (b),(c));\
     if(r==-1) {\
         fprintf(stderr, "fork write failed: '%s' at %d\n",strerror(errno),__LINE__);\
+        if(thisfork) exit(0);\
     };\
     r;\
 })
@@ -392,6 +388,7 @@ static const char *get_exp(duk_context *ctx, duk_idx_t idx)
     r= read(finfo->reader,(b),(c));\
     if(r==-1) {\
         fprintf(stderr, "fork read failed: '%s' at %d\n",strerror(errno),__LINE__);\
+        if(thisfork) exit(0);\
     };\
     r;\
 })
@@ -489,7 +486,6 @@ static SFI *check_fork(DB_HANDLE *h, int create)
             sa.sa_handler =  die_nicely;
             sigemptyset(&sa.sa_mask);
             sigaction(SIGUSR1, &sa, NULL);
-
             close(child2par[0]);
             close(par2child[1]);
             finfo->writer = child2par[1];
@@ -580,12 +576,11 @@ static DB_HANDLE *h_open(const char *db, int forkno, duk_context *ctx)
         forkno = duk_get_int_default(ctx, -1, 0);
         duk_pop_2(ctx);
     }
-
+//printf("forkno = %d\n", thisfork);
     /* not necessary except for testing */
     if (totnthreads<=forkno)
         totnthreads=forkno+1;
 
-    TXLOCK
     if (g_hcache_pid != getpid())
     {
         free_all_handles_noClose(NULL);
@@ -613,6 +608,7 @@ static DB_HANDLE *h_open(const char *db, int forkno, duk_context *ctx)
     /* no handle open with same db, need to close an unused one and reopen*/
     if(!h)
     {
+        HLOCK
         for (i=0; i<NDB_HANDLES; i++)
         {
             h = all_handles[i];
@@ -624,10 +620,12 @@ static DB_HANDLE *h_open(const char *db, int forkno, duk_context *ctx)
                 }
                 free(h);
                 h = all_handles[i] = make_handle(i, db);
+                h->inuse=1;
                 break;
             }
             h = NULL;
         }
+        HUNLOCK
     }
     if(h)
     {
@@ -640,7 +638,6 @@ static DB_HANDLE *h_open(const char *db, int forkno, duk_context *ctx)
         else if (h->tx == NULL)
             h->tx = texis_open((char *)(db), "PUBLIC", "");;
     }
-    TXUNLOCK
     return h;
 }
 
@@ -1173,14 +1170,21 @@ static int fork_open(DB_HANDLE *h)
         finfo->auxsz=0;
         finfo->auxpos=NULL;
         REMALLOC(finfo->mapinfo, sizeof(FMINFO));
+
         finfo->mapinfo->mem = mmap(NULL, FORKMAPSIZE, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);;
-        errmap[h->forkno] = mmap(NULL, msgbufsz, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);;
         if(finfo->mapinfo->mem == MAP_FAILED)
         {
             fprintf(stderr, "mmap failed: %s\n",strerror(errno));
             exit(1);
         }
         finfo->mapinfo->pos = finfo->mapinfo->mem;
+
+        errmap[h->forkno] = mmap(NULL, msgbufsz, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);;
+        if(errmap[h->forkno] == MAP_FAILED)
+        {
+            fprintf(stderr, "errmsg mmap failed: %s\n",strerror(errno));
+            exit(1);
+        }
     }
 
     finfo = check_fork(h, Create);
@@ -1497,9 +1501,13 @@ static int fork_set(duk_context *ctx, DB_HANDLE *h, char *errbuf)
 static int child_set(SFI *finfo, int *idx)
 {
     int ret=0, bufsz=0;
-    duk_context *ctx = main_ctx;
+    duk_context *ctx;
     int size=-1;
 
+    if(thread_ctx && thread_ctx[thisfork])
+        ctx = thread_ctx[thisfork];
+    else
+        ctx = main_ctx;
     if (forkread(idx, sizeof(int))  == -1)
     {
         forkwrite(&ret, sizeof(int));
@@ -2987,6 +2995,7 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
     /* PREP */
     if (!h_prep(hcache, (char *)q->sql))
     {
+        h_close(hcache);
         throw_tx_error(ctx,hcache,"sql prep");
     }
 
@@ -3002,12 +3011,15 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
         else if (q->arr_idx != -1)
             idx = q->arr_idx;
         else
+        {
+            h_close(hcache);
             RP_THROW(ctx, "sql.exec - parameters specified in sql statement, but no corresponding object or array\n");
-
+        }
         if (!duk_rp_add_named_parameters(ctx, hcache, idx, namedSqlParams, nParams))
         {
             free(namedSqlParams);
             free(freeme);
+            h_close(hcache);
             throw_tx_error(ctx,hcache,"sql add parameters");
         }
         free(namedSqlParams);
@@ -3021,7 +3033,10 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
     else if (q->arr_idx != -1)
     {
         if (!duk_rp_add_parameters(ctx, hcache, q->arr_idx))
+        {
+            h_close(hcache);
             throw_tx_error(ctx,hcache,"sql add parameters");
+        }
     }
     else
     {
@@ -3030,8 +3045,10 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
     /* EXEC */
 
     if (!h_exec(hcache))
+    {
+        h_close(hcache);
         throw_tx_error(ctx,hcache,"sql exec");
-
+    }
     /* skip rows using texisapi */
     if (q->skip)
         h_skip(hcache, q->skip);
@@ -3561,9 +3578,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
         propnext:
         duk_pop_2(ctx);
         /* capture and throw errors here */
-        TXLOCK
         msgtobuf(pbuf);
-        TXUNLOCK
         if(*pbuf!='\0')
         {
             sprintf(errbuf, "sql.set(): %s", pbuf+4);
@@ -3647,12 +3662,14 @@ duk_ret_t duk_texis_set(duk_context *ctx)
             duk_pop_2(ctx);
         }
         duk_pop(ctx);
-
+printf("set in fork\n");
         ret = fork_set(ctx, hcache, errbuf);
     }
     else
+    {
+printf("set in 0\n");
         ret = sql_set(ctx, hcache, errbuf);
-
+    }
     h_close(hcache);
 
     if(ret == -1)
@@ -3692,60 +3709,11 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
         return DUK_RET_TYPE_ERROR;
     }
     g_hcache_pid = getpid();
+
     /* 
      if sql=new Sql("/db/path",true), we will 
      create the db if it does not exist 
     */
-/*
-totnthreads=3;
-int ret;
-printf("_____________OPENING_________\n");
-DB_HANDLE *h = h_open((char *)db, 1);
-printf("handle id = %d\n", h->fork_idx);
-
-printf("_____________PREPING_________\n");
-ret=fork_prep(h, "select * from SYSTABLES where WHAT = ?;");
-printf("ret = %d\n",ret);
-if(!ret)exit(1);
-
-printf("_____________RESET_________\n");
-ret = fork_resetparams(h);
-printf("ret = %d\n",ret);
-if(!ret)exit(1);
-
-printf("_____________Params________\n");
-char *p = "Users";
-long len = strlen(p);
-ret=fork_param(h, 1, p, &len, SQL_C_CHAR, SQL_VARCHAR); 
-printf("ret = %d\n",ret);
-if(!ret)exit(1);
-
-printf("_____________EXECING_________\n");
-ret = fork_exec(h);
-printf("ret = %d\n",ret);
-if(!ret)exit(1);
-
-printf("_____________FETCHING________\n");
-FLDLST * fl;
-while( (fl= fork_fetch(h, -1)) )
-{
-    int i=0;
-    for (i=0;i<fl->n;i++)
-    {
-        duk_rp_pushfield(ctx, fl, i);
-        int len = duk_get_length(ctx, -1);
-        printf("col %d is %s of type %d, size %d, len %d ", i+1, fl->name[i], fl->type[i] & 0x3f, fl->ndata[i], len);
-        printat(ctx, -1);
-        duk_pop(ctx); 
-    }
-}
-
-printf("_____________CLOSING__________\n");
-fork_close(h);
-printf("FTN_DOUBLE = %d sizeof=%d\n",FTN_DOUBLE, (int)ddftsize(FTN_DOUBLE));
-exit(0);
-*/
-
     if (duk_is_boolean(ctx, 1) && duk_get_boolean(ctx, 1) != 0)
     {
         /* check for db first */
