@@ -3143,8 +3143,8 @@ duk_ret_t duk_rp_sql_one(duk_context *ctx)
     duk_rp_sql_exec(ctx);
     duk_get_prop_string(ctx, -1, "results");
     duk_get_prop_index(ctx, -1, 0);
-    if(duk_is_undefined(ctx, -1))
-        duk_push_object(ctx);
+    //if(duk_is_undefined(ctx, -1))
+    //    duk_push_object(ctx);
     return (1);
 }
 
