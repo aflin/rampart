@@ -991,8 +991,18 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                                                 scopy('\\');
                                                 break;
                                             }
+                                            else if(*p!='\'')
+                                            {
+                                                scopy('\\');
+                                                scopy(*p);
+                                                break;
+                                            }
+                                            /*skip the ' case for fallthrough */
                                         case '\'':
-                                            /* possible fall through from above */
+                                            /* possible fall through from above 
+                                               If in a double quote from input, we need to escape the 
+                                               single quote, because the output will be single
+                                               quoted */
                                             if(*p=='\'' && (inbs || c == '"') )
                                             {
                                                 inbs=0;
@@ -1138,7 +1148,18 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                 }
                 else
                 {
-                    scopy('"');
+                    /* remove the '+ ""' */
+                    /* node leaves it in, so shall we
+                    if( *(out-1) == '"')
+                    {
+                        //back up
+                        out-=2;
+                        while(isspace(*out))
+                            out--;
+                        //cur char is '+' or ',' which will be overwritten
+                    }
+                    else
+                    */ scopy('"');
                     if(type == 1)
                     {
                         int r;
@@ -1346,19 +1367,26 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
 #define islegitchar(x) ( ((unsigned char)(x)) > 0x79 || (x) == '$' || (x) == '_' || isalnum((x)) )
                 if (getstate() == ST_NONE)
                 {
-                    /* looking for ...var in function(x, ...var) */
+                    /*  looking for ...arg in "function(x, ...arg) {" 
+                        to rewrite as "function(x){var arg=Object.values(arguments).slice(x);"
+                        where x is the number of preceding arguments.
+                    */
                     if( infuncp )
                     {
                         if(*in == ',' || infuncp==1)
                         {
-                            char *s = in +1;
+                            char *s = in;
 
+                            if(*s==',')
+                                s++;
                             infuncp++;
                             while (isspace(*s))
                                 s++;
                             if( *s=='.' && *(s+1)=='.' && *(s+2)=='.' )
                             {
+                                char *varname;
                                 s+=3;
+                                varname=s;
                                 while (islegitchar(*s)) s++;
 
                                 if( !isspace(*s) && *s!=')' )
@@ -1390,15 +1418,17 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                                     if(*s=='{')
                                     {
                                         //good to go, write altered function
-                                        char *varname, nbuf[16];
-                                        in++; // skip ','
+                                        //char *varname, 
+                                        char nbuf[16];
+                                        if(*in==',')
+                                            in++; // skip ','
                                         while(isspace(*in))
                                         {
                                             copy(*in);
                                             if(*in=='\n') line++;
                                             adv;
                                         }
-                                        varname=in+3; //advance past the "..."
+                                        //varname=in+3; //advance past the "..."
                                         while( *in != ')')
                                         {
                                             /* only copy white space here */
@@ -1466,8 +1496,8 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                     }
                     /* end function(...var) processing */
                     
-                    /* for the "/regexp/" vs "var x = 2/3" cases, we need to know where we are 
-                       this is a horrible hack, but it seems to work                             */
+                    /* for the "/regexp/" vs "var x = 2/3" cases, tag function and (...rest) processing,
+                       we need to know where we are. This is a horrible hack, but it seems to work    */
                     if (strchr("{([=;+-/*", *in))
                         startexp=1;
                     else if (isalnum(*in) || *in =='}' || *in == ')' || *in == ']')
