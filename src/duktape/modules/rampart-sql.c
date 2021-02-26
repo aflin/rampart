@@ -26,7 +26,7 @@
 #include "../globals/csv_parser.h"
 
 
-#define RESMAX_DEFAULT 10 /* default number of sql rows returned if max is not set */
+#define RESMAX_DEFAULT 10 /* default number of sql rows returned for select statements if max is not set */
 //#define PUTMSG_STDERR                  /* print texis error messages to stderr */
 
 #define QUERY_STRUCT struct rp_query_struct
@@ -38,9 +38,10 @@
 QUERY_STRUCT
 {
     const char *sql;    /* the sql statement (allocated by duk and on its stack) */
-    duk_idx_t arr_idx;          /* location of array of parameters in ctx, or -1 */
+    duk_idx_t arr_idx;  /* location of array of parameters in ctx, or -1 */
     duk_idx_t obj_idx;
     duk_idx_t str_idx;
+    duk_idx_t arg_idx;  /* location of extra argument for callback */ 
     duk_idx_t callback; /* location of callback in ctx, or -1 */
     int skip;           /* number of results to skip */
     int max;            /* maximum number of results to return */
@@ -378,7 +379,7 @@ static const char *get_exp(duk_context *ctx, duk_idx_t idx)
     r=write(finfo->writer, (b),(c));\
     if(r==-1) {\
         fprintf(stderr, "fork write failed: '%s' at %d\n",strerror(errno),__LINE__);\
-        if(thisfork) exit(0);\
+        if(thisfork) {fprintf(stderr, "child proc exiting\n");exit(0);}\
     };\
     r;\
 })
@@ -388,7 +389,7 @@ static const char *get_exp(duk_context *ctx, duk_idx_t idx)
     r= read(finfo->reader,(b),(c));\
     if(r==-1) {\
         fprintf(stderr, "fork read failed: '%s' at %d\n",strerror(errno),__LINE__);\
-        if(thisfork) exit(0);\
+        if(thisfork) {fprintf(stderr, "child proc exiting\n");exit(0);}\
     };\
     r;\
 })
@@ -1589,8 +1590,10 @@ static void do_fork_loop(SFI *finfo)
             usleep(10000);
             continue;
         }
+        /* this is in fork read now
         else if (ret == -1)
-            return;
+            exit(0);
+        */
 
         clearmsgbuf(); // reset the position of the errmap buffer.
 
@@ -1734,11 +1737,12 @@ void duk_rp_init_qstruct(QUERY_STRUCT *q)
     q->arr_idx = -1;
     q->str_idx = -1;
     q->obj_idx=-1;
+    q->arg_idx=-1;
     q->callback = -1;
     q->skip = 0;
-    q->max = RESMAX_DEFAULT;
-    q->rettype = 0;
-    q->getCounts = 1;
+    q->max = -432100000; //-1 means unlimit, -0.4321 billion means not set.
+    q->rettype = -1;
+    q->getCounts = 0;
     q->err = QS_SUCCESS;
 }
 
@@ -1758,17 +1762,30 @@ void duk_rp_init_qstruct(QUERY_STRUCT *q)
 
 QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
 {
-    int i = 0, gotsettings=0;
+    duk_idx_t i = 0;
+    int gotsettings=0, maxset=0, selectmax=-432100000;
     QUERY_STRUCT q_st;
     QUERY_STRUCT *q = &q_st;
 
     duk_rp_init_qstruct(q);
 
-    for (i = 0; i < 4; i++)
+    for (i = 0; i < 6; i++)
     {
         int vtype = duk_get_type(ctx, i);
         switch (vtype)
         {
+            case DUK_TYPE_NUMBER:
+            {
+                if(maxset==1)
+                    q->skip=duk_get_int(ctx, i);
+                else if(!maxset)
+                    q->max=duk_get_int(ctx, i);
+                else
+                    RP_THROW(ctx, "too many Numbers in parameters to sql.exec()");
+
+                maxset++;
+                break;
+            }
             case DUK_TYPE_STRING:
             {
                 int l;
@@ -1792,6 +1809,23 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
                     duk_concat(ctx, 2);
                     duk_replace(ctx, i);
                     q->sql = (char *)duk_get_string(ctx, i);
+                }
+                /* it hasn't been set yet. we don't want to overwrite returnRows or returnType */
+                if(q->rettype == -1)
+                {
+                    if(strncasecmp(q->sql, "select", 6))
+                        q->rettype=2;
+                    else
+                        q->rettype=0;
+                }
+                
+                /* selectMaxRows from this */
+                if(!strncasecmp(q->sql, "select", 6))
+                {
+                    duk_push_this(ctx);
+                    duk_get_prop_string(ctx, -1, "selectMaxRows");
+                    selectmax=duk_get_int_default(ctx, -1, RESMAX_DEFAULT);
+                    duk_pop_2(ctx);
                 }
                 break;
             }
@@ -1817,29 +1851,57 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
                     {
                         if (duk_get_prop_string(ctx, i, "includeCounts"))
                         {
-                            q->getCounts = duk_get_boolean_default(ctx, -1, 1);
+                            q->getCounts = REQUIRE_BOOL(ctx, -1, "sql: includeCounts must be a Boolean");
                             gotsettings=1;
                         }
                         duk_pop(ctx);
 
+                        if (duk_get_prop_string(ctx, i, "argument"))
+                        {
+                            q->arg_idx = duk_get_top_index(ctx);
+                            gotsettings=1;
+                        }
+                        /* leave it on the stack for use in callback */
+                        else
+                        {
+                            duk_pop(ctx);
+                            /* alternative */
+                            if (duk_get_prop_string(ctx, i, "arg"))
+                            {
+                                q->arg_idx = duk_get_top_index(ctx);
+                                gotsettings=1;
+                            }
+                            /* leave it on the stack for use in callback */
+                            else 
+                                duk_pop(ctx);
+                        }
+
                         if (duk_get_prop_string(ctx, i, "skipRows"))
                         {
-                            q->skip = duk_rp_get_int_default(ctx, -1, 0);
+                            q->skip = REQUIRE_INT(ctx, -1, "skipRows must be a Number");
                             gotsettings=1;
                         }
                         duk_pop(ctx);
 
                         if (duk_get_prop_string(ctx, i, "maxRows"))
                         {
-                            q->max = duk_rp_get_int_default(ctx, -1, q->max);
-                            if (q->max < 0)
-                                q->max = INT_MAX;
+                            q->max = REQUIRE_INT(ctx, -1, "sql: maxRows must be a Number");
                             gotsettings=1;
                         }
 
+                        if (duk_get_prop_string(ctx, i, "returnRows"))
+                        {
+                            if (REQUIRE_BOOL(ctx, -1, "sql: returnRows must be a Boolean"))
+                                q->rettype = 0;
+                            else
+                                q->rettype = 2;
+                            gotsettings=1;
+                        }
+                        duk_pop(ctx);
+
                         if (duk_get_prop_string(ctx, i, "returnType"))
                         {
-                            const char *rt = duk_to_string(ctx, -1);
+                            const char *rt = REQUIRE_STRING(ctx, -1, "sql: returnType must be a String");
 
                             if (!strcasecmp("array", rt))
                             {
@@ -1849,6 +1911,10 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
                             {
                                 q->rettype = 2;
                             }
+                            else if (!strcasecmp("object", rt))
+                                q->rettype=0;
+                            else
+                                RP_THROW(ctx, "sql: returnType '%s' is not valid", rt);
                             gotsettings=1;
                         }
                         duk_pop(ctx);
@@ -1867,6 +1933,17 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
             } /* case */
         } /* switch */
     }     /* for */
+
+    /* if qmax is not set and we are in a select, set to this.selectMaxRows, or RESMAX_DEFAULT */
+    if( q->max == -432100000 && selectmax != -432100000)
+        q->max = selectmax;
+
+    if (q->max < 0)
+        q->max = INT_MAX;
+
+    if (q->skip < 0)
+        q->skip = 0;
+
     if (q->sql == (char *)NULL)
     {
         //q->err = QS_ERROR_PARAM;
@@ -2313,8 +2390,21 @@ int duk_rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
     {
         h_getCountInfo(h, &cinfo);
         pushcounts;             /* countInfo */
-        count_idx=duk_get_top_index(ctx);
     }
+    else
+    {
+        duk_push_object(ctx);
+    }
+    count_idx=duk_get_top_index(ctx);
+
+#define docallback do {\
+    duk_dup(ctx, count_idx);\
+    if(q->arg_idx > -1){\
+        duk_dup(ctx, q->arg_idx);\
+        duk_call_method(ctx, 5);\
+    } else duk_call_method(ctx, 4);\
+} while(0)
+
     while (rown < resmax && (fl = h_fetch(h, -1)))
     {
 
@@ -2344,17 +2434,9 @@ int duk_rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
                     duk_rp_pushfield(ctx, fl, i);
                     duk_put_prop_string(ctx, -2, (const char *)fl->name[i]);
                 }
-                duk_push_int(ctx, rown++ );
+                duk_push_int(ctx, q->skip + rown++ );
                 duk_dup(ctx, colnames_idx);
-
-                if(q->getCounts)
-                {
-                    duk_dup(ctx, count_idx);  /* countInfo */
-                    duk_call_method(ctx, 4);/* function({_res_},resnum,colnames,info){} */
-                }
-                else
-                    duk_call_method(ctx, 3);
-
+                docallback;
                 break;
             }
             /* array */
@@ -2367,33 +2449,18 @@ int duk_rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
                     duk_put_prop_index(ctx, -2, i);
                 }
 
-                duk_push_int(ctx, rown++ );
+                duk_push_int(ctx, q->skip + rown++ );
                 duk_dup(ctx, colnames_idx);
-                if(q->getCounts)
-                {
-                    duk_dup(ctx, count_idx);  /* countInfo */
-                    duk_call_method(ctx, 4);/* function([_res_],resnum,colnames,info){} */
-                }
-                else
-                    duk_call_method(ctx, 3);
-
+                docallback;
                 break;
             }
             /* novars */
             case 2:
             {
                 duk_push_object(ctx);       /*empty object */
-                duk_push_int(ctx, rown++ ); /* index */
+                duk_push_int(ctx, q->skip + rown++ ); /* index */
                 duk_dup(ctx, colnames_idx);
-
-                if(q->getCounts)
-                {
-                    duk_dup(ctx, count_idx);  /* countInfo */
-                    duk_call_method(ctx, 4);  /* function({_empty_},resnum,colnames,info){} */
-                }
-                else
-                    duk_call_method(ctx, 3);
-
+                docallback;
                 break;
             }
         } /* switch */
@@ -3736,7 +3803,8 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     duk_push_this(ctx); /* -> stack: [ db this ] */
     duk_push_string(ctx, db);
     duk_put_prop_string(ctx, -2, "db");
-
+    duk_push_number(ctx, RESMAX_DEFAULT);
+    duk_put_prop_string(ctx, -2, "selectMaxRows");
     SET_THREAD_UNSAFE(ctx);
 
     TXunneededRexEscapeWarning = 0; //silence rex escape warnings
@@ -3799,7 +3867,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_object(ctx); /* -> stack: [ {}, Sql protoObj ] */
 
     /* Set Sql.prototype.exec. */
-    duk_push_c_function(ctx, duk_rp_sql_exec, 4 /*nargs*/);   /* [ {}, Sql protoObj fn_exe ] */
+    duk_push_c_function(ctx, duk_rp_sql_exec, 6 /*nargs*/);   /* [ {}, Sql protoObj fn_exe ] */
     duk_put_prop_string(ctx, -2, "exec");                    /* [ {}, Sql protoObj-->{exe:fn_exe} ] */
 
     /* set Sql.prototype.eval */
@@ -3833,7 +3901,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_c_function(ctx, RPfunc_stringformat, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "stringFormat");
 
-    duk_push_c_function(ctx, RPsqlFuncs_abstract, 4);
+    duk_push_c_function(ctx, RPsqlFuncs_abstract, 5);
     duk_put_prop_string(ctx, -2, "abstract");
 
     duk_push_c_function(ctx, RPsqlFunc_sandr, 3);
