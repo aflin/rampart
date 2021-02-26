@@ -1238,7 +1238,7 @@ void push_req_vars(DHS *dhs)
             //duk_get_prop_string(ctx, -3, "body");
             duk_push_external_buffer(ctx);
             duk_config_buffer(ctx,-1,buf,bsz); /* add reference to buf for js buffer */
-            if (!duk_is_undefined(ctx,-1))
+            if (!duk_is_undefined(ctx,-1))//why would this be undefined.  Think about why you did this and remove if no good reason.
             {
                 duk_buffer_to_string(ctx, -1);
                 if(duk_pcall(ctx,1) != 0)
@@ -1290,6 +1290,10 @@ void push_req_vars(DHS *dhs)
     else
     {
         duk_pop(ctx);
+        duk_push_object(ctx);
+        duk_push_string(ctx, "");
+        duk_put_prop_string(ctx, -2, "Content-Type");
+        duk_put_prop_string(ctx, -3, "postData");
         duk_put_prop_string(ctx, -2, "headers");
     }
 
