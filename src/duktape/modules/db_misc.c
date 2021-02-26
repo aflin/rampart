@@ -650,12 +650,12 @@ RPfunc_stringformat(duk_context *ctx)
   char                  *outData, *fmtData = CHARPN, *fmt;
   RPSFD                 info;
   TXPMBUF               *pmbuf = TXPMBUFPN;
-  int 			i,argn=(duk_get_top(ctx)<2)?1:duk_get_top(ctx);
-  duk_idx_t		curidx=1;
+  int             i,argn=(duk_get_top(ctx)<2)?1:duk_get_top(ctx);
+  duk_idx_t        curidx=1;
   duk_size_t            duk_sz;
-  FLD			*args[argn];
-  HTPFARG		cvtData[argn];
-  void			*dupData[argn];
+  FLD            *args[argn];
+  HTPFARG        cvtData[argn];
+  void            *dupData[argn];
   char pbuf[msgbufsz];
 
   if (duk_get_top(ctx)==0)
@@ -735,22 +735,23 @@ RPfunc_stringformat(duk_context *ctx)
 duk_ret_t
 RPsqlFuncs_abstract(duk_context *ctx)
 {
-	ft_char *text=NULL, *query = CHARPN;
-	ft_long maxsz=230;
-	ft_long style = TXABS_STYLE_SMART;
-	const char *style_str="smart";
-	const char *styles[]= {
-	    "dumb","smart","querysingle","querymultiple","querybest",NULL
-	};
-	int i=0;
-	DBTBL *tbl=NULL;
-	duk_idx_t idx=0;
-	char *ab;
+    ft_char *text=NULL, *query = CHARPN;
+    ft_long maxsz=230;
+    ft_long style = TXABS_STYLE_SMART;
+    char *markup=NULL;
+    const char *style_str="smart";
+    const char *styles[]= {
+        "dumb","smart","querysingle","querymultiple","querybest",NULL
+    };
+    int i=0;
+    DBTBL *tbl=NULL;
+    duk_idx_t idx=0;
+    char *ab;
 
-	if (globalcp == APICPPN) globalcp = TXopenapicp();
+    if (globalcp == APICPPN) globalcp = TXopenapicp();
 
-	if(duk_is_string(ctx, idx))
-	{
+    if(duk_is_string(ctx, idx))
+    {
             text=(ft_char *)REQUIRE_STRING(ctx, idx, "abstract: no text provided");
             idx++;
         }
@@ -759,52 +760,86 @@ RPsqlFuncs_abstract(duk_context *ctx)
             text=(ft_char *)REQUIRE_STRING(ctx, idx+1, "abstract: no text provided");
         }
 
-	if( duk_is_object(ctx,idx) )
-	{
-	    if(duk_get_prop_string(ctx,idx,"max"))
-	        maxsz=(ft_long)REQUIRE_NUMBER(ctx,-1,"abstract: parameter \"max\" requires a number");
-            duk_pop(ctx);
+    if( duk_is_object(ctx,idx) )
+    {
+        if(duk_get_prop_string(ctx,idx,"max"))
+            maxsz=(ft_long)REQUIRE_NUMBER(ctx,-1,"abstract: parameter \"max\" requires a Number");
+        duk_pop(ctx);
 
-	    if(duk_get_prop_string(ctx,idx,"maxsize"))
-	        maxsz=(ft_long)REQUIRE_NUMBER(ctx,-1,"abstract: parameter \"max\" requires a number");
-            duk_pop(ctx);
+        if(duk_get_prop_string(ctx,idx,"maxsize"))
+            maxsz=(ft_long)REQUIRE_NUMBER(ctx,-1,"abstract: parameter \"max\" requires a Number");
+        duk_pop(ctx);
 
-            if(duk_get_prop_string(ctx,idx,"query"))
-                query=(ft_char *)strdup(REQUIRE_STRING(ctx,-1,"abstract: parameter \"query\" requires a string"));
-            duk_pop(ctx);
+        if(duk_get_prop_string(ctx,idx,"query"))
+            query=(ft_char *)strdup(REQUIRE_STRING(ctx,-1,"abstract: parameter \"query\" requires a String"));
+        duk_pop(ctx);
 
-            if(duk_get_prop_string(ctx,idx,"style"))
-                style_str=REQUIRE_STRING(ctx,-1,"abstract: parameter \"style\" requires a string (dumb|smart|querysingle|querymultiple|querybest)");
-            duk_pop(ctx);
-	}
-	else if (duk_is_number(ctx,idx))
-	{
-	    maxsz=(ft_long)duk_get_number(ctx,idx);
-	    idx++;
+        if(duk_get_prop_string(ctx,idx,"markup"))
+        {
+            if(duk_is_boolean(ctx, -1))
+            {
+                if(duk_get_boolean(ctx, -1))
+                    markup=strdup("%mbH");
+            }
+            else
+                markup=strdup(REQUIRE_STRING(ctx,-1,"abstract: parameter \"markup\" requires a String or a Boolean"));
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx,idx,"style"))
+            style_str=REQUIRE_STRING(ctx,-1,"abstract: parameter \"style\" requires a string (dumb|smart|querysingle|querymultiple|querybest)");
+        duk_pop(ctx);
+    }
+    else if (duk_is_number(ctx,idx))
+    {
+        maxsz=(ft_long)duk_get_number(ctx,idx);
+        idx++;
+        if (duk_is_string(ctx,idx))
+        {
+            style_str=duk_get_string(ctx,idx);
+            idx++;
+
             if (duk_is_string(ctx,idx))
             {
-                style_str=duk_get_string(ctx,idx);
+                query=(ft_char *)strdup(duk_get_string(ctx,idx));
                 idx++;
-
                 if (duk_is_string(ctx,idx))
-                    query=(ft_char *)strdup(duk_get_string(ctx,idx));
+                    markup = strdup(duk_get_string(ctx,idx));
+                else if (duk_is_boolean(ctx, idx) && duk_get_boolean(ctx, idx))
+                    markup=strdup("%mbH");
             }
-            
-        }	
-        if (text==NULL)
-            RP_THROW(ctx, "abstract: no text provided");
-	
-	while(styles[i] && strcmp(style_str,styles[i])!=0) i++;
-	if(styles[i]==NULL)
-	    RP_THROW(ctx, "abstract: parameter \"style\" requires a string (dumb|smart|querysingle|querymultiple|querybest)");
-	
-        style = TXstrToAbs((char *)style_str);
+        }
+    }    
 
-	ab=(char*)abstract(text, maxsz, style, query, tbl, CHARPPN, CHARPN);
-	duk_push_string(ctx, ab);
-	free(query);
-	free(ab);
-	return 1;
+    if (text==NULL)
+        RP_THROW(ctx, "abstract: no text provided");
+    
+    while(styles[i] && strcmp(style_str,styles[i])!=0) i++;
+    if(styles[i]==NULL)
+        RP_THROW(ctx, "abstract: parameter \"style\" requires a string (dumb|smart|querysingle|querymultiple|querybest)");
+    
+    style = TXstrToAbs((char *)style_str);
+
+    ab=(char*)abstract(text, maxsz, style, query, tbl, CHARPPN, CHARPN);
+printf("markup=%s\n",markup);
+    if(markup && query)
+    {
+        while(duk_get_top(ctx)) duk_pop(ctx);
+        duk_push_string(ctx, markup);
+        duk_push_string(ctx, "@0 ");
+        duk_push_string(ctx, query);
+        duk_concat(ctx, 2);
+        duk_push_string(ctx, ab);
+        free(query);
+        free(ab);
+        free(markup);
+        return RPfunc_stringformat(ctx);              
+    }
+
+    duk_push_string(ctx, ab);
+    free(query);
+    free(ab);
+    return 1;
 }
 
 /* metamorph/searchfile */
@@ -1786,7 +1821,7 @@ rex_re2_file(duk_context *ctx, TXrexSyntax type)
         duk_pop(ctx);
     }
     else
-    {	
+    {    
         endex=openrex((byte *)def_eexp, TXrexSyntax_Rex);   
     }
 
