@@ -40,7 +40,6 @@
 
 //#define RP_TO_DEBUG
 //#define RP_TIMEO_DEBUG
-#define COMBINE_EVLOOPS 1
 
 RP_MTYPES *allmimes=rp_mimetypes;
 int n_allmimes =nRpMtypes;
@@ -100,34 +99,7 @@ static const char *scheme_strmap[] = {
 };
 */
 
-/*
-   info for shared memory
-   which is used BOTH for thread and fork versions
-   in order to keep it simple
-*/
 
-#define MAPINFO struct map_info_s
-MAPINFO
-{
-    void *mem;
-    void *pos;
-    size_t memsz;
-};
-
-MAPINFO **mapinfos = NULL;
-#define mmap_used ((size_t)(mapinfo->pos - mapinfo->mem))
-#define mmap_rem (mapinfo->memsz - mmap_used)
-/* IPC Pipe info for parent/child and child pid */
-
-#define FORKINFO struct fork_info_s
-FORKINFO
-{
-    int par2child;
-    int child2par;
-    pid_t childpid;
-};
-
-FORKINFO **forkinfo = NULL;
 
 /* a duk http request struct
     keeps info about request, callback,
@@ -146,7 +118,6 @@ DHS
     duk_idx_t func_idx;     // location of the callback (set at server start, or for modules, upon require())
     duk_context *ctx;       // duk context for this thread (updated in thread)
     evhtp_request_t *req;   // the evhtp request struct for the current request (updated in thread, upon each request)
-    MAPINFO *mapinfo;       // holds location and size of buffer
     struct timeval timeout; // timeout for the duk script
     uint16_t threadno;      // our current thread number
     uint16_t pathlen;       // length of the url path if module==MODULE_PATH
@@ -176,7 +147,7 @@ static DHS *new_dhs(duk_context *ctx, int idx)
 {
     DHS *dhs = NULL;
 
-    DUKREMALLOC(ctx, dhs, sizeof(DHS));
+    REMALLOC(dhs, sizeof(DHS));
     dhs->func_idx = (duk_idx_t)idx;
     dhs->module=MODULE_NONE;
     dhs->module_name=NULL;
@@ -188,12 +159,11 @@ static DHS *new_dhs(duk_context *ctx, int idx)
     /* afaik there is no TIME_T_MAX */
     dhs->timeout.tv_sec = RP_TIME_T_FOREVER;
     dhs->timeout.tv_usec = 0;
-    dhs->mapinfo = NULL;
     dhs->auxbuf = NULL;
     dhs->bufsz = 0;
     dhs->bufpos = 0;
     dhsa.n++;
-    DUKREMALLOC(ctx, dhsa.dhs_pa, sizeof(DHS *) * dhsa.n);
+    REMALLOC(dhsa.dhs_pa, sizeof(DHS *) * dhsa.n);
     dhsa.dhs_pa[dhsa.n - 1] = dhs;
 
     return (dhs);
@@ -211,6 +181,8 @@ DHMAP
     char *key;
     char *val;
 };
+DHMAP **all_dhmaps=NULL;
+int n_dhmaps=0;
 
 static void setdate_header(evhtp_request_t *req, time_t secs)
 {
@@ -259,7 +231,7 @@ static int compress_resp(evhtp_request_t *req, int level, void **outbuf)
 
     outlen = libdeflate_gzip_compress_bound(compressor, inlen);
     REMALLOC(outgz, outlen);
-    outlen = libdeflate_gzip_compress(compressor, in, inlen, outgz, outlen); 
+    outlen = libdeflate_gzip_compress(compressor, in, inlen, outgz, outlen);
 
     libdeflate_free_compressor(compressor);
 
@@ -584,32 +556,11 @@ void push_multipart(duk_context *ctx, char *bound, void *buf, duk_size_t bsz)
                 if(*((char*)n)=='\n')n--;
                 if(*((char*)n)=='\r')n--;
                 sz=(n-begin)+1;
-                //printf("Part is %d long:\n%.*s\n",(int)sz,(int)sz,(char*)begin);
-                //share buffer with body/evbuffer
-                /*
-                if( !duk_get_prop_string(ctx,-1,"name") )
-                {
-                    duk_pop(ctx); * undefined *
-                    duk_push_sprintf(ctx,"data-%s",i);
-                    i++;
-                }
-                * name is on stack *
-                name=duk_get_string(ctx, -1);
-
-                duk_pull(ctx,-2);
-                */
+                /* share the memory, and the love */
                 duk_push_external_buffer(ctx);
                 duk_config_buffer(ctx, -1, begin, sz);
-                /*
-                //copy buffer
-                pushbuf = duk_push_fixed_buffer(ctx, sz);
-                memcpy(pushbuf,begin,sz);
-                */
                 duk_put_prop_string(ctx,-2,"content");
-
                 duk_put_prop_index(ctx,-2, (duk_uarridx_t)duk_get_length(ctx, -2));
-                //duk_put_prop_index(ctx,-2,(duk_uarridx_t)i);
-                //i++;
             }
         }
         else
@@ -630,7 +581,7 @@ static void copy_post_vars(duk_context *ctx)
         duk_pop_2(ctx);
         return;
     }
-    duk_remove(ctx, -2); /* discard postData ref */
+    duk_remove(ctx, -2); /* discard postData ref, content is on top */
 
     /* multipart data */
     if(duk_is_array(ctx, -1))
@@ -665,7 +616,7 @@ static void copy_post_vars(duk_context *ctx)
         duk_enum(ctx,-1,DUK_ENUM_OWN_PROPERTIES_ONLY);
         while (duk_next(ctx,-1,1))
         {
-            duk_put_prop(ctx,-6);
+            duk_put_prop(ctx,-6); //wow -where the hell am I?
         }
         duk_pop(ctx);
     }
@@ -826,7 +777,7 @@ duk_ret_t duk_server_add_header(duk_context *ctx)
 }
 */
 
-static void sendws(DHS *dhs, size_t mmapSz);
+static void sendws(DHS *dhs);
 
 /* in case of websockets, the dhs may have disappeared
    when http_callback returns.  We'll create a new one
@@ -854,18 +805,11 @@ static DHS *get_dhs(duk_context *ctx)
     duk_pop_2(ctx);
 
     dhs->threadno = thrno;
-    dhs->mapinfo = mapinfos[thrno];
-    dhs->mapinfo->pos = dhs->mapinfo->mem;
 
     duk_push_pointer(ctx, (void*)dhs);
     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
     return dhs;
 }
-
-#define getmapinfo do {\
-    dhs=get_dhs(ctx);\
-    mapinfo=dhs->mapinfo;\
-} while(0)
 
 duk_ret_t duk_server_ws_end(duk_context *ctx)
 {
@@ -881,7 +825,7 @@ duk_ret_t duk_server_ws_end(duk_context *ctx)
 duk_ret_t duk_server_ws_send(duk_context *ctx)
 {
     DHS *dhs = get_dhs(ctx);
-    sendws(dhs, 0);
+    sendws(dhs);
     free(dhs);
     duk_push_pointer(ctx, (void*)NULL);
     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
@@ -890,24 +834,13 @@ duk_ret_t duk_server_ws_send(duk_context *ctx)
 
 duk_ret_t duk_server_printf(duk_context *ctx)
 {
-    DHS *dhs;
-    MAPINFO *mapinfo;
+    DHS *dhs = get_dhs(ctx);
     size_t size;
 
-    getmapinfo;
-
     size = rp_printf(rp_out_null, NULL, 0, ctx, 0, NULL);
-    if(size < mmap_rem)
-    {
-        size = rp_printf(rp_out_buffer, mapinfo->pos, mmap_rem, ctx, 0, NULL);
-        mapinfo->pos += size;
-    }
-    else
-    {
-        checkauxsize(dhs, size);
-        size = rp_printf(rp_out_buffer, (char*)dhs->auxbuf + dhs->bufpos, size, ctx, 0, NULL);
-        dhs->bufpos += size;
-    }
+    checkauxsize(dhs, size);
+    size = rp_printf(rp_out_buffer, (char*)dhs->auxbuf + dhs->bufpos, size, ctx, 0, NULL);
+    dhs->bufpos += size;
 
     duk_push_int(ctx, (int) size);
 
@@ -916,28 +849,17 @@ duk_ret_t duk_server_printf(duk_context *ctx)
 
 duk_ret_t duk_server_put(duk_context *ctx)
 {
-    DHS *dhs;
-    MAPINFO *mapinfo;
+    DHS *dhs = get_dhs(ctx);
     size_t size;
     duk_size_t dsz;
     const char *s;
 
-    getmapinfo;
-
     s = REQUIRE_STR_OR_BUF(ctx, 0, &dsz, "req.put requires a string or buffer");
     size = (size_t)dsz; // probably the same type, but IDK
 
-    if(size < mmap_rem)
-    {
-        memcpy(mapinfo->pos, s, size);
-        mapinfo->pos += size;
-    }
-    else
-    {
-        checkauxsize(dhs, size);
-        memcpy(dhs->auxbuf + dhs->bufpos, s, size);
-        dhs->bufpos += size;
-    }
+    checkauxsize(dhs, size);
+    memcpy(dhs->auxbuf + dhs->bufpos, s, size);
+    dhs->bufpos += size;
     duk_push_int(ctx, (int) size);
 
     return 1;
@@ -945,77 +867,39 @@ duk_ret_t duk_server_put(duk_context *ctx)
 
 duk_ret_t duk_server_getbuffer(duk_context *ctx)
 {
-    DHS *dhs;
-    MAPINFO *mapinfo;
+    DHS *dhs = get_dhs(ctx);
     void *buf;
 
-    getmapinfo;
-
-    buf = duk_push_fixed_buffer(ctx, mmap_used + dhs->bufpos);
-    memcpy(buf, mapinfo->mem, mmap_used);
-    memcpy(buf+mmap_used, dhs->auxbuf, dhs->bufpos);
+    buf = duk_push_fixed_buffer(ctx, dhs->bufpos);
+    memcpy(buf, dhs->auxbuf, dhs->bufpos);
 
     return 1;
 }
 
 duk_ret_t duk_server_rewind(duk_context *ctx)
 {
-    DHS *dhs;
-    MAPINFO *mapinfo;
-    size_t curpos;
+    DHS *dhs = get_dhs(ctx);
     int position = REQUIRE_INT(ctx, 0, "req.rewind requires a number greater than 0 as its argument");
 
     if(position<0)
-        RP_THROW(ctx, "req.rewind requires a number greater than 0 as its argument");
+        position = dhs->bufpos + position;
 
-    getmapinfo;
-
-    curpos = mmap_used + dhs->bufpos;
-
-    /* order of buffers: mmap | auxbuf */
-    if( position <= curpos)
-    {
-        if(position == mmap_used)
-        {
-            //wherever you go, there you are, especially if you never left
-            return 0;
-        }
-        /* is the requested position within the mmap? */
-        if(position < mmap_used)
-        {
-            mapinfo->pos = mapinfo->mem + position;
-            /* did we have data in the auxbuf? */
-            if(dhs->bufpos)
-            {
-                dhs->bufpos=0;
-                dhs->bufsz=0;
-                free(dhs->auxbuf);
-                dhs->auxbuf=NULL;
-            }
-        }
-        else
-        {
-            position -= mmap_used;
+    if( position <= dhs->bufpos)
             dhs->bufpos=position;
-        }
-    }
     else
         RP_THROW(
             ctx,
-            "req.rewind - cannot set a position past the end of buffer (position:%d > bufsize:%d)\n",
-            position, (int) curpos
+            "req.rewind - cannot set a position past the end of buffer (requested position:%d > current position:%d)\n",
+            position, (int) dhs->bufpos
         );
     return 0;
 }
 
 duk_ret_t duk_server_getpos(duk_context *ctx)
 {
-    DHS *dhs;
-    MAPINFO *mapinfo;
+    DHS *dhs = get_dhs(ctx);
 
-    getmapinfo;
-
-    duk_push_number(ctx, (double)mmap_used + (double)dhs->bufpos);
+    duk_push_number(ctx, (double)dhs->bufpos);
 
     return 1;
 }
@@ -1460,11 +1344,13 @@ static int compress_level = 1;
 static char *_compressibles[] =
 {
     "html",
+    "css",
+    "js",
     "json",
     "xml",
-    "js",
-    "css",
     "txt",
+    "text",
+    "htm",
     NULL
 };
 
@@ -1619,7 +1505,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
             struct stat cstat;
             int makecache=0, cfd=-1;
             char *p = strrchr(gzipfile,'/');
-            
+
             if (stat(gzipfile, &cstat) == -1)
             {
                 //file doesn't exist.  Check for directory.
@@ -1671,7 +1557,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                             return;
                         }
                     }
-                    
+
                 }
             }
             /* the actual compression */
@@ -1860,16 +1746,6 @@ static int attachfile(evhtp_request_t *req, char *fn)
     return 1;
 }
 
-
-
-static void attachauxbuf(DHS *dhs)
-{
-    evbuffer_add_reference(dhs->req->buffer_out, dhs->auxbuf, dhs->bufpos, frefcb, NULL);
-    dhs->auxbuf=NULL;
-    dhs->bufpos=0;
-    dhs->bufsz=0;
-}
-
 /* no check done, idx must be a duktape buffer*/
 static void attachbuf(DHS *dhs, duk_idx_t idx)
 {
@@ -1893,39 +1769,23 @@ static void attachbuf(DHS *dhs, duk_idx_t idx)
    after, send auxbuf if exists
    in whatever form
 */
-static void sendmem(DHS *dhs, size_t mmapSz)
+static void sendmem(DHS *dhs)
 {
-    MAPINFO *mapinfo = dhs->mapinfo;
-
-    if(!mmapSz)
-        mmapSz = mmap_used;
-
-    if(mmapSz)
-    {
-        evbuffer_add_reference(dhs->req->buffer_out, mapinfo->mem, mmapSz, NULL, NULL);
-    }
-    /* our object should be at -4
-       if we forked, buf is in object key="auxbuf"
-       otherwise it is in dhs->auxbuf             */
-    if(duk_get_top_index(dhs->ctx) > 3)
-    {
-        if( duk_get_prop_string(dhs->ctx, -4, "auxbuf"))
-            attachbuf(dhs, -1);
-        else if (dhs->bufpos)
-            attachauxbuf(dhs);
-        duk_pop(dhs->ctx);
-    }
-    else
-        attachauxbuf(dhs);
+    if(!dhs->bufpos)
+        return;
+    evbuffer_add_reference(dhs->req->buffer_out, dhs->auxbuf, dhs->bufpos, frefcb, NULL);
+    dhs->auxbuf=NULL;
+    dhs->bufpos=0;
+    dhs->bufsz=0;
 }
 
-static void sendbuf(DHS *dhs, size_t mmapSz)
+static void sendbuf(DHS *dhs)
 {
     const char *s;
     duk_context *ctx = dhs->ctx;
     duk_size_t sz;
 
-    sendmem(dhs, mmapSz);
+    sendmem(dhs);
     /* null or empty string */
     if(!duk_get_length(ctx, -1) )
     {
@@ -1955,7 +1815,7 @@ static void sendbuf(DHS *dhs, size_t mmapSz)
     }
 }
 
-static void sendws(DHS *dhs, size_t mmapSz)
+static void sendws(DHS *dhs)
 {
     void               * data;
     evhtp_ws_data      * ws_data;
@@ -1966,7 +1826,7 @@ static void sendws(DHS *dhs, size_t mmapSz)
     if(!req)
         return;
     /* put everything into buffer_out */
-    sendbuf(dhs, mmapSz);
+    sendbuf(dhs);
     data = evbuffer_pullup(req->buffer_out, -1);
     ws_data = evhtp_ws_data_new(data, evbuffer_get_length(req->buffer_out));
     outbuf  = evhtp_ws_data_pack(ws_data, &outlen);
@@ -1978,10 +1838,10 @@ static void sendws(DHS *dhs, size_t mmapSz)
     evhtp_send_reply_body(req, resp);
     evbuffer_free(resp);
     evbuffer_drain(req->buffer_out, evbuffer_get_length(req->buffer_out));
-    
+
 }
 
-static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
+static evhtp_res sendobj(DHS *dhs)
 {
     RP_MTYPES m;
     RP_MTYPES *mres;
@@ -2004,7 +1864,7 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
             duk_push_undefined(ctx);
             duk_push_string(ctx, "ws");
             duk_pull(ctx, -3);
-            sendws(dhs, mmapSz);
+            sendws(dhs);
             duk_pop_3(ctx);
             return 0;
         }
@@ -2114,12 +1974,6 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
     {
         m.ext = (char *)duk_to_string(ctx, -2);
 
-        if( !strcmp(m.ext,"auxbuf"))
-        {
-            duk_pop_2(ctx);
-            continue;
-        }
-
         if (gotdata)
             goto opterr;
 
@@ -2138,11 +1992,9 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
             /* if data is a string and starts with '@', its a filename */
             if (duk_is_string(ctx, -1) && ((d = duk_get_string(ctx, -1)) || 1) && *d == '@')
             {
-                MAPINFO *mapinfo = dhs->mapinfo; /* for mmap_used macro */
-
-                if( mmapSz || mmap_used > 0 )
+                if(dhs->bufpos)
                 {
-                    sendmem(dhs, mmapSz);
+                    sendmem(dhs);
                     attachfile(dhs->req, (char *)d+1);
                 }
                 else
@@ -2154,10 +2006,10 @@ static evhtp_res sendobj(DHS *dhs, size_t mmapSz)
             else if (duk_is_object(ctx, -1))
             {
                 duk_json_encode(ctx, -1);
-                sendbuf(dhs,mmapSz);
+                sendbuf(dhs);
             }
             else
-                sendbuf(dhs,mmapSz); /* send buffer or string contents at idx=-1 */
+                sendbuf(dhs); /* send buffer or string contents at idx=-1 */
 
             duk_pop_2(ctx);
             continue;
@@ -2851,7 +2703,7 @@ static void *http_dothread(void *arg)
         duk_pull(ctx, -2);
         duk_put_prop_string(ctx, -2, "text");
     }
-    res = sendobj(dhs, 0);
+    res = sendobj(dhs);
 
     if (res)
         sendresp(req, res);
@@ -2882,17 +2734,12 @@ static duk_context *redo_ctx(int thrno)
         exit(1);
     }
 
-#ifdef COMBINE_EVLOOPS
-    /*
-        in this case server.start() has returned
-        deleting the stack which would have our functions
-        and our array of functions have instead been stashed
-    */
+    //    our array of functions have been stashed
     duk_push_global_stash(main_ctx);
     duk_get_prop_string(main_ctx, -1, "funcstash");
     duk_insert(main_ctx, 0);
     duk_pop(main_ctx);
-#endif
+
     copy_all(main_ctx, thr_ctx);
 
     duk_get_prop_index(main_ctx,0,fno);
@@ -2962,9 +2809,7 @@ static duk_context *redo_ctx(int thrno)
     duk_put_prop_string(thr_ctx, -2, "thread_id");
     duk_put_global_string(thr_ctx, "rampart");
 
-#ifdef COMBINE_EVLOOPS
     duk_remove(main_ctx,0);
-#endif
 
     pthread_mutex_unlock(&ctxlock);
 
@@ -2977,7 +2822,7 @@ static void
 http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
 {
     DHS *dhs = arg;
-    DHR *dhr = NULL;
+    DHR dhr_s, *dhr = &dhr_s;
     pthread_t script_runner;
     pthread_attr_t attr;
     struct timespec ts;
@@ -2993,7 +2838,7 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
 #endif
 
     gettimeofday(&now, NULL);
-    DUKREMALLOC(dhs->ctx, dhr, sizeof(DHR));
+
     dhr->dhs = dhs;
     dhr->req = req;
 #ifdef RP_TIMEO_DEBUG
@@ -3060,7 +2905,7 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
 
         dhs->ctx = redo_ctx(thrno);
         debugf("0x%x, context recreated after timeout\n", (int)x);
-        fflush(stdout);
+        //fflush(stdout);
         if(dhs->module)
         {
             duk_get_prop_index(dhs->ctx, 0, (duk_uarridx_t)dhs->func_idx);
@@ -3098,10 +2943,12 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
 #endif
     pthread_join(script_runner, NULL);
     pthread_cond_destroy(&(dhr->cond));
-    free(dhr);
+
     debugf("exiting http_thread_callback\n");
 }
-/* call with 0.0 to start, use return from first call to get elapsed */
+
+
+/* call with 0.0 to start, use return from first call to get elapsed *
 static double
 stopwatch(double dtime)
 {
@@ -3118,6 +2965,8 @@ void rp_exit(int sig)
     //    printf("exiting in rp_exit()\n");
     exit(0);
 }
+*/
+
 
 //#define tprintf(...)  printf(__VA_ARGS__);
 #define tprintf(...) /*nada */
@@ -3131,738 +2980,10 @@ void rp_exit(int sig)
    default being true (safe) if not present.
 */
 
-#define killfork do {\
- /*printf("Killing Fork at %d\n", __LINE__);*/\
- kill(finfo->childpid, SIGTERM);\
- finfo->childpid=0;\
- close(finfo->child2par);\
- close(finfo->par2child);\
- finfo->child2par = -1;\
- finfo->par2child = -1;\
-} while(0)
-
-#define EVFDATA struct event_fork_data_s
-EVFDATA {
-    DHS *dhs;
-    evhtp_connection_t *conn;
-    FORKINFO *finfo;
-    int have_threadsafe_val;
-};
-#define childwrite(a,b,c) do{\
-    if(write((a),(b),(c))==-1) {\
-        printerr("child->parent write failed: '%s' -- exiting\n",strerror(errno));\
-        exit(1);\
-    };\
-} while(0)
-#define childread(a,b,c) do{\
-    if(read((a),(b),(c))==-1) {\
-        printerr("child<-parent read failed: '%s' -- exiting\n",strerror(errno));\
-        exit(1);\
-    };\
-} while(0)
-
-static size_t contents_to_mmap(DHS *dhs, FORKINFO *finfo)
-{
-    RP_MTYPES m;
-    RP_MTYPES *mres;
-    int gotdata = 0;
-    duk_context *ctx = dhs->ctx;
-    MAPINFO *mapinfo = dhs->mapinfo;
-    size_t ret = 0;
-    //const char *setkey=NULL;
-
-    /* find the key which is a known mime-type extension */
-    duk_enum(ctx, -1, 0);
-    while (duk_next(ctx, -1, 1))
-    {
-        int isws=0;
-        mres=NULL;
-        if (gotdata)
-        {
-            duk_pop_2(ctx);
-            continue;
-        }
-
-        m.ext = (char *)duk_to_string(ctx, -2);
-        if( !strcmp(m.ext,"headers") || !strcmp(m.ext,"status") || !strcmp(m.ext,"compress"))
-        {
-            duk_pop_2(ctx);
-            continue;
-        }
-
-        if( !strcmp(m.ext, "ws"))
-            isws=1;
-        else
-            mres = bsearch(&m, allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
-        if (isws || mres)
-        {
-            const char *d;
-            gotdata = 1;
-            //setkey=m.ext;
-            if (duk_is_object(ctx, -1))
-                duk_json_encode(ctx, -1);
-            /* if data is a string and starts with '@', its a filename
-               no need to put that in the buffer */
-            if (duk_is_string(ctx, -1) && ((d = duk_get_string(ctx, -1)) || 1) && *d == '@')
-            {
-                duk_pop_2(ctx);
-                ret= mmap_used;
-                goto err_end; // not an err, but end anyway
-            }
-            else
-            {
-                duk_size_t sz=0;
-                void *hdata;
-
-                if(duk_is_buffer_data(ctx, -1))
-                    hdata = duk_get_buffer_data(ctx, -1, &sz);
-                else if (duk_is_string(ctx, -1))
-                    hdata = (void *)duk_get_lstring(ctx, -1, &sz);
-
-                if ( sz > mmap_rem )
-                {
-                    /* we'll just pipe it instead */
-                    duk_pop_2(ctx);
-                    ret=0;
-                    goto err_end;
-                }
-                memcpy(mapinfo->pos, hdata, (size_t)sz);
-                mapinfo->pos+=sz;
-
-                duk_push_string(ctx, "");
-                duk_put_prop_string(ctx, -5, m.ext);
-                ret = (size_t) mmap_used;
-            }
-
-            duk_pop_2(ctx);
-            continue;
-        }
-        else
-        {
-            //ret = 0;
-            //printerr( "key '%s' in return object is invalid\n", m.ext);
-            duk_pop_2(ctx);
-            //goto err_end;
-        }
-    }
-
-    err_end:
-
-    duk_pop(ctx);
-    return (ret);
-}
-
-
 extern struct event_base *elbase;
 
 struct timeval evimmediate={0,0};
 
-static void fork_exec_js(evutil_socket_t fd_ignored, short flags, void *arg)
-{
-    EVFDATA *data= (EVFDATA *) arg;
-    DHS *dhs= data->dhs;
-    duk_context *ctx = dhs->ctx;
-    int child2par = data->finfo->child2par;
-    int eno=0;
-    char *cbor=NULL;
-    duk_size_t bufsz;
-    uint32_t msgOutSz = 0;
-    size_t mmapOutSz= 0;
-
-    /* reset position in mmap memory to start */
-    dhs->mapinfo->pos = dhs->mapinfo->mem;
-
-    tprintf("doing fork callback\n");
-    if ((eno = duk_pcall(ctx, 1)))
-    {
-        /* FAIL, ERROR THROWN */
-        /* reset the buffer */
-        dhs->mapinfo->pos = dhs->mapinfo->mem;
-        if (duk_is_error(ctx, -1) || duk_is_string(ctx, -1))
-        {
-            if (duk_is_error(ctx, -1))
-            {
-                duk_get_prop_string(ctx, -1, "stack");
-                duk_remove(ctx,-2);
-            }
-            duk_push_object(ctx);
-            duk_pull(ctx, -2);
-            printerr("error in callback: %s\n",duk_get_string(ctx,-1));
-            duk_put_prop_string(ctx, -2, "err_msg");
-            duk_push_number(ctx, 500);
-            duk_put_prop_string(ctx, -2, "status");
-        }
-    }
-    else
-    {
-        /* SUCCESS */
-        /* encode the result of duk_pcall (or the error message) */
-        if(duk_is_string(ctx, -1))
-        {
-            /* a string was returned instead of {"text":string} */
-            duk_push_object(ctx);
-            duk_pull(ctx, -2);
-            duk_put_prop_string(ctx, -2, "text");
-        }
-        /* put the main content in mmaped memory
-           replace content with ""              */
-        mmapOutSz = contents_to_mmap(dhs, data->finfo);
-    }
-
-    if(dhs->bufpos > 0)
-    {
-        /* attach buffer to a duktape buffer (without copy)
-           so it can be copied in cbor below
-        */
-        duk_push_external_buffer(ctx);
-        duk_config_buffer(ctx, -1, dhs->auxbuf, (duk_size_t) dhs->bufpos);
-        duk_put_prop_string(ctx, -2, "auxbuf");
-    }
-    duk_cbor_encode(ctx, -1, 0);
-    cbor = duk_get_buffer_data(ctx, -1, &bufsz);
-    msgOutSz = (uint32_t)bufsz;
-    if(dhs->bufpos > 0)
-    {
-        dhs->bufpos = 0;
-        dhs->bufsz = 0;
-        free(dhs->auxbuf);
-        dhs->auxbuf = NULL;
-    }
-    if(data->conn)
-    {
-        /* on first loop, safe to close and free here */
-        evutil_closesocket(data->conn->sock);
-        /* this apparently includes something needed later, don't free */
-        //evhtp_connection_free(data->conn);
-        //data->conn=NULL;
-    }
-
-    /* first: write the size of the message to parent */
-    childwrite(child2par, &msgOutSz, sizeof(uint32_t));
-
-    /* second: write the size of the size of data written to mmap */
-    childwrite(child2par, &mmapOutSz, sizeof(size_t));
-
-    /* third: a single char for thread_safe info */
-    if (!data->have_threadsafe_val)
-    {
-        if (
-            duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("threadsafe")) &&
-            duk_is_boolean(ctx, -1) &&
-            duk_get_boolean(ctx, -1) == 0
-        )
-            childwrite(child2par, "F", 1); //message that thread safe==false
-        else
-            childwrite(child2par, "X", 1); //message that thread safe is not to be set one way or another
-
-        duk_push_global_object(ctx);
-        duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("threadsafe"));
-        duk_pop_2(ctx);
-        data->have_threadsafe_val = 1;
-    }
-    else
-    {
-        childwrite(child2par, "X", 1); //message that thread safe is not to be set one way or another
-    }
-
-    /* fourth: write the encoded message */
-    tprintf("child sending cbor message %d long on %d:\n", (int)msgOutSz, child2par);
-    childwrite(child2par, cbor, msgOutSz);
-
-    tprintf("child sent message %d long. Waiting for input\n", (int)msgOutSz);
-
-    duk_pop(ctx); //buffer
-}
-
-static void fork_read_request(evutil_socket_t fd_ignored, short flags, void *arg)
-{
-    EVFDATA *data= (EVFDATA *) arg;
-    DHS *dhs= data->dhs;
-    duk_context *ctx = dhs->ctx;
-    int par2child = data->finfo->par2child;
-    uint32_t msgOutSz = 0;
-    fcntl(par2child, F_SETFL, 0);
-
-    /* wait here for the next request and get it's size */
-    childread(par2child, &msgOutSz, sizeof(uint32_t));
-    tprintf("child to receive message %d long on %d\n", (int)msgOutSz, par2child);
-
-    /* whether we already know the thread-safe status */
-    childread(par2child, &data->have_threadsafe_val, sizeof(int));
-
-    /* the index of the function we will use for javascript callback */
-    childread(par2child, &(dhs->func_idx), sizeof(duk_idx_t));
-    /* now get the cbor message from parent */
-    {
-        char *jbuf=NULL, *p;
-
-        /* buffer to hold cbor data, sized appropriately */
-        REMALLOC(jbuf,(size_t)msgOutSz);
-        p=jbuf;
-        size_t toread = (size_t)msgOutSz;
-        ssize_t TOTread = 0;
-
-        /* read the cbor message from parent */
-        TOTread = read(par2child, p, toread);
-        while (TOTread > 0)
-        {
-            toread -= (size_t)TOTread;
-            tprintf("read %d bytes, %d bytes left\n",(int)TOTread,(int)toread);
-            p += TOTread;
-            TOTread = read(par2child, p, toread);
-        }
-        memcpy(duk_push_fixed_buffer(ctx, (duk_size_t)msgOutSz), jbuf, (size_t)msgOutSz);
-        free(jbuf);
-    }
-    /* decode cbor message */
-    duk_cbor_decode(ctx, -1, 0);
-    /* these don't survive cbor */
-    duk_push_pointer(ctx, (void*) dhs);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("dhs"));
-    duk_push_c_function(ctx, duk_server_printf, DUK_VARARGS);
-    duk_put_prop_string(ctx, -2, "printf");
-    duk_push_c_function(ctx, duk_server_put, 1);
-    duk_put_prop_string(ctx, -2, "put");
-    duk_push_c_function(ctx, duk_server_getpos, 0);
-    duk_put_prop_string(ctx, -2, "getpos");
-    duk_push_c_function(ctx, duk_server_rewind, 1);
-    duk_put_prop_string(ctx, -2, "rewind");
-    duk_push_c_function(ctx, duk_server_getbuffer, 0);
-    duk_put_prop_string(ctx, -2, "getBuffer");
-    if(0 && dhs->req->cb_has_websock)
-    {
-        duk_push_c_function(ctx, duk_server_ws_send,1);
-        duk_put_prop_string(ctx, -2, "wsSend");
-    }
-    /*
-    duk_push_c_function(ctx, duk_server_add_header, 2);
-    duk_put_prop_string(ctx, -2, "addHeader");
-    duk_push_c_function(ctx, duk_server_add_cookie, 1);
-    duk_put_prop_string(ctx, -2, "addCookie");
-    */
-    /* free old names */
-    if(dhs->module_name) free(dhs->module_name);
-    if(dhs->reqpath) free(dhs->reqpath);
-    dhs->reqpath=NULL;
-    dhs->module_name=NULL;
-
-    /* get the module name, if any */
-    if( duk_get_prop_string(ctx, -1, "rp_module_name" ) )
-    {
-        dhs->module_name = strdup(duk_get_string(ctx,-1));
-        duk_del_prop_string(ctx, -2, "rp_module_name");
-    }
-    else
-        dhs->module_name=NULL;
-    duk_pop(ctx);
-
-    if (duk_get_prop_string(ctx, -1, "rp_reqpath"))
-    {
-        dhs->reqpath = strdup(duk_get_string(ctx,-1));
-        duk_del_prop_string(ctx, -2, "rp_reqpath");
-    }
-    //else printf("WTF  -- this can't happen at duk_get_prop_string(ctx, -2, rp_reqpath)");
-    duk_pop(ctx);
-
-    dhs->pathlen=0;
-    if (duk_get_prop_string(ctx, -1, "rp_pathlen"))
-    {
-        dhs->pathlen=duk_get_int(ctx, -1);
-        duk_del_prop_string(ctx, -2, "rp_pathlen");
-    }
-    duk_pop(ctx);
-
-    /* pull function out of stash and prepare to call it with parameters from cbor decoded message */
-    /* this will not return 0, because we previously checked */
-    getfunction(dhs);
-    /* move message/object to top */
-    duk_pull(ctx,-2);
-    fork_exec_js(-1,0,data);
-    fcntl(par2child, F_SETFL, O_NONBLOCK);
-}
-
-static void
-http_fork_callback(evhtp_request_t *req, DHS *dhs, int have_threadsafe_val)
-{
-    evhtp_res res = 200;
-    int preforked = 0, child2par[2], par2child[2], pidstatus;
-    double cstart, celapsed;
-    FORKINFO *finfo = forkinfo[dhs->threadno];
-    char *cbor;
-    uint32_t msgOutSz = 0;
-    size_t mmapSz=0;
-    duk_context *ctx = dhs->ctx;
-
-    signal(SIGPIPE, SIG_IGN); //macos
-    signal(SIGCHLD, SIG_IGN);
-
-    cstart = stopwatch(0.0);
-    tprintf("in fork\n");
-    /* use waitpid to eliminate the very possibility of getting the same pid, but that isn't our child */
-    if (finfo->childpid && !waitpid(finfo->childpid, &pidstatus, WNOHANG))
-    {
-        tprintf("module=%d\n",(int)dhs->module);
-        /* module changed, so must refork */
-        if(dhs->module==MODULE_FILE_RELOAD)
-            killfork;
-        /* if request body is large, fork again rather than piping request.
-           Pipe data in req.body and req.contents are shared and will
-           double when serialized and piped
-        */
-        else if(evbuffer_get_length(dhs->req->buffer_in) > 1048576)
-        {
-            //printf("request is large, killing and reforking\n");
-            killfork;
-        }
-        else
-        {
-            preforked = 1;
-        }
-    }
-    if(!preforked)
-    {
-        /* our first run.  create pipes and setup for fork */
-        if (pipe(child2par) == -1)
-        {
-            printerr( "child2par pipe failed\n");
-            return;
-        }
-
-        if (pipe(par2child) == -1)
-        {
-            printerr( "par2child pipe failed\n");
-            return;
-        }
-
-        /* if child died, close old handles */
-        if (finfo->child2par > 0)
-        {
-            close(finfo->child2par);
-            finfo->child2par = -1;
-        }
-        if (finfo->par2child > 0)
-        {
-            close(finfo->par2child);
-            finfo->par2child = -1;
-        }
-
-        /***** fork ******/
-        finfo->childpid = fork();
-        if (finfo->childpid < 0)
-        {
-            printerr( "fork failed");
-            finfo->childpid = 0;
-            return;
-        }
-    }
-
-    /* *************** CHILD PROCESS ************* */
-    if (!preforked && finfo->childpid == 0)
-    { /* child is forked once then talks over pipes.
-           and is killed if timed out                  */
-
-        RP_TX_isforked=1; /* mutex locking not necessary in fork */
-        struct sigaction sa;
-        evhtp_connection_t *conn = evhtp_request_get_connection(req);
-        struct event *ev;
-
-        EVFDATA data_s={0}, *data=&data_s;
-
-        memset(&sa, 0, sizeof(struct sigaction));
-        sa.sa_flags = 0;
-        sa.sa_handler = rp_exit;
-        sigemptyset(&sa.sa_mask);
-        sigaction(SIGUSR1, &sa, NULL);
-
-        close(child2par[0]);
-        close(par2child[1]);
-
-        tprintf("beginning with par2child=%d, child2par=%d\n", par2child[0], child2par[1]);
-        /* on first round, just forked, so we have all the request info
-            no need to pipe it */
-        /* copy function ref to top of stack */
-        getfunction(dhs);
-
-        /* push an empty object */
-        duk_push_object(ctx);
-        /* populate object with details from client (requires conn) */
-        push_req_vars(dhs);
-
-        data->dhs=dhs;
-        finfo->child2par = child2par[1];
-        finfo->par2child = par2child[0];
-        data->finfo = finfo;
-        data->have_threadsafe_val=have_threadsafe_val;
-        data->conn=conn;
-        /* TODO: find why this causes delay/hang
-        event_reinit(elbase);
-        event_base_loopbreak(elbase); //stop event loop in the child
-        event_base_free(elbase); // free it
-        */
-        elbase = event_base_new(); // redo it
-
-        duk_push_global_stash(ctx);
-        duk_push_pointer(ctx, (void*)elbase);
-        duk_put_prop_string(ctx, -2, "elbase");
-        duk_pop(ctx);
-
-        //do the first js exec once here
-        ev=event_new(elbase, -1, 0,  fork_exec_js, data);
-        event_add(ev, &evimmediate);
-
-        /* make pipe non-blocking */
-        fcntl(finfo->par2child, F_SETFL, O_NONBLOCK);
-
-        /* use event loop to handle piped data in all transactions after this one */
-        ev=event_new(elbase, finfo->par2child, EV_PERSIST|EV_READ,  fork_read_request, data);
-        event_add(ev, NULL);
-        /* start new event loop here */
-        event_base_loop(elbase, 0);
-
-        close(child2par[1]);
-        exit(0);
-    }
-    else
-
-#define parentabort do{\
-    printerr( "server.c line %d: '%s'\n", __LINE__, strerror(errno));\
-    send500(req, "Error in Child Process");\
-    killfork;\
-    return;\
-} while(0)
-
-#define parentwrite(a,b,c) do{\
-    if(write((a),(b),(c))==-1) {\
-        printerr("parent->child write failed: '%s'\n",strerror(errno));\
-        parentabort;\
-    }\
-} while(0)
-#define parentread(a,b,c) do{\
-    if(read((a),(b),(c))==-1) {\
-        printerr("parent<-child read failed: '%s'\n",strerror(errno));\
-        parentabort;\
-    }\
-} while(0)
-
-    /* ********************* PARENT ******************** */
-    {
-        int totread = 0, is_threadsafe = 1;
-        uint32_t bsize;        duk_size_t bufsz;
-        int status=0;
-
-        /* check child is still alive */
-        if (preforked)
-        {
-            tprintf("is preforked in parent, c2p:%d p2c%d\n", finfo->child2par, finfo->par2child);
-
-            /* push an empty object */
-            duk_push_object(ctx);
-            /* populate object with details from client */
-            push_req_vars(dhs);
-
-            /* add module info to pass onto child process */
-            if(dhs->module_name)
-            {
-                duk_push_string(ctx,dhs->module_name);
-                duk_put_prop_string(ctx, -2, "rp_module_name" );
-            }
-            duk_push_string(ctx, dhs->reqpath);
-            duk_put_prop_string(ctx, -2, "rp_reqpath" );
-            duk_push_number(ctx, dhs->pathlen);
-            duk_put_prop_string(ctx, -2, "rp_pathlen" );
-
-            /* convert to cbor and send to child */
-            duk_cbor_encode(ctx, -1, 0);
-            cbor = duk_get_buffer_data(ctx, -1, &bufsz);
-
-            msgOutSz = (uint32_t)bufsz;
-
-            tprintf("parent sending cbor, length %d\n", (int)msgOutSz);
-            parentwrite(finfo->par2child, &msgOutSz, sizeof(uint32_t));
-            parentwrite(finfo->par2child, &have_threadsafe_val,sizeof(int));
-            parentwrite(finfo->par2child, &(dhs->func_idx), sizeof(duk_idx_t));
-            parentwrite(finfo->par2child, cbor, msgOutSz);
-            tprintf("parent sent cbor, length %d\n", (int)msgOutSz);
-
-            duk_pop(ctx);
-        }
-        else
-        {
-            tprintf("first run in parent c2p:%d p2c%d\n", child2par[0], par2child[1]);
-            close(child2par[1]);
-            close(par2child[0]);
-            finfo->child2par = child2par[0];
-            finfo->par2child = par2child[1];
-        }
-        tprintf("parent waiting for input\n");
-
-        if (dhs->timeout.tv_sec == RP_TIME_T_FOREVER)
-        {
-            if (-1 == read(finfo->child2par, &bsize, sizeof(uint32_t)))
-                parentabort;
-        }
-        else
-        {
-            double maxtime = (double)dhs->timeout.tv_sec + ((double)dhs->timeout.tv_usec / 1e6);
-
-            /* this loops 4 times for the minimal callback returning a string
-               on a sandy bridge 3.2ghz core (without the time check, just the usleep) */
-            fcntl(finfo->child2par, F_SETFL, O_NONBLOCK);
-
-            /* wait for and read the size int from child */
-            while (-1 == read(finfo->child2par, &bsize, sizeof(uint32_t)))
-            {
-                celapsed = stopwatch(cstart);
-                if (celapsed > maxtime)
-                {
-                    int loop = 0;
-                    kill(finfo->childpid, SIGUSR1);
-                    while (!waitpid(finfo->childpid, &pidstatus, WNOHANG))
-                    {
-                        usleep(50000);
-                        if (loop++ > 4)
-                        {
-                            printerr( "hard timeout in script, no graceful exit.\n");
-                            kill(finfo->childpid, SIGTERM);
-                            break;
-                        }
-                    }
-                    finfo->childpid = 0;
-                    duk_get_prop_index(ctx, 0, (duk_uarridx_t)dhs->func_idx);
-                    duk_get_prop_string(ctx, -1, "fname");
-                    printerr( "timeout in %s() %f > %f\n", duk_to_string(ctx, -1), celapsed, maxtime);
-                    duk_pop_2(ctx);
-                    send500(req, "Timeout in Script");
-                    return;
-                }
-                usleep(1000);
-            }
-            /* reset to blocking mode */
-            fcntl(finfo->child2par, F_SETFL, 0);
-        }
-
-        /* get thread safe info char and the message.
-           put message in a buffer for decoding      */
-        tprintf("parent about to read %lld bytes\n", (long long)bsize);
-        /* if child is dead here, bsize is bad, bad things will be read later, causing big boom */
-
-        /* confusion about which is correct */
-        //if (waitpid(finfo->childpid, &pidstatus, WNOHANG))
-        if (waitpid(finfo->childpid, &pidstatus, WNOHANG) == -1)
-        {
-            fprintf(stderr, "Error in Child Process: %s, pid=%d\n", strerror(errno), finfo->childpid);
-            send500(req, "Error in Child Process");
-            printerr( "server.c line %d: Error in Child Process\n", __LINE__);
-            return;
-        }
-        {
-            char *jbuf=NULL, *p, c;
-            int toread = (int)bsize;
-            
-            REMALLOC(jbuf, bsize);
-            p=jbuf;
-            parentread(finfo->child2par, &mmapSz, sizeof(size_t));
-            /*
-            if(mmapSz)
-            {
-                evbuffer_add_reference(req->buffer_out, dhs->mapinfo->mem, mmapSz, NULL, NULL);
-            }
-            */
-            parentread(finfo->child2par, &c, 1);
-            if (c == 'F')
-                is_threadsafe = 0;
-
-            while ((totread = read(finfo->child2par, p, toread)) > 0)
-            {
-                tprintf("total read=%d\n", totread);
-                toread -= totread;
-                p += totread;
-            }
-            if (totread < 1 && toread > 0)
-            {
-                printerr( "server.c line %d, errno=%d\n", __LINE__, errno);
-                killfork;
-                send500(req, "Error in Child Process");
-                printerr( "server.c line %d: Error in Child Process\n", __LINE__);
-                return;
-            }
-            //memcpy(duk_push_fixed_buffer(ctx, (duk_size_t)bsize), jbuf, (size_t)bsize);
-            duk_push_external_buffer(ctx);
-            duk_config_buffer(ctx, -1, jbuf, (duk_size_t)bsize);
-            /* decode message */
-            duk_cbor_decode(ctx, -1, 0);
-            free(jbuf);
-        }
-        /* if we don't already have it, set the threadsafe info on the function */
-        if (!have_threadsafe_val)
-        {
-            getfunction(dhs);
-            duk_push_boolean(ctx, (duk_bool_t)is_threadsafe);
-            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("threadsafe"));
-            duk_pop(ctx);
-            /* mark it as thread safe on main_ctx as well (for timeout/redo_ctx, but not if module) */
-            if(!dhs->module)
-            {
-                if (pthread_mutex_lock(&ctxlock) == EINVAL)
-                {
-                    printerr( "could not obtain lock in http_callback\n");
-                    exit(1);
-                }
-
-#ifdef COMBINE_EVLOOPS
-                duk_push_global_stash(main_ctx);
-                duk_get_prop_string(main_ctx, -1, "funcstash");
-                duk_insert(main_ctx, 0);
-                duk_pop(main_ctx);
-#endif
-
-                duk_get_prop_index(main_ctx, 0, (duk_uarridx_t)dhs->func_idx);
-                duk_push_boolean(main_ctx, (duk_bool_t)is_threadsafe);
-                duk_put_prop_string(main_ctx, -2, DUK_HIDDEN_SYMBOL("threadsafe"));
-                duk_pop(main_ctx);
-
-#ifdef COMBINE_EVLOOPS
-                duk_remove(main_ctx,0);
-#endif
-                pthread_mutex_unlock(&ctxlock);
-            }
-        }
-        if( duk_get_prop_string(ctx, -1, "status"))
-        {
-            status=REQUIRE_INT(ctx, -1, "server callback: status must be set to a number\n");
-        }
-        duk_pop(ctx);
-        if(status == 500)
-        {
-            if (duk_get_prop_string(ctx, -1, "err_msg"))
-            {
-                send500(req, (void *)duk_to_string(ctx, -1));
-                duk_pop(ctx);
-                return;
-            }
-            duk_pop(ctx);
-        }
-    }
-    /* stack now has return value from duk function call */
-
-    /* set some headers */
-    //setheaders(req);
-    /* don't accept arrays */
-    if (duk_is_array(ctx, -1))
-    {
-        RP_THROW(ctx, "Return value cannot be an array");
-        (void)duk_throw(ctx);
-    }
-
-    /* object has reply data and options in it */
-    res = sendobj(dhs, mmapSz);
-
-
-    if (res)
-        sendresp(req, res);
-    duk_pop(ctx);
-    tprintf("Parent exit\n");
-}
 
 /* load module if not loaded, return position on stack
     if module file is newer than loaded version, reload
@@ -4147,8 +3268,9 @@ static int getmod_path(DHS *dhs)
 static void http_callback(evhtp_request_t *req, void *arg)
 {
     DHS newdhs, *dhs = arg;
-    int dofork = 1, have_threadsafe_val = 0, thrno = 0;
+    int thrno = 0;
     duk_context *new_ctx;
+
     if (!gl_singlethreaded)
     {
         evthr_t *thread = get_request_thr(req);
@@ -4168,14 +3290,17 @@ static void http_callback(evhtp_request_t *req, void *arg)
     newdhs.module=dhs->module;
     newdhs.module_name=NULL;
     newdhs.aux=dhs->aux;
-    newdhs.reqpath=strdup(req->uri->path->full);
-    newdhs.mapinfo = mapinfos[thrno];
+    //newdhs.reqpath=strdup(req->uri->path->full);
+    newdhs.reqpath=req->uri->path->full;
     newdhs.bufsz = 0;
     newdhs.bufpos = 0;
     newdhs.auxbuf= NULL;
     dhs = &newdhs;
-    /* reset position in mmap memory to start */
-    dhs->mapinfo->pos = dhs->mapinfo->mem;
+
+    //duk_push_c_function(dhs->ctx, close_connection, 0);
+    //duk_push_pointer(dhs->ctx, (void *)dhs);
+    //duk_put_prop_string(dhs->ctx, -2, "dhs");
+    //duk_put_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("clreq"));
 
     if(req->cb_has_websock)
     {
@@ -4200,17 +3325,15 @@ static void http_callback(evhtp_request_t *req, void *arg)
         res=getmod(dhs);
         if(res==-1)
         {
-            free(dhs->reqpath);
             free(dhs->module_name);
             dhs->module_name=NULL;
-            return;
+            goto http_req_end;
         }
         else if (res == 0)
         {
             send404(dhs->req);
-            free(dhs->reqpath);
             free(dhs->module_name);
-            return;
+            goto http_req_end;
         }
     }
     else if (dhs->module==MODULE_PATH)
@@ -4218,46 +3341,21 @@ static void http_callback(evhtp_request_t *req, void *arg)
         int res=getmod_path(dhs);
         if(res==-1)
         {
-            free(dhs->reqpath);
             free(dhs->module_name);
-            return;
+            goto http_req_end;
         }
         else if (res==0)
         {
             //printf("sending 404 from http_callback\n");
             send404(dhs->req);
-            free(dhs->reqpath);
             free(dhs->module_name);
-            return;
+            goto http_req_end;
         }
     }
-    /* fork until we know it is safe not to fork:
-       function will have property threadsafe:true if forking not required
-       after the first time it is called in http_fork_callback              */
-/*  TODO: Remove all forking from server
 
-    if(!getfunction(dhs))
-    {
-        // matching object key to url - fail = 404 (see getfunction() )
-        // doing fail here and we don't need to fork *
-        send404(dhs->req);
-        free(dhs->reqpath);
-        free(dhs->module_name);
-        return;
-    }
-    if (duk_get_prop_string(dhs->ctx, -1, DUK_HIDDEN_SYMBOL("threadsafe")))
-    {
-        if (duk_is_boolean(dhs->ctx, -1) && duk_get_boolean(dhs->ctx, -1))
-            dofork = 0;
-        have_threadsafe_val = 1;
-    }
-    duk_pop_2(dhs->ctx);
-
-    // there are places where we need to know what dhs is
-    // and if dhs exists
     if(duk_get_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("dhs")))
     {
-        //if not NULL, it is the old one from websock functions, if wsSend was never called 
+        //if not NULL, it is the old one from websock functions, if wsSend was never called
         duk_context *fdhs = duk_get_pointer(dhs->ctx, -1);
         if(fdhs)
             free(fdhs);
@@ -4267,19 +3365,21 @@ static void http_callback(evhtp_request_t *req, void *arg)
     duk_push_pointer(dhs->ctx, (void*) dhs);
     duk_put_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("dhs"));
 
-    if (dofork)
-        http_fork_callback(req, dhs, have_threadsafe_val);
-    else
-*/        http_thread_callback(req, dhs, thrno);
+    http_thread_callback(req, dhs, thrno);
 
+    /* cleanup */
     free(dhs->module_name);
-    free(dhs->reqpath);
 
     //dhs is gone at end of this function
     //so we mark it as such
     duk_push_pointer(dhs->ctx, (void*) NULL);
     duk_put_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("dhs"));
-    
+
+    http_req_end:
+
+//    duk_push_undefined(dhs->ctx);
+//    duk_put_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("clreq"));
+    return;
 }
 
 /* bind to addr and port.  Return mallocd string of addr, which
@@ -4367,7 +3467,6 @@ void exitcb(evhtp_request_t *req, void *arg)
     exit(0);
 }
 
-   
 void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
 {
     int *thrno = NULL;
@@ -4380,7 +3479,7 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
         exit(1);
     }
 
-    DUKREMALLOC(main_ctx, thrno, sizeof(int));
+    REMALLOC(thrno, sizeof(int));
 
     /* drop privileges here, after binding port */
     if(unprivu && !gl_threadno)
@@ -4400,6 +3499,8 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     duk_push_pointer(ctx, (void*)base);
     duk_put_prop_string(ctx, -2, "elbase");
     duk_pop(ctx);
+
+
     pthread_mutex_unlock(&ctxlock);
 /*
     printf("threadno = %d, base = %p\n", *thrno, base);
@@ -4701,9 +3802,7 @@ static void proc_mimes(duk_context *ctx)
    step on next.
    TODO: turn this function from hell into something readable */
 
-#ifdef COMBINE_EVLOOPS
 extern struct event_base *elbase;
-#endif
 duk_ret_t duk_server_start(duk_context *ctx)
 {
     DHS *dhs = new_dhs(ctx, -1);
@@ -4715,9 +3814,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
     uint16_t port = 8088;
     int nthr=0, mapsort=1;
     evhtp_t *htp = NULL;
-#ifndef COMBINE_EVLOOPS
-    struct event_base *evbase;
-#endif
     evhtp_ssl_cfg_t *ssl_config = NULL;
     int i=0, confThreads = -1, mthread = 1, daemon=0;
     struct stat f_stat;
@@ -4853,9 +3949,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
             return 1;
         }
     }
-#ifndef COMBINE_EVLOOPS
-    evbase = event_base_new();
-#endif
     /* done with forking, now calloc */
     ssl_config = calloc(1, sizeof(evhtp_ssl_cfg_t));
     rampart_server_started=1;
@@ -5088,85 +4181,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
         fprintf(access_fh, "HTTP server - initializing single threaded\n");
     }
 
-    /* set up info structs for forking in threads for thread-unsafe duk_c functions */
-    REMALLOC(forkinfo, (totnthreads * sizeof(FORKINFO *)));
-    for (i = 0; i < totnthreads; i++)
-    {
-        forkinfo[i] = NULL;
-        REMALLOC(forkinfo[i], sizeof(FORKINFO));
-        forkinfo[i]->par2child = -1;
-        forkinfo[i]->child2par = -1;
-        forkinfo[i]->childpid = 0;
-    }
-
-    /* set up info structs for mmap memory */
-/*TODO: remove forking code */
-
-//for now, just this:
-bufmempct=0;
-
-    {
-        long pagesize = sysconf(_SC_PAGE_SIZE);
-#ifdef __APPLE__
-        uint64_t mem;
-        size_t len = sizeof(mem);
-        sysctlbyname("hw.memsize", &mem, &len, NULL, 0);
-        long physmem = mem/sysconf(_SC_PAGE_SIZE);
-#else
-        long physmem  = sysconf(_SC_PHYS_PAGES);
-#endif
-        long tmapsize = (bufmempct > 100000) ? bufmempct/4000 +1 : bufmempct * physmem / 100000;
-        long mapsize = tmapsize/((long)totnthreads);
-
-        //default case
-        if(bufmempct == -1)
-        {
-            // 20mb per thread by default
-            mapsize = 5120;
-            tmapsize = mapsize * (long)totnthreads;
-            if(tmapsize > 5 * physmem / 100)
-            {
-                tmapsize = 5 * physmem / 100;
-                mapsize = tmapsize / (long)totnthreads;
-            }
-        }
-/*
-        if ((double)tmapsize/250.0 < 1.0)
-            printf("using %.2fkb for buffers ", (double)tmapsize/0.250);
-        else
-            printf("using %.2fmb for buffers ", (double)tmapsize/250.0);
-
-        if ((double)mapsize/250.0 < 1.0)
-            printf("(%.2fkb per thread)\n", (double)mapsize/0.250 );
-        else
-            printf("(%.2fmb per thread)\n", (double)mapsize/250.0 );
-*/
-        REMALLOC(mapinfos, (totnthreads * sizeof(MAPINFO *)));
-        for (i = 0; i < totnthreads; i++)
-        {
-            mapinfos[i] = NULL;
-            REMALLOC(mapinfos[i], sizeof(MAPINFO));
-
-            if( mapsize)
-            {
-                mapinfos[i]->mem = mmap(NULL, (size_t)pagesize * mapsize, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);
-                if(mapinfos[i]->mem == MAP_FAILED)
-                {
-                    fprintf(stderr, "mmap failed: %s\n",strerror(errno));
-                    exit(1);
-                }
-                mapinfos[i]->memsz = (size_t)pagesize * mapsize;
-                mapinfos[i]->pos = mapinfos[i]->mem;
-            }
-            else
-            {
-                mapinfos[i]->mem = NULL;
-                mapinfos[i]->memsz = 0;
-                mapinfos[i]->pos = NULL;
-            }
-        }
-    }
-
     /* initialize a context for each thread */
     REMALLOC(thread_ctx, (totnthreads * sizeof(duk_context *)));
     for (i = 0; i <= totnthreads; i++)
@@ -5199,11 +4213,8 @@ bufmempct=0;
 
         duk_put_global_string(tctx, "rampart");
     }
-#ifdef COMBINE_EVLOOPS
     htp = evhtp_new(elbase, NULL);
-#else
-    htp = evhtp_new(evbase, NULL);
-#endif
+
     /* testing for pure c benchmarking*
     evhtp_set_cb(htp, "/test", testcb, NULL);
 
@@ -5395,7 +4406,7 @@ bufmempct=0;
                         evhtp_callback_t  *req_callback;
 
                         //path = (char *)duk_get_string(ctx, -2);
-                        DUKREMALLOC(ctx, s, strlen(path) + 2);
+                        REMALLOC(s, strlen(path) + 2);
 
                         if(*path == 'w' && *(path+1) =='s' && *(path+2) ==':' &&  *(path+3) =='/')
                         {
@@ -5546,9 +4557,11 @@ bufmempct=0;
                             }
                         }
 
-                        DUKREMALLOC(ctx, map, sizeof(DHMAP));
-
-                        DUKREMALLOC(ctx, s, strlen(path) + 4);
+                        REMALLOC(map, sizeof(DHMAP));
+                        n_dhmaps++;
+                        REMALLOC(all_dhmaps, n_dhmaps * sizeof(DHMAP*));
+                        all_dhmaps[n_dhmaps-1] = map;
+                        REMALLOC(s, strlen(path) + 4);
 
                         if (*path != '/')
                             sprintf(s, "/%s", path);
@@ -5663,7 +4676,7 @@ bufmempct=0;
                         if (mode != S_IFDIR)
                             RP_THROW(ctx, "server.start: parameter \"map\" -- Fileserver path '%s' requires a directory",fspath);
 
-                        DUKREMALLOC(ctx, fs, strlen(fspath) + 2)
+                        REMALLOC(fs, strlen(fspath) + 2)
 
                         if (*(fspath + strlen(fspath) - 1) != '/')
                         {
@@ -5895,25 +4908,17 @@ bufmempct=0;
         }
         stderr=error_fh;
         stdout=access_fh;
-#ifdef COMBINE_EVLOOPS
         duk_push_global_stash(ctx);
         duk_pull(ctx,0);
         duk_put_prop_string(ctx, -2, "funcstash");
-        // if forking, run loop here in child and don't continue with rest of script
+        // if forking as a daemon, run loop here in child and don't continue with rest of script
         // script will continue in parent process
         event_base_loop(elbase, 0);
-#endif
     }
 
-#ifdef COMBINE_EVLOOPS
-//    printstack(ctx);
     duk_push_global_stash(ctx);
     duk_pull(ctx,0);
     duk_put_prop_string(ctx, -2, "funcstash");
-#else
-    //never return
-    event_base_loop(evbase, 0);
-#endif
     duk_push_int(ctx, (int) getpid() );
     return 1;
 }
@@ -5930,13 +4935,6 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_object(ctx);
     duk_put_function_list(ctx, -1, utils_funcs);
     duk_put_number_list(ctx, -1, utils_consts);
-
-    /*
-    duk_compile_string(ctx, DUK_COMPILE_FUNCTION, DIRLISTFUNC);
-    duk_push_string(ctx, "defaultDirList");
-    duk_put_prop_string(ctx, -2, "fname");
-    duk_put_prop_string(ctx, -2, "defaultDirList");
-    */
 
     return 1;
 }
