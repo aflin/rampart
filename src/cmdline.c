@@ -1298,6 +1298,12 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                 copy(*in);
                 line++;
                 adv;
+                /* This succeeds for some (like return and `` on different lines), but not if 
+                   function name and tag template are in different lines
+                   BTW: ASL..., STBY
+                if (!startexp)
+                    startexp=1;
+                */
                 break;
             case '\\':
                 copy(*in);
@@ -1497,17 +1503,21 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                     /* end function(...var) processing */
                     
                     /* for the "/regexp/" vs "var x = 2/3" cases, tag function and (...rest) processing,
-                       we need to know where we are. This is a horrible hack, but it seems to work    */
-                    if (strchr("{([=;+-/*", *in))
+                       we need to know where we are. This is a horrible hack, but it seems to work    
+                       Failings might be Automatic Semicolon Insertion at '\n'. See case '\n' above.
+                    */
+                    if (strchr("{([=;+-/*:,%^&|", *in))
                         startexp=1;
                     else if (isalnum(*in) || *in =='}' || *in == ')' || *in == ']')
                         startexp=0;
+                    /*
                     else if(
                         (*in == '&' && in+1<end && *(in+1)=='&')
                             ||
                         (*in == '|' && in+1<end && *(in+1)=='|')
                     )
                         startexp=1;
+                    */
                 }
                 copy(*in);
                 if (getstate() == ST_BS)
