@@ -12,6 +12,9 @@
 #include <evhtp/thread.h>
 #endif
 
+//-ajf connection tracker
+#define EVHTP_VALGRIND_FORK_SAFE 1
+
 #include <evhtp/parser.h>
 
 /* switched to normal onig calls (instead of the onigposix.h ones) -ajf */
@@ -465,11 +468,18 @@ struct evhtp_connection {
     uint16_t flags;
 
     struct evbuffer * scratch_buf;                 /**< always zero'd out after used */
-
+#ifdef EVHTP_VALGRIND_FORK_SAFE
+    TAILQ_ENTRY(evhtp_connection) conn_entries; //-ajf connection tracker
+#endif
 #ifdef EVHTP_FUTURE_USE
     TAILQ_HEAD(, evhtp_request) pending;           /**< client pending data */
 #endif
 };
+
+#ifdef EVHTP_VALGRIND_FORK_SAFE
+TAILQ_HEAD(connhead_s, evhtp_connection) conn_head; //-ajf connection tracker
+//void evhtp_free_open_connections(); //-ajf connection tracker
+#endif
 
 struct evhtp_hooks {
     evhtp_hook_headers_start_cb   on_headers_start;

@@ -2894,6 +2894,7 @@ htp__connection_new_(evhtp_t * htp, evutil_socket_t sock, evhtp_type type)
     if (evhtp_unlikely(connection == NULL)) {
         return NULL;
     }
+    TAILQ_INSERT_TAIL(&conn_head, connection, conn_entries);//-ajf connection tracker
 
     connection->scratch_buf = evbuffer_new();
 
@@ -2964,7 +2965,6 @@ htp__run_in_thread_(evthr_t * thr, void * arg, void * shared)
 
     connection->evbase = evthr_get_base(thr);
     connection->thread = thr;
-
     if (htp__connection_accept_(connection->evbase, connection) < 0) {
         evhtp_safe_free(connection, evhtp_connection_free);
 
@@ -5291,12 +5291,34 @@ evhtp_request_set_max_body_size(evhtp_request_t * req, uint64_t len)
     evhtp_connection_set_max_body_size(req->conn, len);
 }
 
+/* this doesn't work. but it doesn't matter.
+   the whole issue was to shut up valgrind after a fork
+   and all the threads in new process disappear
+   The existence of the list is enough for that.
+   
+   The big question is should we maintain this list
+   just to quiet valgrind?
+
+//-ajf connection tracker
+void evhtp_free_open_connections()
+{
+    evhtp_connection_t * conn;
+
+    for (conn = conn_head.tqh_first; conn != NULL; conn = conn->conn_entries.tqe_next)
+        evhtp_connection_free(conn);
+
+    while (conn_head.tqh_first != NULL)
+        TAILQ_REMOVE(&conn_head, conn_head.tqh_first, conn_entries);
+}
+*/
+
 void
 evhtp_connection_free(evhtp_connection_t * connection)
 {
     if (evhtp_unlikely(connection == NULL)) {
         return;
     }
+    TAILQ_REMOVE(&conn_head, connection, conn_entries);//-ajf connection tracker
 
     htp__hook_connection_fini_(connection);
 
@@ -5531,7 +5553,7 @@ evhtp__new_(evhtp_t ** out, struct event_base * evbase, void * arg)
 
     TAILQ_INIT(&htp->vhosts);
     TAILQ_INIT(&htp->aliases);
-
+    TAILQ_INIT(&conn_head);//-ajf connection tracker
     /* note that we pass the htp context to the callback,
      * not the user supplied arguments. That is stored
      * within the context itself.
