@@ -2894,8 +2894,9 @@ htp__connection_new_(evhtp_t * htp, evutil_socket_t sock, evhtp_type type)
     if (evhtp_unlikely(connection == NULL)) {
         return NULL;
     }
+#ifdef EVHTP_VALGRIND_FORK_SAFE
     TAILQ_INSERT_TAIL(&conn_head, connection, conn_entries);//-ajf connection tracker
-
+#endif
     connection->scratch_buf = evbuffer_new();
 
     if (evhtp_unlikely(connection->scratch_buf == NULL)) {
@@ -5290,11 +5291,20 @@ evhtp_request_set_max_body_size(evhtp_request_t * req, uint64_t len)
 {
     evhtp_connection_set_max_body_size(req->conn, len);
 }
+/* 
+#ifdef EVHTP_VALGRIND_FORK_SAFE
+   this doesn't work. but it doesn't matter.
 
-/* this doesn't work. but it doesn't matter.
-   the whole issue was to shut up valgrind after a fork
-   and all the threads in new process disappear
-   The existence of the list is enough for that.
+   The whole issue was to shut up valgrind after a fork
+   (where the child process would not and could not be 
+   using the server).
+
+   In such a case, post-fork all the threads in new process 
+   will disappear.  Their connections will never
+   be freed or found again.
+
+   The existence of the list is enough for them to be
+   not lost.
    
    The big question is should we maintain this list
    just to quiet valgrind?
@@ -5310,6 +5320,7 @@ void evhtp_free_open_connections()
     while (conn_head.tqh_first != NULL)
         TAILQ_REMOVE(&conn_head, conn_head.tqh_first, conn_entries);
 }
+#endif
 */
 
 void
@@ -5318,8 +5329,9 @@ evhtp_connection_free(evhtp_connection_t * connection)
     if (evhtp_unlikely(connection == NULL)) {
         return;
     }
+#ifdef EVHTP_VALGRIND_FORK_SAFE
     TAILQ_REMOVE(&conn_head, connection, conn_entries);//-ajf connection tracker
-
+#endif
     htp__hook_connection_fini_(connection);
 
     evhtp_safe_free(connection->request, htp__request_free_);
@@ -5553,7 +5565,9 @@ evhtp__new_(evhtp_t ** out, struct event_base * evbase, void * arg)
 
     TAILQ_INIT(&htp->vhosts);
     TAILQ_INIT(&htp->aliases);
+#ifdef EVHTP_VALGRIND_FORK_SAFE
     TAILQ_INIT(&conn_head);//-ajf connection tracker
+#endif
     /* note that we pass the htp context to the callback,
      * not the user supplied arguments. That is stored
      * within the context itself.
