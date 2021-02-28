@@ -217,7 +217,7 @@ htp_sslutil_sha1_tostr(evhtp_ssl_t * ssl) {
     if (buf) {
         offset = 0;
         for (i = 0; i < n; i++) {
-            sz      = snprintf(buf + offset, nsz - offset, "%02X%c", md[i], (i + 1 == n) ? 0 : ':');
+            sz      = snprintf((char*)(buf + offset), nsz - offset, "%02X%c", md[i], (i + 1 == n) ? 0 : ':');
             offset += sz;
 
             if (sz < 0 || offset >= nsz) {
@@ -495,7 +495,7 @@ htp_sslutil_add_xheaders(evhtp_headers_t * hdrs, evhtp_ssl_t * ssl, short flags)
         char * o_str = NULL;
 
         if (flags & ssl_x_hdrs_[i].flag) {
-            if ((o_str = (ssl_x_hdrs_[i].convfn)(ssl))) {
+            if ((o_str = (char*)(ssl_x_hdrs_[i].convfn)(ssl))) {
                 evhtp_headers_add_header(
                     hdrs,
                     evhtp_header_new(ssl_x_hdrs_[i].hdr_str, o_str, 0, 1));

@@ -105,13 +105,13 @@ enum evhtp_ws_parser_state {
 typedef enum evhtp_ws_parser_state evhtp_ws_parser_state;
 
 struct evhtp_ws_parser_s {
-    evhtp_ws_frame        frame;
     evhtp_ws_parser_state state;
     uint64_t              content_len;
     uint64_t              orig_content_len;
     uint64_t              content_idx;
     uint16_t              status_code;
     void                * usrdata;
+    evhtp_ws_frame        frame;
 };
 
 static uint8_t _fext_len[129] = {
@@ -395,8 +395,8 @@ evhtp_ws_gen_handshake(evhtp_kvs_t * hdrs_in, evhtp_kvs_t * hdrs_out) {
            EVHTP_WS_MAGIC, EVHTP_WS_MAGIC_SZ);
 
     sha1_init(&sha);
-    sha1_update(&sha, magic_w_ws_key, magic_w_ws_key_len - 1);
-    sha1_finalize(&sha, digest);
+    sha1_update(&sha, (uint8_t *)magic_w_ws_key, magic_w_ws_key_len - 1);
+    sha1_finalize(&sha, (uint8_t *)digest);
 
     if (base_encode(base64_rfc, digest,
                     20, (void **)&out, &out_bytes) == -1) {
@@ -521,7 +521,7 @@ evhtp_ws_parser_get_userdata(evhtp_ws_parser * p) {
     return p->usrdata;
 }
 
-void *evhtp_ws_disconnect(evhtp_request_t  * req)
+void evhtp_ws_disconnect(evhtp_request_t  * req)
 {
     evhtp_connection_t * c = evhtp_request_get_connection(req);
     c->flags &=  ~EVHTP_CONN_FLAG_OWNER;

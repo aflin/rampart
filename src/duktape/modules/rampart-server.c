@@ -1623,7 +1623,6 @@ body, td, th, span { font-family: Geneva,Arial,Helvetica; }\n\
                         fn, fn);
     sendresp(req, EVHTP_RES_FOUND);
 }
-
 static void
 fileserver(evhtp_request_t *req, void *arg)
 {
@@ -1636,7 +1635,8 @@ fileserver(evhtp_request_t *req, void *arg)
     mode_t mode;
     int i = 0, len = (int) strlen(path->full);
 
-    dhs->req = req;
+//    don't do that!  It will be stomped on.
+//    dhs->req = req;
 
     strcpy(fn, map->val);
     s=duk_rp_url_decode( path->full, &len );
@@ -1675,10 +1675,12 @@ fileserver(evhtp_request_t *req, void *arg)
     if (mode == S_IFREG)
     {
         int i=0;
+
         for (;i<map->nheaders; i++)
         {
-            evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new(map->hkeys[i], map->hvals[i], 0, 0));
+            evhtp_headers_add_header(req->headers_out, evhtp_header_new(map->hkeys[i], map->hvals[i], 0, 0));
         }
+
         rp_sendfile(req, fn, 0, &sb);
     }
     else if (mode == S_IFDIR)

@@ -1483,7 +1483,7 @@ EVHTP_EXPORT unsigned int evhtp_request_status(evhtp_request_t *);
 /**
  * @brief disconnect from websocket client
  */
-void * evhtp_ws_disconnect(evhtp_request_t  * req);
+void evhtp_ws_disconnect(evhtp_request_t  * req);
 
 #ifdef __cplusplus
 }

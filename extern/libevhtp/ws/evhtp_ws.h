@@ -17,7 +17,8 @@ struct evhtp_ws_frame_s;
 struct evhtp_ws_frame_hdr_s;
 struct evhtp_ws_data_s;
 
-typedef struct evhtp_ws_parser_s    evhtp_ws_parser;
+//defined in evhtp.h
+//typedef struct evhtp_ws_parser_s    evhtp_ws_parser;
 typedef struct evhtp_ws_frame_s     evhtp_ws_frame;
 typedef struct evhtp_ws_frame_hdr_s evhtp_ws_frame_hdr;
 typedef struct evhtp_ws_data_s      evhtp_ws_data;
