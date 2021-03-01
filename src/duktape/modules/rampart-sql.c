@@ -25,7 +25,6 @@
 #include "api3.h"
 #include "../globals/csv_parser.h"
 
-
 #define RESMAX_DEFAULT 10 /* default number of sql rows returned for select statements if max is not set */
 //#define PUTMSG_STDERR                  /* print texis error messages to stderr */
 
@@ -487,6 +486,7 @@ static SFI *check_fork(DB_HANDLE *h, int create)
             sa.sa_handler =  die_nicely;
             sigemptyset(&sa.sa_mask);
             sigaction(SIGUSR1, &sa, NULL);
+
             close(child2par[0]);
             close(par2child[1]);
             finfo->writer = child2par[1];

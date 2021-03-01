@@ -840,6 +840,7 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
     return 0;
 }
 /* tickify (template literal parsing) section */
+/* this has grown out of control and needs to be replaced by a proper parser */
 #define ST_NONE 0
 #define ST_DQ   1
 #define ST_SQ   2
@@ -1258,6 +1259,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                     }
                     else if (startexp)
                     {
+                        regex:
                         /* regular expression */
                         copy(*in);
                         adv;
@@ -1278,6 +1280,23 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                     }
                     else
                     {
+                        char *s=in;
+
+                        s--;
+                        while(s>=src && isspace(*s))s--;
+                        while(s>=src && isalpha(*s))s--;
+                        s++;
+                        if(
+                            /* reserved words which don't require a (), {} or [] next
+                               this prevents >>return /abc`def/;<< from being run through
+                               proc_backtick above                                        */
+                            !strncmp(s,"return",6) || !strncmp(s,"yield",5)     ||
+                            !strncmp(s,"break",5)  || !strncmp(s,"continue",8)  ||
+                            !strncmp(s,"case",4)   || !strncmp(s,"else",4)      ||
+                            !strncmp(s,"typeof",6) || !strncmp(s,"delete",6)    ||
+                            !strncmp(s,"new",3)    || !strncmp(s,"var",3)
+                        )
+                            goto regex;
                         /* division */
                         copy(*in);
                         adv;
@@ -1346,8 +1365,28 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                 if (getstate() == ST_NONE)
                 {
                     int r;
+                    char *s=in;
+
                     qline=line;
-                    r=proc_backtick(in, end, &outbeg, &out, &osz, &line, !startexp);
+                    s--;
+                    while(s>=src && isspace(*s))s--;
+                    while(s>=src && isalpha(*s))s--;
+                    s++;
+                    if(
+                        // reserved words which don't require a (), {} or [] next
+                        // not all make sense in terms of being followed by a `literal`
+                        // but covering the cases anyway.
+                        !strncmp(s,"return",6) || !strncmp(s,"yield",5)     ||
+                        !strncmp(s,"break",5)  || !strncmp(s,"continue",8)  ||
+                        !strncmp(s,"case",4)   || !strncmp(s,"else",4)      ||
+                        !strncmp(s,"typeof",6) || !strncmp(s,"delete",6)    ||
+                        !strncmp(s,"new",3)    || !strncmp(s,"var",3)
+                    )
+                    {
+                        r=proc_backtick(in, end, &outbeg, &out, &osz, &line, startexp);
+                    }
+                    else
+                        r=proc_backtick(in, end, &outbeg, &out, &osz, &line, !startexp);
                     if(!r)
                     {
                         *err=ST_BT;
@@ -1506,7 +1545,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                        we need to know where we are. This is a horrible hack, but it seems to work    
                        Failings might be Automatic Semicolon Insertion at '\n'. See case '\n' above.
                     */
-                    if (strchr("{([=;+-/*:,%^&|", *in))
+                    if (strchr("{([=;+-/*:,%^&|?", *in))
                         startexp=1;
                     else if (isalnum(*in) || *in =='}' || *in == ')' || *in == ']')
                         startexp=0;

@@ -51,68 +51,14 @@
 #define EVHTP_WS_MAGIC_SZ    36
 #define PARSER_STACK_MAX     8192
 
-struct evhtp_ws_frame_hdr_s {
-    uint8_t opcode : 4,
-            rsv3   : 1,
-            rsv2   : 1,
-            rsv1   : 1,
-            fin    : 1;
-
-    #define OP_CONT          0x0
-    #define OP_TEXT          0x1
-    #define OP_BIN           0x2
-    #define OP_NCONTROL_RES1 0x3
-    #define OP_NCONTROL_RES2 0x4
-    #define OP_NCONTROL_RES3 0x5
-    #define OP_NCONTROL_RES4 0x6
-    #define OP_NCONTROL_RES5 0x7
-    #define OP_CLOSE         0x8
-    #define OP_PING          0x9
-    #define OP_PONG          0xA
-    #define OP_CONTROL_RES1  0xB
-    #define OP_CONTROL_RES2  0xC
-    #define OP_CONTROL_RES3  0xD
-    #define OP_CONTROL_RES4  0xE
-    #define OP_CONTROL_RES5  0xF
-
-    uint8_t len  : 7,
-            mask : 1;
-} __attribute__((packed));
 
 struct evhtp_ws_data_s {
     evhtp_ws_frame_hdr hdr;
     char               payload[0];
 };
 
-struct evhtp_ws_frame_s {
-    evhtp_ws_frame_hdr hdr;
 
-    uint32_t masking_key;
-    uint64_t payload_len;
-    char     payload[];
-};
 
-enum evhtp_ws_parser_state {
-    ws_s_start = 0,
-    ws_s_fin_rsv_opcode,
-    ws_s_mask_payload_len,
-    ws_s_ext_payload_len_16,
-    ws_s_ext_payload_len_64,
-    ws_s_masking_key,
-    ws_s_payload
-};
-
-typedef enum evhtp_ws_parser_state evhtp_ws_parser_state;
-
-struct evhtp_ws_parser_s {
-    evhtp_ws_parser_state state;
-    uint64_t              content_len;
-    uint64_t              orig_content_len;
-    uint64_t              content_idx;
-    uint16_t              status_code;
-    void                * usrdata;
-    evhtp_ws_frame        frame;
-};
 
 static uint8_t _fext_len[129] = {
     [0]   = 0,

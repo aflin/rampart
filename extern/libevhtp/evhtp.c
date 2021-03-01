@@ -933,7 +933,7 @@ htp__callback_find_(evhtp_callbacks_t * cbs,
                     UChar *str=(UChar*)path;
                     UChar *end=(UChar* )path + onigenc_str_bytelen_null(ONIG_ENCODING_UTF8, (UChar* )path);
                     unsigned char *start=str, *range=end;
-                    
+
                     r = onig_search(callback->val.regex, str, end,
                         start, range, region, ONIG_OPTION_NONE);
                     if( r >= 0)
@@ -1592,8 +1592,8 @@ htp__request_set_callbacks_(evhtp_request_t * request)
         hooks = callback->hooks;
 /* this is idiotic: said with great respect to a brilliant library for which I am extremely grateful -ajf
 
-   OK that harshness deserves and explanation:  If I want to match just '/' and only that, I use regex '^/$', but 
-   the following allows everything (e.g. '/whatever') to match '/', no matter how expressed with any 
+   OK that harshness deserves and explanation:  If I want to match just '/' and only that, I use regex '^/$', but
+   the following allows everything (e.g. '/whatever') to match '/', no matter how expressed with any
    'path/pattern' using whatever_cb()
 
     } else if ((callback = htp__callback_find_(evhtp->callbacks, path->path,
@@ -2036,7 +2036,7 @@ htp__request_parse_fini_(htparser * p)
      *
      * htp__should_parse_query_body_ does all the proper null checks.
      *
-     
+
          NEVER DO THIS:  we will parse body separately.  query_raw will only be if
          on url from GET, and never overwitten with contents from body regardless of method
          --ajf
@@ -2269,7 +2269,7 @@ check_proto:
         if (len) {
             evbuffer_add_buffer(buf, request->buffer_out);
             /* a compromise for whatever bug causes the major slowdown if
-                we are using ssl and the buffer is not contiguous 
+                we are using ssl and the buffer is not contiguous
                 https://github.com/criticalstack/libevhtp/issues/160
                 --ajf
             */
@@ -2398,6 +2398,7 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
         /* XXX need a parser_init / parser_set_userdata */
         nread = evhtp_ws_parser_run(req->ws_parser,
                                     &ws_hooks, buf, avail);
+
     } else {
         /* process as normal HTTP data. */
         nread = htparser_run(c->parser, &request_psets, (const char *)buf, avail);
@@ -2417,6 +2418,7 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
         if (req->ws_parser)
             free(req->ws_parser);
         evhtp_safe_free(c, evhtp_connection_free);
+
         return;
     }
 
@@ -2431,7 +2433,6 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
                 break;
         }
     }
-
     evbuffer_drain(bufferevent_get_input(bev), nread);
 
     if (c->request && c->cr_status == EVHTP_RES_PAUSE) {
@@ -4407,7 +4408,7 @@ evhtp_callback_new(const char * path, evhtp_callback_type type, evhtp_callback_c
 
                 onig_initialize(&enc, 1);
 
-                r=onig_new( &hcb->val.regex, pattern, 
+                r=onig_new( &hcb->val.regex, pattern,
                     pattern+ onigenc_str_bytelen_null(enc, pattern),
                     ONIG_OPTION_NONE, enc, ONIG_SYNTAX_DEFAULT, &einfo);
                 if (r != ONIG_NORMAL) {
@@ -5291,23 +5292,32 @@ evhtp_request_set_max_body_size(evhtp_request_t * req, uint64_t len)
 {
     evhtp_connection_set_max_body_size(req->conn, len);
 }
-/* 
+/*
 #ifdef EVHTP_VALGRIND_FORK_SAFE
-   this doesn't work. but it doesn't matter.
+   This ( evhtp_free_open_connections() ) doesn't work.  When there is a
+   fork, evhtp_connection_free very well could be in the middle of a free.
+   It would require tracking every malloc'd member of the connection struct.
 
-   The whole issue was to shut up valgrind after a fork
-   (where the child process would not and could not be 
-   using the server).
+   But it doesn't matter.
 
-   In such a case, post-fork all the threads in new process 
-   will disappear.  Their connections will never
-   be freed or found again.
+   The whole issue was to shut up valgrind after a fork (where the child
+   process would not and could not be using the server, but might have other
+   interesting things to do unrelated to libevhtp).
 
-   The existence of the list is enough for them to be
-   not lost.
-   
-   The big question is should we maintain this list
-   just to quiet valgrind?
+   In such a case, post-fork, all the threads in new process will disappear.
+   Their malloc'd connections will never be freed or found again.  This is a
+   technical memory leak, but not a consequential one as the memory is never
+   created or used again in the child.
+
+   The existence of the tailq list in the connection struct
+    is enough for them to be "not lost" for purposes of valgrind.
+
+   The big question is: Should we maintain this list
+   just to quiet valgrind, when it makes no difference otherwise?
+
+   If you answer no, or if not forking, remove
+       #define EVHTP_VALGRIND_FORK_SAFE
+   in evhtp.h
 
 //-ajf connection tracker
 void evhtp_free_open_connections()

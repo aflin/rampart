@@ -108,7 +108,7 @@ static const char *scheme_strmap[] = {
 
 #define MODULE_NONE 0
 #define MODULE_FILE 1
-#define MODULE_FILE_RELOAD 2
+#define MODULE_FILE_RELOAD 2 //unused
 #define MODULE_PATH 3
 
 #define AUX_BUF_CHUNK 16384
@@ -122,7 +122,7 @@ DHS
     uint16_t threadno;      // our current thread number
     uint16_t pathlen;       // length of the url path if module==MODULE_PATH
     char *module_name;      // name of the module
-    char *reqpath;          // same as dhs->dhs->req->uri->path->full, but copied for fork
+    char *reqpath;          // same as dhs->dhs->req->uri->path->full
     void *aux;              // generic pointer - currently used for dirlist()
     char module;            // is 0 for normal fuction, 1 for js module, 2 for js module that needs reload.
     void * auxbuf;          // aux buffer for req.printf when mmap is not present or too small.
@@ -796,7 +796,7 @@ static DHS *get_dhs(duk_context *ctx)
     dhs=new_dhs(ctx, -1);
     duk_push_this(ctx);
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("req"));
-    dhs->req = duk_get_pointer(ctx, -1);
+    dhs->req = *((evhtp_request_t **)duk_get_pointer(ctx, -1));
     duk_pop_2(ctx);
 
     duk_get_global_string(ctx, "rampart");
@@ -811,13 +811,148 @@ static DHS *get_dhs(duk_context *ctx)
     return dhs;
 }
 
+/* 
+    save the callback for disconnect in stash
+    indexed by the connection.
+    
+    the disconnect callback runs function then
+    removes it from stash of callbacks.
+
+*/
+
+#define DISCB struct rp_ws_disconnect_s
+DISCB {
+    double cbno;
+    duk_context *ctx;
+    evhtp_request_t **req_p;
+};
+
+evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
+{
+    DISCB *info = (DISCB*)arg;
+    double cbno = info->cbno;
+    duk_context *ctx = info->ctx;
+
+    free(info);
+
+    duk_push_global_stash(ctx);
+
+    if(!duk_get_prop_string(ctx, -1, "wsdis"))
+    {
+        duk_pop_2(ctx);
+        return 0;
+        //RP_THROW(ctx, "Internal error getting callback for wsOnDisconnect");
+    }
+
+    duk_push_number(ctx, cbno);
+    if (duk_get_prop(ctx, -2))
+        duk_call(ctx, 0);
+
+    duk_pop(ctx);//ignore return value, or undefined (which shouldn't happen);
+
+    // remove the callback
+    duk_push_number(ctx, cbno);
+    duk_del_prop(ctx, -2);
+
+    *(info->req_p) = NULL;
+
+    duk_pop_2(ctx);
+
+    return 0;
+}
+
+
+duk_ret_t duk_server_ws_set_disconnect(duk_context *ctx)
+{
+    evhtp_connection_t *conn;
+    double cbno;
+    DISCB *info=NULL;
+    evhtp_request_t **req;
+
+    if(!duk_is_function(ctx, 0))
+        RP_THROW(ctx, "wsOnDisconnect argument must be a function");
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("req"));
+    req = ((evhtp_request_t **)duk_get_pointer(ctx, -1));
+    duk_pop_2(ctx);
+     if(!*req)
+        return 0;
+
+    conn = evhtp_request_get_connection(*req);
+    cbno= (double) ( (double)(size_t)conn/16 );
+    duk_push_global_stash(ctx);
+
+    if(!duk_get_prop_string(ctx, -1, "wsdis"))
+    {
+        duk_pop(ctx);
+        duk_push_object(ctx);
+    }
+
+    duk_push_number(ctx, cbno);
+    duk_dup(ctx, -1);
+    /* only set it once */
+    if(duk_has_prop(ctx, -3))
+        return 0;
+
+    duk_pull(ctx,0);
+    duk_put_prop(ctx, -3);
+
+    duk_put_prop_string(ctx, -2, "wsdis");
+
+    REMALLOC(info, sizeof(DISCB));
+    info->ctx = ctx;
+    info->cbno = cbno;
+    info->req_p = req;
+
+    evhtp_connection_set_hook(conn, evhtp_hook_on_event, (evhtp_hook)ws_dis_cb, (void*)info);
+    return 0;
+}
+
+
 duk_ret_t duk_server_ws_end(duk_context *ctx)
 {
-    DHS *dhs = get_dhs(ctx);
-    evhtp_ws_disconnect(dhs->req);
-    dhs->req = NULL;
+    evhtp_connection_t *conn;
+    double cbno;
+    evhtp_request_t **req;
+
     duk_push_this(ctx);
-    duk_push_pointer(ctx, (void*)NULL);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("req"));
+    req = ((evhtp_request_t **)duk_get_pointer(ctx, -1));
+    duk_pop_2(ctx);
+    if(!(*req))
+    {
+        return 0;
+    }
+
+    conn = evhtp_request_get_connection(*req);
+    cbno= (double) ( (double)(size_t)conn/16 );
+    /* run disconnect callback */
+    duk_push_global_stash(ctx);
+
+    if(!duk_get_prop_string(ctx, -1, "wsdis"))
+    {
+        duk_pop_2(ctx);
+    }
+    else
+    {
+        duk_push_number(ctx, cbno);
+        if (duk_get_prop(ctx, -2))
+            duk_call(ctx, 0);
+
+        duk_pop(ctx);//ignore return value, or undefined;
+
+        // remove the callback
+        duk_push_number(ctx, cbno);
+        duk_del_prop(ctx, -2);
+
+        duk_pop_2(ctx);
+    }
+   
+    evhtp_ws_disconnect(*req);
+    *(req) = NULL;
+    duk_push_this(ctx);
+    duk_push_pointer(ctx, (void**)NULL);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("req"));
     return 0;
 }
@@ -825,6 +960,17 @@ duk_ret_t duk_server_ws_end(duk_context *ctx)
 duk_ret_t duk_server_ws_send(duk_context *ctx)
 {
     DHS *dhs = get_dhs(ctx);
+    evhtp_request_t **req;
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("req"));
+    req = ((evhtp_request_t **)duk_get_pointer(ctx, -1));
+    duk_pop_2(ctx);
+
+    if(!*req)
+        return 0;
+
+    dhs->req = *req;
     sendws(dhs);
     free(dhs);
     duk_push_pointer(ctx, (void*)NULL);
@@ -907,7 +1053,7 @@ duk_ret_t duk_server_getpos(duk_context *ctx)
 
 /* copy request vars from evhtp to duktape */
 
-void push_req_vars(DHS *dhs)
+int push_req_vars(DHS *dhs)
 {
     duk_context *ctx = dhs->ctx;
     evhtp_path_t *path = dhs->req->uri->path;
@@ -921,6 +1067,7 @@ void push_req_vars(DHS *dhs)
     const char *ct;
     duk_size_t bsz;
     void *buf=NULL;
+    int ret=0;
 
     duk_push_c_function(ctx, duk_server_printf, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "printf");
@@ -935,12 +1082,14 @@ void push_req_vars(DHS *dhs)
 
     if(dhs->req->cb_has_websock)
     {
-        duk_push_pointer(ctx, (void*) dhs->req);
+        duk_push_pointer(ctx, (void*) &(dhs->req));
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("req"));
         duk_push_c_function(ctx, duk_server_ws_send,1);
         duk_put_prop_string(ctx, -2, "wsSend");
         duk_push_c_function(ctx, duk_server_ws_end,0);
         duk_put_prop_string(ctx, -2, "wsEnd");
+        duk_push_c_function(ctx, duk_server_ws_set_disconnect,1);
+        duk_put_prop_string(ctx, -2, "wsOnDisconnect");
     }
 
     /*
@@ -1108,6 +1257,7 @@ void push_req_vars(DHS *dhs)
                 push_multipart(ctx,bound,buf,bsz);
                 duk_put_prop_string(ctx,-2,"content");
                 duk_put_prop_string(ctx,-2,"postData");
+                ret=1; // we have an external buffer
             }
         } else
         if(strncmp("application/json",ct,16)==0)
@@ -1169,6 +1319,7 @@ void push_req_vars(DHS *dhs)
             duk_config_buffer(ctx,-1,buf,bsz); /* add reference to buf for js buffer */
             duk_put_prop_string(ctx, -2, "content");
             duk_put_prop_string(ctx, -2, "postData");
+            ret=1;
         }
     }
     else
@@ -1178,15 +1329,15 @@ void push_req_vars(DHS *dhs)
         duk_push_string(ctx, "");
         duk_put_prop_string(ctx, -2, "Content-Type");
         duk_put_prop_string(ctx, -3, "postData");
+        // This is still on the stack in the 'else' case. 
+        // In if(getpropstring("content-type")) above. 'headers' is alredy put in object higher.
         duk_put_prop_string(ctx, -2, "headers");
     }
 
-    //duk_push_c_function(ctx,flatten_vars,0);
-    //duk_put_prop_string(ctx, -2, "flatten");
     flatten_vars(ctx);
     duk_put_prop_string(ctx, -2, "params");
 
-    /* we want body at the end for easy viewing */
+    /* we want body at the end for easy viewing if converted to json*/
     if(bsz)
     {
         duk_push_external_buffer(ctx);
@@ -1195,9 +1346,10 @@ void push_req_vars(DHS *dhs)
     else
     {
         (void) duk_push_fixed_buffer(ctx, 0);
+        ret=-1;//signal no post data at all.
     }
     duk_put_prop_string(ctx, -2, "body");
-
+    return ret;
 }
 char msg500[] = "<html><head><title>500 Internal Server Error</title></head><body><h1>Internal Server Error</h1><p><pre>%s</pre></p></body></html>";
 
@@ -1627,7 +1779,6 @@ static void
 fileserver(evhtp_request_t *req, void *arg)
 {
     DHMAP *map = (DHMAP *)arg;
-    DHS *dhs = map->dhs;
     evhtp_path_t *path = req->uri->path;
     struct stat sb;
     /* take 2 off of key for the slash and * and add 1 for '\0' and one more for a potential '/' */
@@ -2335,8 +2486,8 @@ enum_object:
     {
         s = duk_get_string(ctx, -2);
 
-        /* these are internal flags and should not be copied to threads */
-        if(!strcmp(s, "\xffobjRefId") || !strcmp(s,"\xffthreadsafe") )
+        /* this is an internal flags and should not be copied to threads */
+        if(!strcmp(s, "\xffobjRefId") )
         {
             duk_pop_2(ctx);
             continue;
@@ -2507,32 +2658,9 @@ DHR
 
 /*  CALLBACK LOGIC:
 
-    First call of any js function:
-      http_callback
-         |-> http_fork_callback -> check for threadsafe
-
-    Subsequent callbacks:
       http_callback
       |-> http_thread_callback -> for thread safe js functions
       |   |-> http_dothread -> Call js func. If there is a timeout set, this function will be threaded
-      or
-      |-> http_fork_callback -> currently just for sql js functions
-
-    The first callback of any function is run through http_fork_callback.
-    If not marked as thread-unsafe (by setting a global variable in the forked child),
-    it will subsequently be run in a thread and the child/fork will be idle.
-    Otherwise, if the global variable is set upon calling the function, it will always be
-    run through the forked child. Currently only the sql engine does this.
-
-    Forking is used because although the sql engine can be safely run with mutexes,
-    doing so is slower than using its native semaphore locks, which allow for concurrent reads.
-    On a six core processor using 12 threads, it is over 10x faster for read only operations on a
-    large text index.  However for very simple (e.g. select one row from a table with no "where" clause)
-    forking will be slower than if it was done with threads.
-
-    The forked children (one per thread) are only forked once.  They stick around and communicate by IPC/Pipes,
-    waiting for future requests.  If a script times out, the child is killed and a new child is forked upon
-    the next request.
 */
 
 /* get the function, whether its a function or a (module) object containing the function */
@@ -2604,6 +2732,88 @@ static int getfunction(DHS *dhs){
     return ret;
 }
 
+static void clean_reqobj(duk_context *ctx, int has_content)
+{
+    if(has_content == -1)
+        return;
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("reqobj"));
+
+    if(duk_get_prop_string(ctx, -1, "body"))
+    {
+        if(duk_is_buffer_data(ctx, -1))
+        {
+            int variant;
+
+            //is it an external buffer?
+            duk_inspect_value(ctx, -1);
+            duk_get_prop_string(ctx, -1, "variant");
+            variant = duk_get_int_default(ctx, -1, 0);
+            duk_pop_2(ctx);
+
+            if(variant == 2)
+                duk_config_buffer(ctx, -1, NULL, 0);
+        }
+    }
+    duk_pop(ctx);//body
+
+    if(has_content)
+    {
+        if(duk_get_prop_string(ctx, -1, "postData"))
+        {
+            if(duk_get_prop_string(ctx, -1, "content"))
+            {
+                if(duk_is_array(ctx,-1))
+                {
+                    int i=0, len= duk_get_length(ctx, -1);
+                    while (i<len)
+                    {
+                        duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+                        if(duk_is_object(ctx, -1) && duk_has_prop_string(ctx, -1, "content") )
+                        {
+                            duk_get_prop_string(ctx, -1, "content");
+                            if(duk_is_buffer_data(ctx, -1))
+                            {
+                                int variant;
+
+                                //is it an external buffer?
+                                duk_inspect_value(ctx, -1);
+                                duk_get_prop_string(ctx, -1, "variant");
+                                variant = duk_get_int_default(ctx, -1, 0);
+                                duk_pop_2(ctx);
+
+                                if(variant == 2)
+                                    duk_config_buffer(ctx, -1, NULL, 0);
+                            }
+                            duk_pop(ctx);//content
+                        }
+                        duk_pop(ctx);//array member
+                        i++;
+                    }
+                }
+                else if (duk_is_buffer_data(ctx, -1))
+                {
+                    int variant;
+
+                    //is it an external buffer?
+                    duk_inspect_value(ctx, -1);
+                    duk_get_prop_string(ctx, -1, "variant");
+                    variant = duk_get_int_default(ctx, -1, 0);
+                    duk_pop_2(ctx);
+
+                    if(variant == 2)
+                        duk_config_buffer(ctx, -1, NULL, 0);
+                }
+            }
+            duk_pop(ctx);//content or undefined
+        }
+        duk_pop(ctx);//postData
+    }
+
+    duk_pop(ctx);//reqobj
+}
+
+
 static void *http_dothread(void *arg)
 {
     DHR *dhr = (DHR *)arg;
@@ -2612,6 +2822,7 @@ static void *http_dothread(void *arg)
     duk_context *ctx=dhs->ctx;
     evhtp_res res = 200;
     int eno;
+    int has_content;
 
 #ifdef RP_TIMEO_DEBUG
     pthread_t x = dhr->par;
@@ -2629,12 +2840,12 @@ static void *http_dothread(void *arg)
     /* push an empty object */
     duk_push_object(ctx);
     /* populate object with details from client */
-    push_req_vars(dhs);
+    has_content = push_req_vars(dhs);
 
-    /* delete any previous setting of threadsafe flag */
-    duk_push_global_object(ctx);
-    duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("threadsafe"));
-    duk_pop(ctx);
+    //put a copy out of the way for a moment
+    duk_dup(ctx,-1);
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("reqobj"));
+
     /* execute function "myfunc({object});" */
     if ((eno = duk_pcall(ctx, 1)))
     {
@@ -2665,20 +2876,9 @@ static void *http_dothread(void *arg)
         if (dhr->have_timeout)
             pthread_mutex_unlock(&(dhr->lock));
 
+        clean_reqobj(ctx, has_content);
         return NULL;
     }
-    /* a function might conditionally run a c function that sets "threadsafe" false
-       check again if this has changed */
-
-    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("threadsafe"));
-    if (duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx,-1) )
-    {
-        duk_get_prop_index(ctx, 0, (duk_uarridx_t)dhs->func_idx);
-        duk_push_false(ctx);
-        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("threadsafe") );
-        duk_pop(ctx);
-    }
-    duk_pop(ctx);
 
     if (dhr->have_timeout)
     {
@@ -2717,6 +2917,7 @@ static void *http_dothread(void *arg)
     if (dhr->have_timeout)
         pthread_mutex_unlock(&(dhr->lock));
 
+    clean_reqobj(ctx, has_content);
     return NULL;
 }
 
@@ -2969,29 +3170,14 @@ void rp_exit(int sig)
 }
 */
 
-
-//#define tprintf(...)  printf(__VA_ARGS__);
-#define tprintf(...) /*nada */
-
-/* a callback must be run once before we can tell if it is thread safe.
-   So to be safe, run every callback in a fork the first time.  If it is
-   thread safe, mark it as so and next time we know not to fork.
-   A c function that is not thread safe must set the hidden global symbol
-   "threadsafe"=false.  After that runs in a thread, the "threadsafe" global
-   will be checked and will be set as a property on that function, with the
-   default being true (safe) if not present.
-*/
-
 extern struct event_base *elbase;
-
-struct timeval evimmediate={0,0};
-
 
 /* load module if not loaded, return position on stack
     if module file is newer than loaded version, reload
 */
 
 /* kinda hidden, but visible from printstack */
+/* TODO: replace RP_HIDDEN_SYMBOL with DUK_HIDDEN_SYMBOL */
 #define RP_HIDDEN_SYMBOL(s) " # " s
 
 static int getmod(DHS *dhs)
@@ -3068,7 +3254,6 @@ static int getmod(DHS *dhs)
     // on stack is module.exports
     duk_get_prop_string(ctx,-1,"exports");
     /* take mtime & id from "module" and put it in module.exports,
-        signal next run requires a refork by setting dhs->module=MODULE_FILE_RELOAD;
         then remove modules */
     if(duk_is_function(ctx, -1))
     {
@@ -3101,10 +3286,7 @@ static int getmod(DHS *dhs)
     duk_put_prop_string(ctx,-2,RP_HIDDEN_SYMBOL("mtime"));
     duk_get_prop_string(ctx,-2,"id");
     duk_put_prop_string(ctx,-2,RP_HIDDEN_SYMBOL("module_id"));
-    /* must reload/redo fork if mod is not recorded */
-    dhs->module=MODULE_FILE_RELOAD;
     duk_remove(ctx,-2); // now stack is [ func_array, ..., {module:xxx}, func_exports ]
-
 
     /* {"module":modname, modname: mod_func} */
     duk_put_prop_string(ctx,-2,modname);
@@ -3299,18 +3481,16 @@ static void http_callback(evhtp_request_t *req, void *arg)
     newdhs.auxbuf= NULL;
     dhs = &newdhs;
 
-    //duk_push_c_function(dhs->ctx, close_connection, 0);
-    //duk_push_pointer(dhs->ctx, (void *)dhs);
-    //duk_put_prop_string(dhs->ctx, -2, "dhs");
-    //duk_put_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("clreq"));
-
     if(req->cb_has_websock)
     {
         struct timeval tv;
         tv.tv_sec = RP_TIME_T_FOREVER;
         tv.tv_usec  = 0;
         evhtp_connection_set_timeouts(evhtp_request_get_connection(req), &tv, &tv);
+        dhs->ctx = thread_ctx[thrno+totnthreads];
+        dhs->threadno = (uint16_t)thrno + (uint16_t)totnthreads;
     }
+
     if(dhs->module==MODULE_FILE)
     {
         int res=0;
@@ -3496,6 +3676,13 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     *thrno = gl_threadno++;
     evthr_set_aux(thr, thrno);
     ctx=thread_ctx[*thrno];
+
+    duk_push_global_stash(ctx);
+    duk_push_pointer(ctx, (void*)base);
+    duk_put_prop_string(ctx, -2, "elbase");
+    duk_pop(ctx);
+
+    ctx=thread_ctx[*thrno+totnthreads];
 
     duk_push_global_stash(ctx);
     duk_push_pointer(ctx, (void*)base);
@@ -4184,11 +4371,13 @@ duk_ret_t duk_server_start(duk_context *ctx)
     }
 
     /* initialize a context for each thread */
-    REMALLOC(thread_ctx, (totnthreads * sizeof(duk_context *)));
-    for (i = 0; i <= totnthreads; i++)
+    REMALLOC(thread_ctx, (2 * totnthreads * sizeof(duk_context *)));
+    for (i = 0; i <= totnthreads*2; i++)
     {
         duk_context *tctx;
-        if (i == totnthreads)
+        int tno = i<totnthreads ? i: i-totnthreads;
+
+        if (i == totnthreads*2)
         {
             tctx = ctx;
         }
@@ -4208,7 +4397,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             duk_pop(tctx);
             duk_push_object(tctx);
         }
-        duk_push_int(tctx, i);
+        duk_push_int(tctx, tno);
         duk_put_prop_string(tctx, -2, "thread_id");
         duk_push_int(tctx, totnthreads);
         duk_put_prop_string(tctx, -2, "total_threads");
@@ -4267,7 +4456,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         copy_mod_func(ctx, thread_ctx[i], fpos);
                 }
                 else
-                    copy_cb_func(dhs404, totnthreads);
+                    copy_cb_func(dhs404, totnthreads*2);
                 fpos++;
             }
             else
@@ -4330,7 +4519,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         copy_mod_func(ctx, thread_ctx[i], fpos);
                 }
                 else
-                    copy_cb_func(dhs_dirlist, totnthreads);
+                    copy_cb_func(dhs_dirlist, totnthreads*2);
 
                 fpos++;
 
@@ -4520,7 +4709,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                 copy_mod_func(ctx, thread_ctx[i], fpos);
                         }
                         else
-                            copy_cb_func(cb_dhs, totnthreads);
+                            copy_cb_func(cb_dhs, totnthreads*2);
 
                         fpos++;
                         /* register callback with evhtp using the callback dhs struct */
