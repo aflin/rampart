@@ -281,6 +281,7 @@ duk_ret_t duk_rp_trigger_event(duk_context *ctx)
 
 void duk_event_init(duk_context *ctx)
 {
+    static int isinit=0;
     if (!duk_get_global_string(ctx, "rampart"))
     {
         duk_pop(ctx);
@@ -292,13 +293,14 @@ void duk_event_init(duk_context *ctx)
         duk_push_object(ctx);
     }
 
-    if(ctx == main_ctx)
+    if(!isinit)
     {
         if (pthread_mutex_init(&cborlock, NULL) == EINVAL)
         {
             fprintf(stderr, "rampart.event: could not initialize cbor lock\n");
             exit(1);
         }
+        isinit=1;
     }
 
     duk_push_c_function(ctx, duk_rp_new_event, 1);

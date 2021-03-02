@@ -3602,11 +3602,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
         }
         else
         {
-            struct timeval tv;
-
-            tv.tv_sec = RP_TIME_T_FOREVER;
-            tv.tv_usec  = 0;
-            evhtp_connection_set_timeouts(evhtp_request_get_connection(req), &tv, &tv);
+            evhtp_connection_set_timeouts(evhtp_request_get_connection(req), NULL, NULL);
             dhs->ctx = thread_ctx[thrno+totnthreads];
             dhs->threadno = (uint16_t)thrno + (uint16_t)totnthreads;
         }
@@ -5181,7 +5177,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
     //done with options, get rid of ob_idx
     duk_remove(ctx, ob_idx);
 
-    evhtp_set_timeouts(htp, &ctimeout, &ctimeout);
+    if(ctimeout.tv_sec != RP_TIME_T_FOREVER)
+        evhtp_set_timeouts(htp, &ctimeout, &ctimeout);
 
     evhtp_set_pre_accept_cb(htp, pre_accept_callback, NULL);
 
