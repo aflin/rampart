@@ -261,7 +261,7 @@ add_custom_command(
 	OUTPUT ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
 	COMMAND make
 	COMMAND mkdir -p ${PROJECT_BINARY_DIR}/extern/libdeflate
-	COMMAND find './' -type f  -perm 0755 -exec mv {} "${PROJECT_BINARY_DIR}/extern/libdeflate" "\;"
+	COMMAND find './' -type f  -perm 0755 -regex '.*[^\.b][^sa][^ht]' -exec mv {} "${PROJECT_BINARY_DIR}/extern/libdeflate" "\;"
 	COMMAND mv libdeflate.a ${PROJECT_BINARY_DIR}/extern/libdeflate/
 	COMMAND cp libdeflate.h ${PROJECT_BINARY_DIR}/extern/libdeflate/
 	COMMAND make clean
