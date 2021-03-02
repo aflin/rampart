@@ -115,6 +115,7 @@ void duk_init_context(duk_context *ctx)
     duk_misc_init(ctx);                       /* register functions in rampart-utils.c */
     duk_import_init(ctx);                     /* register functions in rampart-import.c */
     duk_process_init(ctx);                    /* register process.* vars */
+    duk_event_init(ctx);                      /* register functions in rampart-event.c */
     fix_json_parse(ctx);
     add_object_values(ctx);
 }

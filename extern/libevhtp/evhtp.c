@@ -38,6 +38,11 @@
 #include "regint.h" /* def for oniguruma regex_t (aka 're_pattern_buffer')*/
 #include "oniguruma.h"
 #include "ws/evhtp_ws.h"
+
+/* for making an id for websockets */
+pthread_mutex_t wsctlock;
+uint32_t wsct=0;
+
 /**
  * @brief structure containing a single callback and configuration
  *
@@ -1850,7 +1855,6 @@ htp__request_parse_headers_(htparser * p)
         if (!evhtp_header_find(c->request->headers_in, "Expect")) {
             return 0;
         }
-
         evbuffer_add_printf(bufferevent_get_output(c->bev),
             "HTTP/%c.%c 100 Continue\r\n\r\n",
             evhtp_modp_uchartoa(htparser_get_major(p)),
@@ -1880,6 +1884,14 @@ htp__request_parse_headers_(htparser * p)
                 }
 
                 req->websock = 1;
+
+                if (pthread_mutex_lock(&wsctlock) == EINVAL)
+                {
+                    fprintf(stderr,"could not obtain wsct lock\n");
+                    exit(1);
+                }
+                req->ws_id= wsct++;
+                pthread_mutex_unlock(&wsctlock);
 
                 evhtp_send_reply_start(req, EVHTP_RES_SWITCH_PROTO);
             }
@@ -5596,6 +5608,12 @@ evhtp_new(struct event_base * evbase, void * arg)
 
     if (evhtp__new_(&htp, evbase, arg) == -1) {
         return NULL;
+    }
+
+    if (pthread_mutex_init(&wsctlock, NULL) == EINVAL)
+    {
+        fprintf(stderr, "server.start: could not initialize wsct lock\n");
+        exit(1);
     }
 
     return htp;

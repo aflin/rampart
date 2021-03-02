@@ -45,6 +45,7 @@ add_executable(rampart
 	duktape/core/duk_console.c
 	duktape/core/module.c
 	duktape/globals/rampart-utils.c
+	duktape/globals/rampart-event.c
 	duktape/globals/rampart-import.c
 	duktape/globals/csv_parser.c
 

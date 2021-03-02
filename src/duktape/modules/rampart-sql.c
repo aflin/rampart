@@ -316,9 +316,12 @@ pid_t parent_pid = 0;
     fseek(mmsgfh, 0, SEEK_SET);           \
 } while(0)
 
-#define msgtobuf(buf)  do {                       \
-    strcpy((buf), errmap[thisfork]);              \
-    clearmsgbuf();                                \
+#define msgtobuf(buf)  do {                          \
+    int pos = ftell(mmsgfh);                         \
+    if(pos && errmap[thisfork][pos-1]=='\n') pos--;  \
+    errmap[thisfork][pos]='\0';                      \
+    strcpy((buf), errmap[thisfork]);                 \
+    clearmsgbuf();                                   \
 } while(0)
 
 /* **************************************************
@@ -350,9 +353,9 @@ void duk_rp_log_error(duk_context *ctx, char *pbuf)
 
 void duk_rp_log_tx_error(duk_context *ctx, DB_HANDLE *h, char *buf)
 {
-    //msgtobuf(buf);
-    //duk_rp_log_error(ctx, buf);
-    duk_rp_log_error(ctx, errmap[thisfork]);
+    msgtobuf(buf);
+    duk_rp_log_error(ctx, buf);
+    //duk_rp_log_error(ctx, errmap[thisfork]);
 }
 
 /* get the expression from a /pattern/ or a "string" */
@@ -2915,8 +2918,9 @@ static int parse_sql_parameters(char *old_sql,char **new_sql,char **names[],char
              {
                 char *t=s;
                 s=skip_until_c(s+1,*s,&quote_len);
-                memcpy(out_p,t,quote_len+2);     // the plus 2 is for the quote characters
-                out_p+=quote_len+2;
+                memcpy(out_p,t,quote_len+1);     // the plus 1 is for the quote character
+                out_p+=quote_len+1;
+                break;
              }
           case '\\': break;
           case '?' :

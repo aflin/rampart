@@ -24,9 +24,12 @@
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 int totnthreads=0;
 char *RP_script_path=NULL;
-static duk_context *gl_ctx;
 duk_context **thread_ctx = NULL;
 duk_context *main_ctx;
+struct event_base *elbase;
+struct event_base **thread_base=NULL;
+
+
 /* mutex for locking main_ctx when in a thread with other duk stacks open */
 pthread_mutex_t ctxlock;
 
@@ -686,7 +689,6 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     return (const char*) (strlen(babelsrc)) ? strdup(babelsrc): strdup(fn);
 }
 
-struct event_base *elbase;
 
 #define EVARGS struct ev_args
 EVARGS {
@@ -1655,7 +1657,6 @@ int main(int argc, char *argv[])
         fprintf(stderr,"could not create duktape context\n");
         return 1;
     }
-    gl_ctx = ctx;
     
     /* for cleanup, an array of functions */
     duk_push_global_stash(ctx);

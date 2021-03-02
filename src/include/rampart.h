@@ -22,8 +22,19 @@ extern char **rampart_argv;
 extern int   rampart_argc;
 extern duk_context *main_ctx;
 extern duk_context **thread_ctx;
+extern struct event_base *elbase;
+extern struct event_base **thread_base;
+
 /* mutex for locking main_ctx when in a thread with other duk stacks open */
 extern pthread_mutex_t ctxlock;
+#define CTXLOCK do {\
+    if (pthread_mutex_lock(&ctxlock) == EINVAL)\
+        {fprintf(stderr,"could not obtain lock for main context\n");exit(1);}\
+} while(0)
+#define CTXUNLOCK  do{\
+    pthread_mutex_unlock(&ctxlock);\
+} while(0)
+
 
 /* macros to help with require_* and throwing errors with 
    a stack trace.

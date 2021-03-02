@@ -821,7 +821,7 @@ RPsqlFuncs_abstract(duk_context *ctx)
     style = TXstrToAbs((char *)style_str);
 
     ab=(char*)abstract(text, maxsz, style, query, tbl, CHARPPN, CHARPN);
-printf("markup=%s\n",markup);
+
     if(markup && query)
     {
         while(duk_get_top(ctx)) duk_pop(ctx);

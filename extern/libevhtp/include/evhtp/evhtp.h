@@ -425,6 +425,7 @@ struct evhtp_request {
     uint8_t           cb_has_websock;
     uint8_t websock   : 1,
             pad       : 3 ;
+    uint32_t ws_id;                     /* a counter set id for this websock connection */
     evhtp_ws_parser * ws_parser;
 
     evhtp_callback_cb cb;               /**< the function to call when fully processed */

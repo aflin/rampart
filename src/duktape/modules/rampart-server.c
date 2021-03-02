@@ -124,24 +124,15 @@ DHS
     char *module_name;      // name of the module
     char *reqpath;          // same as dhs->dhs->req->uri->path->full
     void *aux;              // generic pointer - currently used for dirlist()
-    char module;            // is 0 for normal fuction, 1 for js module, 2 for js module that needs reload.
+    char module;            // is 0 for normal fuction, 1 for js module, 3 for module path.
     void * auxbuf;          // aux buffer for req.printf when mmap is not present or too small.
     size_t bufsz;           // size of aux buffer.
     size_t bufpos;          // end position of data in aux buffer.
+    uint8_t freeme;         // whether this is a temporary struct that needs to be freed after use.
 };
 
 DHS *dhs404 = NULL;
 DHS *dhs_dirlist = NULL;
-
-/* TODO: revisit whether DHSA is necessary */
-#define DHSA struct dhs_array
-DHSA
-{
-    int n;
-    DHS **dhs_pa;
-};
-
-DHSA dhsa = {0, NULL};
 
 static DHS *new_dhs(duk_context *ctx, int idx)
 {
@@ -162,9 +153,7 @@ static DHS *new_dhs(duk_context *ctx, int idx)
     dhs->auxbuf = NULL;
     dhs->bufsz = 0;
     dhs->bufpos = 0;
-    dhsa.n++;
-    REMALLOC(dhsa.dhs_pa, sizeof(DHS *) * dhsa.n);
-    dhsa.dhs_pa[dhsa.n - 1] = dhs;
+    dhs->freeme = 0;
 
     return (dhs);
 }
@@ -794,9 +783,13 @@ static DHS *get_dhs(duk_context *ctx)
         return dhs;
 
     dhs=new_dhs(ctx, -1);
+    dhs->freeme=1;
     duk_push_this(ctx);
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("req"));
-    dhs->req = *((evhtp_request_t **)duk_get_pointer(ctx, -1));
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("evreq")))
+        fprintf(stderr, "FIXME: evreq not found\n");
+    else
+        dhs->req = duk_get_pointer(ctx, -1);
+
     duk_pop_2(ctx);
 
     duk_get_global_string(ctx, "rampart");
@@ -806,15 +799,33 @@ static DHS *get_dhs(duk_context *ctx)
 
     dhs->threadno = thrno;
 
+    /* the one we will use for now */
     duk_push_pointer(ctx, (void*)dhs);
     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
+
+    /* the one we need to free eventually */
+    duk_push_pointer(ctx, (void*)dhs);
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("fdhs"));
+
     return dhs;
 }
 
-/* 
+static DHS *free_dhs(DHS *dhs)
+{
+    if(dhs->freeme)
+    {
+        if(dhs->auxbuf)
+            free(dhs->auxbuf);
+        free(dhs);
+        dhs=NULL;
+    }
+    return dhs;
+}
+
+/*
     save the callback for disconnect in stash
     indexed by the connection.
-    
+
     the disconnect callback runs function then
     removes it from stash of callbacks.
 
@@ -822,65 +833,67 @@ static DHS *get_dhs(duk_context *ctx)
 
 #define DISCB struct rp_ws_disconnect_s
 DISCB {
-    double cbno;
     duk_context *ctx;
-    evhtp_request_t **req_p;
+    uint32_t ws_id;
 };
 
 evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
 {
     DISCB *info = (DISCB*)arg;
-    double cbno = info->cbno;
     duk_context *ctx = info->ctx;
+    double ws_id = (double)info->ws_id;
 
     free(info);
-
     duk_push_global_stash(ctx);
 
-    if(!duk_get_prop_string(ctx, -1, "wsdis"))
+    if(duk_get_prop_string(ctx, -1, "wsdis"))
     {
-        duk_pop_2(ctx);
+        duk_push_number(ctx, ws_id);
+        if (duk_get_prop(ctx, -2))
+            duk_call(ctx, 0);
+
+        duk_pop(ctx);//ignore return value, or undefined(if no callback);
+
+        // remove the callback
+        duk_push_number(ctx, ws_id);
+        duk_del_prop(ctx, -2);
+    }
+    duk_pop_2(ctx); //global stash and wsdis/undefined
+
+    /* null out req */
+    if(!duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("wsreq")))
+    {
+        duk_pop(ctx);
         return 0;
-        //RP_THROW(ctx, "Internal error getting callback for wsOnDisconnect");
     }
 
-    duk_push_number(ctx, cbno);
-    if (duk_get_prop(ctx, -2))
-        duk_call(ctx, 0);
+    duk_push_number(ctx, ws_id);
+    if(duk_get_prop(ctx, -2))
+    {
+        duk_push_pointer(ctx,(void*)NULL);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("evreq"));
 
-    duk_pop(ctx);//ignore return value, or undefined (which shouldn't happen);
-
-    // remove the callback
-    duk_push_number(ctx, cbno);
-    duk_del_prop(ctx, -2);
-
-    *(info->req_p) = NULL;
-
+    }
     duk_pop_2(ctx);
-
     return 0;
 }
 
 
 duk_ret_t duk_server_ws_set_disconnect(duk_context *ctx)
 {
-    evhtp_connection_t *conn;
-    double cbno;
-    DISCB *info=NULL;
-    evhtp_request_t **req;
+    evhtp_request_t *req;
 
     if(!duk_is_function(ctx, 0))
         RP_THROW(ctx, "wsOnDisconnect argument must be a function");
 
     duk_push_this(ctx);
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("req"));
-    req = ((evhtp_request_t **)duk_get_pointer(ctx, -1));
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("evreq"));
+    req = (evhtp_request_t *)duk_get_pointer(ctx, -1);
     duk_pop_2(ctx);
-     if(!*req)
+
+    if(!req)
         return 0;
 
-    conn = evhtp_request_get_connection(*req);
-    cbno= (double) ( (double)(size_t)conn/16 );
     duk_push_global_stash(ctx);
 
     if(!duk_get_prop_string(ctx, -1, "wsdis"))
@@ -889,7 +902,7 @@ duk_ret_t duk_server_ws_set_disconnect(duk_context *ctx)
         duk_push_object(ctx);
     }
 
-    duk_push_number(ctx, cbno);
+    duk_push_number(ctx, (double)req->ws_id);
     duk_dup(ctx, -1);
     /* only set it once */
     if(duk_has_prop(ctx, -3))
@@ -900,12 +913,6 @@ duk_ret_t duk_server_ws_set_disconnect(duk_context *ctx)
 
     duk_put_prop_string(ctx, -2, "wsdis");
 
-    REMALLOC(info, sizeof(DISCB));
-    info->ctx = ctx;
-    info->cbno = cbno;
-    info->req_p = req;
-
-    evhtp_connection_set_hook(conn, evhtp_hook_on_event, (evhtp_hook)ws_dis_cb, (void*)info);
     return 0;
 }
 
@@ -948,7 +955,7 @@ duk_ret_t duk_server_ws_end(duk_context *ctx)
 
         duk_pop_2(ctx);
     }
-   
+
     evhtp_ws_disconnect(*req);
     *(req) = NULL;
     duk_push_this(ctx);
@@ -960,19 +967,15 @@ duk_ret_t duk_server_ws_end(duk_context *ctx)
 duk_ret_t duk_server_ws_send(duk_context *ctx)
 {
     DHS *dhs = get_dhs(ctx);
-    evhtp_request_t **req;
 
-    duk_push_this(ctx);
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("req"));
-    req = ((evhtp_request_t **)duk_get_pointer(ctx, -1));
-    duk_pop_2(ctx);
-
-    if(!*req)
+    if(!dhs->req)
         return 0;
 
-    dhs->req = *req;
     sendws(dhs);
-    free(dhs);
+
+    dhs = free_dhs(dhs);
+    duk_push_pointer(ctx, (void*)NULL);
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("fdhs"));
     duk_push_pointer(ctx, (void*)NULL);
     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
     return 0;
@@ -1050,10 +1053,63 @@ duk_ret_t duk_server_getpos(duk_context *ctx)
     return 1;
 }
 
+/* update request vars for ws connection */
+static int update_req_vars(DHS *dhs, int gotbuf)
+{
+    int ret=0;
+    double d=0;
+    duk_context *ctx = dhs->ctx;
+
+    if(!gotbuf)
+    {
+        duk_size_t bsz;
+        void *buf=NULL;
+
+        bsz = (duk_size_t)evbuffer_get_length(dhs->req->buffer_in);
+        if(bsz)
+        {
+            buf=evbuffer_pullup(dhs->req->buffer_in,-1); /* make contiguous and return pointer */
+            duk_push_external_buffer(ctx);
+            duk_config_buffer(ctx,-1,buf,bsz); /* add reference to buf for js buffer */
+        }
+        else
+        {
+            (void) duk_push_fixed_buffer(ctx, 0);
+            ret=-1;//signal no post data at all.
+        }
+        duk_put_prop_string(ctx, -2, "body");
+    }
+    else
+    {
+        /* this is our first connection, set the callback */
+        evhtp_connection_t *conn;
+        DISCB *info=NULL;
+        conn = evhtp_request_get_connection(dhs->req);
+
+        REMALLOC(info, sizeof(DISCB));
+        info->ctx = ctx;
+        info->ws_id = dhs->req->ws_id;
+
+        evhtp_connection_set_hook(conn, evhtp_hook_on_event, (evhtp_hook)ws_dis_cb, (void*)info);
+    }
+
+    duk_get_prop_string(ctx, -1, "count");
+    if(duk_is_number(ctx, -1))
+        d = duk_get_number(ctx, -1) + 1;
+    duk_pop(ctx);
+    duk_push_number(ctx, d);
+    duk_put_prop_string(ctx, -2, "count");
+
+    duk_push_number(ctx, (double) dhs->req->ws_id);
+    duk_put_prop_string(ctx, -2, "websocketId");
+
+
+    return ret;
+}
 
 /* copy request vars from evhtp to duktape */
 
-int push_req_vars(DHS *dhs)
+static int push_req_vars(DHS *dhs)
 {
     duk_context *ctx = dhs->ctx;
     evhtp_path_t *path = dhs->req->uri->path;
@@ -1092,6 +1148,12 @@ int push_req_vars(DHS *dhs)
         duk_put_prop_string(ctx, -2, "wsOnDisconnect");
     }
 
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("evreq")))
+    {
+        duk_pop(ctx);
+        duk_push_pointer(ctx, (void*) dhs->req);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("evreq"));
+    }
     /*
     duk_push_c_function(ctx, duk_server_add_header, 2);
     duk_put_prop_string(ctx, -2, "addHeader");
@@ -1329,7 +1391,7 @@ int push_req_vars(DHS *dhs)
         duk_push_string(ctx, "");
         duk_put_prop_string(ctx, -2, "Content-Type");
         duk_put_prop_string(ctx, -3, "postData");
-        // This is still on the stack in the 'else' case. 
+        // This is still on the stack in the 'else' case.
         // In if(getpropstring("content-type")) above. 'headers' is alredy put in object higher.
         duk_put_prop_string(ctx, -2, "headers");
     }
@@ -2732,12 +2794,24 @@ static int getfunction(DHS *dhs){
     return ret;
 }
 
-static void clean_reqobj(duk_context *ctx, int has_content)
+static void clean_reqobj(duk_context *ctx, int has_content, int keepreq)
 {
     if(has_content == -1)
         return;
 
     duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("reqobj"));
+
+    if(!keepreq)
+    {
+        if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("evreq")))
+        {
+            duk_pop(ctx);
+            duk_push_pointer(ctx, (void*) NULL);
+            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("evreq"));
+        }
+        else
+            duk_pop(ctx);
+    }
 
     if(duk_get_prop_string(ctx, -1, "body"))
     {
@@ -2822,7 +2896,7 @@ static void *http_dothread(void *arg)
     duk_context *ctx=dhs->ctx;
     evhtp_res res = 200;
     int eno;
-    int has_content;
+    int has_content=-1;
 
 #ifdef RP_TIMEO_DEBUG
     pthread_t x = dhr->par;
@@ -2837,10 +2911,47 @@ static void *http_dothread(void *arg)
         return NULL;
     };
 
-    /* push an empty object */
-    duk_push_object(ctx);
     /* populate object with details from client */
-    has_content = push_req_vars(dhs);
+    if(req->cb_has_websock)
+    {
+        int saveobj=0;
+        if(!duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("wsreq")))
+        {   /* we've never done a ws request in this thread before */
+            saveobj=1;
+            duk_pop(ctx);
+            duk_push_object(ctx);
+        }
+        //[ ..., function, {wsobj} ]
+        duk_push_number(ctx, (double)req->ws_id);
+        if(!duk_get_prop(ctx, -2))
+        {
+            /* first time this connection */
+            duk_pop(ctx);
+            duk_push_object(ctx); //[ ..., function, {wsobj}, {req} ]
+            has_content = push_req_vars(dhs);
+            (void)update_req_vars(dhs, 1);
+            duk_push_number(ctx, (double)req->ws_id); //[ ..., function, {wsobj}, {req}, key ]
+            duk_dup(ctx, -2); //[ ..., function, {wsobj}, {req}, key, val(reqcopy) ]
+            duk_put_prop(ctx, -4); //[ ..., function, {wsobj}, {req} ]
+        }
+        else //[ ..., function, {wsobj}, {req} ]
+        {
+            has_content=update_req_vars(dhs, 0);
+        }
+        duk_pull(ctx, -2); //[ ..., function, {req}, {wsobj}]
+
+        if(saveobj)
+            duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("wsreq"));
+        else
+            duk_pop(ctx);
+        //[ ..., function, {req} ]
+    }
+    else
+    {	/* a normal http request */
+        /* push an empty object for js callback "req" parameter*/
+        duk_push_object(ctx);
+        has_content = push_req_vars(dhs);
+    }
 
     //put a copy out of the way for a moment
     duk_dup(ctx,-1);
@@ -2876,7 +2987,7 @@ static void *http_dothread(void *arg)
         if (dhr->have_timeout)
             pthread_mutex_unlock(&(dhr->lock));
 
-        clean_reqobj(ctx, has_content);
+        clean_reqobj(ctx, has_content, req->cb_has_websock);
         return NULL;
     }
 
@@ -2917,7 +3028,7 @@ static void *http_dothread(void *arg)
     if (dhr->have_timeout)
         pthread_mutex_unlock(&(dhr->lock));
 
-    clean_reqobj(ctx, has_content);
+    clean_reqobj(ctx, has_content, req->cb_has_websock);
     return NULL;
 }
 
@@ -3048,7 +3159,7 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
     dhr->par = x;
 #endif
     /* if no timeout, not necessary to thread out the callback */
-    if (dhs->timeout.tv_sec == RP_TIME_T_FOREVER)
+    if (req->websock || dhs->timeout.tv_sec == RP_TIME_T_FOREVER)
     {
         debugf("no timeout set");
         dhr->have_timeout = 0;
@@ -3483,12 +3594,22 @@ static void http_callback(evhtp_request_t *req, void *arg)
 
     if(req->cb_has_websock)
     {
-        struct timeval tv;
-        tv.tv_sec = RP_TIME_T_FOREVER;
-        tv.tv_usec  = 0;
-        evhtp_connection_set_timeouts(evhtp_request_get_connection(req), &tv, &tv);
-        dhs->ctx = thread_ctx[thrno+totnthreads];
-        dhs->threadno = (uint16_t)thrno + (uint16_t)totnthreads;
+        if(!req->websock)
+        {
+            req->cb_has_websock=0; //otherwise send404 will come back here with infinite recursion.
+            send404(req);
+            return;
+        }
+        else
+        {
+            struct timeval tv;
+
+            tv.tv_sec = RP_TIME_T_FOREVER;
+            tv.tv_usec  = 0;
+            evhtp_connection_set_timeouts(evhtp_request_get_connection(req), &tv, &tv);
+            dhs->ctx = thread_ctx[thrno+totnthreads];
+            dhs->threadno = (uint16_t)thrno + (uint16_t)totnthreads;
+        }
     }
 
     if(dhs->module==MODULE_FILE)
@@ -3534,13 +3655,17 @@ static void http_callback(evhtp_request_t *req, void *arg)
             goto http_req_end;
         }
     }
-
-    if(duk_get_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("dhs")))
+    /* TODO: with dhs->freeme flag now present, fdhs and dhs entries can probably be combined */
+    if(duk_get_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("fdhs")))
     {
         //if not NULL, it is the old one from websock functions, if wsSend was never called
-        duk_context *fdhs = duk_get_pointer(dhs->ctx, -1);
+        DHS *fdhs = duk_get_pointer(dhs->ctx, -1);
         if(fdhs)
-            free(fdhs);
+        {
+            fdhs = free_dhs(fdhs);
+            duk_push_pointer(dhs->ctx, (void*) NULL);
+            duk_put_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("fdhs"));
+        }
     }
     duk_pop(dhs->ctx);
 
@@ -3655,12 +3780,6 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     duk_context *ctx;
     struct event_base *base = evthr_get_base(thr);
 
-    if (pthread_mutex_lock(&ctxlock) == EINVAL)
-    {
-        printerr( "could not obtain lock in http_callback\n");
-        exit(1);
-    }
-
     REMALLOC(thrno, sizeof(int));
 
     /* drop privileges here, after binding port */
@@ -3675,25 +3794,23 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
 
     *thrno = gl_threadno++;
     evthr_set_aux(thr, thrno);
+
+    /* for http requests, subject to timeout */
     ctx=thread_ctx[*thrno];
-
     duk_push_global_stash(ctx);
     duk_push_pointer(ctx, (void*)base);
     duk_put_prop_string(ctx, -2, "elbase");
     duk_pop(ctx);
 
+    /* for websocket requests, no timeout */
     ctx=thread_ctx[*thrno+totnthreads];
-
     duk_push_global_stash(ctx);
     duk_push_pointer(ctx, (void*)base);
     duk_put_prop_string(ctx, -2, "elbase");
     duk_pop(ctx);
 
+    thread_base[*thrno]=base;
 
-    pthread_mutex_unlock(&ctxlock);
-/*
-    printf("threadno = %d, base = %p\n", *thrno, base);
-*/
 }
 
 /* just like duk_get_prop_string, except that the prop string compare is
@@ -4370,7 +4487,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
         fprintf(access_fh, "HTTP server - initializing single threaded\n");
     }
 
-    /* initialize a context for each thread */
+    /* initialize two contexts for each thread
+       the second one is used for websockets and will never
+       be destroyed in a timeout.
+    */
     REMALLOC(thread_ctx, (2 * totnthreads * sizeof(duk_context *)));
     for (i = 0; i <= totnthreads*2; i++)
     {
@@ -4404,6 +4524,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
         duk_put_global_string(tctx, "rampart");
     }
+
+    //malloc here, set in initThread
+    REMALLOC(thread_base, (totnthreads * sizeof(struct event_base *)));
+
     htp = evhtp_new(elbase, NULL);
 
     /* testing for pure c benchmarking*
