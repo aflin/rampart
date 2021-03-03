@@ -1974,6 +1974,9 @@ static void attachbuf(DHS *dhs, duk_idx_t idx)
     s = duk_steal_buffer(ctx, idx, &sz);
     freeme->ctx = ctx;
     freeme->threadno = (int)dhs->threadno;
+    if( dhs->req->cb_has_websock)
+        freeme->threadno += totnthreads;
+
     evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, refcb, freeme);
 }
 
@@ -1994,6 +1997,9 @@ static void sendmem(DHS *dhs)
     dhs->bufsz=0;
 }
 
+/* send a buffer or a string 
+   will send content of req.printf first
+*/
 static void sendbuf(DHS *dhs)
 {
     const char *s;
@@ -2040,10 +2046,14 @@ static void sendws(DHS *dhs)
     evhtp_request_t *req = dhs->req;
     if(!req)
         return;
+
+    if(duk_is_object(dhs->ctx, -1))
+        duk_json_encode(dhs->ctx, -1);
+
     /* put everything into buffer_out */
     sendbuf(dhs);
     data = evbuffer_pullup(req->buffer_out, -1);
-    ws_data = evhtp_ws_data_new(data, evbuffer_get_length(req->buffer_out));
+    ws_data = evhtp_ws_data_new(data, evbuffer_get_length(req->buffer_out), OP_TEXT);
     outbuf  = evhtp_ws_data_pack(ws_data, &outlen);
     free(ws_data);
     resp    = evbuffer_new();
@@ -2056,7 +2066,13 @@ static void sendws(DHS *dhs)
 
 }
 
-static evhtp_res sendobj(DHS *dhs)
+/* send the object by mime type
+   fill evbuffers with appropriate data
+   for websockets, just send whatever is on top of the stack
+   This function does not remove the object on top of
+   the stack
+*/
+static evhtp_res obj_to_buffer(DHS *dhs)
 {
     RP_MTYPES m;
     RP_MTYPES *mres;
@@ -2072,18 +2088,11 @@ static evhtp_res sendobj(DHS *dhs)
     /* for websockets */
     if( dhs->req->cb_has_websock)
     {
-        if (duk_get_prop_string(ctx, -1, "ws"))
-        {
-            /* functions above expect [ obj, enum, key, val ]
-               enum and key are unused */
-            duk_push_undefined(ctx);
-            duk_push_string(ctx, "ws");
-            duk_pull(ctx, -3);
+            if(duk_is_null(ctx, -1) || duk_is_undefined(ctx, -1) )
+                return 0; //0 means don't send reply via evhtp
+
             sendws(dhs);
-            duk_pop_3(ctx);
             return 0;
-        }
-        duk_pop(ctx);
     }
 
     if (duk_get_prop_string(ctx, -1, "headers"))
@@ -3000,23 +3009,23 @@ static void *http_dothread(void *arg)
     }
     /* stack now has return value from duk function call */
 
-    /* set some headers */
-    //setheaders(req);
-
-    /* don't accept functions or arrays */
-    if (duk_is_function(ctx, -1) || duk_is_array(ctx, -1))
+    if(!req->cb_has_websock)
     {
-        RP_THROW(ctx, "Return value cannot be an array or a function");
-    }
+        /* don't accept functions or arrays */
+        if (duk_is_function(ctx, -1) || duk_is_array(ctx, -1))
+        {
+            RP_THROW(ctx, "Return value cannot be an array or a function");
+        }
 
-    /* object has reply data and options in it */
-    if (!duk_is_object(ctx, -1))
-    {
-        duk_push_object(ctx);
-        duk_pull(ctx, -2);
-        duk_put_prop_string(ctx, -2, "text");
+        /* object has reply data and options in it */
+        if (!duk_is_object(ctx, -1))
+        {
+            duk_push_object(ctx);
+            duk_pull(ctx, -2);
+            duk_put_prop_string(ctx, -2, "text");
+        }
     }
-    res = sendobj(dhs);
+    res = obj_to_buffer(dhs);
 
     if (res)
         sendresp(req, res);
@@ -3575,7 +3584,6 @@ static void http_callback(evhtp_request_t *req, void *arg)
     /* ****************************
       setup duk function callback
        **************************** */
-
     newdhs.ctx = new_ctx;
     newdhs.req = req;
     newdhs.func_idx = dhs->func_idx;
@@ -3622,6 +3630,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
         dhs->module_name=strdup(duk_get_string(dhs->ctx,-1));
         duk_pop_2(dhs->ctx);
         res=getmod(dhs);
+
         if(res==-1)
         {
             free(dhs->module_name);
@@ -3778,14 +3787,25 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
 
     REMALLOC(thrno, sizeof(int));
 
+    if (pthread_mutex_lock(&ctxlock) == EINVAL)
+    {
+        printerr( "could not obtain lock in http_callback\n");
+        exit(1);
+    }
+
     /* drop privileges here, after binding port */
     if(unprivu && !gl_threadno)
     {
         if (setgid(unprivg) == -1)
+        {
+            pthread_mutex_unlock(&ctxlock);
             RP_THROW(main_ctx, "error setting group, setgid() failed");
-
+        }
         if (setuid(unprivu) == -1)
+        {
+            pthread_mutex_unlock(&ctxlock);
             RP_THROW(main_ctx, "error setting user, setuid() failed");
+        }
     }
 
     *thrno = gl_threadno++;
@@ -3806,7 +3826,7 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     duk_pop(ctx);
 
     thread_base[*thrno]=base;
-
+    pthread_mutex_unlock(&ctxlock);
 }
 
 /* just like duk_get_prop_string, except that the prop string compare is
@@ -4572,7 +4592,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 /* copy function to all the heaps/ctxs */
                 if(mod)
                 {
-                    for (i=0;i<totnthreads;i++)
+                    for (i=0;i<totnthreads*2;i++)
                         copy_mod_func(ctx, thread_ctx[i], fpos);
                 }
                 else
@@ -4635,7 +4655,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 /* copy function to all the heaps/ctxs */
                 if(mod)
                 {
-                    for (i=0;i<totnthreads;i++)
+                    for (i=0;i<totnthreads*2;i++)
                         copy_mod_func(ctx, thread_ctx[i], fpos);
                 }
                 else
@@ -4825,7 +4845,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         /* copy function to all the heaps/ctxs */
                         if(mod)
                         {
-                            for (i=0;i<totnthreads;i++)
+                            for (i=0;i<totnthreads*2;i++)
                                 copy_mod_func(ctx, thread_ctx[i], fpos);
                         }
                         else
@@ -4845,7 +4865,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             evhtp_set_cb(htp, s, http_callback, cb_dhs);
                         else
                         {
-                            //printf("setting exact path %s\n",s);
+                            //printf("setting exact path %s %d\n",s, cb_dhs->module);
                             evhtp_set_exact_cb(htp, s, http_callback, cb_dhs);
                         }
                         free(s);
