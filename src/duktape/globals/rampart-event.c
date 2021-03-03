@@ -85,14 +85,16 @@ CBH {
     size_t size;
 };
 
-#define JSEVENT_TRIGGER 0
-#define JSEVENT_DELETE 1
+#define JSEVENT_TRIGGER 0 // trigger event
+#define JSEVENT_DELETE  1 // delete the event
+#define JSEVENT_DELFUNC 2 // delete a function in the event
 
 #define JSEVARGS struct ev_args
 JSEVARGS {
     int          thread_no;
     struct event *e;
     char         *key;
+    char	 *fname;
     int          action;
     int		 count;
     CBH         *cbor;
@@ -108,96 +110,105 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
     if(earg->thread_no > -1)
         ctx=thread_ctx[earg->thread_no];
 
+#define jsev_exec_func do{\
+    duk_enum(ctx, -1, 0); /* [ {jsevents}, {myevent}, enum ]*/\
+    while(duk_next(ctx, -1, 1))\
+    {\
+        /* [ {jsevents}, {myevent}, enum, func_name, {object} ]*/\
+        if(!duk_get_prop_string(ctx, -1, "cb"))\
+        {\
+            /* [ {jsevents}, {myevent}, enum, func_name, {object}, undefined ]*/\
+            duk_pop_3(ctx); /*[ {jsevents}, {myevent}, enum ] */\
+            continue;\
+        }\
+        duk_get_prop_string(ctx, -2, "param"); /* [ {jsevents}, {myevent}, enum, func_name, {object}, func, param ]*/\
+        if(arg_idx == -1 && earg->cbor != NULL)\
+        {\
+            duk_push_external_buffer(ctx);\
+            duk_config_buffer(ctx, -1, earg->cbor->data, (duk_size_t) earg->cbor->size);\
+            duk_cbor_decode(ctx, -1, 0);\
+            duk_get_prop_string(ctx, -1, "arg");\
+            duk_insert(ctx, 0);\
+            duk_pop(ctx);\
+            arg_idx = 0;\
+        }\
+        if( arg_idx ==-1)\
+            duk_call(ctx, 1); /* [ {jsevents}, {myevent}, enum, func_name, {object}, return ]*/\
+        else\
+        {\
+            duk_dup(ctx,arg_idx);\
+            duk_call(ctx, 2);\
+        }\
+        duk_pop_3(ctx); /* [ {jsevents}, {myevent}, enum]*/\
+    }\
+    duk_pop(ctx);/*enum*/\
+}while(0)
+
     /* the first one */
     do {
         duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("jsevents"));
-        if(!duk_get_prop_string(ctx, -1, earg->key))
+        if(earg->action == JSEVENT_TRIGGER || earg->action == JSEVENT_DELFUNC)
         {
-            duk_pop_2(ctx);
-            break;
-        }
-
-        duk_enum(ctx, -1, 0); // [ {jsevents}, {myevent}, enum ]
-        while(duk_next(ctx, -1, 1))
-        {
-            // [ {jsevents}, {myevent}, enum, func_name, {object} ]
-            if(!duk_get_prop_string(ctx, -1, "cb"))
+            /* do we have an event named "key" ? */
+            if(!duk_get_prop_string(ctx, -1, earg->key))
             {
-                // [ {jsevents}, {myevent}, enum, func_name, {object}, undefined ]
-                duk_pop_3(ctx); //[ {jsevents}, {myevent}, enum ]
-                continue;
+                duk_pop_2(ctx);
+                break; //continue to second one
             }
-            duk_get_prop_string(ctx, -2, "param"); // [ {jsevents}, {myevent}, enum, func_name, {object}, func, param ]
-            if(arg_idx == -1 && earg->cbor != NULL)
-            {
-                duk_push_external_buffer(ctx);
-                duk_config_buffer(ctx, -1, earg->cbor->data, (duk_size_t) earg->cbor->size);
-                duk_cbor_decode(ctx, -1, 0);
-                duk_get_prop_string(ctx, -1, "arg");
-                duk_insert(ctx, 0);
-                duk_pop(ctx);
-                arg_idx = 0;
-            }
-
-            if( arg_idx ==-1)
-                duk_call(ctx, 1); // [ {jsevents}, {myevent}, enum, func_name, {object}, return ]
+            /* yes */
+            if(earg->action == JSEVENT_TRIGGER) // run all functions for this event
+                jsev_exec_func;
             else
             {
-                duk_dup(ctx,arg_idx);
-                duk_call(ctx, 2);
+                duk_del_prop_string(ctx, -1, earg->fname); //delete the named function in this event
             }
-            duk_pop_3(ctx); // [ {jsevents}, {myevent}, enum]
+            duk_pop_2(ctx); // []
         }
-        duk_pop_3(ctx); // []
+        else
+        {
+            /* delete this event and all its functions */
+            duk_del_prop_string(ctx, -1, earg->key);
+            duk_pop(ctx);
+        }
     } while(0);    
+
+    /* clean up the first one */
+    if(arg_idx != -1)
+    {
+        duk_remove(ctx, arg_idx);
+        arg_idx = -1;
+    }
 
     /* the second one, if thread */
     if(earg->thread_no > -1)
     {
-        ctx = thread_ctx[totnthreads + earg->thread_no];
+        ctx = thread_ctx[totnthreads + earg->thread_no]; //switch stacks. Second stack is for websockets.
         duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("jsevents"));
-        if(!duk_get_prop_string(ctx, -1, earg->key))
-        {
-            duk_pop_2(ctx);
-            goto end;
-        }
 
-        duk_enum(ctx, -1, 0); // [ {jsevents}, {myevent}, enum ]
-        while(duk_next(ctx, -1, 1))
+        if(earg->action == JSEVENT_TRIGGER || earg->action == JSEVENT_DELFUNC)
         {
-            // [ {jsevents}, {myevent}, enum, func_name, {object} ]
-            if(!duk_get_prop_string(ctx, -1, "cb"))
+            if(!duk_get_prop_string(ctx, -1, earg->key))
             {
-                // [ {jsevents}, {myevent}, enum, func_name, {object}, undefined ]
-                duk_pop_3(ctx); //[ {jsevents}, {myevent}, enum ]
-                continue;
+                duk_pop_2(ctx);
+                goto end;
             }
-            duk_get_prop_string(ctx, -2, "param"); // [ {jsevents}, {myevent}, enum, func_name, {object}, func, param ]
-            if(arg_idx == -1 && earg->cbor != NULL)
-            {
-                duk_push_external_buffer(ctx);
-                duk_config_buffer(ctx, -1, earg->cbor->data, (duk_size_t) earg->cbor->size);
-                duk_cbor_decode(ctx, -1, 0);
-                duk_get_prop_string(ctx, -1, "arg");
-                duk_insert(ctx, 0);
-                duk_pop(ctx);
-                arg_idx = 0;
-            }
-
-            if( arg_idx ==-1)
-                duk_call(ctx, 1); // [ {jsevents}, {myevent}, enum, func_name, {object}, return ]
+            if(earg->action == JSEVENT_TRIGGER)
+                jsev_exec_func;
             else
             {
-                duk_dup(ctx,arg_idx);
-                duk_call(ctx, 2);
+                duk_del_prop_string(ctx, -1, earg->fname);
             }
-            duk_pop_3(ctx); // [ {jsevents}, {myevent}, enum]
+            duk_pop_2(ctx); // []
         }
-        duk_pop_3(ctx); // []
+        else
+        {
+            duk_del_prop_string(ctx, -1, earg->key);
+            duk_pop(ctx);
+        }
     }
 
     end:
-
+    /* clean up the second one */
     if(arg_idx != -1)
         duk_remove(ctx, arg_idx);
 
@@ -219,22 +230,55 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
         pthread_mutex_unlock(&cborlock);
     }
 
-    event_del(earg->e);
+    event_free(earg->e);
     free(earg->key);
+    if(earg->fname)
+        free(earg->fname);
     free(earg);
+}
+
+static void evloop_insert(const char *evname, const char *fname, CBH *cbor, int action)
+{
+    struct timeval timeout;
+    JSEVARGS *args = NULL;
+    int i=0;
+
+    timeout.tv_sec=0;
+    timeout.tv_usec=0; 
+
+    for(;i<totnthreads+1;i++)
+    {
+        struct event_base *base;
+        int tno=i;
+
+        if(i==totnthreads)
+        {
+            tno=-1;
+            base=elbase;
+        }
+        else
+            base=thread_base[i];
+
+        args=NULL;
+        REMALLOC(args,sizeof(JSEVARGS));
+        args->thread_no = tno;
+        args->key = strdup(evname);
+        args->action=action;
+        if(fname)
+            args->fname=strdup(fname);
+        else
+            args->fname=NULL;
+        args->e = event_new(base, -1, 0, rp_jsev_doevent, args);
+        args->cbor = cbor;
+        event_add(args->e, &timeout);
+    }
 }
 
 
 duk_ret_t duk_rp_trigger_event(duk_context *ctx)
 {
     const char *evname = REQUIRE_STRING(ctx, 0, "event.trigger: parameter must be a string (event name)");
-    struct timeval timeout;
-    JSEVARGS *args = NULL;
     CBH *cbor = NULL;
-    int i=0;
-
-    timeout.tv_sec=0;
-    timeout.tv_usec=0; 
 
     if(!duk_is_undefined(ctx,1))
     {
@@ -254,28 +298,26 @@ duk_ret_t duk_rp_trigger_event(duk_context *ctx)
         cbor->refcount = totnthreads+1;
     }
 
-    for(;i<totnthreads+1;i++)
-    {
-        struct event_base *base;
-        int tno=i;
+    evloop_insert(evname, NULL, cbor, JSEVENT_TRIGGER);
+    return 0;
+}
 
-        if(i==totnthreads)
-        {
-            tno=-1;
-            base=elbase;
-        }
-        else
-            base=thread_base[i];
+/* remove named function, wherever it might reside */
+duk_ret_t duk_rp_off_event(duk_context *ctx)
+{
+    const char *evname = REQUIRE_STRING(ctx, 0, "event.off: first parameter must be a string (event name)");
+    const char *fname = REQUIRE_STRING(ctx, 1, "event.off: second parameter must be a string (function name)");
 
-        args=NULL;
-        REMALLOC(args,sizeof(JSEVARGS));
-        args->thread_no = tno;
-        args->key = strdup(evname);
-        args->action=JSEVENT_TRIGGER;
-        args->e = event_new(base, -1, EV_PERSIST, rp_jsev_doevent, args);
-        args->cbor = cbor;
-        event_add(args->e, &timeout);
-    }
+    evloop_insert(evname, fname, NULL, JSEVENT_DELFUNC);
+    return 0;
+}
+
+/* remove event and all function, wherever they might reside */
+duk_ret_t duk_rp_remove_event(duk_context *ctx)
+{
+    const char *evname = REQUIRE_STRING(ctx, 0, "event.remove: first parameter must be a string (event name)");
+
+    evloop_insert(evname, NULL, NULL, JSEVENT_DELETE);
     return 0;
 }
 
@@ -308,6 +350,12 @@ void duk_event_init(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_rp_on_event, 4);
     duk_put_prop_string(ctx, -2, "on");
+
+    duk_push_c_function(ctx, duk_rp_off_event, 2);
+    duk_put_prop_string(ctx, -2, "off");
+
+    duk_push_c_function(ctx, duk_rp_remove_event, 1);
+    duk_put_prop_string(ctx, -2, "remove");
 
     duk_push_c_function(ctx, duk_rp_trigger_event, 2);
     duk_put_prop_string(ctx, -2, "trigger");
