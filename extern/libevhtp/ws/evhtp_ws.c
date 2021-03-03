@@ -1,4 +1,9 @@
 /*
+ * Most of the websocket code comes from here and was reintegrated into
+ * libevhtp by the authors of Rampart: 
+ *    https://github.com/zerotao/libevhtp/tree/libevhtp2 
+ * -ajf
+ *
  * While this looks nothing like the original code, my initial point of
  * reference was from Marcin Kelar's parser. His license is included here.
  *
@@ -264,7 +269,6 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                 p_start = &data[i];
                 p_end   = (const char *)(data + len);
                 to_read = MIN_READ(p_end - p_start, p->content_len);
-
                 if (to_read > 0) {
                     int  z;
                     char buf[to_read];
@@ -288,8 +292,7 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                     p->content_len -= to_read;
                     i += to_read - 1;
                 }
-
-                if (p->content_len == 0 && p->frame.hdr.fin == 1) {
+                if (p->content_len == 0 && (p->frame.hdr.fin == 1 || p->frame.hdr.opcode & 0x8) ){
                     if (hooks->on_msg_fini) {
                         if ((hooks->on_msg_fini)(p)) {
                             return i;
@@ -369,7 +372,7 @@ evhtp_ws_gen_handshake(evhtp_kvs_t * hdrs_in, evhtp_kvs_t * hdrs_out) {
 } /* evhtp_ws_gen_handshake */
 
 evhtp_ws_data *
-evhtp_ws_data_new(const char * data, size_t len) {
+evhtp_ws_data_new(const char * data, size_t len, uint8_t opcode) {
     evhtp_ws_data * ws_data;
     uint8_t         extra_bytes;
     uint8_t         frame_len;
@@ -390,7 +393,7 @@ evhtp_ws_data_new(const char * data, size_t len) {
     ws_data->hdr.len    = frame_len ? frame_len : len;
     ws_data->hdr.fin    = 1;
     ws_data->hdr.mask   = 0;
-    ws_data->hdr.opcode = OP_TEXT;
+    ws_data->hdr.opcode = opcode;
 
     if (frame_len) {
         memcpy(ws_data->payload, &len, extra_bytes);
@@ -450,7 +453,13 @@ evhtp_ws_data_pack(evhtp_ws_data * ws_data, size_t * out_len) {
 
 evhtp_ws_parser *
 evhtp_ws_parser_new(void) {
-    return calloc(sizeof(evhtp_ws_parser), 1);
+    evhtp_ws_parser *p = calloc(sizeof(evhtp_ws_parser), 1);
+    if(!p)
+    {
+        fprintf(stderr, "calloc err, evhtp_ws line %d\n", __LINE__);
+        exit(1);
+    }
+    return p;
 }
 
 void
@@ -470,5 +479,22 @@ evhtp_ws_parser_get_userdata(evhtp_ws_parser * p) {
 void evhtp_ws_disconnect(evhtp_request_t  * req)
 {
     evhtp_connection_t * c = evhtp_request_get_connection(req);
-    c->flags &=  ~EVHTP_CONN_FLAG_OWNER;
+    struct evbuffer *b = bufferevent_get_input(c->bev);
+
+    /* still run the callback for disconnect */
+    if (c->hooks && c->hooks->on_event) {
+        (c->hooks->on_event)(c, BEV_EVENT_EOF, c->hooks->on_event_arg);
+    }
+
+    evbuffer_drain(b, evbuffer_get_length(b));
+    if (req->ws_parser)
+    {
+        if(req->ws_parser->pingev)
+        {
+            event_del(req->ws_parser->pingev);
+            event_free(req->ws_parser->pingev);
+        }
+        free(req->ws_parser);
+    }
+    evhtp_safe_free(c, evhtp_connection_free);
 }

@@ -2316,13 +2316,120 @@ static htparse_hooks request_psets = {
     .on_msg_complete    = htp__request_parse_fini_
 };
 
+static unsigned char *ws_get_ping_buf(size_t *outlen)
+{
+    struct evbuffer    * resp;
+    evhtp_ws_data      * ws_data;
+
+    static unsigned char * outbuf=NULL;
+    static size_t ol=0;
+
+    if(outbuf)
+    {
+        *outlen = ol;
+        return outbuf;
+    }
+
+    ws_data = evhtp_ws_data_new("tanstaafl", 10, OP_PING);
+    outbuf  = evhtp_ws_data_pack(ws_data, outlen);
+    ol = *outlen;
+    free(ws_data);
+
+    return outbuf;
+}
+
+static void ws_ping(evhtp_request_t *req)
+{
+    struct evbuffer    * resp;
+    unsigned char      * outbuf;
+    size_t               outlen = 0;
+
+
+    outbuf  = ws_get_ping_buf(&outlen);
+
+    resp    = evbuffer_new();
+    evbuffer_add_reference(resp, outbuf, outlen, NULL, NULL);
+    evhtp_send_reply_body(req, resp);
+    evbuffer_free(resp);
+}
+
+static unsigned char *ws_get_pong_buf(size_t *outlen)
+{
+    struct evbuffer    * resp;
+    evhtp_ws_data      * ws_data;
+
+    static unsigned char * outbuf=NULL;
+    static size_t ol=0;
+
+    if(outbuf)
+    {
+        *outlen = ol;
+        return outbuf;
+    }
+
+    /* FIXME: should contain same payload as ping? */
+    ws_data = evhtp_ws_data_new("", 1, OP_PONG);
+    outbuf  = evhtp_ws_data_pack(ws_data, outlen);
+    ol = *outlen;
+    free(ws_data);
+
+    return outbuf;
+}
+
+static void ws_pong(evhtp_request_t *req)
+{
+    struct evbuffer    * resp;
+    unsigned char      * outbuf;
+    size_t               outlen = 0;
+
+
+    outbuf  = ws_get_pong_buf(&outlen);
+
+    resp    = evbuffer_new();
+    evbuffer_add_reference(resp, outbuf, outlen, NULL, NULL);
+    evhtp_send_reply_body(req, resp);
+    evbuffer_free(resp);
+}
+
+
+static void rec_ping(evutil_socket_t fd, short events, void* arg)
+{
+    evhtp_request_t *req = (evhtp_request_t *)arg;
+    evhtp_ws_parser *p = req->ws_parser;
+
+    ws_ping(req);
+    p->pingct++;
+    if(p->pingct >2)
+    {
+        event_del(p->pingev);
+        event_free(p->pingev);
+        p->pingev=NULL;
+        evhtp_ws_disconnect(req);
+    }
+}
+
+static void ws_start_ping(evhtp_request_t *req, int interval)
+{
+    evthr_t * thr = req->conn->thread;
+    struct event_base *base = evthr_get_base(thr);
+    evhtp_ws_parser *p = req->ws_parser;
+    struct timeval timeout;
+    
+    timeout.tv_sec= (time_t) interval;
+    timeout.tv_usec=0; 
+
+    p->pingev = event_new(base, -1, EV_PERSIST, rec_ping, (void*)req);
+    event_add(p->pingev, &timeout);    
+    p->pingct = 0;
+}
+
+
 static int
 _ws_msg_start(evhtp_ws_parser * p) {
     evhtp_request_t * req;
 
     req = evhtp_ws_parser_get_userdata(p);
     evhtp_assert(req != NULL);
-
     //printf("BEGIN!\n");
 
     return 0;
@@ -2335,7 +2442,15 @@ _ws_msg_fini(evhtp_ws_parser * p) {
     req = evhtp_ws_parser_get_userdata(p);
     evhtp_assert(req != NULL);
 
-    if (req->cb) {
+    if(p->frame.hdr.opcode & 0x8)
+    {
+        if(p->frame.hdr.opcode == OP_PONG)
+            p->pingct--;// if sent too many pongs, this will wrap around and we will disconnect
+        else if(p->frame.hdr.opcode == OP_PING)
+            ws_pong(req);//should we track pings too, in case of flood?
+        evbuffer_drain(req->buffer_in, evbuffer_get_length(req->buffer_in));
+    }
+    else if (req->cb) {
         (req->cb)(req, req->cbarg);
     }
     //printf("COMPLETE!\n");
@@ -2401,7 +2516,7 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
          */
         if (req->ws_parser == NULL) {
             req->ws_parser = evhtp_ws_parser_new();
-
+            ws_start_ping(req, 5);
             evhtp_ws_parser_set_userdata(req->ws_parser, req);
         }
 
@@ -2410,7 +2525,6 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
         /* XXX need a parser_init / parser_set_userdata */
         nread = evhtp_ws_parser_run(req->ws_parser,
                                     &ws_hooks, buf, avail);
-
     } else {
         /* process as normal HTTP data. */
         nread = htparser_run(c->parser, &request_psets, (const char *)buf, avail);
@@ -2425,10 +2539,16 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
          */
 
         log_debug("EVHTP_CONN_FLAG_OWNER not set, removing contexts");
-
         evbuffer_drain(bufferevent_get_input(bev), nread);
         if (req->ws_parser)
+        {
+            if(req->ws_parser->pingev)
+            {
+                event_del(req->ws_parser->pingev);
+                event_free(req->ws_parser->pingev);
+            }
             free(req->ws_parser);
+        }
         evhtp_safe_free(c, evhtp_connection_free);
 
         return;
@@ -2489,7 +2609,15 @@ htp__connection_writecb_(struct bufferevent * bev, void * arg)
         log_debug("EVHTP_CONN_FLAG_OWNER not set, removing contexts");
 
         if (conn->request->ws_parser)
+        {
+            evhtp_ws_parser * p = conn->request->ws_parser;
+            if(p->pingev)
+            {
+                event_del(p->pingev);
+                event_free(p->pingev);
+            }
             free(conn->request->ws_parser);
+        }
         evhtp_safe_free(conn, evhtp_connection_free);
         return;
     }
@@ -2711,7 +2839,13 @@ htp__connection_eventcb_(struct bufferevent * bev, short events, void * arg)
     }
     if (c->request && c->request->cb_has_websock)
     {
-        free(c->request->ws_parser);
+        evhtp_ws_parser * p = c->request->ws_parser;
+        if(p->pingev)
+        {
+            event_del(p->pingev);
+            event_free(p->pingev);
+        }
+        free(p);
         c->request->ws_parser=NULL;
     }
     /* set the error mask */

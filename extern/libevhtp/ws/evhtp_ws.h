@@ -70,6 +70,8 @@ struct evhtp_ws_parser_s {
     uint16_t              status_code;
     void                * usrdata;
     evhtp_ws_frame        frame;
+    struct event        * pingev;
+    uint8_t               pingct;
 };
 
 //struct evhtp_ws_parser_s;
@@ -96,7 +98,7 @@ EVHTP_EXPORT ssize_t           evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws
 EVHTP_EXPORT void              evhtp_ws_parser_set_userdata(evhtp_ws_parser * p, void * usrdata);
 EVHTP_EXPORT void            * evhtp_ws_parser_get_userdata(evhtp_ws_parser * p);
 
-EVHTP_EXPORT evhtp_ws_data   * evhtp_ws_data_new(const char * data, size_t len);
+EVHTP_EXPORT evhtp_ws_data   * evhtp_ws_data_new(const char * data, size_t len, uint8_t opcode);
 EVHTP_EXPORT unsigned char   * evhtp_ws_data_pack(evhtp_ws_data * ws_data, size_t * out_len);
 
 #endif
