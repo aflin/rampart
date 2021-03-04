@@ -714,7 +714,28 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
     duk_push_number(ctx, evargs->key);
     duk_get_prop(ctx, -2);
 
-    duk_call(ctx, 0);
+    if(duk_pcall(ctx,0) != 0)
+    {
+        if (duk_is_error(ctx, -1) )
+        {
+            duk_get_prop_string(ctx, -1, "stack");
+            printf("Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
+            /* why won't throw work?  It just aborts with no error message.
+               but I thought that was the point of duk_pcall */
+            RP_THROW(ctx, duk_safe_to_string(ctx, -1));
+            duk_pop(ctx);
+        }
+        else if (duk_is_string(ctx, -1))
+        {
+            printf("Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
+            RP_THROW(ctx, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
+        }
+        else
+        {
+            printf("Error in setTimeout/setInterval callback\n");
+            RP_THROW(ctx, "Error in setTimeout/setInterval callback\n");
+        }
+    }
     //discard return
     duk_pop(ctx);
 

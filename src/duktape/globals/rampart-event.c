@@ -133,11 +133,30 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
             arg_idx = 0;\
         }\
         if( arg_idx ==-1)\
-            duk_call(ctx, 1); /* [ {jsevents}, {myevent}, enum, func_name, {object}, return ]*/\
+            duk_push_undefined(ctx);\
         else\
-        {\
             duk_dup(ctx,arg_idx);\
-            duk_call(ctx, 2);\
+        if(duk_pcall(ctx,2) != 0)\
+        {\
+            if (duk_is_error(ctx, -1) )\
+            {\
+                duk_get_prop_string(ctx, -1, "stack");\
+                printf("Error in event callback: %s\n", duk_get_string(ctx, -1));\
+                /* why won't throw work?  It seems to be in the middle of a throw anyway.\
+                   but I thought that was the point of duk_pcall */\
+                RP_THROW(ctx, duk_safe_to_string(ctx, -1));\
+                duk_pop(ctx);\
+            }\
+            else if (duk_is_string(ctx, -1))\
+            {\
+                printf("Error in event callback: %s\n", duk_get_string(ctx, -1));\
+                RP_THROW(ctx, "Error in event callback: %s\n", duk_get_string(ctx, -1));\
+            }\
+            else\
+            {\
+                printf("Error in event callback\n");\
+                RP_THROW(ctx, "Error in event callback\n");\
+            }\
         }\
         duk_pop_3(ctx); /* [ {jsevents}, {myevent}, enum]*/\
     }\
@@ -229,7 +248,6 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
 
         pthread_mutex_unlock(&cborlock);
     }
-
     event_free(earg->e);
     free(earg->key);
     if(earg->fname)
@@ -297,7 +315,6 @@ duk_ret_t duk_rp_trigger_event(duk_context *ctx)
         memcpy(cbor->data, buf, cbor->size);       
         cbor->refcount = totnthreads+1;
     }
-
     evloop_insert(evname, NULL, cbor, JSEVENT_TRIGGER);
     return 0;
 }
