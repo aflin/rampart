@@ -1,8 +1,16 @@
 /*
- * Most of the websocket code comes from here and was reintegrated into
- * libevhtp by the authors of Rampart: 
- *    https://github.com/zerotao/libevhtp/tree/libevhtp2 
- * -ajf
+ * Most of the websocket code comes from this unfinished fork:
+ *
+ *   https://github.com/zerotao/libevhtp/tree/libevhtp2
+ *
+ * It was reintegrated into libevhtp by the authors of Rampart
+ * with sooooo much gratitude for not having to do this from scratch
+ *    -ajf
+ *
+ * Changes and additions, Copyright (c) 2021 Aaron Flin and released
+ * under the MIT License.
+ *
+ * ----------------------------------------------------------------------------
  *
  * While this looks nothing like the original code, my initial point of
  * reference was from Marcin Kelar's parser. His license is included here.
