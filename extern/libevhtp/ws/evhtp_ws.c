@@ -98,7 +98,6 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
     const char * p_start;
     const char * p_end;
     uint64_t     to_read;
-
     if (!hooks) {
         return (ssize_t)len;
     }
@@ -107,7 +106,6 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
         int res;
 
         byte = (uint8_t)data[i];
-
         switch (p->state) {
             case ws_s_start:
                 memset(&p->frame, 0, sizeof(p->frame));
@@ -123,12 +121,10 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                         return i;
                     }
                 }
-
             /* fall-through */
             case ws_s_fin_rsv_opcode:
                 p->frame.hdr.fin    = (byte & 0x1);
                 p->frame.hdr.opcode = (byte & 0xF);
-
                 p->state = ws_s_mask_payload_len;
                 break;
             case ws_s_mask_payload_len:
@@ -203,15 +199,19 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                 p->state = ws_s_payload;
                 break;
             case ws_s_masking_key:
-                if (MIN_READ((const char *)(data + len) - &data[i], 4) < 4) {
+            {
+                int min= MIN_READ((const char *)(data + len) - &data[i], 4);
+                if (min < 4) 
+                {
                     return i;
                 }
-
                 p->frame.masking_key = *(uint32_t *)&data[i];
                 i       += 3;
-
                 p->state = ws_s_payload;
+                if(min==4) // i==len, so go directly to finish.
+                    goto fini;
                 break;
+            }
             case ws_s_payload:
                 /* XXX we need to abstract out the masking shit here, so I don't
                  * have a OP_CLOSE type mask function AND a normal data mask
@@ -292,13 +292,13 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                     p->content_len -= to_read;
                     i += to_read - 1;
                 }
+        fini:
                 if (p->content_len == 0 && (p->frame.hdr.fin == 1 || p->frame.hdr.opcode & 0x8) ){
                     if (hooks->on_msg_fini) {
                         if ((hooks->on_msg_fini)(p)) {
                             return i;
                         }
                     }
-
                     p->state = ws_s_start;
                 }
 

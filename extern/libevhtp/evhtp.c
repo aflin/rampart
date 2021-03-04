@@ -2353,46 +2353,47 @@ static void ws_ping(evhtp_request_t *req)
     evbuffer_free(resp);
 }
 
-static unsigned char *ws_get_pong_buf(size_t *outlen)
+static unsigned char *ws_get_pong_buf(unsigned char *buf, size_t len, size_t *outlen)
 {
     struct evbuffer    * resp;
     evhtp_ws_data      * ws_data;
 
-    static unsigned char * outbuf=NULL;
-    static size_t ol=0;
-
-    if(outbuf)
-    {
-        *outlen = ol;
-        return outbuf;
-    }
+    unsigned char * outbuf=NULL;
 
     /* FIXME: should contain same payload as ping? */
-    ws_data = evhtp_ws_data_new("", 1, OP_PONG);
+    ws_data = evhtp_ws_data_new(buf, len, OP_PONG);
     outbuf  = evhtp_ws_data_pack(ws_data, outlen);
-    ol = *outlen;
     free(ws_data);
 
     return outbuf;
 }
 
-static void ws_pong(evhtp_request_t *req)
+/* free the data after evbuffer is done with it */
+static void frefcb(const void *data, size_t datalen, void *val)
+{
+    if(val)
+        free((void *)val);
+    else
+        free((void *)data);
+}
+
+static void ws_pong(evhtp_request_t *req, unsigned char *buf, size_t len)
 {
     struct evbuffer    * resp;
     unsigned char      * outbuf;
     size_t               outlen = 0;
 
 
-    outbuf  = ws_get_pong_buf(&outlen);
+    outbuf  = ws_get_pong_buf(buf, len, &outlen);
 
     resp    = evbuffer_new();
-    evbuffer_add_reference(resp, outbuf, outlen, NULL, NULL);
+    evbuffer_add_reference(resp, outbuf, outlen, frefcb, NULL);
     evhtp_send_reply_body(req, resp);
     evbuffer_free(resp);
 }
 
 
-static void rec_ping(evutil_socket_t fd, short events, void* arg)
+static void ws_ping_cb(evutil_socket_t fd, short events, void* arg)
 {
     evhtp_request_t *req = (evhtp_request_t *)arg;
     evhtp_ws_parser *p = req->ws_parser;
@@ -2418,7 +2419,7 @@ static void ws_start_ping(evhtp_request_t *req, int interval)
     timeout.tv_sec= (time_t) interval;
     timeout.tv_usec=0; 
 
-    p->pingev = event_new(base, -1, EV_PERSIST, rec_ping, (void*)req);
+    p->pingev = event_new(base, -1, EV_PERSIST, ws_ping_cb, (void*)req);
     event_add(p->pingev, &timeout);    
     p->pingct = 0;
 }
@@ -2430,7 +2431,21 @@ _ws_msg_start(evhtp_ws_parser * p) {
 
     req = evhtp_ws_parser_get_userdata(p);
     evhtp_assert(req != NULL);
-    //printf("BEGIN!\n");
+    //printf("BEGIN len = %d\n", (int) evbuffer_get_length(req->buffer_in));
+    evbuffer_drain(req->buffer_in, evbuffer_get_length(req->buffer_in));
+
+    return 0;
+}
+
+static int
+_ws_msg_data(evhtp_ws_parser * p, const char * d, size_t l) {
+    evhtp_request_t * req;
+
+    req = evhtp_ws_parser_get_userdata(p);
+    evhtp_assert(req != NULL);
+
+    evbuffer_add(req->buffer_in, d, l);
+    //printf("Got %zu %.*s\n", l, (int)l, d);
 
     return 0;
 }
@@ -2445,9 +2460,15 @@ _ws_msg_fini(evhtp_ws_parser * p) {
     if(p->frame.hdr.opcode & 0x8)
     {
         if(p->frame.hdr.opcode == OP_PONG)
-            p->pingct--;// if sent too many pongs, this will wrap around and we will disconnect
+        {
+            p->pingct=0;// specs allow for fewer pongs than pings, so don't do pingct--;
+        }
         else if(p->frame.hdr.opcode == OP_PING)
-            ws_pong(req);//should we track pings too, in case of flood?
+        {
+            unsigned char *b = evbuffer_pullup(req->buffer_in,-1);
+            size_t l = evbuffer_get_length(req->buffer_in);
+            ws_pong(req,b,l);
+        }
         evbuffer_drain(req->buffer_in, evbuffer_get_length(req->buffer_in));
     }
     else if (req->cb) {
@@ -2458,19 +2479,6 @@ _ws_msg_fini(evhtp_ws_parser * p) {
     return 0;
 }
 
-static int
-_ws_msg_data(evhtp_ws_parser * p, const char * d, size_t l) {
-    evhtp_request_t * req;
-
-    req = evhtp_ws_parser_get_userdata(p);
-    evhtp_assert(req != NULL);
-
-    evbuffer_drain(req->buffer_in, evbuffer_get_length(req->buffer_in));
-    evbuffer_add(req->buffer_in, d, l);
-    //printf("Got %zu %.*s\n", l, (int)l, d);
-
-    return 0;
-}
 
 static evhtp_ws_hooks ws_hooks = {
     .on_msg_start = _ws_msg_start,
@@ -3378,7 +3386,7 @@ evhtp_connection_resume(evhtp_connection_t * c)
     evhtp_assert(c != NULL);
 
     if (!(c->flags & EVHTP_CONN_FLAG_PAUSED)) {
-        log_error("ODDITY, resuming when not paused?!?");
+        //log_error("ODDITY, resuming when not paused?!?");
         return;
     }
 
