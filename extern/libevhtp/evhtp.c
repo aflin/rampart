@@ -1243,7 +1243,7 @@ htp__uri_new_(evhtp_uri_t ** out)
  *
  * @param request the request structure
  */
-static void
+void
 htp__request_free_(evhtp_request_t * request)
 {
     if (request == NULL) {
@@ -2038,6 +2038,7 @@ static int
 htp__request_parse_fini_(htparser * p)
 {
     evhtp_connection_t * c = htparser_get_userdata(p);
+    evthr_t *t = c->thread;
 
     if (c == NULL) {
         return -1;
@@ -2088,13 +2089,13 @@ htp__request_parse_fini_(htparser * p)
      *
      */
     if (c->request && c->request->cb) {
-        if (c->thread)
+        if (t)
         {
             /* flag that we are in the callback to facilitate
                 a wise choice of threads for next request --ajf */
-            c->thread->busy=1;
+            t->busy=1;
             (c->request->cb)(c->request, c->request->cbarg);
-            c->thread->busy=0;
+            t->busy=0;
         }
         else
             (c->request->cb)(c->request, c->request->cbarg);
@@ -2531,6 +2532,7 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
 
     evhtp_assert(buf != NULL);
     evhtp_assert(c->parser != NULL);
+
     if (req && req->websock) {
         /* process this data as websocket data, if the websocket parser has not
          * been allocated, we allocate it first.
@@ -2549,7 +2551,15 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
     } else {
         /* process as normal HTTP data. */
         //printf("%.*s\n",(int)avail, (char*)buf);
+        /* for websockets c->request gets set here */
         nread = htparser_run(c->parser, &request_psets, (const char *)buf, avail);
+    }
+
+    /* websockets: check for disconnect request */
+    if(c->request->disconnect)
+    {
+        evhtp_ws_do_disconnect(c->request);
+        return;
     }
 
     log_debug("nread = %zu", nread);

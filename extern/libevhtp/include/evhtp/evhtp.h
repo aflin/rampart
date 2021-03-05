@@ -422,8 +422,9 @@ struct evhtp_request {
     #define EVHTP_REQ_FLAG_ERROR     (1 << 4)
     uint16_t flags;
 
-    uint8_t           cb_has_websock;
-    uint8_t websock   : 1,
+    uint8_t cb_has_websock :1,
+            websock   : 1,
+            disconnect: 1,
             pad       : 3 ;
     uint32_t ws_id;                     /* a counter set id for this websock connection */
     evhtp_ws_parser * ws_parser;
@@ -1485,6 +1486,7 @@ EVHTP_EXPORT unsigned int evhtp_request_status(evhtp_request_t *);
  * @brief disconnect from websocket client
  */
 void evhtp_ws_disconnect(evhtp_request_t  * req);
+void evhtp_ws_do_disconnect(evhtp_request_t  * req);
 
 #ifdef __cplusplus
 }

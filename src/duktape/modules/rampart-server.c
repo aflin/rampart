@@ -779,6 +779,7 @@ static DHS *get_dhs(duk_context *ctx)
     duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
     dhs=duk_get_pointer(ctx, -1);
     duk_pop(ctx);
+
     if(dhs)
         return dhs;
 
@@ -812,6 +813,7 @@ static DHS *get_dhs(duk_context *ctx)
 
 static DHS *free_dhs(DHS *dhs)
 {
+    duk_context *ctx = dhs->ctx;
     if(dhs->freeme)
     {
         if(dhs->auxbuf)
@@ -819,6 +821,11 @@ static DHS *free_dhs(DHS *dhs)
         free(dhs);
         dhs=NULL;
     }
+    duk_push_pointer(ctx, (void*)NULL);
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
+
+    duk_push_pointer(ctx, (void*)NULL);
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("fdhs"));
     return dhs;
 }
 
@@ -850,8 +857,9 @@ evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
     {
         duk_push_number(ctx, ws_id);
         if (duk_get_prop(ctx, -2))
+        {
             duk_call(ctx, 0);
-
+        }
         duk_pop(ctx);//ignore return value, or undefined(if no callback);
 
         // remove the callback
@@ -919,47 +927,27 @@ duk_ret_t duk_server_ws_set_disconnect(duk_context *ctx)
 
 duk_ret_t duk_server_ws_end(duk_context *ctx)
 {
-    evhtp_connection_t *conn;
-    double cbno;
-    evhtp_request_t **req;
+    evhtp_request_t *req;
+    DHS *dhs;
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
+    dhs=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+    if(dhs)
+        dhs->req=NULL;
 
     duk_push_this(ctx);
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("req"));
-    req = ((evhtp_request_t **)duk_get_pointer(ctx, -1));
+    req = (evhtp_request_t *)duk_get_pointer(ctx, -1);
     duk_pop_2(ctx);
-    if(!(*req))
-    {
+
+    if(!req)
         return 0;
-    }
 
-    conn = evhtp_request_get_connection(*req);
-    cbno= (double) ( (double)(size_t)conn/16 );
-    /* run disconnect callback */
-    duk_push_global_stash(ctx);
+    evhtp_ws_disconnect(req);
 
-    if(!duk_get_prop_string(ctx, -1, "wsdis"))
-    {
-        duk_pop_2(ctx);
-    }
-    else
-    {
-        duk_push_number(ctx, cbno);
-        if (duk_get_prop(ctx, -2))
-            duk_call(ctx, 0);
-
-        duk_pop(ctx);//ignore return value, or undefined;
-
-        // remove the callback
-        duk_push_number(ctx, cbno);
-        duk_del_prop(ctx, -2);
-
-        duk_pop_2(ctx);
-    }
-
-    evhtp_ws_disconnect(*req);
-    *(req) = NULL;
     duk_push_this(ctx);
-    duk_push_pointer(ctx, (void**)NULL);
+    duk_push_pointer(ctx, (void*)NULL);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("req"));
     return 0;
 }
@@ -974,10 +962,6 @@ duk_ret_t duk_server_ws_send(duk_context *ctx)
     sendws(dhs);
 
     dhs = free_dhs(dhs);
-    duk_push_pointer(ctx, (void*)NULL);
-    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("fdhs"));
-    duk_push_pointer(ctx, (void*)NULL);
-    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
     return 0;
 }
 
@@ -1138,7 +1122,7 @@ static int push_req_vars(DHS *dhs)
 
     if(dhs->req->cb_has_websock)
     {
-        duk_push_pointer(ctx, (void*) &(dhs->req));
+        duk_push_pointer(ctx, (void*) (dhs->req));
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("req"));
         duk_push_c_function(ctx, duk_server_ws_send,1);
         duk_put_prop_string(ctx, -2, "wsSend");
@@ -2044,6 +2028,7 @@ static void sendws(DHS *dhs)
     size_t               outlen = 0;
     struct evbuffer    * resp;
     evhtp_request_t *req = dhs->req;
+
     if(!req)
         return;
 
@@ -3009,6 +2994,11 @@ static void *http_dothread(void *arg)
     }
     /* stack now has return value from duk function call */
 
+    if(!dhs->req) // wsEnd may have killed the connection
+    {
+        return NULL;
+    }
+
     if(!req->cb_has_websock)
     {
         /* don't accept functions or arrays */
@@ -3571,7 +3561,7 @@ static int getmod_path(DHS *dhs)
 
 static void http_callback(evhtp_request_t *req, void *arg)
 {
-    DHS newdhs, *dhs = arg;
+    DHS newdhs={0}, *dhs = arg;
     int thrno = 0;
     duk_context *new_ctx;
 
@@ -3598,6 +3588,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
     newdhs.bufsz = 0;
     newdhs.bufpos = 0;
     newdhs.auxbuf= NULL;
+    newdhs.freeme=0;
     dhs = &newdhs;
 
     if(req->cb_has_websock)
@@ -3660,7 +3651,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
             goto http_req_end;
         }
     }
-    /* TODO: with dhs->freeme flag now present, fdhs and dhs entries can probably be combined */
+
     if(duk_get_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("fdhs")))
     {
         //if not NULL, it is the old one from websock functions, if wsSend was never called
@@ -3668,8 +3659,6 @@ static void http_callback(evhtp_request_t *req, void *arg)
         if(fdhs)
         {
             fdhs = free_dhs(fdhs);
-            duk_push_pointer(dhs->ctx, (void*) NULL);
-            duk_put_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("fdhs"));
         }
     }
     duk_pop(dhs->ctx);

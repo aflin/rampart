@@ -97,6 +97,8 @@ static uint32_t __SHIFT[] = {
     0, 8, 16, 24
 };
 
+void htp__request_free_(evhtp_request_t * request);
+
 ssize_t
 evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                     const char * data, size_t len) {
@@ -486,15 +488,33 @@ evhtp_ws_parser_get_userdata(evhtp_ws_parser * p) {
 
 void evhtp_ws_disconnect(evhtp_request_t  * req)
 {
-    evhtp_connection_t * c = evhtp_request_get_connection(req);
-    struct evbuffer *b = bufferevent_get_input(c->bev);
+    req->disconnect=1;
+}
+
+void evhtp_ws_do_disconnect(evhtp_request_t  * req)
+{
+    evhtp_connection_t * c;
+    struct evbuffer *b;
+
+    if (!req)
+        return;
+
+    c = evhtp_request_get_connection(req);
+
+    if(!c)
+        return;
 
     /* still run the callback for disconnect */
     if (c->hooks && c->hooks->on_event) {
         (c->hooks->on_event)(c, BEV_EVENT_EOF, c->hooks->on_event_arg);
     }
 
-    evbuffer_drain(b, evbuffer_get_length(b));
+    if(c->bev)
+    {
+         b = bufferevent_get_input(c->bev);
+         evbuffer_drain(b, evbuffer_get_length(b));
+    }
+
     if (req->ws_parser)
     {
         if(req->ws_parser->pingev)
