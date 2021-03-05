@@ -1871,9 +1871,13 @@ htp__request_parse_headers_(htparser * p)
          * PROTOCOL response. This lets the _evhtp_conn_readcb() function to
          * process further data as websockets, instead of normal HTTP.
          */
-        const char * conn_val;
-        if ((conn_val = evhtp_header_find(req->headers_in, "Connection"))) {
-            if (!strcmp(conn_val, "Upgrade")) {
+        const char * conn_val, *ug_val;
+        if (
+            (conn_val = evhtp_header_find(req->headers_in, "Connection"))
+            &&
+            (ug_val = evhtp_header_find(req->headers_in, "Upgrade"))
+        ) {
+            if (strcasestr(conn_val, "upgrade") && strcasestr(ug_val, "websocket")) {
                 int ws_hs_res;
                 ws_hs_res = evhtp_ws_gen_handshake(
                     req->headers_in,
@@ -2316,6 +2320,7 @@ static htparse_hooks request_psets = {
     .on_msg_complete    = htp__request_parse_fini_
 };
 
+/* create a standard ping packet once, return it when asked */
 static unsigned char *ws_get_ping_buf(size_t *outlen)
 {
     struct evbuffer    * resp;
@@ -2338,6 +2343,7 @@ static unsigned char *ws_get_ping_buf(size_t *outlen)
     return outbuf;
 }
 
+/* send ping */
 static void ws_ping(evhtp_request_t *req)
 {
     struct evbuffer    * resp;
@@ -2353,6 +2359,7 @@ static void ws_ping(evhtp_request_t *req)
     evbuffer_free(resp);
 }
 
+/* create a pong response from the received ping data */
 static unsigned char *ws_get_pong_buf(unsigned char *buf, size_t len, size_t *outlen)
 {
     struct evbuffer    * resp;
@@ -2377,6 +2384,7 @@ static void frefcb(const void *data, size_t datalen, void *val)
         free((void *)data);
 }
 
+/* formulate a pong response */
 static void ws_pong(evhtp_request_t *req, unsigned char *buf, size_t len)
 {
     struct evbuffer    * resp;
@@ -2392,7 +2400,7 @@ static void ws_pong(evhtp_request_t *req, unsigned char *buf, size_t len)
     evbuffer_free(resp);
 }
 
-
+/* do a ping from within the event loop */
 static void ws_ping_cb(evutil_socket_t fd, short events, void* arg)
 {
     evhtp_request_t *req = (evhtp_request_t *)arg;
@@ -2409,6 +2417,7 @@ static void ws_ping_cb(evutil_socket_t fd, short events, void* arg)
     }
 }
 
+/* insert a regularly timed ping into the event loop */
 static void ws_start_ping(evhtp_request_t *req, int interval)
 {
     evthr_t * thr = req->conn->thread;
@@ -2424,7 +2433,7 @@ static void ws_start_ping(evhtp_request_t *req, int interval)
     p->pingct = 0;
 }
 
-
+/* called after message has been received */
 static int
 _ws_msg_start(evhtp_ws_parser * p) {
     evhtp_request_t * req;
@@ -2436,7 +2445,7 @@ _ws_msg_start(evhtp_ws_parser * p) {
 
     return 0;
 }
-
+/* called on each frame of data */
 static int
 _ws_msg_data(evhtp_ws_parser * p, const char * d, size_t l) {
     evhtp_request_t * req;
@@ -2450,6 +2459,7 @@ _ws_msg_data(evhtp_ws_parser * p, const char * d, size_t l) {
     return 0;
 }
 
+/* called on completion of data */
 static int
 _ws_msg_fini(evhtp_ws_parser * p) {
     evhtp_request_t * req;
@@ -2457,6 +2467,7 @@ _ws_msg_fini(evhtp_ws_parser * p) {
     req = evhtp_ws_parser_get_userdata(p);
     evhtp_assert(req != NULL);
 
+    /* process ping and pong here */
     if(p->frame.hdr.opcode & 0x8)
     {
         if(p->frame.hdr.opcode == OP_PONG)
@@ -2465,12 +2476,14 @@ _ws_msg_fini(evhtp_ws_parser * p) {
         }
         else if(p->frame.hdr.opcode == OP_PING)
         {
+            /* specs say pong must have the same payload as the ping */
             unsigned char *b = evbuffer_pullup(req->buffer_in,-1);
             size_t l = evbuffer_get_length(req->buffer_in);
             ws_pong(req,b,l);
         }
         evbuffer_drain(req->buffer_in, evbuffer_get_length(req->buffer_in));
     }
+    /* send non-control frame data to callback */
     else if (req->cb) {
         (req->cb)(req, req->cbarg);
     }
@@ -2524,7 +2537,7 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
          */
         if (req->ws_parser == NULL) {
             req->ws_parser = evhtp_ws_parser_new();
-            ws_start_ping(req, 5);
+            ws_start_ping(req, 10);
             evhtp_ws_parser_set_userdata(req->ws_parser, req);
         }
 
@@ -2535,6 +2548,7 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
                                     &ws_hooks, buf, avail);
     } else {
         /* process as normal HTTP data. */
+        //printf("%.*s\n",(int)avail, (char*)buf);
         nread = htparser_run(c->parser, &request_psets, (const char *)buf, avail);
     }
 
