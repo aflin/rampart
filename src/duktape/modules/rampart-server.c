@@ -1062,6 +1062,11 @@ static int update_req_vars(DHS *dhs, int gotbuf)
             ret=-1;//signal no post data at all.
         }
         duk_put_prop_string(ctx, -2, "body");
+
+        if( dhs->req->ws_opcode == OP_BIN)
+            duk_push_true(ctx);
+        else
+            duk_push_false(ctx);
     }
     else
     {
@@ -1075,7 +1080,10 @@ static int update_req_vars(DHS *dhs, int gotbuf)
         info->ws_id = dhs->req->ws_id;
 
         evhtp_connection_set_hook(conn, evhtp_hook_on_event, (evhtp_hook)ws_dis_cb, (void*)info);
+        duk_push_false(ctx);
     }
+    // from true/false push above
+    duk_put_prop_string(ctx, -2, "wsIsBin");
 
     duk_get_prop_string(ctx, -1, "count");
     if(duk_is_number(ctx, -1))
@@ -2028,17 +2036,20 @@ static void sendws(DHS *dhs)
     size_t               outlen = 0;
     struct evbuffer    * resp;
     evhtp_request_t *req = dhs->req;
+    uint8_t opcode = OP_TEXT;
 
     if(!req)
         return;
 
     if(duk_is_object(dhs->ctx, -1))
         duk_json_encode(dhs->ctx, -1);
+    else if (duk_is_buffer_data(dhs->ctx, -1))
+        opcode = OP_BIN;
 
     /* put everything into buffer_out */
     sendbuf(dhs);
     data = evbuffer_pullup(req->buffer_out, -1);
-    ws_data = evhtp_ws_data_new(data, evbuffer_get_length(req->buffer_out), OP_TEXT);
+    ws_data = evhtp_ws_data_new(data, evbuffer_get_length(req->buffer_out), opcode);
     outbuf  = evhtp_ws_data_pack(ws_data, &outlen);
     free(ws_data);
     resp    = evbuffer_new();
@@ -4133,7 +4144,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     pid_t dpid=0;
     ctimeout.tv_sec = RP_TIME_T_FOREVER;
     ctimeout.tv_usec = 0;
-    long bufmempct = -1;
+    uint64_t max_body_size = 52428800;
     const char *cache_control="max-age=84600, public";
 
     if(rampart_server_started)
@@ -4393,22 +4404,10 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         duk_pop(ctx);
 
-        /* buffer memory percent */
-        if (duk_rp_GPS_icase(ctx, ob_idx, "bufferMem"))
+        /* max body size, for post and websockets */
+        if (duk_rp_GPS_icase(ctx, ob_idx, "maxBodySize"))
         {
-            if( duk_is_boolean(ctx, -1) )
-            {
-                if(duk_get_boolean(ctx, -1))
-                    bufmempct = -1;
-                else
-                    bufmempct = 0;
-            }
-            else
-            {
-                bufmempct = (long) (1000 * REQUIRE_NUMBER(ctx, -1, "server.start: bufferMem requires a Number greater than 0.001" ));
-                if(bufmempct < 1)
-                    RP_THROW(ctx, "server.start: bufferMem requires a Number greater than 0.001" );
-            }
+            max_body_size = (uint64_t) (REQUIRE_NUMBER(ctx, -1, "server.start: maxBodySize requires a number" ));
         }
         duk_pop(ctx);
 
@@ -4534,7 +4533,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
     REMALLOC(thread_base, (totnthreads * sizeof(struct event_base *)));
 
     htp = evhtp_new(elbase, NULL);
-
+    evhtp_set_max_keepalive_requests(htp, 128);
+    evhtp_set_max_body_size(htp, max_body_size);
     /* testing for pure c benchmarking*
     evhtp_set_cb(htp, "/test", testcb, NULL);
 

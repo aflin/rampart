@@ -422,10 +422,10 @@ struct evhtp_request {
     #define EVHTP_REQ_FLAG_ERROR     (1 << 4)
     uint16_t flags;
 
-    uint8_t cb_has_websock :1,
-            websock   : 1,
-            disconnect: 1,
-            pad       : 3 ;
+    uint8_t cb_has_websock : 1,
+            websock        : 1,
+            disconnect     : 1,
+            ws_opcode      : 4 ;
     uint32_t ws_id;                     /* a counter set id for this websock connection */
     evhtp_ws_parser * ws_parser;
 

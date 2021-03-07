@@ -97,6 +97,23 @@ static uint32_t __SHIFT[] = {
     0, 8, 16, 24
 };
 
+static uint64_t ntoh64(const uint64_t input)
+{
+    uint64_t rval;
+    uint8_t *data = (uint8_t *)&rval;
+
+    data[0] = input >> 56;
+    data[1] = input >> 48;
+    data[2] = input >> 40;
+    data[3] = input >> 32;
+    data[4] = input >> 24;
+    data[5] = input >> 16;
+    data[6] = input >> 8;
+    data[7] = input >> 0;
+
+    return rval;
+}
+
 void htp__request_free_(evhtp_request_t * request);
 
 ssize_t
@@ -104,17 +121,17 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                     const char * data, size_t len) {
     uint8_t      byte;
     char         c;
-    size_t       i;
+    size_t       i=0;
     const char * p_start;
     const char * p_end;
     uint64_t     to_read;
     if (!hooks) {
         return (ssize_t)len;
-    }
-
-    for (i = 0; i < len; i++) {
+    }	
+    //printf("\nparser run, len=%d state=%d\n", (int)len, (int)p->state);
+    while(i<len)
+    {
         int res;
-
         byte = (uint8_t)data[i];
         switch (p->state) {
             case ws_s_start:
@@ -133,20 +150,28 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                 }
             /* fall-through */
             case ws_s_fin_rsv_opcode:
-                p->frame.hdr.fin    = (byte & 0x1);
+                p->frame.hdr.fin    = (byte & 0x80)? 1:0;
                 p->frame.hdr.opcode = (byte & 0xF);
+                //printf("parser run, opcode=%d\n", (int)p->frame.hdr.opcode);
+                //sanity check
+                if(
+                    p->frame.hdr.fin != OP_CONT && p->frame.hdr.fin != OP_TEXT &&
+                    p->frame.hdr.fin != OP_BIN  && p->frame.hdr.fin != OP_PING &&
+                    p->frame.hdr.fin != OP_PONG && p->frame.hdr.fin != OP_CLOSE
+                )
+                    return -1;
                 p->state = ws_s_mask_payload_len;
+                i++;
                 break;
             case ws_s_mask_payload_len:
                 p->frame.hdr.mask   = ((byte & 0x80) ? 1 : 0);
                 p->frame.hdr.len    = (byte & 0x7F);
-
+                i++;
                 switch (EXTENDED_PAYLOAD_HDR_LEN(p->frame.hdr.len)) {
                     case 0:
                         p->frame.payload_len = p->frame.hdr.len;
                         p->content_len       = p->frame.payload_len;
                         p->orig_content_len  = p->content_len;
-
 
                         if (p->frame.hdr.mask == 1) {
                             p->state = ws_s_masking_key;
@@ -164,7 +189,6 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                     default:
                         return -1;
                 } /* switch */
-
                 break;
             case ws_s_ext_payload_len_16:
                 if (MIN_READ((const char *)(data + len) - &data[i], 2) < 2) {
@@ -173,10 +197,10 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
 
                 p->frame.payload_len = ntohs(*(uint16_t *)&data[i]);
                 p->content_len       = p->frame.payload_len;
+                //printf("16 - content_len = %d\n",  (int)p->content_len);
                 p->orig_content_len  = p->content_len;
 
-                /* we only increment 1 instead of 2 since this byte counts as 1 */
-                i += 1;
+                i += 2;
 
                 if (p->frame.hdr.mask == 1) {
                     p->state = ws_s_masking_key;
@@ -192,14 +216,12 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                 }
 
 
-                p->frame.payload_len = ntohl(*(uint64_t *)&data[i]);
+                p->frame.payload_len = ntoh64(*(uint64_t *)&data[i]);
                 p->content_len       = p->frame.payload_len;
                 p->orig_content_len  = p->content_len;
+                //printf("64 - content_len = %d\n",  (int)p->content_len);
 
-                /* we only increment by 7, since this byte counts as 1 (total 8
-                 * bytes.
-                 */
-                i += 7;
+                i += 8;
 
                 if (p->frame.hdr.mask == 1) {
                     p->state = ws_s_masking_key;;
@@ -216,17 +238,15 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                     return i;
                 }
                 p->frame.masking_key = *(uint32_t *)&data[i];
-                i       += 3;
+                i += 4;
                 p->state = ws_s_payload;
                 if(min==4) // i==len, so go directly to finish.
                     goto fini;
                 break;
             }
             case ws_s_payload:
-                /* XXX we need to abstract out the masking shit here, so I don't
-                 * have a OP_CLOSE type mask function AND a normal data mask
-                 * function all in one case.
-                 */
+
+                /* op_close case */
                 if (p->frame.hdr.opcode == OP_CLOSE && p->status_code == 0) {
                     uint64_t index;
                     uint32_t mkey;
@@ -235,10 +255,6 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                     int      m1;
                     int      m2;
                     char     buf[2];
-
-                    /* webosckes will even mask the 2 byte OP_CLOSE portion,
-                     * this is a bit hacky, I need to clean this up.
-                     */
 
                     if (MIN_READ((const char *)(data + len) - &data[i], 2) < 2) {
                         return i;
@@ -259,16 +275,10 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                     buf[0]          = data[i] ^ m1;
                     buf[1]          = data[i + 1] ^ m2;
 
-                    /* even though websockets doesn't do network byte order
-                     * anywhere else, for some reason, we do it here! NOW
-                     * AWESOME!
-                     */
                     p->status_code  = ntohs(*(uint16_t *)buf);
-
                     p->content_len -= 2;
                     p->content_idx += 2;
-
-                    i += 1;
+                    i += 2;
 
                     /* RFC states that there could be a message after the
                      * OP_CLOSE 2 byte header, so just drop down and attempt
@@ -276,6 +286,7 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                      */
                 }
 
+                /* check for data */
                 p_start = &data[i];
                 p_end   = (const char *)(data + len);
                 to_read = MIN_READ(p_end - p_start, p->content_len);
@@ -295,26 +306,36 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
 
                     if (hooks->on_msg_data) {
                         if ((hooks->on_msg_data)(p, buf, to_read)) {
-                            return i;
+                            return -1;
                         }
                     }
-
                     p->content_len -= to_read;
-                    i += to_read - 1;
+                    i += to_read;
                 }
-        fini:
-                if (p->content_len == 0 && (p->frame.hdr.fin == 1 || p->frame.hdr.opcode & 0x8) ){
-                    if (hooks->on_msg_fini) {
-                        if ((hooks->on_msg_fini)(p)) {
-                            return i;
-                        }
-                    }
-                    p->state = ws_s_start;
-                }
+                else if (p->frame.hdr.opcode == OP_CONT) //0 size on a cont frame -- something isn't right.
+                    return -1;
 
+                fini:
+        
+                //printf("length=%d, fin= %d\n", (int)p->content_len, (int)p->frame.hdr.fin);
+
+                /* did we get it all? */
+                if (p->content_len == 0)
+                {
+                    /* this is the end, set it to restart if another frame is coming (p->frame.hdr.fin==0) 
+                       or for the next request                                                              */
+                    p->state = ws_s_start;
+                    if(p->frame.hdr.fin == 1 )
+                    {
+                        /*currently, this always returns 0 */
+                        (void)(hooks->on_msg_fini)(p);
+                        return i;
+                    }
+                }
                 break;
         } /* switch */
-    }
+
+    } /* while */
 
     return i;
 }         /* evhtp_ws_parser_run */

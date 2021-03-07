@@ -43,6 +43,10 @@
 pthread_mutex_t wsctlock;
 uint32_t wsct=0;
 
+#ifdef EVHTP_VALGRIND_FORK_SAFE
+/* for the connection list */
+pthread_mutex_t contqlock;
+#endif
 /**
  * @brief structure containing a single callback and configuration
  *
@@ -2442,17 +2446,31 @@ _ws_msg_start(evhtp_ws_parser * p) {
     req = evhtp_ws_parser_get_userdata(p);
     evhtp_assert(req != NULL);
     //printf("BEGIN len = %d\n", (int) evbuffer_get_length(req->buffer_in));
-    evbuffer_drain(req->buffer_in, evbuffer_get_length(req->buffer_in));
+    //evbuffer_drain(req->buffer_in, evbuffer_get_length(req->buffer_in));
 
     return 0;
 }
-/* called on each frame of data */
+
+/* called on each chunk of data */
 static int
 _ws_msg_data(evhtp_ws_parser * p, const char * d, size_t l) {
     evhtp_request_t * req;
+    evhtp_connection_t *c;
+    uint64_t nextsz;
 
     req = evhtp_ws_parser_get_userdata(p);
     evhtp_assert(req != NULL);
+
+    c = evhtp_request_get_connection(req);
+    evhtp_assert(c != NULL);
+
+    nextsz = (uint64_t)evbuffer_get_length(req->buffer_in) + (uint64_t)l;
+
+    if (c->max_body_size > 0 && nextsz >= c->max_body_size) {
+        HTP_FLAG_ON(c, EVHTP_CONN_FLAG_ERROR);
+        c->cr_status = EVHTP_RES_DATA_TOO_LONG;
+        return -1;
+    }
 
     evbuffer_add(req->buffer_in, d, l);
     //printf("Got %zu %.*s\n", l, (int)l, d);
@@ -2482,13 +2500,16 @@ _ws_msg_fini(evhtp_ws_parser * p) {
             size_t l = evbuffer_get_length(req->buffer_in);
             ws_pong(req,b,l);
         }
-        evbuffer_drain(req->buffer_in, evbuffer_get_length(req->buffer_in));
+        else if(p->frame.hdr.opcode == OP_CLOSE)
+            req->disconnect=1;
     }
     /* send non-control frame data to callback */
     else if (req->cb) {
+        req->ws_opcode = p->frame.hdr.opcode;
         (req->cb)(req, req->cbarg);
     }
-    //printf("COMPLETE!\n");
+    evbuffer_drain(req->buffer_in, evbuffer_get_length(req->buffer_in));
+//    printf("COMPLETE!\n");
 
     return 0;
 }
@@ -2533,11 +2554,15 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
     evhtp_assert(buf != NULL);
     evhtp_assert(c->parser != NULL);
 
-    if (req && req->websock) {
+    if (req && req->websock) 
+    {
+        ssize_t ret;
+
         /* process this data as websocket data, if the websocket parser has not
          * been allocated, we allocate it first.
          */
-        if (req->ws_parser == NULL) {
+        if (req->ws_parser == NULL) 
+        {
             req->ws_parser = evhtp_ws_parser_new();
             ws_start_ping(req, 10);
             evhtp_ws_parser_set_userdata(req->ws_parser, req);
@@ -2546,9 +2571,19 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
         //assert(req->ws_parser != NULL);
 
         /* XXX need a parser_init / parser_set_userdata */
-        nread = evhtp_ws_parser_run(req->ws_parser,
+        //printf("readcb, running parser with %d avail\n", (int)avail);
+        ret = evhtp_ws_parser_run(req->ws_parser,
                                     &ws_hooks, buf, avail);
-    } else {
+        if(ret<=0)
+        {
+            evbuffer_drain(bufferevent_get_input(bev), avail);
+            nread=0;
+        }
+        else
+            nread=(size_t)ret;
+    } 
+    else 
+    {
         /* process as normal HTTP data. */
         //printf("%.*s\n",(int)avail, (char*)buf);
         /* for websockets c->request gets set here */
@@ -2589,6 +2624,11 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
     if (c->request) {
         switch (c->cr_status) {
             case EVHTP_RES_DATA_TOO_LONG:
+                if(req->websock)
+                {
+                    evhtp_ws_do_disconnect(c->request);
+                    return;
+                }
                 htp__hook_connection_error_(c, -1);
 
                 evhtp_safe_free(c, evhtp_connection_free);
@@ -2597,7 +2637,11 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
                 break;
         }
     }
+
     evbuffer_drain(bufferevent_get_input(bev), nread);
+
+    //int l = evbuffer_get_length(bufferevent_get_input(bev));
+    //printf("%d left over\n", l);
 
     if (c->request && c->cr_status == EVHTP_RES_PAUSE) {
         log_debug("Pausing connection");
@@ -2608,12 +2652,13 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
             htparser_get_error(c->parser));
 
         evhtp_safe_free(c, evhtp_connection_free);
-    } else if (nread < avail) {
+    } else if (!(req && req->websock) && nread < avail) {
         /* we still have more data to read (piped request probably) */
         log_debug("Reading more data via resumption");
 
         evhtp_connection_resume(c);
     }
+
 }     /* htp__connection_readcb_ */
 
 static void
@@ -2626,7 +2671,6 @@ htp__connection_writecb_(struct bufferevent * bev, void * arg)
     evhtp_assert(bev != NULL);
 
     log_debug("writecb");
-
     if (evhtp_unlikely(arg == NULL)) {
         log_error("No data associated with the bufferevent %p", bev);
 
@@ -3074,7 +3118,13 @@ htp__connection_new_(evhtp_t * htp, evutil_socket_t sock, evhtp_type type)
         return NULL;
     }
 #ifdef EVHTP_VALGRIND_FORK_SAFE
+    if (pthread_mutex_lock(&contqlock) == EINVAL)
+    {
+        fprintf(stderr,"could not obtain wsct lock\n");
+        exit(1);
+    }
     TAILQ_INSERT_TAIL(&conn_head, connection, conn_entries);//-ajf connection tracker
+    pthread_mutex_unlock(&contqlock);
 #endif
     connection->scratch_buf = evbuffer_new();
 
@@ -5514,12 +5564,22 @@ void evhtp_free_open_connections()
 void
 evhtp_connection_free(evhtp_connection_t * connection)
 {
+    evhtp_connection_t *item;
+
     if (evhtp_unlikely(connection == NULL)) {
         return;
     }
+
 #ifdef EVHTP_VALGRIND_FORK_SAFE
+    if (pthread_mutex_lock(&contqlock) == EINVAL)
+    {
+        fprintf(stderr,"could not obtain wsct lock\n");
+        exit(1);
+    }
     TAILQ_REMOVE(&conn_head, connection, conn_entries);//-ajf connection tracker
+    pthread_mutex_unlock(&contqlock);
 #endif
+
     htp__hook_connection_fini_(connection);
 
     evhtp_safe_free(connection->request, htp__request_free_);
@@ -5782,6 +5842,13 @@ evhtp_new(struct event_base * evbase, void * arg)
         exit(1);
     }
 
+#ifdef EVHTP_VALGRIND_FORK_SAFE
+    if (pthread_mutex_init(&contqlock, NULL) == EINVAL)
+    {
+        fprintf(stderr, "server.start: could not initialize contq lock\n");
+        exit(1);
+    }
+#endif
     return htp;
 }
 
