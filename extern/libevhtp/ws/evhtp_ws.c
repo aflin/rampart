@@ -65,21 +65,6 @@
 #define PARSER_STACK_MAX     8192
 
 
-struct evhtp_ws_data_s {
-    evhtp_ws_frame_hdr hdr;
-    char               payload[0];
-};
-
-
-
-
-static uint8_t _fext_len[129] = {
-    [0]   = 0,
-    [126] = 2,
-    [127] = 8
-};
-
-
 #define MIN_READ(a, b)                    ((a) < (b) ? (a) : (b))
 #define HAS_EXTENDED_PAYLOAD_HDR(__frame) ((__frame)->len >= 126)
 #define EXTENDED_PAYLOAD_HDR_LEN(__sz) \
@@ -128,6 +113,9 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
     if (!hooks) {
         return (ssize_t)len;
     }	
+
+    /* TODO: keep track of OP_CONT and fin flag for sanity check */
+
     //printf("\nparser run, len=%d state=%d\n", (int)len, (int)p->state);
     while(i<len)
     {
@@ -287,6 +275,7 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                 }
 
                 /* check for data */
+                /* TODO: transform data in place */
                 p_start = &data[i];
                 p_end   = (const char *)(data + len);
                 to_read = MIN_READ(p_end - p_start, p->content_len);
@@ -402,85 +391,41 @@ evhtp_ws_gen_handshake(evhtp_kvs_t * hdrs_in, evhtp_kvs_t * hdrs_out) {
     return 0;
 } /* evhtp_ws_gen_handshake */
 
-evhtp_ws_data *
-evhtp_ws_data_new(const char * data, size_t len, uint8_t opcode) {
-    evhtp_ws_data * ws_data;
-    uint8_t         extra_bytes;
-    uint8_t         frame_len;
-    size_t          ws_datalen;
+/* use and prepend existing evbuffer with websocket header */
+struct evbuffer * evhtp_ws_add_header(struct evbuffer *buf, uint8_t opcode)
+{
+    size_t          len = evbuffer_get_length(buf),
+                    bufsz = 10;
+    uint8_t         pbuf[bufsz];
+
+    pbuf[0] = opcode | 0x80;
 
     if (len <= 125) {
-        frame_len = 0;
+        pbuf[1]= (uint8_t) len;
+        bufsz = 2;
     } else if (len > 125 && len <= 65535) {
-        frame_len = 126;
+        pbuf[1] = 126;
+        bufsz = 4;
+        pbuf[2] = (uint8_t) (len>>8);
+        pbuf[3] = (uint8_t) (len & 0xff);
     } else {
-        frame_len = 127;
+        pbuf[1] = 127;
+        pbuf[2] = (uint8_t) (len>>56 & 0xff);
+        pbuf[3] = (uint8_t) (len>>48 & 0xff);
+        pbuf[4] = (uint8_t) (len>>40 & 0xff);
+        pbuf[5] = (uint8_t) (len>>32 & 0xff);
+        pbuf[6] = (uint8_t) (len>>24 & 0xff);
+        pbuf[7] = (uint8_t) (len>>16 & 0xff);
+        pbuf[8] = (uint8_t) (len>> 8 & 0xff);
+        pbuf[9] = (uint8_t) (len & 0xff);
+        bufsz = 10;
     }
-
-    extra_bytes         = _fext_len[frame_len];
-    ws_datalen          = sizeof(evhtp_ws_data) + len + extra_bytes;
-
-    ws_data             = calloc(ws_datalen, 1);
-    ws_data->hdr.len    = frame_len ? frame_len : len;
-    ws_data->hdr.fin    = 1;
-    ws_data->hdr.mask   = 0;
-    ws_data->hdr.opcode = opcode;
-
-    if (frame_len) {
-        memcpy(ws_data->payload, &len, extra_bytes);
-    }
-
-    memcpy((char *)(ws_data->payload + extra_bytes), data, len);
-
-    return ws_data;
-}
-
-void
-evhtp_ws_data_free(evhtp_ws_data * ws_data) {
-    return free(ws_data);
-}
-
-unsigned char *
-evhtp_ws_data_pack(evhtp_ws_data * ws_data, size_t * out_len) {
-    unsigned char * payload_start;
-    unsigned char * payload_end;
-    unsigned char * res;
-    uint8_t         ext_len;
-
-    if (!ws_data) {
+    // outgoing data is not masked, so send as is, prepended with header
+    if(evbuffer_prepend(buf, pbuf, bufsz))
         return NULL;
-    }
 
-    payload_start = (unsigned char *)(ws_data->payload);
-
-    switch (ws_data->hdr.len) {
-        case 126:
-            payload_end  = (unsigned char *)(payload_start + *(uint16_t *)ws_data->payload);
-            payload_end += 2;
-            break;
-        case 127:
-            payload_end  = (unsigned char *)(payload_start + *(uint64_t *)ws_data->payload);
-            payload_end += 8;
-            break;
-        default:
-            payload_end  = (unsigned char *)(payload_start + ws_data->hdr.len);
-            break;
-    }
-
-
-    if (!(res = calloc(sizeof(evhtp_ws_frame_hdr) + (payload_end - payload_start), 1))) {
-        return NULL;
-    }
-
-    *(uint16_t *)res = *(uint16_t *)&ws_data->hdr;
-
-    memcpy((char *)(res + sizeof(uint16_t)), payload_start,
-           (payload_end - payload_start));
-
-    *out_len         = sizeof(evhtp_ws_frame_hdr) + (payload_end - payload_start);
-
-    return res;
-} /* evhtp_ws_data_pack */
+    return buf;
+}
 
 evhtp_ws_parser *
 evhtp_ws_parser_new(void) {
@@ -506,12 +451,13 @@ evhtp_ws_parser_get_userdata(evhtp_ws_parser * p) {
 
     return p->usrdata;
 }
-
+/* set a flag to disconnect after we are done parsing */
 void evhtp_ws_disconnect(evhtp_request_t  * req)
 {
     req->disconnect=1;
 }
 
+/* the actual disconnect code, done at the appropriate time */
 void evhtp_ws_do_disconnect(evhtp_request_t  * req)
 {
     evhtp_connection_t * c;

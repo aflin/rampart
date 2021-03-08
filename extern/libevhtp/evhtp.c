@@ -2325,84 +2325,24 @@ static htparse_hooks request_psets = {
     .on_msg_complete    = htp__request_parse_fini_
 };
 
-/* create a standard ping packet once, return it when asked */
-static unsigned char *ws_get_ping_buf(size_t *outlen)
-{
-    struct evbuffer    * resp;
-    evhtp_ws_data      * ws_data;
-
-    static unsigned char * outbuf=NULL;
-    static size_t ol=0;
-
-    if(outbuf)
-    {
-        *outlen = ol;
-        return outbuf;
-    }
-
-    ws_data = evhtp_ws_data_new("tanstaafl", 10, OP_PING);
-    outbuf  = evhtp_ws_data_pack(ws_data, outlen);
-    ol = *outlen;
-    free(ws_data);
-
-    return outbuf;
-}
-
 /* send ping */
 static void ws_ping(evhtp_request_t *req)
 {
     struct evbuffer    * resp;
-    unsigned char      * outbuf;
-    size_t               outlen = 0;
-
-
-    outbuf  = ws_get_ping_buf(&outlen);
+    static unsigned char outbuf[2] = {0x89,0x00};
 
     resp    = evbuffer_new();
-    evbuffer_add_reference(resp, outbuf, outlen, NULL, NULL);
+    evbuffer_add_reference(resp, outbuf, 2, NULL, NULL);
     evhtp_send_reply_body(req, resp);
     evbuffer_free(resp);
-}
-
-/* create a pong response from the received ping data */
-static unsigned char *ws_get_pong_buf(unsigned char *buf, size_t len, size_t *outlen)
-{
-    struct evbuffer    * resp;
-    evhtp_ws_data      * ws_data;
-
-    unsigned char * outbuf=NULL;
-
-    /* FIXME: should contain same payload as ping? */
-    ws_data = evhtp_ws_data_new(buf, len, OP_PONG);
-    outbuf  = evhtp_ws_data_pack(ws_data, outlen);
-    free(ws_data);
-
-    return outbuf;
-}
-
-/* free the data after evbuffer is done with it */
-static void frefcb(const void *data, size_t datalen, void *val)
-{
-    if(val)
-        free((void *)val);
-    else
-        free((void *)data);
 }
 
 /* formulate a pong response */
-static void ws_pong(evhtp_request_t *req, unsigned char *buf, size_t len)
+static void ws_pong(evhtp_request_t *req)
 {
-    struct evbuffer    * resp;
-    unsigned char      * outbuf;
-    size_t               outlen = 0;
-
-
-    outbuf  = ws_get_pong_buf(buf, len, &outlen);
-
-    resp    = evbuffer_new();
-    evbuffer_add_reference(resp, outbuf, outlen, frefcb, NULL);
-    evhtp_send_reply_body(req, resp);
-    evbuffer_free(resp);
+    /* take in buffer and prepend a pong header*/
+    if(evhtp_ws_add_header(req->buffer_in, OP_PONG))
+        evhtp_send_reply_body(req, req->buffer_in);
 }
 
 /* do a ping from within the event loop */
@@ -2445,13 +2385,11 @@ _ws_msg_start(evhtp_ws_parser * p) {
 
     req = evhtp_ws_parser_get_userdata(p);
     evhtp_assert(req != NULL);
-    //printf("BEGIN len = %d\n", (int) evbuffer_get_length(req->buffer_in));
-    //evbuffer_drain(req->buffer_in, evbuffer_get_length(req->buffer_in));
 
     return 0;
 }
 
-/* called on each chunk of data */
+/* called on each chunk of data, possibly over more than one ws frame */
 static int
 _ws_msg_data(evhtp_ws_parser * p, const char * d, size_t l) {
     evhtp_request_t * req;
@@ -2472,8 +2410,10 @@ _ws_msg_data(evhtp_ws_parser * p, const char * d, size_t l) {
         return -1;
     }
 
+    if(p->frame.hdr.opcode) //don't set it for OP_CONT (0)
+        req->ws_opcode = p->frame.hdr.opcode;
+
     evbuffer_add(req->buffer_in, d, l);
-    //printf("Got %zu %.*s\n", l, (int)l, d);
 
     return 0;
 }
@@ -2496,20 +2436,16 @@ _ws_msg_fini(evhtp_ws_parser * p) {
         else if(p->frame.hdr.opcode == OP_PING)
         {
             /* specs say pong must have the same payload as the ping */
-            unsigned char *b = evbuffer_pullup(req->buffer_in,-1);
-            size_t l = evbuffer_get_length(req->buffer_in);
-            ws_pong(req,b,l);
+            ws_pong(req);
         }
         else if(p->frame.hdr.opcode == OP_CLOSE)
             req->disconnect=1;
     }
     /* send non-control frame data to callback */
     else if (req->cb) {
-        req->ws_opcode = p->frame.hdr.opcode;
         (req->cb)(req, req->cbarg);
     }
     evbuffer_drain(req->buffer_in, evbuffer_get_length(req->buffer_in));
-//    printf("COMPLETE!\n");
 
     return 0;
 }
@@ -2916,12 +2852,15 @@ htp__connection_eventcb_(struct bufferevent * bev, short events, void * arg)
     if (c->request && c->request->cb_has_websock)
     {
         evhtp_ws_parser * p = c->request->ws_parser;
-        if(p->pingev)
+        if(p)
         {
-            event_del(p->pingev);
-            event_free(p->pingev);
+            if(p->pingev)
+            {
+                event_del(p->pingev);
+                event_free(p->pingev);
+            }
+            free(p);
         }
-        free(p);
         c->request->ws_parser=NULL;
     }
     /* set the error mask */
@@ -5520,46 +5459,6 @@ evhtp_request_set_max_body_size(evhtp_request_t * req, uint64_t len)
 {
     evhtp_connection_set_max_body_size(req->conn, len);
 }
-/*
-#ifdef EVHTP_VALGRIND_FORK_SAFE
-   This ( evhtp_free_open_connections() ) doesn't work.  When there is a
-   fork, evhtp_connection_free very well could be in the middle of a free.
-   It would require tracking every malloc'd member of the connection struct.
-
-   But it doesn't matter.
-
-   The whole issue was to shut up valgrind after a fork (where the child
-   process would not and could not be using the server, but might have other
-   interesting things to do unrelated to libevhtp).
-
-   In such a case, post-fork, all the threads in new process will disappear.
-   Their malloc'd connections will never be freed or found again.  This is a
-   technical memory leak, but not a consequential one as the memory is never
-   created or used again in the child.
-
-   The existence of the tailq list in the connection struct
-    is enough for them to be "not lost" for purposes of valgrind.
-
-   The big question is: Should we maintain this list
-   just to quiet valgrind, when it makes no difference otherwise?
-
-   If you answer no, or if not forking, remove
-       #define EVHTP_VALGRIND_FORK_SAFE
-   in evhtp.h
-
-//-ajf connection tracker
-void evhtp_free_open_connections()
-{
-    evhtp_connection_t * conn;
-
-    for (conn = conn_head.tqh_first; conn != NULL; conn = conn->conn_entries.tqe_next)
-        evhtp_connection_free(conn);
-
-    while (conn_head.tqh_first != NULL)
-        TAILQ_REMOVE(&conn_head, conn_head.tqh_first, conn_entries);
-}
-#endif
-*/
 
 void
 evhtp_connection_free(evhtp_connection_t * connection)

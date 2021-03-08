@@ -12,7 +12,28 @@
 #include <evhtp/thread.h>
 #endif
 
-//-ajf connection tracker
+/* EVHTP_VALGRIND_FORK_SAFE:
+   The issue is to shut up valgrind after a fork (where the child
+   process would not and could not be using the threaded server, but might have other
+   interesting things to do unrelated to libevhtp).
+
+   In such a case, post-fork, all the threads in new process will disappear.
+   Their malloc'd connections will never be freed or found again.  This is a
+   technical memory leak, but not a consequential one as connections are never
+   created or used again in the child.
+
+   The existence of the tailq list in the connection struct
+   is enough for the connections to be "not lost" for purposes of valgrind.
+
+   The big question is: Should you maintain this list
+   just to quiet valgrind, when it makes no difference otherwise?
+
+   If you answer no, or if there is no forking in your code, remove
+       #define EVHTP_VALGRIND_FORK_SAFE
+   and you will get a minute, tiny, nearly imperceptible gain in performance.
+
+   But mostly it doesn't matter.
+*/
 #define EVHTP_VALGRIND_FORK_SAFE 1
 
 #include <evhtp/parser.h>

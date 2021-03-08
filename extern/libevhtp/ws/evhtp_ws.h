@@ -76,11 +76,9 @@ struct evhtp_ws_parser_s {
 
 //struct evhtp_ws_parser_s;
 struct evhtp_ws_frame_s;
-struct evhtp_ws_data_s;
 
 //defined in evhtp.h
 //typedef struct evhtp_ws_parser_s    evhtp_ws_parser;
-typedef struct evhtp_ws_data_s      evhtp_ws_data;
 typedef struct evhtp_ws_hooks_s     evhtp_ws_hooks;
 
 typedef int (*evhtp_ws_parser_hook)(evhtp_ws_parser *);
@@ -98,8 +96,7 @@ EVHTP_EXPORT ssize_t           evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws
 EVHTP_EXPORT void              evhtp_ws_parser_set_userdata(evhtp_ws_parser * p, void * usrdata);
 EVHTP_EXPORT void            * evhtp_ws_parser_get_userdata(evhtp_ws_parser * p);
 
-EVHTP_EXPORT evhtp_ws_data   * evhtp_ws_data_new(const char * data, size_t len, uint8_t opcode);
-EVHTP_EXPORT unsigned char   * evhtp_ws_data_pack(evhtp_ws_data * ws_data, size_t * out_len);
+EVHTP_EXPORT struct evbuffer * evhtp_ws_add_header(struct evbuffer *buf, uint8_t opcode);
 
 #endif
 

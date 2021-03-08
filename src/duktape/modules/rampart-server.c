@@ -2030,11 +2030,7 @@ static void sendbuf(DHS *dhs)
 
 static void sendws(DHS *dhs)
 {
-    void               * data;
-    evhtp_ws_data      * ws_data;
-    unsigned char      * outbuf;
-    size_t               outlen = 0;
-    struct evbuffer    * resp;
+//    unsigned char      * outbuf;
     evhtp_request_t *req = dhs->req;
     uint8_t opcode = OP_TEXT;
 
@@ -2048,18 +2044,17 @@ static void sendws(DHS *dhs)
 
     /* put everything into buffer_out */
     sendbuf(dhs);
-    data = evbuffer_pullup(req->buffer_out, -1);
-    ws_data = evhtp_ws_data_new(data, evbuffer_get_length(req->buffer_out), opcode);
-    outbuf  = evhtp_ws_data_pack(ws_data, &outlen);
-    free(ws_data);
-    resp    = evbuffer_new();
 
-    evbuffer_add_reference(resp, outbuf, outlen, frefcb, NULL);
+    if(!evhtp_ws_add_header(req->buffer_out, opcode))
+    {
+        fprintf(stderr, "Error prepending header to websocket message\n");
+        evbuffer_drain(req->buffer_out, evbuffer_get_length(req->buffer_out));
+        return;
+    }
+//    outbuf = evbuffer_pullup(req->buffer_out, -1);
+//printf("%x %x %x %x outbuf len=%d\n", outbuf[0], outbuf[1], outbuf[2], outbuf[3], (int)outlen);
 
-    evhtp_send_reply_body(req, resp);
-    evbuffer_free(resp);
-    evbuffer_drain(req->buffer_out, evbuffer_get_length(req->buffer_out));
-
+    evhtp_send_reply_body(req, req->buffer_out);
 }
 
 /* send the object by mime type
@@ -2726,8 +2721,8 @@ DHR
 /*  CALLBACK LOGIC:
 
       http_callback
-      |-> http_thread_callback -> for thread safe js functions
-      |   |-> http_dothread -> Call js func. If there is a timeout set, this function will be threaded
+      |-> http_thread_callback
+      |   |-> http_dothread -> Call js func. If there is a timeout set, this function will be in its own thread
 */
 
 /* get the function, whether its a function or a (module) object containing the function */
@@ -2975,18 +2970,22 @@ static void *http_dothread(void *arg)
         if (duk_is_error(ctx, -1) )
         {
             duk_get_prop_string(ctx, -1, "stack");
-            send500(req, (char*)duk_safe_to_string(ctx, -1));
+            if (!req->cb_has_websock)
+                send500(req, (char*)duk_safe_to_string(ctx, -1));
             printerr("error in callback: '%s'\n", duk_safe_to_string(ctx, -1));
             duk_pop(ctx);
         }
         else if (duk_is_string(ctx, -1))
         {
-            send500(req, (char*)duk_safe_to_string(ctx, -1));
+            if (!req->cb_has_websock)
+                send500(req, (char*)duk_safe_to_string(ctx, -1));
             printerr("error in callback: '%s'\n", duk_safe_to_string(ctx, -1));
         }
         else
         {
-            send500(req, "unknown error");
+            if (!req->cb_has_websock)
+                send500(req, "unknown error in callback");
+            printerr("unknown error in callback");
         }
 
         if (dhr->have_timeout)
