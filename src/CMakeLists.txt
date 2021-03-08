@@ -308,7 +308,7 @@ target_include_directories(rampart-curl PRIVATE
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
   set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb #example_name
           PROPERTIES 
-          LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath ./ -Wl,-rpath ${CMAKE_INSTALL_PREFIX}/modules/" 
+          LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath,./ -Wl,-rpath,${CMAKE_INSTALL_PREFIX}/modules/" 
           SUFFIX       ".so"
           PREFIX ""
   )
