@@ -102,7 +102,7 @@ static uint64_t ntoh64(const uint64_t input)
 void htp__request_free_(evhtp_request_t * request);
 
 ssize_t
-evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
+evhtp_ws_parser_run(evhtp_request_t *req, evhtp_ws_hooks * hooks,
                     const char * data, size_t len) {
     uint8_t      byte;
     char         c;
@@ -110,11 +110,11 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
     const char * p_start;
     const char * p_end;
     uint64_t     to_read;
+    evhtp_ws_parser * p = req->ws_parser;
+
     if (!hooks) {
         return (ssize_t)len;
     }	
-
-    /* TODO: keep track of OP_CONT and fin flag for sanity check */
 
     //printf("\nparser run, len=%d state=%d\n", (int)len, (int)p->state);
     while(i<len)
@@ -140,14 +140,36 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
             case ws_s_fin_rsv_opcode:
                 p->frame.hdr.fin    = (byte & 0x80)? 1:0;
                 p->frame.hdr.opcode = (byte & 0xF);
-                //printf("parser run, opcode=%d\n", (int)p->frame.hdr.opcode);
-                //sanity check
+
+                //printf("parser run, opcode=%d ws_cont=%d\n", (int)p->frame.hdr.opcode, (int) req->ws_cont);
+
+                //sanity check 1
                 if(
                     p->frame.hdr.fin != OP_CONT && p->frame.hdr.fin != OP_TEXT &&
                     p->frame.hdr.fin != OP_BIN  && p->frame.hdr.fin != OP_PING &&
                     p->frame.hdr.fin != OP_PONG && p->frame.hdr.fin != OP_CLOSE
                 )
+                {
+                    fprintf(stderr,"Warning: websockets - invalid opcode %d\n", p->frame.hdr.opcode);
                     return -1;
+                }
+
+                //sanity check 2
+                if(req->ws_cont && p->frame.hdr.opcode !=OP_CONT)
+                {
+                    fprintf(stderr,"Warning: websockets - expecting a continue frame but got opcode %d\n", p->frame.hdr.opcode);
+                    return -1;
+                }
+
+                //sanity check 3
+                if (!req->ws_cont && p->frame.hdr.opcode == OP_CONT)
+                {
+                    fprintf(stderr,"Warning: websockets - not expecting a continue frame but got opcode OP_CONT\n");
+                    return -1;
+                }
+
+                req->ws_cont = !p->frame.hdr.fin;
+
                 p->state = ws_s_mask_payload_len;
                 i++;
                 break;
@@ -275,14 +297,14 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                 }
 
                 /* check for data */
-                /* TODO: transform data in place */
                 p_start = &data[i];
                 p_end   = (const char *)(data + len);
                 to_read = MIN_READ(p_end - p_start, p->content_len);
                 if (to_read > 0) {
                     int  z;
-                    char buf[to_read];
-
+                    //char buf[to_read];
+                    /* reuse existing buffer */
+                    char *buf = (char*)data;
                     for (z = 0; z < to_read; z++) {
                         int           j = p->content_idx % 4;
                         unsigned char xformed_oct;
@@ -316,6 +338,7 @@ evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks,
                     p->state = ws_s_start;
                     if(p->frame.hdr.fin == 1 )
                     {
+                        req->ws_cont = 0;
                         /*currently, this always returns 0 */
                         (void)(hooks->on_msg_fini)(p);
                         return i;

@@ -92,7 +92,7 @@ struct evhtp_ws_hooks_s {
 
 EVHTP_EXPORT evhtp_ws_parser * evhtp_ws_parser_new(void);
 EVHTP_EXPORT int               evhtp_ws_gen_handshake(evhtp_kvs_t * hdrs_in, evhtp_kvs_t * hdrs_out);
-EVHTP_EXPORT ssize_t           evhtp_ws_parser_run(evhtp_ws_parser * p, evhtp_ws_hooks * hooks, const char * data, size_t len);
+EVHTP_EXPORT ssize_t           evhtp_ws_parser_run(evhtp_request_t *req, evhtp_ws_hooks * hooks, const char * data, size_t len);
 EVHTP_EXPORT void              evhtp_ws_parser_set_userdata(evhtp_ws_parser * p, void * usrdata);
 EVHTP_EXPORT void            * evhtp_ws_parser_get_userdata(evhtp_ws_parser * p);
 

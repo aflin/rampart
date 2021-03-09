@@ -2407,10 +2407,11 @@ _ws_msg_data(evhtp_ws_parser * p, const char * d, size_t l) {
     if (c->max_body_size > 0 && nextsz >= c->max_body_size) {
         HTP_FLAG_ON(c, EVHTP_CONN_FLAG_ERROR);
         c->cr_status = EVHTP_RES_DATA_TOO_LONG;
+        fprintf(stderr, "websockets - message exceeded max size of %d\n", (int)c->max_body_size);
         return -1;
     }
 
-    if(p->frame.hdr.opcode) //don't set it for OP_CONT (0)
+    if(p->frame.hdr.opcode != OP_CONT) //don't set it for OP_CONT (0)
         req->ws_opcode = p->frame.hdr.opcode;
 
     evbuffer_add(req->buffer_in, d, l);
@@ -2506,12 +2507,14 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
 
         //assert(req->ws_parser != NULL);
 
-        /* XXX need a parser_init / parser_set_userdata */
+        //TODO: Use evbuffer_remove_buffer() to drain bufferevent_get_input(bev) into req->buffer_in directly
+        //      in ws_msg_data(), possibly saving a copy.
+
         //printf("readcb, running parser with %d avail\n", (int)avail);
-        ret = evhtp_ws_parser_run(req->ws_parser,
+        ret = evhtp_ws_parser_run(req,
                                     &ws_hooks, buf, avail);
         if(ret<=0)
-        {
+        {   // if error, drain buffer and hope for something better next time.
             evbuffer_drain(bufferevent_get_input(bev), avail);
             nread=0;
         }
