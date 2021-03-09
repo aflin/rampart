@@ -266,7 +266,7 @@ var pid=server.start(
             see files in ./modules/mymodulespath directory.
             
         */
-        "/scripts/":	      {modulePath: "modules/mymodulepath/"}
+        "/scripts/":	      {modulePath: "modules/mymodulepath/"},
 
         /* regular expressions can also be used. prepend a '~' to
            your expression: e.g.:
@@ -276,6 +276,11 @@ var pid=server.start(
           see https://github.com/kkos/oniguruma/blob/master/doc/RE
           for full syntax
         */
+
+        /* a sample chat application using websockets */
+        "/chat.html": {module: "modules/chat.js"},
+        /* prepend path with 'ws:' to run as websocket */
+        "ws:/wschat": {module: "modules/wschat.js"}
 
     }
 });
