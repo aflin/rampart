@@ -25,7 +25,6 @@ duk_ret_t duk_rp_new_event(duk_context *ctx)
         duk_push_object(ctx);
         duk_put_prop_string(ctx, -2, evname);
     }
-    //error or no error if event already there?
     return 0;
 }
 
