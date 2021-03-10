@@ -127,6 +127,16 @@
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#full-example">Full Example</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#websockets">Websockets</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#req-wssend">req.wsSend()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#req-wsend">req.wsEnd()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#req-wsondisconnect">req.wsOnDisconnect()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#req-wsisbin">req.wsIsBin</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#req-count">req.count</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#req-websocketid">req.websocketId</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#example-echo-chat-server">Example echo/chat server</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#key-to-mime-mappings">Key to Mime Mappings</a></li>
@@ -1180,13 +1190,9 @@ parameter <code class="docutils literal notranslate"><span class="pre">fsPath</s
 </div>
 <div class="section" id="advanced-functions">
 <h3>Advanced Functions<a class="headerlink" href="#advanced-functions" title="Permalink to this headline">¶</a></h3>
-<p>The <code class="docutils literal notranslate"><span class="pre">rampart-server</span></code> module creates a <code class="docutils literal notranslate"><span class="pre">mmap</span></code>ed buffer to efficiently store data
+<p>The <code class="docutils literal notranslate"><span class="pre">rampart-server</span></code> module creates a buffer to efficiently store data
 that will be returned to the client by the webserver.  There is one buffer per thread
-and it is used from within each thread and shared with any child processes.  The size of
-this “server buffer” is controlled from the <code class="docutils literal notranslate"><span class="pre">bufferMem</span></code> setting in <a class="reference internal" href="#start">start()</a> above.</p>
-<p>Though returning an object with, .e.g. <code class="docutils literal notranslate"><span class="pre">{html:</span> <span class="pre">mydata}</span></code> set is not limited by the size of
-the server buffer, the functions below are so limited and will throw
-an error if the total size written to it is larger than the size allotted.</p>
+and it is used from within each thread.</p>
 <p>The request object contains the functions to manipulate and print to the server buffer,
 which will be directly sent to the client without extra copying.</p>
 <div class="section" id="req-printf">
@@ -1228,10 +1234,6 @@ method.</p>
 <p>However, in nearly all cases, if a function needs to print many strings
 that make up the totality of the data sent to the client, using
 <code class="docutils literal notranslate"><span class="pre">req.printf</span></code> or <code class="docutils literal notranslate"><span class="pre">req.put</span></code> is preferable.</p>
-<p>When printing to the server buffer, each thread’s buffer must be
-large enough to hold all the data from every <code class="docutils literal notranslate"><span class="pre">req.printf</span></code> statement.
-If the server buffer size is smaller than the data inserted, an error
-will be thrown.</p>
 </dd>
 </dl>
 </div>
@@ -1410,6 +1412,180 @@ buffer.</p>
 
 <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;server started with pid: &quot;</span><span class="o">+</span><span class="nx">pid</span><span class="p">);</span>
 </pre></div>
+</div>
+</div>
+<div class="section" id="websockets">
+<h3>Websockets<a class="headerlink" href="#websockets" title="Permalink to this headline">¶</a></h3>
+<p>The server also serves websocket connections.  The server
+callback function for a websocket connection operates much
+the same as a normal http callback, with a few exceptions:</p>
+<ul class="simple">
+<li><p>A websocket callback is specified by prepending the path
+in the <code class="docutils literal notranslate"><span class="pre">map</span></code> object with <code class="docutils literal notranslate"><span class="pre">ws:</span></code>.</p></li>
+<li><p>The mapped callback is run every time the client sends data over
+the websocket.</p></li>
+<li><p>Headers and any GET/POST variables are set once upon connection
+in the <code class="docutils literal notranslate"><span class="pre">req</span></code> object, and are recycled every time new data
+from the client is received.</p></li>
+<li><p>Replies may be returned asynchronously using <a class="reference internal" href="rampart-main.html#rampart-event"><span class="std std-ref">rampart.event</span></a>
+functions or <a class="reference internal" href="rampart-main.html#settimeout"><span class="std std-ref">setTimeout</span></a> using the
+<code class="docutils literal notranslate"><span class="pre">req.wsSend()</span></code> function.</p></li>
+<li><p>Since the <code class="docutils literal notranslate"><span class="pre">req</span></code> object is recycled, variables can be attached to it
+that will be available on subsequent callbacks.  Example: setting
+<code class="docutils literal notranslate"><span class="pre">req.myvar=saveMe&quot;</span> <span class="pre">would</span> <span class="pre">allow</span> <span class="pre">the</span> <span class="pre">contents</span> <span class="pre">of</span> <span class="pre">``saveMe</span></code> to be used
+for the next request.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">req.body</span></code> is empty upon first connecting.  In subsequent calls of the
+callback, <code class="docutils literal notranslate"><span class="pre">req.body</span></code> contains the text or binary data sent by the
+client.</p></li>
+<li><p>Upon returning, the callback function may return <code class="docutils literal notranslate"><span class="pre">undefined</span></code> or
+<code class="docutils literal notranslate"><span class="pre">null</span></code>, if it has no data to send, or if the data has been stored
+using <code class="docutils literal notranslate"><span class="pre">req.printf</span></code> or <code class="docutils literal notranslate"><span class="pre">req.put</span></code> above.
+Data can also be sent by returning the same values as is used in
+<code class="docutils literal notranslate"><span class="pre">req.wsSend</span></code> below.</p></li>
+</ul>
+<p>In addition, several variables and functions are available only when using
+websockets:</p>
+<div class="section" id="req-wssend">
+<h4>req.wsSend()<a class="headerlink" href="#req-wssend" title="Permalink to this headline">¶</a></h4>
+<p>Send data to the client.  How it is sent depends on the type of the data
+being sent (the type of the variable given to wsSend as a parameter):</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><span class="green">String</span> - The string is sent as text.</p></li>
+<li><p><span class="green">Object</span> - The object is converted to JSON and send as a string.</p></li>
+<li><p><span class="green">Buffer</span> - The object is send as binary data.</p></li>
+</ul>
+</div></blockquote>
+<p>In addition to sending the data given in the parameter, any data which was
+added via <code class="docutils literal notranslate"><span class="pre">req.printf</span></code> or <code class="docutils literal notranslate"><span class="pre">req.put</span></code> is prepended to the outgoing data.</p>
+<p>If all the necessary data has been stored in the server’s buffer using
+<code class="docutils literal notranslate"><span class="pre">req.printf</span></code> or <code class="docutils literal notranslate"><span class="pre">req.put</span></code>, the data can be sent to the client by
+calling  <code class="docutils literal notranslate"><span class="pre">req.wsSend(null)</span></code>.</p>
+</div>
+<div class="section" id="req-wsend">
+<h4>req.wsEnd()<a class="headerlink" href="#req-wsend" title="Permalink to this headline">¶</a></h4>
+<p>Close the websocket connection.</p>
+</div>
+<div class="section" id="req-wsondisconnect">
+<h4>req.wsOnDisconnect()<a class="headerlink" href="#req-wsondisconnect" title="Permalink to this headline">¶</a></h4>
+<p>Takes a <span class="green">Function</span> as its sole parameter.  A function to run when
+either the client disconnects or req.wsEnd() is called.</p>
+</div>
+<div class="section" id="req-wsisbin">
+<h4>req.wsIsBin<a class="headerlink" href="#req-wsisbin" title="Permalink to this headline">¶</a></h4>
+<p>This variable is set <code class="docutils literal notranslate"><span class="pre">true</span></code> when the incoming data in <code class="docutils literal notranslate"><span class="pre">req.body</span></code> is sent from
+the client as binary data.  Otherwise this is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p>
+</div>
+<div class="section" id="req-count">
+<h4>req.count<a class="headerlink" href="#req-count" title="Permalink to this headline">¶</a></h4>
+<p>This variable is set to the number of times the client has sent data.  On
+first run of the callback, it is set to <code class="docutils literal notranslate"><span class="pre">0</span></code> and is incremented on each
+subsequent callback.</p>
+</div>
+<div class="section" id="req-websocketid">
+<h4>req.websocketId<a class="headerlink" href="#req-websocketid" title="Permalink to this headline">¶</a></h4>
+<p>A unique number to identify the connection to the client.</p>
+</div>
+<div class="section" id="example-echo-chat-server">
+<h4>Example echo/chat server<a class="headerlink" href="#example-echo-chat-server" title="Permalink to this headline">¶</a></h4>
+<p>Below is a simplified version of an echo/chat server using websockets
+and <a class="reference internal" href="rampart-main.html#rampart-event"><span class="std std-ref">rampart.event</span></a> functions.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="cm">/* load the http server module */</span>
+<span class="kd">var</span> <span class="nx">server</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-server&quot;</span><span class="p">);</span>
+
+<span class="cm">/* function just returns html */</span>
+<span class="kd">function</span> <span class="nx">fp</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="k">return</span> <span class="p">{</span><span class="nx">html</span><span class="o">:</span> <span class="sb">`&lt;html&gt;&lt;body&gt;</span>
+<span class="sb">    &lt;div id=&quot;chatbox&quot;&gt;&lt;/div&gt;</span>
+<span class="sb">    &lt;input id=&quot;chatin&quot; type=text style=&quot;width:50%&quot;&gt;</span>
+<span class="sb">    &lt;button id=&quot;send&quot;&gt;send&lt;/button&gt;</span>
+<span class="sb">    &lt;script&gt;</span>
+<span class="sb">        var chatbox = document.getElementById(&#39;chatbox&#39;);</span>
+<span class="sb">        var chatin = document.getElementById(&#39;chatin&#39;);</span>
+<span class="sb">        var send = document.getElementById(&#39;send&#39;);</span>
+<span class="sb">        var socket = new WebSocket(&quot;ws://localhost:8088/ws&quot;);</span>
+
+<span class="sb">        function showmsg(msg){</span>
+<span class="sb">            var node = document.createElement(&#39;p&#39;);</span>
+<span class="sb">            var textnode = document.createTextNode(msg.data);</span>
+<span class="sb">            node.appendChild(textnode);</span>
+<span class="sb">            chatbox.appendChild(node);</span>
+<span class="sb">        }</span>
+
+<span class="sb">        socket.addEventListener(&#39;open&#39;, function(e){</span>
+<span class="sb">            socket.onmessage = showmsg;</span>
+<span class="sb">        });</span>
+
+<span class="sb">        send.onclick = function(){</span>
+<span class="sb">            if(socket.readyState === socket.OPEN)</span>
+<span class="sb">                socket.send(chatin.value);</span>
+<span class="sb">        };</span>
+
+<span class="sb">    &lt;/script&gt;</span>
+<span class="sb">    &lt;/body&gt;&lt;/html&gt;`</span><span class="p">};</span>
+<span class="p">}</span>
+
+<span class="kd">function</span> <span class="nx">ws</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* setup upon first connecting */</span>
+    <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="nx">req</span><span class="p">.</span><span class="nx">count</span><span class="p">)</span>
+    <span class="p">{</span>
+        <span class="cm">/* what to do if client disconnects */</span>
+        <span class="nx">req</span><span class="p">.</span><span class="nx">wsOnDisconnect</span><span class="p">(</span><span class="kd">function</span><span class="p">(){</span>
+            <span class="c1">//remove our event callback function */</span>
+            <span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">off</span><span class="p">(</span><span class="s2">&quot;myev&quot;</span><span class="p">,</span> <span class="s2">&quot;myfunc&quot;</span><span class="o">+</span><span class="nx">req</span><span class="p">.</span><span class="nx">websocketId</span><span class="p">);</span>
+            <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;disconnected...\n&quot;</span><span class="p">);</span>
+        <span class="p">});</span>
+
+        <span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">on</span><span class="p">(</span><span class="s2">&quot;myev&quot;</span><span class="p">,</span> <span class="s2">&quot;myfunc&quot;</span><span class="o">+</span><span class="nx">req</span><span class="p">.</span><span class="nx">websocketId</span><span class="p">,</span> <span class="kd">function</span><span class="p">(</span><span class="nx">req</span><span class="p">,</span> <span class="nx">data</span><span class="p">)</span>
+        <span class="p">{</span>
+            <span class="c1">// only send if from someone else</span>
+            <span class="k">if</span> <span class="p">(</span><span class="nx">data</span><span class="p">.</span><span class="nx">id</span> <span class="o">!=</span> <span class="nx">req</span><span class="p">.</span><span class="nx">websocketId</span><span class="p">)</span>
+                <span class="nx">req</span><span class="p">.</span><span class="nx">wsSend</span><span class="p">(</span><span class="nx">data</span><span class="p">.</span><span class="nx">msg</span><span class="p">);</span>
+        <span class="p">},</span> <span class="nx">req</span><span class="p">);</span>
+
+        <span class="k">return</span> <span class="s2">&quot;Greetings, I&#39;m an example echo/chat server&quot;</span><span class="p">;</span>
+    <span class="p">}</span>
+
+    <span class="c1">//convert body from a buffer to a string</span>
+    <span class="nx">req</span><span class="p">.</span><span class="nx">body</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">bufferToString</span><span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">body</span><span class="p">);</span>
+
+    <span class="k">if</span><span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">body</span><span class="p">.</span><span class="nx">length</span><span class="p">)</span>
+    <span class="p">{</span>
+        <span class="cm">/* send message to any other client that is connected */</span>
+        <span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">trigger</span><span class="p">(</span>
+            <span class="s2">&quot;myev&quot;</span><span class="p">,</span>
+            <span class="p">{</span>
+                <span class="nx">id</span><span class="o">:</span> <span class="nx">req</span><span class="p">.</span><span class="nx">websocketId</span><span class="p">,</span>
+                <span class="nx">msg</span><span class="o">:</span> <span class="s2">&quot;a message from &quot;</span><span class="o">+</span><span class="nx">req</span><span class="p">.</span><span class="nx">websocketId</span> <span class="o">+</span> <span class="s2">&quot;: &quot;</span> <span class="o">+</span> <span class="nx">req</span><span class="p">.</span><span class="nx">body</span>
+            <span class="p">}</span>
+        <span class="p">);</span>
+
+        <span class="cm">/* send message to this client */</span>
+        <span class="k">return</span> <span class="nx">req</span><span class="p">.</span><span class="nx">body</span><span class="p">;</span>
+    <span class="p">}</span>
+    <span class="c1">//do nothing if we get to here.</span>
+<span class="p">}</span>
+
+<span class="cm">/* Start server */</span>
+<span class="kd">var</span> <span class="nx">pid</span><span class="o">=</span><span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">(</span>
+<span class="p">{</span>
+    <span class="nx">user</span><span class="o">:</span> <span class="s2">&quot;root&quot;</span><span class="p">,</span>
+
+    <span class="nx">map</span><span class="o">:</span>
+    <span class="p">{</span>
+        <span class="s2">&quot;/&quot;</span> <span class="o">:</span> <span class="nx">fp</span><span class="p">,</span>
+        <span class="s2">&quot;ws:/ws&quot;</span><span class="o">:</span> <span class="nx">ws</span>
+    <span class="p">}</span>
+<span class="p">});</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;\ngo here:http://127.0.0.1:8088/\n&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>For a more complete example of using events and websockets,
+see the <code class="docutils literal notranslate"><span class="pre">rampart/examples/web_server/modules/wschat.js</span></code>
+script.</p>
 </div>
 </div>
 </div>

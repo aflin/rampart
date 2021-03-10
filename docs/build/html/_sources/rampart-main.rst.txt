@@ -82,18 +82,24 @@ following:
 
 * Html parsing and and error correcting via ``rampart-html``. 
 
-Rampart philosophy
-~~~~~~~~~~~~~~~~~~
-Though Rampart supports ``setTimeout()`` (and other async functions via
-babel), the functions added to `Duktape <https://duktape.org>`_ 
-via modules as well as the built-in functions are synchronous.  Raw JavaScript
-execution is more memory efficient, but far slower than with, e.g., node.js.
-However, the functionality and speed of the available C functions provide
-comparable efficacy, excellent performance and are a viable alternative to 
-`LAMP <https://en.wikipedia.org/wiki/LAMP_(software_bundle)>`_, 
-`MEAN <https://en.wikipedia.org/wiki/MEAN_(solution_stack)>`_ or other
-stacks, all in a single product, while consuming considerably less resources
-than the aforementioned.
+* Simple Event functions via `rampart.event`_\ .
+
+* `Experimental Syntax`_\ .
+
+Rampart philosophy 
+~~~~~~~~~~~~~~~~~~ 
+
+Though Rampart supports ``setTimeout()``, `Events <rampart.events>`_ (and
+other async functions via babel), the majority of functions added to
+`Duktape <https://duktape.org>`_ via modules as well as the built-in
+functions are synchronous.  Raw JavaScript execution is more memory
+efficient, but far slower than with, e.g., node.js.  However, the
+functionality and speed of the available C functions provide comparable
+efficacy, excellent performance and are a viable alternative to `LAMP
+<https://en.wikipedia.org/wiki/LAMP_(software_bundle)>`_, `MEAN
+<https://en.wikipedia.org/wiki/MEAN_(solution_stack)>`_ or other stacks, all
+in a single product, while consuming considerably less resources than the
+aforementioned.
 
 Rampart Global Variable and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -523,6 +529,295 @@ Modules are searched for in the following order:
 #. In the current working directory. If ``/module.js`` is given, 
    ``./module.js`` is checked.
 
+Experimental Syntax
+~~~~~~~~~~~~~~~~~~~
+
+Some Advanced JavaScript syntax is supported when not using
+`babel <ECMAScript 2015+ and Babel.js> below.  It is provided
+experimentally (unsupported) and is limited in scope. 
+
+Object.values()
+"""""""""""""""
+
+Return an :green:`Array` containing the values of an object.
+
+.. code-block:: javascript
+
+   var obj = {
+      key1: "val1",
+      key2: "val2"
+   }
+
+   console.log(Object.values(obj));
+   /* expected output:
+      ["val1","val2"]              */
+
+Template Literals
+"""""""""""""""""
+
+These may be uses much as expected:
+
+.. code-block:: javascript
+
+   var type, color;
+   
+   var out = `I'm a ${color? color: `black`} ${ type ? `${type} ` : `tea`}pot`;
+   /* out = "I'm a black teapot" */
+   
+   type = "coffee";
+   color = "red";
+   out = `I'm a ${color? color: `black`} ${ type ? `${type} ` : `tea`}pot`;
+   /* out = "I'm a red coffee pot" */   
+
+
+Tagged Functions
+""""""""""""""""
+
+These may be used much as expected:
+
+.. code-block:: javascript
+
+   function aboutMe(strings) {
+      var keys = Object.values(arguments).slice(1);
+      console.log(strings);
+      console.log(keys);
+   }
+
+   var name="Francis", age=31;
+
+   aboutMe`My name is ${name} and I am ${age} years old`;
+   /* expected output:
+      ["My name is "," and I am "," years old"]
+      ["Francis",31]
+   */
+
+
+Rest Parameters
+"""""""""""""""
+
+Rest Parameter syntax may also be used for arguments to functions.
+
+.. code-block:: javascript
+
+   function aboutMe(strings, ...keys) {
+      console.log(strings);
+      console.log(keys);
+   }
+
+   var name="Francis", age=31;
+
+   aboutMe`My name is ${name} and I am ${age} years old`;
+   /* expected output:
+      ["My name is "," and I am "," years old"]
+      ["Francis",31]
+   */
+
+
+Template Literals and sprintf
+"""""""""""""""""""""""""""""
+
+A non-standard shortcut syntax may be used in template literals in place of
+:ref:`rampart.utils.sprintf <rampart-utils:sprintf>` by specifying a format
+string followed by a colon ``:`` in a substituted variable (``${}``).  If
+the string begins with a ``%``, or if the string is quoted with single or
+double quotes :ref:`rampart.utils.sprintf <rampart-utils:sprintf>` is
+called.
+
+Example:
+
+.. the original javascript
+
+
+  var myhtml = `
+  <div>
+      my contents
+  </div>
+  `;
+
+  /* same as:
+  console.log("Here is the html:<br>\n<pre>"+rampart.utils.sprintf("%H",myhtml)+"</pre>");
+  */ 
+  console.log(`Here is the html:<br>\n<pre>${%H:myhtml}</pre>`);
+      
+  /* or */
+      
+  /* same as:
+  console.log("Here is the html:<br>\n"+rampart.utils.sprintf("<pre>%H</pre>",myhtml));
+  */
+
+  console.log(`Here is the html<br>\n${"<pre>%H</pre>":myhtml}`);
+
+  /* expected output:
+  Here is the html:<br>
+  <pre>
+  &lt;div&gt;
+      my contents
+  &lt;&#47;div&gt;
+  </pre>
+  */
+
+
+.. raw:: html
+
+   <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">myhtml</span> <span class="o">=</span> <span class="sb">`</span>
+   <span class="sb">&lt;div&gt;</span>
+   <span class="sb">    my contents</span>
+   <span class="sb">&lt;/div&gt;</span>
+   <span class="sb">`</span><span class="p">;</span>
+
+   <span class="cm">/* same as:</span>
+   <span class="cm">console.log(&quot;Here is the html:&lt;br&gt;\n&lt;pre&gt;&quot;+rampart.utils.sprintf(&quot;%H&quot;,myhtml)+&quot;&lt;/pre&gt;&quot;);</span>
+   <span class="cm">*/</span>
+   <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="sb">`Here is the html:&lt;br&gt;\n&lt;pre&gt;${</span><span class="nx">%H:myhtml</span></span><span class="sb">}&lt;/pre&gt;`</span><span class="p">);</span>
+
+   <span class="cm">/* or */</span>
+
+   <span class="cm">/* same as:</span>
+   <span class="cm">console.log(&quot;Here is the html:&lt;br&gt;\n&quot;+rampart.utils.sprintf(&quot;&lt;pre&gt;%H&lt;/pre&gt;&quot;,myhtml));</span>
+   <span class="cm">*/</span>
+   <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="sb">`Here is the html&lt;br&gt;\n${</span><span class="nx">&quot;&lt;pre&gt;%H&lt;/pre&gt;&quot;:myhtml</span></span><span class="sb">}`</span><span class="p">);</span>
+
+   <span class="cm">/* expected output:</span>
+   <span class="cm">Here is the html:&lt;br&gt;</span>
+   <span class="cm">&lt;pre&gt;</span>
+   <span class="cm">&amp;lt;div&amp;gt;</span>
+   <span class="cm">    my contents</span>
+   <span class="cm">&amp;lt;&amp;#47;div&amp;gt;</span>
+   <span class="cm">&lt;/pre&gt;</span>
+   <span class="cm">*/</span>
+   </pre></div>
+
+setTimeout()
+""""""""""""
+
+Also added to Rampart is the ``setTimeout()`` function.  It supports the
+asynchronous calling of functions from within an event loop in the same
+manner as ``setTimeout`` in ``node.js`` or a browser.
+
+
+rampart.event
+~~~~~~~~~~~~~
+
+Rampart can execute functions from within its event loop using its own
+event-on-trigger syntax.
+
+rampart.event.on()
+""""""""""""""""""
+
+Insert a named function to be run upon triggering a named event.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.event.on(eventName, funcName, callback, callbackUserVar);
+
+Where:
+
+   * ``eventName`` is an arbitrary :green:`String` used to identify, trigger
+     and remove the event using the `rampart.event.remove()`_ function below.
+
+   * ``funcName`` is an arbitrary :green:`String` used to identify and remove
+     the callback function using the `rampart.event.off()`_ function below.
+
+   * ``callback`` is a :green:`Function` to be executed when the event is triggered.
+     It is called with when triggered as such: ``callback(callbackUserVar, callbackTriggerVar)``.
+
+   * ``callbackUserVar`` is an arbitrary variable which will be passed to the ``callback``
+     :green:`Function` as its first parameter.
+
+rampart.event.trigger()
+"""""""""""""""""""""""
+
+.. code-block:: javascript
+
+   rampart.event.trigger(eventName, callbackTriggerVar);
+
+Where:
+
+   * ``eventName`` is the :green:`String` used when registering the event with `rampart.event.on()`_\ .
+
+   * ``callbackTriggerVar`` is the second parameter passed to the ``callback`` function specified
+     when the event and function were registered with `rampart.event.on()`_\ .
+
+   * **Caveat**, the ``callbackTriggerVar`` must be a normal variable which 
+     can be serialized using `CBOR <https://duktape.org/guide.html#builtin-cbor>`_\ .
+     Because this function may trigger events that span several threads and Duktape stacks, when
+     used with the :ref:`rampart-server <rampart-server:The rampart-server HTTP module>`
+     module, special variables such as ``req`` (see: 
+     :ref:`The Request Object <rampart-server:The Request Object>`) may contain
+     functions and hidden state variables which cannot be moved from stack
+     to stack.  In most cases, it will not be limiting since each callback is run on its own thread/stack
+     and can take a ``callbackUserVar`` which does not have the above limitations.
+
+rampart.event.off()
+"""""""""""""""""""
+
+Remove a named function from the list of functions for the given event.
+
+.. code-block:: javascript
+
+   rampart.event.off(eventName, funcName);
+
+Where:
+
+   * ``eventName`` is a :green:`String`, the ``eventName`` passed to the `rampart.utils.on()`
+     function above.
+
+   * ``funcName`` is a :green:`String`, the ``funcName`` passed to the `rampart.utils.on()`
+     function above.
+
+rampart.event.remove()
+""""""""""""""""""""""
+
+Remove all function from the list of functions for the given event. This effectively
+removes the event.
+
+.. code-block:: javascript
+
+   rampart.event.remove(eventName);
+
+Where:
+
+   * ``eventName`` is a :green:`String`, the ``eventName`` passed to the `rampart.utils.on()`
+     function above.
+
+
+Example
+"""""""
+
+.. code-block:: javascript
+
+   var usr_var = "I'm a user variable.";
+
+   function cb (uservar,triggervar){
+
+       console.log(uservar, "Triggervar = "+triggervar);
+       rampart.utils.sleep(0.5);
+
+       if(triggervar>4)
+           rampart.event.remove("myev");
+
+       rampart.event.trigger("myev", triggervar+1);
+   }
+
+   rampart.event.on("myev", "myfunc", cb, usr_var);
+
+   rampart.event.trigger("myev", 1);
+
+   /* expected output:
+   I'm a user variable. Triggervar = 1
+   I'm a user variable. Triggervar = 2
+   I'm a user variable. Triggervar = 3
+   I'm a user variable. Triggervar = 4
+   I'm a user variable. Triggervar = 5
+   */
+
+See also: the :ref:`Echo/Chat Server Example <rampart-server:Example echo/chat server>`.
+
+For a more complete example of events using the webserver and websockets,
+see the ``rampart/examples/web_server/modules/wschat.js``
+script.
 
 Additional Global Variables and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -538,9 +833,6 @@ include:
 
 For more information, see the `Duktape Guide <https://duktape.org/guide.html>`_
 
-Also added to Rampart is the ``setTimeout()`` function.  It is considered
-experimental and is mainly included to support asynchronous functions in 
-`ECMAScript 2015+ and Babel.js`_\ .
 
 ECMAScript 2015+ and Babel.js
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

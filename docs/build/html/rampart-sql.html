@@ -411,9 +411,13 @@ executed.  A trailing <code class="docutils literal notranslate"><span class="pr
 <p>Note that concatenating statements separated by <code class="docutils literal notranslate"><span class="pre">;</span></code> is not supported in
 JavaScript, and as such, a script must use a separate <code class="docutils literal notranslate"><span class="pre">exec()</span></code> for each
 statement to be executed.</p>
-<dl class="simple" id="sql-params">
-<dt>SQL Parameters:</dt><dd><p>Sql Parameters are specified in an <span class="green">Array</span> with each member
-correspond to each <code class="docutils literal notranslate"><span class="pre">?</span></code> in the sql statement.  Example:</p>
+<dl id="sql-params">
+<dt>SQL Parameters:</dt><dd><p>SQL Parameters are specified in an <span class="green">Array</span> with each member
+corresponding to each <code class="docutils literal notranslate"><span class="pre">?</span></code> in the SQL statement. Alternatively parameters
+can be named in an <span class="green">Object</span> with each value in the
+<span class="green">Object</span> corresponding to each <code class="docutils literal notranslate"><span class="pre">?key_name</span></code> in the SQL
+statement.</p>
+<p>Example:</p>
 </dd>
 </dl>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
@@ -436,23 +440,42 @@ Note that if there is only one parameter, it still must be contained in an
 <dt>Options:</dt><dd><p>The <code class="docutils literal notranslate"><span class="pre">options</span></code> <span class="green">Object</span> may contain any of the following:</p>
 <blockquote>
 <div><ul>
-<li><p><code class="docutils literal notranslate"><span class="pre">maxRows</span></code> (<span class="green">Number</span>):  maximum number of rows to return (default: 10).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">maxRows</span></code> (<span class="green">Number</span>):  maximum number of rows to return (default: 10
+for <code class="docutils literal notranslate"><span class="pre">select</span></code> statements; unlimited (<code class="docutils literal notranslate"><span class="pre">-1</span></code>) for others).  See Caveats
+below.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">skipRows</span></code> (<span class="green">Number</span>): the number of rows to skip (default: 0).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">returnType</span></code> (<span class="green">String</span>): Determines the format of the <code class="docutils literal notranslate"><span class="pre">results</span></code> value
 in the return <span class="green">Object</span>.</p>
 <blockquote>
 <div><ul class="simple">
-<li><p>default: an <span class="green">Array</span> of <span class="green">Objects</span> as described <a class="reference internal" href="#returnval"><span class="std std-ref">below</span></a>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">&quot;array&quot;</span></code>: an <span class="green">Array</span> of <span class="green">Arrays</span>. The outer <span class="green">Array</span> members correspond to
-each row fetched.  The inner <span class="green">Array</span> members correspond to
-the fields returned in each row.  Note that column names are still
-available, in order, in <a class="reference internal" href="#returnval"><span class="std std-ref">columns</span></a>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">&quot;novars&quot;</span></code>: an empty <span class="green">Array</span> is returned.  The sql statement is
-still executed.  This may be useful for updates and deletes
+<li><p><strong>default</strong>: if <code class="docutils literal notranslate"><span class="pre">returnType</span></code> is not set, <code class="docutils literal notranslate"><span class="pre">select</span></code> statements,
+<code class="docutils literal notranslate"><span class="pre">results</span></code> will be an <span class="green">Array</span> of <span class="green">Objects</span> as if
+<code class="docutils literal notranslate"><span class="pre">&quot;object&quot;</span></code> was set.  For <code class="docutils literal notranslate"><span class="pre">delete</span></code>, <code class="docutils literal notranslate"><span class="pre">update</span></code> and <code class="docutils literal notranslate"><span class="pre">insert</span></code>
+statements, <code class="docutils literal notranslate"><span class="pre">results</span></code> will be an empty array as if <code class="docutils literal notranslate"><span class="pre">&quot;novars&quot;</span></code>
+was set.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;object&quot;</span></code>: An <span class="green">Array</span> of <span class="green">Objects</span>.  Each
+green:<cite>Array</cite> member  correspond to each row fetched. Each
+<span class="green">Object</span> has its property names (keys) set the names of the
+corresponding column and its values set to the field value of the
+corresponding row for the named column.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;array&quot;</span></code>: An <span class="green">Array</span> of <span class="green">Arrays</span>. The outer <span class="green">Array</span>
+members correspond to each row fetched.  The inner <span class="green">Array</span>
+members correspond to the fields returned in each row.  Note that
+column names are still available, in order, in <a class="reference internal" href="#returnval"><span class="std std-ref">columns</span></a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;novars&quot;</span></code>: An empty <span class="green">Array</span> is returned.  The sql statement is
+still executed.  This is the default for inserts, updates and deletes
 where the return value would otherwise not be used.</p></li>
+<li><p><strong>Note</strong>: If the values of a deleted, inserted or updated row are needed,
+<code class="docutils literal notranslate"><span class="pre">returnType</span></code> can be set to either <code class="docutils literal notranslate"><span class="pre">&quot;object&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;array&quot;</span></code> and
+the statement will be executed as normal with <code class="docutils literal notranslate"><span class="pre">results</span></code> set as if
+the row was selected.</p></li>
 </ul>
 </div></blockquote>
 </li>
+<li><p><code class="docutils literal notranslate"><span class="pre">returnRows</span></code> (<span class="green">Boolean</span>): If set <code class="docutils literal notranslate"><span class="pre">true</span></code>, performs the same
+function as <code class="docutils literal notranslate"><span class="pre">{returnType:</span> <span class="pre">&quot;object&quot;}</span></code> above.  If set <code class="docutils literal notranslate"><span class="pre">false</span></code>,
+performs the same function at <code class="docutils literal notranslate"><span class="pre">{returnType:</span> <span class="pre">&quot;novars&quot;}</span></code> above.  This
+setting overrides the <code class="docutils literal notranslate"><span class="pre">returnType</span></code> setting if both are present.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">includeCounts</span></code> (<span class="green">Boolean</span>): whether to include count
 information in the return <span class="green">Object</span>.  Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.  The
 information will be returned as an <span class="green">Object</span> in the
@@ -462,11 +485,68 @@ information will be returned as an <span class="green">Object</span> in the
 <a class="reference internal" href="sql3.html#intelligent-text-search-queries"><span class="std std-ref">text search</span></a> on a field
 with a fulltext index.  If count information is not available, the
 <span class="green">Numbers</span> will be negative.  See <a class="reference internal" href="#countinfo"><span class="std std-ref">countInfo</span></a>
-below.</p></li>
+below.  If <code class="docutils literal notranslate"><span class="pre">false</span></code>, <cite>countInfo &lt;countinfo&gt;</cite> will be <code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">argument</span></code>: (aka <code class="docutils literal notranslate"><span class="pre">arg</span></code>). A variable of any type to be passed to the
+callback below.</p></li>
 </ul>
 </div></blockquote>
 </dd>
-<dt>Callback:</dt><dd><p>A <span class="green">Function</span> taking as parameters (<code class="docutils literal notranslate"><span class="pre">result_row</span></code>, <code class="docutils literal notranslate"><span class="pre">index</span></code>, <code class="docutils literal notranslate"><span class="pre">columns</span></code>, <code class="docutils literal notranslate"><span class="pre">countInfo</span></code>).
+<dt>Caveats for Options, maxRows and skipRows:</dt><dd><ul class="simple">
+<li><p>SQL <code class="docutils literal notranslate"><span class="pre">select</span></code> statements are by default limited to 10</p></li>
+</ul>
+<blockquote>
+<div><p>rows (<code class="docutils literal notranslate"><span class="pre">{maxRows:10}</span></code>) unless <code class="docutils literal notranslate"><span class="pre">maxRows</span></code> above is set.  This default
+can be changed by setting the special variable <code class="docutils literal notranslate"><span class="pre">sql.selectMaxRows</span></code>.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;./mytestdb&quot;</span><span class="p">);</span>
+
+<span class="nx">sql</span><span class="p">.</span><span class="nx">selectMaxRows</span><span class="o">=</span><span class="mi">20</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select * from mytable&quot;</span><span class="p">);</span>
+<span class="cm">/* expected results: 20 rows, if 20 are available from &quot;mytable&quot; */</span>
+</pre></div>
+</div>
+</div></blockquote>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">maxRows</span></code> defaults to <code class="docutils literal notranslate"><span class="pre">-1</span></code> (unlimited) if not set and the
+SQL statement is not a <code class="docutils literal notranslate"><span class="pre">select</span></code> statement.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">maxRows</span></code> and <code class="docutils literal notranslate"><span class="pre">skipRows</span></code> may be specified, as a shortcut, as
+parameters to the exec function.  Placement of the <span class="green">Numbers</span> in the
+<code class="docutils literal notranslate"><span class="pre">exec()</span></code> function is arbitrary, except that the first number given
+will be treated as <code class="docutils literal notranslate"><span class="pre">maxRows</span></code> and the second, if present will be
+treated as <code class="docutils literal notranslate"><span class="pre">skipRows</span></code>.  Also note that if <code class="docutils literal notranslate"><span class="pre">maxRows</span></code> and/or
+<code class="docutils literal notranslate"><span class="pre">skipRows</span></code> is set in <code class="docutils literal notranslate"><span class="pre">options</span></code> above, the last set value will be
+used.</p>
+<p>Example:</p>
+</li>
+</ul>
+<blockquote>
+<div><div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;./mytestdb&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">sqlopts</span> <span class="o">=</span> <span class="p">{</span><span class="nx">maxRows</span><span class="o">:</span> <span class="mi">5</span><span class="p">,</span> <span class="nx">returnType</span><span class="o">:</span> <span class="s2">&quot;array&quot;</span><span class="p">};</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="s2">&quot;select * from mytable&quot;</span><span class="p">);</span>
+<span class="cm">/* expected results: 20 rows, skipping the first 10,</span>
+<span class="cm">   if 30 are available from &quot;mytable&quot;                */</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select * from mytable&quot;</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="nx">sqlopts</span><span class="p">);</span>
+<span class="cm">/* expected results: 5 rows, skipping the first 10,</span>
+<span class="cm">   if 15 are available from &quot;mytable&quot;.  The option maxRows</span>
+<span class="cm">   is specified last from within &quot;sqlopts&quot;, so it is used       */</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select * from mytable&quot;</span><span class="p">,</span> <span class="nx">sqlopts</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">10</span><span class="p">);</span>
+<span class="cm">/* expected results: 20 rows, skipping the first 10,</span>
+<span class="cm">   if 30 are available from &quot;mytable&quot;.  The parameter 20 is</span>
+<span class="cm">   specified last, so maxRows is overwritten and 20 is used     */</span>
+</pre></div>
+</div>
+</div></blockquote>
+</dd>
+<dt>Callback:</dt><dd><p>A <span class="green">Function</span> taking as parameters (<code class="docutils literal notranslate"><span class="pre">result_row</span></code>, <code class="docutils literal notranslate"><span class="pre">index</span></code>, <code class="docutils literal notranslate"><span class="pre">columns</span></code>, <code class="docutils literal notranslate"><span class="pre">countInfo</span></code>, <code class="docutils literal notranslate"><span class="pre">user_argument</span></code>).
 The callback is executed once for each row retrieved:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">result_row</span></code>: (<span class="green">Array</span>/<span class="green">Object</span>): depending on the setting of <code class="docutils literal notranslate"><span class="pre">returnType</span></code>
@@ -478,6 +558,10 @@ aliases selected and returned in results.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">countInfo</span></code>: an <span class="green">Object</span> as described above in <a class="reference internal" href="#countinfo">countinfo</a> if the
 <code class="docutils literal notranslate"><span class="pre">includeCounts</span></code> option is not set <code class="docutils literal notranslate"><span class="pre">false</span></code>.  Otherwise it will be
 <code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">user_argument</span></code>: a variable that is supplied to the callback after
+being set in the <a class="reference internal" href="#execopts"><span class="std std-ref">options</span></a> <code class="docutils literal notranslate"><span class="pre">arguments</span></code>
+option above.  If not set above, <code class="docutils literal notranslate"><span class="pre">undefined</span></code> will be passed as the
+fifth argument.</p></li>
 <li><p>Note: Regardless of <code class="docutils literal notranslate"><span class="pre">maxRows</span></code> setting , returning <code class="docutils literal notranslate"><span class="pre">false</span></code> from the
 <code class="docutils literal notranslate"><span class="pre">callback</span></code> will cancel the retrieval of any remaining rows.
 Returning <code class="docutils literal notranslate"><span class="pre">undefined</span></code> or any other value will allow the next row to be
@@ -836,8 +920,7 @@ returned from <a class="reference internal" href="#exec">exec()</a> is not neede
 <span class="cm">/* res = { email : &quot;user@example.com&quot; } */</span>
 </pre></div>
 </div>
-<p>See <a class="reference internal" href="sql-server-funcs.html#server-functions"><span class="std std-ref">Server functions</span></a> for a complete list of Server
-functions.</p>
+<p>Note: This returns <code class="docutils literal notranslate"><span class="pre">undefined</span></code> if a matching row is not found.</p>
 </div>
 <div class="section" id="set">
 <h2>set()<a class="headerlink" href="#set" title="Permalink to this headline">¶</a></h2>
@@ -1803,14 +1886,14 @@ query markup call by a script should use the <code class="docutils literal notra
 <p>The following example creates an abstract, marks up each abstract value from
 a table that matches the user’s submitted query string.  Each set (term) is
 color-coded differently, and the <code class="docutils literal notranslate"><span class="pre">abstract(body)</span></code> is HTML-escaped:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span>var results=&#39;&lt;div class=&quot;results&quot;&gt;&#39;;
-sql.exec(sql &quot;select abstract(body) abs from data_tbl where body like ?&quot;,
-     [query],
-     function(res) {
-        results += Sql.stringFormat(&#39;&lt;div class=&quot;hit&quot;&gt;%mIH&lt;/div&gt;&quot;, query, res.abs);
-     }
-);
-results +=&quot;&lt;/div&gt;&quot;;
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">results</span><span class="o">=</span><span class="s1">&#39;&lt;div class=&quot;results&quot;&gt;&#39;</span><span class="p">;</span>
+<span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select abstract(body) abs from data_tbl where body like ?&quot;</span><span class="p">,</span>
+     <span class="p">[</span><span class="nx">query</span><span class="p">],</span>
+     <span class="kd">function</span><span class="p">(</span><span class="nx">res</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">results</span> <span class="o">+=</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">stringFormat</span><span class="p">(</span><span class="s1">&#39;&lt;div class=&quot;hit&quot;&gt;%mIH&lt;/div&gt;&#39;</span><span class="p">,</span> <span class="nx">query</span><span class="p">,</span> <span class="nx">res</span><span class="p">.</span><span class="nx">abs</span><span class="p">);</span>
+     <span class="p">}</span>
+<span class="p">);</span>
+<span class="nx">results</span> <span class="o">+=</span><span class="s2">&quot;&lt;/div&gt;&quot;</span><span class="p">;</span>
 </pre></div>
 </div>
 <p>For more information on <code class="docutils literal notranslate"><span class="pre">abstract</span></code>, see <a class="reference internal" href="#abstract">abstract()</a> below and
@@ -1830,7 +1913,7 @@ results +=&quot;&lt;/div&gt;&quot;;
 </pre></div>
 </div>
 <p><strong>or</strong></p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="kr">abstract</span> <span class="o">=</span> <span class="nx">Sql</span><span class="p">.</span><span class="kr">abstract</span><span class="p">(</span><span class="nx">text</span> <span class="p">[,</span><span class="nx">max</span> <span class="p">[,</span><span class="nx">style</span> <span class="p">[,</span><span class="nx">query</span><span class="p">]]]);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="kr">abstract</span> <span class="o">=</span> <span class="nx">Sql</span><span class="p">.</span><span class="kr">abstract</span><span class="p">(</span><span class="nx">text</span> <span class="p">[,</span><span class="nx">max</span> <span class="p">[,</span><span class="nx">style</span> <span class="p">[,</span><span class="nx">query</span> <span class="p">[,</span><span class="nx">markup</span><span class="p">]]]]);</span>
 </pre></div>
 </div>
 <table class="docutils align-default">
@@ -1861,6 +1944,13 @@ results +=&quot;&lt;/div&gt;&quot;;
 <tr class="row-odd"><td><p>query</p></td>
 <td><p><span class="green">String</span></p></td>
 <td><p>query or keywords used to center the abstract.</p></td>
+</tr>
+<tr class="row-even"><td><p>markup</p></td>
+<td><p><span class="green">String</span> or
+<span class="green">Boolean</span></p></td>
+<td><p>perform markup as <a class="reference internal" href="#metamorph-hit-mark-up">Metamorph Hit Mark-up</a> above.
+May be <code class="docutils literal notranslate"><span class="pre">true</span></code> for “%mbH” or a <span class="green">String</span>
+for a custom format (such as “%mCH”).</p></td>
 </tr>
 </tbody>
 </table>
@@ -1935,6 +2025,20 @@ modes, so that it more closely reflects an index-obtained hit.</p>
 <span class="cm">/* abstract =</span>
 <span class="cm">   It is for us the living, rather, to be dedicated here to the</span>
 <span class="cm">   unfinished work which they who fought ...</span>
+<span class="cm">*/</span>
+
+<span class="kr">abstract</span> <span class="o">=</span> <span class="nx">Sql</span><span class="p">.</span><span class="kr">abstract</span><span class="p">(</span><span class="nx">gba</span><span class="p">,</span> <span class="p">{</span>
+    <span class="nx">max</span><span class="o">:</span><span class="mi">250</span><span class="p">,</span>
+    <span class="nx">style</span><span class="o">:</span> <span class="s2">&quot;querybest&quot;</span><span class="p">,</span>
+    <span class="nx">query</span><span class="o">:</span> <span class="s2">&quot;unfinished work&quot;</span><span class="p">,</span>
+    <span class="nx">markup</span><span class="o">:</span> <span class="s2">&quot;%mCH&quot;</span>
+<span class="p">});</span>
+<span class="cm">/* abstract =</span>
+<span class="cm">   The world will little note, nor long remember what we say here, but it can</span>
+<span class="cm">   never forget what they did here. &lt;span class=&quot;query&quot;&gt;It is for us the living,</span>
+<span class="cm">   rather, to be dedicated here to the &lt;span class=&quot;queryset1&quot;&gt;unfinished&lt;/span&gt;</span>
+<span class="cm">   &lt;span class=&quot;queryset2&quot;&gt;work&lt;/span&gt; which they who fought here have thus far</span>
+<span class="cm">   so nobly advanced. &lt;/span&gt;It is ...</span>
 <span class="cm">*/</span>
 </pre></div>
 </div>

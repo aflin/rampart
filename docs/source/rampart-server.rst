@@ -1068,15 +1068,10 @@ Built-in Directory Function
 Advanced Functions
 ~~~~~~~~~~~~~~~~~~
 
-The ``rampart-server`` module creates a ``mmap``\ ed buffer to efficiently store data
+The ``rampart-server`` module creates a buffer to efficiently store data
 that will be returned to the client by the webserver.  There is one buffer per thread
-and it is used from within each thread and shared with any child processes.  The size of
-this "server buffer" is controlled from the ``bufferMem`` setting in `start()`_ above.
+and it is used from within each thread.
 
-Though returning an object with, .e.g. ``{html: mydata}`` set is not limited by the size of 
-the server buffer, the functions below are so limited and will throw
-an error if the total size written to it is larger than the size allotted.
- 
 The request object contains the functions to manipulate and print to the server buffer, 
 which will be directly sent to the client without extra copying.
 
@@ -1129,11 +1124,6 @@ Note:
     that make up the totality of the data sent to the client, using
     ``req.printf`` or ``req.put`` is preferable.
     
-    When printing to the server buffer, each thread's buffer must be
-    large enough to hold all the data from every ``req.printf`` statement.
-    If the server buffer size is smaller than the data inserted, an error
-    will be thrown.
-
 req.put()
 """""""""
 
@@ -1317,6 +1307,196 @@ Below is a full example:
     });
 
     console.log("server started with pid: "+pid);
+
+Websockets
+~~~~~~~~~~
+
+The server also serves websocket connections.  The server
+callback function for a websocket connection operates much
+the same as a normal http callback, with a few exceptions:
+
+* A websocket callback is specified by prepending the path
+  in the ``map`` object with ``ws:``.
+
+* The mapped callback is run every time the client sends data over
+  the websocket.
+
+* Headers and any GET/POST variables are set once upon connection
+  in the ``req`` object, and are recycled every time new data
+  from the client is received.
+
+* Replies may be returned asynchronously using :ref:`rampart.event <rampart-main:rampart.event>`
+  functions or :ref:`setTimeout <rampart-main:setTimeout()>` using the
+  ``req.wsSend()`` function.
+
+* Since the ``req`` object is recycled, variables can be attached to it
+  that will be available on subsequent callbacks.  Example: setting
+  ``req.myvar=saveMe`` would allow the contents of ``saveMe`` to be used 
+  for the next request.
+
+* ``req.body`` is empty upon first connecting.  In subsequent calls of the 
+  callback, ``req.body`` contains the text or binary data sent by the
+  client.
+
+* Upon returning, the callback function may return ``undefined`` or
+  ``null``, if it has no data to send, or if the data has been stored
+  using ``req.printf`` or ``req.put`` above.
+  Data can also be sent by returning the same values as is used in
+  ``req.wsSend`` below.
+
+In addition, several variables and functions are available only when using
+websockets:
+
+req.wsSend()
+""""""""""""
+
+Send data to the client.  How it is sent depends on the type of the data
+being sent (the type of the variable given to wsSend as a parameter):
+
+   * :green:`String` - The string is sent as text.
+   * :green:`Object` - The object is converted to JSON and send as a string.
+   * :green:`Buffer` - The object is send as binary data.
+
+In addition to sending the data given in the parameter, any data which was
+added via ``req.printf`` or ``req.put`` is prepended to the outgoing data.
+
+If all the necessary data has been stored in the server's buffer using
+``req.printf`` or ``req.put``, the data can be sent to the client by
+calling  ``req.wsSend(null)``.
+
+req.wsEnd()
+""""""""""""
+
+Close the websocket connection.
+
+req.wsOnDisconnect()
+""""""""""""""""""""
+
+Takes a :green:`Function` as its sole parameter.  A function to run when
+either the client disconnects or req.wsEnd() is called.
+
+req.wsIsBin
+"""""""""""
+
+This variable is set ``true`` when the incoming data in ``req.body`` is sent from
+the client as binary data.  Otherwise this is ``false``.
+
+req.count
+"""""""""
+
+This variable is set to the number of times the client has sent data.  On
+first run of the callback, it is set to ``0`` and is incremented on each
+subsequent callback.
+
+req.websocketId
+"""""""""""""""
+
+A unique number to identify the connection to the client.
+
+Example echo/chat server
+""""""""""""""""""""""""
+
+Below is a simplified version of an echo/chat server using websockets
+and :ref:`rampart.event <rampart-main:rampart.event>` functions.
+
+.. code-block:: javascript
+
+    /* load the http server module */
+    var server=require("rampart-server");
+
+    /* function just returns html */
+    function fp(req)
+    {
+        return {html: `<html><body>
+        <div id="chatbox"></div>
+        <input id="chatin" type=text style="width:50%">
+        <button id="send">send</button>
+        <script>
+            var chatbox = document.getElementById('chatbox');
+            var chatin = document.getElementById('chatin');
+            var send = document.getElementById('send');
+            var socket = new WebSocket("ws://localhost:8088/ws");
+
+            function showmsg(msg){
+                var node = document.createElement('p');
+                var textnode = document.createTextNode(msg.data);
+                node.appendChild(textnode);
+                chatbox.appendChild(node);
+            }
+
+            socket.addEventListener('open', function(e){
+                socket.onmessage = showmsg;
+            });
+
+            send.onclick = function(){
+                if(socket.readyState === socket.OPEN)
+                    socket.send(chatin.value);
+            };
+
+        </script>
+        </body></html>`};
+    }
+
+    function ws(req)
+    {
+        /* setup upon first connecting */
+        if (!req.count)
+        {
+            /* what to do if client disconnects */
+            req.wsOnDisconnect(function(){
+                //remove our event callback function */
+                rampart.event.off("myev", "myfunc"+req.websocketId);
+                rampart.utils.printf("disconnected...\n");
+            });
+
+            rampart.event.on("myev", "myfunc"+req.websocketId, function(req, data)
+            {
+                // only send if from someone else 
+                if (data.id != req.websocketId)
+                    req.wsSend(data.msg);
+            }, req);
+
+            return "Greetings, I'm an example echo/chat server";
+        }
+
+        //convert body from a buffer to a string
+        req.body = rampart.utils.bufferToString(req.body);
+
+        if(req.body.length)
+        {
+            /* send message to any other client that is connected */
+            rampart.event.trigger(
+                "myev", 
+                {
+                    id: req.websocketId, 
+                    msg: "a message from "+req.websocketId + ": " + req.body
+                }
+            );
+
+            /* send message to this client */
+            return req.body;
+        }
+        //do nothing if we get to here.
+    }
+
+    /* Start server */
+    var pid=server.start(
+    {
+        user: "root",
+
+        map:
+        {
+            "/" : fp,
+            "ws:/ws": ws
+        }
+    });
+
+    rampart.utils.printf("\ngo here:http://127.0.0.1:8088/\n");
+
+For a more complete example of using events and websockets,
+see the ``rampart/examples/web_server/modules/wschat.js``
+script.
+
 
 Key to Mime Mappings
 --------------------

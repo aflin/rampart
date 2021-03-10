@@ -172,8 +172,13 @@ statement to be executed.
 .. _sql_params:
 
 SQL Parameters:
-    Sql Parameters are specified in an :green:`Array` with each member
-    correspond to each ``?`` in the sql statement.  Example:
+    SQL Parameters are specified in an :green:`Array` with each member
+    corresponding to each ``?`` in the SQL statement. Alternatively parameters
+    can be named in an :green:`Object` with each value in the
+    :green:`Object` corresponding to each ``?key_name`` in the SQL
+    statement. 
+
+    Example:
 
 .. code-block:: javascript
 
@@ -198,21 +203,45 @@ Note that if there is only one parameter, it still must be contained in an
 Options:
  The ``options`` :green:`Object` may contain any of the following:
 
-   * ``maxRows`` (:green:`Number`):  maximum number of rows to return (default: 10).
+   * ``maxRows`` (:green:`Number`):  maximum number of rows to return (default: 10
+     for ``select`` statements; unlimited (``-1``) for others).  See Caveats
+     below.
+
    * ``skipRows`` (:green:`Number`): the number of rows to skip (default: 0).
+
    * ``returnType`` (:green:`String`): Determines the format of the ``results`` value
      in the return :green:`Object`.
 
-      * default: an :green:`Array` of :green:`Objects` as described :ref:`below <returnval>`.
+      * **default**: if ``returnType`` is not set, ``select`` statements,
+        ``results`` will be an :green:`Array` of :green:`Objects` as if
+        ``"object"`` was set.  For ``delete``, ``update`` and ``insert``
+        statements, ``results`` will be an empty array as if ``"novars"``
+        was set.
 
-      * ``"array"``: an :green:`Array` of :green:`Arrays`. The outer :green:`Array` members correspond to
-        each row fetched.  The inner :green:`Array` members correspond to
-        the fields returned in each row.  Note that column names are still
-        available, in order, in :ref:`columns <returnval>`.
+      * ``"object"``: An :green:`Array` of :green:`Objects`.  Each
+        green:`Array` member  correspond to each row fetched. Each
+        :green:`Object` has its property names (keys) set the names of the
+        corresponding column and its values set to the field value of the
+        corresponding row for the named column.
 
-      * ``"novars"``: an empty :green:`Array` is returned.  The sql statement is
-        still executed.  This may be useful for updates and deletes
-        where the return value would otherwise not be used.
+      * ``"array"``: An :green:`Array` of :green:`Arrays`. The outer :green:`Array` 
+        members correspond to each row fetched.  The inner :green:`Array`
+        members correspond to the fields returned in each row.  Note that
+        column names are still available, in order, in :ref:`columns <returnval>`.
+
+      * ``"novars"``: An empty :green:`Array` is returned.  The sql statement is
+        still executed.  This is the default for inserts, updates and deletes
+        where the return value would otherwise not be used.  
+        
+      * **Note**: If the values of a deleted, inserted or updated row are needed,
+        ``returnType`` can be set to either ``"object"`` or ``"array"`` and
+        the statement will be executed as normal with ``results`` set as if
+        the row was selected.
+
+   * ``returnRows`` (:green:`Boolean`): If set ``true``, performs the same
+     function as ``{returnType: "object"}`` above.  If set ``false``,
+     performs the same function at ``{returnType: "novars"}`` above.  This
+     setting overrides the ``returnType`` setting if both are present.
 
    * ``includeCounts`` (:green:`Boolean`): whether to include count
      information in the return :green:`Object`.  Default is ``true``.  The
@@ -223,10 +252,67 @@ Options:
      :ref:`text search <sql3:Intelligent Text Search Queries>` on a field
      with a fulltext index.  If count information is not available, the
      :green:`Numbers` will be negative.  See :ref:`countInfo <countinfo>`
-     below.
+     below.  If ``false``, `countInfo <countinfo>` will be ``undefined``.
+
+   * ``argument``: (aka ``arg``). A variable of any type to be passed to the
+     callback below.
+
+Caveats for Options, maxRows and skipRows:
+   *  SQL ``select`` statements are by default limited to 10
+     rows (``{maxRows:10}``) unless ``maxRows`` above is set.  This default
+     can be changed by setting the special variable ``sql.selectMaxRows``. 
+
+     Example:
+
+     .. code-block:: javascript
+     
+        var Sql = require("rampart-sql");
+           
+        var sql = new Sql.init("./mytestdb");
+        
+        sql.selectMaxRows=20;
+        
+        var res = sql.exec("select * from mytable");
+        /* expected results: 20 rows, if 20 are available from "mytable" */
+                 
+
+   *  ``maxRows`` defaults to ``-1`` (unlimited) if not set and the
+      SQL statement is not a ``select`` statement.
+
+   *  ``maxRows`` and ``skipRows`` may be specified, as a shortcut, as
+      parameters to the exec function.  Placement of the :green:`Numbers` in the
+      ``exec()`` function is arbitrary, except that the first number given
+      will be treated as ``maxRows`` and the second, if present will be
+      treated as ``skipRows``.  Also note that if ``maxRows`` and/or
+      ``skipRows`` is set in ``options`` above, the last set value will be
+      used.
+      
+      Example:
+      
+     .. code-block:: javascript
+     
+        var Sql = require("rampart-sql");
+           
+        var sql = new Sql.init("./mytestdb");
+
+        var sqlopts = {maxRows: 5, returnType: "array"};
+
+        var res = sql.exec(20, 10, "select * from mytable");
+        /* expected results: 20 rows, skipping the first 10,
+           if 30 are available from "mytable"                */
+
+        var res = sql.exec("select * from mytable", 20, 10, sqlopts);
+        /* expected results: 5 rows, skipping the first 10,
+           if 15 are available from "mytable".  The option maxRows
+           is specified last from within "sqlopts", so it is used       */
+
+        var res = sql.exec("select * from mytable", sqlopts, 20, 10);
+        /* expected results: 20 rows, skipping the first 10,
+           if 30 are available from "mytable".  The parameter 20 is 
+           specified last, so maxRows is overwritten and 20 is used     */
 
 Callback:
-   A :green:`Function` taking as parameters (``result_row``, ``index``, ``columns``, ``countInfo``).
+   A :green:`Function` taking as parameters (``result_row``, ``index``, ``columns``, ``countInfo``, ``user_argument``).
    The callback is executed once for each row retrieved:
 
    * ``result_row``: (:green:`Array`/:green:`Object`): depending on the setting of ``returnType``
@@ -241,6 +327,11 @@ Callback:
    * ``countInfo``: an :green:`Object` as described above in `countinfo`_ if the
      ``includeCounts`` option is not set ``false``.  Otherwise it will be
      ``undefined``. 
+
+   * ``user_argument``: a variable that is supplied to the callback after
+     being set in the :ref:`options <execopts>` ``arguments``
+     option above.  If not set above, ``undefined`` will be passed as the
+     fifth argument.
 
    * Note: Regardless of ``maxRows`` setting , returning ``false`` from the
      ``callback`` will cancel the retrieval of any remaining rows. 
@@ -648,8 +739,7 @@ can be more easily written as:
    var res = sql.one("select user from Users where user=?",[user_name]);
    /* res = { email : "user@example.com" } */
 
-See :ref:`sql-server-funcs:Server functions` for a complete list of Server
-functions.
+Note: This returns ``undefined`` if a matching row is not found.
 
 set()
 ~~~~~
@@ -1736,10 +1826,10 @@ color-coded differently, and the ``abstract(body)`` is HTML-escaped:
 .. code-block:: javascript
 
    var results='<div class="results">';
-   sql.exec(sql "select abstract(body) abs from data_tbl where body like ?",
+   sql.exec("select abstract(body) abs from data_tbl where body like ?",
    	[query],
    	function(res) {
-   	   results += Sql.stringFormat('<div class="hit">%mIH</div>", query, res.abs);
+   	   results += Sql.stringFormat('<div class="hit">%mIH</div>', query, res.abs);
    	}
    );
    results +="</div>";
@@ -1766,7 +1856,7 @@ The abstract function generates an abstract of a given portion of text.
 
 .. code-block:: javascript
 
-    var abstract = Sql.abstract(text [,max [,style [,query]]]);
+    var abstract = Sql.abstract(text [,max [,style [,query [,markup]]]]);
 
 
 +--------+------------------+---------------------------------------------------+
@@ -1779,6 +1869,10 @@ The abstract function generates an abstract of a given portion of text.
 |style   |:green:`String`   | Method used to generate the abstract.             |
 +--------+------------------+---------------------------------------------------+
 |query   |:green:`String`   | query or keywords used to center the abstract.    |
++--------+------------------+---------------------------------------------------+
+|markup  |:green:`String` or| perform markup as `Metamorph Hit Mark-up`_ above. |
+|        |:green:`Boolean`  | May be ``true`` for "%mbH" or a :green:`String`   |
+|        |                  | for a custom format (such as "%mCH").             |
 +--------+------------------+---------------------------------------------------+
 
 Return Value:
@@ -1861,6 +1955,20 @@ Example:
    /* abstract =
       It is for us the living, rather, to be dedicated here to the
       unfinished work which they who fought ...
+   */
+
+   abstract = Sql.abstract(gba, {
+       max:250, 
+       style: "querybest", 
+       query: "unfinished work", 
+       markup: "%mCH"
+   });
+   /* abstract = 
+      The world will little note, nor long remember what we say here, but it can 
+      never forget what they did here. <span class="query">It is for us the living,
+      rather, to be dedicated here to the <span class="queryset1">unfinished</span>
+      <span class="queryset2">work</span> which they who fought here have thus far
+      so nobly advanced. </span>It is ...
    */
 
 sandr()

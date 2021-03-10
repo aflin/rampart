@@ -310,13 +310,16 @@ different from <code class="docutils literal notranslate"><span class="pre">url<
 </ul>
 <p>Other possible properties of the results <span class="green">Object</span> are (not all
 apply to non-http requests):</p>
-<ul class="simple">
+<ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">text</span></code> - a <span class="green">String</span> copy of the <code class="docutils literal notranslate"><span class="pre">body</span></code> contents if
-<code class="docutils literal notranslate"><span class="pre">returnText</span></code> is set <code class="docutils literal notranslate"><span class="pre">true</span></code> in <a class="reference internal" href="#curl-options">Curl Options</a>.  Same as
-<code class="docutils literal notranslate"><span class="pre">rampart.utils.bufferToString(result.body)</span></code>.  Note, internally this
-requires a copy of data, whereas the <code class="docutils literal notranslate"><span class="pre">body</span></code> <span class="green">Buffer</span> is directly
-written to by the Curl library.  If the return data is large, it is
-more efficient to have <code class="docutils literal notranslate"><span class="pre">returnText</span></code> set <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
+<code class="docutils literal notranslate"><span class="pre">returnText</span></code> is set <code class="docutils literal notranslate"><span class="pre">true</span></code> in <a class="reference internal" href="#curl-options">Curl Options</a>.  It is set to the</p>
+<blockquote>
+<div><p>value equivalent to <code class="docutils literal notranslate"><span class="pre">rampart.utils.bufferToString(result.body)</span></code>.  Note, internally
+this requires a copy of data, whereas the <code class="docutils literal notranslate"><span class="pre">body</span></code> <span class="green">Buffer</span> is
+directly written to by the Curl library.  If the return data is large,
+it is more efficient to have <code class="docutils literal notranslate"><span class="pre">returnText</span></code> set <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p>
+</div></blockquote>
+</li>
 <li><p><code class="docutils literal notranslate"><span class="pre">localIp</span></code> - a <span class="green">String</span>, the IP address used to connect to the remote server.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">localPort</span></code> - a <span class="green">Number</span>, the port used to connect to the remote server.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">serverIp</span></code> - a <span class="green">String</span>, the IP address of the remote server.</p></li>

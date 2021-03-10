@@ -133,11 +133,11 @@ fetch() Results
     apply to non-http requests):
     
     * ``text`` - a :green:`String` copy of the ``body`` contents if
-      ``returnText`` is set ``true`` in `Curl Options`_.  Same as
-      ``rampart.utils.bufferToString(result.body)``.  Note, internally this
-      requires a copy of data, whereas the ``body`` :green:`Buffer` is directly
-      written to by the Curl library.  If the return data is large, it is
-      more efficient to have ``returnText`` set ``false``.
+      ``returnText`` is set ``true`` in `Curl Options`_.  It is set to the
+		value equivalent to ``rampart.utils.bufferToString(result.body)``.  Note, internally
+		this requires a copy of data, whereas the ``body`` :green:`Buffer` is
+		directly written to by the Curl library.  If the return data is large,
+		it is more efficient to have ``returnText`` set ``false``.
 
     * ``localIp`` - a :green:`String`, the IP address used to connect to the remote server.
     
