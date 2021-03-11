@@ -4541,6 +4541,7 @@ evhtp_callback_new(const char * path, evhtp_callback_type type, evhtp_callback_c
     if (strncmp(path, "ws:", 3) == 0) {
         hcb->websock = 1;
         path        += 3;
+        while(*(path+1)=='/') path++;
     }
 
     hcb->type  = type;
