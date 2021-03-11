@@ -2604,6 +2604,95 @@ duk_ret_t duk_rp_mlock(duk_context *ctx)
     return 1;
 }
 
+/* todo put tickify in its own .c and .h file */
+#define ST_NONE 0
+#define ST_DQ   1
+#define ST_SQ   2
+#define ST_BT   3
+#define ST_BS   4
+
+char * tickify(char *src, size_t sz, int *err, int *ln);
+
+static duk_ret_t include_js(duk_context *ctx)
+{
+    const char *script= REQUIRE_STRING(ctx, -1, "rampart.import: - parameter must be a String (path of script to import)" );
+    const char *bfn=NULL;
+    size_t slen = strlen(script);
+    RPPATH rp;
+    char *buffer = NULL;
+    rp=rp_find_path((char*)script, "includes/");
+
+    if(!strlen(rp.path) && strcmp(&script[slen-3], ".js") )
+    {
+        char jsscript[slen + 4];
+        strcpy(jsscript, script);
+        strcat(jsscript, ".js");
+        rp=rp_find_path(jsscript, "includes/");
+    }
+
+    if(!strlen(rp.path))
+    {
+        RP_THROW(ctx, "could not include file %s: %s", script,  strerror(errno));
+    }
+
+    FILE *f = fopen(rp.path, "r");
+    if (!f)
+        RP_THROW(ctx, "Could not open %s: %s\n", rp.path, strerror(errno));
+
+    REMALLOC(buffer, rp.stat.st_size + 1);
+    slen = fread(buffer, 1, rp.stat.st_size, f);
+    if (rp.stat.st_size != slen)
+        RP_THROW(ctx, "Error loading file %s: %s\n", rp.path, strerror(errno));
+
+    buffer[rp.stat.st_size]='\0';
+
+    if (! (bfn=duk_rp_babelize(ctx, rp.path, buffer, rp.stat.st_mtime, 1)) )
+    {
+        /* No babel, normal compile */
+        int err, lineno;
+        char *isbabel = strstr(rp.path, "/babel.js");
+        /* don't tickify actual babel.js source */
+        if ( !(isbabel && isbabel == rp.path + strlen(rp.path) - 9) )
+        {
+            char *tickified = tickify(buffer, rp.stat.st_size, &err, &lineno);
+            free(buffer);
+            buffer = tickified;
+            if (err)
+            {
+                char *msg="";
+                switch (err) {
+                    case ST_BT:
+                        msg="unterminated or illegal template literal"; break;
+                    case ST_SQ:
+                        msg="unterminated string"; break;
+                    case ST_DQ:
+                        msg="unterminated string"; break;
+                    case ST_BS:
+                        msg="invalid escape"; break;
+                }
+                RP_THROW(ctx, "SyntaxError: %s (line %d)\n    at %s:%d", msg, lineno, rp.path, lineno);
+            }
+        }
+
+        duk_push_string(ctx, buffer);
+    }
+
+    fclose(f);
+    free(buffer);
+
+    if(bfn)
+    {
+        duk_push_string(ctx, bfn);
+        free((char*)bfn);
+    }
+    else
+        duk_push_string(ctx, rp.path);
+    duk_compile(ctx, DUK_COMPILE_EVAL);
+    duk_call(ctx,0);
+    return 0;
+}
+
+
 
 
 void duk_rampart_init(duk_context *ctx)
@@ -2699,6 +2788,9 @@ void duk_rampart_init(duk_context *ctx)
     duk_push_c_function(ctx, duk_rp_globalize,2);
     duk_put_prop_string(ctx, -2, "globalize");
     
+    duk_push_c_function(ctx, include_js, 1);
+    duk_put_prop_string(ctx, -2, "include");
+
     duk_put_global_string(ctx, "rampart");
 }
 

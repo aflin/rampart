@@ -467,8 +467,8 @@ static char *checkbabel(char *src)
 }
 
 
-/* babelized source and fn is left on top of stack*/
-const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime)
+/* babelized source is left on top of stack*/
+const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime, int exclude_strict)
 {
     char *s, *babelcode=NULL;
     char *opt;
@@ -635,6 +635,12 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
                     {
                         fprintf(stderr,"error fread(): error reading file '%s'\n", babelsrc);
                     }
+                    if(exclude_strict)
+                    {
+                        int k=0;
+                        while(k<13)
+                            babelcode[k++]=' ';
+                    }
                     duk_push_lstring(ctx, babelcode, (duk_size_t)babstat.st_size);
                     free(babelcode);
                     babelcode=(char *)duk_get_string(ctx,-1);
@@ -684,6 +690,12 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
             fclose(f);
         }
     }
+    if(exclude_strict)
+    {
+        duk_push_string(ctx, babelcode+13);
+        duk_replace(ctx, -2);
+    }
+
     end:
     free(opt);
     return (const char*) (strlen(babelsrc)) ? strdup(babelsrc): strdup(fn);
@@ -886,7 +898,6 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
 
 #define copy(input) do{\
     if ( ! (getstate() == ST_BT || ( sstack_no>1 && sstack[sstack_no-1]==ST_BT) )){\
-    /*if(getstate() != ST_BT && ! (sstack_no<2 || sstack[sstack_no-1]==ST_BT)  ){*/\
         if(out==outbeg+osz-1){\
             int pos = out - outbeg;\
             osz+=1024;\
@@ -1342,7 +1353,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                 adv;
                 /* This succeeds for some (like return and `` on different lines), but not if 
                    function name and tag template are in different lines
-                   BTW: ASL..., STBY
+                   BTW: ASI..., STBY
                 if (!startexp)
                     startexp=1;
                 */
@@ -1842,7 +1853,7 @@ int main(int argc, char *argv[])
             duk_pop(ctx);
 
             /* push babelized source to stack if available */
-            if (! (babel_source_filename=duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime)) )
+            if (! (babel_source_filename=duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime, 0)) )
             {
                 /* No babel, normal compile */
                 int err, lineno;

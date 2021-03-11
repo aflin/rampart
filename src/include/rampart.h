@@ -293,7 +293,7 @@ int rp_mkdir_parent(const char *path, mode_t mode);
 RPPATH rp_get_home_path(char *file, char *subdir);
 
 /* babelize in cmdline.c */
-const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime);
+const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime, int exclude_strict);
 
 extern pthread_mutex_t loglock;
 extern pthread_mutex_t errlock;
