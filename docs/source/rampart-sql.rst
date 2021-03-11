@@ -244,7 +244,7 @@ Options:
      setting overrides the ``returnType`` setting if both are present.
 
    * ``includeCounts`` (:green:`Boolean`): whether to include count
-     information in the return :green:`Object`.  Default is ``true``.  The
+     information in the return :green:`Object`.  Default is ``false``.  The
      information will be returned as an :green:`Object` in the
      ``sql.exec()`` return :green:`Object` as the value of the key
      ``countInfo`` (or as the fourth parameter to a callback :green:`Function`).  The

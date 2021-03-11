@@ -100,6 +100,15 @@
 <li class="toctree-l2"><a class="reference internal" href="#rampart-global-variable-and-functions">Rampart Global Variable and Functions</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#rampart-globalize">rampart.globalize</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#rampart-utils">rampart.utils</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rampart-event">rampart.event</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#rampart-event-on">rampart.event.on()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#rampart-event-trigger">rampart.event.trigger()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#rampart-event-off">rampart.event.off()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#rampart-event-remove">rampart.event.remove()</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#example">Example</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#rampart-include">rampart.include</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#rampart-import">rampart.import</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#csvfile">csvFile</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#csv">csv</a></li>
@@ -120,21 +129,13 @@
 <li class="toctree-l3"><a class="reference internal" href="#module-search-path">Module Search Path</a></li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="#experimental-syntax">Experimental Syntax</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#extra-javascript-functionality">Extra JavaScript Functionality</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#object-values">Object.values()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#template-literals">Template Literals</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#tagged-functions">Tagged Functions</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#rest-parameters">Rest Parameters</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#template-literals-and-sprintf">Template Literals and sprintf</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#settimeout">setTimeout()</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="#rampart-event">rampart.event</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#rampart-event-on">rampart.event.on()</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#rampart-event-trigger">rampart.event.trigger()</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#rampart-event-off">rampart.event.off()</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#rampart-event-remove">rampart.event.remove()</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#example">Example</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#additional-global-variables-and-functions">Additional Global Variables and Functions</a></li>
@@ -274,19 +275,20 @@ following:</p>
 <li><p>Standard module support for <code class="docutils literal notranslate"><span class="pre">C</span></code> and <code class="docutils literal notranslate"><span class="pre">JavaScript</span></code> modules via the
 <code class="docutils literal notranslate"><span class="pre">require()</span></code> function.</p></li>
 <li><p>File and C-functions utilities such as <code class="docutils literal notranslate"><span class="pre">printf</span></code>, <code class="docutils literal notranslate"><span class="pre">fseek</span></code>, and <code class="docutils literal notranslate"><span class="pre">exec</span></code>.</p></li>
-<li><p>Included <code class="docutils literal notranslate"><span class="pre">C</span></code> modules (<code class="docutils literal notranslate"><span class="pre">rampart-ramis</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-curl</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-sql</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-server</span></code>
-<code class="docutils literal notranslate"><span class="pre">rampart-html</span></code> and <code class="docutils literal notranslate"><span class="pre">rampart-crypto</span></code>).</p></li>
-<li><p>Minimal event loop using <code class="docutils literal notranslate"><span class="pre">libevent2</span></code></p></li>
+<li><p>Included <code class="docutils literal notranslate"><span class="pre">C</span></code> modules (<code class="docutils literal notranslate"><span class="pre">rampart-sql</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-server</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-curl</span></code>,
+<code class="docutils literal notranslate"><span class="pre">rampart-crypto</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-html</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-lmdb</span></code>
+<code class="docutils literal notranslate"><span class="pre">rampart-cmark</span></code> and <code class="docutils literal notranslate"><span class="pre">rampart-robots</span></code>).</p></li>
+<li><p>Event loop using <code class="docutils literal notranslate"><span class="pre">libevent2</span></code>.</p></li>
 <li><p>ECMA 2015, 2016, 2017 and 2018 support using the <a class="reference external" href="https://babeljs.io/">Babel</a>
 JavaScript transpiler.</p></li>
 <li><p>Full Text Search and SQL databasing via <code class="docutils literal notranslate"><span class="pre">rampart-sql</span></code>.</p></li>
-<li><p>Fast NOSQL database via <code class="docutils literal notranslate"><span class="pre">rampart-ramis</span></code>.</p></li>
 <li><p>Multi-threaded http(s) server from libevhtp via <code class="docutils literal notranslate"><span class="pre">rampart-server</span></code>.</p></li>
 <li><p>http, ftp, etc. client functionality via <code class="docutils literal notranslate"><span class="pre">rampart-curl</span></code>.</p></li>
 <li><p>Cryptography functions from Openssl via <code class="docutils literal notranslate"><span class="pre">rampart-crypto</span></code>.</p></li>
 <li><p>Html parsing and and error correcting via <code class="docutils literal notranslate"><span class="pre">rampart-html</span></code>.</p></li>
+<li><p>Fast NOSQL database via <code class="docutils literal notranslate"><span class="pre">rampart-lmdb</span></code>.</p></li>
 <li><p>Simple Event functions via <a class="reference internal" href="#rampart-event">rampart.event</a>.</p></li>
-<li><p><a class="reference internal" href="#experimental-syntax">Experimental Syntax</a>.</p></li>
+<li><p><a class="reference internal" href="#extra-javascript-functionality">Extra JavaScript Functionality</a>.</p></li>
 </ul>
 </div>
 </div>
@@ -359,6 +361,152 @@ the named properties will be exported.</p></td>
 <p>A collection of utility functions.
 See <a class="reference internal" href="rampart-utils.html#rampart-utils"><span class="std std-ref">this page</span></a>
 for full description of functions.</p>
+</div>
+<div class="section" id="rampart-event">
+<h3>rampart.event<a class="headerlink" href="#rampart-event" title="Permalink to this headline">¶</a></h3>
+<p>Rampart can execute functions from within its event loop using its own
+event-on-trigger syntax.</p>
+<div class="section" id="rampart-event-on">
+<h4>rampart.event.on()<a class="headerlink" href="#rampart-event-on" title="Permalink to this headline">¶</a></h4>
+<p>Insert a named function to be run upon triggering a named event.  If the named
+event does not exist, it will be created.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">on</span><span class="p">(</span><span class="nx">eventName</span><span class="p">,</span> <span class="nx">funcName</span><span class="p">,</span> <span class="nx">callback</span><span class="p">,</span> <span class="nx">callbackUserVar</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">eventName</span></code> is an arbitrary <span class="green">String</span> used to identify, trigger
+and remove the event using the <a class="reference internal" href="#rampart-event-remove">rampart.event.remove()</a> function below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">funcName</span></code> is an arbitrary <span class="green">String</span> used to identify and remove
+the callback function using the <a class="reference internal" href="#rampart-event-off">rampart.event.off()</a> function below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">callback</span></code> is a <span class="green">Function</span> to be executed when the event is triggered.
+It is called, when triggered, as such: <code class="docutils literal notranslate"><span class="pre">callback(callbackUserVar,</span> <span class="pre">callbackTriggerVar)</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">callbackUserVar</span></code> is an arbitrary variable which will be passed to the <code class="docutils literal notranslate"><span class="pre">callback</span></code>
+<span class="green">Function</span> as its first parameter.</p></li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="rampart-event-trigger">
+<h4>rampart.event.trigger()<a class="headerlink" href="#rampart-event-trigger" title="Permalink to this headline">¶</a></h4>
+<p>Trigger a named event, calling all the callbacks registered under the given name.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">trigger</span><span class="p">(</span><span class="nx">eventName</span><span class="p">,</span> <span class="nx">callbackTriggerVar</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">eventName</span></code> is the <span class="green">String</span> used when registering the event with <a class="reference internal" href="#rampart-event-on">rampart.event.on()</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">callbackTriggerVar</span></code> is the second parameter passed to the <code class="docutils literal notranslate"><span class="pre">callback</span></code> function specified
+when the event and function were registered with <a class="reference internal" href="#rampart-event-on">rampart.event.on()</a>.</p></li>
+<li><p><strong>Caveat</strong>, the <code class="docutils literal notranslate"><span class="pre">callbackTriggerVar</span></code> must be a variable which
+can be serialized using <a class="reference external" href="https://duktape.org/guide.html#builtin-cbor">CBOR</a>.
+Because this function may trigger events that span several threads and Duktape stacks, when
+used with the <a class="reference internal" href="rampart-server.html#the-rampart-server-http-module"><span class="std std-ref">rampart-server</span></a>
+module, special variables such as <code class="docutils literal notranslate"><span class="pre">req</span></code> (see:
+<a class="reference internal" href="rampart-server.html#the-request-object"><span class="std std-ref">The Request Object</span></a>) may contain
+functions and hidden state variables which cannot be moved from stack
+to stack.  In most cases, it will not be limiting since each callback is run on its own thread/stack
+and can take a <code class="docutils literal notranslate"><span class="pre">callbackUserVar</span></code> which does not have the above limitations.</p></li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="rampart-event-off">
+<h4>rampart.event.off()<a class="headerlink" href="#rampart-event-off" title="Permalink to this headline">¶</a></h4>
+<p>Remove a named function from the list of functions for the given event.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">off</span><span class="p">(</span><span class="nx">eventName</span><span class="p">,</span> <span class="nx">funcName</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">eventName</span></code> is a <span class="green">String</span>, the <code class="docutils literal notranslate"><span class="pre">eventName</span></code> passed to the <cite>rampart.utils.on()</cite>
+function above.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">funcName</span></code> is a <span class="green">String</span>, the <code class="docutils literal notranslate"><span class="pre">funcName</span></code> passed to the <cite>rampart.utils.on()</cite>
+function above.</p></li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="rampart-event-remove">
+<h4>rampart.event.remove()<a class="headerlink" href="#rampart-event-remove" title="Permalink to this headline">¶</a></h4>
+<p>Remove all function from the list of functions for the given event. This effectively
+removes the event.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">remove</span><span class="p">(</span><span class="nx">eventName</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">eventName</span></code> is a <span class="green">String</span>, the <code class="docutils literal notranslate"><span class="pre">eventName</span></code> passed to the <cite>rampart.utils.on()</cite>
+function above.</p></li>
+</ul>
+</div></blockquote>
+</div>
+<div class="section" id="example">
+<h4>Example<a class="headerlink" href="#example" title="Permalink to this headline">¶</a></h4>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">usr_var</span> <span class="o">=</span> <span class="s2">&quot;I&#39;m a user variable.&quot;</span><span class="p">;</span>
+
+<span class="kd">function</span> <span class="nx">myCallback</span> <span class="p">(</span><span class="nx">uservar</span><span class="p">,</span><span class="nx">triggervar</span><span class="p">){</span>
+
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">uservar</span><span class="p">,</span> <span class="s2">&quot;Triggervar = &quot;</span><span class="o">+</span><span class="nx">triggervar</span><span class="p">);</span>
+    <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">sleep</span><span class="p">(</span><span class="mf">0.5</span><span class="p">);</span>
+
+    <span class="k">if</span><span class="p">(</span><span class="nx">triggervar</span><span class="o">&gt;</span><span class="mi">4</span><span class="p">)</span>
+        <span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">remove</span><span class="p">(</span><span class="s2">&quot;myev&quot;</span><span class="p">);</span>
+
+    <span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">trigger</span><span class="p">(</span><span class="s2">&quot;myev&quot;</span><span class="p">,</span> <span class="nx">triggervar</span><span class="o">+</span><span class="mi">1</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">on</span><span class="p">(</span><span class="s2">&quot;myev&quot;</span><span class="p">,</span> <span class="s2">&quot;myfunc&quot;</span><span class="p">,</span> <span class="nx">myCallback</span><span class="p">,</span> <span class="nx">usr_var</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">trigger</span><span class="p">(</span><span class="s2">&quot;myev&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+<span class="cm">I&#39;m a user variable. Triggervar = 1</span>
+<span class="cm">I&#39;m a user variable. Triggervar = 2</span>
+<span class="cm">I&#39;m a user variable. Triggervar = 3</span>
+<span class="cm">I&#39;m a user variable. Triggervar = 4</span>
+<span class="cm">I&#39;m a user variable. Triggervar = 5</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+<p>See also: the <a class="reference internal" href="rampart-server.html#example-echo-chat-server"><span class="std std-ref">Echo/Chat Server Example</span></a>.</p>
+<p>For a more complete example of events using the webserver and websockets,
+see the <code class="docutils literal notranslate"><span class="pre">rampart/examples/web_server/modules/wschat.js</span></code>
+script.</p>
+</div>
+</div>
+<div class="section" id="rampart-include">
+<h3>rampart.include<a class="headerlink" href="#rampart-include" title="Permalink to this headline">¶</a></h3>
+<p>Include the source of a file in the current script as global code.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">include</span><span class="p">(</span><span class="nx">jsfile</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">jsfile</span></code> is the path of the script to be included.</p>
+<p>If <code class="docutils literal notranslate"><span class="pre">jsfile</span></code> is not a absolute path name it will be searched for in the same
+manner as with <a class="reference internal" href="#module-search-path">Module Search Path</a> except that in addition to the
+current directory and the <code class="docutils literal notranslate"><span class="pre">process.scriptPath</span></code> directory, it will search in
+<code class="docutils literal notranslate"><span class="pre">/usr/local/rampart/includes/</span></code> and <code class="docutils literal notranslate"><span class="pre">~/.rampart/includes/</span></code> rather than the
+equivalent <code class="docutils literal notranslate"><span class="pre">/modules/</span></code> paths.</p>
+<p>The function performs similar to the following code:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">icode</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">readFile</span><span class="p">({</span><span class="nx">file</span><span class="o">:</span> <span class="nx">jsfile</span><span class="p">,</span> <span class="nx">retString</span><span class="o">:</span><span class="kc">true</span><span class="p">});</span>
+<span class="nb">eval</span><span class="p">(</span><span class="nx">icode</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>With the exception that it:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>Processes <a class="reference external" href="ECMAScript2015+andBabel.js">babel</a> code.</p></li>
+<li><p>Includes the <a class="reference internal" href="#extra-javascript-functionality">Extra JavaScript Functionality</a> described below.</p></li>
+<li><p>Searches for the <code class="docutils literal notranslate"><span class="pre">jscode</span></code> file in a manner similar to
+the <a class="reference external" href="UsingtherequireFunctiontoImportModules">require</a>
+function.</p></li>
+</ul>
+</div></blockquote>
+<p>Return Value:
+<code class="docutils literal notranslate"><span class="pre">undefined</span></code></p>
 </div>
 <div class="section" id="rampart-import">
 <h3>rampart.import<a class="headerlink" href="#rampart-import" title="Permalink to this headline">¶</a></h3>
@@ -701,10 +849,10 @@ preferentially, if set, the path pointed to by the environment variable
 </ol>
 </div>
 </div>
-<div class="section" id="experimental-syntax">
-<h2>Experimental Syntax<a class="headerlink" href="#experimental-syntax" title="Permalink to this headline">¶</a></h2>
-<p>Some Advanced JavaScript syntax is supported when not using
-<a href="#id1"><span class="problematic" id="id2">`</span></a>babel &lt;ECMAScript 2015+ and Babel.js&gt; below.  It is provided
+<div class="section" id="extra-javascript-functionality">
+<h2>Extra JavaScript Functionality<a class="headerlink" href="#extra-javascript-functionality" title="Permalink to this headline">¶</a></h2>
+<p>A subset of post ES5 JavaScript syntax is supported when not using
+<a class="reference external" href="ECMAScript2015+andBabel.js">babel</a> below.  It is provided
 experimentally (unsupported) and is limited in scope.</p>
 <div class="section" id="object-values">
 <h3>Object.values()<a class="headerlink" href="#object-values" title="Permalink to this headline">¶</a></h3>
@@ -807,125 +955,39 @@ called.</p>
 <span class="cm">&amp;lt;&amp;#47;div&amp;gt;</span>
 <span class="cm">&lt;/pre&gt;</span>
 <span class="cm">*/</span>
-</pre></div></div>
+</pre></div><p>Note that this non-standard syntax is not available when using
+<a class="reference external" href="ECMAScript2015+andBabel.js">babel</a> below.</p>
+</div>
 <div class="section" id="settimeout">
 <h3>setTimeout()<a class="headerlink" href="#settimeout" title="Permalink to this headline">¶</a></h3>
 <p>Also added to Rampart is the <code class="docutils literal notranslate"><span class="pre">setTimeout()</span></code> function.  It supports the
-asynchronous calling of functions from within an event loop in the same
+asynchronous calling of functions from within Rampart’s event loop in the same
 manner as <code class="docutils literal notranslate"><span class="pre">setTimeout</span></code> in <code class="docutils literal notranslate"><span class="pre">node.js</span></code> or a browser.</p>
-</div>
-</div>
-<div class="section" id="rampart-event">
-<h2>rampart.event<a class="headerlink" href="#rampart-event" title="Permalink to this headline">¶</a></h2>
-<p>Rampart can execute functions from within its event loop using its own
-event-on-trigger syntax.</p>
-<div class="section" id="rampart-event-on">
-<h3>rampart.event.on()<a class="headerlink" href="#rampart-event-on" title="Permalink to this headline">¶</a></h3>
-<p>Insert a named function to be run upon triggering a named event.</p>
 <p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">on</span><span class="p">(</span><span class="nx">eventName</span><span class="p">,</span> <span class="nx">funcName</span><span class="p">,</span> <span class="nx">callback</span><span class="p">,</span> <span class="nx">callbackUserVar</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">setTimeout</span><span class="p">(</span><span class="nx">callback</span><span class="p">,</span> <span class="nx">timeOut</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>Where:</p>
-<blockquote>
-<div><ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">eventName</span></code> is an arbitrary <span class="green">String</span> used to identify, trigger
-and remove the event using the <a class="reference internal" href="#rampart-event-remove">rampart.event.remove()</a> function below.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">funcName</span></code> is an arbitrary <span class="green">String</span> used to identify and remove
-the callback function using the <a class="reference internal" href="#rampart-event-off">rampart.event.off()</a> function below.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">callback</span></code> is a <span class="green">Function</span> to be executed when the event is triggered.
-It is called with when triggered as such: <code class="docutils literal notranslate"><span class="pre">callback(callbackUserVar,</span> <span class="pre">callbackTriggerVar)</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">callbackUserVar</span></code> is an arbitrary variable which will be passed to the <code class="docutils literal notranslate"><span class="pre">callback</span></code>
-<span class="green">Function</span> as its first parameter.</p></li>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">callback</span></code> is a <span class="green">Function</span> to be run when the elapsed time is reached.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">timeOut</span></code> is the amount of time in milliseconds to wait before the <code class="docutils literal notranslate"><span class="pre">callback</span></code> function is called.</p></li>
 </ul>
-</div></blockquote>
-</div>
-<div class="section" id="rampart-event-trigger">
-<h3>rampart.event.trigger()<a class="headerlink" href="#rampart-event-trigger" title="Permalink to this headline">¶</a></h3>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">trigger</span><span class="p">(</span><span class="nx">eventName</span><span class="p">,</span> <span class="nx">callbackTriggerVar</span><span class="p">);</span>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="cm">/* print message after 2 seconds */</span>
+<span class="nx">setTimeout</span><span class="p">(</span><span class="kd">function</span><span class="p">(){</span> <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;Hi from a timeout callback&quot;</span><span class="p">);</span> <span class="p">},</span> <span class="mi">2000</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>Where:</p>
-<blockquote>
-<div><ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">eventName</span></code> is the <span class="green">String</span> used when registering the event with <a class="reference internal" href="#rampart-event-on">rampart.event.on()</a>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">callbackTriggerVar</span></code> is the second parameter passed to the <code class="docutils literal notranslate"><span class="pre">callback</span></code> function specified
-when the event and function were registered with <a class="reference internal" href="#rampart-event-on">rampart.event.on()</a>.</p></li>
-<li><p><strong>Caveat</strong>, the <code class="docutils literal notranslate"><span class="pre">callbackTriggerVar</span></code> must be a normal variable which
-can be serialized using <a class="reference external" href="https://duktape.org/guide.html#builtin-cbor">CBOR</a>.
-Because this function may trigger events that span several threads and Duktape stacks, when
-used with the <a class="reference internal" href="rampart-server.html#the-rampart-server-http-module"><span class="std std-ref">rampart-server</span></a>
-module, special variables such as <code class="docutils literal notranslate"><span class="pre">req</span></code> (see:
-<a class="reference internal" href="rampart-server.html#the-request-object"><span class="std std-ref">The Request Object</span></a>) may contain
-functions and hidden state variables which cannot be moved from stack
-to stack.  In most cases, it will not be limiting since each callback is run on its own thread/stack
-and can take a <code class="docutils literal notranslate"><span class="pre">callbackUserVar</span></code> which does not have the above limitations.</p></li>
-</ul>
-</div></blockquote>
-</div>
-<div class="section" id="rampart-event-off">
-<h3>rampart.event.off()<a class="headerlink" href="#rampart-event-off" title="Permalink to this headline">¶</a></h3>
-<p>Remove a named function from the list of functions for the given event.</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">off</span><span class="p">(</span><span class="nx">eventName</span><span class="p">,</span> <span class="nx">funcName</span><span class="p">);</span>
+<p>Note that Rampart JavaScript executes all global code before entering its event loop.
+Thus if a script uses synchronous functions that take longer than <code class="docutils literal notranslate"><span class="pre">timeOut</span></code>, the
+<code class="docutils literal notranslate"><span class="pre">callback</span></code> will be run immediately after the global code is executed. Consider the following:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">setTimeout</span><span class="p">(</span><span class="kd">function</span><span class="p">(){</span> <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;Hi from a timeout callback&quot;</span><span class="p">);</span> <span class="p">},</span> <span class="mi">2000</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">sleep</span><span class="p">(</span><span class="mi">3</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>Where:</p>
-<blockquote>
-<div><ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">eventName</span></code> is a <span class="green">String</span>, the <code class="docutils literal notranslate"><span class="pre">eventName</span></code> passed to the <cite>rampart.utils.on()</cite>
-function above.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">funcName</span></code> is a <span class="green">String</span>, the <code class="docutils literal notranslate"><span class="pre">funcName</span></code> passed to the <cite>rampart.utils.on()</cite>
-function above.</p></li>
-</ul>
-</div></blockquote>
-</div>
-<div class="section" id="rampart-event-remove">
-<h3>rampart.event.remove()<a class="headerlink" href="#rampart-event-remove" title="Permalink to this headline">¶</a></h3>
-<p>Remove all function from the list of functions for the given event. This effectively
-removes the event.</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">remove</span><span class="p">(</span><span class="nx">eventName</span><span class="p">);</span>
-</pre></div>
-</div>
-<p>Where:</p>
-<blockquote>
-<div><ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">eventName</span></code> is a <span class="green">String</span>, the <code class="docutils literal notranslate"><span class="pre">eventName</span></code> passed to the <cite>rampart.utils.on()</cite>
-function above.</p></li>
-</ul>
-</div></blockquote>
-</div>
-<div class="section" id="example">
-<h3>Example<a class="headerlink" href="#example" title="Permalink to this headline">¶</a></h3>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">usr_var</span> <span class="o">=</span> <span class="s2">&quot;I&#39;m a user variable.&quot;</span><span class="p">;</span>
-
-<span class="kd">function</span> <span class="nx">cb</span> <span class="p">(</span><span class="nx">uservar</span><span class="p">,</span><span class="nx">triggervar</span><span class="p">){</span>
-
-    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">uservar</span><span class="p">,</span> <span class="s2">&quot;Triggervar = &quot;</span><span class="o">+</span><span class="nx">triggervar</span><span class="p">);</span>
-    <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">sleep</span><span class="p">(</span><span class="mf">0.5</span><span class="p">);</span>
-
-    <span class="k">if</span><span class="p">(</span><span class="nx">triggervar</span><span class="o">&gt;</span><span class="mi">4</span><span class="p">)</span>
-        <span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">remove</span><span class="p">(</span><span class="s2">&quot;myev&quot;</span><span class="p">);</span>
-
-    <span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">trigger</span><span class="p">(</span><span class="s2">&quot;myev&quot;</span><span class="p">,</span> <span class="nx">triggervar</span><span class="o">+</span><span class="mi">1</span><span class="p">);</span>
-<span class="p">}</span>
-
-<span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">on</span><span class="p">(</span><span class="s2">&quot;myev&quot;</span><span class="p">,</span> <span class="s2">&quot;myfunc&quot;</span><span class="p">,</span> <span class="nx">cb</span><span class="p">,</span> <span class="nx">usr_var</span><span class="p">);</span>
-
-<span class="nx">rampart</span><span class="p">.</span><span class="nx">event</span><span class="p">.</span><span class="nx">trigger</span><span class="p">(</span><span class="s2">&quot;myev&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">);</span>
-
-<span class="cm">/* expected output:</span>
-<span class="cm">I&#39;m a user variable. Triggervar = 1</span>
-<span class="cm">I&#39;m a user variable. Triggervar = 2</span>
-<span class="cm">I&#39;m a user variable. Triggervar = 3</span>
-<span class="cm">I&#39;m a user variable. Triggervar = 4</span>
-<span class="cm">I&#39;m a user variable. Triggervar = 5</span>
-<span class="cm">*/</span>
-</pre></div>
-</div>
-<p>See also: the <a class="reference internal" href="rampart-server.html#example-echo-chat-server"><span class="std std-ref">Echo/Chat Server Example</span></a>.</p>
-<p>For a more complete example of events using the webserver and websockets,
-see the <code class="docutils literal notranslate"><span class="pre">rampart/examples/web_server/modules/wschat.js</span></code>
-script.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">callback</span></code> function will not be executed until after the sleep function returns.
+At that time, it’s clock will have expired and it will be run immediately.  The net effect
+is that <code class="docutils literal notranslate"><span class="pre">console.log</span></code> will be run after approximately 3 seconds.</p>
 </div>
 </div>
 <div class="section" id="additional-global-variables-and-functions">

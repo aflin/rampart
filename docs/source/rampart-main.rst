@@ -62,17 +62,16 @@ following:
 
 * File and C-functions utilities such as ``printf``, ``fseek``, and ``exec``.
 
-* Included ``C`` modules (``rampart-ramis``, ``rampart-curl``, ``rampart-sql``, ``rampart-server`` 
-  ``rampart-html`` and ``rampart-crypto``).
+* Included ``C`` modules (``rampart-sql``, ``rampart-server``, ``rampart-curl``, 
+  ``rampart-crypto``, ``rampart-html``, ``rampart-lmdb`` 
+  ``rampart-cmark`` and ``rampart-robots``).
 
-* Minimal event loop using ``libevent2``
+* Event loop using ``libevent2``.
 
 * ECMA 2015, 2016, 2017 and 2018 support using the `Babel <https://babeljs.io/>`_
   JavaScript transpiler.
 
 * Full Text Search and SQL databasing via ``rampart-sql``.
-
-* Fast NOSQL database via ``rampart-ramis``.
 
 * Multi-threaded http(s) server from libevhtp via ``rampart-server``.
 
@@ -82,9 +81,11 @@ following:
 
 * Html parsing and and error correcting via ``rampart-html``. 
 
+* Fast NOSQL database via ``rampart-lmdb``.
+
 * Simple Event functions via `rampart.event`_\ .
 
-* `Experimental Syntax`_\ .
+* `Extra JavaScript Functionality`_\ .
 
 Rampart philosophy 
 ~~~~~~~~~~~~~~~~~~ 
@@ -150,6 +151,170 @@ rampart.utils
 A collection of utility functions.  
 See :ref:`this page<rampart-utils:rampart.utils>` 
 for full description of functions.
+
+rampart.event
+"""""""""""""
+
+Rampart can execute functions from within its event loop using its own
+event-on-trigger syntax.
+
+rampart.event.on()
+''''''''''''''''''
+
+Insert a named function to be run upon triggering a named event.  If the named
+event does not exist, it will be created.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.event.on(eventName, funcName, callback, callbackUserVar);
+
+Where:
+
+   * ``eventName`` is an arbitrary :green:`String` used to identify, trigger
+     and remove the event using the `rampart.event.remove()`_ function below.
+
+   * ``funcName`` is an arbitrary :green:`String` used to identify and remove
+     the callback function using the `rampart.event.off()`_ function below.
+
+   * ``callback`` is a :green:`Function` to be executed when the event is triggered.
+     It is called, when triggered, as such: ``callback(callbackUserVar, callbackTriggerVar)``.
+
+   * ``callbackUserVar`` is an arbitrary variable which will be passed to the ``callback``
+     :green:`Function` as its first parameter.
+
+rampart.event.trigger()
+'''''''''''''''''''''''
+
+Trigger a named event, calling all the callbacks registered under the given name.
+
+.. code-block:: javascript
+
+   rampart.event.trigger(eventName, callbackTriggerVar);
+
+Where:
+
+   * ``eventName`` is the :green:`String` used when registering the event with `rampart.event.on()`_\ .
+
+   * ``callbackTriggerVar`` is the second parameter passed to the ``callback`` function specified
+     when the event and function were registered with `rampart.event.on()`_\ .
+
+   * **Caveat**, the ``callbackTriggerVar`` must be a variable which 
+     can be serialized using `CBOR <https://duktape.org/guide.html#builtin-cbor>`_\ .
+     Because this function may trigger events that span several threads and Duktape stacks, when
+     used with the :ref:`rampart-server <rampart-server:The rampart-server HTTP module>`
+     module, special variables such as ``req`` (see: 
+     :ref:`The Request Object <rampart-server:The Request Object>`) may contain
+     functions and hidden state variables which cannot be moved from stack
+     to stack.  In most cases, it will not be limiting since each callback is run on its own thread/stack
+     and can take a ``callbackUserVar`` which does not have the above limitations.
+
+rampart.event.off()
+'''''''''''''''''''
+
+Remove a named function from the list of functions for the given event.
+
+.. code-block:: javascript
+
+   rampart.event.off(eventName, funcName);
+
+Where:
+
+   * ``eventName`` is a :green:`String`, the ``eventName`` passed to the `rampart.utils.on()`
+     function above.
+
+   * ``funcName`` is a :green:`String`, the ``funcName`` passed to the `rampart.utils.on()`
+     function above.
+
+rampart.event.remove()
+''''''''''''''''''''''
+
+Remove all function from the list of functions for the given event. This effectively
+removes the event.
+
+.. code-block:: javascript
+
+   rampart.event.remove(eventName);
+
+Where:
+
+   * ``eventName`` is a :green:`String`, the ``eventName`` passed to the `rampart.utils.on()`
+     function above.
+
+
+Example
+'''''''
+
+.. code-block:: javascript
+
+   var usr_var = "I'm a user variable.";
+
+   function myCallback (uservar,triggervar){
+
+       console.log(uservar, "Triggervar = "+triggervar);
+       rampart.utils.sleep(0.5);
+
+       if(triggervar>4)
+           rampart.event.remove("myev");
+
+       rampart.event.trigger("myev", triggervar+1);
+   }
+
+   rampart.event.on("myev", "myfunc", myCallback, usr_var);
+
+   rampart.event.trigger("myev", 1);
+
+   /* expected output:
+   I'm a user variable. Triggervar = 1
+   I'm a user variable. Triggervar = 2
+   I'm a user variable. Triggervar = 3
+   I'm a user variable. Triggervar = 4
+   I'm a user variable. Triggervar = 5
+   */
+
+See also: the :ref:`Echo/Chat Server Example <rampart-server:Example echo/chat server>`.
+
+For a more complete example of events using the webserver and websockets,
+see the ``rampart/examples/web_server/modules/wschat.js``
+script.
+
+rampart.include
+"""""""""""""""
+
+Include the source of a file in the current script as global code.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.include(jsfile);
+
+Where ``jsfile`` is the path of the script to be included.  
+
+If ``jsfile`` is not a absolute path name it will be searched for in the same
+manner as with `Module Search Path`_ except that in addition to the 
+current directory and the ``process.scriptPath`` directory, it will search in
+``/usr/local/rampart/includes/`` and ``~/.rampart/includes/`` rather than the
+equivalent ``/modules/`` paths.
+
+The function performs similar to the following code:
+
+.. code-block:: javascript
+
+   var icode = rampart.utils.readFile({file: jsfile, retString:true});
+   eval(icode);
+
+With the exception that it:
+
+   * Processes `babel <ECMAScript 2015+ and Babel.js>`_ code.
+   * Includes the `Extra JavaScript Functionality`_ described below.
+   * Searches for the ``jscode`` file in a manner similar to 
+     the `require <Using the require Function to Import Modules>`_
+     function.
+
+Return Value:
+``undefined``
 
 rampart.import
 """"""""""""""
@@ -361,7 +526,6 @@ Example:
 Process Global Variable and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-
 The ``process`` global variable contains the following properties:
 
 exit
@@ -529,11 +693,11 @@ Modules are searched for in the following order:
 #. In the current working directory. If ``/module.js`` is given, 
    ``./module.js`` is checked.
 
-Experimental Syntax
-~~~~~~~~~~~~~~~~~~~
+Extra JavaScript Functionality
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Some Advanced JavaScript syntax is supported when not using
-`babel <ECMAScript 2015+ and Babel.js> below.  It is provided
+A subset of post ES5 JavaScript syntax is supported when not using
+`babel <ECMAScript 2015+ and Babel.js>`_ below.  It is provided
 experimentally (unsupported) and is limited in scope. 
 
 Object.values()
@@ -687,137 +851,47 @@ Example:
    <span class="cm">*/</span>
    </pre></div>
 
+Note that this non-standard syntax is not available when using 
+`babel <ECMAScript 2015+ and Babel.js>`_ below.
+
 setTimeout()
 """"""""""""
 
 Also added to Rampart is the ``setTimeout()`` function.  It supports the
-asynchronous calling of functions from within an event loop in the same
+asynchronous calling of functions from within Rampart's event loop in the same
 manner as ``setTimeout`` in ``node.js`` or a browser.
-
-
-rampart.event
-~~~~~~~~~~~~~
-
-Rampart can execute functions from within its event loop using its own
-event-on-trigger syntax.
-
-rampart.event.on()
-""""""""""""""""""
-
-Insert a named function to be run upon triggering a named event.
 
 Usage:
 
 .. code-block:: javascript
 
-   rampart.event.on(eventName, funcName, callback, callbackUserVar);
+   setTimeout(callback, timeOut);
 
 Where:
 
-   * ``eventName`` is an arbitrary :green:`String` used to identify, trigger
-     and remove the event using the `rampart.event.remove()`_ function below.
+* ``callback`` is a :green:`Function` to be run when the elapsed time is reached.
+* ``timeOut`` is the amount of time in milliseconds to wait before the ``callback`` function is called.
 
-   * ``funcName`` is an arbitrary :green:`String` used to identify and remove
-     the callback function using the `rampart.event.off()`_ function below.
-
-   * ``callback`` is a :green:`Function` to be executed when the event is triggered.
-     It is called with when triggered as such: ``callback(callbackUserVar, callbackTriggerVar)``.
-
-   * ``callbackUserVar`` is an arbitrary variable which will be passed to the ``callback``
-     :green:`Function` as its first parameter.
-
-rampart.event.trigger()
-"""""""""""""""""""""""
+Example:
 
 .. code-block:: javascript
 
-   rampart.event.trigger(eventName, callbackTriggerVar);
+   /* print message after 2 seconds */
+   setTimeout(function(){ console.log("Hi from a timeout callback"); }, 2000);
 
-Where:
-
-   * ``eventName`` is the :green:`String` used when registering the event with `rampart.event.on()`_\ .
-
-   * ``callbackTriggerVar`` is the second parameter passed to the ``callback`` function specified
-     when the event and function were registered with `rampart.event.on()`_\ .
-
-   * **Caveat**, the ``callbackTriggerVar`` must be a normal variable which 
-     can be serialized using `CBOR <https://duktape.org/guide.html#builtin-cbor>`_\ .
-     Because this function may trigger events that span several threads and Duktape stacks, when
-     used with the :ref:`rampart-server <rampart-server:The rampart-server HTTP module>`
-     module, special variables such as ``req`` (see: 
-     :ref:`The Request Object <rampart-server:The Request Object>`) may contain
-     functions and hidden state variables which cannot be moved from stack
-     to stack.  In most cases, it will not be limiting since each callback is run on its own thread/stack
-     and can take a ``callbackUserVar`` which does not have the above limitations.
-
-rampart.event.off()
-"""""""""""""""""""
-
-Remove a named function from the list of functions for the given event.
+Note that Rampart JavaScript executes all global code before entering its event loop.
+Thus if a script uses synchronous functions that take longer than ``timeOut``, the 
+``callback`` will be run immediately after the global code is executed. Consider the following:
 
 .. code-block:: javascript
 
-   rampart.event.off(eventName, funcName);
+   setTimeout(function(){ console.log("Hi from a timeout callback"); }, 2000);
 
-Where:
+   rampart.utils.sleep(3);
 
-   * ``eventName`` is a :green:`String`, the ``eventName`` passed to the `rampart.utils.on()`
-     function above.
-
-   * ``funcName`` is a :green:`String`, the ``funcName`` passed to the `rampart.utils.on()`
-     function above.
-
-rampart.event.remove()
-""""""""""""""""""""""
-
-Remove all function from the list of functions for the given event. This effectively
-removes the event.
-
-.. code-block:: javascript
-
-   rampart.event.remove(eventName);
-
-Where:
-
-   * ``eventName`` is a :green:`String`, the ``eventName`` passed to the `rampart.utils.on()`
-     function above.
-
-
-Example
-"""""""
-
-.. code-block:: javascript
-
-   var usr_var = "I'm a user variable.";
-
-   function cb (uservar,triggervar){
-
-       console.log(uservar, "Triggervar = "+triggervar);
-       rampart.utils.sleep(0.5);
-
-       if(triggervar>4)
-           rampart.event.remove("myev");
-
-       rampart.event.trigger("myev", triggervar+1);
-   }
-
-   rampart.event.on("myev", "myfunc", cb, usr_var);
-
-   rampart.event.trigger("myev", 1);
-
-   /* expected output:
-   I'm a user variable. Triggervar = 1
-   I'm a user variable. Triggervar = 2
-   I'm a user variable. Triggervar = 3
-   I'm a user variable. Triggervar = 4
-   I'm a user variable. Triggervar = 5
-   */
-
-See also: the :ref:`Echo/Chat Server Example <rampart-server:Example echo/chat server>`.
-
-For a more complete example of events using the webserver and websockets,
-see the ``rampart/examples/web_server/modules/wschat.js``
-script.
+The ``callback`` function will not be executed until after the sleep function returns.
+At that time, it's clock will have expired and it will be run immediately.  The net effect
+is that ``console.log`` will be run after approximately 3 seconds.
 
 Additional Global Variables and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
