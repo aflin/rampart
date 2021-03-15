@@ -301,6 +301,8 @@ extern FILE *access_fh;
 extern FILE *error_fh;
 extern int duk_rp_server_logging;
 
+typedef void (*rp_vfunc)(void);
+
 void duk_rp_exit(duk_context *ctx, int ec);
 #if defined(__cplusplus)
 }

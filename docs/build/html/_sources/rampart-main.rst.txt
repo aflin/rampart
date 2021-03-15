@@ -296,9 +296,9 @@ If ``jsfile`` is not a absolute path name it will be searched for in the same
 manner as with `Module Search Path`_ except that in addition to the 
 current directory and the ``process.scriptPath`` directory, it will search in
 ``/usr/local/rampart/includes/`` and ``~/.rampart/includes/`` rather than the
-equivalent ``/modules/`` paths.
+equivalent ``*/modules/`` paths.
 
-The function performs similar to the following code:
+The ``rampart.include`` function is similar to the following code:
 
 .. code-block:: javascript
 

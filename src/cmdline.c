@@ -293,6 +293,8 @@ void completion(const char *inbuf, linenoiseCompletions *lc) {
     return;
 }
 
+rp_vfunc duk_rp_lmdb_free_all_env = NULL;
+
 void duk_rp_exit(duk_context *ctx, int ec)
 {
     int i=0,len=0;
@@ -309,6 +311,11 @@ void duk_rp_exit(duk_context *ctx, int ec)
         
     duk_destroy_heap(ctx);
     free(RP_script_path);
+    //for lmdb. TODO: make this a generic array of function pointers if/when others need it.
+    if(duk_rp_lmdb_free_all_env)
+    {
+        (duk_rp_lmdb_free_all_env)();
+    }
     exit(ec);
 }
 

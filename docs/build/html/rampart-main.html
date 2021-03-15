@@ -489,8 +489,8 @@ script.</p>
 manner as with <a class="reference internal" href="#module-search-path">Module Search Path</a> except that in addition to the
 current directory and the <code class="docutils literal notranslate"><span class="pre">process.scriptPath</span></code> directory, it will search in
 <code class="docutils literal notranslate"><span class="pre">/usr/local/rampart/includes/</span></code> and <code class="docutils literal notranslate"><span class="pre">~/.rampart/includes/</span></code> rather than the
-equivalent <code class="docutils literal notranslate"><span class="pre">/modules/</span></code> paths.</p>
-<p>The function performs similar to the following code:</p>
+equivalent <code class="docutils literal notranslate"><span class="pre">*/modules/</span></code> paths.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">rampart.include</span></code> function is similar to the following code:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">icode</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">readFile</span><span class="p">({</span><span class="nx">file</span><span class="o">:</span> <span class="nx">jsfile</span><span class="p">,</span> <span class="nx">retString</span><span class="o">:</span><span class="kc">true</span><span class="p">});</span>
 <span class="nb">eval</span><span class="p">(</span><span class="nx">icode</span><span class="p">);</span>
 </pre></div>

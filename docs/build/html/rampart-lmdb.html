@@ -104,14 +104,34 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#terminology">Terminology</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#main-function">Main Function</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#lmdb-functions">LMDB functions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#get">get</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#put">put</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#del">del</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#drop">drop</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#sync">sync</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#example">Example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#main-function-init">Main Function (init)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#lmdb-easy-functions">LMDB Easy Functions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#opendb">openDb</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#getcount">getCount</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#get">get</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#put">put</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#del">del</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#drop">drop</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sync">sync</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#easy-functions-full-example">Easy Functions Full Example</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#lmdb-transaction-functions">LMDB Transaction Functions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#lmdb-transaction">lmdb.transaction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#txn-get">txn.get</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#txn-put">txn.put</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#txn-del">txn.del</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#using-cursors">Using Cursors</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#txn-cursorget">txn.cursorGet</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#txn-cursorput">txn.cursorPut</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#txn-cursordel">txn.cursorDel</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#txn-cursornext">txn.cursorNext</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#txn-cursorprev">txn.cursorPrev</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#txn-commit">txn.commit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#txn-abort">txn.abort</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#transaction-functions-full-example">Transaction Functions Full Example</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-robots.html">The rampart-robots module</a></li>
@@ -230,8 +250,8 @@ partitioned into “databases”.  Thus an LMDB “database environment” is
 organizationally similar to a SQL database and an LMDB “database” is similar
 to a SQL table.</p>
 </div>
-<div class="section" id="main-function">
-<h2>Main Function<a class="headerlink" href="#main-function" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="main-function-init">
+<h2>Main Function (init)<a class="headerlink" href="#main-function-init" title="Permalink to this headline">¶</a></h2>
 <p>After loading, a new database environment can be opened (and optionally created) as
 follows:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
@@ -252,7 +272,8 @@ database environment.  Options include:</p>
 in megabytes to use for this environment. The size of the memory
 map is also the maximum size of the database. The value should be chosen as
 large as possible, to accommodate future growth of the database.
-It may be increased after the database is created.</p></li>
+It may be increased after the database is created.  The default is
+<code class="docutils literal notranslate"><span class="pre">10</span></code> (10Mb).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">conversion</span></code> - <span class="green">String</span>, whether and what type of
 conversions should be performed before storing values.  One of
 these case-insensitive <span class="green">Strings</span>:</p>
@@ -270,13 +291,17 @@ except a <span class="green">Buffer</span> or an <span class="green">Object</spa
 <span class="green">Buffer</span>.  Output values (<a class="reference internal" href="#get">get</a>) will be the same as
 the input value.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">CBOR</span></code> - Input values
-(<a class="reference internal" href="#put">put</a>) can be any type including a <span class="green">Buffers</span> and
+(<a class="reference internal" href="#put">put</a>) can be any type including a <span class="green">Buffer</span> or
 <span class="green">Objects</span> that contains a <span class="green">Buffers</span>.  Output
 values (<a class="reference internal" href="#get">get</a>) will be the same as the input value. See
 <a class="reference external" href="https://duktape.org/guide.html#builtin-cbor">CBOR encoding description</a>
 for more information on CBOR encoding.</p></li>
 </ul>
 </li>
+<li><p><code class="docutils literal notranslate"><span class="pre">maxDbs</span></code> - a positive <span class="green">Number</span>, the maximum number of
+named databases that can be used in the opened database
+environment.  Default is 256.  There is a cost to opening an
+environment with a large <code class="docutils literal notranslate"><span class="pre">maxDbs</span></code> value.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">noSync</span></code> - a <span class="green">Boolean</span>, whether to turn off the flushing
 of sy buffers to disk when committing a transaction.  This
 optimization means a system crash can corrupt the database or lose
@@ -318,26 +343,77 @@ like wild pointer writes and other bad updates into the database.</p></li>
 </dd>
 </dl>
 </div>
-<div class="section" id="lmdb-functions">
-<h2>LMDB functions<a class="headerlink" href="#lmdb-functions" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="lmdb-easy-functions">
+<h2>LMDB Easy Functions<a class="headerlink" href="#lmdb-easy-functions" title="Permalink to this headline">¶</a></h2>
 <p>After a database environment is opened, the following functions and
 flags are available in the return object:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
 <span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span> <span class="nx">create</span><span class="p">,</span> <span class="nx">options</span><span class="p">);</span>
 <span class="cm">/* return value:</span>
 <span class="cm">    {</span>
-<span class="cm">        get:  {_func: true},</span>
-<span class="cm">        put:  {_func: true},</span>
-<span class="cm">        del:  {_func: true},</span>
-<span class="cm">        drop: {_func: true},</span>
-<span class="cm">        sync: {_func: true},</span>
+<span class="cm">        openDb:      {_func: true},</span>
+<span class="cm">        getCount:    {_func: true},</span>
+<span class="cm">        get:         {_func: true},</span>
+<span class="cm">        put:         {_func: true},</span>
+<span class="cm">        del:         {_func: true},</span>
+<span class="cm">        drop:        {_func: true},</span>
+<span class="cm">        sync:        {_func: true},</span>
+<span class="cm">        transaction: {_func: true}</span>
 <span class="cm">    }</span>
 <span class="cm">*/</span>
 </pre></div>
 </div>
+<div class="section" id="opendb">
+<h3>openDb<a class="headerlink" href="#opendb" title="Permalink to this headline">¶</a></h3>
+<p>Open a database for use with the below functions.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">openDb</span><span class="p">([</span><span class="nx">dbase</span><span class="p">[,</span> <span class="nx">create</span><span class="p">]]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <span class="green">String</span>, the name of the database
+to be accessed.  If <code class="docutils literal notranslate"><span class="pre">undefined</span></code>, the lmdb default database
+for the database envirnoment will be opened.</p>
+<p><code class="docutils literal notranslate"><span class="pre">create</span></code> is a <span class="green">Boolean</span>, if <code class="docutils literal notranslate"><span class="pre">true</span></code> openDb will be
+a write transaction which creates the database, if it does not
+exist.</p>
+</div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> representing the opened database.</p>
+</dd>
+<dt>Note:</dt><dd><p>If opening a database for use in one of the
+<a class="reference internal" href="#lmdb-transaction-functions">LMDB Transaction Functions</a> below, this function must be called
+before any transaction is opened (before calling <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">lmdb.transaction()</span></code>).</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="getcount">
+<h3>getCount<a class="headerlink" href="#getcount" title="Permalink to this headline">¶</a></h3>
+<p>Count the number of items in a database.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">count</span> <span class="o">=</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">getCount</span><span class="p">(</span><span class="nx">dbase</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> returned from <a class="reference internal" href="#opendb">openDb</a> or a
+<span class="green">String</span>, the name of the database to be accessed.  If the
+database does not exist, an error will be thrown.</p>
+</div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Number</span>, the number of items in the database.</p>
+</dd>
+</dl>
 </div>
 <div class="section" id="get">
-<h2>get<a class="headerlink" href="#get" title="Permalink to this headline">¶</a></h2>
+<h3>get<a class="headerlink" href="#get" title="Permalink to this headline">¶</a></h3>
 <p>Retrieve values from a database.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
@@ -354,9 +430,9 @@ flags are available in the return object:</p>
 <p>Where:</p>
 <blockquote>
 <div><ul>
-<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <span class="green">String</span>, the name of the database
-to be accessed.  If the database does not exist, an error
-will be thrown.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> returned from <a class="reference internal" href="#opendb">openDb</a> or a
+<span class="green">String</span>, the name of the database to be accessed.  If the
+database does not exist, an error will be thrown.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">key</span></code> is a <span class="green">String</span>, the name of the key whose data
 will be retrieved.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nKeys</span></code> is an optional <span class="green">Number</span>, the total number of keys to
@@ -388,7 +464,7 @@ retrieved key and each value set as described above.</p>
 </dl>
 </div>
 <div class="section" id="put">
-<h2>put<a class="headerlink" href="#put" title="Permalink to this headline">¶</a></h2>
+<h3>put<a class="headerlink" href="#put" title="Permalink to this headline">¶</a></h3>
 <p>Put (store) values in a given <span class="green">Object</span> into a given database, indexed
 by the <span class="green">Object’s</span> keys.</p>
 <p>Usage:</p>
@@ -396,19 +472,25 @@ by the <span class="green">Object’s</span> keys.</p>
 <span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
 
 <span class="nx">lmdb</span><span class="p">.</span><span class="nx">put</span><span class="p">(</span><span class="nx">dbase</span><span class="p">,</span> <span class="nx">kvpairs</span><span class="p">);</span>
+
+<span class="cm">/* or */</span>
+
+<span class="nx">lmdb</span><span class="p">.</span><span class="nx">put</span><span class="p">(</span><span class="nx">dbase</span><span class="p">,</span> <span class="nx">key</span><span class="p">,</span> <span class="nx">value</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>Where:</p>
 <blockquote>
 <div><ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <span class="green">String</span>, the name of the database
-to be accessed.  If the database does not exist, it will
-be created.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> returned from <a class="reference internal" href="#opendb">openDb</a> or a
+<span class="green">String</span>, the name of the database to be accessed.  If the
+database does not exist, it will be created.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">kvpairs</span></code> is an <span class="green">Object</span> with each <span class="green">Object</span> key
 corresponding to a database key to be used and each <span class="green">Object</span>
 value corresponding to the database value to be stored.  Note: Values must
 be a <span class="green">String</span> or <span class="green">Buffer</span> unless <code class="docutils literal notranslate"><span class="pre">conversion</span></code> above is
 set to “JSON” or “CBOR”.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key</span></code> is the key of a single key:value pair.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">value</span></code> is the value of a single key:value pair.</p></li>
 </ul>
 </div></blockquote>
 <dl class="simple">
@@ -417,7 +499,7 @@ set to “JSON” or “CBOR”.</p></li>
 </dl>
 </div>
 <div class="section" id="del">
-<h2>del<a class="headerlink" href="#del" title="Permalink to this headline">¶</a></h2>
+<h3>del<a class="headerlink" href="#del" title="Permalink to this headline">¶</a></h3>
 <p>Delete values in a database.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
@@ -436,7 +518,7 @@ is set <code class="docutils literal notranslate"><span class="pre">true</span><
 Otherwise <code class="docutils literal notranslate"><span class="pre">undefined</span></code> is returned.</p>
 </div>
 <div class="section" id="drop">
-<h2>drop<a class="headerlink" href="#drop" title="Permalink to this headline">¶</a></h2>
+<h3>drop<a class="headerlink" href="#drop" title="Permalink to this headline">¶</a></h3>
 <p>Drop a database from the database environment.</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
 <span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
@@ -447,19 +529,23 @@ Otherwise <code class="docutils literal notranslate"><span class="pre">undefined
 <p>Where:</p>
 <blockquote>
 <div><ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <span class="green">String</span>, the name of the database
-to be dropped.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> returned from <a class="reference internal" href="#opendb">openDb</a> or a
+<span class="green">String</span>, the name of the database to be dropped.</p></li>
 </ul>
 </div></blockquote>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
 </dd>
+<dt>Note:</dt><dd><p>If a <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> is specified, it must not be used as a parameter
+to any other function after executing <code class="docutils literal notranslate"><span class="pre">lmdb.drop()</span></code>.  It, however,
+may be recreated calling <code class="docutils literal notranslate"><span class="pre">openDb(dbname,</span> <span class="pre">true)</span></code> again.</p>
+</dd>
 </dl>
 </div>
 <div class="section" id="sync">
-<h2>sync<a class="headerlink" href="#sync" title="Permalink to this headline">¶</a></h2>
+<h3>sync<a class="headerlink" href="#sync" title="Permalink to this headline">¶</a></h3>
 <p>Sync the database envirnoment.  Useful if <code class="docutils literal notranslate"><span class="pre">mapAsync</span></code> or <code class="docutils literal notranslate"><span class="pre">noSync</span></code>
-is set in order to manually sync data to disk.</p>
+is set in order to manually sync data to the disk.</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
 <span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
 
@@ -471,10 +557,764 @@ is set in order to manually sync data to disk.</p>
 </dd>
 </dl>
 </div>
-<div class="section" id="example">
-<h2>Example<a class="headerlink" href="#example" title="Permalink to this headline">¶</a></h2>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span>
+<div class="section" id="easy-functions-full-example">
+<h3>Easy Functions Full Example<a class="headerlink" href="#easy-functions-full-example" title="Permalink to this headline">¶</a></h3>
+<p>The following creates random entries of names and addresses.  After the
+database is populated with the sample data, a selection that meet specific
+criteria is displayed.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="cm">/* make printf and sprintf easer to use */</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;printf&quot;</span><span class="p">,</span><span class="s2">&quot;sprintf&quot;</span><span class="p">]);</span>
+
+<span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span>
+    <span class="s2">&quot;./lmdb-test&quot;</span><span class="p">,</span>
+    <span class="kc">true</span><span class="p">,</span> <span class="cm">/* create if does not exist */</span>
+    <span class="p">{</span>
+        <span class="nx">mapSize</span><span class="o">:</span> <span class="mi">1024</span><span class="p">,</span> <span class="c1">//one gigabyte</span>
+        <span class="nx">conversion</span><span class="o">:</span> <span class="s2">&quot;CBOR&quot;</span><span class="p">,</span>
+        <span class="nx">noMetaSync</span><span class="o">:</span><span class="kc">true</span><span class="p">,</span>
+        <span class="nx">noSync</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span>
+    <span class="p">}</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">dbi</span> <span class="o">=</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">openDb</span><span class="p">(</span><span class="s2">&quot;testdata&quot;</span><span class="p">,</span> <span class="kc">true</span><span class="p">);</span>
+
+<span class="cm">/* create test data */</span>
+
+<span class="kd">var</span> <span class="nx">fnames</span> <span class="o">=</span> <span class="p">[</span> <span class="s2">&quot;Mohamed&quot;</span><span class="p">,</span> <span class="s2">&quot;Imene&quot;</span><span class="p">,</span> <span class="s2">&quot;Santiago&quot;</span><span class="p">,</span> <span class="s2">&quot;Sofía&quot;</span><span class="p">,</span> <span class="s2">&quot;Wei&quot;</span><span class="p">,</span> <span class="s2">&quot;Jing&quot;</span><span class="p">,</span>
+               <span class="s2">&quot;Noel&quot;</span><span class="p">,</span> <span class="s2">&quot;Amelia&quot;</span><span class="p">,</span> <span class="s2">&quot;Oliver&quot;</span><span class="p">,</span> <span class="s2">&quot;Olivia&quot;</span> <span class="p">];</span>
+
+<span class="kd">var</span> <span class="nx">lnames</span> <span class="o">=</span> <span class="p">[</span> <span class="s2">&quot;Beridze&quot;</span><span class="p">,</span> <span class="s2">&quot;Cohen&quot;</span><span class="p">,</span> <span class="s2">&quot;Kovačević&quot;</span><span class="p">,</span> <span class="s2">&quot;Nielsen&quot;</span><span class="p">,</span> <span class="s2">&quot;Tremblay&quot;</span><span class="p">,</span>
+               <span class="s2">&quot;Hernández&quot;</span><span class="p">,</span> <span class="s2">&quot;Smith&quot;</span><span class="p">,</span> <span class="s2">&quot;Kumar&quot;</span><span class="p">,</span> <span class="s2">&quot;Mabiala&quot;</span><span class="p">,</span> <span class="s2">&quot;Kimetto&quot;</span><span class="p">];</span>
+
+<span class="kd">var</span> <span class="nx">initials</span> <span class="o">=</span> <span class="s2">&quot;ABCDEFGHIJKLMNOPQRSTUVWXYZ&quot;</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">streets</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;Main&quot;</span><span class="p">,</span> <span class="s2">&quot;Broadway&quot;</span><span class="p">,</span> <span class="s2">&quot;First&quot;</span><span class="p">,</span> <span class="s2">&quot;Second&quot;</span><span class="p">,</span> <span class="s2">&quot;Grove&quot;</span><span class="p">,</span> <span class="s2">&quot;College&quot;</span><span class="p">,</span>
+               <span class="s2">&quot;University&quot;</span><span class="p">,</span> <span class="s2">&quot;Park&quot;</span><span class="p">,</span> <span class="s2">&quot;Oak&quot;</span><span class="p">,</span> <span class="s2">&quot;Pine&quot;</span><span class="p">];</span>
+
+<span class="kd">var</span> <span class="nx">stsuff</span>  <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;Street&quot;</span><span class="p">,</span> <span class="s2">&quot;Drive&quot;</span><span class="p">,</span> <span class="s2">&quot;Avenue&quot;</span><span class="p">,</span> <span class="s2">&quot;Blvd&quot;</span><span class="p">,</span> <span class="s2">&quot;Court&quot;</span><span class="p">,</span> <span class="s2">&quot;Circle.&quot;</span><span class="p">,</span>
+               <span class="s2">&quot;Road&quot;</span><span class="p">,</span> <span class="s2">&quot;Lane&quot;</span><span class="p">,</span> <span class="s2">&quot;Way&quot;</span><span class="p">,</span> <span class="s2">&quot;Highway&quot;</span><span class="p">];</span>
+
+<span class="kd">function</span> <span class="nx">makeName</span><span class="p">(){</span>
+    <span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="nx">first</span><span class="o">:</span> <span class="nx">fnames</span><span class="p">[</span><span class="nb">Math</span><span class="p">.</span><span class="nx">floor</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">random</span><span class="p">()</span><span class="o">*</span><span class="mi">10</span><span class="p">)],</span>
+        <span class="nx">mi</span><span class="o">:</span>    <span class="nx">initials</span><span class="p">.</span><span class="nx">charAt</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">floor</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">random</span><span class="p">()</span><span class="o">*</span><span class="mi">26</span><span class="p">)),</span>
+        <span class="nx">last</span><span class="o">:</span>  <span class="nx">lnames</span><span class="p">[</span><span class="nb">Math</span><span class="p">.</span><span class="nx">floor</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">random</span><span class="p">()</span><span class="o">*</span><span class="mi">10</span><span class="p">)]</span>
+    <span class="p">}</span>
+    <span class="nx">ret</span><span class="p">.</span><span class="nx">full</span> <span class="o">=</span> <span class="nx">sprintf</span> <span class="p">(</span><span class="s2">&quot;%s %s. %s&quot;</span><span class="p">,</span> <span class="nx">ret</span><span class="p">.</span><span class="nx">first</span><span class="p">,</span> <span class="nx">ret</span><span class="p">.</span><span class="nx">mi</span><span class="p">,</span> <span class="nx">ret</span><span class="p">.</span><span class="nx">last</span><span class="p">);</span>
+    <span class="k">return</span> <span class="nx">ret</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="kd">function</span> <span class="nx">makeAddr</span><span class="p">(</span><span class="nx">obj</span><span class="p">){</span>
+    <span class="nx">obj</span><span class="p">.</span><span class="nx">streetno</span> <span class="o">=</span> <span class="nb">Math</span><span class="p">.</span><span class="nx">floor</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">random</span><span class="p">()</span><span class="o">*</span><span class="mi">10000</span><span class="p">);</span>
+    <span class="nx">obj</span><span class="p">.</span><span class="nx">street</span> <span class="o">=</span> <span class="nx">sprintf</span><span class="p">(</span><span class="s2">&quot;%s %s&quot;</span><span class="p">,</span>
+                    <span class="nx">streets</span><span class="p">[</span><span class="nb">Math</span><span class="p">.</span><span class="nx">floor</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">random</span><span class="p">()</span><span class="o">*</span><span class="mi">10</span><span class="p">)],</span>
+                    <span class="nx">stsuff</span><span class="p">[</span><span class="nb">Math</span><span class="p">.</span><span class="nx">floor</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">random</span><span class="p">()</span><span class="o">*</span><span class="mi">10</span><span class="p">)]</span>
+                 <span class="p">);</span>
+    <span class="nx">obj</span><span class="p">.</span><span class="nx">zip</span> <span class="o">=</span> <span class="mi">10000</span> <span class="o">+</span> <span class="nb">Math</span><span class="p">.</span><span class="nx">floor</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">random</span><span class="p">()</span><span class="o">*</span><span class="mi">90000</span><span class="p">);</span>
+    <span class="k">return</span> <span class="nx">obj</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="cm">/* insert entries */</span>
+<span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="o">&lt;</span><span class="mi">5000</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">entry</span> <span class="o">=</span> <span class="nx">makeName</span><span class="p">();</span>
+    <span class="nx">entry</span> <span class="o">=</span> <span class="nx">makeAddr</span><span class="p">(</span><span class="nx">entry</span><span class="p">);</span>
+    <span class="kd">var</span> <span class="nx">key</span> <span class="o">=</span> <span class="nx">entry</span><span class="p">.</span><span class="nx">full</span> <span class="o">+</span> <span class="s2">&quot; from &quot;</span> <span class="o">+</span> <span class="nx">entry</span><span class="p">.</span><span class="nx">zip</span><span class="p">;</span>
+    <span class="nx">lmdb</span><span class="p">.</span><span class="nx">put</span><span class="p">(</span><span class="nx">dbi</span><span class="p">,</span> <span class="nx">key</span><span class="p">,</span> <span class="nx">entry</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// sync now, or sync will happen upon script exit.</span>
+<span class="c1">//lmdb.sync();</span>
+
+<span class="cm">/* get all the Sofías in the database */</span>
+<span class="kd">var</span> <span class="nx">entries</span> <span class="o">=</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">get</span><span class="p">(</span><span class="nx">dbi</span><span class="p">,</span> <span class="s2">&quot;Sofía&quot;</span><span class="p">,</span> <span class="s2">&quot;*&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">keys</span> <span class="o">=</span> <span class="nb">Object</span><span class="p">.</span><span class="nx">keys</span><span class="p">(</span><span class="nx">entries</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">total</span> <span class="o">=</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">getCount</span><span class="p">(</span><span class="nx">dbi</span><span class="p">);</span>
+
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;There are %d Sofías out of %d entries in the database.\n&quot;</span><span class="p">,</span> <span class="nx">keys</span><span class="p">.</span><span class="nx">length</span><span class="p">,</span> <span class="nx">total</span><span class="p">);</span>
+
+<span class="k">for</span> <span class="p">(</span><span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="nx">i</span><span class="o">&lt;</span><span class="nx">keys</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span><span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">key</span> <span class="o">=</span> <span class="nx">keys</span><span class="p">[</span><span class="nx">i</span><span class="p">];</span>
+    <span class="kd">var</span> <span class="nx">entry</span> <span class="o">=</span> <span class="nx">entries</span><span class="p">[</span><span class="nx">key</span><span class="p">];</span>
+    <span class="c1">// find the Sofías living on Main Street</span>
+    <span class="k">if</span><span class="p">(</span><span class="nx">entry</span><span class="p">.</span><span class="nx">street</span> <span class="o">==</span> <span class="s2">&quot;Main Street&quot;</span><span class="p">)</span>
+        <span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%s lives at %d %s\n&quot;</span><span class="p">,</span> <span class="nx">key</span><span class="p">,</span> <span class="nx">entry</span><span class="p">.</span><span class="nx">streetno</span><span class="p">,</span> <span class="nx">entry</span><span class="p">.</span><span class="nx">street</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="cm">/* possible output:</span>
+<span class="cm">There are 471 Sofías out of 5000 entries in the database.</span>
+<span class="cm">Sofía D. Cohen from 85916 lives at 2320 Main Street</span>
+<span class="cm">Sofía H. Hernández from 17267 lives at 518 Main Street</span>
+<span class="cm">Sofía J. Tremblay from 69088 lives at 4701 Main Street</span>
+<span class="cm">Sofía T. Kimetto from 73446 lives at 441 Main Street</span>
+<span class="cm">Sofía U. Mabiala from 94846 lives at 1608 Main Street</span>
+<span class="cm">Sofía Z. Hernández from 57045 lives at 905 Main Street</span>
+<span class="cm">*/</span>
+
+<span class="nx">lmdb</span><span class="p">.</span><span class="nx">drop</span><span class="p">(</span><span class="s2">&quot;testdata&quot;</span><span class="p">);</span>
 </pre></div>
+</div>
+<p>Note that the above is a naive way of inserting data into a database since
+it opens and closes a transaction for every record inserted.</p>
+<p>Though more memory intensive, it is far more efficient to use the following
+code in order to insert all of the records in a single transaction:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="cm">/* create entries in an object*/</span>
+<span class="kd">var</span> <span class="nx">insertobj</span> <span class="o">=</span> <span class="p">{}</span>
+<span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="o">&lt;</span><span class="mi">5000</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">entry</span> <span class="o">=</span> <span class="nx">makeName</span><span class="p">();</span>
+    <span class="nx">entry</span> <span class="o">=</span> <span class="nx">makeAddr</span><span class="p">(</span><span class="nx">entry</span><span class="p">);</span>
+    <span class="kd">var</span> <span class="nx">key</span> <span class="o">=</span> <span class="nx">entry</span><span class="p">.</span><span class="nx">full</span> <span class="o">+</span> <span class="s2">&quot; from &quot;</span> <span class="o">+</span> <span class="nx">entry</span><span class="p">.</span><span class="nx">zip</span><span class="p">;</span>
+    <span class="nx">insertobj</span><span class="p">[</span><span class="nx">key</span><span class="p">]</span><span class="o">=</span><span class="nx">entry</span><span class="p">;</span>
+<span class="p">}</span>
+<span class="cm">/* insert all at once */</span>
+<span class="nx">lmdb</span><span class="p">.</span><span class="nx">put</span><span class="p">(</span><span class="nx">dbi</span><span class="p">,</span> <span class="nx">insertobj</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>In order to conserver memory and to use a single transaction, see the
+<a class="reference internal" href="#transaction-functions-full-example">Transaction Functions Full Example</a> below.</p>
+</div>
+</div>
+<div class="section" id="lmdb-transaction-functions">
+<h2>LMDB Transaction Functions<a class="headerlink" href="#lmdb-transaction-functions" title="Permalink to this headline">¶</a></h2>
+<p>Transactions provide lower level access to lmdb function.  In the above
+functions, transactions are automatically opened and closed without
+explicitely having to do so.  In order to have more flexibility and possibly
+see a performance gain, the transaction model outlined below provides
+the relevant functions.</p>
+<div class="section" id="lmdb-transaction">
+<h3>lmdb.transaction<a class="headerlink" href="#lmdb-transaction" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">lmdb.transaction</span></code> function opens a new transaction and returns
+functions which may perform tasks within the open transaction.</p>
+<p>Note that the <a class="reference internal" href="#lmdb-easy-functions">LMDB Easy Functions</a> above that open an internal transaction
+for writing will throw an error if they are called while any write
+transaction below is open.</p>
+<p>These include <a href="#id1"><span class="problematic" id="id2">`lmdb.put`_</span></a>, <a href="#id3"><span class="problematic" id="id4">`lmdb.del`_</span></a>, <a href="#id5"><span class="problematic" id="id6">`lmdb.drop`_</span></a> and <a href="#id7"><span class="problematic" id="id8">`lmdb.openDb`_</span></a>
+(only when a database is being created).</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="nx">open_rw</span> <span class="p">[,</span> <span class="nx">commit_by_default</span><span class="p">]</span> <span class="p">);</span>
+
+<span class="cm">/* return value:</span>
+<span class="cm">    {</span>
+<span class="cm">        get:         {_func: true},</span>
+<span class="cm">        put:         {_func: true},</span>
+<span class="cm">        del:         {_func: true},</span>
+<span class="cm">        cursorGet:   {_func: true},</span>
+<span class="cm">        cursorPut:   {_func: true},</span>
+<span class="cm">        cursorDel:   {_func: true},</span>
+<span class="cm">        cursorNext:  {_func: true},</span>
+<span class="cm">        cursorPrev:  {_func: true},</span>
+<span class="cm">        commit:      {_func: true},</span>
+<span class="cm">        abort:       {_func: true}</span>
+<span class="cm">    }</span>
+<span class="cm">*/</span>
+
+<span class="cm">/* use connection, then commit or abort */</span>
+<span class="nx">tnx</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> returned from <a class="reference internal" href="#opendb">openDb</a> or a
+<span class="green">String</span>, the name of the database to be accessed.  If the
+database does not exist, it will be created.  If omitted, the
+lmdb default database for the current database environment will
+be use.  This database will be the default for all operations
+below.  However, more than one database may be used per transaction.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">open_rw</span></code> is an <span class="green">Boolean</span>, if <code class="docutils literal notranslate"><span class="pre">true</span></code>, open the transaction
+for read/write.  This is needed if any data will be added or deleted
+from a database.  If <code class="docutils literal notranslate"><span class="pre">false</span></code>, the transaction will be read only.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">commit_by_default</span></code> is an <span class="green">Boolean</span>.  When a transaction is
+opened, it must be eventually closed using either <a class="reference internal" href="#txn-commit">txn.commit</a> or
+<a class="reference internal" href="#txn-abort">txn.abort</a>.  If the script exits or <code class="docutils literal notranslate"><span class="pre">var</span> <span class="pre">txn</span></code> goes out of
+scope (e.g. the function in which <code class="docutils literal notranslate"><span class="pre">var</span> <span class="pre">txn</span></code> was declared returns) without
+closing, it will be automatically closed.  If <code class="docutils literal notranslate"><span class="pre">commit_by_default</span></code>
+is <code class="docutils literal notranslate"><span class="pre">true</span></code>, <a class="reference internal" href="#txn-commit">txn.commit</a> will be called. Otherwise if <code class="docutils literal notranslate"><span class="pre">false</span></code> or
+not set, <a class="reference internal" href="#txn-abort">txn.abort</a> will be called.  This is most relevant when
+<code class="docutils literal notranslate"><span class="pre">open_rw</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code> and the database is being altered.</p></li>
+</ul>
+</div></blockquote>
+<dl>
+<dt>Note:</dt><dd><p>Only one read/write transaction may be open at any time.  Attempting to
+open one while another is open will throw an error.  However, along with
+one read/write transaction, several read only transactions may be
+concurrently open.</p>
+<p>Note also that opening a new transaction with a <span class="green">String</span>
+<code class="docutils literal notranslate"><span class="pre">dbase</span></code> parameter, and where <code class="docutils literal notranslate"><span class="pre">dbase</span></code> does not exist is a read/write
+open even if <code class="docutils literal notranslate"><span class="pre">open_rw</span></code> is <code class="docutils literal notranslate"><span class="pre">false</span></code>.  As such, if another read/write
+transaction is open, an error will be thrown.  In such a case, the
+database should be opened using <a href="#id9"><span class="problematic" id="id10">`lmdb.openDb`_</span></a> to create it before any
+read/write transactions are opened.</p>
+<p>Note also that the one open read/write transaction restriction is
+per-thread, so no special care is needed when using LMDB from
+<a class="reference internal" href="rampart-server.html#the-rampart-server-http-module"><span class="std std-ref">The rampart-server HTTP module</span></a>.  However, when
+using LMDB from the server, a mutex lock is used to ensure that only one
+read/write transaction is open at any given time.  Therefore read/write
+transactions should be closed as soon as all writes are finished.</p>
+</dd>
+<dt>Return Value:</dt><dd><p>An <span class="green">Object</span> of functions.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="txn-get">
+<h3>txn.get<a class="headerlink" href="#txn-get" title="Permalink to this headline">¶</a></h3>
+<p>Get a single value from a database.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* open read only if only reading in this transaction */</span>
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="kc">false</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">txn</span><span class="p">.</span><span class="nx">get</span><span class="p">([</span><span class="nx">dbase</span> <span class="p">,]</span> <span class="nx">key</span> <span class="p">[,</span> <span class="nx">return_string</span><span class="p">]);</span>
+
+<span class="nx">tnx</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> returned from <a class="reference internal" href="#opendb">openDb</a>. If the
+database does not exist, it will be created.  If omitted, the
+database specified in <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">lmdb.transaction</span></code> will be used.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span>, the key of the item
+to be retrieved.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">return_string</span></code> is a <span class="green">Boolean</span>. If <code class="docutils literal notranslate"><span class="pre">true</span></code> the return value
+will be a <span class="green">String</span>.  If <code class="docutils literal notranslate"><span class="pre">false</span></code> or not set, the return value
+will be a <span class="green">Buffer</span>.</p></li>
+</ul>
+</div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Buffer</span> or, if <code class="docutils literal notranslate"><span class="pre">return_string</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code>, a
+<span class="green">String</span>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="txn-put">
+<h3>txn.put<a class="headerlink" href="#txn-put" title="Permalink to this headline">¶</a></h3>
+<p>Put (store) values in a given <span class="green">Object</span> into a given database, indexed
+by the <span class="green">Object’s</span> keys.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* open read write */</span>
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="kc">true</span><span class="p">);</span>
+
+<span class="nx">txn</span><span class="p">.</span><span class="nx">put</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="nx">kvpairs</span><span class="p">);</span>
+
+<span class="cm">/* or */</span>
+
+<span class="nx">txn</span><span class="p">.</span><span class="nx">put</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="nx">key</span><span class="p">,</span> <span class="nx">value</span><span class="p">);</span>
+
+<span class="nx">tnx</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> returned from <a class="reference internal" href="#opendb">openDb</a>. If the
+database does not exist, it will be created.  If omitted, the
+database specified in <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">lmdb.transaction</span></code> will be used.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">kvpairs</span></code> is an <span class="green">Object</span> with each <span class="green">Object</span> key
+corresponding to a database key to be used and each <span class="green">Object</span>
+value corresponding to the database value to be stored.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span>, the key of a single key:value pair.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">value</span></code> is a <span class="green">String</span> <span class="green">Buffer</span>, or <span class="green">Object</span>. The value of a single key:value pair.
+If <code class="docutils literal notranslate"><span class="pre">value</span></code> is an <span class="green">Object</span>, it will be automatically converted
+to a <span class="green">Buffer</span> using <code class="docutils literal notranslate"><span class="pre">CBOR.encode()</span></code>.  Note, when retrieved
+using <code class="docutils literal notranslate"><span class="pre">txn.get</span></code> or <code class="docutils literal notranslate"><span class="pre">txn.cursorGet</span></code>, a CBOR encoded value will not
+be automatically decoded.</p></li>
+</ul>
+</div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="txn-del">
+<h3>txn.del<a class="headerlink" href="#txn-del" title="Permalink to this headline">¶</a></h3>
+<p>Delete an the item with the given key.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* open read write */</span>
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="kc">true</span><span class="p">);</span>
+
+<span class="nx">txn</span><span class="p">.</span><span class="nx">del</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="nx">key</span><span class="p">);</span>
+
+<span class="nx">tnx</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> returned from <a class="reference internal" href="#opendb">openDb</a>. If the
+database does not exist, it will be created.  If omitted, the
+database specified in <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">lmdb.transaction</span></code> will be used.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key</span></code> is the key of the item to be deleted.</p></li>
+</ul>
+</div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Boolean</span>:  <code class="docutils literal notranslate"><span class="pre">true</span></code> if the item was deleted.  <code class="docutils literal notranslate"><span class="pre">false</span></code> if
+there was no item with the given <code class="docutils literal notranslate"><span class="pre">key</span></code> found.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="using-cursors">
+<h3>Using Cursors<a class="headerlink" href="#using-cursors" title="Permalink to this headline">¶</a></h3>
+<p>When any of the below Cursor Functions is used, a cursor is automatically
+created for the database being accessed. The cursor keeps track of the
+position of the last operation and may be used for subsequent operations.</p>
+<p>Each database specified in the below functions has its own associated cursor.
+Each cursor is automatically destroyed when the transaction is committed or
+aborted.</p>
+</div>
+<div class="section" id="txn-cursorget">
+<h3>txn.cursorGet<a class="headerlink" href="#txn-cursorget" title="Permalink to this headline">¶</a></h3>
+<p>Position the cursor using one of several possible “operation modes” and
+return the key and value of the item at the cursor’s new position.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* open read only if only reading in this transaction */</span>
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="kc">false</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">txn</span><span class="p">.</span><span class="nx">cursorGet</span><span class="p">([</span><span class="nx">dbase</span> <span class="p">,]</span> <span class="nx">op</span> <span class="p">[,</span> <span class="nx">key</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">key_is_string</span> <span class="p">[,</span> <span class="nx">val_is_string</span><span class="p">]</span> <span class="p">]);</span>
+
+<span class="nx">tnx</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> returned from <a class="reference internal" href="#opendb">openDb</a>. If the
+database does not exist, it will be created.  If omitted, the
+database specified in <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">lmdb.transaction</span></code> will be used.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">op</span></code> is a flag, which specifies the operation mode and is one of the following:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">lmdb.op_set</span></code> - Position the cursor at the item with the key
+<code class="docutils literal notranslate"><span class="pre">key</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lmdb.op_setRange</span></code> - Position the cursor at the first item with a key greater than or equal to
+<code class="docutils literal notranslate"><span class="pre">key</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lmdb.op_first</span></code> - Position the cursor at the first item in the
+given database.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lmdb.op_last</span></code> - Position the cursor at the last item in the given
+database.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lmdb.op_next</span></code> - Position the cursor one after its current
+position.  If the cursor has not been set, position at the
+first item in the database.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lmdb.op_prev</span></code> - Position the cursor one before its current
+position. If the cursor has not been set, position at the
+last item in the database.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lmdb.op_current</span></code> - Cursor stays at its current position.</p></li>
+</ul>
+</div></blockquote>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key</span></code> is the key of the item to be retrieved.  Used for <code class="docutils literal notranslate"><span class="pre">op_set</span></code>
+and <code class="docutils literal notranslate"><span class="pre">op_setRange</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key_is_string</span></code> is a <span class="green">Boolean</span>. If <code class="docutils literal notranslate"><span class="pre">true</span></code> (the default),
+the return <code class="docutils literal notranslate"><span class="pre">key</span></code> will be converted to a <span class="green">String</span>.
+If <code class="docutils literal notranslate"><span class="pre">false</span></code>, (the default) the return <code class="docutils literal notranslate"><span class="pre">key</span></code> will be a <span class="green">Buffer</span>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">val_is_string</span></code> is a <span class="green">Boolean</span>. If <code class="docutils literal notranslate"><span class="pre">true</span></code>, the returned
+<code class="docutils literal notranslate"><span class="pre">value</span></code> will be converted to a <span class="green">String</span>.  If <code class="docutils literal notranslate"><span class="pre">false</span></code>,
+(the default)``value`` will be a <span class="green">Buffer</span>.</p></li>
+</ul>
+</div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>An <span class="green">Object</span> with the propertis <code class="docutils literal notranslate"><span class="pre">key</span></code> and <code class="docutils literal notranslate"><span class="pre">value</span></code> set to the
+key and value of the retrieved item (e.g. <code class="docutils literal notranslate"><span class="pre">{&quot;key&quot;:</span> <span class="pre">dbkey,</span> <span class="pre">&quot;value&quot;:</span> <span class="pre">dbval}</span></code>).</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="txn-cursorput">
+<h3>txn.cursorPut<a class="headerlink" href="#txn-cursorput" title="Permalink to this headline">¶</a></h3>
+<p>Put (store) value in a given into a database, indexed
+by the the given key.  Move cursor to the items location.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* open read write */</span>
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="kc">true</span><span class="p">);</span>
+
+<span class="nx">txn</span><span class="p">.</span><span class="nx">cursorPut</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="nx">key</span><span class="p">,</span> <span class="nx">value</span><span class="p">);</span>
+
+<span class="nx">tnx</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> returned from <a class="reference internal" href="#opendb">openDb</a>. If the
+database does not exist, it will be created.  If omitted, the
+database specified in <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">lmdb.transaction</span></code> will be used.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span>, the key of a single key:value pair.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">value</span></code> is a <span class="green">String</span> <span class="green">Buffer</span>, or <span class="green">Object</span>. The value of a single key:value pair.
+If <code class="docutils literal notranslate"><span class="pre">value</span></code> is an <span class="green">Object</span>, it will be automatically converted
+to a <span class="green">Buffer</span> using <code class="docutils literal notranslate"><span class="pre">CBOR.encode()</span></code>.  Note, when retrieved
+using <code class="docutils literal notranslate"><span class="pre">txn.get</span></code> or <code class="docutils literal notranslate"><span class="pre">txn.cursorGet</span></code>, a CBOR encoded value will not
+be automatically decoded.</p></li>
+</ul>
+</div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="txn-cursordel">
+<h3>txn.cursorDel<a class="headerlink" href="#txn-cursordel" title="Permalink to this headline">¶</a></h3>
+<p>Delete the item at the cursor’s position.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* open read write */</span>
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="kc">true</span><span class="p">);</span>
+
+<span class="cm">/* e.g. to position the cursor */</span>
+<span class="nx">txn</span><span class="p">.</span><span class="nx">cursorGet</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">op_set</span><span class="p">,</span> <span class="nx">key</span><span class="p">);</span>
+
+<span class="cm">/* delete item at cursor position */</span>
+<span class="nx">txn</span><span class="p">.</span><span class="nx">cursorDel</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]);</span>
+
+<span class="nx">tnx</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> returned from <a class="reference internal" href="#opendb">openDb</a>. If the
+database does not exist, it will be created.  If omitted, the
+database specified in <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">lmdb.transaction</span></code> will be used.</p></li>
+</ul>
+</div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="txn-cursornext">
+<h3>txn.cursorNext<a class="headerlink" href="#txn-cursornext" title="Permalink to this headline">¶</a></h3>
+<p>Move cursor position to the next item and return the key:value pair.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* open read only if only reading in this transaction */</span>
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="kc">false</span><span class="p">);</span>
+
+<span class="cm">/* position the cursor at next item*/</span>
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">txn</span><span class="p">.</span><span class="nx">cursorNext</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="p">[</span><span class="nx">key_is_string</span> <span class="p">[,</span> <span class="nx">val_is_string</span><span class="p">]</span> <span class="p">]);</span>
+
+<span class="nx">tnx</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> returned from <a class="reference internal" href="#opendb">openDb</a>. If the
+database does not exist, it will be created.  If omitted, the
+database specified in <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">lmdb.transaction</span></code> will be used.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key_is_string</span></code> is a <span class="green">Boolean</span>. If <code class="docutils literal notranslate"><span class="pre">true</span></code> (the default),
+the return <code class="docutils literal notranslate"><span class="pre">key</span></code> will be converted to a <span class="green">String</span>.
+If <code class="docutils literal notranslate"><span class="pre">false</span></code>, (the default) the return <code class="docutils literal notranslate"><span class="pre">key</span></code> will be a <span class="green">Buffer</span>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">val_is_string</span></code> is a <span class="green">Boolean</span>. If <code class="docutils literal notranslate"><span class="pre">true</span></code>, the returned
+<code class="docutils literal notranslate"><span class="pre">value</span></code> will be converted to a <span class="green">String</span>.  If <code class="docutils literal notranslate"><span class="pre">false</span></code>,
+(the default)``value`` will be a <span class="green">Buffer</span>.</p></li>
+</ul>
+</div></blockquote>
+<p>This operates identical to:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* open read only if only reading in this transaction */</span>
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="kc">false</span><span class="p">);</span>
+
+<span class="cm">/* position the cursor at next item*/</span>
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">txn</span><span class="p">.</span><span class="nx">cursorGet</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">op_next</span><span class="p">);</span>
+
+<span class="nx">tnx</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>The exception is that if the cursor is already at the last item,
+<code class="docutils literal notranslate"><span class="pre">undefined</span></code> is returned instead of an empty object.</p>
+<p>It allows the following:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* open read only if only reading in this transaction */</span>
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="kc">false</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span><span class="p">;</span>
+
+<span class="cm">/*</span>
+<span class="cm">    Get every item in the database.</span>
+<span class="cm">    If cursor has not been previously set cursorNext()</span>
+<span class="cm">      starts at the first item.</span>
+<span class="cm">*/</span>
+<span class="k">while</span><span class="p">(</span> <span class="p">(</span><span class="nx">res</span> <span class="o">=</span> <span class="nx">txn</span><span class="p">.</span><span class="nx">cursorNext</span><span class="p">())</span> <span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* do something with res */</span>
+<span class="p">}</span>
+
+<span class="nx">tnx</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>Same as <a class="reference internal" href="#txn-cursorget">txn.cursorGet</a> (an <span class="green">Object</span>) unless the cursor
+is at the last item (in which case <code class="docutils literal notranslate"><span class="pre">undefined</span></code> is returned).</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="txn-cursorprev">
+<h3>txn.cursorPrev<a class="headerlink" href="#txn-cursorprev" title="Permalink to this headline">¶</a></h3>
+<p>Move cursor position to the previous item and return the key:value pair.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* open read only if only reading in this transaction */</span>
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="kc">false</span><span class="p">);</span>
+
+<span class="cm">/* position the cursor at previous item*/</span>
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">txn</span><span class="p">.</span><span class="nx">cursorPrev</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="p">[</span><span class="nx">key_is_string</span> <span class="p">[,</span> <span class="nx">val_is_string</span><span class="p">]</span> <span class="p">]);</span>
+
+<span class="nx">tnx</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> returned from <a class="reference internal" href="#opendb">openDb</a>. If the
+database does not exist, it will be created.  If omitted, the
+database specified in <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">lmdb.transaction</span></code> will be used.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key_is_string</span></code> is a <span class="green">Boolean</span>. If <code class="docutils literal notranslate"><span class="pre">true</span></code> (the default),
+the return <code class="docutils literal notranslate"><span class="pre">key</span></code> will be converted to a <span class="green">String</span>.
+If <code class="docutils literal notranslate"><span class="pre">false</span></code>, (the default) the return <code class="docutils literal notranslate"><span class="pre">key</span></code> will be a <span class="green">Buffer</span>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">val_is_string</span></code> is a <span class="green">Boolean</span>. If <code class="docutils literal notranslate"><span class="pre">true</span></code>, the returned
+<code class="docutils literal notranslate"><span class="pre">value</span></code> will be converted to a <span class="green">String</span>.  If <code class="docutils literal notranslate"><span class="pre">false</span></code>,
+(the default)``value`` will be a <span class="green">Buffer</span>.</p></li>
+</ul>
+</div></blockquote>
+<p>This operates identical to:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* open read only if only reading in this transaction */</span>
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="kc">false</span><span class="p">);</span>
+
+<span class="cm">/* position the cursor at previous item*/</span>
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">txn</span><span class="p">.</span><span class="nx">cursorGet</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">op_prev</span><span class="p">);</span>
+
+<span class="nx">tnx</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>The exception is that if the cursor is already at the first item,
+<code class="docutils literal notranslate"><span class="pre">undefined</span></code> is returned instead of an empty object.</p>
+<p>It allows the following:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* open read only if only reading in this transaction */</span>
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">],</span> <span class="kc">false</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span><span class="p">;</span>
+
+<span class="cm">/*</span>
+<span class="cm">    Get every item in the database in reverse order.</span>
+<span class="cm">    If cursor has not been previously set cursorPrev()</span>
+<span class="cm">      starts at the last item.</span>
+<span class="cm">*/</span>
+<span class="k">while</span><span class="p">(</span> <span class="p">(</span><span class="nx">res</span> <span class="o">=</span> <span class="nx">txn</span><span class="p">.</span><span class="nx">cursorPrev</span><span class="p">())</span> <span class="p">)</span>
+<span class="p">{</span>
+    <span class="cm">/* do something with res */</span>
+<span class="p">}</span>
+
+<span class="nx">tnx</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>Same as <a class="reference internal" href="#txn-cursorget">txn.cursorGet</a> (an <span class="green">Object</span>) unless the cursor
+is at the first item (in which case <code class="docutils literal notranslate"><span class="pre">undefined</span></code> is returned).</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="txn-commit">
+<h3>txn.commit<a class="headerlink" href="#txn-commit" title="Permalink to this headline">¶</a></h3>
+<p>Commit the current transaction.  If it is a read/write transactions, the
+associated mutex lock is released.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">],</span> <span class="nx">open_rw</span><span class="p">);</span>
+
+<span class="cm">/* use tnx here */</span>
+
+<span class="nx">tnx</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code></p>
+</dd>
+</dl>
+</div>
+<div class="section" id="txn-abort">
+<h3>txn.abort<a class="headerlink" href="#txn-abort" title="Permalink to this headline">¶</a></h3>
+<p>Abort the current transaction. All data written since starting the
+transaction will be discarded. If it is a read/write transactions, the
+associated mutex lock is released.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span> <span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+
+ <span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+ <span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">],</span> <span class="nx">open_rw</span><span class="p">);</span>
+
+ <span class="cm">/* use tnx here */</span>
+
+<span class="cm">/* discard any/all changes */</span>
+ <span class="nx">tnx</span><span class="p">.</span><span class="nx">abort</span><span class="p">();</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code></p>
+</dd>
+</dl>
+</div>
+<div class="section" id="transaction-functions-full-example">
+<h3>Transaction Functions Full Example<a class="headerlink" href="#transaction-functions-full-example" title="Permalink to this headline">¶</a></h3>
+<p>This example performs the same tasks as the <a class="reference internal" href="#easy-functions-full-example">Easy Functions Full Example</a>
+except that it uses transactions.  As a result, execution speed is
+significantly improved.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="cm">/* make printf and sprintf easer to use */</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">,</span> <span class="p">[</span><span class="s2">&quot;printf&quot;</span><span class="p">,</span><span class="s2">&quot;sprintf&quot;</span><span class="p">]);</span>
+
+<span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span>
+    <span class="s2">&quot;./lmdb-test&quot;</span><span class="p">,</span>
+    <span class="kc">true</span><span class="p">,</span>  <span class="cm">/* create if does not exist */</span>
+    <span class="p">{</span>
+        <span class="nx">mapSize</span><span class="o">:</span> <span class="mi">1024</span><span class="p">,</span> <span class="cm">/* one gigabyte */</span>
+        <span class="nx">conversion</span><span class="o">:</span> <span class="s2">&quot;CBOR&quot;</span><span class="p">,</span>
+        <span class="nx">noMetaSync</span><span class="o">:</span><span class="kc">true</span><span class="p">,</span>
+        <span class="nx">noSync</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span>
+    <span class="p">}</span>
+<span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">dbi</span> <span class="o">=</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">openDb</span><span class="p">(</span><span class="s2">&quot;testdata&quot;</span><span class="p">,</span> <span class="kc">true</span><span class="p">);</span>
+
+<span class="cm">/* create test data */</span>
+
+<span class="kd">var</span> <span class="nx">fnames</span> <span class="o">=</span> <span class="p">[</span> <span class="s2">&quot;Mohamed&quot;</span><span class="p">,</span> <span class="s2">&quot;Imene&quot;</span><span class="p">,</span> <span class="s2">&quot;Santiago&quot;</span><span class="p">,</span> <span class="s2">&quot;Sofía&quot;</span><span class="p">,</span> <span class="s2">&quot;Wei&quot;</span><span class="p">,</span> <span class="s2">&quot;Jing&quot;</span><span class="p">,</span>
+               <span class="s2">&quot;Noel&quot;</span><span class="p">,</span> <span class="s2">&quot;Amelia&quot;</span><span class="p">,</span> <span class="s2">&quot;Oliver&quot;</span><span class="p">,</span> <span class="s2">&quot;Olivia&quot;</span> <span class="p">];</span>
+
+<span class="kd">var</span> <span class="nx">lnames</span> <span class="o">=</span> <span class="p">[</span> <span class="s2">&quot;Beridze&quot;</span><span class="p">,</span> <span class="s2">&quot;Cohen&quot;</span><span class="p">,</span> <span class="s2">&quot;Kovačević&quot;</span><span class="p">,</span> <span class="s2">&quot;Nielsen&quot;</span><span class="p">,</span> <span class="s2">&quot;Tremblay&quot;</span><span class="p">,</span>
+               <span class="s2">&quot;Hernández&quot;</span><span class="p">,</span> <span class="s2">&quot;Smith&quot;</span><span class="p">,</span> <span class="s2">&quot;Kumar&quot;</span><span class="p">,</span> <span class="s2">&quot;Mabiala&quot;</span><span class="p">,</span> <span class="s2">&quot;Kimetto&quot;</span><span class="p">];</span>
+
+<span class="kd">var</span> <span class="nx">initials</span> <span class="o">=</span> <span class="s2">&quot;ABCDEFGHIJKLMNOPQRSTUVWXYZ&quot;</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">streets</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;Main&quot;</span><span class="p">,</span> <span class="s2">&quot;Broadway&quot;</span><span class="p">,</span> <span class="s2">&quot;First&quot;</span><span class="p">,</span> <span class="s2">&quot;Second&quot;</span><span class="p">,</span> <span class="s2">&quot;Grove&quot;</span><span class="p">,</span> <span class="s2">&quot;College&quot;</span><span class="p">,</span>
+               <span class="s2">&quot;University&quot;</span><span class="p">,</span> <span class="s2">&quot;Park&quot;</span><span class="p">,</span> <span class="s2">&quot;Oak&quot;</span><span class="p">,</span> <span class="s2">&quot;Pine&quot;</span><span class="p">];</span>
+
+<span class="kd">var</span> <span class="nx">stsuff</span>  <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;Street&quot;</span><span class="p">,</span> <span class="s2">&quot;Drive&quot;</span><span class="p">,</span> <span class="s2">&quot;Avenue&quot;</span><span class="p">,</span> <span class="s2">&quot;Blvd&quot;</span><span class="p">,</span> <span class="s2">&quot;Court&quot;</span><span class="p">,</span> <span class="s2">&quot;Circle.&quot;</span><span class="p">,</span>
+               <span class="s2">&quot;Road&quot;</span><span class="p">,</span> <span class="s2">&quot;Lane&quot;</span><span class="p">,</span> <span class="s2">&quot;Way&quot;</span><span class="p">,</span> <span class="s2">&quot;Highway&quot;</span><span class="p">];</span>
+
+<span class="kd">function</span> <span class="nx">makeName</span><span class="p">(){</span>
+    <span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="nx">first</span><span class="o">:</span> <span class="nx">fnames</span><span class="p">[</span><span class="nb">Math</span><span class="p">.</span><span class="nx">floor</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">random</span><span class="p">()</span><span class="o">*</span><span class="mi">10</span><span class="p">)],</span>
+        <span class="nx">mi</span><span class="o">:</span>    <span class="nx">initials</span><span class="p">.</span><span class="nx">charAt</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">floor</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">random</span><span class="p">()</span><span class="o">*</span><span class="mi">26</span><span class="p">)),</span>
+        <span class="nx">last</span><span class="o">:</span>  <span class="nx">lnames</span><span class="p">[</span><span class="nb">Math</span><span class="p">.</span><span class="nx">floor</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">random</span><span class="p">()</span><span class="o">*</span><span class="mi">10</span><span class="p">)]</span>
+    <span class="p">}</span>
+    <span class="nx">ret</span><span class="p">.</span><span class="nx">full</span> <span class="o">=</span> <span class="nx">sprintf</span> <span class="p">(</span><span class="s2">&quot;%s %s. %s&quot;</span><span class="p">,</span> <span class="nx">ret</span><span class="p">.</span><span class="nx">first</span><span class="p">,</span> <span class="nx">ret</span><span class="p">.</span><span class="nx">mi</span><span class="p">,</span> <span class="nx">ret</span><span class="p">.</span><span class="nx">last</span><span class="p">);</span>
+    <span class="k">return</span> <span class="nx">ret</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="kd">function</span> <span class="nx">makeAddr</span><span class="p">(</span><span class="nx">obj</span><span class="p">){</span>
+    <span class="nx">obj</span><span class="p">.</span><span class="nx">streetno</span> <span class="o">=</span> <span class="nb">Math</span><span class="p">.</span><span class="nx">floor</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">random</span><span class="p">()</span><span class="o">*</span><span class="mi">10000</span><span class="p">);</span>
+    <span class="nx">obj</span><span class="p">.</span><span class="nx">street</span> <span class="o">=</span> <span class="nx">sprintf</span><span class="p">(</span><span class="s2">&quot;%s %s&quot;</span><span class="p">,</span>
+                    <span class="nx">streets</span><span class="p">[</span><span class="nb">Math</span><span class="p">.</span><span class="nx">floor</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">random</span><span class="p">()</span><span class="o">*</span><span class="mi">10</span><span class="p">)],</span>
+                    <span class="nx">stsuff</span><span class="p">[</span><span class="nb">Math</span><span class="p">.</span><span class="nx">floor</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">random</span><span class="p">()</span><span class="o">*</span><span class="mi">10</span><span class="p">)]</span>
+                 <span class="p">);</span>
+    <span class="nx">obj</span><span class="p">.</span><span class="nx">zip</span> <span class="o">=</span> <span class="mi">10000</span> <span class="o">+</span> <span class="nb">Math</span><span class="p">.</span><span class="nx">floor</span><span class="p">(</span><span class="nb">Math</span><span class="p">.</span><span class="nx">random</span><span class="p">()</span><span class="o">*</span><span class="mi">90000</span><span class="p">);</span>
+    <span class="k">return</span> <span class="nx">obj</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="cm">/* Open a new transaction and insert entries */</span>
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">(</span><span class="nx">dbi</span><span class="p">,</span><span class="kc">true</span><span class="p">);</span> <span class="c1">//read/write</span>
+<span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="o">&lt;</span><span class="mi">5000</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">entry</span> <span class="o">=</span> <span class="nx">makeName</span><span class="p">();</span>
+    <span class="nx">entry</span> <span class="o">=</span> <span class="nx">makeAddr</span><span class="p">(</span><span class="nx">entry</span><span class="p">);</span>
+    <span class="kd">var</span> <span class="nx">key</span> <span class="o">=</span> <span class="nx">entry</span><span class="p">.</span><span class="nx">full</span> <span class="o">+</span> <span class="s2">&quot; from &quot;</span> <span class="o">+</span> <span class="nx">entry</span><span class="p">.</span><span class="nx">zip</span><span class="p">;</span>
+    <span class="cm">/* since entry is an object, it will be converted to CBOR */</span>
+    <span class="nx">txn</span><span class="p">.</span><span class="nx">put</span><span class="p">(</span><span class="nx">dbi</span><span class="p">,</span> <span class="nx">key</span><span class="p">,</span> <span class="nx">entry</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="nx">txn</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+
+<span class="c1">// sync now, or sync will happen upon script exit.</span>
+<span class="c1">//lmdb.sync();</span>
+
+<span class="cm">/* this must be done while not in a transaction */</span>
+<span class="kd">var</span> <span class="nx">total</span> <span class="o">=</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">getCount</span><span class="p">(</span><span class="nx">dbi</span><span class="p">);</span>
+
+<span class="cm">/* get all the Sofías in the database */</span>
+<span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">(</span><span class="nx">dbi</span><span class="p">,</span><span class="kc">false</span><span class="p">);</span> <span class="c1">//read only</span>
+
+<span class="cm">/* get first entry, make the key a string, leave value as a buffer */</span>
+<span class="kd">var</span> <span class="nx">entry</span> <span class="o">=</span> <span class="nx">txn</span><span class="p">.</span><span class="nx">cursorGet</span><span class="p">(</span><span class="nx">dbi</span><span class="p">,</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">op_setRange</span><span class="p">,</span> <span class="s2">&quot;Sofía&quot;</span><span class="p">,</span> <span class="kc">true</span><span class="p">);</span>
+<span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span>
+
+<span class="cm">/* process first entry and loop to get entries after */</span>
+<span class="k">do</span> <span class="p">{</span>
+    <span class="cm">/* if there were no Sofías from the above cursorGet or if</span>
+<span class="cm">       the current cursorNext is not a Sofía, we are done      */</span>
+    <span class="k">if</span><span class="p">(</span> <span class="o">!</span> <span class="nx">entry</span><span class="p">.</span><span class="nx">key</span> <span class="o">||</span> <span class="o">!</span> <span class="sr">/^Sofía./</span><span class="p">.</span><span class="nx">test</span><span class="p">(</span><span class="nx">entry</span><span class="p">.</span><span class="nx">key</span><span class="p">)</span> <span class="p">)</span>
+        <span class="k">break</span><span class="p">;</span>
+    <span class="nx">i</span><span class="o">++</span><span class="p">;</span>
+    <span class="cm">/* in transactions, CBOR is not automatically decoded */</span>
+    <span class="nx">entry</span><span class="p">.</span><span class="nx">value</span> <span class="o">=</span> <span class="nx">CBOR</span><span class="p">.</span><span class="nx">decode</span><span class="p">(</span><span class="nx">entry</span><span class="p">.</span><span class="nx">value</span><span class="p">);</span>
+    <span class="k">if</span><span class="p">(</span><span class="nx">entry</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">street</span> <span class="o">==</span> <span class="s2">&quot;Main Street&quot;</span><span class="p">)</span>
+        <span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%s lives at %d %s\n&quot;</span><span class="p">,</span>
+                <span class="nx">entry</span><span class="p">.</span><span class="nx">key</span><span class="p">,</span>
+                <span class="nx">entry</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">streetno</span><span class="p">,</span>
+                <span class="nx">entry</span><span class="p">.</span><span class="nx">value</span><span class="p">.</span><span class="nx">street</span>
+              <span class="p">);</span>
+<span class="p">}</span> <span class="k">while</span><span class="p">(</span><span class="nx">entry</span> <span class="o">=</span> <span class="nx">txn</span><span class="p">.</span><span class="nx">cursorNext</span><span class="p">(</span><span class="nx">dbi</span><span class="p">,</span> <span class="kc">true</span><span class="p">));</span>
+
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;There are %d Sofías out of %d entries in the database.\n&quot;</span><span class="p">,</span> <span class="nx">i</span><span class="p">,</span> <span class="nx">total</span><span class="p">);</span>
+
+<span class="nx">txn</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+
+<span class="nx">lmdb</span><span class="p">.</span><span class="nx">drop</span><span class="p">(</span><span class="nx">dbi</span><span class="p">);</span>
+
+<span class="cm">/* possible output:</span>
+<span class="cm">Sofía A. Cohen from 25350 lives at 4458 Main Street</span>
+<span class="cm">Sofía I. Beridze from 11345 lives at 8483 Main Street</span>
+<span class="cm">Sofía P. Cohen from 48234 lives at 9441 Main Street</span>
+<span class="cm">Sofía S. Kimetto from 38632 lives at 5244 Main Street</span>
+<span class="cm">Sofía X. Smith from 19604 lives at 21 Main Street</span>
+<span class="cm">There are 501 Sofías out of 5000 entries in the database.</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 </div>
 </div>
