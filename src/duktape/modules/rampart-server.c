@@ -4124,6 +4124,11 @@ static void proc_mimes(duk_context *ctx)
    TODO: turn this function from hell into something readable */
 
 extern struct event_base *elbase;
+
+/* FIXME, free these upon exit */
+DHS *main_dhs;
+evhtp_t *main_htp;
+
 duk_ret_t duk_server_start(duk_context *ctx)
 {
     DHS *dhs = new_dhs(ctx, -1);
@@ -4145,6 +4150,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
     ctimeout.tv_usec = 0;
     uint64_t max_body_size = 52428800;
     const char *cache_control="max-age=84600, public";
+
+    main_dhs=dhs;
 
     if(rampart_server_started)
         RP_THROW(ctx, "server.start - error- only one server per process may be running - use daemon:true to launch multiples");
@@ -4532,6 +4539,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
     REMALLOC(thread_base, (totnthreads * sizeof(struct event_base *)));
 
     htp = evhtp_new(elbase, NULL);
+    main_htp = htp;
+
     evhtp_set_max_keepalive_requests(htp, 128);
     evhtp_set_max_body_size(htp, max_body_size);
     /* testing for pure c benchmarking*
