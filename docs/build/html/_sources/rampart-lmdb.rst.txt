@@ -75,22 +75,23 @@ Where:
 
     *  ``path`` is a :green:`String`, the location of the database environment.
 
-    *  ``create`` is a :green:Boolean, whether to create a new database
+    *  ``create`` is a :green:`Boolean`, whether to create a new database
        environment, if it doesn't exist.
 
     * ``options`` is a :green:`Object`, a list of options for opening a new 
       database environment.  Options include:
 
         * ``mapSize`` - a :green:`Number`, an integer to set the size of the memory map
-          in megabytes to use for this environment. The size of the memory
-          map is also the maximum size of the database. The value should be chosen as
-          large as possible, to accommodate future growth of the database. 
-          It may be increased after the database is created.  The default is
-          ``10`` (10Mb).
+          in megabytes to use for this environment.  The size of the memory
+          map is also the maximum size of the database environment.  The
+          value should be chosen as large as possible, to accommodate future
+          growth of the database environment.  It may be increased after the
+          database environment is created.  The default is ``16`` (16Mb).
 
         * ``conversion`` - :green:`String`, whether and what type of
-          conversions should be performed before storing values.  One of
-          these case-insensitive :green:`Strings`:
+          conversions should be performed before storing values.  This
+          applies to `LMDB Easy Functions`_ only.  The value is of these
+          case-insensitive :green:`Strings`:
           
           * ``Buffer`` - the default if not specified.  Input values
             (`put`_\ ) can be a :green:`String` or a :green:`Buffer` and are
@@ -114,13 +115,13 @@ Where:
             `CBOR encoding description <https://duktape.org/guide.html#builtin-cbor>`_
             for more information on CBOR encoding.
 
-	* ``maxDbs`` - a positive :green:`Number`, the maximum number of
-	  named databases that can be used in the opened database
-	  environment.  Default is 256.  There is a cost to opening an
-	  environment with a large ``maxDbs`` value.
+        * ``maxDbs`` - a positive :green:`Number`, the maximum number of
+          named databases that can be used in the opened database
+          environment.  Default is 256.  There is a cost to opening an
+          environment with a large ``maxDbs`` value.
  
         * ``noSync`` - a :green:`Boolean`, whether to turn off the flushing
-          of sy buffers to disk when committing a transaction.  This
+          of LMDB buffers to disk when committing a transaction.  This
           optimization means a system crash can corrupt the database or lose
           the last transactions if buffers are not yet flushed to disk.  The
           risk is governed by how often the system flushes dirty buffers to
@@ -128,7 +129,7 @@ Where:
           filesystem preserves write order and the ``writeMap`` setting
           below is not set or set ``false``, transactions exhibit ACI
           (atomicity, consistency, isolation) properties and only lose D
-          (durability).  I.e.  database integrity is maintained, but a
+          (durability).  This means database integrity is maintained, but a
           system crash may undo the final transactions.
 
         * ``noMetaSync`` - a :green:`Boolean`, whether flushing of the system buffers
@@ -156,7 +157,7 @@ Where:
           like wild pointer writes and other bad updates into the database. 
 
 Return Value:
-        A set of functions to operate on the database.  See below.
+        A set of functions to operate on the database environment.  See below.
         
 LMDB Easy Functions
 -------------------
@@ -214,30 +215,6 @@ Note:
     `LMDB Transaction Functions`_ below, this function must be called
     before any transaction is opened (before calling ``new lmdb.transaction()``).
 
-getCount
-~~~~~~~~
-
-Count the number of items in a database.
-
-Usage:
-
-.. code-block:: javascript
-
-    var Lmdb = require("rampart-lmdb");
-    var lmdb = new Lmdb.init(path,create,options);
-
-    var count = lmdb.getCount(dbase);
-
-
-Where:
-
-    ``dbase`` is ``dbi object`` returned from `openDb`_ or a 
-    :green:`String`, the name of the database to be accessed.  If the
-    database does not exist, an error will be thrown.
-
-
-Return Value:
-    A :green:`Number`, the number of items in the database.
 
 get
 ~~~
@@ -280,7 +257,7 @@ Where:
       ``endKey`` preceeds ``key`` in lexical order, the keys and values will
       be returned in reverse order (but no more than ``max``, if given).
 
-      If ``endKey`` is set to the special string "*", all keys beginning
+      Globbing: If ``endKey`` is set to the special string ``"*"``, all keys beginning
       with ``key`` will be returned.
 
     * ``max`` is an optional positive :green:`Number` greater than 0 which may be specified
@@ -288,8 +265,8 @@ Where:
 
 Return Value:
     If neither ``nKeys`` nor ``endkey`` is specified, a single value is
-    returned.  If `JSONValues` is set, the type will be the same type
-    as given.
+    returned.  The type of the return value is determined by the ``conversion``
+    setting above.
 
     If either ``nKeys`` or ``endkey`` is specified, an :green:`Object` of
     key/value pairs is returned with each key set to the name of the
@@ -298,8 +275,8 @@ Return Value:
 put
 ~~~
 
-Put (store) values in a given :green:`Object` into a given database, indexed
-by the :green:`Object's` keys.
+Put (store) values in a given :green:`Object` or in a given key:value pair
+into a given database, indexed by the key(s).
 
 Usage:
 
@@ -356,11 +333,11 @@ Where options are the same as in `get`_ above, with the addition of
 is set ``true``, the deleted values are returned in the same manner as get.
 Otherwise ``undefined`` is returned.
 
-
 drop
 ~~~~
 
-Drop a database from the database environment.
+Drop a database from the database environment removing all the
+items in the database along with the database itself.
 
 .. code-block:: javascript
 
@@ -374,6 +351,10 @@ Where:
     * ``dbase`` is a ``dbi object`` returned from `openDb`_ or a
       :green:`String`, the name of the database to be dropped.
 
+      To drop the default database, pass an empty string or ``null``:
+      ``lmdb.drop(null);``. 
+
+
 Return Value:
     ``undefined``.
 
@@ -382,11 +363,18 @@ Note:
     to any other function after executing ``lmdb.drop()``.  It, however,
     may be recreated calling ``openDb(dbname, true)`` again.
 
+Note:
+    Dropping the default database will delete the its contents, 
+    however it will not be removed and the named database metadata
+    will remain.
+
 sync
 ~~~~
 
 Sync the database envirnoment.  Useful if ``mapAsync`` or ``noSync``
 is set in order to manually sync data to the disk.
+
+Usage:
 
 .. code-block:: javascript
 
@@ -398,16 +386,86 @@ is set in order to manually sync data to the disk.
 Return Value:
     ``undefined``.
 
+getCount
+~~~~~~~~
+
+Count the number of items in a database.
+
+Usage:
+
+.. code-block:: javascript
+
+    var Lmdb = require("rampart-lmdb");
+    var lmdb = new Lmdb.init(path,create,options);
+
+    var count = lmdb.getCount(dbase);
+
+
+Where:
+
+    ``dbase`` is ``dbi object`` returned from `openDb`_ or a 
+    :green:`String`, the name of the database to be accessed.  If the
+    database does not exist, an error will be thrown.
+
+
+Return Value:
+    A :green:`Number`, the number of items in the database.
+
+listDbs
+~~~~~~~
+
+List the named databases in a database environment.
+
+Usage:
+
+.. code-block:: javascript
+
+    var Lmdb = require("rampart-lmdb");
+    var lmdb = new Lmdb.init(path,create,options);
+
+    var list = lmdb.listDbs(dbase);
+
+Return Value:
+    An :green:`Array` of :green:`Strings`, the names
+    of all named databases.
+
+Note:  
+    The names of named databases are stored in the default database.  To
+    retrieve the names, every item in the default database must be scanned. 
+    When using named databases, the best practice is to not store data in
+    the default database.
+
+close
+~~~~~
+
+Close the database envirnoment.  After closing, all transaction
+handles, database handles and all functions using the previously 
+opened environment will throw errors if used again.
+
+Usage:
+
+.. code-block:: javascript
+
+    var Lmdb = require("rampart-lmdb");
+    var lmdb = new Lmdb.init(path,create,options);
+
+    /* do stuff */
+
+    lmdb.close();
+
+Return Value:
+    ``undefined``.
+
 Easy Functions Full Example
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The following creates random entries of names and addresses.  After the
 database is populated with the sample data, a selection that meet specific
-criteria is displayed.
+criteria is printed.
 
 .. code-block:: javascript
 
-    /* make printf and sprintf easer to use */
+    /* make printf and sprintf easier to use */
     rampart.globalize(rampart.utils, ["printf","sprintf"]);
 
     var Lmdb = require("rampart-lmdb");
@@ -517,7 +575,7 @@ code in order to insert all of the records in a single transaction:
     /* insert all at once */
     lmdb.put(dbi, insertobj);
 
-In order to conserver memory and to use a single transaction, see the
+In order to conserver memory and to insert in a single transaction, see the
 `Transaction Functions Full Example`_ below.
     
 
@@ -541,7 +599,7 @@ Note that the `LMDB Easy Functions`_ above that open an internal transaction
 for writing will throw an error if they are called while any write
 transaction below is open.
 
-These include `lmdb.put`_\ , `lmdb.del`_\ , `lmdb.drop`_ and `lmdb.openDb`_
+These include `put`_\ , `del`_\ , `drop`_ and `openDb`_
 (only when a database is being created).
 
 
@@ -565,7 +623,8 @@ Usage:
             cursorNext:  {_func: true},
             cursorPrev:  {_func: true},
             commit:      {_func: true},
-            abort:       {_func: true}
+            abort:       {_func: true},
+            lmdb:        {} /*the above lmdb object */
         }
     */
 
@@ -595,16 +654,17 @@ Where:
       ``open_rw`` is ``true`` and the database is being altered.
 
 Note:
-    Only one read/write transaction may be open at any time.  Attempting to
-    open one while another is open will throw an error.  However, along with
-    one read/write transaction, several read only transactions may be
-    concurrently open.  
+    Only one read/write transaction per database environment may be open at
+    any time.  Attempting to open one while another is open will throw an
+    error.  However, along with one read/write transaction, several read
+    only transactions may be concurrently open in a single database
+    environment.
     
     Note also that opening a new transaction with a :green:`String`
     ``dbase`` parameter, and where ``dbase`` does not exist is a read/write
     open even if ``open_rw`` is ``false``.  As such, if another read/write
     transaction is open, an error will be thrown.  In such a case, the
-    database should be opened using `lmdb.openDb`_ to create it before any
+    database should be opened using `openDb`_ to create it before any
     read/write transactions are opened.
 
     Note also that the one open read/write transaction restriction is
@@ -907,12 +967,12 @@ Where:
       database does not exist, it will be created.  If omitted, the 
       database specified in ``new lmdb.transaction`` will be used.
 
-    * ``key_is_string`` is a :green:`Boolean`. If ``true`` (the default),
+    * ``key_is_string`` is a :green:`Boolean`. If ``true``
       the return ``key`` will be converted to a :green:`String`.
-      If ``false``, (the default) the return ``key`` will be a :green:`Buffer`.
+      If ``false`` (the default) the return ``key`` will be a :green:`Buffer`.
 
-    * ``val_is_string`` is a :green:`Boolean`. If ``true``, the returned
-      ``value`` will be converted to a :green:`String`.  If ``false``,
+    * ``val_is_string`` is a :green:`Boolean`. If ``true`` the returned
+      ``value`` will be converted to a :green:`String`.  If ``false``
       (the default)``value`` will be a :green:`Buffer`.
 
 This operates identical to:
@@ -990,12 +1050,12 @@ Where:
       database does not exist, it will be created.  If omitted, the 
       database specified in ``new lmdb.transaction`` will be used.
 
-    * ``key_is_string`` is a :green:`Boolean`. If ``true`` (the default),
+    * ``key_is_string`` is a :green:`Boolean`. If ``true`` 
       the return ``key`` will be converted to a :green:`String`.
-      If ``false``, (the default) the return ``key`` will be a :green:`Buffer`.
+      If ``false`` (the default) the return ``key`` will be a :green:`Buffer`.
 
-    * ``val_is_string`` is a :green:`Boolean`. If ``true``, the returned
-      ``value`` will be converted to a :green:`String`.  If ``false``,
+    * ``val_is_string`` is a :green:`Boolean`. If ``true`` the returned
+      ``value`` will be converted to a :green:`String`.  If ``false``
       (the default)``value`` will be a :green:`Buffer`.
 
 
@@ -1108,7 +1168,7 @@ significantly improved.
 
 .. code-block:: javascript
 
-    /* make printf and sprintf easer to use */
+    /* make printf and sprintf easier to use */
     rampart.globalize(rampart.utils, ["printf","sprintf"]);
 
     var Lmdb = require("rampart-lmdb");

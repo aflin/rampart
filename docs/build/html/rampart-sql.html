@@ -448,11 +448,11 @@ below.</p></li>
 in the return <span class="green">Object</span>.</p>
 <blockquote>
 <div><ul class="simple">
-<li><p><strong>default</strong>: if <code class="docutils literal notranslate"><span class="pre">returnType</span></code> is not set, <code class="docutils literal notranslate"><span class="pre">select</span></code> statements,
-<code class="docutils literal notranslate"><span class="pre">results</span></code> will be an <span class="green">Array</span> of <span class="green">Objects</span> as if
-<code class="docutils literal notranslate"><span class="pre">&quot;object&quot;</span></code> was set.  For <code class="docutils literal notranslate"><span class="pre">delete</span></code>, <code class="docutils literal notranslate"><span class="pre">update</span></code> and <code class="docutils literal notranslate"><span class="pre">insert</span></code>
-statements, <code class="docutils literal notranslate"><span class="pre">results</span></code> will be an empty array as if <code class="docutils literal notranslate"><span class="pre">&quot;novars&quot;</span></code>
-was set.</p></li>
+<li><p><strong>default</strong>: if <code class="docutils literal notranslate"><span class="pre">returnType</span></code> is not set, <code class="docutils literal notranslate"><span class="pre">results</span></code> in
+the return value of <code class="docutils literal notranslate"><span class="pre">select</span></code> statements will be an <span class="green">Array</span>
+of <span class="green">Objects</span>, as if <code class="docutils literal notranslate"><span class="pre">&quot;object&quot;</span></code> below was set.  For
+<code class="docutils literal notranslate"><span class="pre">delete</span></code>, <code class="docutils literal notranslate"><span class="pre">update</span></code> and <code class="docutils literal notranslate"><span class="pre">insert</span></code> statements, <code class="docutils literal notranslate"><span class="pre">results</span></code> will
+be an empty array as if <code class="docutils literal notranslate"><span class="pre">&quot;novars&quot;</span></code> was set.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">&quot;object&quot;</span></code>: An <span class="green">Array</span> of <span class="green">Objects</span>.  Each
 green:<cite>Array</cite> member  correspond to each row fetched. Each
 <span class="green">Object</span> has its property names (keys) set the names of the

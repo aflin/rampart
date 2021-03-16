@@ -212,11 +212,11 @@ Options:
    * ``returnType`` (:green:`String`): Determines the format of the ``results`` value
      in the return :green:`Object`.
 
-      * **default**: if ``returnType`` is not set, ``select`` statements,
-        ``results`` will be an :green:`Array` of :green:`Objects` as if
-        ``"object"`` was set.  For ``delete``, ``update`` and ``insert``
-        statements, ``results`` will be an empty array as if ``"novars"``
-        was set.
+      * **default**: if ``returnType`` is not set, ``results`` in 
+	the return value of ``select`` statements will be an :green:`Array`
+        of :green:`Objects`, as if ``"object"`` below was set.  For
+        ``delete``, ``update`` and ``insert`` statements, ``results`` will
+        be an empty array as if ``"novars"`` was set.
 
       * ``"object"``: An :green:`Array` of :green:`Objects`.  Each
         green:`Array` member  correspond to each row fetched. Each
