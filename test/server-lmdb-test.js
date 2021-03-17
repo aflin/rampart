@@ -10,21 +10,55 @@ var curl=require("rampart-curl");
 /* load the lmdb module */
 
 var Lmdb = require("rampart-lmdb");
+var pid;  // pid of server, set below
+var lmdb; // the db env handle
+var dbi;  // the db handle
 
-/* 
-   normally we'd load Lmdb (at lease we would do "new init()") in a module
-   after the server forks.  However here we are testing to make sure lmdb
-   behaves correctly after forking and in multi-threaded use.
-*/
-var lmdb= new Lmdb.init(
-    process.scriptPath+"/lmdb-test-db",
-    true, /* true means create the database if it doesn't exist */
-    {noMetaSync:true, noSync:true, mapSize: 160}
-);
+function testFeature(name,test)
+{
+    var error=false;
+    printf("testing %-40s - ", name);
+    fflush(stdout);
+    if (typeof test =='function'){
+        try {
+            test=test();
+        } catch(e) {
+            error=e;
+            test=false;
+        }
+    }
+    if(test)
+        printf("passed\n")
+    else
+    {
+        printf(">>>>> FAILED <<<<<\n");
+        if(error) console.log(error);
+        kill(pid,15);
+        process.exit(1);
+    }
+    if(error) console.log(error);
+}
+/* these tests fail if errors are thrown */
+testFeature("Open test database env", function() {
+    /* 
+       normally we'd load Lmdb (at lease we would do "new init()") in a module
+       after the server forks.  However here we are testing to make sure lmdb
+       behaves correctly after forking as well as in multi-threaded use.
+    */
+    lmdb= new Lmdb.init(
+        process.scriptPath+"/lmdb-test-db",
+        true, /* true means create the database if it doesn't exist */
+        {noMetaSync:true, noSync:true, mapSize: 160}
+    );
+    return true;
+});
 
-var pid; //pid of server, set below
+testFeature("Open database", function() {
+    dbi = lmdb.openDb(null,true); //open default db
+    return true;
+});
 
-var dbi = lmdb.openDb("",true); //create and open default db
+
 
 var user = trim(exec("whoami").stdout);
 
@@ -37,33 +71,20 @@ if(user == 'root') {
     }
 }
 
-function testFeature(name,test)
-{
-    var error=false;
-    if (typeof test =='function'){
-        try {
-            test=test();
-        } catch(e) {
-            error=e;
-            test=false;
-        }
-    }
-    printf("testing %-40s - ", name);
-    if(test)
-        printf("passed\n")
-    else
-    {
-        printf(">>>>> FAILED <<<<<\n");
-        if(error) console.log(error);
-        kill(pid,15);
-        process.exit(1);
-    }
-    if(error) console.log(error);
-}
 
 function ltest(req) {
     var kv,i;
-    var txn = new lmdb.transaction("", true, true);
+    var txn;
+    if(req.query.firstrun)
+    {
+        txn = new lmdb.transaction(dbi, true, true);
+        txn.commit();
+        return{
+            text:"complete",
+        }
+    }
+    
+    txn = new lmdb.transaction(dbi, true, true);
 
     /* some writes */
     for (i=0;i<100;i++)
@@ -122,11 +143,22 @@ var pid=server.start(
 // otherwise server.start() doesn't start until end of script.
 
 /* give the forked server a chance to print its info*/
-rampart.utils.sleep(1);
+sleep(0.2);
 
 testFeature("server is running", rampart.utils.kill(pid,0) );
 
-testFeature("500 curl http lmdb requests", function() {
+testFeature("new lmdb transaction after fork", function() {
+    var url="http://localhost:8086/ltest?firstrun=1";
+    var i=0;
+    var res, ret;
+
+    res=curl.fetch(url, function(res){
+        ret = (res.text=="complete");
+    });
+    return ret;
+});
+
+testFeature("500 requests (100 puts, 10000 gets each)", function() {
     var url="http://localhost:8086/ltest";
     var i=0;
     var urls=[]
@@ -164,7 +196,10 @@ testFeature("check lmdb table", function() {
     return ret && (count > 10000); //very very unlikely it will be less
 });
 
-
-lmdb.drop("");
-
 kill(pid,15);
+
+testFeature("syncing data to disk", function() {
+    lmdb.sync();
+    return true;
+});
+
