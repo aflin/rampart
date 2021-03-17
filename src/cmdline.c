@@ -28,6 +28,15 @@ duk_context **thread_ctx = NULL;
 duk_context *main_ctx;
 struct event_base *elbase;
 struct event_base **thread_base=NULL;
+#define ST_NONE 0
+#define ST_DQ   1
+#define ST_SQ   2
+#define ST_BT   3
+#define ST_BS   4
+
+#define ST_PM   20
+#define ST_PN   21
+
 
 
 /* mutex for locking main_ctx when in a thread with other duk stacks open */
@@ -256,7 +265,7 @@ void completion(const char *inbuf, linenoiseCompletions *lc) {
             s++;
         }
     }
-    
+
     for (i=0;i<nwords;i++)
     {
         char *sugg=words[i];
@@ -308,7 +317,7 @@ void duk_rp_exit(duk_context *ctx, int ec)
         duk_call(ctx,0);
         duk_pop(ctx);
     }
-        
+
     duk_destroy_heap(ctx);
     free(RP_script_path);
     //for lmdb. TODO: make this a generic array of function pointers if/when others need it.
@@ -319,6 +328,7 @@ void duk_rp_exit(duk_context *ctx, int ec)
     exit(ec);
 }
 
+char * tickify(char *src, size_t sz, int *err, int *ln);
 
 static int repl(duk_context *ctx)
 {
@@ -329,6 +339,7 @@ static int repl(duk_context *ctx)
     char histfn[PATH_MAX];
     char *hfn=NULL;
     char *home = getenv("HOME");
+    int err;
 
     linenoiseSetMultiLine(1);
     linenoiseSetCompletionCallback(completion);
@@ -338,10 +349,12 @@ static int repl(duk_context *ctx)
         strcat(histfn, "/.rampart_history");
         hfn = histfn;
         linenoiseHistoryLoad(hfn);
-    }                    
-        
+    }
+
     while (1)
     {
+        int ln;
+        char *oldline;
         if(multiline)
             prefix=RP_REPL_PREFIX_CONT;
         else
@@ -349,26 +362,46 @@ static int repl(duk_context *ctx)
 
         line = linenoise(prefix);
         if(line)
-            linenoiseHistoryAdd(line);
+        {
+            oldline = line;
+            linenoiseHistoryAdd(oldline);
+            line = tickify(line, strlen(line), &err, &ln);
+            if (!line)
+                line=oldline;
+            else
+                free(oldline);
+        }
         if(!line)
+        {
             duk_rp_exit(ctx, 0);
-
+        }
         duk_push_string(ctx, line);
 
-        if(multiline) duk_concat(ctx,2);  //combine with last line if last loop set multiline=1
+        if(multiline){
+            duk_concat(ctx,2);  //combine with last line if last loop set multiline=1
+            char *newline = (char *)duk_get_string(ctx, -1);
+            char *tickline = tickify(newline, strlen(newline), &err, &ln);
+            if(tickline)
+            {
+                duk_pop(ctx);
+                duk_push_string(ctx, tickline);
+                free(tickline);
+            }
+        }
+
         duk_dup(ctx, -1);// duplicate in case multiline condition discovered below
         multiline=0;
 
         // evaluate input
        if (duk_peval(ctx) != 0)
         {
-            const char *err=duk_safe_to_string(ctx, -1);
-            if(strstr(err, "end of input")) //command likely spans multiple lines
+            const char *errmsg=duk_safe_to_string(ctx, -1);
+            if(strstr(errmsg, "end of input") || (err && err < 4) ) //command likely spans multiple lines
             {
                 multiline=1;
             }
             else
-                printf("ERR: %s\n", err);
+                printf("ERR: %s\n", errmsg);
         }
         else
         {
@@ -378,7 +411,7 @@ static int repl(duk_context *ctx)
 
         //if not multiline, get rid of extra copy of last line
         if(!multiline) duk_pop(ctx);
-        linenoiseHistoryAdd(line);
+        //linenoiseHistoryAdd(line);
         if(hfn)
             linenoiseHistorySave(hfn);
         free(line);
@@ -441,10 +474,10 @@ static char *checkbabel(char *src)
                 while(*e != '"' && *e != '\n') e++;
                 if(*e!='"')
                     invalidformat;
-                
+
                 e--;
-                while(isspace(*e)) e--;    
-                
+                while(isspace(*e)) e--;
+
                 if(*e!='}')
                     invalidformat;
 
@@ -452,7 +485,7 @@ static char *checkbabel(char *src)
 
                 {
                     char opt[1+e-s];
-                    
+
                     strncpy(opt,s,e-s);
                     opt[e-s]='\0';
                     //file_src=(char *)duk_rp_babelize(ctx, argv[0], file_src, opt, entry_file_stat.st_mtime);
@@ -466,7 +499,7 @@ static char *checkbabel(char *src)
             }
             /* replace "use babel" line with spaces, to preserve line nums */
             while (*bline && *bline!='\n') *bline++ = ' ';
-            return(ret);            
+            return(ret);
         }
         return NULL;
     }
@@ -584,7 +617,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
             {
                 fprintf(stderr,"error unlink(): error removing '%s'\n",pfill_bc);
             }
-        }    
+        }
         fclose(f);
     }
     duk_pop(ctx);
@@ -654,7 +687,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
                     fclose(f);
                     goto end;
                 }
-            }        
+            }
         }
     }
     /* file.babel.js does not exist */
@@ -693,7 +726,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
                     fprintf(stderr,"error unlink(): error removing '%s'\nNot continuing\n",babelsrc);
                     exit(1);
                 }
-            }    
+            }
             fclose(f);
         }
     }
@@ -798,7 +831,7 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat)
     duk_pop_2(ctx);
 
     if(!base)
-        RP_THROW(ctx, "event base not fount in global stash");    
+        RP_THROW(ctx, "event base not fount in global stash");
 
     /* set up struct to be passed to callback */
     DUKREMALLOC(ctx,evargs,sizeof(EVARGS));
@@ -808,7 +841,7 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat)
 
     /* get the timeout */
     timeout.tv_sec=(time_t)to;
-    timeout.tv_usec=(suseconds_t)1000000.0 * (to - (double)timeout.tv_sec); 
+    timeout.tv_usec=(suseconds_t)1000000.0 * (to - (double)timeout.tv_sec);
 
     /* get array of callback functions from global stash */
     duk_push_global_stash(ctx);
@@ -878,19 +911,12 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
         RP_THROW(ctx, "clearTimeout()/clearInteral() requires variable returned from setTimeout()/setInterval()");
 
     duk_del_prop(ctx, -2);
-    
+
     return 0;
 }
+
 /* tickify (template literal parsing) section */
 /* this has grown out of control and needs to be replaced by a proper parser */
-#define ST_NONE 0
-#define ST_DQ   1
-#define ST_SQ   2
-#define ST_BT   3
-#define ST_BS   4
-
-#define ST_PM   20
-#define ST_PN   21
 
 #define adv ({in++;})
 
@@ -947,7 +973,7 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
     }\
 }while(0)
 
-/* 
+/*
     type==0 - template literal
     type==1 - tag function first pass
     type==2 - tag function second pass
@@ -1041,8 +1067,8 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                                             }
                                             /*skip the ' case for fallthrough */
                                         case '\'':
-                                            /* possible fall through from above 
-                                               If in a double quote from input, we need to escape the 
+                                            /* possible fall through from above
+                                               If in a double quote from input, we need to escape the
                                                single quote, because the output will be single
                                                quoted */
                                             if(*p=='\'' && (inbs || c == '"') )
@@ -1273,7 +1299,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                             adv;
                         }
                     }
-                    else if ( in+1<end && *(in+1) == '*') 
+                    else if ( in+1<end && *(in+1) == '*')
                     {
                         copy(*in);
                         adv;
@@ -1358,7 +1384,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                 copy(*in);
                 line++;
                 adv;
-                /* This succeeds for some (like return and `` on different lines), but not if 
+                /* This succeeds for some (like return and `` on different lines), but not if
                    function name and tag template are in different lines
                    BTW: ASI..., STBY
                 if (!startexp)
@@ -1453,7 +1479,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
 #define islegitchar(x) ( ((unsigned char)(x)) > 0x79 || (x) == '$' || (x) == '_' || isalnum((x)) )
                 if (getstate() == ST_NONE)
                 {
-                    /*  looking for ...arg in "function(x, ...arg) {" 
+                    /*  looking for ...arg in "function(x, ...arg) {"
                         to rewrite as "function(x){var arg=Object.values(arguments).slice(x);"
                         where x is the number of preceding arguments.
                     */
@@ -1492,7 +1518,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                                     *ln=line;
                                     free(outbeg);
                                     return NULL;
-                                } 
+                                }
                                 else
                                 {
                                     /* check for '{', if not bail and let duktape report error */
@@ -1504,7 +1530,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                                     if(*s=='{')
                                     {
                                         //good to go, write altered function
-                                        //char *varname, 
+                                        //char *varname,
                                         char nbuf[16];
                                         if(*in==',')
                                             in++; // skip ','
@@ -1539,7 +1565,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                                         while(*varname!=')' && !isspace(*varname) )
                                         {
                                             copy(*varname);
-                                            varname++; 
+                                            varname++;
                                         }
                                         stringcopy2("=Object.values(arguments).slice(");
                                         snprintf(nbuf,16,"%d",infuncp-2);
@@ -1581,9 +1607,9 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                         }
                     }
                     /* end function(...var) processing */
-                    
+
                     /* for the "/regexp/" vs "var x = 2/3" cases, tag function and (...rest) processing,
-                       we need to know where we are. This is a horrible hack, but it seems to work    
+                       we need to know where we are. This is a horrible hack, but it seems to work
                        Failings might be Automatic Semicolon Insertion at '\n'. See case '\n' above.
                     */
                     if (strchr("{([=;+-/*:,%^&|?", *in))
@@ -1622,6 +1648,17 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
 }
 /* end tickify */
 
+
+static void sigint_handler(int sig) {
+    duk_rp_exit(main_ctx, 0);
+}
+
+static void evhandler(int sig, short events, void *base)
+{
+    signal(SIGINT, sigint_handler);
+    signal(SIGTERM, sigint_handler);
+}
+
 char **rampart_argv;
 int   rampart_argc;
 int main(int argc, char *argv[])
@@ -1635,7 +1672,6 @@ int main(int argc, char *argv[])
     rampart_argc=argc;
     access_fh=stdout;
     error_fh=stderr;
-
     /* get script path */
     if(rampart_argc>1)
     {
@@ -1696,7 +1732,7 @@ int main(int argc, char *argv[])
         fprintf(stderr,"could not create duktape context\n");
         return 1;
     }
-    
+
     /* for cleanup, an array of functions */
     duk_push_global_stash(ctx);
     duk_push_array(ctx);
@@ -1718,6 +1754,10 @@ int main(int argc, char *argv[])
 
     duk_init_context(ctx);
     main_ctx = ctx;
+
+    signal(SIGINT, sigint_handler);
+    signal(SIGTERM, sigint_handler);
+
     /* skip past process name */
     argc--;
     argv++;
@@ -1746,16 +1786,16 @@ int main(int argc, char *argv[])
                 goto dofile;
             }
             // store old terminal settings
-            struct termios old_tio, new_tio;
-            tcgetattr(STDIN_FILENO, &old_tio);
-            new_tio = old_tio;
+            //struct termios old_tio, new_tio;
+            //tcgetattr(STDIN_FILENO, &old_tio);
+            //new_tio = old_tio;
 
             // disable buffered output and echo
-            new_tio.c_lflag &= (~ICANON & ~ECHO);
-            tcsetattr(STDIN_FILENO, TCSANOW, &new_tio);
+            //new_tio.c_lflag &= (~ICANON & ~ECHO);
+            //tcsetattr(STDIN_FILENO, TCSANOW, &new_tio);
             int ret = repl(ctx);
             // restore terminal settings
-            tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
+            //tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
             return ret;
         }
         else
@@ -1764,7 +1804,6 @@ int main(int argc, char *argv[])
 
             if (!strcmp("-",argv[0]))
                 isstdin=1;
-
             if(isstdin)
             {
                 size_t read=0;
@@ -1783,14 +1822,14 @@ int main(int argc, char *argv[])
             {
                 if (stat(argv[0], &entry_file_stat))
                 {
-                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not find entry file '%s': %s\n", argv[0], strerror(errno));
+                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not find entry file '%s': %s", argv[0], strerror(errno));
                     fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
                     duk_rp_exit(ctx, 1);
                 }
                 entry_file = fopen(argv[0], "r");
                 if (entry_file == NULL)
                 {
-                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not open entry file '%s': %s\n", argv[0], strerror(errno));
+                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not open entry file '%s': %s", argv[0], strerror(errno));
                     fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
                     duk_rp_exit(ctx, 1);
                 }
@@ -1804,7 +1843,7 @@ int main(int argc, char *argv[])
 
                 if (fread(file_src, 1, entry_file_stat.st_size, entry_file) != entry_file_stat.st_size)
                 {
-                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read entry file '%s': %s\n", argv[0], strerror(errno));
+                    duk_push_error_object(ctx, DUK_ERR_ERROR, "Could not read entry file '%s': %s", argv[0], strerror(errno));
                     fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
                     free(free_file_src);
                     duk_rp_exit(ctx, 1);
@@ -1903,7 +1942,6 @@ int main(int argc, char *argv[])
 
             free(free_file_src);
 
-
             /* run the script */
             if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
             {
@@ -1921,6 +1959,13 @@ int main(int argc, char *argv[])
                 fprintf(stderr,"Eventloop error: could not initialize event base\n");
                 duk_rp_exit(ctx, 1);
             }
+
+            /* sigint for libevent2: insert a one time event to register a sigint handler *
+             * libeven2 otherwise erases our SIGINT and SIGTERM event handler set above   */
+            struct event ev_sig;
+            event_assign(&ev_sig, elbase, -1,  0, evhandler, NULL);
+            struct timeval to={0};
+            event_add(&ev_sig, &to);
 
             /* start event loop */
             event_base_loop(elbase, 0);
