@@ -102,7 +102,6 @@ static LMDB_ENV *redo_env(duk_context *ctx, LMDB_ENV *lenv) {
         mdb_env_close(lenv->env);
         RP_THROW(ctx, "lmdb.init - failed to open %s %s", lenv->dbpath, mdb_strerror(rc));
     }
-
     lock_main_ctx;
     /* get the object with previously opened lmdb environments */
     if(!duk_get_global_string(main_ctx, DUK_HIDDEN_SYMBOL("lmdbenvs")))
@@ -135,7 +134,7 @@ static LMDB_ENV * get_env(duk_context *ctx)
 {
     LMDB_ENV *lenv;
 
-    // it would appear that duktape runs finalizers in some sort of 
+    // it would appear that duktape runs finalizers in some sort of
     // try/cancel manner.  Upon doing the get_prop_string below, it stops
     // and jumps to the next JS instruction without doing anything else here
     // if the finalizer has already been run manually (txn.commit()|txn.abort()).
@@ -170,7 +169,7 @@ static LMDB_ENV * get_env(duk_context *ctx)
     {
         int rc;
         lenv = redo_env(ctx, lenv);
-        /* must sync or some stuff done before a fork 
+        /* must sync or some stuff done before a fork
            (like creating a db) may not be available
            to the child                               */
         rc=mdb_env_sync(lenv->env, 1);
@@ -342,7 +341,7 @@ duk_ret_t duk_rp_lmdb_drop(duk_context *ctx)
         MDB_val key={0}, val={0};
 
         rc = mdb_cursor_open(txn, dbi, &cursor);
-        
+
         if(rc)
         {
             write_unlock;
@@ -350,7 +349,7 @@ duk_ret_t duk_rp_lmdb_drop(duk_context *ctx)
             RP_THROW(ctx, "lmdb.drop - error opening database cursor - %s", mdb_strerror(rc));
         }
 
-        while(1) 
+        while(1)
         {
             int rc2;
             rc = mdb_cursor_get(cursor, &key, &val, MDB_NEXT);
@@ -361,7 +360,7 @@ duk_ret_t duk_rp_lmdb_drop(duk_context *ctx)
             /* names of dbs end in '\0' */
             if( val.mv_size == 48 && ((char *)key.mv_data)[key.mv_size-1] == '\0' )
                 continue;
-                  
+
             rc2 = mdb_cursor_del(cursor, 0);
             if(rc2)// && rc2!=MDB_INCOMPATIBLE) /* a dbname will come back with this*/
             {
@@ -593,7 +592,7 @@ duk_ret_t duk_rp_lmdb_list_dbs(duk_context *ctx)
     }
 
     rc = mdb_cursor_open(txn, dbi, &cursor);
-    
+
     if(rc)
     {
         mdb_txn_abort(txn);
@@ -611,7 +610,7 @@ duk_ret_t duk_rp_lmdb_list_dbs(duk_context *ctx)
         {
             duk_push_string(ctx, (char *)key.mv_data);
             duk_put_prop_index(ctx, -2, i++);
-        }        
+        }
     }
 
     if(rc != MDB_NOTFOUND)
@@ -1173,7 +1172,7 @@ duk_ret_t duk_rp_lmdb_close(duk_context *ctx)
     //Bad things could happen in that gap.  FIXME
     mdb_lock;
     duk_pop(ctx);
-    
+
     if(lenv->env)
     {
         mdb_env_close(lenv->env);
@@ -1229,7 +1228,6 @@ static MDB_txn * get_txn(duk_context *ctx, duk_idx_t this_idx)
 static MDB_dbi get_dbi(duk_context *ctx, duk_idx_t this_idx)
 {
     MDB_dbi dbi;
-
     if(duk_is_object(ctx,0) && duk_has_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("dbi")) )
     {
         pid_t pid;
@@ -1245,7 +1243,7 @@ static MDB_dbi get_dbi(duk_context *ctx, duk_idx_t this_idx)
             duk_remove(ctx, 0);
             return dbi;
         }
-        else        
+        else
         /* we forked, need to get new handle */
         {
             int rc;
@@ -1259,6 +1257,7 @@ static MDB_dbi get_dbi(duk_context *ctx, duk_idx_t this_idx)
             duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("db"));
             db = duk_get_string(ctx, -1);
             duk_pop(ctx);
+
             if(!strcmp(db,"lmdb default"))
                 db=NULL;
             rc = mdb_dbi_open(txn, db, 0, &dbi); // <= 0, presumably it exists
@@ -1303,6 +1302,19 @@ static void clean_txn(duk_context *ctx, MDB_txn *txn, int commit)
     if(lmdb_destroyed)
         return;
 
+    if( duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("refbuffers")) )
+    {
+        duk_uarridx_t i=0, len = duk_get_length(ctx, -1);
+        while(i<len)
+        {
+            duk_get_prop_index(ctx, -1, i);
+            duk_config_buffer(ctx, -1, NULL, 0);
+            duk_pop(ctx);
+            i++;
+        }
+    }
+    duk_pop(ctx);
+
     lenv = get_env(ctx);
 
     if(commit)
@@ -1340,13 +1352,14 @@ static void clean_txn(duk_context *ctx, MDB_txn *txn, int commit)
     }
     duk_pop_2(ctx);
 
+
     if(rc)
         RP_THROW(ctx, "transaction.commit - error committing data: (%d) %s\n", rc, mdb_strerror(rc));
 }
 
 
 /* if finalizer, 'this' is automatically on top of the stack */
-duk_ret_t duk_rp_lmdb_ll_abort_(duk_context *ctx)
+duk_ret_t duk_rp_lmdb_txn_abort_(duk_context *ctx)
 {
     MDB_txn *txn = get_txn(ctx, -1);
 
@@ -1356,15 +1369,15 @@ duk_ret_t duk_rp_lmdb_ll_abort_(duk_context *ctx)
     return 0;
 }
 
-duk_ret_t duk_rp_lmdb_ll_abort(duk_context *ctx)
+duk_ret_t duk_rp_lmdb_txn_abort(duk_context *ctx)
 {
     duk_push_this(ctx);
 
-    return duk_rp_lmdb_ll_abort_(ctx);
+    return duk_rp_lmdb_txn_abort_(ctx);
 }
 
 /* if finalizer, 'this' is automatically on top of the stack */
-duk_ret_t duk_rp_lmdb_ll_commit_(duk_context *ctx)
+duk_ret_t duk_rp_lmdb_txn_commit_(duk_context *ctx)
 {
     MDB_txn *txn = get_txn(ctx, -1);
 
@@ -1374,14 +1387,14 @@ duk_ret_t duk_rp_lmdb_ll_commit_(duk_context *ctx)
     return 0;
 }
 
-duk_ret_t duk_rp_lmdb_ll_commit(duk_context *ctx)
+duk_ret_t duk_rp_lmdb_txn_commit(duk_context *ctx)
 {
     duk_push_this(ctx);
 
-    return duk_rp_lmdb_ll_commit_(ctx);
+    return duk_rp_lmdb_txn_commit_(ctx);
 }
 
-duk_ret_t duk_rp_lmdb_ll_put(duk_context *ctx)
+duk_ret_t duk_rp_lmdb_txn_put(duk_context *ctx)
 {
     int rc;
     MDB_txn *txn;
@@ -1442,7 +1455,7 @@ duk_ret_t duk_rp_lmdb_ll_put(duk_context *ctx)
 }
 
 /* get a single value from the db */
-duk_ret_t duk_rp_lmdb_ll_get(duk_context *ctx)
+duk_ret_t duk_rp_lmdb_txn_get(duk_context *ctx)
 {
     int rc;
     MDB_txn *txn;
@@ -1480,8 +1493,59 @@ duk_ret_t duk_rp_lmdb_ll_get(duk_context *ctx)
     return 1;
 }
 
+/* get a single value from the db by reference*/
+duk_ret_t duk_rp_lmdb_txn_get_ref(duk_context *ctx)
+{
+    int rc;
+    MDB_txn *txn;
+    MDB_dbi dbi;
+    MDB_val key, val;
+    duk_size_t ksz;
+    duk_uarridx_t i=0;
+
+    duk_push_this(ctx);
+
+    txn = get_txn(ctx, -1);
+    dbi = get_dbi(ctx, -1);
+
+    key.mv_data = (void *) REQUIRE_STR_OR_BUF(ctx, 0, &ksz, "transaction.get - first parameter must be a string or buffer (key)");
+    key.mv_size=(duk_size_t)ksz;
+
+
+    rc = mdb_get(txn, dbi, &key, &val);
+
+    if(rc == MDB_NOTFOUND)
+        return 0;
+
+    if(rc)
+    {
+        RP_THROW(ctx, "transaction.get failed - %s", mdb_strerror(rc));
+    }
+
+    duk_push_external_buffer(ctx);
+    duk_config_buffer(ctx, -1, val.mv_data, (duk_size_t)val.mv_size);
+    duk_dup(ctx, -1);
+
+    /* stash it away in 'this' so we can reconfigure to 0 after tnx closes */
+    if( !duk_get_prop_string(ctx, -3, DUK_HIDDEN_SYMBOL("refbuffers")) )
+    {
+        duk_pop(ctx);
+        duk_push_array(ctx);
+        duk_dup(ctx, -1);
+        duk_put_prop_string(ctx, -5, DUK_HIDDEN_SYMBOL("refbuffers"));
+    }
+    else
+        i = duk_get_length(ctx, -1);
+    // [ this, buffer, buffer, ref_array]
+    duk_pull(ctx, -2); // [ this, buffer, ref_array, buffer]
+    duk_put_prop_index(ctx, -2, i); //[ this, buffer, ref_array]
+    duk_pop(ctx); // [ this, buffer ]
+
+    return 1;
+}
+
 /* delete a single value from the db */
-duk_ret_t duk_rp_lmdb_ll_del(duk_context *ctx)
+duk_ret_t duk_rp_lmdb_txn_del(duk_context *ctx)
 {
     int rc;
     MDB_txn *txn;
@@ -1872,7 +1936,7 @@ duk_ret_t duk_rp_lmdb_new_txn(duk_context *ctx)
         else
         {
             if(!strcmp(db,"lmdb default"))
-                dbi = open_dbi(ctx, lenv, "", 0, NULL); //we assume it exists.
+                dbi = open_dbi(ctx, lenv, NULL, 0, NULL); //we assume it exists.
             else
                 dbi = open_dbi(ctx, lenv, db, 0, NULL); //we assume it exists.
 
@@ -1954,9 +2018,9 @@ duk_ret_t duk_rp_lmdb_new_txn(duk_context *ctx)
     }
 
     if(duk_get_boolean_default(ctx, 2, 0))
-        duk_push_c_function(ctx, duk_rp_lmdb_ll_commit_, 1);
+        duk_push_c_function(ctx, duk_rp_lmdb_txn_commit_, 1);
     else
-        duk_push_c_function(ctx, duk_rp_lmdb_ll_abort_, 1);
+        duk_push_c_function(ctx, duk_rp_lmdb_txn_abort_, 1);
     duk_set_finalizer(ctx, -2);
 
     return 0;
@@ -2098,7 +2162,7 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
     lock_main_ctx;
     if(duk_get_global_string(main_ctx, DUK_HIDDEN_SYMBOL("lmdbenvs")))
     {
-        duk_get_prop_string(main_ctx, -1, dbpath); 
+        duk_get_prop_string(main_ctx, -1, dbpath);
         lenv = duk_get_pointer(main_ctx, -1);
         duk_pop(main_ctx);
     }
@@ -2150,13 +2214,16 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
     duk_push_pointer(ctx, (void *) lenv);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("lenv"));
 
-    duk_push_c_function(ctx, duk_rp_lmdb_ll_put, 3);
+    duk_push_c_function(ctx, duk_rp_lmdb_txn_put, 3);
     duk_put_prop_string(ctx, -2, "put");
 
-    duk_push_c_function(ctx, duk_rp_lmdb_ll_get, 3);
+    duk_push_c_function(ctx, duk_rp_lmdb_txn_get, 3);
     duk_put_prop_string(ctx, -2, "get");
 
-    duk_push_c_function(ctx, duk_rp_lmdb_ll_del, 2);
+    duk_push_c_function(ctx, duk_rp_lmdb_txn_get_ref, 2);
+    duk_put_prop_string(ctx, -2, "getRef");
+
+    duk_push_c_function(ctx, duk_rp_lmdb_txn_del, 2);
     duk_put_prop_string(ctx, -2, "del");
 
     duk_push_c_function(ctx, duk_rp_lmdb_cursor_get, 5);
@@ -2174,10 +2241,10 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
     duk_push_c_function(ctx, duk_rp_lmdb_cursor_del, 1);
     duk_put_prop_string(ctx, -2, "cursorDel");
 
-    duk_push_c_function(ctx, duk_rp_lmdb_ll_commit, 0);
+    duk_push_c_function(ctx, duk_rp_lmdb_txn_commit, 0);
     duk_put_prop_string(ctx, -2, "commit");
 
-    duk_push_c_function(ctx, duk_rp_lmdb_ll_abort, 0);
+    duk_push_c_function(ctx, duk_rp_lmdb_txn_abort, 0);
     duk_put_prop_string(ctx, -2, "abort");
 
     duk_put_prop_string(ctx, -2, "prototype");

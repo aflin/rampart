@@ -1958,18 +1958,35 @@ static void attachbuf(DHS *dhs, duk_idx_t idx)
 {
     duk_size_t sz;
     const char *s;
-    CTXFREER *freeme = NULL;
     duk_context *ctx = dhs->ctx;
-    REMALLOC(freeme, sizeof(CTXFREER));
+    int variant;
 
-    duk_to_dynamic_buffer(ctx, idx, &sz);
-    s = duk_steal_buffer(ctx, idx, &sz);
-    freeme->ctx = ctx;
-    freeme->threadno = (int)dhs->threadno;
-    if( dhs->req->cb_has_websock)
-        freeme->threadno += totnthreads;
+    //is it an external buffer?
+    duk_inspect_value(ctx, idx);
+    duk_get_prop_string(ctx, -1, "variant");
+    variant = duk_get_int_default(ctx, -1, 0);
+    duk_pop_2(ctx);
 
-    evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, refcb, freeme);
+    if(variant == 2)
+    // indeed it is, no need to free.
+    {
+        s = duk_get_buffer_data(ctx, idx, &sz);
+        evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, NULL, NULL);
+    }
+    else
+    /* no it isn't, steal and free later */
+    {
+        CTXFREER *freeme = NULL;
+
+        REMALLOC(freeme, sizeof(CTXFREER));
+        duk_to_dynamic_buffer(ctx, idx, &sz);
+        s = duk_steal_buffer(ctx, idx, &sz);
+        freeme->ctx = ctx;
+        freeme->threadno = (int)dhs->threadno;
+        if( dhs->req->cb_has_websock)
+            freeme->threadno += totnthreads;
+        evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, refcb, freeme);
+    }
 }
 
 /* send the shared memory buffer.
@@ -1989,7 +2006,7 @@ static void sendmem(DHS *dhs)
     dhs->bufsz=0;
 }
 
-/* send a buffer or a string 
+/* send a buffer or a string
    will send content of req.printf first
 */
 static void sendbuf(DHS *dhs)
