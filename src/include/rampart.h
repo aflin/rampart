@@ -36,7 +36,7 @@ extern pthread_mutex_t ctxlock;
 } while(0)
 
 
-/* macros to help with require_* and throwing errors with 
+/* macros to help with require_* and throwing errors with
    a stack trace.
 */
 extern int totnthreads;
