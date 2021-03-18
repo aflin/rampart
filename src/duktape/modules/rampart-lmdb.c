@@ -1950,20 +1950,16 @@ duk_ret_t duk_rp_lmdb_new_txn(duk_context *ctx)
     else if (duk_is_undefined(ctx, 0) || duk_is_null(ctx, 0) )
     {
         db="lmdb default";
-        dbi = open_dbi(ctx, lenv, "", 0, &rc);
-        if(rc == MDB_NOTFOUND)
-            dbi = open_dbi(ctx, lenv, db, MDB_CREATE, NULL);
+        dbi = open_dbi(ctx, lenv, NULL, 0, &rc);
     }
     else
     {
-        db = REQUIRE_STRING(ctx, 0, "lmdb.transaction - first parameter must be a string (the database from the current database environment)");
+        db = REQUIRE_STRING(ctx, 0, "lmdb.transaction - first parameter must be a string or dbi object (the database from the current database environment to use)");
 
         if(*db =='\0')
         {
             db="lmdb default";
-            dbi = open_dbi(ctx, lenv, "", 0, &rc);
-            if(rc == MDB_NOTFOUND)
-                dbi = open_dbi(ctx, lenv, db, MDB_CREATE, NULL);
+            dbi = open_dbi(ctx, lenv, NULL, 0, &rc);
         }
         else
         {
