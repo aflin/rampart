@@ -1518,6 +1518,99 @@ For a more complete example of using events and websockets,
 see the ``rampart/examples/web_server/modules/wschat.js``
 script.
 
+Technical Notes
+---------------
+
+A rampart server script is broken into 3 stages:
+
+.. code-block:: javascript
+
+    begin code
+
+    server.start()
+
+    end of script
+
+
+At "begin code", code is run in the main thread.  Global functions and
+variables declared here will be copied when the server starts.
+
+At "server.start" new threads are created, each beginning its own event loop.
+
+At "end of script" the main thread's event loop starts and "server.start" is
+initialized from within the main thread's event loop.
+
+
+Server.start creates the configured number of threads (as specified or equal
+to the number of cpu cores on the system).  Upon creation several things
+happen:
+
+    * Two duktape contexts are created for each thread.  One for http
+      requests and one for websockets conversations.
+
+    * Each duktape context is a separate JavaScript interpreter.  In
+      general, no data is shared between them.
+
+    * An event loop is created for each thread.
+
+    * Global variables and functions from "begin code" are copied from the
+      main thread's duktape context to all the duktape thread contexts. 
+      Local variables are lost.
+
+    * The main thread listens for http connections in its event loop and
+      assigns them to the least busy thread's event loops.
+
+    * The thread event loops accept the http connections and pass the http
+      request data to the appropriate duktape context for that thread.  That
+      context runs the matching callback and returns data which is passed on
+      to the client.
+
+    * Each thread may be handling http requests and multiple websocket
+      connections at the same time from within its event loop.
+
+    * The duktape context for http requests may be destroyed and recreated
+      upon timeout while the websockets context will always persist.
+
+    * Any events or setTimeouts set from within server callbacks are run
+      within that thread's event loop.  Events and setTimeouts run outside
+      the server (in "begin code" or before "end of script") are run in the
+      main event loop.
+      
+    * Http requests which have a timeout are run from a new thread which can
+      be interrupted.  If the timeout is reached before the callback
+      function finishes, the thread is cancelled and the threads duktape
+      context is destroyed and recreated in order to serve the next request.
+
+    * Since websockets do not timeout, destroying their contexts would
+      interrupt its conversation with the client.  So a second, separate
+      context per thread which will never be destroyed is used for
+      websockets.
+
+
+Modules vs Global callback functions:
+
+    * a server callback function may be called from a function defined in
+      the main script or by loading a module.
+
+    * Global functions and variables are set once when the server script is
+      first loaded and cannot be changed without restarting the server.
+
+    * Modules are loaded in each thread and are checked upon each execution. 
+      If the source script of a module is changed while the server is
+      running, it is reloaded.
+
+Return values from server callback function.
+
+    * strings are copied from duktape to the buffer that will be returned to
+      the client.
+
+    * Wherever possible, buffers are passed by reference without copy to be
+      returned to the client.
+
+    * req.put and req.printf data is copied to a buffer which will be
+      passed by reference to the client.
+
+
 Key to Mime Mappings
 --------------------
 
