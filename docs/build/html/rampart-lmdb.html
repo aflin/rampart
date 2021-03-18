@@ -121,6 +121,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#lmdb-transaction-functions">LMDB Transaction Functions</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#lmdb-transaction">lmdb.transaction</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#txn-get">txn.get</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#txn-getref">txn.getRef</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#txn-put">txn.put</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#txn-del">txn.del</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#using-cursors">Using Cursors</a></li>
@@ -846,6 +847,73 @@ will be a <span class="green">Buffer</span>.</p></li>
 <span class="green">String</span>.</p>
 </dd>
 </dl>
+</div>
+<div class="section" id="txn-getref">
+<h3>txn.getRef<a class="headerlink" href="#txn-getref" title="Permalink to this headline">¶</a></h3>
+<p>Get a single value from a database in a mmaped backed buffer.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Lmdb</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-lmdb&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">lmdb</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Lmdb</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">path</span><span class="p">,</span><span class="nx">create</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+
+<span class="cm">/* open read only if only reading in this transaction */</span>
+<span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">([</span><span class="nx">dbase</span><span class="p">,</span> <span class="p">]</span> <span class="kc">false</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">txn</span><span class="p">.</span><span class="nx">getRef</span><span class="p">([</span><span class="nx">dbase</span> <span class="p">,]</span> <span class="nx">key</span><span class="p">);</span>
+
+<span class="cm">/* use res here */</span>
+
+<span class="nx">tnx</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+
+<span class="cm">/* res data is invalid and buffer is reset to zero length */</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <code class="docutils literal notranslate"><span class="pre">dbi</span> <span class="pre">object</span></code> returned from <a class="reference internal" href="#opendb">openDb</a>. If the
+database does not exist, it will be created.  If omitted, the
+database specified in <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">lmdb.transaction</span></code> will be used.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">key</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span>, the key of the item
+to be retrieved.</p></li>
+</ul>
+</div></blockquote>
+<dl>
+<dt>Return Value:</dt><dd><p>A <span class="green">Buffer</span>.  The buffer is backed by the mmaped data on disk and
+is only valid until <a class="reference internal" href="#txn-commit">txn.commit</a> or <a class="reference internal" href="#txn-abort">txn.abort</a> is called, or until
+the <code class="docutils literal notranslate"><span class="pre">txn</span></code> variable is no longer in scope.</p>
+</dd>
+<dt>Note:</dt><dd><p>This can be used to have <a class="reference internal" href="rampart-server.html#the-rampart-server-http-module"><span class="std std-ref">The rampart-server HTTP module</span></a>
+serve content directly from the disk with no copies. In order to do so,
+the <code class="docutils literal notranslate"><span class="pre">txn</span></code> variable must stay in scope until the content is served.</p>
+<p>In the following example, <code class="docutils literal notranslate"><span class="pre">setTimeout</span></code> is used to keep the <code class="docutils literal notranslate"><span class="pre">txn</span></code>
+object in scope until after the http transaction is complete.  Otherwise
+the transaction would be automatically closed upon the return of the
+function and the contents of the buffer would be invalid and reset to
+zero length.</p>
+</dd>
+</dl>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="cm">/* callback function for the rampart-server module */</span>
+<span class="kd">function</span> <span class="nx">cb</span> <span class="p">(</span><span class="nx">req</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">txn</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">transaction</span><span class="p">(</span><span class="kc">false</span><span class="p">);</span>
+    <span class="cm">/* get a mmap backed reference to our data */</span>
+    <span class="kd">var</span> <span class="nx">refbuf</span> <span class="o">=</span> <span class="nx">txn</span><span class="p">.</span><span class="nx">getRef</span><span class="p">(</span><span class="s2">&quot;myjpg&quot;</span><span class="p">);</span>
+
+    <span class="cm">/* close transaction after http request is served. *</span>
+<span class="cm">     * The setTimeout function is inserted into the    *</span>
+<span class="cm">     * event loop and will be run after the http reply *</span>
+<span class="cm">     * is sent to the client.                          */</span>
+    <span class="nx">setTimeout</span><span class="p">(</span>
+        <span class="kd">function</span><span class="p">()</span> <span class="p">{</span>
+            <span class="nx">txn</span><span class="p">.</span><span class="nx">commit</span><span class="p">();</span>
+        <span class="p">},</span>
+        <span class="mi">0</span>
+    <span class="p">);</span>
+    <span class="cm">/* serve data directly from disk */</span>
+    <span class="k">return</span><span class="p">({</span><span class="s2">&quot;jpg&quot;</span><span class="o">:</span><span class="nx">refbuf</span><span class="p">});</span>
+<span class="p">}</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="txn-put">
 <h3>txn.put<a class="headerlink" href="#txn-put" title="Permalink to this headline">¶</a></h3>

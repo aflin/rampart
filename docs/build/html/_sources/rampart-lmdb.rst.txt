@@ -714,6 +714,78 @@ Return Value:
     A :green:`Buffer` or, if ``return_string`` is ``true``, a
     :green:`String`.
 
+txn.getRef
+~~~~~~~~~~
+
+Get a single value from a database in a mmaped backed buffer.
+
+Usage:
+
+.. code-block:: javascript
+
+    var Lmdb = require("rampart-lmdb");
+    var lmdb = new Lmdb.init(path,create,options);
+
+    /* open read only if only reading in this transaction */
+    var txn = new lmdb.transaction([dbase, ] false);
+
+    var res = txn.getRef([dbase ,] key);
+
+    /* use res here */
+
+    tnx.commit();
+
+    /* res data is invalid and buffer is reset to zero length */
+
+Where:
+    
+    * ``dbase`` is a ``dbi object`` returned from `openDb`_\ . If the
+      database does not exist, it will be created.  If omitted, the 
+      database specified in ``new lmdb.transaction`` will be used.
+
+    * ``key`` is a :green:`String` or :green:`Buffer`, the key of the item
+      to be retrieved.
+
+Return Value:
+    A :green:`Buffer`.  The buffer is backed by the mmaped data on disk and
+    is only valid until `txn.commit`_ or `txn.abort`_ is called, or until
+    the ``txn`` variable is no longer in scope.
+
+Note:
+    This can be used to have :ref:`rampart-server:The rampart-server HTTP module`
+    serve content directly from the disk with no copies. In order to do so,
+    the ``txn`` variable must stay in scope until the content is served. 
+
+    In the following example, ``setTimeout`` is used to keep the ``txn``
+    object in scope until after the http transaction is complete.  Otherwise
+    the transaction would be automatically closed upon the return of the
+    function and the contents of the buffer would be invalid and reset to
+    zero length.
+
+.. code-block:: javascript
+
+    /* callback function for the rampart-server module */
+    function cb (req)
+    {
+        var txn = new lmdb.transaction(false);
+        /* get a mmap backed reference to our data */
+        var refbuf = txn.getRef("myjpg");
+
+        /* close transaction after http request is served. *
+         * The setTimeout function is inserted into the    *
+         * event loop and will be run after the http reply *
+         * is sent to the client.                          */
+        setTimeout(
+            function() {
+                txn.commit();
+            }, 
+            0 
+        );
+        /* serve data directly from disk */
+        return({"jpg":refbuf});
+    }
+
+
 txn.put
 ~~~~~~~
 

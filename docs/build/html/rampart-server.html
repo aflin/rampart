@@ -139,6 +139,7 @@
 </li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#technical-notes">Technical Notes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#key-to-mime-mappings">Key to Mime Mappings</a></li>
 </ul>
 </li>
@@ -1606,6 +1607,82 @@ see the <code class="docutils literal notranslate"><span class="pre">rampart/exa
 script.</p>
 </div>
 </div>
+</div>
+<div class="section" id="technical-notes">
+<h2>Technical Notes<a class="headerlink" href="#technical-notes" title="Permalink to this headline">¶</a></h2>
+<p>A rampart server script is broken into 3 stages:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">begin</span> <span class="nx">code</span>
+
+<span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">()</span>
+
+<span class="nx">end</span> <span class="k">of</span> <span class="nx">script</span>
+</pre></div>
+</div>
+<p>At “begin code”, code is run in the main thread.  Global functions and
+variables declared here will be copied when the server starts.</p>
+<p>At “server.start” new threads are created, each beginning its own event loop.</p>
+<p>At “end of script” the main thread’s event loop starts and “server.start” is
+initialized from within the main thread’s event loop.</p>
+<p>Server.start creates the configured number of threads (as specified or equal
+to the number of cpu cores on the system).  Upon creation several things
+happen:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>Two duktape contexts are created for each thread.  One for http
+requests and one for websockets conversations.</p></li>
+<li><p>Each duktape context is a separate JavaScript interpreter.  In
+general, no data is shared between them.</p></li>
+<li><p>An event loop is created for each thread.</p></li>
+<li><p>Global variables and functions from “begin code” are copied from the
+main thread’s duktape context to all the duktape thread contexts.
+Local variables are lost.</p></li>
+<li><p>The main thread listens for http connections in its event loop and
+assigns them to the least busy thread’s event loops.</p></li>
+<li><p>The thread event loops accept the http connections and pass the http
+request data to the appropriate duktape context for that thread.  That
+context runs the matching callback and returns data which is passed on
+to the client.</p></li>
+<li><p>Each thread may be handling http requests and multiple websocket
+connections at the same time from within its event loop.</p></li>
+<li><p>The duktape context for http requests may be destroyed and recreated
+upon timeout while the websockets context will always persist.</p></li>
+<li><p>Any events or setTimeouts set from within server callbacks are run
+within that thread’s event loop.  Events and setTimeouts run outside
+the server (in “begin code” or before “end of script”) are run in the
+main event loop.</p></li>
+<li><p>Http requests which have a timeout are run from a new thread which can
+be interrupted.  If the timeout is reached before the callback
+function finishes, the thread is cancelled and the threads duktape
+context is destroyed and recreated in order to serve the next request.</p></li>
+<li><p>Since websockets do not timeout, destroying their contexts would
+interrupt its conversation with the client.  So a second, separate
+context per thread which will never be destroyed is used for
+websockets.</p></li>
+</ul>
+</div></blockquote>
+<p>Modules vs Global callback functions:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>a server callback function may be called from a function defined in
+the main script or by loading a module.</p></li>
+<li><p>Global functions and variables are set once when the server script is
+first loaded and cannot be changed without restarting the server.</p></li>
+<li><p>Modules are loaded in each thread and are checked upon each execution.
+If the source script of a module is changed while the server is
+running, it is reloaded.</p></li>
+</ul>
+</div></blockquote>
+<p>Return values from server callback function.</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>strings are copied from duktape to the buffer that will be returned to
+the client.</p></li>
+<li><p>Wherever possible, buffers are passed by reference without copy to be
+returned to the client.</p></li>
+<li><p>req.put and req.printf data is copied to a buffer which will be
+passed by reference to the client.</p></li>
+</ul>
+</div></blockquote>
 </div>
 <div class="section" id="key-to-mime-mappings">
 <h2>Key to Mime Mappings<a class="headerlink" href="#key-to-mime-mappings" title="Permalink to this headline">¶</a></h2>
