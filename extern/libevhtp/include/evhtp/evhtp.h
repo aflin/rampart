@@ -308,14 +308,16 @@ struct evhtp_alias {
  * @brief main structure containing all configuration information
  */
 struct evhtp {
-    evhtp_t               * parent;      /**< only when this is a vhost */
-    struct event_base     * evbase;      /**< the initialized event_base */
-    struct evconnlistener * server;      /**< the libevent listener struct */
-    char                  * server_name; /**< the name included in Host: responses */
-    void                  * arg;         /**< user-defined evhtp_t specific arguments */
-    int                     bev_flags;   /**< bufferevent flags to use on bufferevent_*_socket_new() */
-    uint64_t                max_body_size;
-    uint64_t                max_keepalive_requests;
+    evhtp_t               *  parent;      /**< only when this is a vhost */
+    struct event_base     *  evbase;      /**< the initialized event_base */
+    struct evconnlistener ** servers;     /**< the libevent listener structs 
+                                                (now allows more than one evhtp_bind_socket)*/
+    unsigned int             nservers;    /**< the number of above          */
+    char                  *  server_name; /**< the name included in Host: responses */
+    void                  *  arg;         /**< user-defined evhtp_t specific arguments */
+    int                      bev_flags;   /**< bufferevent flags to use on bufferevent_*_socket_new() */
+    uint64_t                 max_body_size;
+    uint64_t                 max_keepalive_requests;
 
     #define EVHTP_FLAG_ENABLE_100_CONT     (1 << 1)
     #define EVHTP_FLAG_ENABLE_REUSEPORT    (1 << 2)

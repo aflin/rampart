@@ -28,6 +28,10 @@
 #include <sys/un.h>
 #endif
 
+#include <sys/types.h>
+#include <unistd.h>
+
+
 #include <limits.h>
 #include <event2/dns.h>
 
@@ -2061,7 +2065,7 @@ htp__request_parse_fini_(htparser * p)
          NEVER DO THIS:  we will parse body separately.  query_raw will only be if
          on url from GET, and never overwitten with contents from body regardless of method
          --ajf
-    
+
     if (htp__should_parse_query_body_(c->request) == 1) {
         const char      * body;
         size_t            body_len;
@@ -2369,12 +2373,12 @@ static void ws_start_ping(evhtp_request_t *req, int interval)
     struct event_base *base = evthr_get_base(thr);
     evhtp_ws_parser *p = req->ws_parser;
     struct timeval timeout;
-    
+
     timeout.tv_sec= (time_t) interval;
-    timeout.tv_usec=0; 
+    timeout.tv_usec=0;
 
     p->pingev = event_new(base, -1, EV_PERSIST, ws_ping_cb, (void*)req);
-    event_add(p->pingev, &timeout);    
+    event_add(p->pingev, &timeout);
     p->pingct = 0;
 }
 
@@ -2491,14 +2495,14 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
     evhtp_assert(buf != NULL);
     evhtp_assert(c->parser != NULL);
 
-    if (req && req->websock) 
+    if (req && req->websock)
     {
         ssize_t ret;
 
         /* process this data as websocket data, if the websocket parser has not
          * been allocated, we allocate it first.
          */
-        if (req->ws_parser == NULL) 
+        if (req->ws_parser == NULL)
         {
             req->ws_parser = evhtp_ws_parser_new();
             ws_start_ping(req, 10);
@@ -2520,8 +2524,8 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
         }
         else
             nread=(size_t)ret;
-    } 
-    else 
+    }
+    else
     {
         /* process as normal HTTP data. */
         //printf("%.*s\n",(int)avail, (char*)buf);
@@ -4265,13 +4269,17 @@ evhtp_send_reply_chunk_end(evhtp_request_t * request)
 }
 
 void
-evhtp_unbind_socket(evhtp_t * htp)
+evhtp_unbind_sockets(evhtp_t * htp)
 {
-    if (htp == NULL || htp->server == NULL) {
+    if (htp == NULL || htp->servers == NULL) {
         return;
     }
 
-    evhtp_safe_free(htp->server, evconnlistener_free);
+    while(htp->nservers--)
+        evhtp_safe_free(htp->servers[htp->nservers], evconnlistener_free);
+
+    free(htp->servers);
+    htp->servers = NULL;
 }
 
 static int
@@ -4348,14 +4356,16 @@ evhtp_accept_socket(evhtp_t * htp, evutil_socket_t sock, int backlog)
     }
 
     do {
-        htp->server = evconnlistener_new(htp->evbase,
+        htp->nservers++;
+        htp->servers = htp__realloc_(htp->servers, sizeof(struct evconnlistener *) * htp->nservers );
+        htp->servers[htp->nservers -1] = evconnlistener_new(htp->evbase,
             htp__accept_cb_,
             htp,
             LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE,
             backlog,
             sock);
 
-        if (htp->server == NULL) {
+        if (htp->servers[htp->nservers -1] == NULL) {
             break;
         }
 
@@ -4377,8 +4387,8 @@ evhtp_accept_socket(evhtp_t * htp, evutil_socket_t sock, int backlog)
     } while (0);
 
     if (err == 1) {
-        if (htp->server != NULL) {
-            evhtp_safe_free(htp->server, evconnlistener_free);
+        if (htp->servers[htp->nservers -1] != NULL) {
+            evhtp_safe_free(htp->servers[htp->nservers -1], evconnlistener_free);
         }
 
         return -1;
@@ -5730,6 +5740,8 @@ evhtp__new_(evhtp_t ** out, struct event_base * evbase, void * arg)
     return 0;
 }
 
+static pid_t start_pid;
+
 evhtp_t *
 evhtp_new(struct event_base * evbase, void * arg)
 {
@@ -5741,17 +5753,18 @@ evhtp_new(struct event_base * evbase, void * arg)
 
     if (pthread_mutex_init(&wsctlock, NULL) == EINVAL)
     {
-        fprintf(stderr, "server.start: could not initialize wsct lock\n");
+        fprintf(stderr, "evhtp_new: could not initialize wsct lock\n");
         exit(1);
     }
 
 #ifdef EVHTP_VALGRIND_FORK_SAFE
     if (pthread_mutex_init(&contqlock, NULL) == EINVAL)
     {
-        fprintf(stderr, "server.start: could not initialize contq lock\n");
+        fprintf(stderr, "evhtp_new: could not initialize contq lock\n");
         exit(1);
     }
 #endif
+    start_pid = getpid();
     return htp;
 }
 
@@ -5764,9 +5777,15 @@ evhtp_free(evhtp_t * evhtp)
         return;
     }
 
+    if (evhtp->servers != NULL) {
+        evhtp_unbind_sockets(evhtp);
+    }
+
 #ifndef EVHTP_DISABLE_EVTHR
     if (evhtp->thr_pool) {
-        evthr_pool_stop(evhtp->thr_pool);
+        /* threads will be gone if forked.  Don't attempt to access */
+        if(start_pid == getpid())
+            evthr_pool_stop(evhtp->thr_pool);
         evthr_pool_free(evhtp->thr_pool);
     }
 
