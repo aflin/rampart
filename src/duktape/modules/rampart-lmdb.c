@@ -1107,13 +1107,10 @@ int duk_rp_lmdb_exitset = 0;
 
 MDB_env **all_env;
 
-extern rp_vfunc duk_rp_lmdb_free_all_env;
-
-static void free_all_env(void)
+static void free_all_env(void *arg)
 {
     int i=0;
     MDB_env *env;
-
     while( (env = all_env[i]) )
     {
         mdb_env_close(env);
@@ -1152,7 +1149,7 @@ duk_ret_t duk_rp_lmdb_cleanup(duk_context *ctx)
         }
         REMALLOC(all_env, (n+1) * sizeof(MDB_env *));
         all_env[n]=NULL;
-        duk_rp_lmdb_free_all_env = free_all_env;
+        add_exit_func(free_all_env, NULL);
     }
     duk_pop(ctx);
     duk_push_object(ctx);

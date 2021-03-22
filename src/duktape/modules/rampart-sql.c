@@ -290,7 +290,7 @@ void die_nicely(int sig)
     for (; i<NDB_HANDLES; i++)
     {
         h= all_handles[i];
-        if(!h)
+        if(h && h->inuse)
         {
             texis_cancel(h->tx);
         }
@@ -522,10 +522,14 @@ static void free_all_handles(void *unused)
     int i=0;
     for (; i<NDB_HANDLES; i++)
     {
+        tx_rp_cancelled = 1;
         h= all_handles[i];
         if(h)
         {
             free(h->db);
+            if(h->inuse && h->forkno)
+                texis_cancel(h->tx);
+
             TEXIS_CLOSE(h->tx);
             free(h);
             all_handles[i]=NULL;
@@ -3981,5 +3985,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     duk_push_c_function(ctx, searchfile, 3);
     duk_put_prop_string(ctx, -2, "searchFile");
+
+    add_exit_func(free_all_handles, NULL);
     return 1;
 }

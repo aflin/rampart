@@ -20,6 +20,7 @@
 #include "event.h"
 #include "event2/thread.h"
 #include "linenoise.h"
+#include "sys/queue.h"
 
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 int totnthreads=0;
@@ -41,6 +42,9 @@ struct event_base **thread_base=NULL;
 
 /* mutex for locking main_ctx when in a thread with other duk stacks open */
 pthread_mutex_t ctxlock;
+
+/* mutex for locking around slist operations on the timeout structures*/
+pthread_mutex_t slistlock;
 
 
 #define RP_REPL_GREETING             \
@@ -302,12 +306,53 @@ void completion(const char *inbuf, linenoiseCompletions *lc) {
     return;
 }
 
-rp_vfunc duk_rp_lmdb_free_all_env = NULL;
+#define EXIT_FUNC struct rp_exit_funcs_s
+EXIT_FUNC {
+    rp_vfunc func;
+    void     *arg;
+//char *nl;
+};
+
+EXIT_FUNC **exit_funcs = NULL;
+
+//void add_exit_func_2(rp_vfunc func, void *arg, char *nl)
+void add_exit_func(rp_vfunc func, void *arg)
+{
+    int n=0;
+    EXIT_FUNC *ef;
+
+    if(exit_funcs)
+    {
+        /* count number of funcs */
+        while( (ef=exit_funcs[n++]) );
+
+        n++;
+    }
+    else
+        n=2;
+
+    ef=NULL;
+
+    REMALLOC(ef, sizeof(EXIT_FUNC));
+    REMALLOC(exit_funcs, n * sizeof (EXIT_FUNC *));
+    ef->func = func;
+    ef->arg=arg;
+//ef->nl=nl;
+    exit_funcs[n-2]=ef;
+    exit_funcs[n-1]=NULL;
+}
+
+
 
 void duk_rp_exit(duk_context *ctx, int ec)
 {
     int i=0,len=0;
 
+    static int ran_already=0;
+//printf("%d exiting once%s\n",(int)getpid(), ran_already?" again":""); 
+    if(ran_already)
+        exit(ec);
+    ran_already=1;
     duk_push_global_stash(ctx);
     duk_get_prop_string(ctx, -1, "exitfuncs");
     len=duk_get_length(ctx, -1);
@@ -320,10 +365,31 @@ void duk_rp_exit(duk_context *ctx, int ec)
 
     duk_destroy_heap(ctx);
     free(RP_script_path);
-    //for lmdb. TODO: make this a generic array of function pointers if/when others need it.
-    if(duk_rp_lmdb_free_all_env)
+
+    /* need to stop the threads before doing this 
+    if(totnthreads)
     {
-        (duk_rp_lmdb_free_all_env)();
+        for (i=0; i<totnthreads*2; i++)
+        {
+            duk_context *tctx = thread_ctx[i];
+            duk_destroy_heap(tctx);
+        }
+        free(thread_ctx);
+    }
+    */
+    //for lmdb. TODO: make this a generic array of function pointers if/when others need it.
+    if(exit_funcs)
+    {
+        EXIT_FUNC *ef;
+        int n=0;
+
+        while( (ef=exit_funcs[n++]) )
+        {
+//printf("--%d-- running callback set at %s\n", (int)getpid(), ef->nl);
+            (ef->func)(ef->arg);
+            free(ef);
+        }
+        free(exit_funcs);
     }
     exit(ec);
 }
@@ -741,14 +807,20 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     return (const char*) (strlen(babelsrc)) ? strdup(babelsrc): strdup(fn);
 }
 
-
-#define EVARGS struct ev_args
-EVARGS {
-    duk_context *ctx;
-    struct event *e;
-    double key;
-    int repeat;
-};
+static void free_tos (void *arg)
+{
+    EVARGS *e;
+    SLISTLOCK;  //probably not needed
+    while (!SLIST_EMPTY(&tohead))
+    {
+        e = SLIST_FIRST(&tohead);
+        SLIST_REMOVE_HEAD(&tohead, entries);
+        event_del(e->e);
+        event_free(e->e);
+        free(e);
+    }
+    SLISTUNLOCK;
+}
 
 
 static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
@@ -802,6 +874,9 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
 
     if(!evargs->repeat)
     {
+        SLISTLOCK;
+        SLIST_REMOVE(&tohead, evargs, ev_args, entries);
+        SLISTUNLOCK;
         event_del(evargs->e);
         event_free(evargs->e);
         duk_push_number(ctx, key);
@@ -834,10 +909,14 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat)
         RP_THROW(ctx, "event base not fount in global stash");
 
     /* set up struct to be passed to callback */
-    DUKREMALLOC(ctx,evargs,sizeof(EVARGS));
+    REMALLOC(evargs,sizeof(EVARGS));
     evargs->key = (double)ev_id++;
     evargs->ctx=ctx;
     evargs->repeat=repeat;
+
+    SLISTLOCK;
+    SLIST_INSERT_HEAD(&tohead, evargs, entries);
+    SLISTUNLOCK;
 
     /* get the timeout */
     timeout.tv_sec=(time_t)to;
@@ -1672,6 +1751,24 @@ int main(int argc, char *argv[])
     rampart_argc=argc;
     access_fh=stdout;
     error_fh=stderr;
+
+    /* timeout cleanups */
+    add_exit_func(free_tos, NULL);
+
+    /* initialze some locks */
+    if (pthread_mutex_init(&ctxlock, NULL) == EINVAL)
+    {
+        fprintf(stderr, "Error: could not initialize context lock\n");
+        exit(1);
+    }
+    if (pthread_mutex_init(&slistlock, NULL) == EINVAL)
+    {
+        fprintf(stderr, "Error: could not initialize slist lock\n");
+        exit(1);
+    }
+
+
+
     /* get script path */
     if(rampart_argc>1)
     {

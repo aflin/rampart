@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include "duktape.h"
+#include "sys/queue.h"
 
 #if defined(__cplusplus)
 extern "C"
@@ -301,9 +302,59 @@ extern FILE *access_fh;
 extern FILE *error_fh;
 extern int duk_rp_server_logging;
 
-typedef void (*rp_vfunc)(void);
+/* functions to be run upon exit */
+typedef void (*rp_vfunc)(void* arg);
+
+/* debugging
+void add_exit_func_2(rp_vfunc func, void *arg, char *nl);
+
+#define add_exit_func(f, a) do{\
+    char nl[128];\
+    sprintf(nl,"%s at %d", __FILE__, __LINE__);\
+    add_exit_func_2( (f), (a), strdup(nl) );\
+} while(0)
+*/
+void add_exit_func(rp_vfunc func, void *arg);
 
 void duk_rp_exit(duk_context *ctx, int ec);
+
+#define DUK_USE_FATAL_HANDLER(udata,msg) do { \
+    const char *fatal_msg = (msg); /* avoid double evaluation */ \
+    (void) udata; \
+    fprintf(stderr, "*** FATAL ERROR: %s\n", fatal_msg ? fatal_msg : "no message"); \
+    fflush(stderr); \
+    abort(); \
+} while (0)
+
+/* a list of timeouts pending */
+#define EVARGS struct ev_args
+
+EVARGS {
+    duk_context *ctx;
+    struct event *e;
+    double key;
+    int repeat;
+    SLIST_ENTRY(ev_args) entries;
+};
+
+extern pthread_mutex_t slistlock;
+#define SLISTLOCK do {\
+    if (pthread_mutex_lock(&slistlock) == EINVAL)\
+        {fprintf(stderr,"could not obtain lock for main context\n");exit(1);}\
+} while(0)
+#define SLISTUNLOCK  do{\
+    pthread_mutex_unlock(&slistlock);\
+} while(0)
+
+SLIST_HEAD(slisthead, ev_args) tohead;
+
+#ifndef SLIST_FOREACH_SAFE
+#define SLIST_FOREACH_SAFE(var, head, field, tvar)      \
+    for ((var) = SLIST_FIRST((head));                   \
+      (var) && ((tvar) = SLIST_NEXT((var), field), 1);  \
+      (var) = (tvar))
+#endif
+
 #if defined(__cplusplus)
 }
 #endif /* end 'extern "C"' wrapper */

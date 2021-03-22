@@ -88,7 +88,7 @@ CBH {
 #define JSEVENT_DELETE  1 // delete the event
 #define JSEVENT_DELFUNC 2 // delete a function in the event
 
-#define JSEVARGS struct ev_args
+#define JSEVARGS struct jsev_args
 JSEVARGS {
     int          thread_no;
     struct event *e;

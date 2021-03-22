@@ -173,6 +173,12 @@ DHMAP
 DHMAP **all_dhmaps=NULL;
 int n_dhmaps=0;
 
+static void simplefree(void *arg)
+{
+    if(arg)
+        free(arg);
+}
+
 static void setdate_header(evhtp_request_t *req, time_t secs)
 {
     if(!secs)
@@ -3151,7 +3157,29 @@ static duk_context *redo_ctx(int thrno)
 
     duk_remove(main_ctx,0);
 
+    /* remove pending events from old context */
+    {
+        EVARGS *e, *tmp;
+        SLISTLOCK;
+        SLIST_FOREACH_SAFE(e, &tohead, entries, tmp)
+        {
+            if(thread_ctx[thrno] == e->ctx)
+            {
+                SLIST_REMOVE(&tohead, e, ev_args, entries);
+                event_del(e->e);
+                event_free(e->e);
+                free(e);
+            }
+        }
+        SLISTUNLOCK;
+    }
+
     pthread_mutex_unlock(&ctxlock);
+
+    duk_push_global_stash(thr_ctx);
+    duk_push_pointer(thr_ctx, thread_base[thrno]);
+    duk_put_prop_string(thr_ctx, -2, "elbase");
+    duk_pop(thr_ctx);
 
     duk_destroy_heap(thread_ctx[thrno]);
     thread_ctx[thrno] = thr_ctx;
@@ -3315,8 +3343,8 @@ extern struct event_base *elbase;
 
 /* kinda hidden, but visible from printstack */
 /* TODO: replace RP_HIDDEN_SYMBOL with DUK_HIDDEN_SYMBOL */
-#define RP_HIDDEN_SYMBOL(s) " # " s
-
+//#define RP_HIDDEN_SYMBOL(s) " # " s
+#define RP_HIDDEN_SYMBOL(s) DUK_HIDDEN_SYMBOL(s)
 static int getmod(DHS *dhs)
 {
     duk_idx_t idx=dhs->func_idx;
@@ -3721,8 +3749,8 @@ char *bind_sock_port(evhtp_t *htp, const char *ip, uint16_t port, int backlog)
         return NULL;
 
     if (getsockname(
-            evconnlistener_get_fd(htp->server),
-            (struct sockaddr *)&sin, &len) == 0)
+            evconnlistener_get_fd(htp->servers[htp->nservers-1]),
+                (struct sockaddr *)&sin, &len) == 0)
     {
         char addr[INET6_ADDRSTRLEN];
 
@@ -3795,6 +3823,8 @@ void exitcb(evhtp_request_t *req, void *arg)
     exit(0);
 }
 
+
+
 void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
 {
     int *thrno = NULL;
@@ -3802,6 +3832,8 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     struct event_base *base = evthr_get_base(thr);
 
     REMALLOC(thrno, sizeof(int));
+
+    add_exit_func(simplefree, thrno);
 
     if (pthread_mutex_lock(&ctxlock) == EINVAL)
     {
@@ -4136,15 +4168,31 @@ static void proc_mimes(duk_context *ctx)
 "    }\n"
 
 
-/* The godzilla function.  Big, Scary and you just don't know what it's gonna
-   step on next.
-   TODO: turn this function from hell into something readable */
 
 extern struct event_base *elbase;
 
-/* FIXME, free these upon exit */
 DHS *main_dhs;
 evhtp_t *main_htp;
+
+
+static pid_t server_pid;
+
+/* TODO: figure out how to clean up after a fork */
+static void evexit(void *arg)
+{
+    free(main_dhs);
+
+    if(getpid() != server_pid)
+        return;
+
+    evhtp_t *htp = arg;
+    evhtp_free(htp);
+    event_base_free(elbase);
+}
+
+/* The godzilla function.  Big, Scary and you just don't know what it's gonna
+   step on next.
+   TODO: turn this function from hell into something readable */
 
 duk_ret_t duk_server_start(duk_context *ctx)
 {
@@ -4169,6 +4217,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     const char *cache_control="max-age=84600, public";
 
     main_dhs=dhs;
+    server_pid = getpid();
 
     if(rampart_server_started)
         RP_THROW(ctx, "server.start - error- only one server per process may be running - use daemon:true to launch multiples");
@@ -4248,6 +4297,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             }
             /* else grandchild */
             event_reinit(elbase);
+            server_pid=getpid();
             /* get first port used */
             if (duk_rp_GPS_icase(ctx, ob_idx, "bind"))
             {
@@ -4852,6 +4902,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         /* copy function into array at pos 0 in stack and into index fpos in array */
                         duk_put_prop_index(ctx,0,fpos);
                         cb_dhs = new_dhs(ctx, fpos);
+                        add_exit_func(simplefree, cb_dhs);
                         cb_dhs->module=mod;
                         cb_dhs->pathlen=pathlen;
                         cb_dhs->timeout.tv_sec = dhs->timeout.tv_sec;
@@ -5216,12 +5267,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     evhtp_set_pre_accept_cb(htp, pre_accept_callback, NULL);
 
-    if (pthread_mutex_init(&ctxlock, NULL) == EINVAL)
-    {
-        fprintf(stderr, "server.start: could not initialize context lock\n");
-        exit(1);
-    }
-
     if (mthread)
     {
         evhtp_use_threads_wexit(htp, initThread, NULL, nthr, NULL);
@@ -5259,6 +5304,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         duk_put_prop_string(ctx, -2, "funcstash");
         // if forking as a daemon, run loop here in child and don't continue with rest of script
         // script will continue in parent process
+        add_exit_func(evexit, htp);
         event_base_loop(elbase, 0);
     }
 
@@ -5266,6 +5312,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     duk_pull(ctx,0);
     duk_put_prop_string(ctx, -2, "funcstash");
     duk_push_int(ctx, (int) getpid() );
+    //add_exit_func(evexit, htp);
     return 1;
 }
 
