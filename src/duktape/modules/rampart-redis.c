@@ -579,7 +579,7 @@ duk_ret_t duk_rp_ramvar_destroy(duk_context *ctx)
   duk_enum(ctx, -1, DUK_ENUM_NO_PROXY_BEHAVIOR|DUK_ENUM_INCLUDE_HIDDEN);
   while (duk_next(ctx, -1, 0)) 
   {
-    printf("deleting %s from this\n", duk_get_string(ctx, -1));
+    //printf("deleting %s from this\n", duk_get_string(ctx, -1));
     duk_del_prop_string(ctx, -3, duk_get_string(ctx, -1));
     duk_pop(ctx);
   }
