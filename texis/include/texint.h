@@ -35,6 +35,8 @@ extern "C"
 #include "urlprotocols.h"
 #include "urlutils.h"
 #include "cgi.h"
+#include "ezsockbuf.h"
+#include "dirio.h"
 
 #ifndef EPI_HAVE_RLIM_T
 typedef long rlim_t;
@@ -376,7 +378,7 @@ int	TXbtfreecache ARGS((DBTBL *));
 
 /******************************************************************/
 
-typedef struct TXAPP_tag        TXAPP;
+typedef struct TXAPP        TXAPP;
 #define TXAPPPN ((TXAPP *)NULL)
 
 typedef enum TXCREATELOCKSMETHOD_tag
@@ -399,12 +401,15 @@ extern const char	TXxCreateLocksOptionsHdrName[];
 #define TX_CREATELOCKS_VERBOSE_IS_SET()     (TXverbosity >= 2)
 
 /* ------------------------------------------------------------------------ */
-
+#include "lockrequest.h"
+#include "ezsockbuf.h"
+TXLockRequest *TXlockRequest(TXEZsockbuf *ezsb, TXLockRequest *request);
 int	TXlockindex	ARGS((DBTBL *, int, ft_counter *));
 int	TXunlockindex	ARGS((DBTBL *, int, ft_counter *));
-int	TXlockandload	ARGS((DBTBL *, int, char **));
 int	TXlocktable	ARGS((DBTBL *, int));
 int	TXunlocktable	ARGS((DBTBL *, int));
+int	TXprepareTableForWriting	(DBTBL *tbl, int mode, char **updfields);
+int	TXdoneWritingToTable	(DBTBL *tbl, ft_counter *fc);
 int	TXlocksystbl(DDIC *ddic, SYSTBL tblid, int ltype, ft_counter *fc);
 int	TXunlocksystbl(DDIC *ddic, SYSTBL tblid, int ltype);
 
@@ -751,8 +756,8 @@ void *TXftiValueWithCooked_GetValue(TXftiValueWithCooked *valueWithCooked,
 
 /* Also typedef'd in dbstruct.h: */
 #ifndef TXA2INDPN
-typedef struct TXA2IND_tag	TXA2IND;
-#  define TXA2INDPN	((TXA2IND *)NULL)
+  typedef struct TXA2IND_tag	TXA2IND;
+# define TXA2INDPN	((TXA2IND *)NULL)
 #endif /* !TXA2INDPN */
 
 struct TXA2IND_tag {
@@ -791,7 +796,11 @@ TXA2IND *TXadd2indcleanup ARGS((TXA2IND *));
 
 int TXverifylocks(TXPMBUF *pmbuf, DBLOCK *dblock, int locked, int fix,
 		  TXbool verbose);
+#ifdef LOCK_SERVER
+#define TXfindltable(a,b,c) (0)
+#else
 int TXfindltable ARGS((TXPMBUF *pmbuf, DBLOCK *sem, char *table));
+#endif
 
 /******************************************************************/
 
@@ -807,69 +816,6 @@ extern int	TXDebugLevel;
 #define DBGMSG(a,b)
 #endif
 
-/******************************************************************/
-
-#define OP_IOCTL_MASK   0x00007FFF      /* bits reserved for individual op */
-#define TYPE_IOCTL_MASK 0xFFFF8000      /* type bits */
-
-#define BTREE_IOCTL     0x00008000      /* B-tree ioctl type  KNG 971016 */
-#define DBF_RAM		0x00010000
-#define DBF_FILE	0x00020000
-#define DBF_KAI		0x00040000
-#define DBF_DBASE	0x00080000
-#define DBF_MEMO	0x00100000
-#ifdef HAVE_JDBF
-#define DBF_JMT		0x00200000
-#endif
-#define DBF_NOOP        0x00400000
-
-#define DBF_MAKE_FILE	0x00000001
-#define DBF_AUTO_SWITCH	0x00000002
-#define DBF_SIZE	0x00000005
-
-#define RDBF_SETOVER	DBF_RAM | 0x00000001
-#define RDBF_TOOBIG	DBF_RAM | 0x00000002
-#define RDBF_BLCK_LIMIT	DBF_RAM | 0x00000003
-#define RDBF_SIZE_LIMIT	DBF_RAM | 0x00000004
-#define RDBF_SIZE	DBF_RAM | DBF_SIZE
-/* Separate ioctl RDBF_SET_NAME to set RAM DBF "file" name, because the
- * normal way to set a DBF name -- at opendbf() -- we can only pass NULL,
- * since that is the way to indicate RAM DBF:
- */
-#define RDBF_SET_NAME	(DBF_RAM | 0x00000006)
-
-#define	isramdbtbl(a)	((a) && (a)->tbl && (a)->tbl->df && ((a)->tbl->df->dbftype & DBF_RAM) == DBF_RAM)
-#define	isramtbl(a)	((a) && (a)->df && ((a)->df->dbftype & DBF_RAM) == DBF_RAM)
-
-/* ------------------------------ noopdbf.c: ------------------------------ */
-
-typedef struct TXNOOPDBF_tag    TXNOOPDBF;
-#define TXNOOPDBFPN     ((TXNOOPDBF *)NULL)
-
-/* "Filename" to pass to opendbf() to indicate TXNOOPDBF: */
-#define TXNOOPDBF_PATH  ((char *)1)
-
-#define TXNOOPDBF_IOCTL_SEEKSTART       0x1
-
-TXNOOPDBF *TXnoOpDbfClose(TXNOOPDBF *df);
-TXNOOPDBF *TXnoOpDbfOpen(void);
-int     TXnoOpDbfFree(TXNOOPDBF *df, EPI_OFF_T at);
-EPI_OFF_T TXnoOpDbfAlloc(TXNOOPDBF *df, void *buf, size_t n);
-EPI_OFF_T TXnoOpDbfPut(TXNOOPDBF *df, EPI_OFF_T at, void *buf, size_t sz);
-int     TXnoOpDbfBlockIsValid(TXNOOPDBF *df, EPI_OFF_T at);
-void    *TXnoOpDbfGet(TXNOOPDBF *df, EPI_OFF_T at, size_t *psz);
-void    *TXnoOpDbfAllocGet(TXNOOPDBF *df, EPI_OFF_T at, size_t *psz);
-size_t  TXnoOpDbfRead(TXNOOPDBF *df, EPI_OFF_T at, size_t *off, void *buf,
-                      size_t sz);
-EPI_OFF_T TXnoOpDbfTell(TXNOOPDBF *df);
-char    *TXnoOpDbfGetFilename(TXNOOPDBF *df);
-int     TXnoOpDbfGetFileDescriptor(TXNOOPDBF *df);
-void    TXnoOpDbfSetOverAlloc(TXNOOPDBF *noOpDbf, int ov);
-int     TXnoOpDbfIoctl(TXNOOPDBF *noOpDbf, int ioctl, void *data);
-int     TXnoOpDbfSetPmbuf(TXNOOPDBF *noOpDbf, TXPMBUF *pmbuf);
-
-int     TXinitNoOpDbf(DBF *df);
-
 /* ------------------------------------------------------------------------ */
 
 int	makevalidtable(DDIC *ddic, SYSTBL tblid);
@@ -883,28 +829,28 @@ void	pred_rmfieldcache ARGS((PRED *, DBTBL *));
 void    pred_sethandled ARGS((PRED *p));
 int     pred_allhandled ARGS((PRED *p));
 
-typedef enum TXpwEncryptMethod_tag
+typedef enum TXpwHashMethod_tag
 {
-	TXpwEncryptMethod_Unknown = -1,		/* must be first and -1 */
-	TXpwEncryptMethod_DES,
-	TXpwEncryptMethod_MD5,			/* `$1$...' */
-	TXpwEncryptMethod_SHA256,		/* `$5$...' */
-	TXpwEncryptMethod_SHA512,		/* `$6$...' */
-	TXpwEncryptMethod_NUM			/* must be last */
+	TXpwHashMethod_Unknown = -1,		/* must be first and -1 */
+	TXpwHashMethod_DES,
+	TXpwHashMethod_MD5,			/* `$1$...' */
+	TXpwHashMethod_SHA256,		/* `$5$...' */
+	TXpwHashMethod_SHA512,		/* `$6$...' */
+	TXpwHashMethod_NUM			/* must be last */
 }
-TXpwEncryptMethod;
+TXpwHashMethod;
 
 /* These are all standard for SHA mode in crypt(); do not change: */
-#define TX_PWENCRYPT_ROUNDS_MIN		1000
-#define TX_PWENCRYPT_ROUNDS_MAX		999999999
-#define TX_PWENCRYPT_ROUNDS_MAX_DIGITS	9	/* # digits in ROUNDS_MAX */
-#define TX_PWENCRYPT_ROUNDS_DEFAULT	5000
+#define TX_PWHASH_ROUNDS_MIN		1000
+#define TX_PWHASH_ROUNDS_MAX		999999999
+#define TX_PWHASH_ROUNDS_MAX_DIGITS	9	/* # digits in ROUNDS_MAX */
+#define TX_PWHASH_ROUNDS_DEFAULT	5000
 
-#define TX_PWENCRYPT_SALT_STR_DES	"$0$"
+#define TX_PWHASH_SALT_STR_DES	"$0$"
 
-char   *TXpwEncrypt(const char *clearPass, const char *salt);
-TXpwEncryptMethod TXpwEncryptMethodStrToEnum(const char *s);
-const char *TXpwEncryptMethodEnumToStr(TXpwEncryptMethod method);
+char   *TXpwHash(const char *clearPass, const char *salt);
+TXpwHashMethod TXpwHashMethodStrToEnum(const char *s);
+const char *TXpwHashMethodEnumToStr(TXpwHashMethod method);
 
 int	TXsetdfltpass ARGS((char *, char *, char *, char *));
 int	TXcreateDb(TXPMBUF *pmbuf, const char *path,
@@ -1187,11 +1133,16 @@ int   TXisUserAdmin(void);
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
-#define TX_INSTBINVARS_NUM      3
+#ifdef EPI_ENABLE_LIBDIR
+#  define TX_INSTBINVARS_NUM	4
+#else /* !EPI_ENABLE_LIBDIR */
+#  define TX_INSTBINVARS_NUM	3
+#endif /* !EPI_ENABLE_LIBDIR */
 extern CONST char * CONST      TxInstBinVars[];
 extern CONST char * CONST      TxInstBinVals[];
 #define TXREPLACEVAL_BINDIR  ((CONST char *)1)
 #define TXREPLACEVAL_EXEDIR  ((CONST char *)2)
+#define TXREPLACEVAL_LIBDIR  ((const char *)3)
 
 int  TXsplitdomainuser ARGS((TXPMBUF *pmbuf, CONST char *domain,
 			     CONST char *user, char **adomain, char **auser));
@@ -1732,7 +1683,7 @@ extern int      TXtraceWatchPath;
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
-extern CONST char       TxPlatformDesc[];
+extern const char * const TxPlatformDesc;
 
 /******************************************************************/
 
@@ -1834,7 +1785,12 @@ extern int TXverbosepredvalid;
 extern int TXdisablenewlist;/* JMT 1999-08-11 */
 extern int TXverifysingle;/* JMT 1999-08-11 */
 extern int TXexceptionbehaviour;/* JMT 2000-07-07 */
+#ifdef LOCK_SERVER
+#define TX_I_AM_DB_MONITOR (TXApp->role == TXAppDBMonitor)
+#else
 extern int TXminserver;
+#define TX_I_AM_DB_MONITOR (TXminserver == 0)
+#endif
 extern const char TXWhitespace[];
 
 int	TXsetTexisApicpDefaults ARGS((APICP *cp, int setBuiltin,
@@ -2072,6 +2028,7 @@ TXsharedBuf;
 #  undef TXrealloc
 #  undef TXstrdup
 #  undef TXstrndup
+#  undef TXmemTermDup
 #  undef TXexpandArray
 #  undef TXallocProtectable
 #  undef TXfreeProtectable
@@ -2104,6 +2061,8 @@ char	*TXstrdup ARGS((TXPMBUF *pmbuf, CONST char *fn,
                         CONST char *s TXALLOC_PROTO));
 char	*TXstrndup ARGS((TXPMBUF *pmbuf, CONST char *fn,
                          CONST char *s, size_t n TXALLOC_PROTO));
+char	*TXmemTermDup(TXPMBUF *pmbuf, const char *fn,
+		      const void *s, size_t n TXALLOC_PROTO);
 int     TXexpandArray ARGS((TXPMBUF *pmbuf, CONST char *fn, void **array,
                size_t *allocedNum, size_t incNum, size_t elSz TXALLOC_PROTO));
 #ifdef TX_ENABLE_MEM_PROTECT
@@ -2146,6 +2105,8 @@ int	TXmemGetNumAllocFailures ARGS((void));
   TXstrdup(pmbuf, fn, s TXALLOC_ARGS_DEFAULT)
 #  define TXstrndup(pmbuf, fn, s, n) \
   TXstrndup(pmbuf, fn, s, n TXALLOC_ARGS_DEFAULT)
+#  define TXmemTermDup(pmbuf, fn, s, n) \
+  TXmemTermDup(pmbuf, fn, s, n TXALLOC_ARGS_DEFAULT)
 #  define TXexpandArray(pmbuf, fn, array, allocedNum, incNum, elSz)     \
 TXexpandArray(pmbuf, fn, array, allocedNum, incNum, elSz TXALLOC_ARGS_DEFAULT)
 #  define TXallocProtectable(pmbuf, fn, sz, flags)      \
@@ -2547,6 +2508,7 @@ DBTBL	*TXopentmpdbtbl ARGS((char *fname, char *lname, char *rname, DD *dd, DDIC 
 int     TXddgetsysmi ARGS((DDIC *ddic, char *index, EPI_OFF_T *threshold, time_t *wait));
 int	TXinsertMetamorphCounterIndexRow(char *query, void *auxfld, BTLOC at,
 					 WTIX *ix);
+DBTBL   *TXcreateinternaldbtblcopy(DBTBL *, TX_DBF_TYPE);
 
 /******************************************************************/
 
@@ -2760,6 +2722,7 @@ extern int      TxTracePipe;    /* documented */
     {
 #define TRACEPIPE_BEFORE_END()						\
       tracePipeStart = TXgetTimeContinuousFixedRateOrOfDay();		\
+      TXclearError();							\
     }
 #define TRACEPIPE_AFTER_START(bits)     				\
   if (TxTracePipe & (bits))             				\
@@ -2845,20 +2808,21 @@ char	**TXcreateargv ARGS((char *, int *));
 
 /******************************************************************/
 
-typedef struct TXCPDB_CONN {
+typedef struct TXCPDB_CONN {			/* A == alloced */
 	int	keepgoing;
 	int	verbose;
 	int	version;
 	int	isSingleThreaded;
 	int	port;				/* server port to listen on */
-	TXsockaddr	network;	/* network to accept for */
-	int		netbits;		/* network # of bits */
+	TXsockaddr	*networks;		/* A networks to accept for */
+	int		*netbits;		/* A networks # of bits */
+	size_t	numNetworks;			/* # items in net{work,bit}s*/
 	int	fd;
 	char	*fdDesc;			/* alloced */
 	int	verbmsg;
 	EPI_OFF_T	rowlimit;
 	int	arraysize;
-	char	*okdb;				/* ok-db (may end in `*') */
+	char	*okdb;				/* A ok-db (may end in `*') */
 	size_t	okdblen;			/* strlen(okdb) */
 	int	okdbisprefix;			/* `okdb' is prefix */
 	PID_T	serverpid;			/*pid to kill for server xit*/
@@ -3166,6 +3130,15 @@ typedef enum TX_BETA_FEATURES
 ,BETA_COUNT /* KEEP_AS_LAST -- must be last item in enum */
 } TX_BETA_FEATURES;
 
+typedef enum TX_APP_INT_SETTINGS
+{
+    TX_APP_INT_SETTING_RING_BUFFER_SIZE
+  , TX_APP_INT_SETTING_LOCK_BATCH_TIME
+  , TX_APP_INT_SETTING_COUNT
+} TX_APP_INT_SETTINGS;
+
+extern int TXAppIntSettingDefaults[TX_APP_INT_SETTING_COUNT];
+
 typedef enum strlst2charmode
 {
   TXs2c_trailing_delimiter,
@@ -3193,11 +3166,17 @@ typedef struct TXstrlstCharConfig
 int	TXstrToTxvssep(TXPMBUF *pmbuf, const char *settingName, const char *s, const char *e, TXstrlstCharConfig *res);
 #include "txlicfunc.h"
 
+typedef enum TXAppRole {
+  TXAppUser,
+  TXAppDBMonitor
+} TXAppRole;
+
 /* NOTE: TXAPP is (supposed to be) a per-thread struct; there are
  * no mutexes e.g. on TXgetGetFldop():
  */
-struct TXAPP_tag
+struct TXAPP
 {
+  TXAppRole role;
 	int	LogBadSYSLOCKS;
 	TXMSM	metamorphStrlstMode;		/* how to convert strlst */
   TXstrlstCharConfig charStrlstConfig;
@@ -3248,27 +3227,27 @@ struct TXAPP_tag
 	((app) ? (app)->ipv6Enabled : (getenv("EPI_ENABLE_IPv6") != (char *)NULL))
 #endif /* !EPI_ENABLE_IPv6 */
 
-	/* `pwEncryptMethodsEnabled' always on in 8+; setting is temp: */
-	TXbool	pwEncryptMethodsEnabled;
-#ifdef EPI_ENABLE_PWENCRYPT_METHODS
-#  define TX_PWENCRYPT_METHODS_ENABLED(app)	1
-#else /* !EPI_ENABLE_PWENCRYPT_METHODS */
-#  define TX_PWENCRYPT_METHODS_ENABLED(app)		\
-	((app) ? (app)->pwEncryptMethodsEnabled : 	\
-	 (getenv("EPI_ENABLE_PWENCRYPT_METHODS") != NULL))
-#endif /* !EPI_ENABLE_PWENCRYPT_METHODS */
+	/* `pwHashMethodsEnabled' always on in 8+; setting is temp: */
+	TXbool	pwHashMethodsEnabled;
+#ifdef EPI_ENABLE_PWHASH_METHODS
+#  define TX_PWHASH_METHODS_ENABLED(app)	1
+#else /* !EPI_ENABLE_PWHASH_METHODS */
+#  define TX_PWHASH_METHODS_ENABLED(app)		\
+	((app) ? (app)->pwHashMethodsEnabled : 	\
+	 (getenv("EPI_ENABLE_PWHASH_METHODS") != NULL))
+#endif /* !EPI_ENABLE_PWHASH_METHODS */
 
-	TXpwEncryptMethod	defaultPasswordEncryptionMethod;
-#define TXpwEncryptMethod_BUILTIN_DEFAULT(app)				\
+	TXpwHashMethod	defaultPasswordHashMethod;
+#define TXpwHashMethod_BUILTIN_DEFAULT(app)				\
 	(TX_COMPATIBILITY_VERSION_MAJOR_IS_AT_LEAST((app), 8) ||	\
-	TX_PWENCRYPT_METHODS_ENABLED(app) ? TXpwEncryptMethod_SHA512 :	\
-	 TXpwEncryptMethod_DES)
-#define TXpwEncryptMethod_CURRENT(app)					     \
-	((app) && (app)->defaultPasswordEncryptionMethod !=		     \
-	TXpwEncryptMethod_Unknown ? (app)->defaultPasswordEncryptionMethod : \
-	 TXpwEncryptMethod_BUILTIN_DEFAULT(app))
+	TX_PWHASH_METHODS_ENABLED(app) ? TXpwHashMethod_SHA512 :	\
+	 TXpwHashMethod_DES)
+#define TXpwHashMethod_CURRENT(app)					\
+	((app) && (app)->defaultPasswordHashMethod !=		        \
+	TXpwHashMethod_Unknown ? (app)->defaultPasswordHashMethod :	\
+	 TXpwHashMethod_BUILTIN_DEFAULT(app))
 
-	int			defaultPasswordEncryptionRounds;
+	int			defaultPasswordHashRounds;
 
 	TXbool	legacyVersion7UrlCoding;
 #define TX_LEGACY_VERSION_7_URL_CODING_DEFAULT(app)		\
@@ -3379,8 +3358,10 @@ struct TXAPP_tag
 	char	*logDir;	/* currently just for cores; wtf expand use */
 	byte	didOncePerSqlMsg[TXoncePerSqlMsg_NUM];
   int     betafeatures[BETA_COUNT];  /* Beta Features */
+  int intSettings[TX_APP_INT_SETTING_COUNT]; /* Settings in int */
   TXPUTMSGFLAGS putmsgFlags;
   TX_LICENSE_FUNCTIONS	*txLicFuncs;
+  TXFMTCP *fmtcp; /**< Hold a struct so stringformat can inherit settings */
 };
 
 extern TXAPP *TXApp;
@@ -3397,10 +3378,10 @@ int TXAppSetTraceRowFields(TXPMBUF *pmbuf, TXAPP *app,
 			   const char *traceRowFields);
 int TXAppSetLogDir(TXPMBUF *pmbuf, TXAPP *app, const char *logDir,
 		   size_t logDirSz);
-TXbool	TXAppSetDefaultPasswordEncryptionMethod(TXPMBUF *pmbuf, TXAPP *app,
-						TXpwEncryptMethod method);
-TXbool TXAppSetDefaultPasswordEncryptionRounds(TXPMBUF *pmbuf, TXAPP *app,
-					       int rounds);
+TXbool	TXAppSetDefaultPasswordHashMethod(TXPMBUF *pmbuf, TXAPP *app,
+					  TXpwHashMethod method);
+TXbool TXAppSetDefaultPasswordHashRounds(TXPMBUF *pmbuf, TXAPP *app,
+					 int rounds);
 
 /* wtf also see prototype in ncgsvr.c: */
 int TXinitapp(TXPMBUF *pmbuf, const char *progName, int argc, char **argv,
@@ -3455,6 +3436,12 @@ int 	TXnode_hint_exec(QNODE *query, FLDOP *fo, int direction, int offset,
 DBTBL  *TXnode_hint_prep(IPREPTREEINFO *prepinfo, QNODE *query,
 			 QNODE *parentquery, int *success);
 
+QNODE *TXbuffer_node_init(QNODE *q);
+DBTBL *TXnode_buffer_prep(IPREPTREEINFO *prepinfo, QNODE *query, QNODE *parentquery, int *success);
+int TXnode_buffer_exec(QNODE *query, FLDOP *fo, int direction, int offset, int verbose);
+
+
+
 /******************************************************************/
 /* JSON Texis SQL functions */
 
@@ -3467,6 +3454,11 @@ int      txfunc_json_modify (FLD *f1, FLD *f2, FLD *f3);
 int      txfunc_json_merge_patch (FLD *f1, FLD *f2);
 int      txfunc_json_merge_preserve (FLD *f1, FLD *f2);
 int      TXmkComputedJson(FLD *f);
+
+/******************************************************************/
+/* UUID Texis function */
+
+int txfunc_generate_uuid(FLD *f);
 
 /******************************************************************/
 

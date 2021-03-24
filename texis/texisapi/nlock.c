@@ -92,6 +92,8 @@ AfterFmt, w, (EPI_HUGEINT)(a), (EPI_HUGEINT)(b), (c), _res) : 0)
 #include "dbquery.h"
 #include "texint.h"
 
+#ifndef LOCK_SERVER
+
 static	int	addserver ARGS((TXPMBUF *pmbuf, DBLOCK *dblock));
 static	int	removeserver ARGS((DBLOCK *, ulong));
 static	int	recalcstate ARGS((DDIC *, LTABLE *));
@@ -146,178 +148,6 @@ TXlockTypeDescription(int lockType)
 	}
 }
 
-/****************************************************************************/
-
-int
-tx_loglockop(ddic, act, ltype, t, dbtbl, a, b, rc)
-CONST DDIC		*ddic;	/* (in) database */
-CONST char		*act;	/* (in) action */
-int			ltype;	/* (in) lock type */
-VOLATILE LTABLE		*t;	/* (in) (opt.) shmem lock struct */
-DBTBL			*dbtbl;	/* (in) (opt.) DBTBL, if known */
-VOLATILE ft_counter	*a;	/* (in) (opt.) first counter to log */
-VOLATILE ft_counter	*b;	/* (in) (opt.) second counter to log */
-int			*rc;	/* (in) (opt.) return code */
-/* Logs lock action to `locks.log' file in database dir.
- * WTF would like to log to B-tree log file to ensure ops are logged
- * in occurrence order (clock resolution may not be enough), but could
- * be multiple B-tree log files, and we don't know what they are here.
- * Returns -1 on error, 0 if ok.
- */
-{
-	static CONST char	fn[] = "tx_loglockop";
-	static CONST char	ll[] = "locks.log";
-	static CONST char	any[] = "!any";
-	int			fh = -1, res, ret, i;
-	double			tim;
-	CONST char		*lts;
-	char	*logFilePath = NULL;
-	char	rctmp[EPI_OS_INT_BITS/3+3], tmp[1024];
-	char	ltmp[EPI_OS_INT_BITS/3+3];
-	char	tofftmp[EPI_OS_INT_BITS/4+4];
-	char	atmp[TX_COUNTER_HEX_BUFSZ], btmp[TX_COUNTER_HEX_BUFSZ];
-	char	dbtbltmp[EPI_OS_LONG_BITS/4+3];
-	char	rltmp[EPI_OS_INT_BITS/3+3], wltmp[EPI_OS_INT_BITS/3+3];
-#define PR(buf, fmt, type, ptr)					\
-	if (ptr)						\
-		htsnpf(buf, sizeof(buf), fmt, (type)*(ptr));	\
-	else							\
-	{							\
-		buf[0] = '-';					\
-		buf[1] = '\0';					\
-	}
-
-	/* Sanity checks: */
-	if (ddic == DDICPN || ddic->epname == CHARPN || !TXApp) goto ok;
-
-	/* See if logging is enabled for this db and table: */
-	if (!TXApp->traceLocksDatabase && !TXApp->traceLocksTable)
-		goto ok;			/* logging not enabled */
-	if (TXApp->traceLocksTable &&
-	    strcmpi(TXApp->traceLocksTable, any) != 0 &&
-	    ((t != NULL &&
-	      strcmp(TXApp->traceLocksTable, (char *)t->name) != 0) ||
-	     (dbtbl != NULL &&
-	      strcmp(TXApp->traceLocksTable, dbtbl->lname) != 0)))
-		goto ok;			/* not logging this table */
-	if (TXApp->traceLocksDatabase &&
-	    strcmpi(TXApp->traceLocksDatabase, any) != 0 &&
-	    TXpathcmp(ddic->epname, -1, TXApp->traceLocksDatabase, -1) != 0)
-		goto ok;			/* not logging this db */
-
-	tim = TXgettimeofday();
-	switch (ltype)
-	{
-	case INDEX_READ:		lts = "ir";	break;
-	case INDEX_WRITE:		lts = "iw";	break;
-	case INDEX_VERIFY:		lts = "iv";	break;
-	case INDEX_READ|INDEX_VERIFY:	lts = "irv";	break;
-	case INDEX_WRITE|INDEX_VERIFY:	lts = "iwv";	break;
-	case R_LCK:			lts = "tr";	goto ok;
-	case W_LCK:			lts = "tw";	goto ok;
-	case V_LCK:			lts = "tv";	goto ok;
-	case R_LCK|V_LCK:		lts = "trv";	goto ok;
-	case W_LCK|V_LCK:		lts = "twv";	goto ok;
-	default:			lts = "-";	break;
-	}
-	logFilePath = TXstrcatN(ddic->pmbuf, fn, ddic->epname, PATH_SEP_S, ll,
-				NULL);
-	if (!logFilePath) goto err;
-	if ((fh = TXrawOpen(ddic->pmbuf, __FUNCTION__, "lock log file",
-			    logFilePath, TXrawOpenFlag_None,
-			    (O_WRONLY | O_APPEND | O_CREAT), 0666)) < 0)
-		goto err;
-	if (a)
-          TXprintHexCounter(atmp, sizeof(atmp), (ft_counter *)a);
-	else
-	{
-		atmp[0] = '-';
-		atmp[1] = '\0';
-	}
-	if (b)
-          TXprintHexCounter(btmp, sizeof(btmp), (ft_counter *)b);
-	else
-	{
-		btmp[0] = '-';
-		btmp[1] = '\0';
-	}
-	PR(ltmp, "%d", int, TXbtreelog_srcline)
-	PR(rctmp, "%d", int, rc)
-	if (t)
-	{
-		htsnpf(tofftmp, sizeof(tofftmp), "0x%x",
-			(int)((byte *)t - (byte *)ddic->dblock->idbl));
-	}
-	else
-	{
-		tofftmp[0] = '-';
-		tofftmp[1] = '\0';
-	}
-	if (dbtbl)
-	{
-		htsnpf(rltmp, sizeof(rltmp), "%d", dbtbl->nireadl);
-		htsnpf(wltmp, sizeof(wltmp), "%d", dbtbl->niwrite);
-		htsnpf(dbtbltmp, sizeof(dbtbltmp), "0x%lx", (long)dbtbl);
-	}
-	else
-	{
-		dbtbltmp[0] = rltmp[0] = wltmp[0] = '-';
-		dbtbltmp[1] = rltmp[1] = wltmp[1] = '\0';
-	}
-	/* Log file format:
- * date time /script:line PID dbtbl rl wl Btree act type tbl off a b rc
-	 *
-	 * dbtbl	DBTBL pointer
-	 * rl		number of index read locks (DBTBL.nireadl)
-	 * wl		number of index write locks (DBTBL.niwrite)
-	 * Btree	placeholder for B-tree field of w/btreelog
-	 * act  	Action
-	 * type		Lock type
-	 * tbl  	Table
-	 * off  	LTABLE offset (lock structure offset)
-	 * a/b		Counter `a'/`b'; varies by `act':
-	 *	TXlockindex	before/after dbtbl->iwritec (or local fc)
-	 *	TXunlockindex 	before/after dbtbl->iwritec (or local fc)
-	 *	dblock		before/after t->[ti]write
-	 *	dbunlock	before/after t->[ti]write
-	 *	verify		t->[ti]write/dbtbl->iwritec
-	 *	dblk-ver	t->[ti]write/dbtbl->iwritec
-	 *	rgetctr		before/after ddic->dblock->idbl->lcount
-	 * rc		return value
-	 */
-	i = htsnpf(tmp, sizeof(tmp),
-"%at.%06d %4s:%-4s %5u %-10s %s %s %-10s %-13s %-3s %-10s %-6s %-12s %-12s %s\n",
-		"%Y-%m-%d %H:%M:%S", (time_t)tim,
-		(int)(((double)1000000.0)*(tim - floor(tim))),
-		(TXbtreelog_srcfile != CHARPPN && *TXbtreelog_srcfile!=CHARPN
-			? TXbasename(*TXbtreelog_srcfile) : "-"),
-		ltmp, (unsigned)TXgetpid(0), dbtbltmp, rltmp, wltmp, "-",
-		act, lts, (t ? t->name : (dbtbl ? dbtbl->lname : "-")),
-		tofftmp, atmp, btmp, rctmp);
-	if ((size_t)i > sizeof(tmp))		/* message too long */
-	{
-		strcpy(tmp + sizeof(tmp) - 5, "...\n");
-		i = sizeof(tmp) - 1;
-	}
-	res = tx_rawwrite(ddic->pmbuf, fh, ll, TXbool_False, (byte *)tmp, i,
-			  TXbool_False);
-	if (res != i) goto err;
-ok:
-	ret = 0;
-	goto done;
-
-err:
-	ret = -1;
-done:
-	if (fh >= 0)
-	{
-		close(fh);
-		fh = -1;
-	}
-	logFilePath = TXfree(logFilePath);
-	return(ret);
-}
-
 /******************************************************************/
 
 static	int
@@ -352,19 +182,6 @@ ulong	sid;
 	server->tlock=-1;
 	server->hlock=-1;
 	return 0; /* WTF */
-}
-
-/******************************************************************/
-
-int
-TXkeepgoing(ddic)
-DDIC	*ddic;
-{
-	if(ddic->state == DDIC_STOPPING)
-	{
-                return 0;
-	}
-	return 1;
 }
 
 /******************************************************************/
@@ -2810,6 +2627,193 @@ err:
 	ret = -1;
 done:
 	TXsetlockverbose(savverb);
+	return(ret);
+}
+
+#endif /* LOCK_SERVER */
+
+/******************************************************************/
+
+int
+TXkeepgoing(ddic)
+DDIC	*ddic;
+{
+	if(ddic->state == DDIC_STOPPING)
+	{
+                return 0;
+	}
+	return 1;
+}
+
+/*****************************************************************************/
+
+int
+tx_loglockop(ddic, act, ltype, t, dbtbl, a, b, rc)
+CONST DDIC		*ddic;	/* (in) database */
+CONST char		*act;	/* (in) action */
+int			ltype;	/* (in) lock type */
+VOLATILE LTABLE		*t;	/* (in) (opt.) shmem lock struct */
+DBTBL			*dbtbl;	/* (in) (opt.) DBTBL, if known */
+VOLATILE ft_counter	*a;	/* (in) (opt.) first counter to log */
+VOLATILE ft_counter	*b;	/* (in) (opt.) second counter to log */
+int			*rc;	/* (in) (opt.) return code */
+/* Logs lock action to `locks.log' file in database dir.
+ * WTF would like to log to B-tree log file to ensure ops are logged
+ * in occurrence order (clock resolution may not be enough), but could
+ * be multiple B-tree log files, and we don't know what they are here.
+ * Returns -1 on error, 0 if ok.
+ */
+{
+	static CONST char	fn[] = "tx_loglockop";
+	static CONST char	ll[] = "locks.log";
+	static CONST char	any[] = "!any";
+	int			fh = -1, res, ret, i;
+	double			tim;
+	CONST char		*lts;
+	char	*logFilePath = NULL;
+	char	rctmp[EPI_OS_INT_BITS/3+3], tmp[1024];
+	char	ltmp[EPI_OS_INT_BITS/3+3];
+	char	tofftmp[EPI_OS_INT_BITS/4+4];
+	char	atmp[TX_COUNTER_HEX_BUFSZ], btmp[TX_COUNTER_HEX_BUFSZ];
+	char	dbtbltmp[EPI_OS_LONG_BITS/4+3];
+	char	rltmp[EPI_OS_INT_BITS/3+3], wltmp[EPI_OS_INT_BITS/3+3];
+#define PR(buf, fmt, type, ptr)					\
+	if (ptr)						\
+		htsnpf(buf, sizeof(buf), fmt, (type)*(ptr));	\
+	else							\
+	{							\
+		buf[0] = '-';					\
+		buf[1] = '\0';					\
+	}
+
+	/* Sanity checks: */
+	if (ddic == DDICPN || ddic->epname == CHARPN || !TXApp) goto ok;
+
+	/* See if logging is enabled for this db and table: */
+	if (!TXApp->traceLocksDatabase && !TXApp->traceLocksTable)
+		goto ok;			/* logging not enabled */
+	if (TXApp->traceLocksTable &&
+	    strcmpi(TXApp->traceLocksTable, any) != 0 &&
+	    ((t != NULL &&
+	      strcmp(TXApp->traceLocksTable, (char *)t->name) != 0) ||
+	     (dbtbl != NULL &&
+	      strcmp(TXApp->traceLocksTable, dbtbl->lname) != 0)))
+		goto ok;			/* not logging this table */
+	if (TXApp->traceLocksDatabase &&
+	    strcmpi(TXApp->traceLocksDatabase, any) != 0 &&
+	    TXpathcmp(ddic->epname, -1, TXApp->traceLocksDatabase, -1) != 0)
+		goto ok;			/* not logging this db */
+
+	tim = TXgettimeofday();
+	switch (ltype)
+	{
+	case INDEX_READ:		lts = "ir";	break;
+	case INDEX_WRITE:		lts = "iw";	break;
+	case INDEX_VERIFY:		lts = "iv";	break;
+	case INDEX_READ|INDEX_VERIFY:	lts = "irv";	break;
+	case INDEX_WRITE|INDEX_VERIFY:	lts = "iwv";	break;
+	case R_LCK:			lts = "tr";	goto ok;
+	case W_LCK:			lts = "tw";	goto ok;
+	case V_LCK:			lts = "tv";	goto ok;
+	case R_LCK|V_LCK:		lts = "trv";	goto ok;
+	case W_LCK|V_LCK:		lts = "twv";	goto ok;
+	default:			lts = "-";	break;
+	}
+	logFilePath = TXstrcatN(ddic->pmbuf, fn, ddic->epname, PATH_SEP_S, ll,
+				NULL);
+	if (!logFilePath) goto err;
+	if ((fh = TXrawOpen(ddic->pmbuf, __FUNCTION__, "lock log file",
+			    logFilePath, TXrawOpenFlag_None,
+			    (O_WRONLY | O_APPEND | O_CREAT), 0666)) < 0)
+		goto err;
+	if (a)
+          TXprintHexCounter(atmp, sizeof(atmp), (ft_counter *)a);
+	else
+	{
+		atmp[0] = '-';
+		atmp[1] = '\0';
+	}
+	if (b)
+          TXprintHexCounter(btmp, sizeof(btmp), (ft_counter *)b);
+	else
+	{
+		btmp[0] = '-';
+		btmp[1] = '\0';
+	}
+	PR(ltmp, "%d", int, TXbtreelog_srcline)
+	PR(rctmp, "%d", int, rc)
+	if (t)
+	{
+		htsnpf(tofftmp, sizeof(tofftmp), "0x%x",
+			(int)((byte *)t - (byte *)ddic->dblock->idbl));
+	}
+	else
+	{
+		tofftmp[0] = '-';
+		tofftmp[1] = '\0';
+	}
+	if (dbtbl)
+	{
+		htsnpf(rltmp, sizeof(rltmp), "%d", dbtbl->nireadl);
+		htsnpf(wltmp, sizeof(wltmp), "%d", dbtbl->niwrite);
+		htsnpf(dbtbltmp, sizeof(dbtbltmp), "0x%lx", (long)dbtbl);
+	}
+	else
+	{
+		dbtbltmp[0] = rltmp[0] = wltmp[0] = '-';
+		dbtbltmp[1] = rltmp[1] = wltmp[1] = '\0';
+	}
+	/* Log file format:
+ * date time /script:line PID dbtbl rl wl Btree act type tbl off a b rc
+	 *
+	 * dbtbl	DBTBL pointer
+	 * rl		number of index read locks (DBTBL.nireadl)
+	 * wl		number of index write locks (DBTBL.niwrite)
+	 * Btree	placeholder for B-tree field of w/btreelog
+	 * act  	Action
+	 * type		Lock type
+	 * tbl  	Table
+	 * off  	LTABLE offset (lock structure offset)
+	 * a/b		Counter `a'/`b'; varies by `act':
+	 *	TXlockindex	before/after dbtbl->iwritec (or local fc)
+	 *	TXunlockindex 	before/after dbtbl->iwritec (or local fc)
+	 *	dblock		before/after t->[ti]write
+	 *	dbunlock	before/after t->[ti]write
+	 *	verify		t->[ti]write/dbtbl->iwritec
+	 *	dblk-ver	t->[ti]write/dbtbl->iwritec
+	 *	rgetctr		before/after ddic->dblock->idbl->lcount
+	 * rc		return value
+	 */
+	i = htsnpf(tmp, sizeof(tmp),
+"%at.%06d %4s:%-4s %5u %-10s %s %s %-10s %-13s %-3s %-10s %-6s %-12s %-12s %s\n",
+		"%Y-%m-%d %H:%M:%S", (time_t)tim,
+		(int)(((double)1000000.0)*(tim - floor(tim))),
+		(TXbtreelog_srcfile != CHARPPN && *TXbtreelog_srcfile!=CHARPN
+			? TXbasename(*TXbtreelog_srcfile) : "-"),
+		ltmp, (unsigned)TXgetpid(0), dbtbltmp, rltmp, wltmp, "-",
+		act, lts, (t ? t->name : (dbtbl ? dbtbl->lname : "-")),
+		tofftmp, atmp, btmp, rctmp);
+	if ((size_t)i > sizeof(tmp))		/* message too long */
+	{
+		strcpy(tmp + sizeof(tmp) - 5, "...\n");
+		i = sizeof(tmp) - 1;
+	}
+	res = tx_rawwrite(ddic->pmbuf, fh, ll, TXbool_False, (byte *)tmp, i,
+			  TXbool_False);
+	if (res != i) goto err;
+ok:
+	ret = 0;
+	goto done;
+
+err:
+	ret = -1;
+done:
+	if (fh >= 0)
+	{
+		close(fh);
+		fh = -1;
+	}
+	logFilePath = TXfree(logFilePath);
 	return(ret);
 }
 

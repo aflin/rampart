@@ -68,10 +68,10 @@ static int convertfield(QNODE *q, FLDOP *fo)
 	FLD *f1, *f2, *f3;
 
 	if(q->op != FIELD_OP)
-		return 0;
+		return -1;
 	f1 = (FLD *)q->tname;
 	if(TXfldbasetype(f1) == FTN_CHAR)
-		return 0;
+		return -1;
 	f2 = createfld("varchar", 1, 0);
 	fopush(fo, f1);
 	fopush(fo, f2);
@@ -80,6 +80,7 @@ static int convertfield(QNODE *q, FLDOP *fo)
 	f2 = fopop(fo);
 	f1 = closefld(f1);
 	q->tname = f2;
+	return 0;
 }
 static int convertfields(QNODE * q, FLDOP *fo)
 {

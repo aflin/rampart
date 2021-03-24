@@ -1,10 +1,10 @@
 if(WANT_SSL)
-	set(OPENSSL_PREFIX openssl-1.1.1g)
+	set(OPENSSL_PREFIX openssl-1.1.1i)
 
 	find_program(MAKE_EXE NAMES gmake nmake make)
 	ExternalProject_Add(${OPENSSL_PREFIX}
 		PREFIX ${OPENSSL_PREFIX}
-		URL https://www.openssl.org/source/openssl-1.1.1g.tar.gz
+		URL https://www.openssl.org/source/${OPENSSL_PREFIX}.tar.gz
 		CONFIGURE_COMMAND <SOURCE_DIR>/config shared --api=1.0.0 enable-weak-ssl-ciphers enable-ssl2 enable-ssl3 enable-ssl3-method --prefix=${CMAKE_CURRENT_BINARY_DIR}/${OPENSSL_PREFIX}
 		BUILD_COMMAND ${MAKE_EXE}
 		INSTALL_COMMAND ${MAKE_EXE} install_sw

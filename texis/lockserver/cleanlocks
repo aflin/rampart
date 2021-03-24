@@ -1,0 +1,41 @@
+#!/bin/bash
+
+
+delay() {
+#	sleep `echo $RANDOM | sed 's/^\(.\)/\1\./'`
+	sleep 1;
+}
+
+PRETTY=true
+LOCKMODE=CR
+
+POSITIONAL=()
+while [[ $# -gt 0 ]]
+do
+key="$1"
+
+case $key in
+    -p|--pretty)
+  	PRETTY="$2"
+    shift # past argument
+    shift # past value
+    ;;
+    -l|--lockmode)
+    LOCKMODE="$2"
+    shift # past argument
+    shift # past value
+    ;;
+    *)    # unknown option
+    POSITIONAL+=("$1") # save it in an array for later
+    shift # past argument
+    ;;
+esac
+done
+set -- "${POSITIONAL[@]}" # restore positional parameters
+
+( \
+	echo -e '{"connect":{"database":"","pretty":' $PRETTY '}}' \
+	 && delay && echo -e '{"cleanup":null}' \
+	 && delay && echo -e '{"status":null}' \
+	 && delay && exit 0
+) | ncat localhost 40713

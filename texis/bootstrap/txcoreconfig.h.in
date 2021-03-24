@@ -133,6 +133,9 @@
 #ifdef HAVE_OPENSSL
 #define SSLCRYLIBNAME "@OPENSSL_CRYPTO_LIBRARY@"
 #define SSLSSLLIBNAME "@OPENSSL_SSL_LIBRARY@"
+#else
+#cmakedefine HAVE_PROC_RANDOM_UUID
+#cmakedefine HAVE_DEV_RANDOM
 #endif
 
 #define TX_VERSION_NUM @PROJECT_VERSION@
@@ -147,10 +150,13 @@
 #endif
 
 #define EPI_PLATFORM_DESC "@CMAKE_SYSTEM_PROCESSOR@-@CMAKE_SYSTEM_NAME@-@CMAKE_SYSTEM_VERSION@"
+#define TEXIS_INSTALL_DIR "@INSTALL_DIRECTORY@"
 #include "txcoreconfig_gen.h"
 #include "version.h"
 
 #undef LIBXML2API
 #undef EPI_VORTEX_WATCHPATH
+
+#cmakedefine LOCK_SERVER
 
 #endif /* TX_CORECONFIG_H */

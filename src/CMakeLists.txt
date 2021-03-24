@@ -85,6 +85,7 @@ include_directories(
 	${PROJECT_SOURCE_DIR}/texis/include 
 	${LIBEVENT_TARGET_DIR}/include
 	${PROJECT_SOURCE_DIR}/extern/libevent/include
+	${PROJECT_BINARY_DIR}/texis/contrib/jansson-2.12/include/
 )
 
 #this is good for later. Right now it interrupts work flow
@@ -194,7 +195,18 @@ target_link_libraries(rampart-sql
 	m
 	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
 ) 
-add_dependencies(rampart-sql texis)
+
+add_custom_command(
+	OUTPUT ${CMAKE_BINARY_DIR}/src/texislockd
+	COMMAND cp "${PROJECT_BINARY_DIR}/texis/apps/texislockd" ${CMAKE_BINARY_DIR}/src
+)
+
+add_custom_target(texislockd
+	DEPENDS ${CMAKE_BINARY_DIR}/src/texislockd
+)
+
+add_dependencies(rampart-sql texis texislockd)
+
 
 # libre2 needs to be linked by c++
 set_target_properties(rampart-sql PROPERTIES LINKER_LANGUAGE CXX )
@@ -348,7 +360,6 @@ endforeach()
 
 
 
-
 install(TARGETS rampart DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
 
 if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
@@ -464,6 +475,8 @@ install(CODE "execute_process( \
     \"${PROJECT_BINARY_DIR}/texis/apps/tsql\" \
     \"${PROJECT_BINARY_DIR}/texis/apps/metamorph\" \
     \"${PROJECT_BINARY_DIR}/texis/apps/rex\" \
+    \"${PROJECT_BINARY_DIR}/texis/apps/texislockd\" \
+    \"${PROJECT_BINARY_DIR}/texis/apps/backref\" \
     \"${CMAKE_INSTALL_PREFIX}/bin\"   \
     )"
 )

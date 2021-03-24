@@ -41,6 +41,9 @@ key_t TEXISLOCKSKEY ARGS((char *));
 #define TEXISLOCKSFILE "SYSLOCKS"     /* MAW 02-10-94 - macroize this */
 
 /* #include "dbtable.h" Already included */
+#ifdef LOCK_SERVER
+#include "ezsockbuf.h"
+#endif
 
 #ifndef PATH_MAX
 #  ifdef _POSIX_PATH_MAX
@@ -186,6 +189,9 @@ typedef struct tagDBLOCK {
 	TXLOCKOBJHANDLE  hFileMap;		/* only for Windows */
 	int	dumponbad;
 	struct DDIC_tag	*ddic;
+#ifdef LOCK_SERVER
+	TXEZsockbuf *lockServerSocket; /**< Socket to talk to lock server */
+#endif /* LOCK_SERVER */
 } DBLOCK ;
 
 #define TX_DBLOCK_PATH(dblock)	((dblock) && (dblock)->idbl ?   \

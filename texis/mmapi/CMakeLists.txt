@@ -2,11 +2,13 @@ add_definitions(-DFORMMAPI -DEPI_NO_VERSION_FUNCTIONS)
 add_library(mmapi3
 	api3.c
 	api3i.c
+	backref.c
 	cp.c
 	dupapi.c
 	eqv.c
 	eqvlst.c
 	eqvpar.c
+	eqvwr.c
 	file.c
 	fpath.c
 	freadex.c
@@ -14,16 +16,16 @@ add_library(mmapi3
 	langc.c
 	mdpar.c
 	mm3e.c
-	mmprep.c
 	mmreport.c
 	mmsg.c
 	npm.c
 	npmp.c
+	otree.c
 	phrase.c
 	ppm.c
 	presuf.c
-	readapic.c
 	rex.c
+	salloc.c
 	spm.c
 	sysmsg.c
 	txstrncpy.c

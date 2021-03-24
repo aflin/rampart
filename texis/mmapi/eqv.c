@@ -26,10 +26,7 @@
 #include "os.h"
 #include "unicode.h"
 #include "mmsg.h"
-#ifndef WORDSONLY
-#  include "presuf.h"
-#  include "mmprep.h"
-#endif
+#include "presuf.h"
 /*#define DEBUG 0*/
 #include "eqvint.h"
 #ifndef NO_RAM_EQUIVS
@@ -1456,9 +1453,6 @@ char *lst[2];
 int retn;
 static CONST char Fn[]="geteqv";
 
-   if((eq->fp!=FILEPN || eq->ram!=BYTEPN) && eqprep()!=0){  /* prevent ripping apart equiv */
-      return(EQVLSTPN);              /* windows eqprep() can't exit() */
-   }
    if((lst[0]=(char *)malloc(strlen(wrd)+2))==CHARPN){
       putmsg(MERR+MAE,Fn,sysmsg(ENOMEM));
       return(EQVLSTPN);
@@ -1546,9 +1540,6 @@ size_t  sz, j;
 static CONST char Fn[]="get equivs";
 
    TST(cahit=camiss=0);
-   if((eq->fp!=FILEPN || eq->ram!=BYTEPN) && eqprep()!=0){  /* prevent ripping apart equiv */
-      return(EQVLSTPPN);             /* windows eqprep() can't exit() */
-   }
    if(eq->sufproc && eq->suflst!=CHARPPN){
       initsuffix(eq->suflst,eq->acp->textsearchmode);  /* reverse suffixes */
       for(i=0,lst=eq->suflst;*lst[i]!='\0';i++) ;
@@ -2151,7 +2142,6 @@ int isects;
          fprintf(stderr,"openeqv() failed\n");
          break;
       }
-      eqprepstr("ovrd");
       eqvkpeqvs(eq,1);
       eqvsuflst(eq,altsuffix);
       eqvnoise(eq,noise);
@@ -2286,7 +2276,6 @@ APICP *acp;
                }
             }
 #        endif
-         if(echo) eqprepstr("ovrd");
          while(putchar('>'),fflush(stdout),gets(buf)!=CHARPN){
             if(echo) puts(buf);
             if(ndump>=0){ /* print dictionary words around found word */

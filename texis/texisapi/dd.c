@@ -932,7 +932,7 @@ DD *dd;
 			break;
                 }
         }
-        (void)ddsettype(rdd, TEXIS_FAST_TABLE);
+        (void)ddsettype(rdd, TEXIS_NULL1_TABLE);
         return rdd;
 }
 

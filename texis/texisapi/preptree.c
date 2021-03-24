@@ -189,9 +189,7 @@ FLDOP *fo;
 	if (query->q && query->q->pred == NULL)
 	{
 		query->q->pred = TXduppredvalid(pred, query->q->out, 0, 0, 1);
-#if !defined(NO_PRE_FIND_INDEX)
 		TXpredgetindx(query->q->pred, query->q->in1, query->q->in2);
-#endif
 	}
 	propagatepred(query->left, pred, fo);
 	propagatepred(query->right, pred, fo);
@@ -506,6 +504,8 @@ int *success;		/* Where to store a success code */
 		return TXnode_hint_prep(prepinfo, query, parentquery, success);
 	case PRODUCT_OP:
 		return TXnode_join_prep(prepinfo, query, parentquery, success);
+	case BUFFER_OP:
+		return TXnode_buffer_prep(prepinfo, query, parentquery, success);
 	case UNION_OP:
 		if(parentquery)
 			query->pfldlist = parentquery->fldlist;
@@ -699,8 +699,6 @@ int *success;		/* Where to store a success code */
 			return(q->out);
 		}
 		/* WTF!!!  Rewinds setup bubble index */
-		/* WTF!!!  Forces extra isetdbidx if NO_PRE_FIND_INDEX */
-		/* WTF!!!  in dbidx.c */
 		TXrewinddbtblifnoindex(q->out);
 		if (!prepq)
 		{
@@ -1418,7 +1416,7 @@ orderproj:
 					 indexType[0], options);
 		afterCreateIndex:
 			options = TXindOptsClose(options);
-			if(rc != -1) 
+			if(rc != -1)
 				*success=1;
 			else
 				*success=0;
@@ -1680,9 +1678,9 @@ DBTBL *dbtbl;
 		/* Statement was already executed by ipreparetree(),
 		 * eg. a SET, CREATE INDEX etc.  No results to be returned:
 		 */
-		query->countInfo.rowsMatchedMin = 
+		query->countInfo.rowsMatchedMin =
 			query->countInfo.rowsMatchedMax = 0;
-		query->countInfo.rowsReturnedMin = 
+		query->countInfo.rowsReturnedMin =
 			query->countInfo.rowsReturnedMax = 0;
 	}
 
@@ -2445,9 +2443,7 @@ FLDOP *fo;
 		}
 		closejotbinfo(jotbinfo);
 	}
-#ifndef NO_PRE_FIND_INDEX
 	TXpredgetindx(q->pred, q->in1, q->in2);
-#endif
 	return 0;
 }
 

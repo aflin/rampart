@@ -262,6 +262,9 @@ SDWORD	cbSqlStr;
 	rc = TXenumparams(lpstmt, q, 0, &nparams);
 	if (rc == -1)
 		return SQL_ERROR;
+	q = TXbuffer_node_init(q);
+	if(!q)
+		return SQL_ERROR;
 	lpstmt->nparams = nparams;
 	lpstmt->query = q;
 	if (!nparams)

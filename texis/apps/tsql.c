@@ -143,16 +143,16 @@ int     showCounts;
 
 /******************************************************************/
 
-static void version ARGS((void));
 static void
-version()
+version(int showcopyright)
 {
 #ifdef STEAL_LOCKS
 	printf("Internal version.  Not for external use.\n");
 #endif
-        htpf(
-"Texis Version %s(%aT) Copyright (c) 1988-2020 Thunderstone EPI\n\n",
-                TXtexisver(), "%Y%m%d", (time_t)TxSeconds);
+  htpf("Texis Version %s(%aT)", TXtexisver(), "%Y%m%d", (time_t)TxSeconds);
+	if(showcopyright)
+		htpf(" Copyright (c) 1988-2020 Thunderstone EPI\n");
+	htpf("\n");
 }
 
 /******************************************************************/
@@ -162,7 +162,7 @@ static void usage ARGS((void));
 static void
 usage()
 {
-        version();
+        version(1);
         puts("Usage: tsql [-a command] [-c [-w width]] [-l rows] [-hmqrv?]");
 	puts("            [-d database] [-u username] [-p password] [-i file]");
 	puts("            [-R profile] sql-statement");
@@ -201,8 +201,6 @@ usage()
         puts("  -d database      Use database as the data dictionary");
         puts("  -m               Create the database named with -d");
         puts("  -i file          Read SQL commands from file instead of the keyboard");
-	puts("  -r               Read default profile");
-	puts("  -R profile       Read specified profile");
         puts("  -f delim         Specify a delimiter or format; 1 or 2 chars:");
         puts("     t             same as -c option");
         puts("     c             default behavior");
@@ -241,6 +239,7 @@ TXtsqlTimeoutHandler(void *usr)
 	(void)usr;
 	TX_PUSHERROR();
 
+#ifndef LOCK_SERVER
 	if (TXgetSemlockCount() > 0)
 	{
 		/* We have a semlock and are thus modifying the lock
@@ -252,6 +251,7 @@ TXtsqlTimeoutHandler(void *usr)
 		TXsetSemunlockCallback(TXtsqlTimeoutHandler, NULL);
 	}
 	else
+#endif
 	{
 		putmsg(MERR, __FUNCTION__, "Timeout: exiting");
 		_exit(TXEXIT_TIMEOUT);
@@ -329,7 +329,9 @@ char **argv, **argvstrip;
 		DUPLICATE_SAME_ACCESS);
 #endif
 		txmaxrlim(TXPMBUFPN);   /* MAW 06-12-97 - crank up ulimits */
-		globalcp = TXopenapicp();
+		if(!globalcp) { /* Should have been initialized already in TXinitapp() */
+			globalcp = TXopenapicp();
+		}
 
 		sfile = stdin;
 
@@ -407,8 +409,15 @@ char **argv, **argvstrip;
 				if(TXApp)
 					TXApp->NoMonitorStart = 1;
 			}
+			else if (strcmp(option, "--version") == 0)
+			{
+				version(0);
+				return 0;
+			}
 			else
+			{
 				*(argDest++) = *argSrc;
+			}
 		}
 		*argDest = NULL;
 		argv = argvWordOptsStripped;
@@ -540,12 +549,6 @@ char **argv, **argvstrip;
 				case 'n' :
 					displaynrows++;
 					break;
-				case 'r' :
-					readapicp(globalcp, "profile.mm3");
-					break;
-				case 'R' :
-					readapicp(globalcp, optarg);
-					break;
 				case 's' :
 					rowskip = atoi(optarg);
 					break;
@@ -560,7 +563,7 @@ char **argv, **argvstrip;
 		fo = dbgetfo();
 		sqlhelp = 1;
 		if (showprompt)
-			version();
+			version(1);
 
 		if (timeoutVal >= 0.0)
 			timeoutVal = TXsetalarm(TXtsqlTimeoutHandler, NULL, timeoutVal,
@@ -823,7 +826,7 @@ char **argv, **argvstrip;
 			ndbfcleanup();
 			TXdtmem();
 #endif
-			globalcp = closeapicp(globalcp);
+//			globalcp = closeapicp(globalcp);
 			closetmpfo();
 #ifdef MEMDEBUG /* WTFWTF */
 			mac_ovchk();
@@ -846,7 +849,7 @@ char **argv, **argvstrip;
 			}
 
 			argvWordOptsStripped = TXfree(argvWordOptsStripped);
-			TXcloseapp();
+//			TXcloseapp();
 			argv = NULL;
 			argc = 0;
 #ifdef _MSC_VER

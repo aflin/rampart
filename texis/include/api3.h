@@ -159,9 +159,9 @@ error: TX_VERSION_NUM undefined;
 /* KNG 20090107 See txGetApicpDefaults() install-dir fixup if these change: */
 /* #  define API3EQPREFIX           BP"/usr/local/morph3/equivs" */
 #  define API3EQPREFIX           BP"builtin"
-#  define API3UEQPREFIX          BP"/usr/local/morph3/eqvsusr"
-#  define API3PROFILE            BP"/usr/local/morph3/profile.mm3"
-#  define R3DB_DATABASE          BP"/usr/local/morph3/index/3db"
+#  define API3UEQPREFIX          BP TEXIS_INSTALL_DIR "/eqvsusr"
+#  define API3PROFILE            BP TEXIS_INSTALL_DIR "/profile.mm3"
+#  define R3DB_DATABASE          BP TEXIS_INSTALL_DIR "/index/3db"
 #  define R3DB_FILESPEC          BP"*"
 #  define R3DB_BUFLEN            128000
 #  define R3DB_SYSALLOW

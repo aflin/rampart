@@ -3,7 +3,9 @@
 #if defined(FORCENOLOCK) && !defined(NOLOCK)
 #  define NOLOCK              /* MAW 08-03-95 - config.h turns it off */
 #endif
-
+#if defined(LOCK_SERVER) && !defined(NOLOCK)
+#  define NOLOCK
+#endif
 #ifndef NOLOCK
 #include <errno.h>
 #include <stdlib.h>

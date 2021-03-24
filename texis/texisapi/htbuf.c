@@ -174,9 +174,11 @@ int     flags;          /* 0x1: release data  0x2: realloc to payload */
           if (data != CHARPPN) *data = CHARPN;  /* prevent caller free() */
           return(0);
         }
-      if ((flags & 0x2) && *data && cnt + 1 != buf->sz)
+      if ((flags & 0x2) && data && *data && cnt + 1 != buf->sz &&
+          !(buf->flags & (HTBF_CONST | HTBF_NOALLOC)))
         {                                       /* realloc to save mem */
-          newData = (char *)TXrealloc(buf->pmbuf, fn, *data, cnt + 1);
+          newData = (char *)TXrealloc(buf->pmbuf, __FUNCTION__,
+                                      *data, cnt + 1);
           if (newData) *data = newData;
 #ifndef EPI_REALLOC_FAIL_SAFE
           else                                  /* realloc fail freed it */
@@ -237,6 +239,12 @@ HTBUF   *buf;
 HTBF    flags;
 {
   return(buf->flags & flags);
+}
+
+char *
+htbuf_geteol(HTBUF *buf)
+{
+  return(buf->eol);
 }
 
 int

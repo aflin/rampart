@@ -140,7 +140,7 @@ I(SENDREQ,              "sending request")                      \
 I(READCONTENTDESC,      "reading local content")                \
 I(SENDCONTENT,          "sending content")                      \
 I(SENDCONTENTLAST,      "sending last content chunk")           \
-I(READRESPCODE,         "reading response line")                \
+I(READSTATUSLINE,       "reading status line")                  \
 I(READHDRS,             "reading headers")                      \
 I(SKIPHDRSEOL,          "reading end-of-headers line")          \
 I(READCONTENT,          "reading content")                      \
@@ -216,7 +216,7 @@ I(COMMAND2,     "sending second command")       \
 I(ACCEPTDATASKT,"accepting data connection")    \
 I(CONNECTDATASKT,"connecting to data socket")   \
 I(DATATRANSFER, "transferring data")            \
-I(READRESPCODE, "reading command response")
+I(READRESPLINE, "reading command response")
 
 typedef enum HTFTPSTATE_tag
 {
@@ -476,7 +476,8 @@ char   *TXhtconnGetTunneledHost(HTCONN *hc);
 unsigned TXhtconnGetTunneledPort(HTCONN *hc);
 int     TXhtconnSetTunneled(HTCONN *hc, HTPROT protocol, const char *host,
                             unsigned port);
-void    TXhtconnVerboseConnectionMsg(HTCONN *hc, TXfetchVerbose what);
+void    TXhtconnVerboseConnectionMsg(TXPMBUF *pmbuf, HTCONN *hc,
+                                     TXfetchVerbose what);
 #ifdef _WIN32
 HINTERNET htconn_getinetconnhandle ARGS((HTCONN *hc));
 #endif /* _WIN32 */
@@ -1136,6 +1137,27 @@ typedef struct TXFindNegotiatedFileServerInfo_tag
   ((TXFindNegotiatedFileServerInfo *)NULL)
 #endif /* !TXFindNegotiatedFileServerInfoPN */
 
+enum TXFNF_tag
+{
+  /* These must be in increasing-success order: */
+  TXFNF_ERR,                    /* severe error; no `*response...' vals */
+  TXFNF_NOT_FOUND,              /* not found; no `*response...' values */
+  TXFNF_NO_ALLOWFILEMASK,       /* found, not permitted by si->allowFileMask*/
+  TXFNF_NO_ALLOWDIRMASK,        /* found, not permitted by si->allowDirMask*/
+  TXFNF_NO_EXCLUDEEXT,          /* found, not permitted by okFileExtCbFunc()*/
+                                /* (for ExcludeExt) */
+  TXFNF_NO_ALLOWEXT,            /* found, not permitted by okFileExtCbFunc()*/
+                                /* (for AllowExt) */
+  /* future server perms go here */
+  TXFNF_NOT_CLIENT_ACCEPTABLE,  /* found, not acceptable per Accept-* hdrs */
+#define TXFNF_OK_SERVER_PERMS   TXFNF_NOT_CLIENT_ACCEPTABLE
+  TXFNF_FOUND,                  /* found, permitted and acceptable */
+};
+#ifndef TXFNFPN
+typedef enum TXFNF_tag TXFNF;
+#  define TXFNFPN
+#endif
+
 /* Only define struct TXFindNegotiatedFileServerInfo_tag if EPI_STAT_S
  * and struct stat are defined, to avoid compile warning.  Not
  * strictly necessary:
@@ -1152,7 +1174,7 @@ struct TXFindNegotiatedFileServerInfo_tag
   /* Returns 1 if file extension `ext' (including ".") is ok, 0 if not.
    * If pointer is NULL, all extensions assumed o:
    */
-  int           (*okFileExtCbFunc) ARGS((void *usr, CONST char *ext));
+  TXFNF         (*okFileExtCbFunc)(void *usr, const char *ext);
   void          *okFileExtCbData;
   /* These function pointers avoid netex1 etc. having to link against
    * Vortex lib for vx_openglob() etc.; these functions should migrate
@@ -1164,22 +1186,6 @@ struct TXFindNegotiatedFileServerInfo_tag
   char     *(*globNextFunc) ARGS((VSTKSTAT *vss, EPI_STAT_S *st, int *depth));
 };
 #endif /* EPI_STAT_SPN */
-
-typedef enum TXFNF_tag
-{
-  /* These must be in increasing-success order: */
-  TXFNF_ERR,                    /* severe error; no `*response...' vals */
-  TXFNF_NOT_FOUND,              /* not found; no `*response...' values */
-  TXFNF_NO_ALLOWFILEMASK,       /* found, not permitted by si->allowFileMask*/
-  TXFNF_NO_ALLOWDIRMASK,        /* found, not permitted by si->allowDirMask*/
-  TXFNF_NO_ALLOWEXT,            /* found, not permitted by okFileExtCbFunc()*/
-  /* future server perms go here */
-  TXFNF_NOT_CLIENT_ACCEPTABLE,  /* found, not acceptable per Accept-* hdrs */
-#define TXFNF_OK_SERVER_PERMS   TXFNF_NOT_CLIENT_ACCEPTABLE
-  TXFNF_FOUND,                  /* found, permitted and acceptable */
-}
-TXFNF;
-#define TXFNFPN ((TXFNF *)NULL)
 
 /* Check TXSTATBUF_DEFINED, because stat will then be defined, which
  * avoids a warning about struct stat not defined.  Not really needed,

@@ -1,0 +1,95 @@
+200 Setting pred b IN x on table test in the function: settablepred
+200 Looking for index on test (x) in the function: ddgetindex
+200 Opening index TMPDIR/junk/ix1 in the function: ixbteqindex
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Handling a table select in the function: TXdotree
+200 Read 1 rows so far from test
+200 Handling a table select in the function: TXdotree
+200 Read 2 rows so far from test
+200 Handling a table select in the function: TXdotree
+200 No more rows [2] from test
+200 Setting pred x IN b on table test in the function: settablepred
+200 Looking for index on test (x) in the function: ddgetindex
+200 Opening index TMPDIR/junk/ix1 in the function: ixbteqindex
+100 Results from index TMPDIR/junk/ix1 will be missing empty rows (if any) in the function: ixbteqindex
+200 Results from index TMPDIR/junk/ix1 will require post-processing: subset op, right-side parameter and multi/zero-item left-side column in the function: ixbteqindex
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Handling a table select in the function: TXdotree
+200 Read 1 rows so far from test
+200 Handling a table select in the function: TXdotree
+200 No more rows [1] from test
+200 Setting pred b = x on table test in the function: settablepred
+200 Looking for index on test (x) in the function: ddgetindex
+200 Handling a table select in the function: TXdotree
+200 Read 1 rows so far from test
+200 Handling a table select in the function: TXdotree
+200 No more rows [1] from test
+200 Setting pred x = b on table test in the function: settablepred
+200 Looking for index on test (x) in the function: ddgetindex
+200 Handling a table select in the function: TXdotree
+200 Read 1 rows so far from test
+200 Handling a table select in the function: TXdotree
+200 No more rows [1] from test
+200 Setting pred x != b on table test in the function: settablepred
+200 Looking for index on test (x) in the function: ddgetindex
+200 Handling a table select in the function: TXdotree
+200 Read 1 rows so far from test
+200 Handling a table select in the function: TXdotree
+200 Read 2 rows so far from test
+200 Handling a table select in the function: TXdotree
+200 Read 3 rows so far from test
+200 Handling a table select in the function: TXdotree
+200 No more rows [3] from test
+200 Setting pred b% MATCHES x on table test in the function: settablepred
+200 Looking for index on test (x) in the function: ddgetindex
+200 Handling a table select in the function: TXdotree
+115 varchar MATCHES varstrlst behavior undefined in the function: fochsl
+200 No more rows [0] from test
+200 Setting pred x MATCHES b% on table test in the function: settablepred
+200 Looking for index on test (x) in the function: ddgetindex
+200 Opening index TMPDIR/junk/ix1 in the function: ixbtindex
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Comparing records
+200 Expect to read 25% of the index in the function: ixbtindex
+200 Handling a table select in the function: TXdotree
+200 Read 1 rows so far from test
+200 Handling a table select in the function: TXdotree
+200 Read 2 rows so far from test
+200 Handling a table select in the function: TXdotree
+200 No more rows [2] from test

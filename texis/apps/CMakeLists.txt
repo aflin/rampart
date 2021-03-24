@@ -4,7 +4,8 @@ if(MATH_LIBRARY)
 endif()
 find_library(DYNAMIC_LINK_LIBRARY dl)
 if(DYNAMIC_LINK_LIBRARY)
-    target_link_libraries(texisapi PUBLIC ${DYNAMIC_LINK_LIBRARY})
+  target_link_libraries(texisbuild PUBLIC ${DYNAMIC_LINK_LIBRARY})
+  target_link_libraries(texisapi PUBLIC ${DYNAMIC_LINK_LIBRARY})
 endif()
 #
 # EPI_HAVE_PTHREADS
@@ -25,6 +26,7 @@ target_compile_definitions(rex PRIVATE TEST=1)
 set(REX_EXE  ${CMAKE_CURRENT_BINARY_DIR}/rex PARENT_SCOPE)
 
 add_executable(metamorph metamorph.c)
+add_executable(backref backrefmain.c)
 add_executable(tsql
 	tsqlmain.c
   tsql.c
@@ -39,6 +41,7 @@ set(TSQL_EXE  ${CMAKE_CURRENT_BINARY_DIR}/tsql PARENT_SCOPE)
 
 target_link_libraries(rex LINK_PUBLIC mmapi3)
 target_link_libraries(metamorph LINK_PUBLIC mmapi3)
+target_link_libraries(backref LINK_PUBLIC mmapi3 texisapi)
 target_link_libraries(tsql PUBLIC Threads::Threads)
 target_link_libraries(tsql LINK_PUBLIC texisapi mmapi3 z)
 
@@ -47,3 +50,19 @@ if(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
 else(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
   install(TARGETS rex tsql RUNTIME)
 endif(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
+
+if(LOCK_SERVER AND EVENT_LIBRARY)
+add_executable(texislockd
+  lockd_main.c
+)
+target_link_libraries(texislockd LINK_PUBLIC event)
+target_link_libraries(texislockd LINK_PUBLIC texisapi mmapi3 z)
+set(LOCKD_EXE  ${CMAKE_CURRENT_BINARY_DIR}/texislockd PARENT_SCOPE)
+
+if(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
+  install(TARGETS texislockd RUNTIME DESTINATION bin)
+else(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
+  install(TARGETS texislockd RUNTIME)
+endif(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
+
+endif(LOCK_SERVER AND EVENT_LIBRARY)

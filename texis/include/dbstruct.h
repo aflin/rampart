@@ -127,11 +127,12 @@ typedef enum QNODE_OP
 	ALTER_OP,
 	ALL_OP,
 	NULL_OP,
-        HINT_OP,
+  HINT_OP,
 #ifdef TX_USE_ORDERING_SPEC_NODE
-        ORDERING_SPEC_OP,
+  ORDERING_SPEC_OP,
 #endif /* TX_USE_ORDERING_SPEC_NODE */
 	ARRAY_OP,
+	BUFFER_OP,
 } QNODE_OP;
 
 /******************************************************************/
@@ -724,7 +725,7 @@ typedef struct DBIDX_tag
 
 typedef struct IINODE_tag	IINODE;
 #define IINODEPN	((IINODE *)NULL)
-typedef struct QNODE_tag	QNODE;
+typedef struct QNODE	QNODE;
 #define QNODEPN		((QNODE *)NULL)
 #ifndef FDBIPN
 /* this is in fdbi.h, but including it here is hairy:  -KNG */
@@ -827,7 +828,8 @@ typedef enum Q_STATE
 	QS_PCOMMIT,
 	QS_FAILED,
 	QS_ABORT,
-	QS_COMMITED
+	QS_COMMITED,
+	QS_NOMOREROWS
 } Q_STATE;
 
 /******************************************************************/
@@ -887,10 +889,16 @@ typedef struct QUERY_tag {
 QUERY;
 #define QUERYPN ((QUERY *)NULL)
 
+typedef struct BUFFER_NODE {
+	int 		LockType;
+	int 		Locked;
+	double	LockTime;
+} BUFFER_NODE;
+
 /******************************************************************/
 /* Node in parse tree */
 
-struct QNODE_tag {
+struct QNODE {
 	QNODE_OP op;
 	Q_STATE	 state;
 	int	 ordered;	/* Determined that the query is ordered */
@@ -907,6 +915,9 @@ struct QNODE_tag {
 	int	readanother;	/* Keep reading.  Don't return till end */
 	int	analyzed;
 	TXCOUNTINFO	countInfo;	/* Stats for Vortex */
+	union {
+
+	} extra;
 };
 
 /******************************************************************/

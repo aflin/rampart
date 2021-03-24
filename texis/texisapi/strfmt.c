@@ -214,6 +214,12 @@ TXstringformatArgCb(HTPFT type, HTPFW what, void *data, char **fmterr,
   userArgFld = info->args[info->numArgsUsed];
   usedAnArg = 1;                                /* delay `numArgsUsed' inc */
   if (userArgFld == FLDPN) goto err;
+  if (TXfldIsNull(userArgFld))
+    {
+      *fmterr = TXfldGetNullOutputString();
+      ret = NULL;
+      goto done;
+    }
   if (wantFtnType == 0)                         /* cannot get that type */
     {
     castfail:
@@ -455,7 +461,7 @@ TXstringformatArgCb(HTPFT type, HTPFW what, void *data, char **fmterr,
       info->dupData[info->numArgsUsed] = ret;   /* remember for later free */
       memcpy(ret, v, *sz);
       ((char *)ret)[*sz] = '\0';                /* in case string */
-      if ((res->type & FTN_VarBaseTypeMask) != wantFtnType)
+      if ((FTN)(res->type & FTN_VarBaseTypeMask) != wantFtnType)
         goto castfail;                          /* wtf should really be err */
     }
   else                                          /* no cast needed */
@@ -576,6 +582,7 @@ TXfunc_stringformat(FLD *fmtFld, FLD *argFld1, FLD *argFld2, FLD *argFld3,
 
   /* Alloc and prep `outBuf': - - - - - - - - - - - - - - - - - - - - - - */
   if ((outBuf = openhtbuf()) == HTBUFPN) goto noMem;
+  htbuf_setfmtcp(outBuf, TXApp->fmtcp, 0);
 #define ADDARG(a)                                       \
  if ((a) != FLDPN && info.numArgs < MAXFLDARGS) info.args[info.numArgs++] = (a)
   ADDARG(argFld1);

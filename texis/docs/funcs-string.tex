@@ -276,7 +276,7 @@ Vortex sandr function documentation for complete syntax of the search
 and replace expressions.
 
 \begin{verbatim}
-     SELECT  NAME, sandr('>>=SYS=', 'SYSTEM TABLE ', NAME) DESC
+     SELECT  NAME, sandr('>>=SYS=', 'SYSTEM TABLE ', NAME) DESCRIPTION
      FROM    SYSTABLES
 \end{verbatim}
 
@@ -284,7 +284,7 @@ The results are:
 
 \begin{screen}
 \begin{verbatim}
-  NAME                DESC
+  NAME                DESCRIPTION
  SYSTABLES            SYSTEM TABLE TABLES
  SYSCOLUMNS           SYSTEM TABLE COLUMNS
  SYSINDEX             SYSTEM TABLE INDEX

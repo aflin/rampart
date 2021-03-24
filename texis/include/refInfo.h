@@ -76,8 +76,6 @@ typedef struct TXrefInfo_tag    TXrefInfo;
 
 /* Fields in TXrefInfo that are alloc'd strings.
  * C/SQL access functions are auto-generated and made live from this list.
- * NOTE: update VORTEX_OBJ_BASE_VERSION if this list changes,
- * as TXdbfldfucns[] changes, so compiled SQL expressions change:
  */
 #define TX_REFINFO_STRING_SYMBOLS       \
 I(Url)                                  \
@@ -87,8 +85,6 @@ I(Description)
 
 /* Fields in TXrefInfo that are EPI_SSIZE_T.
  * C/SQL access functions are auto-generated and made live from this list.
- * NOTE: update VORTEX_OBJ_BASE_VERSION if this list changes,
- * as TXdbfldfucns[] changes, so compiled SQL expressions change:
  */
 #define TX_REFINFO_SSIZE_T_SYMBOLS      \
 I(RawDocOffset)                         \

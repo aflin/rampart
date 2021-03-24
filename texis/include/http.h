@@ -169,7 +169,9 @@ I(AuthenticateServerMutually)       /* experimental/subject to change */    \
 I(PacMsgs)                                                                  \
 I(IPv6ScopeIdInHostHeader)          /* leave IPv6 scope id in Host: hdrs */ \
 I(PreserveCanonPortCleanUrl)        /* save canon port when cleaning URLs */\
-I(MetaCookies)                      /* accept <meta http-equiv> cookies */
+I(MetaCookies)                      /* accept <meta http-equiv> cookies */  \
+I(OffSiteFetchMsgsAndErr)           /* `Not fetching off-site' msgs+err */  \
+I(UserDataFetchMsgsAndErr)          /* `... User-data fetch ...' msgs+err */
 /* >>>>> NOTE: if adding more flags, must update JDOM_VERSION, <<<<<
  * >>>>> as HTOBJ struct size will change (`flags' increases)  <<<<<
  */
@@ -240,6 +242,7 @@ HTMETH;
 
 /* Error codes (see hterr.c / etc. if changed).  Preserve order/values:
  * I(enumToken, userTokenStr, errMsg)
+ * HTERR_OK must be first (0):
  */
 #define TX_HTERR_SYMBOLS_LIST   \
 I(OK,                           "Ok", \
@@ -351,7 +354,11 @@ I(CONNECTION_NOT_REUSABLE,      "ConnectionNotReusable",  \
 I(CANNOT_TUNNEL_PROTOCOL,       "CannotTunnelProtocol", \
   "Cannot tunnel protocol")             \
 I(PacError,                     "PacError", \
-  "Proxy auto-config error")
+  "Proxy auto-config error")            \
+I(UserDataFetchNeedsMoreData,   "UserDataFetchNeedsMoreData",   \
+  "User-data fetch needs more data")    \
+I(ComponentError,               "ComponentError",       \
+  "Page component (frame/iframe/script etc.) error")
 
 typedef enum HTERR_tag
 {
@@ -1978,14 +1985,17 @@ HTPAGE *htfetchpage(HTOBJ *obj, const char *url, HTMETH method, HTFA *args);
 HTPAGE *htgetpage ARGS((HTOBJ *obj, const char *url));
 HTPAGE *htgetpageform ARGS((HTOBJ *obj, char *url, CGISL *vars)); /* 960917 */
 HTPAGE *htpostpageform ARGS((HTOBJ *obj, char *url, CGISL *vars)); /* 960917 */
-HTPAGE *htmakepage(HTOBJ *obj, const char *url, CGISL *hdrs,
-                   const char *rawdoc, size_t rawdocSz, TXbool leaveAttached);
+HTPAGE *htmakepage(HTOBJ *obj, const char *url, const char *statusLine,
+                   CGISL *hdrsCgisl, char **hdrsStrList, char *downloadDoc,
+                   size_t downloadDocLen, TXbool ownDownloadDoc,
+                   TXbool leaveAttached, const char *errToken);
 int     htcopypage ARGS((HTOBJ *obj, char *url, char *file));
 HTPAGE *closehtpage ARGS((HTPAGE *pg));
 
 /* util: */
-CONST char *htstrerror ARGS((int err));
-CONST char *TXhterrUserTokenStr ARGS((HTERR err));
+const char *htstrerror(HTERR err);
+HTERR TXhterrTokenToNum(const char *errToken);
+const char *TXhterrUserTokenStr(HTERR err);
 char *htprwr ARGS((HTSKT *skt, int ing));
 void  htfreestrlist ARGS((char **list, int num));
 char **htfreenlist ARGS((char **list));
@@ -1995,6 +2005,8 @@ char *htgethostname(TXPMBUF *pmbuf, int fast);
 int   htissamesite ARGS((CONST URL *a, CONST URL *b));
 char *htfileurl2path ARGS((HTOBJ *obj, CONST char *url, CONST URL *parts,
                            int flags));
+char *TXobjHostForMsgs(HTOBJ *obj);
+char *TXobjPortForMsgs(HTOBJ *obj);
 char *htcontype ARGS((char *ext));
 CONST char *TXfetchMimeTypeToExt ARGS((CONST char *mimeType,
                                        CONST char *mimeTypeEnd));
@@ -2078,8 +2090,10 @@ int htsetmaxpagecachesz ARGS((HTOBJ *obj, size_t sz));
 size_t htgetmaxpagecachesz ARGS((HTOBJ *obj));
 #define TX_CHARSET_DETECT_BUF_SZ        (128*1024)
 HTCHARSET htdetectcharset ARGS((CONST char *buf, size_t sz));
-int htformatpage ARGS((HTOBJ *obj, HTPAGE *pg, CONST HTFPINFO *parentInfo));
-int htgetframe ARGS((HTOBJ *obj, HTPAGE *pg, int getframes, int getiframes));
+int htformatpage(HTOBJ *obj, HTPAGE *pg, const HTFPINFO *parentInfo,
+                 TXbool forMakePage);
+int htgetframe(HTOBJ *obj, HTPAGE *pg, TXbool getFrames, TXbool getIframes,
+               TXbool forMakePage);
 int htreparent ARGS((HTOBJ *obj, HTPAGE *pg, REPARENT reparentMode,
                 CONST char *newroot, TXmimeId **mimeIds, size_t numMimeIds));
 int TXfetchMimeTypeIsRunnableJavaScript(const char *mimeType);
@@ -2118,6 +2132,7 @@ HTBF;
 
 HTBF  htbuf_setflags ARGS((HTBUF *buf, HTBF flags, int set));
 HTBF  htbuf_getflags ARGS((HTBUF *buf, HTBF flags));
+char *htbuf_geteol(HTBUF *buf);
 int   htbuf_setunhtml ARGS((HTBUF *buf, HTCHARSETFUNC *unhtml, UTF flags));
 HTCHARSETFUNC   *htbuf_getunhtml ARGS((HTBUF *buf, UTF *flags));
 int   htbuf_setpmbuf ARGS((HTBUF *buf, TXPMBUF *pmbufclone, int flags));

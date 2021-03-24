@@ -97,7 +97,7 @@ DBTBL *tb2;
 			{
 				rc = 0;
 				btloc = TXsearch2ind(a2i);
-				if(TXrecidvalid(&btloc) && 
+				if(TXrecidvalid(&btloc) &&
 				   _recidcmp(&btloc, &tb1->recid))
 				   	rc =1;
 				a2i = TXadd2indcleanup(a2i);
@@ -302,23 +302,12 @@ FLDOP *fo;
 	showupdfields(q->out, q->update);
 #endif
 	updfields = TXgetupdfields(q->out, q->update);
-#ifndef NO_UPDATE_LOCK_EARLY
-	if(TXlockandload(tb1, PM_DELETE, updfields) == -1)
+	if(TXprepareTableForWriting(tb1, PM_DELETE, updfields) == -1)
 	{
 		q->usr = closebtree(q->usr);
 		return -1;
 	}
 	updfields = TXfree(updfields);
-	if(TXlocktable(tb1, W_LCK) == -1)
-	{
-		if ((tb1->type == 'T' || tb1->type == 'S') && tb1->rname)
-		{
-			TXunlockindex(tb1, INDEX_WRITE, &tb1->iwritec);
-		}
-		q->usr = closebtree(q->usr);
-		return -1;
-	}
-#endif
 	if(q->lastread.off > (EPI_OFF_T)0)	/* restore DBF pointer */
 	{
 		if (ioctldbf(tb1->tbl->df, (DBF_KAI | KDBF_IOCTL_SETNEXTOFF),
@@ -365,12 +354,11 @@ FLDOP *fo;
 			{
 				tup_copy(tb1, q->out, fo);
 			}
-			else	
+			else
 			{
 				tup_copy(q->out, tb1, fo);
 				putdbtblrow(q->out, NULL);
 			}
-#ifndef NO_UPDATE_LOCK_EARLY
 			newloc = puttblrow(tb1->tbl, &oldloc);
 			if(newloc)
 			{
@@ -397,29 +385,6 @@ FLDOP *fo;
 					}
 				}
 			}
-			TXunlocktable(tb1, W_LCK);
-#else
-			if(TXlocktable(tb1, W_LCK) != -1)
-			{
-				newloc = puttblrow(tb1->tbl, &oldloc);
-				if(newloc)
-				{
-					if(TXrecidvalid(newloc))
-					{
-#ifdef FAST_BUFFLD
-						tb1->tbl->irec = NULL;
-						tb1->tbl->ivarpos = NULL;
-#endif
-						gettblrow(tb1->tbl, newloc);
-					}
-					else
-						newloc = NULL;
-				}
-				TXunlocktable(tb1, W_LCK);
-			}
-			else
-				newloc = NULL;
-#endif
 			if(newloc)
 			{
 				tb1->recid = *newloc;
@@ -436,24 +401,13 @@ FLDOP *fo;
 			}
 			else
 			{
-				if(TXlocktable(tb1, R_LCK) != -1)
+				if(validrow(tb1->tbl, &oldloc))
 				{
-					if(validrow(tb1->tbl, &oldloc))
-					{
-						TXmygettblrow(tb1, &oldloc);
-						tb1->recid = oldloc;
-						TXaddtoindices(tb1);
-					}
-					TXunlocktable(tb1, R_LCK);
+					TXmygettblrow(tb1, &oldloc);
+					tb1->recid = oldloc;
+					TXaddtoindices(tb1);
 				}
-				flushindexes(tb1);
-				if ((tb1->type == 'T' ||
-				     tb1->type == 'S') &&
-				     tb1->rname)
-				{
-					TXunlockindex(tb1, INDEX_WRITE,
-					    &tb1->iwritec);
-				}
+				TXdoneWritingToTable(tb1, &tb1->iwritec);
 				putmsg(MERR, "update", "Could not write updated record");
 				return -1;
 			}
@@ -488,21 +442,11 @@ FLDOP *fo;
 				}
 #endif
 			}
-			flushindexes(tb1);
-#ifdef NO_UPDATE_LOCK_EARLY
-			if ((tb1->type == 'T' || tb1->type == 'S') && tb1->rname)
-			{
-				TXunlockindex(tb1, INDEX_WRITE, &tb1->iwritec);
-			}
-#endif
 		}
 		else
 		{
 			putmsg(MWARN, NULL, "Could not update record");
 			q->usr = closebtree(q->usr);
-#ifndef NO_UPDATE_LOCK_EARLY
-			TXunlocktable(tb1, W_LCK);
-#endif
 			rc = -1;
 		}
 	}
@@ -510,15 +454,7 @@ FLDOP *fo;
 	{
 		q->usr = closebtree(q->usr);
 		rc = -1;
-#ifndef NO_UPDATE_LOCK_EARLY
-		TXunlocktable(tb1, W_LCK);
-#endif
 	}
-#ifndef NO_UPDATE_LOCK_EARLY
-	if ((tb1->type == 'T' || tb1->type == 'S') && tb1->rname)
-	{
-		TXunlockindex(tb1, INDEX_WRITE, &tb1->iwritec);
-	}
-#endif
+	TXdoneWritingToTable(tb1, &tb1->iwritec);
 	return rc;
 }

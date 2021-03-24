@@ -686,3 +686,31 @@ FLD *f1;
 	return dateconv(f1, DATE_WEEKSEQ);
 }
 
+/******************************************************************/
+
+int
+TXnow(FLD *f)
+{
+  size_t elsz;
+  void *p;
+
+  if ((f->type & DDTYPEBITS) == FTN_INTERNAL)
+    TXfreefldshadow(f);		/* before changing type */
+  elsz = sizeof(ft_date);
+  p = getfld(f, NULL);
+  if (f->alloced < elsz + 1 || !p)
+  {
+    if ((p = malloc(elsz + 1)) == (void *) NULL)
+      return (FOP_ENOMEM);
+    *((char *) p + elsz) = '\0';
+    setfld(f, p, elsz + 1);
+  }
+  f->kind = TX_FLD_NORMAL;
+  f->type = FTN_DATE;
+  f->n = 1;
+  f->elsz = elsz;
+  f->size = elsz;
+  *(ft_date *) p = time(NULL);
+  putfld(f, p, 1);
+  return (0);
+}

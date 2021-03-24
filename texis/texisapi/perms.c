@@ -52,9 +52,9 @@ CONST char *encrypt;	/* The encrypted password from the Passwd file */
 	}
 	if (!encrypt || strlen(encrypt) < (size_t)3 || !clear)
 		return 0;
-	/* Bug 7398 use TXpwEncrypt(); works around some crypt() failures: */
+	/* Bug 7398 use TXpwHash(); works around some crypt() failures: */
 	/* Do not truncate `encrypt' to 2 chars: salt could be longer: */
-	cryptRet = TXpwEncrypt(clear, encrypt);
+	cryptRet = TXpwHash(clear, encrypt);
 	if (!cryptRet) return(0);		/* error */
 	ret = (strcmp(cryptRet, encrypt) == 0);
 	cryptRet = TXfree(cryptRet);
@@ -890,8 +890,8 @@ tooLongMsg(TXPMBUF *pmbuf, const char *fn, const char *db, TXbool isPasswd)
 	txpmbuf_putmsg(pmbuf, MERR + MAE, fn, "%s update failed: would be too long for current SYSUSERS schema in `%s'%s",
 		       (isPasswd ? "Password hash" : "User name"),
 		       db,
-		       (TX_PWENCRYPT_METHODS_ENABLED(TXApp) ?
-			": Set [Monitor] Upgrade SYSTEM Tables nonzero and restart Texis Monitor" : ""));
+		       (TX_PWHASH_METHODS_ENABLED(TXApp) ?
+			": Ensure texis.ini [Monitor] Upgrade SYSTEM Tables is nonzero and restart Texis version 8+ monitor" : ""));
 }
 
 /******************************************************************/
@@ -1127,24 +1127,24 @@ char *pass;
 		const char	*salt = NULL;
 
 		/* Fall back to DES if SYSUSERS has not been upgraded,
-		 * so that encrypted password fits:
+		 * so that hashed password fits:
 		 */
 		if (!fldisvar(pf))
 		{
-			TXpwEncryptMethod	prefMethod;
+			TXpwHashMethod	prefMethod;
 
-			salt = TX_PWENCRYPT_SALT_STR_DES;
-			prefMethod = TXpwEncryptMethod_CURRENT(TXApp);
-			if (prefMethod != TXpwEncryptMethod_DES)
-				putmsg(MWARN, NULL, "%s password hash would be too long for current SYSUSERS schema in `%s'; using DES instead: Set [Monitor] Upgrade SYSTEM Tables nonzero and restart Texis Monitor",
-				       TXpwEncryptMethodEnumToStr(prefMethod),
+			salt = TX_PWHASH_SALT_STR_DES;
+			prefMethod = TXpwHashMethod_CURRENT(TXApp);
+			if (prefMethod != TXpwHashMethod_DES)
+				putmsg(MWARN, NULL, "%s password hash would be too long for current SYSUSERS schema in `%s'; using DES instead: Ensure texis.ini [Monitor] Upgrade SYSTEM Tables is nonzero and restart Texis version 8+ monitor",
+				       TXpwHashMethodEnumToStr(prefMethod),
 				       ddic->epname);
 		}
-		penc = TXpwEncrypt(pass, salt);
+		penc = TXpwHash(pass, salt);
 		if (!penc)
 		{
 			putmsg(MERR, __FUNCTION__,
-			       "Could not encrypt password for user `%s'",
+			       "Could not hash password for user `%s'",
 			       user);
 			goto err;
 		}
@@ -1244,11 +1244,11 @@ char *pass;
 	}
 	f = nametofld(tbl, "U_PASSWD");
 	/* Fall back to DES if SYSUSERS has not been upgraded,
-	 * so that encrypted password fits:
+	 * so that hashed password fits:
 	 */
 	salt = NULL;
-	if (!fldisvar(f)) salt = TX_PWENCRYPT_SALT_STR_DES;
-	npsswd = TXpwEncrypt(pass, salt);
+	if (!fldisvar(f)) salt = TX_PWHASH_SALT_STR_DES;
+	npsswd = TXpwHash(pass, salt);
 	if (!npsswd) return(-1);
 	len = strlen(npsswd);
 	if (len > MAX_FLD_LEN(f))

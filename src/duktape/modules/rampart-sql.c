@@ -3843,20 +3843,16 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     if (!db_is_init)
     {
+        char *rampart_path=getenv("RAMPART_PATH");
+        char *TexisArgv[2];
+        char tmp[PATH_MAX+15];
+
         if (pthread_mutex_init(&lock, NULL) != 0)
         {
             printf("\n mutex init failed\n");
             exit(1);
         }
-#ifdef PUTMSG_STDERR
-/*
-        if (pthread_mutex_init(&printlock, NULL) != 0)
-        {
-            printf("\n mutex init failed\n");
-            exit(1);
-        }
-*/
-#endif
+
         REMALLOC(errmap, sizeof(char*));
         errmap[0]=NULL;
         //if 0 was to fork, we'd do this.
@@ -3864,6 +3860,17 @@ duk_ret_t duk_open_module(duk_context *ctx)
         //but currently it does not, so we do this:
         REMALLOC(errmap[0], msgbufsz);
         mmsgfh = fmemopen(errmap[0], msgbufsz, "w+");
+
+        TexisArgv[0]=argv0;
+        if(!rampart_path)
+            TexisArgv[1]="--install-dir=/usr/local/rampart";
+        else
+        {
+            strcpy (tmp, "--install-dir=");
+            strcat (tmp, rampart_path);
+            TexisArgv[1]=tmp;
+        }
+        TXinitapp(NULL, NULL, 2, TexisArgv, NULL, NULL);
         db_is_init = 1;
     }
 
@@ -3987,5 +3994,6 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "searchFile");
 
     add_exit_func(free_all_handles, NULL);
+
     return 1;
 }

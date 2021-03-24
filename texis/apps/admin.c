@@ -45,15 +45,15 @@ char	*spass;
 		case 'C':
 		{
 			char *npass;
-			char *encr;
+			char *hash;
 
 			npass = TXgetstrne("New password:");
 			if(!npass)
 				break;
-			encr = TXpwEncrypt(npass, NULL);
-                        if (!encr) break;
-			rc = chpass(ddic, user, passwd, encr);
-                        encr = TXfree(encr);
+			hash = TXpwHash(npass, NULL);
+                        if (!hash) break;
+			rc = chpass(ddic, user, passwd, hash);
+                        hash = TXfree(hash);
 			break;
 		}
 		default:

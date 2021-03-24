@@ -470,8 +470,8 @@ is designed to speed up one class of query only, and as such has some
 limitations on its use.  The primary limitation is that it can
 currently only be used on a field that is of the type {\tt UNSIGNED INT} or
 \verb`DATE`.
-%\chgbarbegin It is 
-%expected that this restriction will be relaxed in future versions of 
+%\chgbarbegin It is
+%expected that this restriction will be relaxed in future versions of
 %Texis.\chgbarend
 
 Inverted indexes can be used to speed up the {\tt ORDER BY} operation in
@@ -561,6 +561,13 @@ that does not apply to the given index type will result in an error:
     (Metamorph) index.
 
   \item \verb`max_index_text N` \\
+
+    For a regular index created on a varchar field this controls
+    how the maximum number of characters from the field that are indexed.
+    This allows indexing the beginning of potentially large fields, either
+    for approximate sorting, or to find records based on a prefix of the
+    field.
+
   \item \verb`stringcomparemode mode` \\
 
     For regular index types only.  Same effect as the same-named
@@ -2087,12 +2094,19 @@ Texis's system catalog table ``SYSCOLUMNS'' has these columns, defined
 with the following data types:
 
 \begin{verbatim}
-     NAME     -  CHAR(20)
-     TBNAME   -  CHAR(20)
-     TYPE     -  CHAR(15)
-     INDEX    -  CHAR(20)
-     NONNULL  -  BYTE
-     REMARK   -  CHAR(80)
+     NAME             -  CHAR(35)
+     TBNAME           -  CHAR(35)
+     TYPE             -  CHAR(15)
+     SIZE             -  INT
+     ORDINAL_POSITION -  INT
+     IDX              -  CHAR(35)
+     NULLABLE         -  SHORT
+     SQLTYPE          -  SHORT
+     PRECIS           -  INT
+     LENGTH           -  INT
+     SCALE            -  SHORT
+     RADIX            -  SHORT
+     REMARK           -  CHAR(80)
 \end{verbatim}
 
 \begin{description}
@@ -2104,15 +2118,25 @@ with the following data types:
 string.  TYPE might contain ``char'', ``varchar'', ``integer'',
 ``indirect'', and so on.
 
-\item[INDEX] is the name of an index created on this column.  (This
+\item[IDX] is the name of an index created on this column.  (This
 field is reserved for use in future versions of Texis.  As it is not
-currently being used, one should not be surprised if the INDEX field
+currently being used, one should not be surprised if the IDX field
 is empty.)
 
-\item[NONNULL] indicates whether NULL fields should be disallowed.
-(This field is reserved for use in future versions of Texis.  As it is
-not currently being used, one should not be surprised if the INDEX
-field is empty.)
+\item[NULLABLE] indicates whether the field was declared to support NULLs.
+(Texis does not currently support NULLs, even if the field is listed as
+NULLABLE)
+
+\item[SQLTYPE] this is the value which would be used for the sqltype
+argument to the texis_param API call, e.g. SQL_INTEGER or SQL_LONGVARCHAR.
+
+\item[PRECIS] is the number of significant digits, or length of string.
+
+\item[LENGTH] how many bytes are used to store the column
+
+\item[SCALE] reserved for future use, will be 0 in this version.
+
+\item[RADIX] reserved for future use, will be 10 in this version.
 
 \item[REMARK] is reserved for any user comment about the column.
 \end{description}

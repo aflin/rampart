@@ -17,6 +17,8 @@
 #include "cgi.h"
 
 #define CHKCP()	if(!globalcp) {globalcp=TXopenapicp();}
+#define TXglobalcpchanged() if(TXApp->fmtcp) {TXApp->fmtcp->apicp = globalcp; }
+
 /******************************************************************/
 
 extern int TXexttrig;
@@ -257,14 +259,22 @@ char	*value;
 	static CONST char Fn[] = "setprop";
 	static CONST char	SQLpropGroup[] = "SQL property";
 	int	rc, n, errnum, intVal;
-        char    propi[128];
-	char	*e;
+  char propi[128];
+	char *e, *s, *d;
 	EPI_HUGEINT	h;
 	TXMDT	meterVal;
 
-        TXstrncpy(propi, prop, sizeof(propi));
-        propi[sizeof(propi) - 1] = '\0';
-        strlwr(propi);
+  for(s=prop, d=propi; *s && d < (propi + sizeof(propi) -1); s++) {
+    switch(*s) {
+      case ' ':
+      case '-':
+      case '_':
+        break;
+      default:
+        *d++ = tolower(*s);
+    }
+  }
+  *d = '\0';
 
 
 /* Let's sort these by importance.  Those likely to be called often in
@@ -466,14 +476,14 @@ char	*value;
 					SQLpropGroup, propi, value, CHARPN, 2);
 		return 0;
 	}
-	if (!strcmp(propi, "inc_sdexp")) /* docs */
+	if (!strcmp(propi, "incsdexp")) /* docs */
 	{
 		CHKCP();
 		globalcp->incsd = TXgetBooleanOrInt(TXPMBUFPN,
 					SQLpropGroup, propi, value, CHARPN, 2);
 		return 0;
 	}
-	if (!strcmp(propi, "inc_edexp")) /* docs */
+	if (!strcmp(propi, "incedexp")) /* docs */
 	{
 		CHKCP();
 		globalcp->inced = TXgetBooleanOrInt(TXPMBUFPN,
@@ -752,16 +762,20 @@ char	*value;
 			 * means Texis defaults:
 			 */
 			globalcp = closeapicp(globalcp);
+      TXglobalcpchanged();
 			if ((globalcp = TXopenapicp()) == APICPPN)
 				return(-1);
+      TXglobalcpchanged();
 			return(0);		/* success */
 		}
 		else if (n == API3_QUERYSETTINGS_TEXIS5DEFAULTS ||
 			 strcmpi(value, "texis5defaults") == 0)
 		{
 			globalcp = closeapicp(globalcp);
-			if ((globalcp = openapicp()) == APICPPN)
+      TXglobalcpchanged();
+		  if ((globalcp = openapicp()) == APICPPN)
 				return(-1);
+      TXglobalcpchanged();
 			if (!TXsetTexisApicpDefaults(globalcp, 0, 1))
 				return(-1);
 			return(0);		/* success */
@@ -926,6 +940,24 @@ char	*value;
 		TXlikermaxrows = atoi(value);
 		return 0;
 	}
+  if (!strcmp(propi, "lockbatchrows"))
+  {
+    if(!strcmp(value, "default")) {
+      TXApp->intSettings[TX_APP_INT_SETTING_RING_BUFFER_SIZE] = TXAppIntSettingDefaults[TX_APP_INT_SETTING_RING_BUFFER_SIZE];
+    } else {
+      TXApp->intSettings[TX_APP_INT_SETTING_RING_BUFFER_SIZE] = atoi(value);
+    }
+    return 0;
+  }
+  if (!strcmp(propi, "lockbatchtime"))
+  {
+    if(!strcmp(value, "default")) {
+      TXApp->intSettings[TX_APP_INT_SETTING_LOCK_BATCH_TIME] = TXAppIntSettingDefaults[TX_APP_INT_SETTING_LOCK_BATCH_TIME];
+    } else {
+      TXApp->intSettings[TX_APP_INT_SETTING_LOCK_BATCH_TIME] = atoi(value);
+    }
+    return 0;
+  }
 	if (!strcmp(propi, "locksleepmethod")) /* docs */
 	{
 		TXsetparm(ddic, "locksleepmethod", value);
@@ -1451,15 +1483,10 @@ extern int TXshowiplan;
 		TXsetsleepparam(SLEEP_DECREMENT, atoi(value));
 		return 0;
 	}
-	if (!strcmp(propi, "max_index_text"))
+	if (!strcmp(propi, "maxindextext"))
 	{
 		/* Note: see also TXindOptsProcessRawOptions() */
 		ddic->options[DDIC_OPTIONS_MAX_INDEX_TEXT] = atoi(value);
-		return 0;
-	}
-	if (!strcmp(propi, "max_rows"))/* JMT 2002-11-19 */
-	{
-		ddic->options[DDIC_OPTIONS_MAX_ROWS] = atoi(value);
 		return 0;
 	}
 	if (!strcmp(propi, "maxrows"))/* JMT 2002-11-19 */
@@ -1715,27 +1742,27 @@ extern int TXshowiplan;
 		return(0);			/* success */
 	}
 
-	if (TX_PWENCRYPT_METHODS_ENABLED(TXApp) &&
-	    strcmp(propi, "defaultpasswordencryptionmethod") == 0)
+	if (TX_PWHASH_METHODS_ENABLED(TXApp) &&
+	    strcmp(propi, "defaultpasswordhashmethod") == 0)
 	{
-		TXpwEncryptMethod	method;
+		TXpwHashMethod	method;
 
-		method = TXpwEncryptMethodStrToEnum(value);
-		if (method == TXpwEncryptMethod_Unknown)
+		method = TXpwHashMethodStrToEnum(value);
+		if (method == TXpwHashMethod_Unknown)
 		{
 			txpmbuf_putmsg(TXPMBUFPN, MERR + UGE, __FUNCTION__,
-				    "Unknown password encryption method `%s'",
+				    "Unknown password hash method `%s'",
 				       value);
 			return(-1);
 		}
-		if (!TXAppSetDefaultPasswordEncryptionMethod(TXPMBUFPN,
-							     TXApp, method))
+		if (!TXAppSetDefaultPasswordHashMethod(TXPMBUFPN, TXApp,
+						       method))
 			return(-1);
 		return(0);
 	}
 
-	if (TX_PWENCRYPT_METHODS_ENABLED(TXApp) &&
-	    strcmp(propi, "defaultpasswordencryptionrounds") == 0)
+	if (TX_PWHASH_METHODS_ENABLED(TXApp) &&
+	    strcmp(propi, "defaultpasswordhashrounds") == 0)
 	{
 		int	newVal;
 
@@ -1744,8 +1771,8 @@ extern int TXshowiplan;
 				       TXstrtointFlag_TrailingSourceIsError),
 				  &errnum);
 		if (errnum) goto badNum;
-		if (!TXAppSetDefaultPasswordEncryptionRounds(TXPMBUFPN,
-							     TXApp, newVal))
+		if (!TXAppSetDefaultPasswordHashRounds(TXPMBUFPN, TXApp,
+						       newVal))
 			return(-1);
 		return(0);
 	}
@@ -1812,6 +1839,8 @@ extern int TXshowiplan;
 }
 
 /******************************************************************/
+/* Returns 0 on complete success, else -1 if any error (reported).
+ */
 
 static int
 setbetafeature(ddic, value, onoff)
@@ -1819,18 +1848,17 @@ DDIC *ddic;
 char *value;
 int onoff;
 {
-	static const char	fn[] = "setoptimize";
 	char *x;
   int rc = 0;
 
+	(void)ddic;
 	x = strtok(value, " ,()");
 	while (x)
 	{
 		if(!strcmpi(x, "json")) {
 			TXApp->betafeatures[BETA_JSON] = onoff;
 		} else {
-			putmsg(MWARN, fn,
-				"Unknown beta feature `%s'", x);
+			putmsg(MWARN, __FUNCTION__, "Unknown beta feature `%s'", x);
       rc = -1;
     }
 		x = strtok(NULL, ",()");

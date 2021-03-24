@@ -919,17 +919,6 @@ byte	**outbufp;
 	}
 	if(dbidx->nrecs > 0 && !TXrecidvalid(&dbidx->lrecid))
 		dbidx->nrecs = 0;
-#ifdef NO_PRE_FIND_INDEX
-	if(dbidx->nrecs == 0)
-	{
-		rc = TXlockindex(dbidx->dbtbl, INDEX_READ, &dbidx->lread);
-		if(rc == -1)
-			return btloc;
-		btreinit(dbidx->btree);
-		isetdbidx(dbidx, NULL);
-	}
-	else
-#endif
 	{
 		rc = TXlockindex(dbidx->dbtbl, INDEX_VERIFY | INDEX_READ,
 			&dbidx->lread);
@@ -969,12 +958,10 @@ byte	**outbufp;
 #endif
 		}
 	}
-#ifndef NO_PRE_FIND_INDEX
 	if(dbidx->nrecs == 0)
 	{
 		isetdbidx(dbidx, NULL);
 	}
-#endif
 	fc = dbidx->btree->usr;
 	while((sz2 = BT_REALMAXPGSZ), (btloc = btgetnext(dbidx->btree, &sz2, NULL, &indexbuf)), TXrecidvalid(&btloc))
 	{

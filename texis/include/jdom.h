@@ -20,7 +20,7 @@
  * >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> NOTE <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
  */
 
-#define JDOM_VERSION    0x20200211      /* YYYYMMDD lib compat version # */
+#define JDOM_VERSION    0x20201116      /* YYYYMMDD lib compat version # */
 
 #ifdef _WIN32
 #  define JD_EXTERN_API(__type)  extern _declspec(dllexport) CDECL __type
@@ -83,7 +83,7 @@ I(int,          htsettimeout,   (HTOBJ *obj, int timeout))      \
 I(int,          htsnpf,         (char *, size_t, CONST char *, ...)) \
 I(int,          htstr2clr,      (char *s))                      \
 I(HTMETH,       htstr2method,   (CONST char *s, CONST char *e)) \
-I(const char *, htstrerror,     (int err))                      \
+I(const char *, htstrerror,     (HTERR err))                    \
 I(char *,       hturlabsolute,  (char *url, char *relatedurl, CONST byte *htsfFlags)) \
 I(char *,       hturlmerge,     (URL *url))                     \
 I(size_t,       TXhostAndPortToSockaddrs, (TXPMBUF *pmbuf,TXbool suppressErrs,\

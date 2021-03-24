@@ -5,6 +5,12 @@ file(GLOB EXPECTEDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/expected ${CMAKE_CURREN
 #
 # Most tests can be copied, along with args
 #
+if(LOCK_SERVER AND EVENT_LIBRARY)
+  add_test(NAME Prepare COMMAND ${CMAKE_CURRENT_BINARY_DIR}/pretests.sh $<TARGET_FILE:tsql> ${LOCKD_EXE})
+else(LOCK_SERVER and EVENT_LIBRARY)
+  add_test(NAME Prepare COMMAND ${CMAKE_CURRENT_BINARY_DIR}/pretests.sh $<TARGET_FILE:tsql>)
+endif(LOCK_SERVER AND EVENT_LIBRARY)
+
 foreach(test IN LISTS TSQLTESTS)
   string(REGEX REPLACE "\\.in$" "" testsql ${test})
   string(COMPARE EQUAL ${test} ${testsql} NoSubst)
@@ -40,13 +46,30 @@ file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/text DESTINATION ${CMAKE_CURRENT_BINARY_DI
 # substitutions on the test driver script
 #
 configure_file(runtests.sh.in runtests.sh @ONLY)
+configure_file(pretests.sh.in pretests.sh @ONLY)
+configure_file(CTestCustom.cmake.in CTestCustom.cmake)
 
 add_test(NAME apitest1 COMMAND apitest1 ${CMAKE_CURRENT_BINARY_DIR}/junk "SELECT * FROM SYSTABLES")
+add_test(NAME "locktest1-1-proc" COMMAND locktest1 ${CMAKE_CURRENT_BINARY_DIR}/junk 1)
+add_test(NAME "locktest1-2-proc" COMMAND locktest1 ${CMAKE_CURRENT_BINARY_DIR}/junk 2)
+add_test(NAME "locktest1-4-proc" COMMAND locktest1 ${CMAKE_CURRENT_BINARY_DIR}/junk 4)
+add_test(NAME "locktest1-8-proc" COMMAND locktest1 ${CMAKE_CURRENT_BINARY_DIR}/junk 8)
+add_test(NAME "ringbuffer" COMMAND rbtest)
 
 set(THREADS_PREFER_PTHREADS_FLAG ON)
 find_package(Threads REQUIRED)
+
+add_executable(rbtest
+rbtest.c)
+target_link_libraries(rbtest PUBLIC Threads::Threads)
+target_link_libraries(rbtest LINK_PUBLIC texisapi mmapi3 z)
 
 add_executable(apitest1
 apitest1.c)
 target_link_libraries(apitest1 PUBLIC Threads::Threads)
 target_link_libraries(apitest1 LINK_PUBLIC texisapi mmapi3 z)
+
+add_executable(locktest1
+locktest1.c)
+target_link_libraries(locktest1 PUBLIC Threads::Threads)
+target_link_libraries(locktest1 LINK_PUBLIC texisapi mmapi3 z)

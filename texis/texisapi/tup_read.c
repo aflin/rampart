@@ -1063,25 +1063,14 @@ DBTBL *tb;
 /*
 	Need to delete this record from the indexes
 */
-	if(TXlockandload(tb, PM_DELETE, NULL) == -1)
+	if(TXprepareTableForWriting(tb, PM_DELETE, NULL) == -1)
 		return -1;
-	if (TXlocktable(tb, W_LCK) == -1)
-	{
-		if ((tb->type == 'T' || tb->type == 'S') && tb->rname)
-			TXunlockindex(tb, INDEX_WRITE, NULL);
-		return -1;
-	}
 	if(!validrow(tb->tbl, &tb->recid))	/* Already deleted */
 	{
-		flushindexes(tb);
-		TXunlocktable(tb, W_LCK);
-		if ((tb->type == 'T' || tb->type == 'S') && tb->rname)
-			TXunlockindex(tb, INDEX_WRITE, NULL);
+		TXdoneWritingToTable(tb, NULL);
 		return -1;
 	}
-
-        TXdelfromindices(tb);
-
+  TXdelfromindices(tb);
 	if (tb->type != 'B')
 	{
 		TBL	*tbl = tb->tbl;
@@ -1124,10 +1113,7 @@ DBTBL *tb;
 			}
 		}
 		freedbf(tb->tbl->df, TXgetoff(&tb->recid));
-		flushindexes(tb);
-		TXunlocktable(tb, W_LCK);
-		if ((tb->type == 'T' || tb->type == 'S') && tb->rname)
-			TXunlockindex(tb, INDEX_WRITE, NULL);
+		TXdoneWritingToTable(tb, NULL);
 	}
 #ifdef BTREE_TABLE_DELETES
 	else

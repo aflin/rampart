@@ -21,6 +21,7 @@ main(int argc, char *argv[])
   FLDLST *fl;
   int argnum;
   int didheader=0;
+  TXCOUNTINFO txci;
 
   if(argc < 3)
   {
@@ -40,7 +41,13 @@ main(int argc, char *argv[])
     texis_param(tx, argnum, Param, &ParamLen, SQL_C_CHAR, SQL_VARCHAR);
   }
   texis_execute(tx);
-  while (fl = texis_fetch(tx, 0))
+  #ifdef SHOW_INDEXCOUNT
+  texis_getCountInfo(tx, &txci);
+  printf("Matches: %ld - %ld\n", txci.rowsMatchedMin, txci.rowsMatchedMax);
+  printf("Return: %ld - %ld\n", txci.rowsReturnedMin, txci.rowsReturnedMax);
+  printf("Indexcount: %ld\n", txci.indexCount);
+  #endif
+  while ((fl = texis_fetch(tx, 0)))
   {
     int i;
     if(!didheader)
@@ -62,6 +69,12 @@ main(int argc, char *argv[])
     }
     printf("\n");
   }
+  #ifdef SHOW_INDEXCOUNT
+  texis_getCountInfo(tx, &txci);
+  printf("Matches: %ld - %ld\n", txci.rowsMatchedMin, txci.rowsMatchedMax);
+  printf("Return: %ld - %ld\n", txci.rowsReturnedMin, txci.rowsReturnedMax);
+  printf("Indexcount: %ld\n", txci.indexCount);
+  #endif
   tx = texis_close(tx);
   return 0;
 }

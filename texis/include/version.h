@@ -45,7 +45,7 @@ extern "C" {
   /* NOTE: see webtestIPvN01.vs notes when version 8 goes live: */
 #  define EPI_ENABLE_IPv6       1
   /* allow MD5/SHA passwords, use SHA-512 by default, upgrade SYSUSERS: */
-#  define EPI_ENABLE_PWENCRYPT_METHODS  1
+#  define EPI_ENABLE_PWHASH_METHODS     1
 #  define EPI_ENABLE_PRAGMA_IF          1
 #  define EPI_ENABLE_NULL_EMPTY         1
 #  define EPI_PUTMSG_DATE_PID_THREAD    1

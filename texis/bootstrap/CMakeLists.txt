@@ -94,7 +94,11 @@ CHECK_SYMBOL_EXISTS(task_info	mach/task_info.h HAVE_MACH_TASK_INFO)
 CHECK_SYMBOL_EXISTS(madvise		sys/mman.h	EPI_HAVE_MADVISE)
 CHECK_SYMBOL_EXISTS(mmap			sys/mman.h	EPI_HAVE_MMAP)
 CHECK_SYMBOL_EXISTS(msync			sys/mman.h	EPI_HAVE_MSYNC)
-CHECK_SYMBOL_EXISTS(qsort_r		stdlib.h		EPI_HAVE_QSORT_R)
+CHECK_C_SOURCE_RUNS("#include <stdlib.h>\nint f(const void *a, const void *b, void *c){return ((*(int *)a)-(*(int *)b))*(*(int *)c);}\nint main() {int i[]={1,2};int r=-1;qsort_r(i,2,sizeof(int),f,&r);if((i[0]==2)&&(i[1]==1)){return 0;}return -1;}" QSORT_R_WORKS)
+IF("${QSORT_R_WORKS}" EQUAL 0)
+	set(EPI_HAVE_QSORT_R ON)
+ENDIF("${QSORT_R_WORKS}" EQUAL 0)
+#CHECK_SYMBOL_EXISTS(qsort_r		stdlib.h		EPI_HAVE_QSORT_R)
 CHECK_SYMBOL_EXISTS(qsort_s		stdlib.h;search.h		EPI_HAVE_QSORT_S)
 CHECK_SYMBOL_EXISTS(snprintf	stdio.h		EPI_HAVE_SNPRINTF)
 CHECK_SYMBOL_EXISTS(statvfs		sys/statvfs.h	EPI_HAVE_STATVFS)
@@ -209,6 +213,13 @@ CHECK_STRUCT_HAS_MEMBER("struct ipc_perm" __key "sys/ipc.h;sys/shm.h"   EPI_HAVE
 CHECK_STRUCT_HAS_MEMBER("struct ipc_perm"  _key "sys/ipc.h;sys/shm.h"   EPI_HAVE_IPC_PERM__KEY  LANGUAGE C)
 CHECK_STRUCT_HAS_MEMBER("struct ipc_perm"   key "sys/ipc.h;sys/shm.h"   EPI_HAVE_IPC_PERM_KEY   LANGUAGE C)
 
+IF(EXISTS /proc/sys/kernel/random/uuid)
+	SET(HAVE_PROC_RANDOM_UUID ON)
+ENDIF(EXISTS /proc/sys/kernel/random/uuid)
+IF(EXISTS /dev/random)
+	SET(HAVE_DEV_RANDOM ON)
+ENDIF(EXISTS /dev/random)
+
 configure_file(txcoreconfig.h.in ${CMAKE_BINARY_DIR}/txcoreconfig.h)
 
 include_directories(${CMAKE_BINARY_DIR})
@@ -240,12 +251,6 @@ add_custom_target(txcoreconfig.h)
 #
 # Install Rules
 #
-if(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
-	install(FILES ${CMAKE_BINARY_DIR}/txcoreconfig.h ${CMAKE_BINARY_DIR}/txcoreconfig_gen.h ${CMAKE_BINARY_DIR}/sizes.h
-		DESTINATION include
+install(FILES ${CMAKE_BINARY_DIR}/txcoreconfig.h ${CMAKE_BINARY_DIR}/txcoreconfig_gen.h ${CMAKE_BINARY_DIR}/sizes.h
+		DESTINATION include/texis
 	)
-else(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
-	install(FILES ${CMAKE_BINARY_DIR}/txcoreconfig.h ${CMAKE_BINARY_DIR}/txcoreconfig_gen.h ${CMAKE_BINARY_DIR}/sizes.h
-		TYPE INCLUDE
-	)
-endif(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)

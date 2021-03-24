@@ -36,25 +36,6 @@
 extern char *getenv ARGS((char *));
 #endif
 
-
-#ifdef _WIN32
-   static char profdir[64]="c:\\morph3\0                                                     ";
-#else                                                       /* !_WIN32 */
-#  ifdef unix
-      static char profdir[64]="/usr/local/morph3\0                                             ";
-#  else                                                      /* !unix */
-#     ifdef macintosh
-         static char profdir[64]="Macintosh HD:morph3\0                                           ";
-#     else
-#        if defined(AOSVS) || defined(VMS)
-            static char profdir[64]="\0                                                              ";
-#        else
-            stop.
-#        endif                                           /* macintosh */
-#     endif                                                  /* AOSVS */
-#  endif                                                      /* unix */
-#endif                                                       /* !_WIN32 */
-
 /**********************************************************************/
 int
 fisdir(fn)
@@ -513,57 +494,6 @@ char *p;
    }
    return(fp);
 }                                                   /* end pathopen() */
-/**********************************************************************/
-
-/**********************************************************************/
-char *
-proffind(fn)                              /* current,home,path,morph3 */
-char *fn;
-{
-char *p;
-
-   for (p = fn; *p && !TX_ISPATHSEP(*p); p++);
-   if (*p) {
-      if((p=strdup(fn))==CHARPN) goto zerr;
-   }else{
-      if((p=pathcat(".",fn))==CHARPN) goto zerr;
-      if(fexists(p)) goto zgotit;
-      free(p);
-      if((p=getenv("HOME"))!=CHARPN){
-         if((p=pathcat(p,fn))==CHARPN) goto zerr;
-         if(fexists(p)) goto zgotit;
-         free(p);
-      }
-      if((p=epipathfind(fn,CHARPN))!=CHARPN) goto zgotit;
-      if((p=pathcat(profdir,fn))==CHARPN) goto zerr;
-      if(fexists(p)) goto zgotit;
-		free(p);
-		p=(char *)NULL;
-      errno=ENOENT;
-   }
-zgotit:
-   return(p);
-zerr:
-   errno=ENOMEM;
-   return(CHARPN);
-}                                                   /* end proffind() */
-/**********************************************************************/
-
-/**********************************************************************/
-FILE *
-profopen(fn,mode)                         /* current,home,path,morph3 */
-char *fn;
-char *mode;
-{
-FILE *fp=FILEPN;
-char *p;
-
-   if((p=proffind(fn))!=CHARPN){
-      fp=fopen(p,mode);
-      free(p);
-   }
-   return(fp);
-}                                                   /* end profopen() */
 /**********************************************************************/
 
 #ifdef KAITEST

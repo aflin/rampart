@@ -1,0 +1,18 @@
+#!/bin/bash
+
+TESTSDIR=@CMAKE_CURRENT_SOURCE_DIR@
+TESTROOT=@CMAKE_CURRENT_BINARY_DIR@
+TSQL=$1
+LOCKSERVER=$2
+DB=$TESTROOT/junk
+RemoveCRIfWinCmd=cat
+AWK=`which awk`
+
+#
+# Make the database
+#
+killall texislockd
+$LOCKSERVER &
+rm -rf $DB
+rm $TESTROOT/testlog
+$TSQL -q -m -d $DB < /dev/null > /dev/null 2>&1

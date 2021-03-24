@@ -73,6 +73,7 @@ struct db_field_struct
  */
 #define FLD_IS_VIRTUAL(f) (f->kind == TX_FLD_VIRTUAL)
 #define FLD_IS_COMPUTED(f) ((f->kind == TX_FLD_VIRTUAL) || (f->kind == TX_FLD_COMPUTED_JSON))
+#define FLD_IS_NULLABLE(f) (TXftnIsNullable(f->type))
 #define FLD_FORCE_NORMAL TXbool_True
 #define FLD_KEEP_KIND    TXbool_False
 

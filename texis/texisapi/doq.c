@@ -416,7 +416,7 @@ DBTBL	*tbl;
 #ifdef DEBUG
 		DBGMSG(9,(999, NULL, "Deleting temp row"));
 #endif
-		if(TXverbosity > 1)
+		if(TXverbosity > 2)
 			putmsg(MINFO, NULL, "Deleting temp row");
 		rc = deltblrow(tbl->tbl, curloc);
 		for(i=0; ((fin = getfldn(tbl->tbl, i, NULL)) != NULL); i++)
@@ -527,7 +527,8 @@ int offset;
 
 	switch (query->op)
 	{
-
+		case BUFFER_OP:
+			return TXnode_buffer_exec(query, fo, direction, offset, verbose);
 /*
  *	We are reading straight from the table.  No further operations.
  */
@@ -1096,7 +1097,7 @@ startinsert:
 			query->state = QS_ACTIVE;
 			q->state = QS_ACTIVE;
 			/* TXlocktable(q->in1, R_LCK); */
-			if (TXlockandload(q->in1, PM_DELETE, NULL) == -1)
+			if (TXprepareTableForWriting(q->in1, PM_DELETE, NULL) == -1)
 				return(-1);
 			do {
 				do {
@@ -1106,7 +1107,7 @@ startinsert:
 						if(found==0)
 						{
 							/* TXunlocktable(q->in1, R_LCK); */
-							TXunlockindex(q->in1, INDEX_WRITE, NULL);
+							TXdoneWritingToTable(q->in1, NULL);
 							return r;
 						}
 #ifndef NO_DUP_DELETES
@@ -1117,7 +1118,7 @@ startinsert:
 						if(r == -1)
 						{
 							/* TXunlocktable(q->in1, R_LCK); */
-							TXunlockindex(q->in1, INDEX_WRITE, NULL);
+							TXdoneWritingToTable(q->in1, NULL);
 							return r;
 						}
 					}
@@ -1125,13 +1126,13 @@ startinsert:
 				if (r == -1)
 				{
 					/* TXunlocktable(q->in1, R_LCK); */
-					TXunlockindex(q->in1, INDEX_WRITE, NULL);
+					TXdoneWritingToTable(q->in1, NULL);
 					return r;
 				}
 			}while((r = TXprocessquery(query, fo)) == -1 ||
 			       (toskip--> 0 && ++q->nrows));
 			/* TXunlocktable(q->in1, R_LCK); */
-			TXunlockindex(q->in1, INDEX_WRITE, NULL);
+			TXdoneWritingToTable(q->in1, NULL);
 			if (r == -1)
 				return r;
 			found++;

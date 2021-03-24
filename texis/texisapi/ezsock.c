@@ -1423,7 +1423,7 @@ TXhostAndPortToSockaddrs(TXPMBUF *pmbuf, TXbool suppressErrs,
   const char            *errStr, *errSfx = "", *nonGaiErrStr = NULL;
   char                  familyBuf[256];
   char                  portBuf[EPI_OS_INT_BITS/3 + 128];
-  const char            *portArg, *s;
+  const char            *portArg;
   TX_TRACEDNS_VARS;
   MERGE_FUNC_VARS;
   const char            *flag0 = Ques, *flag1 = "", *flag2 = "";
@@ -1463,28 +1463,23 @@ TXhostAndPortToSockaddrs(TXPMBUF *pmbuf, TXbool suppressErrs,
   if (afFamily < 0) goto err;
 
   /* getaddrinfo() allows IP addresses to end with space -- and then
-   * be followed by more junk.  We want to continue to allow
-   * lead/trail space to be liberal in what we accept, but not
-   * internal space so that `3 192.168.1.2' fails instead of returning
-   * `0.0.0.3' and `192.168.1.2 x' fails.  Disallowing internal space
-   * will also disallow `192.168 .1.1', but since getaddrinfo()
-   * doesn't tell us where it stops parsing, we can't know if the
-   * second+ tokens of an internal-whitespace string are being parsed
-   * or not, so fail them all:
+   * be followed by more junk.  This partially changes in Liunx ~3.10
+   * (no longer allows trailing space).  We used to allow some space
+   * (lead/trail) for flexibility in e.g. <nslookup> parsing user
+   * data, but this can lead to issues in e.g. fetching URLs like
+   * `http:// 1.2.3.4/', where we'd "resolve" that IP and then pass a
+   * `Host: %201.2.3.4' header and would get an HTTP error.  Plus,
+   * resolving hostnames w/lead/trail space already gives error; plus
+   * if we return error on IP w/lead/trail space then caller can be
+   * sure on non-error return that the data is solely an IP and does
+   * not contain other characters.  So return error if spaces present:
    */
   if (host)
     {
-      s = host;
-      s += strspn(s, WhiteSpace);               /* skip leading whitespace */
-      if (*s)                                   /* has non-whitespace */
+      if (host[strcspn(host, WhiteSpace)])      /* has any whitespace */
         {
-          s += strcspn(s, WhiteSpace);          /* skip non-whitespace */
-          s += strspn(s, WhiteSpace);           /* and optional trail space */
-          if (*s)                               /* second non-whitespace */
-            {
-              errStr = nonGaiErrStr = "Contains internal whitespace";
-              goto reportErr;
-            }
+          errStr = nonGaiErrStr = "Contains whitespace";
+          goto reportErr;
         }
     }
 
@@ -1538,7 +1533,7 @@ TXhostAndPortToSockaddrs(TXPMBUF *pmbuf, TXbool suppressErrs,
   TX_TRACEDNS_BEFORE_BEGIN(traceDns, TXtraceDns_Syscalls)
     txpmbuf_putmsg(pmbuf, HTS_MSG_BEFORE, MERGE_FUNC(func),
       "getaddrinfo(%s%s%s, %s, {%s, (%s%s%s)}, ...) starting",
-                   openQuote, (host ? host : "NULL"), closeQuote, portBuf,
+       openQuote, (host ? host : "NULL"), closeQuote, portBuf,
                    TXAFFamilyToString(hints.ai_family), flag0, flag1, flag2);
   TX_TRACEDNS_BEFORE_END()
   res = getaddrinfo(host, portArg, &hints, &result);
@@ -1950,7 +1945,8 @@ finally:
       /* Issue message: */
       txpmbuf_putmsg(pmbuf, HTS_MSG_AFTER, MERGE_FUNC(func),
                      "getaddrinfo(%s%s%s, %s, {%s, (%s%s%s)}, ...): %1.3lf sec returned %d=%s %d address%s %s; okIPv4WithIPv6Any=%s; returning %d%s address%s %s%s%s%s",
-                     openQuote, (host ? host : "NULL"), closeQuote, portBuf,
+                     openQuote, (host ? host : "NULL"),
+                     closeQuote, portBuf,
                      TXAFFamilyToString(hints.ai_family), flag0, flag1, flag2,
                      TX_TRACEDNS_TIME(), res, (res ? gai_strerror(res) : "Ok"),
                      (int)numResults, (numResults != 1 ? "es" : ""),
@@ -1967,8 +1963,8 @@ finally:
       TX_TRACEDNS_AFTER_BEGIN(traceDns, TXtraceDns_Syscalls)
         txpmbuf_putmsg(pmbuf, HTS_MSG_AFTER, MERGE_FUNC(func),
        "getaddrinfo(%s%s%s, ...) not called: %s (error suppressed by caller)",
-                       openQuote, (host ? host : "NULL"), closeQuote,
-                       nonGaiErrStr);
+                       openQuote, (host ? host : "NULL"),
+                       closeQuote, nonGaiErrStr);
       TX_TRACEDNS_AFTER_END()
     }
 

@@ -41,13 +41,13 @@ i64c(unsigned i)
 }
 
 static char *
-TXpwEncryptMD5(TXPMBUF *pmbuf,
-	       const char *clearPass,
-	       const char *salt,		/* after `$id$' */
-	       size_t saltLen)
-/* Implements crypt() ID 1 style -- MD5 (TXpwEncryptMethod_MD5).
+TXpwHashMD5(TXPMBUF *pmbuf,
+	    const char *clearPass,
+	    const char *salt,		/* after `$id$' */
+	    size_t saltLen)
+/* Implements crypt() ID 1 style -- MD5 (TXpwHashMethod_MD5).
  * Adapted from OpenSSL passwd.c.
- * Returns alloc'd encrypted passwd-style salted password.
+ * Returns alloc'd hashed passwd-style salted password.
  */
 {
 	static const char	idStr[] = "$1$";
@@ -68,7 +68,7 @@ TXpwEncryptMD5(TXPMBUF *pmbuf,
 	memcpy(d, idStr, ID_STR_LEN);
 	d += ID_STR_LEN;
 
-	/* Stop at `$' in salt if present; (earlier) encrypt/hash follows.
+	/* Stop at `$' in salt if present; (earlier) hash follows.
 	 * And max length is MAX_SALT_LEN:
 	 */
 	saltLen = TXstrcspnBuf(salt, salt + saltLen, "$", 1);
@@ -199,14 +199,14 @@ finally:
 }
 
 static char *
-TXpwEncryptSHA(TXPMBUF *pmbuf,
-	       TXpwEncryptMethod method,	/* -256 or -512 */
-	       const char *clearPass,
-	       const char *salt,		/* e.g. `[rounds=n$]..salt' */
-	       size_t saltLen)
-/* Implements crypt() ID 5/6 styles -- SHA (TXpwEncryptMethod_SHA{256,512}).
+TXpwHashSHA(TXPMBUF *pmbuf,
+	    TXpwHashMethod method,	/* -256 or -512 */
+	    const char *clearPass,
+	    const char *salt,		/* e.g. `[rounds=n$]..salt' */
+	    size_t saltLen)
+/* Implements crypt() ID 5/6 styles -- SHA (TXpwHashMethod_SHA{256,512}).
  * Adapted from OpenSSL passwd.c.
- * Returns alloc'd encrypted passwd-style salted password.
+ * Returns alloc'd hashed passwd-style salted password.
  */
 {
 	static const char	sha256idStr[] = "$5$";
@@ -218,7 +218,7 @@ TXpwEncryptSHA(TXPMBUF *pmbuf,
 #define MAX_SALT_LEN	16			/* per OpenSSL passwd.c */
 	/* `$6$[rounds=n$]...salt...$...SHA-hash...': */
 	char		outBuf[MAX_ID_STR_LEN +
-	               (sizeof(roundsStr) + TX_PWENCRYPT_ROUNDS_MAX_DIGITS) +
+	               (sizeof(roundsStr) + TX_PWHASH_ROUNDS_MAX_DIGITS) +
 		               (MAX_SALT_LEN + 1) + 86 + 2];
 	byte	shaBuf[TX_MAX(SHA256_DIGEST_LENGTH, SHA512_DIGEST_LENGTH)];
 	byte	shaBuf2[TX_MAX(SHA256_DIGEST_LENGTH, SHA512_DIGEST_LENGTH)];
@@ -230,8 +230,8 @@ TXpwEncryptSHA(TXPMBUF *pmbuf,
 	const EVP_MD	*sha = NULL;
 	size_t		clearPassLen, i, n;
 	unsigned	rounds = (TXApp ?
-				  TXApp->defaultPasswordEncryptionRounds :
-				  TX_PWENCRYPT_ROUNDS_DEFAULT);
+				  TXApp->defaultPasswordHashRounds :
+				  TX_PWHASH_ROUNDS_DEFAULT);
 
 	clearPassLen = strlen(clearPass);
 	if (!TXsslLoadLibrary(pmbuf)) goto err;
@@ -239,12 +239,12 @@ TXpwEncryptSHA(TXPMBUF *pmbuf,
 	/* Set method-dependent values: */
 	switch (method)
 	{
-	case TXpwEncryptMethod_SHA256:
+	case TXpwHashMethod_SHA256:
 		sha = TXcryptoSymbols.EVP_sha256();
 		digestSz = SHA256_DIGEST_LENGTH;
 		idStr = sha256idStr;
 		break;
-	case TXpwEncryptMethod_SHA512:
+	case TXpwHashMethod_SHA512:
 		sha = TXcryptoSymbols.EVP_sha512();
 		digestSz = SHA512_DIGEST_LENGTH;
 		idStr = sha512idStr;
@@ -273,10 +273,10 @@ TXpwEncryptSHA(TXPMBUF *pmbuf,
 			     "Unparseable/unterminated rounds value in salt");
 			goto err;
 		}
-		if (val < TX_PWENCRYPT_ROUNDS_MIN)
-			val = TX_PWENCRYPT_ROUNDS_MIN;
-		else if (val > TX_PWENCRYPT_ROUNDS_MAX)
-			val = TX_PWENCRYPT_ROUNDS_MAX;
+		if (val < TX_PWHASH_ROUNDS_MIN)
+			val = TX_PWHASH_ROUNDS_MIN;
+		else if (val > TX_PWHASH_ROUNDS_MAX)
+			val = TX_PWHASH_ROUNDS_MAX;
 		rounds = val;
 		ep++;				/* skip `$' after rounds */
 		saltLen = (salt + saltLen) - ep;
@@ -290,16 +290,16 @@ TXpwEncryptSHA(TXPMBUF *pmbuf,
 	/* Print rounds if different from the *standard* default,
 	 * not if different from *our* (texis.ini) default:
 	 */
-	if (rounds != TX_PWENCRYPT_ROUNDS_DEFAULT)
+	if (rounds != TX_PWHASH_ROUNDS_DEFAULT)
 	{
-	    char tmp[sizeof(roundsStr) + TX_PWENCRYPT_ROUNDS_MAX_DIGITS + 1];
+	    char tmp[sizeof(roundsStr) + TX_PWHASH_ROUNDS_MAX_DIGITS + 1];
 
 		htsnpf(tmp, sizeof(tmp), "%s%u$", roundsStr, rounds);
 		memcpy(d, tmp, strlen(tmp));
 		d += strlen(tmp);
 	}
 
-	/* Stop at `$' in salt if present; (earlier) encrypt/hash follows.
+	/* Stop at `$' in salt if present; (earlier) hash follows.
 	 * And max salt length is MAX_SALT_LEN:
 	 */
 	saltLen = TXstrcspnBuf(salt, salt + saltLen, "$", 1);
@@ -419,7 +419,7 @@ TXpwEncryptSHA(TXPMBUF *pmbuf,
 	*(d++) = '$';
 	switch (method)
 	{
-	case TXpwEncryptMethod_SHA256:
+	case TXpwHashMethod_SHA256:
 		BASE64(shaBuf[0], shaBuf[10], shaBuf[20], 4);
 		BASE64(shaBuf[21], shaBuf[1], shaBuf[11], 4);
 		BASE64(shaBuf[12], shaBuf[22], shaBuf[2], 4);
@@ -432,7 +432,7 @@ TXpwEncryptSHA(TXPMBUF *pmbuf,
 		BASE64(shaBuf[9], shaBuf[19], shaBuf[29], 4);
 		BASE64(0, shaBuf[31], shaBuf[30], 3);
 		break;
-	case TXpwEncryptMethod_SHA512:
+	case TXpwHashMethod_SHA512:
 		BASE64(shaBuf[0], shaBuf[21], shaBuf[42], 4);
 		BASE64(shaBuf[22], shaBuf[43], shaBuf[1], 4);
 		BASE64(shaBuf[44], shaBuf[2], shaBuf[23], 4);
@@ -495,16 +495,16 @@ finally:
 #endif /* HAVE_OPENSSL */
 
 char *
-TXpwEncrypt(const char *clearPass, const char *salt)
-/* Encrypts `clearPass' with optional `salt' (generated if NULL or
+TXpwHash(const char *clearPass, const char *salt)
+/* Hashes `clearPass' with optional `salt' (generated if NULL or
  * empty after any initial `$id$').  Supports glibc2 `$id$salt$...'
  * extensions (Bug 7398); if `salt' is NULL or empty, uses global
- * default method instead (set with TXpwEncryptMethodSetDefault()).
+ * default method instead (set with TXpwHashMethodSetDefault()).
  * Note that we differ from crypt() in that an empty salt -- including
  * after `$id$' -- causes us to generate a salt; crypt() either fails
  * (if DES mode) or uses the empty salt.
  * Note also that we support id `$0$' to mean DES.
- * Returns alloc'd encrypted passwd-style salted password.
+ * Returns alloc'd hashed passwd-style salted password.
  */
 {
 	char	*ret = NULL;
@@ -515,7 +515,7 @@ TXpwEncrypt(const char *clearPass, const char *salt)
 	TXPMBUF	*pmbuf = TXPMBUFPN;
 	const char	*id;
 	size_t	saltLen, idLen, i;
-	TXpwEncryptMethod	method = TXpwEncryptMethod_Unknown;
+	TXpwHashMethod	method = TXpwHashMethod_Unknown;
 
 	/* Bug 7398 comment #0 paragraph 3: use OpenSSL.  Always
 	 * use it instead of crypt(), which is thread-unsafe, needs
@@ -537,10 +537,10 @@ TXpwEncrypt(const char *clearPass, const char *salt)
 		if (*salt != '$')
 		{
 			txpmbuf_putmsg(pmbuf, MERR + UGE, __FUNCTION__,
-				       /* don't leak potential encrypted
+				       /* don't leak potential hashed
 					* password in msg
 					*/
-				 "Unterminated encryption method id in salt");
+				 "Unterminated hash method id in salt");
 			goto err;
 		}
 		/* Skip id in salt.  Note that MD5/SHA methods will know
@@ -550,30 +550,30 @@ TXpwEncrypt(const char *clearPass, const char *salt)
 		saltLen = strlen(++salt);
 		/* Map id to method: */
 		if (idLen == 1 && strncmp(id, "0", idLen) == 0)
-			method = TXpwEncryptMethod_DES;
+			method = TXpwHashMethod_DES;
 		else if (idLen == 1 && strncmp(id, "1", idLen) == 0)
-			method = TXpwEncryptMethod_MD5;
+			method = TXpwHashMethod_MD5;
 		else if (idLen == 1 && strncmp(id, "5", idLen) == 0)
-			method = TXpwEncryptMethod_SHA256;
+			method = TXpwHashMethod_SHA256;
 		else if (idLen == 1 && strncmp(id, "6", idLen) == 0)
-			method = TXpwEncryptMethod_SHA512;
+			method = TXpwHashMethod_SHA512;
 		else
 			goto unkMethod;
 	}
 	else if (!*salt)
-		method = TXpwEncryptMethod_CURRENT(TXApp);
+		method = TXpwHashMethod_CURRENT(TXApp);
 	else					/* non-empty, non-'$' salt */
-		method = TXpwEncryptMethod_DES;
+		method = TXpwHashMethod_DES;
 
 	/* Create salt data if needed: */
 	if (saltLen == 0)
 	{
 		switch (method)
 		{
-		case TXpwEncryptMethod_DES:	saltLen = 2;	break;
-		case TXpwEncryptMethod_MD5:	saltLen = 8;	break;
-		case TXpwEncryptMethod_SHA256:
-		case TXpwEncryptMethod_SHA512:	saltLen = 16;	break;
+		case TXpwHashMethod_DES:	saltLen = 2;	break;
+		case TXpwHashMethod_MD5:	saltLen = 8;	break;
+		case TXpwHashMethod_SHA256:
+		case TXpwHashMethod_SHA512:	saltLen = 16;	break;
 		default:			goto unkMethod;
 		}
 		if (saltLen >= sizeof(newsalt))
@@ -602,18 +602,18 @@ TXpwEncrypt(const char *clearPass, const char *salt)
 		salt = newsalt;
 	}
 
-	/* Do the encryption: */
-	if (method != TXpwEncryptMethod_DES &&
-	    !TX_PWENCRYPT_METHODS_ENABLED(TXApp))
+	/* Do the hash: */
+	if (method != TXpwHashMethod_DES &&
+	    !TX_PWHASH_METHODS_ENABLED(TXApp))
 	{
 		txpmbuf_putmsg(pmbuf, MERR + UGE, __FUNCTION__,
-		       "Encryption methods other than DES not yet supported");
+		       "Hash methods other than DES not yet supported");
 		goto err;
 	}
 
 	switch (method)
 	{
-	case TXpwEncryptMethod_DES:
+	case TXpwHashMethod_DES:
 		cp = TXcryptoSymbols.DES_fcrypt(clearPass, salt, cipherBuf);
 		if (!cp)
 		{
@@ -623,17 +623,17 @@ TXpwEncrypt(const char *clearPass, const char *salt)
 		}
 		ret = TXstrdup(pmbuf, __FUNCTION__, cipherBuf);
 		break;
-	case TXpwEncryptMethod_MD5:
-		ret = TXpwEncryptMD5(pmbuf, clearPass, salt, saltLen);
+	case TXpwHashMethod_MD5:
+		ret = TXpwHashMD5(pmbuf, clearPass, salt, saltLen);
 		break;
-	case TXpwEncryptMethod_SHA256:
-	case TXpwEncryptMethod_SHA512:
-		ret = TXpwEncryptSHA(pmbuf, method, clearPass, salt, saltLen);
+	case TXpwHashMethod_SHA256:
+	case TXpwHashMethod_SHA512:
+		ret = TXpwHashSHA(pmbuf, method, clearPass, salt, saltLen);
 		break;
 	default:
 	unkMethod:
 		txpmbuf_putmsg(pmbuf, MERR + UGE, __FUNCTION__,
-			       "Unknown encryption method id in salt");
+			       "Unknown hash method id in salt");
 		goto err;
 	}
 	if (!ret) goto err;
@@ -646,25 +646,25 @@ finally:
 	return(ret);
 }
 
-TXpwEncryptMethod
-TXpwEncryptMethodStrToEnum(const char *s)
+TXpwHashMethod
+TXpwHashMethodStrToEnum(const char *s)
 {
-	if (strcmpi(s, "DES") == 0) return(TXpwEncryptMethod_DES);
-	if (strcmpi(s, "MD5") == 0) return(TXpwEncryptMethod_MD5);
-	if (strcmpi(s, "SHA-256") == 0) return(TXpwEncryptMethod_SHA256);
-	if (strcmpi(s, "SHA-512") == 0) return(TXpwEncryptMethod_SHA512);
-	return(TXpwEncryptMethod_Unknown);
+	if (strcmpi(s, "DES") == 0) return(TXpwHashMethod_DES);
+	if (strcmpi(s, "MD5") == 0) return(TXpwHashMethod_MD5);
+	if (strcmpi(s, "SHA-256") == 0) return(TXpwHashMethod_SHA256);
+	if (strcmpi(s, "SHA-512") == 0) return(TXpwHashMethod_SHA512);
+	return(TXpwHashMethod_Unknown);
 }
 
 const char *
-TXpwEncryptMethodEnumToStr(TXpwEncryptMethod method)
+TXpwHashMethodEnumToStr(TXpwHashMethod method)
 {
 	switch (method)
 	{
-	case TXpwEncryptMethod_DES:	return("DES");
-	case TXpwEncryptMethod_MD5:	return("MD5");
-	case TXpwEncryptMethod_SHA256:	return("SHA-256");
-	case TXpwEncryptMethod_SHA512:	return("SHA-512");
+	case TXpwHashMethod_DES:	return("DES");
+	case TXpwHashMethod_MD5:	return("MD5");
+	case TXpwHashMethod_SHA256:	return("SHA-256");
+	case TXpwHashMethod_SHA512:	return("SHA-512");
 	default:			return(NULL);
 	}
 }

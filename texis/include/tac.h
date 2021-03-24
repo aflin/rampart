@@ -25,31 +25,33 @@ typedef enum TACF_tag
 TACF;
 #define TACF_OK_FLAGS   (TACF_REV | TACF_TAIL | TACF_FOLLOW | TACF_OKNOFILE)
 
-typedef struct TAC_tag
+typedef struct TAC_tag                  /* A = alloced */
 {
   TACF          flags;
-  char          *fn;                    /* file name */
+  char          *fn;                    /* (A iff not `StdinPipe') path */
   int           fh;                     /* open file handle */
-  FFS           *startrex, *endrex;     /* start/end expressions (if !NULL) */
+  FFS           *startrex, *endrex;     /* A start/end exprs (if !NULL) */
   int           linecnt, maxlines;
-  char          *buf;                   /* read buffer */
+  char          *buf;                   /* A read buffer */
   size_t        bufsz;                  /* its total size */
   char          *preveol;               /* previous EOL in buffer */
-  char          *bufstart, *bufend;     /* start/ end of current read data */
-  char          *bufrdend;              /* end of read data */
+  char          *bufstart, *bufend;     /* start/end of line-aligned data */
+  char          *bufrdend;              /* end of raw read data */
   char          *saveptr, savech;       /* saved char at '\0'-terminator */
   char          endch;                  /* ending char, if split EOL */
   EPI_OFF_T     curloc;                 /* current offset in file */
-  EPI_OFF_T     startloc;               /* offset when starting (for REV) */
-  TACBUF        *buflist;               /* buffers for TACF_REV on pipe */
+  EPI_OFF_T     originalLoc;            /* original offset (for REV) */
+  EPI_OFF_T     bufLoc;                 /* offset of `buf' */
+  TACBUF        *buflist;               /* A buffers for TACF_REV on pipe */
 }
 TAC;
 #define TACPN   ((TAC *)NULL)
 
 
-TAC    *opentac ARGS((char *fname, char *startexp, char *endexp, int maxLines,
-                       TACF flags, TXEXIT *errnum));
+TAC    *opentac(const char *fname, const EPI_OFF_T *startOffset,
+                const char *startexp, const char *endexp,
+                int maxLines, TACF flags, TXEXIT *errnum);
 TAC     *closetac ARGS((TAC *tac));
-size_t  tac_readln ARGS((TAC *tac, char **sp));
+size_t  tac_readln(TAC *tac, char **sp, EPI_OFF_T *fileOffset, size_t *eolSz);
 
 #endif  /* !TAC_H */

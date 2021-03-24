@@ -52,6 +52,7 @@ int	TXclosetblvirtualfields ARGS((TBL *tb));
 int	TXtblReleaseFlds(TBL *tbl);
 size_t	TXtblGetRowSize(TBL *tbl);
 int	TXtblReleaseRow(TBL *tbl);
+TBL *TXcreateinternaltbl(DD *dd, TX_DBF_TYPE dbftype);
 
 /************************************************************************/
 #endif /* DBTABLE_H */

@@ -328,8 +328,7 @@ TXDDOPENFLAG	flags;	/* (in) bit flags */
 		       TXCREATELOCKSMETHOD_NUM*sizeof(TXCREATELOCKSMETHOD));
 
 	TXgetpid(1);
-	eqprepstr("ovrd");
-        ddic = (DDIC *) TXcalloc(pmbuf, Fn, 1, sizeof(DDIC));
+	ddic = (DDIC *) TXcalloc(pmbuf, Fn, 1, sizeof(DDIC));
 	if (ddic == (DDIC *) NULL) goto err;
 	ddic->pmbuf = txpmbuf_open(pmbuf);	/* attach to buffer */
 
@@ -408,8 +407,12 @@ TXDDOPENFLAG	flags;	/* (in) bit flags */
 	/* Open lock structure: */
 	if (!(flags & TXDDOPENFLAG_READ_ONLY))
 	{
+#ifdef LOCK_SERVER
+		ddic->dblock = opendblock(ddic);
+#else
 		ddic->dblock = TXdblockOpenViaMethods(pmbuf, ddic->epname,
 			 methodsToTry, TXApp->createLocksTimeout, &ddic->sid);
+#endif
 		if (!ddic->dblock) goto err;
 		ddic->dblock->ddic = ddic;
 	}
@@ -686,8 +689,6 @@ int state;
 
 /******************************************************************/
 
-extern int TXminserver;
-
 int
 TXddicvalid(DDIC * ddic, char **reason)
 /* Returns 1 if `ddic' is still valid (database still exists), 0 if not.
@@ -707,6 +708,7 @@ TXddicvalid(DDIC * ddic, char **reason)
 		if (reason) *reason = "SYSTABLES deleted";
 		return 0;
 	}
+#ifndef LOCK_SERVER
 	if (ddic->dblock && ddic->dblock->idbl)
 	{
 		if (TXminserver == 0 &&
@@ -736,6 +738,7 @@ TXddicvalid(DDIC * ddic, char **reason)
 			return 0;
 		}
 	}
+#endif /* LOCK_SERVER */
 	return 1;
 }
 

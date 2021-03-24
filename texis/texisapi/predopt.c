@@ -5630,9 +5630,7 @@ TXsettablepred(QNODE *qnode, DBTBL * tb, PRED * p, PROJ * order, FLDOP * fo,
 				closefldcmp(tb->index.btree->usr);
 #endif
 #ifndef NO_BUBBLE_INDEX
-#ifndef NO_PRE_FIND_INDEX
 		if (tb->index.keepcached == 0)
-#endif
 			closedbidx(&tb->index);
 #else
 		tb->index.btree = closebtree(tb->index.btree);

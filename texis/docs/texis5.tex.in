@@ -1,0 +1,2533 @@
+% MAW 09-18-94 removed blob refs, brought rest up to date
+%**********************************************************************/
+
+%\documentstyle[epiman,12pt]{book}
+%\begin{document}           % End of preamble and beginning of text.
+
+%\title{Network Texis API Documentation}
+%\tableofcontents
+%\PART{The Texis API}
+%\chapter{EMBEDDING Texis}
+\chapter{The Texis Network Client API}{\label{Part:V:Chp:tnapi}}{\label{Part:V:Chp:Embed}}
+\section{Overview}
+This chapter provides a reference to the functions that you will need to
+use to write your own custom application that talks to Texis.  This API
+is flexible enough to support both a procedural programming style as well
+as an event driven style.
+
+Most applications can be written in Vortex, and executed via
+\verb`texis`.  Vortex provides a simple programming language which
+allows applications to be written and tested quickly.  Since the Vortex
+code handles the details of extracting data from the web server,
+maintaining variable state, and many of the repetitive tasks in
+generating user output, as well as being automatically compiled when
+the script is changed it allows for rapid development, deployment, and
+provides excellent performance for interactive applications.
+
+The API is provided for applications that may require linking with other APIs
+that would not be good candidates for user defined Vortex functions and for
+applications where the request/response paradigm of the web is not appropriate.
+
+\NAME{Texis Client Functions}
+\SYNOPSIS
+
+{\bf Server Connection Management }
+\begin{verbatim}
+SERVER *openserver(char *hostname,char *port)
+SERVER *closeserver(SERVER *serverhandle)
+int     serveruser(char *username);
+int     servergroup(char *groupname);
+int     serverpass(char *password);
+\end{verbatim}
+
+{\bf Texis control parameters }
+\begin{verbatim}
+int n_setdatabase(SERVER *se,char *database);
+str n_getdatabase(SERVER *se);
+\end{verbatim}
+
+{\bf SQL interface Version 2}
+\begin{verbatim}
+TSQL   *n_opentsql(SERVER *se);
+TSQL   *n_closetsql(TSQL *ts);
+int     n_settsql(TSQL *ts,char *stmt);
+int     n_exectsql(TSQL *ts,...);
+int     n_gettsql(TSQL *ts,char *format,...);
+int     n_dotsql(TSQL *ts,char *stmt,...);
+int     n_resulttsql(TSQL *ts,int flag);
+\end{verbatim}
+
+{\bf SQL interface}
+\begin{verbatim}
+int     n_texis(SERVER *se,char *queryformat,...);
+TX     *n_closetx(SERVER *se,TX *tx);
+TX     *n_opentx(SERVER *se);
+TX     *n_duptx(SERVER *se,TX *tx);
+TX     *n_settx(SERVER *se,TX *tx,char *queryformat,...);
+TX     *n_preptx(SERVER *se,TX *tx,char *queryformat,...);
+TX     *n_exectx(SERVER *se,TX *tx);
+int     n_runtx(SERVER *se,TX *tx);
+FLDLST *n_gettx(SERVER *se,TX *tx);
+FLDLST *freefldlst(FLDLST *fl);
+int     n_settexisparam(SERVER *se,int ipar,void *buf,int *len,
+                        int ctype,int sqltype)
+int     n_paramtx(SERVER *se,TX *tx,int ipar,void *buf,int *len,
+                        int ctype,int sqltype)
+int	n_resetparamtx(SERVER *se, TX *tx);
+int     n_flushtx(SERVER *se,TX *tx);
+int     n_flushtx2(SERVER *se,TX *tx, int nrows, int max);
+MMOFFS *n_offstx(SERVER *se,TX *tx,char *fieldname);
+\end{verbatim}
+\pagebreak[2]
+{\bf Hit registration }
+\begin{verbatim}
+int n_regtexiscb(SERVER *se,void *usr,func cb);
+    func cb(void *usr,TEXIS *tx,FLDLST *fl);
+\end{verbatim}
+
+{\bf Hit information }
+\begin{verbatim}
+SRCHLST *n_getsrchlst(SERVER *se,TEXIS *tx);
+SRCHLST *n_freesrchlst(SERVER *se,SRCHLST *sl);
+SRCHI   *n_srchinfo(SERVER *se,SRCH *sr,int i);
+SRCHI   *n_freesrchi(SERVER *se,SRCHI *si);
+XPMI    *n_xpminfo(SERVER *se,SRCH *sr,int i);
+XPMI    *n_freexpmi(SERVER *se,XPMI *xi);
+int	 n_getindexcount(SERVER *se);
+\end{verbatim}
+
+{\bf Object manipulation }
+\begin{verbatim}
+char *n_newindirect(SERVER *se, char *database, char *table,
+                    char *filename);
+\end{verbatim}
+
+% MAW 09-19-94 new group "file transfer"
+{\bf File transfer }
+\begin{verbatim}
+int n_rcopyto(SERVER *se,char *remotedest,char *localsrc);
+int n_rcopyfrom(SERVER *se,char *localdest,char *remotesrc);
+\end{verbatim}
+
+\DESCRIPTION
+
+The Texis API provides the client program with an easy to use interface to
+any Texis server without regard to machine type.  This is the preferred
+interface and completely unrelated to the ODBC interface which is
+documented elsewhere.
+
+{\bf The network Metamorph API is also contained within the Texis server
+and available to client programs.} It is documented separately.  Please
+see its documentation in Part~VI.
+% WTF !!! Make a real label
+
+The programmer is {\em strongly} encouraged to play with the example
+programs provided with the package before attempting their own
+implementation.  It is also suggested that you experiment with
+\verb|txtoc| as well, as it can generate an outline to start from.
+
+\begin{description}
+\item[Server Connection Management]
+
+    These functions allow you to connect and disconnect from a server.
+    The return value from \verb`openserver()` is a \verb`SERVER *`, and
+    will be used as the first parameter in all subsequent calls to
+    the Server.
+
+\item[SQL interface]
+
+    This group of operations is for passing a user's query onto the
+    server for processing and subsequently obtaining the results.
+    There are two different versions of the SQL interface.
+    Version 2 is a higher level interface, which provides
+    the same functionality, but simplifies many operations by
+    working directly with your variables.  This is the preferred
+    interface for most applications.
+
+\item[Hit registration]
+
+    These functions tell the server which client function to ``{\em call back}''
+    when it has located information pertinent to the query.
+
+\item[Hit information]
+
+    These functions allow you to obtain detailed information about
+    any Metamorph queries that may have been used in the query.
+
+\item[Object manipulation]
+
+    These functions allow you to manipulate indirect fields
+    within a Texis database.
+
+\item[File transfer]
+
+    These functions provide the ability to transfer entire files
+    between the client and server.
+
+\item[Texis control parameters]
+
+    This set of functions is for getting and changing the various
+    operational parameters that define how a remote Texis performs.
+
+\end{description}
+
+%**********************************************************************/
+
+\newpage\section{Network API common functions}
+
+\NAME{openserver() , closeserver() , serveruser() , servergroup() ,
+serverpass() - Connect and disconnect from service}
+
+\SYNOPSIS
+\begin{verbatim}
+#include <sys/types.h>
+#include "tstone.h"
+SERVER *openserver(char *hostname,char *port);
+SERVER *closeserver(SERVER *serverhandle);
+int     serveruser(char *username);
+int     servergroup(char *groupname);
+int     serverpass(char *password);
+\end{verbatim}
+
+\DESCRIPTION
+
+These rather generic sounding functions are for establishing or
+disconnecting a communication channel to a Thunderstone Server.  The
+presumption is made that the host and port you open is the correct one for
+the type of calls you will be making.
+
+In general, the \verb`openserver()` call returns a handle to the requested
+service at the specified \verb`hostname` and \verb`port`.  The returned
+handle is of the type \verb`SERVER *` and will have the value
+\verb`SERVERPN`\footnote{\verb`SERVERPN` is a synonym for \verb`(SERVER*)NULL`} if there's a problem.
+
+The \verb`closeserver()` call shuts the open communication channel with
+a server and frees the allocated memory on both the client and the
+server associated with the connection. \verb`closeserver()` will
+return the value \verb`SERVERPN`.
+
+The \verb`hostname` is a string that is the given internet name
+or number of the machine on which the requested service is running.
+For example: \verb`thunder.thunderstone.com` or \verb`198.49.220.81`.
+The port number is also a string, and is the port number assigned to
+the service when it is brought up initially on the server machine. The
+port number may also be assigned a name of a service that is enumerated
+in the file \verb`/etc/services`.
+
+Either \verb`hostname` or \verb`port` or both may be the empty string
+(\verb`""`) indicating that the compiled in default is to be used.  The
+default for \verb`hostname` is \verb`"localhost"` indicating the same
+machine that the client application is running on.  The default
+\verb`port` is \verb`"10000"` for Metamorph and \verb`"10002"` for Texis.
+
+The \verb`serveruser()`, \verb`servergroup()`, and \verb`serverpass()`
+calls set the user name, group name, and password, respectively, that
+\verb`openserver()` will use when logging into the server.  These
+functions will return zero on error.  Non-zero is returned on success.
+If \verb`servergroup()` is not used, the user will be logged into their
+default group as defined by the server.
+
+The default user name and password are both the empty string (\verb`""`).
+
+%Using a user name other than the default will cause Texis to use its
+%own permissions instead of just file system permissions. Therefore
+%the supplied user and password must be in the Texis SYSUSERS table. This
+%is done with the \verb`tsql` program. This can be cumbersome and will
+%be changed in an upcoming release.
+If no user name is given then Texis will default to PUBLIC.  If a
+user name and password is given then Texis will verify them against
+the users defined in Texis.  You can use \verb`tsql` to add users.
+See Chapter~\ref{Chp:Sec} for an in-depth discussion of security.
+% MAW 09-19-94 wtf texis/filesys perms - redoc when chg
+
+\EXAMPLE
+\begin{verbatim}
+ SERVER *se;                              /* network server pointer */
+ SRCH   *sr;                                      /* search pointer */
+
+                                           /* connect to the server */
+ if(serveruser("me")         &&
+    servergroup("somegroup") &&
+    serverpass("mypassword") &&
+    (se=openserver("thunder.thunderstone.com","666"))!=SERVERPN)
+    {
+     n_reghitcb(se,(void *)NULL,mycallback);  /* setup hit callback */
+     if((sr=n_setqry(se,"power struggle"))!=SRCHPN)  /* setup query */
+         {
+          if(!n_search(se,sr))                     /* find all hits */
+              puts("n_search() failed");
+          n_closesrch(se,sr);                  /* cleanup the query */
+         }
+     closeserver(se);                     /* disconnect from server */
+    }
+\end{verbatim}
+
+\CAVEATS
+Make sure you are talking to the right port!
+
+\SEE
+\verb`/etc/services`, \verb`services(4)`
+
+\NAME{Metamorph control parameters}
+
+\DESCRIPTION
+
+There are numerous other API calls that may be used to control the
+behavior of Metamorph \verb`like` searches in SQL statements.
+See section \ref{napi:mmctrl} for a listing of those functions.
+
+%**********************************************************************/
+
+\newpage\section{SQL Interface Version 2}
+
+\NAME{Building Unix client applications with the Texis SQL API}
+
+\DESCRIPTION
+
+All files needed to build Texis clients are installed into the
+\verb`@INSTALL_DIRECTORY@/inclue` and \verb`@INSTALL_DIRECTORY@/lib` directories.
+These directories should be added
+to your compiler include and linker library paths.  This directory also
+contains example client source code and a \verb`makefile` that can be
+used as a model. \verb`sqlex1.c` is an example of using this API.
+
+Source code needs to \verb`#include "tstone.h"`.  \verb`tstone.h` also
+requires \verb`sys/types.h` if it has not been included already.
+
+Executables need to be linked with \verb`libntexis.a`, \verb`libapi3.a`,
+\verb`txclnop.o`, and the standard math lib.  Also some platforms don't
+include TCP/IP socket calls in the standard libs.  These platforms will
+need them added to the link list.  They are typically called
+\verb`libsocket.a`, \verb`libnsl.a`, and \verb`libresolv.a`.
+
+\begin{verbatim}
+cc -I@INSTALL_DIRECTORY@/include -O -c sqlex1.c
+cc -L@INSTALL_DIRECTORY@/lib sqlex1.o @INSTALL_DIRECTORY/lib/txclnop.o
+   -lntexis -lapi3 -lm -o sqlex1
+\end{verbatim}
+
+or
+
+\begin{verbatim}
+cc -I@INSTALL_DIRECTORY@/include -O -c sqlex1.c
+cc -L@INSTALL_DIRECTORY@/lib sqlex1.o @INSTALL_DIRECTORY/lib/txclnop.o
+   -lntexis -lapi3 -lm -lsocket -lnsl -lresolv -o sqlex1
+\end{verbatim}
+
+or (with the example makefile)
+
+\begin{verbatim}
+make sqlex1
+\end{verbatim}
+
+You should not work directly in the \verb`/usr/local/morph3/api`
+directory.  You should make separate a directory to work in and copy the
+example source and makefile to that directory and work there.
+
+\NAME{n\_opentsql(), n\_closetsql() - Texis SQL API initialization and cleanup}
+\SYNOPSIS
+\begin{verbatim}
+#include "tstone.h"
+
+TSQL *n_opentsql(se)
+SERVER *se;
+
+TSQL *n_closetsql(ts)
+TSQL   *ts;
+\end{verbatim}
+
+\DESCRIPTION
+
+\verb`n_opentsql()` performs the initialization required to perform a
+Texis SQL query.  It returns a pointer to a structure that will be
+required by the \verb`n_settsql(), n_exectsql(), n_gettsql()` and
+\verb`n_closetsql()` functions.  It takes one argument that is an opened
+\verb`SERVER` pointer (from \verb`openserver()`).  The \verb`SERVER`
+pointer must remain open as long as the \verb`TSQL` is open.
+\verb`n_opentsql()` returns \verb`TSQLPN`\footnote{\verb`TSQLPN` is an alias
+for \verb`(TSQL *)NULL`.} on failure.
+
+All subsequent \verb`...tsql()` family calls will take the \verb`TSQL`
+pointer as their first argument.
+
+\verb`n_closetsql()` cleans up all data used used by \verb`n_opentsql()`.
+It takes the \verb`TSQL` pointer to close as its only argument.
+This must be called before shutting the \verb`SERVER` connection given
+to \verb`n_opentsql()`. \verb`n_closetsql()` always returns TSQLPN.
+
+\EXAMPLE
+\begin{verbatim}
+SERVER *se;
+TSQL   *ts;
+char   *database;
+
+   ...
+                     /* connect to the local host on the default port */
+   if((se=openserver("",""))!=SERVERPN)
+   {
+      n_setdatabase(se,database);          /* set the database to use */
+      if((ts=n_opentsql(se))!=TSQLPN) /* initialize the Texis SQL API */
+      {
+
+         /* ... perform SQL processing ... */
+
+         n_closetsql(ts);               /* shutdown the Texis SQL API */
+      }
+      closeserver(se);                  /* disconnect from the server */
+   }
+\end{verbatim}
+
+\SEE
+\begin{verbatim}
+openserver(), n_settsql(), n_gettsql()
+\end{verbatim}
+
+%**********************************************************************/
+
+\NAME{n\_settsql(), n\_exectsql() - Prepare a SQL statement for processing}
+\SYNOPSIS
+\begin{verbatim}
+#include "tstone.h"
+
+int n_settsql(ts,stmt)
+TSQL   *ts;
+char   *stmt;
+
+int n_exectsql(ts,...)
+TSQL   *ts;
+\end{verbatim}
+
+\DESCRIPTION
+
+\verb`n_settsql()` takes a SQL statement, parses it, and prepares to
+execute it.  All SQL statements must end with a semi-colon (\verb`;`).
+Only one SQL statement at a time may be included in the \verb`stmt`
+argument.  The statement may contain \verb`printf` like formatting
+codes.  These formatting codes may appear anywhere in the SQL statement
+that data constants would otherwise appear (e.g.:  as the values for
+insert or the data to perform comparisons on in a select).  The data for
+the formatting codes are provided via the \verb`n_exectsql()` function.
+
+The following table summarizes the format codes and their respective
+data types.  See the {\bf formatting codes} man page for full
+descriptions.
+
+\begin{table}{\label{tab:efmtcodes}}
+%\caption{\verb`n_exectsql()` Formatting Codes}
+\begin{tabular}{|l|l|l|l|} \hline
+\multicolumn{4}{|c|}{Input codes} \\ \hline
+{\em Format}  & {\em Description}               & {\em C Type}  & {\em SQL Type}    \\ \hline
+\%b           & Raw binary data                 & byte *        & BYTE              \\
+\%p\%n        & Raw binary data                 & byte *        & BYTE              \\
+\%s           & Character string                & char *        & CHAR              \\
+\%lf          & Double precision floating point & double        & DOUBLE            \\
+\%lu          & Unix date stored as time\_t     & long          & DATE              \\
+\%f           & Single precision floating point & float         & FLOAT             \\
+\%d           & 32/64-bit signed integer        & long          & INTEGER           \\
+\%ld          & 32/64-bit signed integer        & long          & INTEGER           \\
+\%hd          & 16-bit signed integer           & short         & SMALLINT          \\
+\%w           & 16-bit unsigned integer         & word          & UNSIGNED SMALLINT \\
+\%s           & Name of external file           & char *        & INDIRECT          \\
+\%$<$         & Name of external file           & char *        & INDIRECT          \\
+\%dw          & 32-bit unsigned integer         & dword         & UNSIGNED INTEGER  \\
+\%64d         & 64-bit signed integer           & EPI\_INT64    & INT64             \\
+\%64u         & 64-bit unsigned integer         & EPI\_UINT64   & UINT64            \\
+\%c           & Unique serial number            & ft\_counter * & COUNTER           \\
+\%ls          & A list of allocated strings     & char **       & STRLST            \\ \hline
+\end{tabular}
+\end{table}
+
+\verb`n_exectsql()` takes a variable argument list that is a list of
+pointers to the data to be passed into the query.  \verb`n_exectsql()`
+may be issued as many times as desired for the same statement.  When
+issuing a statement where you want to get the resultant rows, such as
+\verb`SELECT`, you will need to use \verb`n_gettsql()` (see its man page).
+Variables passed to \verb`n_exectsql()` are not modified or \verb`free()`'d.
+
+\verb`SELECT` statements will always generate result rows.  By default \verb`INSERT`
+and \verb`DELETE` statements will not.  To enable result rows from \verb`INSERT` and
+\verb`DELETE` see \verb`n_resulttsql()`.
+
+\verb`n_settsql()` and \verb`n_exectsql()` both return 0 on failure and
+non-0 on success.
+
+\EXAMPLE
+\begin{verbatim}
+/*
+  This example loads records into a table called docs that has the
+  following fields:
+
+  Name    Type       Description
+  ----    ----       -----------
+  ctr     counter    a handy unique key field
+  text    varchar    the text ocr'd off the image
+  thumb   varbyte    a thumbnail of the original image
+  image   indirect   the full size image
+
+  Given a list of images, it OCR's any text, creates a small thumbnail,
+  and uploads the original image file to the server.
+
+  NOTE:  This example uses two fictitious calls, ocrimage() and
+  shrinkimage(), to OCR images and make thumbnails of them.  We do
+  not provide any such calls.  Also, Texis does not know any image
+  formats.  Any image or other binary format data may be stored in
+  a Texis field or indirect.
+*/
+TSQL   *ts;
+char   *text;
+byte   *thumbnail;
+size_t  nthumbnail;
+char  **imagefiles;
+int     i, nimages;
+
+   ...
+              /* setup the insert statement for loading new records */
+   if(n_settsql(ts,"insert into docs values (counter, %s, %p%n, %<);"))
+   {
+      for(i=0;i<nimages;i++)               /* each image to process */
+      {
+         text=ocrimage(imagefile[i]);              /* OCR the image */
+                                                /* make a thumbnail */
+         thumbnail=shrinkimage(imagefiles[i],&thumbnail);
+                        /* execute the insert with the current data */
+         if(!n_exectsql(ts,text,thumbnail,nthumbnail,imagefiles[i]))
+            break;
+      }
+   }
+\end{verbatim}
+
+\EXAMPLE
+\begin{verbatim}
+/*
+  This example accesses the same table described in the previous
+  example.  Given a Metamorph query, it will retrieve all rows
+  that have a match in the text field.
+*/
+TSQL   *ts;
+char   *query;
+
+   ...
+                                    /* setup the select statement */
+   if(n_settsql(ts,
+      "select ctr,text,thumb,image from docs where text like %s;"))
+   {
+          /* execute the select with the supplied Metamorph query */
+      if(n_exectsql(ts,query))
+      {
+         /* the n_gettsql() man page describes how to get results */
+      }
+   }
+   ...
+\end{verbatim}
+
+\SEE
+\begin{verbatim}
+n_opentsql(), n_gettsql(), n_dotsql().
+\end{verbatim}
+
+%**********************************************************************/
+
+\NAME{n\_gettsql() - Get resultant rows from a SQL statement}
+\SYNOPSIS
+\begin{verbatim}
+#include "tstone.h"
+
+int n_gettsql(ts,format,...)
+TSQL   *ts;
+char   *format;
+\end{verbatim}
+
+\DESCRIPTION
+
+\verb`n_gettsql()` retrieves resultant rows from execution of a SQL
+statement.  It takes a format string containing \verb`scanf` like
+conversion codes.  There should not be any characters in the format
+string except format codes and optional space separators.
+
+By default, only \verb`SELECT` statements will generate result rows. To get
+result rows from \verb`INSERT` and \verb`DELETE` statements see \verb`n_resulttsql()`.
+
+The following table summarizes the format codes and their respective
+data types.  See the {\bf formatting codes} man page for full
+descriptions.
+
+\begin{table}{\label{tab:gfmtcodes}}
+%\caption{\verb`n_gettsql()` Formatting Codes}
+\begin{tabular}{|l|l|l|l|} \hline
+\multicolumn{4}{|c|}{Output codes} \\ \hline
+{\em Format}  & {\em Description}               & {\em C Type}  & {\em SQL Type}    \\ \hline
+\%b           & Raw binary data                 & byte **       & BYTE              \\
+\%p\%n        & Raw binary data                 & byte **       & BYTE              \\
+\%s           & Character string                & char **       & CHAR              \\
+\%lf          & Double precision floating point & double *      & DOUBLE            \\
+\%lu          & Unix date stored as time\_t     & long *        & DATE              \\
+\%f           & Single precision floating point & float *       & FLOAT             \\
+\%d           & 32/64-bit signed integer        & int  *        & INTEGER           \\
+\%ld          & 32/64-bit signed integer        & long *        & LONG           \\
+\%hd          & 16-bit signed integer           & short *       & SMALLINT          \\
+\%w           & 16-bit unsigned integer         & word *        & UNSIGNED SMALLINT \\
+\%s           & Name of external file           & char **       & INDIRECT          \\
+\%$>$         & Name of external file           & char **       & INDIRECT          \\
+\%dw          & 32-bit unsigned integer         & dword *       & UNSIGNED INTEGER  \\
+\%64d         & 64-bit signed integer           & EPI\_INT64 *  & INT64             \\
+\%64u         & 64-bit unsigned integer         & EPI\_UINT64 * & UINT64            \\
+\%c           & Unique serial number            & ft\_counter **& COUNTER           \\
+\%ls          & A list of allocated strings     & char ***      & STRLST            \\
+\%a           & All remaining fields as string  & char **       & ---               \\
+\%o           & Metamorph subhit offsets        & MMOFFS **     & ---               \\ \hline
+\end{tabular}
+\end{table}
+
+After the format string are the variables to place the retrieved data
+into.  You must provide the address of each variable, as in
+\verb`scanf`, to set.  Each variable will be pointed to an allocated
+region that must be released with \verb`free()` when you are finished
+with it except for the fundamental types
+\verb`double, long, float, short, word, dword`.
+%wtf - is above allocation good? won't allow list>1 of fund. types
+
+It is not necessary to get all result rows if you don't want them all.
+any subsequent \verb`n_settsql()` will flush any ungotten rows.
+
+\verb`n_gettsql()` both returns 0 on ``end of results'' and non-0 otherwise.
+
+\EXAMPLE
+\begin{verbatim}
+/*
+  This example accesses the same table described in the n_settsql()
+  man page.  Given a Metamorph query, it will retrieve all rows
+  that have a match in the text field.
+*/
+TSQL       *ts;
+char       *query;
+ft_counter *ctr;
+char       *text;
+byte       *thumbnail;
+size_t      nthumbnail;
+char       *imagefile;
+MMOFFS     *mmo;
+
+   ...
+                                      /* setup the select statement */
+   if(n_settsql(ts,
+      "select ctr,text,thumb,image from docs where text like %s;"))
+   {
+            /* execute the select with the supplied Metamorph query */
+      if(n_exectsql(ts,query))
+      {
+                                          /* get all resultant rows */
+         while(n_gettsql(ts,"%c %s%o %p%n %s",
+                         &ctr,&text,&mmo,&thumbnail,&nthumbnail,
+                         &imagefile))
+         {
+               break;
+            ...
+            /* do something with the fields (like display them) */
+            ...
+            free(ctr);
+            free(text);
+            freemmoffs(mmo);
+            free(thumbnail);
+            free(imagefile);
+         }
+      }
+   }
+   ...
+\end{verbatim}
+
+\SEE
+\begin{verbatim}
+n_settsql() and n_resulttsql()
+\end{verbatim}
+
+%**********************************************************************/
+
+\NAME{n\_dotsql() - Prepare and execute a SQL statement}
+\SYNOPSIS
+\begin{verbatim}
+#include "tstone.h"
+
+int n_dotsql(ts,stmt,...)
+TSQL   *ts;
+char   *stmt;
+\end{verbatim}
+
+\DESCRIPTION
+
+\verb`n_dotsql()` combines the functionality of \verb`n_settsql()` and
+\verb`n_exectsql()` into one call.  It takes the statement format string
+as in \verb`n_settsql()` followed by input variable pointers as in
+\verb`n_exectsql()`.  Any resultant rows are discarded.
+
+It returns the number of rows that were processed on success or
+\verb`-1` on error.
+
+This function is useful for performing one shot statements that don't
+generate any output or you don't care about the output.  Like creating
+or dropping a table or inserting a single record.
+
+\EXAMPLE
+\begin{verbatim}
+/*
+  This example creates a table called docs with the following fields:
+
+  Name    Type       Description
+  ----    ----       -----------
+  id      counter    a handy unique key field
+  text    varchar    the text ocr'd off the image
+  thumb   varbyte    a thumbnail of the original image
+  image   indirect   the full size image
+
+  Then it inserts one row into it.
+*/
+SERVER *se;
+TSQL   *ts;
+char   *text;
+byte   *thumbnail;
+size_t  nthumbnail;
+char   *imagefile;
+int     nrows;
+
+   ...
+   if(n_dotsql(ts,"create table docs(id counter,text varchar(1000),
+                      thumbnail varbyte,imagefile indirect);")>=0)
+   {
+      ...
+      nrows=n_dotsql(ts,
+                     "insert into docs values (counter, %s, %p%n, %<);",
+                     text,thumbnail,nthumbnail,imagefile);
+   }
+   ...
+\end{verbatim}
+
+\SEE
+\begin{verbatim}
+n_settsql(), n_exectsql()
+\end{verbatim}
+
+%**********************************************************************/
+
+\NAME{n\_resulttsql() - Control the behavior of SQL {\tt INSERT}, {\tt DELETE}}
+\SYNOPSIS
+\begin{verbatim}
+#include "tstone.h"
+
+int n_resulttsql(ts,flag)
+TSQL   *ts;
+int     flag;
+\end{verbatim}
+
+\DESCRIPTION
+
+\verb`n_resulttsql()` controls the reporting of resultant rows from SQL
+\verb`INSERT` and \verb`DELETE` statements.  By default \verb`INSERT` and \verb`DELETE` will not
+report back the affected rows.  Calling this function with \verb`flag`
+set to \verb`1` will enable the reporting of affected rows.  You then
+must use \verb`n_gettsql()` to retrieve rows as with \verb`SELECT`s.
+\verb`n_resulttsql()` must be called before \verb`n_settsql()`.
+
+Pass \verb`flag` as \verb`0` to disable report of the affected rows.
+
+\verb`SELECT` statements always return matching rows, regardless of this
+setting. \verb`n_dotsql()` is unaffected by this call. Results are
+always suppressed.
+
+\verb`n_resulttsql()` returns the previous \verb`flag` setting. There is
+no error return.
+
+\EXAMPLE
+\begin{verbatim}
+TSQL   *ts;
+long    when;
+long    date;
+char   *query;
+
+   ...
+                                 /* delete rows without seeing them */
+   if(n_settsql(ts,"delete from history where Date<%lu;"))
+   {
+      when=time((time_t *)NULL);                /* get current time */
+      when-=7*86400;                             /* subtract 7 days */
+      n_exectsql(ts,when);                      /* perform deletion */
+   }
+   ...
+                                        /* delete rows and see them */
+   n_resulttsql(ts,1);
+   if(n_settsql(ts,"delete from history where Date<%lu;"))
+   {
+      when=time((time_t *)NULL);                /* get current time */
+      when-=7*86400;                             /* subtract 7 days */
+      if(n_exectsql(ts,when))                   /* perform deletion */
+      {
+         while(n_gettsql(ts,"%lu %s",&date,&query);
+         {
+            printf("%lu %s\n",date,query);
+            free(query);
+         }
+      }
+   }
+   ...
+\end{verbatim}
+
+\SEE
+\begin{verbatim}
+n_settsql()
+\end{verbatim}
+
+%**********************************************************************/
+
+\NAME{Formatting Codes for n\_settsql() and n\_gettsql()}
+
+\DESCRIPTION
+
+The formatting codes placed in the \verb`n_settsql() stmt` variable
+and the \verb`n_gettsql() format` variable deal with the same kinds
+of data. Each code's usage for both input and output will be discussed
+together. The basic difference between input and output modes is as
+follows.
+
+Output is from \verb`n_gettsql()` to your variables.  All output
+variables are specified by address (like \verb`scanf()`) so that they
+may be re-pointed to the allocated data retrieved from the server.  You
+must \verb`free()` the output variables when you are finished with the
+data or your program will grow ever larger with each resultant row until
+the the bounds of time and space are reached and the universe begins to
+tear at the seams and finally explodes in a spectacularly fiery ball
+just because you didn't bother to free a few variables.
+
+Input is from your variables to \verb`n_settsql()`. Input variables
+are specified directly (like \verb`printf()`) rather than by address.
+They are not modified or freed by \verb`n_settsql()`.
+
+\begin{verbatim}
+%b
+\end{verbatim}
+Communicates SQL {\tt byte} fields via C byte variables.  Provide
+\verb`byte **` for output and \verb`byte *` for input.  Typically used
+for raw binary data.  It assumes one byte on input since the length of
+your data can not be determined.  On output it gets as much data as is
+in the field.  It is up to you to know the length of it somehow.  See
+\verb|%p%n| for more robust buffer handling.
+
+\begin{verbatim}
+%p%n
+\end{verbatim}
+Communicates any SQL field type via C byte variables.  Provide
+\verb`byte **` and \verb`size_t *` for output and \verb`byte *` and
+\verb`size_t` for input.  Typically used for raw binary data.  Both
+\verb`%p` and \verb`%n` must be provided and in that order.  Therefore
+you must supply two variables.  The first is a \verb`byte` pointer to
+the data buffer and the second is a \verb`size_t` that is the number of
+bytes in the buffer.
+
+
+\begin{verbatim}
+%s
+\end{verbatim}
+Communicates SQL {\tt char} and {\tt indirect} fields via C {\tt char} variables.  Provide
+\verb`char **` for output and \verb`char *` for input.  The data is a
+standard \verb`'\0'` terminated string.  Accessing an indirect this way
+transfers the name of the indirect file.  See \verb`%<` and \verb`%>` to
+transfer indirect file contents.
+
+\begin{verbatim}
+%lf
+\end{verbatim}
+Communicates SQL {\tt double} fields via C {\tt double} variables. Provide
+\verb`double *` for output and \verb`double` for input.
+
+\begin{verbatim}
+%lu
+\end{verbatim}
+Communicates SQL {\tt date} fields via C {\tt long} variables. Provide
+\verb`long *` for output and \verb`long` for input.
+
+\begin{verbatim}
+%f
+\end{verbatim}
+Communicates SQL {\tt float} fields via C {\tt float} variables. Provide
+\verb`float *` for output and \verb`float` for input.
+
+\begin{verbatim}
+%d or %ld
+\end{verbatim}
+Communicates SQL {\tt integer} fields via C {\tt long} variables. Provide
+\verb`long *` for output and \verb`long` for input.
+
+\begin{verbatim}
+%hd
+\end{verbatim}
+Communicates SQL {\tt smallint} fields via C {\tt short} variables. Provide
+\verb`short *` for output and \verb`short` for input.
+
+\begin{verbatim}
+%w
+\end{verbatim}
+Communicates SQL {\tt unsigned smallint} fields via C {\tt word} (16 bit) variables.
+Provide \verb`word *` for output and \verb`word` for input.
+
+\begin{verbatim}
+%dw
+\end{verbatim}
+Communicates SQL {\tt unsigned integer} fields via C {\tt dword} (32 bit) variables.
+Provide \verb`dword *` for output and \verb`dword` for input.
+
+\begin{verbatim}
+%64d
+\end{verbatim}
+Communicates SQL {\tt int64} fields via C {\tt EPI\_INT64} (64 bit signed) variables.
+Provide \verb`EPI_INT64 *` for output and \verb`EPI_INT64` for input.
+INT64 support was added in Texis version 6.
+
+\begin{verbatim}
+%64u
+\end{verbatim}
+Communicates SQL {\tt uint64} fields via C {\tt EPI\_UINT64} (64 bit unsigned) variables.
+Provide \verb`EPI_UINT64 *` for output and \verb`EPI_UINT64` for input.
+UINT64 support was added in Texis version 6.
+
+\begin{verbatim}
+%<
+\end{verbatim}
+Communicates SQL {\tt indirect} fields via C {\tt char} variables and disk files.
+This is for input only. Provide a \verb`char *` variable that points
+to the name of a file. The file will be uploaded to the server and
+be stored as a Texis managed indirect.
+
+\begin{verbatim}
+%>
+\end{verbatim}
+Communicates SQL {\tt indirect} fields via C {\tt char} variables and disk files.
+This is for output only.  Provide a \verb`char **` variable.  The
+contents of this variable will be examined before retrieving the
+contents of the indirect file from the server.
+
+In all of the following cases your supplied filename will be replaced
+with a generated and allocated filename that is where the contents of
+the indirect file from the server were downloaded to on the local
+machine.  The third case is an exception to the allocated value rule.
+
+If the variable points to \verb`(char *)NULL` a temporary filename will
+be generated with the standard C library call \verb`tempnam()`.
+
+If the variable points to the name of an existing directory on the local
+machine the resulting filename will be that directory with the name of
+the file on the server appended to it.  (i.e.  The file will wind up in
+the specified directory).
+
+Otherwise the variable is taken to be the exact name of the file to
+place the file from the server in.  Anything previously in the specified
+file will be lost.  In this case the resultant filename will be
+untouched.
+
+The contents of your variable will {\em not} be freed, just overwritten.  If
+it needs to be freed, you will have to keep another copy of it to free
+after the transfer.
+
+\begin{verbatim}
+%c
+\end{verbatim}
+Communicates SQL {\tt counter} fields via C {\tt ft\_counter} variables.  Provide a
+\verb`ft_counter **` for output and a \verb`ft_counter *` for input.
+\verb`ft_counter` is a structure that contains two members called
+\verb`date` and \verb`seq`.  \verb`date` is a \verb`long` that contains
+the date in seconds (see std.  C \verb`time()`) that the counter was
+created.  \verb`seq` is a \verb`ulong` that contains the sequence number
+for the particular second described by \verb`date`.  The combination of
+these values provides a unique id across every record in every table in
+a given database.
+
+\begin{verbatim}
+%ls
+\end{verbatim}
+Communicates SQL {\tt strlst} fields via C {\tt char} variables. Provide a
+\verb`char ***` for output and a \verb`char **` for input. The
+string list is an allocated array of pointers to allocated strings.
+The list is terminated with an allocated empty string (\verb`""`).
+
+\begin{verbatim}
+%aD
+\end{verbatim}
+Communicates all remaining resultant fields via a C char variable.  This
+is for output only.  Provide a \verb`char **`.  All fields that have not
+already been extracted will be packed together into a C string with the
+character \verb`D` between each field.  Where \verb`D` is any single
+character except \verb`\000`.  Non-printable characters may be specified
+with octal (\verb`\ooo`) or hex (\verb`\xhh`) notation (e.g.:  tab would
+be \verb`\011` in octal and \verb`\x09` in hex).  Binary data that can
+be converted to human readable form will be (e.g.:  INTEGER FLOAT
+COUNTER).  Everything after the \verb`%aD` code will be ignored since
+all the fields are now converted.
+
+\begin{verbatim}
+%o
+\end{verbatim}
+Communicates Metamorph hit offset information for the preceding field.
+This is for output only. Provide a \verb`MMOFFS **`.
+\verb`MMOFFS` is the following structure:
+\begin{verbatim}
+   MMOFFS             /* Metamorph hit offsets          */
+   {
+      int n;          /* number if off's in array       */
+      MMOFFSE
+      {
+         long start;  /* byte offset of start of region */
+         long end;    /* one past end of region         */
+      } *off;         /* array of subhit offset info    */
+      int nhits;      /* number of hit's in in array    */
+      MMOFFSE *hit;   /* array of hit offset info       */
+   };
+\end{verbatim}
+\verb`MMOFFS->off` is an array of start and end offsets of
+subhits (individual search terms)
+within the field. \verb`MMOFFS->n` is the number of entries
+in the off array. Each \verb`off` is made of two members: \verb`long start`
+and \verb`long end`. Start is the byte offset of the subhit within
+the field. End is the byte offset of the end of the subhit within
+the field plus one (plus one makes \verb`for()` loops easier to write).
+The offs array contains subhits from all Metamorphs that may have been
+applied to the field. Offsets are sorted in ascending order by start offset.
+
+Overall hit and delimiter offsets are contained in \verb`MMOFFS->hit` in
+a manner analogous to subhit info.  \verb`MMOFFS->nhits` is the number
+of entries in the hit array and will always be a multiple of three.  For
+each Metamorph on a field there will be three entries.  The first
+contains the offsets of the overall hit (sentence, paragraph, etc...).
+The second contains the
+offsets of the start delimiter.  The third contains the offsets of the
+end delimiter.
+
+\verb`MMOFFS` must be freed with \verb`freemmoffs(MMOFFS *)` instead of the
+normal \verb`free(void *)`. \verb`freemmoffs(MMOFFS *)` can handle MMOFFSPN.
+This will be \verb`MMOFFSPN`\footnote{\verb`MMOFFSPN` is an alias for
+\verb`(MMOFFS *)NULL`} if there is no Metamorph data for the field.  This
+can happen for a number of reasons.  If the search could be completed in
+the index without needing to read the record, then there will be no hit
+information.  Also if you have ordered the output the hit information
+can become invalid in the ordering, and the pointer will be \verb|NULL|.
+
+\SEE
+\begin{verbatim}
+n_settsql() and n_gettsql()
+\end{verbatim}
+
+%**********************************************************************/
+\newpage\section{Texis specific functions}
+
+%**********************************************************************/
+
+\NAME{n\_regtexiscb() - Register hit callback function}
+
+\SYNOPSIS
+\begin{verbatim}
+#include <sys/types.h>
+#include "tstone.h"
+FLDLST
+{
+ int    n;            /* number of items in each of following lists */
+ int   *type;                           /* types of field (FTN_xxx) */
+ void **data;                                 /* data array pointer */
+ int   *ndata;                  /* number of elements in data array */
+ char **name;                                      /* name of field */
+};
+int n_regtexiscb(SERVER *se,void *usr,
+                 int (*cb)(void *usr,TEXIS *tx,FLDLST *fl) );
+\end{verbatim}
+
+\DESCRIPTION
+
+This function assigns the callback routine that the server is to call each
+time it locates an item that matches the user's query.  The client program
+can pass along a pointer to a ``user'' object to the register function
+that will be in turn passed to the callback routine on each invocation.
+
+The callback routine also gets a \verb`TEXIS` handle that can be used to
+get further information about the hit (see \verb`n_getsrchlst()`) and a
+\verb`FLDLST` handle that contains the \verb`select`ed fields.
+
+A \verb`FLDLST` is a structure containing parallel arrays of information
+about the selected fields and a count of those fields. \verb`FLDLST` members:
+
+\verb`int n` --- The number of fields in the following lists.
+
+\verb`int *type` --- An array of types of the fields.  Each element will
+be one of the \verb`FTN_xxxx` macros.
+
+\verb`void **data` --- An array of data pointers.  Each element will
+point to the data for the field. The data for a field is an
+array of \verb`type`s.
+
+\verb`int *ndata` ---  An array of data counts. Each element says how
+many elements are in the \verb`data` array for this field.
+
+\verb`char **name` --- An array of strings containing the names of the
+fields.
+
+\verb`SRCHLST *sl` --- An array of SRCHLSTs containing information
+Metamorph searches, if any. Filled in, on request only,
+by \verb`n_fillsrchlst()`.
+
+\verb`MMOFFS mmoff` --- An array of Metamorph subhit offsets and lengths
+from Metamorph searches, if any. Filled in, on request only,
+by \verb`n_fillsrchlst()`.
+
+Possible types in \verb`FLDLST->type` array:
+
+\verb`FTN_BYTE` --- An 8 bit \verb`byte`.
+
+\verb`FTN_CHAR` --- A \verb`char`.
+
+\verb`FTN_DOUBLE` --- A \verb`double`.
+
+\verb`FTN_DATE` --- A \verb`long` in the same form as that from the
+\verb`time()` system call.
+
+\verb`FTN_DWORD` --- A 32 bit \verb`dword`.
+
+\verb`FTN_FLOAT` --- A \verb`float`.
+
+\verb`FTN_INT` --- An \verb`int`.
+
+\verb`FTN_INTEGER` --- An \verb`int`.
+
+\verb`FTN_LONG` --- A \verb`long`.
+
+\verb`FTN_INT64` --- An \verb`int64`.
+
+\verb`FTN_UINT64` --- A \verb`uint64`.
+
+\verb`FTN_SHORT` --- A \verb`short`.
+
+\verb`FTN_SMALLINT` --- A \verb`short`.
+
+\verb`FTN_WORD` --- A 16 bit \verb`word`.
+
+\verb`FTN_INDIRECT` --- A \verb`char` string URL indicating the file that
+the data for this field is stored in.
+
+\verb`FTN_COUNTER` --- A \verb`ft_counter` structure containing a unique serial
+number.
+
+\verb`FTN_STRLST` --- A delimited list of strings.
+
+The \verb`type` may also be \verb`|`ed with \verb`FTN_NotNullableFlag` (formerly \verb`DDNULLBIT`) and/or
+\verb`DDVARBIT`.  If \verb`FTN_NotNullableFlag` is set, it indicates that the field is not
+allowed to be NULL. \verb`DDVARBIT` indicated that the field is
+variable length instead of fixed length. When handling result rows
+these bits can generally be ignored.
+
+\verb`n_regtexiscb()` will return true if the registration was successful,
+and will return false (0) on error.
+
+\EXAMPLE
+\begin{verbatim}
+#include <sys/types.h>
+#include "tstone.h"
+
+#define USERDATA my_data_structure
+USERDATA
+{
+ FILE   *outfile;  /* where I will log the hits */
+ long   hitcount;  /* just for fun */
+};
+
+void
+dispnames(ud,fl)                         /* display all field names */
+USERDATA *ud;
+FLDLST *fl;
+{
+ int i;
+
+ for(i=0;i<fl->n;i++)                                /* every field */
+    printf("%s ",fl->name[i]);
+ putchar('\n');                                  /* end header line */
+}
+
+void
+dispfields(ud,fl)                 /* display all fields of any type */
+USERDATA *ud;
+FLDLST *fl;
+{
+ int i, j;
+
+ for(i=0;i<fl->n;i++)
+    {
+     int   type=fl->type[i];                   /* the type of field */
+     void *p   =fl->data[i];                 /* pointer to the data */
+     int   n   =fl->ndata;                     /* how many elements */
+     if(i>0) putchar('\t');  /* tab between fields, but not leading */
+     switch (type & DDTYPEBITS) /* ignore NULL and VAR bits */
+        {
+                        /* loop through each element of field via j */
+                                /* cast and print according to type */
+         case FTN_BYTE    : for(j=0;j<n;j++)
+                             printf("0x%x ",((byte *)p)[j]);
+                            break;
+         case FTN_INDIRECT: /*nobreak;*/
+                            /* just print the filename as a string */
+         case FTN_CHAR    : for(j=0;j<n && ((char *)p)[j]!='\0';j++)
+                             printf("%c"  ,((char *)p)[j]);
+                            break;
+         case FTN_DOUBLE  : for(j=0;j<n;j++)
+                             printf("%lf ",((double *)p)[j]);
+                            break;
+         case FTN_DWORD   : for(j=0;j<n;j++)
+                             printf("%lu ",
+                                    (unsigned long)((dword *)p)[j]);
+                            break;
+         case FTN_FLOAT   : for(j=0;j<n;j++)
+                             printf("%f " ,((float *)p)[j]);
+                            break;
+         case FTN_INT     : for(j=0;j<n;j++)
+                             printf("%d " ,((int *)p)[j]);
+                            break;
+         case FTN_INTEGER : for(j=0;j<n;j++)
+                             printf("%d " ,((int *)p)[j]);
+                            break;
+         case FTN_LONG    : for(j=0;j<n;j++)
+                             printf("%ld ",((long *)p)[j]);
+                            break;
+         case FTN_SHORT   : for(j=0;j<n;j++)
+                             printf("%d " ,((short *)p)[j]);
+                            break;
+         case FTN_SMALLINT: for(j=0;j<n;j++)
+                             printf("%d " ,((short *)p)[j]);
+                            break;
+         case FTN_WORD    : for(j=0;j<n;j++)
+                             printf("%u " ,
+                                    (unsigned int)((word *)p)[j]);
+                            break;
+          /* assume exactly one element on FTN_DATE for this example */
+         case FTN_DATE    : printf("%.25s",ctime(p));/* human format */
+                            break;
+         case FTN_COUNTER : printf("%08lx%08lx",((ft_counter *)p)->date,
+                                                ((ft_counter *)p)->seq);
+                            break;
+         case FTN_STRLST  : {
+                             size_t nb=((ft_strlst *)p)->nb;
+                             char delim=((ft_strlst *)p)->delim;
+                             char *b=((ft_strlst *)p)->buf;
+                                for(j=0;j<nb;j++)
+                                {
+                                   if(b[j]=='\0') putchar(delim);
+                                   else           putchar(b[j]);
+                                }
+                            }
+                            break;
+         default          : printf("unknowntype(%d)",type);
+        }
+    }
+}
+
+int
+hit_handler(usr,tx,fl)
+void *usr;  /* my user-data pointer */
+TEXIS *tx;  /* Texis API handle */
+FLDLST *fl; /* The field list data structure */
+{
+ USERDATA *ud=(USERDATA *)usr;  /* cast the void into the real type */
+
+ ++ud->hitcount;                      /* add one to the hit counter */
+
+ if(ud->hitcount==1)                        /* before the first hit */
+    dispnames(ud,fl);             /* display all of the field names */
+ dispfields(ud,fl);                    /* display all of the fields */
+
+ if(ud->hitcount>=100)/* tell the server to stop if I've seen enough */
+    return(0);
+ return(1);          /* tell the server to keep giving me more hits */
+}
+
+int
+main()
+{
+ SERVER  *se;
+ USERDATA mydata;
+ ...
+ mydata.outfile=(FILE *)NULL;
+ mydata.hitcount=0;
+ n_regtexiscb(se,&mydata,hit_handler);
+ ...
+}
+
+\end{verbatim}
+
+\SEE
+The example program \verb`netex3.c`.
+
+%**********************************************************************/
+
+\NAME{n\_getsrchlst(), n\_freesrchlst(), n\_srchinfo(), n\_freesrchinfo(),
+n\_fillsrchlst() - Hit information}
+
+\SYNOPSIS
+\begin{verbatim}
+#include <sys/types.h>
+#include "tstone.h"
+SRCHLST
+{
+ int n;                                /* number of elements in lst */
+ SRCH lst[];                          /* list of Metamorph searches */
+};
+MMOFFS                                  /* Metamorph subhit offsets */
+{
+   int n;                               /* number if off's in array */
+   MMOFFSE
+   {
+      long start;                 /* byte offset of start of region */
+      long end;                           /* one past end of region */
+   } *off;                                  /* array of offset info */
+};
+SRCHLST *n_getsrchlst(SERVER *se,TEXIS *tx);
+SRCHLST *n_freesrchlst(SERVER *se,SRCHLST *sl);
+int      n_fillsrchlst(SERVER *se,TEXIS *tx,FLDLST *fl);
+
+SRCHI
+{
+ char *what;                               /* what was searched for */
+ char *where;                                     /* what was found */
+ int   len;                               /* length of where buffer */
+};
+SRCHI   *n_srchinfo(SERVER *se,SRCH *sr,int i);
+SRCHI   *n_freesrchi(SERVER *se,SRCHI *si);
+\end{verbatim}
+
+\DESCRIPTION
+
+These functions may be used within the hit callback function to obtain
+detailed information about any Metamorph queries that may have been used
+in the query.  \verb`n_getsrchlst()` takes the {\tt TEXIS} handle passed to
+the hit callback function and returns a list of handles to all Metamorph
+searches associated with the query.  These handles may then be used in
+calls to \verb`n_srchinfo()`.  \verb`SRCHLSTPN` is returned on error.
+\verb`SRCHLST` members:
+
+\verb`int n` --- The number of searches contained in \verb`lst`.
+
+\verb`SRCH lst[]` --- The array of searches.
+
+The \verb`SRCHLST` returned by \verb`n_getsrchlst()` should be freed by
+calling \verb`n_freesrchlst()` when it is no longer needed.
+
+\verb`n_fillsrchlst()` fills in the \verb`SRCHLST *sl[]` and
+\verb`MMOFFS mmoff[]` arrays in the supplied \verb`FLDLST`. This provides
+the Metamorph search handles, if any, for each individual field. This
+supercedes \verb`n_getsrchlst()` because it is more generally useful.
+It also provides a list of all subhit offsets for each individual field.
+This greatly simplifies hit tagging if all you need is the offset information
+about each subhit. \verb`n_fillsrchlst()` always returns non-zero
+meaning success.
+
+The \verb`MMOFFS->off` member is an array of start and end offsets of
+subhits within the field. \verb`MMOFFS->n` is the number of entries
+in the off array. Each \verb`off` is made of two members: \verb`long start`
+and \verb`long end`. Start is the byte offset of the subhit within
+the field. End is the byte offset of the end of the subhit within
+the field plus one (plus one makes \verb`for()` loops easier to write).
+The offs array contains subhits from all Metamorphs that may have been
+applied to the field. Offsets are sorted in ascending order by start offset.
+Overall hit and delimiter offsets are not included in the \verb`MMOFFS` list.
+\verb`MMOFFS` contains the offsets that would be returned with
+indices 3--n of \verb`n_srchinfo()`, but sorted.
+
+Many queries do not need to apply Metamorph to the actual field as the index
+is sufficient to decide if there is a hit or not, and so will not return any
+hit information.  If the query orders the results it is possible that the
+engine will have finished using the Metamorph engine before the results
+are returned to the user, and so the results are no longer available.  If
+you need accurate hit-offset information it is suggested that you use the
+Metamorph API at the client side to search the field returned.
+
+The memory allocated by \verb`n_fillsrchlst()` should not be freed
+because it is managed automatically.
+
+\verb`n_srchinfo()` takes a search handle and the index of the sub-hit
+to return information about.  It returns a \verb`SRCHI` pointer on
+success or SRCHIPN on error or if the index is out of range.  The index
+may be controlled by a loop to get information about all parts of the
+hit.
+
+Index values and what they return:
+\begin{tabbing}
+xxxxxx \= xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \= xxxxxxxxxxxxxxxxxxxxx \kill
+Index  \> \verb`SRCHI->what` points to   \> \verb`SRCHI->where` contains \\
+0      \> The original query             \> The whole hit         \\
+1      \> A regular expression           \> The start delimiter   \\
+2      \> A regular expression           \> The end delimiter     \\
+3-n    \> The ``set'' being searched for \> The match             \\
+       \> as listed below                \>                       \\
+\end{tabbing}
+
+\begin{tabbing}
+xxxxxxxxx \= xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx \kill
+Set type  \> \verb`SRCHI->what` points to       \\
+REX       \> A regular expression               \\
+NPM       \> The npm query expression           \\
+PPM       \> The root word of the list of words \\
+XPM       \> The ``approximate'' string         \\
+\end{tabbing}
+
+Each \verb`SRCHI` returned by \verb`n_srchinfo()` should be freed by
+calling \verb`n_freesrchi()` when it is no longer needed.
+
+\CAVEATS
+The subhit offsets returned by \verb`n_srchinfo()` are {\em not} sorted.
+
+\SEE
+\verb`n_xpminfo()` and its example.
+
+%**********************************************************************/
+
+\NAME{n\_xpminfo(), n\_freexpmi() - Hit information}
+
+\SYNOPSIS
+\begin{verbatim}
+#include <sys/types.h>
+#include "tstone.h"
+XPMI *n_xpminfo(SERVER *se,SRCH *sr,int index);
+XPMI *n_freexpmi(SERVER *se,XPMI *xi);
+\end{verbatim}
+
+\DESCRIPTION
+
+These functions may be used within the hit callback function to obtain
+detailed information about any search terms that may have used the
+approximate pattern matcher (XPM).  \verb`n_xpminfo()` is called with
+the index of the desired XPM.
+
+It returns a structure containing everything about that XPM.  It returns
+XPMIPN\footnote{\verb`XPMIPN` is a synonym for \verb`(XPMI*)NULL`} if
+index is out of bounds.
+
+To get all XPM subhits put \verb`n_xpminfo()` in a loop with index
+starting at zero and incrementing until \verb`XPMIPN` is returned.
+
+Each valid structure returned by \verb`n_xpminfo()` should be freed by
+calling \verb`n_freexpmi()` when it is no longer needed.
+
+The XPMI structure contains the following members:
+\begin{verbatim}
+XPMI                                                    /* XPM Info */
+{
+ word  thresh;             /* threshold above which a hit can occur */
+ word  maxthresh;                          /* exact match threshold */
+ word  thishit;                             /* this hit's threshold */
+ word  maxhit;                      /* max threshold located so far */
+ char *maxstr;                    /* string of highest value so far */
+ char *srchs;                            /* string being search for */
+};
+
+\end{verbatim}
+
+\CAVEATS
+
+Don't expect \verb`XPMI.thresh` to be the percentage entered in the
+query passed to \verb`n_setqry()`.  It is an absolute number calculated
+from that percentage and the search string.
+
+\EXAMPLE
+\begin{verbatim}
+int
+hit_handler(usr,tx,fl)
+void *usr;  /* my user-data pointer */
+TEXIS *tx;  /* Texis API handle */
+FLDLST *fl; /* The field list data structure */
+{
+ ...
+ MYAPP   *ts=(MYAPP *)usr;
+ SERVER  *se=ts->se;
+ SRCHLST *sl;
+ SRCHI   *si;
+ XPMI    *xi;
+ int      i, j, k;
+
+ ...
+ sl=n_getsrchlst(se,tx);        /* get list of Metamorphs for query */
+ if(sl!=SRCHLSTPN)
+    {
+     for(i=0;i<sl->n;i++)                     /* for each Metamorph */
+         {
+          SRCH *sr= &sl->lst[i];                           /* alias */
+                                          /* loop thru all sub-hits */
+            /* the zero index for n_srchinfo is the whole hit       */
+            /* the one  index for n_srchinfo is the start delimiter */
+            /* the two  index for n_srchinfo is the end delimiter   */
+            /* the remaining indices are the subhits                */
+          for(j=0;(si=n_srchinfo(se,sr,j))!=SRCHIPN;j++)
+              {
+               char *p, *e;              /* scratch buffer pointers */
+               switch(j)
+               {
+                case 0 :printf(" HIT    (%s):%d:",si->what,si->len);
+                        break;
+                case 1 :printf(" S-DELIM(%s):%d:",si->what,si->len);
+                        break;
+                case 2 :printf(" E-DELIM(%s):%d:",si->what,si->len);
+                        break;
+                default:printf(" SUB-HIT(%s):%d:",si->what,si->len);
+                        break;
+               }
+               for(p=si->where,e=p+si->len;p<e;p++)
+                   if(*p<32 && *p!='\n' && *p!='\t')
+                      printf("\\x%02x",*p);
+                   else
+                      putchar(*p);
+               printf("\n");
+               n_freesrchi(se,si);            /* free any mem in si */
+              }
+          for(k=0;(xi=n_xpminfo(se,sr,k))!=XPMIPN;k++)
+             {                                    /* loop thru XPMs */
+              printf("XPM: \"%s\": thresh %u, maxthresh %u, thishit %u",
+                     xi->srchs,xi->thresh,xi->maxthresh,xi->thishit);
+              printf("\n   : maxhit %u, maxstr \"%s\"\n",
+                     xi->maxhit,xi->maxstr);
+              n_freexpmi(se,xi);                  /* free mem in xi */
+             }
+         }
+     n_freesrchlst(se,sl);
+    }
+ ...
+
+ return(1);          /* tell the server to keep giving me more hits */
+}
+\end{verbatim}
+
+\SEE
+The example program \verb`netex3.c`, \verb`n_reghitcb()`,
+\verb`n_getsrchlst()`, \verb`n_srchinfo()`.
+
+%**********************************************************************/
+
+\NAME{n\_getindexcount() - Hit information}
+
+\SYNOPSIS
+\begin{verbatim}
+#include <sys/types.h>
+#include "tstone.h"
+int n_getindexcount(SERVER *se);
+\end{verbatim}
+
+\DESCRIPTION
+
+This function will return the count of rows to be read from the index
+for the most recently prepared statement, if available.
+
+\CAVEATS
+
+The return from this function is only valid under certain circumstances,
+which are when the index has been scanned to get a list of potentially
+matching records.  In a join, the return value will be the number of
+matches in the inner table corresponding to the current outer row, not
+the number of outer table matches.  The actual number of records returned
+may be significantly less if post processing is done to resolve some
+of the where clause.
+
+The default behaviour of Texis with a single relational operator and an
+index on the field is to walk the index as the rows are returned, which
+is faster at getting the initial rows out.  Since it does not get all the
+matching rows from the index first, {\tt n\_getindexcount()} will return 0.
+This behaviour can be changed with the {\tt bubble} property.
+
+\EXAMPLE
+\begin{verbatim}
+\end{verbatim}
+
+%**********************************************************************/
+
+%\NAME{newblob(), putblob(), closeblob(), newindirect() - Object manipulation}
+\NAME{n\_newindirect() - Object manipulation}
+
+\SYNOPSIS
+\begin{verbatim}
+char *url=n_newindirect(SERVER *se,char *database,char *table,char *fn);
+\end{verbatim}
+
+\DESCRIPTION
+
+This functions allow you to manipulate indirect fields within
+a Texis database.
+
+%\verb`newblob()` will create a new blob associated with the specified
+%database and table, and copy the buffer passed into the blob.  The
+%\verb`n` parameter says how many bytes from buf to copy.  It returns the
+%handle of the created blob.
+%
+%\verb`putblob()` will put the contents of the buffer into the blob.  The
+%\verb`n` parameter says how many bytes from buf to copy.  It returns the
+%blob where the data was actually put.
+%
+%{\bf Warning:} The returned \verb`BLOB` may be different than that
+%passed to \verb`putblob()`.  If so, the passed \verb`BLOB` will then be
+%invalid.
+%
+%\verb`closeblob()` cleans up the memory associated with the blob handle.
+%The blob itself is left intact.  It returns \verb`BLOBPN`.
+%
+%\verb`getblob()` retrieves data from a blob.  It will read in the data
+%from the blob, and return an allocated buffer containing the data, and
+%the number of bytes actually read in.  \verb`*buf` will be set to the
+%buffer pointer.  \verb`*n` will be set to the number of bytes in
+%\verb`*buf`.  It returns non-0 on success, 0 on failure.
+
+\verb`newindirect()` generates a URL that can be used to store data on
+the server.  If \verb`fn` is \verb`NULL` or \verb`""` it will create a
+URL which can be used to store data in that is owned by Texis.  If
+\verb`fn` is not \verb`NULL` and not \verb`""` and is not a URL already
+then it will be made into a URL owned by you.  If fn is a full path, it
+will be respected.  Otherwise the standard path of indirect files for
+the table will be prepended.
+
+\verb`newindirect()` returns a URL that can be stored into.  The URL
+that is returned is an allocated string that {\bf MUST} be freed by the
+caller.
+
+The URLs returned by this function may then be used
+as the field contents of indirect fields.
+
+\SEE
+\verb`n_rcopyto()`, \verb`n_rcopyfrom()`
+
+%**********************************************************************/
+
+\NAME{n\_rcopyto(), n\_rcopyfrom() - File transfer}
+\SYNOPSIS
+\begin{verbatim}
+int n_rcopyto(SERVER *se,char *remotedest,char *localsrc);
+int n_rcopyfrom(SERVER *se,char *localdest,char *remotesrc);
+\end{verbatim}
+
+\DESCRIPTION
+
+These functions provide the ability to copy files between client
+and server. They are useful for inserting and retrieving INDIRECT fields.
+An indirect field will usually point to a file on the same machine as the
+server. So the existing connection may be used to transfer the file.
+
+\verb`n_rcopyto()` copies a file from the client to the server.
+\verb`n_rcopyfrom()` copies a file from the server to the client.  In
+both cases the second argument is the name of the file to create and the
+third argument is the file to read from.
+
+Both functions return zero on error and non-zero on success.
+
+\EXAMPLE
+\begin{verbatim}
+/* insert a row with an indirect while creating the indirect file */
+
+SERVER *se;
+char *database, *table;
+char *url, *remotefn, *localfn;
+char *description;
+
+   ...
+   database=...
+   table=...
+   ...
+   n_setdatabase(se,database);
+   ...
+   localfn=...
+   description=...
+   ...
+   url=n_newindirect(se,database,table,(char *)NULL);
+   remotefn=urlfn(url);
+   if(!n_rcopyto(se,remotefn,localfn))
+      puts("error");
+   n_texis(se,"insert into %s values('%s','%s');",
+           table,description,remotefn);
+   free(remotefn);
+   free(url);
+   ...
+\end{verbatim}
+
+\EXAMPLE
+\begin{verbatim}
+/* query a table with an indirect field and download the file */
+
+int
+hit_handler(usr,tx,fl)
+void *usr;  /* my user-data pointer */
+TEXIS *tx;  /* Texis API handle */
+FLDLST *fl; /* The field list data structure */
+{
+ USERDATA *myd=(USERDATA *)usr; /* cast the void into the real type */
+ char *description, *remotefn;
+
+      /* I know the resultant data types because I wrote the SELECT */
+ description=(char *)fl->data[0];
+ remotefn   =(char *)fl->data[1];
+ printf("%s:\n",description);              /* print the description */
+ if(!n_rcopyfrom(myd->se,"/tmp/scratch",remotefn)) /* get text file */
+    puts("error");
+ displayfile("/tmp/scratch");/* fictitious function to display a file */
+ return(1);          /* tell the server to keep giving me more hits */
+}
+
+main()
+{
+ USERDATA mydata;
+
+   mydata.se=...
+   mydata.database=...
+   mydata.table=...
+   ...
+   n_regtexiscb(mydata.se,&mydata,hit_handler);
+   n_setdatabase(mydata.se,mydata.database);
+   ...
+   n_texis(mydata.se,
+     "select description,text from %s where text like 'power struggle'",
+     mydata.table);
+   ...
+}
+\end{verbatim}
+
+\SEE
+\verb`n_newindirect()`
+
+%**********************************************************************/
+
+\NAME{n\_setXXX(), n\_getXXX() - Texis control parameters}
+
+\SYNOPSIS
+\begin{verbatim}
+int   n_setdefaults(SERVER *se)
+int   n_setdatabase(SERVER *se,str dbname)
+str   n_getdatabase(SERVER *se)
+\end{verbatim}
+
+\DESCRIPTION
+
+This collection of functions provide the needed control over how a {\bf
+Texis} server will behave.  They are to be used prior to a call to
+\verb`n_texis()`.  All of the functions have a common first argument
+which is the omnipresent \verb`SERVER *`.  If a \verb`set` function
+returns an \verb`int`, the value 0 means failure and \verb`not` 0 means
+the operation was successful.  Those functions that have a \verb`void`
+return value return nothing.  If a \verb`get` function returns a pointer
+type, the value \verb`(type *)NULL` indicates a problem getting memory.
+Otherwise the pointer should be freed when no longer needed.
+
+\begin{description}
+\item[void  n\_setdefaults(SERVER *se)]
+
+     resets all server parameters to their initial state.
+
+\item[int   n\_setdatabase(SERVER *se,str dbname)]
+
+     sets \verb`dbname` as the name of the {\bf Texis} database that is
+     to be queried against.
+
+\item[str   n\_getdatabase(SERVER *se)]
+
+     gets the name of the {\bf Texis} database that is
+     to be queried against.
+\end{description}
+
+%**********************************************************************/
+
+\NAME{n\_texis() - SQL interface}
+
+\SYNOPSIS
+\begin{verbatim}
+int n_texis(SERVER *se,char *queryformat,...);
+\end{verbatim}
+
+\DESCRIPTION
+
+This function comprises the real work that is to be performed by the
+network Texis server.  To initiate the actual search the program makes a
+call to the \verb`n_texis()` function.  The server will begin to call
+the client's callback routine that was set in the \verb`n_regtexiscb()`
+call.  The \verb`n_texis()` function will return 0 on error or true if
+all goes well.  {\em NOTE:  It is not considered an error for there to
+be zero hits located by a search.  A client's callback routine will
+never be invoked in this instance.  }
+
+The \verb`queryformat` argument is a \verb`printf()` style format string
+that will be filled in by any subsequent arguments and then executed.
+
+\EXAMPLE
+\begin{verbatim}
+#include <sys/types.h>
+#include "tstone.h"
+main(argc,argv)
+int argc;
+char **argv;
+{
+ SERVER *se;
+ char buf[80];
+ USERDATA mydata;
+
+ ...
+ n_regtexiscb(se,mydata,hit_handler);         /* setup hit callback */
+ n_setdatabase(se,argv[1]);               /* set database to search */
+ while(gets(buf)!=(char *)NULL)                 /* crude user input */
+    if(!n_texis(se,"%s;",buf))     /* add required ';' for the user */
+         puts("ERROR in n_texis");
+ ...
+}
+\end{verbatim}
+
+\SEE
+Your system's \verb`printf()` man page for the format string \verb`%` codes.
+\begin{verbatim}
+n_settexisparam()
+\end{verbatim}
+
+%**********************************************************************/
+% MAW 09-19-94 added TX family
+
+\NAME{n\_opentx(), n\_duptx(), n\_closetx() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+TX *n_opentx(SERVER *se);
+TX *n_duptx(SERVER *se,TX *tx);
+TX *n_closetx(SERVER *se,TX *tx);
+\end{verbatim}
+
+\DESCRIPTION
+
+These functions provide an alternative to \verb`n_texis()`.  They allow
+the same style of SQL statements via \verb`n_settx()`, but maintain the
+connection to the database for performing multiple queries without
+constant reopens.  This improves the efficiency of executing multiple
+statements against the same database.
+
+\verb`n_opentx()` opens the database specified in the last call to
+\verb`n_setdatabase()`. It returns a valid TX pointer on success or
+\verb`TXPN` on failure. \verb`TXPN` is an alias for \verb`(TX *)NULL`.
+
+\verb`n_duptx()` creates a new TX pointer to the same database as a
+currently valid handle.  This saves much of the overhead of opening
+a new connection to the database.  The returned handle is a clean
+TX handle, and will not have a copy of the SQL statement from the
+copied handle.
+It returns a valid TX pointer on success or
+\verb`TXPN` on failure. \verb`TXPN` is an alias for \verb`(TX *)NULL`.
+
+\verb`n_closetx()` closes the previously opened database.  It always
+returns \verb`TXPN`.
+
+SQL statements are setup and executed with \verb`n_settx()`,
+\verb`n_runtx()`, and \verb`n_gettx()`.
+
+\SEE
+\begin{verbatim}
+n_settx(), n_runtx(), and n_gettx()
+\end{verbatim}
+
+%**********************************************************************/
+
+\NAME{n\_settx(), n\_runtx() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+TX  *n_settx(SERVER *se,TX *tx,char *queryformat,...);
+int  n_runtx(SERVER *se,TX *tx);
+\end{verbatim}
+
+\DESCRIPTION
+
+These functions perform SQL statement setup and execution for databases
+opened with \verb`n_opentx()`. \verb`n_settx()` takes a \verb`TX` pointer
+from \verb`n_opentx()`, a printf style format string, and the arguments
+to fill in that format string with.
+
+The query will be constructed using the format string and arguments,
+parsed, and prepared for execution.  \verb`n_settx()` will return the
+same \verb`TX` passed to it on success.  It will return \verb`TXPN` on
+error.
+
+\verb`n_runtx()` will execute the statement prepared with
+\verb`n_settx()`.  At this point what you said will begin to happen and
+your callback will be called as appropriate.  When this function returns
+execution is complete and another \verb`n_settx()` should be performed
+before running again.  It will return zero on error and non-zero on
+success.
+
+\EXAMPLE
+\begin{verbatim}
+SERVER *se;
+TX *tx;
+
+   ...
+   if((tx=n_opentx())!=TXPN)      /* initialize database connection */
+   {
+      ...
+                                                     /* setup query */
+      if(n_settx(se,tx,
+                 "select NAME from SYSTABLES where CREATOR!='texis';"
+                )!=TXPN)
+         n_runtx(se,tx);                           /* execute query */
+      ...
+                                             /* setup another query */
+      if(n_settx(se,tx,
+                "select NAME,TYPE from SYSCOLUMNS where TBNAME='image';"
+                )!=TXPN)
+         n_runtx(se,tx);                         /* execute a query */
+      ...
+      n_closetx(tx);                   /* close database connection */
+   }
+   ...
+\end{verbatim}
+
+\SEE
+\begin{verbatim}
+n_opentx(), n_gettx()
+\end{verbatim}
+
+%**********************************************************************/
+% MAW 08-21-97 - doc n_preptx() and n_exectx()
+
+\NAME{n\_preptx(), n\_exectx() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+int n_preptx(SERVER *se,TX *tx,char *queryfmt,...);
+int n_exectx(SERVER *p_se,TX *tx);
+\end{verbatim}
+
+\DESCRIPTION
+
+These functions provide an efficient way to perform the same
+SQL statement multiple times with varying parameter data.
+
+\verb`n_preptx()` will perform SQL statement setup.
+It takes a \verb`TX` pointer
+from \verb`n_opentx()`, a printf style format string, and the arguments
+to fill in that format string with.
+
+The query will be constructed using the format string and arguments,
+parsed, and prepared for execution.  \verb`n_preptx()` will return non-zero
+on success.  It will return zero on error.
+
+\verb`n_exectx()` will begin execution of the SQL statement.
+It will return non-zero on success and zero on error.
+\verb`n_runtx()` or \verb`n_gettx()` or \verb`n_flushtx()` would
+then be called to handle the results of the statement as with \verb`n_settx()`.
+
+Once a SQL statement is prepared with \verb`n_preptx()` it may be
+executed multiple times with \verb`n_exectx()`. Typically the parameter
+data is changed between executions using the \verb`n_paramtx()` function.
+
+\EXAMPLE
+\begin{verbatim}
+SERVER *se;
+TX     *tx;
+long    date;
+char   *title;
+char   *article;
+int     tlen, alen, dlen;
+
+   ...
+   if(!n_preptx(se,tx,"insert into docs values(counter,?,?,?);"))
+      { puts("n_preptx Failed"); return(0); }
+   for( each record to insert )
+   {
+      ...
+      date=...
+      dlen=sizeof(date);
+      title=...
+      tlen=strlen(title);
+      article=...
+      alen=strlen(article);
+      if(!n_paramtx(se,tx,1,&date  ,&dlen,SQL_C_LONG,SQL_DATE       ) ||
+         !n_paramtx(se,tx,2,title  ,&tlen,SQL_C_CHAR,SQL_LONGVARCHAR) ||
+         !n_paramtx(se,tx,3,article,&alen,SQL_C_CHAR,SQL_LONGVARCHAR));
+         { puts("n_paramtx Failed"); return(0); }
+      if(!n_exectx(se,tx))
+         { puts("n_exectx Failed"); return(0); }
+      n_flushtx(se,tx);
+   }
+   ...
+\end{verbatim}
+
+\EXAMPLE
+\begin{verbatim}
+SERVER *se;
+TX     *tx;
+char   *query;
+int     qlen;
+FLDLST *fl;
+
+   ...
+   if(!n_preptx(se,tx,
+         "select id,Title from docs where Article like ?;"))
+      { puts("n_preptx Failed"); return(0); }
+   for( each Article query to execute )
+   {
+      query=...
+      qlen=strlen(query);
+      if(!n_paramtx(se,tx,1,query,&qlen,SQL_C_CHAR,SQL_LONGVARCHAR))
+         { puts("n_paramtx Failed"); return(0); }
+      if(!n_exectx(se,tx))
+         { puts("n_exectx Failed"); return(0); }
+      while((fl=n_gettx(se,tx))!=FLDLSTPN)
+      {
+         ...
+         freefldlst(fl);
+      }
+   }
+   ...
+\end{verbatim}
+
+\SEE
+\begin{verbatim}
+n_paramtx(), n_opentx(), n_gettx()
+\end{verbatim}
+
+%**********************************************************************/
+
+\NAME{n\_gettx() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+FLDLST *n_gettx(SERVER *se,TX *tx);
+FLDLST *freefldlst(FLDLST *fl);
+\end{verbatim}
+
+\DESCRIPTION
+
+This function provides a non-callback version of SQL execution.
+\verb`n_gettx()` returns a \verb`FLDLST` pointer which is the
+same as would normally be passed to a callback function. You process
+it just as you would in a callback.
+
+Continue calling \verb`n_gettx()` to get subsequent result rows.
+\verb`n_gettx()` will return \verb`FLDLSTPN` when there are no more
+result rows.
+
+Each returned \verb`FLDLST` must be freed using the \verb`freefldlst()`
+when it is no longer needed.
+
+\EXAMPLE
+\begin{verbatim}
+SERVER *se;
+TX     *tx;
+FLDLST *fl;
+
+   ...
+   if((tx=n_opentx())!=TXPN)      /* initialize database connection */
+   {
+      ...
+                                                     /* setup query */
+      if(n_settx(se,tx,
+                 "select NAME from SYSTABLES where CREATOR!='texis';"
+                )!=TXPN)
+         while((fl=n_gettx(se,tx))!=FLDLSTPN)/* get next result row */
+         {
+            dispfields(fl);            /* display all of the fields */
+            freefldlst(fl);                      /* free the memory */
+         }
+      ...
+      n_closetx(tx);                   /* close database connection */
+   }
+   ...
+\end{verbatim}
+
+\SEE
+\begin{verbatim}
+n_settx(), n_runtx(), n_regtexiscb()
+\end{verbatim}
+
+%**********************************************************************/
+% MAW 08-21-97 - doc n_paramtx()
+% JMT 99-03-06 - doc n_resetparamtx()
+
+\NAME{n\_settexisparam(), n\_paramtx(), n\_resetparamtx() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+int n_settexisparam(se, ipar, buf, len, ctype, sqltype)
+SERVER  *se;
+int     ipar;
+void    *buf;
+int     *len;
+int     ctype;
+int     sqltype;
+
+int n_paramtx(se, tx, ipar, buf, len, ctype, sqltype)
+SERVER  *se;
+TX      *tx;
+int     ipar;
+void    *buf;
+int     *len;
+int     ctype;
+int     sqltype;
+
+int n_resetparamtx(se, tx)
+SERVER	*se;
+TX	*tx;
+\end{verbatim}
+
+\DESCRIPTION
+
+These functions allow you to pass arbitrarily large or complex data into
+a SQL statement. Sometimes there is data that won't work in the confines
+of the simple C string that comprises an SQL statement. Large text fields
+or binary data for example.
+
+Call \verb`n_settexisparam()` to setup the parameter data before calling
+\verb`n_texis()` or \verb`n_settx()` to prepare the SQL statement.
+Call \verb`n_paramtx()` to setup parameters after \verb`n_preptx()` and
+before \verb`n_exectx()`.  If you have a statement you have already
+executed once, and you want to execute again with different data, which
+may have parameters unset which were previously unset you can call
+\verb`n_resetparamtx()`.  This is not neccessary if you will explicitly
+set all the parameters.
+Place a question mark (\verb`?`) in the SQL statement where you would
+otherwise place the data.
+
+These are the parameters:
+\begin{description}
+\item[SERVER *se]      The open server connection.
+\item[TX     *tx]      The prepared SQL statement (\verb`n_paramtx()` only).
+\item[int     ipar]    The number of the parameter, starting at 1.
+\item[void   *buf]     A pointer to the data to be transmitted.
+\item[int    *len]     A pointer to the length of the data.  This can be
+                       \verb`(int *)NULL` to use the default length, which
+                       assumes a \verb`'\0'` terminated string for
+                       character data.
+\item[int     ctype]   The type of the data.  For text use SQL\_C\_CHAR.
+\item[int     sqltype] The type of the field being inserted into.  For
+                       varchar use SQL\_LONGVARCHAR.
+\end{description}
+
+\begin{tabular}{|l|l|l|l|}\hline
+Field type & sqltype          & ctype           & C type     \\ \hline
+varchar    & SQL\_LONGVARCHAR & SQL\_C\_CHAR    & char       \\
+varbyte    & SQL\_BINARY      & SQL\_C\_BINARY  & byte       \\
+date       & SQL\_DATE        & SQL\_C\_LONG    & long       \\
+integer    & SQL\_INTEGER     & SQL\_C\_INTEGER & long       \\
+smallint   & SQL\_SMALLINT    & SQL\_C\_SHORT   & short      \\
+float      & SQL\_FLOAT       & SQL\_C\_FLOAT   & float      \\
+double     & SQL\_DOUBLE      & SQL\_C\_DOUBLE  & double     \\
+varind     & SQL\_LONGVARCHAR & SQL\_C\_CHAR    & char       \\
+counter    & SQL\_COUNTER     & SQL\_C\_COUNTER & ft\_counter \\
+\hline
+\end{tabular}
+
+
+\EXAMPLE
+\begin{verbatim}
+SERVER *se;
+TX     *tx;
+char   *description;
+char   *article;
+int     len;
+
+   ...
+   description="a really large article";
+   article=...
+   len=...
+   if(!n_settexisparam(se,1,article,&len, SQL_C_CHAR, SQL_LONGVARCHAR))
+      puts("n_settexisparam failed");
+   else
+   if(!n_texis(se,"insert into docs values('%s',?);",description))
+      puts("insert failed");
+   ...
+\end{verbatim}
+
+\EXAMPLE
+\begin{verbatim}
+SERVER *se;
+TX     *tx;
+char   *description;
+char   *article;
+int     lend, lena;
+
+   if(!n_preptx(se,tx,"insert into docs values(?,?);"))
+      { puts("n_preptx Failed"); return(0); }
+   ...
+   description="a really large article";
+   lend=strlen(description);
+   article=...
+   lena=strlen(article);
+   if(!n_paramtx(se,tx,1,description,&lend,SQL_C_CHAR,SQL_LONGVARCHAR)||
+      !n_paramtx(se,tx,2,article    ,&lena,SQL_C_CHAR,SQL_LONGVARCHAR));
+      { puts("n_paramtx Failed"); return(0); }
+   if(!n_exectx(se,tx))
+      { puts("n_exectx Failed"); return(0); }
+   ...
+\end{verbatim}
+
+%**********************************************************************/
+% MAW 10-12-94 - add n_flushtx()
+
+\NAME{n\_flushtx() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+int n_flushtx(se,tx);
+SERVER  *se;
+TX      *tx;
+\end{verbatim}
+
+\DESCRIPTION
+
+This function flushes any remaining results from the current SQL
+statement. Execution of the statement is finished however. This
+is useful for ignoring the output of \verb`INSERT` and \verb`DELETE` statements.
+
+\EXAMPLE
+\begin{verbatim}
+SERVER *se;
+
+   ...
+                                                     /* setup query */
+   if(n_settx(se,tx,
+              "delete from customer where lastorder<'1990-01-01';"
+             )!=TXPN)
+      n_flushtx(se,tx);                        /* ignore result set */
+   ...
+\end{verbatim}
+
+
+%**********************************************************************/
+% JMT 2000-08-22 - add n_flushtx2()
+
+\NAME{n\_flushtx2() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+int n_flushtx2(se,tx,nrows,max);
+SERVER  *se;
+TX      *tx;
+int     nrows;
+int     max;
+\end{verbatim}
+
+\DESCRIPTION
+
+This function flushes up to nrows results from the specified SQL
+statement. This is useful for skipping a number of records from
+a \verb`SELECT`.  The max is an suggestion to the SQL engine of how many
+records you intend to read.
+
+The return will be the number of records actually flushed if
+successful, or if an error occurred then the return will be a
+negative number of (-1 - rowsflushed).  Reaching the end of the
+results is not considered an error, and will result in a return
+less than nrows.
+
+\EXAMPLE
+\begin{verbatim}
+SERVER *se;
+
+   ...
+                                                     /* setup query */
+   if(n_settx(se,tx,
+              "select name from customer where lastorder<'1990-01-01';"
+             )!=TXPN)
+      n_flushtx2(se,tx,10,10);           /* ignore first 10 results */
+   ...
+\end{verbatim}
+
+
+%**********************************************************************/
+% MAW 10-12-94 - add n_offstx(),freemmoffs()
+
+\NAME{n\_offstx(),freemmoffs() - SQL interface}
+\SYNOPSIS
+\begin{verbatim}
+MMOFFS *n_offstx(se,tx,fieldname);
+SERVER  *se;
+TX      *tx;
+char    *fieldname;
+\end{verbatim}
+
+\DESCRIPTION
+
+This function returns any and all Metamorph subhit offsets for the named
+field.  It returns \verb`MMOFFSPN`\footnote{\verb`MMOFFSPN` is an alias
+for \verb`(MMOFFS *)NULL`} if there are none.  See
+\verb`n_fillsrchlst()` for a description of the \verb`MMOFFS` structure,
+and why there may be no hit information.
+The returned structure must be freed with \verb`freemmoffs()` when no
+longer needed. It is safe to pass \verb`MMOFFSPN` to \verb`freemmoffs()`.
+
+\EXAMPLE
+\begin{verbatim}
+SERVER *se;
+TX     *tx;
+FLDLST *fl;
+MMOFFS *mmo;
+
+   ...
+                                                     /* setup query */
+   if(n_settx(se,tx,
+       "select desc,text from docs where text like 'power struggle';",
+       )!=TXPN)
+      while((fl=n_gettx(se,tx))!=FLDLSTPN)   /* get next result row */
+      {
+         mmo=n_offstx(se,tx,"text"); /* get Metamorph info for text */
+         dispfields(fl,mmo);/* display the fields, hilighting subhits */
+         freemmoffs(mmo);                    /* free Metamorph info */
+      }
+   ...
+\end{verbatim}
+
+%**********************************************************************/
+
+\newpage\section{Modifying the server}
+% MAW 09-19-94 wtf try modify server/tsql then check doc
+
+\NAME{adduserfuncs - Adding to the server}
+
+\SYNOPSIS
+\begin{verbatim}
+#include <sys/types.h>
+#include "dbquery.h"
+
+void adduserfuncs(fo)
+FLDOP *fo;
+\end{verbatim}
+
+\DESCRIPTION
+
+This section describes how to add user defined types and functions to the
+texis server. The file {\tt aufex.c} in the api directory provides an
+outline of how to do this.  The server calls the function {\tt
+adduserfuncs} which gives you the opportunity to add data types, operators
+and functions to the server.  There are three functions that are used for
+adding to the server. They are {\tt dbaddtype, foaddfuncs} and {\tt
+fosetop.}
+
+Once you have created your own version of {\tt aufex.c} you need to
+compile and link this file with the rest of the daemon objects.  You must
+make sure that this file is linked before the libraries to make sure your
+function gets called.  An example makefile is also included in the api
+directory which shows the needed objects and include paths to make a new
+daemon.  After a new daemon has been created, make sure that it is running
+and not the standard daemon.  See the documentation on {\tt texisd} to see
+how to invoke it.
+
+\NAME{dbaddtype - Add a datatype}
+
+\SYNOPSIS
+\begin{verbatim}
+int dbaddtype(name, type, size)
+char *name;
+int type;
+int size;
+\end{verbatim}
+
+\DESCRIPTION
+{\bf Parameters}
+\begin{description}
+\item[name] the new name for the type.  It should not start with the
+string ``var'', as that is reserved for declaring the variable size
+form of the datatype.
+\item[type] an integer which is used to refer to the type in functions
+etc.  For a user added type this number should be between 32 and 63
+inclusive.  This number should be unique.
+\item[size] the size of one element of the datatype.  When one item of
+this type is written to the database, at least size bytes will be
+transferred.
+\end{description}
+
+The function will return 0 if successful, and -1 if there is no room
+for more datatypes, or if a type with a different name already exists
+with the same type number.
+
+
+\EXAMPLE
+\begin{verbatim}
+typedef struct tagTIMESTAMP
+{
+   short           year;
+   unsigned short  month;
+   unsigned short  day;
+   unsigned short  hour;
+   unsigned short  minute;
+   unsigned short  second;
+   unsigned long   fraction;
+} TIMESTAMP;
+
+dbaddtype("timestamp", 32, sizeof(TIMESTAMP);
+\end{verbatim}
+
+\NAME{foaddfuncs - Add functions}
+
+\SYNOPSIS
+\begin{verbatim}
+#include <sys/types.h>
+#include "dbquery.h"
+
+int foaddfuncs(fo, ff, n)
+FLDOP *fo;
+FLDFUNC *ff;
+int n;
+\end{verbatim}
+
+\DESCRIPTION
+
+{\tt Foaddfuncs} adds a function to the math unit of Texis.  The function
+can take up to five arguments, and returns a single argument.  The function
+will be called with pointers to {\tt FLD} structures.  The return values
+should be stuffed into the pointer to the first argument.
+
+The math unit takes care of all the required stack manipulation, so no
+stack manipulation is required in the function. The math unit will
+always pass the maximum number of arguments to the function.
+
+{\tt Foaddfuncs} takes an array of function descriptions as one of its
+arguments.  The functions description function looks like
+\begin{verbatim}
+struct {
+   char *name;                                  /* name of function */
+   int (*func)();                                        /* handler */
+   int   minargs;                 /* minimum # of arguments allowed */
+   int   maxargs;                 /* maximum # of arguments allowed */
+   int   rettype;                                    /* return type */
+   int   types[MAXFLDARGS];   /* argument types, 0 means don't care */
+} FLDFUNC;
+\end{verbatim}
+
+{\bf Parameters}
+\begin{description}
+\item[fo] The math unit to add to.
+\item[ff] Array of function descriptions to be added.
+\item[n] The number of functions being added.
+\end{description}
+
+\EXAMPLE
+\begin{verbatim}
+int
+fsqr(f)
+FLD *f;
+{
+   int     x;
+   size_t  sz;
+
+   x = *(ft_int *)getfld(f, &sz);      /* Get the number */
+   x = x * x ;                              /* Square it */
+   putfld(f, x, 1);                    /* Put the result */
+   return 0;
+}
+
+static FLDFUNC  dbfldfuncs[]=
+{
+   {"sqr",   fsqr, 1, 1, FTN_INT, FTN_INT, 0, 0, 0, 0 },
+};
+#define NFLDFUNCS (sizeof(dbfldfuncs)/sizeof(dbfldfuncs[0]))
+
+foaddfuncs(fo, dbfldfuncs, NFLDFUNCS);
+\end{verbatim}
+
+This will add a function to square an integer.
+
+\NAME{fosetop - Add an operator}
+
+\SYNOPSIS
+\begin{verbatim}
+#include <sys/types.h>
+#include "dbquery.h"
+
+int fosetop(fo, type1, type2, func, ofunc)
+FLDOP *fo;
+int type1;
+int type2;
+fop_type func;
+fop_type *ofunc;
+\end{verbatim}
+
+\DESCRIPTION
+
+{\tt Fosetop} changes a binary operator in the math unit of Texis.  The
+function {\tt func} will be called for all operations on (type1, type2). If
+the function does not know how to handle the specific operation, and ofunc
+is not NULL, ofunc can be called to hande the operation.
+
+The function being called should look like
+\begin{verbatim}
+int
+func(f1, f2, f3, op)
+FLD *f1;
+FLD *f2;
+FLD *f3;
+int op;
+{
+}
+\end{verbatim}
+
+{\bf Parameters}
+\begin{description}
+\item[fo] The math unit to change.
+\item[type1] The type of the first operand.
+\item[type2] The type of the second operand.
+\item[func] Pointer to the function to perform the operation.
+\item[ofunc] Pointer to pointer to function.  The pointer to function will
+be stuffed with the old function to perform the operation.  This can be
+used to add some cases, and keep the old functionality in others.  The
+return value should be 0 for success.  The result of the operation should
+be put in f3.
+
+\end{description}
+
+\EXAMPLE
+\begin{verbatim}
+#include <sys/types.h>
+#include "dbquery.h"
+
+fop_type o_ftich;          /* the pointer to the previous handler */
+
+int
+n_ftich(f1, f2, f3, op)
+FLD     *f1;
+FLD     *f2;
+FLD     *f2;
+int     op;
+{
+        TIMESTAMP       *ts;
+        double          d;
+        int             n;
+
+        if (op != FOP_ASN)      /* We only know about assignment. */
+                if (o_ftich)
+                        return ((*o_ftich)(f1, f2, f3, op));
+                else
+                        return FOP_EINVAL;
+
+        /* Set up the return field. */
+        f3->type = FTN_TIMESTAMP;
+        f3->elsz = sizeof(TIMESTAMP);
+        f3->size = sizeof(TIMESTAMP);
+        f3->n = 1;
+        if(sizeof(TIMESTAMP) > f3->alloced)
+        {
+                void *v;
+
+                v = malloc(sizeof(TIMESTAMP));
+                setfld(f2, v, sizeof(TIMESTAMP));
+                f3->alloced = sizeof(TIMESTAMP);
+        }
+
+/* First 0 out all the elements */
+        ts = getfld(f1, NULL);
+        ts->year = 0;
+        ts->month = 0;
+        ts->day = 0;
+        ts->hour = 0;
+        ts->minute = 0;
+        ts->second = 0;
+        ts->fraction = 0;
+
+/* Now read in the values */
+        n = sscanf(getfld(f2, NULL), "%hu/%hu/%hd %hu:%hu:%hu%lf",
+                &ts->month, &ts->day, &ts->year,
+                &ts->hour, &ts->minute, &ts->second, &d);
+
+/* Convert any fractional seconds into the appropriate number
+   of billionths of a second.
+*/
+        if (n == 7)
+                ts->fraction = d * 1000000000 ;
+}
+
+ .
+ .
+ .
+        fosetop(fo, FTN_TIMESTAMP, FTN_CHAR, n_ftich, &o_ftich);
+ .
+ .
+ .
+\end{verbatim}
+
+This example adds an operator to allow the assignment of a TIMESTAMP
+field from a character string.  See {\tt dbaddtype} for the definition
+of TIMESTAMP.
+%\end{document}             % End of document.

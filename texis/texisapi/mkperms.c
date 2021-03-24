@@ -17,7 +17,7 @@ TXcreateSysusersDd(void)
 	char	*strType;
 
         /* Bug 7398: change to varchar to accomodate longer user/pass: */
-        strType = (TX_PWENCRYPT_METHODS_ENABLED(TXApp) ? "varchar" : "char");
+        strType = (TX_PWHASH_METHODS_ENABLED(TXApp) ? "varchar" : "char");
 	if (!(dd = opendd()) ||
 	    !ddsettype(dd, TEXIS_FAST_TABLE) ||
 	    !putdd(dd, "U_NAME", strType, 20, 0) ||

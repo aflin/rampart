@@ -164,7 +164,7 @@ tup_disp_head(DBTBL *t, int width)
 	if(width <= 0)
 	{
 		width = 12; /* Our previous default, i.e. min width */
-		for(i = 0; name=getfldname(t->tbl, i); i++)
+		for(i = 0; (name=getfldname(t->tbl, i)); i++)
 		{
 			if(strlen(name) > width)
 				width = strlen(name);

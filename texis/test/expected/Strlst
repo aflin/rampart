@@ -154,137 +154,42 @@ SQL 1 line 48> set verbose=2;          -- ensure we see it use the index
 SQL 1 line 49> set bubble=0;           -- ensure it says it's opening index
 
 SQL 1 line 50> select * from test where 'b' in x;
-200 Setting pred b IN x on table test in the function: settablepred
-200 Looking for index on test (x) in the function: ddgetindex
-200 Opening index TMPDIR/junk/ix1 in the function: ixbteqindex
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
      x      
 ------------+
-200 Handling a table select in the function: TXdotree
-200 Read 1 rows so far from test
 a,b,c,d,
-200 Handling a table select in the function: TXdotree
-200 Read 2 rows so far from test
 b,
-200 Handling a table select in the function: TXdotree
-200 No more rows [2] from test
 
 SQL 1 line 51> select * from test where x in ('b');
-200 Setting pred x IN b on table test in the function: settablepred
-200 Looking for index on test (x) in the function: ddgetindex
-200 Opening index TMPDIR/junk/ix1 in the function: ixbteqindex
-100 Results from index TMPDIR/junk/ix1 will be missing empty rows (if any) in the function: ixbteqindex
-200 Results from index TMPDIR/junk/ix1 will require post-processing: subset op, right-side parameter and multi/zero-item left-side column in the function: ixbteqindex
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
      x      
 ------------+
-200 Handling a table select in the function: TXdotree
-200 Read 1 rows so far from test
 b,
-200 Handling a table select in the function: TXdotree
-200 No more rows [1] from test
 
 SQL 1 line 52> select * from test where 'b' = x;
-200 Setting pred b = x on table test in the function: settablepred
-200 Looking for index on test (x) in the function: ddgetindex
      x      
 ------------+
-200 Handling a table select in the function: TXdotree
-200 Read 1 rows so far from test
 b,
-200 Handling a table select in the function: TXdotree
-200 No more rows [1] from test
 
 SQL 1 line 53> select * from test where x = 'b';
-200 Setting pred x = b on table test in the function: settablepred
-200 Looking for index on test (x) in the function: ddgetindex
      x      
 ------------+
-200 Handling a table select in the function: TXdotree
-200 Read 1 rows so far from test
 b,
-200 Handling a table select in the function: TXdotree
-200 No more rows [1] from test
 
 SQL 1 line 54> select * from test where x != 'b';  -- KNG 20081107 Bug 2398
-200 Setting pred x != b on table test in the function: settablepred
-200 Looking for index on test (x) in the function: ddgetindex
      x      
 ------------+
-200 Handling a table select in the function: TXdotree
-200 Read 1 rows so far from test
 a,b,c,d,
-200 Handling a table select in the function: TXdotree
-200 Read 2 rows so far from test
 e,f,g,h,
-200 Handling a table select in the function: TXdotree
-200 Read 3 rows so far from test
 a,c,
-200 Handling a table select in the function: TXdotree
-200 No more rows [3] from test
 
 SQL 1 line 55> select * from test where 'b%' matches x;
-200 Setting pred b% MATCHES x on table test in the function: settablepred
-200 Looking for index on test (x) in the function: ddgetindex
      x      
 ------------+
-200 Handling a table select in the function: TXdotree
-115 varchar MATCHES varstrlst behavior undefined in the function: fochsl
-200 No more rows [0] from test
 
 SQL 1 line 56> select * from test where x matches 'b%';
-200 Setting pred x MATCHES b% on table test in the function: settablepred
-200 Looking for index on test (x) in the function: ddgetindex
-200 Opening index TMPDIR/junk/ix1 in the function: ixbtindex
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Comparing records
-200 Expect to read 25% of the index in the function: ixbtindex
      x      
 ------------+
-200 Handling a table select in the function: TXdotree
-200 Read 1 rows so far from test
 a,b,c,d,
-200 Handling a table select in the function: TXdotree
-200 Read 2 rows so far from test
 b,
-200 Handling a table select in the function: TXdotree
-200 No more rows [2] from test
 
 SQL 1 line 57> set verbose=0;
 

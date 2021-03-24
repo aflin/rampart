@@ -31,11 +31,15 @@ static int tbfinit ARGS((TBL * tb));
 static TBL *newtbl ARGS((TXPMBUF *pmbuf));
 
 /************************************************************************/
+/**
+ * close virtual fields on table
+ *
+ * @param tb the table to close the fields in
+ * @return 0 on error, 1 on success
+ */
 
 int
 TXclosetblvirtualfields(TBL *tb)
-/* Returns 0 on error.
- */
 {
 	int i;
 #ifndef NO_TRY_FAST_CONV
@@ -66,13 +70,12 @@ static int smiss = 0;
 #endif
 
 /* ------------------------------------------------------------------------ */
-
-int
-TXtblReleaseFlds(tbl)
-TBL	*tbl;
 /* Releases data of `tbl' fields, preserving types/sizes.
  * Returns 0 on error.
  */
+int
+TXtblReleaseFlds(tbl)
+TBL	*tbl;
 {
 	unsigned int	i;
 	TX_FLD_KIND	saveKind;
@@ -88,12 +91,12 @@ TBL	*tbl;
 }
 
 /* ------------------------------------------------------------------------ */
+/* Returns size of current row.
+ */
 
 size_t
 TXtblGetRowSize(tbl)
 TBL	*tbl;
-/* Returns size of current row.
- */
 {
 	return(tbl->irecsz);
 }
@@ -413,6 +416,30 @@ char *tn;    /* (in, opt.) table path, sans `.tbl'; or NULL/TXNOOPDBF_PATH */
 	}
 	tb = TXcreatetbl_dbf(dd, df, bf);
 	return (tb);
+}
+
+/******************************************************************/
+
+TBL *
+TXcreateinternaltbl(DD *dd, TX_DBF_TYPE dbftype)
+{
+	DBF *df = NULL, *bf = NULL;
+
+	if (DDPN == dd)				/* KNG 2005-11-23 sanity */
+	{
+		putmsg(MERR, __FUNCTION__, MissingDD, "");
+		return NULL;
+	}
+	if(ddgetblobs(dd))
+	{
+		bf = opendbfinternal(TXPMBUFPN, dbftype);
+		if(!bf)
+			return NULL;
+	}
+	df = opendbfinternal(TXPMBUFPN, dbftype);
+	if(!df)
+		return NULL;
+	return TXcreatetbl_dbf(dd, df, bf);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -986,10 +1013,8 @@ byte *end;			/* Size of the buffer */
 #endif
 
 /******************************************************************/
-#ifdef NULLABLE_TEXIS_TABLE
 static int nbuftofld(byte * rec, TBL * tb, byte * end);
 static size_t nfldtobuf(TBL * tb);
-#endif /* NULLABLE_TEXIS_TABLE */
 
 int
 buftofld(rec, tb, recsz)
@@ -1007,10 +1032,8 @@ size_t recsz;			/* Size of the buffer */
 		return pbuftofld(rec, tb, rec + recsz);
 	case TEXIS_FAST_TABLE:
 		return fbuftofld(rec, tb, rec + recsz);
-#ifdef NULLABLE_TEXIS_TABLE
 	case TEXIS_NULL1_TABLE:
 		return nbuftofld(rec, tb, rec + recsz);
-#endif
 	case TEXIS_TMP_TABLE:
 		return 0;
 #ifndef NO_HAVE_DDBF
@@ -1240,8 +1263,33 @@ err:
 }
 
 /******************************************************************/
+/*
+ *  These functions are for encoding NULL fields in buffer.
+ *
+ *  Add an array of bits for fields that are NULL.  Buffer looks like:
+ *
+ *  +-----------+---------------------------------+-------------------------+
+ *  | Null bits | Fixed Width Non-Nullable Fields | Var and nullable fields |
+ *  +-----------+---------------------------------+-------------------------+
+ */
 
-#ifdef NULLABLE_TEXIS_TABLE
+
+/**
+ * How many bytes to I need for the null bits.
+ *
+ * WTF - For now one bit per field, whether nullable or not.
+ *
+**/
+
+static int
+sizeofNullFlags(DD *dd)
+{
+	int nullableFldCount = 0;
+
+	if(!dd) return 0;
+
+	return (dd->n + 7) >> 3;
+}
 
 static int
 nbuftofld(byte * rec, TBL * tb, byte * end)
@@ -1266,11 +1314,14 @@ nbuftofld(byte * rec, TBL * tb, byte * end)
 		nrecflds = *(int *) rec;
 		rec += sizeof(int);
 	}
-
+	nnullbytes=sizeofNullFlags(tb->dd);
 	if (nnullbytes)
 	{
 		nulli = rec;
 		rec += nnullbytes;
+		while((size_t)rec%ALIGN_BYTES) {
+			rec++;
+		}
 		if (rec > end)
 			goto trunc;
 	}
@@ -1283,30 +1334,32 @@ nbuftofld(byte * rec, TBL * tb, byte * end)
 			f = f->storage;
 		orpos = dd->fd[i].num;
 		isnull = 0;
-#error check FTN_NotNullableFlag usage: iff set: field is *not* allowed to contain a NULL
-		if (dd->fd[i].type & FTN_NotNullableFlag)
+		if TXftnIsNullable(dd->fd[i].type)
 		{
 			if (nulli[nullb] & nullm)
 			{
 				isnull = 1;
 			}
-			if (nullm > 1)
-			{
-				nullm >>= 1;
-			}
-			else
-			{
-				nullm = 128;
-				nullb++;
-			}
+		}
+		if (nullm > 1)
+		{
+			nullm >>= 1;
+		}
+		else
+		{
+			nullm = 128;
+			nullb++;
 		}
 		if (isnull || (orpos > nrecflds))
 		{
+			setfldandsize(f, NULL, 0, TXbool_True); /* Force Normal */
+#ifdef NEVER
 			f->size = 0;
 			f->n = 0;
 			TXfreefldshadow(f);
 			f->shadow = NULL;
 			f->frees = 0;
+#endif
 			continue;
 		}
 		if (i >= ivar)
@@ -1376,13 +1429,13 @@ nbuftofld(byte * rec, TBL * tb, byte * end)
 					switch(f->type & DDTYPEBITS)
 					{
 					case FTN_BLOB:
-						bi->otype = BLOB_ASIS;
+						bi->otype = FTN_BLOB;
 						break;
 					case FTN_BLOBZ:
-						bi->otype = BLOB_GZIP;
+						bi->otype = FTN_BLOBZ;
 						break;
 					default:
-						bi->otype = BLOB_UNKNOWN;
+						bi->otype = 0;
 						break;
 					}
 				}
@@ -1420,13 +1473,19 @@ nfldtobuf(TBL * tb)
 	size_t needed;
 	byte *rec;
 	int ivar;
-	int nnullbytes = tb->nnb;
+	int nnullbytes;
 	int nullb = 0;
 	byte nullm = 128, *nulli;
 	DD *dd = tb->dd;
 
 	ivar = ddgetivar(tb->dd);
-	for (needed = i = 0; i < (int)tb->n; i++)
+	nnullbytes = sizeofNullFlags(tb->dd);
+	needed = sizeof(int) + nnullbytes;
+	while(needed % ALIGN_BYTES) {
+		needed++;
+		nnullbytes++;
+	}
+	for (i = 0; i < (int)tb->n; i++)
 	{
 		needed += tb->field[i]->size + sizeof(ulong) + sizeof(int)
 			/* + sizeofnulldata */ ;
@@ -1460,47 +1519,50 @@ nfldtobuf(TBL * tb)
 
 	for (i = 0; i < (int)tb->n; i++)
 	{
+		int storeit;
 		FLD *f = tb->field[i];
 
 		if (f->storage)
 			f = f->storage;
-#error check FTN_NotNullableFlag usage: iff set: field is *not* allowed to contain a NULL
-		if (dd->fd[i].type & FTN_NotNullableFlag && (f->v == NULL))
+		if (TXftnIsNullable(dd->fd[i].type) && (f->v == NULL))
 		{
 			nulli[nullb] |= nullm;
-			if (nullm > 1)
-			{
-				nullm >>= 1;
-			}
-			else
-			{
-				nullm = 128;
-				nullb++;
-			}
-			continue;
+			storeit = 0;
+		} else {
+			storeit = 1;
 		}
-		if (i >= ivar)
+		if (nullm > 1)
 		{
-			f->size = f->n * f->elsz;
+			nullm >>= 1;
+		}
+		else
+		{
+			nullm = 128;
+			nullb++;
+		}
+		if(storeit) {
+			if (i >= ivar)
+			{
+				f->size = f->n * f->elsz;
+				if (f->elsz == 1)
+					*(ulong *) rec = (f->size + 1);
+				else
+					*(ulong *) rec = f->size;
+				rec += sizeof(ulong);
+			}
+			memcpy((void *) rec, getfld(f, NULL), f->size);
+			rec += f->size;
 			if (f->elsz == 1)
-				*(ulong *) rec = (f->size + 1);
-			else
-				*(ulong *) rec = f->size;
-			rec += sizeof(ulong);
+			{
+				*rec = '\0';
+				rec++;
+			}
+			while ((unsigned long)rec % (unsigned long)ALIGN_BYTES)
+				*(rec++) = '\0';
 		}
-		memcpy((void *) rec, getfld(f, NULL), f->size);
-		rec += f->size;
-		if (f->elsz == 1)
-		{
-			*rec = '\0';
-			rec++;
-		}
-		while ((unsigned long)rec % (unsigned long)ALIGN_BYTES)
-			*(rec++) = '\0';
 	}
 	return (rec - (tb->orec + tb->prebufsz));
 }
-#endif
 
 size_t fldtobuf(tb)
 TBL *tb;			/* The table to encode */
@@ -1517,11 +1579,9 @@ TBL *tb;			/* The table to encode */
 	case TEXIS_FAST_TABLE:
 		rc = ffldtobuf(tb);
 		break;
-#ifdef NULLABLE_TEXIS_TABLE
 	case TEXIS_NULL1_TABLE:
 		rc = nfldtobuf(tb);
 		break;
-#endif
 	case TEXIS_TMP_TABLE:
 		rc = 0;
 		break;

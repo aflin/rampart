@@ -61,7 +61,7 @@ static const char	TXpasswordNonStringLiteralNotSupported[] =
 	"Syntax error: Non-string-literal passwords not supported yet";
 #define CHECK_PASSWORD_NON_STRING_LITERAL_ENABLED()		\
 	do {							\
-	    if (!TX_PWENCRYPT_METHODS_ENABLED(TXApp))		\
+	    if (!TX_PWHASH_METHODS_ENABLED(TXApp))		\
 	    {							\
 		putmsg(MERR + UGE, CHARPN,			\
 		       TXpasswordNonStringLiteralNotSupported); \
@@ -2507,6 +2507,11 @@ function_ref:
 			}
 			free($1);
 			free($3);
+		}
+	| fmstart '(' ')'
+		{
+			$$ = TXstrcat2($1, " _N");
+			free($1);
 		}
 	|	CONVERT '(' scalar_exp ',' stringlit ')'
 	{

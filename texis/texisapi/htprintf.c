@@ -369,14 +369,6 @@ extern char *fcvt ARGS((double number, int ndigits, int *decpt, int *sign));
 #  ifndef EPI_HAVE_GCVT_PROTOTYPE
 extern char *gcvt ARGS((double number, int ndigit, char *buf));
 #  endif /* !EPI_HAVE_GCVT_PROTOTYPE */
-#  ifdef _WIN32
-/* snprintf() is actually _snprintf() under Windows: */
-#    define snprintf _snprintf
-#  endif /* _WIN32 */
-#  if defined(EPI_HAVE_SNPRINTF) && !defined(EPI_HAVE_SNPRINTF_PROTOTYPE)
-/* wtf implementation may differ, but then they should've given a prototype:*/
-extern int snprintf ARGS((char *s, size_t sz, CONST char *fmt, ...));
-#  endif /* EPI_HAVE_SNPRINTF && !EPI_HAVE_SNPRINTF_PROTOTYPE */
 #endif /* FLOATING */
 
 #if defined(USING_ALT_GCVT) && !defined(USE_SNPRINTF_NOT_CVT)
@@ -2986,6 +2978,13 @@ TXPMBUF         *pmbuf;         /* (out) (opt.) putmsg buffer */
 #    ifdef EPI_HAVE_LONG_DOUBLE
                                 snprintf(cvtbuf, sizeof(cvtbuf), "%1.*Lf",
                                          prec, (long double)hugeFloat);
+                                /* KNG 20210209 Linux 3.10 snprintf()
+                                 * of long double 0 gives NaN; WTF?:
+                                 */
+                                if (TX_TOUPPER(*cvtbuf) == 'N' &&
+                                    hugeFloat == 0.0)
+                                  snprintf(cvtbuf, sizeof(cvtbuf), "%1.*f",
+                                           prec, (double)hugeFloat);
 #    else /* !EPI_HAVE_LONG_DOUBLE */
                                 snprintf(cvtbuf, sizeof(cvtbuf), "%1.*f",
                                          prec, (double)hugeFloat);
@@ -5234,7 +5233,42 @@ va_dcl
   return((int)r);
 }
 
-#ifndef HTPF_STRAIGHT
+#ifdef HTPF_STRAIGHT
+#  if !defined(EPI_HAVE_SNPRINTF) && defined(_WIN32)
+/* Windows (at least MSVS 11-) does not have snprintf() but does
+ * have _snprintf(), albeit with differing behavior.
+ * We should really be using htsnpf() for consistency,
+ * but here is an snprintf() for those that do not know or forget:
+ */
+int
+snprintf(char *buf, size_t sz, const char *fmt, ...)
+{
+  va_list       argp;
+  int           n;
+
+  va_start(argp, fmt);
+  n = _vsnprintf(buf, sz, fmt, argp);
+  va_end(argp);
+  /* If `buf' too small, MSVS returns -1 instead of number of would-be
+   * printed bytes, and does not nul-terminate it.  Can fix the
+   * latter; probably cannot fix the former without using htsnpf() or
+   * possibly huge allocs.  Hope that no users count on return value
+   * when `buf' too small:
+   */
+  if (n < 0)                                    /* `buf' too small */
+    {
+      if (sz > 0) buf[sz - 1] = '\0';
+      /* We know at least `sz' bytes would have been printed.  While
+       * that might still be less than true number, it should at least
+       * be enough to trigger a buf-too-small check by caller:
+       */
+      n = (int)sz;
+    }
+  return(n);
+}
+#  endif /* !EPI_HAVE_SNPRINTF) && _WIN32 */
+
+#else /* !HTPF_STRAIGHT */
 int CDECL
 #ifdef EPI_HAVE_STDARG
 #  if (defined(hpux) && defined(__LP64__))

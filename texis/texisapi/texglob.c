@@ -152,7 +152,7 @@ int	TXdefaultlike = FOP_MM;
 int	TXsingleuser = 0;       /* Go into full single user mode. */
 int	TXbtreecache = 20;
 #ifdef unix
-static CONST char TXPatchedInstallPath[1028] = "@(#)installpath=/usr/local/morph3\0";
+static CONST char TXPatchedInstallPath[1028] = "@(#)installpath=" TEXIS_INSTALL_DIR "\0";
 #elif defined(_WIN32)
 static CONST char TXPatchedInstallPath[1028] = "@(#)installpath=c:\\morph3\0";
 #endif /* unix */
@@ -949,9 +949,9 @@ TXAppSetCompatibilityVersionDependentFields(TXAPP *app)
 	/* Version 8+: - - - - - - - - - - - - - - - - - - - - - - - - - - */
 	app->legacyVersion7OrderByRank =
 		TX_LEGACY_VERSION_7_ORDER_BY_RANK_DEFAULT(app);
-	app->defaultPasswordEncryptionMethod =
-		TXpwEncryptMethod_BUILTIN_DEFAULT(app);
-	app->defaultPasswordEncryptionRounds = TX_PWENCRYPT_ROUNDS_DEFAULT;
+	app->defaultPasswordHashMethod =
+		TXpwHashMethod_BUILTIN_DEFAULT(app);
+	app->defaultPasswordHashRounds = TX_PWHASH_ROUNDS_DEFAULT;
 	app->legacyVersion7UrlCoding =
 		TX_LEGACY_VERSION_7_URL_CODING_DEFAULT(app);
 	/* syntaxversion pragma also defaults to compatibilityversion */
@@ -1266,38 +1266,41 @@ TXAppSetLogDir(TXPMBUF *pmbuf, TXAPP *app, const char *logDir,
 }
 
 TXbool
-TXAppSetDefaultPasswordEncryptionMethod(TXPMBUF *pmbuf, TXAPP *app,
-					TXpwEncryptMethod method)
+TXAppSetDefaultPasswordHashMethod(TXPMBUF *pmbuf, TXAPP *app,
+				  TXpwHashMethod method)
 {
-	if (method <= TXpwEncryptMethod_Unknown ||
-	    method >= TXpwEncryptMethod_NUM)
+	if (method <= TXpwHashMethod_Unknown ||
+	    method >= TXpwHashMethod_NUM)
 	{
 		txpmbuf_putmsg(pmbuf, MERR + UGE, __FUNCTION__,
-			       "Unknown password encryption method %d",
+			       "Unknown password hash method %d",
 			       (int)method);
 		return(TXbool_False);
 	}
-	app->defaultPasswordEncryptionMethod = method;
+	app->defaultPasswordHashMethod = method;
 	return(TXbool_True);
 }
 
 TXbool
-TXAppSetDefaultPasswordEncryptionRounds(TXPMBUF *pmbuf, TXAPP *app,
-					int rounds)
+TXAppSetDefaultPasswordHashRounds(TXPMBUF *pmbuf, TXAPP *app, int rounds)
 {
-	if (rounds < TX_PWENCRYPT_ROUNDS_MIN ||
-	    rounds > TX_PWENCRYPT_ROUNDS_MAX)
+	if (rounds < TX_PWHASH_ROUNDS_MIN ||
+	    rounds > TX_PWHASH_ROUNDS_MAX)
 	{
 		txpmbuf_putmsg(pmbuf, MERR + UGE, __FUNCTION__,
-			      "Password encryption rounds %d is out of range",
+			      "Password hash rounds %d is out of range",
 			       rounds);
 		return(TXbool_False);
 	}
-	app->defaultPasswordEncryptionRounds = rounds;
+	app->defaultPasswordHashRounds = rounds;
 	return(TXbool_True);
 }
 
 /* ------------------------------------------------------------------------ */
+int TXAppIntSettingDefaults[TX_APP_INT_SETTING_COUNT] = {
+    10 /**< Default Ring Buffer Size **/
+  , 10 /**< Default Lock Batch Time (ms) **/
+};
 
 int
 TXinitapp(pmbuf, progName, argc, argv, argcStripped, argvStripped)
@@ -1337,10 +1340,10 @@ char	***argvStripped;	/* (out, opt.) "" `argv', dup'd */
 		"Unneeded REX Escape Warning";
 	static const char	legacyVersion7OrderByRank[] =
 		"Legacy Version 7 Order By Rank";
-	static const char	defaultPasswordEncryptionMethod[] =
-		"Default Password Encryption Method";
-	static const char	defaultPasswordEncryptionRounds[] =
-		"Default Password Encryption Rounds";
+	static const char	defaultPasswordHashMethod[] =
+		"Default Password Hash Method";
+	static const char	defaultPasswordHashRounds[] =
+		"Default Password Hash Rounds";
 #ifdef EPI_ENABLE_CONF_TEXIS_INI
 	static CONST char * CONST	confSuffixes[] =
 	{	/* these are highest-priority first: */
@@ -1501,8 +1504,8 @@ TXApp->NoMonitorStart = 1;
 	TXApp->sqlModEnabled = (getenv("EPI_ENABLE_SQL_MOD") != NULL);
 #endif /* !EPI_ENABLE_SQL_MOD */
 	TXApp->ipv6Enabled = TX_IPv6_ENABLED((TXAPP *)NULL);
-	TXApp->pwEncryptMethodsEnabled =
-		TX_PWENCRYPT_METHODS_ENABLED((TXAPP *)NULL);
+	TXApp->pwHashMethodsEnabled =
+		TX_PWHASH_METHODS_ENABLED((TXAPP *)NULL);
 
 #ifndef EPI_PUTMSG_DATE_PID_THREAD
 /* see also vxglobs.c:VxPutmsgFlags */
@@ -1786,9 +1789,13 @@ TXApp->NoMonitorStart = 1;
 
 /* globalcp init ? */
   if(!globalcp) globalcp = TXopenapicp();
+  TXApp->fmtcp = TxfmtcpDup(NULL, NULL);
+  if(TXApp->fmtcp) {
+    TXApp->fmtcp->apicp = globalcp;
+  }
 
 	TXApp->betafeatures[BETA_JSON] = 1;
-
+  memcpy(TXApp->intSettings, TXAppIntSettingDefaults, sizeof(TXApp->intSettings));
 	if (TxConf != CONFFILEPN)
 	{
 		const char	*s;
@@ -1998,34 +2005,34 @@ TXApp->NoMonitorStart = 1;
 				TXApp->preLoadBlobs = (byte)i;
 		}
 
-		if (TX_PWENCRYPT_METHODS_ENABLED(TXApp) &&
+		if (TX_PWHASH_METHODS_ENABLED(TXApp) &&
 		    (s = getconfstring(TxConf, texisSectionName,
-				       defaultPasswordEncryptionMethod,
+				       defaultPasswordHashMethod,
 				       NULL)) != NULL)
 		{
-			TXpwEncryptMethod	method;
+			TXpwHashMethod	method;
 
-			method = TXpwEncryptMethodStrToEnum(s);
-			if (method == TXpwEncryptMethod_Unknown)
+			method = TXpwHashMethodStrToEnum(s);
+			if (method == TXpwHashMethod_Unknown)
 				txpmbuf_putmsg(pmbuf, MERR + UGE, NULL,
 					       "Unknown [%s] %s value `%s'",
 					       texisSectionName,
-					       defaultPasswordEncryptionMethod,
+					       defaultPasswordHashMethod,
 					       s);
 			else
-				TXApp->defaultPasswordEncryptionMethod =
+				TXApp->defaultPasswordHashMethod =
 					method;
 		}
 
-		if (TX_PWENCRYPT_METHODS_ENABLED(TXApp))
+		if (TX_PWHASH_METHODS_ENABLED(TXApp))
 		{
 			int	intVal;
 
 			intVal = getconfint(TxConf, texisSectionName,
-					    defaultPasswordEncryptionRounds,
-					    TX_PWENCRYPT_ROUNDS_DEFAULT);
-			TXAppSetDefaultPasswordEncryptionRounds(pmbuf, TXApp,
-								intVal);
+					    defaultPasswordHashRounds,
+					    TX_PWHASH_ROUNDS_DEFAULT);
+			TXAppSetDefaultPasswordHashRounds(pmbuf, TXApp,
+							  intVal);
 		}
 
 		s = getconfstring(TxConf, texisSectionName,
@@ -2099,11 +2106,10 @@ TXcloseapp()
 	for (i = 0; i < TXApp->fldopCacheSz; i++)
 		if (TXApp->fldopCache[i] != FLDOPPN)
 			TXApp->fldopCache[i] = foclose(TXApp->fldopCache[i]);
-	TXApp->traceRowFieldsTables =
-		TXapi3FreeNullList(TXApp->traceRowFieldsTables);
-	TXApp->traceRowFieldsFields =
-		TXapi3FreeNullList(TXApp->traceRowFieldsFields);
+	TXApp->traceRowFieldsTables =	TXapi3FreeNullList(TXApp->traceRowFieldsTables);
+	TXApp->traceRowFieldsFields =	TXapi3FreeNullList(TXApp->traceRowFieldsFields);
 
+  TXApp->fmtcp = TxfmtcpClose(TXApp->fmtcp);
 	TXApp = TXfree(TXApp);
 
 	TXsetlibpath(TXPMBUFPN, CHARPN);

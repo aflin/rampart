@@ -246,6 +246,7 @@ DDFD    *ftn2ddfd_quick ARGS((int type, size_t n));
 #define ddsettype(dd,t)	(dd?((dd)->tbltype = (t), 1):0)
 #define isddvar(a)	((a) & DDVARBIT)
 #define TXftnIsNotNullable(a)	((a) & FTN_NotNullableFlag)
+#define TXftnIsNullable(a)	(((a) & FTN_NotNullableFlag) ? 0 : 1)
 
 /******************************************************************/
 

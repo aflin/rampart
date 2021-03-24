@@ -192,7 +192,9 @@ extern int getdtablesize(void);
 #endif /* !DIRPN */
 
 
-CONST char      TxPlatformDesc[] = EPI_PLATFORM_DESC;
+/* Prefix with `ThunderstonePlatform='; install script strings for this: */
+static const char TaggedPlatformDesc[] = "ThunderstonePlatform=" EPI_PLATFORM_DESC;
+const char * const TxPlatformDesc = TaggedPlatformDesc + 21;
 
 static char     TxLocaleBuf[256] = "";
 static size_t   TxLocaleSz = sizeof(TxLocaleBuf);       /* alloced size */
@@ -211,7 +213,12 @@ static char     *TxDecimalSep = TxDecimalSepBuf;
 static const char       Ques[] = "?";
 static CONST char       BinDir[] = "%BINDIR%";
 static const char       SysLibPath[] = "%SYSLIBPATH%";
-static CONST char       DefLibPath[] = "%EXEDIR%" PATH_DIV_S "%BINDIR%"
+static CONST char       DefLibPath[] = "%EXEDIR%" PATH_DIV_S
+#ifdef EPI_ENABLE_LIBDIR
+ "%LIBDIR%"
+#else /* !EPI_ENABLE_LIBDIR */
+ "%BINDIR%"
+#endif /* !EPI_ENABLE_LIBDIR */
   PATH_DIV_S "%SYSLIBPATH%";
 static char     *TxLibPath = (char *)DefLibPath;
 int             TxLibPathSerial = 1;
@@ -357,6 +364,9 @@ CONST char * CONST      TxInstBinVars[TX_INSTBINVARS_NUM + 1] =
   "INSTALLDIR",
   "BINDIR",
   "EXEDIR",
+#ifdef EPI_ENABLE_LIBDIR
+  "LIBDIR",
+#endif /* EPI_ENABLE_LIBDIR */
   CHARPN
 };
 CONST char * CONST      TxInstBinVals[TX_INSTBINVARS_NUM + 1] =
@@ -364,6 +374,9 @@ CONST char * CONST      TxInstBinVals[TX_INSTBINVARS_NUM + 1] =
   TXINSTALLPATH_VAL,
   TXREPLACEVAL_BINDIR,
   TXREPLACEVAL_EXEDIR,
+#ifdef EPI_ENABLE_LIBDIR
+  TXREPLACEVAL_LIBDIR,
+#endif /* EPI_ENABLE_LIBDIR */
   CHARPN
 };
 
@@ -6727,17 +6740,19 @@ CONST char      *prog;  /* (in) path to program */
 #define NUM_PROGS       (sizeof(texisProgs)/sizeof(texisProgs[0]))
   int           l, r, i, cmp;
   CONST char    *baseName;
-#ifdef _WIN32
-  CONST char    *ext;
-#endif /* _WIN32 */
   size_t        baseNameLen;
 
   baseName = TXbasename(prog);
   baseNameLen = strlen(baseName);
 #ifdef _WIN32
+  /* Ignore trailing quote: */
+  if (baseNameLen >= 1 &&
+      (baseName[baseNameLen - 1] == '"' || baseName[baseNameLen - 1] == '\''))
+    baseNameLen--;
   /* Check for `.exe' extension (optional since we can exec without it): */
-  ext = TXfileext(baseName);
-  if (TXpathcmp(ext, -1, ".exe", 4) == 0) baseNameLen -= 4;
+  if (baseNameLen >= 4 &&
+      TXpathcmp(baseName + baseNameLen - 4, 4, ".exe", 4) == 0)
+    baseNameLen -= 4;
 #endif /* _WIN32 */
   l = 0;
   r = NUM_PROGS;
@@ -6885,9 +6900,8 @@ CONST char      *path;
   else if (strcmp(path, "bin") == 0) path = (char *)BinDir;
   if (strcmpi(path, BinDir) == 0) TxLibPath = (char *)BinDir;
   else if (strcmpi(path, DefLibPath) == 0) TxLibPath = (char *)DefLibPath;
-  else if ((TxLibPath = strdup(path)) == CHARPN)
+  else if (!(TxLibPath = TXstrdup(pmbuf, __FUNCTION__, path)))
     {
-      TXputmsgOutOfMem(pmbuf, MERR + MAE, "TXsetlibpath", strlen(path)+1, 1);
       TxLibPath = (char *)DefLibPath;
       return(0);
     }
@@ -7562,6 +7576,14 @@ char            ***listp;
 #endif /* !_WIN32 */
             }
         }
+#ifdef EPI_ENABLE_LIBDIR
+      else if (n == 6 && strnicmp(s, "LIBDIR", 6) == 0)
+        {
+          if (!htbuf_pf(buf, "%s%s", TXINSTALLPATH_VAL,
+                        PATH_SEP_S TX_STRINGIZE_VALUE_OF(LIBSUBDIR)))
+            goto err;
+        }
+#endif /* EPI_ENABLE_LIBDIR */
       else if (n == 10 && strnicmp(s, "SYSLIBPATH", 10) == 0)
         {
           sz = htbuf_getdata(buf, &data, 1);    /* flush existing path */
@@ -7620,6 +7642,7 @@ TXPMBUF         *pmbuf; /* (out) (optional) putmsg buffer */
  *   %INSTALLDIR%       Texis install dir
  *   %BINDIR%           Texis binary dir
  *   %EXEDIR%           Running executable's dir
+ *   %LIBDIR%           (v8+) Texis lib dir
  *   %SYSLIBPATH%       Platform-dependent search path
  * `flags' is a set of bit flags:
  * 0x1: issue error putmsgs
@@ -9530,11 +9553,19 @@ size_t                  topVarLen;      /* (in) "" length */
                   replaceStr = TXREPLACEVAL_BINDIR; /* fixed later */
                   replaceSz = strlen(TXINSTALLPATH_VAL)
 #ifndef _WIN32
-                    + 4
+                    + 4                         /* `/bin' */
 #endif /* !_WIN32 */
                     ;
                 }
             }
+#ifdef EPI_ENABLE_LIBDIR
+          else if (vals[i] == TXREPLACEVAL_LIBDIR)
+            {
+              replaceStr = TXREPLACEVAL_LIBDIR; /* fixed later */
+              replaceSz = strlen(TXINSTALLPATH_VAL) +
+                strlen(PATH_SEP_S TX_STRINGIZE_VALUE_OF(LIBSUBDIR));
+            }
+#endif /* EPI_ENABLE_LIBDIR */
           else                                  /* plain string val */
             {
               if (valsAreExpanded != INTPN && !valsAreExpanded[i])
@@ -9600,6 +9631,15 @@ size_t                  topVarLen;      /* (in) "" length */
           d += 4;
 #endif /* !_WIN32 */
         }
+#ifdef EPI_ENABLE_LIBDIR
+      else if (replaceStr == TXREPLACEVAL_LIBDIR)
+        {
+          strcpy(d, TXINSTALLPATH_VAL);
+          d += strlen(TXINSTALLPATH_VAL);
+          strcpy(d, PATH_SEP_S TX_STRINGIZE_VALUE_OF(LIBSUBDIR));
+          d += 4;
+        }
+#endif /* EPI_ENABLE_LIBDIR */
       else
         {
           memcpy(d, replaceStr, replaceSz);
@@ -12383,6 +12423,7 @@ int             timeout;        /* optional timeout (-1 for infinite) */
   char                  *obuf;
   size_t                olen;
   char                  *e, prebuf[128], postbuf[128];
+  TXbool                haveHandles;
 #endif /* !_WIN32 */
 
   if (timeout >= 0) deadline = (now = time(TIME_TPN)) + (time_t)timeout;
@@ -12471,13 +12512,33 @@ int             timeout;        /* optional timeout (-1 for infinite) */
       FD_ZERO(&rb);
       FD_ZERO(&wb);
       FD_ZERO(&xb);                             /* OOB data */
+      haveHandles = TXbool_False;
       if ((TXFHANDLE_IS_VALID(pa->pipe[STDIN_FILENO].fh)) &&
           htbuf_getsendsz(pa->pipe[STDIN_FILENO].buf) > 0)
-        FD_SET(pa->pipe[STDIN_FILENO].fh, &wb);
+        {
+          FD_SET(pa->pipe[STDIN_FILENO].fh, &wb);
+          haveHandles = TXbool_True;
+        }
       if (TXFHANDLE_IS_VALID(pa->pipe[STDOUT_FILENO].fh))
-        FD_SET(pa->pipe[STDOUT_FILENO].fh, &rb);
+        {
+          FD_SET(pa->pipe[STDOUT_FILENO].fh, &rb);
+          haveHandles = TXbool_True;
+        }
       if (TXFHANDLE_IS_VALID(pa->pipe[STDERR_FILENO].fh))
-        FD_SET(pa->pipe[STDERR_FILENO].fh, &rb);
+        {
+          FD_SET(pa->pipe[STDERR_FILENO].fh, &rb);
+          haveHandles = TXbool_True;
+        }
+      /* Bug 7803: do not deadlock waiting for (possibly infinite)
+       * timeout with no handles:
+       */
+      if (!haveHandles)
+        {
+          /* Nothing to do; caller should check for this condition: */
+          txpmbuf_putmsg(pa->pmbuf, MERR + UGE, __FUNCTION__,
+      "Nothing to do: no stdin data/handle nor stdout/stderr handle(s) left");
+          goto err;
+        }
       if (timeout >= 0)
         {
           if (now >= deadline) goto timeout;    /* timeout */

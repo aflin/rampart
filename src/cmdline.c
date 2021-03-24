@@ -1740,6 +1740,8 @@ static void evhandler(int sig, short events, void *base)
 
 char **rampart_argv;
 int   rampart_argc;
+char argv0[PATH_MAX];
+
 int main(int argc, char *argv[])
 {
     struct rlimit rlp;
@@ -1751,6 +1753,8 @@ int main(int argc, char *argv[])
     rampart_argc=argc;
     access_fh=stdout;
     error_fh=stderr;
+
+    strcpy(argv0, argv[0]);
 
     /* timeout cleanups */
     add_exit_func(free_tos, NULL);

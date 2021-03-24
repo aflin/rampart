@@ -257,6 +257,36 @@ TXinitNoOpDbf(DBF *df)
 
 /************************************************************************/
 
+int
+TXinitRingBufferDbf(DBF *df)
+/* Returns 0 on error, 1 on success.
+ */
+{
+	if ((df->obj = (void *)TXRingBufferDbfOpen()) == NULL) return(0);
+
+	TXRingBufferDbfSetPmbuf((BUFFERDBF *)df->obj, df->pmbuf);
+	df->close = (void *(*)ARGS((void *)))TXRingBufferDbfClose;
+	df->dbfree = (int (*)ARGS((void *, EPI_OFF_T)))TXRingBufferDbfFree;
+	df->alloc = (EPI_OFF_T(*)ARGS((void *, void *, size_t)))TXRingBufferDbfAlloc;
+	df->put = (EPI_OFF_T(*)ARGS((void *, EPI_OFF_T, void *, size_t)))
+		TXRingBufferDbfPut;
+	df->get = (void *(*)ARGS((void *, EPI_OFF_T, size_t *)))TXRingBufferDbfGet;
+	df->aget = (void *(*)ARGS((void *, EPI_OFF_T, size_t *)))
+		TXRingBufferDbfAllocGet;
+	df->read = (size_t(*)ARGS ((void *, EPI_OFF_T, size_t *, void *,
+				    size_t)))TXRingBufferDbfRead;
+	df->tell = (EPI_OFF_T(*)ARGS((void *)))TXRingBufferDbfTell;
+	df->getfn = (char *(*)ARGS((void *)))TXRingBufferDbfGetFilename;
+	df->getfh = (int (*)ARGS((void *)))TXRingBufferDbfGetFileDescriptor;
+	df->setoveralloc = (void (*)ARGS((void *, int)))TXRingBufferDbfSetOverAlloc;
+	df->valid = (int (*)ARGS((void *, EPI_OFF_T)))TXRingBufferDbfBlockIsValid;
+	df->ioctl = (int (*)ARGS((void *, int, void *)))TXRingBufferDbfIoctl;
+	df->dbftype = DBF_RINGBUFFER;
+	return (1);
+}
+
+/************************************************************************/
+
 DBF *
 closedbf(df)
 DBF *df;
@@ -273,6 +303,36 @@ DBF *df;
 	return (DBFPN);
 }
 
+/************************************************************************/
+
+DBF *
+opendbfinternal(TXPMBUF *pmbuf, TX_DBF_TYPE dbftype)
+{
+	DBF *df = (DBF *) TXcalloc(pmbuf, __FUNCTION__, 1, sizeof(DBF));
+
+	if(!df)
+		return df;
+	df->pmbuf = txpmbuf_open(pmbuf);
+
+	switch(dbftype) {
+		case TX_DBF_RAMDBF:
+			if(!initrdbf(df))
+				return closedbf(df);
+			break;
+		case TX_DBF_NOOPDBF:
+			if(!TXinitNoOpDbf(df))
+				return closedbf(df);
+			break;
+		case TX_DBF_RINGDBF:
+			if(!TXinitRingBufferDbf(df))
+				return closedbf(df);
+			break;
+		default:
+			txpmbuf_putmsg(pmbuf, MERR, __FUNCTION__, "Unknown dbftype %d", dbftype);
+			return closedbf(df);
+	}
+	return df;
+}
 /************************************************************************/
 
 DBF *

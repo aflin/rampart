@@ -63,24 +63,42 @@ i=$TESTROOT/sql/$1
 a=$TESTROOT/sql/${BASETEST}.args
 echo $a > /tmp/runtests.log
 o=${OUTDIR}/${BASETEST}
-e=${OUTDIR}/${BASETEST}-expected
+e=${TESTROOT}/expected/${BASETEST}
+oe=${OUTDIR}/${BASETEST}.err
+ee=${TESTROOT}/expected/${BASETEST}.err
 #
 # Cleanup output files
 #
-rm -f $o $e 2>/dev/null
+rm -f $o $oe 2>/dev/null
 if [ -f "${a}" ]; then
   testargs=`cat "${a}"`
   args="$args $testargs"
 fi
 args="$args -i" # Use -i for all for new tests
-$TSQL `echo $args` $i > $o 2>&1;
-cp $TESTROOT/expected/$BASETEST $e
+if [ -f "${ee}" ]; then
+  $TSQL `echo $args` $i > $o 2> $oe;
+  cleanOutputForDiff "$oe"
+else
+  $TSQL `echo $args` $i > $o 2>&1;
+fi
 cleanOutputForDiff "$o"
 #cleanOutputForDiff "$e"
-diff $e $o
+diff $e $o > ${TESTROOT}/${BASETEST}.diff
 diffrc=$?
+echo "e: " $e >> ${TESTROOT}/testlog
+echo "o: " $o >> ${TESTROOT}/testlog
+echo "Diffrc: " $diffrc >> ${TESTROOT}/testlog
 if [ $diffrc -eq 0 ]; then
-  rm $o $OUTDIR/${BASETEST}.err $e
+  if [ -f "${ee}" ]; then
+    diff $ee $oe > ${TESTROOT}/${BASETEST}.err.diff
+    diffrc=$?
+    echo "ee: " $ee >> ${TESTROOT}/testlog
+    echo "oe: " $oe >> ${TESTROOT}/testlog
+    echo "Diffrc: " $diffrc >> ${TESTROOT}/testlog
+  fi
+fi
+if [ $diffrc -eq 0 ]; then
+  rm $o $oe
   exit 0
 else
   exit 1

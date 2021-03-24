@@ -131,7 +131,7 @@ fop_type	func;
 {
 	CONST TXfldFuncNameItem	*f, *e;
 
-	e = TXfldFuncNameList + sizeof(TXfldFuncNameList);
+	e = TXfldFuncNameList + TX_ARRAY_LEN(TXfldFuncNameList);
 	for (f = TXfldFuncNameList; f < e; f++)
 		if (f->func == func)
 			return(f->name);
@@ -1097,7 +1097,7 @@ int n;
 #  include "inetfuncs.h"
 		/* Update inet2int() return type to varint: */
 		for ( ; fldFunc < fldFuncEnd; fldFunc++)
-			if (fldFunc->func == (int (*)(void))txfunc_inet2int)
+			if (fldFunc->func == (int (*)(void))(void *)txfunc_inet2int)
 			{
 				fldFunc->rettype = FTN_varINT;
 				break;
@@ -1273,19 +1273,19 @@ TXPMBUF	*pmbuf;	/* where to send putmsgs (default NULL for putmsg()) */
 		rc = (*ff->func) ();
 		break;
 	case 1:
-		rc = ((int (*) ARGS((FLD *)))ff->func)(firstArgAndReturn);
+		rc = ((int (*) ARGS((FLD *)))(void *)ff->func)(firstArgAndReturn);
 		break;
 	case 2:
-		rc = ((int (*) ARGS((FLD *, FLD *)))ff->func)(firstArgAndReturn, f[1]);
+		rc = ((int (*) ARGS((FLD *, FLD *)))(void *)ff->func)(firstArgAndReturn, f[1]);
 		break;
 	case 3:
-		rc = ((int (*) ARGS((FLD *, FLD *, FLD*)))ff->func)(firstArgAndReturn, f[1], f[2]);
+		rc = ((int (*) ARGS((FLD *, FLD *, FLD*)))(void *)ff->func)(firstArgAndReturn, f[1], f[2]);
 		break;
 	case 4:
-		rc = ((int (*) ARGS((FLD *, FLD *, FLD *, FLD *)))ff->func)(firstArgAndReturn, f[1], f[2], f[3]);
+		rc = ((int (*) ARGS((FLD *, FLD *, FLD *, FLD *)))(void *)ff->func)(firstArgAndReturn, f[1], f[2], f[3]);
 		break;
 	case 5:
-		rc = ((int (*) ARGS((FLD *, FLD *, FLD *, FLD *, FLD *)))ff->func)(firstArgAndReturn, f[1], f[2], f[3], f[4]);
+		rc = ((int (*) ARGS((FLD *, FLD *, FLD *, FLD *, FLD *)))(void *)ff->func)(firstArgAndReturn, f[1], f[2], f[3], f[4]);
 		break;
 	default:
 		rc = FOP_EINVAL;

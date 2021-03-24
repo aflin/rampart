@@ -25,6 +25,7 @@
 #  undef TXrealloc
 #  undef TXstrdup
 #  undef TXstrndup
+#  undef TXmemTermDup
 #  undef TXexpandArray
 #  undef TXallocProtectable
 #  undef TXfreeProtectable
@@ -863,6 +864,27 @@ TXstrndup(TXPMBUF *pmbuf, const char *fn, const char *s, size_t n
 	}
 	else
 		TXputmsgOutOfMem(pmbuf, MERR + MAE, fn, sz + 1, 1);
+	return(ret);
+}
+
+char *
+TXmemTermDup(TXPMBUF *pmbuf, const char *fn, const void *s, size_t n
+             TXALLOC_PROTO)
+/* Dups `s' of size `n', adding a nul terminator.
+ */
+{
+	void	*ret;
+
+        TX_MEM_SYS_FUNC_ENTER(fn);
+	ret = FUNC(malloc(n + 1), mac_malloc(n + 1, file, line, memo));
+        TX_MEM_SYS_FUNC_EXIT();
+	if (ret)
+	{
+		if (n > 0) memcpy(ret, s, n);
+		((char *)ret)[n] = '\0';
+	}
+	else
+		TXputmsgOutOfMem(pmbuf, MERR + MAE, fn, n + 1, 1);
 	return(ret);
 }
 

@@ -219,7 +219,8 @@ TXsqlFunc_refInfoGetFlags(FLD *refInfoFld)
   refFlags = TXrefInfoGetFlags(refInfo);
   for (flagIdx = (TXrefFlagIter)0; flagIdx < TXrefFlagIter_NUM; flagIdx++)
     if ((refFlags & TX_REF_FLAG(flagIdx)) &&
-        !TXstrlstBufAddString(strlstBuf, TXrefFlagStr(flagIdx, "?"),
+        !TXstrlstBufAddString(strlstBuf,
+                              TXrefFlagStr(TX_REF_FLAG(flagIdx), "?"),
                               (size_t)(-1)))
       goto err;
   if (!TXstrlstBufEnd(strlstBuf)) goto err;

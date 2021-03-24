@@ -69,171 +69,224 @@ scientific notation too
 
 
 
-STATIC TTF ziptf = {"", 0.0, NOOP, 0.0, 0, 0}; /* empty for null comps */
+STATIC TTF ziptf = {"", 0.0, NOOP, 0.0, 0, 0, 0}; /* empty for null comps */
 
 STATIC TTF tfa[]={
-{"0",           0.0,     VOID,    0.0,     1, 0 },
-{"1",           1.0,     VOID,    0.0,     1, 0 },
-{"2",           2.0,     VOID,    0.0,     1, 0 },
-{"3",           3.0,     VOID,    0.0,     1, 0 },
-{"4",           4.0,     VOID,    0.0,     1, 0 },
-{"5",           5.0,     VOID,    0.0,     1, 0 },
-{"6",           6.0,     VOID,    0.0,     1, 0 },
-{"7",           7.0,     VOID,    0.0,     1, 0 },
-{"8",           8.0,     VOID,    0.0,     1, 0 },
-{"9",           9.0,     VOID,    0.0,     1, 0 },
-{"+",           1.0,     VOID,    0.0,     1, 0 },
-{"-",          -1.0,     HYPH,    0.0,     1, 0 },
-{"and an ",     1.0,     ANDA,    0.0,     0, 0 },
-{"and a ",      1.0,     ANDA,    0.0,     0, 0 },
-{"and ",        1.0,     ANDA,    0.0,     0, 0 },
-{"& ",          1.0,     ANDA,    0.0,     0, 0 },
-{"a ",          1.0,     NOOP,    0.0,     1, 0 },
-{"an ",         1.0,     NOOP,    0.0,     1, 0 },
-{"less than",   0.0,     LTOP,    0.0,     1, 0 },
-{"greater than",0.0,     GTOP,    0.0,     1, 0 },
-{"more than",   0.0,     GTOP,    0.0,     1, 0 },
-{"positive",    1.0,     SIOP,    0.0,     1, 0 },
-{"negative",   -1.0,     SIOP,    0.0,     1, 0 },
-{"/",           0.0,     FROP,    0.0,     0, 0 },
-{">",           0.0,     GTOP,    0.0,     1, 0 },
-{">=",          0.0,     GEOP,    0.0,     1, 0 },
-{"<",           0.0,     LTOP,    0.0,     1, 0 },
-{"<=",          0.0,     LEOP,    0.0,     1, 0 },
-{"a few",       3.0,     RNG,     6.0,     1, 0 },
-{"several",     3.0,     RNG,    10.0,     1, 0 },
-{"partial",     1.0e-32, RNG,     0.999999,1, 0 },
-{"a couple",    2.0,     SQTY,    0.0,     1, 0 },
-{"zero",        0.0,     SQTY,    0.0,     1, 0 },
-{"one",         1.0,     SQTY,    0.0,     1, 0 },
-{"two",         2.0,     SQTY,    0.0,     1, 0 },
-{"half",        2.0,     SQF,     0.0,     1, 0 },
-{"second",      2.0,     SQTY,    0.0,     1, 0 },
-{"three",       3.0,     SQTY,    0.0,     1, 0 },
-{"third",       3.0,     SQF,     0.0,     0, 0 },
-{"four",        4.0,     SQTY,    0.0,     1, 0 },
-{"fourth",      4.0,     SQF,     0.0,     0, 0 },
-{"forth",       4.0,     SQF,     0.0,     0, 0 },
-{"quarter",     4.0,     SQF,     0.0,     0, 0 },
-{"five",        5.0,     SQTY,    0.0,     1, 0 },
-{"fifth",       5.0,     SQF,     0.0,     0, 0 },
-{"six",         6.0,     SQTY,    0.0,     1, 0 },
-{"sixth",       6.0,     SQF,     0.0,     0, 0 },
-{"seven",       7.0,     SQTY,    0.0,     1, 0 },
-{"seventh",     7.0,     SQF,     0.0,     0, 0 },
-{"eight",       8.0,     SQTY,    0.0,     1, 0 },
-{"eighth",      8.0,     SQF,     0.0,     0, 0 },
-{"nine",        9.0,     SQTY,    0.0,     1, 0 },
-{"ninth",       9.0,     SQF,     0.0,     0, 0 },
-{"ten",         10.0,    SQTY,    0.0,     1, 0 },
-{"tenth",       10.0,    SQF,     0.0,     0, 0 },
-{"eleven",      11.0,    SQTY,    0.0,     1, 0 },
-{"eleventh",    11.0,    SQF,     0.0,     0, 0 },
-{"twelve",      12.0,    SQTY,    0.0,     1, 0 },
-{"twelfth",     12.0,    SQF,     0.0,     0, 0 },
-{"thirteen",    13.0,    SQTY,    0.0,     1, 0 },
-{"thirteenth",  13.0,    SQF,     0.0,     0, 0 },
-{"fourteen",    14.0,    SQTY,    0.0,     1, 0 },
-{"fourteenth",  14.0,    SQF,     0.0,     0, 0 },
-{"fifteen",     15.0,    SQTY,    0.0,     1, 0 },
-{"fifteenth",   15.0,    SQF,     0.0,     0, 0 },
-{"sixteen",     16.0,    SQTY,    0.0,     1, 0 },
-{"sixteenth",   16.0,    SQF,     0.0,     0, 0 },
-{"seventeen",   17.0,    SQTY,    0.0,     1, 0 },
-{"seventeenth", 17.0,    SQF,     0.0,     0, 0 },
-{"eighteen",    18.0,    SQTY,    0.0,     1, 0 },
-{"eighteenth",  18.0,    SQF,     0.0,     0, 0 },
-{"nineteen",    19.0,    SQTY,    0.0,     1, 0 },
-{"nineteenth",  19.0,    SQF,     0.0,     0, 0 },
-{"twenty",      20.0,    SQTY,    0.0,     1, 0 },
-{"twentieth",   20.0,    SQF,     0.0,     0, 0 },
-{"thirty",      30.0,    SQTY,    0.0,     1, 0 },
-{"thirtieth",   30.0,    SQF,     0.0,     0, 0 },
-{"fourty",      40.0,    SQTY,    0.0,     1, 0 },
-{"forty",       40.0,    SQTY,    0.0,     1, 0 },
-{"fortieth",    40.0,    SQF,     0.0,     0, 0 },
-{"fourtieth",   40.0,    SQF,     0.0,     0, 0 },
-{"fifty",       50.0,    SQTY,    0.0,     1, 0 },
-{"fiftieth",    50.0,    SQF,     0.0,     0, 0 },
-{"sixty",       60.0,    SQTY,    0.0,     1, 0 },
-{"sixtieth",    60.0,    SQF,     0.0,     0, 0 },
-{"seventy",     70.0,    SQTY,    0.0,     1, 0 },
-{"seventieth",  70.0,    SQF,     0.0,     0, 0 },
-{"eighty",      80.0,    SQTY,    0.0,     1, 0 },
-{"eightieth",   80.0,    SQF,     0.0,     0, 0 },
-{"ninety",      90.0,    SQTY,    0.0,     1, 0 },
-{"ninetieth",   90.0,    SQF,     0.0,     0, 0 },
-{"scores",      20.0,    MAG,   100.0,     1, 0 },  /* MAW,PBR 10-28-93 */
-{"dozens",      12.0,    MAG,    48.0,     1, 0 },  /* MAW,PBR 10-28-93 */
-{"hundreds",     1.0e2,  MAG,     1.0e3,   1, 0 },
-{"thousands",    1.0e3,  MAG,     1.0e6,   1, 0 },
-{"millions",     1.0e6,  MAG,     1.0e9,   1, 0 },
-{"billions",     1.0e9,  MAG,     1.0e12,  1, 0 },
-{"trillions",    1.0e12, MAG,     1.0e15,  1, 0 },
-{"score",        20.0,   SMUL,    0.0,     0, 0 },
-{"dozen",        12.0,   SMUL,    0.0,     1, 0 },
-{"gross",       144.0,   SMUL,    0.0,     1, 0 },
-{"hundred",      1.0e2,  SMUL,    0.0,     1, 0 },
-{"thousand",     1.0e3,  SMUL,    0.0,     1, 0 },
-{"million",      1.0e6,  SMUL,    0.0,     1, 0 },
-{"billion",      1.0e9,  SMUL,    0.0,     1, 0 },
-{"trillion",     1.0e12, SMUL,    0.0,     1, 0 },
-{"hundredth",    1.0e2,  SQF,     0.0,     0, 0 },
-{"thousandth",   1.0e3,  SQF,     0.0,     0, 0 },
-{"millionth",    1.0e6 , SQF,     0.0,     0, 0 },
-{"billionth",    1.0e9 , SQF,     0.0,     0, 0 },
-{"trillionth",   1.0e12, SQF,     0.0,     0, 0 },
-{"percent",      1.0e-2, SMUL,    0.0,     0, 0 },
-{"%",            1.0e-2, SMUL,    0.0,     0, 0 },
-{"dollars",      1.0   , BUCK,    0.0,     0, 0 },
-{"dollar",       1.0   , BUCK,    0.0,     0, 0 },
-{"cents",        1.0e-2, BUCK,    0.0,     0, 0 },
-{"cent",         1.0e-2, BUCK,    0.0,     0, 0 },
-{"deci",         1.0e-1, SMUL,    0.0,     0, 0 },
-{"centi",        1.0e-2, SMUL,    0.0,     0, 0 },
-{"milli",        1.0e-3, SMUL,    0.0,     0, 0 },
-{"micro",        1.0e-6, SMUL,    0.0,     0, 0 },
-{"nano",         1.0e-9, SMUL,    0.0,     0, 0 },
-{"pico",         1.0e-12,SMUL,    0.0,     0, 0 },
-{"femto",        1.0e-15,SMUL,    0.0,     0, 0 },
-{"atto",         1.0e-18,SMUL,    0.0,     0, 0 },
-{"deca",         1.0e1,  SMUL,    0.0,     1, 0 },
-{"deka",         1.0e1,  SMUL,    0.0,     1, 0 },
-{"hecto",        1.0e2  ,SMUL,    0.0,     0, 0 },
-{"kilo",         1.0e3  ,SMUL,    0.0,     0, 0 },
-{"kb"          , 1.0e3  ,SMUL,   0.0,     0, 0 },
-{"k "          , 1.0e3  ,SMUL,   0.0,     0, 0 },
-{"mega",         1.0e6  ,SMUL,    0.0,     0, 0 },
-{"meg"         , 1.0e6  ,SMUL,   0.0,     0, 0 },
-{"mb"          , 1.0e6  ,SMUL,   0.0,     0, 0 },
-{"giga",         1.0e9  ,SMUL,    0.0,     0, 0 },
-{"gig"         , 1.0e9  ,SMUL,   0.0,     0, 0 },
-{"gb"          , 1.0e9  ,SMUL,   0.0,     0, 0 },
-{"tera",         1.0e12 ,SMUL,    0.0,     0, 0 },
-{"tb",           1.0e12 ,SMUL,    0.0,     0, 0 },
-{"peta",         1.0e15 ,SMUL,    0.0,     0, 0 },
-{"pb",           1.0e15 ,SMUL,    0.0,     0, 0 },
+{"0",           0.0,     VOID,    0.0,     1, 0, 0 },
+{"1",           1.0,     VOID,    0.0,     1, 0, 0 },
+{"2",           2.0,     VOID,    0.0,     1, 0, 0 },
+{"3",           3.0,     VOID,    0.0,     1, 0, 0 },
+{"4",           4.0,     VOID,    0.0,     1, 0, 0 },
+{"5",           5.0,     VOID,    0.0,     1, 0, 0 },
+{"6",           6.0,     VOID,    0.0,     1, 0, 0 },
+{"7",           7.0,     VOID,    0.0,     1, 0, 0 },
+{"8",           8.0,     VOID,    0.0,     1, 0, 0 },
+{"9",           9.0,     VOID,    0.0,     1, 0, 0 },
+{"+",           1.0,     VOID,    0.0,     1, 0, 0 },
+{"-",          -1.0,     HYPH,    0.0,     1, 0, 0 },
+{"and an ",     1.0,     ANDA,    0.0,     0, 0, 0 },
+{"and a ",      1.0,     ANDA,    0.0,     0, 0, 0 },
+{"and ",        1.0,     ANDA,    0.0,     0, 0, 0 },
+{"& ",          1.0,     ANDA,    0.0,     0, 0, 0 },
+{"a ",          1.0,     NOOP,    0.0,     1, 0, 0 },
+{"an ",         1.0,     NOOP,    0.0,     1, 0, 0 },
+{"less than",   0.0,     LTOP,    0.0,     1, 0, 0 },
+{"greater than",0.0,     GTOP,    0.0,     1, 0, 0 },
+{"more than",   0.0,     GTOP,    0.0,     1, 0, 0 },
+{"positive",    1.0,     SIOP,    0.0,     1, 0, 0 },
+{"negative",   -1.0,     SIOP,    0.0,     1, 0, 0 },
+{"/",           0.0,     FROP,    0.0,     0, 0, 0 },
+{">",           0.0,     GTOP,    0.0,     1, 0, 0 },
+{">=",          0.0,     GEOP,    0.0,     1, 0, 0 },
+{"<",           0.0,     LTOP,    0.0,     1, 0, 0 },
+{"<=",          0.0,     LEOP,    0.0,     1, 0, 0 },
+{"a few",       3.0,     RNG,     6.0,     1, 0, 0 },
+{"several",     3.0,     RNG,    10.0,     1, 0, 0 },
+{"partial",     1.0e-32, RNG,     0.999999,1, 0, 0 },
+{"a couple",    2.0,     SQTY,    0.0,     1, 0, 0 },
+{"zero",        0.0,     SQTY,    0.0,     1, 0, 0 },
+{"one",         1.0,     SQTY,    0.0,     1, 0, 0 },
+{"two",         2.0,     SQTY,    0.0,     1, 0, 0 },
+{"half",        2.0,     SQF,     0.0,     1, 0, 0 },
+{"second",      2.0,     SQTY,    0.0,     1, 0, 0 },
+{"three",       3.0,     SQTY,    0.0,     1, 0, 0 },
+{"third",       3.0,     SQF,     0.0,     0, 0, 0 },
+{"four",        4.0,     SQTY,    0.0,     1, 0, 0 },
+{"fourth",      4.0,     SQF,     0.0,     0, 0, 0 },
+{"forth",       4.0,     SQF,     0.0,     0, 0, 0 },
+{"quarter",     4.0,     SQF,     0.0,     0, 0, 0 },
+{"five",        5.0,     SQTY,    0.0,     1, 0, 0 },
+{"fifth",       5.0,     SQF,     0.0,     0, 0, 0 },
+{"six",         6.0,     SQTY,    0.0,     1, 0, 0 },
+{"sixth",       6.0,     SQF,     0.0,     0, 0, 0 },
+{"seven",       7.0,     SQTY,    0.0,     1, 0, 0 },
+{"seventh",     7.0,     SQF,     0.0,     0, 0, 0 },
+{"eight",       8.0,     SQTY,    0.0,     1, 0, 0 },
+{"eighth",      8.0,     SQF,     0.0,     0, 0, 0 },
+{"nine",        9.0,     SQTY,    0.0,     1, 0, 0 },
+{"ninth",       9.0,     SQF,     0.0,     0, 0, 0 },
+{"ten",         10.0,    SQTY,    0.0,     1, 0, 0 },
+{"tenth",       10.0,    SQF,     0.0,     0, 0, 0 },
+{"eleven",      11.0,    SQTY,    0.0,     1, 0, 0 },
+{"eleventh",    11.0,    SQF,     0.0,     0, 0, 0 },
+{"twelve",      12.0,    SQTY,    0.0,     1, 0, 0 },
+{"twelfth",     12.0,    SQF,     0.0,     0, 0, 0 },
+{"thirteen",    13.0,    SQTY,    0.0,     1, 0, 0 },
+{"thirteenth",  13.0,    SQF,     0.0,     0, 0, 0 },
+{"fourteen",    14.0,    SQTY,    0.0,     1, 0, 0 },
+{"fourteenth",  14.0,    SQF,     0.0,     0, 0, 0 },
+{"fifteen",     15.0,    SQTY,    0.0,     1, 0, 0 },
+{"fifteenth",   15.0,    SQF,     0.0,     0, 0, 0 },
+{"sixteen",     16.0,    SQTY,    0.0,     1, 0, 0 },
+{"sixteenth",   16.0,    SQF,     0.0,     0, 0, 0 },
+{"seventeen",   17.0,    SQTY,    0.0,     1, 0, 0 },
+{"seventeenth", 17.0,    SQF,     0.0,     0, 0, 0 },
+{"eighteen",    18.0,    SQTY,    0.0,     1, 0, 0 },
+{"eighteenth",  18.0,    SQF,     0.0,     0, 0, 0 },
+{"nineteen",    19.0,    SQTY,    0.0,     1, 0, 0 },
+{"nineteenth",  19.0,    SQF,     0.0,     0, 0, 0 },
+{"twenty",      20.0,    SQTY,    0.0,     1, 0, 0 },
+{"twentieth",   20.0,    SQF,     0.0,     0, 0, 0 },
+{"thirty",      30.0,    SQTY,    0.0,     1, 0, 0 },
+{"thirtieth",   30.0,    SQF,     0.0,     0, 0, 0 },
+{"fourty",      40.0,    SQTY,    0.0,     1, 0, 0 },
+{"forty",       40.0,    SQTY,    0.0,     1, 0, 0 },
+{"fortieth",    40.0,    SQF,     0.0,     0, 0, 0 },
+{"fourtieth",   40.0,    SQF,     0.0,     0, 0, 0 },
+{"fifty",       50.0,    SQTY,    0.0,     1, 0, 0 },
+{"fiftieth",    50.0,    SQF,     0.0,     0, 0, 0 },
+{"sixty",       60.0,    SQTY,    0.0,     1, 0, 0 },
+{"sixtieth",    60.0,    SQF,     0.0,     0, 0, 0 },
+{"seventy",     70.0,    SQTY,    0.0,     1, 0, 0 },
+{"seventieth",  70.0,    SQF,     0.0,     0, 0, 0 },
+{"eighty",      80.0,    SQTY,    0.0,     1, 0, 0 },
+{"eightieth",   80.0,    SQF,     0.0,     0, 0, 0 },
+{"ninety",      90.0,    SQTY,    0.0,     1, 0, 0 },
+{"ninetieth",   90.0,    SQF,     0.0,     0, 0, 0 },
+{"scores",      20.0,    MAG,   100.0,     1, 0, 0 },  /* MAW,PBR 10-28-93 */
+{"dozens",      12.0,    MAG,    48.0,     1, 0, 0 },  /* MAW,PBR 10-28-93 */
+{"hundreds",     1.0e2,  MAG,     1.0e3,   1, 0, 0 },
+{"thousands",    1.0e3,  MAG,     1.0e6,   1, 0, 0 },
+{"millions",     1.0e6,  MAG,     1.0e9,   1, 0, 0 },
+{"billions",     1.0e9,  MAG,     1.0e12,  1, 0, 0 },
+{"trillions",    1.0e12, MAG,     1.0e15,  1, 0, 0 },
+{"score",        20.0,   SMUL,    0.0,     0, 0, 0 },
+{"dozen",        12.0,   SMUL,    0.0,     1, 0, 0 },
+{"gross",       144.0,   SMUL,    0.0,     1, 0, 0 },
+{"hundred",      1.0e2,  SMUL,    0.0,     1, 0, 0 },
+{"thousand",     1.0e3,  SMUL,    0.0,     1, 0, 0 },
+{"million",      1.0e6,  SMUL,    0.0,     1, 0, 0 },
+{"billion",      1.0e9,  SMUL,    0.0,     1, 0, 0 },
+{"trillion",     1.0e12, SMUL,    0.0,     1, 0, 0 },
+{"hundredth",    1.0e2,  SQF,     0.0,     0, 0, 0 },
+{"thousandth",   1.0e3,  SQF,     0.0,     0, 0, 0 },
+{"millionth",    1.0e6 , SQF,     0.0,     0, 0, 0 },
+{"billionth",    1.0e9 , SQF,     0.0,     0, 0, 0 },
+{"trillionth",   1.0e12, SQF,     0.0,     0, 0, 0 },
+{"percent",      1.0e-2, SMUL,    0.0,     0, 0, 0 },
+{"%",            1.0e-2, SMUL,    0.0,     0, 0, 0 },
+{"dollars",      1.0   , BUCK,    0.0,     0, 0, 0 },
+{"dollar",       1.0   , BUCK,    0.0,     0, 0, 0 },
+{"cents",        1.0e-2, BUCK,    0.0,     0, 0, 0 },
+{"cent",         1.0e-2, BUCK,    0.0,     0, 0, 0 },
+{"deci",         1.0e-1, SMUL,    0.0,     0, 0, 0 },
+{"centi",        1.0e-2, SMUL,    0.0,     0, 0, 0 },
+{"milli",        1.0e-3, SMUL,    0.0,     0, 0, 0 },
+{"micro",        1.0e-6, SMUL,    0.0,     0, 0, 0 },
+{"nano",         1.0e-9, SMUL,    0.0,     0, 0, 0 },
+{"pico",         1.0e-12,SMUL,    0.0,     0, 0, 0 },
+{"femto",        1.0e-15,SMUL,    0.0,     0, 0, 0 },
+{"atto",         1.0e-18,SMUL,    0.0,     0, 0, 0 },
+{"deca",         1.0e1,  SMUL,    0.0,     1, 0, 0 },
+{"deka",         1.0e1,  SMUL,    0.0,     1, 0, 0 },
+{"hecto",        1.0e2  ,SMUL,    0.0,     0, 0, 0 },
+/* `kilobyte' and `kb' clearly refer to bytes and thus have the potential
+ * decimal/binary ambiguity.  But `kiloAnythingElse' is definitly decimal:
+ */
+{"kilo",         1.0e3  ,SMUL,    0.0,     0, 0, 0 },
+{"kilobyte",     1.0e3  ,SMUL,    0.0,     0, 0, 1 },
+{"kb"          , 1.0e3  ,SMUL,   0.0,     0, 0, 1 },
+/* `k ' alone is usually referring to bytes: */
+{"k "          , 1.0e3  ,SMUL,   0.0,     0, 0, 1 },
+/* `kibi' would match `kibitz' etc.; seems only to be used with `byte' */
+{"kibibyte",    1024.0  ,SMUL,   0.0,     0, 0, 0 },
+{"kib ",        1024.0  ,SMUL,   0.0,     0, 0, 0 },
+{"mega",         1.0e6  ,SMUL,    0.0,     0, 0, 0 },
+{"megabyte",     1.0e6  ,SMUL,    0.0,     0, 0, 2 },
+{"meg"         , 1.0e6  ,SMUL,   0.0,     0, 0, 2 },
+{"mb"          , 1.0e6  ,SMUL,   0.0,     0, 0, 2 },
+/* see `kibibyte' reasoning */
+{"mebibyte", 1024.0*1024.0, SMUL, 0.0,    0, 0, 0 },
+{"mib ",     1024.0*1024.0, SMUL, 0.0,    0, 0, 0 },
+{"giga",         1.0e9  ,SMUL,    0.0,     0, 0, 0 },
+{"gigabyte",     1.0e9  ,SMUL,    0.0,     0, 0, 3 },
+{"gig"         , 1.0e9  ,SMUL,   0.0,     0, 0, 3 },
+{"gb"          , 1.0e9  ,SMUL,   0.0,     0, 0, 3 },
+/* see `mebibyte'/`mib' reasoning */
+{"gibibyte", 1024.0*1024.0*1024.0, SMUL, 0.0, 0, 0, 0 },
+{"gib ",     1024.0*1024.0*1024.0, SMUL, 0.0, 0, 0, 0 },
+{"tera",         1.0e12 ,SMUL,    0.0,     0, 0, 0 },
+{"terabyte",     1.0e12 ,SMUL,    0.0,     0, 0, 4 },
+{"tb",           1.0e12 ,SMUL,    0.0,     0, 0, 4 },
+/* see `mebibyte'/`mib' reasoning */
+{"tebibyte", 1024.0*1024.0*1024.0*1024.0, SMUL, 0.0, 0, 0, 0 },
+{"tib ",     1024.0*1024.0*1024.0*1024.0, SMUL, 0.0, 0, 0, 0 },
+{"peta",         1.0e15 ,SMUL,    0.0,     0, 0, 0 },
+{"petabyte",     1.0e15 ,SMUL,    0.0,     0, 0, 5 },
+{"pb",           1.0e15 ,SMUL,    0.0,     0, 0, 5 },
+/* see `mebibyte'/`mib' reasoning */
+{"pebibyte", 1024.0*1024.0*1024.0*1024.0*1024.0, SMUL, 0.0, 0, 0, 0 },
+{"pib ",     1024.0*1024.0*1024.0*1024.0*1024.0, SMUL, 0.0, 0, 0, 0 },
 /* commented out cause it matches weird stuff
- * {"exa",          1.0e18 ,SMUL,    0.0,     0, 0 },
+ * {"exa",          1.0e18 ,SMUL,    0.0,     0, 0, 6 },
  */
 /* wtf why does this not work? KNG 20070111
- * {"exabyte",      1.0e18 ,SMUL,    0.0,     0, 0 },
+ * {"exabyte",      1.0e18 ,SMUL,    0.0,     0, 0, 6 },
  */
 /* exabyte; may erroneously match other stuff?:
- * {"eb",          1.0e18 ,SMUL,    0.0,     0, 0 },
+ * {"eb",          1.0e18 ,SMUL,    0.0,     0, 0, 6 },
+ * exbibyte
  */
-{"zetta",        1.0e21 ,SMUL,    0.0,     0, 0 },
-{"zb",           1.0e21 ,SMUL,    0.0,     0, 0 },
-{"yotta",        1.0e24 ,SMUL,    0.0,     0, 0 },
-{"yb",           1.0e24 ,SMUL,    0.0,     0, 0 },
-{"zillion",      1.0e32 ,SMUL,    0.0,     0, 0 },
-{"ittybitty",    1.0e-32,SMUL,    0.0,     0, 0 },
-{"thirty secondth",  32.0,SQF,    0.0,     0, 0 },
-{"sixty fourth",     64.0,SQF,    0.0,     0, 0 },
+{"zetta",        1.0e21 ,SMUL,    0.0,     0, 0, 0 },
+{"zettabyte",    1.0e21 ,SMUL,    0.0,     0, 0, 7 },
+{"zb",           1.0e21 ,SMUL,    0.0,     0, 0, 7 },
+/* see `mebibyte'/`mib' reasoning */
+{"zebibyte", 1024.0*1024.0*1024.0*1024.0*1024.0*1024.0*1024.0, SMUL, 0.0,0,0, 0},
+{"zib ",     1024.0*1024.0*1024.0*1024.0*1024.0*1024.0*1024.0, SMUL, 0.0,0,0, 0},
+{"yotta",        1.0e24 ,SMUL,    0.0,     0, 0, 0 },
+{"yottabyte",    1.0e24 ,SMUL,    0.0,     0, 0, 8 },
+{"yb",           1.0e24 ,SMUL,    0.0,     0, 0, 8 },
+/* see `mebibyte'/`mib' reasoning */
+{"yobibyte", 1024.0*1024.0*1024.0*1024.0*1024.0*1024.0*1024.0*1024.0, SMUL, 0.0, 0, 0, 0},
+{"yib ",     1024.0*1024.0*1024.0*1024.0*1024.0*1024.0*1024.0*1024.0, SMUL, 0.0, 0, 0, 0},
+{"zillion",      1.0e32 ,SMUL,    0.0,     0, 0, 0 },
+{"ittybitty",    1.0e-32,SMUL,    0.0,     0, 0, 0 },
+{"thirty secondth",  32.0,SQF,    0.0,     0, 0, 0 },
+{"sixty fourth",     64.0,SQF,    0.0,     0, 0, 0 },
                                                       /* PBR 10-28-93 */
-{"", 0.0, UNK, 0.0, 0, 0 }
+{"", 0.0, UNK, 0.0, 0, 0, 0 }
 };
 
+static TXbool   TXnpmBytePowersBinary = TXbool_False;
+static TXbool   TXnpmInitBytePowers = TXbool_True;
+
+TXbool
+TXnpmSetBytePowersBinary(TXbool binary)
+{
+  binary = !!binary;                            /* standardize value */
+  if (binary != TXnpmBytePowersBinary)          /* value is changing */
+    {
+      TXnpmBytePowersBinary = binary;
+      TXnpmInitBytePowers = TXbool_True;        /* need to init at search */
+    }
+  return(TXbool_True);
+}
+
+TXbool
+TXnpmGetBytePowersBinary(void)
+{
+  return(TXnpmBytePowersBinary);
+}
 
 /************************************************************************/
 
@@ -336,6 +389,26 @@ byte *s;	      /* MAW 05-21-92 - byte not char for nct[] index */
      qsort((char *)tfa,n,sizeof(TTF),ttfcmp);
      locale_serial = TXgetlocaleserial();
     }
+
+  if (TXnpmInitBytePowers)
+    {
+      TTF       *item;
+      double    base = (TXnpmBytePowersBinary ? 1024.0 : 1000.0);
+      int       itemIdx, power;
+
+      for (itemIdx = 0; itemIdx < n; itemIdx++)
+        {
+          item = &tfa[itemIdx];
+          if (item->decimalBinaryPower)
+            {
+              item->x = 1.0;
+              for (power = 0; power < item->decimalBinaryPower; power++)
+                item->x *= base;
+            }
+        }
+      TXnpmInitBytePowers = TXbool_False;
+    }
+
 /** end of init *****/
 
 

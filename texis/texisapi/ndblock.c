@@ -1,6 +1,7 @@
 /* -=- kai-mode: John -=- */
 #ifndef OLD_LOCKING
 #include "txcoreconfig.h"
+#ifndef LOCK_SERVER
 #if defined(FORCENOLOCK) && !defined(NOLOCK)
 #  define NOLOCK		/* MAW 08-03-95 - config.h turns if off */
 #endif /* FORCENOLOCK && !NOLOCK */
@@ -1241,4 +1242,5 @@ int n;
 }
 
 /******************************************************************/
+#endif /* LOCK_SERVER */
 #endif /* OLD_LOCKING */

@@ -158,6 +158,7 @@ size_t		bufSz;	/* (in) "" size */
 	case ORDERING_SPEC_OP:	return("orderingSpec");
 #endif /* TX_USE_ORDERING_SPEC_NODE */
 	case ARRAY_OP:		return("arrayOp[");
+	case BUFFER_OP: return ("Buffer");
 	case QNODE_OP_UNKNOWN:	return("QNODE_OP_UNKNOWN");
 	}
 	/* This could be the `default:' for the above switch(), but
@@ -441,7 +442,7 @@ int depth;
 		case SELECT_OP:
 			innerDesc = " leftChild=\"inrows\" rightChild=\"criteria\"";
 			goto doNode;
-			/* WTF from qnode 
+			/* WTF from qnode
 			if(query->fldlist)
 			{
 				if(query->fldlist->cnt > 1)
@@ -457,6 +458,9 @@ int depth;
 				   "<qnode op=\"%H\" to=\"%H\"%s>\n",
 				   opName, query->tname, nodeAttrs);
 			goto doLR;
+		case BUFFER_OP:
+			innerDesc = " leftChild=\"original\"";
+			goto doNode;
 		case CREATE_OP:
 		case ALTER_OP:
 		case DROP_OP:

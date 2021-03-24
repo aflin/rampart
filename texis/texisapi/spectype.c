@@ -1905,8 +1905,8 @@ int op;
 			}
 			mem = json_dumps(thearray, JSON_COMPACT);
 			json_decref(thearray);
-			na = strlen(mem);
-			setfld(f3, mem, na);
+			na = strlen(mem) + 1;
+			setfldandsize(f3, mem, na, FLD_FORCE_NORMAL);
 			rc = 0;
 		} else {
 			na = sl2.nb + 1;		/* +1 for ft_char nul */

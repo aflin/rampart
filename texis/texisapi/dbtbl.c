@@ -703,6 +703,29 @@ again:
 	return t;
 }
 
+DBTBL *
+TXcreateinternaldbtblcopy(DBTBL *source, TX_DBF_TYPE dbftype)
+{
+	DBTBL *rc;
+	DD *dd;
+
+	if(!source) return source;
+	rc = (DBTBL *)calloc(1, sizeof(DBTBL));
+	dd = TXbddc(tbldd(source->tbl));
+	rc->tbl = TXcreateinternaltbl(dd, dbftype);
+	if(!rc->tbl) {
+		return closedbtbl(rc);
+	}
+	closedd(dd);
+	rc->lname = strdup(source->lname);
+	rc->rname = NULL;
+	rc->type = 'T';
+	rc->ddic = source->ddic;
+	rc->frecid = createfld("long", 1, 0);
+	rc->tblid = -1;
+	putfld(rc->frecid, &rc->recid, 1);
+	return rc;
+}
 /********************************************************************/
 
 int
@@ -889,23 +912,11 @@ RECID *where;			/* Where to put the data */
 
 	if ((int)(long)where == -1)
 		where = (RECID *) NULL;
-	if (TXlockandload(db, PM_INSERT, NULL) == -1)
+	if (TXprepareTableForWriting(db, PM_INSERT, NULL) == -1)
 	{
 		/* If SQLCancel() called, top-level user will yap: */
 		if (!TXsqlWasCancelled(db->ddic))
 			putmsg(MWARN, Fn, "Could not open indexes");
-		return NULL;
-	}
-	if (TXlocktable(db, W_LCK) == -1)
-	{
-		if ((db->type == TEXIS_TABLE || db->type == TEXIS_SYS_TABLE)
-		    && db->rname)
-		{
-			TXunlockindex(db, INDEX_WRITE, NULL);
-		}
-		/* If SQLCancel() called, top-level user will yap: */
-		if (!TXsqlWasCancelled(db->ddic))
-			putmsg(MWARN, Fn, "Could not lock table");
 		return NULL;
 	}
 	switch (db->type)
@@ -959,20 +970,10 @@ RECID *where;			/* Where to put the data */
 			TXsetrecid(&btloc, (EPI_OFF_T) 0);
 		rc = btinsert(db->index.btree, &btloc, sz, db->tbl->orec);
 		btflush(db->index.btree);
-		TXunlocktable(db, W_LCK);
-		if ((db->type == TEXIS_TABLE || db->type == TEXIS_SYS_TABLE)
-		    && db->rname)
-		{
-			TXunlockindex(db, INDEX_WRITE, NULL);
-		}
+		TXdoneWritingToTable(db, NULL);
 		return (rc < 0 ? NULL : &btloc);
 	default:
-		if ((db->type == TEXIS_TABLE || db->type == TEXIS_SYS_TABLE)
-		    && db->rname)
-		{
-			TXunlockindex(db, INDEX_WRITE, NULL);
-		}
-		TXunlocktable(db, W_LCK);
+		TXdoneWritingToTable(db, NULL);
 		return NULL;
 	}
 	db->recid = pos;
@@ -992,14 +993,7 @@ RECID *where;			/* Where to put the data */
 #ifdef NEVER
 			putmsg(999, NULL, "Removing row at %d", pos.off);
 #endif
-			flushindexes(db);
-			if (
-			    (db->type == TEXIS_TABLE
-			     || db->type == TEXIS_SYS_TABLE) && db->rname)
-			{
-				TXunlockindex(db, INDEX_WRITE, NULL);
-			}
-			TXunlocktable(db, W_LCK);
+			TXdoneWritingToTable(db, NULL);
 			return NULL;
 		}
 	}
@@ -1007,13 +1001,7 @@ RECID *where;			/* Where to put the data */
 	{
 		putmsg(MWARN, NULL, "Record write failed");
 	}
-	flushindexes(db);
-	if ((db->type == TEXIS_TABLE || db->type == TEXIS_SYS_TABLE)
-	    && db->rname)
-	{
-		TXunlockindex(db, INDEX_WRITE, NULL);
-	}
-	TXunlocktable(db, W_LCK);
+	TXdoneWritingToTable(db, NULL);
 	return &pos;
 }
 
@@ -2218,7 +2206,7 @@ done:
 /******************************************************************/
 
 int
-TXlockandload(DBTBL * tb, int mode, char **updfields)
+TXprepareTableForWriting(DBTBL * tb, int mode, char **updfields)
 /* Returns 0 on success, -1 on error.
  */
 {
@@ -2264,9 +2252,27 @@ TXlockandload(DBTBL * tb, int mode, char **updfields)
 			}
 		}
 	}
+	if(TXlocktable(tb, W_LCK) == -1) {
+		TXunlockindex(tb, INDEX_WRITE, NULL);
+		return -1;
+	}
 	return 0;
 }
 
+/******************************************************************/
+
+int
+TXdoneWritingToTable(DBTBL *tb, ft_counter *fc)
+{
+	flushindexes(tb);
+	TXunlocktable(tb, W_LCK);
+	if ((tb->type == TEXIS_TABLE || tb->type == TEXIS_SYS_TABLE)
+			&& tb->rname)
+	{
+		TXunlockindex(tb, INDEX_WRITE, fc);
+	}
+	return 0;
+}
 /******************************************************************/
 
 fop_type o_n_fchch = NULL, o_n_fidch = NULL, o_n_fdwch = NULL,
@@ -3331,27 +3337,24 @@ FLD *f5;
 	void	*data;
 	DBTBL *tbl;
 	size_t sz;
+	TXPMBUF	*pmbuf = TXPMBUFPN;
 
-	if (f1)
+	if (!f1 || !(text = getfld(f1, NULL)))
 	{
-		text = getfld(f1, NULL);
+		/* Returning "NULL" fld for NULL input lets SQL proceed,
+		 * e.g. Bug 7789:
+		 */
+		rc = TXstrdup(pmbuf, __FUNCTION__, TXfldGetNullOutputString());
+		goto dupRc;
 	}
-	else
-		return FOP_EINVAL;
 
-	if (f2)
-	{
-		pmaxsz = getfld(f2, NULL);
+	if (f2 && (pmaxsz = getfld(f2, NULL)) != NULL)
 		maxsz = *pmaxsz;
-	}
 	else
 		maxsz = 0;
 
-	if (f3)
-	{
-		data = getfld(f3, NULL);
+	if (f3 && (data = getfld(f3, NULL)) != NULL)
 		style = TXstrToAbs((char *)data);
-	}
 	else
 		style = TXABS_STYLE_SMART;
 
@@ -3373,10 +3376,11 @@ FLD *f5;
 	 * findrankabs() will drill out:
 	 */
 	rc = abstract(text, maxsz, style, query, tbl, CHARPPN, CHARPN);
+dupRc:
 	sz = strlen(rc);
 	setfldandsize(f1, rc, sz + 1, FLD_FORCE_NORMAL);
 	if (queryAlloced) free(query);
-	return 0;
+	return(FOP_EOK);
 }
 
 /******************************************************************/

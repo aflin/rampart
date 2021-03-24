@@ -410,12 +410,16 @@ TXcreateDb(TXPMBUF *pmbuf, const char *path, const char *encSystemPass,
 	 * across the close/open cycle.  We can open directly since
 	 * we know locks already exist via open `ddic':
 	 */
+#ifndef LOCK_SERVER
 	saveLocks = TXdblockOpenDirect(pmbuf, path, &serverId,
 				       TXbool_False /* !readOnly */);
+#endif
 	ddic = ddclose(ddic);
 	ddic = TXddopen(pmbuf, path, ddopenFlags);
+#ifndef LOCK_SERVER
 	saveLocks = closedblock(pmbuf, saveLocks, serverId,
 				TXbool_False /* !readOnly */);
+#endif
 	if (!ddic) goto err;
 
 	/* Bug 4732: replaced permstexis(ddic, "_SYSTEM", users[0].plain)
@@ -674,9 +678,9 @@ __try
 
 	if (*systemPass || *publicPass)
 	{
-		encryptedSystemPass = TXpwEncrypt(systemPass, CHARPN);
+		encryptedSystemPass = TXpwHash(systemPass, CHARPN);
 		if (!encryptedSystemPass) return(TXEXIT_UNKNOWNERROR);
-		encryptedPublicPass = TXpwEncrypt(publicPass, CHARPN);
+		encryptedPublicPass = TXpwHash(publicPass, CHARPN);
 		if (!encryptedPublicPass) return(TXEXIT_UNKNOWNERROR);
 		TXsetdfltpass(encryptedSystemPass, encryptedPublicPass,
 			      systemPass, publicPass);

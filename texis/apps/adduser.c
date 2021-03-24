@@ -111,7 +111,7 @@ char	*spass;
  */
 {
 	static  char Fn[] = "adduser";
-	char	*penc = NULL;
+	char	*hash = NULL;
 	int	uid, gid, ret;
 	FLD	*uf, *pf, *df, *gf;
 	TBL	*tbl;
@@ -143,15 +143,15 @@ char	*spass;
 	if(!pword) goto err;
 	if (strlen(pword) > 0)
 	{
-		penc = TXpwEncrypt(pword, NULL);
-		if (!penc)
+		hash = TXpwHash(pword, NULL);
+		if (!hash)
 		{
 			putmsg(MERR, __FUNCTION__,
 			       "Cannot encrypt password for user `%s'", uname);
 			goto err;
 		}
 	}
-	else if (!(penc = TXstrdup(pmbuf, __FUNCTION__, "")))
+	else if (!(hash = TXstrdup(pmbuf, __FUNCTION__, "")))
 		goto err;
 	pword = TXfree(pword);
 	uid   = getint  ("New User id  : ");
@@ -173,7 +173,7 @@ char	*spass;
 	}
 
 	putfld(uf, uname, strlen(uname));
-	putfld(pf, penc, strlen(penc));
+	putfld(pf, hash, strlen(hash));
 	putfld(df, &uid, 1);
 	putfld(gf, &gid, 1);
 	puttblrow(tbl, NULL);
@@ -184,7 +184,7 @@ err:
 	ret = -1;
 finally:
 	uname = TXfree(uname);
-	penc = TXfree(penc);
+	hash = TXfree(hash);
 	return(ret);
 }
 

@@ -323,6 +323,7 @@ extern int TXsecond ARGS((FLD *f1));
 extern int TXmonthseq ARGS((FLD *f1));
 extern int TXdayseq ARGS((FLD *f1));
 extern int TXweekseq ARGS((FLD *f1));
+int TXnow(FLD *f);
 
 /* ISEQ_DT(): true if datetime `a' == `b': */
 #define ISEQ_DT(a, b)                   \

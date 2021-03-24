@@ -274,6 +274,8 @@ static FLDFUNC TXdbfldfuncsUnsorted[] =
     { "json_merge_patch", F(txfunc_json_merge_patch), 2, 2, FTN_CHAR | DDVARBIT, {FTN_CHAR | DDVARBIT, FTN_CHAR | DDVARBIT, 0, 0, 0 } },
     { "json_merge_preserve", F(txfunc_json_merge_preserve), 2, 2, FTN_CHAR | DDVARBIT, {FTN_CHAR | DDVARBIT, FTN_CHAR | DDVARBIT, 0, 0, 0 } },
     { "json_format", F(txfunc_json_format), 2, 2, FTN_CHAR | DDVARBIT, {FTN_CHAR | DDVARBIT, FTN_CHAR | DDVARBIT, 0, 0, 0 } },
+    { "generate_uuid", F(txfunc_generate_uuid), 1, 1, FTN_CHAR | DDVARBIT, {0,0,0,0,0}},
+    { "now", F(TXnow), 1, 1, FTN_DATE, {0,0,0,0,0}},
 };
 
 static int

@@ -266,9 +266,7 @@ TBSPEC  *tbspec;
 	 */
 	FLD	*promotedParamFld = NULL;
 	DBIDX	*dbidx=NULL;
-#ifndef NO_PRE_FIND_INDEX
 	int	shortcircuit = 0;
-#endif
 	INDEXINFO indexinfo;
 
 #ifdef NEVER
@@ -300,17 +298,15 @@ TBSPEC  *tbspec;
 	fld = dbnametofld(tb, dname);
 	resetindexinfo(&indexinfo);
 	indexinfo.tbspec = tbspec;
-#ifndef NO_PRE_FIND_INDEX
 	if(p->iname && p->op == FLDMATH_EQ)
 	{
-		indexinfo.paths = p->iname; 
+		indexinfo.paths = p->iname;
 		indexinfo.itypes = p->itype;
 		rev = p->rev;
 		shortcircuit = 1;
 		indexinfo.numIndexes = p->indexcnt;
 		goto letsgo;
 	}
-#endif
 	indexinfo.numIndexes = ddgetindex(tb->ddic, tb->rname, dname, &indexinfo.itypes, &indexinfo.paths, &indexinfo.fields, &indexinfo.sysindexParamsVals);
 	rev = 0;
 	if (indexinfo.numIndexes <= 0)
@@ -424,13 +420,11 @@ letsgo:
 			     j = TXchooseindex(&indexinfo, tb, p->op, infld,
 					       lookright))
 			{
-#ifndef NO_PRE_FIND_INDEX
 				if (shortcircuit && tb->index.keepcached)
 				{
 					dbidx = &tb->index;
 				}
 				else
-#endif
 				dbidx = opendbidx(indexinfo.itypes[j],
 						  indexinfo.paths[j],
 						  indexinfo.fields[j],
@@ -461,7 +455,7 @@ letsgo:
 					 */
 					indexFldN = fld->n;
 				}
-				
+
 				/* Create `dupIndexFld' as copy of `infld': */
 				if ((indexFldType & DDTYPEBITS) == FTN_CHAR &&
 				    (infld->type & DDTYPEBITS) == FTN_STRLST &&
@@ -487,10 +481,8 @@ letsgo:
 				if (res && (!order ||
 				    infodbidx(dbidx)<TXbtreemaxpercent))
 				{
-#ifndef NO_PRE_FIND_INDEX
 					if(!(shortcircuit &&
 					  tb->index.keepcached))
-#endif
 					if(dbidx != &tb->index)
 						tb->index = *dbidx;
 				}
@@ -509,16 +501,12 @@ letsgo:
 					break;
 #endif /* BUBBLE_GPRED */
 			}
-#ifndef NO_PRE_FIND_INDEX
 			if(dbidx)
 				dbidx->keepcached = shortcircuit;
 			if(!shortcircuit)
 				closeindexinfo(&indexinfo);
 			else if(indexinfo.iscores)
 				indexinfo.iscores = TXfree(indexinfo.iscores);
-#else
-			closeindexinfo(&indexinfo);
-#endif
 			ret = (dbidx != NULL ? 1 : -1);
 			goto done;
 		case FOP_EQ :
@@ -539,13 +527,11 @@ letsgo:
 			    j=TXchooseindex(&indexinfo, tb, p->op, infld,
 					    lookright))
 			{
-#ifndef NO_PRE_FIND_INDEX
 				if(shortcircuit && tb->index.keepcached)
 				{
 					dbidx = &tb->index;
 				}
 				else
-#endif
 				/* KNG 20090313 Bug 2542 The setdbidx() call
 				 * below was occurring without a read lock,
 				 * because opendbidx() normally unlocks the
@@ -589,10 +575,8 @@ letsgo:
 					if(res && (!order ||
 					    infodbidx(dbidx)<TXbtreemaxpercent))
 					{
-#ifndef NO_PRE_FIND_INDEX
 						if(!(shortcircuit &&
 						  tb->index.keepcached))
-#endif
 						if(dbidx != &tb->index)
 							tb->index = *dbidx;
 					}
@@ -615,16 +599,12 @@ letsgo:
 					break;
 #endif /* BUBBLE_GPRED */
 			}
-#ifndef NO_PRE_FIND_INDEX
 			if(dbidx)
 				dbidx->keepcached = shortcircuit;
 			if(!shortcircuit)
 				closeindexinfo(&indexinfo);
 			else if(indexinfo.iscores)
 				indexinfo.iscores = TXfree(indexinfo.iscores);
-#else
-			closeindexinfo(&indexinfo);
-#endif
 			ret = (dbidx != NULL ? 1 : -1);
 			goto done;
 		case FOP_GT :
@@ -639,13 +619,11 @@ letsgo:
 			    j=TXchooseindex(&indexinfo, tb, p->op, infld,
 					    lookright))
 			{
-#ifndef NO_PRE_FIND_INDEX
 				if(shortcircuit && tb->index.keepcached)
 				{
 					dbidx = &tb->index;
 				}
 				else
-#endif
 				dbidx=opendbidx(indexinfo.itypes[j],
 						indexinfo.paths[j],
 						indexinfo.fields[j],
@@ -669,10 +647,8 @@ letsgo:
 					if (res && (!order ||
 					    infodbidx(dbidx)<TXbtreemaxpercent))
 					{
-#ifndef NO_PRE_FIND_INDEX
 						if(!(shortcircuit &&
 						  tb->index.keepcached))
-#endif
 						if(dbidx != &tb->index)
 							tb->index = *dbidx;
 					}
@@ -681,9 +657,7 @@ letsgo:
 						if (hasSplitValues &&
 						    TXverbosity > 0)
 							txpmbuf_putmsg(TXPMBUFPN, MINFO, Fn, TXcannotUseIndexInBubbleUpModeFmt, dbidx->iname);
-#ifndef NO_PRE_FIND_INDEX
 						dbidx=closedbidx(dbidx);
-#endif
 						dbidx=NULL;
 					}
 				}
@@ -724,10 +698,8 @@ letsgo:
 					break;
 				}
 			}
-#ifndef NO_PRE_FIND_INDEX
 			tb->index.keepcached = shortcircuit;
 			if(!shortcircuit)
-#endif
 				closeindexinfo(&indexinfo);
 			ret = (dbidx != NULL ? 1 : -1);
 			goto done;
@@ -743,13 +715,11 @@ letsgo:
 			    j=TXchooseindex(&indexinfo, tb, p->op, infld,
 					    lookright))
 			{
-#ifndef NO_PRE_FIND_INDEX
 				if(shortcircuit && tb->index.keepcached)
 				{
 					dbidx = &tb->index;
 				}
 				else
-#endif
 				dbidx=opendbidx(indexinfo.itypes[j],
 						indexinfo.paths[j],
 						indexinfo.fields[j],
@@ -773,10 +743,8 @@ letsgo:
 					if (res && (!order ||
 					    infodbidx(dbidx)<TXbtreemaxpercent))
 					{
-#ifndef NO_PRE_FIND_INDEX
 						if(!(shortcircuit &&
 						  tb->index.keepcached))
-#endif
 						if(dbidx != &tb->index)
 							tb->index = *dbidx;
 					}
@@ -799,10 +767,8 @@ letsgo:
 					break;
 #endif /* BUBBLE_GPRED */
 			}
-#ifndef NO_PRE_FIND_INDEX
 			tb->index.keepcached = shortcircuit;
 			if(!shortcircuit)
-#endif
 				closeindexinfo(&indexinfo);
 			ret = (dbidx != NULL ? 1 : -1);
 			goto done;
@@ -827,7 +793,7 @@ letsgo:
 					continue;
 				else
 				{
-/* Can't guarantee anything at this point 
+/* Can't guarantee anything at this point
 					in->gpred = p;
 */
 					break;
@@ -940,13 +906,11 @@ letsgo:
 					    lookright))
 			{
 #ifndef NO_BUBBLE_MATCH
-#  ifndef NO_PRE_FIND_INDEX
 				if(shortcircuit && tb->index.keepcached)
 				{
 					dbidx = &tb->index;
 				}
 				else
-#  endif /* !NO_PRE_FIND_INDEX */
 				dbidx=opendbidx(indexinfo.itypes[j],
 						indexinfo.paths[j],
 						indexinfo.fields[j],
@@ -968,10 +932,8 @@ letsgo:
 						dbidx = closedbidx(dbidx);
 						continue;
 					}
-#  ifndef NO_PRE_FIND_INDEX
 					if(!(shortcircuit &&
 					  tb->index.keepcached))
-#  endif /* !NO_PRE_FIND_INDEX */
 					if(dbidx != &tb->index)
 						tb->index = *dbidx;
 				}
@@ -993,10 +955,8 @@ letsgo:
 				}
 #endif /* NO_BUBBLE_MATCH */
 			}
-#ifndef NO_PRE_FIND_INDEX
 			tb->index.keepcached = shortcircuit;
 			if(!shortcircuit)
-#endif /* !NO_PRE_FIND_INDEX */
 				closeindexinfo(&indexinfo);
 			if(fld!=fld2)
 				fld2 = closefld(fld2);
