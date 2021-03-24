@@ -125,7 +125,7 @@ DHS
     char *reqpath;          // same as dhs->dhs->req->uri->path->full
     void *aux;              // generic pointer - currently used for dirlist()
     char module;            // is 0 for normal fuction, 1 for js module, 3 for module path.
-    void * auxbuf;          // aux buffer for req.printf when mmap is not present or too small.
+    void * auxbuf;          // aux buffer for req.printf and req.put.
     size_t bufsz;           // size of aux buffer.
     size_t bufpos;          // end position of data in aux buffer.
     uint8_t freeme;         // whether this is a temporary struct that needs to be freed after use.
@@ -3646,8 +3646,10 @@ static void http_callback(evhtp_request_t *req, void *arg)
     newdhs.freeme=0;
     dhs = &newdhs;
 
+    /* if a ws callback has been set */
     if(req->cb_has_websock)
     {
+        /* if this is not a websocket connection */
         if(!req->websock)
         {
             req->cb_has_websock=0; //otherwise send404 will come back here with infinite recursion.
@@ -3656,7 +3658,9 @@ static void http_callback(evhtp_request_t *req, void *arg)
         }
         else
         {
+            /* no timeout */
             evhtp_connection_set_timeouts(evhtp_request_get_connection(req), NULL, NULL);
+            /* get context that is specifically for websockets (with no timeouts allowed) */
             dhs->ctx = thread_ctx[thrno+totnthreads];
             dhs->threadno = (uint16_t)thrno + (uint16_t)totnthreads;
         }
