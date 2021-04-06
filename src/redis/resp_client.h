@@ -50,7 +50,8 @@ RESPCLIENT *connectRespServer(char *hostname, int port);
 RESPCLIENT *closeRespClient(RESPCLIENT *rcp);
 
 // a formatted way to send data to the server
-RESPROTO *sendRespCommand(RESPCLIENT *rcp, char *fmt, ...);
+//RESPROTO *sendRespCommand(RESPCLIENT *rcp, char *fmt, ...);
+int sendRespCommand(RESPCLIENT *rcp, char *fmt, ...);
 
 // Counts the number of arguments to expect for sendRespCommand()
 // places the count in *nArgs
@@ -73,7 +74,7 @@ char *respClienError(RESPCLIENT *rcp);
 #define RP_VA_RET union rp_va_u
 RP_VA_RET
 {
-  char *c;
+  void *c;
   size_t s;
   int i;
   long l;

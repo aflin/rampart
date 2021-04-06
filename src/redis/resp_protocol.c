@@ -477,8 +477,11 @@ int parseResProto(RESPROTO *rpp, byte *buf, size_t bufLen, int newBuffer)
         return (respParseError(rpp, "RESP invalid integer array length after '*'"));
 
       thisItem->length = integer;
+
+      decrementArray(rpp); // PBR added March 30th 2021 to solve a conflicting understanding with RESP
       if (thisItem->length != 0) // if it's not the 0 length array
       {
+
         if (rpp->arrayDepth >= RESPNESTEDARRAYMAX)
           return (respParseError(rpp, "RESP array nesting exceeded limit"));
 
@@ -574,7 +577,10 @@ int parseResProto(RESPROTO *rpp, byte *buf, size_t bufLen, int newBuffer)
     restoreTo = p = nextItem;
   }
   if (rpp->arrayDepth) // we're still expecting more array members
+  {
+    rpp->currPointer = restoreTo; //--ajf
     return (RESP_PARSE_INCOMPLETE);
+  }
   return (RESP_PARSE_COMPLETE);
 }
 
@@ -720,7 +726,7 @@ int respSendReply(RESPROTO *rpp, FILE *fh)
     }
     case (RESPISINT):
     {
-      fprintf(fh, ":%lld\r\n", item->rinteger);
+      fprintf(fh, ":%lld\r\n", (long long int)item->rinteger);
       break;
     }
     case (RESPISARRAY):

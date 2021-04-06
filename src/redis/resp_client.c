@@ -178,8 +178,10 @@ isThereMoreComing(RESPCLIENT *rcp)
   int ret;
   memset(&pfd, 0, sizeof(struct pollfd));
   pfd.fd = rcp->socket;
-  pfd.events = POLLIN | POLLHUP;
+//  pfd.events = POLLIN | POLLHUP;
+  pfd.events = POLLIN;
   ret = poll(&pfd, 1, 0);
+
   if (ret == 1)
     return (ret);
   return (0);
@@ -203,10 +205,13 @@ getRespReply(RESPCLIENT *rcp)
     if (!rcp->waitForever)
       if (!waitForRespData(rcp))
         return (NULL);
-
+//char *lastread=(char*)rcp->fromReadp;
     do
     {
+//lastread=(char*)rcp->fromReadp;
+//printf("recv at %p, avail=%d\n", rcp->fromReadp, (int) bufAvailable);
       nread = recv(rcp->socket, rcp->fromReadp, bufAvailable, 0);
+
       if (nread <= 0) // server closed or error
       {
         rcp->rppFrom->errorMsg = strerror(errno);
@@ -226,20 +231,23 @@ getRespReply(RESPCLIENT *rcp)
         }
         rcp->fromReadp = rcp->fromBuf + totalRead;
         rcp->fromBufSize = rcp->fromBufSize + RESPCLIENTBUFSZ;
-        bufAvailable = rcp->fromBufSize - totalRead;
+        //bufAvailable = rcp->fromBufSize - totalRead; //see below - ajf
       }
       else
         rcp->fromReadp = rcp->fromBuf + totalRead;
 
+      bufAvailable = rcp->fromBufSize - totalRead;//-ajf
     } while (isThereMoreComing(rcp));
-
+//printf("buffer (size %d):\n%.*s\n", (int)nread, (int)nread, lastread);
     parseRet = parseResProto(rcp->rppFrom, rcp->fromBuf, totalRead, newBuffer);
+//printf("buffer after (size %d):\n%.*s\n", (int)totalRead, totalRead, rcp->fromBuf);
 
     if (parseRet == RESP_PARSE_ERROR)
       return (NULL);
 
+//printf("bufavail = %d, used=%d\n", (int) bufAvailable, (int) (rcp->fromReadp - rcp->fromBuf));
     newBuffer = 0;
-
+//printf("%s\n", (parseRet == RESP_PARSE_INCOMPLETE)?"incomplete":"complete");
   } while (parseRet == RESP_PARSE_INCOMPLETE);
   return (rcp->rppFrom);
 }
@@ -390,8 +398,9 @@ sendRespBufNeeded(RESPCLIENT *rcp, char *fmt, va_list *argp)
         break;
         case b:
         {
-          char *thisArg = (char *)VA_ARG(arg, byte *);
-          thisArg = NULL; // this is just to shut up a warning for unused variable
+          //char *thisArg = (char *)
+          VA_ARG(arg, byte *);
+          //thisArg = NULL; // this is just to shut up a warning for unused variable
           size_t thisLen = len = VA_ARG(arg, size_t);
           bufNeeded += thisLen;
           thisArgLength += len;
@@ -543,7 +552,10 @@ transmitRespCommand(RESPCLIENT *rcp, byte *buf, size_t n)
 
 // RESP encodes parameters in a printf kind of way and sends them to the server
 // returns the server's reply in the form of a list of items in RESPROTO
-RESPROTO *
+
+// removed getRespReply and return an int (1==success) instead - ajf
+//RESPROTO *
+int 
 sendRespCommand(RESPCLIENT *rcp, char *fmt, ...)
 {
   char *p, *q, t;
@@ -562,15 +574,15 @@ sendRespCommand(RESPCLIENT *rcp, char *fmt, ...)
   RP_VA_ARG
 
   if (!argSizes)
-    return (NULL); // parser or malloc error
+    return 0;//(NULL); // parser or malloc error
 
   if (!fmtCopy)
   {
-  bufferFail:
-    if (fmtCopy)
-      rp_redisFree(fmtCopy);
+//  bufferFail:
+//    if (fmtCopy)
+//      rp_redisFree(fmtCopy);
     rcp->rppFrom->errorMsg = "Malloc error in sendRespCommand";
-    return (NULL);
+    return 0;//(NULL);
   }
 
   outBuffer = (char *)rcp->toBuf;
@@ -700,7 +712,7 @@ sendRespCommand(RESPCLIENT *rcp, char *fmt, ...)
         default:
         {
           rcp->rppFrom->errorMsg = "Invalid % code in sendRespCommand()";
-          return (NULL);
+          return 0;// (NULL);
         }
         }
       }
@@ -719,11 +731,18 @@ sendRespCommand(RESPCLIENT *rcp, char *fmt, ...)
 
   //fwrite(rcp->toBuf,(byte *)bufp-rcp->toBuf,1,stdout);
   // printf("\n\n");
-
+  if (fmtCopy)
+    rp_redisFree(fmtCopy);
+  if (argSizes)
+    rp_redisFree(argSizes);
   if (!transmitRespCommand(rcp, rcp->toBuf, (byte *)bufp - rcp->toBuf))
+/* need to separate these in order to do anything async
     return (NULL);
 
   return (getRespReply(rcp)); // everything was fine so far, so return the reply from the server
+*/
+    return 0;
+  return 1;
 }
 
 // Sees if anything went wrong. If everything's ok returns NULL , otherwise an error message.
