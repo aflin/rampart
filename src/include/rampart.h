@@ -319,6 +319,8 @@ void add_exit_func(rp_vfunc func, void *arg);
 
 void duk_rp_exit(duk_context *ctx, int ec);
 
+void duk_rp_fatal(void *udata, const char *msg);
+
 #define DUK_USE_FATAL_HANDLER(udata,msg) do { \
     const char *fatal_msg = (msg); /* avoid double evaluation */ \
     (void) udata; \

@@ -1727,6 +1727,13 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
 }
 /* end tickify */
 
+void duk_rp_fatal(void *udata, const char *msg){
+    fprintf(stderr, "*** FATAL ERROR: %s\n", (msg ? msg : "no message"));
+    fflush(stderr);
+    abort();
+}
+
+
 
 static void sigint_handler(int sig) {
     duk_rp_exit(main_ctx, 0);
@@ -1827,7 +1834,7 @@ int main(int argc, char *argv[])
         } while (lflimit > filelimit + 1);
     }
 
-    duk_context *ctx = duk_create_heap_default();
+    duk_context *ctx = duk_create_heap(NULL, NULL, NULL, NULL, duk_rp_fatal);
     if (!ctx)
     {
         fprintf(stderr,"could not create duktape context\n");

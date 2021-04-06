@@ -3066,7 +3066,7 @@ static void *http_dothread(void *arg)
 
 static duk_context *redo_ctx(int thrno)
 {
-    duk_context *thr_ctx = duk_create_heap_default();
+    duk_context *thr_ctx = duk_create_heap(NULL, NULL, NULL, NULL, duk_rp_fatal);
     duk_idx_t fno = 0;
     void *bc_ptr, *buf;
     duk_size_t bc_len;
@@ -4584,7 +4584,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         else
         {
-            thread_ctx[i] = duk_create_heap_default();
+            thread_ctx[i] = duk_create_heap(NULL, NULL, NULL, NULL, duk_rp_fatal);
             tctx = thread_ctx[i];
             /* do all the normal startup done in duk_cmdline but for each thread */
             duk_init_context(tctx);
