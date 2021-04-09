@@ -184,6 +184,21 @@ static void procstring(duk_context *ctx, RESPITEM *item, int retbuf)
   return;
 }
 
+#ifdef REMOVE_ME
+  //TODO: maybe add this back in but put it in procstring() ???
+  case RESPISBULKSTR:\
+  {\
+    size_t l = 1 + strnlen((const char *)item->loc, item->length);\
+    if (l < item->length || retbuf)\
+    { /* if it's binary, put it in a buffer */\
+      void *b = duk_push_fixed_buffer(ctx, item->length);\
+      memcpy(b, item->loc, item->length);\
+      break;\
+    } /* else fall through and copy string */\
+  }\
+
+#endif
+
 
 #define STANDARDCASES \
   case RESPISNULL:\
@@ -202,15 +217,6 @@ static void procstring(duk_context *ctx, RESPITEM *item, int retbuf)
     break;\
   }\
   case RESPISBULKSTR:\
-  {\
-    size_t l = 1 + strnlen((const char *)item->loc, item->length);\
-    if (l < item->length || retbuf)\
-    { /* if it's binary, put it in a buffer */\
-      void *b = duk_push_fixed_buffer(ctx, item->length);\
-      memcpy(b, item->loc, item->length);\
-      break;\
-    } /* else fall through and copy string */\
-  }\
   case RESPISSTR:\
   case RESPISPLAINTXT:\
   {\
@@ -252,6 +258,31 @@ static int array_push_single(duk_context *ctx, RESPROTO *response, int ridx, con
   return ridx;
 }
 
+/* assumes everything is in one array of ints 1 or 0*/
+static void push_response_array_bool(duk_context *ctx, RESPROTO *response, const char *fname, int retbuf)
+{
+  int ridx=1;
+
+  if(response->items->respType != RESPISARRAY)
+    RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
+
+  duk_push_array(ctx);    
+  while (ridx < response->nItems)
+  {
+    RESPITEM *item = &response->items[ridx];
+    switch(item->respType)
+    {
+      case RESPISINT:
+        duk_push_boolean(ctx, item->rinteger);
+        break;
+      default:
+        RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
+    }
+    duk_put_prop_index(ctx, -2, duk_get_length(ctx, -2));
+    ridx++;
+  }
+} 
+
 /* assumes everything is in one array */
 static void push_response_array(duk_context *ctx, RESPROTO *response, const char *fname, int retbuf)
 {
@@ -265,6 +296,34 @@ static void push_response_array(duk_context *ctx, RESPROTO *response, const char
   {
     ridx = array_push_single(ctx, response, ridx, fname, retbuf);
     duk_put_prop_index(ctx, -2, duk_get_length(ctx, -2));
+  }
+} 
+
+/* for zsets withscores */
+static void push_response_array_wscores(duk_context *ctx, RESPROTO *response, const char *fname, int retbuf, int ridx)
+{
+  int ii=0;
+
+  if(response->items->respType != RESPISARRAY)
+    RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
+
+  duk_push_array(ctx);    
+  while (ridx < response->nItems)
+  {
+    if(!(ii%2))
+      duk_push_object(ctx);
+
+    ridx = array_push_single(ctx, response, ridx, fname, retbuf);
+    if(!(ii%2))
+    {
+      duk_put_prop_string(ctx, -2, "value");
+    }
+    else
+    {
+      duk_put_prop_string(ctx,-2, "score");
+      duk_put_prop_index(ctx, -2, duk_get_length(ctx, -2));
+    }
+    ii++;
   }
 } 
 
@@ -385,12 +444,10 @@ static void rd_push_response(duk_context *ctx, RESPROTO *response, const char *f
       case 1:
         push_response_array(ctx, response, fname, retbuf);
         break;
-/* UNUSED
       case 2:
         duk_push_array(ctx);
-        printf("FIXME\n");
+        push_response_array(ctx, response, fname, retbuf);
         break;
-*/
       case 3:
         push_response_object(ctx, response, fname, retbuf);
         break;
@@ -418,6 +475,31 @@ static void rd_push_response(duk_context *ctx, RESPROTO *response, const char *f
         duk_put_prop_string(ctx, -2, "values");
         response->nItems+=2; //for free
         response->items-=2;
+        break;
+      case 7:
+        duk_push_object(ctx);
+        array_push_single(ctx, response, 1, fname, 0);
+        duk_put_prop_string(ctx, -2, "cursor");
+        response->nItems-=2;
+        response->items+=2;
+        push_response_array(ctx, response, fname, retbuf);
+        duk_put_prop_string(ctx, -2, "values");
+        response->nItems+=2; //for free
+        response->items-=2;
+        break;
+      case 8:
+        push_response_array_bool(ctx, response, fname, retbuf);
+        break;
+      case 9:
+        push_response_array_wscores(ctx, response, fname, retbuf, 1);
+        break;
+      case 10:
+        duk_push_object(ctx);
+        array_push_single(ctx, response, 1, fname, 0);
+        duk_put_prop_string(ctx, -2, "cursor");
+        push_response_array_wscores(ctx, response, fname, retbuf, 3);
+        duk_put_prop_string(ctx, -2, "values");
+        break;        
     }      
   }
   else
@@ -440,6 +522,37 @@ static void rd_push_response(duk_context *ctx, RESPROTO *response, const char *f
   }\
   duk_pop(ctx);\
 }while(0)
+
+static void push_response_cb_scores(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
+{
+  int total=0, ii=0;
+  int isasync = flag & ASYNCFLAG, retbuf = flag & RETBUFFLAG;
+
+  if(response->items->respType != RESPISARRAY)
+    RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
+
+  while (ridx < response->nItems)
+  {
+    if(!(ii%2))
+      duk_push_object(ctx);
+
+    ridx = array_push_single(ctx, response, ridx, fname, retbuf);
+    if(!(ii%2))
+    {
+      duk_put_prop_string(ctx, -2, "value");
+    }
+    else
+    {
+      duk_put_prop_string(ctx,-2, "score");
+      docallback;
+      duk_pop(ctx); //discard return from callback
+    }
+    ii++;
+  }
+
+  cb_end:
+  duk_push_int(ctx, total);
+}
 
 static void push_arrays(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
 {
@@ -473,15 +586,43 @@ static void push_response_cb_array(duk_context *ctx, RESPROTO *response, duk_idx
   push_arrays(ctx, response, cb_idx, this_idx, fname, flag, 0);
 }
 
-/* expecting [key,val,key,val,...] -> {key:val, key:val,...}  */
-static void push_response_cb_keyval(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag)
+static void push_response_cb_single_bool(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag)
 {
-  int total=0, ridx=1, ii=0;
-  int isasync = flag & ASYNCFLAG, retbuf = flag & RETBUFFLAG;
+  int total=0;
+  int isasync = flag & ASYNCFLAG;
+  int ridx=1;
 
   if(response->items->respType != RESPISARRAY)
     RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
 
+  while (ridx < response->nItems)
+  {
+    RESPITEM *item = &response->items[ridx];
+    switch(item->respType)
+    {
+      case RESPISINT:
+        duk_push_boolean(ctx, item->rinteger);
+        break;
+      default:
+        RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
+    }
+    docallback;
+    duk_pop(ctx); //discard return from callback
+    ridx++;
+  }
+
+  cb_end:
+  duk_push_int(ctx, total);
+}
+
+/* expecting [key,val,key,val,...] -> {key:val, key:val,...}  */
+static void push_response_cb_keyval(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
+{
+  int total=0, ii=0;
+  int isasync = flag & ASYNCFLAG, retbuf = flag & RETBUFFLAG;
+
+  if(response->items->respType != RESPISARRAY)
+    RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
   while (ridx < response->nItems)
   {
     if(!(ii%2))
@@ -552,7 +693,8 @@ static void rd_push_response_cb(duk_context *ctx, RESPROTO *response, duk_idx_t 
         duk_push_int(ctx,0);
         return;
       }
-      type=0;//only one item, return it as is regardless of type
+      if(flag != 5)
+        type=0;//only one item, return it as is regardless of type
     }
   }
   else
@@ -574,7 +716,6 @@ static void rd_push_response_cb(duk_context *ctx, RESPROTO *response, duk_idx_t 
       docallback;
       duk_pop(ctx); //discard return from callback
       duk_push_int(ctx, total);
-      cb_end:
       break;
     }
     case 1:
@@ -584,15 +725,53 @@ static void rd_push_response_cb(duk_context *ctx, RESPROTO *response, duk_idx_t 
       push_response_cb_array(ctx, response, cb_idx, this_idx, fname, flag);
       break;
     case 3:
-      push_response_cb_keyval(ctx, response, cb_idx, this_idx, fname, flag);
+      push_response_cb_keyval(ctx, response, cb_idx, this_idx, fname, flag, 1);
       break;
     case 4:
       push_response_cb_keyval_pairs(ctx, response, cb_idx, this_idx, fname, flag);
       break;
+    case 5:
+    {
+      RESPITEM *item = response->items;
+      int isasync = flag & ASYNCFLAG;
+      int total=0;
+      switch(item->respType)
+      {
+        case RESPISINT:
+          duk_push_boolean(ctx, item->rinteger);
+          break;
+        default:
+          RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
+      }
+      docallback;
+      duk_pop(ctx); //discard return from callback
+      duk_push_int(ctx, total);
+      break;
+    }
+    case 6:
+      push_response_cb_keyval(ctx, response, cb_idx, this_idx, fname, flag, 3);
+      array_push_single(ctx, response, 1, fname, 0); //return cursor
+      break;
+    case 7:
+      push_arrays(ctx, response, cb_idx, this_idx, fname, flag, 3);
+      array_push_single(ctx, response, 1, fname, 0); //return cursor
+      break;
+    case 8:
+      push_response_cb_single_bool(ctx, response, cb_idx, this_idx, fname, flag);
+      break;
+    case 9:
+      push_response_cb_scores(ctx, response, cb_idx, this_idx, fname, flag, 1);
+      break;
+    case 10:
+      push_response_cb_scores(ctx, response, cb_idx, this_idx, fname, flag, 3);
+      array_push_single(ctx, response, 1, fname, 0);
+      break;
   }
+  cb_end:
+  return;
 }
 
-/*************** FUNCTION FOR createClient ****************************** */
+/*************** FUNCTION FOR init ****************************** */
 #define checkresp do {\
   /*printenum(ctx,-1);*/\
   if(duk_has_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("thread_copied") ) ){\
@@ -727,6 +906,40 @@ static duk_ret_t duk_rp_rd_close(duk_context *ctx)
 }
 
 
+#define IF_FMT_INSERT \
+    if( duk_is_buffer_data(ctx, i))\
+    {\
+      duk_push_int(ctx, (int)duk_get_length(ctx, i));\
+      i++;\
+      duk_insert(ctx, i);\
+      top=duk_get_top(ctx);\
+      strcat(fmt," %b");      \
+    }\
+    else if (duk_is_string(ctx, i))\
+      strcat(fmt," %s");\
+    else if (duk_is_number(ctx, i))\
+    {\
+      double d, d2 = duk_get_number(ctx, i);\
+      d = (double)((int)d2);\
+      d -= d2;\
+      if( ! (d<0.0 || d>0.0) )\
+        strcat(fmt," %lld");\
+      else\
+        strcat(fmt," %lf");\
+    }
+
+#define ELSE_IF_FMT_INSERT\
+  else if (duk_is_object(ctx, i))\
+  {\
+    duk_json_encode(ctx, i);\
+    strcat(fmt," %s");\
+  }\
+  else\
+  {\
+    duk_safe_to_string(ctx,i);\
+    strcat(fmt," %s");\
+  }
+
 /* generic function for all the rd.xxx functions */
 
 static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
@@ -735,7 +948,7 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
   RESPROTO *response;
   char *fmt=NULL;
   duk_idx_t top=0, i=0;
-  int gotfunc=0, isasync=0, commandtype=0, retbuf=0;
+  int gotfunc=0, isasync=0, commandtype=0, retbuf=0, totalels=0;
   const char *fname, *cname;
   duk_size_t sz;
 
@@ -755,10 +968,40 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
 
   top=duk_get_top(ctx);
 
+  /* get count of elements for the format, including array members and object keys and vals */
+  while(i < top)
+  {
+    if(duk_is_ecmascript_function(ctx, i)||duk_is_boolean(ctx, i))
+    {
+      i++;
+      continue;
+    }
+    else if(duk_is_array(ctx,i))
+      totalels += (int)duk_get_length(ctx,i);
+    else if(duk_is_buffer_data(ctx,i))
+      totalels++;
+    else if(duk_is_object(ctx, i))
+    {
+      int keys=0;
+      duk_enum(ctx, i, 0);
+      while(duk_next(ctx, -1, 0))
+      {
+        duk_pop(ctx);
+        keys++;
+      }
+      duk_pop(ctx);
+      totalels += keys * 2;
+    }
+    else
+      totalels++;
+    i++;
+  }
+  i=0;
+
   duk_push_current_function(ctx);
   duk_get_prop_string(ctx, -1, "command");
   cname=duk_get_lstring(ctx, -1, &sz);
-  REMALLOC(fmt, 5 * (size_t)top + (sz + 1) );
+  REMALLOC(fmt, 5 * (size_t)totalels + (sz + 1) );
   strcpy(fmt, cname);
   duk_pop(ctx);
 
@@ -769,6 +1012,15 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
   duk_get_prop_string(ctx, -1, "fname");
   fname = duk_get_string(ctx, -1);
   duk_pop_2(ctx);
+
+  //zpop is always 9
+  if(commandtype==9 && strcmp(fname,"zpopmin") && strcmp(fname,"zpopmax"))
+  {
+    duk_idx_t last = top-1;
+    while(duk_is_boolean(ctx, last) || duk_is_function(ctx, last)) last--;
+    if( !duk_is_string(ctx,last) || strcasecmp("WITHSCORES", duk_get_string(ctx,last))!=0 )
+      commandtype=1;
+  }
 
   if( !strcmp( (fname + sz - 6), "_async") )
     isasync=1;
@@ -782,26 +1034,7 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
 
   while (i < top)
   {
-    if( duk_is_buffer_data(ctx, i))
-    {
-      duk_push_int(ctx, (int)duk_get_length(ctx, i));
-      i++;
-      duk_insert(ctx, i);
-      top=duk_get_top(ctx);
-      strcat(fmt," %b");      
-    }
-    else if (duk_is_string(ctx, i))
-      strcat(fmt," %s");
-    else if (duk_is_number(ctx, i))
-    {
-      double d, d2 = duk_get_number(ctx, i);
-      d = (double)((int)d2);
-      d -= d2;
-      if( ! (d<0.0 || d>0.0) )
-        strcat(fmt," %lld");
-      else
-        strcat(fmt," %lf");
-    }
+    IF_FMT_INSERT
     else if (duk_is_ecmascript_function(ctx, i))
     {
       if (!gotfunc)
@@ -822,10 +1055,41 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
       top=duk_get_top(ctx);
       i--;
     }
+    else if (duk_is_array(ctx, i))
+    {
+      duk_idx_t oldi=i;
+      duk_uarridx_t j = 0, l = duk_get_length(ctx, i);
+      for (;j<l;j++)
+      {
+        i++;
+        duk_get_prop_index(ctx, oldi, j);
+        duk_insert(ctx, i);
+        IF_FMT_INSERT
+        ELSE_IF_FMT_INSERT
+      }
+      duk_remove(ctx, oldi);
+      i--;
+      top=duk_get_top(ctx);
+    } 
     else if (duk_is_object(ctx, i))
     {
-      duk_json_encode(ctx, i);
-      strcat(fmt," %s");
+      duk_idx_t oldi=i;
+      duk_enum(ctx, i, 0);
+      while(duk_next(ctx, -1, 1))
+      {
+        i++; //new location for key
+        duk_pull(ctx, -2);//do key first
+        duk_insert(ctx, i);
+        strcat(fmt," %s");
+        i++;//new location for val
+        duk_insert(ctx, i);
+        IF_FMT_INSERT
+        ELSE_IF_FMT_INSERT
+      }
+      duk_pop(ctx);//enum
+      duk_remove(ctx, oldi);//object
+      i--;
+      top=duk_get_top(ctx);
     }
     else if (duk_is_boolean(ctx, i))
     {
@@ -1002,8 +1266,8 @@ static duk_ret_t duk_rp_cc_dofmt(duk_context *ctx)
 }
 
 
-static duk_ret_t duk_rp_ramvar_destroy(duk_context *ctx);
-static void duk_rp_ramvar_makeproxy(duk_context *ctx);
+static duk_ret_t duk_rp_proxyobj_destroy(duk_context *ctx);
+static void duk_rp_proxyobj_makeproxy(duk_context *ctx);
 
 /* normally pointer is in this.  When copied in server.c, 
    the only place we can copy respclient to is targ */
@@ -1039,12 +1303,12 @@ static void duk_rp_ramvar_makeproxy(duk_context *ctx);
       hname=duk_get_string(ctx, -1);\
       duk_put_prop_string(ctx, 0, "_hname");\
     }\
-    else RP_THROW(ctx, "ramvar: internal error");\
+    else RP_THROW(ctx, "proxyObj: internal error");\
   }\
 } while(0);
 
   /* this does not get carried over and for some reason cannot be
-     added to properties of the proxy object at the bottom of duk_rp_ramvar()
+     added to properties of the proxy object at the bottom of duk_rp_proxyobj()
      constructor function.
   */
 #define copytotarg do{\
@@ -1052,7 +1316,7 @@ static void duk_rp_ramvar_makeproxy(duk_context *ctx);
     ||\
     !duk_has_prop_string(ctx, 0, "_destroy") )\
   {\
-    duk_push_c_function(ctx, duk_rp_ramvar_destroy, 0);\
+    duk_push_c_function(ctx, duk_rp_proxyobj_destroy, 0);\
     duk_put_prop_string(ctx, 0, "_destroy");\
 \
     duk_push_string(ctx, hname);\
@@ -1066,7 +1330,7 @@ static void duk_rp_ramvar_makeproxy(duk_context *ctx);
         duk_pop(ctx);\
     } else duk_pop(ctx);\
 \
-    duk_rp_ramvar_makeproxy(ctx);\
+    duk_rp_proxyobj_makeproxy(ctx);\
     duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("proxy_obj"));\
   }\
 } while(0)
@@ -1075,7 +1339,7 @@ static void duk_rp_ramvar_makeproxy(duk_context *ctx);
  proxy get
 ************* */
 
-static duk_ret_t duk_rp_ramvar_get(duk_context *ctx)
+static duk_ret_t duk_rp_proxyobj_get(duk_context *ctx)
 {
   RESPCLIENT *rcp=NULL;
   RESPROTO *response;
@@ -1098,14 +1362,14 @@ static duk_ret_t duk_rp_ramvar_get(duk_context *ctx)
   copytotarg;
 
   if( rcp == NULL )
-    RP_THROW(ctx, "error: rampart-redis.ramvar(): container object has been destroyed");    
+    RP_THROW(ctx, "error: rampart-redis.proxyObj(): container object has been destroyed");    
   
   duk_pop_3(ctx);// target, key, this
 
   duk_push_sprintf(ctx, "HGET %s %s", hname, key);
 
   response = rc_send(ctx, rcp);
-  rd_push_response(ctx, response, "ramvar", 1);
+  rd_push_response(ctx, response, "proxyObj", 1);
 //  duk_get_prop_index(ctx, -1, 0);
   if(duk_is_null(ctx, -1) || duk_is_undefined(ctx, -1) )
   {
@@ -1122,7 +1386,7 @@ static duk_ret_t duk_rp_ramvar_get(duk_context *ctx)
  proxy set
 ************* */
 
-static duk_ret_t duk_rp_ramvar_set(duk_context *ctx)
+static duk_ret_t duk_rp_proxyobj_set(duk_context *ctx)
 {
   RESPCLIENT *rcp=NULL;
   RESPROTO *response;
@@ -1151,7 +1415,7 @@ static duk_ret_t duk_rp_ramvar_set(duk_context *ctx)
   }
   
   if( rcp == NULL ) return 0;
-//    RP_THROW(ctx, "error: rampart-redis.ramvar(): container object has been destroyed");    
+//    RP_THROW(ctx, "error: rampart-redis.proxyObj(): container object has been destroyed");    
   
   /* add local copy as null */
   duk_push_null(ctx);
@@ -1169,7 +1433,7 @@ static duk_ret_t duk_rp_ramvar_set(duk_context *ctx)
   duk_pull(ctx, 0);
   duk_get_prop_string(ctx, -1, "byteLength");
   response = rc_send(ctx, rcp);
-  rd_push_response(ctx, response, "ramvar", 1);
+  rd_push_response(ctx, response, "proxyObj", 1);
   duk_get_prop_index(ctx, -1, 0);
   return 0;
 }
@@ -1177,7 +1441,7 @@ static duk_ret_t duk_rp_ramvar_set(duk_context *ctx)
  proxy del
 ************* */
 
-static duk_ret_t duk_rp_ramvar_del(duk_context *ctx)
+static duk_ret_t duk_rp_proxyobj_del(duk_context *ctx)
 {
   RESPCLIENT *rcp=NULL;
   RESPROTO *response;
@@ -1202,13 +1466,13 @@ static duk_ret_t duk_rp_ramvar_del(duk_context *ctx)
     return 0;
 
   if( rcp == NULL )
-    RP_THROW(ctx, "error: rampart-redis.ramvar(): container object has been destroyed");    
+    RP_THROW(ctx, "error: rampart-redis.proxyObj(): container object has been destroyed");    
   
   duk_pop_2(ctx);// targ, key, this
 
   duk_push_sprintf(ctx, "HDEL %s %s", hname, key);
   response = rc_send(ctx, rcp);
-  rd_push_response(ctx, response, "ramvar", 1);
+  rd_push_response(ctx, response, "proxyObj", 1);
   duk_get_prop_index(ctx, -1, 0);
   return 0;
 }
@@ -1216,7 +1480,7 @@ static duk_ret_t duk_rp_ramvar_del(duk_context *ctx)
 /************
  destroy proxy
 ************* */
-static duk_ret_t duk_rp_ramvar_destroy(duk_context *ctx)
+static duk_ret_t duk_rp_proxyobj_destroy(duk_context *ctx)
 {
   RESPCLIENT *rcp=NULL;
   RESPROTO *response;
@@ -1246,13 +1510,13 @@ static duk_ret_t duk_rp_ramvar_destroy(duk_context *ctx)
   duk_pop(ctx);//enum
 
   if( rcp == NULL )
-    RP_THROW(ctx, "error: rampart-redis.ramvar(): container object has been destroyed");    
+    RP_THROW(ctx, "error: rampart-redis.proxyObj(): container object has been destroyed");    
   
   duk_pop(ctx);// this
 
   duk_push_sprintf(ctx, "DEL %s", hname);
   response = rc_send(ctx, rcp);
-  rd_push_response(ctx, response, "ramvar", 1);
+  rd_push_response(ctx, response, "proxyObj", 1);
   duk_get_prop_index(ctx, -1, 0);
   free(hname);
   return 0;
@@ -1261,7 +1525,7 @@ static duk_ret_t duk_rp_ramvar_destroy(duk_context *ctx)
 /************
  proxy ownKeys
 ************* */
-static duk_ret_t duk_rp_ramvar_ownkeys(duk_context *ctx)
+static duk_ret_t duk_rp_proxyobj_ownkeys(duk_context *ctx)
 {
   RESPCLIENT *rcp=NULL;
   RESPROTO *response;
@@ -1284,11 +1548,11 @@ static duk_ret_t duk_rp_ramvar_ownkeys(duk_context *ctx)
   duk_pop(ctx);
   
   if( rcp == NULL )
-    RP_THROW(ctx, "error: rampart-redis.ramvar(): container object has been destroyed");    
+    RP_THROW(ctx, "error: rampart-redis.proxyObj(): container object has been destroyed");    
   
   duk_push_sprintf(ctx, "HKEYS %s", hname);
   response = rc_send(ctx, rcp);
-  rd_push_response(ctx, response, "ramvar", 1);
+  rd_push_response(ctx, response, "proxyObj", 1);
 //  duk_get_prop_index(ctx, -1, 0);
 
   duk_push_this(ctx);
@@ -1321,30 +1585,30 @@ static duk_ret_t duk_rp_ramvar_ownkeys(duk_context *ctx)
  make the proxy obj
 ******************** */
 
-static void duk_rp_ramvar_makeproxy(duk_context *ctx)
+static void duk_rp_proxyobj_makeproxy(duk_context *ctx)
 {
   duk_push_object(ctx); //handler
-  duk_push_c_function(ctx, duk_rp_ramvar_ownkeys, 1);
+  duk_push_c_function(ctx, duk_rp_proxyobj_ownkeys, 1);
   duk_put_prop_string(ctx, -2, "ownKeys");
-  duk_push_c_function(ctx, duk_rp_ramvar_get, 2);
+  duk_push_c_function(ctx, duk_rp_proxyobj_get, 2);
   duk_put_prop_string(ctx, -2, "get");
-  duk_push_c_function(ctx, duk_rp_ramvar_del, 2);
+  duk_push_c_function(ctx, duk_rp_proxyobj_del, 2);
   duk_put_prop_string(ctx, -2, "deleteProperty");
-  duk_push_c_function(ctx, duk_rp_ramvar_set, 4);
+  duk_push_c_function(ctx, duk_rp_proxyobj_set, 4);
   duk_put_prop_string(ctx, -2, "set");
 }
 
 /*******************
- ramvar constructor
+ proxyObj constructor
 ******************** */
 
-static duk_ret_t duk_rp_ramvar(duk_context *ctx)
+static duk_ret_t duk_rp_proxyobj(duk_context *ctx)
 {
   if (!duk_is_constructor_call(ctx))
     return DUK_RET_TYPE_ERROR;
   
   duk_push_this(ctx);
-  (void)REQUIRE_STRING(ctx, 0, "createClient.ramvar(name) requires an argument (name)");
+  (void)REQUIRE_STRING(ctx, 0, "proxyObj(name) requires a String (name)");
 
   /* copy over the client pointer */
   duk_push_current_function(ctx);
@@ -1353,7 +1617,7 @@ static duk_ret_t duk_rp_ramvar(duk_context *ctx)
   duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("respclient"));
   duk_pull(ctx, 0);
   duk_put_prop_string(ctx, -2, "_hname");
-  duk_rp_ramvar_makeproxy(ctx);
+  duk_rp_proxyobj_makeproxy(ctx);
   
   duk_dup(ctx, -1);
   duk_put_prop_string( ctx, 0, DUK_HIDDEN_SYMBOL("proxy_obj")); 
@@ -1367,7 +1631,7 @@ static duk_ret_t duk_rp_ramvar(duk_context *ctx)
 /* **************************************************
    redis(host,port) constructor
    var redis = require("rampart-redis");
-   var rd=new redis.createClient(6379, "127.0.0.1");
+   var rcl=new redis.init(6379, "127.0.0.1");
 
    ************************************************** */
 static duk_ret_t duk_rp_cc_constructor(duk_context *ctx)
@@ -1407,7 +1671,7 @@ static duk_ret_t duk_rp_cc_constructor(duk_context *ctx)
   duk_push_c_function(ctx, _close_, 1);
   duk_set_finalizer(ctx, -2);
 
-  duk_push_c_function(ctx, duk_rp_ramvar, 1);
+  duk_push_c_function(ctx, duk_rp_proxyobj, 1);
 
   duk_push_object(ctx); //put it in an object so there is only copy with multiple references
   duk_push_pointer(ctx, (void *)respClient);
@@ -1418,9 +1682,9 @@ static duk_ret_t duk_rp_cc_constructor(duk_context *ctx)
   duk_put_prop_string(ctx, -2, "port");
   duk_dup(ctx, -1);
   duk_put_prop_string(ctx, -4, DUK_HIDDEN_SYMBOL("respclient")); /* copy on this */
-  duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("respclient")); /* copy on duk_rp_ramvar */
+  duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("respclient")); /* copy on duk_rp_proxyobj */
 
-  duk_put_prop_string(ctx, -2, "ramvar"); // c_function into this
+  duk_put_prop_string(ctx, -2, "proxyObj"); // c_function into this
 
   return 0;
 }
@@ -1463,7 +1727,8 @@ char *commandnames[] = {
 /* 230 */"zremrangebyrank", "zremrangebyscore", "zrevrange", "zrevrangebyscore", "zrevrank", "zscore", "zunionstore", "scan", "sscan", "hscan",
 /* 240 */"zscan", "xinfo", "xadd", "xtrim", "xdel", "xrange", "xrevrange", "xlen", "xread_count", "xread_block",
 /* 250 */"xgroup", "xreadgroup", "xack", "xclaim", "xpending", "latency_doctor", "latency_graph", "latency_history", "latency_latest", "latency_reset",
-/* 260 */"latency_help", "reset", "getdel", "getex", "hrandfield"
+/* 260 */"latency_help", "reset", "getdel", "getex", "hrandfield", "lmove", "smismember", "zdiff", "zdiffstore", "zinter",
+/* 270 */"zunion", "zrangestore", "zmscore", "zrandmember"
 };
 char *commandcommands[] = {
 /* 000 */"ACL LOAD", "ACL SAVE", "ACL LIST", "ACL USERS", "ACL GETUSER", "ACL SETUSER", "ACL DELUSER", "ACL CAT", "ACL GENPASS", "ACL WHOAMI",
@@ -1492,7 +1757,8 @@ char *commandcommands[] = {
 /* 230 */"ZREMRANGEBYRANK", "ZREMRANGEBYSCORE", "ZREVRANGE", "ZREVRANGEBYSCORE", "ZREVRANK", "ZSCORE", "ZUNIONSTORE", "SCAN", "SSCAN", "HSCAN",
 /* 240 */"ZSCAN", "XINFO", "XADD", "XTRIM", "XDEL", "XRANGE", "XREVRANGE", "XLEN", "XREAD COUNT", "XREAD BLOCK",
 /* 250 */"XGROUP", "XREADGROUP", "XACK", "XCLAIM", "XPENDING", "LATENCY DOCTOR", "LATENCY GRAPH", "LATENCY HISTORY", "LATENCY LATEST", "LATENCY RESET",
-/* 260 */"LATENCY HELP", "RESET", "GETDEL", "GETEX", "HRANDFIELD"
+/* 260 */"LATENCY HELP", "RESET", "GETDEL", "GETEX", "HRANDFIELD", "LMOVE", "SMISMEMBER", "ZDIFF", "ZDIFFSTORE", "ZINTER",
+/* 270 */"ZUNION", "ZRANGESTORE", "ZMSCORE", "ZRANDMEMBER"
 };
 
 // 0 - treated as "val" - single response only
@@ -1501,7 +1767,11 @@ char *commandcommands[] = {
 // 3 - treated as [key, val, key, val, ...] - make object
 // 4 - treated as [ [key,val], [key,val], ...] - make object
 // 5 - like 0 but expects 0/1 and returns boolean
-
+// 6 - scans with cursors - objects
+// 7 - scans with cursors - arrays
+// 8 - array of bools
+// 9 - same as 1, except if last option is WITHSCORES make objects with keys score & value
+//10 - only for zscan, cross between 7 and 9
 int commandtypes[] = {
 /* 000 */0, 0, 1, 1, 1, 0, 0, 1, 0, 0,
 /* 010 */0, 1, 0, 0, 0, 0, 0, 1, 0, 0,
@@ -1520,16 +1790,17 @@ int commandtypes[] = {
 /* 140 */5, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 /* 150 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 /* 160 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 170 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 180 */0, 0, 0, 5, 0, 0, 0, 0, 0, 0,
-/* 190 */0, 0, 0, 0, 0, 0, 0, 0, 3, 0,
-/* 200 */2, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 210 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 220 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 230 */0, 0, 0, 0, 0, 0, 0, 0, 0, 6,
-/* 240 */0, 0, 0, 0, 0, 4, 0, 0, 0, 0,
+/* 170 */0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
+/* 180 */0, 0, 0, 5, 0, 0, 1, 0, 5, 0,
+/* 190 */0, 0, 1, 0, 0, 1, 1, 0, 3, 0,
+/* 200 */2, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+/* 210 */0, 0, 0, 0, 0, 0, 0, 0, 0, 9,
+/* 220 */0, 9, 9, 9, 1, 9, 9, 0, 0, 0,
+/* 230 */0, 0, 9, 9, 0, 0, 9, 0, 7, 6,
+/* 240 */10, 0, 0, 0, 0, 4, 0, 0, 0, 0,
 /* 250 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 260 */0, 0, 0, 0, 1
+/* 260 */0, 0, 0, 0, 1, 0, 8, 9, 9, 9,
+/* 270 */9, 0, 1, 9
 };
 
 
@@ -1560,7 +1831,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
   duk_put_prop_string(ctx, -2, "prototype"); /* -> stack: [ ret-->[prototype-->[exe=fn_exe,...]] ] */
 
-  duk_put_prop_string(ctx, -2, "createClient"); /* -> stack: [ ret ] */
+  duk_put_prop_string(ctx, -2, "init"); /* -> stack: [ ret ] */
 
   return 1;
 }
