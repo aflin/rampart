@@ -14,6 +14,7 @@ var rdexec = trim(ret.stdout);
 
 ret = exec(rdexec, {background: true}, "--port", "13287");
 
+sleep(0.5);
 var rpid = ret.pid;
 if (!kill(rpid, 0)) {
     fprintf(stderr, "Failed to start redis-server\n");
@@ -24,11 +25,26 @@ sleep(0.5);
 
 var rcl=new redis.init(13287);
 
+rcl.flushall();
+
+var ret = rcl.info();
+var ver = ret.match(/redis_version.*/)[0].match(/[\d\./]+/)[0].split(".");
+var vers=sprintf("%d%0.2d%0.2d", parseInt(ver[0]), parseInt(ver[1]), parseInt(ver[2]));
+
+//console.log(vers);
+
+if(vers < 60201) {
+    cleanup();
+    console.log("version 6.2.1 or greater required for test");
+    process.exit(1);
+}
+
+
 function cleanup() {
     kill(rpid, 15);
     for (var i=0; i<50; i++) {
         if(!kill(rpid, 0)) {
-            process.exit();
+            return;
         }
         sleep(0.1);
         kill(rpid, 15);
@@ -57,7 +73,7 @@ function testFeature(name,test)
     {
         printf(">>>>> FAILED <<<<<\n");
         if(error) console.log(error);
-        //cleanup();
+        cleanup();
         process.exit(1);
     }
     if(error) console.log(error);
@@ -137,7 +153,7 @@ myset._destroy();
 
 testFeature("redis proxyObj -- destroy", function() {
     var set=rcl.hkeys("myset");
-    return (set === null);
+    return (set.length == 0);
 });
 
 testFeature("K/V  Commands  -- set/get/getdel", function() {
@@ -291,7 +307,7 @@ testFeature("List Commands  -- lindex/(l|r)pushx/(l|r)pop/rpoplpush", function()
     var r8=rcl.lindex("mylist2", 0);
     rcl.del("mylist2");
     rcl.del("mylist");
-    return r1=="two" && r2==0 && r3==0 && r4===null && r9==2 &&
+    return r1=="two" && r2==0 && r3==0 && r4.length==0 && r9==2 &&
            r5=="one" && r6=="three" && r7=="two" && r8=="one";
 });
 
@@ -448,6 +464,65 @@ testFeature("Zset Commands  -- zrev(rank|range(bylex|byscore))/zscan", function(
     return r1==1 && r2[2].value=='y' && r3[0]=='a' && r4[25]=='b' &&
            r5.cursor==0 && r5.values[0].value=='b';
 });
+
+testFeature("Xstream Commds -- xadd/xrange/xread", function(){
+    var ms= new Date().getTime();
+    var r1=rcl.xadd("x1","*", "mess1a","val1a", "mess2a", "val2a");
+    var r1=rcl.xadd("x1","*", "mess1","val1", "mess2", "val2");
+    rcl.xadd("x2","*", "mess1","val1", "mess2", "val2");
+    var r2=rcl.xadd("x1", "MAXLEN", "=", 2, "*", "mess3","val3");
+    var r3=rcl.xrange("x1", sprintf("%d",ms), "+");
+    var r4=rcl.xread("STREAMS", "x1", "x2", "0-0", "0-0");
+    var r5 = ( (r4[0].data.length==2 || r4[0].stream=="x1") &&
+               (r4[1].data.length==1 || r4[1].stream=="x2") );
+    return Object.keys(r3).length==2 && r5
+});
+
+/* todo - test async somehow
+
+console.log(
+rcl.format("XINFO STREAM x1")
+);
+
+process.exit();
+rcl.xread("STREAMS", "x1", "x2", "0-0", "0-0", function(x) {
+    printf("Sync Callback:\n%3J\n", x);
+});
+
+
+
+rcl.subscribe("one", "two", function(x){ 
+    console.log("callback:",x);
+    if(x[0]=="message")
+     setTimeout(function(){
+        rcl.publish("one", "on going...");
+     },1000);
+    if(x[0]=="unsubscribe" && x[2] == 0 )
+    {
+        console.log("closing");
+        this.close();
+    }
+});
+
+rcl.publish("one","sync hello");
+
+
+
+
+rcl.xread_auto_async({ x1:"0-0", x2:"0-0", x3:"0-0", x4:"0-0"}, function(x)
+{
+    this.xreadArgs.x1=false;
+    printf("Callback:\n%3J\n", x);
+});
+
+
+rcl.xread_block_async(0, "STREAMS", "x1", "x2", "$", "$", function(x)
+{
+    printf("BLOCK Callback:\n%3J\n", x);
+//    rcl.close_async();
+});
+
+*/
 
 rcl.flushall();
 cleanup();

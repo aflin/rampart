@@ -471,21 +471,27 @@ int parseResProto(RESPROTO *rpp, byte *buf, size_t bufLen, int newBuffer)
     {
     case '*':
     {
-      thisItem->respType = RESPISARRAY;
+      thisItem->respType=RESPISARRAY;
 
-      if (!parseRespNumber(rpp, p + 1, &floatingPoint, &integer))
-        return (respParseError(rpp, "RESP invalid integer array length after '*'"));
+      if(!parseRespNumber(rpp,p+1,&floatingPoint,&integer))
+        return(respParseError(rpp,"RESP invalid integer array length after '*'"));
 
-      thisItem->length = integer;
+      thisItem->length=integer;
 
-      decrementArray(rpp); // PBR added March 30th 2021 to solve a conflicting understanding with RESP
-      if (thisItem->length != 0) // if it's not the 0 length array
+      decrementArray(rpp); // PBR added March 30th 2021 to solve a conflicting understanding with RESP docs
+
+      if(integer<0) // ajf caught this PBR 2021-04-14 : "-1 is the same as null -ajf"
       {
+        integer=0;
+        thisItem->length=0;
+        thisItem->respType=RESPISNULL;
+      }
 
-        if (rpp->arrayDepth >= RESPNESTEDARRAYMAX)
-          return (respParseError(rpp, "RESP array nesting exceeded limit"));
-
-        rpp->arrayNest[rpp->arrayDepth++] = (uint32_t)integer;
+      if(thisItem->length!=0) // if it's not the 0 length array
+      {
+        if(rpp->arrayDepth>=RESPNESTEDARRAYMAX)
+          return(respParseError(rpp,"RESP array nesting exceeded limit"));
+        rpp->arrayNest[rpp->arrayDepth++]=(uint32_t)integer;
       }
       ++rpp->nItems;
       break;

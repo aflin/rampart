@@ -2534,7 +2534,7 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
     }
 
     /* websockets: check for disconnect request */
-    if(c->request->disconnect)
+    if(c->request && c->request->disconnect)
     {
         evhtp_ws_do_disconnect(c->request);
         return;

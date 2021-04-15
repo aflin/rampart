@@ -3180,6 +3180,8 @@ static duk_context *redo_ctx(int thrno)
     duk_push_pointer(thr_ctx, thread_base[thrno]);
     duk_put_prop_string(thr_ctx, -2, "elbase");
     duk_pop(thr_ctx);
+    duk_dup(thr_ctx,0);
+    duk_put_global_string(thr_ctx, DUK_HIDDEN_SYMBOL("thread_funcstash"));
 
     duk_destroy_heap(thread_ctx[thrno]);
     thread_ctx[thrno] = thr_ctx;
@@ -3342,9 +3344,10 @@ extern struct event_base *elbase;
 */
 
 /* kinda hidden, but visible from printstack */
-/* TODO: replace RP_HIDDEN_SYMBOL with DUK_HIDDEN_SYMBOL */
+/* DONE: replace RP_HIDDEN_SYMBOL with DUK_HIDDEN_SYMBOL */
 //#define RP_HIDDEN_SYMBOL(s) " # " s
 #define RP_HIDDEN_SYMBOL(s) DUK_HIDDEN_SYMBOL(s)
+
 static int getmod(DHS *dhs)
 {
     duk_idx_t idx=dhs->func_idx;
@@ -3666,6 +3669,8 @@ static void http_callback(evhtp_request_t *req, void *arg)
         }
     }
 
+    duk_get_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("thread_funcstash")); //this should be at index 0;
+
     if(dhs->module==MODULE_FILE)
     {
         int res=0;
@@ -3739,6 +3744,8 @@ static void http_callback(evhtp_request_t *req, void *arg)
 
 //    duk_push_undefined(dhs->ctx);
 //    duk_put_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("clreq"));
+    // should only be thread_funcstash, but remove everything
+    while (duk_get_top(dhs->ctx) > 0) duk_pop(dhs->ctx); // DUK_HIDDEN_SYMBOL("thread_funcstash")
     return;
 }
 
@@ -3869,6 +3876,7 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     duk_push_pointer(ctx, (void*)base);
     duk_put_prop_string(ctx, -2, "elbase");
     duk_pop(ctx);
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("thread_funcstash"));
 
     /* for websocket requests, no timeout */
     ctx=thread_ctx[*thrno+totnthreads];
@@ -3876,6 +3884,7 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     duk_push_pointer(ctx, (void*)base);
     duk_put_prop_string(ctx, -2, "elbase");
     duk_pop(ctx);
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("thread_funcstash"));
 
     thread_base[*thrno]=base;
     pthread_mutex_unlock(&ctxlock);

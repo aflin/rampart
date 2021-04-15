@@ -1,4 +1,4 @@
-/* Copyright (C) 2021 Aaron Flin - All Rights Reserved
+;/* Copyright (C) 2021 Aaron Flin - All Rights Reserved
  * Copyright (C) 2021 P. Barton Richards - All Rights Reserved
  * You may use, distribute or alter this code under the
  * terms of the MIT license
@@ -25,6 +25,7 @@
 
 #define ASYNCFLAG        1<<8
 #define RETBUFFLAG       1<<9
+#define XREADAUTOFLAG    1<<10
 
 /* ************************************************************** 
 
@@ -225,7 +226,7 @@ static void procstring(duk_context *ctx, RESPITEM *item, int retbuf)
   }\
   case RESPISERRORMSG:\
   {\
-    RP_THROW(ctx, "%s: %s\n", fname, item->loc);\
+    RP_THROW(ctx, "%s: %s", fname, item->loc);\
     break;\
   }
 
@@ -328,9 +329,9 @@ static void push_response_array_wscores(duk_context *ctx, RESPROTO *response, co
 } 
 
 /* assumes everything is in one array */
-static void push_response_object(duk_context *ctx, RESPROTO *response, const char *fname, int retbuf)
+static void push_response_object(duk_context *ctx, RESPROTO *response, int ridx, const char *fname, int retbuf)
 {
-  int ridx=1, ii=0;
+  int ii=0;
 
   if(response->items->respType != RESPISARRAY)
     RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
@@ -345,70 +346,81 @@ static void push_response_object(duk_context *ctx, RESPROTO *response, const cha
   }
 } 
 
-static int rd_push_response_object(duk_context *ctx, RESPITEM **item_p, int start, int end, const char *fname, int retbuf, int pushobj)
+/* [key,val], [key,val], ... */
+static int push_nested(duk_context *ctx, RESPROTO *response, int ridx, const char *fname, int retbuf, int topnest, const char **lastid)
 {
-  int i, ii=0;
-  RESPITEM *item;
+  int ii=0, narry;
+  RESPITEM *item = &response->items[ridx];
+//printf("entering nested, ridx=%d\n",ridx);
+  if(item->respType != RESPISARRAY)
+    RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
 
-  for (i = start; i < end; i++, (*item_p)++)
+  narry = (int)item->nItems;
+  ridx++;
+   
+  while (ridx < response->nItems && ii < narry)
   {
-    item = *item_p;
-    switch (item->respType)
+    item = &response->items[ridx];
+    if (item->respType==RESPISARRAY)
     {
-      STANDARDCASES
-      case RESPISARRAY:
+      duk_push_object(ctx);
+      ridx = push_nested(ctx, response, ridx, fname, retbuf, 0, NULL);
+    }
+    else
+    {
+      ridx = array_push_single(ctx, response, ridx, fname, retbuf);
+    }
+    if(topnest)
+    {
+      if( ii%2 )
+        duk_put_prop_string(ctx, -2, "value");
+      else
       {
-        if(pushobj||ii)
-          duk_push_object(ctx);
-
-        (*item_p)++;
-        i++;
-        i=rd_push_response_object(ctx, item_p, i, i + item->nItems, fname, retbuf, 1);
-        i--;
-        (*item_p)--;
-        break;
+        if(lastid)
+            *lastid=duk_get_string(ctx, -1);
+        duk_put_prop_string(ctx, -2, "id");
       }
-    }//switch
-    if (ii%2)
-      duk_put_prop(ctx, -3);
-    ii++;
-  }//for
-
-  return i;
+    }
+    else
+    {
+      if( ii%2 )
+      {
+        //if(lastid)
+        //  *lastid=duk_get_string(ctx, -2);
+        duk_put_prop(ctx, -3);
+      }
+    }
+    ii++;    
+  }
+  return ridx;
 } 
-
-/* TODO: this is technically wrong.  Fix to match recursion technique above.
-         currently only used for xrange, where it doesn't matter
-*/
-static int rd_push_response_object_nested(duk_context *ctx, RESPITEM **item_p, int start, int end, const char *fname, int retbuf)
+/* [ [key,val], [key,val], ... ]*/
+static int push_response_object_nested(duk_context *ctx, RESPROTO *response, int ridx, const char *fname, int retbuf, const char **lastid)
 {
-  int i;
-  RESPITEM *item;
+  int ii=0, narry;
+  RESPITEM *item = &response->items[ridx];
 
-  for (i = start; i < end; i++, (*item_p)++)
+  if(item->respType != RESPISARRAY)
+    RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
+
+  narry = (int)item->nItems;
+  duk_push_array(ctx);
+  ridx++;
+   
+  while (ridx < response->nItems && ii < narry)
   {
-    item = *item_p;
-    switch (item->respType)
+    item = &response->items[ridx];
+    if (item->respType==RESPISARRAY)
     {
-      case RESPISARRAY:
-      {
-        if(!i)
-          duk_push_object(ctx);
-        (*item_p)++;
-        i++;
-        /* first/return object is pushed here */        
-        i=rd_push_response_object(ctx, item_p, i, i + item->nItems, fname, retbuf, 0);
-        i--;
-        (*item_p)--;
-        break;
-      }
-      default:
-          RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
-
-    }//switch
-  }//for
-
-  return i;
+      duk_push_object(ctx);
+      ridx = push_nested(ctx, response, ridx, fname, retbuf, 1, lastid);
+      duk_put_prop_index(ctx, -2, duk_get_length(ctx, -2) );
+    }
+    else
+      RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
+    ii++;    
+  }
+  return ridx;
 } 
 
 static void rd_push_response(duk_context *ctx, RESPROTO *response, const char *fname, int type)
@@ -424,7 +436,8 @@ static void rd_push_response(duk_context *ctx, RESPROTO *response, const char *f
     {
       if(item->respType == RESPISARRAY) //empty list reply
       {
-        duk_push_null(ctx);
+        //duk_push_null(ctx);
+        duk_push_array(ctx); //return empty array
         return;
       }
       if(type!=5)
@@ -449,10 +462,12 @@ static void rd_push_response(duk_context *ctx, RESPROTO *response, const char *f
         push_response_array(ctx, response, fname, retbuf);
         break;
       case 3:
-        push_response_object(ctx, response, fname, retbuf);
+        push_response_object(ctx, response, 1, fname, retbuf);
         break;
       case 4:
-        rd_push_response_object_nested(ctx, &item, 0, response->nItems, fname, retbuf);
+        //rd_push_response_object_nested(ctx, &item, 0, response->nItems, fname, retbuf);
+//        duk_push_object(ctx);
+        push_response_object_nested(ctx, response, 0, fname, retbuf, NULL);
         break;
       case 5:
         if(item->respType== RESPISINT)
@@ -469,14 +484,15 @@ static void rd_push_response(duk_context *ctx, RESPROTO *response, const char *f
         duk_push_object(ctx);
         array_push_single(ctx, response, 1, fname, 0);
         duk_put_prop_string(ctx, -2, "cursor");
-        response->nItems-=2;
-        response->items+=2;
-        push_response_object(ctx, response, fname, retbuf);
+//        response->nItems-=2;
+//        response->items+=2;
+        push_response_object(ctx, response, 3, fname, retbuf);
         duk_put_prop_string(ctx, -2, "values");
-        response->nItems+=2; //for free
-        response->items-=2;
+//        response->nItems+=2; //for free
+//        response->items-=2;
         break;
       case 7:
+        //FIXME: dont increment items or if there is a throw, it will fail to put it back and free will crash.
         duk_push_object(ctx);
         array_push_single(ctx, response, 1, fname, 0);
         duk_put_prop_string(ctx, -2, "cursor");
@@ -500,6 +516,28 @@ static void rd_push_response(duk_context *ctx, RESPROTO *response, const char *f
         push_response_array_wscores(ctx, response, fname, retbuf, 3);
         duk_put_prop_string(ctx, -2, "values");
         break;        
+      case 11:
+      {
+        int nmem, i=0,ridx=2;
+        if(response->items->respType != RESPISARRAY)
+          RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
+
+        nmem=(int)response->items->nItems;
+        duk_push_array(ctx);
+        while(i<nmem)
+        {
+          duk_push_object(ctx);
+          array_push_single(ctx, response, ridx, fname, 0);
+          duk_put_prop_string(ctx, -2, "stream");
+          ridx+=1;
+          ridx=push_response_object_nested(ctx, response, ridx, fname, retbuf, NULL);
+          duk_put_prop_string(ctx, -2, "data");
+          duk_put_prop_index(ctx, -2, duk_get_length(ctx,-2));
+          ridx++;
+          i++;
+        }
+        break;
+      }
     }      
   }
   else
@@ -643,7 +681,41 @@ static void push_response_cb_keyval(duk_context *ctx, RESPROTO *response, duk_id
   duk_push_int(ctx, total);
 }
 
-/* expecting [ [key,val],[key,val], ...] */
+/* [ [key,val], [key,val], ... ]*/
+static void push_response_object_cb_nested(duk_context *ctx, RESPROTO *response,  duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
+{
+  int total=0, isasync = flag & ASYNCFLAG, retbuf = flag & RETBUFFLAG;
+  int ii=0, narry;
+  RESPITEM *item = &response->items[ridx];
+
+  if(item->respType != RESPISARRAY)
+    RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
+
+  narry = (int)item->nItems;
+  ridx++;
+   
+  while (ridx < response->nItems && ii < narry)
+  {
+    item = &response->items[ridx];
+    if (item->respType==RESPISARRAY)
+    {
+      duk_push_object(ctx);
+      ridx = push_nested(ctx, response, ridx, fname, retbuf, 1, NULL);
+    }
+    else
+      RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
+
+    docallback;
+    duk_pop(ctx); //discard return from callback
+    ii++;    
+  }
+  cb_end:
+  duk_push_int(ctx, total);
+} 
+
+
+
+/* expecting [ [key,val],[key,val], ...] 
 static void push_response_cb_keyval_pairs(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag)
 {
   int i, total=0;
@@ -678,11 +750,12 @@ static void push_response_cb_keyval_pairs(duk_context *ctx, RESPROTO *response, 
   cb_end:
   duk_push_int(ctx, total);
 }
-
+*/
 static void rd_push_response_cb(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag)
 {
   int type = flag & 255;
   int retbuf = flag & RETBUFFLAG;
+  int xreadauto = flag & XREADAUTOFLAG;
   if (response)
   {
     RESPITEM *item = response->items;
@@ -693,7 +766,7 @@ static void rd_push_response_cb(duk_context *ctx, RESPROTO *response, duk_idx_t 
         duk_push_int(ctx,0);
         return;
       }
-      if(flag != 5)
+      if(type != 5)
         type=0;//only one item, return it as is regardless of type
     }
   }
@@ -728,7 +801,8 @@ static void rd_push_response_cb(duk_context *ctx, RESPROTO *response, duk_idx_t 
       push_response_cb_keyval(ctx, response, cb_idx, this_idx, fname, flag, 1);
       break;
     case 4:
-      push_response_cb_keyval_pairs(ctx, response, cb_idx, this_idx, fname, flag);
+      //push_response_cb_keyval_pairs(ctx, response, cb_idx, this_idx, fname, flag);
+      push_response_object_cb_nested(ctx, response,  cb_idx, this_idx, fname, flag, 0);
       break;
     case 5:
     {
@@ -766,6 +840,124 @@ static void rd_push_response_cb(duk_context *ctx, RESPROTO *response, duk_idx_t 
       push_response_cb_scores(ctx, response, cb_idx, this_idx, fname, flag, 3);
       array_push_single(ctx, response, 1, fname, 0);
       break;
+    case 11:
+    {
+      int nmem, i=0,ridx=2,total=0;
+      int isasync = flag & ASYNCFLAG;
+
+      if(response->items->respType != RESPISARRAY)
+        RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
+
+      nmem=(int)response->items->nItems;
+
+      if(xreadauto)
+      {
+        RESPCLIENT *subrcp=NULL;
+        duk_idx_t xo_idx, j;
+        int nargs=0;
+        char *fmt=NULL;
+
+        duk_get_prop_string(ctx, this_idx, "xreadArgs");
+        REQUIRE_OBJECT(ctx, -1, "xread_auto_async: xreadArgs must be an Object");
+
+        xo_idx=duk_get_top_index(ctx);
+
+        while(i<nmem)
+        {
+          const char *lastid, *streamid;
+          duk_push_object(ctx);
+          array_push_single(ctx, response, ridx, fname, 0);
+          streamid=duk_get_string(ctx, -1);
+          duk_put_prop_string(ctx, -2, "stream");
+          ridx+=1;
+          ridx=push_response_object_nested(ctx, response, ridx, fname, retbuf, &lastid);
+          duk_put_prop_string(ctx, -2, "data");
+          ridx++;
+          i++;
+
+          /* update last id for next call to xread_auto_async before callback 
+             as duktape will free them after the callback                      */
+          duk_push_string(ctx, streamid);
+          duk_push_string(ctx, lastid);
+          duk_put_prop(ctx, xo_idx);
+
+          docallback;
+          duk_pop(ctx); //discard return from callback
+
+        }
+        // get the array of arguments and the object holding the stream ids and last ids
+        duk_pull(ctx, xo_idx);
+        //get the current rcp pointer for this async connection
+        if( !duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("respclient")) )
+          RP_THROW(ctx,"async: internal error getting redis handle object");
+        if(duk_get_prop_string(ctx, -1, "async_client_p")) 
+        {
+          subrcp=duk_get_pointer(ctx,-1);
+          duk_pop_2(ctx);
+        } 
+        else
+          RP_THROW(ctx,"async: internal error getting redis handle");
+
+        //leave only the top one on the stack (xreadargs_array)
+        while(duk_get_top(ctx)>1) duk_remove(ctx,0);
+
+        // push streamids , lastids in order [stream1, stream2, ..., id1, id2, ...]
+        j=duk_get_top(ctx)+1;
+        duk_enum(ctx, 0, 0);
+        duk_insert(ctx, 0);
+        while(duk_next(ctx, 0, 1))
+        {
+          if(duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1))
+          {
+            // if set to false in callback, "unsubscribe" (ie, on next round dont listen for) that stream
+            duk_pop_2(ctx);
+          }
+          else
+          {
+            duk_pull(ctx, -2);
+            duk_insert(ctx, j);
+            j++;
+            nargs+=2;
+          }
+        }
+
+        duk_remove(ctx,0);//xread object
+        duk_remove(ctx,0);//enum
+
+        REMALLOC(fmt, 22 + (nargs*3));
+        strcpy(fmt,"XREAD BLOCK 0 STREAMS");
+        while(nargs--)
+          strcat(fmt, " %s");
+        duk_push_string(ctx, fmt);
+        duk_insert(ctx, 0);
+        free(fmt);
+
+        /* refresh the current xread command exactly as given in the last
+           round, except with updated ids for subsequent messages         */
+        if(!rc_send_async(ctx, subrcp))
+          RP_THROW(ctx, "error sending command to redis server");
+
+        /* stack will be cleared in rp_rdev_doevent */ 
+
+      }
+      else
+      {
+        while(i<nmem)
+        {
+          duk_push_object(ctx);
+          array_push_single(ctx, response, ridx, fname, 0);
+          duk_put_prop_string(ctx, -2, "stream");
+          ridx+=1;
+          ridx=push_response_object_nested(ctx, response, ridx, fname, retbuf, NULL);
+          duk_put_prop_string(ctx, -2, "data");
+          ridx++;
+          i++;
+          docallback;
+          duk_pop(ctx); //discard return from callback
+        }
+      }
+      duk_push_int(ctx, total);
+    }
   }
   cb_end:
   return;
@@ -794,7 +986,7 @@ static void rd_push_response_cb(duk_context *ctx, RESPROTO *response, duk_idx_t 
     int port; const char *ip;\
     duk_push_this(ctx);\
     if( !duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("respclient")) )\
-      RP_THROW(ctx,"subscribe: internal error getting ip and port\n");\
+      RP_THROW(ctx,"async: internal error getting ip and port");\
     if(duk_get_prop_string(ctx, -1, "async_client_p")) {\
       subrcp=duk_get_pointer(ctx,-1);\
       duk_pop_3(ctx);\
@@ -824,29 +1016,6 @@ RDEVARGS {
 };
 
 
-static void rp_rdev_doevent(evutil_socket_t fd, short events, void* arg)
-{
-  RDEVARGS *args = (RDEVARGS *)arg;
-  duk_context *ctx = args->ctx;
-  RESPROTO *response;
-  duk_idx_t top=duk_get_top(ctx); //we need to end where we started
-
-  if(!duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("rd_event")) )
-    RP_THROW(ctx, "internal error in redis async callback");
-
-  duk_push_pointer(ctx, (void*)args->rcp);
-  duk_get_prop(ctx, -2);//this
-  duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("subcallback"));//our callback
-  duk_remove(ctx,-3);//remove rd_event
-  duk_pull(ctx,-2);// [..., callback, this]
-  response = getRespReply(args->rcp);
-  rd_push_response_cb(ctx, response, duk_normalize_index(ctx, -2), duk_normalize_index(ctx, -1), args->fname, args->flag);
-
-  //duk_pop_3(ctx); // callback, 'this' and return from callback
-  while (duk_get_top(ctx) > top) 
-    duk_pop(ctx);
-}
-
 static duk_ret_t _close_async_(duk_context *ctx)
 {
   RESPCLIENT *subrcp=NULL;
@@ -864,7 +1033,7 @@ static duk_ret_t _close_async_(duk_context *ctx)
   duk_pop(ctx);
 
   if( !duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("respclient")) )
-    RP_THROW(ctx,"close_async: internal error getting client handle\n");
+    RP_THROW(ctx,"close_async: internal error getting client handle");
   if(duk_get_prop_string(ctx, -1, "async_client_p")) 
   {
     subrcp = duk_get_pointer(ctx,-1);
@@ -886,7 +1055,7 @@ static duk_ret_t _close_(duk_context *ctx)
   RESPCLIENT *rcp=NULL;
 
   if( !duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("respclient")) )
-    RP_THROW(ctx,"close: internal error getting client handle\n");
+    RP_THROW(ctx,"close: internal error getting client handle");
 
   if(duk_get_prop_string(ctx, -1, "client_p")) 
   {
@@ -903,6 +1072,43 @@ static duk_ret_t duk_rp_rd_close(duk_context *ctx)
 {
   duk_push_this(ctx);
   return _close_(ctx);
+}
+
+static void rp_rdev_doevent(evutil_socket_t fd, short events, void* arg)
+{
+  RDEVARGS *args = (RDEVARGS *)arg;
+  duk_context *ctx = args->ctx;
+  RESPROTO *response;
+
+  //start with empty stack
+  while (duk_get_top(ctx) > 0) duk_pop(ctx);
+
+  if(!duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("rd_event")) )
+    RP_THROW(ctx, "internal error in redis async callback");
+
+  duk_push_pointer(ctx, (void*)args->rcp); // [ ..., rd_event, pointer ]
+  duk_get_prop(ctx, -2);// [ ..., rd_event, this ]
+  duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("subcallback"));// [ ..., rd_event, this, callback ]
+  duk_remove(ctx,-3);// [ ..., this, callback ];
+
+  // get response from redis
+  response = getRespReply(args->rcp);
+  //parse response, run callback
+  rd_push_response_cb(ctx, response, duk_normalize_index(ctx, -1), duk_normalize_index(ctx, -2), args->fname, args->flag);
+  // [ ..., this, callback, callback_return_val ]
+
+  // if not subscribe or xread_auto_async, its a one time event.
+  if(strcmp("subscribe", args->fname) && strcmp("xread_auto_async", args->fname) )
+  {
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("rd_event"));
+    duk_push_pointer(ctx, (void*)args->rcp);
+    duk_get_prop(ctx, -2);
+    _close_async_(ctx);
+  }
+  //end with empty stack
+  while (duk_get_top(ctx) > 0) 
+    duk_pop(ctx);
+  // [ ... ]
 }
 
 
@@ -1010,7 +1216,7 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
   duk_pop(ctx);
 
   duk_get_prop_string(ctx, -1, "fname");
-  fname = duk_get_string(ctx, -1);
+  fname = duk_get_lstring(ctx, -1, &sz);
   duk_pop_2(ctx);
 
   //zpop is always 9
@@ -1026,11 +1232,9 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
     isasync=1;
   else if( 
       !strcmp(fname, "subscribe") || !strcmp(fname, "psubscribe")  ||
-      !strcmp(fname, "unsubscribe") || !strcmp(fname, "punsubscribe") ||
-      !strcmp(fname, "xread_block") 
+      !strcmp(fname, "unsubscribe") || !strcmp(fname, "punsubscribe")
     )
     isasync=1;
-
 
   while (i < top)
   {
@@ -1073,21 +1277,47 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
     } 
     else if (duk_is_object(ctx, i))
     {
-      duk_idx_t oldi=i;
-      duk_enum(ctx, i, 0);
-      while(duk_next(ctx, -1, 1))
+      duk_idx_t oldi=i, ins_idx;
+      if(strcmp(fname,"xread_auto_async")==0)
       {
-        i++; //new location for key
-        duk_pull(ctx, -2);//do key first
-        duk_insert(ctx, i);
-        strcat(fmt," %s");
-        i++;//new location for val
-        duk_insert(ctx, i);
-        IF_FMT_INSERT
-        ELSE_IF_FMT_INSERT
+        duk_idx_t enum_idx=duk_get_top(ctx);//next item to top the stack
+        duk_push_this(ctx);
+        duk_dup(ctx, i);
+        duk_put_prop_string(ctx, -2, "xreadArgs");
+        duk_pop(ctx);//this
+        commandtype|=XREADAUTOFLAG;
+
+        duk_enum(ctx, i, 0);
+        ins_idx=duk_get_top(ctx); //where the stream names go
+        while(duk_next(ctx, enum_idx, 1))
+        {
+          //new location for key
+          duk_pull(ctx, -2);//do key first
+          duk_insert(ctx, ins_idx);
+          //leave val where it is, but make sure it's a string
+          (void)duk_to_string(ctx, -1);
+          ins_idx++;
+        }
+        duk_remove(ctx, enum_idx);
+        duk_remove(ctx, oldi);//object
       }
-      duk_pop(ctx);//enum
-      duk_remove(ctx, oldi);//object
+      else
+      {
+        duk_enum(ctx, i, 0);
+        while(duk_next(ctx, -1, 1))
+        {
+          i++; //new location for key
+          duk_pull(ctx, -2);//do key first
+          duk_insert(ctx, i);
+          strcat(fmt," %s");
+          i++;//new location for val
+          duk_insert(ctx, i);
+          IF_FMT_INSERT
+          ELSE_IF_FMT_INSERT
+        }
+        duk_pop(ctx);//enum
+        duk_remove(ctx, oldi);//object
+      }
       i--;
       top=duk_get_top(ctx);
     }
@@ -1127,15 +1357,20 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
       int thrno=-1;//, flags = fcntl(subrcp->socket, F_GETFL, 0);
       struct event_base *base;
 
+      /* Allow subscribing to more channels */
       duk_push_this(ctx);
       if( duk_has_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("args")) )
       {
-        duk_pop(ctx);
+        duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("args"));
+        args=duk_get_pointer(ctx, -1);
+        duk_pop_2(ctx);
+        if(strcmp(args->fname,"subscribe"))
+          RP_THROW(ctx, "%s: Cannot send to redis server: redis is already blocking on the %s command", fname, args->fname);
         return 0;
       }
 
       if (!gotfunc)
-        RP_THROW(ctx, "%s: subscribe functions requires a callback", fname);
+        RP_THROW(ctx, "%s: subscribe and other async functions require a callback", fname);
 
       duk_get_global_string(ctx, "rampart");
       if(duk_get_prop_string(ctx, -1, "thread_id"))
@@ -1178,6 +1413,8 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
 
       return 0;
     }
+    else
+      RP_THROW(ctx, "%s: error sending command to redis server", fname);
   }
   else
   {
@@ -1716,7 +1953,7 @@ char *commandnames[] = {
 /* 120 */"lpush", "lpushx", "lrange", "lrem", "lset", "ltrim", "memory_doctor", "memory_help", "memory_malloc-stats", "memory_purge",
 /* 130 */"memory_stats", "memory_usage", "mget", "migrate", "module_list", "module_load", "module_unload", "monitor", "move", "mset",
 /* 140 */"msetnx", "multi", "object", "persist", "pexpire", "pexpireat", "pfadd", "pfcount", "pfmerge", "ping",
-/* 150 */"psetex", "psubscribe", "pubsub", "pttl", "publish_async", "publish"   , "punsubscribe", "quit", "randomkey", "readonly",
+/* 150 */"psetex", "psubscribe", "pubsub", "pttl", /*"publish_async",*/ "publish"   , "punsubscribe", "quit", "randomkey", "readonly",
 /* 160 */"readwrite", "rename", "renamenx", "restore", "role", "rpop", "rpoplpush", "rpush", "rpushx", "sadd",
 /* 170 */"save", "scard", "script_debug", "script_exists", "script_flush", "script_kill", "script_load", "sdiff", "sdiffstore", "select",
 /* 180 */"set", "setbit", "setex", "setnx", "setrange", "shutdown", "sinter", "sinterstore", "sismember", "slaveof",
@@ -1725,10 +1962,10 @@ char *commandnames[] = {
 /* 210 */"unsubscribe", "unlink", "unwatch", "wait", "watch", "zadd", "zcard", "zcount", "zincrby", "zinterstore",
 /* 220 */"zlexcount", "zpopmax", "zpopmin", "zrange", "zrangebylex", "zrevrangebylex", "zrangebyscore", "zrank", "zrem", "zremrangebylex",
 /* 230 */"zremrangebyrank", "zremrangebyscore", "zrevrange", "zrevrangebyscore", "zrevrank", "zscore", "zunionstore", "scan", "sscan", "hscan",
-/* 240 */"zscan", "xinfo", "xadd", "xtrim", "xdel", "xrange", "xrevrange", "xlen", "xread_count", "xread_block",
+/* 240 */"zscan", "xinfo", "xadd", "xtrim", "xdel", "xrange", "xrevrange", "xlen", "xread", "xread_block_async",
 /* 250 */"xgroup", "xreadgroup", "xack", "xclaim", "xpending", "latency_doctor", "latency_graph", "latency_history", "latency_latest", "latency_reset",
 /* 260 */"latency_help", "reset", "getdel", "getex", "hrandfield", "lmove", "smismember", "zdiff", "zdiffstore", "zinter",
-/* 270 */"zunion", "zrangestore", "zmscore", "zrandmember"
+/* 270 */"zunion", "zrangestore", "zmscore", "zrandmember", "xread_auto_async"
 };
 char *commandcommands[] = {
 /* 000 */"ACL LOAD", "ACL SAVE", "ACL LIST", "ACL USERS", "ACL GETUSER", "ACL SETUSER", "ACL DELUSER", "ACL CAT", "ACL GENPASS", "ACL WHOAMI",
@@ -1746,7 +1983,7 @@ char *commandcommands[] = {
 /* 120 */"LPUSH", "LPUSHX", "LRANGE", "LREM", "LSET", "LTRIM", "MEMORY DOCTOR", "MEMORY HELP", "MEMORY MALLOC-STATS", "MEMORY PURGE",
 /* 130 */"MEMORY STATS", "MEMORY USAGE", "MGET", "MIGRATE", "MODULE LIST", "MODULE LOAD", "MODULE UNLOAD", "MONITOR", "MOVE", "MSET",
 /* 140 */"MSETNX", "MULTI", "OBJECT", "PERSIST", "PEXPIRE", "PEXPIREAT", "PFADD", "PFCOUNT", "PFMERGE", "PING",
-/* 150 */"PSETEX", "PSUBSCRIBE", "PUBSUB", "PTTL", "PUBLISH"/*async*/, "PUBLISH"/*sync*/, "PUNSUBSCRIBE", "QUIT", "RANDOMKEY", "READONLY",
+/* 150 */"PSETEX", "PSUBSCRIBE", "PUBSUB", "PTTL", /*"PUBLISH" async,*/ "PUBLISH"/*sync*/, "PUNSUBSCRIBE", "QUIT", "RANDOMKEY", "READONLY",
 /* 160 */"READWRITE", "RENAME", "RENAMENX", "RESTORE", "ROLE", "RPOP", "RPOPLPUSH", "RPUSH", "RPUSHX", "SADD",
 /* 170 */"SAVE", "SCARD", "SCRIPT DEBUG", "SCRIPT EXISTS", "SCRIPT FLUSH", "SCRIPT KILL", "SCRIPT LOAD", "SDIFF", "SDIFFSTORE", "SELECT",
 /* 180 */"SET", "SETBIT", "SETEX", "SETNX", "SETRANGE", "SHUTDOWN", "SINTER", "SINTERSTORE", "SISMEMBER", "SLAVEOF",
@@ -1755,10 +1992,10 @@ char *commandcommands[] = {
 /* 210 */"UNSUBSCRIBE", "UNLINK", "UNWATCH", "WAIT", "WATCH", "ZADD", "ZCARD", "ZCOUNT", "ZINCRBY", "ZINTERSTORE",
 /* 220 */"ZLEXCOUNT", "ZPOPMAX", "ZPOPMIN", "ZRANGE", "ZRANGEBYLEX", "ZREVRANGEBYLEX", "ZRANGEBYSCORE", "ZRANK", "ZREM", "ZREMRANGEBYLEX",
 /* 230 */"ZREMRANGEBYRANK", "ZREMRANGEBYSCORE", "ZREVRANGE", "ZREVRANGEBYSCORE", "ZREVRANK", "ZSCORE", "ZUNIONSTORE", "SCAN", "SSCAN", "HSCAN",
-/* 240 */"ZSCAN", "XINFO", "XADD", "XTRIM", "XDEL", "XRANGE", "XREVRANGE", "XLEN", "XREAD COUNT", "XREAD BLOCK",
+/* 240 */"ZSCAN", "XINFO", "XADD", "XTRIM", "XDEL", "XRANGE", "XREVRANGE", "XLEN", "XREAD", "XREAD BLOCK",
 /* 250 */"XGROUP", "XREADGROUP", "XACK", "XCLAIM", "XPENDING", "LATENCY DOCTOR", "LATENCY GRAPH", "LATENCY HISTORY", "LATENCY LATEST", "LATENCY RESET",
 /* 260 */"LATENCY HELP", "RESET", "GETDEL", "GETEX", "HRANDFIELD", "LMOVE", "SMISMEMBER", "ZDIFF", "ZDIFFSTORE", "ZINTER",
-/* 270 */"ZUNION", "ZRANGESTORE", "ZMSCORE", "ZRANDMEMBER"
+/* 270 */"ZUNION", "ZRANGESTORE", "ZMSCORE", "ZRANDMEMBER", "XREAD BLOCK 0 STREAMS",
 };
 
 // 0 - treated as "val" - single response only
@@ -1772,35 +2009,36 @@ char *commandcommands[] = {
 // 8 - array of bools
 // 9 - same as 1, except if last option is WITHSCORES make objects with keys score & value
 //10 - only for zscan, cross between 7 and 9
+//11 - only for xread.
 int commandtypes[] = {
-/* 000 */0, 0, 1, 1, 1, 0, 0, 1, 0, 0,
-/* 010 */0, 1, 0, 0, 0, 0, 0, 1, 0, 0,
-/* 020 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 030 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 040 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 050 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 060 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 070 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 080 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 090 */0, 0, 0, 0, 0, 5, 0, 3, 0, 0,
-/* 100 */1, 0, 1, 0, 0, 5, 0, 1, 0, 0,
-/* 110 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 120 */0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-/* 130 */0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
-/* 140 */5, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 150 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 160 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 170 */0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
-/* 180 */0, 0, 0, 5, 0, 0, 1, 0, 5, 0,
-/* 190 */0, 0, 1, 0, 0, 1, 1, 0, 3, 0,
-/* 200 */2, 1, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 210 */0, 0, 0, 0, 0, 0, 0, 0, 0, 9,
-/* 220 */0, 9, 9, 9, 1, 9, 9, 0, 0, 0,
-/* 230 */0, 0, 9, 9, 0, 0, 9, 0, 7, 6,
-/* 240 */10, 0, 0, 0, 0, 4, 0, 0, 0, 0,
-/* 250 */0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-/* 260 */0, 0, 0, 0, 1, 0, 8, 9, 9, 9,
-/* 270 */9, 0, 1, 9
+/* 000 */0,  0,  1,  1,  1,  0,  0,  1,  0,  0,
+/* 010 */0,  1,  0,  0,  0,  0,  0,  1,  0,  0,
+/* 020 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+/* 030 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+/* 040 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+/* 050 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+/* 060 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+/* 070 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+/* 080 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+/* 090 */0,  0,  0,  0,  0,  5,  0,  3,  0,  0,
+/* 100 */1,  0,  1,  0,  0,  5,  0,  1,  0,  0,
+/* 110 */0,  1,  0,  0,  0,  0,  0,  0,  0,  0,
+/* 120 */0,  0,  1,  0,  0,  0,  0,  0,  0,  0,
+/* 130 */0,  0,  1,  0,  0,  0,  0,  0,  0,  0,
+/* 140 */5,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+/* 150 */0,  0,  0,  0,/*0,*/0,  0,  0,  0,  0,
+/* 160 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+/* 170 */0,  0,  0,  0,  0,  0,  0,  1,  0,  0,
+/* 180 */0,  0,  0,  5,  0,  0,  1,  0,  5,  0,
+/* 190 */0,  0,  1,  0,  0,  1,  1,  0,  3,  0,
+/* 200 */2,  1,  0,  0,  0,  0,  0,  0,  0,  0,
+/* 210 */0,  0,  0,  0,  0,  0,  0,  0,  0,  9,
+/* 220 */0,  9,  9,  9,  1,  9,  9,  0,  0,  0,
+/* 230 */0,  0,  9,  9,  0,  0,  9,  0,  7,  6,
+/* 240 */10, 3,  0,  0,  0,  4,  0,  0,  11, 11,
+/* 250 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+/* 260 */0,  0,  0,  0,  1,  0,  8,  9,  9,  9,
+/* 270 */9,  0,  1,  9, 11
 };
 
 
