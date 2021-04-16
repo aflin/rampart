@@ -882,13 +882,20 @@ evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
     }
 
     duk_push_number(ctx, ws_id);
+
     if(duk_get_prop(ctx, -2))
     {
+        /* other references might exist, so replace evhtp req with null */        
         duk_push_pointer(ctx,(void*)NULL);
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("evreq"));
-
     }
-    duk_pop_2(ctx);
+    duk_pop(ctx);
+
+    /* get rid of this reference */
+    duk_push_number(ctx, ws_id);
+    duk_del_prop(ctx, -2);
+    duk_pop(ctx);
+
     return 0;
 }
 
@@ -963,12 +970,15 @@ duk_ret_t duk_server_ws_send(duk_context *ctx)
     DHS *dhs = get_dhs(ctx);
 
     if(!dhs->req)
-        return 0;
-
+    {
+        duk_push_false(ctx);
+        return 1;
+    }
     sendws(dhs);
 
     dhs = free_dhs(dhs);
-    return 0;
+    duk_push_true(ctx);
+    return 1;
 }
 
 duk_ret_t duk_server_printf(duk_context *ctx)
@@ -2993,22 +3003,23 @@ static void *http_dothread(void *arg)
         if (duk_is_error(ctx, -1) )
         {
             duk_get_prop_string(ctx, -1, "stack");
+            printerr("error in callback: '%s'\n", duk_safe_to_string(ctx, -1));
             if (!req->cb_has_websock)
                 send500(req, (char*)duk_safe_to_string(ctx, -1));
-            printerr("error in callback: '%s'\n", duk_safe_to_string(ctx, -1));
-            duk_pop(ctx);
+            //send500 calls http_callback, which now empties the stack
+            //duk_pop(ctx);
         }
         else if (duk_is_string(ctx, -1))
         {
+            printerr("error in callback: '%s'\n", duk_safe_to_string(ctx, -1));
             if (!req->cb_has_websock)
                 send500(req, (char*)duk_safe_to_string(ctx, -1));
-            printerr("error in callback: '%s'\n", duk_safe_to_string(ctx, -1));
         }
         else
         {
+            printerr("unknown error in callback");
             if (!req->cb_has_websock)
                 send500(req, "unknown error in callback");
-            printerr("unknown error in callback");
         }
 
         if (dhr->have_timeout)
