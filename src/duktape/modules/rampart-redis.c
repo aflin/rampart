@@ -544,12 +544,24 @@ static void rd_push_response(duk_context *ctx, RESPROTO *response, const char *f
     RP_THROW(ctx, "rampart-redis - error getting response from redis server (disconnected?)");
 }
 
-#define docallback do{     \
-  duk_dup(ctx, cb_idx);    \
-  duk_dup(ctx, this_idx);  \
-  duk_pull(ctx, -3);       \
-  duk_call_method(ctx, 1); \
-  total++;                 \
+#define docallback do{          \
+  int ret;                      \
+  duk_dup(ctx, cb_idx);         \
+  duk_dup(ctx, this_idx);       \
+  duk_pull(ctx, -3);            \
+  ret=duk_pcall_method(ctx, 1);                 \
+  if(ret!=DUK_EXEC_SUCCESS) {                   \
+        if (duk_is_error(ctx, -1) ){\
+            duk_get_prop_string(ctx, -1, "stack");\
+            fprintf(stderr, "error in async callback: '%s'\n", duk_safe_to_string(ctx, -1));\
+        }\
+        else if (duk_is_string(ctx, -1)){\
+            fprintf(stderr, "error in async callback: '%s'\n", duk_safe_to_string(ctx, -1));\
+        } else {\
+            fprintf(stderr,"unknown error in async callback");\
+        }\
+  }         \
+  total++;  \
   /* if we closed in the callback, response, items, rcp etc will be freed and invalid */\
   /* and removed from respclient in 'this' */\
   if( !duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("respclient")) )\
@@ -1806,7 +1818,7 @@ static duk_ret_t duk_rp_proxyobj_ownkeys(duk_context *ctx)
     duk_pop_2(ctx);
   }
   duk_pop(ctx);
-
+/*
   duk_push_string(ctx, "_destroy");
   duk_put_prop_index(ctx, -2, duk_get_length(ctx, -2) );
   duk_push_string(ctx, DUK_HIDDEN_SYMBOL("respclient"));
@@ -1815,6 +1827,7 @@ static duk_ret_t duk_rp_proxyobj_ownkeys(duk_context *ctx)
   duk_put_prop_index(ctx, -2, duk_get_length(ctx, -2) );
   duk_push_string(ctx, "_hname");
   duk_put_prop_index(ctx, -2, duk_get_length(ctx, -2) );
+*/
   return 1;
 }
 
