@@ -3409,24 +3409,24 @@ static int getmod(DHS *dhs)
     }
     else if(ret == -1)
     {
-        if (duk_is_error(ctx, -1) || duk_is_string(ctx, -1))
+        if (duk_is_error(ctx, -1) )
         {
             duk_get_prop_string(ctx, -1, "stack");
-            send500(dhs->req, (char*)duk_safe_to_string(ctx, -1));
-            printerr("error loading module: '%s'\n", duk_safe_to_string(ctx, -1));
+            printerr("error loading module: '%s' - '%s'\n", modname, duk_safe_to_string(ctx, -1));
             duk_pop(ctx);
+            send500(dhs->req, (char*)duk_safe_to_string(ctx, -1));
         }
         else if ( duk_is_string(ctx, -1))
         {
+            printerr("error loading module: '%s' - '%s'\n", modname, duk_safe_to_string(ctx, -1));
             send500(dhs->req, (char*)duk_safe_to_string(ctx, -1));
-            printerr("error loading module: '%s'\n", duk_safe_to_string(ctx, -1));
         }
         else
         {
+            printerr("error loading module '%s': Unknown error", modname);
             send500(dhs->req, "Unknown error");
-            printerr("error loading module: Unknown error");
         }
-        duk_pop_2(ctx);
+        //duk_pop_2(ctx);
         return -1;
     }
 
@@ -3512,7 +3512,6 @@ static int getmod_path(DHS *dhs)
         strcpy(subpath, (path->full) + dhs->pathlen -1);
 
 //printf("1 subpath=%s\n", (path->full) + dhs->pathlen -1);
-
 
         if(subpath[strlen(subpath)-1] == '/')
             subpath[strlen(subpath)-1] = '\0';
@@ -3681,7 +3680,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
     }
 
     duk_get_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("thread_funcstash")); //this should be at index 0;
-
+//printf("dhs req path = %s, module=%d\n",dhs->reqpath, dhs->module);
     if(dhs->module==MODULE_FILE)
     {
         int res=0;
@@ -4830,6 +4829,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         if(*path == 'w' && *(path+1) =='s' && *(path+2) ==':' &&  *(path+3) =='/')
                         {
                             sprintf(s, "%s", path);
+                            if  (*(s + strlen(s) - 1)=='/')
+                                cbtype=3;
                         }
                         else if (*path == '~')
                         {
@@ -4879,7 +4880,16 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                    but only for non glob/regex paths for module:
                                 */
                                 if(cbtype == 0 || cbtype == 3)
-                                    pathlen=strlen(s);
+                                {
+                                    if(*s=='w'  && *(s+1)=='s' && *(s+2)==':')
+                                    {
+                                        char *p=s+3;
+                                        while(*p=='/') p++;
+                                        pathlen=strlen(p)+1;
+                                    }
+                                    else
+                                        pathlen=strlen(s);
+                                }
                                 goto copyfunction;
 
                             }
@@ -4911,7 +4921,16 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                 fprintf(access_fh, "mapping %s path to mod folder %-20s ->    module path:%s\n", pathtypes[cbtype], s, fname);
                                 mod=MODULE_PATH;
                                 duk_pop(ctx);
-                                pathlen=strlen(s);
+
+                                if(*s=='w'  && *(s+1)=='s' && *(s+2)==':')
+                                {
+                                    char *p=s+3;
+                                    while(*p=='/') p++;
+                                    pathlen=strlen(p)+1;
+                                }
+                                else
+                                    pathlen=strlen(s);
+
                                 goto copyfunction;
                             }
                             duk_pop(ctx);
