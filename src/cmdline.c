@@ -846,18 +846,18 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
             printf("Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
             /* why won't throw work?  It just aborts with no error message.
                but I thought that was the point of duk_pcall */
-            RP_THROW(ctx, duk_safe_to_string(ctx, -1));
+            //RP_THROW(ctx, duk_safe_to_string(ctx, -1));
             duk_pop(ctx);
         }
         else if (duk_is_string(ctx, -1))
         {
             printf("Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
-            RP_THROW(ctx, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
+            //RP_THROW(ctx, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
         }
         else
         {
             printf("Error in setTimeout/setInterval callback\n");
-            RP_THROW(ctx, "Error in setTimeout/setInterval callback\n");
+            //RP_THROW(ctx, "Error in setTimeout/setInterval callback\n");
         }
     }
     //discard return
@@ -2017,7 +2017,7 @@ int main(int argc, char *argv[])
                 file_src = free_file_src = tickified;
                 if (err)
                 {
-                    char *msg;
+                    char *msg="";
                     switch (err) {
                         case ST_BT:
                             msg="unterminated or illegal template literal"; break;

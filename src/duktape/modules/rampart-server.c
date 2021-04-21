@@ -792,6 +792,8 @@ static DHS *get_dhs(duk_context *ctx)
     dhs=new_dhs(ctx, -1);
     dhs->freeme=1;
     duk_push_this(ctx);
+    if (duk_is_undefined(ctx, -1))
+        RP_THROW(ctx, "server websockets- reference to req is no longer valid"); 
     if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("evreq")))
         fprintf(stderr, "FIXME: evreq not found\n");
     else
@@ -908,6 +910,8 @@ duk_ret_t duk_server_ws_set_disconnect(duk_context *ctx)
         RP_THROW(ctx, "wsOnDisconnect argument must be a function");
 
     duk_push_this(ctx);
+    if (duk_is_undefined(ctx, -1))
+        RP_THROW(ctx, "server req.wsOnDisconnect- reference to req is no longer valid"); 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("evreq"));
     req = (evhtp_request_t *)duk_get_pointer(ctx, -1);
     duk_pop_2(ctx);
@@ -950,6 +954,8 @@ duk_ret_t duk_server_ws_end(duk_context *ctx)
         dhs->req=NULL;
 
     duk_push_this(ctx);
+    if (duk_is_undefined(ctx, -1))
+        RP_THROW(ctx, "server req.wsEnd- reference to req is no longer valid"); 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("req"));
     req = (evhtp_request_t *)duk_get_pointer(ctx, -1);
     duk_pop_2(ctx);
@@ -4369,7 +4375,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
     }
     /* done with forking, now calloc */
     ssl_config = calloc(1, sizeof(evhtp_ssl_cfg_t));
-    rampart_server_started=1;
 
     /* options from server({options},...) */
     if (ob_idx != -1)
@@ -5350,6 +5355,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
         add_exit_func(evexit, htp);
         event_base_loop(elbase, 0);
     }
+    else
+        rampart_server_started=1;
 
     duk_push_global_stash(ctx);
     duk_pull(ctx,0);
