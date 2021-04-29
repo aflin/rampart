@@ -1059,6 +1059,23 @@ duk_ret_t duk_server_getpos(duk_context *ctx)
     return 1;
 }
 
+duk_ret_t duk_server_getmime(duk_context *ctx)
+{
+    const char *ext = REQUIRE_STRING(ctx, 0, "req.getMime - parameter must be a string (filename extension)");
+    RP_MTYPES m;
+    RP_MTYPES *mres, *m_p = &m;
+
+    m.ext = ext;
+    /* look for proper mime type listed in mime.h */
+    mres = bsearch(m_p, allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
+    if (mres)
+        duk_push_string(ctx, mres->mime);
+    else
+        return 0;
+    return 1;
+}
+
+
 /* update request vars for ws connection */
 static int update_req_vars(DHS *dhs, int gotbuf)
 {
@@ -1149,6 +1166,8 @@ static int push_req_vars(DHS *dhs)
     duk_put_prop_string(ctx, -2, "rewind");
     duk_push_c_function(ctx, duk_server_getbuffer, 0);
     duk_put_prop_string(ctx, -2, "getBuffer");
+    duk_push_c_function(ctx, duk_server_getmime, 1);
+    duk_put_prop_string(ctx, -2, "getMime");
 
     if(dhs->req->cb_has_websock)
     {
