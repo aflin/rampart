@@ -237,8 +237,8 @@ getRespReply(RESPCLIENT *rcp)
         rcp->fromReadp = rcp->fromBuf + totalRead;
 
       bufAvailable = rcp->fromBufSize - totalRead;//-ajf
-    } while (isThereMoreComing(rcp));
 //printf("buffer (size %d):\n%.*s\n", (int)nread, (int)nread, lastread);
+    } while (isThereMoreComing(rcp));
     parseRet = parseResProto(rcp->rppFrom, rcp->fromBuf, totalRead, newBuffer);
 //printf("buffer after (size %d):\n%.*s\n", (int)totalRead, totalRead, rcp->fromBuf);
 

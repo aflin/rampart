@@ -580,7 +580,8 @@ int parseResProto(RESPROTO *rpp, byte *buf, size_t bufLen, int newBuffer)
       convertRespPlaintext(rpp, p, nextItem);
     }
     }
-    restoreTo = p = nextItem;
+    //restoreTo = p = nextItem;
+    rpp->currPointer=restoreTo=p=nextItem; // PBR 4/28/21 attempt to fix restart
   }
   if (rpp->arrayDepth) // we're still expecting more array members
   {
