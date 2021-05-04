@@ -144,10 +144,15 @@ waitForRespData(RESPCLIENT *rcp)
 {
   struct pollfd pfd;
   int ret;
+  
+  if(rcp->timeout < 0)  // - timeout instead of waitForever - ajf -5/3/2021
+    return (1);
+
   memset(&pfd, 0, sizeof(struct pollfd));
   pfd.fd = rcp->socket;
   pfd.events = POLLIN | POLLHUP;
-  ret = poll(&pfd, 1, 1000 * RESPCLIENTTIMEOUT);
+//  ret = poll(&pfd, 1, 1000 * RESPCLIENTTIMEOUT);
+  ret = poll(&pfd, 1, rcp->timeout); // - timeout instead of waitForever - ajf -5/3/2021
 
   if (ret == -1)
   {
@@ -201,9 +206,9 @@ getRespReply(RESPCLIENT *rcp)
   do
   {
     parseRet = RESP_PARSE_INCOMPLETE;
-    //if waitForever is set we'll just block on the read instead of polling with a timeout
-    if (!rcp->waitForever)
-      if (!waitForRespData(rcp))
+    // if waitForever is set we'll just block on the read instead of polling with a timeout
+    // if (!waitForever(rcp))
+      if (!waitForRespData(rcp)) // - rcp->timeout instead of waitForever - ajf -5/3/2021
         return (NULL);
 //char *lastread=(char*)rcp->fromReadp;
     do

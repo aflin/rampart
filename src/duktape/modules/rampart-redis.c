@@ -346,6 +346,26 @@ static void push_response_object(duk_context *ctx, RESPROTO *response, int ridx,
   }
 } 
 
+/* assumes everything is in one array */
+static void push_response_object_labeled(duk_context *ctx, RESPROTO *response, int ridx, const char *fname, int retbuf)
+{
+  int ii=0;
+
+  if(response->items->respType != RESPISARRAY)
+    RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
+
+  duk_push_object(ctx);    
+  while (ridx < response->nItems)
+  {
+    ridx = array_push_single(ctx, response, ridx, fname, retbuf);
+    if( ii%2 )
+      duk_put_prop_string(ctx, -2, "value");
+    else
+      duk_put_prop_string(ctx, -2, "key");
+    ii++;    
+  }
+} 
+
 /* [key,val], [key,val], ... */
 static int push_nested(duk_context *ctx, RESPROTO *response, int ridx, const char *fname, int retbuf, int topnest, const char **lastid)
 {
@@ -423,7 +443,7 @@ static int push_response_object_nested(duk_context *ctx, RESPROTO *response, int
   return ridx;
 } 
 
-static void rd_push_response(duk_context *ctx, RESPROTO *response, const char *fname, int type)
+static int rd_push_response(duk_context *ctx, RESPROTO *response, const char *fname, int type)
 {
   int retbuf = type & RETBUFFLAG;
   
@@ -438,7 +458,7 @@ static void rd_push_response(duk_context *ctx, RESPROTO *response, const char *f
       {
         //duk_push_null(ctx);
         duk_push_array(ctx); //return empty array
-        return;
+        return 1;
       }
       if(type!=5)
         type=0;//only one item, return it as is regardless of type
@@ -538,10 +558,16 @@ static void rd_push_response(duk_context *ctx, RESPROTO *response, const char *f
         }
         break;
       }
+      case 12:
+        push_response_object_labeled(ctx, response, 1, fname, retbuf);
+        break;
     }      
   }
   else
-    RP_THROW(ctx, "rampart-redis - error getting response from redis server (disconnected?)");
+     return 0;
+    //RP_THROW(ctx, "rampart-redis - error getting response from redis server (disconnected?)");
+
+  return 1;
 }
 
 #define docallback do{          \
@@ -553,12 +579,15 @@ static void rd_push_response(duk_context *ctx, RESPROTO *response, const char *f
   if(ret!=DUK_EXEC_SUCCESS) {                   \
         if (duk_is_error(ctx, -1) ){\
             duk_get_prop_string(ctx, -1, "stack");\
-            fprintf(stderr, "error in async callback: '%s'\n", duk_safe_to_string(ctx, -1));\
+            if(isasync) fprintf(stderr, "error in async callback: '%s'\n", duk_safe_to_string(ctx, -1));\
+            else RP_THROW(ctx, "%s", duk_safe_to_string(ctx, -1));\
         }\
         else if (duk_is_string(ctx, -1)){\
-            fprintf(stderr, "error in async callback: '%s'\n", duk_safe_to_string(ctx, -1));\
+            if(isasync) fprintf(stderr, "error in async callback: '%s'\n", duk_safe_to_string(ctx, -1));\
+            else RP_THROW(ctx, "%s", duk_safe_to_string(ctx, -1));\
         } else {\
-            fprintf(stderr,"unknown error in async callback");\
+            if(isasync) fprintf(stderr,"unknown error in async callback");\
+            else RP_THROW(ctx, "unknown error in callback");\
         }\
   }         \
   total++;  \
@@ -693,6 +722,38 @@ static void push_response_cb_keyval(duk_context *ctx, RESPROTO *response, duk_id
   duk_push_int(ctx, total);
 }
 
+/* expecting [key,val,key,val,...] -> {key:val, key:val,...}  */
+static void push_response_cb_keyval_labeled(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
+{
+  int total=0, ii=0;
+  int isasync = flag & ASYNCFLAG, retbuf = flag & RETBUFFLAG;
+
+  if(response->items->respType != RESPISARRAY)
+    RP_THROW(ctx, "rampart-redis %s - Unexpected format of response from redis server", fname);
+  while (ridx < response->nItems)
+  {
+    if(!(ii%2))
+      duk_push_object(ctx);
+
+    ridx = array_push_single(ctx, response, ridx, fname, retbuf);
+
+    if (ii%2)
+    {
+      duk_put_prop_string(ctx, -2, "value");
+      docallback;
+      duk_pop(ctx); //discard return from callback
+    }
+    else
+    {
+      duk_put_prop_string(ctx, -2, "key");
+    }
+    ii++;
+  }
+
+  cb_end:
+  duk_push_int(ctx, total);
+}
+
 /* [ [key,val], [key,val], ... ]*/
 static void push_response_object_cb_nested(duk_context *ctx, RESPROTO *response,  duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag, int ridx)
 {
@@ -763,11 +824,17 @@ static void push_response_cb_keyval_pairs(duk_context *ctx, RESPROTO *response, 
   duk_push_int(ctx, total);
 }
 */
-static void rd_push_response_cb(duk_context *ctx, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag)
+static void rd_push_response_cb(duk_context *ctx, RESPCLIENT *rcp, RESPROTO *response, duk_idx_t cb_idx, duk_idx_t this_idx, const char *fname, int flag)
 {
   int type = flag & 255;
   int retbuf = flag & RETBUFFLAG;
+  int isasync = flag & ASYNCFLAG;
   int xreadauto = flag & XREADAUTOFLAG;
+
+  /* reset error message */
+  duk_push_string(ctx, "");
+  duk_put_prop_string(ctx, this_idx, "errMsg");
+
   if (response)
   {
     RESPITEM *item = response->items;
@@ -783,8 +850,36 @@ static void rd_push_response_cb(duk_context *ctx, RESPROTO *response, duk_idx_t 
     }
   }
   else
-    RP_THROW(ctx, "rampart-redis - error getting response from redis server (disconnected?)");
+  {
+    //RP_THROW(ctx, "rampart-redis - error getting response from redis server (disconnected?)");
+    int ret;
 
+    duk_push_sprintf(ctx, "%s: redis server connection error:\n%s", fname, (rcp->rppFrom->errorMsg?rcp->rppFrom->errorMsg:"Unknown Error") );
+//    duk_push_string(ctx, "rampart-redis - error getting response from redis server (disconnected?)");
+    duk_put_prop_string(ctx, this_idx, "errMsg");
+
+    duk_dup(ctx, cb_idx);
+    duk_dup(ctx, this_idx);
+    duk_push_array(ctx);
+    ret=duk_pcall_method(ctx, 1);
+    if(ret!=DUK_EXEC_SUCCESS) {
+          if (duk_is_error(ctx, -1) ){
+              duk_get_prop_string(ctx, -1, "stack");
+              if(isasync) fprintf(stderr, "error in async callback: '%s'\n", duk_safe_to_string(ctx, -1));
+              else RP_THROW(ctx, "%s", duk_safe_to_string(ctx, -1));
+          }
+          else if (duk_is_string(ctx, -1)){
+              if(isasync) fprintf(stderr, "error in async callback: '%s'\n", duk_safe_to_string(ctx, -1));
+              else RP_THROW(ctx, "%s", duk_safe_to_string(ctx, -1));
+          } else {
+              if(isasync) fprintf(stderr,"unknown error in async callback");
+              else RP_THROW(ctx, "unknown error in callback");
+          }
+    }
+
+    duk_push_int(ctx, 0);
+    return;
+  }
   switch(type)
   {
     case 0:
@@ -969,7 +1064,10 @@ static void rd_push_response_cb(duk_context *ctx, RESPROTO *response, duk_idx_t 
         }
       }
       duk_push_int(ctx, total);
-    }
+    }//case 11
+    case 12:
+      push_response_cb_keyval_labeled(ctx, response, cb_idx, this_idx, fname, flag, 1);
+      break;
   }
   cb_end:
   return;
@@ -977,19 +1075,23 @@ static void rd_push_response_cb(duk_context *ctx, RESPROTO *response, duk_idx_t 
 
 /*************** FUNCTION FOR init ****************************** */
 #define checkresp do {\
-  /*printenum(ctx,-1);*/\
+  /* thread_copied is set in rampart-server if object was copied from a different thread */\
+  /* In that case, we need to open a separate connection to redis */\
   if(duk_has_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("thread_copied") ) ){\
     int port; const char *ip;\
+    duk_del_prop_string(ctx, -1, "async_client_p");\
     duk_get_prop_string(ctx, -1, "ip");\
     ip=duk_get_string(ctx, -1);\
     duk_pop(ctx);\
     duk_get_prop_string(ctx, -1, "port");\
     port=duk_get_int(ctx, -1);\
     duk_pop(ctx);\
+    duk_pop(ctx);\
     duk_del_prop_string( ctx, -1, DUK_HIDDEN_SYMBOL("thread_copied") );\
     rcp= connectRespServer((char *)ip, port);\
     if(!rcp) RP_THROW(ctx,"could not reconnect to resp server");\
-    duk_push_pointer(ctx, (void *) rcp);\
+    duk_get_prop_string(ctx, -1, "timeout");\
+    rcp->timeout=duk_get_int(ctx, -1);\
     duk_put_prop_string(ctx, -2, "client_p");\
   }\
 } while(0)
@@ -1012,6 +1114,7 @@ static void rd_push_response_cb(duk_context *ctx, RESPROTO *response, duk_idx_t 
     duk_pop(ctx);\
     subrcp= connectRespServer((char *)ip, port);\
     if(!subrcp) RP_THROW(ctx,"subscribe: could not connect to resp server");\
+    subrcp->timeout=-1;/* always blocking for async */\
     duk_push_pointer(ctx, (void *) subrcp);\
     duk_put_prop_string(ctx, -2, "async_client_p");\
     duk_pop_2(ctx);\
@@ -1106,7 +1209,7 @@ static void rp_rdev_doevent(evutil_socket_t fd, short events, void* arg)
   // get response from redis
   response = getRespReply(args->rcp);
   //parse response, run callback
-  rd_push_response_cb(ctx, response, duk_normalize_index(ctx, -1), duk_normalize_index(ctx, -2), args->fname, args->flag);
+  rd_push_response_cb(ctx, args->rcp, response, duk_normalize_index(ctx, -1), duk_normalize_index(ctx, -2), args->fname, args->flag);
   // [ ..., this, callback, callback_return_val ]
 
   // if not subscribe or xread_auto_async, its a one time event.
@@ -1120,7 +1223,7 @@ static void rp_rdev_doevent(evutil_socket_t fd, short events, void* arg)
   //end with empty stack
   while (duk_get_top(ctx) > 0) 
     duk_pop(ctx);
-  // [ ... ]
+  // [ ]
 }
 
 
@@ -1164,14 +1267,17 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
 {
   RESPCLIENT *rcp=NULL;
   RESPROTO *response;
-  char *fmt=NULL;
   duk_idx_t top=0, i=0;
   int gotfunc=0, isasync=0, commandtype=0, retbuf=0, totalels=0;
   const char *fname, *cname;
   duk_size_t sz;
 
-  /* get the client */
   duk_push_this(ctx);
+  /* reset any error messages */
+  duk_push_string(ctx, "");
+  duk_put_prop_string(ctx, -2, "errMsg");
+
+  /* get the client */
   if( duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("respclient")) ) 
   {
     checkresp;
@@ -1186,42 +1292,8 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
 
   top=duk_get_top(ctx);
 
-  /* get count of elements for the format, including array members and object keys and vals */
-  while(i < top)
-  {
-    if(duk_is_ecmascript_function(ctx, i)||duk_is_boolean(ctx, i))
-    {
-      i++;
-      continue;
-    }
-    else if(duk_is_array(ctx,i))
-      totalels += (int)duk_get_length(ctx,i);
-    else if(duk_is_buffer_data(ctx,i))
-      totalels++;
-    else if(duk_is_object(ctx, i))
-    {
-      int keys=0;
-      duk_enum(ctx, i, 0);
-      while(duk_next(ctx, -1, 0))
-      {
-        duk_pop(ctx);
-        keys++;
-      }
-      duk_pop(ctx);
-      totalels += keys * 2;
-    }
-    else
-      totalels++;
-    i++;
-  }
-  i=0;
 
   duk_push_current_function(ctx);
-  duk_get_prop_string(ctx, -1, "command");
-  cname=duk_get_lstring(ctx, -1, &sz);
-  REMALLOC(fmt, 5 * (size_t)totalels + (sz + 1) );
-  strcpy(fmt, cname);
-  duk_pop(ctx);
 
   duk_get_prop_string(ctx, -1, "type");
   commandtype = duk_get_int(ctx,-1);
@@ -1229,7 +1301,7 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
 
   duk_get_prop_string(ctx, -1, "fname");
   fname = duk_get_lstring(ctx, -1, &sz);
-  duk_pop_2(ctx);
+  duk_pop(ctx);
 
   //zpop is always 9
   if(commandtype==9 && strcmp(fname,"zpopmin") && strcmp(fname,"zpopmax"))
@@ -1248,110 +1320,182 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
     )
     isasync=1;
 
-  while (i < top)
+  /* for all commands except format & format_async - make the format string */
+  if(strcmp(fname, "format") != 0 && strcmp(fname, "format_async") != 0)
   {
-    IF_FMT_INSERT
-    else if (duk_is_ecmascript_function(ctx, i))
-    {
-      if (!gotfunc)
-      {
-        //get callback out of the way
-        duk_push_this(ctx);
-        duk_pull(ctx,i);
-        if(isasync)
-          duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("subcallback"));
-        else
-          duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("callback"));
-        gotfunc=1;
-        duk_pop(ctx);//this
-      }
-      else
-        duk_remove(ctx,i);
+    char *fmt=NULL;
 
-      top=duk_get_top(ctx);
-      i--;
-    }
-    else if (duk_is_array(ctx, i))
+    i=0;
+    /* get count of elements for the format, including array members and object keys and vals */
+    while(i < top)
     {
-      duk_idx_t oldi=i;
-      duk_uarridx_t j = 0, l = duk_get_length(ctx, i);
-      for (;j<l;j++)
+      if(duk_is_ecmascript_function(ctx, i)||duk_is_boolean(ctx, i))
       {
         i++;
-        duk_get_prop_index(ctx, oldi, j);
-        duk_insert(ctx, i);
-        IF_FMT_INSERT
-        ELSE_IF_FMT_INSERT
+        continue;
       }
-      duk_remove(ctx, oldi);
-      i--;
-      top=duk_get_top(ctx);
-    } 
-    else if (duk_is_object(ctx, i))
-    {
-      duk_idx_t oldi=i, ins_idx;
-      if(strcmp(fname,"xread_auto_async")==0)
+      else if(duk_is_array(ctx,i))
+        totalels += (int)duk_get_length(ctx,i);
+      else if(duk_is_buffer_data(ctx,i))
+        totalels++;
+      else if(duk_is_object(ctx, i))
       {
-        duk_idx_t enum_idx=duk_get_top(ctx);//next item to top the stack
-        duk_push_this(ctx);
-        duk_dup(ctx, i);
-        duk_put_prop_string(ctx, -2, "xreadArgs");
-        duk_pop(ctx);//this
-        commandtype|=XREADAUTOFLAG;
-
+        int keys=0;
         duk_enum(ctx, i, 0);
-        ins_idx=duk_get_top(ctx); //where the stream names go
-        while(duk_next(ctx, enum_idx, 1))
+        while(duk_next(ctx, -1, 0))
         {
-          //new location for key
-          duk_pull(ctx, -2);//do key first
-          duk_insert(ctx, ins_idx);
-          //leave val where it is, but make sure it's a string
-          (void)duk_to_string(ctx, -1);
-          ins_idx++;
+          duk_pop(ctx);
+          keys++;
         }
-        duk_remove(ctx, enum_idx);
-        duk_remove(ctx, oldi);//object
+        duk_pop(ctx);
+        totalels += keys * 2;
       }
       else
+        totalels++;
+      i++;
+    }
+
+    duk_get_prop_string(ctx, -1, "command");
+    cname=duk_get_lstring(ctx, -1, &sz);
+    REMALLOC(fmt, 5 * (size_t)totalels + (sz + 1) );
+    strcpy(fmt, cname);
+    duk_pop_2(ctx);//command and current_function
+
+    i=0;
+    while (i < top)
+    {
+      IF_FMT_INSERT
+      else if (duk_is_ecmascript_function(ctx, i))
       {
-        duk_enum(ctx, i, 0);
-        while(duk_next(ctx, -1, 1))
+        if (!gotfunc)
         {
-          i++; //new location for key
-          duk_pull(ctx, -2);//do key first
-          duk_insert(ctx, i);
-          strcat(fmt," %s");
-          i++;//new location for val
+          //get callback out of the way
+          duk_push_this(ctx);
+          duk_pull(ctx,i);
+          if(isasync)
+            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("subcallback"));
+          else
+            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("callback"));
+          gotfunc=1;
+          duk_pop(ctx);//this
+        }
+        else
+          duk_remove(ctx,i);
+
+        top=duk_get_top(ctx);
+        i--;
+      }
+      else if (duk_is_array(ctx, i))
+      {
+        duk_idx_t oldi=i;
+        duk_uarridx_t j = 0, l = duk_get_length(ctx, i);
+        for (;j<l;j++)
+        {
+          i++;
+          duk_get_prop_index(ctx, oldi, j);
           duk_insert(ctx, i);
           IF_FMT_INSERT
           ELSE_IF_FMT_INSERT
         }
-        duk_pop(ctx);//enum
-        duk_remove(ctx, oldi);//object
-      }
-      i--;
-      top=duk_get_top(ctx);
-    }
-    else if (duk_is_boolean(ctx, i))
-    {
-      if(duk_get_boolean(ctx, i))
-        retbuf = RETBUFFLAG;
-      duk_remove(ctx, i);
-      top=duk_get_top(ctx);
-      i--;
-    }
-    else
-    {
-      duk_safe_to_string(ctx,i);
-      strcat(fmt," %s");
-    }
-    i++;
-  }
+        duk_remove(ctx, oldi);
+        i--;
+        top=duk_get_top(ctx);
+      } 
+      else if (duk_is_object(ctx, i))
+      {
+        duk_idx_t oldi=i, ins_idx;
+        if(strcmp(fname,"xread_auto_async")==0)
+        {
+          duk_idx_t enum_idx=duk_get_top(ctx);//next item to top the stack
+          duk_push_this(ctx);
+          duk_dup(ctx, i);
+          duk_put_prop_string(ctx, -2, "xreadArgs");
+          duk_pop(ctx);//this
+          commandtype|=XREADAUTOFLAG;
 
-  duk_push_string(ctx,fmt);
-  free(fmt);
-  duk_insert(ctx,0);
+          duk_enum(ctx, i, 0);
+          ins_idx=duk_get_top(ctx); //where the stream names go
+          while(duk_next(ctx, enum_idx, 1))
+          {
+            //new location for key
+            duk_pull(ctx, -2);//do key first
+            duk_insert(ctx, ins_idx);
+            //leave val where it is, but make sure it's a string
+            (void)duk_to_string(ctx, -1);
+            ins_idx++;
+          }
+          duk_remove(ctx, enum_idx);
+          duk_remove(ctx, oldi);//object
+        }
+        else
+        {
+          duk_enum(ctx, i, 0);
+          while(duk_next(ctx, -1, 1))
+          {
+            i++; //new location for key
+            duk_pull(ctx, -2);//do key first
+            duk_insert(ctx, i);
+            strcat(fmt," %s");
+            i++;//new location for val
+            duk_insert(ctx, i);
+            IF_FMT_INSERT
+            ELSE_IF_FMT_INSERT
+          }
+          duk_pop(ctx);//enum
+          duk_remove(ctx, oldi);//object
+        }
+        i--;
+        top=duk_get_top(ctx);
+      }
+      else if (duk_is_boolean(ctx, i))
+      {
+        if(duk_get_boolean(ctx, i))
+          retbuf = RETBUFFLAG;
+        duk_remove(ctx, i);
+        top=duk_get_top(ctx);
+        i--;
+      }
+      else
+      {
+        duk_safe_to_string(ctx,i);
+        strcat(fmt," %s");
+      }
+      i++;
+    }
+
+    duk_push_string(ctx,fmt);
+    free(fmt);
+    duk_insert(ctx,0);
+  }
+  else // is format or format_async
+  {
+    duk_pop(ctx);//current_function
+    i=0;
+    while (i < top)
+    {
+      if (duk_is_ecmascript_function(ctx, i))
+      {
+        if (!gotfunc)
+        {
+          //get callback out of the way
+          duk_push_this(ctx);
+          duk_pull(ctx,i);
+          if(isasync)
+            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("subcallback"));
+          else
+            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("callback"));
+          gotfunc=1;
+          duk_pop(ctx);//this
+        }
+        else
+          duk_remove(ctx,i);
+
+        top=duk_get_top(ctx);
+        i--;
+      }//ecmascript
+      i++;
+    }//while
+  } // if format or format_async
 
   /* async functions (pub/sub) will be handled using the current libevent loop */
   if(isasync)
@@ -1382,7 +1526,7 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
       }
 
       if (!gotfunc)
-        RP_THROW(ctx, "%s: subscribe and other async functions require a callback", fname);
+        RP_THROW(ctx, "%s: subscribe and *_async functions require a callback", fname);
 
       duk_get_global_string(ctx, "rampart");
       if(duk_get_prop_string(ctx, -1, "thread_id"))
@@ -1431,89 +1575,29 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
   else
   {
     response = rc_send(ctx, rcp);
+
     if(gotfunc)
     {
       duk_push_this(ctx);
       duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("callback"));
-      rd_push_response_cb(ctx, response, duk_normalize_index(ctx, -1), duk_normalize_index(ctx, -2), fname, commandtype|retbuf);
+      //error handled in callback
+      rd_push_response_cb(ctx, rcp, response, duk_normalize_index(ctx, -1), duk_normalize_index(ctx, -2), fname, commandtype|retbuf);
     }
     else
-      rd_push_response(ctx, response, fname, commandtype|retbuf);
-  }
-  return 1;
-}
-
-/* generic function for fmt */
-
-static duk_ret_t duk_rp_cc_dofmt(duk_context *ctx)
-{
-  RESPCLIENT *rcp=NULL;
-  RESPROTO *response;
-  duk_idx_t top=0, i=0;
-  int gotfunc=0, commandtype=1, retbuf=0;
-  const char *fname = "format";
-
-  REQUIRE_STRING(ctx, 0, "%s - first argument must be a String (format)", fname);
-
-  /* get the client */
-  duk_push_this(ctx);
-  if( duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("respclient")) ) 
-  {
-    checkresp;
-    duk_get_prop_string(ctx, -1, "client_p");
-    rcp = (RESPCLIENT *)duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
-  }
-  duk_pop_2(ctx);
-
-  if( rcp == NULL )
-    RP_THROW(ctx, "error: rampart-redis - client not connected");
-
-  top=duk_get_top(ctx);
-
-  while (i < top)
-  {
-    if (duk_is_ecmascript_function(ctx, i))
     {
-      if (!gotfunc)
+      if(!response) 
       {
-        //get callback out of the way
+        //connection or other error
         duk_push_this(ctx);
-        duk_pull(ctx,i);
-        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("callback"));
-        gotfunc=1;
-        duk_pop(ctx);//this
+        duk_push_sprintf(ctx, "%s: redis server connection error:\n%s", fname, (rcp->rppFrom->errorMsg?rcp->rppFrom->errorMsg:"Unknown Error") );
+        duk_put_prop_string(ctx, -2, "errMsg");
+        return 0;//return undefined
       }
-      else
-        duk_remove(ctx,i);
-
-      top=duk_get_top(ctx);
-      i--;
+      rd_push_response(ctx, response, fname, commandtype|retbuf);
     }
-    else if (duk_is_boolean(ctx, i))
-    {
-      if(duk_get_boolean(ctx, i))
-        retbuf = RETBUFFLAG;
-      duk_remove(ctx, i);
-      top=duk_get_top(ctx);
-      i--;
-    }
-    i++;
   }
-
-  response = rc_send(ctx, rcp);
-  if(gotfunc)
-  {
-    duk_push_this(ctx);
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("callback"));
-    rd_push_response_cb(ctx, response, duk_normalize_index(ctx, -1), duk_normalize_index(ctx, -2), fname, commandtype|retbuf);
-  }
-  else
-    rd_push_response(ctx, response, fname, commandtype|retbuf);
-
   return 1;
 }
-
 
 static duk_ret_t duk_rp_proxyobj_destroy(duk_context *ctx);
 static void duk_rp_proxyobj_makeproxy(duk_context *ctx);
@@ -1879,43 +1963,64 @@ static duk_ret_t duk_rp_proxyobj(duk_context *ctx)
 
 
 /* **************************************************
-   redis(host,port) constructor
+   new redis.init([host,] [port,] [timeout]) constructor
+     or
+   new redis.init([port,] [host,] [timeout]) constructor
+     or
+   new redis.init( { [port:xxx,] [ip: yyy,] [timeout:zzz]})
    var redis = require("rampart-redis");
    var rcl=new redis.init(6379, "127.0.0.1");
 
    ************************************************** */
 static duk_ret_t duk_rp_cc_constructor(duk_context *ctx)
 {
-  int port = 6379;
+  int port = 6379, timeout=-1;
   const char *ip = "127.0.0.1";
-  RESPCLIENT *respClient = NULL;
+  RESPCLIENT *rcp = NULL;
 
   if (!duk_is_constructor_call(ctx))
   {
     return DUK_RET_TYPE_ERROR;
   }
 
-  if(duk_is_number(ctx, 0))
+  if (duk_is_object(ctx,0))
   {
-    port = (int)duk_get_int(ctx, 0);
-    ip = duk_get_string_default(ctx, 1, "127.0.0.1");
+    if(duk_get_prop_string(ctx, 0, "port"))
+      port = REQUIRE_INT(ctx, -1, "redis.init - property 'port' must be an Integer (port of redis server)");
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, 0, "ip"))
+      ip = REQUIRE_STRING(ctx, -1, "redis.init - property 'ip' must be a String (ip address of redis server)");
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, 0, "timeout"))
+      timeout = (int)(1000.0 * REQUIRE_NUMBER(ctx, -1, "redis.init - property 'timeout' must be a Number (timeout in seconds)") );
+    duk_pop(ctx);
   }
-  else if(duk_is_string(ctx, 0))
+  else
   {
-    ip = duk_get_string(ctx, 0);
-    port = (int)duk_get_int_default(ctx, 1,  6379);
+    if(duk_is_number(ctx, 0))
+    {
+      port = duk_get_int(ctx, 0);
+      ip = duk_get_string_default(ctx, 1, "127.0.0.1");
+    }
+    else if(duk_is_string(ctx, 0))
+    {
+      ip = duk_get_string(ctx, 0);
+      port = (int)duk_get_int_default(ctx, 1,  6379);
+    }
+
+    if(!duk_is_undefined(ctx, -2))
+      timeout=(int) ( 1000.0 * REQUIRE_NUMBER(ctx, -2, "redis.init - third parameter must be a number (timeout in seconds)") );
   }
 
-  respClient = connectRespServer((char *)ip, port);
-  if (!respClient)
-  {
-    duk_push_sprintf(ctx, "respClient: Failed to connect to %s:%d\n", ip, port);
-    (void)duk_throw(ctx);
-  }
+  rcp = connectRespServer((char *)ip, port);
 
-  // TODO: ask what this should be set to
-  respClient->waitForever = 1;
-  //  respClientWaitForever(respClient,1);
+  if (!rcp)
+    RP_THROW(ctx, "redis.init - Failed to connect to %s:%d", ip, port);
+
+  rcp->timeout = timeout; // wait forever
+
   duk_push_this(ctx);
 
   duk_push_c_function(ctx, _close_, 1);
@@ -1924,12 +2029,14 @@ static duk_ret_t duk_rp_cc_constructor(duk_context *ctx)
   duk_push_c_function(ctx, duk_rp_proxyobj, 1);
 
   duk_push_object(ctx); //put it in an object so there is only copy with multiple references
-  duk_push_pointer(ctx, (void *)respClient);
+  duk_push_pointer(ctx, (void *)rcp);
   duk_put_prop_string(ctx, -2, "client_p");
   duk_push_string(ctx, ip);
   duk_put_prop_string(ctx, -2, "ip");
   duk_push_int(ctx,port);
   duk_put_prop_string(ctx, -2, "port");
+  duk_push_int(ctx,timeout);
+  duk_put_prop_string(ctx, -2, "timeout");
   duk_dup(ctx, -1);
   duk_put_prop_string(ctx, -4, DUK_HIDDEN_SYMBOL("respclient")); /* copy on this */
   duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("respclient")); /* copy on duk_rp_proxyobj */
@@ -1966,7 +2073,7 @@ char *commandnames[] = {
 /* 120 */"lpush", "lpushx", "lrange", "lrem", "lset", "ltrim", "memory_doctor", "memory_help", "memory_malloc-stats", "memory_purge",
 /* 130 */"memory_stats", "memory_usage", "mget", "migrate", "module_list", "module_load", "module_unload", "monitor", "move", "mset",
 /* 140 */"msetnx", "multi", "object", "persist", "pexpire", "pexpireat", "pfadd", "pfcount", "pfmerge", "ping",
-/* 150 */"psetex", "psubscribe", "pubsub", "pttl", /*"publish_async",*/ "publish"   , "punsubscribe", "quit", "randomkey", "readonly",
+/* 150 */"psetex", "psubscribe", "pubsub", "pttl", "blpop_async", "publish"   , "punsubscribe", "quit", "randomkey", "readonly",
 /* 160 */"readwrite", "rename", "renamenx", "restore", "role", "rpop", "rpoplpush", "rpush", "rpushx", "sadd",
 /* 170 */"save", "scard", "script_debug", "script_exists", "script_flush", "script_kill", "script_load", "sdiff", "sdiffstore", "select",
 /* 180 */"set", "setbit", "setex", "setnx", "setrange", "shutdown", "sinter", "sinterstore", "sismember", "slaveof",
@@ -1978,7 +2085,7 @@ char *commandnames[] = {
 /* 240 */"zscan", "xinfo", "xadd", "xtrim", "xdel", "xrange", "xrevrange", "xlen", "xread", "xread_block_async",
 /* 250 */"xgroup", "xreadgroup", "xack", "xclaim", "xpending", "latency_doctor", "latency_graph", "latency_history", "latency_latest", "latency_reset",
 /* 260 */"latency_help", "reset", "getdel", "getex", "hrandfield", "lmove", "smismember", "zdiff", "zdiffstore", "zinter",
-/* 270 */"zunion", "zrangestore", "zmscore", "zrandmember", "xread_auto_async"
+/* 270 */"zunion", "zrangestore", "zmscore", "zrandmember", "xread_auto_async", "brpop_async", "blmove", "blmove_async", "format", "format_async"
 };
 char *commandcommands[] = {
 /* 000 */"ACL LOAD", "ACL SAVE", "ACL LIST", "ACL USERS", "ACL GETUSER", "ACL SETUSER", "ACL DELUSER", "ACL CAT", "ACL GENPASS", "ACL WHOAMI",
@@ -1996,7 +2103,7 @@ char *commandcommands[] = {
 /* 120 */"LPUSH", "LPUSHX", "LRANGE", "LREM", "LSET", "LTRIM", "MEMORY DOCTOR", "MEMORY HELP", "MEMORY MALLOC-STATS", "MEMORY PURGE",
 /* 130 */"MEMORY STATS", "MEMORY USAGE", "MGET", "MIGRATE", "MODULE LIST", "MODULE LOAD", "MODULE UNLOAD", "MONITOR", "MOVE", "MSET",
 /* 140 */"MSETNX", "MULTI", "OBJECT", "PERSIST", "PEXPIRE", "PEXPIREAT", "PFADD", "PFCOUNT", "PFMERGE", "PING",
-/* 150 */"PSETEX", "PSUBSCRIBE", "PUBSUB", "PTTL", /*"PUBLISH" async,*/ "PUBLISH"/*sync*/, "PUNSUBSCRIBE", "QUIT", "RANDOMKEY", "READONLY",
+/* 150 */"PSETEX", "PSUBSCRIBE", "PUBSUB", "PTTL", "BLPOP" /* async,*/, "PUBLISH", "PUNSUBSCRIBE", "QUIT", "RANDOMKEY", "READONLY",
 /* 160 */"READWRITE", "RENAME", "RENAMENX", "RESTORE", "ROLE", "RPOP", "RPOPLPUSH", "RPUSH", "RPUSHX", "SADD",
 /* 170 */"SAVE", "SCARD", "SCRIPT DEBUG", "SCRIPT EXISTS", "SCRIPT FLUSH", "SCRIPT KILL", "SCRIPT LOAD", "SDIFF", "SDIFFSTORE", "SELECT",
 /* 180 */"SET", "SETBIT", "SETEX", "SETNX", "SETRANGE", "SHUTDOWN", "SINTER", "SINTERSTORE", "SISMEMBER", "SLAVEOF",
@@ -2008,14 +2115,14 @@ char *commandcommands[] = {
 /* 240 */"ZSCAN", "XINFO", "XADD", "XTRIM", "XDEL", "XRANGE", "XREVRANGE", "XLEN", "XREAD", "XREAD BLOCK",
 /* 250 */"XGROUP", "XREADGROUP", "XACK", "XCLAIM", "XPENDING", "LATENCY DOCTOR", "LATENCY GRAPH", "LATENCY HISTORY", "LATENCY LATEST", "LATENCY RESET",
 /* 260 */"LATENCY HELP", "RESET", "GETDEL", "GETEX", "HRANDFIELD", "LMOVE", "SMISMEMBER", "ZDIFF", "ZDIFFSTORE", "ZINTER",
-/* 270 */"ZUNION", "ZRANGESTORE", "ZMSCORE", "ZRANDMEMBER", "XREAD BLOCK 0 STREAMS",
+/* 270 */"ZUNION", "ZRANGESTORE", "ZMSCORE", "ZRANDMEMBER", "XREAD BLOCK 0 STREAMS", "BRPOP" /* async */, "BLMOVE", "BLMOVE" /* async */, "", ""
 };
 
-// 0 - treated as "val" - single response only
-// 1 - treated as [val, val, val] - make an array, or return one value per callback
-// 2 - treated as [ [val, val, ...], [val, val, ...], ...], - grouping of arrays or one array per callback. 
-// 3 - treated as [key, val, key, val, ...] - make object
-// 4 - treated as [ [key,val], [key,val], ...] - make object
+// 0 - expects "val" - single response only
+// 1 - expects [val, val, val] - make an array, or return one value per callback
+// 2 - expects [ [val, val, ...], [val, val, ...], ...], - grouping of arrays or one array per callback. 
+// 3 - expects [key, val, key, val, ...] - make object
+// 4 - expects [ [key,val], [key,val], ...] - make object
 // 5 - like 0 but expects 0/1 and returns boolean
 // 6 - scans with cursors - objects
 // 7 - scans with cursors - arrays
@@ -2023,10 +2130,12 @@ char *commandcommands[] = {
 // 9 - same as 1, except if last option is WITHSCORES make objects with keys score & value
 //10 - only for zscan, cross between 7 and 9
 //11 - only for xread.
+//12 - like 3, but returns {key:"key_name", value:"some value"}
+
 int commandtypes[] = {
 /* 000 */0,  0,  1,  1,  1,  0,  0,  1,  0,  0,
 /* 010 */0,  1,  0,  0,  0,  0,  0,  1,  0,  0,
-/* 020 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+/* 020 */12, 12, 0,  0,  0,  0,  0,  0,  0,  0,
 /* 030 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
 /* 040 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
 /* 050 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
@@ -2035,12 +2144,12 @@ int commandtypes[] = {
 /* 080 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
 /* 090 */0,  0,  0,  0,  0,  5,  0,  3,  0,  0,
 /* 100 */1,  0,  1,  0,  0,  5,  0,  1,  0,  0,
-/* 110 */0,  1,  0,  0,  0,  0,  0,  0,  0,  0,
+/* 110 */0,  1,  0,  0,  0,  0,  0,  0,  1,  0,
 /* 120 */0,  0,  1,  0,  0,  0,  0,  0,  0,  0,
 /* 130 */0,  0,  1,  0,  0,  0,  0,  0,  0,  0,
 /* 140 */5,  0,  0,  0,  0,  0,  0,  0,  0,  0,
-/* 150 */0,  0,  0,  0,/*0,*/0,  0,  0,  0,  0,
-/* 160 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+/* 150 */0,  0,  0,  0,  12, 0,  0,  0,  0,  0,
+/* 160 */0,  0,  0,  0,  0,  1,  0,  0,  0,  0,
 /* 170 */0,  0,  0,  0,  0,  0,  0,  1,  0,  0,
 /* 180 */0,  0,  0,  5,  0,  0,  1,  0,  5,  0,
 /* 190 */0,  0,  1,  0,  0,  1,  1,  0,  3,  0,
@@ -2051,7 +2160,7 @@ int commandtypes[] = {
 /* 240 */10, 3,  0,  0,  0,  4,  4,  0,  11, 11,
 /* 250 */0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
 /* 260 */0,  0,  0,  0,  1,  0,  8,  9,  9,  9,
-/* 270 */9,  0,  1,  9, 11
+/* 270 */9,  0,  1,  9,  11, 12, 0,  0,  1,  1
 };
 
 
@@ -2073,8 +2182,8 @@ duk_ret_t duk_open_module(duk_context *ctx)
   for (i=0; i<sz; i++)
     PUSHCMD(commandnames[i], commandcommands[i], commandtypes[i]);
 
-  duk_push_c_function(ctx, duk_rp_cc_dofmt, DUK_VARARGS);
-  duk_put_prop_string(ctx, -2, "format");
+//  duk_push_c_function(ctx, duk_rp_cc_dofmt, DUK_VARARGS);
+//  duk_put_prop_string(ctx, -2, "format");
   duk_push_c_function(ctx, duk_rp_rd_close, 0);
   duk_put_prop_string(ctx, -2, "close");
   duk_push_c_function(ctx, duk_rp_rd_close_async, 0);
