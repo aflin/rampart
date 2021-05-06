@@ -186,7 +186,7 @@ testFeature("K/V  Commands  -- bit commands", function() {
     var five5 = sprintf("%c", 85);
     var r1=rcl.mset("b1", aa, "b2", five5);
     var r2=rcl.bitop("OR", "b3", "b1", "b2");
-    var r3=rcl.get("b3",true);
+    var r3=rcl.get({returnBuffer:true}, "b3");
     rcl.set("b4", bprintf("%c%c",1,6));
     var r4=rcl.bitfield("b4", "INCRBY", "i5", 0, 2, "GET", "u8", 8);
     rcl.set("b1", " ");
@@ -431,7 +431,7 @@ testFeature("Zset Commands  -- zscore/zmscore/zpopmax/zpopmin/zrandm", function(
     var r2=rcl.zmscore("zset1", "z", "a");
     var r3=rcl.zpopmax("zset1", 2);
     var r4=rcl.zpopmin("zset1", 2);
-    var r5=rcl.zrandmember("zset2", 1, "WITHSCORES",true);
+    var r5=rcl.zrandmember({returnBuffer:true},"zset2", 1, "WITHSCORES");
 
     rcl.zadd("zset1",lex);
     rcl.zincrby("zset1", 1, "a");
