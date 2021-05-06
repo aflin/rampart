@@ -110,7 +110,7 @@ static LMDB_ENV *redo_env(duk_context *ctx, LMDB_ENV *lenv) {
         duk_pop(main_ctx);
         /* make a new object to be our lmdbenvs */
         duk_push_object(main_ctx);
-        duk_dup(ctx, -1);
+        duk_dup(main_ctx, -1);
         duk_put_global_string(main_ctx, DUK_HIDDEN_SYMBOL("lmdbenvs"));
     }
 
