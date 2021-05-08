@@ -41,6 +41,8 @@ if(vers < 60201) {
 
 
 function cleanup() {
+    if(!kill(rpid, 0))
+      return;
     kill(rpid, 15);
     for (var i=0; i<50; i++) {
         if(!kill(rpid, 0)) {
@@ -73,6 +75,7 @@ function testFeature(name,test)
     {
         printf(">>>>> FAILED <<<<<\n");
         if(error) console.log(error);
+        if(rcl && rcl.errMsg) console.log(rcl.errMsg);
         cleanup();
         process.exit(1);
     }
@@ -156,12 +159,13 @@ testFeature("redis proxyObj -- destroy", function() {
     return (set.length == 0);
 });
 
-testFeature("K/V  Commands  -- set/get/getdel", function() {
+testFeature("K/V  Commands  -- set/get/getdel/keys", function() {
     var r1=rcl.set("testkey", "abcd");
     var r2=rcl.get("testkey");
+    var r5=rcl.keys("tes*");
     var r3=rcl.getdel("testkey");
     var r4=rcl.get("testkey");
-    return r1=="OK" && r2=="abcd" && r3=="abcd" && r4==null;
+    return r1=="OK" && r2=="abcd" && r3=="abcd" && r4==null && r5=="testkey";
 });
 
 testFeature("K/V  Commands  -- setnx/mset/mget/msetnx", function() {
@@ -207,6 +211,19 @@ testFeature("K/V  Commands  -- incr/decr commands", function() {
     var r4=rcl.incrbyfloat("testfloat",3.3);
     var r5=rcl.get("testfloat");
     return r1=="OK" && r2==11 && r3=="OK" && r4==6.5 && r5==6.5;
+});
+
+testFeature("K/V  Commands  -- expire", function() {
+    rcl.set("key1","val1");
+    rcl.set("key2","val2");
+    var r1 = rcl.pexpire("key4",200);
+    rcl.pexpire("key1",200);
+    rcl.pexpire("key2",200);
+    var r2 = rcl.persist("key2");
+    sleep(0.21);
+    var r3 = rcl.get("key1");
+    var r4 = rcl.get("key2");
+    return r1==0 && r2==1 && r3==null && r4=="val2";
 });
 
 testFeature("K/V  Commands  -- getex/setex/ttl", function() {
@@ -312,10 +329,11 @@ testFeature("List Commands  -- lindex/(l|r)pushx/(l|r)pop/rpoplpush", function()
 });
 
 
-testFeature("List Commands  -- lmove/lpos/ltrim/lrem/lset", function(){
+testFeature("List Commands  -- sort/lmove/lpos/ltrim/lrem/lset", function(){
     rcl.rpush("mylist", "one");
     rcl.rpush("mylist", "two");
     rcl.rpush("mylist", "three");
+    var r8 = rcl.sort("mylist", "DESC", "ALPHA");
     var r1=rcl.lmove("mylist", "mylist2", "RIGHT", "LEFT");
     rcl.lmove("mylist", "mylist2", "RIGHT", "LEFT");
     rcl.lmove("mylist", "mylist2", "LEFT", "RIGHT");
@@ -330,9 +348,8 @@ testFeature("List Commands  -- lmove/lpos/ltrim/lrem/lset", function(){
     var r7=rcl.lrange("mylist2", 0, -1);
 
     return r1=="three" && r2[0]=="two" && r3=="OK" && r4[0]=="three";
-           r5==1 && r6=="OK" && r7[2]=="THREE"
+           r5==1 && r6=="OK" && r7[2]=="THREE" && r8[2]=="one";
 });
-
 
 testFeature("Set  Commands  -- sadd/srem/smove/scard/sismember", function(){
     rcl.del("set1","set2");
@@ -475,8 +492,27 @@ testFeature("Xstream Commds -- xadd/xrange/xread", function(){
     var r4=rcl.xread("STREAMS", "x1", "x2", "0-0", "0-0");
     var r5 = ( (r4[0].data.length==2 || r4[0].stream=="x1") &&
                (r4[1].data.length==1 || r4[1].stream=="x2") );
-    return Object.keys(r3).length==2 && r5
+    return Object.keys(r3).length==2 && r5;
 });
+
+testFeature("Misc Commands  -- time/touch/object/type/unlink", function(){
+  rcl.set("key1", "val1");
+  rcl.set("key2", "val2");
+  sleep(1);
+  rcl.touch("key2");
+  var r1 = rcl.object("idletime", "key1")
+  var r2 = rcl.object("idletime", "key2")
+
+  var r3 = rcl.time();
+
+  var r4 = rcl.type("key1");
+  var r5 = rcl.unlink("key1");
+  var r6 = rcl.get("key1");
+
+  return (typeof r3[0]) == "number" && (typeof r3[1]) == "number" && 
+           r2 == 0 && r1 == 1 && r4 == "string" && r5 == 1 && r6 == null;
+});
+
 
 /* todo - test async somehow
 
@@ -523,6 +559,7 @@ rcl.xread_block_async(0, "STREAMS", "x1", "x2", "$", "$", function(x)
 });
 
 */
+
 
 rcl.flushall();
 cleanup();
