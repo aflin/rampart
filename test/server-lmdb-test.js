@@ -143,7 +143,7 @@ var pid=server.start(
 // otherwise server.start() doesn't start until end of script.
 
 /* give the forked server a chance to print its info*/
-sleep(0.2);
+sleep(1);
 
 testFeature("server is running", rampart.utils.kill(pid,0) );
 

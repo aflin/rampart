@@ -4,6 +4,7 @@
  * terms of the MIT license
  * see https://opensource.org/licenses/MIT
  */
+
 #include "rampart.h"
 #include "./include/version.h"
 #include "duktape/register.h"
@@ -1732,8 +1733,6 @@ void duk_rp_fatal(void *udata, const char *msg){
     fflush(stderr);
     abort();
 }
-
-
 
 static void sigint_handler(int sig) {
     duk_rp_exit(main_ctx, 0);
