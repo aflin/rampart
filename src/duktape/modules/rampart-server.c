@@ -3877,15 +3877,13 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     duk_context *ctx;
     struct event_base *base = evthr_get_base(thr);
 
-    REMALLOC(thrno, sizeof(int));
-
-    add_exit_func(simplefree, thrno);
-
     if (pthread_mutex_lock(&ctxlock) == EINVAL)
     {
         printerr( "could not obtain lock in http_callback\n");
         exit(1);
     }
+
+    REMALLOC(thrno, sizeof(int));
 
     /* drop privileges here, after binding port */
     if(unprivu && !gl_threadno)
@@ -3903,6 +3901,7 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     }
 
     *thrno = gl_threadno++;
+    add_exit_func(simplefree, thrno);
     evthr_set_aux(thr, thrno);
 
     /* for http requests, subject to timeout */
@@ -3923,6 +3922,7 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
 
     thread_base[*thrno]=base;
     pthread_mutex_unlock(&ctxlock);
+
 }
 
 /* just like duk_get_prop_string, except that the prop string compare is

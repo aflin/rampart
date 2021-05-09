@@ -1314,11 +1314,13 @@ static void clean_txn(duk_context *ctx, MDB_txn *txn, int commit)
 
     lenv = get_env(ctx);
 
+    /* moved down to avoid double free ??
+       TODO: check everything below
     if(commit)
         rc = mdb_txn_commit(txn);
     else
         mdb_txn_abort(txn);
-
+    */
     duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("lmdb_writers"));
     if(duk_get_prop_string(ctx, -1, lenv->dbpath))
         wdb = duk_get_string(ctx, -1);
@@ -1348,6 +1350,11 @@ static void clean_txn(duk_context *ctx, MDB_txn *txn, int commit)
         duk_pop_2(ctx);
     }
     duk_pop_2(ctx);
+
+    if(commit)
+        rc = mdb_txn_commit(txn);
+    else
+        mdb_txn_abort(txn);
 
 
     if(rc)
