@@ -63,6 +63,7 @@ static duk_ret_t load_js_module(duk_context *ctx)
 
     buffer[sb.st_size]='\0';
     duk_push_string(ctx, "(function (module, exports) { ");
+
     /* check for babel and push src to stack */
     if (! (bfn=duk_rp_babelize(ctx, (char *)id, buffer, sb.st_mtime, 0)) )
     {
@@ -94,12 +95,14 @@ static duk_ret_t load_js_module(duk_context *ctx)
 
         duk_push_string(ctx, buffer);
     }
+    // else is babel, babelized source is on top of stack.
 
     fclose(f);
     free(buffer);
 
     duk_push_string(ctx, "\n})");
     duk_concat(ctx, 3);
+
     if(bfn)
     {
         duk_push_string(ctx, bfn);
@@ -115,9 +118,17 @@ static duk_ret_t load_js_module(duk_context *ctx)
     */
     duk_compile(ctx, DUK_COMPILE_EVAL);
     duk_call(ctx,0);
+    //TODO: revisit and rethink pcall
+    //    if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
+    //        fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+
     duk_dup(ctx, module_idx);
     duk_get_prop_string(ctx, -1, "exports");
     duk_call(ctx, 2);
+    //    if (duk_pcall(ctx, 2) == DUK_EXEC_ERROR)
+    //        fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+
+    duk_pop(ctx);
     return 0;
 }
 
@@ -240,7 +251,7 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
 {
     int force_reload=1;
     int module_loader_idx;
-    const char *id;
+    const char *id, *p;
     const char *fn;
 
     if(!name)
@@ -291,6 +302,15 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
     // module.id
     duk_push_string(ctx, id);
     duk_put_prop_string(ctx, -2, "id");
+
+    // module.path
+    p = strrchr(id,'/');
+    if(p)
+        duk_push_sprintf(ctx, "%.*s", (int)(p-id), id);
+    else
+        duk_push_string(ctx, "");        
+
+    duk_put_prop_string(ctx, -2, "path");
 
     // module.exports
     duk_push_object(ctx);
