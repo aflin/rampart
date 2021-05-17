@@ -212,24 +212,23 @@ the url by the user agent is allowed by the rules set forth in the robots.txt fi
 <div class="section" id="loading">
 <h3>Loading<a class="headerlink" href="#loading" title="Permalink to this headline">¶</a></h3>
 <p>Loading the module is a simple matter of using the <code class="docutils literal notranslate"><span class="pre">require()</span></code> function:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">isAllowed</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-robots&quot;</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">robots</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-robots&quot;</span><span class="p">);</span>
 </pre></div>
 </div>
 </div>
 </div>
 <div class="section" id="main-function">
 <h2>Main Function<a class="headerlink" href="#main-function" title="Permalink to this headline">¶</a></h2>
-<p>The rampart-robots module exports a single function, which in this documentation
-will be named and referred to as <code class="docutils literal notranslate"><span class="pre">isAllowed()</span></code>.</p>
+<p>The rampart-robots module exports an <span class="green">Object</span> with a single function: <code class="docutils literal notranslate"><span class="pre">isAllowed()</span></code>.</p>
 <div class="section" id="isallowed">
 <h3>isAllowed()<a class="headerlink" href="#isallowed" title="Permalink to this headline">¶</a></h3>
 <blockquote>
 <div><p>The <code class="docutils literal notranslate"><span class="pre">isAllowed</span></code> function takes three <span class="green">Strings</span>, the text of a
 robots.txt file, a user agent string, and a URL.</p>
 <p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">isAllowed</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-robots&quot;</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">robots</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-robots&quot;</span><span class="p">);</span>
 
-<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">isAllowed</span><span class="p">(</span><span class="nx">user_agent</span><span class="p">,</span> <span class="nx">robotstxt</span><span class="p">,</span> <span class="nx">url</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">robots</span><span class="p">.</span><span class="nx">isAllowed</span><span class="p">(</span><span class="nx">user_agent</span><span class="p">,</span> <span class="nx">robotstxt</span><span class="p">,</span> <span class="nx">url</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>Where:</p>
@@ -248,7 +247,7 @@ robots.txt file, a user agent string, and a URL.</p>
 </div>
 <div class="section" id="example">
 <h2>Example<a class="headerlink" href="#example" title="Permalink to this headline">¶</a></h2>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">isAllowed</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-robots&quot;</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">robots</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-robots&quot;</span><span class="p">);</span>
 <span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>
 
 <span class="kd">var</span> <span class="nx">agent</span> <span class="o">=</span> <span class="s2">&quot;myUniqueBotName&quot;</span><span class="p">;</span>
@@ -261,8 +260,8 @@ robots.txt file, a user agent string, and a URL.</p>
     <span class="nx">process</span><span class="p">.</span><span class="nx">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
 <span class="p">}</span>
 
-<span class="kd">var</span> <span class="nx">res1</span> <span class="o">=</span> <span class="nx">isAllowed</span><span class="p">(</span><span class="nx">agent</span><span class="p">,</span> <span class="nx">rtxt</span><span class="p">.</span><span class="nx">text</span><span class="p">,</span> <span class="nx">url1</span><span class="p">);</span>
-<span class="kd">var</span> <span class="nx">res2</span> <span class="o">=</span> <span class="nx">isAllowed</span><span class="p">(</span><span class="nx">agent</span><span class="p">,</span> <span class="nx">rtxt</span><span class="p">.</span><span class="nx">text</span><span class="p">,</span> <span class="nx">url1</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">res1</span> <span class="o">=</span> <span class="nx">robots</span><span class="p">.</span><span class="nx">isAllowed</span><span class="p">(</span><span class="nx">agent</span><span class="p">,</span> <span class="nx">rtxt</span><span class="p">.</span><span class="nx">text</span><span class="p">,</span> <span class="nx">url1</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">res2</span> <span class="o">=</span> <span class="nx">robots</span><span class="p">.</span><span class="nx">isAllowed</span><span class="p">(</span><span class="nx">agent</span><span class="p">,</span> <span class="nx">rtxt</span><span class="p">.</span><span class="nx">text</span><span class="p">,</span> <span class="nx">url2</span><span class="p">);</span>
 
 <span class="cm">/* expected results:</span>
 <span class="cm">    res1 == true</span>

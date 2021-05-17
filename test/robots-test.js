@@ -1,4 +1,4 @@
-var rtxt=require("rampart-robots");
+var robots=require("rampart-robots");
 
 /* this is mostly a copy and paste of robots_test.cc */
 
@@ -35,7 +35,7 @@ function expect_false(b)
 }
 
 function IsUserAgentAllowed(robotstxt, bot, url) {
-  return rtxt(bot, robotstxt, url);
+  return robots.isAllowed(bot, robotstxt, url);
 }
 
 
@@ -90,20 +90,20 @@ function grouptest() {
     var url_z = "http://foo.bar/z/d";
     var url_foo = "http://foo.bar/foo/bar/";
 
-    expect_true( rtxt("FooBot", txt, url_x) );
-    expect_true( rtxt("FooBot", txt, url_z) );
-    expect_false( rtxt("FooBot", txt, url_y) );
-    expect_true( rtxt("BarBot", txt, url_y) );
-    expect_true( rtxt("BarBot", txt, url_w) );
-    expect_false( rtxt("BarBot", txt, url_z) );
-    expect_true( rtxt("BazBot", txt, url_z) );
+    expect_true( robots.isAllowed("FooBot", txt, url_x) );
+    expect_true( robots.isAllowed("FooBot", txt, url_z) );
+    expect_false( robots.isAllowed("FooBot", txt, url_y) );
+    expect_true( robots.isAllowed("BarBot", txt, url_y) );
+    expect_true( robots.isAllowed("BarBot", txt, url_w) );
+    expect_false( robots.isAllowed("BarBot", txt, url_z) );
+    expect_true( robots.isAllowed("BazBot", txt, url_z) );
 
       // Lines with rules outside groups are ignored.
-    expect_false( rtxt("FooBot", txt, url_foo) );
-    expect_false( rtxt("BarBot", txt, url_foo) );
-    expect_false( rtxt("BazBot", txt, url_foo) );
+    expect_false( robots.isAllowed("FooBot", txt, url_foo) );
+    expect_false( robots.isAllowed("BarBot", txt, url_foo) );
+    expect_false( robots.isAllowed("BazBot", txt, url_foo) );
 
-    expect_true( rtxt("NOBOT", txt, url_foo) );
+    expect_true( robots.isAllowed("NOBOT", txt, url_foo) );
 }
 
 function linetest() {

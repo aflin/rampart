@@ -30,7 +30,8 @@ static duk_ret_t allowed(duk_context *ctx)
 duk_ret_t duk_open_module(duk_context *ctx)
 {
 
+  duk_push_object(ctx);
   duk_push_c_function(ctx, allowed, 3);
-
+  duk_put_prop_string(ctx, -2, "isAllowed");
   return 1;
 }
