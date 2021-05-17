@@ -113,6 +113,8 @@ Client Commands
 
         *  ``command_name`` is the name of one of the functions listed below.
 
+        *  ``paramX`` is one or more parameters, required or optional for the given Redis command.
+
         *  ``callback_function`` is an optional (if synchronous) or required (if
            asynchronous) function which takes a single parameter.
         
@@ -123,9 +125,9 @@ Client Commands
               server when using a syncronous command. It overrides the timeout set
               in ``redis.init`` for the single command.
 
-            * ``async`` - a :green:`Boolean`, which if true, the client will
+            * ``async`` - a :green:`Boolean`, which if ``true``, the client will
               send the command to server and wait for reply in the
-              Rampart event loop.
+              Rampart event loop.  If ``true``, a callback function must be provided.
 
             * ``returnBuffer`` - a :green:`Boolean`, which if true,  Redis
               ``strings`` and ``bulk strings`` will be returned in :green:`Buffers`.
@@ -202,12 +204,47 @@ format
 
     Example:
 
+        .. code-block:: javascript
 
+            var redis = require("rampart-redis");
+
+            var rcl = new redis.init(); //localhost and default port
+
+            rcl.format("HMSET %s %s %d %s %d", "myset", "one", 1, "two", 2);
+            
+            rampart.utils.printf("%3J\n", rcl.format("HGETALL myset") );
+
+            /* expected output (generic array)
+                [  
+                   "one",
+                   1,
+                   "two",
+                   2
+                ]
+            */
+
+            rampart.utils.printf("%3J\n", rcl.hgetall("myset"));
+
+            /* expected output (formatted for the HGETALL command)
+                {  
+                   "one": 1,
+                   "two": 2
+                }
+            */
+ 
 xread_block_async
 ~~~~~~~~~~~~~~~~~
 
+    This is equivalent to ``xread({async:true}, "BLOCK", ...)``. 
+
 xread_auto_async
 ~~~~~~~~~~~~~~~~
+
+    This is equivalent to ``xread_block_async`` above, except that the
+    returned IDs are tracked and the ``XREAD BLOCK`` command is reissued
+    with the proper IDs each time a new Stream Message is received.  In this
+    way it acts more like ``subscribe`` and continually accepts new streamed
+    messages similar to a PUB/SUB model.
 
 Supported Commands
 ------------------
@@ -216,48 +253,48 @@ The following commands have been tested and return values formatted
 appropriately for the given command (number in parantheses is the format of
 the :ref:`return value <rampart-redis:Return Values from Supported Commands>`):
 
-    ``bitcount`` (1), ``bitfield`` (2), ``bitop`` (1), ``bitpos`` (1),
-    ``blmove`` (1), ``blmove_async`` (1), ``blpop`` (13),
-    ``blpop_async`` (13), ``brpop`` (13), ``brpop_async`` (13),
-    ``brpoplpush`` (1), ``bzpopmax`` (14), ``bzpopmax_async`` (14),
-    ``bzpopmin`` (14), ``bzpopmin_async`` (14), ``decr`` (1),
-    ``decrby`` (1), ``del`` (1), ``discard`` (1), ``dump`` (1),
-    ``echo`` (1), ``exists`` (6), ``expire`` (1), ``expireat`` (1),
-    ``flushall`` (1), ``flushdb`` (1), ``format`` (2), ``format_async`` (2),
-    ``get`` (1), ``getbit`` (1), ``getdel`` (1), ``getex`` (1),
-    ``getrange`` (1), ``getset`` (1), ``hdel`` (1), ``hexists`` (6),
-    ``hget`` (1), ``hgetall`` (4), ``hincrby`` (1), ``hincrbyfloat`` (1),
-    ``hkeys`` (2), ``hlen`` (1), ``hmget`` (2), ``hmset`` (1),
-    ``hrandfield`` (2), ``hscan`` (7), ``hset`` (1), ``hsetnx`` (6),
-    ``hstrlen`` (1), ``hvals`` (2), ``incr`` (1), ``incrby`` (1),
-    ``incrbyfloat`` (1), ``info`` (2), ``keys`` (2), ``lindex`` (1),
-    ``linsert`` (1), ``llen`` (1), ``lmove`` (1), ``lpop`` (2),
-    ``lpos`` (1), ``lpush`` (1), ``lpushx`` (1), ``lrange`` (2),
-    ``lrem`` (1), ``lset`` (1), ``ltrim`` (1), ``mget`` (2), ``move`` (1),
-    ``mset`` (1), ``msetnx`` (6), ``object`` (1), ``persist`` (1),
-    ``pexpire`` (1), ``pexpireat`` (1), ``psetex`` (1), ``psubscribe`` (1),
-    ``pttl`` (1), ``publish`` (1), ``pubsub`` (1), ``punsubscribe`` (1),
-    ``rpop`` (2), ``rpoplpush`` (1), ``rpush`` (1), ``rpushx`` (1),
-    ``sadd`` (1), ``save`` (1), ``scan`` (8), ``scard`` (1), ``sdiff`` (2),
-    ``sdiffstore`` (1), ``set`` (1), ``setbit`` (1), ``setex`` (1),
-    ``setnx`` (6), ``setrange`` (1), ``sinter`` (2), ``sinterstore`` (1),
-    ``sismember`` (6), ``smembers`` (2), ``smismember`` (9), ``smove`` (1),
-    ``sort`` (2), ``spop`` (2), ``srandmember`` (2), ``srem`` (1),
-    ``sscan`` (8), ``stralgo`` (4), ``strlen`` (1), ``subscribe`` (3),
-    ``sunion`` (2), ``sunionstore`` (1), ``time`` (2), ``touch`` (1),
-    ``ttl`` (1), ``type`` (1), ``unlink`` (1), ``unsubscribe`` (1),
-    ``xadd`` (1), ``xdel`` (1), ``xinfo`` (4), ``xlen`` (1), ``xrange`` (5),
-    ``xread`` (12), ``xread_auto_async`` (12), ``xread_block_async`` (12),
-    ``xrevrange`` (5), ``xtrim`` (1), ``zadd`` (1), ``zcard`` (1),
-    ``zcount`` (1), ``zdiff`` (10), ``zdiffstore`` (10), ``zincrby`` (1),
-    ``zinter`` (10), ``zinterstore`` (10), ``zlexcount`` (1),
-    ``zmscore`` (2), ``zpopmax`` (10), ``zpopmin`` (10),
-    ``zrandmember`` (10), ``zrange`` (10), ``zrangebylex`` (2),
-    ``zrangebyscore`` (10), ``zrangestore`` (1), ``zrank`` (1),
-    ``zrem`` (1), ``zremrangebylex`` (1), ``zremrangebyrank`` (1),
-    ``zremrangebyscore`` (1), ``zrevrange`` (10), ``zrevrangebylex`` (10),
-    ``zrevrangebyscore`` (10), ``zrevrank`` (1), ``zscan`` (11),
-    ``zscore`` (1), ``zunion`` (10), ``zunionstore`` (10)
+    ``bitcount``\ →(1), ``bitfield``\ →(2), ``bitop``\ →(1), ``bitpos``\ →(1),
+    ``blmove``\ →(1), ``blmove_async``\ →(1), ``blpop``\ →(13),
+    ``blpop_async``\ →(13), ``brpop``\ →(13), ``brpop_async``\ →(13),
+    ``brpoplpush``\ →(1), ``bzpopmax``\ →(14), ``bzpopmax_async``\ →(14),
+    ``bzpopmin``\ →(14), ``bzpopmin_async``\ →(14), ``decr``\ →(1),
+    ``decrby``\ →(1), ``del``\ →(1), ``discard``\ →(1), ``dump``\ →(1),
+    ``echo``\ →(1), ``exists``\ →(6), ``expire``\ →(1), ``expireat``\ →(1),
+    ``flushall``\ →(1), ``flushdb``\ →(1), ``format``\ →(2), ``format_async``\ →(2),
+    ``get``\ →(1), ``getbit``\ →(1), ``getdel``\ →(1), ``getex``\ →(1),
+    ``getrange``\ →(1), ``getset``\ →(1), ``hdel``\ →(1), ``hexists``\ →(6),
+    ``hget``\ →(1), ``hgetall``\ →(4), ``hincrby``\ →(1), ``hincrbyfloat``\ →(1),
+    ``hkeys``\ →(2), ``hlen``\ →(1), ``hmget``\ →(2), ``hmset``\ →(1),
+    ``hrandfield``\ →(2), ``hscan``\ →(7), ``hset``\ →(1), ``hsetnx``\ →(6),
+    ``hstrlen``\ →(1), ``hvals``\ →(2), ``incr``\ →(1), ``incrby``\ →(1),
+    ``incrbyfloat``\ →(1), ``info``\ →(2), ``keys``\ →(2), ``lindex``\ →(1),
+    ``linsert``\ →(1), ``llen``\ →(1), ``lmove``\ →(1), ``lpop``\ →(2),
+    ``lpos``\ →(1), ``lpush``\ →(1), ``lpushx``\ →(1), ``lrange``\ →(2),
+    ``lrem``\ →(1), ``lset``\ →(1), ``ltrim``\ →(1), ``mget``\ →(2), ``move``\ →(1),
+    ``mset``\ →(1), ``msetnx``\ →(6), ``object``\ →(1), ``persist``\ →(1),
+    ``pexpire``\ →(1), ``pexpireat``\ →(1), ``psetex``\ →(1), ``psubscribe``\ →(1),
+    ``pttl``\ →(1), ``publish``\ →(1), ``pubsub``\ →(1), ``punsubscribe``\ →(1),
+    ``rpop``\ →(2), ``rpoplpush``\ →(1), ``rpush``\ →(1), ``rpushx``\ →(1),
+    ``sadd``\ →(1), ``save``\ →(1), ``scan``\ →(8), ``scard``\ →(1), ``sdiff``\ →(2),
+    ``sdiffstore``\ →(1), ``set``\ →(1), ``setbit``\ →(1), ``setex``\ →(1),
+    ``setnx``\ →(6), ``setrange``\ →(1), ``sinter``\ →(2), ``sinterstore``\ →(1),
+    ``sismember``\ →(6), ``smembers``\ →(2), ``smismember``\ →(9), ``smove``\ →(1),
+    ``sort``\ →(2), ``spop``\ →(2), ``srandmember``\ →(2), ``srem``\ →(1),
+    ``sscan``\ →(8), ``stralgo``\ →(4), ``strlen``\ →(1), ``subscribe``\ →(3),
+    ``sunion``\ →(2), ``sunionstore``\ →(1), ``time``\ →(2), ``touch``\ →(1),
+    ``ttl``\ →(1), ``type``\ →(1), ``unlink``\ →(1), ``unsubscribe``\ →(1),
+    ``xadd``\ →(1), ``xdel``\ →(1), ``xinfo``\ →(4), ``xlen``\ →(1), ``xrange``\ →(5),
+    ``xread``\ →(12), ``xread_auto_async``\ →(12), ``xread_block_async``\ →(12),
+    ``xrevrange``\ →(5), ``xtrim``\ →(1), ``zadd``\ →(1), ``zcard``\ →(1),
+    ``zcount``\ →(1), ``zdiff``\ →(10), ``zdiffstore``\ →(10), ``zincrby``\ →(1),
+    ``zinter``\ →(10), ``zinterstore``\ →(10), ``zlexcount``\ →(1),
+    ``zmscore``\ →(2), ``zpopmax``\ →(10), ``zpopmin``\ →(10),
+    ``zrandmember``\ →(10), ``zrange``\ →(10), ``zrangebylex``\ →(2),
+    ``zrangebyscore``\ →(10), ``zrangestore``\ →(1), ``zrank``\ →(1),
+    ``zrem``\ →(1), ``zremrangebylex``\ →(1), ``zremrangebyrank``\ →(1),
+    ``zremrangebyscore``\ →(1), ``zrevrange``\ →(10), ``zrevrangebylex``\ →(10),
+    ``zrevrangebyscore``\ →(10), ``zrevrank``\ →(1), ``zscan``\ →(11),
+    ``zscore``\ →(1), ``zunion``\ →(10), ``zunionstore``\ →(10)
 
   
 
@@ -275,7 +312,8 @@ Return Values from Supported Commands
 
     #. Multi-Value - return is an :green:`Array` of :green:`Arrays`. When used 
        with a callback, the callback will be called once for each member of
-       the outer :green:`Array` and be passed the inner :green:`Arrays`.
+       the outer :green:`Array` and have its sole parameter one of each of the 
+       inner :green:`Arrays`.
 
     #. Associative - return is an :green:`Object` with one or more key:value
        pairs.
@@ -471,4 +509,212 @@ Unsupported Commands
 
 Proxy Objects
 -------------
+
+A Rampart Redis Proxy Object is an JavaScript :green:`Object` whose
+properties are backed by a `Redis Hash <https://redis.io/topics/data-types-intro#redis-hashes>`_
+and for which operations on the :green:`Object` serves as a shortcut for the
+``hset``, ``hget``, ``hgetall`` and ``hdel`` commands.  They are intended as
+a quick and easy storage system for occassionally used variables that are
+shared between scripts or threads.  They should not be used as a robust
+databasing solution.
+
+Creation
+~~~~~~~~
+
+    A proxy object is created as follows:
+
+    .. code-block:: javascript
+
+        var redis = require("rampart-redis");
+
+        var rcl = new redis.init([ip, ][port, ][timeout]);
+
+        var myProxyObject = new rcl.proxyObj(name);
+
+    Where ``name`` is the name of the Redis key that will store the Redis
+    Hash.
+
+Usage
+~~~~~
+
+    Setting and reading the property keys of the returned proxy object will automatically
+    set and retrieve the keys in the specified Hash Key.  These values will then
+    be available in any other thread or script which connects to the same Redis
+    Server instance using the identical proxy object.
+
+    Example:
+
+    .. code-block:: javascript
+
+        /* script 1 - insert new data */
+
+        var redis = require("rampart-redis");
+
+        var rcl = new redis.init(); //localhost and default port
+
+        var users = new rcl.proxyObj("Users");
+
+       /* populate variables for insertion */
+       var cl = [
+           "principal", "principal", "salary",
+           "salary", "hourly", "intern"
+       ];
+       var name = [
+           "Debbie Dreamer", "Rusty Grump","Georgia Geek",
+           "Sydney Slacker", "Pat Particular", "Billie Barista"
+       ];
+       var id = [ "dd", "rg", "gg", "ss", "pp", "bb" ];
+       var age = [ 63, 58, 44, 44, 32, 22 ];
+       var salary = [ 250000, 250000, 100000, 100000, 80000, 0 ];
+       var title = [
+           "Chief Executive Officer", "Chief Financial Officer", "Lead Programmer",
+           "Programmer", "Systems Administrator", "Intern"
+       ];
+
+       var startDate = [ 
+           '1999-12-31', 
+           '1999-12-31', 
+           '2001-3-15', 
+           '2002-5-12',
+           '2003-7-14', 
+           '2020-3-18'
+       ];
+
+       /* insert rows */
+       for (var i=0; i<6; i++)
+       {
+            users[id] = {
+                employeeClass: cl[i], 
+                name: name[i], 
+                age: age[i], 
+                salary: salary[i], 
+                title: title[i], 
+                startDate: startDate[i] 
+            }
+       }
+       /* end script 1 */
+
+        /* script 2 - access data */
+
+        var redis = require("rampart-redis");
+
+        var rcl = new redis.init(); //localhost and default port
+
+        var users = new rcl.proxyObj("Users");
+
+        delete users.bb; //Billie's internship is finished.
+
+        rampart.utils.printf("%3J\n", users);
+
+        /* expected output:
+            {
+               "rg": {
+                  "employeeClass": "principal",
+                  "name": "Rusty Grump",
+                  "age": 58,
+                  "salary": 250000,
+                  "title": "Chief Financial Officer",
+                  "startDate": "1999-12-31"
+               },
+               "ss": {
+                  "employeeClass": "salary",
+                  "name": "Sydney Slacker",
+                  "age": 44,
+                  "salary": 100000,
+                  "title": "Programmer",
+                  "startDate": "2002-5-12"
+               },
+               "dd": {
+                  "employeeClass": "principal",
+                  "name": "Debbie Dreamer",
+                  "age": 63,
+                  "salary": 250000,
+                  "title": "Chief Executive Officer",
+                  "startDate": "1999-12-31"
+               },
+               "pp": {
+                  "employeeClass": "hourly",
+                  "name": "Pat Particular",
+                  "age": 32,
+                  "salary": 80000,
+                  "title": "Systems Administrator",
+                  "startDate": "2003-7-14"
+               },
+               "gg": {
+                  "employeeClass": "salary",
+                  "name": "Georgia Geek",
+                  "age": 44,
+                  "salary": 100000,
+                  "title": "Lead Programmer",
+                  "startDate": "2001-3-15"
+               }
+            }
+        */
+
+Caveats
+~~~~~~~
+
+    *  JavaScript primitives and :green:`Objects` are stored and retrieved by converting
+       to and from `CBOR <https://duktape.org/guide.html#builtin-cbor>`_
+       which limits what can be stored (no :green:`Dates` or
+       :green:`Functions`);
+
+    *  Proxy Objects are saved to the Redis Key specified when the object is
+       created (i.e. ``new rcl.proxyObj(redisKeyName)``).  If the Redis Key
+       already exists and is not a Redis Hash, an error will be thrown.
+
+    *  Any Proxy Object key that begins with ``_`` (underscore) will not be
+       saved to the Redis Hash and will only exist locally.  The following
+       are preset:
+
+       *  ``_destroy`` - A :green:`Function` which when called, deletes the
+          Redis Hash from the database. Example:
+
+
+          .. code-block:: javascript
+
+              var rcl = new redis.init(); //localhost and default port
+
+              var users = new rcl.proxyObj("Users");
+
+              users._destroy(); // same as rcl.del("Users");
+
+       *  ``_hname`` - A :green:`String` set to the name of the Redis Key.
+          In the above example, it would be set to ``"Users"``;
+       
+    *  A Proxy Object is a shallow proxy - meaning that only key/value pairs
+       of the :green:`Object` returned from ``new rcl.proxyObj()`` will be stored
+       to the Redis database.  Example:
+       
+       .. code-block:: javascript
+
+           var rcl = new redis.init(); //localhost and default port
+
+           var users = new rcl.proxyObj("Users");
+
+           users.myid = {name:"Joe"}; //myid.name is stored in Redis
+
+           users.myid.age = 42;       // users.myid.age is not set;
+           
+           console.log(users.myid)    // {name:"Joe"}
+
+           var myid = users.myid;     // var myid is created from the Redis Hash "myid"
+                                      // which is CBOR decoded into a JavaScript Object
+           myid.age = 42;
+                                
+           users.myid = myid;         // myid.age and myid.name are now stored in Redis
+
+           console.log(users.myid)    // {name:"Joe", age: 42}
+
+    *  Operations which may otherwise appear to be atomic will not work
+       properly with concurrency.  Example:  ``users.count++`` will indeed
+       increment the variable stored under the Hash key ``count``.  However,
+       it will retrieve the value, add one, then set it again, during which
+       time another script may have retrieved the value to do the same. 
+       Thus, doing this simultaneously in several scripts or threads will
+       not work as intended.
+
+
+
+
 

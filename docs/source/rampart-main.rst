@@ -63,7 +63,7 @@ following:
 * File and C-functions utilities such as ``printf``, ``fseek``, and ``exec``.
 
 * Included ``C`` modules (``rampart-sql``, ``rampart-server``, ``rampart-curl``, 
-  ``rampart-crypto``, ``rampart-html``, ``rampart-lmdb`` 
+  ``rampart-crypto``, ``rampart-html``, ``rampart-lmdb``, ``rampart-redis``, 
   ``rampart-cmark`` and ``rampart-robots``).
 
 * Event loop using ``libevent2``.
@@ -83,6 +83,8 @@ following:
 
 * Fast NOSQL database via ``rampart-lmdb``.
 
+* Redis Client via ``rampart-redis``.
+
 * Simple Event functions via `rampart.event`_\ .
 
 * `Extra JavaScript Functionality`_\ .
@@ -91,14 +93,14 @@ Rampart philosophy
 ~~~~~~~~~~~~~~~~~~ 
 
 Though Rampart supports ``setTimeout()``, `Events <rampart.events>`_ (and
-other async functions via babel), the majority of functions added to
-`Duktape <https://duktape.org>`_ via modules as well as the built-in
-functions are synchronous.  Raw JavaScript execution is more memory
-efficient, but far slower than with, e.g., node.js.  However, the
-functionality and speed of the available C functions provide comparable
-efficacy, excellent performance and are a viable alternative to `LAMP
-<https://en.wikipedia.org/wiki/LAMP_(software_bundle)>`_, `MEAN
-<https://en.wikipedia.org/wiki/MEAN_(solution_stack)>`_ or other stacks, all
+other async functions via, e.g., :ref:`websockets <rampart-server:websockets>`, 
+:ref:`rampart-redis <rampart-redis:The rampart-redis module>`, Babel, etc),
+the majority of functions added to `Duktape <https://duktape.org>`_ via are 
+synchronous.  Raw JavaScript execution is more memory efficient, but far
+slower than with, e.g., node.js.  However, the functionality and speed of
+the available C functions provide comparable efficacy, excellent performance
+and are a viable alternative to `LAMP <https://en.wikipedia.org/wiki/LAMP_(software_bundle)>`_, 
+`MEAN <https://en.wikipedia.org/wiki/MEAN_(solution_stack)>`_ or other stacks, all
 in a single product, while consuming considerably less resources than the
 aforementioned.
 
@@ -567,6 +569,34 @@ canonical path (directory) in which the currently executing script can be
 found (e.g.  if ``rampart /path/to/my/script.js`` is run,
 ``process.scriptPath`` will be ``/path/to/my``).
 
+getpid
+""""""
+
+Get the process id of the current process.
+
+Usage:
+
+.. code-block:: javascript
+
+   var pid = process.getpid();
+
+Return Value:
+   :green:`Number`. The pid of the current process.
+
+getppid
+"""""""
+
+Get the process id of the parent of the current process.
+
+Usage:
+
+.. code-block:: javascript
+
+   var ppid = process.getppid();
+
+Return Value:
+   :green:`Number`. The pid of the parent process.
+
 Using the require Function to Import Modules
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -585,7 +615,8 @@ This will search the current directory and the rampart modules directories
 for a module named ``rampart-sql.so`` or ``rampart-sql.js`` and use the
 first one found.  In this case ``rampart-sql.so`` will be found and the SQL
 module and its functions will be usable via the named variable ``Sql``.  See,
-e.g, :ref:`rampart-sql:Loading the Javascript Module` for full details.
+e.g, :ref:`The rampart-sql documentation <rampart-sql:Loading the Javascript Module>` 
+for full details.
 
 Example creating a JavaScript module
 """"""""""""""""""""""""""""""""""""
@@ -651,7 +682,7 @@ Example (where filename is ``times3.c``):
      return 1;
    }
 
-The following could be compiled with GCC as follows:
+This could be compiled with GCC as follows:
 
 ``cc -I/usr/local/rampart/include -fPIC -shared -Wl,-soname,times3.so -o times3.so times3.c``
 
@@ -865,12 +896,15 @@ Usage:
 
 .. code-block:: javascript
 
-   setTimeout(callback, timeOut);
+   var id = setTimeout(callback, timeOut);
 
 Where:
 
 * ``callback`` is a :green:`Function` to be run when the elapsed time is reached.
 * ``timeOut`` is the amount of time in milliseconds to wait before the ``callback`` function is called.
+
+Return Value:
+    An id which may be used with `clearTimeout`_\ .
 
 Example:
 
@@ -889,9 +923,85 @@ Thus if a script uses synchronous functions that take longer than ``timeOut``, t
 
    rampart.utils.sleep(3);
 
-The ``callback`` function will not be executed until after the sleep function returns.
-At that time, it's clock will have expired and it will be run immediately.  The net effect
-is that ``console.log`` will be run after approximately 3 seconds.
+The ``callback`` function will not be executed until after the sleep
+function returns.  At that time, the clock will have expired and the
+``setTimeout`` callback will be run immediately.  The net effect is that
+``console.log`` will be executed after approximately 3 seconds.
+
+clearTimeout()
+""""""""""""""
+
+Clear a pending `setTimeout()`_ timer before it has executed.
+
+Usage:
+
+.. code-block:: javascript
+
+   var id = setTimeout(callback, timeOut);
+
+   clearTimeout(id);
+
+Where:
+
+* ``id`` is the return value from a call to `setTimeout()`_\ .
+
+Return Value:
+    ``undefined``
+
+setInterval()
+"""""""""""""
+
+Similar to `setTimeout()`_ except it repeats every ``interval`` milliseconds.
+
+Usage:
+
+.. code-block:: javascript
+
+   var id = setInterval(callback, interval);
+
+Where:
+
+* ``callback`` is a :green:`Function` to be run when the elapsed time is reached.
+* ``interval`` is the amount of time in milliseconds between calls to ``callback``.
+
+Return Value:
+    An id which may be used with `clearInterval()`_\ .
+
+Example:
+
+.. code-block:: javascript
+
+   var x=0;
+
+   /* print message every second, 10 times */
+   var id = setInterval(function(){ 
+        x++;
+        console.log("loop " + x);
+        if(x>9) {
+            clearInterval(id);
+            console.log("all done");
+        }
+   }, 1000);
+
+clearInterval()
+"""""""""""""""
+
+Clear a pending `setInterval()`_ timer, breaking the loop.
+
+Usage:
+
+.. code-block:: javascript
+
+   var id = setInterval(callback, interval);
+
+   clearInterval(id);
+
+Where:
+
+* ``id`` is the return value from a call to `setInterval()`_\ .
+
+Return Value:
+    ``undefined``
 
 Additional Global Variables and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

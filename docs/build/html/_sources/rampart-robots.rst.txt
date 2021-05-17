@@ -45,15 +45,14 @@ Loading the module is a simple matter of using the ``require()`` function:
 
 .. code-block:: javascript
 
-    var isAllowed = require("rampart-robots");
+    var robots = require("rampart-robots");
 
 
 
 Main Function
 -------------
 
-The rampart-robots module exports a single function, which in this documentation 
-will be named and referred to as ``isAllowed()``.
+The rampart-robots module exports an :green:`Object` with a single function: ``isAllowed()``.
 
 isAllowed()
 ~~~~~~~~~~~
@@ -65,9 +64,9 @@ isAllowed()
 
     .. code-block:: javascript
     
-        var isAllowed = require("rampart-robots");
-        
-        var res = isAllowed(user_agent, robotstxt, url); 
+	var robots = require("rampart-robots");
+
+        var res = robots.isAllowed(user_agent, robotstxt, url); 
 
     Where:
     
@@ -86,7 +85,7 @@ Example
 
 .. code-block:: javascript
 
-    var isAllowed = require("rampart-robots");
+    var robots = require("rampart-robots");
     var curl = require("rampart-curl");
 
     var agent = "myUniqueBotName";
@@ -99,8 +98,8 @@ Example
         process.exit(1);
     }
 
-    var res1 = isAllowed(agent, rtxt.text, url1); 
-    var res2 = isAllowed(agent, rtxt.text, url1);
+    var res1 = robots.isAllowed(agent, rtxt.text, url1); 
+    var res2 = robots.isAllowed(agent, rtxt.text, url2);
 
     /* expected results: 
         res1 == true

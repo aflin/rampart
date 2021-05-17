@@ -120,11 +120,10 @@
 <li class="toctree-l2"><a class="reference internal" href="#link">link</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#symlink">symlink</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#chmod">chmod</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#realpath">realPath</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#touch">touch</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#rename">rename</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#sleep">sleep</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#getpid">getpid</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#getppid">getppid</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#gettype">getType</a></li>
 </ul>
 </li>
@@ -1307,6 +1306,19 @@ number), but <code class="docutils literal notranslate"><span class="pre">755</s
 </dd>
 </dl>
 </div>
+<div class="section" id="realpath">
+<h2>realPath<a class="headerlink" href="#realpath" title="Permalink to this headline">¶</a></h2>
+<p>Find the canonical form of a file system path.  The path or file must exist.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">realPath</span><span class="p">(</span><span class="nx">path</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">path</span></code> is a <span class="green">String</span>, not necessarily in canonical form.</p>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A green:<cite>String</cite>, the canonical form of the path.</p>
+</dd>
+</dl>
+</div>
 <div class="section" id="touch">
 <h2>touch<a class="headerlink" href="#touch" title="Permalink to this headline">¶</a></h2>
 <p>Create an empty file, or update the access timestamp of an existing file.</p>
@@ -1371,30 +1383,6 @@ is used.</p>
 <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">sleep</span><span class="p">(</span><span class="mf">1.5</span><span class="p">);</span>
 </pre></div>
 </div>
-</div>
-<div class="section" id="getpid">
-<h2>getpid<a class="headerlink" href="#getpid" title="Permalink to this headline">¶</a></h2>
-<p>Get the process id of the current process.</p>
-<p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">pid</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">getpid</span><span class="p">();</span>
-</pre></div>
-</div>
-<dl class="simple">
-<dt>Return Value:</dt><dd><p><span class="green">Number</span>. The pid of the current process.</p>
-</dd>
-</dl>
-</div>
-<div class="section" id="getppid">
-<h2>getppid<a class="headerlink" href="#getppid" title="Permalink to this headline">¶</a></h2>
-<p>Get the process id of the parent of the current process.</p>
-<p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ppid</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">getppid</span><span class="p">();</span>
-</pre></div>
-</div>
-<dl class="simple">
-<dt>Return Value:</dt><dd><p><span class="green">Number</span>. The pid of the parent process.</p>
-</dd>
-</dl>
 </div>
 <div class="section" id="gettype">
 <h2>getType<a class="headerlink" href="#gettype" title="Permalink to this headline">¶</a></h2>

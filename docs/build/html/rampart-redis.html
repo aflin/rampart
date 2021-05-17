@@ -123,7 +123,12 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#unsupported-commands">Unsupported Commands</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#proxy-objects">Proxy Objects</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#proxy-objects">Proxy Objects</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#creation">Creation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#usage">Usage</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#caveats">Caveats</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-robots.html">The rampart-robots module</a></li>
@@ -288,6 +293,7 @@ as listed below.</p>
 <blockquote>
 <div><ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">command_name</span></code> is the name of one of the functions listed below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">paramX</span></code> is one or more parameters, required or optional for the given Redis command.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">callback_function</span></code> is an optional (if synchronous) or required (if
 asynchronous) function which takes a single parameter.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> is an optional <span class="green">Object</span> with the following optional
@@ -297,9 +303,9 @@ properties:</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">timeout</span></code> - the <span class="green">Number</span> of seconds to wait for a response from the redis
 server when using a syncronous command. It overrides the timeout set
 in <code class="docutils literal notranslate"><span class="pre">redis.init</span></code> for the single command.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">async</span></code> - a <span class="green">Boolean</span>, which if true, the client will
+<li><p><code class="docutils literal notranslate"><span class="pre">async</span></code> - a <span class="green">Boolean</span>, which if <code class="docutils literal notranslate"><span class="pre">true</span></code>, the client will
 send the command to server and wait for reply in the
-Rampart event loop.</p></li>
+Rampart event loop.  If <code class="docutils literal notranslate"><span class="pre">true</span></code>, a callback function must be provided.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">returnBuffer</span></code> - a <span class="green">Boolean</span>, which if true,  Redis
 <code class="docutils literal notranslate"><span class="pre">strings</span></code> and <code class="docutils literal notranslate"><span class="pre">bulk</span> <span class="pre">strings</span></code> will be returned in <span class="green">Buffers</span>.</p></li>
 </ul>
@@ -375,13 +381,52 @@ will be sent as a double float.</p></li>
 </ul>
 </div></blockquote>
 <p>Example:</p>
+<blockquote>
+<div><div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">redis</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-redis&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">rcl</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">redis</span><span class="p">.</span><span class="nx">init</span><span class="p">();</span> <span class="c1">//localhost and default port</span>
+
+<span class="nx">rcl</span><span class="p">.</span><span class="nx">format</span><span class="p">(</span><span class="s2">&quot;HMSET %s %s %d %s %d&quot;</span><span class="p">,</span> <span class="s2">&quot;myset&quot;</span><span class="p">,</span> <span class="s2">&quot;one&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;two&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">rcl</span><span class="p">.</span><span class="nx">format</span><span class="p">(</span><span class="s2">&quot;HGETALL myset&quot;</span><span class="p">)</span> <span class="p">);</span>
+
+<span class="cm">/* expected output (generic array)</span>
+<span class="cm">    [</span>
+<span class="cm">       &quot;one&quot;,</span>
+<span class="cm">       1,</span>
+<span class="cm">       &quot;two&quot;,</span>
+<span class="cm">       2</span>
+<span class="cm">    ]</span>
+<span class="cm">*/</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">rcl</span><span class="p">.</span><span class="nx">hgetall</span><span class="p">(</span><span class="s2">&quot;myset&quot;</span><span class="p">));</span>
+
+<span class="cm">/* expected output (formatted for the HGETALL command)</span>
+<span class="cm">    {</span>
+<span class="cm">       &quot;one&quot;: 1,</span>
+<span class="cm">       &quot;two&quot;: 2</span>
+<span class="cm">    }</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div></blockquote>
 </div></blockquote>
 </div>
 <div class="section" id="xread-block-async">
 <h3>xread_block_async<a class="headerlink" href="#xread-block-async" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>This is equivalent to <code class="docutils literal notranslate"><span class="pre">xread({async:true},</span> <span class="pre">&quot;BLOCK&quot;,</span> <span class="pre">...)</span></code>.</p>
+</div></blockquote>
 </div>
 <div class="section" id="xread-auto-async">
 <h3>xread_auto_async<a class="headerlink" href="#xread-auto-async" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>This is equivalent to <code class="docutils literal notranslate"><span class="pre">xread_block_async</span></code> above, except that the
+returned IDs are tracked and the <code class="docutils literal notranslate"><span class="pre">XREAD</span> <span class="pre">BLOCK</span></code> command is reissued
+with the proper IDs each time a new Stream Message is received.  In this
+way it acts more like <code class="docutils literal notranslate"><span class="pre">subscribe</span></code> and continually accepts new streamed
+messages similar to a PUB/SUB model.</p>
+</div></blockquote>
 </div>
 </div>
 <div class="section" id="supported-commands">
@@ -390,48 +435,48 @@ will be sent as a double float.</p></li>
 appropriately for the given command (number in parantheses is the format of
 the <a class="reference internal" href="#return-values-from-supported-commands"><span class="std std-ref">return value</span></a>):</p>
 <blockquote>
-<div><p><code class="docutils literal notranslate"><span class="pre">bitcount</span></code> (1), <code class="docutils literal notranslate"><span class="pre">bitfield</span></code> (2), <code class="docutils literal notranslate"><span class="pre">bitop</span></code> (1), <code class="docutils literal notranslate"><span class="pre">bitpos</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">blmove</span></code> (1), <code class="docutils literal notranslate"><span class="pre">blmove_async</span></code> (1), <code class="docutils literal notranslate"><span class="pre">blpop</span></code> (13),
-<code class="docutils literal notranslate"><span class="pre">blpop_async</span></code> (13), <code class="docutils literal notranslate"><span class="pre">brpop</span></code> (13), <code class="docutils literal notranslate"><span class="pre">brpop_async</span></code> (13),
-<code class="docutils literal notranslate"><span class="pre">brpoplpush</span></code> (1), <code class="docutils literal notranslate"><span class="pre">bzpopmax</span></code> (14), <code class="docutils literal notranslate"><span class="pre">bzpopmax_async</span></code> (14),
-<code class="docutils literal notranslate"><span class="pre">bzpopmin</span></code> (14), <code class="docutils literal notranslate"><span class="pre">bzpopmin_async</span></code> (14), <code class="docutils literal notranslate"><span class="pre">decr</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">decrby</span></code> (1), <code class="docutils literal notranslate"><span class="pre">del</span></code> (1), <code class="docutils literal notranslate"><span class="pre">discard</span></code> (1), <code class="docutils literal notranslate"><span class="pre">dump</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">echo</span></code> (1), <code class="docutils literal notranslate"><span class="pre">exists</span></code> (6), <code class="docutils literal notranslate"><span class="pre">expire</span></code> (1), <code class="docutils literal notranslate"><span class="pre">expireat</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">flushall</span></code> (1), <code class="docutils literal notranslate"><span class="pre">flushdb</span></code> (1), <code class="docutils literal notranslate"><span class="pre">format</span></code> (2), <code class="docutils literal notranslate"><span class="pre">format_async</span></code> (2),
-<code class="docutils literal notranslate"><span class="pre">get</span></code> (1), <code class="docutils literal notranslate"><span class="pre">getbit</span></code> (1), <code class="docutils literal notranslate"><span class="pre">getdel</span></code> (1), <code class="docutils literal notranslate"><span class="pre">getex</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">getrange</span></code> (1), <code class="docutils literal notranslate"><span class="pre">getset</span></code> (1), <code class="docutils literal notranslate"><span class="pre">hdel</span></code> (1), <code class="docutils literal notranslate"><span class="pre">hexists</span></code> (6),
-<code class="docutils literal notranslate"><span class="pre">hget</span></code> (1), <code class="docutils literal notranslate"><span class="pre">hgetall</span></code> (4), <code class="docutils literal notranslate"><span class="pre">hincrby</span></code> (1), <code class="docutils literal notranslate"><span class="pre">hincrbyfloat</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">hkeys</span></code> (2), <code class="docutils literal notranslate"><span class="pre">hlen</span></code> (1), <code class="docutils literal notranslate"><span class="pre">hmget</span></code> (2), <code class="docutils literal notranslate"><span class="pre">hmset</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">hrandfield</span></code> (2), <code class="docutils literal notranslate"><span class="pre">hscan</span></code> (7), <code class="docutils literal notranslate"><span class="pre">hset</span></code> (1), <code class="docutils literal notranslate"><span class="pre">hsetnx</span></code> (6),
-<code class="docutils literal notranslate"><span class="pre">hstrlen</span></code> (1), <code class="docutils literal notranslate"><span class="pre">hvals</span></code> (2), <code class="docutils literal notranslate"><span class="pre">incr</span></code> (1), <code class="docutils literal notranslate"><span class="pre">incrby</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">incrbyfloat</span></code> (1), <code class="docutils literal notranslate"><span class="pre">info</span></code> (2), <code class="docutils literal notranslate"><span class="pre">keys</span></code> (2), <code class="docutils literal notranslate"><span class="pre">lindex</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">linsert</span></code> (1), <code class="docutils literal notranslate"><span class="pre">llen</span></code> (1), <code class="docutils literal notranslate"><span class="pre">lmove</span></code> (1), <code class="docutils literal notranslate"><span class="pre">lpop</span></code> (2),
-<code class="docutils literal notranslate"><span class="pre">lpos</span></code> (1), <code class="docutils literal notranslate"><span class="pre">lpush</span></code> (1), <code class="docutils literal notranslate"><span class="pre">lpushx</span></code> (1), <code class="docutils literal notranslate"><span class="pre">lrange</span></code> (2),
-<code class="docutils literal notranslate"><span class="pre">lrem</span></code> (1), <code class="docutils literal notranslate"><span class="pre">lset</span></code> (1), <code class="docutils literal notranslate"><span class="pre">ltrim</span></code> (1), <code class="docutils literal notranslate"><span class="pre">mget</span></code> (2), <code class="docutils literal notranslate"><span class="pre">move</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">mset</span></code> (1), <code class="docutils literal notranslate"><span class="pre">msetnx</span></code> (6), <code class="docutils literal notranslate"><span class="pre">object</span></code> (1), <code class="docutils literal notranslate"><span class="pre">persist</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">pexpire</span></code> (1), <code class="docutils literal notranslate"><span class="pre">pexpireat</span></code> (1), <code class="docutils literal notranslate"><span class="pre">psetex</span></code> (1), <code class="docutils literal notranslate"><span class="pre">psubscribe</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">pttl</span></code> (1), <code class="docutils literal notranslate"><span class="pre">publish</span></code> (1), <code class="docutils literal notranslate"><span class="pre">pubsub</span></code> (1), <code class="docutils literal notranslate"><span class="pre">punsubscribe</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">rpop</span></code> (2), <code class="docutils literal notranslate"><span class="pre">rpoplpush</span></code> (1), <code class="docutils literal notranslate"><span class="pre">rpush</span></code> (1), <code class="docutils literal notranslate"><span class="pre">rpushx</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">sadd</span></code> (1), <code class="docutils literal notranslate"><span class="pre">save</span></code> (1), <code class="docutils literal notranslate"><span class="pre">scan</span></code> (8), <code class="docutils literal notranslate"><span class="pre">scard</span></code> (1), <code class="docutils literal notranslate"><span class="pre">sdiff</span></code> (2),
-<code class="docutils literal notranslate"><span class="pre">sdiffstore</span></code> (1), <code class="docutils literal notranslate"><span class="pre">set</span></code> (1), <code class="docutils literal notranslate"><span class="pre">setbit</span></code> (1), <code class="docutils literal notranslate"><span class="pre">setex</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">setnx</span></code> (6), <code class="docutils literal notranslate"><span class="pre">setrange</span></code> (1), <code class="docutils literal notranslate"><span class="pre">sinter</span></code> (2), <code class="docutils literal notranslate"><span class="pre">sinterstore</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">sismember</span></code> (6), <code class="docutils literal notranslate"><span class="pre">smembers</span></code> (2), <code class="docutils literal notranslate"><span class="pre">smismember</span></code> (9), <code class="docutils literal notranslate"><span class="pre">smove</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">sort</span></code> (2), <code class="docutils literal notranslate"><span class="pre">spop</span></code> (2), <code class="docutils literal notranslate"><span class="pre">srandmember</span></code> (2), <code class="docutils literal notranslate"><span class="pre">srem</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">sscan</span></code> (8), <code class="docutils literal notranslate"><span class="pre">stralgo</span></code> (4), <code class="docutils literal notranslate"><span class="pre">strlen</span></code> (1), <code class="docutils literal notranslate"><span class="pre">subscribe</span></code> (3),
-<code class="docutils literal notranslate"><span class="pre">sunion</span></code> (2), <code class="docutils literal notranslate"><span class="pre">sunionstore</span></code> (1), <code class="docutils literal notranslate"><span class="pre">time</span></code> (2), <code class="docutils literal notranslate"><span class="pre">touch</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">ttl</span></code> (1), <code class="docutils literal notranslate"><span class="pre">type</span></code> (1), <code class="docutils literal notranslate"><span class="pre">unlink</span></code> (1), <code class="docutils literal notranslate"><span class="pre">unsubscribe</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">xadd</span></code> (1), <code class="docutils literal notranslate"><span class="pre">xdel</span></code> (1), <code class="docutils literal notranslate"><span class="pre">xinfo</span></code> (4), <code class="docutils literal notranslate"><span class="pre">xlen</span></code> (1), <code class="docutils literal notranslate"><span class="pre">xrange</span></code> (5),
-<code class="docutils literal notranslate"><span class="pre">xread</span></code> (12), <code class="docutils literal notranslate"><span class="pre">xread_auto_async</span></code> (12), <code class="docutils literal notranslate"><span class="pre">xread_block_async</span></code> (12),
-<code class="docutils literal notranslate"><span class="pre">xrevrange</span></code> (5), <code class="docutils literal notranslate"><span class="pre">xtrim</span></code> (1), <code class="docutils literal notranslate"><span class="pre">zadd</span></code> (1), <code class="docutils literal notranslate"><span class="pre">zcard</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">zcount</span></code> (1), <code class="docutils literal notranslate"><span class="pre">zdiff</span></code> (10), <code class="docutils literal notranslate"><span class="pre">zdiffstore</span></code> (10), <code class="docutils literal notranslate"><span class="pre">zincrby</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">zinter</span></code> (10), <code class="docutils literal notranslate"><span class="pre">zinterstore</span></code> (10), <code class="docutils literal notranslate"><span class="pre">zlexcount</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">zmscore</span></code> (2), <code class="docutils literal notranslate"><span class="pre">zpopmax</span></code> (10), <code class="docutils literal notranslate"><span class="pre">zpopmin</span></code> (10),
-<code class="docutils literal notranslate"><span class="pre">zrandmember</span></code> (10), <code class="docutils literal notranslate"><span class="pre">zrange</span></code> (10), <code class="docutils literal notranslate"><span class="pre">zrangebylex</span></code> (2),
-<code class="docutils literal notranslate"><span class="pre">zrangebyscore</span></code> (10), <code class="docutils literal notranslate"><span class="pre">zrangestore</span></code> (1), <code class="docutils literal notranslate"><span class="pre">zrank</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">zrem</span></code> (1), <code class="docutils literal notranslate"><span class="pre">zremrangebylex</span></code> (1), <code class="docutils literal notranslate"><span class="pre">zremrangebyrank</span></code> (1),
-<code class="docutils literal notranslate"><span class="pre">zremrangebyscore</span></code> (1), <code class="docutils literal notranslate"><span class="pre">zrevrange</span></code> (10), <code class="docutils literal notranslate"><span class="pre">zrevrangebylex</span></code> (10),
-<code class="docutils literal notranslate"><span class="pre">zrevrangebyscore</span></code> (10), <code class="docutils literal notranslate"><span class="pre">zrevrank</span></code> (1), <code class="docutils literal notranslate"><span class="pre">zscan</span></code> (11),
-<code class="docutils literal notranslate"><span class="pre">zscore</span></code> (1), <code class="docutils literal notranslate"><span class="pre">zunion</span></code> (10), <code class="docutils literal notranslate"><span class="pre">zunionstore</span></code> (10)</p>
+<div><p><code class="docutils literal notranslate"><span class="pre">bitcount</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">bitfield</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">bitop</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">bitpos</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">blmove</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">blmove_async</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">blpop</span></code>→(13),
+<code class="docutils literal notranslate"><span class="pre">blpop_async</span></code>→(13), <code class="docutils literal notranslate"><span class="pre">brpop</span></code>→(13), <code class="docutils literal notranslate"><span class="pre">brpop_async</span></code>→(13),
+<code class="docutils literal notranslate"><span class="pre">brpoplpush</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">bzpopmax</span></code>→(14), <code class="docutils literal notranslate"><span class="pre">bzpopmax_async</span></code>→(14),
+<code class="docutils literal notranslate"><span class="pre">bzpopmin</span></code>→(14), <code class="docutils literal notranslate"><span class="pre">bzpopmin_async</span></code>→(14), <code class="docutils literal notranslate"><span class="pre">decr</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">decrby</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">del</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">discard</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">dump</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">echo</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">exists</span></code>→(6), <code class="docutils literal notranslate"><span class="pre">expire</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">expireat</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">flushall</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">flushdb</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">format</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">format_async</span></code>→(2),
+<code class="docutils literal notranslate"><span class="pre">get</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">getbit</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">getdel</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">getex</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">getrange</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">getset</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">hdel</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">hexists</span></code>→(6),
+<code class="docutils literal notranslate"><span class="pre">hget</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">hgetall</span></code>→(4), <code class="docutils literal notranslate"><span class="pre">hincrby</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">hincrbyfloat</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">hkeys</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">hlen</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">hmget</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">hmset</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">hrandfield</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">hscan</span></code>→(7), <code class="docutils literal notranslate"><span class="pre">hset</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">hsetnx</span></code>→(6),
+<code class="docutils literal notranslate"><span class="pre">hstrlen</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">hvals</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">incr</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">incrby</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">incrbyfloat</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">info</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">keys</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">lindex</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">linsert</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">llen</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">lmove</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">lpop</span></code>→(2),
+<code class="docutils literal notranslate"><span class="pre">lpos</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">lpush</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">lpushx</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">lrange</span></code>→(2),
+<code class="docutils literal notranslate"><span class="pre">lrem</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">lset</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">ltrim</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">mget</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">move</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">mset</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">msetnx</span></code>→(6), <code class="docutils literal notranslate"><span class="pre">object</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">persist</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">pexpire</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">pexpireat</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">psetex</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">psubscribe</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">pttl</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">publish</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">pubsub</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">punsubscribe</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">rpop</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">rpoplpush</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">rpush</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">rpushx</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">sadd</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">save</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">scan</span></code>→(8), <code class="docutils literal notranslate"><span class="pre">scard</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">sdiff</span></code>→(2),
+<code class="docutils literal notranslate"><span class="pre">sdiffstore</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">set</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">setbit</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">setex</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">setnx</span></code>→(6), <code class="docutils literal notranslate"><span class="pre">setrange</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">sinter</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">sinterstore</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">sismember</span></code>→(6), <code class="docutils literal notranslate"><span class="pre">smembers</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">smismember</span></code>→(9), <code class="docutils literal notranslate"><span class="pre">smove</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">sort</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">spop</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">srandmember</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">srem</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">sscan</span></code>→(8), <code class="docutils literal notranslate"><span class="pre">stralgo</span></code>→(4), <code class="docutils literal notranslate"><span class="pre">strlen</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">subscribe</span></code>→(3),
+<code class="docutils literal notranslate"><span class="pre">sunion</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">sunionstore</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">time</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">touch</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">ttl</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">type</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">unlink</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">unsubscribe</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">xadd</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">xdel</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">xinfo</span></code>→(4), <code class="docutils literal notranslate"><span class="pre">xlen</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">xrange</span></code>→(5),
+<code class="docutils literal notranslate"><span class="pre">xread</span></code>→(12), <code class="docutils literal notranslate"><span class="pre">xread_auto_async</span></code>→(12), <code class="docutils literal notranslate"><span class="pre">xread_block_async</span></code>→(12),
+<code class="docutils literal notranslate"><span class="pre">xrevrange</span></code>→(5), <code class="docutils literal notranslate"><span class="pre">xtrim</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">zadd</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">zcard</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">zcount</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">zdiff</span></code>→(10), <code class="docutils literal notranslate"><span class="pre">zdiffstore</span></code>→(10), <code class="docutils literal notranslate"><span class="pre">zincrby</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">zinter</span></code>→(10), <code class="docutils literal notranslate"><span class="pre">zinterstore</span></code>→(10), <code class="docutils literal notranslate"><span class="pre">zlexcount</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">zmscore</span></code>→(2), <code class="docutils literal notranslate"><span class="pre">zpopmax</span></code>→(10), <code class="docutils literal notranslate"><span class="pre">zpopmin</span></code>→(10),
+<code class="docutils literal notranslate"><span class="pre">zrandmember</span></code>→(10), <code class="docutils literal notranslate"><span class="pre">zrange</span></code>→(10), <code class="docutils literal notranslate"><span class="pre">zrangebylex</span></code>→(2),
+<code class="docutils literal notranslate"><span class="pre">zrangebyscore</span></code>→(10), <code class="docutils literal notranslate"><span class="pre">zrangestore</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">zrank</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">zrem</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">zremrangebylex</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">zremrangebyrank</span></code>→(1),
+<code class="docutils literal notranslate"><span class="pre">zremrangebyscore</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">zrevrange</span></code>→(10), <code class="docutils literal notranslate"><span class="pre">zrevrangebylex</span></code>→(10),
+<code class="docutils literal notranslate"><span class="pre">zrevrangebyscore</span></code>→(10), <code class="docutils literal notranslate"><span class="pre">zrevrank</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">zscan</span></code>→(11),
+<code class="docutils literal notranslate"><span class="pre">zscore</span></code>→(1), <code class="docutils literal notranslate"><span class="pre">zunion</span></code>→(10), <code class="docutils literal notranslate"><span class="pre">zunionstore</span></code>→(10)</p>
 </div></blockquote>
 <div class="section" id="return-values-from-supported-commands">
 <h3>Return Values from Supported Commands<a class="headerlink" href="#return-values-from-supported-commands" title="Permalink to this headline">¶</a></h3>
@@ -444,7 +489,8 @@ the callback will be called once for each member of the
 <span class="green">Array</span>.</p></li>
 <li><p>Multi-Value - return is an <span class="green">Array</span> of <span class="green">Arrays</span>. When used
 with a callback, the callback will be called once for each member of
-the outer <span class="green">Array</span> and be passed the inner <span class="green">Arrays</span>.</p></li>
+the outer <span class="green">Array</span> and have its sole parameter one of each of the
+inner <span class="green">Arrays</span>.</p></li>
 <li><p>Associative - return is an <span class="green">Object</span> with one or more key:value
 pairs.</p></li>
 <li><p>Associative - for <code class="docutils literal notranslate"><span class="pre">xrange</span></code> and <code class="docutils literal notranslate"><span class="pre">xrevrange</span></code> only.  Format is as
@@ -639,6 +685,206 @@ they have not (yet) been tested for the format of their return value:</p>
 </div>
 <div class="section" id="proxy-objects">
 <h2>Proxy Objects<a class="headerlink" href="#proxy-objects" title="Permalink to this headline">¶</a></h2>
+<p>A Rampart Redis Proxy Object is an JavaScript <span class="green">Object</span> whose
+properties are backed by a <a class="reference external" href="https://redis.io/topics/data-types-intro#redis-hashes">Redis Hash</a>
+and for which operations on the <span class="green">Object</span> serves as a shortcut for the
+<code class="docutils literal notranslate"><span class="pre">hset</span></code>, <code class="docutils literal notranslate"><span class="pre">hget</span></code>, <code class="docutils literal notranslate"><span class="pre">hgetall</span></code> and <code class="docutils literal notranslate"><span class="pre">hdel</span></code> commands.  They are intended as
+a quick and easy storage system for occassionally used variables that are
+shared between scripts or threads.  They should not be used as a robust
+databasing solution.</p>
+<div class="section" id="creation">
+<h3>Creation<a class="headerlink" href="#creation" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>A proxy object is created as follows:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">redis</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-redis&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">rcl</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">redis</span><span class="p">.</span><span class="nx">init</span><span class="p">([</span><span class="nx">ip</span><span class="p">,</span> <span class="p">][</span><span class="nx">port</span><span class="p">,</span> <span class="p">][</span><span class="nx">timeout</span><span class="p">]);</span>
+
+<span class="kd">var</span> <span class="nx">myProxyObject</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">rcl</span><span class="p">.</span><span class="nx">proxyObj</span><span class="p">(</span><span class="nx">name</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">name</span></code> is the name of the Redis key that will store the Redis
+Hash.</p>
+</div></blockquote>
+</div>
+<div class="section" id="usage">
+<h3>Usage<a class="headerlink" href="#usage" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><p>Setting and reading the property keys of the returned proxy object will automatically
+set and retrieve the keys in the specified Hash Key.  These values will then
+be available in any other thread or script which connects to the same Redis
+Server instance using the identical proxy object.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span> <span class="cm">/* script 1 - insert new data */</span>
+
+ <span class="kd">var</span> <span class="nx">redis</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-redis&quot;</span><span class="p">);</span>
+
+ <span class="kd">var</span> <span class="nx">rcl</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">redis</span><span class="p">.</span><span class="nx">init</span><span class="p">();</span> <span class="c1">//localhost and default port</span>
+
+ <span class="kd">var</span> <span class="nx">users</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">rcl</span><span class="p">.</span><span class="nx">proxyObj</span><span class="p">(</span><span class="s2">&quot;Users&quot;</span><span class="p">);</span>
+
+<span class="cm">/* populate variables for insertion */</span>
+<span class="kd">var</span> <span class="nx">cl</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;principal&quot;</span><span class="p">,</span> <span class="s2">&quot;principal&quot;</span><span class="p">,</span> <span class="s2">&quot;salary&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;salary&quot;</span><span class="p">,</span> <span class="s2">&quot;hourly&quot;</span><span class="p">,</span> <span class="s2">&quot;intern&quot;</span>
+<span class="p">];</span>
+<span class="kd">var</span> <span class="nx">name</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;Debbie Dreamer&quot;</span><span class="p">,</span> <span class="s2">&quot;Rusty Grump&quot;</span><span class="p">,</span><span class="s2">&quot;Georgia Geek&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Sydney Slacker&quot;</span><span class="p">,</span> <span class="s2">&quot;Pat Particular&quot;</span><span class="p">,</span> <span class="s2">&quot;Billie Barista&quot;</span>
+<span class="p">];</span>
+<span class="kd">var</span> <span class="nx">id</span> <span class="o">=</span> <span class="p">[</span> <span class="s2">&quot;dd&quot;</span><span class="p">,</span> <span class="s2">&quot;rg&quot;</span><span class="p">,</span> <span class="s2">&quot;gg&quot;</span><span class="p">,</span> <span class="s2">&quot;ss&quot;</span><span class="p">,</span> <span class="s2">&quot;pp&quot;</span><span class="p">,</span> <span class="s2">&quot;bb&quot;</span> <span class="p">];</span>
+<span class="kd">var</span> <span class="nx">age</span> <span class="o">=</span> <span class="p">[</span> <span class="mi">63</span><span class="p">,</span> <span class="mi">58</span><span class="p">,</span> <span class="mi">44</span><span class="p">,</span> <span class="mi">44</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">22</span> <span class="p">];</span>
+<span class="kd">var</span> <span class="nx">salary</span> <span class="o">=</span> <span class="p">[</span> <span class="mi">250000</span><span class="p">,</span> <span class="mi">250000</span><span class="p">,</span> <span class="mi">100000</span><span class="p">,</span> <span class="mi">100000</span><span class="p">,</span> <span class="mi">80000</span><span class="p">,</span> <span class="mi">0</span> <span class="p">];</span>
+<span class="kd">var</span> <span class="nx">title</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s2">&quot;Chief Executive Officer&quot;</span><span class="p">,</span> <span class="s2">&quot;Chief Financial Officer&quot;</span><span class="p">,</span> <span class="s2">&quot;Lead Programmer&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Programmer&quot;</span><span class="p">,</span> <span class="s2">&quot;Systems Administrator&quot;</span><span class="p">,</span> <span class="s2">&quot;Intern&quot;</span>
+<span class="p">];</span>
+
+<span class="kd">var</span> <span class="nx">startDate</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s1">&#39;1999-12-31&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;1999-12-31&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;2001-3-15&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;2002-5-12&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;2003-7-14&#39;</span><span class="p">,</span>
+    <span class="s1">&#39;2020-3-18&#39;</span>
+<span class="p">];</span>
+
+<span class="cm">/* insert rows */</span>
+<span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="o">&lt;</span><span class="mi">6</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span>
+<span class="p">{</span>
+     <span class="nx">users</span><span class="p">[</span><span class="nx">id</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
+         <span class="nx">employeeClass</span><span class="o">:</span> <span class="nx">cl</span><span class="p">[</span><span class="nx">i</span><span class="p">],</span>
+         <span class="nx">name</span><span class="o">:</span> <span class="nx">name</span><span class="p">[</span><span class="nx">i</span><span class="p">],</span>
+         <span class="nx">age</span><span class="o">:</span> <span class="nx">age</span><span class="p">[</span><span class="nx">i</span><span class="p">],</span>
+         <span class="nx">salary</span><span class="o">:</span> <span class="nx">salary</span><span class="p">[</span><span class="nx">i</span><span class="p">],</span>
+         <span class="nx">title</span><span class="o">:</span> <span class="nx">title</span><span class="p">[</span><span class="nx">i</span><span class="p">],</span>
+         <span class="nx">startDate</span><span class="o">:</span> <span class="nx">startDate</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span>
+     <span class="p">}</span>
+<span class="p">}</span>
+<span class="cm">/* end script 1 */</span>
+
+ <span class="cm">/* script 2 - access data */</span>
+
+ <span class="kd">var</span> <span class="nx">redis</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-redis&quot;</span><span class="p">);</span>
+
+ <span class="kd">var</span> <span class="nx">rcl</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">redis</span><span class="p">.</span><span class="nx">init</span><span class="p">();</span> <span class="c1">//localhost and default port</span>
+
+ <span class="kd">var</span> <span class="nx">users</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">rcl</span><span class="p">.</span><span class="nx">proxyObj</span><span class="p">(</span><span class="s2">&quot;Users&quot;</span><span class="p">);</span>
+
+ <span class="k">delete</span> <span class="nx">users</span><span class="p">.</span><span class="nx">bb</span><span class="p">;</span> <span class="c1">//Billie&#39;s internship is finished.</span>
+
+ <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">users</span><span class="p">);</span>
+
+ <span class="cm">/* expected output:</span>
+<span class="cm">     {</span>
+<span class="cm">        &quot;rg&quot;: {</span>
+<span class="cm">           &quot;employeeClass&quot;: &quot;principal&quot;,</span>
+<span class="cm">           &quot;name&quot;: &quot;Rusty Grump&quot;,</span>
+<span class="cm">           &quot;age&quot;: 58,</span>
+<span class="cm">           &quot;salary&quot;: 250000,</span>
+<span class="cm">           &quot;title&quot;: &quot;Chief Financial Officer&quot;,</span>
+<span class="cm">           &quot;startDate&quot;: &quot;1999-12-31&quot;</span>
+<span class="cm">        },</span>
+<span class="cm">        &quot;ss&quot;: {</span>
+<span class="cm">           &quot;employeeClass&quot;: &quot;salary&quot;,</span>
+<span class="cm">           &quot;name&quot;: &quot;Sydney Slacker&quot;,</span>
+<span class="cm">           &quot;age&quot;: 44,</span>
+<span class="cm">           &quot;salary&quot;: 100000,</span>
+<span class="cm">           &quot;title&quot;: &quot;Programmer&quot;,</span>
+<span class="cm">           &quot;startDate&quot;: &quot;2002-5-12&quot;</span>
+<span class="cm">        },</span>
+<span class="cm">        &quot;dd&quot;: {</span>
+<span class="cm">           &quot;employeeClass&quot;: &quot;principal&quot;,</span>
+<span class="cm">           &quot;name&quot;: &quot;Debbie Dreamer&quot;,</span>
+<span class="cm">           &quot;age&quot;: 63,</span>
+<span class="cm">           &quot;salary&quot;: 250000,</span>
+<span class="cm">           &quot;title&quot;: &quot;Chief Executive Officer&quot;,</span>
+<span class="cm">           &quot;startDate&quot;: &quot;1999-12-31&quot;</span>
+<span class="cm">        },</span>
+<span class="cm">        &quot;pp&quot;: {</span>
+<span class="cm">           &quot;employeeClass&quot;: &quot;hourly&quot;,</span>
+<span class="cm">           &quot;name&quot;: &quot;Pat Particular&quot;,</span>
+<span class="cm">           &quot;age&quot;: 32,</span>
+<span class="cm">           &quot;salary&quot;: 80000,</span>
+<span class="cm">           &quot;title&quot;: &quot;Systems Administrator&quot;,</span>
+<span class="cm">           &quot;startDate&quot;: &quot;2003-7-14&quot;</span>
+<span class="cm">        },</span>
+<span class="cm">        &quot;gg&quot;: {</span>
+<span class="cm">           &quot;employeeClass&quot;: &quot;salary&quot;,</span>
+<span class="cm">           &quot;name&quot;: &quot;Georgia Geek&quot;,</span>
+<span class="cm">           &quot;age&quot;: 44,</span>
+<span class="cm">           &quot;salary&quot;: 100000,</span>
+<span class="cm">           &quot;title&quot;: &quot;Lead Programmer&quot;,</span>
+<span class="cm">           &quot;startDate&quot;: &quot;2001-3-15&quot;</span>
+<span class="cm">        }</span>
+<span class="cm">     }</span>
+<span class="cm"> */</span>
+</pre></div>
+</div>
+</div></blockquote>
+</div>
+<div class="section" id="caveats">
+<h3>Caveats<a class="headerlink" href="#caveats" title="Permalink to this headline">¶</a></h3>
+<blockquote>
+<div><ul>
+<li><p>JavaScript primitives and <span class="green">Objects</span> are stored and retrieved by converting
+to and from <a class="reference external" href="https://duktape.org/guide.html#builtin-cbor">CBOR</a>
+which limits what can be stored (no <span class="green">Dates</span> or
+<span class="green">Functions</span>);</p></li>
+<li><p>Proxy Objects are saved to the Redis Key specified when the object is
+created (i.e. <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">rcl.proxyObj(redisKeyName)</span></code>).  If the Redis Key
+already exists and is not a Redis Hash, an error will be thrown.</p></li>
+<li><p>Any Proxy Object key that begins with <code class="docutils literal notranslate"><span class="pre">_</span></code> (underscore) will not be
+saved to the Redis Hash and will only exist locally.  The following
+are preset:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">_destroy</span></code> - A <span class="green">Function</span> which when called, deletes the
+Redis Hash from the database. Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">rcl</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">redis</span><span class="p">.</span><span class="nx">init</span><span class="p">();</span> <span class="c1">//localhost and default port</span>
+
+<span class="kd">var</span> <span class="nx">users</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">rcl</span><span class="p">.</span><span class="nx">proxyObj</span><span class="p">(</span><span class="s2">&quot;Users&quot;</span><span class="p">);</span>
+
+<span class="nx">users</span><span class="p">.</span><span class="nx">_destroy</span><span class="p">();</span> <span class="c1">// same as rcl.del(&quot;Users&quot;);</span>
+</pre></div>
+</div>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">_hname</span></code> - A <span class="green">String</span> set to the name of the Redis Key.
+In the above example, it would be set to <code class="docutils literal notranslate"><span class="pre">&quot;Users&quot;</span></code>;</p></li>
+</ul>
+</li>
+<li><p>A Proxy Object is a shallow proxy - meaning that only key/value pairs
+of the <span class="green">Object</span> returned from <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">rcl.proxyObj()</span></code> will be stored
+to the Redis database.  Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">rcl</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">redis</span><span class="p">.</span><span class="nx">init</span><span class="p">();</span> <span class="c1">//localhost and default port</span>
+
+<span class="kd">var</span> <span class="nx">users</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">rcl</span><span class="p">.</span><span class="nx">proxyObj</span><span class="p">(</span><span class="s2">&quot;Users&quot;</span><span class="p">);</span>
+
+<span class="nx">users</span><span class="p">.</span><span class="nx">myid</span> <span class="o">=</span> <span class="p">{</span><span class="nx">name</span><span class="o">:</span><span class="s2">&quot;Joe&quot;</span><span class="p">};</span> <span class="c1">//myid.name is stored in Redis</span>
+
+<span class="nx">users</span><span class="p">.</span><span class="nx">myid</span><span class="p">.</span><span class="nx">age</span> <span class="o">=</span> <span class="mi">42</span><span class="p">;</span>       <span class="c1">// users.myid.age is not set;</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">users</span><span class="p">.</span><span class="nx">myid</span><span class="p">)</span>    <span class="c1">// {name:&quot;Joe&quot;}</span>
+
+<span class="kd">var</span> <span class="nx">myid</span> <span class="o">=</span> <span class="nx">users</span><span class="p">.</span><span class="nx">myid</span><span class="p">;</span>     <span class="c1">// var myid is created from the Redis Hash &quot;myid&quot;</span>
+                           <span class="c1">// which is CBOR decoded into a JavaScript Object</span>
+<span class="nx">myid</span><span class="p">.</span><span class="nx">age</span> <span class="o">=</span> <span class="mi">42</span><span class="p">;</span>
+
+<span class="nx">users</span><span class="p">.</span><span class="nx">myid</span> <span class="o">=</span> <span class="nx">myid</span><span class="p">;</span>         <span class="c1">// myid.age and myid.name are now stored in Redis</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">users</span><span class="p">.</span><span class="nx">myid</span><span class="p">)</span>    <span class="c1">// {name:&quot;Joe&quot;, age: 42}</span>
+</pre></div>
+</div>
+</li>
+<li><p>Operations which may otherwise appear to be atomic will not work
+properly with concurrency.  Example:  <code class="docutils literal notranslate"><span class="pre">users.count++</span></code> will indeed
+increment the variable stored under the Hash key <code class="docutils literal notranslate"><span class="pre">count</span></code>.  However,
+it will retrieve the value, add one, then set it again, during which
+time another script may have retrieved the value to do the same.
+Thus, doing this simultaneously in several scripts or threads will
+not work as intended.</p></li>
+</ul>
+</div></blockquote>
+</div>
 </div>
 </div>
 

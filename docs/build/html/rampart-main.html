@@ -121,6 +121,8 @@
 <li class="toctree-l3"><a class="reference internal" href="#env">env</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#argv">argv</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#scriptpath">scriptPath</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#getpid">getpid</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#getppid">getppid</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#using-the-require-function-to-import-modules">Using the require Function to Import Modules</a><ul>
@@ -136,6 +138,9 @@
 <li class="toctree-l3"><a class="reference internal" href="#rest-parameters">Rest Parameters</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#template-literals-and-sprintf">Template Literals and sprintf</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#settimeout">setTimeout()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#cleartimeout">clearTimeout()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#setinterval">setInterval()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#clearinterval">clearInterval()</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#additional-global-variables-and-functions">Additional Global Variables and Functions</a></li>
@@ -277,7 +282,7 @@ following:</p>
 <code class="docutils literal notranslate"><span class="pre">require()</span></code> function.</p></li>
 <li><p>File and C-functions utilities such as <code class="docutils literal notranslate"><span class="pre">printf</span></code>, <code class="docutils literal notranslate"><span class="pre">fseek</span></code>, and <code class="docutils literal notranslate"><span class="pre">exec</span></code>.</p></li>
 <li><p>Included <code class="docutils literal notranslate"><span class="pre">C</span></code> modules (<code class="docutils literal notranslate"><span class="pre">rampart-sql</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-server</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-curl</span></code>,
-<code class="docutils literal notranslate"><span class="pre">rampart-crypto</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-html</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-lmdb</span></code>
+<code class="docutils literal notranslate"><span class="pre">rampart-crypto</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-html</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-lmdb</span></code>, <code class="docutils literal notranslate"><span class="pre">rampart-redis</span></code>,
 <code class="docutils literal notranslate"><span class="pre">rampart-cmark</span></code> and <code class="docutils literal notranslate"><span class="pre">rampart-robots</span></code>).</p></li>
 <li><p>Event loop using <code class="docutils literal notranslate"><span class="pre">libevent2</span></code>.</p></li>
 <li><p>ECMA 2015, 2016, 2017 and 2018 support using the <a class="reference external" href="https://babeljs.io/">Babel</a>
@@ -288,6 +293,7 @@ JavaScript transpiler.</p></li>
 <li><p>Cryptography functions from Openssl via <code class="docutils literal notranslate"><span class="pre">rampart-crypto</span></code>.</p></li>
 <li><p>Html parsing and and error correcting via <code class="docutils literal notranslate"><span class="pre">rampart-html</span></code>.</p></li>
 <li><p>Fast NOSQL database via <code class="docutils literal notranslate"><span class="pre">rampart-lmdb</span></code>.</p></li>
+<li><p>Redis Client via <code class="docutils literal notranslate"><span class="pre">rampart-redis</span></code>.</p></li>
 <li><p>Simple Event functions via <a class="reference internal" href="#rampart-event">rampart.event</a>.</p></li>
 <li><p><a class="reference internal" href="#extra-javascript-functionality">Extra JavaScript Functionality</a>.</p></li>
 </ul>
@@ -296,12 +302,14 @@ JavaScript transpiler.</p></li>
 <div class="section" id="rampart-philosophy">
 <h2>Rampart philosophy<a class="headerlink" href="#rampart-philosophy" title="Permalink to this headline">¶</a></h2>
 <p>Though Rampart supports <code class="docutils literal notranslate"><span class="pre">setTimeout()</span></code>, <a class="reference external" href="rampart.events">Events</a> (and
-other async functions via babel), the majority of functions added to
-<a class="reference external" href="https://duktape.org">Duktape</a> via modules as well as the built-in
-functions are synchronous.  Raw JavaScript execution is more memory
-efficient, but far slower than with, e.g., node.js.  However, the
-functionality and speed of the available C functions provide comparable
-efficacy, excellent performance and are a viable alternative to <a class="reference external" href="https://en.wikipedia.org/wiki/LAMP_(software_bundle)">LAMP</a>, <a class="reference external" href="https://en.wikipedia.org/wiki/MEAN_(solution_stack)">MEAN</a> or other stacks, all
+other async functions via, e.g., <a class="reference internal" href="rampart-server.html#websockets"><span class="std std-ref">websockets</span></a>,
+<a class="reference internal" href="rampart-redis.html#the-rampart-redis-module"><span class="std std-ref">rampart-redis</span></a>, Babel, etc),
+the majority of functions added to <a class="reference external" href="https://duktape.org">Duktape</a> via are
+synchronous.  Raw JavaScript execution is more memory efficient, but far
+slower than with, e.g., node.js.  However, the functionality and speed of
+the available C functions provide comparable efficacy, excellent performance
+and are a viable alternative to <a class="reference external" href="https://en.wikipedia.org/wiki/LAMP_(software_bundle)">LAMP</a>,
+<a class="reference external" href="https://en.wikipedia.org/wiki/MEAN_(solution_stack)">MEAN</a> or other stacks, all
 in a single product, while consuming considerably less resources than the
 aforementioned.</p>
 </div>
@@ -746,6 +754,30 @@ canonical path (directory) in which the currently executing script can be
 found (e.g.  if <code class="docutils literal notranslate"><span class="pre">rampart</span> <span class="pre">/path/to/my/script.js</span></code> is run,
 <code class="docutils literal notranslate"><span class="pre">process.scriptPath</span></code> will be <code class="docutils literal notranslate"><span class="pre">/path/to/my</span></code>).</p>
 </div>
+<div class="section" id="getpid">
+<h3>getpid<a class="headerlink" href="#getpid" title="Permalink to this headline">¶</a></h3>
+<p>Get the process id of the current process.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">pid</span> <span class="o">=</span> <span class="nx">process</span><span class="p">.</span><span class="nx">getpid</span><span class="p">();</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><span class="green">Number</span>. The pid of the current process.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="getppid">
+<h3>getppid<a class="headerlink" href="#getppid" title="Permalink to this headline">¶</a></h3>
+<p>Get the process id of the parent of the current process.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ppid</span> <span class="o">=</span> <span class="nx">process</span><span class="p">.</span><span class="nx">getppid</span><span class="p">();</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><span class="green">Number</span>. The pid of the parent process.</p>
+</dd>
+</dl>
+</div>
 </div>
 <div class="section" id="using-the-require-function-to-import-modules">
 <h2>Using the require Function to Import Modules<a class="headerlink" href="#using-the-require-function-to-import-modules" title="Permalink to this headline">¶</a></h2>
@@ -761,7 +793,8 @@ which exports an <span class="green">Object</span> or <span class="green">Functi
 for a module named <code class="docutils literal notranslate"><span class="pre">rampart-sql.so</span></code> or <code class="docutils literal notranslate"><span class="pre">rampart-sql.js</span></code> and use the
 first one found.  In this case <code class="docutils literal notranslate"><span class="pre">rampart-sql.so</span></code> will be found and the SQL
 module and its functions will be usable via the named variable <code class="docutils literal notranslate"><span class="pre">Sql</span></code>.  See,
-e.g, <a class="reference internal" href="rampart-sql.html#loading-the-javascript-module"><span class="std std-ref">Loading the Javascript Module</span></a> for full details.</p>
+e.g, <a class="reference internal" href="rampart-sql.html#loading-the-javascript-module"><span class="std std-ref">The rampart-sql documentation</span></a>
+for full details.</p>
 <div class="section" id="example-creating-a-javascript-module">
 <h3>Example creating a JavaScript module<a class="headerlink" href="#example-creating-a-javascript-module" title="Permalink to this headline">¶</a></h3>
 <p>If you have an often used function, or a function used for serving web pages
@@ -817,7 +850,7 @@ and/or other JavaScript variables.</p>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>The following could be compiled with GCC as follows:</p>
+<p>This could be compiled with GCC as follows:</p>
 <p><code class="docutils literal notranslate"><span class="pre">cc</span> <span class="pre">-I/usr/local/rampart/include</span> <span class="pre">-fPIC</span> <span class="pre">-shared</span> <span class="pre">-Wl,-soname,times3.so</span> <span class="pre">-o</span> <span class="pre">times3.so</span> <span class="pre">times3.c</span></code></p>
 <p>The module could then be imported using the <code class="docutils literal notranslate"><span class="pre">require()</span></code> function.</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">x3</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;times3&quot;</span><span class="p">);</span>
@@ -965,7 +998,7 @@ called.</p>
 asynchronous calling of functions from within Rampart’s event loop in the same
 manner as <code class="docutils literal notranslate"><span class="pre">setTimeout</span></code> in <code class="docutils literal notranslate"><span class="pre">node.js</span></code> or a browser.</p>
 <p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">setTimeout</span><span class="p">(</span><span class="nx">callback</span><span class="p">,</span> <span class="nx">timeOut</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">id</span> <span class="o">=</span> <span class="nx">setTimeout</span><span class="p">(</span><span class="nx">callback</span><span class="p">,</span> <span class="nx">timeOut</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>Where:</p>
@@ -973,6 +1006,10 @@ manner as <code class="docutils literal notranslate"><span class="pre">setTimeou
 <li><p><code class="docutils literal notranslate"><span class="pre">callback</span></code> is a <span class="green">Function</span> to be run when the elapsed time is reached.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">timeOut</span></code> is the amount of time in milliseconds to wait before the <code class="docutils literal notranslate"><span class="pre">callback</span></code> function is called.</p></li>
 </ul>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>An id which may be used with <a href="#id6"><span class="problematic" id="id7">`clearTimeout`_</span></a>.</p>
+</dd>
+</dl>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="cm">/* print message after 2 seconds */</span>
 <span class="nx">setTimeout</span><span class="p">(</span><span class="kd">function</span><span class="p">(){</span> <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;Hi from a timeout callback&quot;</span><span class="p">);</span> <span class="p">},</span> <span class="mi">2000</span><span class="p">);</span>
@@ -986,9 +1023,77 @@ Thus if a script uses synchronous functions that take longer than <code class="d
 <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">sleep</span><span class="p">(</span><span class="mi">3</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>The <code class="docutils literal notranslate"><span class="pre">callback</span></code> function will not be executed until after the sleep function returns.
-At that time, it’s clock will have expired and it will be run immediately.  The net effect
-is that <code class="docutils literal notranslate"><span class="pre">console.log</span></code> will be run after approximately 3 seconds.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">callback</span></code> function will not be executed until after the sleep
+function returns.  At that time, the clock will have expired and the
+<code class="docutils literal notranslate"><span class="pre">setTimeout</span></code> callback will be run immediately.  The net effect is that
+<code class="docutils literal notranslate"><span class="pre">console.log</span></code> will be executed after approximately 3 seconds.</p>
+</div>
+<div class="section" id="cleartimeout">
+<h3>clearTimeout()<a class="headerlink" href="#cleartimeout" title="Permalink to this headline">¶</a></h3>
+<p>Clear a pending <a class="reference internal" href="#settimeout">setTimeout()</a> timer before it has executed.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">id</span> <span class="o">=</span> <span class="nx">setTimeout</span><span class="p">(</span><span class="nx">callback</span><span class="p">,</span> <span class="nx">timeOut</span><span class="p">);</span>
+
+<span class="nx">clearTimeout</span><span class="p">(</span><span class="nx">id</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">id</span></code> is the return value from a call to <a class="reference internal" href="#settimeout">setTimeout()</a>.</p></li>
+</ul>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code></p>
+</dd>
+</dl>
+</div>
+<div class="section" id="setinterval">
+<h3>setInterval()<a class="headerlink" href="#setinterval" title="Permalink to this headline">¶</a></h3>
+<p>Similar to <a class="reference internal" href="#settimeout">setTimeout()</a> except it repeats every <code class="docutils literal notranslate"><span class="pre">interval</span></code> milliseconds.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">id</span> <span class="o">=</span> <span class="nx">setInterval</span><span class="p">(</span><span class="nx">callback</span><span class="p">,</span> <span class="nx">interval</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">callback</span></code> is a <span class="green">Function</span> to be run when the elapsed time is reached.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">interval</span></code> is the amount of time in milliseconds between calls to <code class="docutils literal notranslate"><span class="pre">callback</span></code>.</p></li>
+</ul>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>An id which may be used with <a class="reference internal" href="#clearinterval">clearInterval()</a>.</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">x</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span>
+
+<span class="cm">/* print message every second, 10 times */</span>
+<span class="kd">var</span> <span class="nx">id</span> <span class="o">=</span> <span class="nx">setInterval</span><span class="p">(</span><span class="kd">function</span><span class="p">(){</span>
+     <span class="nx">x</span><span class="o">++</span><span class="p">;</span>
+     <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;loop &quot;</span> <span class="o">+</span> <span class="nx">x</span><span class="p">);</span>
+     <span class="k">if</span><span class="p">(</span><span class="nx">x</span><span class="o">&gt;</span><span class="mi">9</span><span class="p">)</span> <span class="p">{</span>
+         <span class="nx">clearInterval</span><span class="p">(</span><span class="nx">id</span><span class="p">);</span>
+         <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;all done&quot;</span><span class="p">);</span>
+     <span class="p">}</span>
+<span class="p">},</span> <span class="mi">1000</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="clearinterval">
+<h3>clearInterval()<a class="headerlink" href="#clearinterval" title="Permalink to this headline">¶</a></h3>
+<p>Clear a pending <a class="reference internal" href="#setinterval">setInterval()</a> timer, breaking the loop.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">id</span> <span class="o">=</span> <span class="nx">setInterval</span><span class="p">(</span><span class="nx">callback</span><span class="p">,</span> <span class="nx">interval</span><span class="p">);</span>
+
+<span class="nx">clearInterval</span><span class="p">(</span><span class="nx">id</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">id</span></code> is the return value from a call to <a class="reference internal" href="#setinterval">setInterval()</a>.</p></li>
+</ul>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code></p>
+</dd>
+</dl>
 </div>
 </div>
 <div class="section" id="additional-global-variables-and-functions">
