@@ -15,6 +15,7 @@
 #include <pwd.h>
 #include <grp.h>
 #include <signal.h>
+#include <limits.h>
 #include "rampart.h"
 extern char **environ;
 extern char *RP_script_path;
@@ -429,6 +430,20 @@ duk_ret_t duk_process_getppid(duk_context *ctx)
     duk_push_int(ctx, (duk_int_t)getppid());
     return 1;
 }
+
+duk_ret_t duk_rp_realpath(duk_context *ctx)
+{
+    const char *path = REQUIRE_STRING(ctx, 0, "realPath requires a String as its sole parameter");
+    char respath[PATH_MAX];
+
+    errno=0;
+    if(!realpath(path,respath))
+        RP_THROW(ctx, "realPath: %s\n", strerror(errno));
+
+    duk_push_string(ctx, respath);
+    return 1;
+}
+
 
 void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase)
 {
@@ -2065,7 +2080,6 @@ duk_ret_t duk_rp_copyFile(duk_context *ctx, char *fname)
 
         if (src == NULL)
         {
-            fclose(src);
             RP_THROW(ctx, "%s: could not open file '%s': %s", fname, src_filename, strerror(errno));
         }
 
@@ -2766,6 +2780,8 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "readdir");
     duk_push_c_function(ctx, duk_rp_copy_file, 4);
     duk_put_prop_string(ctx, -2, "copyFile");
+    duk_push_c_function(ctx, duk_rp_realpath, 1);
+    duk_put_prop_string(ctx, -2, "realPath");
     duk_push_c_function(ctx, duk_rp_delete, 1);
     duk_put_prop_string(ctx, -2, "rmFile");
     duk_push_c_function(ctx, duk_rp_link, 3);

@@ -1195,6 +1195,22 @@ number), but ``755``, as a decimal number may not work as intended.
 Return Value: 
    ``undefined``.
 
+realPath
+''''''''
+
+Find the canonical form of a file system path.  The path or file must exist.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.utils.realPath(path);
+
+Where ``path`` is a :green:`String`, not necessarily in canonical form.
+
+Return Value: 
+   A green:`String`, the canonical form of the path.
+
 touch
 '''''
 
@@ -1274,34 +1290,6 @@ Example:
 
    /* wait 1.5 seconds */
    rampart.utils.sleep(1.5);
-
-getpid
-''''''
-
-Get the process id of the current process.
-
-Usage:
-
-.. code-block:: javascript
-
-   var pid = rampart.utils.getpid();
-
-Return Value:
-   :green:`Number`. The pid of the current process.
-
-getppid
-'''''''
-
-Get the process id of the parent of the current process.
-
-Usage:
-
-.. code-block:: javascript
-
-   var ppid = rampart.utils.getppid();
-
-Return Value:
-   :green:`Number`. The pid of the parent process.
 
 getType
 '''''''
