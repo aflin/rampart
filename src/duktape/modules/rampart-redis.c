@@ -1788,8 +1788,9 @@ static duk_ret_t duk_rp_proxyobj_get(duk_context *ctx)
   RESPROTO *response;
   const char *key, *hname=NULL;
   duk_size_t sz;
+  int ret=0;
 
-  key=duk_get_string(ctx,1);
+  key=duk_to_string(ctx,1);
   
   /* keys starting with '_' are local only */
   if(*key == '_'  || *key == '\xff')
@@ -1812,7 +1813,13 @@ static duk_ret_t duk_rp_proxyobj_get(duk_context *ctx)
   duk_push_sprintf(ctx, "HGET %s %s", hname, key);
 
   response = rc_send(ctx, rcp);
-  rd_push_response(ctx, response, "proxyObj", 1);
+  ret = rd_push_response(ctx, response, "proxyObj", 1);
+  if(!ret)
+  {
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, "errMsg");
+    RP_THROW(ctx, "Redis Proxy Object Error: %s\n", duk_to_string(ctx, -1));
+  }
 //  duk_get_prop_index(ctx, -1, 0);
   if(duk_is_null(ctx, -1) || duk_is_undefined(ctx, -1) )
   {
@@ -1833,15 +1840,16 @@ static duk_ret_t duk_rp_proxyobj_set(duk_context *ctx)
 {
   RESPCLIENT *rcp=NULL;
   RESPROTO *response;
+  int ret=0;
   const char *key, *hname=NULL;
-
   /* get the client & hname */
   duk_push_this(ctx);
+
   getresp(rcp,-1,0);
   gethname;
   copytotarg;
 
-  key=duk_get_string(ctx,1);
+  key=duk_to_string(ctx,1);
 
   /* keys starting with '_' are local only */
   if(*key == '_'  || *key == '\xff')
@@ -1870,8 +1878,15 @@ static duk_ret_t duk_rp_proxyobj_set(duk_context *ctx)
   duk_pull(ctx, 0);
   duk_get_prop_string(ctx, -1, "byteLength");
   response = rc_send(ctx, rcp);
-  rd_push_response(ctx, response, "proxyObj", 1);
+  ret = rd_push_response(ctx, response, "proxyObj", 1);
+  if(!ret)
+  {
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, "errMsg");
+    RP_THROW(ctx, "Redis Proxy Object Error: %s\n", duk_to_string(ctx, -1));
+  }
   duk_get_prop_index(ctx, -1, 0);
+
   return 0;
 }
 /************
@@ -1883,6 +1898,7 @@ static duk_ret_t duk_rp_proxyobj_del(duk_context *ctx)
   RESPCLIENT *rcp=NULL;
   RESPROTO *response;
   const char *key, *hname=NULL;
+  int ret=0;
 
   /* get the client & hname */
   duk_push_this(ctx);
@@ -1892,7 +1908,7 @@ static duk_ret_t duk_rp_proxyobj_del(duk_context *ctx)
 
   duk_pop(ctx); // pointer;
 
-  key=duk_get_string(ctx,1);
+  key=duk_to_string(ctx,1);
   duk_del_prop_string(ctx, 0, key);
 
   /* keys starting with '_' are local only */
@@ -1906,7 +1922,13 @@ static duk_ret_t duk_rp_proxyobj_del(duk_context *ctx)
 
   duk_push_sprintf(ctx, "HDEL %s %s", hname, key);
   response = rc_send(ctx, rcp);
-  rd_push_response(ctx, response, "proxyObj", 1);
+  ret = rd_push_response(ctx, response, "proxyObj", 1);
+  if(!ret)
+  {
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, "errMsg");
+    RP_THROW(ctx, "Redis Proxy Object Error: %s\n", duk_to_string(ctx, -1));
+  }
   duk_get_prop_index(ctx, -1, 0);
   return 0;
 }
@@ -1919,6 +1941,7 @@ static duk_ret_t duk_rp_proxyobj_destroy(duk_context *ctx)
   RESPCLIENT *rcp=NULL;
   RESPROTO *response;
   char *hname=NULL;
+  int ret=0;
 
   /* get the client & hname */
   duk_push_this(ctx);
@@ -1943,14 +1966,23 @@ static duk_ret_t duk_rp_proxyobj_destroy(duk_context *ctx)
   duk_pop(ctx);//enum
 
   if( rcp == NULL )
+  {
+    free(hname);
     RP_THROW(ctx, "error: rampart-redis.proxyObj(): container object has been destroyed");    
-  
+  }  
   duk_pop(ctx);// this
 
   duk_push_sprintf(ctx, "DEL %s", hname);
   response = rc_send(ctx, rcp);
-  rd_push_response(ctx, response, "proxyObj", 1);
-  duk_get_prop_index(ctx, -1, 0);
+  ret = rd_push_response(ctx, response, "proxyObj", 1);
+  if(!ret)
+  {
+    free(hname);
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, "errMsg");
+    RP_THROW(ctx, "Redis Proxy Object Error: %s\n", duk_to_string(ctx, -1));
+  }
+//  duk_get_prop_index(ctx, -1, 0);
   free(hname);
   return 0;
 }
@@ -1963,6 +1995,7 @@ static duk_ret_t duk_rp_proxyobj_ownkeys(duk_context *ctx)
   RESPCLIENT *rcp=NULL;
   RESPROTO *response;
   const char *hname=NULL;
+  int ret=0;
 
   /* get the client & hname */
   duk_push_this(ctx);
@@ -1985,7 +2018,13 @@ static duk_ret_t duk_rp_proxyobj_ownkeys(duk_context *ctx)
   
   duk_push_sprintf(ctx, "HKEYS %s", hname);
   response = rc_send(ctx, rcp);
-  rd_push_response(ctx, response, "proxyObj", 1);
+  ret = rd_push_response(ctx, response, "proxyObj", 1);
+  if(!ret)
+  {
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, "errMsg");
+    RP_THROW(ctx, "Redis Proxy Object Error: %s\n", duk_to_string(ctx, -1));
+  }
 
   duk_push_this(ctx);
   duk_get_prop_string(ctx, -1, "_targ");
