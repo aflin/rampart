@@ -2492,7 +2492,7 @@ static void clean_obj(duk_context *ctx, duk_context *tctx)
     if (duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("objRefId")) || (prev && !strcmp(prev, "prototype")))
     {
         duk_del_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("objRefId"));
-        duk_enum(ctx, -2, DUK_ENUM_INCLUDE_HIDDEN);
+        duk_enum(ctx, -2, DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS);
         while (duk_next(ctx, -1, 1))
         {
             if (duk_is_object(ctx, -1) || duk_is_c_function(ctx, -1))
@@ -2520,11 +2520,13 @@ static int copy_obj(duk_context *ctx, duk_context *tctx, int objid)
 {
     const char *s;
 
-    /* for debugging */
-    //const char *lastvar="global";
-    //if(duk_is_string(ctx, -2) )
-    //    lastvar=duk_get_string(ctx, -2);
-    /* end for debugging */
+    /* for debugging *
+    const char *lastvar="global";
+    if(duk_is_string(ctx, -2) )
+        lastvar=duk_get_string(ctx, -2);
+    printf("copy_obj %s top=%d\n",lastvar, (int)duk_get_top(ctx));
+    * end for debugging */
+
 
     objid++;
     const char *prev = duk_get_string(ctx, -2);
@@ -2554,7 +2556,9 @@ static int copy_obj(duk_context *ctx, duk_context *tctx, int objid)
         duk_push_sprintf(tctx, "%d", ref_objid); //[ [par obj], [global stash], [stash_obj], [objid] ]
         if( !duk_get_prop(tctx, -2) )                  //[ [par obj], [global stash], [stash_obj], [obj_ref] ]
         {
+            // this really shouldn't happen either. If it does, we may infinitely recurse.
             duk_pop_3(tctx);
+            cprintf("ref object not found in stash, going to enum_object\n");
             goto enum_object;
         }
         //printenum(tctx,-1);
@@ -4620,7 +4624,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
     {
         duk_context *tctx;
         int tno = i<totnthreads ? i: i-totnthreads;
-
         if (i == totnthreads*2)
         {
             tctx = ctx;
@@ -4664,6 +4667,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     evhtp_set_cb(htp, "/exit", exitcb, ctx);
     */
     /* file system and function mapping */
+
     if (ob_idx != -1)
     {
         /* custom 404 page/function */
