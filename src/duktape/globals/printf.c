@@ -1177,7 +1177,11 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             json:
             if (!duk_is_string(ctx, fidx))
             {
-                if (duk_is_undefined(ctx, fidx))
+                if(duk_is_error(ctx, fidx))
+                {
+                    duk_safe_to_stacktrace(ctx, fidx);
+                }
+                else if (duk_is_undefined(ctx, fidx))
                 {
                     duk_push_string(ctx,"undefined");
                     duk_replace(ctx,fidx);
