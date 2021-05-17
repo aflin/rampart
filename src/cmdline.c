@@ -979,6 +979,10 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
 
     evargs=(EVARGS *)duk_get_pointer(ctx, 1);
 
+    SLISTLOCK;
+    SLIST_REMOVE(&tohead, evargs, ev_args, entries);
+    SLISTUNLOCK;
+
     event_del(evargs->e);
     event_free(evargs->e);
     free(evargs);
