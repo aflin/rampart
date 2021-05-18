@@ -1897,11 +1897,11 @@ char *s;
 		if (j == DDFIELDS)
 			putmsg(MWARN, NULL, "Too many virtual fields");
 		return fld;
-	} else if ((TXApp->betafeatures[BETA_JSON]) &&
+	} else if (
                   (jp = strstr(s, ".$")) && (jp[2] == '.' || jp[2] == '[')) {
-            char *parentFldName = NULL;
-            char *jsonPath;
-            FLD *ofld;
+    char *parentFldName = NULL;
+    char *jsonPath;
+    FLD *ofld;
 		int j;
 
 #ifndef NO_TRY_FAST_CONV

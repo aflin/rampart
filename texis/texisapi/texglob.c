@@ -1245,15 +1245,17 @@ finally:
 
 int
 TXAppSetLogDir(TXPMBUF *pmbuf, TXAPP *app, const char *logDir,
-	       size_t logDirSz)
+	       size_t logDirLen)
 /* Sets TXAPP log dir.  Currently only used for core files.
+ * If EPI_ENABLE_LOGDIR_RUNDIR defined, this should be set to [Texis] Log Dir.
  * Returns 0 on error.
  */
 {
 	char	*newDir;
 	size_t	len;
 
-	newDir = TXstrndup(pmbuf, __FUNCTION__, logDir, logDirSz);
+	if (logDirLen == (size_t)-1) logDirLen = strlen(logDir);
+	newDir = TXstrndup(pmbuf, __FUNCTION__, logDir, logDirLen);
 	if (!newDir) return(0);
 	/* Trim trailing slash, if any: */
 	len = strlen(newDir);
@@ -1794,8 +1796,7 @@ TXApp->NoMonitorStart = 1;
     TXApp->fmtcp->apicp = globalcp;
   }
 
-	TXApp->betafeatures[BETA_JSON] = 1;
-  memcpy(TXApp->intSettings, TXAppIntSettingDefaults, sizeof(TXApp->intSettings));
+	memcpy(TXApp->intSettings, TXAppIntSettingDefaults, sizeof(TXApp->intSettings));
 	if (TxConf != CONFFILEPN)
 	{
 		const char	*s;

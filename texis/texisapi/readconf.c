@@ -47,9 +47,15 @@ struct CONFFILE_tag
   char          *scriptRootValue;		/* Script Root */
   int           scriptRootValueIsExpanded;	/* nonzero: "" var-expanded */
   char          *documentRootValue;		/* Document Root */
-  int           documentRootValueIsExpanded;/* nonzero: "" var-expanded */
+  int           documentRootValueIsExpanded;    /* nonzero: "" var-expanded */
   char          *serverRootValue;		/* Server Root */
   int           serverRootValueIsExpanded;	/* nonzero: "" var-expanded */
+#ifdef EPI_ENABLE_LOGDIR_RUNDIR
+  char          *logDirValue;                   /* [Texis] Log Dir */
+  TXbool        logDirValueIsExpanded;
+  char          *runDirValue;                   /* [Texis] Run Dir */
+  TXbool        runDirValueIsExpanded;
+#endif /* EPI_ENABLE_LOGDIR_RUNDIR */
   int           curExpandedSerialNum;
 };
 
@@ -92,6 +98,10 @@ CONFFILE *conffile;
 			TXfree(conffile->documentRootValue);
 		conffile->serverRootValue =
 			TXfree(conffile->serverRootValue);
+#ifdef EPI_ENABLE_LOGDIR_RUNDIR
+		conffile->logDirValue = TXfree(conffile->logDirValue);
+		conffile->runDirValue = TXfree(conffile->runDirValue);
+#endif /* EPI_ENABLE_LOGDIR_RUNDIR */
 		conffile = TXfree(conffile);
 	}
 	return NULL;
@@ -99,14 +109,11 @@ CONFFILE *conffile;
 
 /******************************************************************/
 
-static char *TXconfExpandRawValue ARGS((TXPMBUF *pmbuf, CONFFILE *conf,
-                                        const char *rawValue, int yap));
-static char *
-TXconfExpandRawValue(pmbuf, conf, rawValue, yap)
+char *
+TXconfExpandRawValue(pmbuf, conffile, rawValue)
 TXPMBUF         *pmbuf;         /* (out, opt.) buffer for msgs */
-CONFFILE        *conf;          /* (in) config file */
+CONFFILE        *conffile;          /* (in) config file */
 const char      *rawValue;    /* (in) value to expand */
-int             yap;            /* (in) nonzero: issue msg on error */
 /* Returns malloc'd %-var-expanded copy of `rawValue'.
  * NOTE: see also TXvhttpdReplaceVarsMergePath(), which may expand
  * raw values from a CONFFILE too.
@@ -123,31 +130,45 @@ int             yap;            /* (in) nonzero: issue msg on error */
       vals[i] = TxInstBinVals[i];
       valsAreExpanded[i] = 1;
     }
-  if (conf->scriptRootValue != CHARPN)
+  if (conffile->scriptRootValue != CHARPN)
     {
       vars[i] = "SCRIPTROOT";
-      vals[i] = conf->scriptRootValue;
-      valsAreExpanded[i++] = conf->scriptRootValueIsExpanded;
+      vals[i] = conffile->scriptRootValue;
+      valsAreExpanded[i++] = conffile->scriptRootValueIsExpanded;
     }
-  if (conf->documentRootValue != CHARPN)
+  if (conffile->documentRootValue != CHARPN)
     {
       vars[i] = "DOCUMENT_ROOT";
-      vals[i] = conf->documentRootValue;
-      valsAreExpanded[i++] = conf->documentRootValueIsExpanded;
+      vals[i] = conffile->documentRootValue;
+      valsAreExpanded[i++] = conffile->documentRootValueIsExpanded;
       vars[i] = "DOCUMENTROOT";
-      vals[i] = conf->documentRootValue;
-      valsAreExpanded[i++] = conf->documentRootValueIsExpanded;
+      vals[i] = conffile->documentRootValue;
+      valsAreExpanded[i++] = conffile->documentRootValueIsExpanded;
     }
-  if (conf->serverRootValue != CHARPN)
+  if (conffile->serverRootValue != CHARPN)
     {
       vars[i] = "SERVERROOT";
-      vals[i] = conf->serverRootValue;
-      valsAreExpanded[i++] = conf->serverRootValueIsExpanded;
+      vals[i] = conffile->serverRootValue;
+      valsAreExpanded[i++] = conffile->serverRootValueIsExpanded;
     }
+#ifdef EPI_ENABLE_LOGDIR_RUNDIR
+  if (conffile->logDirValue)
+    {
+      vars[i] = "LOGDIR";
+      vals[i] = conffile->logDirValue;
+      valsAreExpanded[i++] = conffile->logDirValueIsExpanded;
+    }
+  if (conffile->runDirValue)
+    {
+      vars[i] = "RUNDIR";
+      vals[i] = conffile->runDirValue;
+      valsAreExpanded[i++] = conffile->runDirValueIsExpanded;
+    }
+#endif /* EPI_ENABLE_LOGDIR_RUNDIR */
   vars[i] = CHARPN;
   vals[i] = CHARPN;
   valsAreExpanded[i] = 0;
-  return(tx_replacevars(pmbuf, rawValue, yap, vars, i, vals,
+  return(tx_replacevars(pmbuf, rawValue, 1, vars, i, vals,
                         valsAreExpanded));
 }
 
@@ -216,6 +237,122 @@ int             isExpanded;     /* (in) nonzero: scriptRoot already expanded*/
   conf->scriptRootValueIsExpanded = isExpanded;
   return(1);
 }
+
+#ifdef EPI_ENABLE_LOGDIR_RUNDIR
+static char *
+TXconfGetLogRunDirFile(TXPMBUF          *pmbuf,      /* (in, opt.) */
+                       TXbool           isRun,       /* else logdir */
+                       CONFFILE         *conf,       /* (in, opt.) */
+                       const char       *section,    /* (in, opt.) */
+                       const char       *attrib,     /* (in, opt.) */
+                       const char       *defaultFile)/* (in, opt.) */
+/* Gets %LOGDIR% (or %RUNDIR% if `isRun')-based setting [section]
+ * attrib.  If those are NULL or not found, returns `%LOGDIR%[/file]'.
+ * If `conf' NULL, uses default %LOGDIR% for platform.
+ * NOTE: see also TXvxSetDefaultErrorLog(), which has the same defaults
+ * but is async-signal safe.  See also install script.
+ * Returns alloced value.
+ */
+{
+  char  *dir = NULL, *defaultVal = NULL, *val = NULL;
+
+  if (conf)
+    dir = TXconfExpandRawValue(pmbuf, conf, (isRun ? "%RUNDIR%" :"%LOGDIR%"));
+  else
+#  ifdef _WIN32
+    dir = TXstrcatN(pmbuf, __FUNCTION__, TXINSTALLPATH_VAL,
+                    (isRun ? PATH_SEP_S "run" : PATH_SEP_S "logs"), NULL);
+#  else /* !_WIN32 */
+    dir = TXstrdup(pmbuf, __FUNCTION__,
+                   (isRun ? PATH_SEP_S "run" PATH_SEP_S "texis" :
+                    PATH_SEP_S "var" PATH_SEP_S "log" PATH_SEP_S "texis"));
+#  endif /* !_WIN32 */
+  if (!dir) goto err;
+  defaultVal = TXstrcatN(pmbuf, __FUNCTION__, dir,
+                        (defaultFile ? PATH_SEP_S : NULL), defaultFile, NULL);
+  if (!defaultVal) goto err;
+  if (section && attrib)
+    val = getconfstring(conf, section, attrib, defaultVal);
+  else
+    val = defaultVal;
+  if (val == defaultVal)
+    defaultVal = NULL;            		/* `val' owns it */
+  else
+    val = TXstrdup(pmbuf, __FUNCTION__, val);
+  goto finally;
+
+err:
+  val = TXfree(val);
+finally:
+  dir = TXfree(dir);
+  defaultVal = TXfree(defaultVal);
+  return(val);
+}
+
+char *
+TXconfGetLogDirFile(TXPMBUF     *pmbuf,         /* (in, opt.) */
+                    CONFFILE    *conf,          /* (in, opt.) */
+                    const char  *section,       /* (in, opt.) */
+                    const char  *attrib,        /* (in, opt.) */
+                    const char  *defaultFile)   /* (in, opt.) */
+{
+  return(TXconfGetLogRunDirFile(pmbuf, TXbool_False, conf, section, attrib,
+                                defaultFile));
+}
+
+char *
+TXconfGetRunDirFile(TXPMBUF     *pmbuf,         /* (in, opt.) */
+                    CONFFILE    *conf,          /* (in, opt.) */
+                    const char  *section,       /* (in, opt.) */
+                    const char  *attrib,        /* (in, opt.) */
+                    const char  *defaultFile)   /* (in, opt.) */
+{
+  return(TXconfGetLogRunDirFile(pmbuf, TXbool_True, conf, section, attrib,
+                                defaultFile));
+}
+
+int
+TXconfSetLogDirVar(CONFFILE	*conf,	    /* (in/out) CONFFILE object */
+		   const char	*logDir,    /* (in, opt.) LOGDIR to use */
+		   TXbool	isExpanded) /* (in) logDir already expanded */
+/* Sets value to use for %LOGDIR% replacement.
+ * Default is [Texis] Log Dir.
+ * Returns 0 on error.
+ */
+{
+  TXPMBUF       *pmbuf = TXPMBUFPN;
+
+  conf->logDirValue = TXfree(conf->logDirValue);
+  /* Increment serial number, to invalidate all `SETTING.expandedValue's: */
+  conf->curExpandedSerialNum++;
+  if (logDir != CHARPN &&
+      !(conf->logDirValue = TXstrdup(pmbuf, __FUNCTION__, logDir)))
+    return(0);
+  conf->logDirValueIsExpanded = isExpanded;
+  return(1);
+}
+
+int
+TXconfSetRunDirVar(CONFFILE	*conf,	    /* (in/out) CONFFILE object */
+		   const char	*runDir,    /* (in, opt.) RUNDIR to use */
+		   TXbool	isExpanded) /* (in) runDir already expanded */
+/* Sets value to use for %RUNDIR% replacement.
+ * Default is [Texis] Run Dir.
+ * Returns 0 on error.
+ */
+{
+  TXPMBUF       *pmbuf = TXPMBUFPN;
+
+  conf->runDirValue = TXfree(conf->runDirValue);
+  /* Increment serial number, to invalidate all `SETTING.expandedValue's: */
+  conf->curExpandedSerialNum++;
+  if (runDir != CHARPN &&
+      !(conf->runDirValue = TXstrdup(pmbuf, __FUNCTION__, runDir)))
+    return(0);
+  conf->runDirValueIsExpanded = isExpanded;
+  return(1);
+}
+#endif /* EPI_ENABLE_LOGDIR_RUNDIR */
 
 CONFFILE *
 openconffile(filename, yap)
@@ -461,6 +598,34 @@ int yap;			/* 0: silent  1: non-ENOENT errors  2: all errors */
 					goto err;
 				rc->documentRootValueIsExpanded = 0;
 			}
+#ifdef EPI_ENABLE_LOGDIR_RUNDIR
+			/* And [Texis] Log Dir and [Texis] Run Dir: */
+			if (TX_TOUPPER(*s->section->name) == 'T' &&
+			    (TX_TOUPPER(*s->name) == 'L' ||
+                             TX_TOUPPER(*s->name) == 'R') &&
+			    TXstrnispacecmp(s->section->name, (size_t)(-1),
+					    "Texis", 5, NULL) == 0)
+			{
+                          if (TXstrnispacecmp(s->name, (size_t)(-1),
+                                              "Log Dir", 7, NULL) == 0)
+                            {
+                              rc->logDirValue = TXfree(rc->logDirValue);
+                              rc->logDirValue = TXstrdup(pmbuf, __FUNCTION__,
+                                                         s->rawValue);
+                              if (!rc->logDirValue) goto err;
+                              rc->logDirValueIsExpanded = TXbool_False;
+                            }
+                          if (TXstrnispacecmp(s->name, (size_t)(-1),
+                                              "Run Dir", 7, NULL) == 0)
+                            {
+                              rc->runDirValue = TXfree(rc->runDirValue);
+                              rc->runDirValue = TXstrdup(pmbuf, __FUNCTION__,
+                                                         s->rawValue);
+                              if (!rc->runDirValue) goto err;
+                              rc->runDirValueIsExpanded = TXbool_False;
+                            }
+                        }
+#endif /* EPI_ENABLE_LOGDIR_RUNDIR */
 			break;
 		}
 	}
@@ -491,6 +656,25 @@ int yap;			/* 0: silent  1: non-ENOENT errors  2: all errors */
 		strcat(t, PATH_SEP_S "htdocs");
 		rc->documentRootValueIsExpanded = 1;
 	}
+#ifdef EPI_ENABLE_LOGDIR_RUNDIR
+        /* And [Texis] Log Dir and [Texis] Run Dir: */
+	if (!rc->logDirValue)
+	{
+		/* note: no CONFFILE passed in; no circular dependency: */
+		rc->logDirValue = TXconfGetLogDirFile(pmbuf, NULL, NULL, NULL,
+						      NULL);
+		if (!rc->logDirValue) goto err;
+		rc->documentRootValueIsExpanded = 1;
+	}
+	if (!rc->runDirValue)
+	{
+		/* note: no CONFFILE passed in; no circular dependency: */
+		rc->runDirValue = TXconfGetRunDirFile(pmbuf, NULL, NULL, NULL,
+						      NULL);
+		if (!rc->runDirValue) goto err;
+		rc->documentRootValueIsExpanded = 1;
+	}
+#endif /* EPI_ENABLE_LOGDIR_RUNDIR */
 
 	goto done;
       err:
@@ -558,7 +742,7 @@ TXgetConfStrings(TXPMBUF *pmbuf, CONFFILE *conffile, const char *sectionName,
                 /* Expand if not already expanded: */
                 if (setting->expandedValue == CHARPN)
                   setting->expandedValue =
-                    TXconfExpandRawValue(pmbuf, conffile, setting->rawValue,1);
+                    TXconfExpandRawValue(pmbuf, conffile, setting->rawValue);
                 val = setting->expandedValue;
               }
             if (!val) goto err;
@@ -623,7 +807,7 @@ char *defval;
 					setting->expandedValue =
 					    TXconfExpandRawValue(TXPMBUFPN,
 						conffile,
-						setting->rawValue, 1);
+						setting->rawValue);
 				return(setting->expandedValue ?
 					setting->expandedValue : defval);
 			}
@@ -687,7 +871,7 @@ int defval;
 					setting->expandedValue =
 					    TXconfExpandRawValue(TXPMBUFPN,
 						conffile,
-						setting->rawValue, 1);
+						setting->rawValue);
 				if (setting->expandedValue != CHARPN)
 					return((int)strtol(setting->expandedValue, NULL, 0));
 				else
@@ -730,7 +914,7 @@ int	i;
 					setting->expandedValue =
 					    TXconfExpandRawValue(TXPMBUFPN,
 						conffile,
-						setting->rawValue, 1);
+						setting->rawValue);
 				return(setting->expandedValue);
 			}
 		}

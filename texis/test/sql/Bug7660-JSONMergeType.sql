@@ -1,6 +1,6 @@
 -- Tests Bug 7660: JSON Library
 
-set betafeatures = 'json';
+
 
 create table test (id int, Json varchar(40), Patch varchar(20));
 
@@ -58,4 +58,3 @@ select json_type('0.0');
 select id, json_type(Json), Json, json_type(Patch), Patch from test;
 
 drop table test;
-

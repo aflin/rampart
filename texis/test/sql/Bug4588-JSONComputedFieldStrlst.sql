@@ -1,6 +1,6 @@
 -- Tests Bug 4588: JSON Library
 
-set betafeatures = 'json';
+
 
 -- ======================================================================
 create table test (id int, Json varchar(20), Country varchar(20));
@@ -8,7 +8,7 @@ insert into test values (1, '{"info":{"type":2,"address":{"town":"Cleveland","co
 insert into test values (2, '{"info":{"type":1,"address":{"town":"Bristol","county":"Avon","country":"England"},"tags":["Sport","Water polo"]},"type":"Basic"}', 'England');
 insert into test values (3, '{"name":"John","skills":["C#","SQL"]}', '');
 --
--- 
+--
 
 select id, Json.$.skills[*] from test;
 select id, Json.$.name from test where Json.$.skills[*] = 'SQL';

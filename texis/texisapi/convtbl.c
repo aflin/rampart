@@ -62,7 +62,7 @@ TXconverttbl(char *fname, int nbits)
 			rc = -1;
 			goto end;
 		}
-		TXdirname(directory, sizeof(directory), full_fname);
+		TXdirname(TXPMBUFPN, directory, sizeof(directory), full_fname);
 		tempfile = TXtempnam(directory, CHARPN, CHARPN);
 		if(!tempfile)
 		{

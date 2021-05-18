@@ -37,11 +37,11 @@ int child(char *db, long pid)
 #define MAXKIDS 8
 int children[MAXKIDS];
 
-int startchildren(char *db, int nkids)
+void startchildren(char *db, int nkids)
 {
     int i, newpid, ret;
 
-    if(nkids > MAXKIDS) return -1;
+    if(nkids > MAXKIDS) return;
     for(i = 0; i < MAXKIDS; i++) {
       children[i] = 0;
     }
@@ -66,7 +66,7 @@ int countchildren(void)
   }
   return n;
 }
-int waitchildren(void)
+void waitchildren(void)
 {
   int nchildren, child;
   int i, status;

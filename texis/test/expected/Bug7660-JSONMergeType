@@ -2,10 +2,9 @@ Texis Version ...
 
 SQL 1 line 1> -- Tests Bug 7660: JSON Library
 SQL 2 line 2> 
-SQL 3 line 3> set betafeatures = 'json';
-
-SQL 1 line 4> 
-SQL 1 line 5> create table test (id int, Json varchar(40), Patch varchar(20));
+SQL 3 line 3> 
+SQL 4 line 4> 
+SQL 5 line 5> create table test (id int, Json varchar(40), Patch varchar(20));
               id                            Json                          Patch             
 ------------------------------+------------------------------+------------------------------+
 
@@ -238,4 +237,3 @@ SQL 1 line 59>
 SQL 1 line 60> drop table test;
 
 SQL 1 line 61> 
-SQL 1 line 62> 

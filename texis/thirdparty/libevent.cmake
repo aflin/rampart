@@ -1,28 +1,33 @@
 find_library(EVENT_LIBRARY event)
 
 if(NOT EVENT_LIBRARY)
-set(LIBEVENT_PREFIX libevent)
+	set(LIBEVENT_PREFIX libevent)
 
-ExternalProject_Add(${LIBEVENT_PREFIX}
-	PREFIX ${LIBEVENT_PREFIX}
-	SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/${LIBEVENT_PREFIX}
-	INSTALL_DIR contrib/${LIBEVENT_PREFIX}
-	CMAKE_ARGS -DEVENT__DISABLE_MBEDTLS=ON -DEVENT__DISABLE_OPENSSL=ON -DEVENT__DISABLE_SAMPLES=ON -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+	ExternalProject_Add(${LIBEVENT_PREFIX}
+		PREFIX ${LIBEVENT_PREFIX}
+		SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/${LIBEVENT_PREFIX}
+		INSTALL_DIR contrib/${LIBEVENT_PREFIX}
+		CMAKE_ARGS -DEVENT__DISABLE_MBEDTLS=ON -DEVENT__DISABLE_OPENSSL=ON -DEVENT__DISABLE_SAMPLES=ON -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
 
-	LOG_INSTALL 1
-)
+		LOG_INSTALL 1
+	)
 
-# get the unpacked source directory path
-ExternalProject_Get_Property(${LIBEVENT_PREFIX} SOURCE_DIR)
-message(STATUS "Source directory of ${LIBEVENT_PREFIX} ${SOURCE_DIR}")
+	# get the unpacked source directory path
+	ExternalProject_Get_Property(${LIBEVENT_PREFIX} SOURCE_DIR)
+	message(STATUS "Source directory of ${LIBEVENT_PREFIX} ${SOURCE_DIR}")
 
-# set the include directory variable and include it
-set(LIBEVENT_RELEASE_DIR ${CMAKE_CURRENT_BINARY_DIR}/contrib/${LIBEVENT_PREFIX}/lib)
-set(LIBEVENT_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/contrib/${LIBEVENT_PREFIX}/include)
-include_directories(${LIBEVENT_INCLUDE_DIRS})
+	# set the include directory variable and include it
+	set(LIBEVENT_RELEASE_DIR ${CMAKE_CURRENT_BINARY_DIR}/contrib/${LIBEVENT_PREFIX}/lib)
+	set(LIBEVENT_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/contrib/${LIBEVENT_PREFIX}/include)
+	include_directories(${LIBEVENT_INCLUDE_DIRS})
 
-link_directories(${LIBEVENT_RELEASE_DIR})
-set(LIBEVENT_LIBS event)
-set(EVENT_LIBRARY event)
-set(LIBEVENT_LIBRARY_DIRS ${LIBEVENT_RELEASE_DIR})
+	link_directories(${LIBEVENT_RELEASE_DIR})
+	set(LIBEVENT_LIBS event)
+	set(EVENT_LIBRARY event)
+	set(LIBEVENT_LIBRARY_DIRS ${LIBEVENT_RELEASE_DIR})
+else(NOT EVENT_LIBRARY)
+	find_path(LIBEVENT_INCLUDE_DIRS NAMES event2/event.h)
+	include_directories(${LIBEVENT_INCLUDE_DIRS})
+        get_filename_component(LIBEVENT_LIBRARY_DIRS ${EVENT_LIBRARY} DIRECTORY)
+        link_directories(${LIBEVENT_LIBRARY_DIRS})
 endif(NOT EVENT_LIBRARY)

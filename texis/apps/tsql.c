@@ -48,7 +48,6 @@ HDBC    hdbc = NULL;
 HSTMT   hstmt = NULL;
 static  FLDOP   *fo=NULL;
 
-extern APICP *globalcp;
 extern int  sqlhelp;
 
 static char *lstmnt;
@@ -329,9 +328,6 @@ char **argv, **argvstrip;
 		DUPLICATE_SAME_ACCESS);
 #endif
 		txmaxrlim(TXPMBUFPN);   /* MAW 06-12-97 - crank up ulimits */
-		if(!globalcp) { /* Should have been initialized already in TXinitapp() */
-			globalcp = TXopenapicp();
-		}
 
 		sfile = stdin;
 
@@ -644,7 +640,6 @@ char **argv, **argvstrip;
 		{
 			SQLFreeEnv(henv);
 			henv = NULL;
-			globalcp = closeapicp(globalcp);
 			ret = TXEXIT_SQLSTATEMENTFAILED;
 			goto finally;
 		}
@@ -654,7 +649,6 @@ char **argv, **argvstrip;
 			SQLFreeEnv(henv);
 			hdbc = NULL;
 			henv = NULL;
-			globalcp = closeapicp(globalcp);
 			ret = TXEXIT_SQLSTATEMENTFAILED;
 			goto finally;
 		}
@@ -670,7 +664,6 @@ char **argv, **argvstrip;
 				hstmt = NULL;
 				hdbc = NULL;
 				henv = NULL;
-				globalcp = closeapicp(globalcp);
 				ret = TXEXIT_SQLSTATEMENTFAILED;
 				goto finally;
 			}
@@ -826,7 +819,6 @@ char **argv, **argvstrip;
 			ndbfcleanup();
 			TXdtmem();
 #endif
-//			globalcp = closeapicp(globalcp);
 			closetmpfo();
 #ifdef MEMDEBUG /* WTFWTF */
 			mac_ovchk();

@@ -5192,25 +5192,31 @@ finally:
 
 TXbool
 TXmkdir(TXPMBUF *pmbuf, const char *path, unsigned mode)
-/* Returns false on error.
+/* Preserves original error.
+ * Returns false on error.
  */
 {
   TXbool        ret;
 
+  TXclearError();
   if (mkdir(path
 #ifndef _WIN32
             , mode
 #endif /* !_WIN32 */
             ) != 0)
     {
+      TX_PUSHERROR();
       txpmbuf_putmsg(pmbuf, MERR + FCE, __FUNCTION__,
                      "Cannot create directory `%s': %s", path,
                      TXstrerror(TXgeterror()));
+      TX_POPERROR();
       goto err;
     }
 #ifdef _WIN32
+  TXclearError();
   if (_chmod(path, mode) != 0)
     {
+      TX_PUSHERROR();
       txpmbuf_putmsg(pmbuf, MERR + PRM, __FUNCTION__,
                      "Cannot change permissions to %04o on newly created directory `%s': %s; removing",
                      (unsigned)mode, path, TXstrerror(TXgeterror()));
@@ -5221,6 +5227,7 @@ TXmkdir(TXPMBUF *pmbuf, const char *path, unsigned mode)
         txpmbuf_putmsg(pmbuf, MERR + FDE, __FUNCTION__,
                        "Cannot remove newly created directory `%s': %s", path,
                        TXstrerror(TXgeterror()));
+      TX_POPERROR();
       goto err;
     }
 #endif /* !_WIN32 */
@@ -5232,6 +5239,85 @@ err:
 finally:
   return(ret);
 }
+
+/* ------------------------------------------------------------------------- */
+
+#ifdef EPI_ENABLE_LOGDIR_RUNDIR
+TXbool
+TXcreateDirOfFileIfNotExist(TXPMBUF *pmbuf, const char *file,
+                            UID_T uidChown, GID_T gidChown)
+/* Creates directory of `file' if it does not exist, and chowns to
+ * `uidChown/gidChown' (if not ...UNKNOWN).  This is needed in version
+ * 8 because /run/texis likely will not exist after boot.  It is also
+ * used for /var/log/texis, though that use is more of a crutch for
+ * when we are run without a correct install (which would have created
+ * the dir), e.g. for files we moved there from morph3/{texis,logs}.
+ * Would prefer not to auto-create dirs, since (like auto-create db)
+ * they could get created when not needed, in the wrong place, or with
+ * wrong perms.
+ * Returns false on error.
+ */
+{
+	EPI_STAT_S	st;
+	TXbool		ret;
+	size_t	        dirLen;
+#  ifndef _WIN32
+        UID_T           ruid = UID_T_UNKNOWN, euid = UID_T_UNKNOWN;
+        TXbool          didSeteuid = TXbool_False;
+#  endif /* !_WIN32 */
+        char            dir[PATH_MAX];
+
+        dirLen = TXdirname(pmbuf, dir, sizeof(dir), file);
+        if (dirLen == 0) goto err;              /* too long */
+	if (EPI_STAT(dir, &st) == 0) goto ok;   /* already exists */
+#  ifndef _WIN32
+        /* We might be run by root, but setuid != root.  Temp flip
+         * back to root so chown() works:
+         */
+        if ((uidChown != UID_T_UNKNOWN || gidChown != GID_T_UNKNOWN) &&
+            (ruid = getuid()) == 0 &&           /* real UID is root */
+            (euid = geteuid()) != 0)            /* but effective is not */
+          didSeteuid = (seteuid(ruid) == 0);    /* then switch to root */
+#  endif /* !_WIN32 */
+        /* Report TXmkdir() error ourselves, so we can say what file
+         * it was for.  wtf for Windows this may suppress a _chmod() error:
+         */
+	ret = TXmkdir(TXPMBUF_SUPPRESS, dir, 0755);
+        if (!ret)
+          txpmbuf_putmsg(pmbuf, MERR + FCE, __FUNCTION__,
+                         "Could not create directory `%s' for `%s': %s",
+                         dir, file, TXstrerror(TXgeterror()));
+#  ifndef _WIN32
+        if (ret && (uidChown != UID_T_UNKNOWN || gidChown != GID_T_UNKNOWN))
+          {
+            if (chown(dir, uidChown, gidChown) != 0)
+              {
+                txpmbuf_putmsg(pmbuf, MERR + PRM,  __FUNCTION__,
+             "Cannot chown newly created directory `%s' to UID %d GID %d: %s",
+                               dir, (int)uidChown, (int)gidChown,
+                               TXstrerror(TXgeterror()));
+                ret = TXbool_False;
+              }
+          }
+#  endif /* !_WIN32 */
+	goto finally;
+
+ok:
+	ret = TXbool_True;
+        goto finally;
+err:
+        ret = TXbool_False;
+finally:
+#  ifndef _WIN32
+        if (didSeteuid)
+          {
+            seteuid(euid);
+            didSeteuid = TXbool_False;
+          }
+#  endif /* !_WIN32 */
+	return(ret);
+}
+#endif /* EPI_ENABLE_LOGDIR_RUNDIR */
 
 /* ------------------------------------------------------------------------- */
 
@@ -5980,10 +6066,10 @@ CONST char      *path;
 }
 
 size_t
-TXdirname(dest, destSz, src)
-char            *dest;  /* (out) buffer for directory name */
-size_t          destSz; /* (in) size of `dest' */
-CONST char      *src;   /* (src) path to parse */
+TXdirname(TXPMBUF       *pmbuf,         /* (out, opt.) for putmsgs */
+          char          *dest,          /* (out) buffer for directory name */
+          size_t        destSz,         /* (in) size of `dest' */
+          const char    *src)           /* (in) path to parse */
 /* Copies directory part of `src' to `dest'.  Will not contain trailing
  * slash, unless needed as leading slash.  May be `.' if no slashes in `src'.
  * Note that return value might NOT be a prefix of `src' (e.g. `.' for `x').
@@ -5991,8 +6077,7 @@ CONST char      *src;   /* (src) path to parse */
  * Returns 0 on error (not enough space) with putmsg, else strlen(dest).
  */
 {
-  static CONST char     fn[] = "TXdirname";
-  CONST char            *bn, *s, *dirSrc;
+  const char            *bn, *s, *dirSrc;
   size_t                sz;
 
   bn = TXbasename(src);
@@ -6027,7 +6112,8 @@ CONST char      *src;   /* (src) path to parse */
   /* Copy `sz' bytes of `dirSrc' to `dest': */
   if (sz >= destSz)                             /* dir too large */
     {
-      putmsg(MERR + MAE, fn, "Path `%.30s'... too long for %wd-byte buffer",
+      txpmbuf_putmsg(pmbuf, MERR + MAE, __FUNCTION__,
+                     "Path `%.30s'... too long for %wd-byte buffer",
              src, (EPI_HUGEINT)destSz);
       sz = 0;                                   /* error */
     }

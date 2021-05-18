@@ -2,7 +2,7 @@
 
 -- ======================================================================
 
-set betafeatures = 'json';
+
 
 create table test (id int, Json varchar(20));
 insert into test values (1, '{"info":{"type":2,"address":{"town":"Cleveland","county":"Cuyahoga","country":"United States"},"tags":["Sport","Football"]},"type":"Basic"}');

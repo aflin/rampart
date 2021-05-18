@@ -3687,6 +3687,7 @@ TXezConnectSocket(TXPMBUF *pmbuf, TXtraceSkt traceSkt, const char *func,
   TXERRTYPE     errnum;
   char          addrBuf[TX_SOCKADDR_MAX_STR_SZ];
   TXsockaddr    sockaddrActual;
+  EPI_SOCKLEN_T sa_size;
   unsigned      port;
   HTS_TRACE_VARS;
   MERGE_FUNC_VARS;
@@ -3720,8 +3721,12 @@ again:
                      skt, addrBuf);
   HTS_TRACE_BEFORE_END()
   TXclearError();
-  rc = connect(skt, (const struct sockaddr *)&sockaddrActual.storage,
-               sizeof(sockaddrActual.storage));
+  switch(sockaddrActual.storage.ss_family) {
+    case AF_INET:  sa_size = sizeof(struct sockaddr_in); break;
+    case AF_INET6: sa_size = sizeof(struct sockaddr_in6); break;
+    default:       sa_size = sizeof(struct sockaddr_storage); break;
+  }
+  rc = connect(skt, (const struct sockaddr *)&sockaddrActual.storage, sa_size);
   HTS_TRACE_AFTER_START_ARG(traceSkt, HTS_OPEN)
   {
     TXsockaddr  localAddr;

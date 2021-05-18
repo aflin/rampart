@@ -565,7 +565,7 @@ TXcmpTbl        *ct;
   static CONST char     fn[] = "TXcmpTblCloseOutputBtreeIndexes";
   int                   i, res;
   BTREE                 *btree;
-  char                  *d, scratchPath[PATH_MAX];
+  char                  scratchPath[PATH_MAX];
 
   if (ct->outputBtrees != BTREEPPN)
     {
@@ -578,10 +578,13 @@ TXcmpTbl        *ct;
           if (res)
             {
               tx_delindexfile(MERR, fn, scratchPath, 0);
-              d = TXfileext(scratchPath);
 #ifdef _WIN32
-              strcpy(d, TXtempPidExt);
-              tx_delindexfile(MERR, fn, scratchPath, 0);
+              {
+                char    *d;
+                d = TXfileext(scratchPath);
+                strcpy(d, TXtempPidExt);
+                tx_delindexfile(MERR, fn, scratchPath, 0);
+              }
 #endif /* _WIN32 */
             }
         }
@@ -637,7 +640,7 @@ TXcmpTbl        *ct;
       if (ct->inputBtreePathsSansExt[i] == CHARPN) goto err;
       *TXfileext(ct->inputBtreePathsSansExt[i]) = '\0';
       /* wtf respect indexspace: */
-      n = TXdirname(scratchPath, sizeof(scratchPath),
+      n = TXdirname(TXPMBUFPN, scratchPath, sizeof(scratchPath),
                     ct->inputBtreePathsSansExt[i]);
       if (n == 0) goto err;
       path = CHARPN;
@@ -741,7 +744,7 @@ TXcmpTbl        *ct;
   static CONST char     fn[] = "TXcmpTblCloseOutputInvertedIndexes";
   int                   i, res;
   BTREE                 *btree;
-  char                  *d, scratchPath[PATH_MAX];
+  char                  scratchPath[PATH_MAX];
 
   if (ct->outputInverteds != BTREEPPN)
     {
@@ -753,10 +756,13 @@ TXcmpTbl        *ct;
           if (res)
             {
               tx_delindexfile(MERR, fn, scratchPath, 0);
-              d = TXfileext(scratchPath);
 #ifdef _WIN32
-              strcpy(d, TXtempPidExt);
-              tx_delindexfile(MERR, fn, scratchPath, 0);
+              {
+                char    *d;
+                d = TXfileext(scratchPath);
+                strcpy(d, TXtempPidExt);
+                tx_delindexfile(MERR, fn, scratchPath, 0);
+              }
 #endif /* _WIN32 */
             }
         }
@@ -811,7 +817,7 @@ TXcmpTbl        *ct;
       if (ct->inputInvertedPathsSansExt[i] == CHARPN) goto err;
       *TXfileext(ct->inputInvertedPathsSansExt[i]) = '\0';
       /* wtf respect indexspace: */
-      n = TXdirname(scratchPath, sizeof(scratchPath),
+      n = TXdirname(TXPMBUFPN, scratchPath, sizeof(scratchPath),
                     ct->inputInvertedPathsSansExt[i]);
       if (n == 0) goto err;
       path = CHARPN;
@@ -1036,7 +1042,8 @@ TXcmpTbl        *ct;
        * WTF Bug 3684: we are "changing" (just copying) .btr and .dat too;
        * could respect indexspace:
        */
-      n = TXdirname(orgPath, sizeof(orgPath), ct->fdbiTokenPaths[i]);
+      n = TXdirname(TXPMBUFPN, orgPath, sizeof(orgPath),
+                    ct->fdbiTokenPaths[i]);
       if (n == 0) goto err;
       if (!TXcreateTempIndexOrTableEntry(ct->ddic, orgPath,
                                          dbtbl->fdbiIndexNames[i],
@@ -1217,7 +1224,7 @@ TXcmpTbl        *ct;
               goto err;
             }
           /* Write the row to the output B-tree: */
-          if (btappend(ct->outputBtrees[i], &outputRecid, inputKeySz,
+          if (btappend(ct->outputBtrees[i], &outputRecid, (int)inputKeySz,
                        inputKeyBuf, 90, BTBMPN) != 0)
             goto err;
           numIndexRows++;

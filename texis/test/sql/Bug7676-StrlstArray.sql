@@ -1,6 +1,6 @@
 -- Tests Bug 4588: JSON Library
 
-set betafeatures = 'json';
+
 
 -- ======================================================================
 create table test (id int, Json varchar(20), Tags strlst);

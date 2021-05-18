@@ -357,8 +357,8 @@ I(PacError,                     "PacError", \
   "Proxy auto-config error")            \
 I(UserDataFetchNeedsMoreData,   "UserDataFetchNeedsMoreData",   \
   "User-data fetch needs more data")    \
-I(ComponentError,               "ComponentError",       \
-  "Page component (frame/iframe/script etc.) error")
+I(ExternalComponentError,       "ExternalComponentError",       \
+  "External page component (frame/iframe/script src etc.) error")
 
 typedef enum HTERR_tag
 {

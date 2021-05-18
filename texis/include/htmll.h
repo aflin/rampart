@@ -383,10 +383,10 @@ I(XML)          /* grok <?xml...?>, <![CDATA[...]]>, XML NS prefixes */ \
 I(PARSESCRIPT)  /* parse <SCRIPT> bodies as normal HTML */      \
 I(NoEmptyElements) /* ending `/' in `.../>' is part of name/val not tag */ \
 I(RslashBindsToAttrNames) /*if !NoEmptyElements: `/' part of attr names too*/\
-I(ParseLineMarkers)     /* parse `# NN "file"' preprocessor linemarkers */
-/* Note that linemarkers are essentially incompatible with htl_push()
- * buffers (e.g. from JavaScript document.write()s)
- */
+I(ParseLineMarkers)     /* parse `# NN "file"' preprocessor linemarkers */\
+/* Note that linemarkers are essentially incompatible with htl_push() */\
+/* buffers (e.g. from JavaScript document.write()s) */          \
+I(EmbeddedQuotedStrs)   /* `<$x = foo"bar "y ...>': `foo"bar "y' atomic */
 
 typedef enum HFint_tag                          /* internal header usage */
 {
@@ -440,8 +440,10 @@ typedef enum TXtraceHtmlParse_tag
 #define    TX_PUTMSG_WordPunctWhite_Info (MINFO + 3)
     TXtraceHtmlParse_TagStack           = 0x0010,       /* HTML fmt'r only */
 #define    TX_PUTMSG_TagStack_Info      (MINFO + 4)
-    TXtraceHtmlParse_BufferStack        = 0x0020        /* push/pop buffers */
+    TXtraceHtmlParse_BufferStack        = 0x0020,       /* push/pop buffers */
 #define    TX_PUTMSG_BufferStack_Info   (MINFO + 5)
+    TXtraceHtmlParse_TagData            = 0x0040
+#define    TX_PUTMSG_TagData            (MINFO + 6)
   }
   TXtraceHtmlParse;
 

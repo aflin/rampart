@@ -2,11 +2,10 @@ Texis Version ...
 
 SQL 1 line 1> -- Tests Bug 4588: JSON Library
 SQL 2 line 2> 
-SQL 3 line 3> set betafeatures = 'json';
-
-SQL 1 line 4> 
-SQL 1 line 5> -- ======================================================================
-SQL 2 line 6> create table test (id int, Json varchar(20), Country varchar(20));
+SQL 3 line 3> 
+SQL 4 line 4> 
+SQL 5 line 5> -- ======================================================================
+SQL 6 line 6> create table test (id int, Json varchar(20), Country varchar(20));
      id          Json       Country   
 ------------+------------+------------+
 
@@ -26,7 +25,7 @@ SQL 1 line 9> insert into test values (3, '{"name":"John","skills":["C#","SQL"]}
            3 {"name":"John","skills":["C#","SQL"]} 
 
 SQL 1 line 10> --
-SQL 2 line 11> -- 
+SQL 2 line 11> --
 SQL 3 line 12> 
 SQL 4 line 13> select id, Json.$.skills[*] from test;
        id        Json.$.skills[*]

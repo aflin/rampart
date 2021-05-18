@@ -38,8 +38,6 @@ txfunc_isjson(FLD *f1)
    json_t *j;
    json_error_t e;
 
-   if (!TXApp->betafeatures[BETA_JSON]) return(FOP_EINVAL);
-
    if (f1 == FLDPN ||
       (f1->type & DDTYPEBITS) != FTN_CHAR ||
       (a = (char *)getfld(f1, &an)) == CHARPN)
@@ -451,8 +449,6 @@ txfunc_json_value(FLD *f1, FLD *f2)
    int wantlength = 0;
    size_t pathlen;
 
-   if (!TXApp->betafeatures[BETA_JSON]) return(FOP_EINVAL);
-
    if    (f1 == FLDPN
       || (f1->type & DDTYPEBITS) != FTN_CHAR
       || (jsons = (char *)getfld(f1, &jsons_n)) == CHARPN)
@@ -499,8 +495,6 @@ txfunc_json_query(FLD *f1, FLD *f2)
    size_t jsons_n, path_n;
    json_t *j, *jres;
    json_error_t e;
-
-   if (!TXApp->betafeatures[BETA_JSON]) return(FOP_EINVAL);
 
    if    (f1 == FLDPN
       || (f1->type & DDTYPEBITS) != FTN_CHAR
@@ -663,8 +657,6 @@ txfunc_json_modify(FLD *f1, FLD *f2, FLD *f3)
    json_error_t e;
    int rc, isappend = 0;
 
-   if (!TXApp->betafeatures[BETA_JSON]) return(FOP_EINVAL);
-
    if    (f1 == FLDPN
       || (f1->type & DDTYPEBITS) != FTN_CHAR
       || (jsons = (char *)getfld(f1, &jsons_n)) == CHARPN)
@@ -816,8 +808,6 @@ txfunc_json_merge_patch(FLD *f1, FLD *f2)
   json_error_t e;
   int rc = 0;
 
-  if (!TXApp->betafeatures[BETA_JSON]) return(FOP_EINVAL);
-
   fldToJson(f1, &OriginalJson);
   fldToJson(f2, &PatchJson);
 
@@ -919,8 +909,6 @@ txfunc_json_merge_preserve(FLD *f1, FLD *f2)
   json_error_t e;
   int rc = 0;
 
-  if (!TXApp->betafeatures[BETA_JSON]) return(FOP_EINVAL);
-
   fldToJson(f1, &OriginalJson);
   fldToJson(f2, &PatchJson);
 
@@ -953,8 +941,6 @@ txfunc_json_type(FLD *f1)
   char *res = NULL;
   json_t *Json;
   int rc = 0;
-
-  if (!TXApp->betafeatures[BETA_JSON]) return(FOP_EINVAL);
 
   fldToJson(f1, &Json);
   if(!Json)
@@ -1054,8 +1040,6 @@ txfunc_json_format(FLD *f1, FLD *f2)
   json_t *Json;
   int rc = 0;
 
-  if (!TXApp->betafeatures[BETA_JSON]) return(FOP_EINVAL);
-
   fldToJson(f1, &Json);
   if(!Json)
     return FOP_EINVAL;
@@ -1088,8 +1072,6 @@ TXmkComputedJsonStrlst(FLD *f)
    char tmpbuf[TMPBUFSZ]; /* TmpBuf for printing numbers */
    size_t printed;
 #endif
-
-   if (!TXApp->betafeatures[BETA_JSON]) return(-1);
 
    if (!f) return -1; /* Fail */
 
@@ -1316,8 +1298,6 @@ TXmkComputedJson(FLD *f)
    char tmpbuf[TMPBUFSZ]; /* TmpBuf for printing numbers */
    size_t printed;
 #endif
-
-   if (!TXApp->betafeatures[BETA_JSON]) return(-1);
 
    if (!f) return -1; /* Fail */
    switch(TXfldbasetype(f))

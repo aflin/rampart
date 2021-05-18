@@ -183,6 +183,8 @@ typedef gid_t           GID_T;
 #endif /* !_WIN32 */
 #define UID_TPN ((UID_T *)NULL)
 #define GID_TPN ((GID_T *)NULL)
+#define UID_T_UNKNOWN	((UID_T)(-1))
+#define GID_T_UNKNOWN	((GID_T)(-1))
 
 /* Info about a particular process: */
 typedef struct TXprocInfo_tag
@@ -570,7 +572,7 @@ int	TXaddtable ARGS((char *db, char *file, char *tbname, char *comment,
 char    *TXfd2file ARGS((int fd, int flags));
 /* wtf also see prototype in ncgsvr.c: */
 char   *TXbasename ARGS((CONST char *path));
-size_t  TXdirname ARGS((char *dest, size_t destSz, CONST char *src));
+size_t  TXdirname(TXPMBUF *pmbuf, char *dest, size_t destSz, const char *src);
 char   *TXfileext ARGS((CONST char *path));
 char   *TXjoinpath ARGS((TXPMBUF *pmbuf, int flags, char **srcs,
                          size_t numSrcs));
@@ -888,6 +890,10 @@ TXdiskSpace;
 
 int     TXgetDiskSpace(const char *path, TXdiskSpace *diskSpace);
 TXbool	TXmkdir(TXPMBUF *pmbuf, const char *path, unsigned mode);
+#ifdef EPI_ENABLE_LOGDIR_RUNDIR
+TXbool TXcreateDirOfFileIfNotExist(TXPMBUF *pmbuf, const char *file,
+				   UID_T uidChown, GID_T gidChown);
+#endif /* EPI_ENABLE_LOGDIR_RUNDIR */
 char    *TXproff_t ARGS((EPI_OFF_T at));
 char    *TXprkilo ARGS((char *buf, size_t bufsz, EPI_HUGEUINT sz));
 int     TXparseCEscape ARGS((TXPMBUF *pmbuf, CONST char **buf,
@@ -1786,6 +1792,7 @@ extern int TXdisablenewlist;/* JMT 1999-08-11 */
 extern int TXverifysingle;/* JMT 1999-08-11 */
 extern int TXexceptionbehaviour;/* JMT 2000-07-07 */
 #ifdef LOCK_SERVER
+PID_T TXrunlockdaemon(DDIC *ddic);
 #define TX_I_AM_DB_MONITOR (TXApp->role == TXAppDBMonitor)
 #else
 extern int TXminserver;
@@ -2608,7 +2615,15 @@ int     TXconfSetServerRootVar ARGS((CONFFILE *conf, CONST char *serverRoot,
                                      int isExpanded));
 int     TXconfSetScriptRootVar ARGS((CONFFILE *conf, CONST char *scriptRoot,
                                      int isExpanded));
+#ifdef EPI_ENABLE_LOGDIR_RUNDIR
+int     TXconfSetLogDirVar(CONFFILE *conf, const char *logDir,
+		           TXbool isExpanded);
+int     TXconfSetRunDirVar(CONFFILE *conf, const char *runDir,
+		           TXbool isExpanded);
+#endif /* EPI_ENABLE_LOGDIR_RUNDIR */
 CONFFILE *openconffile ARGS((char *filename, int yap));
+char *TXconfExpandRawValue(TXPMBUF *pmbuf, CONFFILE *conffile,
+			   const char *rawValue);
 char **TXgetConfStrings(TXPMBUF *pmbuf, CONFFILE *conffile,
 			const char *sectionName, int sectionNum,
 			const char *attrib, char *defval);
@@ -2622,6 +2637,11 @@ char *getnextconfstring(CONFFILE *conffile, CONST char *section,
                         CONST char **attrib, int i);
 size_t  TXconfGetNumSections ARGS((CONFFILE *conf));
 CONST char *TXconfGetSectionName ARGS((CONFFILE *conf, size_t sectionIdx));
+
+char *TXconfGetLogDirFile(TXPMBUF *pmbuf, CONFFILE *conf, const char *section,
+			  const char *attrib, const char *defaultFile);
+char *TXconfGetRunDirFile(TXPMBUF *pmbuf, CONFFILE *conf, const char *section,
+			  const char *attrib, const char *defaultFile);
 
 #define TX_DEFSCHEDULEPORT              10005
 #define TX_DEFSCHEDULEPORT_SECURE       10006
@@ -3124,12 +3144,6 @@ typedef enum TXoncePerSqlMsg_tag
 }
 TXoncePerSqlMsg;
 
-typedef enum TX_BETA_FEATURES
-{
- BETA_JSON
-,BETA_COUNT /* KEEP_AS_LAST -- must be last item in enum */
-} TX_BETA_FEATURES;
-
 typedef enum TX_APP_INT_SETTINGS
 {
     TX_APP_INT_SETTING_RING_BUFFER_SIZE
@@ -3357,7 +3371,6 @@ struct TXAPP
 
 	char	*logDir;	/* currently just for cores; wtf expand use */
 	byte	didOncePerSqlMsg[TXoncePerSqlMsg_NUM];
-  int     betafeatures[BETA_COUNT];  /* Beta Features */
   int intSettings[TX_APP_INT_SETTING_COUNT]; /* Settings in int */
   TXPUTMSGFLAGS putmsgFlags;
   TX_LICENSE_FUNCTIONS	*txLicFuncs;
@@ -3377,7 +3390,7 @@ size_t TXAppGetCompatibilityVersion(TXAPP *app, char *buf, size_t bufSz);
 int TXAppSetTraceRowFields(TXPMBUF *pmbuf, TXAPP *app,
 			   const char *traceRowFields);
 int TXAppSetLogDir(TXPMBUF *pmbuf, TXAPP *app, const char *logDir,
-		   size_t logDirSz);
+		   size_t logDirLen);
 TXbool	TXAppSetDefaultPasswordHashMethod(TXPMBUF *pmbuf, TXAPP *app,
 					  TXpwHashMethod method);
 TXbool TXAppSetDefaultPasswordHashRounds(TXPMBUF *pmbuf, TXAPP *app,

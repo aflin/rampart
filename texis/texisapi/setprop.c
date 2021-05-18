@@ -1856,11 +1856,11 @@ int onoff;
 	while (x)
 	{
 		if(!strcmpi(x, "json")) {
-			TXApp->betafeatures[BETA_JSON] = onoff;
-		} else {
-			putmsg(MWARN, __FUNCTION__, "Unknown beta feature `%s'", x);
-      rc = -1;
-    }
+      putmsg(MINFO, __FUNCTION__, "Feature `%s' no longer beta", x);
+    }	else {
+			putmsg(MWARN, __FUNCTION__,	"Unknown beta feature `%s'", x);
+			rc = -1;
+		}
 		x = strtok(NULL, ",()");
   }
   return rc;

@@ -2140,7 +2140,7 @@ TXindOpts	*options;	/* (in) `WITH ...' options; may be modified */
             if (s > newIndexDir && TX_ISPATHSEP(*s)) *s = '\0';
           }
         else
-          TXdirname(newIndexDir, sizeof(newIndexDir), oldIndexPath);
+          TXdirname(TXPMBUFPN, newIndexDir, sizeof(newIndexDir), oldIndexPath);
 
 	if(TXlockindex(dbtable, INDEX_WRITE, NULL) == -1)
 		goto err;
