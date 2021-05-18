@@ -83,20 +83,13 @@ function copy_files(path, docpath, destpath){
     var i, ret;
 
     ret = shell(`cp -a ${docpath}/_static ${destpath}/`);
+
     if(ret.exitStatus)
         throw(ret.stderr);
 
     ret = shell(`cp -a ${docpath}/_sources ${destpath}/`);
     if(ret.exitStatus)
         throw(ret.stderr);
-
-/*
-    rampart.utils.copyFile(
-        path + "/data/docs/jquery.autocomplete.js",
-        destpath + "/_static/jquery.autocomplete.js",
-        true
-    );
-*/
 
     rampart.utils.copyFile(
         path + "/data/docs/client_search.js",
@@ -180,6 +173,7 @@ function init(path) {
 
     dbpath = path + "/data/docs/db";
 
+
     sql = new Sql.init(dbpath,true);
 
     var trypaths = [
@@ -201,6 +195,14 @@ function init(path) {
     
     destpath = path + "/html/docs";
     
+    if(!stat(destpath))
+        mkdir(destpath);
+
+    var ret = shell(`chown -R ${webuser} ${destpath}`); 
+
+    if(ret.exitStatus)
+        throw(ret.stderr);
+
     if(is_current(docpath, destpath))
     {
         console.log("docs are up to date");
@@ -213,17 +215,12 @@ function init(path) {
     
     make_index();
 
-    var ret = shell(`chown -R ${webuser} ${destpath}`); 
+    ret = shell(`chown -R ${webuser} ${destpath}`); 
 
     if(ret.exitStatus)
         throw(ret.stderr);
 
-    var ret = shell(`chown -R ${webuser} ${destpath}`); 
-
-    if(ret.exitStatus)
-        throw(ret.stderr);
-
-    var ret = shell(`chown -R ${webuser} ${dbpath}`); 
+    ret = shell(`chown -R ${webuser} ${dbpath}`); 
 
     if(ret.exitStatus)
         throw(ret.stderr);

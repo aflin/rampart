@@ -1,16 +1,23 @@
 var server=require("rampart-server");
 rampart.globalize(rampart.utils);
 
-var bind = [ "[::]:80", "0.0.0.0:80" ];
-
 //  IF YOU HAVE A CERT AND WANT SSL, SET THIS TRUE AND EDIT CERT LOCATION BELOW
 //var secure=true;
-var secure=false;
+var secure   = false;
 var webuser  = "nobody";
 
 
 if(secure)
-    bind = [ "[::]:443", "0.0.0.0:443" ];    
+    port = 443;
+else
+    port = 80;
+
+var bind = [ `[::]:${port}`, `0.0.0.0:${port}` ];
+
+var iam = trim(exec('whoami').stdout);
+
+if(port < 1024 && iam != "root")
+    throw("Error: script must be started as root to bind to port " + port);
 
 /* startup scripts */
 var scripts = readdir(process.scriptPath+"/startup_scripts");
