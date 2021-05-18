@@ -44,7 +44,7 @@ QUERY_STRUCT
     duk_idx_t callback; /* location of callback in ctx, or -1 */
     int skip;           /* number of results to skip */
     int max;            /* maximum number of results to return */
-    char rettype;       /* 0 for return object with key as column names, 
+    signed char rettype;/* 0 for return object with key as column names, 
                            1 for array
                            2 for novars                                           */
     char err;
