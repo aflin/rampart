@@ -328,14 +328,14 @@ else()
   if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
     set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb #example_name
             PROPERTIES 
-            LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath ${CMAKE_INSTALL_PREFIX}/modules/"
+            LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath,${CMAKE_INSTALL_PREFIX}/modules/"
             SUFFIX       ".so"
             PREFIX ""
     )
   else()
     set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-lmdb #example_name
             PROPERTIES 
-            LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath ${CMAKE_INSTALL_PREFIX}/modules/"
+            LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath,${CMAKE_INSTALL_PREFIX}/modules/"
             SUFFIX       ".so"
             PREFIX ""
     )
