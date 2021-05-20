@@ -51,11 +51,20 @@ else(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
   install(TARGETS rex tsql RUNTIME)
 endif(${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} VERSION_LESS 3.14)
 
-if(LOCK_SERVER AND EVENT_LIBRARY)
+#if(LOCK_SERVER AND EVENT_LIBRARY)
+if(LOCK_SERVER)
 add_executable(texislockd
   lockd_main.c
 )
-target_link_libraries(texislockd LINK_PUBLIC event)
+
+set(LIBEVENT_TARGET_DIR ${CMAKE_BINARY_DIR}/../extern/libevent)
+
+target_link_libraries(texislockd LINK_PUBLIC 
+	${LIBEVENT_TARGET_DIR}/lib/libevent_core.a
+	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
+)
+
+#target_link_libraries(texislockd LINK_PUBLIC event)
 target_link_libraries(texislockd LINK_PUBLIC texisapi mmapi3 z)
 set(LOCKD_EXE  ${CMAKE_CURRENT_BINARY_DIR}/texislockd PARENT_SCOPE)
 
