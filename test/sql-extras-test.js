@@ -7,7 +7,7 @@
 rampart.globalize(rampart.utils);
 
 var Sql=require("rampart-sql");
-
+var wikifile = process.scriptPath + "/wiki_00";
 /*  make sql functions global.  Same as doing this:
 var rex=Sql.rex;
 var re2=Sql.re2;
@@ -284,7 +284,7 @@ testFeature("rex - with callback and cancel", function() {
   */
 
 testFeature("rexfile - basic", function() {
-  var res=rexFile(">>function=[^\n]+","sql-extras-test.js");
+  var res=rexFile(">>function=[^\n]+",process.scriptPath+"/sql-extras-test.js");
   //console.log(res.length);
   return res.length == 38;
 });
@@ -292,7 +292,7 @@ testFeature("rexfile - basic", function() {
 
 testFeature("rexfile - submatches", function() {
   var sum=0;
-  var nhits=rexFile('>><doc id\\="=\\digit+[^>]*>=',"wiki_00",function(match,info,i){
+  var nhits=rexFile('>><doc id\\="=\\digit+[^>]*>=',wikifile,function(match,info,i){
       //printf("match='%J', matchno=%d info=%J\n",match,i,info);
       sum+=parseInt(info.submatches[1]);
   });
@@ -301,7 +301,7 @@ testFeature("rexfile - submatches", function() {
 
 testFeature("re2file - submatches", function() {
   var sum=0;
-  var nhits=re2File('<doc id="(\\d+)[^>]*>',"wiki_00",function(match,info,i){
+  var nhits=re2File('<doc id="(\\d+)[^>]*>',wikifile,function(match,info,i){
       //printf("match='%J', matchno=%d info=%J\n",match,i,info);
       sum+=parseInt(info.submatches[0]);
   });
@@ -310,7 +310,7 @@ testFeature("re2file - submatches", function() {
 
 testFeature("rexfile - full record(rex is fast)", function() {
   var sum=0;
-  var nhits=rexFile('>><doc id\\="=\\digit+[^>]*>=[^<]+',"wiki_00",function(match,info,i){
+  var nhits=rexFile('>><doc id\\="=\\digit+[^>]*>=[^<]+',wikifile,function(match,info,i){
       //printf("match='%J', matchno=%d info=%J\n",match,i,info);
       sum+=parseInt(info.submatches[1]);
   });
@@ -321,7 +321,7 @@ testFeature("rexfile - full record(rex is fast)", function() {
   //Perhaps they have buffer crossing problems? or it checks conditions for a longer match with every char?
 testFeature("re2file - full record(re2 is slow)", function() {
   var sum=0;
-  var nhits=re2File('<doc id="(\\d+)[^>]*>[^<]+',"wiki_00",function(match,info,i){
+  var nhits=re2File('<doc id="(\\d+)[^>]*>[^<]+',wikifile,function(match,info,i){
       //printf("match='%J', matchno=%d info=%J\n",match,i,info);
       sum+=parseInt(info.submatches[0]);
   });

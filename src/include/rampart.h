@@ -22,6 +22,8 @@ extern "C"
 extern char **rampart_argv;
 extern int   rampart_argc;
 extern char argv0[PATH_MAX];  // in rampart-server argv[0] is changed.  Original is saved here.
+extern char rampart_exec[PATH_MAX]; //the full path to the executable
+extern char rampart_dir[PATH_MAX];  //the base directory
 extern duk_context *main_ctx;
 extern duk_context **thread_ctx;
 extern struct event_base *elbase;

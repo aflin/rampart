@@ -120,11 +120,21 @@ int duk_rp_require_number(duk_context *ctx,duk_idx_t i) {
   return duk_require_number(ctx,i);
 }
 */
-/*  Find file searching standard directories */
+
+/*  Find file searching standard directories 
+    check:
+    1) as given. -- if absolute, this will be found first
+    2) in scriptPath/file -- NO SUBDIR
+    3) in ./file --NO SUBDIR
+    4) in execpath/subdir/file
+    5) in ~/.rampart/subdir/file or if doesn't exist in /tmp/subdir/file (latter is for writing babel code)
+    6) in $RAMPART_PATH/subdir/file
+    7) in execpath/file -- questionable strategy, but allow running in github build dir from outside that dir.
+*/
 
 RPPATH rp_find_path(char *file, char *subdir)
 {
-    int nlocs=2;
+    int nlocs=3;
     /* look in these locations and in ./ */
     char *locs[nlocs];
     char *home=( getenv("HOME") ? getenv("HOME") : "/tmp" );
@@ -138,6 +148,7 @@ RPPATH rp_find_path(char *file, char *subdir)
     struct stat sb;
 
     if(!file) return ret;
+
     /* look for it as given before searching paths */
     if (stat(file, &sb) != -1)
     {
@@ -178,36 +189,39 @@ RPPATH rp_find_path(char *file, char *subdir)
     strcpy(homedir,home);
     strcat(homedir,homesubdir); /* ~/.rampart */
 
+    locs[0]=rampart_dir; //this is set in cmdline.c based on path of executable
+
     /* this should only happen if /tmp is not writable */
     if(skiphome)
     {
-        locs[0]=(rampart_path)?rampart_path:RP_INST_PATH;
-        nlocs=1;
+        locs[1]=(rampart_path)?rampart_path:RP_INST_PATH;
+        nlocs=2;
     }
     else
     {
-        locs[0]=homedir;
-        locs[1]=(rampart_path)?rampart_path:RP_INST_PATH;
+        locs[1]=homedir;
+        locs[2]=(rampart_path)?rampart_path:RP_INST_PATH;
     }
     /* start with cur dir "./" */
     strcpy(path,loc);
     strcat(path,file);
+
 //printf("first check\n");
+    //look for it in ./, execpath, homedir, rampart_path
     while(1) {
 //printf("checking %s\n",path);
         if (stat(path, &sb) != -1)
         {
 //printf("break at i=%d\n",i);
-            break;
+            goto path_found;
         }
 
 //printf ("not found\n");
         if(i==nlocs)
-        {
-            i++;
             break;
-        }
+
         strcpy(path,locs[i]);
+
         /* in case RAMPART_PATH doesn't have trailing '/' */
         if(locs[i][strlen(locs[i])-1] != '/')
             strcat(path,"/");
@@ -217,13 +231,25 @@ RPPATH rp_find_path(char *file, char *subdir)
         i++;
     }
 
-    if(i<=nlocs){
-        ret.stat=sb;
-        if(!realpath(path,ret.path))
-            strcpy(ret.path,path);
+    //look in exec path with no subdir
+    //TODO: THIS ONE IS QUESTIONABLE. revisit and rethink.
+    strcpy(path,rampart_dir);
+    strcat(path,"/");
+    strcat(path,file);
+    if (stat(path, &sb) != -1)
+        goto path_found;
+
+    //not found
+    ret.path[0]='\0';
+    return ret;
+    
+    //found it above
+    path_found:
+
+    ret.stat=sb;
+    if(!realpath(path,ret.path))
+        strcpy(ret.path,path);
 //printf("FOUND %s\n",ret.path);
-    }
-    else ret.path[0]='\0';
 
     return ret;
 }

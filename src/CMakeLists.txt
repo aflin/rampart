@@ -50,6 +50,7 @@ add_executable(rampart
 	duktape/globals/csv_parser.c
 
 	linenoise.c
+	whereami.c
 	cmdline.c
 )
 
@@ -320,7 +321,7 @@ target_include_directories(rampart-curl PRIVATE
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
   set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb #example_name
           PROPERTIES 
-          LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath,./ -Wl,-rpath,${CMAKE_INSTALL_PREFIX}/modules/" 
+          LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath,./ -Wl,-rpath,${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/"
           SUFFIX       ".so"
           PREFIX ""
   )
@@ -328,14 +329,14 @@ else()
   if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
     set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb #example_name
             PROPERTIES 
-            LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath,${CMAKE_INSTALL_PREFIX}/modules/"
+            LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath,${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/"
             SUFFIX       ".so"
             PREFIX ""
     )
   else()
     set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-lmdb #example_name
             PROPERTIES 
-            LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath,${CMAKE_INSTALL_PREFIX}/modules/"
+            LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath,${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/"
             SUFFIX       ".so"
             PREFIX ""
     )
@@ -373,7 +374,7 @@ install(TARGETS
 	rampart-cmark
 	rampart-robots
 	rampart-lmdb
-	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
+	DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/"
 )
 else()
 install(TARGETS
@@ -385,7 +386,7 @@ install(TARGETS
 	rampart-html
 	rampart-cmark
 	rampart-lmdb
-	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
+	DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/"
 )
 endif()
 
@@ -395,18 +396,12 @@ install(CODE "execute_process( \
     \"/usr/local/bin/rampart\"   \
     )"
 )
-install(CODE "execute_process( \
-    COMMAND ${CMAKE_COMMAND} -E create_symlink \
-    \"${CMAKE_INSTALL_PREFIX}/bin/rampart\" \
-    \"/usr/local/bin/rp\"   \
-    )"
-)
 
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
     \"${PROJECT_BINARY_DIR}/src/babel.js\" \
     \"${PROJECT_BINARY_DIR}/src/babel-polyfill.js\" \
-    \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
+    \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/\"   \
     )"
 )
 
@@ -465,7 +460,7 @@ install(CODE "execute_process ( \
 install(CODE "execute_process( \
    COMMAND ${CMAKE_COMMAND} -E copy \
     \"${PROJECT_SOURCE_DIR}/jsmodules/rampart-letsencrypt.js\" \
-    \"${CMAKE_INSTALL_PREFIX}/modules\"   \
+    \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules\"   \
     )"
 )
 
@@ -499,11 +494,11 @@ install(CODE "execute_process( \
     )"
 )
 
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-server.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-crypto.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-curl.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-sql.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-lmdb.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-redis.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/rampart-server.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/rampart-crypto.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/rampart-curl.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/rampart-sql.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/rampart-lmdb.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/rampart-redis.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
 

@@ -9,6 +9,7 @@
 #include "./include/version.h"
 #include "duktape/register.h"
 #include <stdio.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -18,10 +19,12 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <errno.h>
+
 #include "event.h"
 #include "event2/thread.h"
 #include "linenoise.h"
 #include "sys/queue.h"
+#include "whereami.h"
 
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 int totnthreads=0;
@@ -602,7 +605,10 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     }
     duk_pop(ctx);
 
-    rppath=rp_find_path(pfill_bc,"modules/");
+    rppath=rp_find_path(pfill_bc,"lib/rampart_modules/");
+    if(!strlen(rppath.path))
+        rppath=rp_find_path(pfill_bc,"modules/");
+    
     if(strlen(rppath.path))
     {
         pfill_bc=rppath.path;
@@ -630,7 +636,10 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     }
 
     /* not found, so load and save it */
-    rppath=rp_find_path(pfill,"modules/");
+    rppath=rp_find_path(pfill,"lib/rampart_modules/");
+    if (!strlen(rppath.path))
+        rppath=rp_find_path(pfill,"modules/");
+
     if (!strlen(rppath.path))
     {
         fprintf(stderr,"cannot locate babel-polyfill.min.js\n");
@@ -1751,11 +1760,14 @@ static void evhandler(int sig, short events, void *base)
 char **rampart_argv;
 int   rampart_argc;
 char argv0[PATH_MAX];
+char rampart_exec[PATH_MAX];
+char rampart_dir[PATH_MAX];
 
 int main(int argc, char *argv[])
 {
     struct rlimit rlp;
-    int filelimit = 16384, lflimit = filelimit, isstdin=0;
+    int filelimit = 16384, lflimit = filelimit, isstdin=0, len, dirlen;
+    char *ptr;
     struct stat entry_file_stat;
 
     /* for later use */
@@ -1765,6 +1777,26 @@ int main(int argc, char *argv[])
     error_fh=stderr;
 
     strcpy(argv0, argv[0]);
+
+    len = wai_getExecutablePath(NULL, 0, NULL);
+    wai_getExecutablePath(rampart_exec, len, &dirlen);
+    rampart_exec[len]='\0';
+
+    strcpy(rampart_dir, rampart_exec);
+    ptr=strrchr(rampart_dir, '/');
+    if(!ptr)
+    {
+        fprintf(stderr,"could not find subpath of '%s'\n", rampart_dir);
+        exit(1);
+    }
+    if( ptr-rampart_dir > 4 && 
+        *(ptr-1)=='n' &&     
+        *(ptr-2)=='i' &&     
+        *(ptr-3)=='b' &&     
+        *(ptr-4)=='/'
+      )
+        ptr-=4;
+    *ptr='\0';
 
     /* timeout cleanups */
     add_exit_func(free_tos, NULL);

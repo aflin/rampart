@@ -3834,7 +3834,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
 /* **************************************************
    Initialize Sql module 
    ************************************************** */
-char install_dir[PATH_MAX+15];
+char install_dir[PATH_MAX+21];
 
 duk_ret_t duk_open_module(duk_context *ctx)
 {
@@ -3868,18 +3868,28 @@ duk_ret_t duk_open_module(duk_context *ctx)
         {
             struct stat sb;
 
-            if (stat("/usr/local/rampart", &sb) == 0 && S_ISDIR(sb.st_mode))
-                TexisArgv[1]="--install-dir=/usr/local/rampart";
+            
+//            if (stat("/usr/local/rampart", &sb) == 0 && S_ISDIR(sb.st_mode))
+//                TexisArgv[1]="--install-dir=/usr/local/rampart";
+            if (stat(rampart_dir, &sb) == 0 && S_ISDIR(sb.st_mode))
+            {
+                strcpy (install_dir, "--install-dir-force=");
+                strcat (install_dir, rampart_dir);
+                TexisArgv[1]=install_dir;
+            }
             else
                 nargs=1;
         }
         else
         {
-            strcpy (install_dir, "--install-dir=");
+            strcpy (install_dir, "--install-dir-force=");
             strcat (install_dir, rampart_path);
             TexisArgv[1]=install_dir;
         }
-        TXinitapp(NULL, NULL, nargs, TexisArgv, NULL, NULL);
+
+        if( TXinitapp(NULL, NULL, nargs, TexisArgv, NULL, NULL) )
+            RP_THROW(ctx, "Failed to initialize rampart-sql in TXinitapp");
+
         db_is_init = 1;
     }
 

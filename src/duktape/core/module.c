@@ -149,7 +149,9 @@ static duk_ret_t load_so_module(duk_context *ctx)
         {
             RPPATH rp;
 
-            rp=rp_find_path("rampart-crypto.so", "modules/");
+            rp=rp_find_path("rampart-crypto.so", "lib/rampart_modules/");
+            if(!strlen(rp.path))
+                rp=rp_find_path("rampart-crypto.so", "modules/");
 
             if(!strlen(rp.path))
             {
@@ -208,7 +210,9 @@ static int resolve_id(duk_context *ctx, const char *request_id)
 
         if( extlen && !strcmp(fext,module_loaders[module_loader_idx].ext) )
         {
-            rppath=rp_find_path((char *)duk_get_string(ctx,-1), "modules/");
+            rppath=rp_find_path((char *)duk_get_string(ctx,-1), "lib/rampart_modules/");
+            if(!strlen(rppath.path))
+                rppath=rp_find_path((char *)duk_get_string(ctx,-1), "modules/");
             id = (strlen(rppath.path))?rppath.path:NULL;
         }
         else
@@ -216,7 +220,9 @@ static int resolve_id(duk_context *ctx, const char *request_id)
             duk_push_string(ctx, request_id);
             duk_push_string(ctx, module_loaders[module_loader_idx].ext);
             duk_concat(ctx, 2);
-            rppath=rp_find_path((char *)duk_get_string(ctx,-1), "modules/");
+            rppath=rp_find_path((char *)duk_get_string(ctx,-1), "lib/rampart_modules/");
+            if(!strlen(rppath.path))
+                rppath=rp_find_path((char *)duk_get_string(ctx,-1), "modules/");
             id = (strlen(rppath.path))?rppath.path:NULL;
             duk_pop(ctx);
         }
