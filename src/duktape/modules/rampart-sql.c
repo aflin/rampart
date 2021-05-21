@@ -3847,6 +3847,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
     {
         char *rampart_path=getenv("RAMPART_PATH");
         char *TexisArgv[2];
+        int nargs=2;
 
         if (pthread_mutex_init(&lock, NULL) != 0)
         {
@@ -3869,6 +3870,8 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
             if (stat("/usr/local/rampart", &sb) == 0 && S_ISDIR(sb.st_mode))
                 TexisArgv[1]="--install-dir=/usr/local/rampart";
+            else
+                nargs=1;
         }
         else
         {
@@ -3876,7 +3879,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
             strcat (install_dir, rampart_path);
             TexisArgv[1]=install_dir;
         }
-        TXinitapp(NULL, NULL, 2, TexisArgv, NULL, NULL);
+        TXinitapp(NULL, NULL, nargs, TexisArgv, NULL, NULL);
         db_is_init = 1;
     }
 
