@@ -20,4 +20,5 @@ ExternalProject_Add( texis
 	CMAKE_ARGS "-DGENERATE_PIC=1"
 	BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/texis" 
 	INSTALL_COMMAND cmake -E echo "Skipping install step."
+	DEPENDS openssl event_static event_core_static event_pthreads_static
 )
