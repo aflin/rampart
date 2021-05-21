@@ -12,13 +12,14 @@ add_executable(texislockd
   lockd_resource.c
 )
 
-set(LIBEVENT_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevent)
+set(LIBEVENT_TARGET_DIR ${CMAKE_BINARY_DIR}/../extern/libevent)
 
 target_link_libraries(texislockd LINK_PUBLIC 
 	${LIBEVENT_TARGET_DIR}/lib/libevent_core.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
 )
 target_link_libraries(texislockd LINK_PUBLIC texisapi mmapi3 z)
+
 set(LOCKD_EXE  ${CMAKE_CURRENT_BINARY_DIR}/texislockd PARENT_SCOPE)
 
 

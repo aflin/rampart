@@ -38,11 +38,16 @@ include(CheckIncludeFile)
 include(ExternalProject)
 include(thirdparty/openssl.cmake)
 include(thirdparty/jansson.cmake)
-#if(LOCK_SERVER)
-#include(thirdparty/libevent.cmake)
-#endif(LOCK_SERVER)
-include(GNUInstallDirs)
 
+if(LOCK_SERVER)
+#include(thirdparty/libevent.cmake)
+include_directories(
+	${CMAKE_SOURCE_DIR}/../extern/libevent/include
+	${CMAKE_BINARY_DIR}/../extern/libevent/include
+)
+endif(LOCK_SERVER)
+
+include(GNUInstallDirs)
 include_directories(include)
 include_directories(${CMAKE_BINARY_DIR})
 if(HAVE_RE2)
