@@ -3863,7 +3863,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
         REMALLOC(errmap[0], msgbufsz);
         mmsgfh = fmemopen(errmap[0], msgbufsz, "w+");
 
-        TexisArgv[0]=argv0;
+        TexisArgv[0]=rampart_exec;
         if(!rampart_path)
         {
             struct stat sb;
