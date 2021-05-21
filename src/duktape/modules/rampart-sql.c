@@ -3834,6 +3834,8 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
 /* **************************************************
    Initialize Sql module 
    ************************************************** */
+char install_dir[PATH_MAX+15];
+
 duk_ret_t duk_open_module(duk_context *ctx)
 {
     /* Set up locks:
@@ -3845,7 +3847,6 @@ duk_ret_t duk_open_module(duk_context *ctx)
     {
         char *rampart_path=getenv("RAMPART_PATH");
         char *TexisArgv[2];
-        char tmp[PATH_MAX+15];
 
         if (pthread_mutex_init(&lock, NULL) != 0)
         {
@@ -3863,12 +3864,17 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
         TexisArgv[0]=argv0;
         if(!rampart_path)
-            TexisArgv[1]="--install-dir=/usr/local/rampart";
+        {
+            struct stat sb;
+
+            if (stat("/usr/local/rampart", &sb) == 0 && S_ISDIR(sb.st_mode))
+                TexisArgv[1]="--install-dir=/usr/local/rampart";
+        }
         else
         {
-            strcpy (tmp, "--install-dir=");
-            strcat (tmp, rampart_path);
-            TexisArgv[1]=tmp;
+            strcpy (install_dir, "--install-dir=");
+            strcat (install_dir, rampart_path);
+            TexisArgv[1]=install_dir;
         }
         TXinitapp(NULL, NULL, 2, TexisArgv, NULL, NULL);
         db_is_init = 1;
