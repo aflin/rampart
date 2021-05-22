@@ -390,12 +390,12 @@ install(TARGETS
 )
 endif()
 
-install(CODE "execute_process( \
-    COMMAND ${CMAKE_COMMAND} -E create_symlink \
-    \"${CMAKE_INSTALL_PREFIX}/bin/rampart\" \
-    \"/usr/local/bin/rampart\"   \
-    )"
-)
+#install(CODE "execute_process( \
+#    COMMAND ${CMAKE_COMMAND} -E create_symlink \
+#    \"${CMAKE_INSTALL_PREFIX}/bin/rampart\" \
+#    \"/usr/local/bin/rampart\"   \
+#    )"
+#)
 
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
@@ -417,7 +417,7 @@ install(CODE "execute_process( \
 )
 
 # test files
-install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/test")
+install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rampart/test")
 if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
@@ -431,7 +431,7 @@ install(CODE "execute_process( \
     \"${PROJECT_SOURCE_DIR}/test/rputils-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/sql-extras-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/wiki_00\" \
-    \"${CMAKE_INSTALL_PREFIX}/test\"   \
+    \"${CMAKE_INSTALL_PREFIX}/share/rampart/test\"   \
     )"
 )
 else()
@@ -446,13 +446,13 @@ install(CODE "execute_process( \
     \"${PROJECT_SOURCE_DIR}/test/rputils-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/sql-extras-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/wiki_00\" \
-    \"${CMAKE_INSTALL_PREFIX}/test\"   \
+    \"${CMAKE_INSTALL_PREFIX}/share/rampart/test\"   \
     )"
 )
 endif()
 
 install(CODE "execute_process ( \
-    COMMAND bash -c \"chmod 777 ${CMAKE_INSTALL_PREFIX}/test\"
+    COMMAND bash -c \"chmod 777 ${CMAKE_INSTALL_PREFIX}/share/rampart/test\"
  )"
 )
 
@@ -477,20 +477,20 @@ install(CODE "execute_process( \
 )
 
 # example dirs
-install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/examples")
+install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rampart/examples")
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy_directory \
     \"${PROJECT_SOURCE_DIR}/examples\" \
-    \"${CMAKE_INSTALL_PREFIX}/examples\"   \
+    \"${CMAKE_INSTALL_PREFIX}/share/rampart/examples\"   \
     )"
 )
 
 # docs dirs
-install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/docs")
+install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rampart/docs")
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy_directory \
-    \"${PROJECT_SOURCE_DIR}//docs/build/html\" \
-    \"${CMAKE_INSTALL_PREFIX}/docs\"   \
+    \"${PROJECT_SOURCE_DIR}/docs/build/html\" \
+    \"${CMAKE_INSTALL_PREFIX}/share/rampart/docs\"   \
     )"
 )
 
