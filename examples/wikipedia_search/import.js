@@ -1,6 +1,6 @@
 var Sql=require("rampart-sql");
-var rexfile=Sql.rexfile;
-var re2file=Sql.re2file;
+var rexFile=Sql.rexFile;
+var re2File=Sql.re2File;
 var rex=Sql.rex;
 
 rampart.globalize(rampart.utils);
