@@ -1556,14 +1556,16 @@ void *duk_rp_exec_thread_waitpid(void *arg)
 #define DUK_UTIL_EXEC_READ_FD(ctx, buf, fildes, nread)                                                      \
     {                                                                                                       \
         int size = BUFREADSZ;                                                                               \
-        DUKREMALLOC(ctx,buf, size);                                                                         \
+        REMALLOC(buf, size);                                                                                \
         int nbytes = 0;                                                                                     \
         nread = 0;                                                                                          \
         while ((nbytes = read(fildes, buf + nread, size - nread)) > 0)                                      \
         {                                                                                                   \
-            size *= 2;                                                                                      \
             nread += nbytes;                                                                                \
-            DUKREMALLOC(ctx,buf, size);                                                                     \
+            if (size <= nread){                                                                             \
+                size *= 2;                                                                                  \
+                REMALLOC(buf, size);                                                                        \
+            }                                                                                               \
         }                                                                                                   \
         if (nbytes < 0)                                                                                     \
             RP_THROW(ctx, "exec(): could not read output buffer: %s", strerror(errno));                     \
@@ -1596,6 +1598,7 @@ void *duk_rp_exec_thread_waitpid(void *arg)
  *    pid: int
  * } = utils.exec({ 
  *    path: "/bin/ls", 
+ *    stdin: "text",
  *    args: ["ls", "-1"], 
  *    timeout: 1000
  *    kill_signal: 9, background: false });
@@ -1604,7 +1607,8 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 {
     int kill_signal=SIGTERM, background=0, i=0;
     unsigned int timeout=0;
-    const char *path;
+    const char *path, *stdin_txt=NULL;
+    duk_size_t stdin_sz;
     char **args=NULL;
     duk_size_t nargs;
 
@@ -1634,6 +1638,12 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     }
     duk_pop(ctx);
 
+    if(duk_get_prop_string(ctx, -1, "stdin"))
+    {
+       stdin_txt=REQUIRE_STR_OR_BUF(ctx, -1, &stdin_sz, "exec(): stdin must be a String or Buffer");
+    }
+    duk_pop(ctx);
+
     // get arguments into null terminated buffer
     duk_get_prop_string(ctx, -1, "args");
 
@@ -1655,9 +1665,10 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 
     int stdout_pipe[2];
     int stderr_pipe[2];
+    int stdin_pipe[2];
     if (!background)
     {
-        if (pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1)
+        if (pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1|| pipe(stdin_pipe) == -1)
             RP_THROW(ctx, "exec(): could not create pipe: %s", strerror(errno));
     }
 
@@ -1672,10 +1683,11 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
             // make pipe equivalent to stdout and stderr
             dup2(stdout_pipe[1], STDOUT_FILENO);
             dup2(stderr_pipe[1], STDERR_FILENO);
-
+            dup2(stdin_pipe[0], STDIN_FILENO);
             // close unused pipes
             close(stdout_pipe[0]);
             close(stderr_pipe[0]);
+            close(stdin_pipe[1]);
         }
         execv(path, args);
         fprintf(stderr, "exec(): could not execute %s\n", args[0]);
@@ -1692,6 +1704,16 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     {
         pthread_create(&thread, NULL, duk_rp_exec_thread_waitpid, &arg);
     }
+
+    // close unused pipes
+    close(stdout_pipe[1]);
+    close(stderr_pipe[1]);
+    close(stdin_pipe[0]);
+
+    if(stdin_txt)
+        write(stdin_pipe[1], stdin_txt, (size_t)stdin_sz);
+
+    close(stdin_pipe[1]);
 
     if (background)
     {
@@ -1714,6 +1736,14 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     else
     {
         int exit_status;
+        int stdout_nread, stderr_nread;
+        char *stdout_buf = NULL;
+        char *stderr_buf = NULL;
+
+        // read output
+        DUK_UTIL_EXEC_READ_FD(ctx, stdout_buf, stdout_pipe[0], stdout_nread);
+        DUK_UTIL_EXEC_READ_FD(ctx, stderr_buf, stderr_pipe[0], stderr_nread);
+
         waitpid(pid, &exit_status, 0);
         // cancel timeout thread in case it is still running
         if (timeout > 0)
@@ -1721,17 +1751,6 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
             pthread_cancel(thread);
             pthread_join(thread, NULL);
         }
-        // close unused pipes
-        close(stdout_pipe[1]);
-        close(stderr_pipe[1]);
-
-        char *stdout_buf = NULL;
-        char *stderr_buf = NULL;
-
-        // read output
-        int stdout_nread, stderr_nread;
-        DUK_UTIL_EXEC_READ_FD(ctx, stdout_buf, stdout_pipe[0], stdout_nread);
-        DUK_UTIL_EXEC_READ_FD(ctx, stderr_buf, stderr_pipe[0], stderr_nread);
 
         // push return object
         duk_push_object(ctx);
