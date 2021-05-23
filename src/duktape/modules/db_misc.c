@@ -1831,9 +1831,10 @@ rex_re2_file(duk_context *ctx, TXrexSyntax type)
     else
         RP_THROW(ctx,"re%cFile: item to be matched (arg 2), must be a string (filename)", ((type==TXrexSyntax_Re2)?'2':'x'));
 
+    errno=0;
     ipfh=fopen((char *)fname,"r");
     if(ipfh==(FILE *)NULL)
-        RP_THROW(ctx,"re%cFile: error opening file '%s'", ((type==TXrexSyntax_Re2)?'2':'x'), fname);
+        RP_THROW(ctx,"re%cFile: error opening file '%s': %s", ((type==TXrexSyntax_Re2)?'2':'x'), fname, strerror(errno));
 
     while((nread=rpfreadex(ctx,ipfh,str,strsz,endex))>0)
     {
@@ -1841,7 +1842,7 @@ rex_re2_file(duk_context *ctx, TXrexSyntax type)
          i=rex(ctx,str,end,opt_idx,func_idx,type,i);
     }
     closerex(endex);
-
+    fclose(ipfh);
     return 1;
 }
 /* duktape rex functions */
