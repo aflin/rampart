@@ -296,7 +296,7 @@ add_library(rampart-curl SHARED
 target_link_libraries(rampart-curl PRIVATE
 	${CURL_TARGET_DIR}/lib/libcurl.a
 	rampart-crypto
-	z
+	idn2 ldap z
 )
 target_include_directories(rampart-curl PRIVATE
 	${PROJECT_SOURCE_DIR}/extern/curl/include/
