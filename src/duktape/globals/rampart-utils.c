@@ -2676,7 +2676,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln);
 
 static duk_ret_t include_js(duk_context *ctx)
 {
-    const char *script= REQUIRE_STRING(ctx, -1, "rampart.import: - parameter must be a String (path of script to import)" );
+    const char *script= REQUIRE_STRING(ctx, -1, "rampart.include: - parameter must be a String (path of script to include)" );
     const char *bfn=NULL;
     size_t slen = strlen(script);
     RPPATH rp;
