@@ -247,6 +247,7 @@ TXnode_buffer_prep(IPREPTREEINFO *prepinfo, QNODE *query, QNODE *parentquery, in
   if (q->in1 == NULL)
     return (DBTBL *) NULL;
   q->out = TXcreateinternaldbtblcopy(q->in1, TX_DBF_RINGDBF);
+  query->countInfo = query->left->countInfo;
   return q->out;
 }
 
@@ -286,6 +287,7 @@ TXnode_buffer_exec(QNODE *query, FLDOP *fo, int direction, int offset, int verbo
     TXInLockBlock = 0;
 #endif
     TXqnode_traverse(query, &node_type, TXqnode_unlock_tables_callback);
+    query->countInfo = query->left->countInfo;
   }
   index =  getdbtblrow(q->out);
   return TXrecidvalid(index) ? 0 : -1;
