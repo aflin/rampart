@@ -254,11 +254,28 @@ TXnode_buffer_prep(IPREPTREEINFO *prepinfo, QNODE *query, QNODE *parentquery, in
 int
 TXnode_buffer_exec(QNODE *query, FLDOP *fo, int direction, int offset, int verbose)
 {
-  int r = 0, nrows = 0;
+  int r = 0, nrows = 0, toskip = 0;
   QUERY *q = query->q;
   RECID *index;
   double start, now, stoptime;
+  /*
+    Need to skip offset -1 rows, assuming direction is RELATIVE
+  */
 
+  switch(direction) {
+    case SQL_FETCH_NEXT:
+      break; /* toskip = 0, just get next record */
+    case SQL_FETCH_RELATIVE:
+      if(offset <= 0) return -1; /* Invalid offset */
+      toskip = offset - 1;
+  }
+  while((toskip > 0) && ioctldbtbl(q->out, RINGBUFFER_DBF_HAS_DATA, NULL)) {
+    index = getdbtblrow(q->out);
+    if(TXrecidvalid(index)) {
+      toskip --;
+    }
+  }
+  offset = toskip + 1;
   if(ioctldbtbl(q->out, RINGBUFFER_DBF_HAS_DATA, NULL) == 0)
   {
     TXqnode_traverse(query, &node_type, TXqnode_lock_tables_callback);
@@ -274,6 +291,7 @@ TXnode_buffer_exec(QNODE *query, FLDOP *fo, int direction, int offset, int verbo
     }
     while(query->left->state != QS_NOMOREROWS && !r && now <= stoptime && ioctldbtbl(q->out, RINGBUFFER_DBF_HAS_SPACE, NULL) > 0) {
       r = TXdotree(query->left, fo, direction, offset);
+      offset = 1;
       if(r == -1) {
         query->left->state = QS_NOMOREROWS;
       } else {
