@@ -1705,15 +1705,16 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         pthread_create(&thread, NULL, duk_rp_exec_thread_waitpid, &arg);
     }
 
-    // close unused pipes
-    close(stdout_pipe[1]);
-    close(stderr_pipe[1]);
-    close(stdin_pipe[0]);
+    if (!background)
+    {
+        // close unused pipes
+        close(stdout_pipe[1]);
+        close(stderr_pipe[1]);
+        close(stdin_pipe[0]);
+    }
 
     if(stdin_txt)
         write(stdin_pipe[1], stdin_txt, (size_t)stdin_sz);
-
-    close(stdin_pipe[1]);
 
     if (background)
     {
