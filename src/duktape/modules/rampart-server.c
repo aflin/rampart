@@ -2969,7 +2969,14 @@ static void *http_dothread(void *arg)
     /* copy function ref to top of stack */
     if(!getfunction(dhs))
     {
+        if (dhr->have_timeout)
+        {
+            pthread_mutex_lock(&(dhr->lock));
+            pthread_cond_signal(&(dhr->cond));
+        }
         send404(req);
+        if (dhr->have_timeout)
+            pthread_mutex_unlock(&(dhr->lock));
         return NULL;
     };
 
