@@ -168,21 +168,23 @@ extern int totnthreads;
         exit(1);                                         \
     }
 
-pthread_mutex_t lock;
-
 #ifdef PUTMSG_STDERR
     pthread_mutex_t printlock;
 #endif
 
 extern void rp_register_functions(duk_context *ctx);
 
-
+/*
 #define SET_THREAD_UNSAFE(ctx)                                       \
 do                                                               \
 {                                                                \
     duk_push_false(ctx);                                         \
     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("threadsafe")); \
 } while (0)
+*/
+
+//currently unused, probably can be removed
+#define SET_THREAD_UNSAFE(ctx) /* nada */
 
 #define RP_TIME_T_FOREVER 2147483647
 

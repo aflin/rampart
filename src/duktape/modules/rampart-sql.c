@@ -25,6 +25,10 @@
 #include "api3.h"
 #include "../globals/csv_parser.h"
 
+pthread_mutex_t tx_handle_lock;
+pthread_mutex_t tx_create_lock;
+
+
 #define RESMAX_DEFAULT 10 /* default number of sql rows returned for select statements if max is not set */
 //#define PUTMSG_STDERR                  /* print texis error messages to stderr */
 
@@ -98,13 +102,13 @@ char **errmap=NULL;
        Only one texis call can be happening concurrently
        in a process, so "main thread" or "thread 0" can use it
        in the current process, while threads >0 need to
-       fork in order to avoid locking slowdown.
+       fork in order to avoid mutex locking slowdown.
 
        Thus, SFI[0] can serve both the main thread
        and thread 0.  Or in the case of no server, 
        SFI[0] is exclusively used. But since SFI
        contains information about forking, in reality
-       SFI[0] is not used at all.
+       the SFI[0] struct is not used at all.
 
        This does create some numbering confusion with the
        first usable/used SFI being SFI[1].  But it's better
@@ -119,9 +123,9 @@ char **errmap=NULL;
 #define SFI struct sql_fork_info_s
 SFI
 {
-    int reader;         // pipe to read from in parent or child
-    int writer;         // pipe to write to in parent or child
-    pid_t childpid;     // process id of the child if in parent
+    int reader;         // pipe to read from, in parent or child
+    int writer;         // pipe to write to, in parent or child
+    pid_t childpid;     // process id of the child if in parent (return from fork())
     FMINFO *mapinfo;    // the shared mmap for reading and writing in both parent and child
     void *aux;          // if data is larger than mapsize, we need to copy it in chunks into here
     void *auxpos;
@@ -147,7 +151,7 @@ DB_HANDLE
 
 DB_HANDLE *all_handles[NDB_HANDLES] = {0};
 
-
+// for yosemite:
 #ifdef __APPLE__
 #include <Availability.h>
 #  if __MAC_OS_X_VERSION_MIN_REQUIRED < 101300
@@ -167,9 +171,9 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf);
 #define TXLOCK
 #define TXUNLOCK
 
-#define HLOCK if(!RP_TX_isforked) pthread_mutex_lock(&lock);
+#define HLOCK if(!RP_TX_isforked) pthread_mutex_lock(&tx_handle_lock);
 //#define HLOCK if(!RP_TX_isforked) {printf("lock from %d\n", thisfork);pthread_mutex_lock(&lock);}
-#define HUNLOCK if(!RP_TX_isforked) pthread_mutex_unlock(&lock);
+#define HUNLOCK if(!RP_TX_isforked) pthread_mutex_unlock(&tx_handle_lock);
 
 int db_is_init = 0;
 int tx_rp_cancelled = 0;
@@ -2484,6 +2488,8 @@ int duk_rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
     return (rown);
 }
 
+void reset_tx_default(duk_context *ctx, DB_HANDLE *h);
+
 #undef pushcounts
 
 /* ************************************************** 
@@ -2544,6 +2550,9 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
     h = h_open(db, fromContext, ctx);
     if(!h)
         throw_tx_error(ctx,h,"sql open");
+
+    reset_tx_default(ctx, h);
+
     tx = h->tx;
     if (!tx)
     {
@@ -3063,6 +3072,9 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
     hcache = h_open(db, fromContext, ctx);
     if(!hcache)
         throw_tx_error(ctx,hcache,"sql open");
+
+    reset_tx_default(ctx, hcache);
+
     tx = hcache->tx;
     if (!tx && !hcache->forkno)
         throw_tx_error(ctx,hcache,"open sql");
@@ -3249,7 +3261,7 @@ static void free_list(char **nl)
 //    *needs_free=0;
 }
 
-static void rp_set_tx_defaults(duk_context *ctx, DB_HANDLE *h, int rampartdef)
+static void set_tx_def(duk_context *ctx, DB_HANDLE *h, int rampartdef)
 {
     LPSTMT lpstmt;
     DDIC *ddic=NULL;
@@ -3281,6 +3293,36 @@ if(setprop(ddic, prop, val )==-1)\
     }
     else
         TXunneededRexEscapeWarning = 1;
+}
+
+void reset_tx_default(duk_context *ctx, DB_HANDLE *h)
+{
+    duk_push_global_object(ctx);
+    if(duk_has_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sql_needs_reset")))
+    {
+        char errbuf[1024];
+        int ret;
+
+        duk_push_object(ctx);
+        duk_push_true(ctx);
+        duk_put_prop_string(ctx, -2, "defaults");
+        /* going to a child proc */
+        if(h->forkno)
+        {
+            ret = fork_set(ctx, h, errbuf);
+        }
+        else // handled by this proc
+        {
+            ret = sql_set(ctx, h, errbuf);
+        }
+        duk_pop(ctx); //{defaults:true} obj
+        duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sql_needs_reset"));
+        if(ret == -1)
+            RP_THROW(ctx, "%s", errbuf);
+        else if (ret ==-2)
+            throw_tx_error(ctx, h, errbuf);
+    }
+    duk_pop(ctx);//global obj
 }
 
 static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
@@ -3324,8 +3366,38 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
         for(i = 0; prop[i]; i++)
             prop[i] = tolower(prop[i]);
 
+        //check for default reset first
+        if (!strcmp ("defaults", prop))
+        {
+            if(duk_is_boolean(ctx, -1))
+            {
+                if (duk_get_boolean(ctx, -1) )
+                {
+                    set_tx_def(ctx, hcache, 1);
+                }
+                goto propnext;
+            }
+            if(duk_is_string(ctx, -1))
+                val=duk_get_string(ctx, -1);
+            else
+                goto default_err;
+            if(!strcasecmp("texis", val))
+            {
+                set_tx_def(ctx, hcache, 0);
+                goto propnext;
+            }
+            else if(!strcasecmp("rampart", val))
+            {
+                set_tx_def(ctx, hcache, 1);
+                goto propnext;
+            }
+
+            default_err:
+            sprintf(errbuf, "sql.set() - property defaults option requires a string('texis' or 'rampart') or a boolean");
+            return -1;
+        }
         /* a few aliases */
-        if(!strcmp("listexp", prop) || !strcmp("listexpressions", prop))
+        else if(!strcmp("listexp", prop) || !strcmp("listexpressions", prop))
             prop="lstexp";
         else if (!strcmp("listindextmp", prop) || !strcmp("listindextemp", prop) || !strcmp("lstindextemp", prop))
             prop="lstindextmp"; 
@@ -3361,35 +3433,6 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
             setlisttype=2;
         else if (!strcmp ("prefixlst", prop) || !strcmp ("prefixlist",prop))
             setlisttype=3;
-        else if (!strcmp ("defaults", prop))
-        {
-            if(duk_is_boolean(ctx, -1))
-            {
-                if (duk_get_boolean(ctx, -1) )
-                {
-                    rp_set_tx_defaults(ctx, hcache, 1);
-                }
-                goto propnext;
-            }
-            if(duk_is_string(ctx, -1))
-                val=duk_get_string(ctx, -1);
-            else
-                goto default_err;
-            if(!strcasecmp("texis", val))
-            {
-                rp_set_tx_defaults(ctx, hcache, 0);
-                goto propnext;
-            }
-            else if(!strcasecmp("rampart", val))
-            {
-                rp_set_tx_defaults(ctx, hcache, 1);
-                goto propnext;
-            }
-
-            default_err:
-            sprintf(errbuf, "sql.set() - property defaults option requires a string('texis' or 'rampart') or a boolean");
-            return -1;
-        }
 
         if(retlisttype>-1)
         {
@@ -3660,6 +3703,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
             return -1;
         }
     }
+    duk_pop(ctx);//enum
 
     duk_rp_log_tx_error(ctx,hcache,pbuf); /* log any non fatal errors to this.errMsg */
 
@@ -3687,23 +3731,25 @@ duk_ret_t duk_texis_set(duk_context *ctx)
 
     hcache = h_open(db, fromContext, ctx);
 
-    if(!hcache)
-        throw_tx_error(ctx,hcache,"sql open");
-
     if(!hcache || (!hcache->tx && !hcache->forkno) )
     {
         h_close(hcache);
-        throw_tx_error(ctx,hcache,"open sql");
+        throw_tx_error(ctx,hcache,"sql open");
     }
+
+    reset_tx_default(ctx, hcache);
     
     duk_rp_log_error(ctx, "");
 
     if(!duk_is_object(ctx, -1) || duk_is_array(ctx, -1) || duk_is_function(ctx, -1) )
         RP_THROW(ctx, "sql.set() - object with {prop:value} expected as parameter - got '%s'",duk_safe_to_string(ctx, -1));
 
+    /* going to a child proc */
     if(hcache->forkno)
     {
-        // regular expressions in addexp don't survive cbor
+        // regular expressions in addexp don't survive cbor, 
+        // so get the source expression and replace in array
+        // before sending to child
         duk_enum(ctx, -1, 0);
         while (duk_next(ctx, -1, 1))
         {
@@ -3739,7 +3785,7 @@ duk_ret_t duk_texis_set(duk_context *ctx)
         duk_pop(ctx);
         ret = fork_set(ctx, hcache, errbuf);
     }
-    else
+    else // handled by this proc
     {
         ret = sql_set(ctx, hcache, errbuf);
     }
@@ -3752,6 +3798,12 @@ duk_ret_t duk_texis_set(duk_context *ctx)
 
     return (duk_ret_t) ret;
 }
+
+// create db lock, in case a server callback function opens a new
+// texis db with create option, we don't want two threads doing this at once
+#define CRLOCK pthread_mutex_lock(&tx_create_lock);
+#define CRUNLOCK pthread_mutex_unlock(&tx_create_lock);
+
 
 /* **************************************************
    Sql("/database/path") constructor:
@@ -3789,6 +3841,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     */
     if (duk_is_boolean(ctx, 1) && duk_get_boolean(ctx, 1) != 0)
     {
+        CRLOCK
         /* check for db first */
         DB_HANDLE *h = h_open( (char*)db, fromContext, ctx );
         if (!h || (h->tx == NULL && !h->forkno) )
@@ -3800,11 +3853,13 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
             if (!createdb(db))
             {
                 duk_rp_log_tx_error(ctx,h,pbuf);
+                CRUNLOCK
                 RP_THROW(ctx, "cannot create database at '%s' (root path not found, lacking permission or other error\n%s)", db, pbuf);
             }
         }
         duk_rp_log_tx_error(ctx,h,pbuf); /* log any non fatal errors to this.errMsg */
         h_close(h);
+        CRUNLOCK
     }
 
     /* save the name of the database in 'this' */
@@ -3813,6 +3868,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "db");
     duk_push_number(ctx, RESMAX_DEFAULT);
     duk_put_prop_string(ctx, -2, "selectMaxRows");
+
     SET_THREAD_UNSAFE(ctx);
 
     TXunneededRexEscapeWarning = 0; //silence rex escape warnings
@@ -3849,9 +3905,15 @@ duk_ret_t duk_open_module(duk_context *ctx)
         char *TexisArgv[2];
         int nargs=2;
 
-        if (pthread_mutex_init(&lock, NULL) != 0)
+        if (pthread_mutex_init(&tx_handle_lock, NULL) != 0)
         {
-            printf("\n mutex init failed\n");
+            printf("\n handle mutex init failed\n");
+            exit(1);
+        }
+
+        if (pthread_mutex_init(&tx_create_lock, NULL) != 0)
+        {
+            printf("\n create mutex init failed\n");
             exit(1);
         }
 

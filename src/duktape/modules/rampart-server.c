@@ -3022,6 +3022,11 @@ static void *http_dothread(void *arg)
         has_content = push_req_vars(dhs);
     }
 
+    // set flag that function is being called anew
+    // Used for sql.exec to know when to reset texis defaults
+    duk_push_true(ctx);
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_needs_reset"));
+
     //put a copy out of the way for a moment
     duk_dup(ctx,-1);
     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("reqobj"));
