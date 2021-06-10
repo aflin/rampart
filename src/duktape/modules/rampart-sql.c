@@ -1971,7 +1971,8 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
             double floord;\
             d = duk_get_number(ctx, -1);\
             floord = floor(d);\
-            if( (d - floord) > 0.0 || (d - floord) < 0.0)\
+            if( (d - floord) > 0.0 || (d - floord) < 0.0 || \
+                floord < (double)INT64_MIN || floord > (double)INT64_MAX)\
             {\
                 v = (double *)&d;\
                 plen = sizeof(double);\
@@ -1980,11 +1981,11 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
             }\
             else\
             {\
-                lval = (long) floord;\
-                v = (long *)&lval;\
-                plen = sizeof(long);\
-                in = SQL_C_LONG;\
-                out = SQL_INTEGER;\
+                lval = (int64_t) floord;\
+                v = (int64_t *)&lval;\
+                plen = sizeof(int64_t);\
+                in = SQL_C_SBIGINT;\
+                out = SQL_BIGINT;\
             }\
             break;\
         }\
@@ -2048,7 +2049,7 @@ int duk_rp_add_named_parameters(
         void *v;   /* value to be passed to db */
         long plen; /* lenght of value */
         double d;  /* for numbers */
-        long lval;
+        int64_t lval;
         int in, out;
 
         duk_get_prop_string(ctx, obj_loc, key);
@@ -2088,7 +2089,7 @@ int duk_rp_add_parameters(duk_context *ctx, DB_HANDLE *h, duk_idx_t arr_loc)
         void *v;   /* value to be passed to db */
         long plen; /* lenght of value */
         double d;  /* for numbers */
-        long lval;
+        int64_t lval;
         int in, out;
 
         /* push array member to top of stack */
