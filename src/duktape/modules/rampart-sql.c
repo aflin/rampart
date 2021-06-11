@@ -3363,7 +3363,7 @@ void reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
 
         if (this_idx > -1) //we reapply old setting
         {
-            if (duk_get_prop_string(ctx, 1, DUK_HIDDEN_SYMBOL("sql_settings")) )
+            if (duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("sql_settings")) )
             {
                 if(h->forkno)
                     ret = fork_set(ctx, h, errbuf);
@@ -3376,6 +3376,8 @@ void reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
                 
             }
             duk_pop(ctx);
+            duk_push_int(ctx, handle_no);
+            duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no"));
         }
     }
 
