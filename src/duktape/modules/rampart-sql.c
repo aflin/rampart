@@ -3269,39 +3269,6 @@ static void free_list(char **nl)
 //    *needs_free=0;
 }
 
-static void set_tx_def(duk_context *ctx, DB_HANDLE *h, int rampartdef)
-{
-    LPSTMT lpstmt;
-    DDIC *ddic=NULL;
-    TEXIS *tx = h->tx;
-
-    if(!tx && !h->forkno)
-        throw_tx_error(ctx,h,"open sql");
-    
-    lpstmt = tx->hstmt;
-    if(lpstmt && lpstmt->dbc && lpstmt->dbc->ddic)
-            ddic = lpstmt->dbc->ddic;
-    else
-        throw_tx_error(ctx,h,"open sql");
-
-    TXresetproperties(ddic);
-
-#define duk_tx_set_prop(prop,val) \
-if(setprop(ddic, prop, val )==-1)\
-    throw_tx_error(ctx,h,"sql set");
-
-    duk_tx_set_prop("querysettings","defaults");
-
-    /* rampart defaults */
-    if(rampartdef)
-    {
-        duk_tx_set_prop("strlsttovarcharmode","json");
-        duk_tx_set_prop("varchartostrlstmode","json");
-        TXunneededRexEscapeWarning = 0; //silence rex escape warnings
-    }
-    else
-        TXunneededRexEscapeWarning = 1;
-}
 
 /* 
     reset defaults if they've been changed by another javascript sql handle 
@@ -3323,13 +3290,12 @@ void reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
         handle_no = duk_get_int(ctx, -1);
         duk_pop(ctx);
 
+        // see rampart-server.c:initThread - last_handle is set to -2 upon thread ctx creation
+        // to force a reset of all settings that may have been set in main_ctx, but not applied to this thread/fork
         if(duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no")))
             last_handle_no = duk_get_int(ctx, -1);
         duk_pop(ctx); 
     }
-
-//    duk_push_global_object(ctx);
-//    if(duk_has_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sql_needs_reset")))
 
     //if hard reset, or  we've set a setting before and it was made by a different sql handel
     if( this_idx < 0 || (last_handle_no != -1       &&  last_handle_no != handle_no) )
@@ -3337,15 +3303,8 @@ void reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
         char errbuf[1024];
         int ret;
 
-        duk_push_object(ctx);
-        /* vortex defaults */
-        duk_push_string(ctx, "defaults");
-        duk_put_prop_string(ctx, -2, "querysettings");
-        /* rampart defaults: default to json for strlst in and out */
-        duk_push_string(ctx, "json");
-        duk_put_prop_string(ctx, -2, "strlsttovarcharmode");
-        duk_push_string(ctx, "json");
-        duk_put_prop_string(ctx, -2, "varchartostrlstmode");
+        if(!(duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_defaults"))))
+            RP_THROW(ctx, "internal error getting default settings");
 
         if(h->forkno) //going to a child proc
             ret = fork_set(ctx, h, errbuf);
@@ -3354,7 +3313,6 @@ void reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
 
         duk_pop(ctx); //{defaults:true} obj
 
-//        duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sql_needs_reset"));
 
         if(ret == -1)
             RP_THROW(ctx, "%s", errbuf);
@@ -3380,8 +3338,6 @@ void reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
             duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no"));
         }
     }
-
-//    duk_pop(ctx);//global obj
 }
 
 
@@ -3453,38 +3409,8 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
         for(i = 0; prop[i]; i++)
             prop[i] = tolower(prop[i]);
 
-        //check for default reset first
-        if (!strcmp ("defaults", prop))
-        {
-            if(duk_is_boolean(ctx, -1))
-            {
-                if (duk_get_boolean(ctx, -1) )
-                {
-                    set_tx_def(ctx, hcache, 1);
-                }
-                goto propnext;
-            }
-            if(duk_is_string(ctx, -1))
-                val=duk_get_string(ctx, -1);
-            else
-                goto default_err;
-            if(!strcasecmp("texis", val))
-            {
-                set_tx_def(ctx, hcache, 0);
-                goto propnext;
-            }
-            else if(!strcasecmp("rampart", val))
-            {
-                set_tx_def(ctx, hcache, 1);
-                goto propnext;
-            }
-
-            default_err:
-            sprintf(errbuf, "sql.set() - property defaults option requires a string('texis' or 'rampart') or a boolean");
-            return -1;
-        }
         /* a few aliases */
-        else if(!strcmp("listexp", prop) || !strcmp("listexpressions", prop))
+        if(!strcmp("listexp", prop) || !strcmp("listexpressions", prop))
             prop="lstexp";
         else if (!strcmp("listindextmp", prop) || !strcmp("listindextemp", prop) || !strcmp("lstindextemp", prop))
             prop="lstindextmp"; 
@@ -3802,12 +3728,26 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
     return 0;
 }
 
+static char *stringLower(const char *str)
+{
+    size_t len = strlen(str);
+    char *lower = NULL;
+    int i=0;
+
+    REMALLOC(lower, len+1);
+    for (; i < len; ++i) {
+        lower[i] = tolower((unsigned char)str[i]);
+    }
+    lower[i] = '\0';
+    return lower;
+}
+
 duk_ret_t duk_texis_set(duk_context *ctx)
 {
     const char *db;
     DB_HANDLE *hcache = NULL;
     int ret = 0, handle_no=0;
-    char errbuf[1024];
+    char errbuf[1024], *lowered;
 
     duk_push_this(ctx); //idx == 1
     // this should always be true
@@ -3842,27 +3782,28 @@ duk_ret_t duk_texis_set(duk_context *ctx)
     if(! duk_get_prop_string(ctx, 1, DUK_HIDDEN_SYMBOL("sql_settings")) )
     {
         duk_pop(ctx);   // pop undefined,
-        duk_dup(ctx, 0); //stack = [ settings_obj this, settings_obj]
-        duk_put_prop_string(ctx, 1, 
-          DUK_HIDDEN_SYMBOL("sql_settings"));  // [ settings_object, this ]
-        duk_pop(ctx); // [ settings_object ]
+        duk_push_object(ctx); // [ settings_obj, this, new_empty_old_settings ]
     }
-    else
-    {     
-        // do equiv of combined_settings = Object.assign(old_settings, settings_obj)
-        
-        //stack = [ settings_obj, this , old_settings]
-        duk_get_global_string(ctx,"Object");   // [ settings_obj, this , old_settings, global.Object ]
-        duk_push_string(ctx, "assign");        // [ settings_obj, this , old_settings, global.Object, "assign" ]
-        duk_pull(ctx, 2);                      // [ settings_obj, this, global.Object, "assign", old_settings ]
-        duk_pull(ctx, 0);                      // [ this, global.Object, "assign", old_settings, settings_object ]
-        duk_call_prop(ctx, 1, 2);              // [ this, global.Object, combined_settings ]
-        duk_remove(ctx, 1);                    // [ this, combined_settings ]
-        duk_dup(ctx, -1);                      // [ this, combined_settings, combined_settings ]
-        duk_put_prop_string(ctx, 0, 
-          DUK_HIDDEN_SYMBOL("sql_settings"));  // [ this, combined_settings ]
-        duk_remove(ctx, 0);                    // [ combined_settings ]
+                                       //stack = [ settings_obj, this, old_settings ]
+
+    /* copy properties, renamed as lowercase, into saved old settings */
+    duk_enum(ctx, 0, 0);                      // [ settings_obj, this, old_settings, enum_obj ]
+    while (duk_next(ctx, -1, 1))
+    {
+        //  inside loop -                        [ settings_obj, this , old_settings, enum_obj, key, val ]
+        const char *k = duk_get_string(ctx, -2);
+        lowered = stringLower(k);
+        duk_put_prop_string(ctx, 2, lowered); // [ settings_obj, this , old_settings, enum_obj, key ]
+        free(lowered);
+        duk_pop(ctx);                         // [ settings_obj, this , old_settings, enum_obj ]
     }
+    duk_pop(ctx);                             // [ settings_obj, this, combined_settings ]
+    duk_remove(ctx, 0);                       // [ this , combined_settings ]
+
+    duk_dup(ctx, -1);                         // [ this , combined_settings, combined_settings ]
+    duk_put_prop_string(ctx, 0, 
+      DUK_HIDDEN_SYMBOL("sql_settings"));     // [ this, combined_settings ]
+    duk_remove(ctx, 0);                       // [ combined_settings ]
 
     /* going to a child proc */
     if(hcache->forkno)
@@ -3951,6 +3892,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     int sql_handle_no = 0;
     const char *db = duk_get_string(ctx, 0);
     char pbuf[msgbufsz];
+    DB_HANDLE *h;
 
     /* allow call to Sql() with "new Sql()" only */
     if (!duk_is_constructor_call(ctx))
@@ -3967,7 +3909,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     {
         CRLOCK
         /* check for db first */
-        DB_HANDLE *h = h_open( (char*)db, fromContext, ctx );
+        h = h_open( (char*)db, fromContext, ctx );
         if (!h || (h->tx == NULL && !h->forkno) )
         {
             /* don't log the error */
@@ -4017,22 +3959,36 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     SET_THREAD_UNSAFE(ctx);
 
     TXunneededRexEscapeWarning = 0; //silence rex escape warnings
-    /* settings object for defaults*/
-    duk_push_object(ctx);
-    /* vortex defaults */
-    duk_push_string(ctx, "defaults");
-    duk_put_prop_string(ctx, -2, "querysettings");
-    /* rampart defaults: default to json for strlst in and out */
-    duk_push_string(ctx, "json");
-    duk_put_prop_string(ctx, -2, "strlsttovarcharmode");
-    duk_push_string(ctx, "json");
-    duk_put_prop_string(ctx, -2, "varchartostrlstmode");
-    // put object at index 0 and get rid of everything else.
-    duk_insert(ctx, 0);
-    while(duk_get_top(ctx)>1)
-        duk_pop(ctx);
 
-    (void)duk_texis_set(ctx);
+    if(!(duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_defaults"))))
+    {
+        /* settings object for defaults*/
+        duk_push_object(ctx);
+        /* vortex defaults */
+        duk_push_string(ctx, "defaults");
+        duk_put_prop_string(ctx, -2, "querysettings");
+        /* rampart defaults: default to json for strlst in and out */
+        duk_push_string(ctx, "json");
+        duk_put_prop_string(ctx, -2, "strlsttovarcharmode");
+        duk_push_string(ctx, "json");
+        duk_put_prop_string(ctx, -2, "varchartostrlstmode");
+        // put object at index 0 and get rid of everything else.
+        duk_push_int(ctx, 500);
+        duk_put_prop_string(ctx, -2, "likepproximity");
+        duk_push_int(ctx, 500);
+        duk_put_prop_string(ctx, -2, "likepleadbias");
+        duk_push_int(ctx, 500);
+        duk_put_prop_string(ctx, -2, "likeporder");
+        duk_push_int(ctx, 500);
+        duk_put_prop_string(ctx, -2, "likepdocfreq");
+        duk_push_int(ctx, 500);
+        duk_put_prop_string(ctx, -2, "likeptblfreq");
+        duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_defaults"));
+    }
+
+    h = h_open( (char*)db, fromContext, ctx );
+    reset_tx_default(ctx, h, -1);
+    h_close(h);
 
     return 0;
 }

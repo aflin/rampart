@@ -3022,11 +3022,6 @@ static void *http_dothread(void *arg)
         has_content = push_req_vars(dhs);
     }
 
-    // set flag that function is being called anew
-    // Used for sql.exec to know when to reset texis defaults
-    duk_push_true(ctx);
-    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_needs_reset"));
-
     //put a copy out of the way for a moment
     duk_dup(ctx,-1);
     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("reqobj"));
@@ -3850,42 +3845,14 @@ char *bind_sock_port(evhtp_t *htp, const char *ip, uint16_t port, int backlog)
     return NULL;
 }
 
+/*
 void testcb(evhtp_request_t *req, void *arg)
 {
     char rep[] = "hello world";
-    /*
-    TODO: figure out keepalive problem
-    evhtp_request_set_keepalive(req, 1);
-    evhtp_headers_add_header(req->headers_out, evhtp_header_new("Connection","keep-alive", 0, 0));
-    */
-    /*sleep(1);
-    printf("%d\n",(int)pthread_self());
-    fflush(stdout);*/
     evbuffer_add_printf(req->buffer_out, "%s", rep);
-//    sendresp(req, EVHTP_RES_OK);
     evhtp_send_reply(req, EVHTP_RES_OK); // for pure speed in testing - no logs
 }
-
-void exitcb(evhtp_request_t *req, void *arg)
-{
-    //duk_context *ctx=arg;
-    char rep[] = "exit";
-    int i = 0;
-
-    evbuffer_add_reference(req->buffer_out, rep, strlen(rep), NULL, NULL);
-    sendresp(req, EVHTP_RES_OK);
-    for (; i < totnthreads; i++)
-    {
-        //duk_rp_sql_close(thread_ctx[i]);
-        duk_destroy_heap(thread_ctx[i]);
-    }
-    //duk_rp_sql_close(main_ctx);
-    duk_destroy_heap(main_ctx);
-    free(thread_ctx);
-    exit(0);
-}
-
-
+*/
 
 void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
 {
@@ -3928,6 +3895,11 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     duk_pop(ctx);
     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("thread_funcstash"));
 
+    //a special reset for sql module so that new thread/fork will have settings reapplied
+    //in rampart-sql.c:reset_tx_default
+    duk_push_int(ctx, -2);
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no"));
+
     /* for websocket requests, no timeout */
     ctx=thread_ctx[*thrno+totnthreads];
     duk_push_global_stash(ctx);
@@ -3935,6 +3907,12 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     duk_put_prop_string(ctx, -2, "elbase");
     duk_pop(ctx);
     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("thread_funcstash"));
+
+    //a special reset for sql module so that new thread/fork will have settings reapplied
+    //in rampart-sql.c:reset_tx_default
+    duk_push_int(ctx, -2);
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no"));
+
 
     thread_base[*thrno]=base;
     pthread_mutex_unlock(&ctxlock);
@@ -4672,11 +4650,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     evhtp_set_max_keepalive_requests(htp, 128);
     evhtp_set_max_body_size(htp, max_body_size);
+
     /* testing for pure c benchmarking*
     evhtp_set_cb(htp, "/test", testcb, NULL);
-
-    * testing, quick semi clean exit *
-    evhtp_set_cb(htp, "/exit", exitcb, ctx);
     */
     /* file system and function mapping */
 
