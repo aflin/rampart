@@ -1552,7 +1552,7 @@ static int child_set(SFI *finfo, int *idx)
         /* this is only filled if ret < 0 
            and is error text to be sent back to JS  */
         if( ret < 0 )
-            strncpy(finfo->mapinfo->mem, errbuf, 1023);
+            memcpy(finfo->mapinfo->mem, errbuf, 1024);
 
         /*there's some JS data in an object that needs to be sent back */
         else if (ret > 0 )
@@ -3303,40 +3303,39 @@ void reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
         char errbuf[1024];
         int ret;
 
-        if(!(duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_defaults"))))
-            RP_THROW(ctx, "internal error getting default settings");
+        if (this_idx > -1) //we reapply old setting
+        {
+            if (!duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("sql_settings")) )
+            {
+                //we have no old settings
+                duk_pop(ctx);//undefined
+                duk_push_object(ctx); //empty object, reset anyway
+            }
 
-        if(h->forkno) //going to a child proc
+        }
+        else // just reset, don't apply settings
+        {
+            duk_push_object(ctx);
+        }
+
+        //if empty object, all settings will be reset to default
+
+        // set the reset and settings if any
+        if(h->forkno)
             ret = fork_set(ctx, h, errbuf);
-        else // handled by this proc
+        else
             ret = sql_set(ctx, h, errbuf);
 
-        duk_pop(ctx); //{defaults:true} obj
-
+        duk_pop(ctx);// no longer need settings object on stack
 
         if(ret == -1)
             RP_THROW(ctx, "%s", errbuf);
         else if (ret ==-2)
             throw_tx_error(ctx, h, errbuf);
 
-        if (this_idx > -1) //we reapply old setting
-        {
-            if (duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("sql_settings")) )
-            {
-                if(h->forkno)
-                    ret = fork_set(ctx, h, errbuf);
-                else
-                    ret = sql_set(ctx, h, errbuf);
-                if(ret == -1)
-                    RP_THROW(ctx, "%s", errbuf);
-                else if (ret ==-2)
-                    throw_tx_error(ctx, h, errbuf);
-                
-            }
-            duk_pop(ctx);
-            duk_push_int(ctx, handle_no);
-            duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no"));
-        }
+        //set this javascript sql handle as the last to have applied settings
+        duk_push_int(ctx, handle_no);
+        duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no"));
     }
 }
 
@@ -3391,6 +3390,29 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
         return -2;
     }
 
+    // check for a full reset and do that first
+    // this should remain undocumented
+    // FIXME: we are probably at the point where this is always done.
+
+    //cumulative settings are always set, so reset to default here and reapply
+    TXresetproperties(ddic);
+    if(setprop(ddic, "querysettings", "defaults" )==-1)
+    {
+        sprintf(errbuf, "sql set");
+        return -2;
+    }
+    if(setprop(ddic, "strlsttovarcharmode", "json" )==-1)
+    {
+        sprintf(errbuf, "sql set");
+        return -2;
+    }
+    if(setprop(ddic, "varchartostrlstmode", "json" )==-1)
+    {
+        sprintf(errbuf, "sql set");
+        return -2;
+    }
+
+    // apply all settings in object
     duk_enum(ctx, -1, 0);
     while (duk_next(ctx, -1, 1))
     {
@@ -3958,37 +3980,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     //currently unused, probably can be removed:
     SET_THREAD_UNSAFE(ctx);
 
-    TXunneededRexEscapeWarning = 0; //silence rex escape warnings
-
-    if(!(duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_defaults"))))
-    {
-        /* settings object for defaults*/
-        duk_push_object(ctx);
-        /* vortex defaults */
-        duk_push_string(ctx, "defaults");
-        duk_put_prop_string(ctx, -2, "querysettings");
-        /* rampart defaults: default to json for strlst in and out */
-        duk_push_string(ctx, "json");
-        duk_put_prop_string(ctx, -2, "strlsttovarcharmode");
-        duk_push_string(ctx, "json");
-        duk_put_prop_string(ctx, -2, "varchartostrlstmode");
-        // put object at index 0 and get rid of everything else.
-        duk_push_int(ctx, 500);
-        duk_put_prop_string(ctx, -2, "likepproximity");
-        duk_push_int(ctx, 500);
-        duk_put_prop_string(ctx, -2, "likepleadbias");
-        duk_push_int(ctx, 500);
-        duk_put_prop_string(ctx, -2, "likeporder");
-        duk_push_int(ctx, 500);
-        duk_put_prop_string(ctx, -2, "likepdocfreq");
-        duk_push_int(ctx, 500);
-        duk_put_prop_string(ctx, -2, "likeptblfreq");
-        duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_defaults"));
-    }
-
-    h = h_open( (char*)db, fromContext, ctx );
-    reset_tx_default(ctx, h, -1);
-    h_close(h);
+    //TXunneededRexEscapeWarning = 0; //silence rex escape warnings
 
     return 0;
 }
