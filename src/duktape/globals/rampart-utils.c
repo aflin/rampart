@@ -2591,21 +2591,106 @@ duk_ret_t duk_rp_nsleep(duk_context *ctx)
     return 0;
 }
 
+#define ULOCK struct utils_mlock_s
+
+ULOCK {
+    pthread_mutex_t lock;
+    char *name;
+};
+
+static int nulocks=0;
+
+static ULOCK **ulocks=NULL;
+
+pthread_mutex_t ulock_lock;
+
+#define LOCK_ULOCK do {\
+    if (pthread_mutex_lock(&ulock_lock) == EINVAL)\
+        {fprintf(stderr,"could not obtain lock for main context\n");exit(1);}\
+} while(0)
+
+#define UNLOCK_ULOCK  do{\
+    pthread_mutex_unlock(&ulock_lock);\
+} while(0)
+
+
+#define CREATE_LOCK 0
+#define NO_CREATE_LOCK 1
+#define DEL_LOCK 2
+
+//mode=0 - create lock if not found
+//mode=1 - return existing or NULL
+//mode=2 - mark unused if exists
+pthread_mutex_t * get_lock(const char *name, int mode)
+{
+    int i=0, first_unused=-1;
+    ULOCK *l=NULL;
+
+    LOCK_ULOCK;
+    //find existing
+    while(i<nulocks)
+    {
+        l=ulocks[i];
+        if(l->name!=NULL && !strcmp(l->name,name))
+        {
+            if(mode != DEL_LOCK) // if CREATE_LOCK or NO_CREATE_LOCK, return found lock
+            {
+                UNLOCK_ULOCK;
+                return(&(l->lock));
+            }
+            else //if DEL_LOCK, free name, mark as unused
+            {
+                free(l->name);
+                l->name=NULL;
+                UNLOCK_ULOCK;
+                return NULL;
+            }
+        }
+        if(first_unused<0 && l->name==NULL)
+            first_unused=i;
+        i++;
+    }
+    //doesn't exist, if NO_CREATE_LOCK or DEL_LOCK, return NULL
+    if(mode!=CREATE_LOCK)
+    {
+        UNLOCK_ULOCK;
+        return NULL;
+    }
+
+    // if CREATE_LOCK:
+
+    // there's an empty slot, use it.
+    if(first_unused>-1)
+    {
+        l=ulocks[first_unused];
+        l->name=strdup(name);
+        UNLOCK_ULOCK;
+        return(&(l->lock));
+    }
+
+    //mode=0 and doesn't exist, create the struct, init the lock
+    nulocks++;
+    REMALLOC(ulocks, nulocks * sizeof(ULOCK *) );
+    l=NULL;
+    REMALLOC(l,sizeof(ULOCK));
+    ulocks[nulocks-1]=l;
+
+    if (pthread_mutex_init(&(l->lock), NULL) == EINVAL)
+    {
+        UNLOCK_ULOCK;
+        return NULL; //with CREATE_LOCK NULL=error
+    }
+    l->name=strdup(name);
+    UNLOCK_ULOCK;
+    return(&(l->lock));
+}
+
 duk_ret_t duk_rp_mlock_fin(duk_context *ctx)
 {
-    pthread_mutex_t *lock;
-
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("mlock"));
-    lock = duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
-
-    if(lock)
-    {
-        pthread_mutex_unlock(lock);
-        free(lock);
-        duk_push_pointer(ctx, (void *) NULL);
-        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("mlock"));
-    }
+    const char *name;
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("mlock_name"));
+    name=duk_get_string(ctx, -1);
+    get_lock(name, DEL_LOCK);
     return 0;
 }
 
@@ -2618,51 +2703,56 @@ duk_ret_t duk_rp_mlock_destroy (duk_context *ctx)
 
 duk_ret_t duk_rp_mlock_constructor(duk_context *ctx)
 {
-    pthread_mutex_t *newlock=NULL;
+    pthread_mutex_t *newlock;
+    const char *lockname;
 
     if (!duk_is_constructor_call(ctx))
-    {
-        return DUK_RET_TYPE_ERROR;
-    }
+        RP_THROW(ctx, "rampart.utils.mlock is a constructor (must be called with 'new rampart.utils.mlock()')");
 
-    DUKREMALLOC(ctx, newlock, sizeof(pthread_mutex_t) );
-
-    if (pthread_mutex_init(newlock, NULL) == EINVAL)
-        RP_THROW(ctx,"mlock(): error - could not initialize file handle lock");
-
+    lockname=REQUIRE_STRING(ctx, 0, "rampart.utils.mlock - String required as first/only parameter (lock_name)");
 
     duk_push_this(ctx);
-    duk_push_pointer(ctx, (void *)newlock);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("mlock"));
+    duk_push_string(ctx, lockname);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("mlock_name"));
 
-    duk_push_c_function(ctx, duk_rp_mlock_fin, 1);
-    duk_set_finalizer(ctx, -2);
+    newlock=get_lock(lockname, CREATE_LOCK);
+    
+    if(!newlock)
+        RP_THROW(ctx, "new rampart.utils.mlock - internal error creating lock");
     return 0;
 }
 
 duk_ret_t duk_rp_mlock_lock (duk_context *ctx)
 {
     pthread_mutex_t *lock;
+    const char *name;
+
     duk_push_this(ctx);
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("mlock"));
-    lock=(pthread_mutex_t *)duk_get_pointer(ctx, -1);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("mlock_name"));
+    name=duk_get_string(ctx, -1);
+    lock = get_lock(name, NO_CREATE_LOCK);
+
     if(!lock)
-        RP_THROW(ctx, "mlock(): error - lock already destroyed\n");
+        RP_THROW(ctx, "mlock(): error - lock already destroyed");
     if (pthread_mutex_lock(lock) == EINVAL)
-        RP_THROW(ctx, "mlock(): error - could not obtain lock\n");
+        RP_THROW(ctx, "mlock(): error - could not obtain lock");
     return 0;
 }
 
 duk_ret_t duk_rp_mlock_unlock (duk_context *ctx)
 {
     pthread_mutex_t *lock;
+    const char *name;
+
     duk_push_this(ctx);
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("mlock"));
-    lock=(pthread_mutex_t *)duk_get_pointer(ctx, -1);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("mlock_name"));
+    name=duk_get_string(ctx, -1);
+    lock = get_lock(name, NO_CREATE_LOCK);
+
     if(!lock)
-        RP_THROW(ctx, "mlock(): error - lock already destroyed\n");
+        RP_THROW(ctx, "munlock(): error - lock already destroyed");
     if (pthread_mutex_unlock(lock) == EINVAL)
-        RP_THROW(ctx, "mlock(): error - could not obtain lock\n");
+        RP_THROW(ctx, "munlock(): error - could not obtain lock");
     return 0;
 }
 
@@ -2774,7 +2864,7 @@ void duk_rampart_init(duk_context *ctx)
     /* populate utils object with functions */
 
     //mlock
-    duk_push_c_function(ctx, duk_rp_mlock_constructor, 0);
+    duk_push_c_function(ctx, duk_rp_mlock_constructor, 1);
     duk_push_object(ctx);
     duk_push_c_function(ctx, duk_rp_mlock_lock, 0);
     duk_put_prop_string(ctx, -2, "lock");
@@ -2784,6 +2874,12 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "destroy");
     duk_put_prop_string(ctx, -2, "prototype");
     duk_put_prop_string(ctx, -2, "mlock");
+
+    if (pthread_mutex_init(&ulock_lock, NULL) == EINVAL)
+    {
+        RP_THROW(ctx, "rampart.utils - error initializing mlock lock");
+    }
+
     //end mlock
 
     duk_push_c_function(ctx, duk_rp_hexify, 2);
