@@ -58,7 +58,7 @@ QUERY_STRUCT
 
 duk_ret_t duk_rp_sql_close(duk_context *ctx);
 
-extern int TXunneededRexEscapeWarning;
+//extern int TXunneededRexEscapeWarning;
 int texis_resetparams(TEXIS *tx);
 int texis_cancel(TEXIS *tx);
 /*
@@ -3923,32 +3923,33 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     }
     g_hcache_pid = getpid();
 
-    /* 
-     if sql=new Sql("/db/path",true), we will 
-     create the db if it does not exist 
-    */
-    if (duk_is_boolean(ctx, 1) && duk_get_boolean(ctx, 1) != 0)
+    /* check for db first */
+    h = h_open( (char*)db, fromContext, ctx );
+    if (!h || (h->tx == NULL && !h->forkno) )
     {
-        CRLOCK
-        /* check for db first */
-        h = h_open( (char*)db, fromContext, ctx );
-        if (!h || (h->tx == NULL && !h->forkno) )
+        /* 
+         if sql=new Sql("/db/path",true), we will 
+         create the db if it does not exist 
+        */
+        if (duk_is_boolean(ctx, 1) && duk_get_boolean(ctx, 1) != 0)
         {
-            /* don't log the error */
-            //fclose(mmsgfh);
-            //mmsgfh = fmemopen(NULL, msgbufsz, "w+");
+            CRLOCK
             clearmsgbuf();
             if (!createdb(db))
             {
                 duk_rp_log_tx_error(ctx,h,pbuf);
                 CRUNLOCK
-                RP_THROW(ctx, "cannot create database at '%s' (root path not found, lacking permission or other error\n%s)", db, pbuf);
+                RP_THROW(ctx, "cannot create database at '%s' - root path not found, lacking permission or other error\n%s)", db, pbuf);
             }
+            CRUNLOCK
         }
-        duk_rp_log_tx_error(ctx,h,pbuf); /* log any non fatal errors to this.errMsg */
-        h_close(h);
-        CRUNLOCK
+        else
+        {
+            RP_THROW(ctx, "cannot open database at '%s'\n%s", db, pbuf);
+        }
     }
+    duk_rp_log_tx_error(ctx,h,pbuf); /* log any non fatal errors to this.errMsg */
+    h_close(h);
 
     /* save the name of the database in 'this' */
     duk_push_this(ctx); /* -> stack: [ db this ] */
