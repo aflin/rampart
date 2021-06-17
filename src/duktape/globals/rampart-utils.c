@@ -1158,134 +1158,6 @@ duk_ret_t duk_rp_readln_finalizer(duk_context *ctx)
     return 0;
 }
 
-#ifdef FORGET_ABOUT_READLN
-/* TODO:  ask Ben to fix this.  Or better yet, just skip it.
-   var rl=readln("./file.txt")[Symbol.iterator]();
-   var res=rl.next();
-   while (!res.done) {
-       console.log(res.value);
-       rex=rl.next();
-   }
- 
-  The typo "rex=rl.next();" caused this:
-    corrupted double-linked list
-    Aborted
-*/
-
-duk_ret_t duk_rp_readln_iter(duk_context *ctx)
-{
-    duk_push_this(ctx);
-
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filename"));
-    const char *filename = duk_get_string(ctx, -1);
-    duk_pop(ctx);
-
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filepointer"));
-    FILE *fp = duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
-
-    // already at the end of the iterator
-    if (fp == NULL)
-    {
-        // return object
-        duk_push_object(ctx);
-
-        duk_push_null(ctx);
-        duk_put_prop_string(ctx, -2, "value");
-
-        duk_push_boolean(ctx, 0);
-        duk_put_prop_string(ctx, -2, "done");
-        return 1;
-    }
-
-    {
-        char *line = NULL;
-        size_t len = 0;
-        int nread;
-
-        errno = 0;
-        nread = getline(&line, &len, fp);
-        if (errno)
-        {
-            free(line);
-            RP_THROW(ctx, "readln(): error reading file '%s': %s", filename, strerror(errno));
-        }
-        // return object
-        duk_push_object(ctx);
-
-        if (nread != -1)
-        {
-            duk_push_string(ctx, line);
-            duk_put_prop_string(ctx, -2, "value");
-        }
-        else
-        {
-            duk_push_undefined(ctx);
-            duk_put_prop_string(ctx, -2, "value");
-        }
-
-        duk_push_boolean(ctx, nread == -1);
-        duk_put_prop_string(ctx, -2, "done");
-
-        if (nread == -1)
-        {
-            duk_push_pointer(ctx, NULL);
-            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
-            fclose(fp);
-        }
-
-        free(line);
-        return 1;
-    }
-}
-
-
-/**
- * Reads a file line by line using getline and javascript iterators.
- * @param {string} filename - the path to the file to be read.
- * @returns {Iterator} an object with a Symbol.iterator.
- */
- 
- 
-duk_ret_t duk_rp_readln(duk_context *ctx)
-{
-    const char *filename = duk_require_string(ctx, -1);
-    FILE *fp = fopen(filename, "r");
-
-    if (fp == NULL)
-        RP_THROW(ctx, "readln(): error opening '%s': %s", filename, strerror(errno));
-
-    // return object
-    duk_push_object(ctx);
-
-    // [Symbol.iterator] function
-    duk_push_string(ctx, "(function() { return function getiter(iter) { return (function () { return iter; }); }})()");
-    duk_eval(ctx);
-
-    // iterator object
-    duk_push_object(ctx);
-
-    // add fp, filename and finalizer
-    duk_push_pointer(ctx, fp);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
-
-    duk_push_string(ctx, filename);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filename"));
-
-    duk_push_c_function(ctx, duk_rp_readln_finalizer, 1);
-    duk_set_finalizer(ctx, -2);
-
-    // next
-    duk_push_c_function(ctx, duk_rp_readln_iter, 0);
-    duk_put_prop_string(ctx, -2, "next");
-    duk_call(ctx, 1);
-
-    // iterator function is at top of stack
-    duk_put_prop_string(ctx, -2, DUK_WELLKNOWN_SYMBOL("Symbol.iterator"));
-
-    return 1;
-}
-#endif //FORGET_ABOUT_READLN
 
 static duk_ret_t readline_next(duk_context *ctx)
 {
@@ -1345,12 +1217,29 @@ duk_ret_t duk_rp_readline(duk_context *ctx)
     const char *filename;
     FILE *fp;
 
-    filename = duk_require_string(ctx, 0);
+    if (duk_is_object(ctx, 0))
+    {
+        if(duk_get_prop_string(ctx, 0, "stream")){\
+            const char *s=REQUIRE_STRING(ctx,-1, "error: readline({stream:\"streamName\"},...): streamName must be stdin");
+            if (strcmp(s,"stdin")!=0)
+                RP_THROW(ctx, "error: readline(stream) - must be stdin\n");
+            
+        }
+        else
+            RP_THROW(ctx, "readline - first argument must be a string or rampart.utils.stdin");
 
-    fp = fopen(filename, "r");
-    if (fp == NULL)
-        RP_THROW(ctx, "readLine(): error opening '%s': %s", filename, strerror(errno));
+        filename="stdin";
+        fp=stdin;
 
+    }
+    else
+    {
+        filename = REQUIRE_STRING(ctx, 0, "readline - first argument must be a string or rampart.utils.stdin");
+
+        fp = fopen(filename, "r");
+        if (fp == NULL)
+            RP_THROW(ctx, "readLine(): error opening '%s': %s", filename, strerror(errno));
+    }
     duk_push_object(ctx);
 
     duk_push_string(ctx,filename);
@@ -1714,7 +1603,10 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     }
 
     if(stdin_txt)
+    {
         write(stdin_pipe[1], stdin_txt, (size_t)stdin_sz);
+        close(stdin_pipe[1]);
+    }
 
     if (background)
     {
