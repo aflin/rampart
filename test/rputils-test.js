@@ -93,7 +93,7 @@ testFeature("readLine/trim",function(){
 
 testFeature("stat",function(){
     var st=stat("/dev/null");
-    return st.isCharacterDevice();
+    return st.isCharacterDevice;
 });
 
 
@@ -154,7 +154,7 @@ testFeature("copy/delete",function(){
 
 testFeature("symlink/delete/lstat",function(){
     symlink(thisfile,"test1.js");
-    var islink=lstat("test1.js").isSymbolicLink();
+    var islink=lstat("test1.js").isSymbolicLink;
     var diff=shell("diff "+ thisfile +" test1.js");
     rmFile("test1.js");
     var stat2=stat("test1.js");

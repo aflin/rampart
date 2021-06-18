@@ -1269,33 +1269,12 @@ duk_ret_t duk_rp_readline(duk_context *ctx)
         duk_put_prop_string(ctx, idx, key); \
     }
 
-#define DUK_UTIL_STAT_TEST_MODE(mode, test)             \
-    duk_ret_t duk_util_stat_is_##mode(duk_context *ctx) \
-    {                                                   \
-        duk_push_this(ctx);                             \
-        duk_get_prop_string(ctx, -1, "mode");           \
-        int mode = duk_require_int(ctx, -1);            \
-        duk_push_boolean(ctx, test(mode));              \
-        return 1;                                       \
-    }
+#define push_is_test(propname, test) do{\
+    duk_push_boolean(ctx, test(path_stat.st_mode));\
+    duk_put_prop_string(ctx, -2, propname);\
+} while(0)
 
-DUK_UTIL_STAT_TEST_MODE(block_device, S_ISBLK);
-DUK_UTIL_STAT_TEST_MODE(character_device, S_ISCHR);
-DUK_UTIL_STAT_TEST_MODE(directory, S_ISDIR);
-DUK_UTIL_STAT_TEST_MODE(fifo, S_ISFIFO);
-DUK_UTIL_STAT_TEST_MODE(file, S_ISREG);
-DUK_UTIL_STAT_TEST_MODE(socket, S_ISSOCK);
-DUK_UTIL_STAT_TEST_MODE(symbolic_link, S_ISLNK);
 
-static const duk_function_list_entry stat_methods[] = {
-    {"isBlockDevice", duk_util_stat_is_block_device, 0},
-    {"isCharacterDevice", duk_util_stat_is_character_device, 0},
-    {"isDirectory", duk_util_stat_is_directory, 0},
-    {"isFIFO", duk_util_stat_is_fifo, 0},
-    {"isFile", duk_util_stat_is_file, 0},
-    {"isSocket", duk_util_stat_is_socket, 0},
-//    {"isSymbolicLink", duk_util_stat_is_symbolic_link, 0},
-    {NULL, NULL, 0}};
 /**
  *  Filesystem stat
  *  @typedef {Object} StatObject
@@ -1391,16 +1370,15 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
     duk_new(ctx, 1);
     duk_put_prop_string(ctx, -2, "ctime");
 
-    // add methods
-    duk_put_function_list(ctx, -1, stat_methods);
+    push_is_test("isBlockDevice",S_ISBLK);
+    push_is_test("isCharacterDevice",S_ISCHR);
+    push_is_test("isDirectory",S_ISDIR);
+    push_is_test("isFIFO",S_ISFIFO);
+    push_is_test("isFile",S_ISREG);
+    push_is_test("isSocket",S_ISSOCK);
     if(islstat)
-    {
-        duk_push_c_function(ctx,duk_util_stat_is_symbolic_link, 0);
-        duk_put_prop_string(ctx,-2,"isSymbolicLink");
-    }
+        push_is_test("isSymbolicLink", S_ISLNK);
 
-
-    // see duktape function interface
     return 1;
 }
 
