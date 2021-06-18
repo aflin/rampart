@@ -151,15 +151,6 @@ extern int totnthreads;
     r;\
 })
 
-/* this is almost certainly wrong */
-#define DUKREMALLOC(ctx, s, t)                 \
-    (s) = realloc((s), (t));                   \
-    if ((char *)(s) == (char *)NULL)           \
-    {                                          \
-        duk_push_string((ctx), "alloc error"); \
-        (void)duk_throw((ctx));                \
-    }
-
 #define REMALLOC(s, t) /*printf("malloc=%d\n",(int)t);*/ \
     (s) = realloc((s), (t));                             \
     if ((char *)(s) == (char *)NULL)                     \

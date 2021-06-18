@@ -304,7 +304,7 @@ duk_pop(ctx);\
         normalizeCSV(csv);        // examine each column and force data type to the majority 
 
     /* COLUMN NAMES */
-    DUKREMALLOC(ctx, hnames, (csv->cols+1) * sizeof(char *)); 
+    REMALLOC(hnames, (csv->cols+1) * sizeof(char *)); 
     if (dcsv.hasHeader)
     {
         for(col=0;col<csv->cols;col++)

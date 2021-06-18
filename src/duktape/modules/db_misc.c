@@ -902,7 +902,7 @@ duk_ret_t dosearchfile(duk_context *ctx, const char *search, const char *file, A
     duk_put_prop_string(ctx, -2, (name) );\
 }while(0)
 */
-    DUKREMALLOC(ctx, buf, RDBUFSZ);
+    REMALLOC(buf, RDBUFSZ);
     duk_push_array(ctx);
 
     for(bufbase=0L,nread=rdmmapi((byte *)buf,RDBUFSZ,fh,mm); /* seed read */
@@ -1011,7 +1011,7 @@ static byte **arglst (duk_context *ctx, char *optname, byte **var)
         free(var);                                 /* free the list memory */
     }
     var=NULL;
-    DUKREMALLOC(ctx, var, (len+1)*sizeof(byte *) );
+    REMALLOC(var, (len+1)*sizeof(byte *) );
 
     for (i=0;i<len;i++)
     {

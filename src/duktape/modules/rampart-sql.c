@@ -2588,7 +2588,7 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
         while((fl = h_fetch(h, -1)))
         {
             /* an array of column names */
-            DUKREMALLOC(ctx, field_names, (tbcols+2) * sizeof(char*) );
+            REMALLOC(field_names, (tbcols+2) * sizeof(char*) );
             
             field_names[tbcols] = strdup(fl->data[0]);
             tbcols++;
@@ -3507,7 +3507,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
              * should be null or an array of strings ONLY              */
             if(duk_is_null(ctx, -1))
             {
-                DUKREMALLOC(ctx, nl, sizeof(char*) * 1);
+                REMALLOC(nl, sizeof(char*) * 1);
                 nl[0]=strdup("");
             }
             else if(duk_is_array(ctx, -1))
@@ -3516,7 +3516,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
 
                 i=0;
 
-                DUKREMALLOC(ctx, nl, sizeof(char*) * (len + 1));
+                REMALLOC(nl, sizeof(char*) * (len + 1));
 
                 while (i<len)
                 {

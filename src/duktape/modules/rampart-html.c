@@ -1407,7 +1407,7 @@ static void _findtxts(duk_context *ctx, duk_idx_t arr_idx, const char **txts, in
     if(findtype==findAttr)
     {
         int i=0;
-        DUKREMALLOC(ctx, txt2, ntxts * sizeof(const char *));
+        REMALLOC(txt2, ntxts * sizeof(const char *));
 
         for(;i<ntxts;i++)
         {
@@ -2594,7 +2594,7 @@ duk_ret_t duk_rp_html_find_(duk_context *ctx, int findtype, int filter)
 
     if(duk_is_string(ctx, 0))
     {
-        DUKREMALLOC(ctx, txts, sizeof(const char *));
+        REMALLOC(txts, sizeof(const char *));
         txts[0]=duk_get_string(ctx,0);
     }
     else if (duk_is_array(ctx,0))
@@ -2602,7 +2602,7 @@ duk_ret_t duk_rp_html_find_(duk_context *ctx, int findtype, int filter)
         int i=0;
 
         ntxt=(int)duk_get_length(ctx, 0);
-        DUKREMALLOC(ctx, txts, ntxt * sizeof(const char *));
+        REMALLOC(txts, ntxt * sizeof(const char *));
 
         for (;i<ntxt;i++)
         {

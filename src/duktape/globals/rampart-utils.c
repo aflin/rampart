@@ -487,7 +487,7 @@ void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase)
     buf=(unsigned char *)duk_get_buffer_data(ctx,idx,&sz);
 
     end=buf+sz;
-    DUKREMALLOC(ctx,out,sz*2);
+    REMALLOC(out,sz*2);
     
     p=out;
     /* conver to lowercase hex */
@@ -1541,7 +1541,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 
     nargs = duk_get_length(ctx, -1);
 
-    DUKREMALLOC(ctx,args, (nargs + 1) * sizeof(char *));
+    REMALLOC(args, (nargs + 1) * sizeof(char *));
 
     for (i = 0; i < nargs; i++)
     {
@@ -3267,7 +3267,7 @@ duk_ret_t duk_fopen(duk_context *ctx)
     duk_push_pointer(ctx,(void *)f);
     duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("filehandle") );
 
-    DUKREMALLOC(ctx, newlock, sizeof(pthread_mutex_t) );
+    REMALLOC(newlock, sizeof(pthread_mutex_t) );
 
     if (pthread_mutex_init(newlock, NULL) == EINVAL)
         RP_THROW(ctx,"could not initialize file handle lock");

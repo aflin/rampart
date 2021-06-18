@@ -653,7 +653,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
         fprintf(stderr,"cannot open '%s': %s\n",pfill,strerror(errno));
         exit(1);
     }
-    DUKREMALLOC(ctx, babelcode, rppath.stat.st_size);
+    REMALLOC(babelcode, rppath.stat.st_size);
     read=fread(babelcode, 1, rppath.stat.st_size,f);
     if(read != rppath.stat.st_size)
     {
@@ -736,7 +736,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
             if(babstat.st_mtime >= src_mtime)
             {
                 /* load the cached file.babel.js */
-                DUKREMALLOC(ctx,babelcode,babstat.st_size);
+                REMALLOC(babelcode,babstat.st_size);
 
                 f=fopen(babelsrc,"r");
                 if(f==NULL)
