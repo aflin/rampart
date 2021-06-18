@@ -1277,29 +1277,73 @@ char **VXsandr ARGS((char **, char **, char **));
 static void sandr(duk_context *ctx, int re2)
 {
         int ns=0, nr=0, nt=0; //length of search, replace and text arrays. 0 if string
-        if(duk_get_top(ctx) != 3)
-            RP_THROW(ctx,"sandr: exactly three arguments required: search, replace, text_to_search\n");
 
+        //check if we have [ [s,r],[s2,r2],...]
         if(duk_is_array(ctx,0))
-            ns=(int)duk_get_length(ctx,0);
+        {
+            ns=(int)duk_get_length(ctx, 0);
+
+            if(!ns)
+                RP_THROW(ctx,"sandr: search (agr 1) array cannot be empty");
+            
+            if(duk_is_undefined(ctx,2))
+            {
+                int i=0;
+                duk_idx_t sidx,ridx;
+
+                duk_pop(ctx);//undefined
+                duk_push_array(ctx);
+                sidx=duk_get_top_index(ctx);
+                duk_push_array(ctx);
+                ridx=duk_get_top_index(ctx);
+
+                while(i<ns)
+                {
+                    duk_get_prop_index(ctx, 0, (duk_uarridx_t)i);
+                    if(!duk_is_array(ctx, -1))
+                        RP_THROW(ctx,"sandr: search/replace pairs (arg 1) must be an array of arrays");
+                    duk_get_prop_index(ctx, -1, 0);
+                    duk_put_prop_index(ctx, sidx, (duk_uarridx_t)i);
+                    duk_get_prop_index(ctx, -1, 1);
+                    if(duk_is_undefined(ctx, -1))
+                    {
+                        duk_pop(ctx);
+                        duk_push_string(ctx, "");
+                    }
+                    duk_put_prop_index(ctx, ridx, (duk_uarridx_t)i);
+                    duk_pop(ctx);
+                    i++;
+                }
+                duk_remove(ctx, 0);//old array or arrays
+                duk_insert(ctx, 0);//new replace array
+                duk_insert(ctx, 0);//rew search array
+                nr=(int)duk_get_length(ctx,1);
+            }
+            else
+            {
+                if(duk_get_top(ctx) != 3)
+                    RP_THROW(ctx,"sandr: exactly three arguments required: search, replace, text_to_search\n");
+
+                if(duk_is_array(ctx,1))
+                    nr=(int)duk_get_length(ctx,1);
+                else if (!duk_is_string(ctx,1))
+                    RP_THROW(ctx,"sandr: replace (arg 2) must be a string or array of strings");
+            }
+        }
         else if (!duk_is_string(ctx,0) && !duk_is_object(ctx,0))
             RP_THROW(ctx,"sandr: search (arg 1) must be a string/pattern or array of strings/patterns");
-
-        if(duk_is_array(ctx,1))
-            nr=(int)duk_get_length(ctx,1);
-        else if (!duk_is_string(ctx,1))
-            RP_THROW(ctx,"sandr: replace (arg 2) must be a string or array of strings");
 
         if(duk_is_array(ctx,2))
             nt=(int)duk_get_length(ctx,2);
         else if (!duk_is_string(ctx,2))
             RP_THROW(ctx,"sandr: text (arg 3) must be a string or array of strings");
 
-#define getstrings(s,idx,arg,argn) do{\
+#define getstrings(s,idx,arg) do{\
         int i=0;\
         duk_enum(ctx,idx,DUK_ENUM_ARRAY_INDICES_ONLY);\
         while (duk_next(ctx, -1, 1)) { \
-            if(!duk_is_string(ctx,-1)) {RP_THROW(ctx,"sandr: %s (arg %d) array must contain only strings",arg,argn);}\
+            if(duk_is_number(ctx, -1)) duk_to_string(ctx, -1);\
+            if(!duk_is_string(ctx,-1)) {RP_THROW(ctx,"sandr: %s array must contain only strings",arg);}\
             s[i]=(char*)duk_get_string(ctx,-1);\
             /*printf("%s[%d]=%s\n",arg,i,s[i]);*/\
             i++;\
@@ -1365,12 +1409,12 @@ static void sandr(duk_context *ctx, int re2)
             }
 
             if (nr)
-                getstrings(repl,1,"replace",2);
+                getstrings(repl,1,"replace");
             else
                 repl[0]=(char*)duk_get_string(ctx,1);
 
             if (nt)
-                getstrings(in,2,"text",3);
+                getstrings(in,2,"text");
             else
                 in[0]=(char*)duk_get_string(ctx,2);
 
