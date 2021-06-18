@@ -1434,8 +1434,11 @@ void *duk_rp_exec_thread_waitpid(void *arg)
                 REMALLOC(buf, size);                                                                        \
             }                                                                                               \
         }                                                                                                   \
-        if (nbytes < 0)                                                                                     \
+        if (nbytes < 0){                                                                                    \
+            free(args);                                                                                     \
+            if(env) free(env);                                                                              \
             RP_THROW(ctx, "exec(): could not read output buffer: %s", strerror(errno));                     \
+        }                                                                                                   \
     }
 
 /**
@@ -1472,11 +1475,11 @@ void *duk_rp_exec_thread_waitpid(void *arg)
  */
 duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 {
-    int kill_signal=SIGTERM, background=0, i=0;
+    int kill_signal=SIGTERM, background=0, i=0, len=0;
     unsigned int timeout=0;
     const char *path, *stdin_txt=NULL;
     duk_size_t stdin_sz;
-    char **args=NULL;
+    char **args=NULL, **env=NULL;
     duk_size_t nargs;
 
     // get options
@@ -1511,12 +1514,85 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     }
     duk_pop(ctx);
 
+
+    if(duk_get_prop_string(ctx, -1, "appendEnv") && duk_get_boolean_default(ctx,-1,0) )
+    {
+        char *env_s;
+        i=0;
+        while ( environ[i] != NULL )
+            i++;
+        len=i;
+        REMALLOC(env, (len + 1) * sizeof(char *));
+
+        i=0;
+        while ( (env_s=environ[i]) != NULL )
+        {
+            env[i]=env_s;
+            i++;
+        }
+        env[len]=NULL;
+    }
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, -1, "env"))
+    {
+        int start=len;
+        if(!duk_is_object(ctx, -1) || duk_is_function(ctx, -1))
+        {
+            if(env)
+                free(env);
+            RP_THROW(ctx, "exec(): option 'env' must be an object or array");
+        }
+
+        if(!duk_is_array(ctx, -1))
+        {
+            duk_uarridx_t arr_idx=0;
+            duk_push_array(ctx); //[..., envobj, array ]
+            duk_enum(ctx, -2, 0); // [..., envobj, array, enum ]
+            while (duk_next(ctx, -1, 1))
+            {
+                // [..., envobj, array, enum, key, val ]
+                if(duk_is_object(ctx, -1))
+                    duk_json_encode(ctx, -1);
+                duk_push_sprintf(ctx, "%s=%s", duk_get_string(ctx, -2), duk_safe_to_string(ctx, -1));
+                // [..., envobj, array, enum, key, val, "key=val" ]
+                duk_put_prop_index(ctx, -5, arr_idx);
+                // [..., envobj, array, enum, key, val ]
+                arr_idx++;
+                duk_pop_2(ctx);// [..., envobj, array, enum ]
+            }
+            duk_pop(ctx);// [..., envobj, array ]
+            duk_replace(ctx, -2); //[..., array ]
+            duk_dup(ctx, -1); //[opts_obj, array, array ]
+            duk_insert(ctx, 0);// put copy out of the way so strings won't be freed
+        }
+        len += duk_get_length(ctx, -1);
+        REMALLOC(env, (len + 1) * sizeof(char *));
+        for (i = start; i < len; i++)
+        {
+            duk_get_prop_index(ctx, -1, i-start);
+            if(!duk_is_string(ctx, -1))
+            {
+                free(env);
+                RP_THROW(ctx, "exec(): option 'env' - environment array must contain only strings");
+            }
+            env[i] = (char *)duk_get_string(ctx, -1);
+            duk_pop(ctx);
+        }
+        env[len]=NULL;
+    }
+    duk_pop(ctx);
+
+
     // get arguments into null terminated buffer
     duk_get_prop_string(ctx, -1, "args");
 
     if(!duk_is_array(ctx, -1))
+    {
+        if(env)
+            free(env);
         RP_THROW(ctx, "exec(): args value must be an Array");
-
+    }
     nargs = duk_get_length(ctx, -1);
 
     REMALLOC(args, (nargs + 1) * sizeof(char *));
@@ -1536,13 +1612,22 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     if (!background)
     {
         if (pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1|| pipe(stdin_pipe) == -1)
+        {
+            free(args);
+            if(env)
+                free(env);
             RP_THROW(ctx, "exec(): could not create pipe: %s", strerror(errno));
+        }
     }
 
     pid_t pid;
     if ((pid = fork()) == -1)
+    {
+        free(args);
+        if(env)
+            free(env);
         RP_THROW(ctx, "exec(): could not fork: %s", strerror(errno));
-
+    }
     else if (pid == 0)
     {
         if (!background)
@@ -1556,8 +1641,14 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
             close(stderr_pipe[0]);
             close(stdin_pipe[1]);
         }
-        execv(path, args);
-        fprintf(stderr, "exec(): could not execute %s\n", args[0]);
+        if(env)
+            execvpe(path, args, env);
+        else
+            execvp(path, args);
+        fprintf(stderr, "exec(): could not execute %s: %s\n", args[0], strerror(errno));
+        free(args);
+        if(env)
+            free(env);
         exit(EXIT_FAILURE);
     }
     // create thread for timeout
@@ -1646,19 +1737,22 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 duk_ret_t duk_rp_exec(duk_context *ctx)
 {
     duk_idx_t i=1, obj_idx=-1, top=duk_get_top(ctx), arr_idx;
-    char *comm=NULL, *s=NULL;
     duk_uarridx_t arrayi=0;
     duk_push_object(ctx); //object for exec_raw
     duk_push_array(ctx);  //array for args
 
     arr_idx=duk_get_top_index(ctx);
 
-    comm=strdup( REQUIRE_STRING(ctx, 0, "exec(): first argument must be a String (command to execute)") );
+    (void) REQUIRE_STRING(ctx, 0, "exec(): first argument must be a String (command to execute)");
+
+    //first argument in argument list is command name
     duk_dup(ctx, 0);
     duk_put_prop_index(ctx, arr_idx, arrayi++);
 
+    // rest of arguments, and mark where object is, if exists
     for (i=1; i<top; i++)
     {
+        //first object found is our options object.
         if(obj_idx==-1 && duk_is_object(ctx,i) && !duk_is_function(ctx,i) && !duk_is_array(ctx,i))
         {
             obj_idx=i;
@@ -1682,9 +1776,9 @@ duk_ret_t duk_rp_exec(duk_context *ctx)
         }    
 
         duk_dup(ctx,i);
-//        printf("arg = '%s'\n", duk_get_string(ctx, -1));
         duk_put_prop_index(ctx, arr_idx, arrayi++);
     }
+
     /* stack: [ ..., empty_obj, args_arr ] */
     if(obj_idx!=-1)
     {
@@ -1695,61 +1789,8 @@ duk_ret_t duk_rp_exec(duk_context *ctx)
     }
     duk_put_prop_string(ctx, -2, "args");
 
-    s=strchr(comm,'/');
-    if(!s)
-    {
-        char *path=strdup(getenv("PATH")), *p=path;
-        char *end, *pfile=NULL;
-        struct stat st;
-
-        /* search for file in PATHs */
-        end=strchr(p,':');
-        while ( p != NULL )
-        {
-            if( end != NULL)
-            {
-                *end='\0';
-                pfile=strdup(p);
-                p=end+1;
-                end=strchr(p,':');
-            }
-            else
-            {
-                pfile=strdup(p);
-                p=NULL;
-            }
-
-            if(pfile[strlen(pfile)-1]!='/')
-                pfile=strjoin(pfile,comm,'/');
-            else
-                pfile=strcatdup(pfile,comm);
-
-            if ( stat(pfile,&st) != -1) 
-                break;
-
-            free(pfile);
-            pfile=NULL;
-        }
-
-        free(path);
-        if(pfile)
-        {
-            duk_push_string(ctx,pfile);
-            free(pfile);
-        }
-        else
-        {
-            duk_push_error_object(ctx, DUK_ERR_ERROR, "exec(): could not find '%s' in PATH", comm);
-            free(comm);
-            return duk_throw(ctx);
-        }
-    }
-    else
-        duk_push_string(ctx,comm);
-
-    free(comm);
+    duk_pull(ctx,0);
     duk_put_prop_string(ctx,-2,"path");
-    duk_replace(ctx,0);
 
     top=duk_get_top(ctx);
     for (i=1;i<top;i++)
