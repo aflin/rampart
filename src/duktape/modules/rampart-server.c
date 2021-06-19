@@ -4323,7 +4323,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             /* need to double fork, and need to write back the pid of grandchild to parent. */
             dpid2=fork();
 
-            if(dpid==-1)
+            if(dpid2==-1)
             {
                 fprintf(stderr, "server.start: fork failed\n");
                 exit(1);

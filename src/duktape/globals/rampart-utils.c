@@ -1481,6 +1481,12 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     duk_size_t stdin_sz;
     char **args=NULL, **env=NULL;
     duk_size_t nargs;
+    pid_t pid, pid2;
+    int exit_status;
+    int stdout_pipe[2];
+    int stderr_pipe[2];
+    int stdin_pipe[2];
+    int child2par[2];
 
     // get options
     if(duk_get_prop_string(ctx, -1, "timeout"))
@@ -1606,9 +1612,6 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     args[nargs] = NULL;
     duk_pop(ctx);
 
-    int stdout_pipe[2];
-    int stderr_pipe[2];
-    int stdin_pipe[2];
     if (!background)
     {
         if (pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1|| pipe(stdin_pipe) == -1)
@@ -1619,8 +1622,19 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
             RP_THROW(ctx, "exec(): could not create pipe: %s", strerror(errno));
         }
     }
+    else
+    //if background, only need one pipe to get the pid after the double fork
+    {
+        if (pipe(child2par) == -1  ||  pipe(stdin_pipe) == -1)
+        {
+            free(args);
+            if(env)
+                free(env);
+            RP_THROW(ctx, "exec(): could not create pipe: %s", strerror(errno));
+        }
+    
+    }
 
-    pid_t pid;
     if ((pid = fork()) == -1)
     {
         free(args);
@@ -1630,17 +1644,58 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     }
     else if (pid == 0)
     {
-        if (!background)
+        //child
+        if (background)
+        {
+            //double fork and return pid to parent
+            close(child2par[0]);
+            if (setsid()==-1) {
+                pid2=-1;
+                if(-1 == write(child2par[1], &pid2, sizeof(pid_t)) )
+                    fprintf(error_fh, "exec(): failed to send setsid error to parent\n");
+                exit(1);
+            }
+            pid2=fork();
+            //write pid2
+            if(pid2) //if -1 or pid of child
+            {
+                //error or first child
+                free(args);
+                if(env)
+                    free(env);
+                if(-1 == write(child2par[1], &pid2, sizeof(pid_t)) )
+                {
+                    fprintf(error_fh, "exec(): failed to send pid to parent\n");
+                    pid2=-1;
+                }
+
+                if(stdin_txt)
+                    write(stdin_pipe[1], stdin_txt, (size_t)stdin_sz);
+
+                close(stdin_pipe[1]);
+                close(child2par[1]);
+                exit((pid2<0?1:0));
+            }
+            //grandchild from here on
+            close(child2par[1]);
+            fclose(stdin);
+            fclose(stdout);
+            fclose(stderr);
+        }
+        else
         {
             // make pipe equivalent to stdout and stderr
             dup2(stdout_pipe[1], STDOUT_FILENO);
             dup2(stderr_pipe[1], STDERR_FILENO);
-            dup2(stdin_pipe[0], STDIN_FILENO);
             // close unused pipes
             close(stdout_pipe[0]);
             close(stderr_pipe[0]);
             close(stdin_pipe[1]);
         }
+        // stdin for child, or grandchild if double fork
+        dup2(stdin_pipe[0], STDIN_FILENO);
+        close(stdin_pipe[1]);
+
         if(env)
             execvpe(path, args, env);
         else
@@ -1651,45 +1706,26 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
             free(env);
         exit(EXIT_FAILURE);
     }
-    // create thread for timeout
-    struct exec_thread_waitpid_arg arg;
-    pthread_t thread;
-    arg.signal = kill_signal;
-    arg.pid = pid;
-    arg.timeout = timeout;
-    arg.killed = 0;
-    if (timeout > 0)
-    {
-        pthread_create(&thread, NULL, duk_rp_exec_thread_waitpid, &arg);
-    }
-
-    if (!background)
-    {
-        // close unused pipes
-        close(stdout_pipe[1]);
-        close(stderr_pipe[1]);
-        close(stdin_pipe[0]);
-    }
-
-    if(stdin_txt)
-    {
-        write(stdin_pipe[1], stdin_txt, (size_t)stdin_sz);
-        close(stdin_pipe[1]);
-    }
 
     if (background)
     {
         // return object
         duk_push_object(ctx);
 
-        DUK_PUT(ctx, int, "pid", pid, -2);
+        waitpid(pid,&exit_status,0);
+        if(-1 == read(child2par[0], &pid2, sizeof(pid_t)) )
+            RP_THROW(ctx, "exec(): failed to get pid from child");
+
+        close(child2par[0]);
+
+        DUK_PUT(ctx, int, "pid", pid2, -2);
 
         // set stderr and stdout to null
         duk_push_null(ctx);
         duk_put_prop_string(ctx, -2, "stderr");
         duk_push_null(ctx);
         duk_put_prop_string(ctx, -2, "stdout");
-        duk_push_null(ctx);
+        duk_push_int(ctx, (int) exit_status);
         duk_put_prop_string(ctx, -2, "exitStatus");
 
         // set timed_out to false
@@ -1697,10 +1733,32 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     }
     else
     {
-        int exit_status;
         int stdout_nread, stderr_nread;
         char *stdout_buf = NULL;
         char *stderr_buf = NULL;
+        // create thread for timeout
+        struct exec_thread_waitpid_arg arg;
+        pthread_t thread;
+
+        if (timeout > 0)
+        {
+            arg.signal = kill_signal;
+            arg.pid = pid;
+            arg.timeout = timeout;
+            arg.killed = 0;
+            pthread_create(&thread, NULL, duk_rp_exec_thread_waitpid, &arg);
+        }
+
+        // close unused pipes
+        close(stdout_pipe[1]);
+        close(stderr_pipe[1]);
+        close(stdin_pipe[0]);
+
+        if(stdin_txt)
+        {
+            write(stdin_pipe[1], stdin_txt, (size_t)stdin_sz);
+            close(stdin_pipe[1]);
+        }
 
         // read output
         DUK_UTIL_EXEC_READ_FD(ctx, stdout_buf, stdout_pipe[0], stdout_nread);
