@@ -1788,11 +1788,14 @@ duk_ret_t duk_rp_exec(duk_context *ctx)
         /* stack: [ ..., options_object, args_arr ] */
     }
     duk_put_prop_string(ctx, -2, "args");
-
     duk_pull(ctx,0);
     duk_put_prop_string(ctx,-2,"path");
-
     top=duk_get_top(ctx);
+    if(top>1)
+    {
+        duk_replace(ctx, 0);
+        top--;
+    }
     for (i=1;i<top;i++)
         duk_pop(ctx);
 
