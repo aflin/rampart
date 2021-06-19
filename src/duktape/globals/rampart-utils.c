@@ -1729,6 +1729,8 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         free(stdout_buf);
         free(stderr_buf);
     }
+    if(env)
+        free(env);
     free(args);
     return 1;
 }
