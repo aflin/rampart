@@ -14,7 +14,9 @@
 // and endian-ness issues if used across multiple platforms.
 
 
-#if UINTPTR_MAX == 0xffffffff
+//#if UINTPTR_MAX == 0xffffffff
+//this produces a different number than the version below, and we prefer consistency
+#if 0
 // 64-bit hash for 32-bit platforms
 uint64_t MurmurHash64( const void * key,int len)
 {
@@ -70,7 +72,7 @@ uint64_t MurmurHash64( const void * key,int len)
 #endif // 32 bit check
 
 // 64-bit hash for 64-bit platforms
-#if UINTPTR_MAX == 0xffffffffffffffff
+//#if UINTPTR_MAX == 0xffffffffffffffff
 uint64_t MurmurHash64(const void * key, int len)
 {
 	static unsigned int seed=MURMURSEED;
@@ -114,4 +116,4 @@ uint64_t MurmurHash64(const void * key, int len)
 
 	return h;
 } 
-#endif
+//#endif
