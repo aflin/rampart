@@ -48,7 +48,9 @@ add_executable(rampart
 	duktape/globals/rampart-event.c
 	duktape/globals/rampart-import.c
 	duktape/globals/csv_parser.c
-
+	duktape/globals/hash_random/cityhash.c
+	duktape/globals/hash_random/fast_random.c
+	duktape/globals/hash_random/murmurhash.c
 	linenoise.c
 	whereami.c
 	cmdline.c
@@ -87,6 +89,7 @@ include_directories(
 	${LIBEVENT_TARGET_DIR}/include
 	${PROJECT_SOURCE_DIR}/extern/libevent/include
 	${PROJECT_BINARY_DIR}/texis/contrib/jansson-2.12/include/
+	${PROJECT_SOURCE_DIR}/src/duktape/globals/hash_random/
 )
 
 #this is good for later. Right now it interrupts work flow

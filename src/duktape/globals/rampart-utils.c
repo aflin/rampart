@@ -16,6 +16,8 @@
 #include <grp.h>
 #include <signal.h>
 #include <limits.h>
+#include <fcntl.h>
+
 #include "rampart.h"
 extern char **environ;
 extern char *RP_script_path;
@@ -2818,8 +2820,225 @@ static duk_ret_t include_js(duk_context *ctx)
     return 0;
 }
 
+#include "cityhash.h"
+#include "fast_random.h"
+#include "murmurhash.h"
+
+#define HASH_TYPE_CITY64 0
+#define HASH_TYPE_CITY   1
+#define HASH_TYPE_MURMUR 2
+#define HASH_TYPE_BOTH 3
 
 
+static uint64_t ntoh64(const uint64_t input)
+{
+    uint64_t rval;
+    uint8_t *data = (uint8_t *)&rval;
+
+    data[0] = input >> 56;
+    data[1] = input >> 48;
+    data[2] = input >> 40;
+    data[3] = input >> 32;
+    data[4] = input >> 24;
+    data[5] = input >> 16;
+    data[6] = input >> 8;
+    data[7] = input >> 0;
+
+    return rval;
+}
+
+
+static inline void hash_one(duk_context *ctx, duk_idx_t idx, int type)
+{
+    duk_size_t insz;
+    const char *inbuf;
+    void *buf;
+
+    inbuf = REQUIRE_STR_OR_BUF(ctx, idx, &insz, "rampart.utils.hash - input must be a string or buffer");
+
+    switch(type)
+    {
+        case HASH_TYPE_CITY64:
+        {
+            uint64 h = ntoh64(CityHash64(inbuf, (size_t)insz));
+
+            buf = duk_push_fixed_buffer(ctx, 8);
+
+            memcpy(buf, &h, 8);
+            break;
+        }
+        case HASH_TYPE_CITY:
+        {
+            uint128 h = CityHash128(inbuf, (size_t)insz);
+            Uint128High64(h) = ntoh64( Uint128High64(h) );
+            Uint128Low64(h) = ntoh64( Uint128Low64(h) );
+            
+            buf = duk_push_fixed_buffer(ctx, 16);
+            memcpy(buf, &(Uint128High64(h)), 8);
+            memcpy(buf+8, &(Uint128Low64(h)), 8);
+            break;
+        }
+        case HASH_TYPE_MURMUR:
+        {
+            uint64_t h = ntoh64(MurmurHash64( (const void *) inbuf, (int) insz));
+            
+            buf = duk_push_fixed_buffer(ctx, 8);
+
+            memcpy(buf, &h, 8);
+            break;
+        }
+        case HASH_TYPE_BOTH:
+        {
+            uint128 h = CityHash128(inbuf, (size_t)insz);
+            uint64_t h2 = ntoh64(MurmurHash64( (const void *) inbuf, (int) insz));
+            
+            Uint128High64(h) = ntoh64( Uint128High64(h) );
+            Uint128Low64(h) = ntoh64( Uint128Low64(h) );
+            buf = duk_push_fixed_buffer(ctx, 24);
+            memcpy(buf, &(Uint128High64(h)), 8);
+            memcpy(buf+8, &(Uint128Low64(h)), 8);
+            memcpy(buf+16, &h2, 8);
+            break;
+        }
+    }
+}
+
+duk_ret_t duk_rp_hash(duk_context *ctx)
+{
+    int type=HASH_TYPE_CITY64;
+    duk_idx_t val_idx=-1, opts_idx=-1;
+    int hexconv=1;
+
+    if(duk_is_object(ctx, 0) && !duk_is_array(ctx, 0) && !duk_is_function(ctx, 0))
+        opts_idx=0;
+    else if (duk_is_object(ctx, 1) && !duk_is_array(ctx, 1) && !duk_is_function(ctx, 1))
+        opts_idx=1;
+
+    if(opts_idx > -1)
+    {
+        const char *type_name=NULL;
+        if(duk_get_prop_string(ctx, opts_idx, "type"))
+        {
+            type_name=REQUIRE_STRING(ctx, -1, "hash() - option 'type' must be a String");
+        }
+        duk_pop(ctx);
+        if(duk_get_prop_string(ctx, opts_idx, "function"))
+        {
+            type_name=REQUIRE_STRING(ctx, -1, "hash() - option 'type' must be a String");
+        }
+        duk_pop(ctx);
+
+        if(type_name)
+        {
+            if(!strcmp(type_name,"city128"))
+                type=HASH_TYPE_CITY;
+            else if(!strcmp(type_name,"murmur"))
+                type=HASH_TYPE_MURMUR;
+            else if(!strcmp(type_name,"both"))
+                type=HASH_TYPE_BOTH;
+            else if(strcmp(type_name,"city"))
+                RP_THROW(ctx, "hash() - unknown value for option 'type' ('%s')", type_name);
+            //else is city64
+        }
+
+        if(duk_get_prop_string(ctx, opts_idx, "returnBuffer") && duk_get_boolean_default(ctx, -1, 0))
+        {
+            hexconv=0;
+        }
+        duk_pop(ctx);
+    }
+
+    val_idx = !opts_idx; //0 or 1
+
+    if(duk_is_array(ctx, val_idx))
+    {
+        duk_uarridx_t i=0, len=duk_get_length(ctx, val_idx);
+        
+        duk_push_array(ctx);
+        while(i<len)
+        {
+            duk_get_prop_index(ctx, val_idx, i);
+            hash_one(ctx, -1, type);
+            if(hexconv)
+                duk_rp_toHex(ctx, -1, 0);
+            duk_put_prop_index(ctx, -3, i);
+            duk_pop(ctx);
+            i++;
+        }
+        hexconv=0;
+    }
+    else
+        hash_one(ctx, val_idx, type);
+    
+    if(hexconv)
+    {
+        duk_rp_toHex(ctx, -1, 0);
+    }
+    return 1;
+}
+
+/* make sure when we use RAND_ functions, we've seeded at least once */
+static int seeded=0;
+void checkseed(duk_context *ctx)
+{
+    if(!seeded)
+    {
+        int rd;
+
+        errno=0;
+        rd = open("/dev/urandom", O_RDONLY);
+        if (rd < 0)
+            RP_THROW(ctx, "error opening data from /dev/urandom - '%s'",strerror(errno));
+        else
+        {
+            uint64_t rc;
+            ssize_t result = read(rd, &rc, sizeof(uint64_t));
+            if (result != sizeof(uint64_t))
+                RP_THROW(ctx, "error reading data from /dev/urandom - '%s'",strerror(errno));
+            xorRand64Seed(rc);
+        }
+        seeded=1;
+    }
+}
+
+duk_ret_t duk_rp_srand(duk_context *ctx)
+{
+    if(!duk_is_undefined(ctx,0))
+    {
+        uint64_t t = (uint64_t) fabs(REQUIRE_NUMBER(ctx, 0, "srand() - first argument must be a number (seed)"));
+        xorRand64Seed(t);        
+        seeded=1;
+        return 0;
+    }
+    seeded=0;
+    checkseed(ctx);
+    return 0;
+}
+
+duk_ret_t duk_rp_rand(duk_context *ctx)
+{
+    uint64_t r;
+    double max=1.0, min=0.0;
+
+    if(!duk_is_undefined(ctx,0))
+    {
+        double t = REQUIRE_NUMBER(ctx, 0, "rand() - first argument must be a number");
+
+        if(duk_is_undefined(ctx,1))
+            max=t;
+        else
+            min=t;
+    }
+
+    if(!duk_is_undefined(ctx,1))
+        max = REQUIRE_NUMBER(ctx, 1, "rand() - second argument must be a number (max)");
+
+    checkseed(ctx);
+    r=xorRand64();
+    duk_push_number(ctx, (((double)r/(double)UINT64_MAX) * (max - min) + min) );
+
+    return 1;
+}
 
 void duk_rampart_init(duk_context *ctx)
 {
@@ -2856,6 +3075,12 @@ void duk_rampart_init(duk_context *ctx)
 
     //end mlock
 
+    duk_push_c_function(ctx, duk_rp_srand, 1);
+    duk_put_prop_string(ctx, -2, "srand");
+    duk_push_c_function(ctx, duk_rp_rand, 2);
+    duk_put_prop_string(ctx, -2, "rand");
+    duk_push_c_function(ctx, duk_rp_hash, 2);
+    duk_put_prop_string(ctx, -2, "hash");
     duk_push_c_function(ctx, duk_rp_hexify, 2);
     duk_put_prop_string(ctx, -2, "hexify");
     duk_push_c_function(ctx, duk_rp_dehexify, 2);
