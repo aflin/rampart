@@ -17,7 +17,7 @@
 #include <signal.h>
 #include <limits.h>
 #include <fcntl.h>
-
+#include <sys/mman.h>
 #include "rampart.h"
 extern char **environ;
 extern char *RP_script_path;
@@ -2848,13 +2848,19 @@ static uint64_t ntoh64(const uint64_t input)
 }
 
 
-static inline void hash_one(duk_context *ctx, duk_idx_t idx, int type)
+static inline void hash_one(duk_context *ctx, duk_idx_t idx, int type, void *map, size_t sz)
 {
     duk_size_t insz;
     const char *inbuf;
     void *buf;
 
-    inbuf = REQUIRE_STR_OR_BUF(ctx, idx, &insz, "rampart.utils.hash - input must be a string or buffer");
+    if(map)
+    {
+        inbuf =(const char *)map;
+        insz = (duk_size_t)sz;    
+    }
+    else
+        inbuf = REQUIRE_STR_OR_BUF(ctx, idx, &insz, "rampart.utils.hash - input must be a string or buffer");
 
     switch(type)
     {
@@ -2903,7 +2909,7 @@ static inline void hash_one(duk_context *ctx, duk_idx_t idx, int type)
     }
 }
 
-duk_ret_t duk_rp_hash(duk_context *ctx)
+static duk_ret_t _hash(duk_context *ctx, void *map, size_t sz)
 {
     int type=HASH_TYPE_CITY64;
     duk_idx_t val_idx=-1, opts_idx=-1;
@@ -2950,7 +2956,9 @@ duk_ret_t duk_rp_hash(duk_context *ctx)
 
     val_idx = !opts_idx; //0 or 1
 
-    if(duk_is_array(ctx, val_idx))
+    if(map)
+        hash_one(ctx, val_idx, type, map, sz);
+    else if(duk_is_array(ctx, val_idx))
     {
         duk_uarridx_t i=0, len=duk_get_length(ctx, val_idx);
         
@@ -2958,7 +2966,7 @@ duk_ret_t duk_rp_hash(duk_context *ctx)
         while(i<len)
         {
             duk_get_prop_index(ctx, val_idx, i);
-            hash_one(ctx, -1, type);
+            hash_one(ctx, -1, type, NULL, 0);
             if(hexconv)
                 duk_rp_toHex(ctx, -1, 0);
             duk_put_prop_index(ctx, -3, i);
@@ -2968,13 +2976,50 @@ duk_ret_t duk_rp_hash(duk_context *ctx)
         hexconv=0;
     }
     else
-        hash_one(ctx, val_idx, type);
+        hash_one(ctx, val_idx, type, NULL, 0);
     
     if(hexconv)
     {
         duk_rp_toHex(ctx, -1, 0);
     }
     return 1;
+}
+
+duk_ret_t duk_rp_hash(duk_context *ctx)
+{
+    return _hash(ctx, NULL, 0);
+}
+
+duk_ret_t duk_rp_hash_file(duk_context *ctx)
+{
+    void *map;
+    duk_idx_t val_idx=-1, opts_idx=-1;
+    const char *fn;
+    struct stat sb;
+    int fd;
+
+
+    if(duk_is_object(ctx, 0) && !duk_is_array(ctx, 0) && !duk_is_function(ctx, 0))
+        opts_idx=0;
+    else if (duk_is_object(ctx, 1) && !duk_is_array(ctx, 1) && !duk_is_function(ctx, 1))
+        opts_idx=1;
+    
+    val_idx = !opts_idx;
+    fn = REQUIRE_STRING(ctx, val_idx, "hashFile() - argument (filename) must be a string");
+    fd = open(fn, O_RDONLY);
+    if (fd == -1)
+        RP_THROW(ctx, "hashFile() - could not open file '%s' - %s", fn, strerror(errno));
+
+    if (fstat(fd, &sb) == -1)
+        RP_THROW(ctx, "hashFile() - could not get stats of file '%s' - %s", fn, strerror(errno));    
+    
+    map = mmap(NULL, sb.st_size,  PROT_READ, MAP_PRIVATE, fd, 0);
+
+    duk_ret_t ret = _hash(ctx, map, sb.st_size);
+
+    munmap(map, sb.st_size);
+
+    return ret;
 }
 
 /* make sure when we use RAND_ functions, we've seeded at least once */
@@ -3081,6 +3126,8 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "rand");
     duk_push_c_function(ctx, duk_rp_hash, 2);
     duk_put_prop_string(ctx, -2, "hash");
+    duk_push_c_function(ctx, duk_rp_hash_file, 2);
+    duk_put_prop_string(ctx, -2, "hashFile");
     duk_push_c_function(ctx, duk_rp_hexify, 2);
     duk_put_prop_string(ctx, -2, "hexify");
     duk_push_c_function(ctx, duk_rp_dehexify, 2);
