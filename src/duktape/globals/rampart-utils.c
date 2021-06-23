@@ -37,6 +37,18 @@ FILE *access_fh;
 FILE *error_fh;
 int duk_rp_server_logging=0;
 
+#ifdef __APPLE__
+int execvpe(const char *program, char **argv, char **envp)
+{
+    char **saved = environ;
+    int rc;
+    environ = envp;
+    rc = execvp(program, argv);
+    environ = saved;
+    return rc;
+}
+#endif
+
 
 /* utility function for rampart object:
       var buf=rampart.utils.StringToBuffer(val); //fixed if string, same type if already buffer
