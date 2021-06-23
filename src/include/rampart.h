@@ -159,6 +159,14 @@ extern int totnthreads;
         exit(1);                                         \
     }
 
+#define CALLOC(s, t) 					 \
+    (s) = calloc(1, (t));                                \
+    if ((char *)(s) == (char *)NULL)                     \
+    {                                                    \
+        fprintf(stderr, "error: calloc() ");             \
+        exit(1);                                         \
+    }
+
 #ifdef PUTMSG_STDERR
     pthread_mutex_t printlock;
 #endif

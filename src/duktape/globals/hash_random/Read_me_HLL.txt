@@ -17,7 +17,7 @@ Ramparts HLL tested to be significantly and consistently more accurate than
 the implementations of Redis, Google, and Facebook.  Rampart HLL is tuned to
 use Google's CityHash function.  We empirically found that it tended to
 produce better hashes for use with the HLL algorithm than the more popular
-Mumurhash algorithm.
+Murmurhash algorithm.
 
  
 Usage:

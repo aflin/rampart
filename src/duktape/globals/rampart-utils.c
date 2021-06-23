@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <sys/file.h>
 #include <unistd.h>
 #include <errno.h>
 #include <dirent.h>
@@ -29,6 +30,8 @@ extern char *RP_script_path;
 
 pthread_mutex_t loglock;
 pthread_mutex_t errlock;
+pthread_mutex_t pflock;
+pthread_mutex_t pflock_err;
 FILE *access_fh;
 FILE *error_fh;
 int duk_rp_server_logging=0;
@@ -1020,6 +1023,30 @@ duk_ret_t duk_rp_globalize(duk_context *ctx)
 
 /* file utils */
 
+#define getfh_nonull_lock(ctx,idx,func,lock) ({\
+    FILE *f=NULL;\
+    lock=NULL;\
+    if(duk_get_prop_string(ctx, idx, "stream")){\
+        const char *s=REQUIRE_STRING(ctx,-1, "error: %s({stream:\"streamName\"},...): streamName must be stdout, stderr, stdin, accessLog or errorLog", func);\
+        if (!strcmp(s,"stdout")) {f=stdout;lock=&pflock;}\
+        else if (!strcmp(s,"stderr")) {f=stderr;lock=&pflock_err;}\
+        else if (!strcmp(s,"stdin")) {f=stdin;lock=NULL;}\
+        else if (!strcmp(s,"accessLog")) {f=access_fh;lock=&loglock;}\
+        else if (!strcmp(s,"errorLog")) {f=error_fh;lock=&errlock;}\
+        else RP_THROW(ctx,"error: %s({stream:\"streamName\"},...): streamName must be stdout, stderr, stdin, accessLog or errorLog", func);\
+        duk_pop(ctx);\
+    } else {\
+        duk_pop(ctx);\
+        if( !duk_get_prop_string(ctx,idx,DUK_HIDDEN_SYMBOL("filehandle")) )\
+            RP_THROW(ctx,"error %s(): argument is not a file handle",func);\
+        f=duk_get_pointer(ctx,-1);\
+        duk_pop(ctx);\
+        if(f==NULL)\
+            RP_THROW(ctx,"error %s(): file handle was previously closed",func);\
+    }\
+    f;\
+})
+
 /* rampart.utils.readFile({
        filename: "./filename", //required
        offset: -20,            //default 0.     Negative number is from end of file.
@@ -1033,13 +1060,15 @@ duk_ret_t duk_rp_globalize(duk_context *ctx)
 duk_ret_t duk_rp_read_file(duk_context *ctx)
 {
     const char *filename=NULL;
+    pthread_mutex_t *lock_p=NULL;
+    FILE *fp=NULL;
     int64_t offset=0;
     int64_t length=0;
     duk_idx_t obj_idx=-1;
     int retstring=0;
-    FILE *fp;
+    int close=1;
     void *buf;
-    struct stat fstat;
+    struct stat filestat;
     size_t off;
     size_t nbytes;
 
@@ -1075,41 +1104,69 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
     
     if ( obj_idx != -1) 
     {   
+        if( duk_has_prop_string(ctx,obj_idx,DUK_HIDDEN_SYMBOL("filehandle")) )
+        {
+            fp = getfh_nonull_lock(ctx,obj_idx,"readFile",lock_p);
+            close=0;
+            rewind(fp);
+        }
+        else
+        {
+            if(duk_get_prop_string(ctx, obj_idx, "file"))
+            {
+                if(duk_is_object(ctx, -1) && duk_has_prop_string(ctx,-1,DUK_HIDDEN_SYMBOL("filehandle")) )
+                {
+                    close=0;
+                    fp = getfh_nonull_lock(ctx, -1,"readFile",lock_p);
+                    rewind(fp);
+                }
+                else
+                    filename = REQUIRE_STRING(ctx, -1, "readFile() - option 'file' must be a String or filehandle");
+            }
+            duk_pop(ctx);
+            
+            if(duk_get_prop_string(ctx, obj_idx, "offset"))
+                offset=(int64_t) REQUIRE_NUMBER(ctx, -1, "readFile() - option 'offset' must be a Number");
+            duk_pop(ctx);
 
-        if(duk_get_prop_string(ctx, obj_idx, "file"))
-            filename = duk_require_string(ctx, -1);
-        duk_pop(ctx);
+            if(duk_get_prop_string(ctx, obj_idx, "length"))
+                length = (long) REQUIRE_NUMBER(ctx, -1, "readFile() - option 'length' must be a Number");
+            duk_pop(ctx);
         
-        if(duk_get_prop_string(ctx, obj_idx, "offset"))
-            offset=(int64_t) duk_get_number_default(ctx, -1, 0);
-        duk_pop(ctx);
-
-        if(duk_get_prop_string(ctx, obj_idx, "length"))
-            length = (long)duk_get_number_default(ctx, -1, 0);
-        duk_pop(ctx);
-    
-        if(duk_get_prop_string(ctx, obj_idx, "retString"))
-            retstring=duk_require_boolean(ctx,-1);
+            if(duk_get_prop_string(ctx, obj_idx, "retString"))
+                retstring=REQUIRE_BOOL(ctx,-1, "readFile() - option 'retString' must be a Boolean");
+        }
     }
 
-    if (!filename)
-        RP_THROW(ctx, "readFile() - error, no filename provided");
+    if (!filename && !fp)
+        RP_THROW(ctx, "readFile() - error, no file name or handle provided");
 
-    if (stat(filename, &fstat) == -1)
-        RP_THROW(ctx, "readFile(\"%s\") - error accessing: %s", filename, strerror(errno));
+    if(fp)
+    {
+        if (fstat(fileno(fp), &filestat) == -1)
+            RP_THROW(ctx, "readFile(\"%s\") - error accessing: %s", filename, strerror(errno));
+    }
+    else
+    {
+        if (stat(filename, &filestat) == -1)
+            RP_THROW(ctx, "readFile(\"%s\") - error accessing: %s", filename, strerror(errno));
+    }
 
     if(offset < 0)
-        offset = (int64_t)fstat.st_size + offset;
+        offset = (int64_t)filestat.st_size + offset;
 
     if(length < 1)
-        length = ((int64_t)fstat.st_size + length) - offset;
+        length = ((int64_t)filestat.st_size + length) - offset;
 
     if( length < 1 )
         RP_THROW(ctx, "readFile(\"%s\") - negative length puts end of read before offset or start of file", filename);
     
-    fp = fopen(filename, "r");
-    if (fp == NULL)
-        RP_THROW(ctx, "readFile(\"%s\") - error opening: %s", filename, strerror(errno));
+    if(filename)
+    {
+        fp = fopen(filename, "r");
+        if (fp == NULL)
+            RP_THROW(ctx, "readFile(\"%s\") - error opening: %s", filename, strerror(errno));
+    }
 
     if(offset)
     {
@@ -1123,15 +1180,29 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
     buf = duk_push_fixed_buffer(ctx, length);
 
     off = 0;
+
+    if(!lock_p)
+    {
+        if (flock(fileno(fp), LOCK_SH) == -1)
+            RP_THROW(ctx, "error readFile(): could not get read lock");            
+    }
+
     while ((nbytes = fread(buf + off, 1, length - off, fp)) != 0)
     {
         off += nbytes;
     }
 
+    if(!lock_p)
+    {
+        if (flock(fileno(fp), LOCK_UN) == -1)
+            RP_THROW(ctx, "error readFile(): could not get read lock");
+    }
+
     if (ferror(fp))
         RP_THROW(ctx, "readFile(\"%s\") - error reading file: %s", filename, strerror(errno));
 
-    fclose(fp);
+    if(close)
+        fclose(fp);
 
     if(retstring)
         duk_buffer_to_string(ctx,-1);    
@@ -1141,13 +1212,6 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
 
 duk_ret_t duk_rp_readln_finalizer(duk_context *ctx)
 {
-    /* for readln */
-    duk_push_this(ctx);
-    if (duk_is_undefined(ctx, -1))
-        /* for readLine */
-        duk_push_current_function(ctx);
-    if (duk_is_undefined(ctx, -1))
-        return 0;
     if (duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filepointer")))
     {
         FILE *fp = duk_get_pointer(ctx, -1);
@@ -1157,16 +1221,18 @@ duk_ret_t duk_rp_readln_finalizer(duk_context *ctx)
             fclose(fp);
         }
     }
+    duk_push_pointer(ctx, NULL);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
     return 0;
 }
 
 
+//TODO: add read lock if not stdin
 static duk_ret_t readline_next(duk_context *ctx)
 {
     FILE *fp;
 
     duk_push_this(ctx);
-
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filepointer"));
     fp = duk_get_pointer(ctx, -1);
     duk_pop(ctx);
@@ -1189,22 +1255,11 @@ static duk_ret_t readline_next(duk_context *ctx)
         {
             free(line);
             duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filename"));
-            RP_THROW(ctx, "readln(): error reading file '%s': %s", duk_get_string(ctx, -1), strerror(errno));
+            RP_THROW(ctx, "readln(): error reading file %s: %s", duk_get_string(ctx, -1), strerror(errno));
         }
 
         if (nread == -1)
-        {
-          /*  duk_push_pointer(ctx, NULL);
-              duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("filepointer")); */
-
-            /* clear finalizer */
             duk_push_null(ctx);
-            duk_set_finalizer(ctx, 0);
-
-            /* close here rather than in finalizer */
-            fclose(fp);
-            duk_push_null(ctx);
-        }
         else
             duk_push_string(ctx, line);
 
@@ -1214,53 +1269,70 @@ static duk_ret_t readline_next(duk_context *ctx)
 }
 
 
+#define getfh(ctx,idx,func) ({\
+    FILE *f;\
+    if( !duk_get_prop_string(ctx,idx,DUK_HIDDEN_SYMBOL("filehandle")) )\
+        RP_THROW(ctx,"%s: argument is not a file handle",func);\
+    f=duk_get_pointer(ctx,-1);\
+    duk_pop(ctx);\
+    f;\
+})
+
+#define RTYPE_STDIN 0
+#define RTYPE_HANDLE 1
+#define RTYPE_FILENAME 2
+
+#define getreadfile(ctx,idx,fname,filename,type) ({\
+    FILE *f=NULL;\
+    if(duk_is_object(ctx, idx)){\
+        if(duk_get_prop_string(ctx, idx, "stream")){\
+            const char *s=REQUIRE_STRING(ctx,-1, "error: readline({stream:\"streamName\"},...): streamName must be stdin");\
+            if (strcmp(s,"stdin")!=0)\
+                RP_THROW(ctx, "error: %s(stream) - must be stdin\n",fname);\
+            filename="stdin";\
+            f=stdin;\
+            type=RTYPE_STDIN;\
+        } else {\
+            f=getfh(ctx, idx, fname);\
+            if(!f)\
+                RP_THROW(ctx, "%s - first argument must be a string, filehandle or rampart.utils.stdin", fname);\
+            type=RTYPE_HANDLE;\
+        }\
+        duk_pop(ctx);\
+    } else {\
+        filename = REQUIRE_STRING(ctx, idx, "%s - first argument must be a string or rampart.utils.stdin", fname);\
+        f = fopen(filename, "r");\
+        if (f == NULL)\
+            RP_THROW(ctx, "%s: error opening '%s': %s", fname, filename, strerror(errno));\
+        type=RTYPE_FILENAME;\
+    }\
+    f;\
+})
+
 duk_ret_t duk_rp_readline(duk_context *ctx)
 {
-    const char *filename;
-    FILE *fp;
+    const char *filename="";
+    FILE *f;
+    int type;
 
-    if (duk_is_object(ctx, 0))
-    {
-        if(duk_get_prop_string(ctx, 0, "stream")){\
-            const char *s=REQUIRE_STRING(ctx,-1, "error: readline({stream:\"streamName\"},...): streamName must be stdin");
-            if (strcmp(s,"stdin")!=0)
-                RP_THROW(ctx, "error: readline(stream) - must be stdin\n");
-            
-        }
-        else
-            RP_THROW(ctx, "readline - first argument must be a string or rampart.utils.stdin");
+    f=getreadfile(ctx, 0, "readLine", filename, type);
 
-        filename="stdin";
-        fp=stdin;
-
-    }
-    else
-    {
-        filename = REQUIRE_STRING(ctx, 0, "readline - first argument must be a string or rampart.utils.stdin");
-
-        fp = fopen(filename, "r");
-        if (fp == NULL)
-            RP_THROW(ctx, "readLine(): error opening '%s': %s", filename, strerror(errno));
-    }
     duk_push_object(ctx);
 
     duk_push_string(ctx,filename);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filename"));
 
-    duk_push_pointer(ctx,fp);
+    duk_push_pointer(ctx,f);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
 
     duk_push_c_function(ctx,readline_next,0);
     duk_put_prop_string(ctx, -2, "next");
-    
-    duk_push_c_function(ctx,duk_rp_readln_finalizer,0);
 
-    duk_push_pointer(ctx,fp);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
-
-
-//    duk_put_prop_string(ctx, -2, "finish");
-    duk_set_finalizer(ctx, -2);
+    if(type==RTYPE_FILENAME)
+    {
+        duk_push_c_function(ctx,duk_rp_readln_finalizer,1);
+        duk_set_finalizer(ctx, -2);
+    }
 
     return 1;
 }
@@ -2582,7 +2654,7 @@ pthread_mutex_t ulock_lock;
 
 #define LOCK_ULOCK do {\
     if (pthread_mutex_lock(&ulock_lock) == EINVAL)\
-        {fprintf(stderr,"could not obtain lock for main context\n");exit(1);}\
+        {fprintf(stderr,"could not obtain lock for mlock\n");exit(1);}\
 } while(0)
 
 #define UNLOCK_ULOCK  do{\
@@ -2823,7 +2895,7 @@ static duk_ret_t include_js(duk_context *ctx)
 #include "cityhash.h"
 #include "fast_random.h"
 #include "murmurhash.h"
-
+#include "hyperloglog.h"
 #define HASH_TYPE_CITY64 0
 #define HASH_TYPE_CITY   1
 #define HASH_TYPE_MURMUR 2
@@ -3085,6 +3157,334 @@ duk_ret_t duk_rp_rand(duk_context *ctx)
     return 1;
 }
 
+#define HLL struct utils_hll_s
+
+HLL {
+    unsigned char * buf;
+    char *name;
+    int refcount;
+    pthread_mutex_t lock;
+    duk_context *ctx;
+    HLL *next;
+};
+
+HLL *hll_list = NULL;
+
+pthread_mutex_t hll_lock;
+
+#define HLL_MAIN_LOCK do {\
+    if (pthread_mutex_lock(&hll_lock) == EINVAL)\
+        {fprintf(stderr,"could not obtain lock for hll main\n");exit(1);}\
+} while(0)
+
+#define HLL_MAIN_UNLOCK  do{\
+    pthread_mutex_unlock(&hll_lock);\
+} while(0)
+
+#define HLL_LOCK(h) do {\
+    if (pthread_mutex_lock(&((h)->lock)) == EINVAL)\
+        {fprintf(stderr,"could not obtain lock for hll\n");exit(1);}\
+} while(0)
+
+#define HLL_UNLOCK(h)  do{\
+    pthread_mutex_unlock(&((h)->lock));\
+} while(0)
+
+static inline HLL *newhll(duk_context *ctx, const char *name)
+{
+    HLL *hll=NULL;
+    REMALLOC(hll, sizeof(HLL));
+    CALLOC(hll->buf,16384);
+    hll->name=strdup(name);
+    hll->refcount=1;
+    hll->ctx=ctx;
+    if (pthread_mutex_init(&hll->lock, NULL) == EINVAL)
+    {
+        RP_THROW(ctx, "rampart.utils - error initializing hll lock");
+    }
+    hll->next=NULL;
+    return hll;
+}
+
+// updateref +1 or -1 for existing hll only
+static HLL *gethll(duk_context *ctx, const char *name, int updateref)
+{
+    HLL *hll=NULL, *lasthll=NULL;
+
+    HLL_MAIN_LOCK;
+    if(!hll_list)
+    {
+        if(!updateref) //this should not happen ever
+            RP_THROW(ctx, "hll() - internal error getting hll list bufer");
+        hll=hll_list=newhll(ctx, name);
+    }
+    else
+    {
+        // find our named hll, if exists
+        hll=hll_list;
+        while(hll)
+        {
+            if(!strcmp(hll->name, name))
+                break;
+            lasthll=hll;
+            hll = hll->next;
+        }
+        //doesn't exist. Create it.
+        if(!hll)
+        {
+            if(!updateref) //this should not happen ever
+                RP_THROW(ctx, "hll() - internal error getting hll bufer");
+            hll=newhll(ctx, name);
+            lasthll->next=hll;
+        }
+        else if(updateref)
+        {
+            // if using a copy from another context, add one to ref count
+            if(!updateref && hll->ctx != ctx)
+            {
+                hll->ctx = ctx;
+                updateref=1;
+            }
+            // if new, or destroy, or copied from another context
+            if(updateref)
+            {
+                hll->refcount += updateref;
+                if(!hll->refcount)
+                {
+                    free(hll->buf);
+                    free(hll->name);
+                    if(lasthll)
+                        lasthll->next = hll->next;
+                    else //hll==hll_list
+                        hll_list=NULL;
+                    free(hll);
+                    hll=NULL;
+                }
+            }
+        }
+    }        
+    HLL_MAIN_UNLOCK;
+    return hll;
+}
+
+static duk_ret_t _hll_destroy(duk_context *ctx)
+{
+    const char *hllname;
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("hllname"));
+    hllname=duk_get_string(ctx, -1);
+    (void)gethll(ctx, hllname, -1);
+    return 0;
+}
+
+duk_ret_t duk_rp_hll_addfile(duk_context *ctx)
+{
+    HLL *hll=NULL;
+    char delim='\n';
+    FILE *f;
+    const char *filename="";
+    int type;
+    char *line = NULL;
+    size_t len = 0;
+    int nread;
+
+    f=getreadfile(ctx, 0, "addFile", filename, type);
+
+    if(!duk_is_undefined(ctx, 1))
+    {
+        const char *d = REQUIRE_STRING(ctx, 1, "addfile - second argument must be a string (first char is delimiter)");
+        delim=*d;
+    }
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("hllbuf"));
+    hll = (HLL *) duk_get_pointer(ctx, -1);
+
+    if(!hll)
+        RP_THROW(ctx, "hll - could not retrieve buffer");
+
+    while(1)
+    {
+        errno = 0;
+        nread = getdelim(&line, &len, delim, f);
+        if (errno)
+        {
+            free(line);
+            duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filename"));
+            RP_THROW(ctx, "addFile(): error reading file %s: %s", duk_get_string(ctx, -1), strerror(errno));
+        }
+
+        if (nread == -1)
+            break;
+        else
+        {
+            if(line[nread-1]==delim)
+                nread--;
+            HLL_LOCK(hll);
+            addHLL16K(hll->buf, CityHash64(line,(size_t)nread) );
+            HLL_UNLOCK(hll);
+            // just looking:
+            //addHLL16K(hll->buf, MurmurHash64( (const void *) line, (int) nread) );
+        }
+    }
+
+    free(line);
+
+    if(type==RTYPE_FILENAME)
+        fclose(f);
+
+    duk_push_this(ctx);
+    return 1;
+
+}
+duk_ret_t duk_rp_hll_getbuffer(duk_context *ctx)
+{
+    HLL *hll=NULL;
+    void *buf;
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("hllbuf"));
+    hll = (HLL *) duk_get_pointer(ctx, -1);
+
+    buf=duk_push_fixed_buffer(ctx, 16384);
+    memcpy(buf, hll->buf, 16384);
+    return 1;
+}
+
+duk_ret_t duk_rp_hll_add(duk_context *ctx)
+{
+    duk_size_t sz;
+    const char *in;
+    HLL *hll=NULL;
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("hllbuf"));
+    hll = (HLL *) duk_get_pointer(ctx, -1);
+
+    if(duk_is_array(ctx, 0))
+    {
+        duk_uarridx_t i=0, len=duk_get_length(ctx, 0);
+        
+        while(i<len)
+        {
+            duk_get_prop_index(ctx, 0, i);
+            in = REQUIRE_STR_OR_BUF(ctx, -1, &sz, "hll.add() - input must be a buffer, string or an array of strings/buffers");
+            HLL_LOCK(hll);
+            addHLL16K(hll->buf, CityHash64(in,(size_t)sz) );
+            HLL_UNLOCK(hll);
+            duk_pop(ctx);
+            i++;
+        }
+    }
+    else
+    {
+        in = REQUIRE_STR_OR_BUF(ctx, 0, &sz, "hll.add() - input must be a buffer, string or an array of strings/buffers");
+        HLL_LOCK(hll);
+        addHLL16K(hll->buf, CityHash64(in,(size_t)sz) );
+        HLL_UNLOCK(hll);
+    }
+
+    duk_push_this(ctx);
+    return 1;
+}
+
+duk_ret_t duk_rp_hll_count(duk_context *ctx)
+{
+    HLL *hll=NULL;
+    double c;
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("hllbuf"));
+    hll = (HLL *) duk_get_pointer(ctx, -1);
+    HLL_LOCK(hll);
+    c=(double)countHLL16k(hll->buf);
+    HLL_UNLOCK(hll);
+    duk_push_number(ctx, c);
+    return 1;
+}
+
+//assumes stack starts with the hlls to merge, up to top
+static void _merge(duk_context *ctx, duk_idx_t cur, duk_idx_t top, HLL *hll)
+{
+    HLL *hll2=NULL;
+
+    while (cur<top)
+    {
+        if(!duk_is_object(ctx, cur) || !duk_get_prop_string(ctx, cur, DUK_HIDDEN_SYMBOL("hllbuf")) )
+            RP_THROW(ctx, "hll.merge() - argument must be another hll object");
+
+        hll2 = (HLL *)duk_get_pointer(ctx, -1);
+        duk_pop(ctx);
+        HLL_LOCK(hll);
+        if(hll!=hll2)
+            HLL_LOCK(hll2);
+
+        mergeHLL16K(hll->buf, hll->buf, hll2->buf);
+        if(hll!=hll2)
+            HLL_UNLOCK(hll2);
+        HLL_UNLOCK(hll);
+        cur++;
+    }
+}
+
+duk_ret_t duk_rp_hll_merge(duk_context *ctx)
+{
+    HLL *hll=NULL;
+    duk_idx_t top;
+
+    top=duk_get_top(ctx);
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("hllbuf"));
+    hll = (HLL *) duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    _merge(ctx, 0, top, hll);
+
+//    duk_pull(ctx, top);//this
+    return 1;
+}
+
+duk_ret_t duk_rp_hll_constructor(duk_context *ctx)
+{
+    const char *hllname;
+    HLL *hll=NULL;
+    duk_idx_t top;
+
+    if (!duk_is_constructor_call(ctx))
+        RP_THROW(ctx, "rampart.utils.hll is a constructor (must be called with 'new rampart.utils.hll()')");
+
+    hllname=REQUIRE_STRING(ctx, 0, "hll() - first argument must be a string (name of the hll)");    
+
+    hll=gethll(ctx, hllname, 1);
+    
+    duk_push_this(ctx);
+    duk_push_pointer(ctx, (void*)hll);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("hllbuf"));
+    duk_push_string(ctx, hllname);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("hllname"));
+    duk_push_c_function(ctx, _hll_destroy, 1);
+    duk_set_finalizer(ctx, -2);
+    duk_pop(ctx);
+
+    if(duk_is_buffer_data(ctx, 1))
+    {
+        duk_size_t sz;
+        void *buf = duk_get_buffer_data(ctx, 1, &sz);
+        if(sz !=16384)
+            RP_THROW(ctx, "new hll(): error - buffer must be 16384 bytes in length");
+        memcpy(hll->buf, buf, (size_t)sz);
+        duk_remove(ctx, 1); 
+    }
+
+    top=duk_get_top(ctx);
+
+    if(top>1)
+        _merge(ctx, 1, top, hll);
+
+    return 0;
+}
+
 void duk_rampart_init(duk_context *ctx)
 {
     if (!duk_get_global_string(ctx, "rampart"))
@@ -3119,6 +3519,28 @@ void duk_rampart_init(duk_context *ctx)
     }
 
     //end mlock
+
+    // hll
+    duk_push_c_function(ctx, duk_rp_hll_constructor, DUK_VARARGS);
+    duk_push_object(ctx);
+    duk_push_c_function(ctx, duk_rp_hll_add, 1);
+    duk_put_prop_string(ctx, -2, "add");
+    duk_push_c_function(ctx, duk_rp_hll_addfile, 2);
+    duk_put_prop_string(ctx, -2, "addFile");
+    duk_push_c_function(ctx, duk_rp_hll_getbuffer, 0);
+    duk_put_prop_string(ctx, -2, "getBuffer");
+    duk_push_c_function(ctx, duk_rp_hll_count, 0);
+    duk_put_prop_string(ctx, -2, "count");
+    duk_push_c_function(ctx, duk_rp_hll_merge, DUK_VARARGS);
+    duk_put_prop_string(ctx, -2, "merge");
+    duk_put_prop_string(ctx, -2, "prototype");
+    duk_put_prop_string(ctx, -2, "hll");
+    if (pthread_mutex_init(&hll_lock, NULL) == EINVAL)
+    {
+        RP_THROW(ctx, "rampart.utils - error initializing hll lock");
+    }
+    // end hll
+
 
     duk_push_c_function(ctx, duk_rp_srand, 1);
     duk_put_prop_string(ctx, -2, "srand");
@@ -3337,8 +3759,6 @@ char *to_utf8(const char *in_str)
     r;\
 })
 
-pthread_mutex_t pflock;
-pthread_mutex_t pflock_err;
 
 #include "printf.c"
 
@@ -3356,14 +3776,8 @@ duk_ret_t duk_printf(duk_context *ctx)
     duk_push_int(ctx, ret);
     return 1;
 }
-#define getfh(ctx,idx,func) ({\
-    FILE *f;\
-    if( !duk_get_prop_string(ctx,idx,DUK_HIDDEN_SYMBOL("filehandle")) )\
-        RP_THROW(ctx,"%s: argument is not a file handle",func);\
-    f=duk_get_pointer(ctx,-1);\
-    duk_pop(ctx);\
-    f;\
-})
+
+
 #define getfh_nonull(ctx,idx,func) ({\
     FILE *f=NULL;\
     if(duk_get_prop_string(ctx, idx, "stream")){\
@@ -3392,17 +3806,20 @@ duk_ret_t duk_fseek(duk_context *ctx)
     FILE *f = getfh_nonull(ctx,0,"fseek()");
     long offset=(long)REQUIRE_NUMBER(ctx, 1, "fseek(): second argument must be a number (seek position)");
     int whence=SEEK_SET;
-    const char *wstr=REQUIRE_STRING(ctx,2, "fseek(): third argument must be a string (whence)");
 
-    if(!strcasecmp(wstr,"SEEK_SET"))
-        whence=SEEK_SET;
-    else if(!strcasecmp(wstr,"SEEK_END"))
-        whence=SEEK_END;
-    else if(!strcasecmp(wstr,"SEEK_CUR"))
-        whence=SEEK_CUR;
-    else
-        RP_THROW(ctx,"error fseek(): invalid argument '%s'",wstr);
+    if(!duk_is_undefined(ctx,2))
+    {
+        const char *wstr=REQUIRE_STRING(ctx,2, "fseek(): third argument must be a string (whence)");
 
+        if(!strcasecmp(wstr,"SEEK_SET"))
+            whence=SEEK_SET;
+        else if(!strcasecmp(wstr,"SEEK_END"))
+            whence=SEEK_END;
+        else if(!strcasecmp(wstr,"SEEK_CUR"))
+            whence=SEEK_CUR;
+        else
+            RP_THROW(ctx,"error fseek(): invalid argument '%s'",wstr);
+    }
     if(fseek(f, offset, whence))
         RP_THROW(ctx, "error fseek():'%s'", strerror(errno));
 
@@ -3431,29 +3848,39 @@ duk_ret_t duk_ftell(duk_context *ctx)
 
 duk_ret_t duk_fread(duk_context *ctx)
 {
-    FILE *f = getfh_nonull(ctx,0,"fread()");
+    FILE *f = NULL;
     void *buf;
     size_t r, read=0, sz=4096, max=SIZE_MAX;
     int isz=-1;
+    const char *filename="";
+    int type;
+
+    f=getreadfile(ctx, 0, "fread", filename, type);
 
     if (!duk_is_undefined(ctx,1))
     {
-        int isz=REQUIRE_INT(ctx, 1, "fread(): second argument (chunk_size) must be a Number (integer)");
-        if(isz > 0)
-            sz=(size_t)isz;
+        int imax = REQUIRE_INT(ctx, 1, "fread(): second argument (max_bytes) must be a Number (positive integer)");
+        if(imax>0)
+            max=(size_t)imax;
     }
 
     if (!duk_is_undefined(ctx,2))
     {
-        int imax = REQUIRE_INT(ctx, 2, "fread(): third argument (max_bytes) must be a Number (integer)");
-        if(imax>0)
-            max=(size_t)imax;
+        int isz=REQUIRE_INT(ctx, 2, "fread(): third argument (chunk_size) must be a Number (positive integer)");
+        if(isz > 0)
+            sz=(size_t)isz;
     }
 
     if(isz > 0)
         sz=(size_t)isz;
 
     buf=duk_push_dynamic_buffer(ctx, (duk_size_t)sz);
+
+    if(type!=RTYPE_STDIN)
+    {
+        if (flock(fileno(f), LOCK_SH) == -1)
+            RP_THROW(ctx, "error fread(): could not get read lock");            
+    }
 
     while (1)
     {
@@ -3462,23 +3889,60 @@ duk_ret_t duk_fread(duk_context *ctx)
             RP_THROW(ctx, "error fread(): error reading file");
         read+=r;
         if (r != sz || r > max ) break;
-        duk_resize_buffer(ctx, -1, read+sz);
+        buf = duk_resize_buffer(ctx, -1, read+sz);
+    }
+
+    if(type!=RTYPE_STDIN)
+    {
+        if (flock(fileno(f), LOCK_UN) == -1)
+            RP_THROW(ctx, "error fread(): could not get read lock");
     }
 
     if(read > max) read=max;
     duk_resize_buffer(ctx, -1, read);
+
+    if(type==RTYPE_FILENAME)
+        fclose(f);
 
     return (1);
 }
 
 duk_ret_t duk_fwrite(duk_context *ctx)
 {
-    FILE *f = getfh_nonull(ctx,0,"fwrite()");
+    pthread_mutex_t *lock_p=NULL;
+    FILE *f;
     void *buf;
     size_t wrote, 
         sz=(size_t)duk_get_number_default(ctx,2,-1);
     duk_size_t bsz;
-    pthread_mutex_t *lock_p=NULL;
+    int closefh=1;
+    int append=0;
+
+    if(duk_is_object(ctx,0))
+    {
+        f = getfh_nonull_lock(ctx,0,"fprintf()",lock_p);
+        closefh=0;
+    }
+    else
+    {
+        const char *fn=REQUIRE_STRING(ctx, 0, "fwrite(): output must be a filehandle opened with fopen() or a String (filename)");
+        if( duk_is_boolean(ctx,1) )
+        {
+            append=duk_get_boolean(ctx,1);
+            duk_remove(ctx,1);
+        }
+
+        if(append)
+        {
+            if( (f=fopen(fn,"a")) == NULL )
+                RP_THROW(ctx, "fwrite(): error opening file '%s': %s", fn, strerror(errno));
+        }
+        else
+        {
+            if( (f=fopen(fn,"w")) == NULL )
+                RP_THROW(ctx, "fwrite(): error opening file '%s': %s", fn, strerror(errno));
+        }
+    }
 
     duk_to_buffer(ctx,1,&bsz);
     buf=duk_get_buffer_data(ctx, 1, &bsz);
@@ -3489,18 +3953,32 @@ duk_ret_t duk_fwrite(duk_context *ctx)
     }
     else sz=(size_t)bsz;
 
-    if ( duk_get_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filelock")) )
-        lock_p=duk_get_pointer(ctx,-1);
+    if(!lock_p)
+    {
+        if (flock(fileno(f), LOCK_EX) == -1)
+            RP_THROW(ctx, "fwrite(): error - could not obtain lock");
+    }
     else
-        RP_THROW(ctx, "error fwrite(): no mutex lock found (this should never happen)");
+    {
+        if (pthread_mutex_lock(lock_p) == EINVAL)
+            RP_THROW(ctx, "fwrite(): error - could not obtain lock");
+    }
 
-    if (pthread_mutex_lock(lock_p) == EINVAL)
-        RP_THROW(ctx, "fwrite(): error - could not obtain lock\n");
     wrote=fwrite(buf,1,sz,f);
-    pthread_mutex_unlock(lock_p);
-    
+
+    if(!lock_p)
+    {
+        if (flock(fileno(f), LOCK_UN) == -1)
+            RP_THROW(ctx, "fwrite(): error - could not release lock");
+    }
+    else
+        pthread_mutex_unlock(lock_p);
+
+    if(closefh)
+        fclose(f);
+
     if(wrote != sz)
-        RP_THROW(ctx, "error fwrite(): error writing file");
+        RP_THROW(ctx, "fwrite(): error writing file");
 
     duk_push_number(ctx,(double)wrote);
     return(1);
@@ -3538,21 +4016,9 @@ duk_ret_t duk_fclose(duk_context *ctx)
         }
         else
         {
-            pthread_mutex_t *lock;
 
             duk_pop(ctx);
             f = getfh(ctx,0,"fclose()");
-            
-            duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("filelock") );
-            lock=duk_get_pointer(ctx, -1);
-            if (lock)
-            {
-                free(lock);
-                duk_pop(ctx);
-                duk_push_pointer(ctx,NULL);
-                duk_put_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filelock") );
-            } 
-
             if(f)
             {
                 fclose(f);
@@ -3602,7 +4068,6 @@ duk_ret_t duk_fflush(duk_context *ctx)
 duk_ret_t duk_fopen(duk_context *ctx)
 {
     FILE *f;
-    pthread_mutex_t *newlock=NULL;
     const char *fn=REQUIRE_STRING(ctx,0, "fopen(): filename (String) required as first parameter");
     const char *mode=REQUIRE_STRING(ctx, 1, "fopen(): mode (String) required as second parameter");
     int mlen=strlen(mode);
@@ -3621,14 +4086,6 @@ duk_ret_t duk_fopen(duk_context *ctx)
     duk_push_pointer(ctx,(void *)f);
     duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("filehandle") );
 
-    REMALLOC(newlock, sizeof(pthread_mutex_t) );
-
-    if (pthread_mutex_init(newlock, NULL) == EINVAL)
-        RP_THROW(ctx,"could not initialize file handle lock");
-
-    duk_push_pointer(ctx,(void *)newlock);
-    duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("filelock") );
-
     duk_push_c_function(ctx, duk_fclose, 2);
     duk_set_finalizer(ctx, -2);
 
@@ -3643,63 +4100,15 @@ duk_ret_t duk_fprintf(duk_context *ctx)
 {
     int ret;
     const char *fn;
-    FILE *out=NULL;
+    FILE *f=NULL;
     int append=0;
     int closefh=1;
-    pthread_mutex_t *lock_p=&pflock;
+    pthread_mutex_t *lock_p=NULL;
 
     if(duk_is_object(ctx,0))
     {
-        /* special named file handles */
-        if(duk_get_prop_string(ctx,0,"stream"))
-        {
-            const char *s=duk_require_string(ctx,-1);
-            if (!strcmp(s,"stdout"))
-            {
-                out=stdout;
-            }
-            else if (!strcmp(s,"stderr"))
-            {
-                out=stderr;
-                lock_p=&pflock_err;
-            }
-            else if (!strcmp(s,"accessLog"))
-            {
-                out=access_fh;
-                lock_p=&loglock;
-            }
-            else if (!strcmp(s,"errorLog"))
-            {
-                out=error_fh;
-                lock_p=&errlock;
-            }
-            else
-                RP_THROW(ctx,"error: fprintf({stream:\"streamName\"},...): streamName must be stdout, stderr, accessLog or errorLog");
-
-            closefh=0;
-            duk_pop(ctx);
-            goto startprint;
-        }
-        duk_pop(ctx);
-        /* file handles opened with javascript:fopen() */
-        if ( duk_get_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filehandle")) )
-        {
-            out=duk_get_pointer(ctx,-1);
-            duk_pop(ctx);
-            closefh=0;
-            if(out==NULL)
-                RP_THROW(ctx,"error: fprintf(handle,...): handle was previously closed");
-
-            if ( duk_get_prop_string(ctx,0,DUK_HIDDEN_SYMBOL("filelock")) )
-            {
-                lock_p=duk_get_pointer(ctx,-1);
-            }
-            duk_pop(ctx);
-            goto startprint;
-        }
-        duk_pop(ctx);
-
-        RP_THROW(ctx,"error: fprintf(): invalid option");
+        f = getfh_nonull_lock(ctx,0,"fprintf()",lock_p);
+        closefh=0;
     }
     else
     {
@@ -3712,28 +4121,46 @@ duk_ret_t duk_fprintf(duk_context *ctx)
 
         if(append)
         {
-            if( (out=fopen(fn,"a")) == NULL )
+            if( (f=fopen(fn,"a")) == NULL )
             {
-                //if( (out=fopen(fn,"w")) == NULL )
-                //why would I do such a thing?
                     goto err;
             }
         }
         else
         {
-            if( (out=fopen(fn,"w")) == NULL )
+            if( (f=fopen(fn,"w")) == NULL )
                 goto err;
         }
     }
-    startprint:
-    if (pthread_mutex_lock(lock_p) == EINVAL)
-        RP_THROW(ctx, "fprintf(): error - could not obtain lock\n");
 
-    ret = rp_printf(_fout_char, (void*)out, (size_t)-1, ctx, 1, lock_p);
-    fflush(out);
+    if(!lock_p)
+    {
+        if (flock(fileno(f), LOCK_EX) == -1)
+            RP_THROW(ctx, "fprintf(): error - could not obtain lock");
+    }
+    else
+    {
+        if (pthread_mutex_lock(lock_p) == EINVAL)
+            RP_THROW(ctx, "fprintf(): error - could not obtain lock");
+    }
+
+    errno=0;
+    ret = rp_printf(_fout_char, (void*)f, (size_t)-1, ctx, 1, lock_p);
+    fflush(f);
+    if(errno)
+        RP_THROW(ctx, "fprintf(): error - %s", strerror(errno));
+
+    if(!lock_p)
+    {
+        if (flock(fileno(f), LOCK_UN) == -1)
+            RP_THROW(ctx, "fprintf(): error - could not release lock");
+    }
+    else
+        pthread_mutex_unlock(lock_p);
+
     if(closefh)
-        fclose(out);
-    pthread_mutex_unlock(lock_p);
+        fclose(f);
+
     duk_push_int(ctx, ret);
     return 1;
 

@@ -51,6 +51,7 @@ add_executable(rampart
 	duktape/globals/hash_random/cityhash.c
 	duktape/globals/hash_random/fast_random.c
 	duktape/globals/hash_random/murmurhash.c
+	duktape/globals/hash_random/hyperloglog.c
 	linenoise.c
 	whereami.c
 	cmdline.c
