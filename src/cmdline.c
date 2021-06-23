@@ -29,6 +29,7 @@
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 int totnthreads=0;
 char *RP_script_path=NULL;
+char *RP_script=NULL;
 duk_context **thread_ctx = NULL;
 duk_context *main_ctx;
 struct event_base *elbase;
@@ -369,6 +370,7 @@ void duk_rp_exit(duk_context *ctx, int ec)
 
     duk_destroy_heap(ctx);
     free(RP_script_path);
+    free(RP_script);
 
     /* need to stop the threads before doing this 
     if(totnthreads)
@@ -1819,8 +1821,16 @@ int main(int argc, char *argv[])
     if(rampart_argc>1)
     {
         char p[PATH_MAX], *s;
+        int n=1;
 
-        strcpy(p, rampart_argv[1]);
+        //script is either first arg or last
+        if((stat(argv[1], &entry_file_stat)))
+        {
+            n=argc-1;
+        }
+
+        strcpy(p, rampart_argv[n]);
+        RP_script=realpath(p, NULL);
         s=strrchr(p,'/');
         if (s)
         {

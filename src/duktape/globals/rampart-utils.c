@@ -22,6 +22,7 @@
 #include "rampart.h"
 extern char **environ;
 extern char *RP_script_path;
+extern char *RP_script;
 
 /* 
     defined in main program here 
@@ -621,6 +622,7 @@ void duk_process_init(duk_context *ctx)
 
     {   /* add process.argv */
         int i=0;
+        char *s;
 
         duk_push_array(ctx); /* process.argv */
 
@@ -637,6 +639,31 @@ void duk_process_init(duk_context *ctx)
         duk_push_string(ctx,RP_script_path);
         duk_put_prop_string(ctx,-2,"scriptPath");
 
+        if(RP_script)
+        {
+            duk_push_string(ctx,RP_script);
+            duk_put_prop_string(ctx,-2,"script");
+
+            s=strrchr(RP_script, '/');
+            if(s)
+            {
+                duk_push_string(ctx, s+1);
+                duk_put_prop_string(ctx,-2,"scriptName");
+            }
+            else
+            {
+                duk_push_string(ctx,RP_script);
+                duk_put_prop_string(ctx,-2,"scriptName");
+            }
+        }
+        else
+        {
+            duk_push_string(ctx,"");
+            duk_put_prop_string(ctx,-2,"script");
+
+            duk_push_string(ctx, "");
+            duk_put_prop_string(ctx,-2,"scriptName");
+        }
     }
 
     duk_put_prop_string(ctx,-2,"process");
