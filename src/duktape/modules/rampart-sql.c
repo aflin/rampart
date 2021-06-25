@@ -1,6 +1,6 @@
 /* Copyright (C) 2021 Aaron Flin - All Rights Reserved
  * You may use, distribute this code under the
- * terms of the Rampart Open Source License.
+ * terms of the Rampart Source Available License.
  * see rsal.txt for details
  */
 #include "txcoreconfig.h"
@@ -2059,11 +2059,11 @@ int duk_rp_add_named_parameters(
 
             /* texis_params is indexed starting at 1 */
             rc = h_param(h, i+1, v, &plen, in, out);
+            if (!rc)
+                return 0;
         }
         duk_pop(ctx);
 
-        if (!rc)
-            return 0;
     }
     return 1;
 }
