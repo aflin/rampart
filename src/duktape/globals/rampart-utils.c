@@ -160,7 +160,7 @@ RPPATH rp_find_path(char *file, char *subdir)
     char homedir[strlen(home)+strlen(homesubdir)+1];
     char *loc="./";
     char *sd= (subdir)?subdir:"";
-    RPPATH ret={0};
+    RPPATH ret={{0}};
     char path[PATH_MAX];
     int i=0, skiphome=0;
     struct stat sb;
@@ -1906,6 +1906,27 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     return 1;
 }
 
+duk_ret_t duk_rp_getcwd(duk_context *ctx)
+{
+    char * cwd = getcwd(NULL, 0);
+
+    if(!cwd)
+        RP_THROW(ctx, "getcwd(): error - %s", strerror(errno));
+    duk_push_string(ctx, cwd);
+    free(cwd);
+    return 1;
+}
+
+duk_ret_t duk_rp_chdir(duk_context *ctx)
+{
+    const char * d = REQUIRE_STRING(ctx, 0, "chdir(): argument must be a string (directory)");
+
+    if(chdir(d))
+        RP_THROW(ctx, "chdir(): error - %s", strerror(errno));
+
+    return 0;
+}
+
 
 duk_ret_t duk_rp_exec(duk_context *ctx)
 {
@@ -3625,6 +3646,10 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "mkdir");
     duk_push_c_function(ctx, duk_rp_rmdir, 2);
     duk_put_prop_string(ctx, -2, "rmdir");
+    duk_push_c_function(ctx, duk_rp_chdir, 1);
+    duk_put_prop_string(ctx, -2, "chdir");
+    duk_push_c_function(ctx, duk_rp_getcwd, 0);
+    duk_put_prop_string(ctx, -2, "getcwd");
     duk_push_c_function(ctx, duk_rp_readdir, 2);
     duk_put_prop_string(ctx, -2, "readdir");
     duk_push_c_function(ctx, duk_rp_copy_file, 4);
