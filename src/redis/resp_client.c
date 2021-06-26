@@ -52,6 +52,7 @@ static RESPCLIENT *
 newRespClient()
 {
   RESPCLIENT *rcp = rp_redisCalloc(1, sizeof(RESPCLIENT));
+  signal(SIGPIPE, SIG_IGN); // don't die if pipe to redis disappears -ajf 6/25/2021
   if (!rcp)
   {
     fprintf(stderr, "Malloc error in client\n");
