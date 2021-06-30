@@ -194,6 +194,101 @@ static KEYIV pw_to_keyiv(duk_context *ctx, const char *pass, const char *cipher_
     return kiv;
 }
 
+//from rampart-utils.c
+void duk_rp_hexToBuf(duk_context *ctx, duk_idx_t idx);
+void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase);
+
+/* produce a hash from a password using pbkdf2 */
+duk_ret_t duk_rp_pass_to_keyiv(duk_context *ctx)
+{
+    unsigned char salt[PKCS5_SALT_LEN];
+    unsigned char *salt_p=NULL;
+    const char *pass=NULL;
+    KEYIV kiv;
+    int iter=10000;
+    int klen,ivlen, retbuf=0;
+    const char *cipher_name = "aes-256-cbc";
+    void *buf;
+    const EVP_CIPHER *cipher;
+
+    REQUIRE_OBJECT(ctx, 0, "passToKeyIv requires an object of options as its argument");
+    
+    if(duk_get_prop_string(ctx, 0, "password"))
+        pass = REQUIRE_STRING(ctx, -1, "option 'password' must be a string");
+    else
+        RP_THROW(ctx, "passToKeyIv requires a password");
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, 0, "iter"))
+    {
+        iter=(int)REQUIRE_NUMBER(ctx,-1,"passToKeyIv: option 'iter' requires a Number");
+    }
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, 0, "cipher") )
+    {
+        cipher_name = REQUIRE_STRING(ctx, -1, "passToKeyIv: option 'cipher' must be a String");
+    }
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, 0, "returnBuffer") )
+    {
+        retbuf = REQUIRE_BOOL(ctx, -1, "passToKeyIv: option 'returnBuffer' must be a Boolean");
+    }
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, 0, "salt"))
+    {
+        void *b;
+        if(duk_is_string(ctx, -1))
+        {
+            duk_rp_hexToBuf(ctx, -1);
+            duk_remove(ctx, -2);
+        }
+
+        if (duk_is_buffer_data(ctx, -1))
+        {
+            if(duk_get_length(ctx, -1) < PKCS5_SALT_LEN)
+                RP_THROW(ctx, "passToKeyIv: option 'salt' must be at least %d bytes", PKCS5_SALT_LEN);
+        }
+        else
+            RP_THROW(ctx, "passToKeyIv: option 'salt' must be a buffer (8 bytes) or a string (8 bytes in hex)");
+
+        b = duk_get_buffer_data(ctx, -1, NULL);
+        memcpy(salt, b, PKCS5_SALT_LEN);
+        salt_p=salt;
+    }
+    duk_pop(ctx);
+
+    kiv=pw_to_keyiv(ctx,pass,cipher_name,salt_p,iter);
+
+    cipher = EVP_get_cipherbyname(cipher_name);
+    klen   = EVP_CIPHER_key_length(cipher);
+    ivlen  = EVP_CIPHER_iv_length(cipher);
+
+    duk_push_object(ctx);
+
+    buf = duk_push_fixed_buffer(ctx, (duk_size_t)klen);
+    memcpy(buf, kiv.key, klen);
+    if(!retbuf)
+        duk_rp_toHex(ctx, -1, 0);
+    duk_put_prop_string(ctx, -2, "key");
+
+    buf = duk_push_fixed_buffer(ctx, (duk_size_t)ivlen);
+    memcpy(buf, kiv.iv, ivlen);
+    if(!retbuf)
+        duk_rp_toHex(ctx, -1, 0);
+    duk_put_prop_string(ctx, -2, "iv");
+
+    buf = duk_push_fixed_buffer(ctx, (duk_size_t)PKCS5_SALT_LEN);
+    memcpy(buf, kiv.salt, PKCS5_SALT_LEN);
+    if(!retbuf)
+        duk_rp_toHex(ctx, -1, 0);
+    duk_put_prop_string(ctx, -2, "salt");
+
+    return 1;
+}
+
 
 
 static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
@@ -210,7 +305,7 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
         /* Get options */
         if(duk_get_prop_string(ctx, 0, "cipher") )
         {
-            cipher_name = duk_get_string(ctx, -1);
+            cipher_name = REQUIRE_STRING(ctx, -1, "option 'cipher' must be a string");
         }
         duk_pop(ctx);
 
@@ -2011,6 +2106,7 @@ const duk_function_list_entry crypto_funcs[] = {
     {"rsa_components", duk_rsa_components, 2},
     {"rsa_import_priv_key", duk_rsa_import_priv_key, 3},
     {"cert_info", duk_cert_info,1},
+    {"passToKeyIv", duk_rp_pass_to_keyiv, 1},
     {NULL, NULL, 0}};
 
 duk_ret_t duk_open_module(duk_context *ctx)
