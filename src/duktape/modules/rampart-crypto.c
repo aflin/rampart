@@ -215,9 +215,17 @@ duk_ret_t duk_rp_pass_to_keyiv(duk_context *ctx)
     
     if(duk_get_prop_string(ctx, 0, "password"))
         pass = REQUIRE_STRING(ctx, -1, "option 'password' must be a string");
-    else
-        RP_THROW(ctx, "passToKeyIv requires a password");
     duk_pop(ctx);
+
+    if(!pass)
+    {
+        if(duk_get_prop_string(ctx, 0, "pass"))
+            pass = REQUIRE_STRING(ctx, -1, "option 'password' must be a string");
+        duk_pop(ctx);
+    }
+
+    if(!pass)
+        RP_THROW(ctx, "passToKeyIv requires a password");
 
     if(duk_get_prop_string(ctx, 0, "iter"))
     {
@@ -350,12 +358,43 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
         }
         else
         {
+            int klen, ivlen;
+            const EVP_CIPHER *cipher;
+
+            cipher = EVP_get_cipherbyname(cipher_name);
+            if (cipher == NULL)
+                RP_THROW(ctx, "Cipher %s not found", cipher_name);
+            klen   = EVP_CIPHER_key_length(cipher);
+            ivlen  = EVP_CIPHER_iv_length(cipher);
+
             if (duk_get_prop_string(ctx, 0, "key"))
-                key = (unsigned char *)duk_get_string(ctx, -1);
+            {
+                if(duk_is_string(ctx, -1))
+                {
+                    duk_rp_hexToBuf(ctx, -1);
+                    duk_remove(ctx, -2);
+                }
+
+                if (!duk_is_buffer_data(ctx, -1) || duk_get_length(ctx, -1) != klen)
+                    RP_THROW(ctx, "crypto.[en|de]crypt: option 'key' must be a buffer (%d bytes) or a string (%d bytes in hex)", klen, klen);
+
+                key = (unsigned char *)duk_get_buffer_data(ctx, -1, NULL);
+            }
             duk_pop(ctx);
 
             if (duk_get_prop_string(ctx, 0, "iv"))
-                iv = (unsigned char *)duk_get_string(ctx, -1);
+            {
+                if(duk_is_string(ctx, -1))
+                {
+                    duk_rp_hexToBuf(ctx, -1);
+                    duk_remove(ctx, -2);
+                }
+
+                if (!duk_is_buffer_data(ctx, -1) || duk_get_length(ctx, -1) != ivlen)
+                    RP_THROW(ctx, "crypto.[en|de]crypt: option 'iv' must be a buffer (%d bytes) or a string (%d bytes in hex)", ivlen, ivlen);
+
+                iv = (unsigned char *)duk_get_buffer_data(ctx, -1, NULL);
+            }
             duk_pop(ctx);
         }
         duk_pop(ctx);
