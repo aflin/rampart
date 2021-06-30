@@ -2554,16 +2554,23 @@ querySettings
 Restoring Defaults
 ~~~~~~~~~~~~~~~~~~
 
-defaults
-""""""""
-   String or Boolean.
+sql.reset()
+"""""""""""
 
-   * ``true`` or ``"rampart"`` - reset all settings (including
-     `querySettings`_:"defaults" above) to their original values.
+   Reset all settings (including `querySettings`_:"defaults" above) to their original values.
 
-   * ``"texis"`` - Same as above, except: 
+Example:
 
-      *  `varcharToStrlstMode`_ is set to ``create``.
-      *  `strlstToVarcharMode`_ is set to ``delimited``.
-      *  `unneededRexEscapeWarning`_ is set to ``true``.
+.. code-block:: javascript
 
+   var Sql = require("rampart-sql");
+
+   var sql = new Sql.init("/path/to/my/db");
+
+   ...
+
+   sql.set({...});  //settings changed in script
+
+   ...
+
+   sql.reset(); //reset all to default

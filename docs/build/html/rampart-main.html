@@ -304,11 +304,12 @@ JavaScript transpiler.</p></li>
 <p>Though Rampart supports <code class="docutils literal notranslate"><span class="pre">setTimeout()</span></code>, <a class="reference external" href="rampart.events">Events</a> (and
 other async functions via, e.g., <a class="reference internal" href="rampart-server.html#websockets"><span class="std std-ref">websockets</span></a>,
 <a class="reference internal" href="rampart-redis.html#the-rampart-redis-module"><span class="std std-ref">rampart-redis</span></a>, Babel, etc),
-the majority of functions added to <a class="reference external" href="https://duktape.org">Duktape</a> via are
-synchronous.  Raw JavaScript execution is more memory efficient, but far
-slower than with, e.g., node.js.  However, the functionality and speed of
-the available C functions provide comparable efficacy, excellent performance
-and are a viable alternative to <a class="reference external" href="https://en.wikipedia.org/wiki/LAMP_(software_bundle)">LAMP</a>,
+all functions included in the <a class="reference external" href="https://duktape.org">Duktape</a> JavaScript
+engine (as well as most of the functions added to Rampart) are synchronous.  Raw
+JavaScript execution ismore memory efficient, but far slower than with, e.g.,
+node.js.  However, the functionality and speed of the available C functions provide
+comparable efficacy, excellent performance and are a viable alternative to
+<a class="reference external" href="https://en.wikipedia.org/wiki/LAMP_(software_bundle)">LAMP</a>,
 <a class="reference external" href="https://en.wikipedia.org/wiki/MEAN_(solution_stack)">MEAN</a> or other stacks, all
 in a single product, while consuming considerably less resources than the
 aforementioned.</p>
@@ -820,6 +821,19 @@ separate file (here the file is named <code class="docutils literal notranslate"
 <span class="cm">/* res == 10 */</span>
 </pre></div>
 </div>
+<p>Note also that from within a module, the <code class="docutils literal notranslate"><span class="pre">module</span></code> object contains some useful
+information.  An example module named <code class="docutils literal notranslate"><span class="pre">mod.js</span></code> and loaded with the
+statement <code class="docutils literal notranslate"><span class="pre">require(&quot;mod.js&quot;)</span></code> will have
+<code class="docutils literal notranslate"><span class="pre">module</span></code> set to a value similar to the following:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+   <span class="s2">&quot;id&quot;</span><span class="o">:</span> <span class="s2">&quot;/path/to/my/mod.js&quot;</span><span class="p">,</span>
+   <span class="s2">&quot;path&quot;</span><span class="o">:</span> <span class="s2">&quot;/path/to/my&quot;</span><span class="p">,</span>
+   <span class="s2">&quot;exports&quot;</span><span class="o">:</span> <span class="p">{},</span>
+   <span class="s2">&quot;mtime&quot;</span><span class="o">:</span> <span class="mi">1624904227</span><span class="p">,</span>
+   <span class="s2">&quot;atime&quot;</span><span class="o">:</span> <span class="mi">1624904227</span>
+<span class="p">}</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="example-creating-a-c-module">
 <h3>Example creating a C module<a class="headerlink" href="#example-creating-a-c-module" title="Permalink to this headline">¶</a></h3>
@@ -874,6 +888,10 @@ first. Thus relative paths are checked from the current directory first.</p></li
 <li><p>In <a class="reference internal" href="#scriptpath"><span class="std std-ref">process.scriptPath</span></a>.</p></li>
 <li><p>In the <code class="docutils literal notranslate"><span class="pre">.rampart/modules</span></code> directory of current user’s home directory
 as provided by the <code class="docutils literal notranslate"><span class="pre">$HOME</span></code> environment variable.</p></li>
+<li><p>In the “/lib/rampart_modules” directory of the <code class="docutils literal notranslate"><span class="pre">-DRP_INST_PATH</span></code> path set when Rampart
+was compiled.  The default is <code class="docutils literal notranslate"><span class="pre">/usr/local/rampart/lib/rampart_modules</span></code>. Or
+preferentially, if set, the path pointed to by the environment variable
+<code class="docutils literal notranslate"><span class="pre">$RAMPART_PATH</span></code> + “/lib/rampart_modules”.</p></li>
 <li><p>In the “/modules” directory of the <code class="docutils literal notranslate"><span class="pre">-DRP_INST_PATH</span></code> path set when Rampart
 was compiled.  The default is <code class="docutils literal notranslate"><span class="pre">/usr/local/rampart/modules</span></code>. Or
 preferentially, if set, the path pointed to by the environment variable
@@ -989,8 +1007,8 @@ called.</p>
 <span class="cm">&amp;lt;&amp;#47;div&amp;gt;</span>
 <span class="cm">&lt;/pre&gt;</span>
 <span class="cm">*/</span>
-</pre></div><p>Note that this non-standard syntax is not available when using
-<a class="reference external" href="ECMAScript2015+andBabel.js">babel</a> below.</p>
+</pre></div></div><p>Note that this non-standard syntax is not available when using
+<a class="reference internal" href="#babeljs"><span class="std std-ref">babel</span></a> below.</p>
 </div>
 <div class="section" id="settimeout">
 <h3>setTimeout()<a class="headerlink" href="#settimeout" title="Permalink to this headline">¶</a></h3>
@@ -1007,7 +1025,7 @@ manner as <code class="docutils literal notranslate"><span class="pre">setTimeou
 <li><p><code class="docutils literal notranslate"><span class="pre">timeOut</span></code> is the amount of time in milliseconds to wait before the <code class="docutils literal notranslate"><span class="pre">callback</span></code> function is called.</p></li>
 </ul>
 <dl class="simple">
-<dt>Return Value:</dt><dd><p>An id which may be used with <a href="#id6"><span class="problematic" id="id7">`clearTimeout`_</span></a>.</p>
+<dt>Return Value:</dt><dd><p>An id which may be used with <a href="#id5"><span class="problematic" id="id6">`clearTimeout`_</span></a>.</p>
 </dd>
 </dl>
 <p>Example:</p>
@@ -1110,7 +1128,7 @@ include:</p>
 <p>For more information, see the <a class="reference external" href="https://duktape.org/guide.html">Duktape Guide</a></p>
 </div>
 <div class="section" id="ecmascript-2015-and-babel-js">
-<h2>ECMAScript 2015+ and Babel.js<a class="headerlink" href="#ecmascript-2015-and-babel-js" title="Permalink to this headline">¶</a></h2>
+<span id="babeljs"></span><h2>ECMAScript 2015+ and Babel.js<a class="headerlink" href="#ecmascript-2015-and-babel-js" title="Permalink to this headline">¶</a></h2>
 <div class="section" id="babel-acknowledgement">
 <h3>Babel Acknowledgement<a class="headerlink" href="#babel-acknowledgement" title="Permalink to this headline">¶</a></h3>
 <p>Rampart <strong>experimentally</strong> uses <a class="reference external" href="https://babeljs.io/">Babel.js</a> to support a

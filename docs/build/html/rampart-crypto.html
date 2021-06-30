@@ -104,6 +104,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#encryption-and-decryption">Encryption and Decryption</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#encrypt">encrypt</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#decrypt">decrypt</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#passtokeyiv">passToKeyIv</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#supported-modes">Supported Modes</a></li>
 </ul>
 </li>
@@ -252,11 +253,11 @@ providing a password.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
 
-<span class="nx">crypto</span><span class="p">.</span><span class="nx">encrypt</span><span class="p">(</span><span class="nx">options</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">ciphertext</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">encrypt</span><span class="p">(</span><span class="nx">options</span><span class="p">);</span>
 
 <span class="cm">/* or */</span>
 
-<span class="nx">crypto</span><span class="p">.</span><span class="nx">encrypt</span><span class="p">(</span><span class="nx">pass</span><span class="p">,</span> <span class="nx">data</span><span class="p">[,</span> <span class="nx">cipher_mode</span><span class="p">]);</span>
+<span class="kd">var</span> <span class="nx">ciphertext</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">encrypt</span><span class="p">(</span><span class="nx">pass</span><span class="p">,</span> <span class="nx">data</span><span class="p">[,</span> <span class="nx">cipher_mode</span><span class="p">]);</span>
 </pre></div>
 </div>
 <p>Where</p>
@@ -331,9 +332,94 @@ using openssl version 1.1.1 from the command line.</p>
     <span class="nx">data</span><span class="o">:</span> <span class="nx">ciphertext</span>
 <span class="p">});</span>
 
-<span class="nx">printf</span><span class="p">(</span><span class="s1">&#39;The decrypted data: &quot;%s&quot;\n&#39;</span><span class="p">,</span> <span class="nx">plaintext</span><span class="p">);</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s1">&#39;The decrypted data: &quot;%s&quot;\n&#39;</span><span class="p">,</span> <span class="nx">plaintext</span><span class="p">);</span>
 
 <span class="cm">/* expected output:</span>
+
+<span class="cm">The decrypted data: &quot;my data&quot;</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="passtokeyiv">
+<h3>passToKeyIv<a class="headerlink" href="#passtokeyiv" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">passToKeyIv()</span></code> function performs the same password to
+key/iv pair generation as <a class="reference internal" href="#encrypt">encrypt</a> above.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">kiv</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">passToKeyIv</span><span class="p">(</span><span class="nx">options</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> is an <span class="green">Object</span> which may contain the following:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">cipher</span></code> is a <span class="green">String</span> and is one of the <a class="reference internal" href="#supported-modes">Supported Modes</a>
+listed below.  If not specified, the default is <code class="docutils literal notranslate"><span class="pre">aes-256-cbc</span></code>.  This
+option controls the key and iv length.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pass</span></code> is a <span class="green">String</span>, the password used to generate a key/iv pair.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">salt</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span>, the optional salt for generation
+of the key and iv.  If not provided, a random salt will be generated.
+If provided as a <span class="green">String</span> it must be a hex encoded string representing at
+least 8 bytes.  If provided as a <span class="green">Buffer</span>, it must be at least 8 bytes in length.
+If longer than 8 bytes, only the first 8 bytes will be used.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">iter</span></code> - number of iterations for generating a key and iv from <code class="docutils literal notranslate"><span class="pre">pass</span></code>.
+Default is <code class="docutils literal notranslate"><span class="pre">10000</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">returnBuffer</span></code> is an <span class="green">Boolean</span>, if <code class="docutils literal notranslate"><span class="pre">true</span></code> the key, iv and salt will be returned
+as binary data in <span class="green">Buffers</span>.  Otherwise if not set or <code class="docutils literal notranslate"><span class="pre">false</span></code>, they will be encoded as a hex
+<span class="green">Strings</span>.</p></li>
+</ul>
+</li>
+</ul>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>An <span class="green">Object</span> containing the key, iv and salt as hex encoded <span class="green">Strings</span> or
+as binary data in <span class="green">Buffers</span>.
+The function <code class="docutils literal notranslate"><span class="pre">crypto.passToKeyIv</span></code> produces the same results as
+<code class="docutils literal notranslate"><span class="pre">openssl</span> <span class="pre">enc</span> <span class="pre">-&lt;cipher_mode&gt;</span> <span class="pre">-pbkdf2</span>&#160; <span class="pre">-k</span> <span class="pre">&lt;password&gt;</span> <span class="pre">[-S</span> <span class="pre">&lt;salt_as_hex&gt;]</span> <span class="pre">-P</span></code>
+using openssl version 1.1.1 from the command line.</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">salt</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">sha1</span><span class="p">(</span><span class="s2">&quot;a unique string for one time use as salt&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">kiv</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">passToKeyIv</span><span class="p">({</span>
+   <span class="nx">pass</span><span class="o">:</span> <span class="s2">&quot;mypass&quot;</span><span class="p">,</span>
+   <span class="nx">salt</span><span class="o">:</span> <span class="nx">salt</span>
+<span class="p">});</span>
+
+<span class="kd">var</span> <span class="nx">ciphertext</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">encrypt</span><span class="p">({</span>
+    <span class="nx">key</span><span class="o">:</span>  <span class="nx">kiv</span><span class="p">.</span><span class="nx">key</span><span class="p">,</span>
+    <span class="nx">iv</span><span class="o">:</span>   <span class="nx">kiv</span><span class="p">.</span><span class="nx">iv</span><span class="p">,</span>
+    <span class="nx">data</span><span class="o">:</span> <span class="s2">&quot;my data&quot;</span>
+<span class="p">});</span>
+
+<span class="cm">/*</span>
+<span class="cm">   note that when key/iv is used in encrypt instead of a password, salt</span>
+<span class="cm">   is not stored in the ciphertext, and the ciphertext must be decrypted</span>
+<span class="cm">   with the same key and iv.</span>
+<span class="cm">*/</span>
+
+<span class="kd">var</span> <span class="nx">plaintext</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">decrypt</span><span class="p">({</span>
+    <span class="nx">key</span><span class="o">:</span>  <span class="nx">kiv</span><span class="p">.</span><span class="nx">key</span><span class="p">,</span>
+    <span class="nx">iv</span><span class="o">:</span>   <span class="nx">kiv</span><span class="p">.</span><span class="nx">iv</span><span class="p">,</span>
+    <span class="nx">data</span><span class="o">:</span> <span class="nx">ciphertext</span>
+<span class="p">});</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s1">&#39;Key/Iv/Salt: &quot;%3J&quot;\n\n&#39;</span><span class="p">,</span> <span class="nx">kiv</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s1">&#39;The decrypted data: &quot;%s&quot;\n&#39;</span><span class="p">,</span> <span class="nx">plaintext</span><span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">Key/Iv/Salt: &quot;{</span>
+<span class="cm">   &quot;key&quot;: &quot;215a744a875c4604046f05a34164507cf9f8c54342f75b1d58ad5d1f428aadd2&quot;,</span>
+<span class="cm">   &quot;iv&quot;: &quot;daffcd9ff10128eee4f19375f1aa4dde&quot;,</span>
+<span class="cm">   &quot;salt&quot;: &quot;ce37ddf6cda911f4&quot;</span>
+<span class="cm">}&quot;</span>
 
 <span class="cm">The decrypted data: &quot;my data&quot;</span>
 

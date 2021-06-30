@@ -846,26 +846,25 @@ Return Value:
 .. code-block:: javascript
 
    {
-      "dev":     Number,
-      "ino":     Number,
-      "mode":    Number,
-      "nlink":   Number,
-      "uid":     Number,
-      "gid":     Number,
-      "rdev":    Number,
-      "size":    Number,
-      "blksize": Number,
-      "blocks":  Number,
-      "atime":   Date,
-      "mtime":   Date,
-      "ctime":   Date
-      "isBlockDevice":     function,
-      "isCharacterDevice": function,
-      "isDirectory":       function,
-      "isFIFO":            function,
-      "isFile":            function,
-      "isSocket":          function
-
+      "dev":               Number,
+      "ino":               Number,
+      "mode":              Number,
+      "nlink":             Number,
+      "uid":               Number,
+      "gid":               Number,
+      "rdev":              Number,
+      "size":              Number,
+      "blksize":           Number,
+      "blocks":            Number,
+      "atime":             Date,
+      "mtime":             Date,
+      "ctime":             Date,
+      "isBlockDevice":     Boolean,
+      "isCharacterDevice": Boolean,
+      "isDirectory":       Boolean,
+      "isFIFO":            Boolean,
+      "isFile":            Boolean,
+      "isSocket":          Boolean
    }
 
 See `stat (2) <https://man7.org/linux/man-pages/man2/stat.2.html>`_ for the
@@ -919,7 +918,11 @@ Where:
    *  ``killSignal`` - :green:`Number`. If timeout is reached, use this signal 
 
    *  ``background`` - :green:`Boolean`.  Whether to execute detached and return
-      immediately.  ``stdout`` and ``stderr`` below will be set to ``null``.
+      immediately.  ``stdout`` and ``stderr`` below will be set to ``null``.  Any ``timeout`` 
+      value is ignored.
+
+   *  ``stdin`` - :green:`String` or :green:`Buffer`. If specified, the content is piped to the 
+      command as stdin.
 
 *  ``argn`` - :green:`String`/:green:`Number`/:green:`Object`/:green:`Boolean`/:green:`Null` - Arguments to be passed to
    ``command``.  Non-Strings are converted to a :green:`String` (e.g. "true", "null",
@@ -951,10 +954,10 @@ Usage:
 
 .. code-block:: javascript
 
-   var ret = rampart.utils.shell(shellcmd);
+   var ret = rampart.utils.shell(shellcmd[, options]);
 
 Where ``shellcmd`` is a :green:`String` containing the command and arguments to be
-passed to bash.
+passed to bash and ``options`` are the same as specified for `exec`_\ .
 
 Return Value:
    Same as `exec`_\ ().
@@ -1015,6 +1018,41 @@ Example:
       process is still running
       and now is dead
    */
+
+
+getcwd
+''''''
+
+Return the current working directory as a :green:`String`.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.utils.getcwd();
+
+Return Value:
+   A :green:`String`, the current working directory of the script.
+
+
+
+chdir
+'''''
+
+Change the current working directory.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.utils.chdir(path);
+
+Where ``path`` is a :green:`String`, the location of the new working
+directory.  This command throws an error if it fails to change to the
+specified directory.
+
+Return Value:
+   ``undefined``.
 
 
 mkdir

@@ -112,6 +112,8 @@
 <li class="toctree-l2"><a class="reference internal" href="#exec">exec</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#shell">shell</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#kill">kill</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#getcwd">getcwd</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#chdir">chdir</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#mkdir">mkdir</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#rmdir">rmdir</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#readdir">readdir</a></li>
@@ -1008,26 +1010,25 @@ properties:</p>
 </dd>
 </dl>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
-   <span class="s2">&quot;dev&quot;</span><span class="o">:</span>     <span class="nb">Number</span><span class="p">,</span>
-   <span class="s2">&quot;ino&quot;</span><span class="o">:</span>     <span class="nb">Number</span><span class="p">,</span>
-   <span class="s2">&quot;mode&quot;</span><span class="o">:</span>    <span class="nb">Number</span><span class="p">,</span>
-   <span class="s2">&quot;nlink&quot;</span><span class="o">:</span>   <span class="nb">Number</span><span class="p">,</span>
-   <span class="s2">&quot;uid&quot;</span><span class="o">:</span>     <span class="nb">Number</span><span class="p">,</span>
-   <span class="s2">&quot;gid&quot;</span><span class="o">:</span>     <span class="nb">Number</span><span class="p">,</span>
-   <span class="s2">&quot;rdev&quot;</span><span class="o">:</span>    <span class="nb">Number</span><span class="p">,</span>
-   <span class="s2">&quot;size&quot;</span><span class="o">:</span>    <span class="nb">Number</span><span class="p">,</span>
-   <span class="s2">&quot;blksize&quot;</span><span class="o">:</span> <span class="nb">Number</span><span class="p">,</span>
-   <span class="s2">&quot;blocks&quot;</span><span class="o">:</span>  <span class="nb">Number</span><span class="p">,</span>
-   <span class="s2">&quot;atime&quot;</span><span class="o">:</span>   <span class="nb">Date</span><span class="p">,</span>
-   <span class="s2">&quot;mtime&quot;</span><span class="o">:</span>   <span class="nb">Date</span><span class="p">,</span>
-   <span class="s2">&quot;ctime&quot;</span><span class="o">:</span>   <span class="nb">Date</span>
-   <span class="s2">&quot;isBlockDevice&quot;</span><span class="o">:</span>     <span class="kd">function</span><span class="p">,</span>
-   <span class="s2">&quot;isCharacterDevice&quot;</span><span class="o">:</span> <span class="kd">function</span><span class="p">,</span>
-   <span class="s2">&quot;isDirectory&quot;</span><span class="o">:</span>       <span class="kd">function</span><span class="p">,</span>
-   <span class="s2">&quot;isFIFO&quot;</span><span class="o">:</span>            <span class="kd">function</span><span class="p">,</span>
-   <span class="s2">&quot;isFile&quot;</span><span class="o">:</span>            <span class="kd">function</span><span class="p">,</span>
-   <span class="s2">&quot;isSocket&quot;</span><span class="o">:</span>          <span class="kd">function</span>
-
+   <span class="s2">&quot;dev&quot;</span><span class="o">:</span>               <span class="nb">Number</span><span class="p">,</span>
+   <span class="s2">&quot;ino&quot;</span><span class="o">:</span>               <span class="nb">Number</span><span class="p">,</span>
+   <span class="s2">&quot;mode&quot;</span><span class="o">:</span>              <span class="nb">Number</span><span class="p">,</span>
+   <span class="s2">&quot;nlink&quot;</span><span class="o">:</span>             <span class="nb">Number</span><span class="p">,</span>
+   <span class="s2">&quot;uid&quot;</span><span class="o">:</span>               <span class="nb">Number</span><span class="p">,</span>
+   <span class="s2">&quot;gid&quot;</span><span class="o">:</span>               <span class="nb">Number</span><span class="p">,</span>
+   <span class="s2">&quot;rdev&quot;</span><span class="o">:</span>              <span class="nb">Number</span><span class="p">,</span>
+   <span class="s2">&quot;size&quot;</span><span class="o">:</span>              <span class="nb">Number</span><span class="p">,</span>
+   <span class="s2">&quot;blksize&quot;</span><span class="o">:</span>           <span class="nb">Number</span><span class="p">,</span>
+   <span class="s2">&quot;blocks&quot;</span><span class="o">:</span>            <span class="nb">Number</span><span class="p">,</span>
+   <span class="s2">&quot;atime&quot;</span><span class="o">:</span>             <span class="nb">Date</span><span class="p">,</span>
+   <span class="s2">&quot;mtime&quot;</span><span class="o">:</span>             <span class="nb">Date</span><span class="p">,</span>
+   <span class="s2">&quot;ctime&quot;</span><span class="o">:</span>             <span class="nb">Date</span><span class="p">,</span>
+   <span class="s2">&quot;isBlockDevice&quot;</span><span class="o">:</span>     <span class="nb">Boolean</span><span class="p">,</span>
+   <span class="s2">&quot;isCharacterDevice&quot;</span><span class="o">:</span> <span class="nb">Boolean</span><span class="p">,</span>
+   <span class="s2">&quot;isDirectory&quot;</span><span class="o">:</span>       <span class="nb">Boolean</span><span class="p">,</span>
+   <span class="s2">&quot;isFIFO&quot;</span><span class="o">:</span>            <span class="nb">Boolean</span><span class="p">,</span>
+   <span class="s2">&quot;isFile&quot;</span><span class="o">:</span>            <span class="nb">Boolean</span><span class="p">,</span>
+   <span class="s2">&quot;isSocket&quot;</span><span class="o">:</span>          <span class="nb">Boolean</span>
 <span class="p">}</span>
 </pre></div>
 </div>
@@ -1073,7 +1074,10 @@ an executable that may be found in the current <code class="docutils literal not
 the process is automatically killed.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">killSignal</span></code> - <span class="green">Number</span>. If timeout is reached, use this signal</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">background</span></code> - <span class="green">Boolean</span>.  Whether to execute detached and return
-immediately.  <code class="docutils literal notranslate"><span class="pre">stdout</span></code> and <code class="docutils literal notranslate"><span class="pre">stderr</span></code> below will be set to <code class="docutils literal notranslate"><span class="pre">null</span></code>.</p></li>
+immediately.  <code class="docutils literal notranslate"><span class="pre">stdout</span></code> and <code class="docutils literal notranslate"><span class="pre">stderr</span></code> below will be set to <code class="docutils literal notranslate"><span class="pre">null</span></code>.  Any <code class="docutils literal notranslate"><span class="pre">timeout</span></code>
+value is ignored.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">stdin</span></code> - <span class="green">String</span> or <span class="green">Buffer</span>. If specified, the content is piped to the
+command as stdin.</p></li>
 </ul>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">argn</span></code> - <span class="green">String</span>/<span class="green">Number</span>/<span class="green">Object</span>/<span class="green">Boolean</span>/<span class="green">Null</span> - Arguments to be passed to
@@ -1100,11 +1104,11 @@ Otherwise <code class="docutils literal notranslate"><span class="pre">null</spa
 <p>Execute <span class="green">String</span> in a bash shell. Equivalent to
 <code class="docutils literal notranslate"><span class="pre">rampart.utils.exec(&quot;bash&quot;,</span> <span class="pre">&quot;-c&quot;,</span> <span class="pre">shellcmd);</span></code>.</p>
 <p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">shell</span><span class="p">(</span><span class="nx">shellcmd</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">shell</span><span class="p">(</span><span class="nx">shellcmd</span><span class="p">[,</span> <span class="nx">options</span><span class="p">]);</span>
 </pre></div>
 </div>
 <p>Where <code class="docutils literal notranslate"><span class="pre">shellcmd</span></code> is a <span class="green">String</span> containing the command and arguments to be
-passed to bash.</p>
+passed to bash and <code class="docutils literal notranslate"><span class="pre">options</span></code> are the same as specified for <a class="reference internal" href="#exec">exec</a>.</p>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p>Same as <a class="reference internal" href="#exec">exec</a>().</p>
 </dd>
@@ -1159,6 +1163,33 @@ an error or process does not exist.</p>
 <span class="cm">*/</span>
 </pre></div>
 </div>
+</div>
+<div class="section" id="getcwd">
+<h2>getcwd<a class="headerlink" href="#getcwd" title="Permalink to this headline">¶</a></h2>
+<p>Return the current working directory as a <span class="green">String</span>.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">getcwd</span><span class="p">();</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">String</span>, the current working directory of the script.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="chdir">
+<h2>chdir<a class="headerlink" href="#chdir" title="Permalink to this headline">¶</a></h2>
+<p>Change the current working directory.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">chdir</span><span class="p">(</span><span class="nx">path</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">path</span></code> is a <span class="green">String</span>, the location of the new working
+directory.  This command throws an error if it fails to change to the
+specified directory.</p>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
+</dd>
+</dl>
 </div>
 <div class="section" id="mkdir">
 <h2>mkdir<a class="headerlink" href="#mkdir" title="Permalink to this headline">¶</a></h2>

@@ -101,6 +101,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#exec">exec()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#one">one()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#set">set()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#reset">reset()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#importcsvfile">importCsvFile()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#importcsv">importCsv()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#close">close()</a></li>
@@ -337,6 +338,7 @@ the location specified.</p></td>
     exec:          {_func:true},
     one:           {_func:true},
     set:           {_func:true},
+    reset:         {_func:true},
     importCsvFile: {_func:true},
     importCsv:     {_func:true},
     close:         {_func:true}
@@ -361,7 +363,7 @@ with <a class="reference internal" href="#initconst"><span class="std std-ref">i
 statement and an optional <span class="green">Array</span> of sql parameters, an optional
 <span class="green">Object</span> of options and an optional callback <span class="green">Function</span>.  The
 parameters may be specified in any order.</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="nx">statement</span> <span class="p">[,</span> <span class="nx">options</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">sql_parameters</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">callback</span><span class="p">])</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">rows</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="nx">statement</span> <span class="p">[,</span> <span class="nx">options</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">sql_parameters</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">callback</span><span class="p">])</span>
 </pre></div>
 </div>
 <table class="docutils align-default">
@@ -404,7 +406,7 @@ parameters may be specified in any order.</p>
 executed.  A trailing <code class="docutils literal notranslate"><span class="pre">;</span></code> (semicolon) is optional.  Example:</p>
 </dd>
 </dl>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">rows</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
     <span class="s2">&quot;select * from employees where Salary &gt; 50000 and Start_date &lt; &#39;2018-12-31&#39;&quot;</span>
 <span class="p">);</span>
 </pre></div>
@@ -421,14 +423,14 @@ statement.</p>
 <p>Example:</p>
 </dd>
 </dl>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">rows</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
     <span class="s2">&quot;select * from employees where Salary &gt; ? and Start-date &lt; ?&quot;</span><span class="p">,</span>
     <span class="p">[</span><span class="mi">50000</span><span class="p">,</span> <span class="s2">&quot;2018-12-31&quot;</span><span class="p">]</span>
 <span class="p">);</span>
 
 <span class="cm">/* or */</span>
 
-<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
+<span class="kd">var</span> <span class="nx">rows</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
     <span class="s2">&quot;select * from employees where Salary &gt; ?salary and Start-date &lt; ?date&quot;</span><span class="p">,</span>
     <span class="p">{</span> <span class="nx">salary</span><span class="o">:</span> <span class="mi">50000</span><span class="p">,</span> <span class="nx">date</span><span class="o">:</span> <span class="s2">&quot;2018-12-31&quot;</span><span class="p">}</span>
 <span class="p">);</span>
@@ -469,7 +471,7 @@ where the return value would otherwise not be used.</p></li>
 <li><p><strong>Note</strong>: If the values of a deleted, inserted or updated row are needed,
 <code class="docutils literal notranslate"><span class="pre">returnType</span></code> can be set to either <code class="docutils literal notranslate"><span class="pre">&quot;object&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;array&quot;</span></code> and
 the statement will be executed as normal with <code class="docutils literal notranslate"><span class="pre">results</span></code> set as if
-the row was selected.</p></li>
+the row or rows were selected.</p></li>
 </ul>
 </div></blockquote>
 </li>
@@ -505,7 +507,7 @@ can be changed by setting the special variable <code class="docutils literal not
 
 <span class="nx">sql</span><span class="p">.</span><span class="nx">selectMaxRows</span><span class="o">=</span><span class="mi">20</span><span class="p">;</span>
 
-<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select * from mytable&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">rows</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select * from mytable&quot;</span><span class="p">);</span>
 <span class="cm">/* expected results: 20 rows, if 20 are available from &quot;mytable&quot; */</span>
 </pre></div>
 </div>
@@ -530,16 +532,16 @@ used.</p>
 
 <span class="kd">var</span> <span class="nx">sqlopts</span> <span class="o">=</span> <span class="p">{</span><span class="nx">maxRows</span><span class="o">:</span> <span class="mi">5</span><span class="p">,</span> <span class="nx">returnType</span><span class="o">:</span> <span class="s2">&quot;array&quot;</span><span class="p">};</span>
 
-<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="s2">&quot;select * from mytable&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">rows</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="s2">&quot;select * from mytable&quot;</span><span class="p">);</span>
 <span class="cm">/* expected results: 20 rows, skipping the first 10,</span>
 <span class="cm">   if 30 are available from &quot;mytable&quot;                */</span>
 
-<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select * from mytable&quot;</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="nx">sqlopts</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">rows</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select * from mytable&quot;</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="nx">sqlopts</span><span class="p">);</span>
 <span class="cm">/* expected results: 5 rows, skipping the first 10,</span>
 <span class="cm">   if 15 are available from &quot;mytable&quot;.  The option maxRows</span>
 <span class="cm">   is specified last from within &quot;sqlopts&quot;, so it is used       */</span>
 
-<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select * from mytable&quot;</span><span class="p">,</span> <span class="nx">sqlopts</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">10</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">rows</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select * from mytable&quot;</span><span class="p">,</span> <span class="nx">sqlopts</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">10</span><span class="p">);</span>
 <span class="cm">/* expected results: 20 rows, skipping the first 10,</span>
 <span class="cm">   if 30 are available from &quot;mytable&quot;.  The parameter 20 is</span>
 <span class="cm">   specified last, so maxRows is overwritten and 20 is used     */</span>
@@ -588,10 +590,11 @@ aliases selected and returned in results.</p>
 </dd>
 </dl>
 <blockquote id="countinfo">
-<div><p>Key: <code class="docutils literal notranslate"><span class="pre">countInfo</span></code>; Value: if option <code class="docutils literal notranslate"><span class="pre">includeCounts</span></code> is not set
-<code class="docutils literal notranslate"><span class="pre">false</span></code>, information regarding the number of total possible matches
-is set.  Otherwise undefined.  When performing a <a class="reference internal" href="sql3.html#intelligent-text-search-queries"><span class="std std-ref">text search</span></a> the <code class="docutils literal notranslate"><span class="pre">countInfo</span></code> <span class="green">Object</span>
-contains the following:</p>
+<div><p>Key: <code class="docutils literal notranslate"><span class="pre">countInfo</span></code>; Value: if option <code class="docutils literal notranslate"><span class="pre">includeCounts</span></code> is set
+<code class="docutils literal notranslate"><span class="pre">true</span></code>, information regarding the number of total possible matches
+is set.  Otherwise <code class="docutils literal notranslate"><span class="pre">countInfo</span></code> is undefined.  When performing a
+<a class="reference internal" href="sql3.html#intelligent-text-search-queries"><span class="std std-ref">text search</span></a> the
+<code class="docutils literal notranslate"><span class="pre">countInfo</span></code> <span class="green">Object</span> contains the following:</p>
 <blockquote>
 <div><ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">indexCount</span></code> (<span class="green">Number</span>): a single value estimating the number
@@ -622,6 +625,9 @@ any <a class="reference internal" href="sql2.html#summarizing-values-group-by-cl
 number of rows retrieved) is returned.  The callback is given the above
 values as arguments in the following order: <code class="docutils literal notranslate"><span class="pre">cbfunc(result_row,</span> <span class="pre">index,</span>
 <span class="pre">columns,</span> <span class="pre">countInfo)</span></code>.</p>
+<p>Note also that if <code class="docutils literal notranslate"><span class="pre">includeCounts</span></code> is set <code class="docutils literal notranslate"><span class="pre">true</span></code> and the sql query is
+not a text search, the values of the properties of <code class="docutils literal notranslate"><span class="pre">countInfo</span></code> will be
+negative.</p>
 </div></blockquote>
 <dl>
 <dt>Error Messages:</dt><dd><p>Errors may or may not throw a JavaScript exception depending on the
@@ -681,19 +687,19 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
 <span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;./mytestdb&quot;</span><span class="p">,</span><span class="kc">true</span><span class="p">);</span>
 
 <span class="cm">/* check if table exists */</span>
-<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
+<span class="kd">var</span> <span class="nx">rows</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
     <span class="s2">&quot;select * from SYSTABLES where NAME=&#39;employees&#39;&quot;</span><span class="p">,</span>
     <span class="p">{</span><span class="s2">&quot;returnType&quot;</span><span class="o">:</span><span class="s2">&quot;novars&quot;</span><span class="p">}</span> <span class="cm">/* we only need the count */</span>
 <span class="p">);</span>
 
-<span class="k">if</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">rowCount</span><span class="p">)</span> <span class="cm">/* 1 if the table exists */</span>
+<span class="k">if</span><span class="p">(</span><span class="nx">rows</span><span class="p">.</span><span class="nx">rowCount</span><span class="p">)</span> <span class="cm">/* 1 if the table exists */</span>
 <span class="p">{</span>
     <span class="cm">/* drop table from previous test run of this script */</span>
-    <span class="nx">res</span><span class="o">=</span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;drop table employees&quot;</span><span class="p">);</span>
+    <span class="nx">rows</span><span class="o">=</span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;drop table employees&quot;</span><span class="p">);</span>
 <span class="p">}</span>
 
 <span class="cm">/* (re)create the table */</span>
-<span class="nx">res</span><span class="o">=</span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
+<span class="nx">rows</span><span class="o">=</span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
         <span class="s2">&quot;create table employees (Classification varchar(8), &quot;</span> <span class="o">+</span>
         <span class="s2">&quot;Name varchar(16), Age int, Salary int, Title varchar(16), &quot;</span> <span class="o">+</span>
         <span class="s2">&quot;Start_date date, Bio varchar(128) )&quot;</span><span class="p">,</span>
@@ -763,8 +769,8 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
 <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;create fulltext index employees_Bio_text on employees(Bio)&quot;</span><span class="p">);</span>
 
 <span class="cm">/* perform some queries */</span>
-<span class="nx">res</span><span class="o">=</span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select Name, Age from employees&quot;</span><span class="p">);</span>
-<span class="nx">pprint</span><span class="p">(</span><span class="nx">res</span><span class="p">);</span>
+<span class="nx">rows</span><span class="o">=</span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select Name, Age from employees&quot;</span><span class="p">);</span>
+<span class="nx">pprint</span><span class="p">(</span><span class="nx">rows</span><span class="p">);</span>
 <span class="cm">/* expected output:</span>
 <span class="cm">   {</span>
 <span class="cm">       &quot;columns&quot;: [</span>
@@ -797,24 +803,15 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
 <span class="cm">               &quot;Age&quot;: 22</span>
 <span class="cm">           }</span>
 <span class="cm">       ],</span>
-<span class="cm">       &quot;countInfo&quot;: {</span>
-<span class="cm">           &quot;indexCount&quot;: -1,</span>
-<span class="cm">           &quot;rowsMatchedMin&quot;: -1,</span>
-<span class="cm">           &quot;rowsMatchedMax&quot;: -2,</span>
-<span class="cm">           &quot;rowsReturnedMin&quot;: -1,</span>
-<span class="cm">           &quot;rowsReturnedMax&quot;: -2</span>
-<span class="cm">       },</span>
 <span class="cm">       &quot;rowCount&quot;: 6</span>
 <span class="cm">   }</span>
-<span class="cm">             Note that countInfo values are all negative since no</span>
-<span class="cm">             text search was performed.</span>
 <span class="cm">*/</span>
 
-<span class="nx">res</span><span class="o">=</span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
+<span class="nx">rows</span><span class="o">=</span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
     <span class="s2">&quot;select Name, Age from employees&quot;</span><span class="p">,</span>
-    <span class="p">{</span><span class="nx">returnType</span><span class="o">:</span><span class="s1">&#39;array&#39;</span><span class="p">,</span> <span class="nx">maxRows</span><span class="o">:</span><span class="mi">2</span><span class="p">}</span>
+    <span class="p">{</span><span class="nx">returnType</span><span class="o">:</span><span class="s1">&#39;array&#39;</span><span class="p">,</span> <span class="nx">maxRows</span><span class="o">:</span><span class="mi">2</span><span class="p">,</span> <span class="nx">includeCounts</span><span class="o">:</span><span class="kc">true</span><span class="p">}</span>
 <span class="p">);</span>
-<span class="nx">pprint</span><span class="p">(</span><span class="nx">res</span><span class="p">);</span>
+<span class="nx">pprint</span><span class="p">(</span><span class="nx">rows</span><span class="p">);</span>
 <span class="cm">/* expected output:</span>
 <span class="cm">   {</span>
 <span class="cm">       &quot;columns&quot;: [</span>
@@ -840,11 +837,14 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
 <span class="cm">       },</span>
 <span class="cm">       &quot;rowCount&quot;: 2</span>
 <span class="cm">   }</span>
+<span class="cm">             Note that countInfo values are all negative since no</span>
+<span class="cm">             text search was performed.</span>
 <span class="cm">*/</span>
-<span class="nx">res</span><span class="o">=</span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
-    <span class="s2">&quot;select Name from employees where Bio likep &#39;proficient&#39; and Salary &gt; 50000&quot;</span>
+<span class="nx">rows</span><span class="o">=</span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
+    <span class="s2">&quot;select Name from employees where Bio likep &#39;proficient&#39; and Salary &gt; 50000&quot;</span><span class="p">,</span>
+     <span class="p">{</span><span class="nx">includeCounts</span><span class="o">:</span><span class="kc">true</span><span class="p">}</span>
 <span class="p">);</span>
-<span class="nx">pprint</span><span class="p">(</span><span class="nx">res</span><span class="p">);</span>
+<span class="nx">pprint</span><span class="p">(</span><span class="nx">rows</span><span class="p">);</span>
 
 <span class="cm">/* expected output:</span>
 <span class="cm">   {</span>
@@ -880,10 +880,10 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
     <span class="nx">suffixproc</span><span class="o">:</span> <span class="kc">true</span>
 <span class="p">});</span>
 
-<span class="nx">res</span><span class="o">=</span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
+<span class="nx">rows</span><span class="o">=</span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
     <span class="s2">&quot;select Name, Salary from employees where Bio likep &#39;skydive&#39; order by Salary desc&quot;</span><span class="p">,</span>
-    <span class="p">{</span><span class="nx">returnType</span><span class="o">:</span><span class="s2">&quot;array&quot;</span><span class="p">},</span>
-    <span class="kd">function</span> <span class="p">(</span><span class="nx">res</span><span class="p">,</span> <span class="nx">i</span><span class="p">,</span> <span class="nx">coln</span><span class="p">,</span> <span class="nx">cinfo</span><span class="p">)</span> <span class="p">{</span>
+    <span class="p">{</span><span class="nx">returnType</span><span class="o">:</span><span class="s2">&quot;array&quot;</span><span class="p">,</span> <span class="nx">includeCounts</span><span class="o">:</span><span class="kc">true</span><span class="p">},</span>
+    <span class="kd">function</span> <span class="p">(</span><span class="nx">row</span><span class="p">,</span> <span class="nx">i</span><span class="p">,</span> <span class="nx">coln</span><span class="p">,</span> <span class="nx">cinfo</span><span class="p">)</span> <span class="p">{</span>
         <span class="k">if</span><span class="p">(</span><span class="o">!</span><span class="nx">i</span><span class="p">)</span> <span class="p">{</span>
             <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span>
                <span class="s2">&quot;Total approximate number of matches in db: &quot;</span> <span class="o">+</span>
@@ -891,7 +891,7 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
             <span class="p">);</span>
             <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">,</span> <span class="nx">coln</span><span class="p">);</span>
         <span class="p">}</span>
-        <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">i</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span><span class="nx">res</span><span class="p">);</span>
+        <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">i</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span><span class="nx">row</span><span class="p">);</span>
     <span class="p">}</span>
 <span class="p">);</span>
 <span class="cm">/* expected output:</span>
@@ -901,7 +901,7 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
 <span class="cm">   2 [&quot;Billie Barista&quot;,0]</span>
 <span class="cm">*/</span>
 
-<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">res</span><span class="p">);</span> <span class="c1">// 2</span>
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">rows</span><span class="p">);</span> <span class="c1">// 2</span>
 </pre></div>
 </div>
 </div>
@@ -911,17 +911,17 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
 where only one row is desired and the extra information normally
 returned from <a class="reference internal" href="#exec">exec()</a> is not needed.</p>
 <p>With <code class="docutils literal notranslate"><span class="pre">exec()</span></code>, this:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res1</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select email from Users where user=?&quot;</span><span class="p">,</span> <span class="p">{</span><span class="nx">maxRows</span><span class="o">:</span><span class="mi">1</span><span class="p">},</span> <span class="p">[</span><span class="nx">user_name</span><span class="p">]);</span>
-<span class="kd">var</span> <span class="nx">res</span><span class="o">=</span><span class="nx">res1</span><span class="p">.</span><span class="nx">results</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
-<span class="cm">/* res = { email : &quot;user@example.com&quot; } */</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">rows</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select email from Users where user=?user&quot;</span><span class="p">,</span> <span class="p">{</span><span class="nx">maxRows</span><span class="o">:</span><span class="mi">1</span><span class="p">},</span> <span class="p">{</span><span class="nx">user</span><span class="o">:</span><span class="nx">user_name</span><span class="p">});</span>
+<span class="kd">var</span> <span class="nx">row</span><span class="o">=</span><span class="nx">rows</span><span class="p">.</span><span class="nx">results</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+<span class="cm">/* row = { email : &quot;user@example.com&quot; } */</span>
 </pre></div>
 </div>
 <p>can be more easily written as:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">one</span><span class="p">(</span><span class="s2">&quot;select user from Users where user=?&quot;</span><span class="p">,[</span><span class="nx">user_name</span><span class="p">]);</span>
-<span class="cm">/* res = { email : &quot;user@example.com&quot; } */</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">row</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">one</span><span class="p">(</span><span class="s2">&quot;select user from Users where user=?user&quot;</span><span class="p">,{</span><span class="nx">user</span><span class="o">:</span><span class="nx">user_name</span><span class="p">});</span>
+<span class="cm">/* row = { email : &quot;user@example.com&quot; } */</span>
 </pre></div>
 </div>
-<p>Note: This returns <code class="docutils literal notranslate"><span class="pre">undefined</span></code> if a matching row is not found.</p>
+<p>Note: <code class="docutils literal notranslate"><span class="pre">one</span></code> returns <code class="docutils literal notranslate"><span class="pre">undefined</span></code> if a matching row is not found.</p>
 </div>
 <div class="section" id="set">
 <h2>set()<a class="headerlink" href="#set" title="Permalink to this headline">¶</a></h2>
@@ -965,6 +965,24 @@ database), settings apply to all databases in use by the current process.</p>
 <span class="cm">        expressionsList:  [&quot;\\alnum{2,99}&quot;, &quot;[\\alnum\\x80-\xff]+&quot;, &quot;[\\alnum\\x80-\xff,&#39;]+&quot;]</span>
 <span class="cm">   }</span>
 <span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="reset">
+<h2>reset()<a class="headerlink" href="#reset" title="Permalink to this headline">¶</a></h2>
+<p>Reset all settings set with <a class="reference internal" href="#set">set()</a> above to their original values.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;/path/to/my/db&quot;</span><span class="p">);</span>
+
+<span class="p">...</span>
+
+<span class="nx">sql</span><span class="p">.</span><span class="nx">set</span><span class="p">({...});</span>  <span class="c1">//settings changed in script</span>
+
+<span class="p">...</span>
+
+<span class="nx">sql</span><span class="p">.</span><span class="nx">reset</span><span class="p">();</span> <span class="c1">//reset all to default</span>
 </pre></div>
 </div>
 </div>
@@ -1426,8 +1444,8 @@ example, to print today’s date in the form month/day/year:</p>
 </div>
 <p>Or to print the title and insertion date of books matching a query, in the
 style “February 20, 1997” (assuming id is a <a class="reference internal" href="sql1.html#dtypes"><span class="std std-ref">Texis counter field</span></a>):</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select id, Title from books where Desc like ?&quot;</span><span class="p">,</span>
-         <span class="p">[</span><span class="nx">query</span><span class="p">],</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select id, Title from books where Desc like ?q&quot;</span><span class="p">,</span>
+         <span class="p">{</span><span class="nx">q</span><span class="o">:</span><span class="nx">query</span><span class="p">},</span>
          <span class="kd">function</span><span class="p">(</span><span class="nx">res</span><span class="p">)</span> <span class="p">{</span>
             <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span>
              <span class="nx">Sql</span><span class="p">.</span><span class="nx">stringFormat</span><span class="p">(</span><span class="s2">&quot;%at %s&quot;</span><span class="p">,</span> <span class="s2">&quot;%B %d, %Y&quot;</span><span class="p">,</span> <span class="nx">res</span><span class="p">.</span><span class="nx">id</span><span class="p">,</span> <span class="nx">res</span><span class="p">.</span><span class="nx">Title</span><span class="p">)</span>
@@ -1888,8 +1906,8 @@ query markup call by a script should use the <code class="docutils literal notra
 a table that matches the user’s submitted query string.  Each set (term) is
 color-coded differently, and the <code class="docutils literal notranslate"><span class="pre">abstract(body)</span></code> is HTML-escaped:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">results</span><span class="o">=</span><span class="s1">&#39;&lt;div class=&quot;results&quot;&gt;&#39;</span><span class="p">;</span>
-<span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select abstract(body) abs from data_tbl where body like ?&quot;</span><span class="p">,</span>
-     <span class="p">[</span><span class="nx">query</span><span class="p">],</span>
+<span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select abstract(body) abs from data_tbl where body like ?q&quot;</span><span class="p">,</span>
+     <span class="p">{</span><span class="nx">q</span><span class="o">:</span><span class="nx">query</span><span class="p">},</span>
      <span class="kd">function</span><span class="p">(</span><span class="nx">res</span><span class="p">)</span> <span class="p">{</span>
         <span class="nx">results</span> <span class="o">+=</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">stringFormat</span><span class="p">(</span><span class="s1">&#39;&lt;div class=&quot;hit&quot;&gt;%mIH&lt;/div&gt;&#39;</span><span class="p">,</span> <span class="nx">query</span><span class="p">,</span> <span class="nx">res</span><span class="p">.</span><span class="nx">abs</span><span class="p">);</span>
      <span class="p">}</span>

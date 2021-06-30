@@ -412,11 +412,11 @@ Note that `examples`_ are provided below.
 
     * ``arrayType`` - :green:`String` - How to translate arrays into
       parameters for ``get`` and ``post`` below.  See
-      :ref:`rampart-main:objectToQuery`.
+      :ref:`rampart-utils:objectToQuery`.
 
     * ``get`` - :green:`Object` or :green:`String` - **THIS OPTION DIFFERS FROM CURL COMMAND LINE**.
       If an :green:`Object` is provided, it is converted to a
-      :green:`String` using :ref:`rampart-main:objectToQuery` first.  The
+      :green:`String` using :ref:`rampart-utils:objectToQuery` first.  The
       :green:`String` is then joined to the URL using a ``?``.  See also
       ``arrayType`` above.
 

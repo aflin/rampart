@@ -94,12 +94,13 @@ Rampart philosophy
 
 Though Rampart supports ``setTimeout()``, `Events <rampart.events>`_ (and
 other async functions via, e.g., :ref:`websockets <rampart-server:websockets>`, 
-:ref:`rampart-redis <rampart-redis:The rampart-redis module>`, Babel, etc),
-the majority of functions added to `Duktape <https://duktape.org>`_ via are 
-synchronous.  Raw JavaScript execution is more memory efficient, but far
-slower than with, e.g., node.js.  However, the functionality and speed of
-the available C functions provide comparable efficacy, excellent performance
-and are a viable alternative to `LAMP <https://en.wikipedia.org/wiki/LAMP_(software_bundle)>`_, 
+:ref:`rampart-redis <rampart-redis:The rampart-redis module>`, Babel, etc), 
+all functions included in the `Duktape <https://duktape.org>`_ JavaScript
+engine (as well as most of the functions added to Rampart) are synchronous.  Raw 
+JavaScript execution ismore memory efficient, but far slower than with, e.g., 
+node.js.  However, the functionality and speed of the available C functions provide 
+comparable efficacy, excellent performance and are a viable alternative to 
+`LAMP <https://en.wikipedia.org/wiki/LAMP_(software_bundle)>`_, 
 `MEAN <https://en.wikipedia.org/wiki/MEAN_(solution_stack)>`_ or other stacks, all
 in a single product, while consuming considerably less resources than the
 aforementioned.
@@ -649,6 +650,23 @@ In another script, the exported ``timestwo`` function could be accessed as such:
 
   /* res == 10 */
 
+Note also that from within a module, the ``module`` object contains some useful
+information.  An example module named ``mod.js`` and loaded with the
+statement ``require("mod.js")`` will have
+``module`` set to a value similar to the following:
+
+.. code-block:: javascript
+
+    {
+       "id": "/path/to/my/mod.js",
+       "path": "/path/to/my",
+       "exports": {},
+       "mtime": 1624904227,
+       "atime": 1624904227
+    }
+
+
+
 Example creating a C module
 """""""""""""""""""""""""""
 
@@ -715,6 +733,11 @@ Modules are searched for in the following order:
 
 #. In the ``.rampart/modules`` directory of current user's home directory 
    as provided by the ``$HOME`` environment variable.
+
+#. In the "/lib/rampart_modules" directory of the ``-DRP_INST_PATH`` path set when Rampart 
+   was compiled.  The default is ``/usr/local/rampart/lib/rampart_modules``. Or
+   preferentially, if set, the path pointed to by the environment variable
+   ``$RAMPART_PATH`` + "/lib/rampart_modules".
 
 #. In the "/modules" directory of the ``-DRP_INST_PATH`` path set when Rampart 
    was compiled.  The default is ``/usr/local/rampart/modules``. Or
@@ -880,10 +903,11 @@ Example:
    <span class="cm">&amp;lt;&amp;#47;div&amp;gt;</span>
    <span class="cm">&lt;/pre&gt;</span>
    <span class="cm">*/</span>
-   </pre></div>
+   </pre></div></div>
+
 
 Note that this non-standard syntax is not available when using 
-`babel <ECMAScript 2015+ and Babel.js>`_ below.
+:ref:`babel <babeljs>` below.
 
 setTimeout()
 """"""""""""
@@ -1017,6 +1041,7 @@ include:
 
 For more information, see the `Duktape Guide <https://duktape.org/guide.html>`_
 
+.. _babeljs:
 
 ECMAScript 2015+ and Babel.js
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

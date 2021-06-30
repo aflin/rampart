@@ -62,11 +62,11 @@ Usage:
 
     var crypto = require("rampart-crypto");
 
-    crypto.encrypt(options);
+    var ciphertext = crypto.encrypt(options);
 
     /* or */
 
-    crypto.encrypt(pass, data[, cipher_mode]);
+    var ciphertext = crypto.encrypt(pass, data[, cipher_mode]);
 
 
 Where
@@ -148,13 +148,105 @@ Example:
         data: ciphertext
     });
 
-    printf('The decrypted data: "%s"\n', plaintext);
+    rampart.utils.printf('The decrypted data: "%s"\n', plaintext);
 
     /* expected output:
 
     The decrypted data: "my data"
 
     */
+
+passToKeyIv
+~~~~~~~~~~~
+
+The ``passToKeyIv()`` function performs the same password to 
+key/iv pair generation as `encrypt`_ above.
+
+Usage:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+
+    var kiv = crypto.passToKeyIv(options);
+
+Where
+
+* ``options`` is an :green:`Object` which may contain the following:
+
+  * ``cipher`` is a :green:`String` and is one of the `Supported Modes`_
+    listed below.  If not specified, the default is ``aes-256-cbc``.  This
+    option controls the key and iv length.
+
+  * ``pass`` is a :green:`String`, the password used to generate a key/iv pair.
+
+  * ``salt`` is a :green:`String` or :green:`Buffer`, the optional salt for generation 
+    of the key and iv.  If not provided, a random salt will be generated. 
+    If provided as a :green:`String` it must be a hex encoded string representing at
+    least 8 bytes.  If provided as a :green:`Buffer`, it must be at least 8 bytes in length. 
+    If longer than 8 bytes, only the first 8 bytes will be used.
+
+  * ``iter`` - number of iterations for generating a key and iv from ``pass``. 
+    Default is ``10000``.
+
+  * ``returnBuffer`` is an :green:`Boolean`, if ``true`` the key, iv and salt will be returned
+    as binary data in :green:`Buffers`.  Otherwise if not set or ``false``, they will be encoded as a hex
+    :green:`Strings`.
+
+Return Value:
+  An :green:`Object` containing the key, iv and salt as hex encoded :green:`Strings` or
+  as binary data in :green:`Buffers`.
+  The function ``crypto.passToKeyIv`` produces the same results as
+  ``openssl enc -<cipher_mode> -pbkdf2  -k <password> [-S <salt_as_hex>] -P``
+  using openssl version 1.1.1 from the command line.
+
+Example:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+
+    var salt = crypto.sha1("a unique string for one time use as salt");
+
+    var kiv = crypto.passToKeyIv({
+       pass: "mypass",
+       salt: salt
+    });
+
+    var ciphertext = crypto.encrypt({
+        key:  kiv.key,
+        iv:   kiv.iv,
+        data: "my data"
+    });
+
+    /* 
+       note that when key/iv is used in encrypt instead of a password, salt
+       is not stored in the ciphertext, and the ciphertext must be decrypted
+       with the same key and iv.
+    */
+
+    var plaintext = crypto.decrypt({
+        key:  kiv.key,
+        iv:   kiv.iv,
+        data: ciphertext
+    });
+
+    rampart.utils.printf('Key/Iv/Salt: "%3J"\n\n', kiv);
+
+    rampart.utils.printf('The decrypted data: "%s"\n', plaintext);
+
+    /* expected output:
+
+    Key/Iv/Salt: "{
+       "key": "215a744a875c4604046f05a34164507cf9f8c54342f75b1d58ad5d1f428aadd2",
+       "iv": "daffcd9ff10128eee4f19375f1aa4dde",
+       "salt": "ce37ddf6cda911f4"
+    }"
+
+    The decrypted data: "my data"
+
+    */
+
 
 Supported Modes
 ~~~~~~~~~~~~~~~

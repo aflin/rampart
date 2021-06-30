@@ -108,6 +108,7 @@ Return Value:
         exec:          {_func:true},
         one:           {_func:true},
         set:           {_func:true},
+        reset:         {_func:true},
         importCsvFile: {_func:true},
         importCsv:     {_func:true},
         close:         {_func:true}
@@ -138,7 +139,7 @@ parameters may be specified in any order.
 
 .. code-block:: javascript
 
-    var res = sql.exec(statement [, options] [, sql_parameters] [, callback])
+    var rows = sql.exec(statement [, options] [, sql_parameters] [, callback])
 
 +--------------+------------------+--------------------------------------------------------+
 |Argument      |Type              |Description                                             |
@@ -161,7 +162,7 @@ Statement:
 
 .. code-block:: javascript
 
-    var res = sql.exec(
+    var rows = sql.exec(
         "select * from employees where Salary > 50000 and Start_date < '2018-12-31'"
     );
 
@@ -182,14 +183,14 @@ SQL Parameters:
 
 .. code-block:: javascript
 
-    var res = sql.exec(
+    var rows = sql.exec(
         "select * from employees where Salary > ? and Start-date < ?",
         [50000, "2018-12-31"]
     );
 
     /* or */
 
-    var res = sql.exec(
+    var rows = sql.exec(
         "select * from employees where Salary > ?salary and Start-date < ?date",
         { salary: 50000, date: "2018-12-31"}
     );
@@ -236,7 +237,7 @@ Options:
       * **Note**: If the values of a deleted, inserted or updated row are needed,
         ``returnType`` can be set to either ``"object"`` or ``"array"`` and
         the statement will be executed as normal with ``results`` set as if
-        the row was selected.
+        the row or rows were selected.
 
    * ``returnRows`` (:green:`Boolean`): If set ``true``, performs the same
      function as ``{returnType: "object"}`` above.  If set ``false``,
@@ -272,7 +273,7 @@ Caveats for Options, maxRows and skipRows:
         
         sql.selectMaxRows=20;
         
-        var res = sql.exec("select * from mytable");
+        var rows = sql.exec("select * from mytable");
         /* expected results: 20 rows, if 20 are available from "mytable" */
                  
 
@@ -297,16 +298,16 @@ Caveats for Options, maxRows and skipRows:
 
         var sqlopts = {maxRows: 5, returnType: "array"};
 
-        var res = sql.exec(20, 10, "select * from mytable");
+        var rows = sql.exec(20, 10, "select * from mytable");
         /* expected results: 20 rows, skipping the first 10,
            if 30 are available from "mytable"                */
 
-        var res = sql.exec("select * from mytable", 20, 10, sqlopts);
+        var rows = sql.exec("select * from mytable", 20, 10, sqlopts);
         /* expected results: 5 rows, skipping the first 10,
            if 15 are available from "mytable".  The option maxRows
            is specified last from within "sqlopts", so it is used       */
 
-        var res = sql.exec("select * from mytable", sqlopts, 20, 10);
+        var rows = sql.exec("select * from mytable", sqlopts, 20, 10);
         /* expected results: 20 rows, skipping the first 10,
            if 30 are available from "mytable".  The parameter 20 is 
            specified last, so maxRows is overwritten and 20 is used     */
@@ -362,11 +363,11 @@ Return Value:
 
 .. _countinfo:
 
-  Key: ``countInfo``; Value: if option ``includeCounts`` is not set
-  ``false``, information regarding the number of total possible matches
-  is set.  Otherwise undefined.  When performing a :ref:`text search
-  <sql3:Intelligent Text Search Queries>` the ``countInfo`` :green:`Object`
-  contains the following:
+  Key: ``countInfo``; Value: if option ``includeCounts`` is set
+  ``true``, information regarding the number of total possible matches
+  is set.  Otherwise ``countInfo`` is undefined.  When performing a 
+  :ref:`text search <sql3:Intelligent Text Search Queries>` the 
+  ``countInfo`` :green:`Object` contains the following:
 
    * ``indexCount`` (:green:`Number`): a single value estimating the number
      of matching rows.
@@ -399,6 +400,10 @@ Return Value:
   number of rows retrieved) is returned.  The callback is given the above
   values as arguments in the following order: ``cbfunc(result_row, index,
   columns, countInfo)``.
+
+  Note also that if ``includeCounts`` is set ``true`` and the sql query is
+  not a text search, the values of the properties of ``countInfo`` will be
+  negative.
 
 Error Messages:
    Errors may or may not throw a JavaScript exception depending on the
@@ -462,19 +467,19 @@ Full Example:
    var sql = new Sql.init("./mytestdb",true);
 
    /* check if table exists */
-   var res = sql.exec(
+   var rows = sql.exec(
        "select * from SYSTABLES where NAME='employees'",
        {"returnType":"novars"} /* we only need the count */
    );
 
-   if(res.rowCount) /* 1 if the table exists */
+   if(rows.rowCount) /* 1 if the table exists */
    {
        /* drop table from previous test run of this script */
-       res=sql.exec("drop table employees");
+       rows=sql.exec("drop table employees");
    }
 
    /* (re)create the table */
-   res=sql.exec(
+   rows=sql.exec(
            "create table employees (Classification varchar(8), " +
            "Name varchar(16), Age int, Salary int, Title varchar(16), " +
            "Start_date date, Bio varchar(128) )",
@@ -544,8 +549,8 @@ Full Example:
    sql.exec("create fulltext index employees_Bio_text on employees(Bio)");
 
    /* perform some queries */
-   res=sql.exec("select Name, Age from employees");
-   pprint(res);
+   rows=sql.exec("select Name, Age from employees");
+   pprint(rows);
    /* expected output:
       {
           "columns": [
@@ -578,24 +583,15 @@ Full Example:
                   "Age": 22
               }
           ],
-          "countInfo": {
-              "indexCount": -1,
-              "rowsMatchedMin": -1,
-              "rowsMatchedMax": -2,
-              "rowsReturnedMin": -1,
-              "rowsReturnedMax": -2
-          },
           "rowCount": 6
       }
-		Note that countInfo values are all negative since no
-		text search was performed.
    */
 
-   res=sql.exec(
+   rows=sql.exec(
        "select Name, Age from employees",
-       {returnType:'array', maxRows:2}
+       {returnType:'array', maxRows:2, includeCounts:true}
    );
-   pprint(res);
+   pprint(rows);
    /* expected output:
       {
           "columns": [
@@ -621,11 +617,14 @@ Full Example:
           },
           "rowCount": 2
       }
+		Note that countInfo values are all negative since no
+		text search was performed.
    */
-   res=sql.exec(
-       "select Name from employees where Bio likep 'proficient' and Salary > 50000"
+   rows=sql.exec(
+       "select Name from employees where Bio likep 'proficient' and Salary > 50000",
+	{includeCounts:true}
    );
-   pprint(res);
+   pprint(rows);
 
    /* expected output:
       {
@@ -661,10 +660,10 @@ Full Example:
        suffixproc: true
    });
 
-   res=sql.exec(
+   rows=sql.exec(
        "select Name, Salary from employees where Bio likep 'skydive' order by Salary desc",
-       {returnType:"array"},
-       function (res, i, coln, cinfo) {
+       {returnType:"array", includeCounts:true},
+       function (row, i, coln, cinfo) {
            if(!i) {
                console.log(
                   "Total approximate number of matches in db: " +
@@ -672,7 +671,7 @@ Full Example:
                );
                console.log("-", coln);
            }
-           console.log(i+1,res);
+           console.log(i+1,row);
        }
    );
    /* expected output:
@@ -682,7 +681,7 @@ Full Example:
       2 ["Billie Barista",0]
    */
 
-   console.log(res); // 2
+   console.log(rows); // 2
 
 .. remove this?
     eval()
@@ -700,9 +699,9 @@ Full Example:
 
        var sql = new Sql.init("/path/to/my/db", true);
 
-       var res1 = sql.exec("select joinpath('one', 'two/', '/three/four', 'five') newpath");
-       var res=res1.results[0];
-       console.log(res); /* {newpath:"one/two/three/four/five"} */
+       var rows1 = sql.exec("select joinpath('one', 'two/', '/three/four', 'five') newpath");
+       var row=rows1.results[0];
+       console.log(row); /* {newpath:"one/two/three/four/five"} */
 
     can be more easily written as:
         
@@ -711,8 +710,8 @@ Full Example:
        var Sql = require("rampart-sql");
        var sql = new Sql.init("/path/to/my/db", true);
        
-       var res = sql.eval("joinpath('one', 'two/', '/three/four', 'five') newpath");
-       console.log(res); /* {newpath:"one/two/three/four/five"} */
+       var rows = sql.eval("joinpath('one', 'two/', '/three/four', 'five') newpath");
+       console.log(rows); /* {newpath:"one/two/three/four/five"} */
 
     See :ref:`sql-server-funcs:Server functions` for a complete list of Server
     functions.
@@ -728,18 +727,18 @@ With ``exec()``, this:
 
 .. code-block:: javascript
 
-   var res1 = sql.exec("select email from Users where user=?", {maxRows:1}, [user_name]);
-   var res=res1.results[0];
-   /* res = { email : "user@example.com" } */
+   var rows = sql.exec("select email from Users where user=?user", {maxRows:1}, {user:user_name});
+   var row=rows.results[0];
+   /* row = { email : "user@example.com" } */
 
 can be more easily written as:
     
 .. code-block:: javascript
 
-   var res = sql.one("select user from Users where user=?",[user_name]);
-   /* res = { email : "user@example.com" } */
+   var row = sql.one("select user from Users where user=?user",{user:user_name});
+   /* row = { email : "user@example.com" } */
 
-Note: This returns ``undefined`` if a matching row is not found.
+Note: ``one`` returns ``undefined`` if a matching row is not found.
 
 set()
 ~~~~~
@@ -791,6 +790,27 @@ Example:
 	   	expressionsList:  ["\\alnum{2,99}", "[\\alnum\\x80-\xff]+", "[\\alnum\\x80-\xff,']+"]
 	   }
 	*/		                        	 
+
+reset()
+~~~~~~~
+
+Reset all settings set with `set()`_ above to their original values.
+
+Example:
+
+.. code-block:: javascript
+
+   var Sql = require("rampart-sql");
+
+   var sql = new Sql.init("/path/to/my/db");
+
+   ...
+
+   sql.set({...});  //settings changed in script
+
+   ...
+
+   sql.reset(); //reset all to default
 
 importCsvFile()
 ~~~~~~~~~~~~~~~
@@ -1274,8 +1294,8 @@ style "February 20, 1997" (assuming id is a :ref:`Texis counter field <dtypes>`)
 
 .. code-block:: javascript
 
-   sql.exec("select id, Title from books where Desc like ?",
-            [query],
+   sql.exec("select id, Title from books where Desc like ?q",
+            {q:query},
             function(res) {
                console.log(
                	Sql.stringFormat("%at %s", "%B %d, %Y", res.id, res.Title) 
@@ -1826,8 +1846,8 @@ color-coded differently, and the ``abstract(body)`` is HTML-escaped:
 .. code-block:: javascript
 
    var results='<div class="results">';
-   sql.exec("select abstract(body) abs from data_tbl where body like ?",
-   	[query],
+   sql.exec("select abstract(body) abs from data_tbl where body like ?q",
+   	{q:query},
    	function(res) {
    	   results += Sql.stringFormat('<div class="hit">%mIH</div>', query, res.abs);
    	}

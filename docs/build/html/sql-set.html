@@ -254,7 +254,7 @@
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#restoring-defaults">Restoring Defaults</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#defaults">defaults</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#sql-reset">sql.reset()</a></li>
 </ul>
 </li>
 </ul>
@@ -2442,24 +2442,25 @@ one of the following:</p>
 </div>
 <div class="section" id="restoring-defaults">
 <h2>Restoring Defaults<a class="headerlink" href="#restoring-defaults" title="Permalink to this headline">¶</a></h2>
-<div class="section" id="defaults">
-<h3>defaults<a class="headerlink" href="#defaults" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="sql-reset">
+<h3>sql.reset()<a class="headerlink" href="#sql-reset" title="Permalink to this headline">¶</a></h3>
 <blockquote>
-<div><p>String or Boolean.</p>
-<ul>
-<li><p><code class="docutils literal notranslate"><span class="pre">true</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;rampart&quot;</span></code> - reset all settings (including
-<a class="reference internal" href="#querysettings">querySettings</a>:”defaults” above) to their original values.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">&quot;texis&quot;</span></code> - Same as above, except:</p>
-<blockquote>
-<div><ul class="simple">
-<li><p><a class="reference internal" href="#varchartostrlstmode">varcharToStrlstMode</a> is set to <code class="docutils literal notranslate"><span class="pre">create</span></code>.</p></li>
-<li><p><a class="reference internal" href="#strlsttovarcharmode">strlstToVarcharMode</a> is set to <code class="docutils literal notranslate"><span class="pre">delimited</span></code>.</p></li>
-<li><p><a class="reference internal" href="#unneededrexescapewarning">unneededRexEscapeWarning</a> is set to <code class="docutils literal notranslate"><span class="pre">true</span></code>.</p></li>
-</ul>
+<div><p>Reset all settings (including <a class="reference internal" href="#querysettings">querySettings</a>:”defaults” above) to their original values.</p>
 </div></blockquote>
-</li>
-</ul>
-</div></blockquote>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;/path/to/my/db&quot;</span><span class="p">);</span>
+
+<span class="p">...</span>
+
+<span class="nx">sql</span><span class="p">.</span><span class="nx">set</span><span class="p">({...});</span>  <span class="c1">//settings changed in script</span>
+
+<span class="p">...</span>
+
+<span class="nx">sql</span><span class="p">.</span><span class="nx">reset</span><span class="p">();</span> <span class="c1">//reset all to default</span>
+</pre></div>
+</div>
 </div>
 </div>
 </div>
