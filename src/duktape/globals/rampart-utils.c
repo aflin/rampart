@@ -1824,13 +1824,14 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     {
         // return object
         duk_push_object(ctx);
-
+        close(child2par[1]);
         waitpid(pid,&exit_status,0);
         if(-1 == read(child2par[0], &pid2, sizeof(pid_t)) )
             RP_THROW(ctx, "exec(): failed to get pid from child");
 
         close(child2par[0]);
-
+        close(stdin_pipe[1]);
+        close(stdin_pipe[0]);
         DUK_PUT(ctx, int, "pid", pid2, -2);
 
         // set stderr and stdout to null
@@ -1899,6 +1900,9 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         DUK_PUT(ctx, int, "pid", pid, -2);
         free(stdout_buf);
         free(stderr_buf);
+        close(stdout_pipe[0]);
+        close(stderr_pipe[0]);
+        close(stdin_pipe[1]);
     }
     if(env)
         free(env);
