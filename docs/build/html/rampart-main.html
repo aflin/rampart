@@ -121,6 +121,8 @@
 <li class="toctree-l3"><a class="reference internal" href="#env">env</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#argv">argv</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#scriptpath">scriptPath</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#scriptname">scriptName</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#script">script</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#getpid">getpid</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#getppid">getppid</a></li>
 </ul>
@@ -754,6 +756,19 @@ in the order they were given on the command line.</p>
 canonical path (directory) in which the currently executing script can be
 found (e.g.  if <code class="docutils literal notranslate"><span class="pre">rampart</span> <span class="pre">/path/to/my/script.js</span></code> is run,
 <code class="docutils literal notranslate"><span class="pre">process.scriptPath</span></code> will be <code class="docutils literal notranslate"><span class="pre">/path/to/my</span></code>).</p>
+</div>
+<div class="section" id="scriptname">
+<h3>scriptName<a class="headerlink" href="#scriptname" title="Permalink to this headline">¶</a></h3>
+<p>The value of <code class="docutils literal notranslate"><span class="pre">process.scriptName</span></code> is a <span class="green">String</span>, the name of the
+currently executing script (e.g.  if <code class="docutils literal notranslate"><span class="pre">rampart</span> <span class="pre">/path/to/my/script.js</span></code> is
+run, <code class="docutils literal notranslate"><span class="pre">process.scriptName</span></code> will be <code class="docutils literal notranslate"><span class="pre">script.js</span></code>).</p>
+</div>
+<div class="section" id="script">
+<h3>script<a class="headerlink" href="#script" title="Permalink to this headline">¶</a></h3>
+<p>The value of <code class="docutils literal notranslate"><span class="pre">process.script</span></code> is a <span class="green">String</span> containing the
+canonical path (file) of the currently executing script
+(e.g.  if <code class="docutils literal notranslate"><span class="pre">rampart</span> <span class="pre">/path/to/my/script.js</span></code> is run,
+<code class="docutils literal notranslate"><span class="pre">process.script</span></code> will be <code class="docutils literal notranslate"><span class="pre">/path/to/my/script.js</span></code>).</p>
 </div>
 <div class="section" id="getpid">
 <h3>getpid<a class="headerlink" href="#getpid" title="Permalink to this headline">¶</a></h3>

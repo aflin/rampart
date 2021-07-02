@@ -570,6 +570,21 @@ canonical path (directory) in which the currently executing script can be
 found (e.g.  if ``rampart /path/to/my/script.js`` is run,
 ``process.scriptPath`` will be ``/path/to/my``).
 
+scriptName
+""""""""""
+
+The value of ``process.scriptName`` is a :green:`String`, the name of the
+currently executing script (e.g.  if ``rampart /path/to/my/script.js`` is 
+run, ``process.scriptName`` will be ``script.js``).
+
+script
+""""""
+
+The value of ``process.script`` is a :green:`String` containing the
+canonical path (file) of the currently executing script
+(e.g.  if ``rampart /path/to/my/script.js`` is run,
+``process.script`` will be ``/path/to/my/script.js``).
+
 getpid
 """"""
 

@@ -1247,7 +1247,7 @@ Usage:
 Where ``path`` is a :green:`String`, not necessarily in canonical form.
 
 Return Value: 
-   A green:`String`, the canonical form of the path.
+   A :green:`String`, the canonical form of the path.
 
 touch
 '''''
