@@ -492,7 +492,7 @@ static SFI *check_fork(DB_HANDLE *h, int create)
             sa.sa_flags = 0;
             sa.sa_handler =  die_nicely;
             sigemptyset(&sa.sa_mask);
-            sigaction(SIGUSR1, &sa, NULL);
+            sigaction(SIGUSR2, &sa, NULL);
 
             close(child2par[0]);
             close(par2child[1]);
@@ -2531,9 +2531,9 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
     sa.sa_flags = 0; //SA_NODEFER;
     sa.sa_handler = die_nicely;
     sigemptyset(&sa.sa_mask);
-    sigaction(SIGUSR1, &sa, NULL);
+    sigaction(SIGUSR2, &sa, NULL);
 
-    //  signal(SIGUSR1, die_nicely);
+    //  signal(SIGUSR2, die_nicely);
 
     SET_THREAD_UNSAFE(ctx);
 
@@ -3029,11 +3029,11 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
     sa.sa_flags = 0; //SA_NODEFER;
     sa.sa_handler = die_nicely;
     sigemptyset(&sa.sa_mask);
-    sigaction(SIGUSR1, &sa, NULL);
+    sigaction(SIGUSR2, &sa, NULL);
 
     int nParams=0;
     char *newSql=NULL, **namedSqlParams=NULL, *freeme=NULL;
-    //  signal(SIGUSR1, die_nicely);
+    //  signal(SIGUSR2, die_nicely);
 
     SET_THREAD_UNSAFE(ctx);
 

@@ -4000,9 +4000,42 @@ evhtp_res pre_accept_callback(evhtp_connection_t *conn, void *arg)
     return EVHTP_RES_OK;
 }
 
+const char *access_fn=NULL, *error_fn=NULL;
+
+void reopen_logs(int sig)
+{
+    errno=0;
+    if(access_fn)
+    {
+        fclose(access_fh);
+        access_fh=fopen(access_fn,"a");
+        if(!access_fh)
+        {
+            fprintf(stderr,"could not re-open %s for writing - %s\n", access_fn, strerror(errno));
+            exit(1);
+        }
+    }
+
+    if(error_fn)
+    {
+        fclose(error_fh);
+        error_fh=fopen(error_fn,"a");
+        if(!error_fh)
+        {
+            fprintf(stderr,"could not re-open %s for writing - %s\n", error_fn, strerror(errno));
+            exit(1);
+        }
+    }
+}
+
 static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
 {
-    /* logging in daemon */
+    if (duk_rp_GPS_icase(ctx, ob_idx, "log") && duk_get_boolean_default(ctx,-1,0) )
+    {
+        duk_rp_server_logging=1;
+    }
+    duk_pop(ctx);
+
     if (duk_rp_GPS_icase(ctx, ob_idx, "log") && duk_get_boolean_default(ctx,-1,0) )
     {
         duk_rp_server_logging=1;
@@ -4011,12 +4044,30 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
 
     if(duk_rp_server_logging)
     {
+        int sig_reload=0;
+        struct passwd  *pwd=NULL;
+
+        if (duk_rp_GPS_icase(ctx, ob_idx, "user"))
+        {
+            const char *user=REQUIRE_STRING(ctx, -1, "server.start: parameter \"user\" requires a string (username)");
+
+            if(! (pwd = getpwnam(user)) )
+                RP_THROW(ctx, "server.start: error getting user '%s' in start()\n",user);
+        }
+        duk_pop(ctx);
+
         if(duk_rp_GPS_icase(ctx, ob_idx, "accessLog") )
         {
-            const char *fn=REQUIRE_STRING(ctx,-1,  "server.start: parameter \"accessLog\" requires a string (filename)");
-            access_fh=fopen(fn,"a");
+            access_fn=REQUIRE_STRING(ctx,-1,  "server.start: parameter \"accessLog\" requires a string (filename)");
+            access_fh=fopen(access_fn,"a");
             if(access_fh==NULL)
-                RP_THROW(ctx, "server.start: error opening accessLog file '%s': %s", fn, strerror(errno));
+                RP_THROW(ctx, "server.start: error opening accessLog file '%s': %s", access_fn, strerror(errno));
+            sig_reload=1;
+            if(pwd)
+            {
+                if(chown(access_fn, pwd->pw_uid, -1))
+                    RP_THROW(ctx, "server.start: could not chown access log - %s", strerror(errno));
+            }
         }
         else
         {
@@ -4026,16 +4077,31 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
 
         if(duk_rp_GPS_icase(ctx, ob_idx, "errorLog") )
         {
-            const char *fn=REQUIRE_STRING(ctx,-1, "server.start: parameter \"errorLog\" requires a string (filename)");
-            error_fh=fopen(fn,"a");
+            error_fn=REQUIRE_STRING(ctx,-1, "server.start: parameter \"errorLog\" requires a string (filename)");
+            error_fh=fopen(error_fn,"a");
             if(error_fh==NULL)
-                RP_THROW(ctx, "server.start: error opening errorLog file '%s': %s", fn, strerror(errno));
+                RP_THROW(ctx, "server.start: error opening errorLog file '%s': %s", error_fn, strerror(errno));
+            sig_reload=1;
+            if(pwd)
+            {
+                if(chown(error_fn, pwd->pw_uid, -1))
+                    RP_THROW(ctx, "server.start: could not chown error log - %s", strerror(errno));
+            }
         }
         else
         {
             printf("no errorLog specified, logging to stderr\n");
         }
         duk_pop(ctx);
+
+        if(sig_reload)
+        {
+            struct sigaction sa = { {0} };
+
+            sa.sa_handler = reopen_logs;
+            sigemptyset(&sa.sa_mask);
+            sigaction(SIGUSR1, &sa, NULL);
+        }
     }
 }
 
