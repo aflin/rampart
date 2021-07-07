@@ -1588,7 +1588,7 @@ void *duk_rp_exec_thread_waitpid(void *arg)
  */
 duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 {
-    int kill_signal=SIGTERM, background=0, i=0, len=0;
+    int kill_signal=SIGTERM, background=0, i=0, len=0, append=0;
     unsigned int timeout=0;
     const char *path, *stdin_txt=NULL;
     duk_size_t stdin_sz;
@@ -1633,7 +1633,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     }
     duk_pop(ctx);
 
-
+/*
     if(duk_get_prop_string(ctx, -1, "appendEnv") && duk_get_boolean_default(ctx,-1,0) )
     {
         char *env_s;
@@ -1652,18 +1652,35 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         env[len]=NULL;
     }
     duk_pop(ctx);
+*/
+    
+    if(duk_get_prop_string(ctx, -1, "appendEnv") && duk_get_boolean_default(ctx,-1,0) )
+        append=1;
+    duk_pop(ctx);
 
     if(duk_get_prop_string(ctx, -1, "env"))
     {
         int start=len;
-        if(!duk_is_object(ctx, -1) || duk_is_function(ctx, -1))
+        if(!duk_is_object(ctx, -1) || duk_is_function(ctx, -1) || duk_is_array(ctx, -1))
         {
             if(env)
                 free(env);
-            RP_THROW(ctx, "exec(): option 'env' must be an object or array");
+            RP_THROW(ctx, "exec(): option 'env' must be an object");
         }
 
-        if(!duk_is_array(ctx, -1))
+        if(append)
+        {
+            duk_get_global_string(ctx, "Object");  // [env_arg, "Object" ]
+            duk_push_string(ctx, "assign");        // [env_arg, "Object", "assign" ]
+            duk_push_object(ctx);                  // [env_arg, "Object", "assign", dest_obj ]
+            duk_get_global_string(ctx, "process"); // [env_arg, "Object", "assign", dest_obj, "process" ]
+            duk_get_prop_string(ctx, -1, "env");   // [env_arg, "Object", "assign", dest_obj,  "process", curenv ]
+            duk_remove(ctx, -2);                   // [env_arg, "Object", "assign", dest_obj, curenv ]
+            duk_pull(ctx, -5);                     // ["Object", "assign" dest_obj, curenv, env_arg ]
+            duk_call_prop(ctx, -5, 3);             // ["Object", retobj ]
+            duk_remove(ctx, -2);                   // [ retobj ]
+        }
+
         {
             duk_uarridx_t arr_idx=0;
             duk_push_array(ctx); //[..., envobj, array ]
@@ -1685,6 +1702,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
             duk_dup(ctx, -1); //[opts_obj, array, array ]
             duk_insert(ctx, 0);// put copy out of the way so strings won't be freed
         }
+
         len += duk_get_length(ctx, -1);
         REMALLOC(env, (len + 1) * sizeof(char *));
         for (i = start; i < len; i++)
