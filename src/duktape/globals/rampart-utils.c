@@ -635,6 +635,7 @@ void duk_process_init(duk_context *ctx)
     {   /* add process.argv */
         int i=0;
         char *s;
+        char *rampart_path=getenv("RAMPART_PATH");
 
         duk_push_array(ctx); /* process.argv */
 
@@ -676,6 +677,19 @@ void duk_process_init(duk_context *ctx)
             duk_push_string(ctx, "");
             duk_put_prop_string(ctx,-2,"scriptName");
         }
+
+        if(rampart_path)
+        {
+            if(rampart_path[strlen(rampart_path)-1] != '/')
+                duk_push_string(ctx, rampart_path);
+            else
+                duk_push_lstring(ctx, rampart_path, (duk_size_t)(strlen(rampart_path)-1) );
+        }
+        else
+        {
+            duk_push_string(ctx, rampart_dir); //set from executable path - '/bin'
+        }
+        duk_put_prop_string(ctx, -2, "installPath");
     }
 
     duk_put_prop_string(ctx,-2,"process");
