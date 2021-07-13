@@ -1,8 +1,6 @@
 //first line
 rampart.globalize(rampart.utils);
 
-var thisfile="rputils-test.js"
-
 function testFeature(name,test)
 {
     var error=false;
@@ -41,43 +39,44 @@ testFeature("fopen/fseek/fprint/fread/fwrite/rewind",function(){
 
     var fh=fopen("test.txt","w+");
 
-    fprintf(fh,"abcdef");
+    fh.fprintf("abcdef");
 
-    fprintf(fh,"ghijkl");
+    fh.fprintf("ghijkl");
 
-    rewind(fh);
-    fprintf(fh,"123");
+    fh.rewind();
+    fh.fprintf("123");
 
-    fseek(fh,-3,"SEEK_END");
-    fprintf(fh,"456");
+    fh.fseek(-3,"SEEK_END");
+    fh.fprintf("456");
 
-    rewind(fh);
-    var buf=fread(fh,1000);
+    fh.rewind();
+    var buf=fh.fread(1000);
 
     var out="789abcdefghijklmnopqrstuvwxyz";
-    fwrite(fh,out,3);
+    fh.fwrite(out,3);
 
-    rewind(fh);
-    var res1=bufferToString(fread(fh,1000));
+    fh.rewind();
+//    var res1=bufferToString(fread(fh,1000));
+    var res1=fh.fread(1000,true);
     rmFile("test.txt");
     return res1=="123defghi456789";
 });
 
 
-var str=readFile(thisfile,-220,-20,true);
+var str=readFile(process.script,-220,-20,true);
 
 testFeature("readFile/string",
     str.length==200
 );
 
-var buf=readFile(thisfile,{offset:-220,length:-20,retString:false});
+var buf=readFile(process.script,{offset:-220,length:-20,retString:false});
 
 testFeature("readFile/buf - bufferToString",function(){
     return buf.length==200 && bufferToString(buf)==str;
 });
 
 testFeature("readLine/trim",function(){
-    var rl=readLine(thisfile);
+    var rl=readLine(process.script);
     var i=0;
     var line;
     var firstline;
@@ -107,13 +106,20 @@ testFeature("execRaw/timeout",function(){
     return ret.timedOut;
 });
 
-testFeature("exec",function(){
-    var ret=exec("head", "-n", "1", thisfile);
-    return trim(ret.stdout) == "//first line"
+testFeature("exec/env/stdin",function(){
+    var ret=exec("head", "-n", "1", process.script);
+    var ret2=exec('env',{env:{myvar:"myval"}});
+    var ret3=exec('cat',{stdin:"hello"});
+    return (
+        trim(ret.stdout) == "//first line" &&
+        trim(ret2.stdout)== "myvar=myval" &&
+        ret3.stdout == "hello"
+    );
+
 });
 
 testFeature("shell",function(){
-    var ret=shell("tail -n 1 "+ thisfile, {timeout:2000} );
+    var ret=shell("tail -n 1 "+ process.script, {timeout:2000} );
     return trim(ret.stdout)=="//lastline";
 });
 
@@ -136,26 +142,26 @@ testFeature("mkdir/rmdir/stat",function(){
 testFeature("readdir",function(){
     var gotdot=false;
     var gotthis=false;
-    readdir("./",true).forEach(function(d){
+    readdir(process.scriptPath,true).forEach(function(d){
         if(d==".") gotdot=true;
-        if(d==thisfile) gotthis=true
+        if(d==process.scriptName) gotthis=true
     });
     return gotthis && gotdot;
 });
 
 testFeature("copy/delete",function(){
-    copyFile(thisfile,"test1.js",true);
+    copyFile(process.script,"test1.js",true);
     var stat1=stat("test1.js");
-    var diff=shell("diff "+ thisfile +" test1.js");
+    var diff=shell("diff "+ process.script +" test1.js");
     rmFile("test1.js");
     var stat2=stat("test1.js");
     return stat1.mode && !stat2 && diff.stdout == "";
 });
 
 testFeature("symlink/delete/lstat",function(){
-    symlink(thisfile,"test1.js");
+    symlink(process.script,"test1.js");
     var islink=lstat("test1.js").isSymbolicLink;
-    var diff=shell("diff "+ thisfile +" test1.js");
+    var diff=shell("diff "+ process.script +" test1.js");
     rmFile("test1.js");
     var stat2=stat("test1.js");
     return islink && !stat2 && diff.stdout == "";
@@ -202,10 +208,10 @@ testFeature("touch/rename",function(){
 testFeature("reference touch",function(){
     touch({
         path:"myfile",
-        reference:thisfile
+        reference:process.script
     });
     var stat1=stat("myfile");
-    var stat2=stat(thisfile);
+    var stat2=stat(process.script);
     rmFile("myfile");
 
     return stat1.atime.getSeconds() == stat2.atime.getSeconds() && stat1.mtime.getSeconds() == stat2.mtime.getSeconds();
