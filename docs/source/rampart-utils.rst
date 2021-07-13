@@ -1,37 +1,20 @@
 rampart.utils
-"""""""""""""
+=============
 
 Utility functions are provided by the global ``rampart.utils`` :green:`Object`.
 These functions bring file io and other functionality to Duktape JavaScript.
 
-`fprintf`_ (), `fseek`_\ (), `rewind`_\ (), `ftell`_\ (), `fflush`_\ (),
-`fread`_\ () and `fwrite`_\ () take a filehandle, which may be obtained
-using `fopen`_\ (), or by using one of the following:
 
-rampart.utils.stdin:
-   A handle that corresponds to the UNIX standard in stream.
 
-rampart.utils.stdout:
-   A handle that corresponds to the UNIX standard out stream. 
 
-rampart.utils.stderr:
-   A handle that corresponds to the Unix standard error stream.
-
-rampart.utils.accessLog:
-   A handle that corresponds to the ``accessLog`` file option in ``server.start()`` for the
-   ``rampart-server`` module.  If not specified, or not loaded, same as
-   ``rampart.utils.stdout``.
-
-rampart.utils.errorLog:
-   A handle that corresponds to the ``errorLog`` file option in ``server.start()`` for the
-   ``rampart-server`` module.  If not specified, or not loaded, same as
-   ``rampart.utils.stderr``.
+General Utilities
+"""""""""""""""""
 
 printf
 ''''''
 
-Print a formatted string to stdout.  Provides C-like 
-`printf(3) <https://man7.org/linux/man-pages/man3/printf.3.html>`_ 
+Print a formatted string to stdout.  Provides C-like
+`printf(3) <https://man7.org/linux/man-pages/man3/printf.3.html>`_
 functionality in JavaScript.
 
 Usage:
@@ -39,7 +22,7 @@ Usage:
 .. code-block:: javascript
 
    rampart.utils.printf(fmt, ...)
-   
+
 Return Value:
    :green:`Number`. The length in bytes of the printed string.
 
@@ -58,30 +41,30 @@ Extended (non-standard) formats:
      not a :green:`String`.
 
    * ``%J`` - print :green:`Object` as JSON.  An optional width (i.e.
-     ``printf("%4J", obj);``) may be given which will print with new lines and 
-     indentation of the specified amount. Thus ``printf("%4J", obj);`` is 
-     equivalent to ``printf("%s", JSON.stringify(obj, null, 4) );``. 
+     ``printf("%4J", obj);``) may be given which will print with new lines and
+     indentation of the specified amount. Thus ``printf("%4J", obj);`` is
+     equivalent to ``printf("%s", JSON.stringify(obj, null, 4) );``.
 
    * ``%B`` - print contents of a :green:`Buffer` or :green:`String` as
      base64.
 
       * If ``!`` flag present, it decodes a :green:`Buffer` or
-        :green:`String` containing base64 (throws an error if not valid 
-        base64). 
-        
+        :green:`String` containing base64 (throws an error if not valid
+        base64).
+
       * If a width is given (e.g. ``%80B``), a newline will be printed
-        after every ``width`` characters.  
-        
-      * If the ``-`` flag is present and ``!`` is not present, the output 
-        will be a modified url safe base64 (using ``-`` and ``_`` in place 
+        after every ``width`` characters.
+
+      * If the ``-`` flag is present and ``!`` is not present, the output
+        will be a modified url safe base64 (using ``-`` and ``_`` in place
         of ``+`` and ``/``).
 
       * If the ``0`` flag is given (e.g. ``%0B`` or ``%-080B``), and ``!``
         is not present, the output will not be padded with ``=`` characters.
 
-   * ``%U`` - url encode (or if ``!`` flag present, decode) a :green:`String`. 
+   * ``%U`` - url encode (or if ``!`` flag present, decode) a :green:`String`.
 
-   * ``%H`` - html encode (or if ``!`` flag present, decode) a :green:`String`. 
+   * ``%H`` - html encode (or if ``!`` flag present, decode) a :green:`String`.
 
    * ``%P`` - pretty print a :green:`String` or :green:`Buffer`.  Expects
      text with white space.  Format is ``%[!][-][i][.w]P`` where:
@@ -101,12 +84,12 @@ Extended (non-standard) formats:
        after newlines is still indented).  In all cases, a double newline
        ("\\n\\n") is considered a separator of paragraphs and is respected.
 
-   * ``%w`` - a shortcut format for ``%!-.wP`` - where ``w`` is effectively unlimited. 
+   * ``%w`` - a shortcut format for ``%!-.wP`` - where ``w`` is effectively unlimited.
      Remove all leading white space from each line and don't wrap lines.
 
    * ``%C`` - like ``%c`` but prints multi-byte character.  Example:
-     
-     ``rampart.utils.printf("%C", 0xf09f9983);`` prints ``🙃``. 
+
+     ``rampart.utils.printf("%C", 0xf09f9983);`` prints ``🙃``.
 
      Requires a number, 1-4 bytes (``0``-``4294967295``, or ``0x0``-``0xffffffff``).
 
@@ -123,13 +106,13 @@ Example:
    Decoded: a url encoded string. '#$?'
    */
 
-   var getty = "Four score and seven years ago our fathers\n" + 
+   var getty = "Four score and seven years ago our fathers\n" +
             "brought forth on this continent, a new nation,\n" +
             "conceived in Liberty, and dedicated to the proposition\n" +
             "that all men are created equal."
 
    rampart.utils.printf("%5.40P\n", getty);
-   /* or 
+   /* or
         rampart.utils.printf("%*.*P\n", 5, 40, getty);
    */
 
@@ -142,14 +125,14 @@ Example:
         created equal.
    */
 
-    var html = 
+    var html =
     "<html>\n"+
     "  <body>\n"+
     "    <div>\n"+
-    "      content\n"+      
+    "      content\n"+
     "    </div>\n"+
     "  </body>\n"+
-    "</html>\n"+
+    "</html>\n";
 
     /* remove leading white space */
     rampart.utils.printf("%!-.1000P", html);
@@ -180,278 +163,6 @@ Same as ``sprintf()`` except a :green:`Buffer` is returned.
 
 Return Value:
    :green:`Buffer`.  The formatted string as a :green:`Buffer`.
-
-fopen
-'''''
-
-Open a filehandle for use with `fprintf`_\ (), `fclose`_\ (), `fseek`_\ (),
-`rewind`_\ (), `ftell`_\ (), `fflush`_\ () `fread`_\ () and `fwrite`_\ ().
-
-Return Value:
-   :green:`Object`. The opened filehandle.
-
-Usage:
-
-.. code-block:: javascript
-
-   var handle = rampart.utils.fopen(filename, mode);
-
-Where ``filename`` is a :green:`String` containing the file to be opened and mode is
-a :green:`String` (one of the following):
-
-*  ``"r"`` - Open text file for reading.  The stream is positioned at the
-   beginning of the file.
-
-*  ``"r+"`` - Open for reading and writing.  The stream is positioned at the
-   beginning of the file.
-
-*  ``"w"`` - Truncate file to zero length or create text file for writing. 
-   The stream is positioned at the beginning of the file.
-
-*  ``"w+"`` - Open for reading and writing.  The file is created if it does
-   not exist, otherwise it is truncated.  The stream is positioned at the
-   beginning of the file.
-
-*  ``"a"`` - Open for appending (writing at end of file).  The file is
-   created if it does not exist.  The stream is positioned at the end of the
-   file.
-
-*  ``"a+"`` - Open for reading and appending (writing at end of file).  The
-   file is created if it does not exist.  The initial file position for reading
-   is at the beginning of the file, but output is always appended to the end of the
-   file.
-
-fclose
-''''''
-
-Close a previously opened handle :green:`Object` opened with `fopen`_\ ().
-
-Example:
-
-.. code-block:: javascript
-
-   var handle = rampart.utils.fopen("/tmp/out.txt", "a");
-   ...
-   rampart.utils.fclose(handle);
-
-fprintf
-'''''''
-
-Same as ``printf()`` except output is sent to the file provided by
-a :green:`String` or filehandle :green:`Object` opened and returned from `fopen`_\ ().
-
-Usage:
-
-.. code-block:: javascript
-
-   var filename = "/home/user/myfile.txt";
-
-   var output = rampart.utils.fopen(filename, mode);
-   rampart.utils.fprintf(output, fmt, ...);
-   rampart.utils.fclose(output);
-
-   /* or */
-
-   var output = filename;
-   rampart.utils.fprintf(output, [, append], fmt, ...); 
-   /* file is automatically closed after function returns */
-   
-Where:
-
-* ``output`` may be a :green:`String` (a filename), or an :green:`Object` returned from `fopen`_\ ().
-
-* ``fmt`` is a :green:`String`, a `printf`_\ () format.
-
-* ``append`` is an optional :green:`Boolean` - if ``true`` append instead of
-  overwrite an existing file.
-
-Return Value:
-   :green:`Number`. The length in bytes of the printed string.
-
-Example:
-
-.. code-block:: javascript
-
-   var handle = fopen("/tmp/out.txt", "w+");
-   fprintf(handle, "A number: %d\n", 123);
-   fclose(handle);
-
-   /* OR */
-
-   fprintf("/tmp/out.txt", "A number: %d\n", 456); /* implicit fclose */
-
-fseek
-'''''
-
-Set file position for file operations.
-
-Usage:
-
-.. code-block:: javascript
-
-   rampart.utils.fseek(handle, offset, whence);
-
-+------------+----------------+---------------------------------------------------+
-|Argument    |Type            |Description                                        |
-+============+================+===================================================+
-|handle      |:green:`Object` | A handle opened with `fopen`_\ ()                 |
-+------------+----------------+---------------------------------------------------+
-|offset      |:green:`Number` | offset in bytes from whence                       |
-+------------+----------------+---------------------------------------------------+
-|whence      |:green:`String` | "seek_set" - measure offset from start of file    |
-+            +                +---------------------------------------------------+
-|            |                | "seek_cur" - measure offset from current position |
-+            +                +---------------------------------------------------+
-|            |                | "seek_end" - measure offset from end of file.     |
-+------------+----------------+---------------------------------------------------+
-
-Return Value:
-   ``undefined``
-
-Example
-
-.. code-block:: javascript
-
-   rampart.globalize(rampart.utils,
-     ["fopen","printf","fprintf","fseek","fread"]);
-
-   var handle = fopen("/tmp/out.txt", "w+");
-
-   fprintf(handle, "123def");
-
-   fseek(handle, 0, "seek_set");
-
-   fprintf(handle, "abc");
-
-   fseek(handle, 0, "seek_set");
-
-   var out=fread(handle);
-
-   printf("%s", out);
-   /* expect output: "abcdef" */
-
-   fclose(handle);
-
-
-rewind
-''''''
-
-Set the file position to the beginning of the file.  It is equivalent to:
-
-.. code-block:: javascript
-
-   fseek(handle, 0, "seek_set")
-
-Usage:
-
-.. code-block:: javascript
-
-   rewind(handle);
-
-Return Value:
-   ``undefined``
-
-ftell
-'''''
-
-Obtain the current value of the file position for the handle opened with
-`fopen`_\ ().
-
-Usage:
-
-.. code-block:: javascript
-
-   var pos = rampart.utils.ftell(handle);
-
-Return Value:
-   :green:`Number`. Current position of ``handle``.
-
-
-fflush
-''''''
-
-For output file handles opened with `fopen`_\ (), or for
-``stdout``/``stderr``/``accessLog``/``errorLog``, ``fflush()`` forces a
-write of buffered data.
-
-Usage:
-
-.. code-block:: javascript
-
-    rampart.utils.fflush(handle);
-
-Example:
-
-.. code-block:: javascript
-
-   /* normally a flush happens automatically
-      when a '\n' is printed.  Since we are using
-      '\r', flush manually                        */
-
-   for (var i=0; i< 10; i++) {
-      rampart.utils.printf("doing #%d\r", i);
-      rampart.utils.fflush(rampart.utils.stdout);
-      rampart.utils.sleep(1);
-   }
-
-   rampart.utils.printf("blast off!!!\n");
-
-fread
-'''''
-
-Read data from a handle opened with `fopen`_\ () or ``stdin``.
-
-Usage:
-
-.. code-block:: javascript
-
-    rampart.utils.fread(handle [, chunk_size [, max_size]]);
-
-+------------+-----------------+---------------------------------------------------+
-|Argument    |Type             |Description                                        |
-+============+=================+===================================================+
-|handle      |:green:`Object`  | A handle opened with `fopen`_\ ()                 |
-+------------+-----------------+---------------------------------------------------+
-|chunk_size  |:green:`Number`  | Initial size of return :green:`Buffer` and number |
-|            |                 | of bytes to read at a time. If the total number of|
-|            |                 | bytes read is greater, the buffer grows as needed.|
-|            |                 | If total bytes read is less, the returned buffer  |
-|            |                 | will be reduced in size to match. Default is 4096 |
-|            |                 | if not specified.                                 |
-+------------+-----------------+---------------------------------------------------+
-|max_size    |:green:`Number`  | Maximum number of bytes to read.  Unlimited if    |
-|            |                 | not specified.                                    |
-+------------+-----------------+---------------------------------------------------+
-
-Return Value:
-    :green:`Buffer`. Contents set to the read bytes.
-
-fwrite
-''''''
-
-Write data to handle opened with `fopen`_\ () or ``stdout``/``stderr``.
-
-Usage:
-
-.. code-block:: javascript
-
-    var nbytes = rampart.utils.fwrite(handle, data [, max_bytes]);
-
-+------------+-----------------+---------------------------------------------------+
-|Argument    |Type             |Description                                        |
-+============+=================+===================================================+
-|handle      |:green:`Object`  | A handle opened with `fopen`_\ ()                 |
-+------------+-----------------+---------------------------------------------------+
-|data        |:green:`Buffer`/ | The data to be written.                           |
-|            |:green:`String`  |                                                   |
-+------------+-----------------+---------------------------------------------------+
-|max_bytes   |:green:`Number`  | Maximum number of bytes to write. :green:`Buffer`/|
-|            |                 | :green:`String` length if not specified.          |
-+------------+-----------------+---------------------------------------------------+
-
-Return Value:
-    :green:`Number`. Number of bytes written.
-
 
 hexify
 ''''''
@@ -508,9 +219,9 @@ Example:
 stringToBuffer
 ''''''''''''''
 
-Performs a byte-for-byte copy of :green:`String` into a :green:`Buffer`.  
+Performs a byte-for-byte copy of :green:`String` into a :green:`Buffer`.
 Also convert one :green:`Buffer` to a :green:`Buffer` of another type.
-See ``duk_to_buffer()`` in the 
+See ``duk_to_buffer()`` in the
 `Duktape documentation <https://wiki.duktape.org/howtobuffers2x#string-to-buffer-conversion>`_
 
 Usage:
@@ -582,7 +293,7 @@ one of the following:
      (comma).  Example: ``{key1: ["val1", "val2"]}`` becomes
      ``key1=val1,val2``.
 
-   * ``json`` - encode array as JSON.  Example: 
+   * ``json`` - encode array as JSON.  Example:
      ``{key1: ["val1", "val2"]}`` becomes
      ``key1=%5b%22val1%22%2c%22val2%22%5d``.
 
@@ -606,7 +317,7 @@ Caveats:
 
 *  All primitive values will be converted to :green:`Strings`.
 
-*  If ``repeat`` or ``bracket`` was used to create the 
+*  If ``repeat`` or ``bracket`` was used to create the
    query string, all values will be returned as strings (even if an :green:`Array` of
    :green:`Numbers` was given to `objectToQuery`_\ ().
 
@@ -620,7 +331,7 @@ Example:
 .. code-block:: javascript
 
    var obj= {
-     key1: null, 
+     key1: null,
      key2: [1,2,3],
      key3: ["val1","val2"]
    }
@@ -631,12 +342,12 @@ Example:
        var qs = rampart.utils.objectToQuery(obj, type[i] );
        var qsobj = rampart.utils.queryToObject(qs);
        rampart.utils.printf("qToO(\n     '%s'\n    ) = \n%s\n", qs, JSON.stringify(qsobj,null,3));
-   } 
+   }
 
    /* expected output:
    qToO(
         'key1=null&key2=1&key2=2&key2=3&key3=val1&key3=val2'
-       ) = 
+       ) =
    {
       "key1": "null",
       "key2": [
@@ -652,7 +363,7 @@ Example:
    qToO(
 
    'key1=null&key2%5B%5D=1&key2%5B%5D=2&key2%5B%5D=3&key3%5B%5D=val1&key3%5B%5D=val2'
-       ) = 
+       ) =
    {
       "key1": "null",
       "key2": [
@@ -667,7 +378,7 @@ Example:
    }
    qToO(
         'key1=null&key2=1,2,3&key3=val1,val2'
-       ) = 
+       ) =
    {
       "key1": "null",
       "key2": "1,2,3",
@@ -675,7 +386,7 @@ Example:
    }
    qToO(
         'key1=null&key2=%5b1%2c2%2c3%5d&key3=%5b%22val1%22%2c%22val2%22%5d'
-       ) = 
+       ) =
    {
       "key1": "null",
       "key2": [
@@ -746,8 +457,8 @@ Example:
 
    var txt = rampart.utils.readFile({
       filename:  "/tmp/file.txt",
-      offset:    10, 
-      length:    -6, 
+      offset:    10,
+      length:    -6,
       retString: true
    });
 
@@ -763,7 +474,7 @@ Example:
 trim
 ''''
 
-Remove whitespace characters from beginning and end of a :green:`String`.
+Remove whitespace characters from the beginning and end of a :green:`String`.
 
 Usage:
 
@@ -785,46 +496,6 @@ Example:
    /* expected output:
    'a line of text'
    */
-
-readLine
-''''''''
-
-Read a text file line-by-line.
-
-Usage:
-
-.. code-block:: javascript
-
-   var rl = rampart.utils.readLine(file);
-   var line=rl.next();
-
-Where ``file`` is a :green:`String` (name of file to be read) and return :green:`Object`
-contains the property ``next``, a :green:`Function` to retrieve and return the next
-line of text in the file.
-
-Return Value:
-   :green:`Object`.  Property ``next`` of the return :green:`Object` is a
-   :green:`Function` which retrieves and returns the next line of text in
-   the file.  After the last line of ``file`` is returned, subsequent calls
-   to ``next`` will return ``null``.
-
-Example:
-
-.. code-block:: javascript
-
-    var rl = rampart.utils.readLine("./myfile.txt");
-    var i = 0;
-    var line, firstline, lastline;
-
-    while ( (line=rl.next()) ) {
-        if(i==0)
-            firstline = rampart.utils.trim(line);
-        i++;
-        lastline = line;
-    }
-    rampart.utils.printf("%s\n%s\n", firstline, lastline);
-
-    /* expected output: first and last line of file "./myfile.txt" */
 
 stat
 ''''
@@ -912,16 +583,24 @@ Where:
 
 *  ``options`` - :green:`Object`. Containing the following properties:
 
-   *  ``timeout`` - :green:`Number`: Maximum amount of time in milliseconds before
+   *  ``timeout`` - :green:`Number`. Maximum amount of time in milliseconds before
       the process is automatically killed.
 
-   *  ``killSignal`` - :green:`Number`. If timeout is reached, use this signal 
+   *  ``killSignal`` - :green:`Number`. If timeout is reached, use this signal
 
    *  ``background`` - :green:`Boolean`.  Whether to execute detached and return
-      immediately.  ``stdout`` and ``stderr`` below will be set to ``null``.  Any ``timeout`` 
+      immediately.  ``stdout`` and ``stderr`` below will be set to ``null``.  Any ``timeout``
       value is ignored.
 
-   *  ``stdin`` - :green:`String` or :green:`Buffer`. If specified, the content is piped to the 
+   *  ``env`` - :green:`Object`. Key/value pairs to be used as environment variables for the executed process.
+
+   *  ``appendEnv`` - :green:`Boolean`.  Only used if ``env`` is provided.  If ``false`` (the default),
+      only the environment variables given in ``env`` will be available.  If
+      ``true``, variables provided in ``env`` will be appended to :ref:`process.env <rampart-main:env>`.
+      Duplicate keys in :ref:`process.env <rampart-main:env>` are replaced with the value from ``env``.
+
+   * ``stdin`` - :green:`String` or :green:`Buffer`.  If specified, the
+   content is piped to the
       command as stdin.
 
 *  ``argn`` - :green:`String`/:green:`Number`/:green:`Object`/:green:`Boolean`/:green:`Null` - Arguments to be passed to
@@ -931,7 +610,7 @@ Where:
 Return Value:
    :green:`Object`.  Properties as follows:
 
-   * ``stdout`` - :green:`String`. Output of command if ``background`` is not set ``false``. 
+   * ``stdout`` - :green:`String`. Output of command if ``background`` is not set ``false``.
      Otherwise ``null``.
 
    * ``stderr`` - :green:`String`. stderr output of command if ``background`` is not set ``false``.
@@ -947,7 +626,7 @@ Return Value:
 shell
 '''''
 
-Execute :green:`String` in a bash shell. Equivalent to 
+Execute :green:`String` in a bash shell. Equivalent to
 ``rampart.utils.exec("bash", "-c", shellcmd);``.
 
 Usage:
@@ -966,8 +645,8 @@ Example:
 
 .. code-block:: javascript
 
-   var ret = rampart.utils.shell('echo -n "hello"; echo "hi" 1>&2;'); 
-   console.log(JSON.stringify(ret, null, 3)); 
+   var ret = rampart.utils.shell('echo -n "hello"; echo "hi" 1>&2;');
+   console.log(JSON.stringify(ret, null, 3));
 
    /* expected output:
    {
@@ -1034,8 +713,6 @@ Usage:
 Return Value:
    A :green:`String`, the current working directory of the script.
 
-
-
 chdir
 '''''
 
@@ -1053,7 +730,6 @@ specified directory.
 
 Return Value:
    ``undefined``.
-
 
 mkdir
 '''''
@@ -1103,7 +779,7 @@ Example:
 
 .. code-block:: javascript
 
-   /* make the following directories in the 
+   /* make the following directories in the
       current working directory             */
    rampart.utils.mkdir("p1/p2/p3",0755);
 
@@ -1112,7 +788,7 @@ Example:
 
 
 
-readdir
+readDir
 '''''''
 
 Get listing of directory files.
@@ -1127,7 +803,7 @@ Where ``path`` is a :green:`String`, the directory whose content will be listed 
 ``showhidden`` is a :green:`Boolean`, which if ``true``, files or directories
 beginning with ``.`` (hidden files) will be included in the return value.
 
-Return Value: 
+Return Value:
    :green:`Array`.  An :green:`Array` of :green:`Strings`, each filename in the directory.
 
 
@@ -1230,7 +906,7 @@ Note that ``mode`` is normally given as an octal.  As such it can be, e.g.,
 ``0755`` (octal number) or ``"755"`` (:green:`String` representation of an octal
 number), but ``755``, as a decimal number may not work as intended.
 
-Return Value: 
+Return Value:
    ``undefined``.
 
 realPath
@@ -1246,7 +922,7 @@ Usage:
 
 Where ``path`` is a :green:`String`, not necessarily in canonical form.
 
-Return Value: 
+Return Value:
    A :green:`String`, the canonical form of the path.
 
 touch
@@ -1263,16 +939,16 @@ Usage:
    /* or */
 
    rampart.utils.touch({
-      path: file  
+      path: file
       [, nocreate: noCreate]
       [, setaccess: setAccess]
-      [, setmodify: setModify] 
+      [, setmodify: setModify]
       [, reference: referenceFile]
    });
 
 Where:
 
-* ``file`` is a :green:`String`, the name of the file upon which to operate, 
+* ``file`` is a :green:`String`, the name of the file upon which to operate,
 
 * ``noCreate`` is a :green:`Boolean` (default ``false``) which, if ``true``
   will only update the timestamp, and will not create a non-existing
@@ -1318,7 +994,7 @@ Usage:
 
    rampart.utils.sleep(seconds);
 
-Where ``seconds`` is a :green:`Number`.  Seconds may be a fraction of seconds. 
+Where ``seconds`` is a :green:`Number`.  Seconds may be a fraction of seconds.
 Internally `nanosleep <https://man7.org/linux/man-pages//man2/nanosleep.2.html>`_
 is used.
 
@@ -1345,3 +1021,626 @@ Return Value:
   A :green:`String`, one of ``String``, ``Array``, ``Number``, ``Function``,
   ``Boolean``, ``Buffer`` (any buffer type), ``Nan``, ``Null``, ``Undefined``,
   ``Date`` or ``Object``.
+
+File Handle Utilities
+"""""""""""""""""""""
+
+The functions `fprintf`_ (), `fseek`_\ (), `rewind`_\ (), `ftell`_\ (), `fflush`_\ (),
+`fread`_\ (), `fwrite`_\ (), and `readLine`_\ () take a filehandle, which may be obtained
+using `fopen`_\ ().
+
+
+Calling Methods:
+   The above listed functions (functions which take filehandles) may be called using one of
+   two alternative syntaxes.
+
+   .. code-block:: javascript
+
+      var handle = rampart.utils.fopen(filename, mode);
+
+      rampart.utils.fprintf(handle, fmt, ...);
+
+      /* or */
+
+      handle.fprintf(fmt, ...);
+
+   The return value for each of the file handle functions is the same for either
+   syntax, with the exception that `fseek`_\ (), `rewind`_\ () and `fflush`_\ ()
+   return undefined in the first syntax and ``handle`` in the second.
+
+   Below, only the first syntax is documented.
+
+Pre-opened file handles:
+   rampart.utils.stdin:
+      A handle that corresponds to the UNIX standard in stream.
+
+   rampart.utils.stdout:
+      A handle that corresponds to the UNIX standard out stream.
+
+   rampart.utils.stderr:
+      A handle that corresponds to the Unix standard error stream.
+
+   rampart.utils.accessLog:
+      A handle that corresponds to the ``accessLog`` file option in ``server.start()`` for the
+      ``rampart-server`` module.  If not specified, or not loaded, same as
+      ``rampart.utils.stdout``.
+
+   rampart.utils.errorLog:
+      A handle that corresponds to the ``errorLog`` file option in ``server.start()`` for the
+      ``rampart-server`` module.  If not specified, or not loaded, same as
+      ``rampart.utils.stderr``.
+
+   The ``rampart.utils.stdin`` handle includes the `fread`_\ (), and `readLine`_\ () functions
+   while the other four include the `fprintf`_\ (), `fflush`_\ () and `fwrite`_\ () functions.
+   Example:
+
+   .. code-block:: javascript
+
+      var inf = rampart.utils.stdin.readLine();
+
+      while ( (var line = inf.next()) )
+         rampart.utils.stdout.fprintf("%s", line); //same as rampart.utils.printf
+
+
+fopen
+'''''
+
+Open a filehandle for use with `fprintf`_\ (), `fclose`_\ (), `fseek`_\ (),
+`rewind`_\ (), `ftell`_\ (), `fflush`_\ () `fread`_\ (), `fwrite`_\ () and readLine.
+
+Return Value:
+   :green:`Object`. An object which opaquely contains the opened file handle along with
+   the above functions.
+
+Usage:
+
+.. code-block:: javascript
+
+   var handle = rampart.utils.fopen(filename, mode);
+
+Where ``filename`` is a :green:`String` containing the file to be opened and mode is
+a :green:`String` (one of the following):
+
+*  ``"r"`` - Open text file for reading.  The stream is positioned at the
+   beginning of the file.
+
+*  ``"r+"`` - Open for reading and writing.  The stream is positioned at the
+   beginning of the file.
+
+*  ``"w"`` - Truncate file to zero length or create text file for writing.
+   The stream is positioned at the beginning of the file.
+
+*  ``"w+"`` - Open for reading and writing.  The file is created if it does
+   not exist, otherwise it is truncated.  The stream is positioned at the
+   beginning of the file.
+
+*  ``"a"`` - Open for appending (writing at end of file).  The file is
+   created if it does not exist.  The stream is positioned at the end of the
+   file.
+
+*  ``"a+"`` - Open for reading and appending (writing at end of file).  The
+   file is created if it does not exist.  The initial file position for reading
+   is at the beginning of the file, but output is always appended to the end of the
+   file.
+
+fclose
+''''''
+
+Close a previously opened handle :green:`Object` opened with `fopen`_\ ().
+
+Example:
+
+.. code-block:: javascript
+
+   var handle = rampart.utils.fopen("/tmp/out.txt", "a");
+
+   ...
+
+   rampart.utils.fclose(handle);
+
+     /* or */
+
+   handle.fclose();
+
+Return Value:
+   ``undefined``.
+
+fprintf
+'''''''
+
+Same as ``printf()`` except output is sent to the file provided by
+a :green:`String` or filehandle :green:`Object` opened and returned from `fopen`_\ ().
+
+Usage:
+
+.. code-block:: javascript
+
+   var filename = "/home/user/myfile.txt";
+
+   var output = rampart.utils.fopen(filename, mode);
+   rampart.utils.fprintf(output, fmt, ...);
+   rampart.utils.fclose(output);
+
+   /* or */
+
+   var output = filename;
+   rampart.utils.fprintf(output, [, append], fmt, ...);
+   /* file is automatically closed after function returns */
+
+Where:
+
+* ``output`` may be a :green:`String` (a file name), or an :green:`Object` returned from `fopen`_\ ().
+
+* ``fmt`` is a :green:`String`, a `printf`_\ () format.
+
+* ``append`` is an optional :green:`Boolean` - if ``true`` and output is a file name, append instead of
+  overwrite an existing file.
+
+Return Value:
+   A :green:`Number`. The length in bytes of the printed string.
+
+Example:
+
+.. code-block:: javascript
+
+   var handle = fopen("/tmp/out.txt", "w+");
+   fprintf(handle, "A number: %d\n", 123);
+   fclose(handle);
+
+   /* OR */
+
+   fprintf("/tmp/out.txt", "A number: %d\n", 456); /* implicit fclose */
+
+fseek
+'''''
+
+Set file position for file operations.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.utils.fseek(handle, offset[, whence]);
+
++------------+----------------+----------------------------------------------------------+
+|Argument    |Type            |Description                                               |
++============+================+==========================================================+
+|handle      |:green:`Object` | A handle opened with `fopen`_\ ()                        |
++------------+----------------+----------------------------------------------------------+
+|offset      |:green:`Number` | offset in bytes from whence                              |
++------------+----------------+----------------------------------------------------------+
+|whence      |:green:`String` | "seek_set" - measure offset from start of file (default) |
++            +                +----------------------------------------------------------+
+|            |                | "seek_cur" - measure offset from current position        |
++            +                +----------------------------------------------------------+
+|            |                | "seek_end" - measure offset from end of file.            |
++------------+----------------+----------------------------------------------------------+
+
+Return Value:
+   ``undefined``
+
+Example
+
+.. code-block:: javascript
+
+   rampart.globalize(rampart.utils,
+     ["fopen","printf","fprintf","fseek","fread"]);
+
+   var handle = fopen("/tmp/out.txt", "w+");
+
+   fprintf(handle, "123def");
+
+   fseek(handle, 0, "seek_set");
+
+   fprintf(handle, "abc");
+
+   fseek(handle, 0, "seek_set");
+
+   var out=fread(handle);
+
+   printf("%s", out);
+   /* expect output: "abcdef" */
+
+   fclose(handle);
+
+
+rewind
+''''''
+
+Set the file position to the beginning of the file.  It is equivalent to:
+
+.. code-block:: javascript
+
+   fseek(handle, 0, "seek_set")
+
+Usage:
+
+.. code-block:: javascript
+
+   rewind(handle);
+
+Return Value:
+   ``undefined``
+
+ftell
+'''''
+
+Obtain the current value of the file position for the handle opened with
+`fopen`_\ ().
+
+Usage:
+
+.. code-block:: javascript
+
+   var pos = rampart.utils.ftell(handle);
+
+Return Value:
+   :green:`Number`. Current position of ``handle``.
+
+
+fflush
+''''''
+
+For output file handles opened with `fopen`_\ (), or for
+``stdout``/``stderr``/``accessLog``/``errorLog``, ``fflush()`` forces a
+write of buffered data.
+
+Usage:
+
+.. code-block:: javascript
+
+    rampart.utils.fflush(handle);
+
+Return Value:
+   ``undefined``
+
+Example:
+
+.. code-block:: javascript
+
+   /* normally a flush happens automatically
+      when a '\n' is printed.  Since we are using
+      '\r', flush manually                        */
+
+   for (var i=0; i< 10; i++) {
+      rampart.utils.printf("doing #%d\r", i);
+      rampart.utils.fflush(rampart.utils.stdout);
+      rampart.utils.sleep(1);
+   }
+
+   rampart.utils.printf("blast off!!!\n");
+
+fread
+'''''
+
+Read data from a file, handle opened with `fopen`_\ () or the pre-opened handle ``stdin``.
+
+Usage:
+
+.. code-block:: javascript
+
+    rampart.utils.fread([handle|file] [, max_size [, chunk_size [,returnString]]]);
+
++------------+-----------------+---------------------------------------------------+
+|Argument    |Type             |Description                                        |
++============+=================+===================================================+
+|handle      |:green:`Object`  | A handle opened with `fopen`_\ ()                 |
++------------+-----------------+---------------------------------------------------+
+|file        |:green:`String`  | A filename -- file will be auto opened and closed |
++------------+-----------------+---------------------------------------------------+
+|max_size    |:green:`Number`  | Maximum number of bytes to read.  Unlimited if    |
+|            |                 | not specified.                                    |
++------------+-----------------+---------------------------------------------------+
+|chunk_size  |:green:`Number`  | Initial size of return :green:`Buffer` and number |
+|            |                 | of bytes to read at a time. If the total number of|
+|            |                 | bytes read is greater, the buffer grows as needed.|
+|            |                 | If total bytes read is less, the returned buffer  |
+|            |                 | will be reduced in size to match. Default is 4096 |
+|            |                 | if not specified.                                 |
++------------+-----------------+---------------------------------------------------+
+|returnString|:green:`Boolean` | Whether return value is returned as a             |
+|            |                 | :green:`String`.  Default is ``false``.           |
++------------+-----------------+---------------------------------------------------+
+
+Return Value:
+    A :green:`Buffer` or a :green:`String` if ``returnString`` is ``true``.
+
+fwrite
+''''''
+
+Write data to a file, a handle opened with `fopen`_\ () or a pre-opened
+output handle (``stdout``/``stderr``/``accessLog``/``errorLog``).  If using
+a handle, the start of the write will be the current position based on how
+the file was opened and whether any seeks have been performed.  If using a
+file name, the ``append`` parameter will determine whether the file is
+appended or truncated.
+
+Usage:
+
+.. code-block:: javascript
+
+    var nbytes = rampart.utils.fwrite([handle|file], data [, max_bytes [, append]]);
+
++------------+-----------------+---------------------------------------------------+
+|Argument    |Type             |Description                                        |
++============+=================+===================================================+
+|handle      |:green:`Object`  | A handle opened with `fopen`_\ ()                 |
++------------+-----------------+---------------------------------------------------+
+|file        |:green:`String`  | A filename -- file will be auto opened and closed |
++------------+-----------------+---------------------------------------------------+
+|data        |:green:`Buffer`/ | The data to be written.                           |
+|            |:green:`String`  |                                                   |
++------------+-----------------+---------------------------------------------------+
+|max_bytes   |:green:`Number`  | Maximum number of bytes to write. :green:`Buffer`/|
+|            |                 | :green:`String` length if not specified.          |
++------------+-----------------+---------------------------------------------------+
+|append      |:green:`Boolean` | If opened with ``file`` instead of ``handle``,    |
+|            |                 | whether to append the file.  Default is ``false``,|
+|            |                 | in which case the file will be truncated.         |
++------------+-----------------+---------------------------------------------------+
+
+Return Value:
+    A :green:`Number`. Number of bytes written.
+
+readLine
+''''''''
+
+Read a text file line-by-line.
+
+Usage:
+
+.. code-block:: javascript
+
+   var rl = rampart.utils.readLine(file);
+   var line=rl.next();
+
+Where ``file`` is a :green:`String` (name of file to be read) or a file handle opened
+with with `fopen`_\ () or ``rampart.utils.stdin``. It returns a :green:`Object`
+that contains the property ``next`` which is :green:`Function` to retrieve and return the next
+line of text in the opened file.
+
+Return Value:
+   An :green:`Object`.  Property ``next`` of the return :green:`Object` is a
+   :green:`Function` which retrieves and returns the next line of text in
+   the file.  After the last line of ``file`` is returned, subsequent calls
+   to ``next`` will return ``null``.
+
+Example:
+
+.. code-block:: javascript
+
+    var rl = rampart.utils.readLine("./myfile.txt");
+    var i = 0;
+    var line, firstline, lastline;
+
+    while ( (line=rl.next()) ) {
+        if(i==0)
+            firstline = rampart.utils.trim(line);
+        i++;
+        lastline = line;
+    }
+    rampart.utils.printf("%s\n%s\n", firstline, lastline);
+
+    /* expected output: first and last line of file "./myfile.txt" */
+
+Rand, Hash and HLL
+""""""""""""""""""
+
+Included in rampart.utils are three non-cryptographic functions which have been optimized for speed and ease of use.
+
+Note that the `rand`_\ () and `hash`_\ () functions are not of cryptographic quality.  For cryptographic quality hashes
+and random numbers, see :ref:`The Rampart-Crypto Module <rampart-crypto:preface>`.
+
+rand
+''''
+
+Generate a random number using a fast, non-cryptographic random number generator.
+
+Usage:
+
+.. code-block:: javascript
+
+   var rn = rampart.utils.rand([min, max]);
+
+      /* or */
+
+   var rn = rampart.utils.rand(max);
+
+Where ``min`` is the floor and ``max``
+is the ceiling of the range of the random number to produce.
+
+Return Value:
+   A :green:`Number` - the generated random number.
+
+Note that if srand has not been called before use, the random number generator
+will be automatically seeded.
+
+
+srand
+'''''
+
+Seed the random number generator for use with `rand`_\ () above.
+
+Usage:
+
+.. code-block:: javascript
+
+   rampart.utils.srand([random_num]);
+
+Where ``random_num`` is an optional number to seed the random number generator.  If not specified, a number will
+be derived by reading ``/dev/urandom``.
+
+hash
+''''
+
+Calculate the hash of data.
+
+Usage:
+
+.. code-block:: javascript
+
+   var myhash = rampart.utils.hash(data,options);
+
+Where ``data`` is the data from which the hash is calculated and options is
+an :green:`Object` with the following optional properties:
+
+* ``type`` - the type of hash to be calculated. A :green:`String`, one of:
+
+   * ``murmur`` - A 64 bit hash using the `murmur` algorithm.
+
+   * ``city`` - A 64 bit hash using the `city` algorithm.
+
+   * ``city128`` - A 128 bit hash using the `city` algorithm.  This is the default if not specified.
+
+   * ``both`` - A 192 bit hash -- the ``city128`` hash concatenated with the ``murmur`` hash.
+
+* ``function`` - Same as ``type``.
+
+* ``returnBuffer`` - a :green:`Boolean`, if ``true``, the hash will be returned as the binary value of the hash
+  in a a :green:`Buffer`.  If ``false`` (the default), the return value will be a :green:`String` - a hex encoded representation
+  of the hash.
+
+Return Value:
+   A :green:`String` or :green:`Buffer` - the computed hash.
+
+hll
+'''
+
+The ``hll`` function calculates a count of unique items based on Rampart's own
+`hyperloglog <https://en.wikipedia.org/wiki/HyperLogLog>`_ algorithm. It allocates and uses
+a 16384 byte buffer to calculate a distinct count of items added.
+
+Usage:
+
+.. code-block:: javascript
+
+   var myhll = new rampart.utils.hll(name);
+
+      /* or */
+
+   var myhll = new rampart.utils.hll(name, hllBufferData);
+
+      /* or */
+
+   var myhll = new rampart.utils.hll(name [, hllBufferData], merge_hll1 [, merge_hll2, ...]);
+
+Where:
+
+* ``name`` is an arbitrary :green:`String`.  It may be called again with the same ``name``
+  in order to retrieve the same `hll object`.
+
+* ``hllBufferData`` is a :green:`Buffer` - The raw `hll` buffer to initialize the new
+  ``hll`` :green:`Object` with data previously extracted using
+  `getBuffer <hll.getBuffer>`_ \() below.
+
+* ``merge_hll1``, ``merge_hll2``, etc. are `hll` :green:`Objects` created with ``new rampart.utils.hll(name)``
+  to be merged into the new (blank) return `hll` :green:`Object` in the same manner as
+  `merge <hll.merge>`_ \() below.
+
+Return Value:
+   An opaque `hll` :green:`Object` containing the following functions: ``add``, ``addFile``, ``count``, ``merge``,
+   and ``getBuffer``.
+
+Note that an `hll` can be refered to from different threads in the
+:ref:`Rampart Server <rampart-server:The rampart-server HTTP module>`. Each server
+thread may specify the same `hll` by using the same name.  In addition, the below
+functions are thread-safe.
+
+
+hll.add
+'''''''
+
+Add a value or values to the `hll`_\ .
+
+Usage:
+
+.. code-block:: javascript
+
+   var myhll = new rampart.utils.hll(name);
+
+   myhll.add(value);
+
+Where ``value`` is a :green:`String`, :green:`Buffer` or an array of :green:`Strings` and/or :green:`Buffers`.
+
+Return Value:
+   The `hll` :green:`Object`.
+
+hll.addFile
+'''''''''''
+
+Add values to the `hll`_ from a file, with each value on a separate line.
+
+.. code-block:: javascript
+
+   var myhll = new rampart.utils.hll(name);
+
+   myhll.addFile(file [, delim] );
+
+Where
+   * ``file`` is a :green:`String` (name of file to be read) or a file handle opened
+     with with `fopen`_\ () or ``rampart.utils.stdin``.
+
+   * ``delim`` is an optional :green:`String`, the first character of which is used
+     as a line separator.  The default value is ``"\n"``.
+
+Return Value:
+   The `hll` :green:`Object`.
+
+hll.count
+'''''''''
+
+Get a current count of distinct items added to the `hll`_\ .
+
+Usage:
+
+.. code-block:: javascript
+
+   var myhll = new rampart.utils.hll(name);
+
+   /* add items */
+   ...
+
+   var mycount = myhll.count();
+
+
+Return Value:
+   A :green:`Number`, the estimated number of distinct items added to the `hll`_\ .
+
+hll.merge
+'''''''''
+
+Merge one or more `hll` files into the current `hll` in order to calculate an estimate of the number of distinct
+items of the union.
+
+Usage:
+
+.. code-block:: javascript
+
+   var mergedHll = myhll.merge(myhll2 [, myhll3, ...]);
+
+
+Where ``myhll2``, ``myhll3``, etc. are `hlls` created with ``new rampart.utils.hll`` above.
+
+Return Value:
+   The `hll` :green:`Object` merged and updated with the provided `hlls`.
+
+hll.getBuffer
+'''''''''''''
+
+Get the raw `hll` buffer as a JavaScript :green:`Buffer`, which may be used to save
+the `hll` to disk using a command such as `fwrite`_\ () above.
+
+Usage:
+
+.. code-block:: javascript
+
+   var myhll = new rampart.utils.hll(name);
+
+   /* add items */
+   ...
+
+   var hllbuf = myhll.getBuffer();
+
+Return Value:
+   A :green:`Buffer` 16384 bytes in length.
+

@@ -86,47 +86,65 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart JavaScript</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Rampart Utility Functions</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#printf">printf</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#sprintf">sprintf</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#bprintf">bprintf</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#fopen">fopen</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#fclose">fclose</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#fprintf">fprintf</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#fseek">fseek</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#rewind">rewind</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#ftell">ftell</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#fflush">fflush</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#fread">fread</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#fwrite">fwrite</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#hexify">hexify</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#dehexify">dehexify</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#stringtobuffer">stringToBuffer</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#buffertostring">bufferToString</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#objecttoquery">objectToQuery</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#querytoobject">queryToObject</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#readfile">readFile</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#trim">trim</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#readline">readLine</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#stat">stat</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#lstat">lstat</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#exec">exec</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#shell">shell</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#kill">kill</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#getcwd">getcwd</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#chdir">chdir</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#mkdir">mkdir</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#rmdir">rmdir</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#readdir">readdir</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#copyfile">copyFile</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#rmfile">rmFile</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#link">link</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#symlink">symlink</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#chmod">chmod</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#realpath">realPath</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#touch">touch</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#rename">rename</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#sleep">sleep</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#gettype">getType</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#general-utilities">General Utilities</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#printf">printf</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sprintf">sprintf</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#bprintf">bprintf</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#hexify">hexify</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#dehexify">dehexify</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#stringtobuffer">stringToBuffer</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#buffertostring">bufferToString</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#objecttoquery">objectToQuery</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#querytoobject">queryToObject</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#readfile">readFile</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#trim">trim</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#stat">stat</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#lstat">lstat</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#exec">exec</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#shell">shell</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#kill">kill</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#getcwd">getcwd</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#chdir">chdir</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#mkdir">mkdir</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rmdir">rmdir</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#readdir">readDir</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#copyfile">copyFile</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rmfile">rmFile</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#link">link</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#symlink">symlink</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#chmod">chmod</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#realpath">realPath</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#touch">touch</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rename">rename</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sleep">sleep</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#gettype">getType</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#file-handle-utilities">File Handle Utilities</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#fopen">fopen</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fclose">fclose</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fprintf">fprintf</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fseek">fseek</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#rewind">rewind</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#ftell">ftell</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fflush">fflush</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fread">fread</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fwrite">fwrite</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#readline">readLine</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#rand-hash-and-hll">Rand, Hash and HLL</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#rand">rand</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#srand">srand</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#hash">hash</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#hll">hll</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#hll-add">hll.add</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#hll-addfile">hll.addFile</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#hll-count">hll.count</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#hll-merge">hll.merge</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#hll-getbuffer">hll.getBuffer</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a></li>
@@ -205,27 +223,10 @@
 <h1>rampart.utils<a class="headerlink" href="#rampart-utils" title="Permalink to this headline">¶</a></h1>
 <p>Utility functions are provided by the global <code class="docutils literal notranslate"><span class="pre">rampart.utils</span></code> <span class="green">Object</span>.
 These functions bring file io and other functionality to Duktape JavaScript.</p>
-<p><a class="reference internal" href="#fprintf">fprintf</a> (), <a class="reference internal" href="#fseek">fseek</a>(), <a class="reference internal" href="#rewind">rewind</a>(), <a class="reference internal" href="#ftell">ftell</a>(), <a class="reference internal" href="#fflush">fflush</a>(),
-<a class="reference internal" href="#fread">fread</a>() and <a class="reference internal" href="#fwrite">fwrite</a>() take a filehandle, which may be obtained
-using <a class="reference internal" href="#fopen">fopen</a>(), or by using one of the following:</p>
-<dl class="simple">
-<dt>rampart.utils.stdin:</dt><dd><p>A handle that corresponds to the UNIX standard in stream.</p>
-</dd>
-<dt>rampart.utils.stdout:</dt><dd><p>A handle that corresponds to the UNIX standard out stream.</p>
-</dd>
-<dt>rampart.utils.stderr:</dt><dd><p>A handle that corresponds to the Unix standard error stream.</p>
-</dd>
-<dt>rampart.utils.accessLog:</dt><dd><p>A handle that corresponds to the <code class="docutils literal notranslate"><span class="pre">accessLog</span></code> file option in <code class="docutils literal notranslate"><span class="pre">server.start()</span></code> for the
-<code class="docutils literal notranslate"><span class="pre">rampart-server</span></code> module.  If not specified, or not loaded, same as
-<code class="docutils literal notranslate"><span class="pre">rampart.utils.stdout</span></code>.</p>
-</dd>
-<dt>rampart.utils.errorLog:</dt><dd><p>A handle that corresponds to the <code class="docutils literal notranslate"><span class="pre">errorLog</span></code> file option in <code class="docutils literal notranslate"><span class="pre">server.start()</span></code> for the
-<code class="docutils literal notranslate"><span class="pre">rampart-server</span></code> module.  If not specified, or not loaded, same as
-<code class="docutils literal notranslate"><span class="pre">rampart.utils.stderr</span></code>.</p>
-</dd>
-</dl>
+<div class="section" id="general-utilities">
+<h2>General Utilities<a class="headerlink" href="#general-utilities" title="Permalink to this headline">¶</a></h2>
 <div class="section" id="printf">
-<h2>printf<a class="headerlink" href="#printf" title="Permalink to this headline">¶</a></h2>
+<h3>printf<a class="headerlink" href="#printf" title="Permalink to this headline">¶</a></h3>
 <p>Print a formatted string to stdout.  Provides C-like
 <a class="reference external" href="https://man7.org/linux/man-pages/man3/printf.3.html">printf(3)</a>
 functionality in JavaScript.</p>
@@ -332,7 +333,7 @@ Remove all leading white space from each line and don’t wrap lines.</p></li>
  <span class="s2">&quot;      content\n&quot;</span><span class="o">+</span>
  <span class="s2">&quot;    &lt;/div&gt;\n&quot;</span><span class="o">+</span>
  <span class="s2">&quot;  &lt;/body&gt;\n&quot;</span><span class="o">+</span>
- <span class="s2">&quot;&lt;/html&gt;\n&quot;</span><span class="o">+</span>
+ <span class="s2">&quot;&lt;/html&gt;\n&quot;</span><span class="p">;</span>
 
  <span class="cm">/* remove leading white space */</span>
  <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%!-.1000P&quot;</span><span class="p">,</span> <span class="nx">html</span><span class="p">);</span>
@@ -350,7 +351,7 @@ Remove all leading white space from each line and don’t wrap lines.</p></li>
 </div>
 </div>
 <div class="section" id="sprintf">
-<h2>sprintf<a class="headerlink" href="#sprintf" title="Permalink to this headline">¶</a></h2>
+<h3>sprintf<a class="headerlink" href="#sprintf" title="Permalink to this headline">¶</a></h3>
 <p>Same as <code class="docutils literal notranslate"><span class="pre">printf()</span></code> except a <span class="green">String</span> is returned</p>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p><span class="green">String</span>. The formatted string.</p>
@@ -358,301 +359,15 @@ Remove all leading white space from each line and don’t wrap lines.</p></li>
 </dl>
 </div>
 <div class="section" id="bprintf">
-<h2>bprintf<a class="headerlink" href="#bprintf" title="Permalink to this headline">¶</a></h2>
+<h3>bprintf<a class="headerlink" href="#bprintf" title="Permalink to this headline">¶</a></h3>
 <p>Same as <code class="docutils literal notranslate"><span class="pre">sprintf()</span></code> except a <span class="green">Buffer</span> is returned.</p>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p><span class="green">Buffer</span>.  The formatted string as a <span class="green">Buffer</span>.</p>
 </dd>
 </dl>
 </div>
-<div class="section" id="fopen">
-<h2>fopen<a class="headerlink" href="#fopen" title="Permalink to this headline">¶</a></h2>
-<p>Open a filehandle for use with <a class="reference internal" href="#fprintf">fprintf</a>(), <a class="reference internal" href="#fclose">fclose</a>(), <a class="reference internal" href="#fseek">fseek</a>(),
-<a class="reference internal" href="#rewind">rewind</a>(), <a class="reference internal" href="#ftell">ftell</a>(), <a class="reference internal" href="#fflush">fflush</a>() <a class="reference internal" href="#fread">fread</a>() and <a class="reference internal" href="#fwrite">fwrite</a>().</p>
-<dl class="simple">
-<dt>Return Value:</dt><dd><p><span class="green">Object</span>. The opened filehandle.</p>
-</dd>
-</dl>
-<p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">handle</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fopen</span><span class="p">(</span><span class="nx">filename</span><span class="p">,</span> <span class="nx">mode</span><span class="p">);</span>
-</pre></div>
-</div>
-<p>Where <code class="docutils literal notranslate"><span class="pre">filename</span></code> is a <span class="green">String</span> containing the file to be opened and mode is
-a <span class="green">String</span> (one of the following):</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">&quot;r&quot;</span></code> - Open text file for reading.  The stream is positioned at the
-beginning of the file.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">&quot;r+&quot;</span></code> - Open for reading and writing.  The stream is positioned at the
-beginning of the file.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">&quot;w&quot;</span></code> - Truncate file to zero length or create text file for writing.
-The stream is positioned at the beginning of the file.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">&quot;w+&quot;</span></code> - Open for reading and writing.  The file is created if it does
-not exist, otherwise it is truncated.  The stream is positioned at the
-beginning of the file.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">&quot;a&quot;</span></code> - Open for appending (writing at end of file).  The file is
-created if it does not exist.  The stream is positioned at the end of the
-file.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">&quot;a+&quot;</span></code> - Open for reading and appending (writing at end of file).  The
-file is created if it does not exist.  The initial file position for reading
-is at the beginning of the file, but output is always appended to the end of the
-file.</p></li>
-</ul>
-</div>
-<div class="section" id="fclose">
-<h2>fclose<a class="headerlink" href="#fclose" title="Permalink to this headline">¶</a></h2>
-<p>Close a previously opened handle <span class="green">Object</span> opened with <a class="reference internal" href="#fopen">fopen</a>().</p>
-<p>Example:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">handle</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fopen</span><span class="p">(</span><span class="s2">&quot;/tmp/out.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">);</span>
-<span class="p">...</span>
-<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fclose</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
-</pre></div>
-</div>
-</div>
-<div class="section" id="fprintf">
-<h2>fprintf<a class="headerlink" href="#fprintf" title="Permalink to this headline">¶</a></h2>
-<p>Same as <code class="docutils literal notranslate"><span class="pre">printf()</span></code> except output is sent to the file provided by
-a <span class="green">String</span> or filehandle <span class="green">Object</span> opened and returned from <a class="reference internal" href="#fopen">fopen</a>().</p>
-<p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">filename</span> <span class="o">=</span> <span class="s2">&quot;/home/user/myfile.txt&quot;</span><span class="p">;</span>
-
-<span class="kd">var</span> <span class="nx">output</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fopen</span><span class="p">(</span><span class="nx">filename</span><span class="p">,</span> <span class="nx">mode</span><span class="p">);</span>
-<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fprintf</span><span class="p">(</span><span class="nx">output</span><span class="p">,</span> <span class="nx">fmt</span><span class="p">,</span> <span class="p">...);</span>
-<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fclose</span><span class="p">(</span><span class="nx">output</span><span class="p">);</span>
-
-<span class="cm">/* or */</span>
-
-<span class="kd">var</span> <span class="nx">output</span> <span class="o">=</span> <span class="nx">filename</span><span class="p">;</span>
-<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fprintf</span><span class="p">(</span><span class="nx">output</span><span class="p">,</span> <span class="p">[,</span> <span class="nx">append</span><span class="p">],</span> <span class="nx">fmt</span><span class="p">,</span> <span class="p">...);</span>
-<span class="cm">/* file is automatically closed after function returns */</span>
-</pre></div>
-</div>
-<p>Where:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">output</span></code> may be a <span class="green">String</span> (a filename), or an <span class="green">Object</span> returned from <a class="reference internal" href="#fopen">fopen</a>().</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">fmt</span></code> is a <span class="green">String</span>, a <a class="reference internal" href="#printf">printf</a>() format.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">append</span></code> is an optional <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> append instead of
-overwrite an existing file.</p></li>
-</ul>
-<dl class="simple">
-<dt>Return Value:</dt><dd><p><span class="green">Number</span>. The length in bytes of the printed string.</p>
-</dd>
-</dl>
-<p>Example:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">handle</span> <span class="o">=</span> <span class="nx">fopen</span><span class="p">(</span><span class="s2">&quot;/tmp/out.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;w+&quot;</span><span class="p">);</span>
-<span class="nx">fprintf</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="s2">&quot;A number: %d\n&quot;</span><span class="p">,</span> <span class="mi">123</span><span class="p">);</span>
-<span class="nx">fclose</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
-
-<span class="cm">/* OR */</span>
-
-<span class="nx">fprintf</span><span class="p">(</span><span class="s2">&quot;/tmp/out.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;A number: %d\n&quot;</span><span class="p">,</span> <span class="mi">456</span><span class="p">);</span> <span class="cm">/* implicit fclose */</span>
-</pre></div>
-</div>
-</div>
-<div class="section" id="fseek">
-<h2>fseek<a class="headerlink" href="#fseek" title="Permalink to this headline">¶</a></h2>
-<p>Set file position for file operations.</p>
-<p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fseek</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="nx">offset</span><span class="p">,</span> <span class="nx">whence</span><span class="p">);</span>
-</pre></div>
-</div>
-<table class="docutils align-default">
-<colgroup>
-<col style="width: 15%" />
-<col style="width: 20%" />
-<col style="width: 65%" />
-</colgroup>
-<thead>
-<tr class="row-odd"><th class="head"><p>Argument</p></th>
-<th class="head"><p>Type</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>handle</p></td>
-<td><p><span class="green">Object</span></p></td>
-<td><p>A handle opened with <a class="reference internal" href="#fopen">fopen</a>()</p></td>
-</tr>
-<tr class="row-odd"><td><p>offset</p></td>
-<td><p><span class="green">Number</span></p></td>
-<td><p>offset in bytes from whence</p></td>
-</tr>
-<tr class="row-even"><td rowspan="3"><p>whence</p></td>
-<td rowspan="3"><p><span class="green">String</span></p></td>
-<td><p>“seek_set” - measure offset from start of file</p></td>
-</tr>
-<tr class="row-odd"><td><p>“seek_cur” - measure offset from current position</p></td>
-</tr>
-<tr class="row-even"><td><p>“seek_end” - measure offset from end of file.</p></td>
-</tr>
-</tbody>
-</table>
-<dl class="simple">
-<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code></p>
-</dd>
-</dl>
-<p>Example</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">,</span>
-  <span class="p">[</span><span class="s2">&quot;fopen&quot;</span><span class="p">,</span><span class="s2">&quot;printf&quot;</span><span class="p">,</span><span class="s2">&quot;fprintf&quot;</span><span class="p">,</span><span class="s2">&quot;fseek&quot;</span><span class="p">,</span><span class="s2">&quot;fread&quot;</span><span class="p">]);</span>
-
-<span class="kd">var</span> <span class="nx">handle</span> <span class="o">=</span> <span class="nx">fopen</span><span class="p">(</span><span class="s2">&quot;/tmp/out.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;w+&quot;</span><span class="p">);</span>
-
-<span class="nx">fprintf</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="s2">&quot;123def&quot;</span><span class="p">);</span>
-
-<span class="nx">fseek</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;seek_set&quot;</span><span class="p">);</span>
-
-<span class="nx">fprintf</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="s2">&quot;abc&quot;</span><span class="p">);</span>
-
-<span class="nx">fseek</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;seek_set&quot;</span><span class="p">);</span>
-
-<span class="kd">var</span> <span class="nx">out</span><span class="o">=</span><span class="nx">fread</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
-
-<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%s&quot;</span><span class="p">,</span> <span class="nx">out</span><span class="p">);</span>
-<span class="cm">/* expect output: &quot;abcdef&quot; */</span>
-
-<span class="nx">fclose</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
-</pre></div>
-</div>
-</div>
-<div class="section" id="rewind">
-<h2>rewind<a class="headerlink" href="#rewind" title="Permalink to this headline">¶</a></h2>
-<p>Set the file position to the beginning of the file.  It is equivalent to:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">fseek</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;seek_set&quot;</span><span class="p">)</span>
-</pre></div>
-</div>
-<p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rewind</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
-</pre></div>
-</div>
-<dl class="simple">
-<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code></p>
-</dd>
-</dl>
-</div>
-<div class="section" id="ftell">
-<h2>ftell<a class="headerlink" href="#ftell" title="Permalink to this headline">¶</a></h2>
-<p>Obtain the current value of the file position for the handle opened with
-<a class="reference internal" href="#fopen">fopen</a>().</p>
-<p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">pos</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">ftell</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
-</pre></div>
-</div>
-<dl class="simple">
-<dt>Return Value:</dt><dd><p><span class="green">Number</span>. Current position of <code class="docutils literal notranslate"><span class="pre">handle</span></code>.</p>
-</dd>
-</dl>
-</div>
-<div class="section" id="fflush">
-<h2>fflush<a class="headerlink" href="#fflush" title="Permalink to this headline">¶</a></h2>
-<p>For output file handles opened with <a class="reference internal" href="#fopen">fopen</a>(), or for
-<code class="docutils literal notranslate"><span class="pre">stdout</span></code>/<code class="docutils literal notranslate"><span class="pre">stderr</span></code>/<code class="docutils literal notranslate"><span class="pre">accessLog</span></code>/<code class="docutils literal notranslate"><span class="pre">errorLog</span></code>, <code class="docutils literal notranslate"><span class="pre">fflush()</span></code> forces a
-write of buffered data.</p>
-<p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fflush</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
-</pre></div>
-</div>
-<p>Example:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="cm">/* normally a flush happens automatically</span>
-<span class="cm">   when a &#39;\n&#39; is printed.  Since we are using</span>
-<span class="cm">   &#39;\r&#39;, flush manually                        */</span>
-
-<span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="o">&lt;</span> <span class="mi">10</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
-   <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;doing #%d\r&quot;</span><span class="p">,</span> <span class="nx">i</span><span class="p">);</span>
-   <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fflush</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">stdout</span><span class="p">);</span>
-   <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
-<span class="p">}</span>
-
-<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;blast off!!!\n&quot;</span><span class="p">);</span>
-</pre></div>
-</div>
-</div>
-<div class="section" id="fread">
-<h2>fread<a class="headerlink" href="#fread" title="Permalink to this headline">¶</a></h2>
-<p>Read data from a handle opened with <a class="reference internal" href="#fopen">fopen</a>() or <code class="docutils literal notranslate"><span class="pre">stdin</span></code>.</p>
-<p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fread</span><span class="p">(</span><span class="nx">handle</span> <span class="p">[,</span> <span class="nx">chunk_size</span> <span class="p">[,</span> <span class="nx">max_size</span><span class="p">]]);</span>
-</pre></div>
-</div>
-<table class="docutils align-default">
-<colgroup>
-<col style="width: 15%" />
-<col style="width: 21%" />
-<col style="width: 64%" />
-</colgroup>
-<thead>
-<tr class="row-odd"><th class="head"><p>Argument</p></th>
-<th class="head"><p>Type</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>handle</p></td>
-<td><p><span class="green">Object</span></p></td>
-<td><p>A handle opened with <a class="reference internal" href="#fopen">fopen</a>()</p></td>
-</tr>
-<tr class="row-odd"><td><p>chunk_size</p></td>
-<td><p><span class="green">Number</span></p></td>
-<td><p>Initial size of return <span class="green">Buffer</span> and number
-of bytes to read at a time. If the total number of
-bytes read is greater, the buffer grows as needed.
-If total bytes read is less, the returned buffer
-will be reduced in size to match. Default is 4096
-if not specified.</p></td>
-</tr>
-<tr class="row-even"><td><p>max_size</p></td>
-<td><p><span class="green">Number</span></p></td>
-<td><p>Maximum number of bytes to read.  Unlimited if
-not specified.</p></td>
-</tr>
-</tbody>
-</table>
-<dl class="simple">
-<dt>Return Value:</dt><dd><p><span class="green">Buffer</span>. Contents set to the read bytes.</p>
-</dd>
-</dl>
-</div>
-<div class="section" id="fwrite">
-<h2>fwrite<a class="headerlink" href="#fwrite" title="Permalink to this headline">¶</a></h2>
-<p>Write data to handle opened with <a class="reference internal" href="#fopen">fopen</a>() or <code class="docutils literal notranslate"><span class="pre">stdout</span></code>/<code class="docutils literal notranslate"><span class="pre">stderr</span></code>.</p>
-<p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">nbytes</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fwrite</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="nx">data</span> <span class="p">[,</span> <span class="nx">max_bytes</span><span class="p">]);</span>
-</pre></div>
-</div>
-<table class="docutils align-default">
-<colgroup>
-<col style="width: 15%" />
-<col style="width: 21%" />
-<col style="width: 64%" />
-</colgroup>
-<thead>
-<tr class="row-odd"><th class="head"><p>Argument</p></th>
-<th class="head"><p>Type</p></th>
-<th class="head"><p>Description</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>handle</p></td>
-<td><p><span class="green">Object</span></p></td>
-<td><p>A handle opened with <a class="reference internal" href="#fopen">fopen</a>()</p></td>
-</tr>
-<tr class="row-odd"><td><p>data</p></td>
-<td><p><span class="green">Buffer</span>/
-<span class="green">String</span></p></td>
-<td><p>The data to be written.</p></td>
-</tr>
-<tr class="row-even"><td><p>max_bytes</p></td>
-<td><p><span class="green">Number</span></p></td>
-<td><p>Maximum number of bytes to write. <span class="green">Buffer</span>/
-<span class="green">String</span> length if not specified.</p></td>
-</tr>
-</tbody>
-</table>
-<dl class="simple">
-<dt>Return Value:</dt><dd><p><span class="green">Number</span>. Number of bytes written.</p>
-</dd>
-</dl>
-</div>
 <div class="section" id="hexify">
-<h2>hexify<a class="headerlink" href="#hexify" title="Permalink to this headline">¶</a></h2>
+<h3>hexify<a class="headerlink" href="#hexify" title="Permalink to this headline">¶</a></h3>
 <p>Convert data to a hex string.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">hexstring</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">hexify</span><span class="p">(</span><span class="nx">data</span> <span class="p">[,</span> <span class="nx">upper</span><span class="p">]);</span>
@@ -668,7 +383,7 @@ to be converted and <code class="docutils literal notranslate"><span class="pre"
 <p>Example:  See <a class="reference internal" href="#dehexify">dehexify</a> below.</p>
 </div>
 <div class="section" id="dehexify">
-<h2>dehexify<a class="headerlink" href="#dehexify" title="Permalink to this headline">¶</a></h2>
+<h3>dehexify<a class="headerlink" href="#dehexify" title="Permalink to this headline">¶</a></h3>
 <p>Convert a hex string to a string of bytes.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">data</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">dehexify</span><span class="p">(</span><span class="nx">hexstring</span><span class="p">);</span>
@@ -695,7 +410,7 @@ byte in the binary string.</p>
 </div>
 </div>
 <div class="section" id="stringtobuffer">
-<h2>stringToBuffer<a class="headerlink" href="#stringtobuffer" title="Permalink to this headline">¶</a></h2>
+<h3>stringToBuffer<a class="headerlink" href="#stringtobuffer" title="Permalink to this headline">¶</a></h3>
 <p>Performs a byte-for-byte copy of <span class="green">String</span> into a <span class="green">Buffer</span>.
 Also convert one <span class="green">Buffer</span> to a <span class="green">Buffer</span> of another type.
 See <code class="docutils literal notranslate"><span class="pre">duk_to_buffer()</span></code> in the
@@ -723,7 +438,7 @@ more information on different types of <span class="green">Buffers</span>.</p>
 </dl>
 </div>
 <div class="section" id="buffertostring">
-<h2>bufferToString<a class="headerlink" href="#buffertostring" title="Permalink to this headline">¶</a></h2>
+<h3>bufferToString<a class="headerlink" href="#buffertostring" title="Permalink to this headline">¶</a></h3>
 <p>Performs a 1:1 copy of the contents of a <span class="green">Buffer</span> to a <span class="green">String</span>.</p>
 <p>See <code class="docutils literal notranslate"><span class="pre">duk_buffer_to_string()</span></code> in the
 <a class="reference external" href="https://wiki.duktape.org/howtobuffers2x#buffer-to-string-conversion">Duktape documentation</a></p>
@@ -738,7 +453,7 @@ more information on different types of <span class="green">Buffers</span>.</p>
 </dl>
 </div>
 <div class="section" id="objecttoquery">
-<h2>objectToQuery<a class="headerlink" href="#objecttoquery" title="Permalink to this headline">¶</a></h2>
+<h3>objectToQuery<a class="headerlink" href="#objecttoquery" title="Permalink to this headline">¶</a></h3>
 <p>Convert an <span class="green">Object</span> of key/value pairs to a <span class="green">String</span> suitable for use as a query
 string in an HTTP request.</p>
 <p>Usage:</p>
@@ -769,7 +484,7 @@ to the keys.  Example: <code class="docutils literal notranslate"><span class="p
 themselves are <span class="green">Objects</span> will be converted to JSON.</p>
 </div>
 <div class="section" id="querytoobject">
-<h2>queryToObject<a class="headerlink" href="#querytoobject" title="Permalink to this headline">¶</a></h2>
+<h3>queryToObject<a class="headerlink" href="#querytoobject" title="Permalink to this headline">¶</a></h3>
 <p>Convert a query string to an <span class="green">Object</span>.  Reverses the process, with caveats, of
 <a class="reference internal" href="#objecttoquery">objectToQuery</a>().</p>
 <p>Usage:</p>
@@ -861,7 +576,7 @@ separated values will occur and the entire value will be returned as a <span cla
 </div>
 </div>
 <div class="section" id="readfile">
-<h2>readFile<a class="headerlink" href="#readfile" title="Permalink to this headline">¶</a></h2>
+<h3>readFile<a class="headerlink" href="#readfile" title="Permalink to this headline">¶</a></h3>
 <p>Read the contents of a file.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">contents</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">readFile</span><span class="p">({</span>
@@ -941,8 +656,8 @@ May be truncated if the file contains null characters.</p></td>
 </div>
 </div>
 <div class="section" id="trim">
-<h2>trim<a class="headerlink" href="#trim" title="Permalink to this headline">¶</a></h2>
-<p>Remove whitespace characters from beginning and end of a <span class="green">String</span>.</p>
+<h3>trim<a class="headerlink" href="#trim" title="Permalink to this headline">¶</a></h3>
+<p>Remove whitespace characters from the beginning and end of a <span class="green">String</span>.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">trimmed</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">trim</span><span class="p">(</span><span class="nx">str</span><span class="p">);</span>
 </pre></div>
@@ -961,43 +676,8 @@ May be truncated if the file contains null characters.</p></td>
 </pre></div>
 </div>
 </div>
-<div class="section" id="readline">
-<h2>readLine<a class="headerlink" href="#readline" title="Permalink to this headline">¶</a></h2>
-<p>Read a text file line-by-line.</p>
-<p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">rl</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">readLine</span><span class="p">(</span><span class="nx">file</span><span class="p">);</span>
-<span class="kd">var</span> <span class="nx">line</span><span class="o">=</span><span class="nx">rl</span><span class="p">.</span><span class="nx">next</span><span class="p">();</span>
-</pre></div>
-</div>
-<p>Where <code class="docutils literal notranslate"><span class="pre">file</span></code> is a <span class="green">String</span> (name of file to be read) and return <span class="green">Object</span>
-contains the property <code class="docutils literal notranslate"><span class="pre">next</span></code>, a <span class="green">Function</span> to retrieve and return the next
-line of text in the file.</p>
-<dl class="simple">
-<dt>Return Value:</dt><dd><p><span class="green">Object</span>.  Property <code class="docutils literal notranslate"><span class="pre">next</span></code> of the return <span class="green">Object</span> is a
-<span class="green">Function</span> which retrieves and returns the next line of text in
-the file.  After the last line of <code class="docutils literal notranslate"><span class="pre">file</span></code> is returned, subsequent calls
-to <code class="docutils literal notranslate"><span class="pre">next</span></code> will return <code class="docutils literal notranslate"><span class="pre">null</span></code>.</p>
-</dd>
-</dl>
-<p>Example:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">rl</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">readLine</span><span class="p">(</span><span class="s2">&quot;./myfile.txt&quot;</span><span class="p">);</span>
-<span class="kd">var</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
-<span class="kd">var</span> <span class="nx">line</span><span class="p">,</span> <span class="nx">firstline</span><span class="p">,</span> <span class="nx">lastline</span><span class="p">;</span>
-
-<span class="k">while</span> <span class="p">(</span> <span class="p">(</span><span class="nx">line</span><span class="o">=</span><span class="nx">rl</span><span class="p">.</span><span class="nx">next</span><span class="p">())</span> <span class="p">)</span> <span class="p">{</span>
-    <span class="k">if</span><span class="p">(</span><span class="nx">i</span><span class="o">==</span><span class="mi">0</span><span class="p">)</span>
-        <span class="nx">firstline</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">trim</span><span class="p">(</span><span class="nx">line</span><span class="p">);</span>
-    <span class="nx">i</span><span class="o">++</span><span class="p">;</span>
-    <span class="nx">lastline</span> <span class="o">=</span> <span class="nx">line</span><span class="p">;</span>
-<span class="p">}</span>
-<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%s\n%s\n&quot;</span><span class="p">,</span> <span class="nx">firstline</span><span class="p">,</span> <span class="nx">lastline</span><span class="p">);</span>
-
-<span class="cm">/* expected output: first and last line of file &quot;./myfile.txt&quot; */</span>
-</pre></div>
-</div>
-</div>
 <div class="section" id="stat">
-<h2>stat<a class="headerlink" href="#stat" title="Permalink to this headline">¶</a></h2>
+<h3>stat<a class="headerlink" href="#stat" title="Permalink to this headline">¶</a></h3>
 <p>Return information on a file.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">st</span> <span class="o">=</span> <span class="nx">stat</span><span class="p">(</span><span class="nx">file</span><span class="p">);</span>
@@ -1049,7 +729,7 @@ corresponding file property is true.</p>
 </div>
 </div>
 <div class="section" id="lstat">
-<h2>lstat<a class="headerlink" href="#lstat" title="Permalink to this headline">¶</a></h2>
+<h3>lstat<a class="headerlink" href="#lstat" title="Permalink to this headline">¶</a></h3>
 <p>Same as <a class="reference internal" href="#stat">stat</a>() except if <code class="docutils literal notranslate"><span class="pre">file</span></code> is a link, return information about the link itself.</p>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p>Same as <a class="reference internal" href="#stat">stat</a>() with the addition of the property/function
@@ -1058,27 +738,35 @@ corresponding file property is true.</p>
 </dl>
 </div>
 <div class="section" id="exec">
-<h2>exec<a class="headerlink" href="#exec" title="Permalink to this headline">¶</a></h2>
+<h3>exec<a class="headerlink" href="#exec" title="Permalink to this headline">¶</a></h3>
 <p>Run an executable file.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="nx">command</span> <span class="p">[,</span> <span class="nx">options</span><span class="p">]</span> <span class="p">[,</span><span class="nx">arg1</span><span class="p">,</span> <span class="nx">arg2</span><span class="p">,</span> <span class="p">...,</span> <span class="nx">argn</span><span class="p">]</span> <span class="p">);</span>
 </pre></div>
 </div>
 <p>Where:</p>
-<ul class="simple">
+<ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">command</span></code> - <span class="green">String</span>. An absolute path to an executable or the name of
 an executable that may be found in the current <code class="docutils literal notranslate"><span class="pre">PATH</span></code> environment variable.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> - <span class="green">Object</span>. Containing the following properties:</p>
-<ul>
-<li><p><code class="docutils literal notranslate"><span class="pre">timeout</span></code> - <span class="green">Number</span>: Maximum amount of time in milliseconds before
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">timeout</span></code> - <span class="green">Number</span>. Maximum amount of time in milliseconds before
 the process is automatically killed.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">killSignal</span></code> - <span class="green">Number</span>. If timeout is reached, use this signal</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">background</span></code> - <span class="green">Boolean</span>.  Whether to execute detached and return
 immediately.  <code class="docutils literal notranslate"><span class="pre">stdout</span></code> and <code class="docutils literal notranslate"><span class="pre">stderr</span></code> below will be set to <code class="docutils literal notranslate"><span class="pre">null</span></code>.  Any <code class="docutils literal notranslate"><span class="pre">timeout</span></code>
 value is ignored.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">stdin</span></code> - <span class="green">String</span> or <span class="green">Buffer</span>. If specified, the content is piped to the
-command as stdin.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">env</span></code> - <span class="green">Object</span>. Key/value pairs to be used as environment variables for the executed process.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">appendEnv</span></code> - <span class="green">Boolean</span>.  Only used if <code class="docutils literal notranslate"><span class="pre">env</span></code> is provided.  If <code class="docutils literal notranslate"><span class="pre">false</span></code> (the default),
+only the environment variables given in <code class="docutils literal notranslate"><span class="pre">env</span></code> will be available.  If
+<code class="docutils literal notranslate"><span class="pre">true</span></code>, variables provided in <code class="docutils literal notranslate"><span class="pre">env</span></code> will be appended to <a class="reference internal" href="rampart-main.html#env"><span class="std std-ref">process.env</span></a>.
+Duplicate keys in <a class="reference internal" href="rampart-main.html#env"><span class="std std-ref">process.env</span></a> are replaced with the value from <code class="docutils literal notranslate"><span class="pre">env</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">stdin</span></code> - <span class="green">String</span> or <span class="green">Buffer</span>.  If specified, the</p></li>
 </ul>
+<dl class="simple">
+<dt>content is piped to the</dt><dd><p>command as stdin.</p>
+</dd>
+</dl>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">argn</span></code> - <span class="green">String</span>/<span class="green">Number</span>/<span class="green">Object</span>/<span class="green">Boolean</span>/<span class="green">Null</span> - Arguments to be passed to
 <code class="docutils literal notranslate"><span class="pre">command</span></code>.  Non-Strings are converted to a <span class="green">String</span> (e.g. “true”, “null”,
@@ -1100,7 +788,7 @@ Otherwise <code class="docutils literal notranslate"><span class="pre">null</spa
 </dl>
 </div>
 <div class="section" id="shell">
-<h2>shell<a class="headerlink" href="#shell" title="Permalink to this headline">¶</a></h2>
+<h3>shell<a class="headerlink" href="#shell" title="Permalink to this headline">¶</a></h3>
 <p>Execute <span class="green">String</span> in a bash shell. Equivalent to
 <code class="docutils literal notranslate"><span class="pre">rampart.utils.exec(&quot;bash&quot;,</span> <span class="pre">&quot;-c&quot;,</span> <span class="pre">shellcmd);</span></code>.</p>
 <p>Usage:</p>
@@ -1130,7 +818,7 @@ passed to bash and <code class="docutils literal notranslate"><span class="pre">
 </div>
 </div>
 <div class="section" id="kill">
-<h2>kill<a class="headerlink" href="#kill" title="Permalink to this headline">¶</a></h2>
+<h3>kill<a class="headerlink" href="#kill" title="Permalink to this headline">¶</a></h3>
 <p>Terminate a process or send a signal.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">kill</span><span class="p">(</span><span class="nx">pid</span> <span class="p">[,</span> <span class="nx">signal</span><span class="p">]);</span>
@@ -1165,7 +853,7 @@ an error or process does not exist.</p>
 </div>
 </div>
 <div class="section" id="getcwd">
-<h2>getcwd<a class="headerlink" href="#getcwd" title="Permalink to this headline">¶</a></h2>
+<h3>getcwd<a class="headerlink" href="#getcwd" title="Permalink to this headline">¶</a></h3>
 <p>Return the current working directory as a <span class="green">String</span>.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">getcwd</span><span class="p">();</span>
@@ -1177,7 +865,7 @@ an error or process does not exist.</p>
 </dl>
 </div>
 <div class="section" id="chdir">
-<h2>chdir<a class="headerlink" href="#chdir" title="Permalink to this headline">¶</a></h2>
+<h3>chdir<a class="headerlink" href="#chdir" title="Permalink to this headline">¶</a></h3>
 <p>Change the current working directory.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">chdir</span><span class="p">(</span><span class="nx">path</span><span class="p">);</span>
@@ -1192,7 +880,7 @@ specified directory.</p>
 </dl>
 </div>
 <div class="section" id="mkdir">
-<h2>mkdir<a class="headerlink" href="#mkdir" title="Permalink to this headline">¶</a></h2>
+<h3>mkdir<a class="headerlink" href="#mkdir" title="Permalink to this headline">¶</a></h3>
 <p>Create a directory.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">mkdir</span><span class="p">(</span><span class="nx">path</span> <span class="p">[,</span> <span class="nx">mode</span><span class="p">]);</span>
@@ -1211,7 +899,7 @@ number), but <code class="docutils literal notranslate"><span class="pre">755</s
 </dl>
 </div>
 <div class="section" id="rmdir">
-<h2>rmdir<a class="headerlink" href="#rmdir" title="Permalink to this headline">¶</a></h2>
+<h3>rmdir<a class="headerlink" href="#rmdir" title="Permalink to this headline">¶</a></h3>
 <p>Remove an empty directory.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">rmdir</span><span class="p">(</span><span class="nx">path</span> <span class="p">[,</span> <span class="nx">recurse</span><span class="p">]);</span>
@@ -1236,7 +924,7 @@ removed (.e.g., not empty or lacking permission).</p>
 </div>
 </div>
 <div class="section" id="readdir">
-<h2>readdir<a class="headerlink" href="#readdir" title="Permalink to this headline">¶</a></h2>
+<h3>readDir<a class="headerlink" href="#readdir" title="Permalink to this headline">¶</a></h3>
 <p>Get listing of directory files.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">files</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">readdir</span><span class="p">(</span><span class="nx">path</span> <span class="p">[,</span> <span class="nx">showhidden</span><span class="p">]);</span>
@@ -1251,7 +939,7 @@ beginning with <code class="docutils literal notranslate"><span class="pre">.</s
 </dl>
 </div>
 <div class="section" id="copyfile">
-<h2>copyFile<a class="headerlink" href="#copyfile" title="Permalink to this headline">¶</a></h2>
+<h3>copyFile<a class="headerlink" href="#copyfile" title="Permalink to this headline">¶</a></h3>
 <p>Make a copy of a file.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">copyFile</span><span class="p">({</span><span class="nx">src</span><span class="o">:</span> <span class="nx">source</span><span class="p">,</span> <span class="nx">dest</span><span class="o">:</span> <span class="nx">destination</span> <span class="p">[,</span> <span class="nx">overwrite</span><span class="o">:</span> <span class="nx">overWrite</span><span class="p">]});</span>
@@ -1270,7 +958,7 @@ which if <code class="docutils literal notranslate"><span class="pre">true</span
 </dl>
 </div>
 <div class="section" id="rmfile">
-<h2>rmFile<a class="headerlink" href="#rmfile" title="Permalink to this headline">¶</a></h2>
+<h3>rmFile<a class="headerlink" href="#rmfile" title="Permalink to this headline">¶</a></h3>
 <p>Delete a file.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">rmFile</span><span class="p">(</span><span class="nx">filename</span><span class="p">);</span>
@@ -1283,7 +971,7 @@ which if <code class="docutils literal notranslate"><span class="pre">true</span
 </dl>
 </div>
 <div class="section" id="link">
-<h2>link<a class="headerlink" href="#link" title="Permalink to this headline">¶</a></h2>
+<h3>link<a class="headerlink" href="#link" title="Permalink to this headline">¶</a></h3>
 <p>Create a hard link.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">link</span><span class="p">({</span><span class="nx">src</span><span class="o">:</span> <span class="nx">sourceName</span><span class="p">,</span> <span class="nx">target</span><span class="o">:</span> <span class="nx">targetName</span><span class="p">});</span>
@@ -1301,7 +989,7 @@ the to-be-created link.</p>
 </dl>
 </div>
 <div class="section" id="symlink">
-<h2>symlink<a class="headerlink" href="#symlink" title="Permalink to this headline">¶</a></h2>
+<h3>symlink<a class="headerlink" href="#symlink" title="Permalink to this headline">¶</a></h3>
 <p>Create a soft (symbolic) link.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">symlink</span><span class="p">({</span><span class="nx">src</span><span class="o">:</span> <span class="nx">sourceName</span><span class="p">,</span> <span class="nx">target</span><span class="o">:</span> <span class="nx">targetName</span><span class="p">});</span>
@@ -1319,7 +1007,7 @@ the to-be-created symlink.</p>
 </dl>
 </div>
 <div class="section" id="chmod">
-<h2>chmod<a class="headerlink" href="#chmod" title="Permalink to this headline">¶</a></h2>
+<h3>chmod<a class="headerlink" href="#chmod" title="Permalink to this headline">¶</a></h3>
 <p>Change the file mode bits of a file or directory.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">chmod</span><span class="p">(</span><span class="nx">path</span> <span class="p">[,</span> <span class="nx">mode</span><span class="p">]);</span>
@@ -1338,7 +1026,7 @@ number), but <code class="docutils literal notranslate"><span class="pre">755</s
 </dl>
 </div>
 <div class="section" id="realpath">
-<h2>realPath<a class="headerlink" href="#realpath" title="Permalink to this headline">¶</a></h2>
+<h3>realPath<a class="headerlink" href="#realpath" title="Permalink to this headline">¶</a></h3>
 <p>Find the canonical form of a file system path.  The path or file must exist.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">realPath</span><span class="p">(</span><span class="nx">path</span><span class="p">);</span>
@@ -1351,7 +1039,7 @@ number), but <code class="docutils literal notranslate"><span class="pre">755</s
 </dl>
 </div>
 <div class="section" id="touch">
-<h2>touch<a class="headerlink" href="#touch" title="Permalink to this headline">¶</a></h2>
+<h3>touch<a class="headerlink" href="#touch" title="Permalink to this headline">¶</a></h3>
 <p>Create an empty file, or update the access timestamp of an existing file.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">touch</span><span class="p">(</span><span class="nx">file</span><span class="p">);</span>
@@ -1386,7 +1074,7 @@ modification timestamps will be used rather than the current time/date.</p></li>
 </dl>
 </div>
 <div class="section" id="rename">
-<h2>rename<a class="headerlink" href="#rename" title="Permalink to this headline">¶</a></h2>
+<h3>rename<a class="headerlink" href="#rename" title="Permalink to this headline">¶</a></h3>
 <p>Rename or move a file.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">rename</span><span class="p">(</span><span class="nx">source</span><span class="p">,</span> <span class="nx">destination</span><span class="p">);</span>
@@ -1400,7 +1088,7 @@ modification timestamps will be used rather than the current time/date.</p></li>
 </dl>
 </div>
 <div class="section" id="sleep">
-<h2>sleep<a class="headerlink" href="#sleep" title="Permalink to this headline">¶</a></h2>
+<h3>sleep<a class="headerlink" href="#sleep" title="Permalink to this headline">¶</a></h3>
 <p>Pause execution for specified number of seconds.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">sleep</span><span class="p">(</span><span class="nx">seconds</span><span class="p">);</span>
@@ -1416,7 +1104,7 @@ is used.</p>
 </div>
 </div>
 <div class="section" id="gettype">
-<h2>getType<a class="headerlink" href="#gettype" title="Permalink to this headline">¶</a></h2>
+<h3>getType<a class="headerlink" href="#gettype" title="Permalink to this headline">¶</a></h3>
 <p>Get the type of variable. A simplified but more specific version of
 <code class="docutils literal notranslate"><span class="pre">typeof</span></code>.</p>
 <p>Usage:</p>
@@ -1429,6 +1117,606 @@ is used.</p>
 <code class="docutils literal notranslate"><span class="pre">Date</span></code> or <code class="docutils literal notranslate"><span class="pre">Object</span></code>.</p>
 </dd>
 </dl>
+</div>
+</div>
+<div class="section" id="file-handle-utilities">
+<h2>File Handle Utilities<a class="headerlink" href="#file-handle-utilities" title="Permalink to this headline">¶</a></h2>
+<p>The functions <a class="reference internal" href="#fprintf">fprintf</a> (), <a class="reference internal" href="#fseek">fseek</a>(), <a class="reference internal" href="#rewind">rewind</a>(), <a class="reference internal" href="#ftell">ftell</a>(), <a class="reference internal" href="#fflush">fflush</a>(),
+<a class="reference internal" href="#fread">fread</a>(), <a class="reference internal" href="#fwrite">fwrite</a>(), and <a class="reference internal" href="#readline">readLine</a>() take a filehandle, which may be obtained
+using <a class="reference internal" href="#fopen">fopen</a>().</p>
+<dl>
+<dt>Calling Methods:</dt><dd><p>The above listed functions (functions which take filehandles) may be called using one of
+two alternative syntaxes.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">handle</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fopen</span><span class="p">(</span><span class="nx">filename</span><span class="p">,</span> <span class="nx">mode</span><span class="p">);</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fprintf</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="nx">fmt</span><span class="p">,</span> <span class="p">...);</span>
+
+<span class="cm">/* or */</span>
+
+<span class="nx">handle</span><span class="p">.</span><span class="nx">fprintf</span><span class="p">(</span><span class="nx">fmt</span><span class="p">,</span> <span class="p">...);</span>
+</pre></div>
+</div>
+<p>The return value for each of the file handle functions is the same for either
+syntax, with the exception that <a class="reference internal" href="#fseek">fseek</a>(), <a class="reference internal" href="#rewind">rewind</a>() and <a class="reference internal" href="#fflush">fflush</a>()
+return undefined in the first syntax and <code class="docutils literal notranslate"><span class="pre">handle</span></code> in the second.</p>
+<p>Below, only the first syntax is documented.</p>
+</dd>
+<dt>Pre-opened file handles:</dt><dd><dl class="simple">
+<dt>rampart.utils.stdin:</dt><dd><p>A handle that corresponds to the UNIX standard in stream.</p>
+</dd>
+<dt>rampart.utils.stdout:</dt><dd><p>A handle that corresponds to the UNIX standard out stream.</p>
+</dd>
+<dt>rampart.utils.stderr:</dt><dd><p>A handle that corresponds to the Unix standard error stream.</p>
+</dd>
+<dt>rampart.utils.accessLog:</dt><dd><p>A handle that corresponds to the <code class="docutils literal notranslate"><span class="pre">accessLog</span></code> file option in <code class="docutils literal notranslate"><span class="pre">server.start()</span></code> for the
+<code class="docutils literal notranslate"><span class="pre">rampart-server</span></code> module.  If not specified, or not loaded, same as
+<code class="docutils literal notranslate"><span class="pre">rampart.utils.stdout</span></code>.</p>
+</dd>
+<dt>rampart.utils.errorLog:</dt><dd><p>A handle that corresponds to the <code class="docutils literal notranslate"><span class="pre">errorLog</span></code> file option in <code class="docutils literal notranslate"><span class="pre">server.start()</span></code> for the
+<code class="docutils literal notranslate"><span class="pre">rampart-server</span></code> module.  If not specified, or not loaded, same as
+<code class="docutils literal notranslate"><span class="pre">rampart.utils.stderr</span></code>.</p>
+</dd>
+</dl>
+<p>The <code class="docutils literal notranslate"><span class="pre">rampart.utils.stdin</span></code> handle includes the <a class="reference internal" href="#fread">fread</a>(), and <a class="reference internal" href="#readline">readLine</a>() functions
+while the other four include the <a class="reference internal" href="#fprintf">fprintf</a>(), <a class="reference internal" href="#fflush">fflush</a>() and <a class="reference internal" href="#fwrite">fwrite</a>() functions.
+Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">inf</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">stdin</span><span class="p">.</span><span class="nx">readLine</span><span class="p">();</span>
+
+<span class="k">while</span> <span class="p">(</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">line</span> <span class="o">=</span> <span class="nx">inf</span><span class="p">.</span><span class="nx">next</span><span class="p">())</span> <span class="p">)</span>
+   <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">stdout</span><span class="p">.</span><span class="nx">fprintf</span><span class="p">(</span><span class="s2">&quot;%s&quot;</span><span class="p">,</span> <span class="nx">line</span><span class="p">);</span> <span class="c1">//same as rampart.utils.printf</span>
+</pre></div>
+</div>
+</dd>
+</dl>
+<div class="section" id="fopen">
+<h3>fopen<a class="headerlink" href="#fopen" title="Permalink to this headline">¶</a></h3>
+<p>Open a filehandle for use with <a class="reference internal" href="#fprintf">fprintf</a>(), <a class="reference internal" href="#fclose">fclose</a>(), <a class="reference internal" href="#fseek">fseek</a>(),
+<a class="reference internal" href="#rewind">rewind</a>(), <a class="reference internal" href="#ftell">ftell</a>(), <a class="reference internal" href="#fflush">fflush</a>() <a class="reference internal" href="#fread">fread</a>(), <a class="reference internal" href="#fwrite">fwrite</a>() and readLine.</p>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><span class="green">Object</span>. An object which opaquely contains the opened file handle along with
+the above functions.</p>
+</dd>
+</dl>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">handle</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fopen</span><span class="p">(</span><span class="nx">filename</span><span class="p">,</span> <span class="nx">mode</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">filename</span></code> is a <span class="green">String</span> containing the file to be opened and mode is
+a <span class="green">String</span> (one of the following):</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;r&quot;</span></code> - Open text file for reading.  The stream is positioned at the
+beginning of the file.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;r+&quot;</span></code> - Open for reading and writing.  The stream is positioned at the
+beginning of the file.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;w&quot;</span></code> - Truncate file to zero length or create text file for writing.
+The stream is positioned at the beginning of the file.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;w+&quot;</span></code> - Open for reading and writing.  The file is created if it does
+not exist, otherwise it is truncated.  The stream is positioned at the
+beginning of the file.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;a&quot;</span></code> - Open for appending (writing at end of file).  The file is
+created if it does not exist.  The stream is positioned at the end of the
+file.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;a+&quot;</span></code> - Open for reading and appending (writing at end of file).  The
+file is created if it does not exist.  The initial file position for reading
+is at the beginning of the file, but output is always appended to the end of the
+file.</p></li>
+</ul>
+</div>
+<div class="section" id="fclose">
+<h3>fclose<a class="headerlink" href="#fclose" title="Permalink to this headline">¶</a></h3>
+<p>Close a previously opened handle <span class="green">Object</span> opened with <a class="reference internal" href="#fopen">fopen</a>().</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">handle</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fopen</span><span class="p">(</span><span class="s2">&quot;/tmp/out.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">);</span>
+
+<span class="p">...</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fclose</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
+
+  <span class="cm">/* or */</span>
+
+<span class="nx">handle</span><span class="p">.</span><span class="nx">fclose</span><span class="p">();</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="fprintf">
+<h3>fprintf<a class="headerlink" href="#fprintf" title="Permalink to this headline">¶</a></h3>
+<p>Same as <code class="docutils literal notranslate"><span class="pre">printf()</span></code> except output is sent to the file provided by
+a <span class="green">String</span> or filehandle <span class="green">Object</span> opened and returned from <a class="reference internal" href="#fopen">fopen</a>().</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">filename</span> <span class="o">=</span> <span class="s2">&quot;/home/user/myfile.txt&quot;</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">output</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fopen</span><span class="p">(</span><span class="nx">filename</span><span class="p">,</span> <span class="nx">mode</span><span class="p">);</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fprintf</span><span class="p">(</span><span class="nx">output</span><span class="p">,</span> <span class="nx">fmt</span><span class="p">,</span> <span class="p">...);</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fclose</span><span class="p">(</span><span class="nx">output</span><span class="p">);</span>
+
+<span class="cm">/* or */</span>
+
+<span class="kd">var</span> <span class="nx">output</span> <span class="o">=</span> <span class="nx">filename</span><span class="p">;</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fprintf</span><span class="p">(</span><span class="nx">output</span><span class="p">,</span> <span class="p">[,</span> <span class="nx">append</span><span class="p">],</span> <span class="nx">fmt</span><span class="p">,</span> <span class="p">...);</span>
+<span class="cm">/* file is automatically closed after function returns */</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">output</span></code> may be a <span class="green">String</span> (a file name), or an <span class="green">Object</span> returned from <a class="reference internal" href="#fopen">fopen</a>().</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">fmt</span></code> is a <span class="green">String</span>, a <a class="reference internal" href="#printf">printf</a>() format.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">append</span></code> is an optional <span class="green">Boolean</span> - if <code class="docutils literal notranslate"><span class="pre">true</span></code> and output is a file name, append instead of
+overwrite an existing file.</p></li>
+</ul>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Number</span>. The length in bytes of the printed string.</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">handle</span> <span class="o">=</span> <span class="nx">fopen</span><span class="p">(</span><span class="s2">&quot;/tmp/out.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;w+&quot;</span><span class="p">);</span>
+<span class="nx">fprintf</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="s2">&quot;A number: %d\n&quot;</span><span class="p">,</span> <span class="mi">123</span><span class="p">);</span>
+<span class="nx">fclose</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
+
+<span class="cm">/* OR */</span>
+
+<span class="nx">fprintf</span><span class="p">(</span><span class="s2">&quot;/tmp/out.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;A number: %d\n&quot;</span><span class="p">,</span> <span class="mi">456</span><span class="p">);</span> <span class="cm">/* implicit fclose */</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="fseek">
+<h3>fseek<a class="headerlink" href="#fseek" title="Permalink to this headline">¶</a></h3>
+<p>Set file position for file operations.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fseek</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="nx">offset</span><span class="p">[,</span> <span class="nx">whence</span><span class="p">]);</span>
+</pre></div>
+</div>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 19%" />
+<col style="width: 67%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>handle</p></td>
+<td><p><span class="green">Object</span></p></td>
+<td><p>A handle opened with <a class="reference internal" href="#fopen">fopen</a>()</p></td>
+</tr>
+<tr class="row-odd"><td><p>offset</p></td>
+<td><p><span class="green">Number</span></p></td>
+<td><p>offset in bytes from whence</p></td>
+</tr>
+<tr class="row-even"><td rowspan="3"><p>whence</p></td>
+<td rowspan="3"><p><span class="green">String</span></p></td>
+<td><p>“seek_set” - measure offset from start of file (default)</p></td>
+</tr>
+<tr class="row-odd"><td><p>“seek_cur” - measure offset from current position</p></td>
+</tr>
+<tr class="row-even"><td><p>“seek_end” - measure offset from end of file.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code></p>
+</dd>
+</dl>
+<p>Example</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">,</span>
+  <span class="p">[</span><span class="s2">&quot;fopen&quot;</span><span class="p">,</span><span class="s2">&quot;printf&quot;</span><span class="p">,</span><span class="s2">&quot;fprintf&quot;</span><span class="p">,</span><span class="s2">&quot;fseek&quot;</span><span class="p">,</span><span class="s2">&quot;fread&quot;</span><span class="p">]);</span>
+
+<span class="kd">var</span> <span class="nx">handle</span> <span class="o">=</span> <span class="nx">fopen</span><span class="p">(</span><span class="s2">&quot;/tmp/out.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;w+&quot;</span><span class="p">);</span>
+
+<span class="nx">fprintf</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="s2">&quot;123def&quot;</span><span class="p">);</span>
+
+<span class="nx">fseek</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;seek_set&quot;</span><span class="p">);</span>
+
+<span class="nx">fprintf</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="s2">&quot;abc&quot;</span><span class="p">);</span>
+
+<span class="nx">fseek</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;seek_set&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">out</span><span class="o">=</span><span class="nx">fread</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
+
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%s&quot;</span><span class="p">,</span> <span class="nx">out</span><span class="p">);</span>
+<span class="cm">/* expect output: &quot;abcdef&quot; */</span>
+
+<span class="nx">fclose</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="rewind">
+<h3>rewind<a class="headerlink" href="#rewind" title="Permalink to this headline">¶</a></h3>
+<p>Set the file position to the beginning of the file.  It is equivalent to:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">fseek</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;seek_set&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rewind</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code></p>
+</dd>
+</dl>
+</div>
+<div class="section" id="ftell">
+<h3>ftell<a class="headerlink" href="#ftell" title="Permalink to this headline">¶</a></h3>
+<p>Obtain the current value of the file position for the handle opened with
+<a class="reference internal" href="#fopen">fopen</a>().</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">pos</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">ftell</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><span class="green">Number</span>. Current position of <code class="docutils literal notranslate"><span class="pre">handle</span></code>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="fflush">
+<h3>fflush<a class="headerlink" href="#fflush" title="Permalink to this headline">¶</a></h3>
+<p>For output file handles opened with <a class="reference internal" href="#fopen">fopen</a>(), or for
+<code class="docutils literal notranslate"><span class="pre">stdout</span></code>/<code class="docutils literal notranslate"><span class="pre">stderr</span></code>/<code class="docutils literal notranslate"><span class="pre">accessLog</span></code>/<code class="docutils literal notranslate"><span class="pre">errorLog</span></code>, <code class="docutils literal notranslate"><span class="pre">fflush()</span></code> forces a
+write of buffered data.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fflush</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code></p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="cm">/* normally a flush happens automatically</span>
+<span class="cm">   when a &#39;\n&#39; is printed.  Since we are using</span>
+<span class="cm">   &#39;\r&#39;, flush manually                        */</span>
+
+<span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="o">&lt;</span> <span class="mi">10</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+   <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;doing #%d\r&quot;</span><span class="p">,</span> <span class="nx">i</span><span class="p">);</span>
+   <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fflush</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">stdout</span><span class="p">);</span>
+   <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;blast off!!!\n&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="fread">
+<h3>fread<a class="headerlink" href="#fread" title="Permalink to this headline">¶</a></h3>
+<p>Read data from a file, handle opened with <a class="reference internal" href="#fopen">fopen</a>() or the pre-opened handle <code class="docutils literal notranslate"><span class="pre">stdin</span></code>.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fread</span><span class="p">([</span><span class="nx">handle</span><span class="o">|</span><span class="nx">file</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">max_size</span> <span class="p">[,</span> <span class="nx">chunk_size</span> <span class="p">[,</span><span class="nx">returnString</span><span class="p">]]]);</span>
+</pre></div>
+</div>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 21%" />
+<col style="width: 64%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>handle</p></td>
+<td><p><span class="green">Object</span></p></td>
+<td><p>A handle opened with <a class="reference internal" href="#fopen">fopen</a>()</p></td>
+</tr>
+<tr class="row-odd"><td><p>file</p></td>
+<td><p><span class="green">String</span></p></td>
+<td><p>A filename – file will be auto opened and closed</p></td>
+</tr>
+<tr class="row-even"><td><p>max_size</p></td>
+<td><p><span class="green">Number</span></p></td>
+<td><p>Maximum number of bytes to read.  Unlimited if
+not specified.</p></td>
+</tr>
+<tr class="row-odd"><td><p>chunk_size</p></td>
+<td><p><span class="green">Number</span></p></td>
+<td><p>Initial size of return <span class="green">Buffer</span> and number
+of bytes to read at a time. If the total number of
+bytes read is greater, the buffer grows as needed.
+If total bytes read is less, the returned buffer
+will be reduced in size to match. Default is 4096
+if not specified.</p></td>
+</tr>
+<tr class="row-even"><td><p>returnString</p></td>
+<td><p><span class="green">Boolean</span></p></td>
+<td><p>Whether return value is returned as a
+<span class="green">String</span>.  Default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Buffer</span> or a <span class="green">String</span> if <code class="docutils literal notranslate"><span class="pre">returnString</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="fwrite">
+<h3>fwrite<a class="headerlink" href="#fwrite" title="Permalink to this headline">¶</a></h3>
+<p>Write data to a file, a handle opened with <a class="reference internal" href="#fopen">fopen</a>() or a pre-opened
+output handle (<code class="docutils literal notranslate"><span class="pre">stdout</span></code>/<code class="docutils literal notranslate"><span class="pre">stderr</span></code>/<code class="docutils literal notranslate"><span class="pre">accessLog</span></code>/<code class="docutils literal notranslate"><span class="pre">errorLog</span></code>).  If using
+a handle, the start of the write will be the current position based on how
+the file was opened and whether any seeks have been performed.  If using a
+file name, the <code class="docutils literal notranslate"><span class="pre">append</span></code> parameter will determine whether the file is
+appended or truncated.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">nbytes</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fwrite</span><span class="p">([</span><span class="nx">handle</span><span class="o">|</span><span class="nx">file</span><span class="p">],</span> <span class="nx">data</span> <span class="p">[,</span> <span class="nx">max_bytes</span> <span class="p">[,</span> <span class="nx">append</span><span class="p">]]);</span>
+</pre></div>
+</div>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 21%" />
+<col style="width: 64%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Argument</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>handle</p></td>
+<td><p><span class="green">Object</span></p></td>
+<td><p>A handle opened with <a class="reference internal" href="#fopen">fopen</a>()</p></td>
+</tr>
+<tr class="row-odd"><td><p>file</p></td>
+<td><p><span class="green">String</span></p></td>
+<td><p>A filename – file will be auto opened and closed</p></td>
+</tr>
+<tr class="row-even"><td><p>data</p></td>
+<td><p><span class="green">Buffer</span>/
+<span class="green">String</span></p></td>
+<td><p>The data to be written.</p></td>
+</tr>
+<tr class="row-odd"><td><p>max_bytes</p></td>
+<td><p><span class="green">Number</span></p></td>
+<td><p>Maximum number of bytes to write. <span class="green">Buffer</span>/
+<span class="green">String</span> length if not specified.</p></td>
+</tr>
+<tr class="row-even"><td><p>append</p></td>
+<td><p><span class="green">Boolean</span></p></td>
+<td><p>If opened with <code class="docutils literal notranslate"><span class="pre">file</span></code> instead of <code class="docutils literal notranslate"><span class="pre">handle</span></code>,
+whether to append the file.  Default is <code class="docutils literal notranslate"><span class="pre">false</span></code>,
+in which case the file will be truncated.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Number</span>. Number of bytes written.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="readline">
+<h3>readLine<a class="headerlink" href="#readline" title="Permalink to this headline">¶</a></h3>
+<p>Read a text file line-by-line.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">rl</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">readLine</span><span class="p">(</span><span class="nx">file</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">line</span><span class="o">=</span><span class="nx">rl</span><span class="p">.</span><span class="nx">next</span><span class="p">();</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">file</span></code> is a <span class="green">String</span> (name of file to be read) or a file handle opened
+with with <a class="reference internal" href="#fopen">fopen</a>() or <code class="docutils literal notranslate"><span class="pre">rampart.utils.stdin</span></code>. It returns a <span class="green">Object</span>
+that contains the property <code class="docutils literal notranslate"><span class="pre">next</span></code> which is <span class="green">Function</span> to retrieve and return the next
+line of text in the opened file.</p>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>An <span class="green">Object</span>.  Property <code class="docutils literal notranslate"><span class="pre">next</span></code> of the return <span class="green">Object</span> is a
+<span class="green">Function</span> which retrieves and returns the next line of text in
+the file.  After the last line of <code class="docutils literal notranslate"><span class="pre">file</span></code> is returned, subsequent calls
+to <code class="docutils literal notranslate"><span class="pre">next</span></code> will return <code class="docutils literal notranslate"><span class="pre">null</span></code>.</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">rl</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">readLine</span><span class="p">(</span><span class="s2">&quot;./myfile.txt&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">i</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+<span class="kd">var</span> <span class="nx">line</span><span class="p">,</span> <span class="nx">firstline</span><span class="p">,</span> <span class="nx">lastline</span><span class="p">;</span>
+
+<span class="k">while</span> <span class="p">(</span> <span class="p">(</span><span class="nx">line</span><span class="o">=</span><span class="nx">rl</span><span class="p">.</span><span class="nx">next</span><span class="p">())</span> <span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span><span class="p">(</span><span class="nx">i</span><span class="o">==</span><span class="mi">0</span><span class="p">)</span>
+        <span class="nx">firstline</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">trim</span><span class="p">(</span><span class="nx">line</span><span class="p">);</span>
+    <span class="nx">i</span><span class="o">++</span><span class="p">;</span>
+    <span class="nx">lastline</span> <span class="o">=</span> <span class="nx">line</span><span class="p">;</span>
+<span class="p">}</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%s\n%s\n&quot;</span><span class="p">,</span> <span class="nx">firstline</span><span class="p">,</span> <span class="nx">lastline</span><span class="p">);</span>
+
+<span class="cm">/* expected output: first and last line of file &quot;./myfile.txt&quot; */</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="rand-hash-and-hll">
+<h2>Rand, Hash and HLL<a class="headerlink" href="#rand-hash-and-hll" title="Permalink to this headline">¶</a></h2>
+<p>Included in rampart.utils are three non-cryptographic functions which have been optimized for speed and ease of use.</p>
+<p>Note that the <a class="reference internal" href="#rand">rand</a>() and <a class="reference internal" href="#hash">hash</a>() functions are not of cryptographic quality.  For cryptographic quality hashes
+and random numbers, see <a class="reference internal" href="rampart-crypto.html#preface"><span class="std std-ref">The Rampart-Crypto Module</span></a>.</p>
+<div class="section" id="rand">
+<h3>rand<a class="headerlink" href="#rand" title="Permalink to this headline">¶</a></h3>
+<p>Generate a random number using a fast, non-cryptographic random number generator.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">rn</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">rand</span><span class="p">([</span><span class="nx">min</span><span class="p">,</span> <span class="nx">max</span><span class="p">]);</span>
+
+   <span class="cm">/* or */</span>
+
+<span class="kd">var</span> <span class="nx">rn</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">rand</span><span class="p">(</span><span class="nx">max</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">min</span></code> is the floor and <code class="docutils literal notranslate"><span class="pre">max</span></code>
+is the ceiling of the range of the random number to produce.</p>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Number</span> - the generated random number.</p>
+</dd>
+</dl>
+<p>Note that if srand has not been called before use, the random number generator
+will be automatically seeded.</p>
+</div>
+<div class="section" id="srand">
+<h3>srand<a class="headerlink" href="#srand" title="Permalink to this headline">¶</a></h3>
+<p>Seed the random number generator for use with <a class="reference internal" href="#rand">rand</a>() above.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">srand</span><span class="p">([</span><span class="nx">random_num</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">random_num</span></code> is an optional number to seed the random number generator.  If not specified, a number will
+be derived by reading <code class="docutils literal notranslate"><span class="pre">/dev/urandom</span></code>.</p>
+</div>
+<div class="section" id="hash">
+<h3>hash<a class="headerlink" href="#hash" title="Permalink to this headline">¶</a></h3>
+<p>Calculate the hash of data.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">myhash</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">hash</span><span class="p">(</span><span class="nx">data</span><span class="p">,</span><span class="nx">options</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">data</span></code> is the data from which the hash is calculated and options is
+an <span class="green">Object</span> with the following optional properties:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">type</span></code> - the type of hash to be calculated. A <span class="green">String</span>, one of:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">murmur</span></code> - A 64 bit hash using the <cite>murmur</cite> algorithm.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">city</span></code> - A 64 bit hash using the <cite>city</cite> algorithm.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">city128</span></code> - A 128 bit hash using the <cite>city</cite> algorithm.  This is the default if not specified.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">both</span></code> - A 192 bit hash – the <code class="docutils literal notranslate"><span class="pre">city128</span></code> hash concatenated with the <code class="docutils literal notranslate"><span class="pre">murmur</span></code> hash.</p></li>
+</ul>
+</div></blockquote>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">function</span></code> - Same as <code class="docutils literal notranslate"><span class="pre">type</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">returnBuffer</span></code> - a <span class="green">Boolean</span>, if <code class="docutils literal notranslate"><span class="pre">true</span></code>, the hash will be returned as the binary value of the hash
+in a a <span class="green">Buffer</span>.  If <code class="docutils literal notranslate"><span class="pre">false</span></code> (the default), the return value will be a <span class="green">String</span> - a hex encoded representation
+of the hash.</p></li>
+</ul>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">String</span> or <span class="green">Buffer</span> - the computed hash.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="hll">
+<h3>hll<a class="headerlink" href="#hll" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">hll</span></code> function calculates a count of unique items based on Rampart’s own
+<a class="reference external" href="https://en.wikipedia.org/wiki/HyperLogLog">hyperloglog</a> algorithm. It allocates and uses
+a 16384 byte buffer to calculate a distinct count of items added.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">myhll</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">hll</span><span class="p">(</span><span class="nx">name</span><span class="p">);</span>
+
+   <span class="cm">/* or */</span>
+
+<span class="kd">var</span> <span class="nx">myhll</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">hll</span><span class="p">(</span><span class="nx">name</span><span class="p">,</span> <span class="nx">hllBufferData</span><span class="p">);</span>
+
+   <span class="cm">/* or */</span>
+
+<span class="kd">var</span> <span class="nx">myhll</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">hll</span><span class="p">(</span><span class="nx">name</span> <span class="p">[,</span> <span class="nx">hllBufferData</span><span class="p">],</span> <span class="nx">merge_hll1</span> <span class="p">[,</span> <span class="nx">merge_hll2</span><span class="p">,</span> <span class="p">...]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> is an arbitrary <span class="green">String</span>.  It may be called again with the same <code class="docutils literal notranslate"><span class="pre">name</span></code>
+in order to retrieve the same <cite>hll object</cite>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hllBufferData</span></code> is a <span class="green">Buffer</span> - The raw <cite>hll</cite> buffer to initialize the new
+<code class="docutils literal notranslate"><span class="pre">hll</span></code> <span class="green">Object</span> with data previously extracted using
+<a class="reference external" href="hll.getBuffer">getBuffer</a> () below.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">merge_hll1</span></code>, <code class="docutils literal notranslate"><span class="pre">merge_hll2</span></code>, etc. are <cite>hll</cite> <span class="green">Objects</span> created with <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">rampart.utils.hll(name)</span></code>
+to be merged into the new (blank) return <cite>hll</cite> <span class="green">Object</span> in the same manner as
+<a class="reference external" href="hll.merge">merge</a> () below.</p></li>
+</ul>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>An opaque <cite>hll</cite> <span class="green">Object</span> containing the following functions: <code class="docutils literal notranslate"><span class="pre">add</span></code>, <code class="docutils literal notranslate"><span class="pre">addFile</span></code>, <code class="docutils literal notranslate"><span class="pre">count</span></code>, <code class="docutils literal notranslate"><span class="pre">merge</span></code>,
+and <code class="docutils literal notranslate"><span class="pre">getBuffer</span></code>.</p>
+</dd>
+</dl>
+<p>Note that an <cite>hll</cite> can be refered to from different threads in the
+<a class="reference internal" href="rampart-server.html#the-rampart-server-http-module"><span class="std std-ref">Rampart Server</span></a>. Each server
+thread may specify the same <cite>hll</cite> by using the same name.  In addition, the below
+functions are thread-safe.</p>
+</div>
+<div class="section" id="hll-add">
+<h3>hll.add<a class="headerlink" href="#hll-add" title="Permalink to this headline">¶</a></h3>
+<p>Add a value or values to the <a class="reference internal" href="#hll">hll</a>.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">myhll</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">hll</span><span class="p">(</span><span class="nx">name</span><span class="p">);</span>
+
+<span class="nx">myhll</span><span class="p">.</span><span class="nx">add</span><span class="p">(</span><span class="nx">value</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">value</span></code> is a <span class="green">String</span>, <span class="green">Buffer</span> or an array of <span class="green">Strings</span> and/or <span class="green">Buffers</span>.</p>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>The <cite>hll</cite> <span class="green">Object</span>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="hll-addfile">
+<h3>hll.addFile<a class="headerlink" href="#hll-addfile" title="Permalink to this headline">¶</a></h3>
+<p>Add values to the <a class="reference internal" href="#hll">hll</a> from a file, with each value on a separate line.</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">myhll</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">hll</span><span class="p">(</span><span class="nx">name</span><span class="p">);</span>
+
+<span class="nx">myhll</span><span class="p">.</span><span class="nx">addFile</span><span class="p">(</span><span class="nx">file</span> <span class="p">[,</span> <span class="nx">delim</span><span class="p">]</span> <span class="p">);</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Where</dt><dd><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">file</span></code> is a <span class="green">String</span> (name of file to be read) or a file handle opened
+with with <a class="reference internal" href="#fopen">fopen</a>() or <code class="docutils literal notranslate"><span class="pre">rampart.utils.stdin</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">delim</span></code> is an optional <span class="green">String</span>, the first character of which is used
+as a line separator.  The default value is <code class="docutils literal notranslate"><span class="pre">&quot;\n&quot;</span></code>.</p></li>
+</ul>
+</dd>
+<dt>Return Value:</dt><dd><p>The <cite>hll</cite> <span class="green">Object</span>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="hll-count">
+<h3>hll.count<a class="headerlink" href="#hll-count" title="Permalink to this headline">¶</a></h3>
+<p>Get a current count of distinct items added to the <a class="reference internal" href="#hll">hll</a>.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">myhll</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">hll</span><span class="p">(</span><span class="nx">name</span><span class="p">);</span>
+
+<span class="cm">/* add items */</span>
+<span class="p">...</span>
+
+<span class="kd">var</span> <span class="nx">mycount</span> <span class="o">=</span> <span class="nx">myhll</span><span class="p">.</span><span class="nx">count</span><span class="p">();</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Number</span>, the estimated number of distinct items added to the <a class="reference internal" href="#hll">hll</a>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="hll-merge">
+<h3>hll.merge<a class="headerlink" href="#hll-merge" title="Permalink to this headline">¶</a></h3>
+<p>Merge one or more <cite>hll</cite> files into the current <cite>hll</cite> in order to calculate an estimate of the number of distinct
+items of the union.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">mergedHll</span> <span class="o">=</span> <span class="nx">myhll</span><span class="p">.</span><span class="nx">merge</span><span class="p">(</span><span class="nx">myhll2</span> <span class="p">[,</span> <span class="nx">myhll3</span><span class="p">,</span> <span class="p">...]);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">myhll2</span></code>, <code class="docutils literal notranslate"><span class="pre">myhll3</span></code>, etc. are <cite>hlls</cite> created with <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">rampart.utils.hll</span></code> above.</p>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>The <cite>hll</cite> <span class="green">Object</span> merged and updated with the provided <cite>hlls</cite>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="hll-getbuffer">
+<h3>hll.getBuffer<a class="headerlink" href="#hll-getbuffer" title="Permalink to this headline">¶</a></h3>
+<p>Get the raw <cite>hll</cite> buffer as a JavaScript <span class="green">Buffer</span>, which may be used to save
+the <cite>hll</cite> to disk using a command such as <a class="reference internal" href="#fwrite">fwrite</a>() above.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">myhll</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">hll</span><span class="p">(</span><span class="nx">name</span><span class="p">);</span>
+
+<span class="cm">/* add items */</span>
+<span class="p">...</span>
+
+<span class="kd">var</span> <span class="nx">hllbuf</span> <span class="o">=</span> <span class="nx">myhll</span><span class="p">.</span><span class="nx">getBuffer</span><span class="p">();</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">Buffer</span> 16384 bytes in length.</p>
+</dd>
+</dl>
+</div>
 </div>
 </div>
 

@@ -562,6 +562,19 @@ the command line.  However if flags are present (arguments starting with
 ``-``), the script name may be a later argument.  Subsequent members occur
 in the order they were given on the command line.
 
+installPath
+"""""""""""
+
+The value of ``process.installPath`` is a :green:`String` containing the
+canonical path (directory) of the rampart install directory. It is derived
+from the path of the rampart executable, removing '/bin' from the end of the 
+path if exists.  Example: if ``/usr/local/bin/rampart`` is run (and is the
+actual location of the executable and not a symlink), ``process.installPath``
+will be ``/usr/local``.  However if the executable is in a path that does
+not end in ``bin/`` (e.g. ``~/mytestfiles/rampart``), ``process.installPath`` will be the location of the
+executable.  ``process.installPath`` is used internally to locate modules
+and other files used by rampart. See `Module Search Path`_ below.
+
 scriptPath
 """"""""""
 
@@ -746,21 +759,31 @@ Modules are searched for in the following order:
 
 #. In :ref:`process.scriptPath <rampart-main:scriptPath>`\ .
 
-#. In the ``.rampart/modules`` directory of current user's home directory 
+#. In the current working directory. If ``/module.js`` is given, 
+   ``./module.js`` is checked.
+
+#. In the ``lib/rampart_modules`` subdirectory of :ref:`process.installPath <rampart-main:installPath>`\ .
+
+#. In the ``~/.rampart/lib/rampart_modules`` directory of current user's home directory 
    as provided by the ``$HOME`` environment variable.
 
-#. In the "/lib/rampart_modules" directory of the ``-DRP_INST_PATH`` path set when Rampart 
+#. In the ``lib/rampart_modules`` directory of the ``-DRP_INST_PATH`` path set when Rampart 
    was compiled.  The default is ``/usr/local/rampart/lib/rampart_modules``. Or
    preferentially, if set, the path pointed to by the environment variable
    ``$RAMPART_PATH`` + "/lib/rampart_modules".
 
-#. In the "/modules" directory of the ``-DRP_INST_PATH`` path set when Rampart 
+#. In :ref:`process.installPath <rampart-main:installPath>`\ .
+
+#. In the ``modules`` subdirectory of :ref:`process.installPath <rampart-main:installPath>`\ .
+
+#. In the ``~/.rampart/modules`` directory of current user's home directory 
+   as provided by the ``$HOME`` environment variable.
+
+#. In the ``modules`` directory of the ``-DRP_INST_PATH`` path set when Rampart 
    was compiled.  The default is ``/usr/local/rampart/modules``. Or
    preferentially, if set, the path pointed to by the environment variable
    ``$RAMPART_PATH`` + "/modules".
 
-#. In the current working directory. If ``/module.js`` is given, 
-   ``./module.js`` is checked.
 
 Extra JavaScript Functionality
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -943,7 +966,7 @@ Where:
 * ``timeOut`` is the amount of time in milliseconds to wait before the ``callback`` function is called.
 
 Return Value:
-    An id which may be used with `clearTimeout`_\ .
+    An id which may be used with `clearTimeout()`_\ .
 
 Example:
 

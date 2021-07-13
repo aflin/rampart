@@ -1149,7 +1149,7 @@ directory.  It is shown below so that if modifications to the default
 are desired, it can be used as a starting point for a custom function
 that can be set using the <code class="docutils literal notranslate"><span class="pre">directoryFunc</span></code> property.</p>
 <p>Note that the <code class="docutils literal notranslate"><span class="pre">req</span></code> variable passed to the function contains an extra
-parameter <code class="docutils literal notranslate"><span class="pre">fsPath</span></code>, which is the path on the filesystem being requested.</p>
+property <code class="docutils literal notranslate"><span class="pre">fsPath</span></code>, which is the path on the filesystem being requested.</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">function</span> <span class="nx">dirlist</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
     <span class="kd">var</span> <span class="nx">html</span><span class="o">=</span><span class="s2">&quot;&lt;!DOCTYPE html&gt;\n&quot;</span><span class="o">+</span>
         <span class="s1">&#39;&lt;html&gt;&lt;head&gt;&lt;meta charset=&quot;UTF-8&quot;&gt;&lt;title&gt;Index of &#39;</span> <span class="o">+</span>

@@ -2005,16 +2005,21 @@ replacement :green:`Strings` for the extra search values.
 
    var dataOut = Sql.sandr(expr, replace, data);
 
+   /* or */
 
-+--------+---------------------------------------------------+---------------------------------------------------+
-|Argument|Type                                               |Description                                        |
-+========+===================================================+===================================================+
-|expr    |:green:`String`/:green:`Array` of :green:`Strings` | `rex()`_ expression(s) to search for              |
-+--------+---------------------------------------------------+---------------------------------------------------+
-|replace |:green:`String`/:green:`Array` of :green:`Strings` | Text to replace the `rex()`_ expressions          |
-+--------+---------------------------------------------------+---------------------------------------------------+
-|data    |:green:`String`/:green:`Array` of :green:`Strings` | string(s) as input for search and replace         |
-+--------+---------------------------------------------------+---------------------------------------------------+ 
+   var dataOut = Sql.sandr(rexargs, data);
+
++--------+--------------------------------------------------------+---------------------------------------------------+
+|Argument|Type                                                    |Description                                        |
++========+========================================================+===================================================+
+|expr    |:green:`String`/:green:`Array` of :green:`Strings`      | `rex()`_ expression(s) to search for              |
++--------+--------------------------------------------------------+---------------------------------------------------+
+|replace |:green:`String`/:green:`Array` of :green:`Strings`      | Text to replace the `rex()`_ expressions          |
++--------+--------------------------------------------------------+---------------------------------------------------+
+|rexargs |:green:`Array` of :green:`Arrays` - search/replace pairs| pairs of expr and replace strings                 |
++--------+--------------------------------------------------------+---------------------------------------------------+
+|data    |:green:`String`/:green:`Array` of :green:`Strings`      | string(s) as input for search and replace         |
++--------+--------------------------------------------------------+---------------------------------------------------+ 
 
 
 Return Value:
@@ -2065,6 +2070,15 @@ Example:
 	var replace="try"; /* "participate"->"try", "not un"->"" */
 	var dataOut=Sql.sandr(expr, replace, data);
 	/* dataOut = "I am happy and am willing to try" */
+
+Example using search/replace argument pairs :
+
+.. code-block:: javascript
+
+    var data="I am not unhappy and am not unwilling to participate";
+    var rexargs =[ ["participate","try"], ["not un",""]];
+    var dataOut=Sql.sandr(rexargs, data);
+    /* dataOut = "I am happy and am willing to try" */
 
 See `rex()`_ for rex regular expression syntax.
 

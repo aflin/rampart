@@ -1025,7 +1025,7 @@ Built-in Directory Function
     that can be set using the ``directoryFunc`` property.
 
     Note that the ``req`` variable passed to the function contains an extra
-    parameter ``fsPath``, which is the path on the filesystem being requested.
+    property ``fsPath``, which is the path on the filesystem being requested.
 
     .. code-block:: javascript
 

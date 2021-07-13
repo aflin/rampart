@@ -2070,13 +2070,17 @@ returns <code class="docutils literal notranslate"><span class="pre">dataOut</sp
 <p>If <code class="docutils literal notranslate"><span class="pre">replace</span></code> has fewer values than <code class="docutils literal notranslate"><span class="pre">expr</span></code>, it is “padded” with empty
 replacement <span class="green">Strings</span> for the extra search values.</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">dataOut</span> <span class="o">=</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">sandr</span><span class="p">(</span><span class="nx">expr</span><span class="p">,</span> <span class="nx">replace</span><span class="p">,</span> <span class="nx">data</span><span class="p">);</span>
+
+<span class="cm">/* or */</span>
+
+<span class="kd">var</span> <span class="nx">dataOut</span> <span class="o">=</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">sandr</span><span class="p">(</span><span class="nx">rexargs</span><span class="p">,</span> <span class="nx">data</span><span class="p">);</span>
 </pre></div>
 </div>
 <table class="docutils align-default">
 <colgroup>
 <col style="width: 7%" />
-<col style="width: 46%" />
-<col style="width: 46%" />
+<col style="width: 49%" />
+<col style="width: 44%" />
 </colgroup>
 <thead>
 <tr class="row-odd"><th class="head"><p>Argument</p></th>
@@ -2093,7 +2097,11 @@ replacement <span class="green">Strings</span> for the extra search values.</p>
 <td><p><span class="green">String</span>/<span class="green">Array</span> of <span class="green">Strings</span></p></td>
 <td><p>Text to replace the <a class="reference internal" href="#rex">rex()</a> expressions</p></td>
 </tr>
-<tr class="row-even"><td><p>data</p></td>
+<tr class="row-even"><td><p>rexargs</p></td>
+<td><p><span class="green">Array</span> of <span class="green">Arrays</span> - search/replace pairs</p></td>
+<td><p>pairs of expr and replace strings</p></td>
+</tr>
+<tr class="row-odd"><td><p>data</p></td>
 <td><p><span class="green">String</span>/<span class="green">Array</span> of <span class="green">Strings</span></p></td>
 <td><p>string(s) as input for search and replace</p></td>
 </tr>
@@ -2137,6 +2145,13 @@ hexadecimal value of that character using the following syntax:
 <span class="kd">var</span> <span class="nx">expr</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;participate&quot;</span><span class="p">,</span> <span class="s2">&quot;not un&quot;</span><span class="p">];</span>
 <span class="kd">var</span> <span class="nx">replace</span><span class="o">=</span><span class="s2">&quot;try&quot;</span><span class="p">;</span> <span class="cm">/* &quot;participate&quot;-&gt;&quot;try&quot;, &quot;not un&quot;-&gt;&quot;&quot; */</span>
 <span class="kd">var</span> <span class="nx">dataOut</span><span class="o">=</span><span class="nx">Sql</span><span class="p">.</span><span class="nx">sandr</span><span class="p">(</span><span class="nx">expr</span><span class="p">,</span> <span class="nx">replace</span><span class="p">,</span> <span class="nx">data</span><span class="p">);</span>
+<span class="cm">/* dataOut = &quot;I am happy and am willing to try&quot; */</span>
+</pre></div>
+</div>
+<p>Example using search/replace argument pairs :</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">data</span><span class="o">=</span><span class="s2">&quot;I am not unhappy and am not unwilling to participate&quot;</span><span class="p">;</span>
+<span class="kd">var</span> <span class="nx">rexargs</span> <span class="o">=</span><span class="p">[</span> <span class="p">[</span><span class="s2">&quot;participate&quot;</span><span class="p">,</span><span class="s2">&quot;try&quot;</span><span class="p">],</span> <span class="p">[</span><span class="s2">&quot;not un&quot;</span><span class="p">,</span><span class="s2">&quot;&quot;</span><span class="p">]];</span>
+<span class="kd">var</span> <span class="nx">dataOut</span><span class="o">=</span><span class="nx">Sql</span><span class="p">.</span><span class="nx">sandr</span><span class="p">(</span><span class="nx">rexargs</span><span class="p">,</span> <span class="nx">data</span><span class="p">);</span>
 <span class="cm">/* dataOut = &quot;I am happy and am willing to try&quot; */</span>
 </pre></div>
 </div>
