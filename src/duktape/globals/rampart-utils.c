@@ -1157,6 +1157,7 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
     
     if ( obj_idx != -1) 
     {   
+/* use fread if you want to use filehandle.  This is redundant.
         if( duk_has_prop_string(ctx,obj_idx,DUK_HIDDEN_SYMBOL("filehandle")) )
         {
             fp = getfh_nonull_lock(ctx,obj_idx,"readFile",lock_p);
@@ -1164,9 +1165,11 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
             rewind(fp);
         }
         else
+*/
         {
             if(duk_get_prop_string(ctx, obj_idx, "file"))
             {
+                /*
                 if(duk_is_object(ctx, -1) && duk_has_prop_string(ctx,-1,DUK_HIDDEN_SYMBOL("filehandle")) )
                 {
                     close=0;
@@ -1174,6 +1177,7 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
                     rewind(fp);
                 }
                 else
+                */
                     filename = REQUIRE_STRING(ctx, -1, "readFile() - option 'file' must be a String or filehandle");
             }
             duk_pop(ctx);
@@ -1815,7 +1819,13 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
                 }
 
                 if(stdin_txt)
-                    write(stdin_pipe[1], stdin_txt, (size_t)stdin_sz);
+                {
+                    if( -1 == write(stdin_pipe[1], stdin_txt, (size_t)stdin_sz))
+                    {
+                        fprintf(error_fh, "exec(): failed to write to stdin of command %s\n", strerror(errno));
+                        exit(1);
+                    }
+                }
 
                 close(stdin_pipe[1]);
                 close(child2par[1]);
@@ -1902,7 +1912,11 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 
         if(stdin_txt)
         {
-            write(stdin_pipe[1], stdin_txt, (size_t)stdin_sz);
+            if(-1 == write(stdin_pipe[1], stdin_txt, (size_t)stdin_sz))
+            {
+                close(stdin_pipe[1]);
+                RP_THROW(ctx, "exec(): could not write to stdin of command: %s", strerror(errno));
+            }
             close(stdin_pipe[1]);
         }
 
@@ -3098,7 +3112,7 @@ static duk_ret_t _hash(duk_context *ctx, void *map, size_t sz)
         duk_pop(ctx);
         if(duk_get_prop_string(ctx, opts_idx, "function"))
         {
-            type_name=REQUIRE_STRING(ctx, -1, "hash() - option 'type' must be a String");
+            type_name=REQUIRE_STRING(ctx, -1, "hash() - option 'function' must be a String");
         }
         duk_pop(ctx);
 
@@ -3495,7 +3509,7 @@ duk_ret_t duk_rp_hll_count(duk_context *ctx)
     HLL_LOCK(hll);
     c=(double)countHLL16k(hll->buf);
     HLL_UNLOCK(hll);
-    duk_push_number(ctx, c);
+    duk_push_int(ctx, (int)c);
     return 1;
 }
 
@@ -3680,14 +3694,24 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "kill");
     duk_push_c_function(ctx, duk_rp_mkdir, 2);
     duk_put_prop_string(ctx, -2, "mkdir");
+    duk_push_c_function(ctx, duk_rp_mkdir, 2);
+    duk_put_prop_string(ctx, -2, "mkDir");
     duk_push_c_function(ctx, duk_rp_rmdir, 2);
     duk_put_prop_string(ctx, -2, "rmdir");
+    duk_push_c_function(ctx, duk_rp_rmdir, 2);
+    duk_put_prop_string(ctx, -2, "rmDir");
     duk_push_c_function(ctx, duk_rp_chdir, 1);
     duk_put_prop_string(ctx, -2, "chdir");
+    duk_push_c_function(ctx, duk_rp_chdir, 1);
+    duk_put_prop_string(ctx, -2, "chDir");
     duk_push_c_function(ctx, duk_rp_getcwd, 0);
     duk_put_prop_string(ctx, -2, "getcwd");
+    duk_push_c_function(ctx, duk_rp_getcwd, 0);
+    duk_put_prop_string(ctx, -2, "getCwd");
     duk_push_c_function(ctx, duk_rp_readdir, 2);
     duk_put_prop_string(ctx, -2, "readdir");
+    duk_push_c_function(ctx, duk_rp_readdir, 2);
+    duk_put_prop_string(ctx, -2, "readDir");
     duk_push_c_function(ctx, duk_rp_copy_file, 4);
     duk_put_prop_string(ctx, -2, "copyFile");
     duk_push_c_function(ctx, duk_rp_realpath, 1);
@@ -3864,7 +3888,7 @@ char *to_utf8(const char *in_str)
 
 /* TODO: make locking per file.  Add locking to fwrite */
 
-duk_ret_t duk_printf(duk_context *ctx)
+duk_ret_t duk_rp_printf(duk_context *ctx)
 {
     char buffer[1];
     int ret;
@@ -3901,7 +3925,7 @@ duk_ret_t duk_printf(duk_context *ctx)
     f;\
 })
 
-duk_ret_t duk_fseek(duk_context *ctx)
+duk_ret_t duk_rp_fseek(duk_context *ctx)
 {
     FILE *f = getfh_nonull(ctx,0,"fseek()");
     long offset=(long)REQUIRE_NUMBER(ctx, 1, "fseek(): second argument must be a number (seek position)");
@@ -3926,14 +3950,14 @@ duk_ret_t duk_fseek(duk_context *ctx)
     return 0;
 }
 
-duk_ret_t duk_rewind(duk_context *ctx)
+duk_ret_t duk_rp_rewind(duk_context *ctx)
 {
     FILE *f = getfh_nonull(ctx,0,"rewind()");
     rewind(f);
     return 0;
 }
 
-duk_ret_t duk_ftell(duk_context *ctx)
+duk_ret_t duk_rp_ftell(duk_context *ctx)
 {
     FILE *f = getfh_nonull(ctx,0,"ftell()");
     long pos;
@@ -3946,27 +3970,35 @@ duk_ret_t duk_ftell(duk_context *ctx)
     return 1;
 }
 
-duk_ret_t duk_fread(duk_context *ctx)
+duk_ret_t duk_rp_fread(duk_context *ctx)
 {
     FILE *f = NULL;
     void *buf;
     size_t r, read=0, sz=4096, max=SIZE_MAX;
     int isz=-1;
     const char *filename="";
-    int type;
+    duk_idx_t idx=1;
+    int type, retstr=0;;
 
     f=getreadfile(ctx, 0, "fread", filename, type);
 
+    /* check for boolean in idx 1,2 or 3 */
+    if(duk_is_boolean(ctx, idx) || duk_is_boolean(ctx, ++idx) || duk_is_boolean(ctx, ++idx))
+    {
+        retstr=duk_get_boolean(ctx, idx);
+        duk_remove(ctx, idx);
+    }
+
     if (!duk_is_undefined(ctx,1))
     {
-        int imax = REQUIRE_INT(ctx, 1, "fread(): second argument (max_bytes) must be a Number (positive integer)");
+        int imax = REQUIRE_INT(ctx, 1, "fread(): argument max_bytes must be a Number (positive integer)");
         if(imax>0)
             max=(size_t)imax;
     }
 
     if (!duk_is_undefined(ctx,2))
     {
-        int isz=REQUIRE_INT(ctx, 2, "fread(): third argument (chunk_size) must be a Number (positive integer)");
+        int isz=REQUIRE_INT(ctx, 2, "fread(): argument chunk_size must be a Number (positive integer)");
         if(isz > 0)
             sz=(size_t)isz;
     }
@@ -4001,19 +4033,21 @@ duk_ret_t duk_fread(duk_context *ctx)
     if(read > max) read=max;
     duk_resize_buffer(ctx, -1, read);
 
+    if(retstr)
+        duk_buffer_to_string(ctx, -1);    
+
     if(type==RTYPE_FILENAME)
         fclose(f);
 
     return (1);
 }
 
-duk_ret_t duk_fwrite(duk_context *ctx)
+duk_ret_t duk_rp_fwrite(duk_context *ctx)
 {
     pthread_mutex_t *lock_p=NULL;
     FILE *f;
     void *buf;
-    size_t wrote, 
-        sz=(size_t)duk_get_number_default(ctx,2,-1);
+    size_t wrote, sz;
     duk_size_t bsz;
     int closefh=1;
     int append=0;
@@ -4026,10 +4060,12 @@ duk_ret_t duk_fwrite(duk_context *ctx)
     else
     {
         const char *fn=REQUIRE_STRING(ctx, 0, "fwrite(): output must be a filehandle opened with fopen() or a String (filename)");
-        if( duk_is_boolean(ctx,1) )
+        duk_idx_t idx=2;
+        /* get boolean at stack pos 2 or 3 */
+        if( duk_is_boolean(ctx, idx) || duk_is_boolean(ctx, ++idx) )
         {
-            append=duk_get_boolean(ctx,1);
-            duk_remove(ctx,1);
+            append=duk_get_boolean(ctx, idx);
+            duk_remove(ctx, idx);
         }
 
         if(append)
@@ -4044,8 +4080,10 @@ duk_ret_t duk_fwrite(duk_context *ctx)
         }
     }
 
-    duk_to_buffer(ctx,1,&bsz);
-    buf=duk_get_buffer_data(ctx, 1, &bsz);
+    buf = (void *) REQUIRE_STR_OR_BUF(ctx, 1, &bsz, "fwrite(): error - data must be a String or Buffer" );
+
+    sz=(size_t)duk_get_number_default(ctx,2,-1);
+
     if(sz > 0)
     {
         if((size_t)bsz < sz)
@@ -4078,13 +4116,13 @@ duk_ret_t duk_fwrite(duk_context *ctx)
         fclose(f);
 
     if(wrote != sz)
-        RP_THROW(ctx, "fwrite(): error writing file");
+        RP_THROW(ctx, "fwrite(): error writing file (wrote %d of %d bytes)", wrote, sz);
 
     duk_push_number(ctx,(double)wrote);
     return(1);
 }
 
-duk_ret_t duk_fclose(duk_context *ctx)
+duk_ret_t duk_rp_fclose(duk_context *ctx)
 {
     if (!duk_is_object(ctx, 0))
     {
@@ -4130,7 +4168,7 @@ duk_ret_t duk_fclose(duk_context *ctx)
     return 0;
 }
 
-duk_ret_t duk_fflush(duk_context *ctx)
+duk_ret_t duk_rp_fflush(duk_context *ctx)
 {
     if (!duk_is_object(ctx, 0))
     {
@@ -4165,38 +4203,8 @@ duk_ret_t duk_fflush(duk_context *ctx)
     return 0;
 }
 
-duk_ret_t duk_fopen(duk_context *ctx)
-{
-    FILE *f;
-    const char *fn=REQUIRE_STRING(ctx,0, "fopen(): filename (String) required as first parameter");
-    const char *mode=REQUIRE_STRING(ctx, 1, "fopen(): mode (String) required as second parameter");
-    int mlen=strlen(mode);
 
-    if (
-        mlen > 2 || 
-        (  mlen > 1 && mode[1] != '+') ||
-        (*mode != 'r' && *mode != 'w' && *mode != 'a')
-    )
-        RP_THROW(ctx, "error opening file '%s': invalid mode '%s'", fn, mode);
-
-    f=fopen(fn,mode);
-    if(f==NULL) goto err;
-
-    duk_push_object(ctx);
-    duk_push_pointer(ctx,(void *)f);
-    duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("filehandle") );
-
-    duk_push_c_function(ctx, duk_fclose, 2);
-    duk_set_finalizer(ctx, -2);
-
-    return 1;
-
-    err:
-    RP_THROW(ctx, "error opening file '%s': %s", fn, strerror(errno));
-    return 0;
-}
-
-duk_ret_t duk_fprintf(duk_context *ctx)
+duk_ret_t duk_rp_fprintf(duk_context *ctx)
 {
     int ret;
     const char *fn;
@@ -4269,7 +4277,7 @@ duk_ret_t duk_fprintf(duk_context *ctx)
     return 0;
 }
 
-duk_ret_t duk_sprintf(duk_context *ctx)
+duk_ret_t duk_rp_sprintf(duk_context *ctx)
 {
     char *buffer;
     int size = rp_printf(_out_null, NULL, (size_t)-1, ctx, 0, NULL);
@@ -4283,7 +4291,7 @@ duk_ret_t duk_sprintf(duk_context *ctx)
     return 1;
 }
 
-duk_ret_t duk_bprintf(duk_context *ctx)
+duk_ret_t duk_rp_bprintf(duk_context *ctx)
 {
     char *buffer;
     int size = rp_printf(_out_null, NULL, (size_t)-1, ctx, 0, NULL);
@@ -4292,7 +4300,7 @@ duk_ret_t duk_bprintf(duk_context *ctx)
     return 1;
 }
 
-duk_ret_t duk_getType(duk_context *ctx)
+duk_ret_t duk_rp_getType(duk_context *ctx)
 {
     if (duk_is_string(ctx, 0))
         duk_push_string(ctx, "String");
@@ -4327,6 +4335,99 @@ duk_ret_t duk_getType(duk_context *ctx)
     return 1;
 }
 
+#define func_fprintf 0
+#define func_fseek 1
+#define func_rewind 2
+#define func_ftell 3
+#define func_fflush 4
+#define func_fread 5
+#define func_fwrite 6
+#define func_readline 7
+#define func_fclose 8
+
+static duk_ret_t (*funcmap[9])(duk_context *ctx) = {
+  duk_rp_fprintf, duk_rp_fseek,    duk_rp_rewind,
+  duk_rp_ftell,   duk_rp_fflush,   duk_rp_fread,
+  duk_rp_fwrite,  duk_rp_readline, duk_rp_fclose
+};
+
+static int f_return_this[9] = {
+  0, 1, 1,
+  0, 1, 0,
+  0, 0, 0
+};
+
+/* for var h=fopen(); h.fprintf, h.fseek, ... */
+
+static duk_ret_t f_func(duk_context *ctx)
+{
+    int fno=-1;
+
+    duk_push_current_function(ctx);
+    if (!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("f_no")))
+        RP_THROW(ctx, "Internal error getting function from filehandle");
+    fno = REQUIRE_INT(ctx, -1, "Internal error getting function from filehandle");
+    duk_pop_2(ctx);
+    duk_push_this(ctx);
+    duk_insert(ctx, 0);
+    if(!f_return_this[fno])
+        return (funcmap[fno])(ctx);
+    else
+    {
+        (void) (funcmap[fno])(ctx);
+        duk_push_this(ctx);
+        return 1;
+    }
+}
+
+#define pushffunc(fname, fn,n) do {\
+    duk_push_c_function(ctx, f_func, (n));\
+    duk_push_int(ctx, (fn));\
+    duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("f_no"));\
+    duk_put_prop_string(ctx,-2,(fname));\
+} while(0) 
+
+
+duk_ret_t duk_rp_fopen(duk_context *ctx)
+{
+    FILE *f;
+    const char *fn=REQUIRE_STRING(ctx,0, "fopen(): filename (String) required as first parameter");
+    const char *mode=REQUIRE_STRING(ctx, 1, "fopen(): mode (String) required as second parameter");
+    int mlen=strlen(mode);
+
+    if (
+        mlen > 2 || 
+        (  mlen > 1 && mode[1] != '+') ||
+        (*mode != 'r' && *mode != 'w' && *mode != 'a')
+    )
+        RP_THROW(ctx, "error opening file '%s': invalid mode '%s'", fn, mode);
+
+    f=fopen(fn,mode);
+    if(f==NULL) goto err;
+
+    duk_push_object(ctx);
+    duk_push_pointer(ctx,(void *)f);
+    duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("filehandle") );
+
+    duk_push_c_function(ctx, duk_rp_fclose, 2);
+    duk_set_finalizer(ctx, -2);
+
+    pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
+    pushffunc("fseek",      func_fseek,     2           );
+    pushffunc("rewind",     func_rewind,    0           );
+    pushffunc("ftell",      func_ftell,     0           );
+    pushffunc("fflush",     func_fflush,    0           );
+    pushffunc("fwrite",     func_fwrite,    2           );
+    pushffunc("fread",      func_fread,     3           );
+    pushffunc("readLine",   func_readline,  0           );
+    pushffunc("fclose",     func_fclose,    0           );
+
+    return 1;
+
+    err:
+    RP_THROW(ctx, "error opening file '%s': %s", fn, strerror(errno));
+    return 0;
+}
 
 void duk_printf_init(duk_context *ctx)
 {
@@ -4340,68 +4441,82 @@ void duk_printf_init(duk_context *ctx)
         duk_pop(ctx);
         duk_push_object(ctx);
     }
-    duk_push_c_function(ctx, duk_printf, DUK_VARARGS);
+    duk_push_c_function(ctx, duk_rp_printf, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "printf");
 
-    duk_push_c_function(ctx, duk_sprintf, DUK_VARARGS);
+    duk_push_c_function(ctx, duk_rp_sprintf, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "sprintf");
 
-    duk_push_c_function(ctx, duk_fprintf, DUK_VARARGS);
+    duk_push_c_function(ctx, duk_rp_fprintf, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "fprintf");
 
-    duk_push_c_function(ctx, duk_bprintf, DUK_VARARGS);
+    duk_push_c_function(ctx, duk_rp_bprintf, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "bprintf");
 
-    duk_push_c_function(ctx, duk_fopen, 2);
+    duk_push_c_function(ctx, duk_rp_fopen, 2);
     duk_put_prop_string(ctx, -2, "fopen");
 
-    duk_push_c_function(ctx, duk_fclose, 1);
+    duk_push_c_function(ctx, duk_rp_fclose, 1);
     duk_put_prop_string(ctx, -2, "fclose");
 
-    duk_push_c_function(ctx, duk_fflush, 1);
+    duk_push_c_function(ctx, duk_rp_fflush, 1);
     duk_put_prop_string(ctx, -2, "fflush");
 
-    duk_push_c_function(ctx, duk_fseek, 3);
+    duk_push_c_function(ctx, duk_rp_fseek, 3);
     duk_put_prop_string(ctx, -2, "fseek");
 
-    duk_push_c_function(ctx, duk_ftell, 1);
+    duk_push_c_function(ctx, duk_rp_ftell, 1);
     duk_put_prop_string(ctx, -2, "ftell");
 
-    duk_push_c_function(ctx, duk_rewind, 1);
+    duk_push_c_function(ctx, duk_rp_rewind, 1);
     duk_put_prop_string(ctx, -2, "rewind");
 
-    duk_push_c_function(ctx, duk_fread, 3);
+    duk_push_c_function(ctx, duk_rp_fread, 4);
     duk_put_prop_string(ctx, -2, "fread");
 
-    duk_push_c_function(ctx, duk_fwrite, 3);
+    duk_push_c_function(ctx, duk_rp_fwrite, 4);
     duk_put_prop_string(ctx, -2, "fwrite");
 
-    duk_push_c_function(ctx, duk_getType, 1);
+    duk_push_c_function(ctx, duk_rp_getType, 1);
     duk_put_prop_string(ctx, -2, "getType");
 
     duk_push_object(ctx);
     duk_push_string(ctx,"accessLog");
     duk_put_prop_string(ctx,-2,"stream");
+    pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
+    pushffunc("fflush",     func_fflush,    0           );
+    pushffunc("fwrite",     func_fwrite,    2           );
     duk_put_prop_string(ctx, -2,"accessLog");
 
     duk_push_object(ctx);
     duk_push_string(ctx,"errorLog");
     duk_put_prop_string(ctx,-2,"stream");
+    pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
+    pushffunc("fflush",     func_fflush,    0           );
+    pushffunc("fwrite",     func_fwrite,    2           );
     duk_put_prop_string(ctx, -2,"errorLog");
 
     duk_push_object(ctx);
     duk_push_string(ctx,"stdout");
     duk_put_prop_string(ctx,-2,"stream");
+    pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
+    pushffunc("fflush",     func_fflush,    0           );
+    pushffunc("fwrite",     func_fwrite,    2           );
     duk_put_prop_string(ctx, -2,"stdout");
 
     duk_push_object(ctx);
     duk_push_string(ctx,"stderr");
     duk_put_prop_string(ctx,-2,"stream");
+    pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
+    pushffunc("fflush",     func_fflush,    0           );
+    pushffunc("fwrite",     func_fwrite,    2           );
     duk_put_prop_string(ctx, -2,"stderr");
 
     duk_push_object(ctx);
     duk_push_string(ctx,"stdin");
     duk_put_prop_string(ctx,-2,"stream");
+    pushffunc("fread",      func_fread,     2           );
+    pushffunc("readLine",   func_readline,  0           );
     duk_put_prop_string(ctx, -2,"stdin");
 
     duk_put_prop_string(ctx, -2,"utils");
