@@ -2370,8 +2370,11 @@ int duk_rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
             duk_put_prop_index(ctx, -2, rown++);
         }
     }
+    /* added "rows", "results" to be removed */
+    duk_dup(ctx, -1);
+    duk_put_prop_string(ctx,-3,"results");
 
-    duk_put_prop_string(ctx,-2,"results");
+    duk_put_prop_string(ctx,-2,"rows");
     if(q->getCounts)
     {
         pushcounts;
@@ -3204,7 +3207,7 @@ duk_ret_t duk_rp_sql_eval(duk_context *ctx)
     duk_push_sprintf(ctx, "select %s;", stmt);
     duk_replace(ctx, str_idx);
     duk_rp_sql_exec(ctx);
-    duk_get_prop_string(ctx, -1, "results");
+    duk_get_prop_string(ctx, -1, "rows");
     duk_get_prop_index(ctx, -1, 0);
     return (1);
 }
@@ -3236,7 +3239,7 @@ duk_ret_t duk_rp_sql_one(duk_context *ctx)
         duk_pull(ctx, obj_idx);
 
     duk_rp_sql_exec(ctx);
-    duk_get_prop_string(ctx, -1, "results");
+    duk_get_prop_string(ctx, -1, "rows");
     duk_get_prop_index(ctx, -1, 0);
     //if(duk_is_undefined(ctx, -1))
     //    duk_push_object(ctx);

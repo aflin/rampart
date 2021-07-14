@@ -12,7 +12,7 @@ console.log(sql.errMsg);
 /* check if our table exists.  If not, make it */
 var ret=sql.exec("select * from SYSTABLES where NAME='wikitext'");
 
-if(ret.results.length==0) {
+if(ret.rows.length==0) {
     printf("creating table wikitext\n");
     ret=sql.exec("create table wikitext ( Id int, Title varchar(16), Doc varchar(1024) );");
     console.log(ret);

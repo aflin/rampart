@@ -53,7 +53,7 @@ sql.exec("drop table urls2;");
 testFeature ("create a sql table", function(){
   sql.exec("create table urls ( Md5 byte(16), Url varchar(16) );");
   var ret=sql.exec("select * from SYSTABLES where NAME='urls'");
-  return ret.results.length != 0;
+  return ret.rows.length != 0;
 });
 
 
@@ -67,7 +67,7 @@ testFeature("insert of urls and binary md5 hash", function(){
       sql.exec("insert into urls values(?,?);",[buf,u]);
   }
   ret=sql.exec("select * from urls");
-  return ret.results.length == 5;
+  return ret.rows.length == 5;
 });    
 
 
@@ -89,7 +89,7 @@ testFeature("select md5 hash, hexify, nested sql", function() {
       }
   );
   var res=sql.exec("select * from urls2");
-  return ret && res.results.length == 5;
+  return ret && res.rows.length == 5;
 });
 
 
@@ -116,8 +116,8 @@ testFeature("insert dup into table with unique index", function(){
    
 testFeature("built in sql bintohex()", function(){
   var res=sql.exec("select bintohex(Md5) Md5, Url from urls",{max:1});
-  var md5comp=md5(res.results[0].Url);
-  return md5comp == res.results[0].Md5;
+  var md5comp=md5(res.rows[0].Url);
+  return md5comp == res.rows[0].Md5;
 });
 
 

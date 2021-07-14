@@ -22,7 +22,7 @@ var sql= new Sql.init(process.scriptPath+"/testdb",true); /* true means create t
 
 /* check if our quicktest table exists.  If not, make it */
 var res=sql.exec("select * from SYSTABLES where NAME='quicktest'");
-if(res.results.length==0) {
+if(res.rows.length==0) {
     res=sql.exec("create table quicktest ( I int, Text varchar(16) );");
     sql.exec("insert into quicktest values(2,'just a test');");
     sql.exec("create index quicktest_I_x on quicktest(I);");
