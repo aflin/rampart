@@ -2007,6 +2007,7 @@ duk_ret_t duk_rp_lmdb_new_txn(duk_context *ctx)
         duk_pop(ctx);
     }
 
+    /* by default, abort if not committed */
     if(duk_get_boolean_default(ctx, 2, 0))
         duk_push_c_function(ctx, duk_rp_lmdb_txn_commit_, 1);
     else
@@ -2268,29 +2269,28 @@ duk_ret_t duk_open_module(duk_context *ctx)
     /* Push object that will be Lmdb.prototype. */
     duk_push_object(ctx); /* -> stack: [ {}, Lmdb protoObj ] */
 
-    /* Set Lmdb.prototype.exec. */
-    duk_push_c_function(ctx, duk_rp_lmdb_get, 4 /*nargs*/);
+    duk_push_c_function(ctx, duk_rp_lmdb_get, 4);
     duk_put_prop_string(ctx, -2, "get");
 
-    duk_push_c_function(ctx, duk_rp_lmdb_get_count, 1 /*nargs*/);
+    duk_push_c_function(ctx, duk_rp_lmdb_get_count, 1);
     duk_put_prop_string(ctx, -2, "getCount");
 
-    duk_push_c_function(ctx, duk_rp_lmdb_list_dbs, 1 /*nargs*/);
+    duk_push_c_function(ctx, duk_rp_lmdb_list_dbs, 1);
     duk_put_prop_string(ctx, -2, "listDbs");
 
-    duk_push_c_function(ctx, duk_rp_lmdb_put, 3 /*nargs*/);
+    duk_push_c_function(ctx, duk_rp_lmdb_put, 3);
     duk_put_prop_string(ctx, -2, "put");
 
-    duk_push_c_function(ctx, duk_rp_lmdb_del, 5 /*nargs*/);
+    duk_push_c_function(ctx, duk_rp_lmdb_del, 5);
     duk_put_prop_string(ctx, -2, "del");
 
-    duk_push_c_function(ctx, duk_rp_lmdb_sync, 0 /*nargs*/);
+    duk_push_c_function(ctx, duk_rp_lmdb_sync, 0);
     duk_put_prop_string(ctx, -2, "sync");
 
-    duk_push_c_function(ctx, duk_rp_lmdb_drop, 1 /*nargs*/);
+    duk_push_c_function(ctx, duk_rp_lmdb_drop, 1);
     duk_put_prop_string(ctx, -2, "drop");
 
-    duk_push_c_function(ctx, duk_rp_lmdb_close, 0 /*nargs*/);
+    duk_push_c_function(ctx, duk_rp_lmdb_close, 0);
     duk_put_prop_string(ctx, -2, "close");
 
     duk_push_c_function(ctx, duk_rp_lmdb_open_db, 2);
