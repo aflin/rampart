@@ -39,7 +39,7 @@
         <link rel="search" title="Search" href="search.html"/>
     <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
         <link rel="up" title="The rampart-sql module" href="sqltoc.html"/>
-        <link rel="next" title="Introduction to Texis SQL" href="sql1.html"/>
+        <link rel="next" title="Server Functions" href="sql-server-funcs.html"/>
         <link rel="prev" title="The rampart-sql module" href="sqltoc.html"/> 
 
   
@@ -93,6 +93,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#license">License</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#what-does-it-do">What does it do?</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#documentation-caveat">Documentation Caveat</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#further-reading">Further Reading</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#loading-the-javascript-module">Loading the Javascript Module</a></li>
@@ -137,26 +138,9 @@
 <li class="toctree-l3"><a class="reference internal" href="#searchfile">searchFile()</a></li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html">Introduction to Texis SQL</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#creating-a-database">Creating a Database</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#table-definition">Table Definition</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#a-first-look-at-queries">A First Look at Queries</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html">Queries Involving Calculated Values</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html#advanced-queries">Advanced Queries</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql3.html">Intelligent Text Search Queries</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html">Server functions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html">Indexing for Increased Performance</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#keeping-the-database-current">Keeping the Database Current</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#security">Security</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#administration-of-the-database">Administration of the Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html">Server Functions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="sql-set.html">Server Properties</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tsql.html">Tsql Command Line Utility</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html">Metamorph: The Program Inside the Program</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html#hits-intersections-and-sets">Hits, Intersections and Sets</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm3.html">Thesaurus Customization</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm4.html">Tailoring Metamorph’s Linguistics</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm5.html">Types of Searches in Metamorph</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm6.html">REX On Its Own</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
@@ -247,7 +231,7 @@ Rampart Source Available License.</p>
 <div class="section" id="what-does-it-do">
 <h2>What does it do?<a class="headerlink" href="#what-does-it-do" title="Permalink to this headline">¶</a></h2>
 <p>The rampart-sql module provides database and full text search capabilities
-in Rampart.  It includes a SQL relational database with a fully integrated
+in Rampart.  It includes Texis, a SQL relational database with a fully integrated
 full text search engine.</p>
 </div>
 <div class="section" id="documentation-caveat">
@@ -255,16 +239,21 @@ full text search engine.</p>
 <p>In this document, the term “Texis” used to refer to the SQL engine, the text
 search index and the text search engine.  The term “Metamorph” is used to
 solely refer to the text search engine.</p>
-<p>As the Texis library and its included Metamorph search engine encompasses
-more functionality than is currently used in Rampart, some settings and
-procedures may not be directly applicable in the context of its use from
-within a JavaScript program.  We include nearly all of it here for
-completeness and as it may provide a deeper understanding of philosophy
-behind the library’s functionality.</p>
-<p>Note that the convention used in this document is <code class="docutils literal notranslate"><span class="pre">var</span> <span class="pre">Sql</span></code> with a capital
+<p>The convention used in this document is <code class="docutils literal notranslate"><span class="pre">var</span> <span class="pre">Sql</span></code> with a capital
 “S” for the return <span class="green">Object</span> of the loaded module and <code class="docutils literal notranslate"><span class="pre">var</span> <span class="pre">sql</span></code> with a
 lower-case “s” for the instance of a connection to a database made with the
 JavaScript <a class="reference internal" href="#initconst"><span class="std std-ref">init() constructor</span></a> <span class="green">Function</span>.</p>
+</div>
+<div class="section" id="further-reading">
+<h2>Further Reading<a class="headerlink" href="#further-reading" title="Permalink to this headline">¶</a></h2>
+<p>As the Texis library and its included Metamorph search engine encompasses
+more functionality than is expressed in this documentation, a full understanding
+of the workings of Texis and Metamorph can be found by referring to the
+documentation at Thunderstone.com:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://docs.thunderstone.com/site/texisman/">Texis Manual</a></p></li>
+<li><p><a class="reference external" href="https://docs.thunderstone.com/site/texisman/metamorph_intelligent_query.html">Metamorph Manual</a></p></li>
+</ul>
 </div>
 </div>
 <div class="section" id="loading-the-javascript-module">
@@ -300,7 +289,7 @@ of using the <code class="docutils literal notranslate"><span class="pre">requir
 and an optional <span class="green">Boolean</span> as parameters. It returns an <span class="green">Object</span> representing a
 new connection to the specified database.  The return <span class="green">Object</span> includes the
 following <span class="green">Functions</span>: <code class="docutils literal notranslate"><span class="pre">exec()</span></code>, <code class="docutils literal notranslate"><span class="pre">one()</span></code>, <code class="docutils literal notranslate"><span class="pre">set()</span></code>,
-<code class="docutils literal notranslate"><span class="pre">importCsvFile()</span></code>, <code class="docutils literal notranslate"><span class="pre">importCsv</span></code> and <code class="docutils literal notranslate"><span class="pre">close()</span></code>.</p>
+<code class="docutils literal notranslate"><span class="pre">reset()</span></code>, <code class="docutils literal notranslate"><span class="pre">importCsvFile()</span></code>, <code class="docutils literal notranslate"><span class="pre">importCsv</span></code> and <code class="docutils literal notranslate"><span class="pre">close()</span></code>.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="nx">dbpath</span> <span class="p">[,</span><span class="nx">create</span><span class="p">]);</span>
 </pre></div>
@@ -360,9 +349,9 @@ the current user.</p>
 <h2>exec()<a class="headerlink" href="#exec" title="Permalink to this headline">¶</a></h2>
 <p>The exec <span class="green">Function</span> executes a sql statement on the database opened
 with <a class="reference internal" href="#initconst"><span class="std std-ref">init()</span></a>.  It takes a <span class="green">String</span> containing a sql
-statement and an optional <span class="green">Array</span> of sql parameters, an optional
-<span class="green">Object</span> of options and an optional callback <span class="green">Function</span>.  The
-parameters may be specified in any order.</p>
+statement and an optional <span class="green">Object</span> or <span class="green">Array</span> of sql
+parameters, an optional <span class="green">Object</span> of options and an optional callback
+<span class="green">Function</span>.  The parameters may be specified in any order.</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">rows</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="nx">statement</span> <span class="p">[,</span> <span class="nx">options</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">sql_parameters</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">callback</span><span class="p">])</span>
 </pre></div>
 </div>
@@ -385,8 +374,8 @@ parameters may be specified in any order.</p>
 </tr>
 <tr class="row-odd"><td><p>options</p></td>
 <td><p><span class="green">Object</span></p></td>
-<td><p>Options (skipRows, maxRows, returnType, includeCounts)
-<em>described below</em></p></td>
+<td><p>Options (skipRows, maxRows, returnType, includeCounts
+returnRows and arg) <em>as described below</em></p></td>
 </tr>
 <tr class="row-even"><td rowspan="2"><p>sql_parameters</p></td>
 <td><p><span class="green">Array</span></p></td>
@@ -438,7 +427,7 @@ statement.</p>
 </div>
 <p>The use of Parameters can make the handling of user input safe from sql injection.
 Note that if there is only one parameter, it still must be contained in an
-<span class="green">Array</span>.</p>
+<span class="green">Array</span> or <span class="green">Object</span>.</p>
 <dl id="execopts">
 <dt>Options:</dt><dd><p>The <code class="docutils literal notranslate"><span class="pre">options</span></code> <span class="green">Object</span> may contain any of the following:</p>
 <blockquote>
@@ -457,7 +446,7 @@ of <span class="green">Objects</span>, as if <code class="docutils literal notra
 <code class="docutils literal notranslate"><span class="pre">delete</span></code>, <code class="docutils literal notranslate"><span class="pre">update</span></code> and <code class="docutils literal notranslate"><span class="pre">insert</span></code> statements, <code class="docutils literal notranslate"><span class="pre">results</span></code> will
 be an empty array as if <code class="docutils literal notranslate"><span class="pre">&quot;novars&quot;</span></code> was set.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">&quot;object&quot;</span></code>: An <span class="green">Array</span> of <span class="green">Objects</span>.  Each
-green:<cite>Array</cite> member  correspond to each row fetched. Each
+<span class="green">Array</span> member  correspond to each row fetched. Each
 <span class="green">Object</span> has its property names (keys) set the names of the
 corresponding column and its values set to the field value of the
 corresponding row for the named column.</p></li>
@@ -467,11 +456,11 @@ members correspond to the fields returned in each row.  Note that
 column names are still available, in order, in <a class="reference internal" href="#returnval"><span class="std std-ref">columns</span></a>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">&quot;novars&quot;</span></code>: An empty <span class="green">Array</span> is returned.  The sql statement is
 still executed.  This is the default for inserts, updates and deletes
-where the return value would otherwise not be used.</p></li>
+where the return value would normally not be used.</p></li>
 <li><p><strong>Note</strong>: If the values of a deleted, inserted or updated row are needed,
 <code class="docutils literal notranslate"><span class="pre">returnType</span></code> can be set to either <code class="docutils literal notranslate"><span class="pre">&quot;object&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;array&quot;</span></code> and
 the statement will be executed as normal with <code class="docutils literal notranslate"><span class="pre">results</span></code> set as if
-the row or rows were selected.</p></li>
+the row or rows operated upon were selected.</p></li>
 </ul>
 </div></blockquote>
 </li>
@@ -485,10 +474,10 @@ information will be returned as an <span class="green">Object</span> in the
 <code class="docutils literal notranslate"><span class="pre">sql.exec()</span></code> return <span class="green">Object</span> as the value of the key
 <code class="docutils literal notranslate"><span class="pre">countInfo</span></code> (or as the fourth parameter to a callback <span class="green">Function</span>).  The
 <span class="green">Numbers</span> returned will only be useful when performing a
-<a class="reference internal" href="sql3.html#intelligent-text-search-queries"><span class="std std-ref">text search</span></a> on a field
+<span class="xref std std-ref">text search</span> on a field
 with a fulltext index.  If count information is not available, the
 <span class="green">Numbers</span> will be negative.  See <a class="reference internal" href="#countinfo"><span class="std std-ref">countInfo</span></a>
-below.  If <code class="docutils literal notranslate"><span class="pre">false</span></code>, <cite>countInfo &lt;countinfo&gt;</cite> will be <code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p></li>
+below.  If <code class="docutils literal notranslate"><span class="pre">false</span></code>, <code class="docutils literal notranslate"><span class="pre">countInfo</span></code> will be <code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">argument</span></code>: (aka <code class="docutils literal notranslate"><span class="pre">arg</span></code>). A variable of any type to be passed to the
 callback below.</p></li>
 </ul>
@@ -520,7 +509,7 @@ parameters to the exec function.  Placement of the <span class="green">Numbers</
 <code class="docutils literal notranslate"><span class="pre">exec()</span></code> function is arbitrary, except that the first number given
 will be treated as <code class="docutils literal notranslate"><span class="pre">maxRows</span></code> and the second, if present will be
 treated as <code class="docutils literal notranslate"><span class="pre">skipRows</span></code>.  Also note that if <code class="docutils literal notranslate"><span class="pre">maxRows</span></code> and/or
-<code class="docutils literal notranslate"><span class="pre">skipRows</span></code> is set in <code class="docutils literal notranslate"><span class="pre">options</span></code> above, the last set value will be
+<code class="docutils literal notranslate"><span class="pre">skipRows</span></code> is also set in <code class="docutils literal notranslate"><span class="pre">options</span></code> above, the last set value will be
 used.</p>
 <p>Example:</p>
 </li>
@@ -558,11 +547,11 @@ in <code class="docutils literal notranslate"><span class="pre">Options</span></
 <li><p><code class="docutils literal notranslate"><span class="pre">index</span></code>: (<span class="green">Number</span>) The ordinal number of the current search result.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">columns</span></code>: an <span class="green">Array</span> corresponding to the column names or
 aliases selected and returned in results.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">countInfo</span></code>: an <span class="green">Object</span> as described above in <a class="reference internal" href="#countinfo">countinfo</a> if the
-<code class="docutils literal notranslate"><span class="pre">includeCounts</span></code> option is not set <code class="docutils literal notranslate"><span class="pre">false</span></code>.  Otherwise it will be
+<li><p><code class="docutils literal notranslate"><span class="pre">countInfo</span></code>: an <span class="green">Object</span> as described below in <a class="reference internal" href="#countinfo">countinfo</a> if the
+<code class="docutils literal notranslate"><span class="pre">includeCounts</span></code> option is set <code class="docutils literal notranslate"><span class="pre">true</span></code>.  Otherwise it will be
 <code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">user_argument</span></code>: a variable that is supplied to the callback after
-being set in the <a class="reference internal" href="#execopts"><span class="std std-ref">options</span></a> <code class="docutils literal notranslate"><span class="pre">arguments</span></code>
+being set in the <a class="reference internal" href="#execopts"><span class="std std-ref">options</span></a> <code class="docutils literal notranslate"><span class="pre">argument</span></code>
 option above.  If not set above, <code class="docutils literal notranslate"><span class="pre">undefined</span></code> will be passed as the
 fifth argument.</p></li>
 <li><p>Note: Regardless of <code class="docutils literal notranslate"><span class="pre">maxRows</span></code> setting , returning <code class="docutils literal notranslate"><span class="pre">false</span></code> from the
@@ -593,31 +582,31 @@ aliases selected and returned in results.</p>
 <div><p>Key: <code class="docutils literal notranslate"><span class="pre">countInfo</span></code>; Value: if option <code class="docutils literal notranslate"><span class="pre">includeCounts</span></code> is set
 <code class="docutils literal notranslate"><span class="pre">true</span></code>, information regarding the number of total possible matches
 is set.  Otherwise <code class="docutils literal notranslate"><span class="pre">countInfo</span></code> is undefined.  When performing a
-<a class="reference internal" href="sql3.html#intelligent-text-search-queries"><span class="std std-ref">text search</span></a> the
+<span class="xref std std-ref">text search</span> the
 <code class="docutils literal notranslate"><span class="pre">countInfo</span></code> <span class="green">Object</span> contains the following:</p>
 <blockquote>
 <div><ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">indexCount</span></code> (<span class="green">Number</span>): a single value estimating the number
 of matching rows.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">rowsMatchedMin</span></code> (<span class="green">Number</span>): Minimum number of rows matched <strong>before</strong>
-any <a class="reference internal" href="sql2.html#summarizing-values-group-by-clause-and-aggregate-functions"><span class="std std-ref">group by</span></a>,
+any <span class="xref std std-ref">group by</span>,
 <a class="reference internal" href="sql-set.html#likeprows"><span class="std std-ref">likepRows</span></a>,
-<a class="reference internal" href="sql2.html#summarizing-values-group-by-clause-and-aggregate-functions"><span class="std std-ref">aggregates</span></a> or
+<span class="xref std std-ref">aggregates</span> or
 <a class="reference internal" href="sql-set.html#multivaluetomultirow"><span class="std std-ref">multiValueToMultiRow</span></a> are applied.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">rowsMatchedMax</span></code> (<span class="green">Number</span>): Maximum number of rows matched <strong>before</strong>
-any <a class="reference internal" href="sql2.html#summarizing-values-group-by-clause-and-aggregate-functions"><span class="std std-ref">group by</span></a>,
+any <span class="xref std std-ref">group by</span>,
 <a class="reference internal" href="sql-set.html#likeprows"><span class="std std-ref">likepRows</span></a>,
-<a class="reference internal" href="sql2.html#summarizing-values-group-by-clause-and-aggregate-functions"><span class="std std-ref">aggregates</span></a> or
+<span class="xref std std-ref">aggregates</span> or
 <a class="reference internal" href="sql-set.html#multivaluetomultirow"><span class="std std-ref">multiValueToMultiRow</span></a> are applied.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">rowsReturnedMin</span></code> (<span class="green">Number</span>): Minimum number of rows matched <strong>after</strong>
-any <a class="reference internal" href="sql2.html#summarizing-values-group-by-clause-and-aggregate-functions"><span class="std std-ref">group by</span></a>,
+any <span class="xref std std-ref">group by</span>,
 <a class="reference internal" href="sql-set.html#likeprows"><span class="std std-ref">likepRows</span></a>,
-<a class="reference internal" href="sql2.html#summarizing-values-group-by-clause-and-aggregate-functions"><span class="std std-ref">aggregates</span></a> or
+<span class="xref std std-ref">aggregates</span> or
 <a class="reference internal" href="sql-set.html#multivaluetomultirow"><span class="std std-ref">multiValueToMultiRow</span></a> are applied.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">rowsReturnedMax</span></code> (<span class="green">Number</span>): Maximum number of rows matched <strong>after</strong>
-any <a class="reference internal" href="sql2.html#summarizing-values-group-by-clause-and-aggregate-functions"><span class="std std-ref">group by</span></a>,
+any <span class="xref std std-ref">group by</span>,
 <a class="reference internal" href="sql-set.html#likeprows"><span class="std std-ref">likepRows</span></a>,
-<a class="reference internal" href="sql2.html#summarizing-values-group-by-clause-and-aggregate-functions"><span class="std std-ref">aggregates</span></a> or
+<span class="xref std std-ref">aggregates</span> or
 <a class="reference internal" href="sql-set.html#multivaluetomultirow"><span class="std std-ref">multiValueToMultiRow</span></a> are applied.</p></li>
 </ul>
 </div></blockquote>
@@ -677,11 +666,7 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
 <dt>Full Example:</dt><dd><p>Below is a full example of <code class="docutils literal notranslate"><span class="pre">exec()</span></code> functionality:</p>
 </dd>
 </dl>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">function</span> <span class="nx">pprint</span><span class="p">(</span><span class="nx">obj</span><span class="p">)</span> <span class="p">{</span>
-    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span> <span class="p">(</span> <span class="nx">JSON</span><span class="p">.</span><span class="nx">stringify</span><span class="p">(</span><span class="nx">obj</span><span class="p">,</span> <span class="kc">null</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span> <span class="p">);</span>
-<span class="p">}</span>
-
-<span class="kd">var</span> <span class="nx">Sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
 
 <span class="cm">/* create database if it does not exist */</span>
 <span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;./mytestdb&quot;</span><span class="p">,</span><span class="kc">true</span><span class="p">);</span>
@@ -707,61 +692,80 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
 <span class="p">);</span>
 
 <span class="cm">/* populate variables for insertion */</span>
-<span class="kd">var</span> <span class="nx">cl</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="s2">&quot;principal&quot;</span><span class="p">,</span> <span class="s2">&quot;principal&quot;</span><span class="p">,</span> <span class="s2">&quot;salary&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;salary&quot;</span><span class="p">,</span> <span class="s2">&quot;hourly&quot;</span><span class="p">,</span> <span class="s2">&quot;intern&quot;</span>
-<span class="p">];</span>
-<span class="kd">var</span> <span class="nx">name</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="s2">&quot;Debbie Dreamer&quot;</span><span class="p">,</span> <span class="s2">&quot;Rusty Grump&quot;</span><span class="p">,</span><span class="s2">&quot;Georgia Geek&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;Sydney Slacker&quot;</span><span class="p">,</span> <span class="s2">&quot;Pat Particular&quot;</span><span class="p">,</span> <span class="s2">&quot;Billie Barista&quot;</span>
-<span class="p">];</span>
-<span class="kd">var</span> <span class="nx">age</span> <span class="o">=</span> <span class="p">[</span> <span class="mi">63</span><span class="p">,</span> <span class="mi">58</span><span class="p">,</span> <span class="mi">44</span><span class="p">,</span> <span class="mi">44</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">22</span> <span class="p">];</span>
-<span class="kd">var</span> <span class="nx">salary</span> <span class="o">=</span> <span class="p">[</span> <span class="mi">250000</span><span class="p">,</span> <span class="mi">250000</span><span class="p">,</span> <span class="mi">100000</span><span class="p">,</span> <span class="mi">100000</span><span class="p">,</span> <span class="mi">80000</span><span class="p">,</span> <span class="mi">0</span> <span class="p">];</span>
-<span class="kd">var</span> <span class="nx">title</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="s2">&quot;Chief Executive Officer&quot;</span><span class="p">,</span> <span class="s2">&quot;Chief Financial Officer&quot;</span><span class="p">,</span> <span class="s2">&quot;Lead Programmer&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;Programmer&quot;</span><span class="p">,</span> <span class="s2">&quot;Systems Administrator&quot;</span><span class="p">,</span> <span class="s2">&quot;Intern&quot;</span>
-<span class="p">];</span>
+<span class="kd">var</span> <span class="nx">emp1</span> <span class="o">=</span> <span class="p">{</span>
+  <span class="nx">cl</span><span class="o">:</span>     <span class="s2">&quot;principal&quot;</span><span class="p">,</span>
+  <span class="nx">name</span><span class="o">:</span>   <span class="s2">&quot;Debbie Dreamer&quot;</span><span class="p">,</span>
+  <span class="nx">age</span><span class="o">:</span>    <span class="mi">63</span><span class="p">,</span>
+  <span class="nx">title</span><span class="o">:</span>  <span class="s2">&quot;Chief Executive Officer&quot;</span><span class="p">,</span>
+  <span class="nx">start</span><span class="o">:</span>  <span class="s1">&#39;1999-12-31&#39;</span><span class="p">,</span>
+  <span class="nx">salary</span><span class="o">:</span> <span class="mi">250000</span><span class="p">,</span>
+  <span class="nx">bio</span><span class="o">:</span>    <span class="s2">&quot;Born and raised in Manhattan, New York. U.C. Berkeley graduate. &quot;</span> <span class="o">+</span>
+          <span class="s2">&quot;Loves to skydive. Built Company from scratch. Still uses word-perfect.&quot;</span><span class="p">,</span>
+<span class="p">}</span>
 
-<span class="cm">/*</span>
-<span class="cm">  String dates are converted to local time .</span>
-<span class="cm">  Javascript dates are UTC unless offset</span>
-<span class="cm">  is given.</span>
-<span class="cm">*/</span>
-<span class="kd">var</span> <span class="nx">startDate</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="s1">&#39;1999-12-31&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;1999-12-31&#39;</span><span class="p">,</span>
-    <span class="s1">&#39;2001-3-15&#39;</span><span class="p">,</span>
-    <span class="k">new</span> <span class="nb">Date</span><span class="p">(</span><span class="s1">&#39;2002-5-12T00:00:00.0-0800&#39;</span><span class="p">),</span>
-    <span class="k">new</span> <span class="nb">Date</span><span class="p">(</span><span class="s1">&#39;2003-7-14&#39;</span><span class="p">),</span>
-    <span class="k">new</span> <span class="nb">Date</span><span class="p">(</span><span class="s1">&#39;2020-3-18&#39;</span><span class="p">)</span>
-<span class="p">];</span>
+<span class="kd">var</span> <span class="nx">emp2</span> <span class="o">=</span> <span class="p">{</span>
+  <span class="nx">cl</span><span class="o">:</span>     <span class="s2">&quot;principal&quot;</span><span class="p">,</span>
+  <span class="nx">name</span><span class="o">:</span>   <span class="s2">&quot;Rusty Grump&quot;</span><span class="p">,</span>
+  <span class="nx">age</span><span class="o">:</span>    <span class="mi">58</span><span class="p">,</span>
+  <span class="nx">title</span><span class="o">:</span>  <span class="s2">&quot;Chief Financial Officer&quot;</span><span class="p">,</span>
+  <span class="nx">start</span><span class="o">:</span>  <span class="s1">&#39;1999-12-31&#39;</span><span class="p">,</span> <span class="c1">// Strings are converted to local time</span>
+  <span class="nx">salary</span><span class="o">:</span> <span class="mi">250000</span><span class="p">,</span>
+  <span class="nx">bio</span><span class="o">:</span>    <span class="s2">&quot;Born in Switzerland, raised in South Dakota. Columbia graduate. &quot;</span> <span class="o">+</span>
+          <span class="s2">&quot;Financed operation with inheritance. Has no sense of humor.&quot;</span><span class="p">,</span>
+<span class="p">}</span>
 
-<span class="kd">var</span> <span class="nx">bio</span> <span class="o">=</span> <span class="p">[</span>
-<span class="s2">&quot;Born and raised in Manhattan, New York. U.C. Berkeley graduate. &quot;</span> <span class="o">+</span>
-    <span class="s2">&quot;Loves to skydive. Built Company from scratch. Still uses word-perfect.&quot;</span><span class="p">,</span>
+<span class="kd">var</span> <span class="nx">emp3</span> <span class="o">=</span> <span class="p">{</span>
+  <span class="nx">cl</span><span class="o">:</span>     <span class="s2">&quot;salary&quot;</span><span class="p">,</span>
+  <span class="nx">name</span><span class="o">:</span>   <span class="s2">&quot;Georgia Geek&quot;</span><span class="p">,</span>
+  <span class="nx">age</span><span class="o">:</span>    <span class="mi">44</span><span class="p">,</span>
+  <span class="nx">title</span><span class="o">:</span>  <span class="s2">&quot;Lead Programmer&quot;</span><span class="p">,</span>
+  <span class="nx">start</span><span class="o">:</span>  <span class="s1">&#39;2001-3-15&#39;</span><span class="p">,</span>
+  <span class="nx">salary</span><span class="o">:</span> <span class="mi">100000</span><span class="p">,</span>
+  <span class="nx">bio</span><span class="o">:</span>    <span class="s2">&quot;Stanford graduate. Enjoys pizza and beer. Proficient in Perl, COBOL,&quot;</span> <span class="o">+</span>
+          <span class="s2">&quot;FORTRAN and IBM System/360&quot;</span><span class="p">,</span>
+<span class="p">}</span>
 
-<span class="s2">&quot;Born in Switzerland, raised in South Dakota. Columbia graduate. &quot;</span> <span class="o">+</span>
-    <span class="s2">&quot;Financed operation with inheritance. Has no sense of humor.&quot;</span><span class="p">,</span>
+<span class="kd">var</span> <span class="nx">emp4</span> <span class="o">=</span> <span class="p">{</span>
+  <span class="nx">cl</span><span class="o">:</span>     <span class="s2">&quot;salary&quot;</span><span class="p">,</span>
+  <span class="nx">name</span><span class="o">:</span>   <span class="s2">&quot;Sydney Slacker&quot;</span><span class="p">,</span>
+  <span class="nx">age</span><span class="o">:</span>    <span class="mi">44</span><span class="p">,</span>
+  <span class="nx">title</span><span class="o">:</span>  <span class="s2">&quot;Programmer&quot;</span><span class="p">,</span>
+  <span class="nx">start</span><span class="o">:</span>  <span class="k">new</span> <span class="nb">Date</span><span class="p">(</span><span class="s1">&#39;2002-5-12T00:00:00.0-0800&#39;</span><span class="p">),</span> <span class="c1">// Dates are UTC unless offset is given.</span>
+  <span class="nx">salary</span><span class="o">:</span> <span class="mi">100000</span><span class="p">,</span>
+  <span class="nx">bio</span><span class="o">:</span>    <span class="s2">&quot;DeVry University graduate. Enjoys a good nap. Proficient in Python, &quot;</span> <span class="o">+</span>
+          <span class="s2">&quot;Perl and JavaScript&quot;</span><span class="p">,</span>
+<span class="p">}</span>
 
-<span class="s2">&quot;Stanford graduate. Enjoys pizza and beer. Proficient in Perl, COBOL,&quot;</span> <span class="o">+</span>
-    <span class="s2">&quot;FORTRAN and IBM System/360&quot;</span><span class="p">,</span>
+<span class="kd">var</span> <span class="nx">emp5</span> <span class="o">=</span> <span class="p">{</span>
+  <span class="nx">cl</span><span class="o">:</span>     <span class="s2">&quot;hourly&quot;</span><span class="p">,</span>
+  <span class="nx">name</span><span class="o">:</span>   <span class="s2">&quot;Pat Particular&quot;</span><span class="p">,</span>
+  <span class="nx">age</span><span class="o">:</span>    <span class="mi">32</span><span class="p">,</span>
+  <span class="nx">title</span><span class="o">:</span>  <span class="s2">&quot;Systems Administrator&quot;</span><span class="p">,</span>
+  <span class="nx">start</span><span class="o">:</span>  <span class="k">new</span> <span class="nb">Date</span><span class="p">(</span><span class="s1">&#39;2003-7-14&#39;</span><span class="p">),</span>
+  <span class="nx">salary</span><span class="o">:</span> <span class="mi">80000</span><span class="p">,</span>
+  <span class="nx">bio</span><span class="o">:</span>    <span class="s2">&quot;Lincoln High School graduate. Self taught Linux and windows administration skills. Proficient in &quot;</span> <span class="o">+</span>
+          <span class="s2">&quot;Bash and GNU utilities. Capable of crashing or resurrecting machines with a single ping.&quot;</span><span class="p">,</span>
+<span class="p">}</span>
 
-<span class="s2">&quot;DeVry University graduate. Enjoys a good nap. Proficient in Python, &quot;</span> <span class="o">+</span>
-    <span class="s2">&quot;Perl and JavaScript&quot;</span><span class="p">,</span>
+<span class="kd">var</span> <span class="nx">emp6</span> <span class="o">=</span> <span class="p">{</span>
+  <span class="nx">cl</span><span class="o">:</span>     <span class="s2">&quot;intern&quot;</span><span class="p">,</span>
+  <span class="nx">name</span><span class="o">:</span>   <span class="s2">&quot;Billie Barista&quot;</span><span class="p">,</span>
+  <span class="nx">age</span><span class="o">:</span>    <span class="mi">22</span><span class="p">,</span>
+  <span class="nx">title</span><span class="o">:</span>  <span class="s2">&quot;Intern&quot;</span><span class="p">,</span>
+  <span class="nx">start</span><span class="o">:</span>  <span class="k">new</span> <span class="nb">Date</span><span class="p">(</span><span class="s1">&#39;2020-3-18&#39;</span><span class="p">),</span>
+  <span class="nx">salary</span><span class="o">:</span> <span class="mi">0</span><span class="p">,</span>
+  <span class="nx">bio</span><span class="o">:</span>    <span class="s2">&quot;Harvard graduate, full ride scholarship, top of class.  Proficient in C, C++, &quot;</span> <span class="o">+</span>
+          <span class="s2">&quot;Rust, Haskell, Node, Python. Into skydiving. Makes a mean latte.&quot;</span>
+<span class="p">}</span>
 
-<span class="s2">&quot;Lincoln High School graduate. Self taught Linux and windows administration skills. Proficient in &quot;</span> <span class="o">+</span>
-    <span class="s2">&quot;Bash and GNU utilities. Capable of crashing or resurrecting machines with a single ping.&quot;</span><span class="p">,</span>
-
-<span class="s2">&quot;Harvard graduate, full ride scholarship, top of class.  Proficient in C, C++, &quot;</span> <span class="o">+</span>
-    <span class="s2">&quot;Rust, Haskell, Node, Python. Into skydiving. Makes a mean latte.&quot;</span>
-<span class="p">];</span>
+<span class="kd">var</span> <span class="nx">employees</span> <span class="o">=</span> <span class="p">[</span> <span class="nx">emp1</span><span class="p">,</span> <span class="nx">emp2</span><span class="p">,</span> <span class="nx">emp3</span><span class="p">,</span> <span class="nx">emp4</span><span class="p">,</span> <span class="nx">emp5</span><span class="p">,</span> <span class="nx">emp6</span> <span class="p">];</span>
 
 <span class="cm">/* insert rows */</span>
-<span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="o">&lt;</span><span class="mi">6</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span>
+<span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="o">&lt;</span><span class="nx">employees</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span>
 <span class="p">{</span>
     <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span>
-        <span class="s2">&quot;insert into employees values(?,?,?,?,?,?,?)&quot;</span><span class="p">,</span>
-        <span class="p">[</span> <span class="nx">cl</span><span class="p">[</span><span class="nx">i</span><span class="p">],</span> <span class="nx">name</span><span class="p">[</span><span class="nx">i</span><span class="p">],</span> <span class="nx">age</span><span class="p">[</span><span class="nx">i</span><span class="p">],</span> <span class="nx">salary</span><span class="p">[</span><span class="nx">i</span><span class="p">],</span> <span class="nx">title</span><span class="p">[</span><span class="nx">i</span><span class="p">],</span> <span class="nx">startDate</span><span class="p">[</span><span class="nx">i</span><span class="p">],</span> <span class="nx">bio</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span> <span class="p">]</span>
+        <span class="s2">&quot;insert into employees values(?cl,?name,?age,?salary,?title,?start,?bio)&quot;</span><span class="p">,</span>
+        <span class="nx">employees</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span>
     <span class="p">);</span>
 <span class="p">}</span>
 
@@ -770,7 +774,7 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
 
 <span class="cm">/* perform some queries */</span>
 <span class="nx">rows</span><span class="o">=</span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select Name, Age from employees&quot;</span><span class="p">);</span>
-<span class="nx">pprint</span><span class="p">(</span><span class="nx">rows</span><span class="p">);</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s1">&#39;%3J\n&#39;</span><span class="p">,</span> <span class="nx">rows</span><span class="p">);</span>
 <span class="cm">/* expected output:</span>
 <span class="cm">   {</span>
 <span class="cm">       &quot;columns&quot;: [</span>
@@ -811,7 +815,7 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
     <span class="s2">&quot;select Name, Age from employees&quot;</span><span class="p">,</span>
     <span class="p">{</span><span class="nx">returnType</span><span class="o">:</span><span class="s1">&#39;array&#39;</span><span class="p">,</span> <span class="nx">maxRows</span><span class="o">:</span><span class="mi">2</span><span class="p">,</span> <span class="nx">includeCounts</span><span class="o">:</span><span class="kc">true</span><span class="p">}</span>
 <span class="p">);</span>
-<span class="nx">pprint</span><span class="p">(</span><span class="nx">rows</span><span class="p">);</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s1">&#39;%3J\n&#39;</span><span class="p">,</span> <span class="nx">rows</span><span class="p">);</span>
 <span class="cm">/* expected output:</span>
 <span class="cm">   {</span>
 <span class="cm">       &quot;columns&quot;: [</span>
@@ -844,7 +848,7 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
     <span class="s2">&quot;select Name from employees where Bio likep &#39;proficient&#39; and Salary &gt; 50000&quot;</span><span class="p">,</span>
      <span class="p">{</span><span class="nx">includeCounts</span><span class="o">:</span><span class="kc">true</span><span class="p">}</span>
 <span class="p">);</span>
-<span class="nx">pprint</span><span class="p">(</span><span class="nx">rows</span><span class="p">);</span>
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s1">&#39;%3J\n&#39;</span><span class="p">,</span> <span class="nx">rows</span><span class="p">);</span>
 
 <span class="cm">/* expected output:</span>
 <span class="cm">   {</span>
@@ -894,14 +898,15 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
         <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">i</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span><span class="nx">row</span><span class="p">);</span>
     <span class="p">}</span>
 <span class="p">);</span>
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;Total: &quot;</span> <span class="o">+</span> <span class="nx">rows</span><span class="p">);</span> <span class="c1">// 2</span>
+
 <span class="cm">/* expected output:</span>
 <span class="cm">   Total approximate number of matches in db: 2</span>
 <span class="cm">   - [&quot;Name&quot;,&quot;Salary&quot;]</span>
 <span class="cm">   1 [&quot;Debbie Dreamer&quot;,250000]</span>
 <span class="cm">   2 [&quot;Billie Barista&quot;,0]</span>
+<span class="cm">   Total: 2</span>
 <span class="cm">*/</span>
-
-<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">rows</span><span class="p">);</span> <span class="c1">// 2</span>
 </pre></div>
 </div>
 </div>
@@ -939,8 +944,6 @@ as described in <a class="reference internal" href="sql-set.html#server-properti
 returned with corresponding keys <code class="docutils literal notranslate"><span class="pre">expressionsList</span></code>, <code class="docutils literal notranslate"><span class="pre">indexTempList</span></code>,
 <code class="docutils literal notranslate"><span class="pre">prefixList</span></code>, <code class="docutils literal notranslate"><span class="pre">suffixList</span></code>, <code class="docutils literal notranslate"><span class="pre">suffixEquivsList</span></code> and/or
 <code class="docutils literal notranslate"><span class="pre">noiseList</span></code> respectively.</p>
-<p>Note also that though <code class="docutils literal notranslate"><span class="pre">sql.set()</span></code> is a <span class="green">Function</span> of <code class="docutils literal notranslate"><span class="pre">sql</span></code> (a single opened
-database), settings apply to all databases in use by the current process.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="cm">/* rank higher docs with words appearing at beginning of document *</span>
 <span class="cm"> *  and only return matches with all the given query terms.       */</span>
@@ -1443,7 +1446,7 @@ example, to print today’s date in the form month/day/year:</p>
 </pre></div>
 </div>
 <p>Or to print the title and insertion date of books matching a query, in the
-style “February 20, 1997” (assuming id is a <a class="reference internal" href="sql1.html#dtypes"><span class="std std-ref">Texis counter field</span></a>):</p>
+style “February 20, 1997” (assuming id is a <span class="xref std std-ref">Texis counter field</span>):</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select id, Title from books where Desc like ?q&quot;</span><span class="p">,</span>
          <span class="p">{</span><span class="nx">q</span><span class="o">:</span><span class="nx">query</span><span class="p">},</span>
          <span class="kd">function</span><span class="p">(</span><span class="nx">res</span><span class="p">)</span> <span class="p">{</span>
@@ -1454,7 +1457,7 @@ style “February 20, 1997” (assuming id is a <a class="reference internal" hr
 <span class="p">);</span>
 </pre></div>
 </div>
-<p>To use a default strftime() format, eliminate the a flag and its corresponding strftime() format argument:</p>
+<p>To use a default strftime() format, eliminate the <code class="docutils literal notranslate"><span class="pre">a</span></code> flag and its corresponding strftime() format argument:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">curDate</span> <span class="o">=</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">stringFormat</span><span class="p">(</span><span class="s2">&quot;%t&quot;</span><span class="p">,</span> <span class="s2">&quot;now&quot;</span><span class="p">);</span>
 </pre></div>
 </div>
@@ -1484,10 +1487,10 @@ expected, and a default subformat is used.</p></li>
 </ul>
 <p>Latitude, longitude and location arguments should be in one of the formats
 supported by the
-<span class="xref std std-ref">parselatitude()</span>,
-<span class="xref std std-ref">parselongitude()</span>,
-or <span class="xref std std-ref">latlon2geocode() &lt;sql-server-funcs:latlon2geocode, latlon2geocodearea&gt;
-(with single arg) SQL functions, as appropriate.  If the ``a`</span> flag is given,
+<a class="reference internal" href="sql-server-funcs.html#parselatitude-parselongitude"><span class="std std-ref">parselatitude()</span></a>,
+<a class="reference internal" href="sql-server-funcs.html#parselatitude-parselongitude"><span class="std std-ref">parselongitude()</span></a>,
+or <a class="reference internal" href="sql-server-funcs.html#latlon2geocode-latlon2geocodearea"><span class="std std-ref">latlon2geocode()</span></a>
+(with single arg) SQL functions, as appropriate.  If the <code class="docutils literal notranslate"><span class="pre">a</span></code> flag is given,
 the subformat string may contain the following codes:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">%D</span></code> for degrees</p></li>
@@ -1831,7 +1834,7 @@ to be HTML-safe, use:</p>
 above example, if you did not want to match “formatting” from the query term
 “format” but still wanted to highlight “javascript” where “format” is not
 present (<code class="docutils literal notranslate"><span class="pre">&#64;0</span></code> for zero intersections; see
-<a class="reference internal" href="sql3.html#specifying-fewer-intersections"><span class="std std-ref">this section</span></a> for full explanation),
+<span class="xref std std-ref">this section</span> for full explanation),
 the following could be used:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span>             <span class="cm">/* no suffix proc, 0 intersections required */</span>
 <span class="kd">var</span> <span class="nx">query</span>  <span class="o">=</span> <span class="s2">&quot;@suffixproc=0 @0 format javascript&quot;</span><span class="p">;</span>
@@ -1916,7 +1919,7 @@ color-coded differently, and the <code class="docutils literal notranslate"><spa
 </pre></div>
 </div>
 <p>For more information on <code class="docutils literal notranslate"><span class="pre">abstract</span></code>, see <a class="reference internal" href="#abstract">abstract()</a> below and
-<code class="docutils literal notranslate"><span class="pre">abstract</span></code> in <a class="reference internal" href="sql-server-funcs.html#server-functions"><span class="std std-ref">Server functions</span></a>.</p>
+<code class="docutils literal notranslate"><span class="pre">abstract</span></code> in <a class="reference internal" href="sql-server-funcs.html#server-functions"><span class="std std-ref">Server Functions</span></a>.</p>
 </div>
 </div>
 <div class="section" id="abstract">
@@ -2616,8 +2619,8 @@ is returned (empty <span class="green">Array</span>). See <a class="reference in
 </div>
 <div class="section" id="searchfile">
 <h2>searchFile()<a class="headerlink" href="#searchfile" title="Permalink to this headline">¶</a></h2>
-<p>The <code class="docutils literal notranslate"><span class="pre">searchFile</span></code> function performs a keyword search on a file and returns
-the matching portions of that file.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">searchFile</span></code> function performs a Metamorph keyword search on a file
+and returns the matching portions of that file.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">searchFile</span><span class="p">(</span><span class="nx">query</span><span class="p">,</span> <span class="nx">filename</span> <span class="p">[,</span> <span class="nx">options</span><span class="p">]);</span>
 </pre></div>
@@ -2678,7 +2681,7 @@ match).</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="sql1.html" class="btn btn-neutral float-right" title="Introduction to Texis SQL" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+        <a href="sql-server-funcs.html" class="btn btn-neutral float-right" title="Server Functions" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
       
       
         <a href="sqltoc.html" class="btn btn-neutral" title="The rampart-sql module" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>

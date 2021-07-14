@@ -3,14 +3,19 @@ Server Properties
 -----------------
 
 There are a number of properties that are settable in the SQL Engine.
-They do not need to be changed unless the behavior of the system must be
-modified. The properties are set using the following SQL syntax:
+They do not need to be changed unless a change in the  behavior of 
+the system is desired.
+
+Using the command line utility
+:ref:`tsql <tsql:Tsql Command Line Utility>`
+the properties are set using the following SQL syntax:
 
 .. code-block:: sql
 
         SET property = value;
 
-or using the :ref:`rampart-sql:set()` function:
+In Rampart, this is accomplished by using the 
+:ref:`rampart-sql:set()` function:
 
 .. code-block:: javascript
 
@@ -20,18 +25,27 @@ or using the :ref:`rampart-sql:set()` function:
    });
 
 The ``property`` names are case insensitive and may be specified in
-*camelCase*, *lower case*, *UPPER CASE* or as you prefer.  In Rampart
-JavaScript, most properties can be set using either 
-``sql.exec("SET property = value;");`` or ``sql.set({property: value});``. 
+*camelCase*, *lower case*, *UPPER CASE* or as you prefer.  
+
+The `Server Properties` set using either 
+:ref:`tsql <tsql:Tsql Command Line Utility>`
+or :ref:`rampart-sql:set()` are for the most part identical.
 However, note below that a few properties (such as ``noiseList``) can only
 be set using the :ref:`rampart-sql:set()` function.
 
-The ``value`` can be one of four types depending on the property: Number,
+In :ref:`tsql <tsql:Tsql Command Line Utility>`
+the ``value`` can be one of four types depending on the property: Number,
 Boolean, Array or String.  A Boolean value is either an integer  – ``0`` is false,
-``1`` is true. Using the ``sql.set()``
-function, Booleans cat also be set to JavaScript Booleans ``true`` or ``false``.
+``1`` is true. Using the :ref:`rampart-sql:set()`
+function, Booleans are set using the JavaScript Booleans ``true`` or ``false``.
 
-The settings are grouped as follows:
+NOTE:
+   In Rampart Javascript, it is possible to use ``sql.exec("SET property = value;")``.  
+   However doing so will set the property for every open ``sql`` handle
+   opened with ``new Sql.init()`` and not allow settings to be automatically
+   reapplied when using multiple ``sql`` handles.  Thus one should always
+   use ``sql.set()`` in order to maintain distinct settings per handle.
+
 
 Search and optimization parameters
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1339,8 +1353,11 @@ lstExp
           add two expressions and list.                  */
 
        var lists = sql.set({
-          deleteExpressions: 0,
-          addExpressions: [ /\alnum\x80-\xff]+/,"[\\alnum\\x80-\\xff']+" ],
+          deleteExpressions: 0,              // delete the default at pos 0
+          addExpressions: [ 
+             "[\\alnum\\x80-\\xff]+",        // letters and numbers
+             "[\\alnum\\$\\%\\@\\-\\_\\+]+"  // letters, numbers and additional chars
+          ],
           listExpressions: true
        });
        
@@ -1350,7 +1367,7 @@ lstExp
        {
           "expressionsList": [
              "\\alnum\\x80-\\xff]+",
-             "[\\alnum\\x80-\\xff']+"
+             "[\\alnum\\$\\%\\@\\-\\_\\+]+"
           ]
        }
        */

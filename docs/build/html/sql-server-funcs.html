@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Server functions &mdash; Rampart 0.1.0 documentation</title>
+  <title>Server Functions &mdash; Rampart 0.1.0 documentation</title>
   
 
   
@@ -39,8 +39,8 @@
         <link rel="search" title="Search" href="search.html"/>
     <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
         <link rel="up" title="The rampart-sql module" href="sqltoc.html"/>
-        <link rel="next" title="Indexing for Increased Performance" href="sql4.html"/>
-        <link rel="prev" title="Intelligent Text Search Queries" href="sql3.html"/> 
+        <link rel="next" title="Server Properties" href="sql-set.html"/>
+        <link rel="prev" title="Preface" href="rampart-sql.html"/> 
 
   
   <script src="_static/js/modernizr.min.js"></script>
@@ -92,14 +92,7 @@
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#loading-the-javascript-module">Loading the Javascript Module</a></li>
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#database-functions">Database Functions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#string-functions">String Functions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html">Introduction to Texis SQL</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#creating-a-database">Creating a Database</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#table-definition">Table Definition</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#a-first-look-at-queries">A First Look at Queries</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html">Queries Involving Calculated Values</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html#advanced-queries">Advanced Queries</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql3.html">Intelligent Text Search Queries</a></li>
-<li class="toctree-l2 current"><a class="current reference internal" href="#">Server functions</a><ul>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Server Functions</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#general-functions">General Functions</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#exec">exec</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#mminfo">mminfo</a></li>
@@ -145,7 +138,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#math-functions">Math functions</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#date-functions">Date functions</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#bit-manipulation-functions">Bit manipulation functions</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#internet-ip-address-functions">Internet/IP address functions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#internet-ipv4-address-functions">Internet/IPV4 address functions</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#urlcanonicalize">urlcanonicalize</a></li>
 </ul>
 </li>
@@ -176,18 +169,8 @@
 </li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html">Indexing for Increased Performance</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#keeping-the-database-current">Keeping the Database Current</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#security">Security</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#administration-of-the-database">Administration of the Database</a></li>
 <li class="toctree-l2"><a class="reference internal" href="sql-set.html">Server Properties</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tsql.html">Tsql Command Line Utility</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html">Metamorph: The Program Inside the Program</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html#hits-intersections-and-sets">Hits, Intersections and Sets</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm3.html">Thesaurus Customization</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm4.html">Tailoring Metamorph’s Linguistics</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm5.html">Types of Searches in Metamorph</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm6.html">REX On Its Own</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
@@ -244,7 +227,7 @@
         
           <li><a href="sqltoc.html">The rampart-sql module</a> &raquo;</li>
         
-      <li>Server functions</li>
+      <li>Server Functions</li>
     
     
       <li class="wy-breadcrumbs-aside">
@@ -264,12 +247,11 @@
            <div itemprop="articleBody">
             
   <div class="section" id="server-functions">
-<h1>Server functions<a class="headerlink" href="#server-functions" title="Permalink to this headline">¶</a></h1>
-<p>The Texis server has a number of functions built into it which can
-operate on fields. This can occur anywhere an expression can occur in a
-SQL statement. It is possible that the server at your site has been
-extended with additional functions. Each of the arguments can be either
-a single field name, or another expression.</p>
+<h1>Server Functions<a class="headerlink" href="#server-functions" title="Permalink to this headline">¶</a></h1>
+<p>The SQL Module has a number of functions built into it which can operate
+on fields.  This can occur anywhere that an expression can occur in a SQL
+statement. Each of the arguments can be either a single field name, or
+another expression.</p>
 <div class="section" id="general-functions">
 <h2>General Functions<a class="headerlink" href="#general-functions" title="Permalink to this headline">¶</a></h2>
 <div class="section" id="exec">
@@ -282,28 +264,12 @@ a single field name, or another expression.</p>
 command to execute. Any subsequent arguments are written to the standard
 input of the process. The standard output of the command is read as the
 return from the function.</p>
-<p>This function allows unlimited extensibility of Texis, although if a
-particular function is being used often then it should be linked into
-the Texis server to avoid the overhead of invoking another process.</p>
-<p>For example this could be used to OCR text. If you have a program which
-will take an image filename on the command line, and return the text on
-standard out you could issue SQL as follows:</p>
+<p>For example this could be used to extract text from a pdf.</p>
 <div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">UPDATE</span>     <span class="n">DOCUMENTS</span>
-<span class="k">SET</span>        <span class="nb">TEXT</span> <span class="o">=</span> <span class="k">exec</span><span class="p">(</span><span class="s1">&#39;ocr &#39;</span><span class="o">+</span><span class="n">IMGFILE</span><span class="p">)</span>
+<span class="k">SET</span>        <span class="nb">TEXT</span> <span class="o">=</span> <span class="k">exec</span><span class="p">(</span><span class="s1">&#39;pdftotext &#39;</span><span class="o">+</span><span class="n">PDFFILE</span><span class="p">)</span>
 <span class="k">WHERE</span>      <span class="nb">TEXT</span> <span class="o">=</span> <span class="s1">&#39;&#39;</span><span class="p">;</span>
 </pre></div>
 </div>
-<p>Another example would be if you wanted to print envelopes from names and
-addresses in a table you might use the following SQL:</p>
-<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SELECT</span> <span class="k">exec</span><span class="p">(</span><span class="s1">&#39;envelope &#39;</span><span class="p">,</span> <span class="n">FIRST_NAME</span><span class="o">+</span><span class="s1">&#39; &#39;</span><span class="o">+</span><span class="n">LAST_NAME</span><span class="o">+</span><span class="s1">&#39;</span>
-<span class="s1">&#39;</span><span class="p">,</span> <span class="n">STREET</span> <span class="o">+</span> <span class="s1">&#39;</span>
-<span class="s1">&#39;</span><span class="p">,</span> <span class="n">CITY</span> <span class="o">+</span> <span class="s1">&#39;, &#39;</span> <span class="o">+</span> <span class="k">STATE</span> <span class="o">+</span> <span class="s1">&#39; &#39;</span> <span class="o">+</span> <span class="n">ZIP</span><span class="p">)</span>
-<span class="k">FROM</span> <span class="n">ADDRESSES</span><span class="p">;</span>
-</pre></div>
-</div>
-<p>Notice in this example the addition of spaces and line-breaks between
-the fields. Texis does not add any delimiters between fields or
-arguments itself.</p>
 </div>
 <div class="section" id="mminfo">
 <h3>mminfo<a class="headerlink" href="#mminfo" title="Permalink to this headline">¶</a></h3>
@@ -361,7 +327,7 @@ required to satisfy the query.</p></li>
        <span class="n">where</span> <span class="n">Title</span>\<span class="n">Meta</span>\<span class="n">Body</span> <span class="n">like</span> <span class="s1">&#39;power struggle&#39;</span><span class="p">;</span>
 </pre></div>
 </div>
-<p>Would give something of the form:</p>
+<p>Would give a result similar to the following:</p>
 </dd>
 </dl>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">300</span> <span class="o">&lt;</span><span class="n">Data</span> <span class="kn">from</span> <span class="nn">Texis</span><span class="o">&gt;</span> <span class="mi">62</span> <span class="mi">5</span> <span class="mi">0</span> <span class="mi">5</span>
@@ -398,7 +364,7 @@ you can see when the record was inserted, for example:</p>
 </pre></div>
 </div>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">CONVERT</span><span class="p">(</span><span class="nb">id</span><span class="p">,</span> <span class="s1">&#39;date&#39;</span><span class="p">)</span>
-<span class="mi">1995</span><span class="o">-</span><span class="mi">01</span><span class="o">-</span><span class="mi">27</span> <span class="mi">22</span><span class="p">:</span><span class="mi">43</span><span class="p">:</span><span class="mi">48</span>
+<span class="mi">2015</span><span class="o">-</span><span class="mi">01</span><span class="o">-</span><span class="mi">27</span> <span class="mi">22</span><span class="p">:</span><span class="mi">43</span><span class="p">:</span><span class="mi">48</span>
 </pre></div>
 </div>
 </li>
@@ -430,7 +396,7 @@ and the increment can be defined for each call. The syntax is:</p>
 </pre></div>
 </div>
 <p>If init is given then the sequence number is initialized to that value,
-which will be the value returned. It is then incremented by increment.
+which will be the first value returned. It is then incremented by increment.
 If init is not specified then the current value will be retained. The
 initial value will be zero if init has not been specified.</p>
 <p>Examples of typical use:</p>
@@ -577,6 +543,91 @@ returned as a <code class="docutils literal notranslate"><span class="pre">strls
 should be cast to <code class="docutils literal notranslate"><span class="pre">double</span></code> during comparisons.</p>
 <p>The <code class="docutils literal notranslate"><span class="pre">identifylanguage()</span></code> function is experimental, and its behavior,
 syntax, name and/or existence are subject to change.</p>
+<p>Example:</p>
+<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span>var Sql = require(&quot;rampart-sql&quot;);
+
+var sql = new Sql.init(&quot;./testdb&quot;, true);
+
+// ignore error if table doesn&#39;t exists
+try {
+   sql.exec(&quot;drop table idtext;&quot;);
+} catch(e){}
+
+// (re)create the table
+sql.exec(&quot;create table idtext (text varchar(64));&quot;);
+
+
+var texts = [
+   `Now we are engaged in a great civil war, testing whether that nation, or
+   any nation so conceived and so dedicated, can long endure.  We are met on
+   a great battle-field of that war.  We have come to dedicate a portion of that
+   field, as a final resting place for those who here gave their lives that
+   that nation might live.  It is altogether fitting and proper that we should
+   do this.`,
+
+   `Maintenant, nous sommes engagés dans une grande guerre civile, testant
+   si cette nation, ou toute autre nation ainsi conçue et si dévouée, peut
+   durer longtemps.  Nous sommes rencontrés sur un grand champ de bataille
+   de cette guerre.  Nous sommes venus pour consacrer une partie de ce
+   champ, comme lieu de repos final pour ceux qui ici ont donné leur vie
+   pour que cette nation puisse vivre.  Il est tout à fait approprié et
+   approprié que nous fassions cela.`,
+
+   `Ahora estamos inmersos en una gran guerra civil, probando si esa nación,
+   o cualquier nación así concebida y dedicada, puede durar mucho tiempo.
+   Nos encontramos en un gran campo de batalla de esa guerra.  Hemos venido
+   a dedicar una porción de ese campo, como lugar de descanso final para
+   quienes aquí dieron su vida para que viviera esa nación.  Es totalmente
+   apropiado y apropiado que hagamos esto.`,
+
+   `Jetzt sind wir in einen großen Bürgerkrieg verwickelt, in dem geprüft
+   wird, ob diese Nation oder eine so konzipierte und engagierte Nation
+   lange bestehen kann.  Wir treffen uns auf einem großen Schlachtfeld
+   dieses Krieges.  Wir sind gekommen, um einen Teil dieses Feldes als
+   letzte Ruhestätte für diejenigen zu widmen, die hier ihr Leben gegeben
+   haben, damit diese Nation leben kann.  Es ist durchaus angemessen und
+   richtig, dass wir dies tun.`
+];
+
+// insert text
+for (var i=0;i&lt;texts.length;i++) {
+   sql.exec(&quot;insert into idtext values (?);&quot;, [texts[i]]);
+}
+
+//identify text
+var rows = sql.exec(&quot;select identifylanguage(text) from idtext;&quot;);
+
+rampart.utils.printf(&quot;%3J\n&quot;, rows.results);
+/* expected output:
+[
+   {
+      &quot;identifylanguage(text)&quot;: [
+         &quot;0.602603&quot;,
+         &quot;en&quot;
+      ]
+   },
+   {
+      &quot;identifylanguage(text)&quot;: [
+         &quot;0.612079&quot;,
+         &quot;fr&quot;
+      ]
+   },
+   {
+      &quot;identifylanguage(text)&quot;: [
+         &quot;0.626431&quot;,
+         &quot;es&quot;
+      ]
+   },
+   {
+      &quot;identifylanguage(text)&quot;: [
+         &quot;0.614251&quot;,
+         &quot;de&quot;
+      ]
+   }
+]
+*/
+</pre></div>
+</div>
 </div>
 <div class="section" id="lookup">
 <h3>lookup<a class="headerlink" href="#lookup" title="Permalink to this headline">¶</a></h3>
@@ -649,10 +700,26 @@ this SQL:</p>
 <span class="k">ORDER</span> <span class="k">BY</span> <span class="mi">2</span> <span class="k">DESC</span><span class="p">;</span>
 </pre></div>
 </div>
-<p>or this in Rampart JavaScript:</p>
+<p>Full example in Rampart JavaScript:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Sql</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
 
-<span class="kd">var</span> <span class="nx">sql</span><span class="o">=</span><span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;/path/to/database&quot;</span><span class="p">);</span>
+<span class="kd">var</span> <span class="nx">sql</span><span class="o">=</span><span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;./testdb&quot;</span><span class="p">);</span>
+
+<span class="c1">// ignore error if table doesn&#39;t exists</span>
+<span class="k">try</span> <span class="p">{</span>
+   <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;drop table Products;&quot;</span><span class="p">);</span>
+<span class="p">}</span> <span class="k">catch</span><span class="p">(</span><span class="nx">e</span><span class="p">){}</span>
+
+<span class="c1">// (re)create the table</span>
+<span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;create table Products (SKU int, Price double);&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">skus</span> <span class="o">=</span> <span class="p">[</span> <span class="mi">1234</span><span class="p">,</span> <span class="mi">1235</span><span class="p">,</span> <span class="mi">1236</span><span class="p">,</span> <span class="mi">1237</span><span class="p">,</span> <span class="mi">1238</span><span class="p">,</span> <span class="mi">1239</span><span class="p">,</span> <span class="mi">1240</span><span class="p">,</span>
+             <span class="mi">1241</span><span class="p">,</span> <span class="mi">1242</span><span class="p">,</span> <span class="mi">1243</span><span class="p">,</span> <span class="mi">1244</span><span class="p">,</span> <span class="mi">1245</span> <span class="p">];</span>
+<span class="kd">var</span> <span class="nx">prices</span> <span class="o">=</span> <span class="p">[</span> <span class="mf">12.95</span><span class="p">,</span> <span class="mf">5.99</span><span class="p">,</span> <span class="mf">69.88</span><span class="p">,</span> <span class="mf">39.99</span><span class="p">,</span> <span class="mf">29.99</span><span class="p">,</span> <span class="mf">25.00</span><span class="p">,</span> <span class="mf">50.00</span><span class="p">,</span>
+               <span class="o">-</span><span class="mf">2.00</span><span class="p">,</span> <span class="mf">499.95</span><span class="p">,</span> <span class="mf">19.95</span><span class="p">,</span> <span class="mf">9.99</span><span class="p">,</span> <span class="mf">125.00</span> <span class="p">];</span>
+
+<span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="nx">i</span><span class="o">&lt;</span><span class="nx">skus</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span>
+    <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;insert into Products values (?,?)&quot;</span><span class="p">,</span> <span class="p">[</span><span class="nx">skus</span><span class="p">[</span><span class="nx">i</span><span class="p">],</span><span class="nx">prices</span><span class="p">[</span><span class="nx">i</span><span class="p">]]);</span>
 
 <span class="kd">var</span> <span class="nx">range</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;0..25&#39;</span><span class="p">,</span><span class="s1">&#39;25..50&#39;</span><span class="p">,</span><span class="s1">&#39;50..&#39;</span><span class="p">];</span>
 <span class="kd">var</span> <span class="nx">rangenames</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;Under $25&#39;</span><span class="p">,</span><span class="s1">&#39;$25-$49&#39;</span><span class="p">,</span><span class="s1">&#39;$50 and up&#39;</span><span class="p">];</span>
@@ -667,25 +734,24 @@ this SQL:</p>
 
 <span class="nx">rows</span><span class="o">=</span><span class="nx">res</span><span class="p">.</span><span class="nx">results</span><span class="p">;</span>
 <span class="nx">cols</span><span class="o">=</span><span class="nx">res</span><span class="p">.</span><span class="nx">columns</span><span class="p">;</span>
-<span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="nx">i</span><span class="o">&lt;</span><span class="nx">rows</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span><span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+<span class="k">for</span> <span class="p">(</span><span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="nx">i</span><span class="o">&lt;</span><span class="nx">rows</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span><span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
 
         <span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="nx">i</span><span class="p">)</span> <span class="p">{</span>
             <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%-12s %16s\n&quot;</span><span class="p">,</span> <span class="nx">cols</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="p">,</span> <span class="nx">cols</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span>
             <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;------------+----------------\n&quot;</span><span class="p">);</span>
         <span class="p">}</span>
 
-        <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%-12s %16s\n&quot;</span><span class="p">,</span> <span class="nx">rows</span><span class="p">[</span><span class="nx">i</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span> <span class="nx">rows</span><span class="p">[</span><span class="nx">i</span><span class="p">][</span><span class="mi">1</span><span class="p">]);</span>
+        <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%-12s %16s\n&quot;</span><span class="p">,</span> <span class="nx">rows</span><span class="p">[</span><span class="nx">i</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span> <span class="nx">rows</span><span class="p">[</span><span class="nx">i</span><span class="p">][</span><span class="mi">1</span><span class="p">]);</span>
 
 <span class="p">}</span>
-</pre></div>
-</div>
-<p>which would give these results:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>PriceRange   NumberOfProducts
-------------+----------------
-$50 and up                  4
-Under $25                   4
-$25-$49                     3
-                            1
+<span class="cm">/* expected output :</span>
+<span class="cm">PriceRange   NumberOfProducts</span>
+<span class="cm">------------+----------------</span>
+<span class="cm">$50 and up                  4</span>
+<span class="cm">Under $25                   4</span>
+<span class="cm">$25-$49                     3</span>
+<span class="cm">                            1</span>
+<span class="cm">*/</span>
 </pre></div>
 </div>
 <p>Note that:</p>
@@ -704,7 +770,7 @@ empty PriceRange was returned for it.</p></li>
 <h3>lookupCanonicalizeRanges<a class="headerlink" href="#lookupcanonicalizeranges" title="Permalink to this headline">¶</a></h3>
 <p>The <code class="docutils literal notranslate"><span class="pre">lookupCanonicalizeRanges()</span></code> function returns the canonical
 version(s) of its ranges argument, which is zero or more ranges of the
-syntaxes acceptable to <span class="xref std std-ref">lookup()</span>:</p>
+syntaxes used in <span class="xref std std-ref">lookup()</span> above:</p>
 <div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">lookupCanonicalizeRanges</span><span class="p">(</span><span class="n">ranges</span><span class="p">,</span> <span class="n">keyType</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -867,10 +933,8 @@ paths:</p>
 <p>Returns an integer indicating the sort order of <code class="docutils literal notranslate"><span class="pre">pathA</span></code> relative to
 <code class="docutils literal notranslate"><span class="pre">pathB</span></code>: 0 if <code class="docutils literal notranslate"><span class="pre">pathA</span></code> is the same as <code class="docutils literal notranslate"><span class="pre">pathB</span></code>, less than 0 if
 <code class="docutils literal notranslate"><span class="pre">pathA</span></code> is less than <code class="docutils literal notranslate"><span class="pre">pathB</span></code>, greater than 0 if <code class="docutils literal notranslate"><span class="pre">pathA</span></code> is greater
-than <code class="docutils literal notranslate"><span class="pre">pathB</span></code>. Paths are compared case-insensitively if and only if the
-OS is case-insensitive for paths, and OS-specific alternate directory
-separators are considered the same (e.g. “<code class="docutils literal notranslate"><span class="pre">\</span></code>” and “<code class="docutils literal notranslate"><span class="pre">/</span></code>” in
-Windows). Multiple consecutive directory separators are considered the
+than <code class="docutils literal notranslate"><span class="pre">pathB</span></code>.</p>
+<p>Multiple consecutive directory separators are considered the
 same as one. A trailing directory separator (if not also a leading
 separator) is ignored. Directory separators sort lexically before any
 other character.</p>
@@ -939,9 +1003,6 @@ absolute path will overwrite the previously-merged path. E.g.:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">/</span><span class="n">three</span><span class="o">/</span><span class="n">four</span><span class="o">/</span><span class="n">five</span>
 </pre></div>
 </div>
-<p>Under Windows, partially absolute path arguments – e.g. “ /dir”
-where the drive or dir is still relative – are considered
-absolute for the sake of overwriting the merge.</p>
 <p>Redundant path separators
 internal to an argument are not removed, nor are “.” and “..” path
 components removed.</p>
@@ -1086,8 +1147,7 @@ is</p>
 <span class="n">SYSMETAINDEX</span>         <span class="n">sysmetaindex</span>
 </pre></div>
 </div>
-<p>The optional <code class="docutils literal notranslate"><span class="pre">mode</span></code> argument is a string-folding mode in the same
-format as ; see the Vortex manual for details on the syntax and default.
+<p>The optional <code class="docutils literal notranslate"><span class="pre">mode</span></code> argument is a string-folding mode.
 If <code class="docutils literal notranslate"><span class="pre">mode</span></code> is unspecified, the current apicp <a class="reference internal" href="sql-set.html#stringcomparemode"><span class="std std-ref">stringCompareMode</span></a>
 setting – with “+lowercase” aded – is used.</p>
 </div>
@@ -1113,8 +1173,7 @@ setting – with “+lowercase” aded – is used.</p>
 <span class="n">SYSMETAINDEX</span>         <span class="n">SYSMETAINDEX</span>
 </pre></div>
 </div>
-<p>The optional <code class="docutils literal notranslate"><span class="pre">mode</span></code> argument is a string-folding mode in the same
-format as ; see the Vortex manual for details on the syntax and default.
+<p>The optional <code class="docutils literal notranslate"><span class="pre">mode</span></code> argument is a string-folding mode.
 If <code class="docutils literal notranslate"><span class="pre">mode</span></code> is unspecified, the current apicp <a class="reference internal" href="sql-set.html#stringcomparemode"><span class="std std-ref">stringCompareMode</span></a>
 setting – with “+uppercase” added – is used.</p>
 </div>
@@ -1193,15 +1252,14 @@ greater than <code class="docutils literal notranslate"><span class="pre">b</spa
 <div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">stringcompare</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">[,</span> <span class="k">mode</span><span class="p">])</span>
 </pre></div>
 </div>
-<p>The strings are compared using the optional <code class="docutils literal notranslate"><span class="pre">mode</span></code> argument, which is
-a string-folding mode in the same format as ; see the Vortex manual for
-details on the syntax and default. If <code class="docutils literal notranslate"><span class="pre">mode</span></code> is unspecified, the
-current apicp <a class="reference internal" href="sql-set.html#stringcomparemode"><span class="std std-ref">stringCompareMode</span></a> setting is used.</p>
+<p>The strings are compared using the optional <code class="docutils literal notranslate"><span class="pre">mode</span></code> argument.
+If <code class="docutils literal notranslate"><span class="pre">mode</span></code> is unspecified, the current apicp
+<a class="reference internal" href="sql-set.html#stringcomparemode"><span class="std std-ref">stringCompareMode</span></a> setting is used.</p>
 </div>
 <div class="section" id="stringformat">
 <h3>stringformat<a class="headerlink" href="#stringformat" title="Permalink to this headline">¶</a></h3>
 <p>Returns its arguments formatted into a string (<code class="docutils literal notranslate"><span class="pre">varchar</span></code>), like the
-equivalent Vortex function <code class="docutils literal notranslate"><span class="pre">&lt;strfmt&gt;</span></code> (based on the C function
+equivalent Sql.<a class="reference internal" href="rampart-sql.html#stringformat"><span class="std std-ref">stringFormat()</span></a> (based on the C function
 <code class="docutils literal notranslate"><span class="pre">sprintf()</span></code>):</p>
 <div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="n">stringformat</span><span class="p">(</span><span class="n">format</span><span class="p">[,</span> <span class="n">arg</span><span class="p">[,</span> <span class="n">arg</span><span class="p">[,</span> <span class="n">arg</span><span class="p">[,</span> <span class="n">arg</span><span class="p">]]]])</span>
 </pre></div>
@@ -1316,8 +1374,8 @@ with 0-value integers if needed to reach <code class="docutils literal notransla
 Returns 1 if bit number <code class="docutils literal notranslate"><span class="pre">n</span></code> is set to 1 in <code class="docutils literal notranslate"><span class="pre">a</span></code>, 0 if not.</p></li>
 </ul>
 </div>
-<div class="section" id="internet-ip-address-functions">
-<h2>Internet/IP address functions<a class="headerlink" href="#internet-ip-address-functions" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="internet-ipv4-address-functions">
+<h2>Internet/IPV4 address functions<a class="headerlink" href="#internet-ipv4-address-functions" title="Permalink to this headline">¶</a></h2>
 <p>The following functions manipulate IP network and/or host addresses;
 most take <code class="docutils literal notranslate"><span class="pre">inet</span></code> style argument(s). This is an IPv4 address string,
 optionally followed by a netmask.</p>
@@ -1703,7 +1761,7 @@ A number (integer or decimal) with optional plus/minus sign. Only
 the first number may be negative, in which case it is a south
 latitude or west longitude. Note that this is true even for
 <span class="math notranslate nohighlight">\(DDDMMSS\)</span> (DMS) longitudes – i.e. the ISO 6709 east-positive
-standard is followed, not the deprecated Texis/Vortex west-positive
+standard is followed, not the deprecated Texis west-positive
 standard.</p></li>
 <li><p><span class="math notranslate nohighlight">\(U\)</span>
 A unit (case-insensitive):</p>
@@ -2032,10 +2090,10 @@ the target document.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="sql4.html" class="btn btn-neutral float-right" title="Indexing for Increased Performance" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+        <a href="sql-set.html" class="btn btn-neutral float-right" title="Server Properties" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
       
       
-        <a href="sql3.html" class="btn btn-neutral" title="Intelligent Text Search Queries" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+        <a href="rampart-sql.html" class="btn btn-neutral" title="Preface" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
       
     </div>
   

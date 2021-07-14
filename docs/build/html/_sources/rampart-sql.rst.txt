@@ -17,7 +17,7 @@ What does it do?
 ~~~~~~~~~~~~~~~~
 
 The rampart-sql module provides database and full text search capabilities
-in Rampart.  It includes a SQL relational database with a fully integrated
+in Rampart.  It includes Texis, a SQL relational database with a fully integrated
 full text search engine.
 
 Documentation Caveat
@@ -27,17 +27,20 @@ In this document, the term "Texis" used to refer to the SQL engine, the text
 search index and the text search engine.  The term "Metamorph" is used to
 solely refer to the text search engine.
 
-As the Texis library and its included Metamorph search engine encompasses
-more functionality than is currently used in Rampart, some settings and
-procedures may not be directly applicable in the context of its use from
-within a JavaScript program.  We include nearly all of it here for
-completeness and as it may provide a deeper understanding of philosophy
-behind the library's functionality.
-
-Note that the convention used in this document is ``var Sql`` with a capital
+The convention used in this document is ``var Sql`` with a capital
 "S" for the return :green:`Object` of the loaded module and ``var sql`` with a
 lower-case "s" for the instance of a connection to a database made with the
 JavaScript :ref:`init() constructor <initconst>` :green:`Function`.
+
+Further Reading
+~~~~~~~~~~~~~~~
+As the Texis library and its included Metamorph search engine encompasses
+more functionality than is expressed in this documentation, a full understanding
+of the workings of Texis and Metamorph can be found by referring to the
+documentation at Thunderstone.com:
+
+* `Texis Manual <https://docs.thunderstone.com/site/texisman/>`_
+* `Metamorph Manual <https://docs.thunderstone.com/site/texisman/metamorph_intelligent_query.html>`_
 
 Loading the Javascript Module
 -----------------------------
@@ -81,7 +84,7 @@ The ``init`` constructor function takes a :green:`String`, the path to the datab
 and an optional :green:`Boolean` as parameters. It returns an :green:`Object` representing a
 new connection to the specified database.  The return :green:`Object` includes the
 following :green:`Functions`: ``exec()``, ``one()``, ``set()``,
-``importCsvFile()``, ``importCsv`` and ``close()``.
+``reset()``, ``importCsvFile()``, ``importCsv`` and ``close()``.
 
 Usage:
 
@@ -133,9 +136,9 @@ exec()
 
 The exec :green:`Function` executes a sql statement on the database opened
 with :ref:`init() <initconst>`.  It takes a :green:`String` containing a sql
-statement and an optional :green:`Array` of sql parameters, an optional
-:green:`Object` of options and an optional callback :green:`Function`.  The
-parameters may be specified in any order.
+statement and an optional :green:`Object` or :green:`Array` of sql
+parameters, an optional :green:`Object` of options and an optional callback
+:green:`Function`.  The parameters may be specified in any order.
 
 .. code-block:: javascript
 
@@ -146,8 +149,8 @@ parameters may be specified in any order.
 +==============+==================+========================================================+
 |statement     |:green:`String`   | The sql statement                                      |
 +--------------+------------------+--------------------------------------------------------+
-|options       |:green:`Object`   | Options (skipRows, maxRows, returnType, includeCounts) |
-|              |                  | *described below*                                      |
+|options       |:green:`Object`   | Options (skipRows, maxRows, returnType, includeCounts  |
+|              |                  | returnRows and arg) *as described below*               |
 +--------------+------------------+--------------------------------------------------------+
 |sql_parameters|:green:`Array`    | ``?`` substitution parameters                          |
 +              +------------------+--------------------------------------------------------+
@@ -197,7 +200,7 @@ SQL Parameters:
 
 The use of Parameters can make the handling of user input safe from sql injection.
 Note that if there is only one parameter, it still must be contained in an
-:green:`Array`.
+:green:`Array` or :green:`Object`.
 
 .. _execopts:
 
@@ -220,7 +223,7 @@ Options:
         be an empty array as if ``"novars"`` was set.
 
       * ``"object"``: An :green:`Array` of :green:`Objects`.  Each
-        green:`Array` member  correspond to each row fetched. Each
+        :green:`Array` member  correspond to each row fetched. Each
         :green:`Object` has its property names (keys) set the names of the
         corresponding column and its values set to the field value of the
         corresponding row for the named column.
@@ -232,12 +235,12 @@ Options:
 
       * ``"novars"``: An empty :green:`Array` is returned.  The sql statement is
         still executed.  This is the default for inserts, updates and deletes
-        where the return value would otherwise not be used.  
+        where the return value would normally not be used.  
         
       * **Note**: If the values of a deleted, inserted or updated row are needed,
         ``returnType`` can be set to either ``"object"`` or ``"array"`` and
         the statement will be executed as normal with ``results`` set as if
-        the row or rows were selected.
+        the row or rows operated upon were selected.
 
    * ``returnRows`` (:green:`Boolean`): If set ``true``, performs the same
      function as ``{returnType: "object"}`` above.  If set ``false``,
@@ -253,7 +256,7 @@ Options:
      :ref:`text search <sql3:Intelligent Text Search Queries>` on a field
      with a fulltext index.  If count information is not available, the
      :green:`Numbers` will be negative.  See :ref:`countInfo <countinfo>`
-     below.  If ``false``, `countInfo <countinfo>` will be ``undefined``.
+     below.  If ``false``, ``countInfo`` will be ``undefined``.
 
    * ``argument``: (aka ``arg``). A variable of any type to be passed to the
      callback below.
@@ -285,7 +288,7 @@ Caveats for Options, maxRows and skipRows:
       ``exec()`` function is arbitrary, except that the first number given
       will be treated as ``maxRows`` and the second, if present will be
       treated as ``skipRows``.  Also note that if ``maxRows`` and/or
-      ``skipRows`` is set in ``options`` above, the last set value will be
+      ``skipRows`` is also set in ``options`` above, the last set value will be
       used.
       
       Example:
@@ -325,12 +328,12 @@ Callback:
    * ``columns``: an :green:`Array` corresponding to the column names or
      aliases selected and returned in results.
    
-   * ``countInfo``: an :green:`Object` as described above in `countinfo`_ if the
-     ``includeCounts`` option is not set ``false``.  Otherwise it will be
+   * ``countInfo``: an :green:`Object` as described below in `countinfo`_ if the
+     ``includeCounts`` option is set ``true``.  Otherwise it will be
      ``undefined``. 
 
    * ``user_argument``: a variable that is supplied to the callback after
-     being set in the :ref:`options <execopts>` ``arguments``
+     being set in the :ref:`options <execopts>` ``argument``
      option above.  If not set above, ``undefined`` will be passed as the
      fifth argument.
 
@@ -457,10 +460,6 @@ Full Example:
 
 .. code-block:: javascript
 
-   function pprint(obj) {
-       console.log ( JSON.stringify(obj, null, 4) );
-   }
-
    var Sql = require("rampart-sql");
 
    /* create database if it does not exist */
@@ -487,61 +486,80 @@ Full Example:
    );
 
    /* populate variables for insertion */
-   var cl = [
-       "principal", "principal", "salary",
-       "salary", "hourly", "intern"
-   ];
-   var name = [
-       "Debbie Dreamer", "Rusty Grump","Georgia Geek",
-       "Sydney Slacker", "Pat Particular", "Billie Barista"
-   ];
-   var age = [ 63, 58, 44, 44, 32, 22 ];
-   var salary = [ 250000, 250000, 100000, 100000, 80000, 0 ];
-   var title = [
-       "Chief Executive Officer", "Chief Financial Officer", "Lead Programmer",
-       "Programmer", "Systems Administrator", "Intern"
-   ];
+   var emp1 = {
+     cl:     "principal",
+     name:   "Debbie Dreamer",
+     age:    63,
+     title:  "Chief Executive Officer",
+     start:  '1999-12-31',
+     salary: 250000,
+     bio:    "Born and raised in Manhattan, New York. U.C. Berkeley graduate. " +
+             "Loves to skydive. Built Company from scratch. Still uses word-perfect.",
+   }
 
-   /* 
-     String dates are converted to local time .
-     Javascript dates are UTC unless offset
-     is given.
-   */
-   var startDate = [ 
-       '1999-12-31', 
-       '1999-12-31', 
-       '2001-3-15', 
-       new Date('2002-5-12T00:00:00.0-0800'),
-       new Date('2003-7-14'), 
-       new Date('2020-3-18')
-   ];
+   var emp2 = {
+     cl:     "principal",
+     name:   "Rusty Grump",
+     age:    58,
+     title:  "Chief Financial Officer",
+     start:  '1999-12-31', // Strings are converted to local time
+     salary: 250000,
+     bio:    "Born in Switzerland, raised in South Dakota. Columbia graduate. " +
+             "Financed operation with inheritance. Has no sense of humor.",
+   }
 
-   var bio = [
-   "Born and raised in Manhattan, New York. U.C. Berkeley graduate. " +
-       "Loves to skydive. Built Company from scratch. Still uses word-perfect.",
+   var emp3 = {
+     cl:     "salary",
+     name:   "Georgia Geek",
+     age:    44,
+     title:  "Lead Programmer",
+     start:  '2001-3-15',
+     salary: 100000,
+     bio:    "Stanford graduate. Enjoys pizza and beer. Proficient in Perl, COBOL," +
+             "FORTRAN and IBM System/360",
+   }
 
-   "Born in Switzerland, raised in South Dakota. Columbia graduate. " +
-       "Financed operation with inheritance. Has no sense of humor.",
+   var emp4 = {
+     cl:     "salary",
+     name:   "Sydney Slacker",
+     age:    44,
+     title:  "Programmer",
+     start:  new Date('2002-5-12T00:00:00.0-0800'), // Dates are UTC unless offset is given.
+     salary: 100000,
+     bio:    "DeVry University graduate. Enjoys a good nap. Proficient in Python, " +
+             "Perl and JavaScript",
+   }
 
-   "Stanford graduate. Enjoys pizza and beer. Proficient in Perl, COBOL," +
-       "FORTRAN and IBM System/360",
+   var emp5 = {
+     cl:     "hourly",
+     name:   "Pat Particular",
+     age:    32,
+     title:  "Systems Administrator",
+     start:  new Date('2003-7-14'),
+     salary: 80000,
+     bio:    "Lincoln High School graduate. Self taught Linux and windows administration skills. Proficient in " +
+             "Bash and GNU utilities. Capable of crashing or resurrecting machines with a single ping.",
+   }
 
-   "DeVry University graduate. Enjoys a good nap. Proficient in Python, " +
-       "Perl and JavaScript",
+   var emp6 = {
+     cl:     "intern",
+     name:   "Billie Barista",
+     age:    22,
+     title:  "Intern",
+     start:  new Date('2020-3-18'),
+     salary: 0,
+     bio:    "Harvard graduate, full ride scholarship, top of class.  Proficient in C, C++, " +
+             "Rust, Haskell, Node, Python. Into skydiving. Makes a mean latte."
+   }
 
-   "Lincoln High School graduate. Self taught Linux and windows administration skills. Proficient in " +
-       "Bash and GNU utilities. Capable of crashing or resurrecting machines with a single ping.",
-
-   "Harvard graduate, full ride scholarship, top of class.  Proficient in C, C++, " +
-       "Rust, Haskell, Node, Python. Into skydiving. Makes a mean latte."
-   ];
+   var employees = [ emp1, emp2, emp3, emp4, emp5, emp6 ];
 
    /* insert rows */
-   for (var i=0; i<6; i++)
+   for (var i=0; i<employees.length; i++)
    {
        sql.exec(
-           "insert into employees values(?,?,?,?,?,?,?)",
-           [ cl[i], name[i], age[i], salary[i], title[i], startDate[i], bio[i] ]
+           "insert into employees values(?cl,?name,?age,?salary,?title,?start,?bio)",
+           employees[i]
        );
    }
 
@@ -550,7 +568,7 @@ Full Example:
 
    /* perform some queries */
    rows=sql.exec("select Name, Age from employees");
-   pprint(rows);
+   rampart.utils.printf('%3J\n', rows);
    /* expected output:
       {
           "columns": [
@@ -591,13 +609,13 @@ Full Example:
        "select Name, Age from employees",
        {returnType:'array', maxRows:2, includeCounts:true}
    );
-   pprint(rows);
+   rampart.utils.printf('%3J\n', rows);
    /* expected output:
       {
           "columns": [
               "Name",
               "Age"
-          ],  
+          ],
           "results": [
               [
                   "Debbie Dreamer",
@@ -617,14 +635,14 @@ Full Example:
           },
           "rowCount": 2
       }
-		Note that countInfo values are all negative since no
-		text search was performed.
+                Note that countInfo values are all negative since no
+                text search was performed.
    */
    rows=sql.exec(
        "select Name from employees where Bio likep 'proficient' and Salary > 50000",
-	{includeCounts:true}
+        {includeCounts:true}
    );
-   pprint(rows);
+   rampart.utils.printf('%3J\n', rows);
 
    /* expected output:
       {
@@ -674,14 +692,16 @@ Full Example:
            console.log(i+1,row);
        }
    );
+   console.log("Total: " + rows); // 2
+
    /* expected output:
       Total approximate number of matches in db: 2
       - ["Name","Salary"]
       1 ["Debbie Dreamer",250000]
       2 ["Billie Barista",0]
+      Total: 2
    */
 
-   console.log(rows); // 2
 
 .. remove this?
     eval()
@@ -759,9 +779,6 @@ However if :ref:`sql-set:lstexp`,
 returned with corresponding keys ``expressionsList``, ``indexTempList``,
 ``prefixList``, ``suffixList``, ``suffixEquivsList`` and/or
 ``noiseList`` respectively.
-
-Note also that though ``sql.set()`` is a :green:`Function` of ``sql`` (a single opened
-database), settings apply to all databases in use by the current process.
 
 Example:
 
@@ -1303,7 +1320,7 @@ style "February 20, 1997" (assuming id is a :ref:`Texis counter field <dtypes>`)
             }
    );
    
-To use a default strftime() format, eliminate the a flag and its corresponding strftime() format argument:
+To use a default strftime() format, eliminate the ``a`` flag and its corresponding strftime() format argument:
 
 .. code-block:: javascript
 
@@ -1340,9 +1357,9 @@ subformat is provided:
 
 Latitude, longitude and location arguments should be in one of the formats
 supported by the 
-:ref:`parselatitude() <sql-server-funcs:parselatitude,parselongitude>`, 
-:ref:`parselongitude() <sql-server-funcs:parselatitude,parselongitude>`, 
-or :ref:`latlon2geocode() <sql-server-funcs:latlon2geocode, latlon2geocodearea>
+:ref:`parselatitude() <sql-server-funcs:parselatitude, parselongitude>`, 
+:ref:`parselongitude() <sql-server-funcs:parselatitude, parselongitude>`, 
+or :ref:`latlon2geocode() <sql-server-funcs:latlon2geocode, latlon2geocodearea>`
 (with single arg) SQL functions, as appropriate.  If the ``a`` flag is given,
 the subformat string may contain the following codes:
 
@@ -2599,8 +2616,8 @@ is returned (empty :green:`Array`). See `rexFile()`_ above.
 searchFile()
 ~~~~~~~~~~~~
 
-The ``searchFile`` function performs a keyword search on a file and returns
-the matching portions of that file.  
+The ``searchFile`` function performs a Metamorph keyword search on a file
+and returns the matching portions of that file.
 
 Usage:
 

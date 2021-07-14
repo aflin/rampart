@@ -1,17 +1,15 @@
 
-Server functions
+Server Functions
 ----------------
 
-The Texis server has a number of functions built into it which can
-operate on fields. This can occur anywhere an expression can occur in a
-SQL statement. It is possible that the server at your site has been
-extended with additional functions. Each of the arguments can be either
-a single field name, or another expression.
+The SQL Module has a number of functions built into it which can operate
+on fields.  This can occur anywhere that an expression can occur in a SQL
+statement. Each of the arguments can be either a single field name, or
+another expression.
 
 
 General Functions
 ~~~~~~~~~~~~~~~~~
-
 
 exec
 """"
@@ -27,34 +25,13 @@ command to execute. Any subsequent arguments are written to the standard
 input of the process. The standard output of the command is read as the
 return from the function.
 
-This function allows unlimited extensibility of Texis, although if a
-particular function is being used often then it should be linked into
-the Texis server to avoid the overhead of invoking another process.
-
-For example this could be used to OCR text. If you have a program which
-will take an image filename on the command line, and return the text on
-standard out you could issue SQL as follows:
+For example this could be used to extract text from a pdf.
 
 .. code-block:: sql
 
          UPDATE     DOCUMENTS
-         SET        TEXT = exec('ocr '+IMGFILE)
+         SET        TEXT = exec('pdftotext '+PDFFILE)
          WHERE      TEXT = '';
-
-Another example would be if you wanted to print envelopes from names and
-addresses in a table you might use the following SQL:
-
-.. code-block:: sql
-
-         SELECT exec('envelope ', FIRST_NAME+' '+LAST_NAME+'
-         ', STREET + '
-         ', CITY + ', ' + STATE + ' ' + ZIP)
-         FROM ADDRESSES;
-
-Notice in this example the addition of spaces and line-breaks between
-the fields. Texis does not add any delimiters between fields or
-arguments itself.
-
 
 mminfo
 """"""
@@ -136,7 +113,7 @@ msgs
        select mminfo('power struggle @0 w/.',Body,0,0,1) inf from html
               where Title\Meta\Body like 'power struggle';
 
-    Would give something of the form:
+    Would give a result similar to the following:
 
 ::
 
@@ -181,7 +158,7 @@ want to use convert are
    ::
 
            CONVERT(id, 'date')
-           1995-01-27 22:43:48
+           2015-01-27 22:43:48
 
 *  If you have an application which is expecting data in a particular
    type you can use convert to make sure you will receive the correct
@@ -213,7 +190,7 @@ and the increment can be defined for each call. The syntax is:
         seq(increment [, init])
 
 If init is given then the sequence number is initialized to that value,
-which will be the value returned. It is then incremented by increment.
+which will be the first value returned. It is then incremented by increment.
 If init is not specified then the current value will be retained. The
 initial value will be zero if init has not been specified.
 
@@ -411,6 +388,92 @@ should be cast to ``double`` during comparisons.
 The ``identifylanguage()`` function is experimental, and its behavior,
 syntax, name and/or existence are subject to change.
 
+Example:
+
+.. code-block:: sql
+
+   var Sql = require("rampart-sql");
+
+   var sql = new Sql.init("./testdb", true);
+
+   // ignore error if table doesn't exists
+   try {
+      sql.exec("drop table idtext;");
+   } catch(e){}
+
+   // (re)create the table
+   sql.exec("create table idtext (text varchar(64));");
+
+
+   var texts = [
+      `Now we are engaged in a great civil war, testing whether that nation, or
+      any nation so conceived and so dedicated, can long endure.  We are met on
+      a great battle-field of that war.  We have come to dedicate a portion of that
+      field, as a final resting place for those who here gave their lives that
+      that nation might live.  It is altogether fitting and proper that we should
+      do this.`,
+
+      `Maintenant, nous sommes engagés dans une grande guerre civile, testant
+      si cette nation, ou toute autre nation ainsi conçue et si dévouée, peut
+      durer longtemps.  Nous sommes rencontrés sur un grand champ de bataille
+      de cette guerre.  Nous sommes venus pour consacrer une partie de ce
+      champ, comme lieu de repos final pour ceux qui ici ont donné leur vie
+      pour que cette nation puisse vivre.  Il est tout à fait approprié et
+      approprié que nous fassions cela.`,
+
+      `Ahora estamos inmersos en una gran guerra civil, probando si esa nación,
+      o cualquier nación así concebida y dedicada, puede durar mucho tiempo. 
+      Nos encontramos en un gran campo de batalla de esa guerra.  Hemos venido
+      a dedicar una porción de ese campo, como lugar de descanso final para
+      quienes aquí dieron su vida para que viviera esa nación.  Es totalmente
+      apropiado y apropiado que hagamos esto.`,
+
+      `Jetzt sind wir in einen großen Bürgerkrieg verwickelt, in dem geprüft
+      wird, ob diese Nation oder eine so konzipierte und engagierte Nation
+      lange bestehen kann.  Wir treffen uns auf einem großen Schlachtfeld
+      dieses Krieges.  Wir sind gekommen, um einen Teil dieses Feldes als
+      letzte Ruhestätte für diejenigen zu widmen, die hier ihr Leben gegeben
+      haben, damit diese Nation leben kann.  Es ist durchaus angemessen und
+      richtig, dass wir dies tun.`
+   ];
+
+   // insert text
+   for (var i=0;i<texts.length;i++) {
+      sql.exec("insert into idtext values (?);", [texts[i]]);
+   }
+
+   //identify text
+   var rows = sql.exec("select identifylanguage(text) from idtext;");
+
+   rampart.utils.printf("%3J\n", rows.results);
+   /* expected output:
+   [
+      {
+         "identifylanguage(text)": [
+            "0.602603",
+            "en"
+         ]
+      },
+      {
+         "identifylanguage(text)": [
+            "0.612079",
+            "fr"
+         ]
+      },
+      {
+         "identifylanguage(text)": [
+            "0.626431",
+            "es"
+         ]
+      },
+      {
+         "identifylanguage(text)": [
+            "0.614251",
+            "de"
+         ]
+      }
+   ]
+   */
 
 lookup
 """"""
@@ -498,50 +561,62 @@ this SQL:
          convert('Under $25,$25-49.99,$50 and up,', 'strlst', 'lastchar'))
     ORDER BY 2 DESC;
 
-or this in Rampart JavaScript:
+Full example in Rampart JavaScript:
 
 .. code-block:: javascript
 
-    var Sql=require("rampart-sql");
+   var Sql=require("rampart-sql");
 
-    var sql=new Sql.init("/path/to/database");
-    
-    var range=['0..25','25..50','50..'];
-    var rangenames=['Under $25','$25-$49','$50 and up'];
-    var res = sql.exec(
-        "SELECT lookup( Price, convert(?,'strlst','json'), convert(?,'strlst','json') ) PriceRange,"+
-        "count(SKU) NumberOfProducts FROM Products " +
-        "GROUP BY lookup(Price, convert(?,'strlst','json'), convert(?,'strlst','json') )" +
-        "ORDER BY 2 DESC",
-        [range,rangenames,range,rangenames],
-        {returnType:"array"}
-    );
+   var sql=new Sql.init("./testdb");
 
-    rows=res.results;
-    cols=res.columns;
-    for (var i=0;i<rows.length;i++) {
+   // ignore error if table doesn't exists
+   try {
+      sql.exec("drop table Products;");
+   } catch(e){}
 
-            if (!i) {
-                rampart.utils.printf("%-12s %16s\n", cols[0] , cols[1]);
-                rampart.utils.printf("------------+----------------\n");
-            }
+   // (re)create the table
+   sql.exec("create table Products (SKU int, Price double);");
 
-            rampart.utils.printf("%-12s %16s\n", rows[i][0], rows[i][1]);
+   var skus = [ 1234, 1235, 1236, 1237, 1238, 1239, 1240,
+                1241, 1242, 1243, 1244, 1245 ];
+   var prices = [ 12.95, 5.99, 69.88, 39.99, 29.99, 25.00, 50.00,
+                  -2.00, 499.95, 19.95, 9.99, 125.00 ];
 
-    }
+   for (var i=0;i<skus.length; i++)
+       sql.exec("insert into Products values (?,?)", [skus[i],prices[i]]);
+     
+   var range=['0..25','25..50','50..'];
+   var rangenames=['Under $25','$25-$49','$50 and up'];
+   var res = sql.exec(
+       "SELECT lookup( Price, convert(?,'strlst','json'), convert(?,'strlst','json') ) PriceRange,"+
+       "count(SKU) NumberOfProducts FROM Products " +
+       "GROUP BY lookup(Price, convert(?,'strlst','json'), convert(?,'strlst','json') )" +
+       "ORDER BY 2 DESC",
+       [range,rangenames,range,rangenames],
+       {returnType:"array"}
+   );
 
+   rows=res.results;
+   cols=res.columns;
+   for (i=0;i<rows.length;i++) {
 
+           if (!i) {
+               rampart.utils.printf("%-12s %16s\n", cols[0] , cols[1]);
+               rampart.utils.printf("------------+----------------\n");
+           }
 
-which would give these results:
+           rampart.utils.printf("%-12s %16s\n", rows[i][0][0], rows[i][1]);
 
-::
-
+   }
+   /* expected output :
    PriceRange   NumberOfProducts
    ------------+----------------
    $50 and up                  4
    Under $25                   4
    $25-$49                     3
                                1
+   */
+
 
 Note that:
 
@@ -563,7 +638,7 @@ lookupCanonicalizeRanges
 
 The ``lookupCanonicalizeRanges()`` function returns the canonical
 version(s) of its ranges argument, which is zero or more ranges of the
-syntaxes acceptable to :ref:`lookup() <function:lookup>`:
+syntaxes used in :ref:`lookup() <function:lookup>` above:
 
 .. code-block:: sql
 
@@ -889,10 +964,15 @@ paths:
 Returns an integer indicating the sort order of ``pathA`` relative to
 ``pathB``: 0 if ``pathA`` is the same as ``pathB``, less than 0 if
 ``pathA`` is less than ``pathB``, greater than 0 if ``pathA`` is greater
-than ``pathB``. Paths are compared case-insensitively if and only if the
-OS is case-insensitive for paths, and OS-specific alternate directory
-separators are considered the same (e.g. “``\``” and “``/``” in
-Windows). Multiple consecutive directory separators are considered the
+than ``pathB``. 
+
+.. nope 
+   Paths are compared case-insensitively if and only if the
+   OS is case-insensitive for paths, and OS-specific alternate directory
+   separators are considered the same (e.g. “``\``” and “``/``” in
+   Windows). 
+
+Multiple consecutive directory separators are considered the
 same as one. A trailing directory separator (if not also a leading
 separator) is ignored. Directory separators sort lexically before any
 other character.
@@ -987,9 +1067,10 @@ yields
 
       /three/four/five
 
-Under Windows, partially absolute path arguments – e.g. “ /dir”
-where the drive or dir is still relative – are considered
-absolute for the sake of overwriting the merge.
+.. nope
+   Under Windows, partially absolute path arguments – e.g. “ /dir”
+   where the drive or dir is still relative – are considered
+   absolute for the sake of overwriting the merge.
 
 Redundant path separators
 internal to an argument are not removed, nor are “.” and “..” path
@@ -1174,8 +1255,7 @@ The results are:
      SYSTRIG              systrig
      SYSMETAINDEX         sysmetaindex
 
-The optional ``mode`` argument is a string-folding mode in the same
-format as ; see the Vortex manual for details on the syntax and default.
+The optional ``mode`` argument is a string-folding mode.
 If ``mode`` is unspecified, the current apicp :ref:`sql-set:stringCompareMode` 
 setting – with “+lowercase” aded – is used.
 
@@ -1208,8 +1288,7 @@ The results are:
      SYSTRIG              SYSTRIG
      SYSMETAINDEX         SYSMETAINDEX
 
-The optional ``mode`` argument is a string-folding mode in the same
-format as ; see the Vortex manual for details on the syntax and default.
+The optional ``mode`` argument is a string-folding mode.
 If ``mode`` is unspecified, the current apicp :ref:`sql-set:stringCompareMode`
 setting – with “+uppercase” added – is used.
 
@@ -1312,17 +1391,16 @@ greater than ``b``:
 
       stringcompare(a, b[, mode])
 
-The strings are compared using the optional ``mode`` argument, which is
-a string-folding mode in the same format as ; see the Vortex manual for
-details on the syntax and default. If ``mode`` is unspecified, the
-current apicp :ref:`sql-set:stringCompareMode` setting is used.
+The strings are compared using the optional ``mode`` argument.
+If ``mode`` is unspecified, the current apicp 
+:ref:`sql-set:stringCompareMode` setting is used.
 
 
 stringformat
 """"""""""""
 
 Returns its arguments formatted into a string (``varchar``), like the
-equivalent Vortex function ``<strfmt>`` (based on the C function
+equivalent Sql.\ :ref:`rampart-sql:stringFormat()` (based on the C function
 ``sprintf()``):
 
 .. code-block:: sql
@@ -1461,8 +1539,8 @@ integer (if a multi-value ``varint``), etc.
 - ``bitisset(a, n)``
   Returns 1 if bit number ``n`` is set to 1 in ``a``, 0 if not.
 
-Internet/IP address functions
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Internet/IPV4 address functions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The following functions manipulate IP network and/or host addresses;
 most take ``inet`` style argument(s). This is an IPv4 address string,
@@ -1939,7 +2017,7 @@ where the terms are:
   the first number may be negative, in which case it is a south
   latitude or west longitude. Note that this is true even for
   :math:`DDDMMSS` (DMS) longitudes – i.e. the ISO 6709 east-positive
-  standard is followed, not the deprecated Texis/Vortex west-positive
+  standard is followed, not the deprecated Texis west-positive
   standard.
 
 - :math:`U`

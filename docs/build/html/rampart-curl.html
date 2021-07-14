@@ -774,7 +774,7 @@ module</span></a>.</p>
     <span class="nx">log</span><span class="o">:</span> <span class="kc">true</span><span class="p">,</span>
     <span class="nx">map</span><span class="o">:</span>
     <span class="p">{</span>
-        <span class="s2">&quot;/&quot;</span><span class="o">:</span> <span class="s2">&quot;/usr/local/rampart/examples/sample-server/mPurpose&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;/&quot;</span><span class="o">:</span> <span class="s2">&quot;/path/to/html_root&quot;</span><span class="p">,</span>
         <span class="s2">&quot;/echo.txt&quot;</span> <span class="o">:</span> <span class="nx">echo</span>
     <span class="p">}</span>
 <span class="p">});</span>
@@ -889,8 +889,8 @@ module</span></a>.</p>
 <p>There may be cases where, while fetching HTML pages, more resources are discovered and can be
 added to the list of URLs that <code class="docutils literal notranslate"><span class="pre">fetch()</span></code> will retrieve.  The following example uses
 <a class="reference internal" href="rampart-html.html#the-rampart-server-html-module"><span class="std std-ref">the rampart-html module</span></a> to extract
-links from the <code class="docutils literal notranslate"><span class="pre">index.html</span></code> page on the sample website in the <code class="docutils literal notranslate"><span class="pre">/usr/local/rampart/examples</span></code>
-directory, and “crawl” the rest of the site.</p>
+links from the <code class="docutils literal notranslate"><span class="pre">index.html</span></code> page on a sample website (using
+<a class="reference external" href="https://github.com/dragdropsite/mPurpose">this</a> example) and “crawl” the rest of the site.</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">);</span>
 
 <span class="kd">var</span> <span class="nx">curl</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-curl&quot;</span><span class="p">);</span>

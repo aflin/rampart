@@ -787,8 +787,8 @@ opened, it must be eventually closed using either <a class="reference internal" 
 <a class="reference internal" href="#txn-abort">txn.abort</a>.  If the script exits or <code class="docutils literal notranslate"><span class="pre">var</span> <span class="pre">txn</span></code> goes out of
 scope (e.g. the function in which <code class="docutils literal notranslate"><span class="pre">var</span> <span class="pre">txn</span></code> was declared returns) without
 closing, it will be automatically closed.  If <code class="docutils literal notranslate"><span class="pre">commit_by_default</span></code>
-is <code class="docutils literal notranslate"><span class="pre">true</span></code>, <a class="reference internal" href="#txn-commit">txn.commit</a> will be called. Otherwise if <code class="docutils literal notranslate"><span class="pre">false</span></code> or
-not set, <a class="reference internal" href="#txn-abort">txn.abort</a> will be called.  This is most relevant when
+is <code class="docutils literal notranslate"><span class="pre">true</span></code>, <a class="reference internal" href="#txn-commit">txn.commit</a> will be called. Otherwise if <code class="docutils literal notranslate"><span class="pre">false</span></code> (the default) or
+not set, <a class="reference internal" href="#txn-abort">txn.abort</a> will be called.  This is only relevant when
 <code class="docutils literal notranslate"><span class="pre">open_rw</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code> and the database is being altered.</p></li>
 </ul>
 </div></blockquote>

@@ -606,7 +606,7 @@ module <rampart-server:The rampart-server HTTP module>`.
         log: true,
         map:
         {
-            "/": "/usr/local/rampart/examples/sample-server/mPurpose",
+            "/": "/path/to/html_root",
             "/echo.txt" : echo
         }
     });
@@ -725,8 +725,8 @@ Multiple HTTP request with addurl()
 There may be cases where, while fetching HTML pages, more resources are discovered and can be 
 added to the list of URLs that ``fetch()`` will retrieve.  The following example uses
 :ref:`the rampart-html module <rampart-html:The rampart-server HTML module>` to extract
-links from the ``index.html`` page on the sample website in the ``/usr/local/rampart/examples``
-directory, and "crawl" the rest of the site.
+links from the ``index.html`` page on a sample website (using 
+`this <https://github.com/dragdropsite/mPurpose>`_ example) and "crawl" the rest of the site.
 
 .. code-block:: javascript
 

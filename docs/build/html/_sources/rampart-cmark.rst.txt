@@ -75,7 +75,7 @@ toHtml
       Markdown.
 
     * ``options`` is an :green:`Object` with the following optional
-      properties:
+      properties (all properties default to ``false`` if not set):
 
         * ``hardBreaks`` - A :green:`Boolean`. If ``true`` render softbreak
     	  elements as hard line breaks.

@@ -91,26 +91,9 @@
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#loading-the-javascript-module">Loading the Javascript Module</a></li>
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#database-functions">Database Functions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#string-functions">String Functions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html">Introduction to Texis SQL</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#creating-a-database">Creating a Database</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#table-definition">Table Definition</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#a-first-look-at-queries">A First Look at Queries</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html">Queries Involving Calculated Values</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html#advanced-queries">Advanced Queries</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql3.html">Intelligent Text Search Queries</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html">Server functions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html">Indexing for Increased Performance</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#keeping-the-database-current">Keeping the Database Current</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#security">Security</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#administration-of-the-database">Administration of the Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html">Server Functions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="sql-set.html">Server Properties</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tsql.html">Tsql Command Line Utility</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html">Metamorph: The Program Inside the Program</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html#hits-intersections-and-sets">Hits, Intersections and Sets</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm3.html">Thesaurus Customization</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm4.html">Tailoring Metamorph’s Linguistics</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm5.html">Types of Searches in Metamorph</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm6.html">REX On Its Own</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
@@ -194,6 +177,7 @@
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#license">License</a></li>
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#what-does-it-do">What does it do?</a></li>
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#documentation-caveat">Documentation Caveat</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#further-reading">Further Reading</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-sql.html#loading-the-javascript-module">Loading the Javascript Module</a></li>
@@ -238,133 +222,7 @@
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#searchfile">searchFile()</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="sql1.html">Introduction to Texis SQL</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#texis-thunderstones-text-information-server">Texis: Thunderstone’s Text Information Server</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#what-is-it">What is it?</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#why-is-that-different">Why is that different?</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#what-can-it-do">What can it do?</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#features-unique-to-texis">Features Unique to Texis</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#zero-latency-insert">Zero Latency Insert</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#variable-sized-records">Variable Sized Records</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#indirect-fields">Indirect Fields</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#variable-length-index-keys">Variable Length Index Keys</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#advantages-of-variable-length-fields-and-btrees">Advantages of Variable Length Fields and Btrees</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#specifications">Specifications</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#texis-as-a-relational-database-management-system">Texis as a Relational Database Management System</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#relational-database-background">Relational Database Background</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="sql1.html#creating-a-database">Creating a Database</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#creating-db-from-command-line">Creating DB from Command Line</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#creating-db-from-javascript">Creating DB from JavaScript</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="sql1.html#table-definition">Table Definition</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#creating-the-resume-table">Creating the Resume Table</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#inserting-data-into-the-resume-table">Inserting Data into the Resume Table</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#defining-a-table">Defining a Table</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#command-discussion">Command Discussion</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#removing-a-table">Removing a Table</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="sql1.html#a-first-look-at-queries">A First Look at Queries</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#first-look-command-discussion">First Look Command Discussion</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#retrieving-from-the-entire-table">Retrieving From the Entire Table</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#retrieving-all-the-columns">Retrieving All the Columns</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#retrieving-a-subset-of-rows-simple-conditions">Retrieving a Subset of Rows: Simple Conditions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#retrieving-a-subset-of-rows-compound-conditions">Retrieving a Subset of Rows: Compound Conditions</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#retrieval-using-the-and-operator">Retrieval Using the AND Operator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#retrieval-using-the-or-operator">Retrieval Using the OR Operator</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#retrieval-using-both-and-and-or-operators">Retrieval Using Both AND and OR Operators</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#retrieval-using-parentheses">Retrieval Using Parentheses</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#logical-operator-not">Logical Operator NOT</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#additional-comparison-operators">Additional Comparison Operators</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#range-and-geographical-searches-using-between">Range and Geographical Searches Using BETWEEN</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#geographical-searches-with-between">Geographical Searches with BETWEEN</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#set-like-searches-using-in-subset-and-intersect">Set-like Searches Using IN, SUBSET and INTERSECT</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#searches-using-in">Searches Using IN</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#searches-using-subset">Searches Using SUBSET</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="sql1.html#index-usage-by-subset">Index Usage by SUBSET</a></li>
-</ul>
-</li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#searches-using-intersect">Searches Using INTERSECT</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="sql1.html#index-usage-by-intersect">Index Usage by INTERSECT</a></li>
-</ul>
-</li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#in-subset-intersect-commonality">IN, SUBSET, INTERSECT Commonality</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#search-condition-using-like">Search Condition Using LIKE</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#like-command-discussion">LIKE Command Discussion</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#relevance-ranking-using-liker-and-likep">Relevance Ranking Using LIKER and LIKEP</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#relevance-ranking-command-discussion">Relevance Ranking Command Discussion</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#query-searching-using-likein">Query searching using LIKEIN</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql1.html#search-condition-using-matches">Search Condition Using MATCHES</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#sorting-your-results">Sorting Your Results</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="sql2.html">Queries Involving Calculated Values</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html#arithmetic-calculations">Arithmetic Calculations</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html#manipulating-information-by-date">Manipulating Information By Date</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html#summarizing-values-group-by-clause-and-aggregate-functions">Summarizing Values: GROUP BY Clause and Aggregate Functions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html#groups-with-conditions-having-clause">Groups With Conditions: HAVING Clause</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="sql2.html#advanced-queries">Advanced Queries</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html#retrieving-data-from-multiple-tables">Retrieving Data From Multiple Tables</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql2.html#command-discussion">Command Discussion</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html#nesting-queries">Nesting Queries</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql2.html#id2">Command Discussion</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html#forming-complex-queries">Forming Complex Queries</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql2.html#joining-a-table-to-itself">Joining a Table to Itself</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql2.html#correlated-subqueries">Correlated Subqueries</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql2.html#subquery-using-exists">Subquery Using EXISTS</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html#virtual-fields">Virtual Fields</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html#column-aliasing">Column Aliasing</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="sql3.html">Intelligent Text Search Queries</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="sql3.html#types-of-text-query">Types of Text Query</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql3.html#definition-of-metamorph-terms">Definition of Metamorph Terms</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql3.html#adjusting-linguistic-controls">Adjusting Linguistic Controls</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql3.html#constructing-a-metamorph-query">Constructing a Metamorph Query</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql3.html#keyword-search">Keyword Search</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql3.html#refining-a-query">Refining a Query</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql3.html#adjusting-proximity-range-by-specifying-delimiters">Adjusting Proximity Range by Specifying Delimiters</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql3.html#delimiter-syntax-summary">Delimiter Syntax Summary</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql3.html#rules-of-delimiter-syntax">Rules of Delimiter Syntax</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql3.html#using-set-logic-in-metamorph-queries">Using Set Logic in Metamorph Queries</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql3.html#set-logic-and-intersections-defined">Set Logic and Intersections Defined</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql3.html#maximum-intersections-possible-and">Maximum Intersections Possible (“AND”)</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql3.html#specifying-fewer-intersections">Specifying Fewer Intersections</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql3.html#specifying-no-intersections-or">Specifying No Intersections (“OR”)</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql3.html#weighting-items-for-precedence">Weighting Items for Precedence (+)</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql3.html#marking-items-for-exclusion-not">Marking Items for Exclusion (“NOT”) (-)</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql3.html#combinatorial-logic">Combinatorial Logic</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql3.html#combinatorial-logic-and-liker">Combinatorial Logic and LIKER</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql3.html#metamorph-logic-rules-summary">Metamorph Logic Rules Summary</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql3.html#other-metamorph-features">Other Metamorph Features</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="sql-server-funcs.html">Server functions</a><ul>
+<li class="toctree-l1"><a class="reference internal" href="sql-server-funcs.html">Server Functions</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html#general-functions">General Functions</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="sql-server-funcs.html#exec">exec</a></li>
 <li class="toctree-l3"><a class="reference internal" href="sql-server-funcs.html#mminfo">mminfo</a></li>
@@ -410,7 +268,7 @@
 <li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html#math-functions">Math functions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html#date-functions">Date functions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html#bit-manipulation-functions">Bit manipulation functions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html#internet-ip-address-functions">Internet/IP address functions</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html#internet-ipv4-address-functions">Internet/IPV4 address functions</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="sql-server-funcs.html#urlcanonicalize">urlcanonicalize</a></li>
 </ul>
 </li>
@@ -439,78 +297,6 @@
 <li class="toctree-l3"><a class="reference internal" href="sql-server-funcs.html#json-merge-preserve">json_merge_preserve</a></li>
 </ul>
 </li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="sql4.html">Indexing for Increased Performance</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#when-and-how-to-index">When and How to Index</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#creating-an-index">Creating An Index</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#command-discussion">Command Discussion</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#creating-a-unique-index">Creating a Unique Index</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#id1">Command Discussion</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#creating-a-metamorph-index">Creating a Metamorph Index</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#metamorph-index-types-inverted-vs-compact-vs-counter">Metamorph Index Types: Inverted vs. Compact vs. Counter</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#inverted">Inverted</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#compact">Compact</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#counter">Counter</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#metamorph-index-capabilities-and-limitations">Metamorph Index Capabilities and Limitations</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#using-like3-for-index-only-search-no-post-search">Using LIKE3 for Index Only Search (No Post-Search)</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#difference-between-like-and-like3">Difference between LIKE and LIKE3</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#creating-an-inverted-index">Creating an Inverted Index</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#index-options">Index Options</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#available-options">Available Options</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#dropping-an-index">Dropping an Index</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="sql4.html#keeping-the-database-current">Keeping the Database Current</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#adding-new-records">Adding New Records</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#inserting-one-row-at-a-time">Inserting One Row at a Time</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#id2">Command Discussion</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#inserting-text">Inserting Text</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#inserting-multiple-rows-at-a-time">Inserting Multiple Rows at a Time</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#id3">Command Discussion</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#updating-records">Updating Records</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#id4">Command Discussion</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#making-a-texis-owned-file">Making a Texis Owned File</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#deleting-records">Deleting Records</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#id5">Command Discussion</a></li>
-</ul>
-</li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="sql4.html#security">Security</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#creating-users-and-logging-in">Creating Users and Logging In</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#granting-privileges">Granting Privileges</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#id6">Command Discussion</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#removing-privileges">Removing Privileges</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#id7">Command Discussion</a></li>
-</ul>
-</li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="sql4.html#administration-of-the-database">Administration of the Database</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#system-catalog">System Catalog</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#optimization">Optimization</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#table-compaction">Table Compaction</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#index-maintenance">Index Maintenance</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#manual-index-optimization-via-create-metamorph-index">Manual Index Optimization via CREATE METAMORPH INDEX</a></li>
-<li class="toctree-l3"><a class="reference internal" href="sql4.html#manual-index-optimization-via-alter-index">Manual Index Optimization via ALTER INDEX</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#reserved-words">Reserved Words</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="sql-set.html">Server Properties</a><ul>
@@ -669,91 +455,6 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="tsql.html">Tsql Command Line Utility</a></li>
-<li class="toctree-l1"><a class="reference internal" href="mm2.html">Metamorph: The Program Inside the Program</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html#background">Background</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="mm2.html#hits-intersections-and-sets">Hits, Intersections and Sets</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html#definition-and-background">Definition and Background</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html#basic-operation">Basic Operation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html#intersections-and-search-logic">Intersections and Search Logic</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html#intersection-quantity-specification-further-explained">Intersection Quantity Specification Further Explained</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html#how-and-logic-affects-intersection-settings">How ‘+’ and ‘-’ Logic Affects Intersection Settings</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html#modulating-set-size">Modulating Set Size</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="mm2.html#limiting-sets-to-roots-only">Limiting Sets to Roots Only</a></li>
-<li class="toctree-l3"><a class="reference internal" href="mm2.html#expanding-sets-by-use-of-see-references">Expanding Sets by Use of See References</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html#modulating-set-content">Modulating Set Content</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html#modulating-hit-size-by-adjusting-delimiters">Modulating Hit Size by Adjusting Delimiters</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="mm2.html#discussion">Discussion</a></li>
-<li class="toctree-l3"><a class="reference internal" href="mm2.html#delimiter-syntax-summary">Delimiter Syntax Summary</a></li>
-<li class="toctree-l3"><a class="reference internal" href="mm2.html#rules-of-delimiter-syntax">Rules of Delimiter Syntax</a></li>
-</ul>
-</li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="mm3.html">Thesaurus Customization</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="mm3.html#specializing-knowledge">Specializing Knowledge</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm3.html#equivalence-file-explanation">Equivalence File Explanation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm3.html#editing-concept-sets-with-backref">Editing Concept Sets With Backref</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm3.html#toggling-equiv-expansion-on-or-off">Toggling Equiv Expansion On or Off</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm3.html#creating-a-user-equivalence-file-by-hand">Creating a User Equivalence File By Hand</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm3.html#user-equivalence-file-format">User Equivalence File Format</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm3.html#back-referencing">Back Referencing</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm3.html#see-referencing">See Referencing</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm3.html#word-classes-and-parts-of-speech">Word Classes and Parts of Speech</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm3.html#rules-of-precedence-and-syntax">Rules of Precedence and Syntax</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm3.html#specialized-user-equivalence-files">Specialized User Equivalence Files</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="mm4.html">Tailoring Metamorph’s Linguistics</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="mm4.html#editing-special-word-lists">Editing Special Word Lists</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm4.html#question-parsing">Question Parsing</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm4.html#morpheme-processing">Morpheme Processing</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="mm4.html#morpheme-stripping-routine">Morpheme Stripping Routine</a></li>
-<li class="toctree-l3"><a class="reference internal" href="mm4.html#suffix-list-editing-notes">Suffix List Editing Notes</a></li>
-<li class="toctree-l3"><a class="reference internal" href="mm4.html#toggling-prefix-suffix-processing-on-off">Toggling Prefix/Suffix Processing On/Off</a></li>
-<li class="toctree-l3"><a class="reference internal" href="mm4.html#toggling-morpheme-rebuild-step-on-off">Toggling Morpheme Rebuild Step On/Off</a></li>
-<li class="toctree-l3"><a class="reference internal" href="mm4.html#setting-minimum-word-length">Setting Minimum Word Length</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="mm4.html#warning-to-linguistic-fiddlers">Warning to Linguistic Fiddlers</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm4.html#apicp-metamorph-control-parameters-summary">APICP Metamorph Control Parameters Summary</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="mm5.html">Types of Searches in Metamorph</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="mm5.html#multiple-search-algorithms">Multiple Search Algorithms</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm5.html#the-natural-language-question">The Natural Language Question</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm5.html#single-multiple-items-keywords-phrases-wildcard-patterns">Single/Multiple Items, Keywords, Phrases, Wildcard Patterns (*)</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm5.html#intelligent-intersection-search">Intelligent Intersection Search</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm5.html#string-search-literal-pattern-match">String Search (Literal Pattern Match)</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm5.html#fixed-and-variable-length-regular-expressions-rex">Fixed and Variable Length Regular Expressions (REX)</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="mm5.html#rex-description">REX Description</a></li>
-<li class="toctree-l3"><a class="reference internal" href="mm5.html#examples">Examples</a></li>
-<li class="toctree-l3"><a class="reference internal" href="mm5.html#examples-of-some-useful-rex-expressions">Examples of Some Useful REX Expressions</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="mm5.html#misspellings-typos-and-pattern-approximations-xpm">Misspellings, Typos, and Pattern Approximations (XPM)</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="mm5.html#searching-for-approximations">Searching for Approximations</a></li>
-<li class="toctree-l3"><a class="reference internal" href="mm5.html#xpm-rules-of-syntax">XPM Rules of Syntax</a></li>
-</ul>
-</li>
-<li class="toctree-l2"><a class="reference internal" href="mm5.html#numeric-quantities-entered-as-text-npm">Numeric Quantities Entered as Text (NPM)</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm5.html#designating-logic-operators-and">Designating Logic Operators (+) and (-)</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="mm6.html">REX On Its Own</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="mm6.html#rex-the-regular-expression-pattern-matcher">REX, The Regular Expression Pattern Matcher</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm6.html#rex-program-syntax-and-options">REX Program Syntax and Options</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm6.html#rex-expression-syntax">REX Expression Syntax</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm6.html#rex-repetition-operators">REX Repetition Operators</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm6.html#re2-syntax">RE2 Syntax</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm6.html#rex-replacement-strings">REX Replacement Strings</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm6.html#rex-caveats-and-commentary">REX Caveats and Commentary</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm6.html#other-rex-notes">Other REX Notes</a></li>
-</ul>
-</li>
 </ul>
 </div>
 </div>

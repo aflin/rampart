@@ -40,7 +40,7 @@
     <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
         <link rel="up" title="The rampart-sql module" href="sqltoc.html"/>
         <link rel="next" title="Tsql Command Line Utility" href="tsql.html"/>
-        <link rel="prev" title="Indexing for Increased Performance" href="sql4.html"/> 
+        <link rel="prev" title="Server Functions" href="sql-server-funcs.html"/> 
 
   
   <script src="_static/js/modernizr.min.js"></script>
@@ -92,18 +92,7 @@
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#loading-the-javascript-module">Loading the Javascript Module</a></li>
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#database-functions">Database Functions</a></li>
 <li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#string-functions">String Functions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html">Introduction to Texis SQL</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#creating-a-database">Creating a Database</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#table-definition">Table Definition</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql1.html#a-first-look-at-queries">A First Look at Queries</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html">Queries Involving Calculated Values</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql2.html#advanced-queries">Advanced Queries</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql3.html">Intelligent Text Search Queries</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html">Server functions</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html">Indexing for Increased Performance</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#keeping-the-database-current">Keeping the Database Current</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#security">Security</a></li>
-<li class="toctree-l2"><a class="reference internal" href="sql4.html#administration-of-the-database">Administration of the Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html">Server Functions</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Server Properties</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#search-and-optimization-parameters">Search and optimization parameters</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#defaultlike">defaultLike</a></li>
@@ -260,12 +249,6 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="tsql.html">Tsql Command Line Utility</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html">Metamorph: The Program Inside the Program</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm2.html#hits-intersections-and-sets">Hits, Intersections and Sets</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm3.html">Thesaurus Customization</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm4.html">Tailoring Metamorph’s Linguistics</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm5.html">Types of Searches in Metamorph</a></li>
-<li class="toctree-l2"><a class="reference internal" href="mm6.html">REX On Its Own</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
@@ -344,12 +327,16 @@
   <div class="section" id="server-properties">
 <h1>Server Properties<a class="headerlink" href="#server-properties" title="Permalink to this headline">¶</a></h1>
 <p>There are a number of properties that are settable in the SQL Engine.
-They do not need to be changed unless the behavior of the system must be
-modified. The properties are set using the following SQL syntax:</p>
+They do not need to be changed unless a change in the  behavior of
+the system is desired.</p>
+<p>Using the command line utility
+<a class="reference internal" href="tsql.html#tsql-command-line-utility"><span class="std std-ref">tsql</span></a>
+the properties are set using the following SQL syntax:</p>
 <div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SET</span> <span class="n">property</span> <span class="o">=</span> <span class="n">value</span><span class="p">;</span>
 </pre></div>
 </div>
-<p>or using the <a class="reference internal" href="rampart-sql.html#set"><span class="std std-ref">set()</span></a> function:</p>
+<p>In Rampart, this is accomplished by using the
+<a class="reference internal" href="rampart-sql.html#set"><span class="std std-ref">set()</span></a> function:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">sql</span><span class="p">.</span><span class="nx">set</span><span class="p">({</span>
    <span class="nx">property1</span><span class="o">:</span> <span class="nx">value1</span>
    <span class="p">[,</span> <span class="nx">property2</span><span class="o">:</span> <span class="nx">value2</span><span class="p">,</span> <span class="p">...]</span>
@@ -357,16 +344,25 @@ modified. The properties are set using the following SQL syntax:</p>
 </pre></div>
 </div>
 <p>The <code class="docutils literal notranslate"><span class="pre">property</span></code> names are case insensitive and may be specified in
-<em>camelCase</em>, <em>lower case</em>, <em>UPPER CASE</em> or as you prefer.  In Rampart
-JavaScript, most properties can be set using either
-<code class="docutils literal notranslate"><span class="pre">sql.exec(&quot;SET</span> <span class="pre">property</span> <span class="pre">=</span> <span class="pre">value;&quot;);</span></code> or <code class="docutils literal notranslate"><span class="pre">sql.set({property:</span> <span class="pre">value});</span></code>.
+<em>camelCase</em>, <em>lower case</em>, <em>UPPER CASE</em> or as you prefer.</p>
+<p>The <cite>Server Properties</cite> set using either
+<a class="reference internal" href="tsql.html#tsql-command-line-utility"><span class="std std-ref">tsql</span></a>
+or <a class="reference internal" href="rampart-sql.html#set"><span class="std std-ref">set()</span></a> are for the most part identical.
 However, note below that a few properties (such as <code class="docutils literal notranslate"><span class="pre">noiseList</span></code>) can only
 be set using the <a class="reference internal" href="rampart-sql.html#set"><span class="std std-ref">set()</span></a> function.</p>
-<p>The <code class="docutils literal notranslate"><span class="pre">value</span></code> can be one of four types depending on the property: Number,
+<p>In <a class="reference internal" href="tsql.html#tsql-command-line-utility"><span class="std std-ref">tsql</span></a>
+the <code class="docutils literal notranslate"><span class="pre">value</span></code> can be one of four types depending on the property: Number,
 Boolean, Array or String.  A Boolean value is either an integer  – <code class="docutils literal notranslate"><span class="pre">0</span></code> is false,
-<code class="docutils literal notranslate"><span class="pre">1</span></code> is true. Using the <code class="docutils literal notranslate"><span class="pre">sql.set()</span></code>
-function, Booleans cat also be set to JavaScript Booleans <code class="docutils literal notranslate"><span class="pre">true</span></code> or <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p>
-<p>The settings are grouped as follows:</p>
+<code class="docutils literal notranslate"><span class="pre">1</span></code> is true. Using the <a class="reference internal" href="rampart-sql.html#set"><span class="std std-ref">set()</span></a>
+function, Booleans are set using the JavaScript Booleans <code class="docutils literal notranslate"><span class="pre">true</span></code> or <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p>
+<dl class="simple">
+<dt>NOTE:</dt><dd><p>In Rampart Javascript, it is possible to use
+<code class="docutils literal notranslate"><span class="pre">sql.exec(&quot;SET</span> <span class="pre">property</span> <span class="pre">=</span> <span class="pre">value;&quot;)</span></code>.  However doing so will set
+this property for every open <code class="docutils literal notranslate"><span class="pre">sql</span></code> handle opened with <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">Sql.init()</span></code>.
+Thus it is preferable to use <code class="docutils literal notranslate"><span class="pre">sql.set()</span></code> in order to maintain distinct
+settings per handle.</p>
+</dd>
+</dl>
 <div class="section" id="search-and-optimization-parameters">
 <h2>Search and optimization parameters<a class="headerlink" href="#search-and-optimization-parameters" title="Permalink to this headline">¶</a></h2>
 <p>These settings affect the way that Texis will process the search. They
@@ -1080,7 +1076,7 @@ original word is at least minwordlen long).  Default value is <code class="docut
 <blockquote>
 <div><p>AKA <code class="docutils literal notranslate"><span class="pre">equivsFile</span></code> when used from <code class="docutils literal notranslate"><span class="pre">sql.set()</span></code>.  The name of the
 equivalence file.  Default is “builtin”, which uses the built-in
-<a class="reference internal" href="mm3.html#thesaurus-customization"><span class="std std-ref">equivalence list</span></a>.</p>
+<span class="xref std std-ref">equivalence list</span>.</p>
 </div></blockquote>
 </div>
 <div class="section" id="exactphrase">
@@ -1596,7 +1592,7 @@ operators that look at individual items in a <code class="docutils literal notra
 <p>If <code class="docutils literal notranslate"><span class="pre">indexValues</span></code> is set to <code class="docutils literal notranslate"><span class="pre">all</span></code> – or the index is not on a
 <code class="docutils literal notranslate"><span class="pre">strlst</span></code> field, or is on multiple fields – such splitting does not
 occur, and the index can generally not be used for set-like queries
-(with some exceptions; see <a class="reference internal" href="sql1.html#searches-using-subset"><span class="std std-ref">Searches Using SUBSET</span></a>  for details).</p>
+(with some exceptions; see <span class="xref std std-ref">sql1:Searches Using SUBSET</span>  for details).</p>
 <p>Note that if index values are split (i.e. <code class="docutils literal notranslate"><span class="pre">splitStrlst</span></code> set and index
 is one field which is <code class="docutils literal notranslate"><span class="pre">strlst</span></code>), table rows with an empty (zero-items)
 <code class="docutils literal notranslate"><span class="pre">strlst</span></code> value will not be stored in the index. This means that
@@ -2150,9 +2146,9 @@ table rows for results).</p>
 <blockquote>
 <div><p>How the IN operator should behave. If set to
 <code class="docutils literal notranslate"><span class="pre">subset</span></code>, IN behaves like the
-<a class="reference internal" href="sql1.html#searches-using-subset"><span class="std std-ref">SUBSET</span></a> operator. If set to
+<span class="xref std std-ref">SUBSET</span> operator. If set to
 <code class="docutils literal notranslate"><span class="pre">intersect</span></code>, IN behaves like the
-<a class="reference internal" href="sql1.html#searches-using-intersect"><span class="std std-ref">INTERSECT</span></a>
+<span class="xref std std-ref">INTERSECT</span>
 operator. The default is <code class="docutils literal notranslate"><span class="pre">subset</span></code>.</p>
 </div></blockquote>
 </div>
@@ -2475,7 +2471,7 @@ one of the following:</p>
         <a href="tsql.html" class="btn btn-neutral float-right" title="Tsql Command Line Utility" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
       
       
-        <a href="sql4.html" class="btn btn-neutral" title="Indexing for Increased Performance" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+        <a href="sql-server-funcs.html" class="btn btn-neutral" title="Server Functions" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
       
     </div>
   

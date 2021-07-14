@@ -132,10 +132,14 @@ Where:
       ``accessLog`` and/or ``errorLog`` below are set.
 
     * ``accessLog``: A :green:`String`, the location of the access log.  The
-      default, if not specified is to log to ``stdout``.
+      default, if not specified is to log to ``stdout``.  If given, the log 
+      file will be closed and re-opened upon sending the rampart executable
+      a ``USR1`` signal, which allows log rotation.
       
     * ``errorLog``: A :green:`String`, the location of the error log.  The
-      default, if not specified is to log to ``stderr``.
+      default, if not specified is to log to ``stderr``. If given, the log 
+      file will be closed and re-opened upon sending the rampart executable
+      a ``USR1`` signal, which allows log rotation.
 
     * ``daemon``: A :green:`Boolean`, whether to fork and detach from the
       controlling terminal.  If ``true``, the ``start()`` function will return

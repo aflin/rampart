@@ -649,8 +649,8 @@ Where:
       `txn.abort`_\ .  If the script exits or ``var txn`` goes out of
       scope (e.g. the function in which ``var txn`` was declared returns) without
       closing, it will be automatically closed.  If ``commit_by_default``
-      is ``true``, `txn.commit`_ will be called. Otherwise if ``false`` or
-      not set, `txn.abort`_ will be called.  This is most relevant when 
+      is ``true``, `txn.commit`_ will be called. Otherwise if ``false`` (the default) or
+      not set, `txn.abort`_ will be called.  This is only relevant when 
       ``open_rw`` is ``true`` and the database is being altered.
 
 Note:

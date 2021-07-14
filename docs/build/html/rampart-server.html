@@ -39,7 +39,7 @@
         <link rel="search" title="Search" href="search.html"/>
     <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
         <link rel="next" title="The rampart-server HTML module" href="rampart-html.html"/>
-        <link rel="prev" title="REX On Its Own" href="mm6.html"/> 
+        <link rel="prev" title="Tsql Command Line Utility" href="tsql.html"/> 
 
   
   <script src="_static/js/modernizr.min.js"></script>
@@ -321,9 +321,13 @@ timeout/unlimited.</p></li>
 are logged to <code class="docutils literal notranslate"><span class="pre">stdout</span></code> and errors are logged to <code class="docutils literal notranslate"><span class="pre">stderr</span></code> unless
 <code class="docutils literal notranslate"><span class="pre">accessLog</span></code> and/or <code class="docutils literal notranslate"><span class="pre">errorLog</span></code> below are set.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">accessLog</span></code>: A <span class="green">String</span>, the location of the access log.  The
-default, if not specified is to log to <code class="docutils literal notranslate"><span class="pre">stdout</span></code>.</p></li>
+default, if not specified is to log to <code class="docutils literal notranslate"><span class="pre">stdout</span></code>.  If given, the log
+file will be closed and re-opened upon sending the rampart executable
+a <code class="docutils literal notranslate"><span class="pre">USR1</span></code> signal, which allows log rotation.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">errorLog</span></code>: A <span class="green">String</span>, the location of the error log.  The
-default, if not specified is to log to <code class="docutils literal notranslate"><span class="pre">stderr</span></code>.</p></li>
+default, if not specified is to log to <code class="docutils literal notranslate"><span class="pre">stderr</span></code>. If given, the log
+file will be closed and re-opened upon sending the rampart executable
+a <code class="docutils literal notranslate"><span class="pre">USR1</span></code> signal, which allows log rotation.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">daemon</span></code>: A <span class="green">Boolean</span>, whether to fork and detach from the
 controlling terminal.  If <code class="docutils literal notranslate"><span class="pre">true</span></code>, the <code class="docutils literal notranslate"><span class="pre">start()</span></code> function will return
 the pid of the server. Otherwise the pid of the current process is
@@ -2212,7 +2216,7 @@ from the filesystem which end in <code class="docutils literal notranslate"><spa
         <a href="rampart-html.html" class="btn btn-neutral float-right" title="The rampart-server HTML module" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
       
       
-        <a href="mm6.html" class="btn btn-neutral" title="REX On Its Own" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+        <a href="tsql.html" class="btn btn-neutral" title="Tsql Command Line Utility" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
       
     </div>
   

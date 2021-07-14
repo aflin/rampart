@@ -312,7 +312,7 @@ With the exception that it:
 
    * Processes `babel <ECMAScript 2015+ and Babel.js>`_ code.
    * Includes the `Extra JavaScript Functionality`_ described below.
-   * Searches for the ``jscode`` file in a manner similar to 
+   * Searches for the ``jsfile`` file in a manner similar to 
      the `require <Using the require Function to Import Modules>`_
      function.
 
