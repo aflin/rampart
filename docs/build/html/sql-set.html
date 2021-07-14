@@ -356,11 +356,11 @@ Boolean, Array or String.  A Boolean value is either an integer  – <code class
 <code class="docutils literal notranslate"><span class="pre">1</span></code> is true. Using the <a class="reference internal" href="rampart-sql.html#set"><span class="std std-ref">set()</span></a>
 function, Booleans are set using the JavaScript Booleans <code class="docutils literal notranslate"><span class="pre">true</span></code> or <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p>
 <dl class="simple">
-<dt>NOTE:</dt><dd><p>In Rampart Javascript, it is possible to use
-<code class="docutils literal notranslate"><span class="pre">sql.exec(&quot;SET</span> <span class="pre">property</span> <span class="pre">=</span> <span class="pre">value;&quot;)</span></code>.  However doing so will set
-this property for every open <code class="docutils literal notranslate"><span class="pre">sql</span></code> handle opened with <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">Sql.init()</span></code>.
-Thus it is preferable to use <code class="docutils literal notranslate"><span class="pre">sql.set()</span></code> in order to maintain distinct
-settings per handle.</p>
+<dt>NOTE:</dt><dd><p>In Rampart Javascript, it is possible to use <code class="docutils literal notranslate"><span class="pre">sql.exec(&quot;SET</span> <span class="pre">property</span> <span class="pre">=</span> <span class="pre">value;&quot;)</span></code>.
+However doing so will set the property for every open <code class="docutils literal notranslate"><span class="pre">sql</span></code> handle
+opened with <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">Sql.init()</span></code> and not allow settings to be automatically
+reapplied when using multiple <code class="docutils literal notranslate"><span class="pre">sql</span></code> handles.  Thus one should always
+use <code class="docutils literal notranslate"><span class="pre">sql.set()</span></code> in order to maintain distinct settings per handle.</p>
 </dd>
 </dl>
 <div class="section" id="search-and-optimization-parameters">
@@ -1503,8 +1503,11 @@ of word expressions.</p>
 <span class="cm">   add two expressions and list.                  */</span>
 
 <span class="kd">var</span> <span class="nx">lists</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">set</span><span class="p">({</span>
-   <span class="nx">deleteExpressions</span><span class="o">:</span> <span class="mi">0</span><span class="p">,</span>
-   <span class="nx">addExpressions</span><span class="o">:</span> <span class="p">[</span> <span class="sr">/\alnum\x80-\xff]+/</span><span class="p">,</span><span class="s2">&quot;[\\alnum\\x80-\\xff&#39;]+&quot;</span> <span class="p">],</span>
+   <span class="nx">deleteExpressions</span><span class="o">:</span> <span class="mi">0</span><span class="p">,</span>              <span class="c1">// delete the default at pos 0</span>
+   <span class="nx">addExpressions</span><span class="o">:</span> <span class="p">[</span>
+      <span class="s2">&quot;[\\alnum\\x80-\\xff]+&quot;</span><span class="p">,</span>        <span class="c1">// letters and numbers</span>
+      <span class="s2">&quot;[\\alnum\\$\\%\\@\\-\\_\\+]+&quot;</span>  <span class="c1">// letters, numbers and additional chars</span>
+   <span class="p">],</span>
    <span class="nx">listExpressions</span><span class="o">:</span> <span class="kc">true</span>
 <span class="p">});</span>
 
@@ -1514,7 +1517,7 @@ of word expressions.</p>
 <span class="cm">{</span>
 <span class="cm">   &quot;expressionsList&quot;: [</span>
 <span class="cm">      &quot;\\alnum\\x80-\\xff]+&quot;,</span>
-<span class="cm">      &quot;[\\alnum\\x80-\\xff&#39;]+&quot;</span>
+<span class="cm">      &quot;[\\alnum\\$\\%\\@\\-\\_\\+]+&quot;</span>
 <span class="cm">   ]</span>
 <span class="cm">}</span>
 <span class="cm">*/</span>

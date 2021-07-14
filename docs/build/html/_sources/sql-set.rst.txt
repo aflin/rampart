@@ -40,11 +40,11 @@ Boolean, Array or String.  A Boolean value is either an integer  – ``0`` is fa
 function, Booleans are set using the JavaScript Booleans ``true`` or ``false``.
 
 NOTE:
-   In Rampart Javascript, it is possible to use 
-   ``sql.exec("SET property = value;")``.  However doing so will set
-   this property for every open ``sql`` handle opened with ``new Sql.init()``.
-   Thus it is preferable to use ``sql.set()`` in order to maintain distinct
-   settings per handle.
+   In Rampart Javascript, it is possible to use ``sql.exec("SET property = value;")``.  
+   However doing so will set the property for every open ``sql`` handle
+   opened with ``new Sql.init()`` and not allow settings to be automatically
+   reapplied when using multiple ``sql`` handles.  Thus one should always
+   use ``sql.set()`` in order to maintain distinct settings per handle.
 
 
 Search and optimization parameters
@@ -1353,8 +1353,11 @@ lstExp
           add two expressions and list.                  */
 
        var lists = sql.set({
-          deleteExpressions: 0,
-          addExpressions: [ /\alnum\x80-\xff]+/,"[\\alnum\\x80-\\xff']+" ],
+          deleteExpressions: 0,              // delete the default at pos 0
+          addExpressions: [ 
+             "[\\alnum\\x80-\\xff]+",        // letters and numbers
+             "[\\alnum\\$\\%\\@\\-\\_\\+]+"  // letters, numbers and additional chars
+          ],
           listExpressions: true
        });
        
@@ -1364,7 +1367,7 @@ lstExp
        {
           "expressionsList": [
              "\\alnum\\x80-\\xff]+",
-             "[\\alnum\\x80-\\xff']+"
+             "[\\alnum\\$\\%\\@\\-\\_\\+]+"
           ]
        }
        */
