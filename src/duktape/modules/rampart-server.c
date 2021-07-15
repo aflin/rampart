@@ -4049,10 +4049,13 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
 
         if (duk_rp_GPS_icase(ctx, ob_idx, "user"))
         {
-            const char *user=REQUIRE_STRING(ctx, -1, "server.start: parameter \"user\" requires a string (username)");
+            if ( geteuid() == 0)
+            {
+                const char *user=REQUIRE_STRING(ctx, -1, "server.start: parameter \"user\" requires a string (username)");
 
-            if(! (pwd = getpwnam(user)) )
-                RP_THROW(ctx, "server.start: error getting user '%s' in start()\n",user);
+                if(! (pwd = getpwnam(user)) )
+                    RP_THROW(ctx, "server.start: error getting user '%s' in start()\n",user);
+            }
         }
         duk_pop(ctx);
 
