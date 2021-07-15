@@ -3370,6 +3370,55 @@ duk_ret_t duk_texis_reset(duk_context *ctx)
     return 0;
 }
 
+static void sql_normalize_prop(char *prop, const char *dprop)
+{
+    int i=0;
+
+    strcpy(prop, dprop);
+
+    for(i = 0; prop[i]; i++)
+        prop[i] = tolower(prop[i]);
+
+    /* a few aliases */
+    if(!strcmp("listexp", prop) || !strcmp("listexpressions", prop))
+        strcpy(prop, "lstexp");
+    else if (!strcmp("listindextmp", prop) || !strcmp("listindextemp", prop) || !strcmp("lstindextemp", prop))
+        strcpy(prop, "lstindextmp"); 
+    else if (!strcmp("deleteindextmp", prop) || !strcmp("deleteindextemp", prop) || !strcmp("delindextemp", prop))
+        strcpy(prop, "delindextmp"); 
+    else if (!strcmp("addindextemp", prop))
+        strcpy(prop, "addindextmp");
+    else if (!strcmp("addexpressions", prop))
+        strcpy(prop, "addexp");
+    else if (!strcmp("delexpressions", prop) || !strcmp("deleteexpressions", prop))
+        strcpy(prop, "delexp");
+    else if (!strcmp("keepequivs", prop) || !strcmp("useequivs", prop))
+        strcpy(prop, "useequiv");
+    else if (!strcmp("equivsfile", prop))
+        strcpy(prop, "eqprefix");
+    else if (!strcmp("userequivsfile", prop))
+        strcpy(prop, "ueqprefix");
+    else if (!strcmp ("listnoise",prop))
+        strcpy (prop, "lstnoise");
+    else if (!strcmp ("listsuffix",prop))
+        strcpy (prop, "lstsuffix");
+    else if (!strcmp ("listsuffixequivs",prop))
+        strcpy (prop, "lstsuffixeqivs");
+    else if (!strcmp ("listprefix",prop))
+        strcpy (prop, "lstprefix");
+    else if (!strcmp ("noiselist",prop))
+        strcpy (prop, "noiselst");
+    else if (!strcmp ("suffixlist",prop))
+        strcpy (prop, "suffixlst");
+    else if (!strcmp ("suffixequivslist",prop))
+        strcpy (prop, "suffixeqivslst");
+    else if (!strcmp ("suffixeqlist",prop))
+        strcpy (prop, "suffixeqlst");
+    else if (!strcmp ("prefixlist",prop))
+        strcpy (prop, "prefixlst");
+}
+
+
 static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
 {
     LPSTMT lpstmt;
@@ -3393,12 +3442,8 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
         return -2;
     }
 
-    // check for a full reset and do that first
-    // this should remain undocumented
-    // FIXME: we are probably at the point where this is always done.
-
     //cumulative settings are always set, so reset to default here and reapply
-    TXresetproperties(ddic);
+    TXresetproperties(ddic); //this resets indextmplst and explst as well
     if(setprop(ddic, "querysettings", "defaults" )==-1)
     {
         sprintf(errbuf, "sql set");
@@ -3415,10 +3460,58 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
         return -2;
     }
 
+    /**** Reapply indextmplst and explst if it was modified */
+    duk_push_this(ctx);
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("indlist")))
+    {
+        int i=0, len = duk_get_length(ctx, -1);
+        const char *val;
+
+        for (i=0;i<len;i++)
+        {
+            duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+            val = duk_get_string(ctx, -1);
+            if(setprop(ddic, "addindextmp", (char*)val )==-1)
+            {
+                sprintf(errbuf, "sql set");
+                return -2;
+            }
+            duk_pop(ctx);
+        }
+    }
+    duk_pop(ctx);//list or undef
+
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("explist")))
+    {
+        int i=0, len = duk_get_length(ctx, -1);
+        const char *val;
+
+        /* delete first entry for an empty list */
+        if(setprop(ddic, "delexp", "0" )==-1)
+        {
+            sprintf(errbuf, "sql set");
+            return -2;
+        }
+        
+        for (i=0;i<len;i++)
+        {
+            duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+            val = duk_get_string(ctx, -1);
+            if(setprop(ddic, "addexp", (char*)val )==-1)
+            {
+                sprintf(errbuf, "sql set");
+                return -2;
+            }
+            duk_pop(ctx);
+        }
+    }
+    duk_pop_2(ctx);// list and this
+
     // apply all settings in object
     duk_enum(ctx, -1, 0);
     while (duk_next(ctx, -1, 1))
     {
+/*
         int retlisttype=-1, setlisttype=-1, i=0;
         char propa[64], *prop=&propa[0];
         duk_size_t sz;
@@ -3429,48 +3522,72 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
             sprintf(errbuf, "sql.set - '%s' - unknown/invalid property", dprop);
             return -1;
         }
-        strcpy(prop, dprop);
 
-        for(i = 0; prop[i]; i++)
-            prop[i] = tolower(prop[i]);
+        sql_normalize_prop(prop, dprop);
+*/
+        const char *prop=duk_get_string(ctx, -2);
+        int retlisttype=-1, setlisttype=-1;
 
-        /* a few aliases */
-        if(!strcmp("listexp", prop) || !strcmp("listexpressions", prop))
-            prop="lstexp";
-        else if (!strcmp("listindextmp", prop) || !strcmp("listindextemp", prop) || !strcmp("lstindextemp", prop))
-            prop="lstindextmp"; 
-        else if (!strcmp("deleteindextmp", prop) || !strcmp("deleteindextemp", prop) || !strcmp("delindextemp", prop))
-            prop="delindextmp"; 
-        else if (!strcmp("addindextemp", prop))
-            prop="addindextmp";
-        else if (!strcmp("addexpressions", prop))
-            prop="addexp";
-        else if (!strcmp("delexpressions", prop) || !strcmp("deleteexpressions", prop))
-            prop="delexp";
-        else if (!strcmp("keepequivs", prop) || !strcmp("useequivs", prop))
-            prop="useequiv";
-        else if (!strcmp("equivsfile", prop))
-            prop="eqprefix";
-        else if (!strcmp("userequivsfile", prop))
-            prop="ueqprefix";
-        else if (!strcmp ("lstnoise", prop) || !strcmp ("listnoise",prop))
+        if (!strcmp ("lstnoise", prop))
             retlisttype=0;
-        else if (!strcmp ("lstsuffix", prop) || !strcmp ("listsuffix",prop))
+        else if (!strcmp ("lstsuffix", prop))
             retlisttype=1;
-        else if (!strcmp ("lstsuffixeqivs", prop) || !strcmp ("listsuffixequivs",prop))
+        else if (!strcmp ("lstsuffixeqivs", prop))
             retlisttype=2;
-        else if (!strcmp ("lstprefix", prop) || !strcmp ("listprefix",prop))
+        else if (!strcmp ("lstprefix", prop))
             retlisttype=3;
-        else if (!strcmp ("noiselst", prop) || !strcmp ("noiselist",prop))
+        else if (!strcmp ("noiselst", prop))
             setlisttype=0;
-        else if (!strcmp ("suffixlst", prop) || !strcmp ("suffixlist",prop))
+        else if (!strcmp ("suffixlst", prop))
             setlisttype=1;
-        else if (!strcmp ("suffixeqivslst", prop) || !strcmp ("suffixequivslist",prop))
+        else if (!strcmp ("suffixeqivslst", prop))
             setlisttype=2;
-        else if (!strcmp ("suffixeqlst", prop) || !strcmp ("suffixeqlist",prop))
+        else if (!strcmp ("suffixeqlst", prop))
             setlisttype=2;
-        else if (!strcmp ("prefixlst", prop) || !strcmp ("prefixlist",prop))
+        else if (!strcmp ("prefixlst", prop))
             setlisttype=3;
+
+        if( (!strcmp(prop, "lstexp")||!strcmp(prop, "lstindextmp")))
+        {
+            char **lst;
+            int arryi=0;
+            if(duk_is_boolean(ctx, -1))
+            {
+                if(!duk_get_boolean(ctx, -1))
+                    goto propnext;
+            }
+            else
+                RP_THROW(ctx, "sql.set - property '%s' requires a Boolean", prop);
+
+            if(!added_ret_obj)
+            {
+                duk_push_object(ctx);
+                duk_insert(ctx, 0);
+                added_ret_obj=1;
+            }
+
+            duk_push_array(ctx);
+
+            if (!strcmp(prop, "lstexp"))
+                lst=TXgetglobalexp();
+            else
+                lst=TXgetglobalindextmp();
+
+            while (lst[arryi] && strlen(lst[arryi]))
+            {
+                duk_push_string(ctx, lst[arryi]);
+                duk_put_prop_index(ctx, -2, (duk_uarridx_t)arryi);
+                arryi++;
+            }
+
+            duk_put_prop_string(ctx, 0, 
+                ( 
+                    strcmp(prop, "lstindextmp")?"expressionsList":"indexTempList"
+                )
+            );
+            
+            goto propnext;
+        }
 
         if(retlisttype>-1)
         {
@@ -3478,12 +3595,17 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
             byte **lsts[]={globalcp->noise,globalcp->suffix,globalcp->suffixeq,globalcp->prefix};
             char *rprop=rlsts[retlisttype];
             byte **lst=lsts[retlisttype];
-            
-            i=0;
+            int i=0;
+
             /* skip if false */
-            if(duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1))
-                goto propnext;
-            
+            if(duk_is_boolean(ctx, -1))
+            {
+                if(!duk_get_boolean(ctx, -1))
+                    goto propnext;
+            } 
+            else
+                RP_THROW(ctx, "sql.set - property '%s' requires a Boolean", prop);
+
             if(!added_ret_obj)
             {
                 duk_push_object(ctx);
@@ -3515,9 +3637,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
             }
             else if(duk_is_array(ctx, -1))
             {
-                int len=duk_get_length(ctx, -1);
-
-                i=0;
+                int len=duk_get_length(ctx, -1), i=0;
 
                 REMALLOC(nl, sizeof(char*) * (len + 1));
 
@@ -3693,42 +3813,35 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
                 return -2;
             }
         }
-        /* lstexp and lstindextmp are output via putmsg, capture output here */
-        if( (!strcmp(prop, "lstexp")||!strcmp(prop, "lstindextmp")) 
-                && strcmp(val,"off") )
-        {
-            if(!added_ret_obj)
-            {
-                duk_push_object(ctx);
-                duk_insert(ctx, 0);
-                added_ret_obj=1;
-            }
-            duk_push_array(ctx);
-            msgtobuf(pbuf);
-            if(strncmp("200  ",pbuf,5)==0)
-            {
-                char *s=pbuf+5, *end;
-                duk_size_t slen=0;
-                int arrayi=0;
 
-                while (*s != '\0')
-                {
-                    while(isdigit(*s)||*s==':'||*s==' ')s++;
-                    end=strchr(s,'\n');
-                    if(end)
-                        slen=(duk_size_t)(end-s);
-                    else
-                        break;
-                    duk_push_lstring(ctx,s,slen);
-                    duk_put_prop_index(ctx, -2, arrayi++);
-                    s+=slen+1;
-                }
+        /* save the altered list for reapplication after reset */
+        if( !strcmp(prop, "addexp")||!strcmp(prop, "addindextmp") || 
+            !strcmp(prop, "delexp")||!strcmp(prop, "delindextmp")
+          )
+        {
+            char **lst;
+            int arryi=0;
+            char type = prop[3]; // i for index, e for expression
+
+            duk_push_this(ctx);
+            duk_push_array(ctx);
+            if (type == 'e')
+                lst=TXgetglobalexp();
+            else
+                lst=TXgetglobalindextmp();
+
+            while (lst[arryi] && strlen(lst[arryi]))
+            {
+                duk_push_string(ctx, lst[arryi]);
+                duk_put_prop_index(ctx, -2, (duk_uarridx_t)arryi);
+                arryi++;
             }
-            duk_put_prop_string(ctx, 0, 
-                ( 
-                    strcmp(prop, "lstindextmp")?"expressionsList":"indexTempList"
-                )
-            );
+            if (type == 'e')
+                duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("explist"));
+            else
+                duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("indlist")); 
+
+            duk_pop(ctx);//this
         }
 
         propnext:
@@ -3753,6 +3866,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
     return 0;
 }
 
+/*
 static char *stringLower(const char *str)
 {
     size_t len = strlen(str);
@@ -3766,13 +3880,34 @@ static char *stringLower(const char *str)
     lower[i] = '\0';
     return lower;
 }
+*/
+
+// certain settings like lstexp and addexp should not remain in saved settings
+static void clean_settings(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sql_settings"));
+    duk_remove(ctx, -2);
+    duk_del_prop_string(ctx, -1, "lstexp");
+    duk_del_prop_string(ctx, -1, "delexp");
+    duk_del_prop_string(ctx, -1, "addexp");
+    duk_del_prop_string(ctx, -1, "lstindextmp");
+    duk_del_prop_string(ctx, -1, "delindextmp");
+    duk_del_prop_string(ctx, -1, "addindextmp");
+    duk_del_prop_string(ctx, -1, "lstnoise");
+    duk_del_prop_string(ctx, -1, "lstsuffix");
+    duk_del_prop_string(ctx, -1, "lstsuffixeqivs");
+    duk_del_prop_string(ctx, -1, "lstprefix");
+    duk_pop(ctx);//the settings list object
+}
 
 duk_ret_t duk_texis_set(duk_context *ctx)
 {
     const char *db;
     DB_HANDLE *hcache = NULL;
     int ret = 0, handle_no=0;
-    char errbuf[1024], *lowered;
+    char errbuf[1024];
+    char propa[64], *prop=&propa[0];
 
     duk_push_this(ctx); //idx == 1
     // this should always be true
@@ -3809,17 +3944,22 @@ duk_ret_t duk_texis_set(duk_context *ctx)
         duk_pop(ctx);   // pop undefined,
         duk_push_object(ctx); // [ settings_obj, this, new_empty_old_settings ]
     }
-                                       //stack = [ settings_obj, this, old_settings ]
-
+                                              // [ settings_obj, this, old_settings ]
     /* copy properties, renamed as lowercase, into saved old settings */
     duk_enum(ctx, 0, 0);                      // [ settings_obj, this, old_settings, enum_obj ]
     while (duk_next(ctx, -1, 1))
     {
         //  inside loop -                        [ settings_obj, this , old_settings, enum_obj, key, val ]
-        const char *k = duk_get_string(ctx, -2);
-        lowered = stringLower(k);
-        duk_put_prop_string(ctx, 2, lowered); // [ settings_obj, this , old_settings, enum_obj, key ]
-        free(lowered);
+        duk_size_t sz;
+        const char *dprop=duk_get_lstring(ctx, -2, &sz);
+
+        if(sz>63)
+            RP_THROW(ctx, "sql.set - '%s' - unknown/invalid property", dprop);
+
+        sql_normalize_prop(prop, dprop);
+
+        // put val into old settings, overwriting old if exists
+        duk_put_prop_string(ctx, 2, prop);    // [ settings_obj, this , old_settings, enum_obj, key ]
         duk_pop(ctx);                         // [ settings_obj, this , old_settings, enum_obj ]
     }
     duk_pop(ctx);                             // [ settings_obj, this, combined_settings ]
@@ -3886,6 +4026,7 @@ duk_ret_t duk_texis_set(duk_context *ctx)
     duk_push_int(ctx, handle_no);
     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no"));
 
+    clean_settings(ctx);
     return (duk_ret_t) ret;
 }
 
