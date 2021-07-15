@@ -390,7 +390,7 @@ syntax, name and/or existence are subject to change.
 
 Example:
 
-.. code-block:: sql
+.. code-block:: javascript
 
    var Sql = require("rampart-sql");
 
@@ -443,9 +443,9 @@ Example:
    }
 
    //identify text
-   var rows = sql.exec("select identifylanguage(text) from idtext;");
+   var res = sql.exec("select identifylanguage(text) from idtext;");
 
-   rampart.utils.printf("%3J\n", rows.results);
+   rampart.utils.printf("%3J\n", res.rows);
    /* expected output:
    [
       {
@@ -596,7 +596,7 @@ Full example in Rampart JavaScript:
        {returnType:"array"}
    );
 
-   rows=res.results;
+   rows=res.rows;
    cols=res.columns;
    for (i=0;i<rows.length;i++) {
 

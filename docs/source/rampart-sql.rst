@@ -142,7 +142,7 @@ parameters, an optional :green:`Object` of options and an optional callback
 
 .. code-block:: javascript
 
-    var rows = sql.exec(statement [, options] [, sql_parameters] [, callback])
+    var res = sql.exec(statement [, options] [, sql_parameters] [, callback])
 
 +--------------+------------------+--------------------------------------------------------+
 |Argument      |Type              |Description                                             |
@@ -165,7 +165,7 @@ Statement:
 
 .. code-block:: javascript
 
-    var rows = sql.exec(
+    var res = sql.exec(
         "select * from employees where Salary > 50000 and Start_date < '2018-12-31'"
     );
 
@@ -186,14 +186,14 @@ SQL Parameters:
 
 .. code-block:: javascript
 
-    var rows = sql.exec(
+    var res = sql.exec(
         "select * from employees where Salary > ? and Start-date < ?",
         [50000, "2018-12-31"]
     );
 
     /* or */
 
-    var rows = sql.exec(
+    var res = sql.exec(
         "select * from employees where Salary > ?salary and Start-date < ?date",
         { salary: 50000, date: "2018-12-31"}
     );
@@ -213,13 +213,13 @@ Options:
 
    * ``skipRows`` (:green:`Number`): the number of rows to skip (default: 0).
 
-   * ``returnType`` (:green:`String`): Determines the format of the ``results`` value
+   * ``returnType`` (:green:`String`): Determines the format of the ``rows`` value
      in the return :green:`Object`.
 
-      * **default**: if ``returnType`` is not set, ``results`` in 
+      * **default**: if ``returnType`` is not set, ``rows`` in 
 	the return value of ``select`` statements will be an :green:`Array`
         of :green:`Objects`, as if ``"object"`` below was set.  For
-        ``delete``, ``update`` and ``insert`` statements, ``results`` will
+        ``delete``, ``update`` and ``insert`` statements, ``rows`` will
         be an empty array as if ``"novars"`` was set.
 
       * ``"object"``: An :green:`Array` of :green:`Objects`.  Each
@@ -239,7 +239,7 @@ Options:
         
       * **Note**: If the values of a deleted, inserted or updated row are needed,
         ``returnType`` can be set to either ``"object"`` or ``"array"`` and
-        the statement will be executed as normal with ``results`` set as if
+        the statement will be executed as normal with ``rows`` set as if
         the row or rows operated upon were selected.
 
    * ``returnRows`` (:green:`Boolean`): If set ``true``, performs the same
@@ -276,7 +276,7 @@ Caveats for Options, maxRows and skipRows:
         
         sql.selectMaxRows=20;
         
-        var rows = sql.exec("select * from mytable");
+        var res = sql.exec("select * from mytable");
         /* expected results: 20 rows, if 20 are available from "mytable" */
                  
 
@@ -301,16 +301,16 @@ Caveats for Options, maxRows and skipRows:
 
         var sqlopts = {maxRows: 5, returnType: "array"};
 
-        var rows = sql.exec(20, 10, "select * from mytable");
+        var res = sql.exec(20, 10, "select * from mytable");
         /* expected results: 20 rows, skipping the first 10,
            if 30 are available from "mytable"                */
 
-        var rows = sql.exec("select * from mytable", 20, 10, sqlopts);
+        var res = sql.exec("select * from mytable", 20, 10, sqlopts);
         /* expected results: 5 rows, skipping the first 10,
            if 15 are available from "mytable".  The option maxRows
            is specified last from within "sqlopts", so it is used       */
 
-        var rows = sql.exec("select * from mytable", sqlopts, 20, 10);
+        var res = sql.exec("select * from mytable", sqlopts, 20, 10);
         /* expected results: 20 rows, skipping the first 10,
            if 30 are available from "mytable".  The parameter 20 is 
            specified last, so maxRows is overwritten and 20 is used     */
@@ -342,6 +342,35 @@ Callback:
      Returning ``undefined`` or any other value will allow the next row to be
      retrieved up to ``maxRows`` rows.
 
+   Example
+
+   .. code-block:: javascript
+
+      var nrows = sql.exec(
+          "select NAME, REMARK from SYSTABLES", // statement
+          { returnType:"array"},                // options
+          function(row, i, cols) {              // callback
+              if(i==0)
+                  rampart.utils.printf("%s\n", cols.join(" "));
+              rampart.utils.printf("%s\n", row.join(" "));
+          }
+      );
+
+      console.log("nrows =", nrows);
+
+      /* expected output:
+          NAME REMARK
+          SYSCOLUMNS Catalog of Columns
+          SYSTABLES Catalog of Tables
+          SYSINDEX Catalog of Indices
+          SYSUSERS Texis Users
+          SYSPERMS Texis Permissions
+          SYSTRIG Texis Triggers
+          SYSMETAINDEX Chkind Parameters
+          SYSSTATISTICS Database Statistics
+          nrows = 8
+      */
+
 .. _returnval:
 
 Return Value:
@@ -350,7 +379,7 @@ Return Value:
         With no callback, an :green:`Object` is returned.  The :green:`Object` contains
 	three or four key/value pairs.  
 	
-	Key: ``results``; Value: an :green:`Array` of :green:`Objects`. 
+	Key: ``rows``; Value: an :green:`Array` of :green:`Objects`. 
 	Each :green:`Object` corresponds to a row in the database and will
 	have keys set to the corresponding column names and the values set
 	to the corresponding field of the retrieved row.  If ``returnType``
@@ -362,7 +391,7 @@ Return Value:
 	returned.
 
 	Key:  ``columns``; Value: an :green:`Array` corresponding to the column names or
-	aliases selected and returned in results.
+	aliases selected and returned in rows.
 
 .. _countinfo:
 
@@ -428,7 +457,7 @@ Error Messages:
    sql.exec("create table testtb (text varchar(16), number double)");
    
    /* create a unique index on number */
-   sql.exec("create unique index testtb_number_ux on testeb(number)");
+   sql.exec("create unique index testtb_number_ux on testtb(number)");
 
    /* insert a row */
    sql.exec("insert into testtb values ('A B C', 123)");
@@ -466,19 +495,19 @@ Full Example:
    var sql = new Sql.init("./mytestdb",true);
 
    /* check if table exists */
-   var rows = sql.exec(
+   var res = sql.exec(
        "select * from SYSTABLES where NAME='employees'",
        {"returnType":"novars"} /* we only need the count */
    );
 
-   if(rows.rowCount) /* 1 if the table exists */
+   if(res.rowCount) /* 1 if the table exists */
    {
        /* drop table from previous test run of this script */
-       rows=sql.exec("drop table employees");
+       res=sql.exec("drop table employees");
    }
 
    /* (re)create the table */
-   rows=sql.exec(
+   sql.exec(
            "create table employees (Classification varchar(8), " +
            "Name varchar(16), Age int, Salary int, Title varchar(16), " +
            "Start_date date, Bio varchar(128) )",
@@ -567,15 +596,15 @@ Full Example:
    sql.exec("create fulltext index employees_Bio_text on employees(Bio)");
 
    /* perform some queries */
-   rows=sql.exec("select Name, Age from employees");
-   rampart.utils.printf('%3J\n', rows);
+   res=sql.exec("select Name, Age from employees");
+   rampart.utils.printf('%3J\n', res);
    /* expected output:
       {
           "columns": [
               "Name",
               "Age"
           ],
-          "results": [
+          "rows": [
               {
                   "Name": "Debbie Dreamer",
                   "Age": 63
@@ -605,18 +634,18 @@ Full Example:
       }
    */
 
-   rows=sql.exec(
+   res=sql.exec(
        "select Name, Age from employees",
        {returnType:'array', maxRows:2, includeCounts:true}
    );
-   rampart.utils.printf('%3J\n', rows);
+   rampart.utils.printf('%3J\n', res);
    /* expected output:
       {
           "columns": [
               "Name",
               "Age"
           ],
-          "results": [
+          "rows": [
               [
                   "Debbie Dreamer",
                   63
@@ -638,18 +667,18 @@ Full Example:
                 Note that countInfo values are all negative since no
                 text search was performed.
    */
-   rows=sql.exec(
+   res=sql.exec(
        "select Name from employees where Bio likep 'proficient' and Salary > 50000",
         {includeCounts:true}
    );
-   rampart.utils.printf('%3J\n', rows);
+   rampart.utils.printf('%3J\n', res);
 
    /* expected output:
       {
           "columns": [
               "Name"
           ],
-          "results": [
+          "rows": [
               {
                   "Name": "Georgia Geek"
               },
@@ -678,7 +707,7 @@ Full Example:
        suffixproc: true
    });
 
-   rows=sql.exec(
+   nrows=sql.exec(
        "select Name, Salary from employees where Bio likep 'skydive' order by Salary desc",
        {returnType:"array", includeCounts:true},
        function (row, i, coln, cinfo) {
@@ -692,7 +721,7 @@ Full Example:
            console.log(i+1,row);
        }
    );
-   console.log("Total: " + rows); // 2
+   console.log("Total: " + nrows); // 2
 
    /* expected output:
       Total approximate number of matches in db: 2
@@ -719,9 +748,9 @@ Full Example:
 
        var sql = new Sql.init("/path/to/my/db", true);
 
-       var rows1 = sql.exec("select joinpath('one', 'two/', '/three/four', 'five') newpath");
-       var row=rows1.results[0];
-       console.log(row); /* {newpath:"one/two/three/four/five"} */
+       var res1 = sql.exec("select joinpath('one', 'two/', '/three/four', 'five') newpath");
+       var res=rows1.rows[0];
+       console.log(res); /* {newpath:"one/two/three/four/five"} */
 
     can be more easily written as:
         
@@ -730,8 +759,8 @@ Full Example:
        var Sql = require("rampart-sql");
        var sql = new Sql.init("/path/to/my/db", true);
        
-       var rows = sql.eval("joinpath('one', 'two/', '/three/four', 'five') newpath");
-       console.log(rows); /* {newpath:"one/two/three/four/five"} */
+       var res = sql.eval("joinpath('one', 'two/', '/three/four', 'five') newpath");
+       console.log(res); /* {newpath:"one/two/three/four/five"} */
 
     See :ref:`sql-server-funcs:Server functions` for a complete list of Server
     functions.
@@ -747,8 +776,8 @@ With ``exec()``, this:
 
 .. code-block:: javascript
 
-   var rows = sql.exec("select email from Users where user=?user", {maxRows:1}, {user:user_name});
-   var row=rows.results[0];
+   var res = sql.exec("select email from Users where user=?user", {maxRows:1}, {user:user_name});
+   var row=res.rows[0];
    /* row = { email : "user@example.com" } */
 
 can be more easily written as:
@@ -1023,11 +1052,11 @@ Example:
    sql.exec("update company_assets set Tot_Val_item2 = ( Num_item2 * Val_item2 )");
    sql.exec("update company_assets set Tot_Val_items = ( Tot_Val_item1 + Tot_Val_item2 )");
 
-   /* print the results */
-   sql.exec("select * from company_assets", {returnType:'array'},function(res,i,cols) {
+   /* print the rows */
+   sql.exec("select * from company_assets", {returnType:'array'},function(row,i,cols) {
        if( i==0)
            console.log("-", cols);
-       console.log(i, res);
+       console.log(i, row);
    });
 
    /* output:
@@ -1414,9 +1443,9 @@ Examples:
       "from geotest " +
       "where geocode between (select latlon2geocodearea(41.4, -81.5, 3.0)) " +
       "order by 4 asc;",
-      function(res,i) {
-         console.log(i+1,res);
-         console.log(Sql.stringFormat("  Loc: %+L", res.geocode));
+      function(row,i) {
+         console.log(i+1,row);
+         console.log(Sql.stringFormat("  Loc: %+L", row.geocode));
       }
    );
    /* expected output:
@@ -1865,8 +1894,8 @@ color-coded differently, and the ``abstract(body)`` is HTML-escaped:
    var results='<div class="results">';
    sql.exec("select abstract(body) abs from data_tbl where body like ?q",
    	{q:query},
-   	function(res) {
-   	   results += Sql.stringFormat('<div class="hit">%mIH</div>', query, res.abs);
+   	function(row) {
+   	   results += Sql.stringFormat('<div class="hit">%mIH</div>', query, row.abs);
    	}
    );
    results +="</div>";

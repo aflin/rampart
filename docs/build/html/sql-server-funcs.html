@@ -544,88 +544,88 @@ should be cast to <code class="docutils literal notranslate"><span class="pre">d
 <p>The <code class="docutils literal notranslate"><span class="pre">identifylanguage()</span></code> function is experimental, and its behavior,
 syntax, name and/or existence are subject to change.</p>
 <p>Example:</p>
-<div class="highlight-sql notranslate"><div class="highlight"><pre><span></span>var Sql = require(&quot;rampart-sql&quot;);
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
 
-var sql = new Sql.init(&quot;./testdb&quot;, true);
+<span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;./testdb&quot;</span><span class="p">,</span> <span class="kc">true</span><span class="p">);</span>
 
-// ignore error if table doesn&#39;t exists
-try {
-   sql.exec(&quot;drop table idtext;&quot;);
-} catch(e){}
+<span class="c1">// ignore error if table doesn&#39;t exists</span>
+<span class="k">try</span> <span class="p">{</span>
+   <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;drop table idtext;&quot;</span><span class="p">);</span>
+<span class="p">}</span> <span class="k">catch</span><span class="p">(</span><span class="nx">e</span><span class="p">){}</span>
 
-// (re)create the table
-sql.exec(&quot;create table idtext (text varchar(64));&quot;);
+<span class="c1">// (re)create the table</span>
+<span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;create table idtext (text varchar(64));&quot;</span><span class="p">);</span>
 
 
-var texts = [
-   `Now we are engaged in a great civil war, testing whether that nation, or
-   any nation so conceived and so dedicated, can long endure.  We are met on
-   a great battle-field of that war.  We have come to dedicate a portion of that
-   field, as a final resting place for those who here gave their lives that
-   that nation might live.  It is altogether fitting and proper that we should
-   do this.`,
+<span class="kd">var</span> <span class="nx">texts</span> <span class="o">=</span> <span class="p">[</span>
+   <span class="sb">`Now we are engaged in a great civil war, testing whether that nation, or</span>
+<span class="sb">   any nation so conceived and so dedicated, can long endure.  We are met on</span>
+<span class="sb">   a great battle-field of that war.  We have come to dedicate a portion of that</span>
+<span class="sb">   field, as a final resting place for those who here gave their lives that</span>
+<span class="sb">   that nation might live.  It is altogether fitting and proper that we should</span>
+<span class="sb">   do this.`</span><span class="p">,</span>
 
-   `Maintenant, nous sommes engagés dans une grande guerre civile, testant
-   si cette nation, ou toute autre nation ainsi conçue et si dévouée, peut
-   durer longtemps.  Nous sommes rencontrés sur un grand champ de bataille
-   de cette guerre.  Nous sommes venus pour consacrer une partie de ce
-   champ, comme lieu de repos final pour ceux qui ici ont donné leur vie
-   pour que cette nation puisse vivre.  Il est tout à fait approprié et
-   approprié que nous fassions cela.`,
+   <span class="sb">`Maintenant, nous sommes engagés dans une grande guerre civile, testant</span>
+<span class="sb">   si cette nation, ou toute autre nation ainsi conçue et si dévouée, peut</span>
+<span class="sb">   durer longtemps.  Nous sommes rencontrés sur un grand champ de bataille</span>
+<span class="sb">   de cette guerre.  Nous sommes venus pour consacrer une partie de ce</span>
+<span class="sb">   champ, comme lieu de repos final pour ceux qui ici ont donné leur vie</span>
+<span class="sb">   pour que cette nation puisse vivre.  Il est tout à fait approprié et</span>
+<span class="sb">   approprié que nous fassions cela.`</span><span class="p">,</span>
 
-   `Ahora estamos inmersos en una gran guerra civil, probando si esa nación,
-   o cualquier nación así concebida y dedicada, puede durar mucho tiempo.
-   Nos encontramos en un gran campo de batalla de esa guerra.  Hemos venido
-   a dedicar una porción de ese campo, como lugar de descanso final para
-   quienes aquí dieron su vida para que viviera esa nación.  Es totalmente
-   apropiado y apropiado que hagamos esto.`,
+   <span class="sb">`Ahora estamos inmersos en una gran guerra civil, probando si esa nación,</span>
+<span class="sb">   o cualquier nación así concebida y dedicada, puede durar mucho tiempo.</span>
+<span class="sb">   Nos encontramos en un gran campo de batalla de esa guerra.  Hemos venido</span>
+<span class="sb">   a dedicar una porción de ese campo, como lugar de descanso final para</span>
+<span class="sb">   quienes aquí dieron su vida para que viviera esa nación.  Es totalmente</span>
+<span class="sb">   apropiado y apropiado que hagamos esto.`</span><span class="p">,</span>
 
-   `Jetzt sind wir in einen großen Bürgerkrieg verwickelt, in dem geprüft
-   wird, ob diese Nation oder eine so konzipierte und engagierte Nation
-   lange bestehen kann.  Wir treffen uns auf einem großen Schlachtfeld
-   dieses Krieges.  Wir sind gekommen, um einen Teil dieses Feldes als
-   letzte Ruhestätte für diejenigen zu widmen, die hier ihr Leben gegeben
-   haben, damit diese Nation leben kann.  Es ist durchaus angemessen und
-   richtig, dass wir dies tun.`
-];
+   <span class="sb">`Jetzt sind wir in einen großen Bürgerkrieg verwickelt, in dem geprüft</span>
+<span class="sb">   wird, ob diese Nation oder eine so konzipierte und engagierte Nation</span>
+<span class="sb">   lange bestehen kann.  Wir treffen uns auf einem großen Schlachtfeld</span>
+<span class="sb">   dieses Krieges.  Wir sind gekommen, um einen Teil dieses Feldes als</span>
+<span class="sb">   letzte Ruhestätte für diejenigen zu widmen, die hier ihr Leben gegeben</span>
+<span class="sb">   haben, damit diese Nation leben kann.  Es ist durchaus angemessen und</span>
+<span class="sb">   richtig, dass wir dies tun.`</span>
+<span class="p">];</span>
 
-// insert text
-for (var i=0;i&lt;texts.length;i++) {
-   sql.exec(&quot;insert into idtext values (?);&quot;, [texts[i]]);
-}
+<span class="c1">// insert text</span>
+<span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="nx">i</span><span class="o">&lt;</span><span class="nx">texts</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span><span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+   <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;insert into idtext values (?);&quot;</span><span class="p">,</span> <span class="p">[</span><span class="nx">texts</span><span class="p">[</span><span class="nx">i</span><span class="p">]]);</span>
+<span class="p">}</span>
 
-//identify text
-var rows = sql.exec(&quot;select identifylanguage(text) from idtext;&quot;);
+<span class="c1">//identify text</span>
+<span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select identifylanguage(text) from idtext;&quot;</span><span class="p">);</span>
 
-rampart.utils.printf(&quot;%3J\n&quot;, rows.results);
-/* expected output:
-[
-   {
-      &quot;identifylanguage(text)&quot;: [
-         &quot;0.602603&quot;,
-         &quot;en&quot;
-      ]
-   },
-   {
-      &quot;identifylanguage(text)&quot;: [
-         &quot;0.612079&quot;,
-         &quot;fr&quot;
-      ]
-   },
-   {
-      &quot;identifylanguage(text)&quot;: [
-         &quot;0.626431&quot;,
-         &quot;es&quot;
-      ]
-   },
-   {
-      &quot;identifylanguage(text)&quot;: [
-         &quot;0.614251&quot;,
-         &quot;de&quot;
-      ]
-   }
-]
-*/
+<span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%3J\n&quot;</span><span class="p">,</span> <span class="nx">res</span><span class="p">.</span><span class="nx">rows</span><span class="p">);</span>
+<span class="cm">/* expected output:</span>
+<span class="cm">[</span>
+<span class="cm">   {</span>
+<span class="cm">      &quot;identifylanguage(text)&quot;: [</span>
+<span class="cm">         &quot;0.602603&quot;,</span>
+<span class="cm">         &quot;en&quot;</span>
+<span class="cm">      ]</span>
+<span class="cm">   },</span>
+<span class="cm">   {</span>
+<span class="cm">      &quot;identifylanguage(text)&quot;: [</span>
+<span class="cm">         &quot;0.612079&quot;,</span>
+<span class="cm">         &quot;fr&quot;</span>
+<span class="cm">      ]</span>
+<span class="cm">   },</span>
+<span class="cm">   {</span>
+<span class="cm">      &quot;identifylanguage(text)&quot;: [</span>
+<span class="cm">         &quot;0.626431&quot;,</span>
+<span class="cm">         &quot;es&quot;</span>
+<span class="cm">      ]</span>
+<span class="cm">   },</span>
+<span class="cm">   {</span>
+<span class="cm">      &quot;identifylanguage(text)&quot;: [</span>
+<span class="cm">         &quot;0.614251&quot;,</span>
+<span class="cm">         &quot;de&quot;</span>
+<span class="cm">      ]</span>
+<span class="cm">   }</span>
+<span class="cm">]</span>
+<span class="cm">*/</span>
 </pre></div>
 </div>
 </div>
@@ -732,7 +732,7 @@ this SQL:</p>
     <span class="p">{</span><span class="nx">returnType</span><span class="o">:</span><span class="s2">&quot;array&quot;</span><span class="p">}</span>
 <span class="p">);</span>
 
-<span class="nx">rows</span><span class="o">=</span><span class="nx">res</span><span class="p">.</span><span class="nx">results</span><span class="p">;</span>
+<span class="nx">rows</span><span class="o">=</span><span class="nx">res</span><span class="p">.</span><span class="nx">rows</span><span class="p">;</span>
 <span class="nx">cols</span><span class="o">=</span><span class="nx">res</span><span class="p">.</span><span class="nx">columns</span><span class="p">;</span>
 <span class="k">for</span> <span class="p">(</span><span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="nx">i</span><span class="o">&lt;</span><span class="nx">rows</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span><span class="nx">i</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
 

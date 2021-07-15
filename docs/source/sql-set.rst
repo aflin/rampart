@@ -1704,7 +1704,7 @@ indexAccess
        );
 
        /* flatten to a single array */
-       res=[].concat.apply([], res.results);
+       res=[].concat.apply([], res.rows);
 
        /* sample return to application */
        console.log(JSON.stringify({words:res},null,3));
@@ -2166,6 +2166,59 @@ paramChk
     not cause an error, and will be ignored. This lets a single complex
     query be given, yet parameter values need only be supplied for those
     clauses that should take effect on the query.
+
+    Example:
+
+    .. code-block:: javascript
+
+         var Sql = require("rampart-sql");
+
+         var sql = new Sql.init("./mytestdb");
+
+         sql.exec("create table kvs (Keys varchar(8), Vals varchar(8));");
+
+         var data = [
+             {key: "key1", val: "val1"},
+             {key: "key2", val: "val2"},
+             {key: "key3", val: "val1"}
+         ];
+
+         for (var i=0; i<data.length; i++)
+             sql.exec("insert into kvs values (?key, ?val);", data[i]);
+
+         var selectors = [
+             {key: "key2", val: "val2"},
+             {val: "val1"}
+         ];
+
+         try {
+             for (i=0; i<selectors.length; i++)
+             {
+                 var res = sql.exec("select * from kvs where Keys=?key and Vals=?val", selectors[i]);
+                 console.log(res.rows);
+             }
+         } catch(e) {
+             console.log(e);
+         }
+         /* expected output:
+            [{Keys:"key2",Vals:"val2"}]
+            Error: sql exec error: 000 SQLExecute() failed with 99: Needed parameters not supplied in the function: texis_execute
+         */
+
+
+         sql.set({"paramchk":false}); //ignore the absence of "key" in given parameters
+
+         for (i=0; i<selectors.length; i++)
+         {
+             var res = sql.exec("select * from kvs where Keys=?key and Vals=?val", selectors[i]);
+             console.log(res.rows);
+         }
+
+         /* expected output:
+            [{Keys:"key2",Vals:"val2"}]
+            [{Keys:"key1",Vals:"val1"},{Keys:"key3",Vals:"val1"}]
+         */
+
 
 
 message,nomessage

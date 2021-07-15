@@ -1681,7 +1681,7 @@ word will be returned.</p>
 <span class="p">);</span>
 
 <span class="cm">/* flatten to a single array */</span>
-<span class="nx">res</span><span class="o">=</span><span class="p">[].</span><span class="nx">concat</span><span class="p">.</span><span class="nx">apply</span><span class="p">([],</span> <span class="nx">res</span><span class="p">.</span><span class="nx">results</span><span class="p">);</span>
+<span class="nx">res</span><span class="o">=</span><span class="p">[].</span><span class="nx">concat</span><span class="p">.</span><span class="nx">apply</span><span class="p">([],</span> <span class="nx">res</span><span class="p">.</span><span class="nx">rows</span><span class="p">);</span>
 
 <span class="cm">/* sample return to application */</span>
 <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">JSON</span><span class="p">.</span><span class="nx">stringify</span><span class="p">({</span><span class="nx">words</span><span class="o">:</span><span class="nx">res</span><span class="p">},</span><span class="kc">null</span><span class="p">,</span><span class="mi">3</span><span class="p">));</span>
@@ -2040,6 +2040,56 @@ cause an error. If paramchk is set to <code class="docutils literal notranslate"
 not cause an error, and will be ignored. This lets a single complex
 query be given, yet parameter values need only be supplied for those
 clauses that should take effect on the query.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;./mytestdb&quot;</span><span class="p">);</span>
+
+<span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;create table kvs (Keys varchar(8), Vals varchar(8));&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">data</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">{</span><span class="nx">key</span><span class="o">:</span> <span class="s2">&quot;key1&quot;</span><span class="p">,</span> <span class="nx">val</span><span class="o">:</span> <span class="s2">&quot;val1&quot;</span><span class="p">},</span>
+    <span class="p">{</span><span class="nx">key</span><span class="o">:</span> <span class="s2">&quot;key2&quot;</span><span class="p">,</span> <span class="nx">val</span><span class="o">:</span> <span class="s2">&quot;val2&quot;</span><span class="p">},</span>
+    <span class="p">{</span><span class="nx">key</span><span class="o">:</span> <span class="s2">&quot;key3&quot;</span><span class="p">,</span> <span class="nx">val</span><span class="o">:</span> <span class="s2">&quot;val1&quot;</span><span class="p">}</span>
+<span class="p">];</span>
+
+<span class="k">for</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="o">&lt;</span><span class="nx">data</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span>
+    <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;insert into kvs values (?key, ?val);&quot;</span><span class="p">,</span> <span class="nx">data</span><span class="p">[</span><span class="nx">i</span><span class="p">]);</span>
+
+<span class="kd">var</span> <span class="nx">selectors</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="p">{</span><span class="nx">key</span><span class="o">:</span> <span class="s2">&quot;key2&quot;</span><span class="p">,</span> <span class="nx">val</span><span class="o">:</span> <span class="s2">&quot;val2&quot;</span><span class="p">},</span>
+    <span class="p">{</span><span class="nx">val</span><span class="o">:</span> <span class="s2">&quot;val1&quot;</span><span class="p">}</span>
+<span class="p">];</span>
+
+<span class="k">try</span> <span class="p">{</span>
+    <span class="k">for</span> <span class="p">(</span><span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="o">&lt;</span><span class="nx">selectors</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span>
+    <span class="p">{</span>
+        <span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select * from kvs where Keys=?key and Vals=?val&quot;</span><span class="p">,</span> <span class="nx">selectors</span><span class="p">[</span><span class="nx">i</span><span class="p">]);</span>
+        <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">rows</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">}</span> <span class="k">catch</span><span class="p">(</span><span class="nx">e</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">e</span><span class="p">);</span>
+<span class="p">}</span>
+<span class="cm">/* expected output:</span>
+<span class="cm">   [{Keys:&quot;key2&quot;,Vals:&quot;val2&quot;}]</span>
+<span class="cm">   Error: sql exec error: 000 SQLExecute() failed with 99: Needed parameters not supplied in the function: texis_execute</span>
+<span class="cm">*/</span>
+
+
+<span class="nx">sql</span><span class="p">.</span><span class="nx">set</span><span class="p">({</span><span class="s2">&quot;paramchk&quot;</span><span class="o">:</span><span class="kc">false</span><span class="p">});</span> <span class="c1">//ignore the absence of &quot;key&quot; in given parameters</span>
+
+<span class="k">for</span> <span class="p">(</span><span class="nx">i</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span> <span class="nx">i</span><span class="o">&lt;</span><span class="nx">selectors</span><span class="p">.</span><span class="nx">length</span><span class="p">;</span> <span class="nx">i</span><span class="o">++</span><span class="p">)</span>
+<span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select * from kvs where Keys=?key and Vals=?val&quot;</span><span class="p">,</span> <span class="nx">selectors</span><span class="p">[</span><span class="nx">i</span><span class="p">]);</span>
+    <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="nx">res</span><span class="p">.</span><span class="nx">rows</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="cm">/* expected output:</span>
+<span class="cm">   [{Keys:&quot;key2&quot;,Vals:&quot;val2&quot;}]</span>
+<span class="cm">   [{Keys:&quot;key1&quot;,Vals:&quot;val1&quot;},{Keys:&quot;key3&quot;,Vals:&quot;val1&quot;}]</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div></blockquote>
 </div>
 <div class="section" id="message-nomessage">
