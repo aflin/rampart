@@ -2552,12 +2552,15 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
         RP_THROW(ctx, "no database has been opened");
     }
     db = duk_get_string(ctx, -1);
-    duk_pop_2(ctx);
+
+    duk_pop(ctx);
+
     h = h_open(db, fromContext, ctx);
     if(!h)
         throw_tx_error(ctx,h,"sql open");
 
     reset_tx_default(ctx, h, this_idx);
+    duk_pop(ctx);//this
 
     tx = h->tx;
     if (!tx)
@@ -2609,7 +2612,6 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
     closecsv; \
 } while(0);
 
-    
     {
         /* ncols = number of columns in the csv
            tbcols = number of columns in the table   */
