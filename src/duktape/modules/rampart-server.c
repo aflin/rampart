@@ -257,15 +257,11 @@ void sa_to_string(void *sa, char *buf, size_t bufsz)
     \
     timeinfo = localtime_r(&now,&ti_s);\
     strftime(date,32,"%d/%b/%Y:%H:%M:%S %z",timeinfo);\
-    if (pthread_mutex_lock(&errlock) == EINVAL)\
-    {\
-        fprintf(error_fh, "could not obtain lock in http_callback\n");\
-        exit(1);\
-    }\
+    RP_MLOCK(&errlock);\
     fprintf(error_fh, "%s ", date);\
     fprintf(error_fh, args);\
     fflush(error_fh);\
-    pthread_mutex_unlock(&errlock);\
+    RP_MUNLOCK(&errlock);\
 } while(0)
 
 
@@ -309,11 +305,7 @@ static void writelog(evhtp_request_t *req, int code)
     if( !(ua=evhtp_kv_find(req->headers_in,"User-Agent")) )
         ua="-";
 
-    if (pthread_mutex_lock(&loglock) == EINVAL)
-    {
-        printerr( "could not obtain lock in http_callback\n");
-        exit(1);
-    }
+    RP_MLOCK(&loglock);
 
     fprintf(access_fh,"%s - - [%s] \"%s %s%s%s %s\" %d %s \"%s\" \"%s\"\n",
         address,date,method_strmap[method],
@@ -321,7 +313,7 @@ static void writelog(evhtp_request_t *req, int code)
         code, length, ref, ua
     );
     fflush(access_fh);
-    pthread_mutex_unlock(&loglock);
+    RP_MUNLOCK(&loglock);
 }
 
 
@@ -2971,12 +2963,12 @@ static void *http_dothread(void *arg)
     {
         if (dhr->have_timeout)
         {
-            pthread_mutex_lock(&(dhr->lock));
+            RP_MLOCK(&(dhr->lock));
             pthread_cond_signal(&(dhr->cond));
         }
         send404(req);
         if (dhr->have_timeout)
-            pthread_mutex_unlock(&(dhr->lock));
+            RP_MUNLOCK(&(dhr->lock));
         return NULL;
     };
 
@@ -3031,7 +3023,7 @@ static void *http_dothread(void *arg)
     {
         if (dhr->have_timeout)
         {
-            pthread_mutex_lock(&(dhr->lock));
+            RP_MLOCK(&(dhr->lock));
             pthread_cond_signal(&(dhr->cond));
         }
 
@@ -3059,7 +3051,7 @@ static void *http_dothread(void *arg)
         }
 
         if (dhr->have_timeout)
-            pthread_mutex_unlock(&(dhr->lock));
+            RP_MUNLOCK(&(dhr->lock));
 
         clean_reqobj(ctx, has_content, req->cb_has_websock);
         return NULL;
@@ -3069,7 +3061,7 @@ static void *http_dothread(void *arg)
     {
         debugf("0x%x, LOCKING in thread_cb\n", (int)x);
         fflush(stdout);
-        pthread_mutex_lock(&(dhr->lock));
+        RP_MLOCK(&(dhr->lock));
         pthread_cond_signal(&(dhr->cond));
     }
     /* stack now has return value from duk function call */
@@ -3105,7 +3097,7 @@ static void *http_dothread(void *arg)
     debugf("0x%x, UNLOCKING in thread_cb\n", (int)x);
     fflush(stdout);
     if (dhr->have_timeout)
-        pthread_mutex_unlock(&(dhr->lock));
+        RP_MUNLOCK(&(dhr->lock));
 
     clean_reqobj(ctx, has_content, req->cb_has_websock);
     return NULL;
@@ -3121,11 +3113,7 @@ static duk_context *redo_ctx(int thrno)
     duk_init_context(thr_ctx);
     duk_push_array(thr_ctx);
     /* copy all the functions previously stored at bottom of stack */
-    if (pthread_mutex_lock(&ctxlock) == EINVAL)
-    {
-        printerr( "could not obtain lock in http_callback\n");
-        exit(1);
-    }
+    CTXLOCK;
 
     //    our array of functions have been stashed
     duk_push_global_stash(main_ctx);
@@ -3221,7 +3209,7 @@ static duk_context *redo_ctx(int thrno)
         SLISTUNLOCK;
     }
 
-    pthread_mutex_unlock(&ctxlock);
+    CTXUNLOCK;
 
     duk_push_global_stash(thr_ctx);
     duk_push_pointer(thr_ctx, thread_base[thrno]);
@@ -3283,11 +3271,7 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
 
     debugf("now= %d.%06d, timeout=%d.%6d\n",(int)now.tv_sec, (int)now.tv_usec, (int)ts.tv_sec, (int)(ts.tv_nsec/1000));
 
-    if (pthread_mutex_init(&(dhr->lock), NULL) == EINVAL)
-    {
-        printerr( "could not initialize lock in http_callback\n");
-        exit(1);
-    }
+    RP_MINIT(&(dhr->lock));
 
     pthread_cond_init(&(dhr->cond), NULL);
 
@@ -3296,11 +3280,7 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
     debugf("0x%x, LOCKING in http_callback\n", (int)x);
-    if (pthread_mutex_lock(&(dhr->lock)) == EINVAL)
-    {
-        printerr( "could not obtain lock in http_callback\n");
-        exit(1);
-    }
+    RP_MLOCK(&(dhr->lock));
 
     pthread_create(&script_runner, &attr, http_dothread, dhr);
     debugf("0x%x, cond wait, UNLOCKING\n", (int)x);
@@ -3860,11 +3840,7 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     duk_context *ctx;
     struct event_base *base = evthr_get_base(thr);
 
-    if (pthread_mutex_lock(&ctxlock) == EINVAL)
-    {
-        printerr( "could not obtain lock in http_callback\n");
-        exit(1);
-    }
+    CTXLOCK;
 
     REMALLOC(thrno, sizeof(int));
 
@@ -3873,12 +3849,12 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     {
         if (setgid(unprivg) == -1)
         {
-            pthread_mutex_unlock(&ctxlock);
+            CTXUNLOCK;
             RP_THROW(main_ctx, "error setting group, setgid() failed");
         }
         if (setuid(unprivu) == -1)
         {
-            pthread_mutex_unlock(&ctxlock);
+            CTXUNLOCK;
             RP_THROW(main_ctx, "error setting user, setuid() failed");
         }
     }
@@ -3915,8 +3891,7 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
 
 
     thread_base[*thrno]=base;
-    pthread_mutex_unlock(&ctxlock);
-
+    CTXUNLOCK;
 }
 
 /* just like duk_get_prop_string, except that the prop string compare is

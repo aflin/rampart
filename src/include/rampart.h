@@ -29,15 +29,27 @@ extern duk_context **thread_ctx;
 extern struct event_base *elbase;
 extern struct event_base **thread_base;
 
+
+/* mutex locking in general */
+#define RP_MLOCK(lock) do{\
+    if (pthread_mutex_lock((lock)) != 0)\
+        {fprintf(stderr,"could not obtain lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
+} while(0)
+
+#define RP_MUNLOCK(lock) do{\
+    if (pthread_mutex_unlock((lock)) != 0)\
+        {fprintf(stderr,"could not release lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
+} while(0)
+
+#define RP_MINIT(lock) do{\
+    if (pthread_mutex_init((lock),NULL) != 0)\
+        {fprintf(stderr,"could not create lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
+} while(0)
+
 /* mutex for locking main_ctx when in a thread with other duk stacks open */
 extern pthread_mutex_t ctxlock;
-#define CTXLOCK do {\
-    if (pthread_mutex_lock(&ctxlock) == EINVAL)\
-        {fprintf(stderr,"could not obtain lock for main context\n");exit(1);}\
-} while(0)
-#define CTXUNLOCK  do{\
-    pthread_mutex_unlock(&ctxlock);\
-} while(0)
+#define CTXLOCK RP_MLOCK(&ctxlock)
+#define CTXUNLOCK RP_MUNLOCK(&ctxlock)
 
 
 /* macros to help with require_* and throwing errors with
@@ -344,13 +356,8 @@ EVARGS {
 };
 
 extern pthread_mutex_t slistlock;
-#define SLISTLOCK do {\
-    if (pthread_mutex_lock(&slistlock) == EINVAL)\
-        {fprintf(stderr,"could not obtain lock for main context\n");exit(1);}\
-} while(0)
-#define SLISTUNLOCK  do{\
-    pthread_mutex_unlock(&slistlock);\
-} while(0)
+#define SLISTLOCK RP_MLOCK(&slistlock)
+#define SLISTUNLOCK RP_MUNLOCK(&slistlock)
 
 SLIST_HEAD(slisthead, ev_args) tohead;
 

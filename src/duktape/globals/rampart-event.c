@@ -232,11 +232,7 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
 
     if(earg->cbor)
     {
-        if (pthread_mutex_lock(&cborlock) == EINVAL)
-        {
-            fprintf(stderr, "could not obtain cbor lock in triggered event\n");
-            exit(1);
-        }
+        RP_MLOCK(&cborlock);
 
         earg->cbor->refcount--;
         if(!earg->cbor->refcount)
@@ -245,7 +241,7 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
             free(earg->cbor);
         }
 
-        pthread_mutex_unlock(&cborlock);
+        RP_MUNLOCK(&cborlock);
     }
     event_free(earg->e);
     free(earg->key);
@@ -353,11 +349,7 @@ void duk_event_init(duk_context *ctx)
 
     if(!isinit)
     {
-        if (pthread_mutex_init(&cborlock, NULL) == EINVAL)
-        {
-            fprintf(stderr, "rampart.event: could not initialize cbor lock\n");
-            exit(1);
-        }
+        RP_MINIT(&cborlock);
         isinit=1;
     }
 

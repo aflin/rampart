@@ -29,46 +29,25 @@ LMDB_ENV {
 };
 
 #define lock_main_ctx do{\
-    if (ctx != main_ctx && pthread_mutex_lock(&ctxlock) == EINVAL){\
-        fprintf( stderr, "could not obtain context lock\n");\
-        exit(1);\
-    }\
-}while(0)
+    if (ctx != main_ctx)\
+        CTXLOCK;\
+} while(0)
 
 #define unlock_main_ctx do{\
     if(ctx != main_ctx)\
-        pthread_mutex_unlock(&ctxlock);\
+        CTXUNLOCK;\
 }while(0)
 
 pthread_mutex_t lmdblock;
 
 
-#define mdb_lock do{\
-    if (pthread_mutex_lock(&lmdblock) == EINVAL){\
-        fprintf( stderr, "could not obtain lmdb lock\n");\
-        exit(1);\
-    }\
-}while(0)
+#define mdb_lock RP_MLOCK(&lmdblock)
 
-#define mdb_unlock do{\
-    pthread_mutex_unlock(&lmdblock);\
-}while(0)
+#define mdb_unlock RP_MUNLOCK(&lmdblock)
 
-#define write_lock do{\
-    /*printf("locking %d\n", __LINE__);*/\
-    if (pthread_mutex_lock(&lenv->lock) == EINVAL){\
-        fprintf( stderr, "could not obtain lmdb lock\n");\
-        exit(1);\
-    }\
-}while(0)
+#define write_lock RP_MLOCK(&(lenv->lock))
 
-#define write_unlock do{\
-    pthread_mutex_unlock(&lenv->lock);\
-    /*printf("unlocking %d\n", __LINE__);*/\
-}while(0)
-
-
-
+#define write_unlock RP_MUNLOCK(&(lenv->lock))
 
 // conversion types
 #define RP_LMDB_BUFFER 0
@@ -2178,11 +2157,9 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
         lenv->maxdbs    = maxdbs;
         lenv->convtype  = convtype;
         lenv->env       = NULL;
-        if (pthread_mutex_init(&lenv->lock, NULL) == EINVAL)
-        {
-            fprintf(stderr, "rampart.event: could not initialize cbor lock\n");
-            exit(1);
-        }
+
+        RP_MINIT(&lenv->lock);
+
         lenv = redo_env(ctx, lenv);
 
         duk_push_pointer(ctx, (void *) lenv);
@@ -2254,11 +2231,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     if(!isinit)
     {
-        if (pthread_mutex_init(&lmdblock, NULL) == EINVAL)
-        {
-            fprintf(stderr, "rampart.event: could not initialize cbor lock\n");
-            exit(1);
-        }
+        RP_MINIT(&lmdblock);
         isinit=1;
     }
 

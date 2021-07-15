@@ -2763,12 +2763,13 @@ static ULOCK **ulocks=NULL;
 pthread_mutex_t ulock_lock;
 
 #define LOCK_ULOCK do {\
-    if (pthread_mutex_lock(&ulock_lock) == EINVAL)\
+    if (pthread_mutex_lock(&ulock_lock) != 0)\
         {fprintf(stderr,"could not obtain lock for mlock\n");exit(1);}\
 } while(0)
 
 #define UNLOCK_ULOCK  do{\
-    pthread_mutex_unlock(&ulock_lock);\
+    if (pthread_mutex_unlock(&ulock_lock) != 0)\
+        {fprintf(stderr,"could not release lock for mlock\n");exit(1);}\
 } while(0)
 
 
@@ -2892,7 +2893,7 @@ duk_ret_t duk_rp_mlock_lock (duk_context *ctx)
 
     if(!lock)
         RP_THROW(ctx, "mlock(): error - lock already destroyed");
-    if (pthread_mutex_lock(lock) == EINVAL)
+    if (pthread_mutex_lock(lock) != 0)
         RP_THROW(ctx, "mlock(): error - could not obtain lock");
     return 0;
 }
@@ -2909,7 +2910,7 @@ duk_ret_t duk_rp_mlock_unlock (duk_context *ctx)
 
     if(!lock)
         RP_THROW(ctx, "munlock(): error - lock already destroyed");
-    if (pthread_mutex_unlock(lock) == EINVAL)
+    if (pthread_mutex_unlock(lock) != 0)
         RP_THROW(ctx, "munlock(): error - could not obtain lock");
     return 0;
 }
@@ -3282,23 +3283,13 @@ HLL *hll_list = NULL;
 
 pthread_mutex_t hll_lock;
 
-#define HLL_MAIN_LOCK do {\
-    if (pthread_mutex_lock(&hll_lock) == EINVAL)\
-        {fprintf(stderr,"could not obtain lock for hll main\n");exit(1);}\
-} while(0)
+#define HLL_MAIN_LOCK RP_MLOCK(&hll_lock)
+#define HLL_MAIN_UNLOCK RP_MUNLOCK(&hll_lock)
 
-#define HLL_MAIN_UNLOCK  do{\
-    pthread_mutex_unlock(&hll_lock);\
-} while(0)
 
-#define HLL_LOCK(h) do {\
-    if (pthread_mutex_lock(&((h)->lock)) == EINVAL)\
-        {fprintf(stderr,"could not obtain lock for hll\n");exit(1);}\
-} while(0)
+#define HLL_LOCK(h) RP_MLOCK(&((h)->lock))
+#define HLL_UNLOCK(h) RP_MUNLOCK(&((h)->lock))
 
-#define HLL_UNLOCK(h)  do{\
-    pthread_mutex_unlock(&((h)->lock));\
-} while(0)
 
 static inline HLL *newhll(duk_context *ctx, const char *name)
 {
@@ -3308,10 +3299,13 @@ static inline HLL *newhll(duk_context *ctx, const char *name)
     hll->name=strdup(name);
     hll->refcount=1;
     hll->ctx=ctx;
+
+    /* throw or die?? */
     if (pthread_mutex_init(&hll->lock, NULL) == EINVAL)
     {
         RP_THROW(ctx, "rampart.utils - error initializing hll lock");
     }
+
     hll->next=NULL;
     return hll;
 }
@@ -3623,10 +3617,7 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "prototype");
     duk_put_prop_string(ctx, -2, "mlock");
 
-    if (pthread_mutex_init(&ulock_lock, NULL) == EINVAL)
-    {
-        RP_THROW(ctx, "rampart.utils - error initializing mlock lock");
-    }
+    RP_MINIT(&ulock_lock);
 
     //end mlock
 
@@ -3645,10 +3636,8 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "merge");
     duk_put_prop_string(ctx, -2, "prototype");
     duk_put_prop_string(ctx, -2, "hll");
-    if (pthread_mutex_init(&hll_lock, NULL) == EINVAL)
-    {
-        RP_THROW(ctx, "rampart.utils - error initializing hll lock");
-    }
+
+    RP_MINIT(&hll_lock);
     // end hll
 
 
@@ -3815,7 +3804,7 @@ char *to_utf8(const char *in_str)
 #define PF_REQUIRE_STRING(ctx,idx) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_string((ctx),i)) {\
-        if(lock_p) pthread_mutex_unlock(lock_p);\
+        if(lock_p) RP_MUNLOCK(lock_p);\
         RP_THROW(ctx, "string required in format string argument %d",i);\
     }\
     const char *r=duk_get_string((ctx),i);\
@@ -3826,7 +3815,7 @@ char *to_utf8(const char *in_str)
 #define PF_REQUIRE_LSTRING(ctx,idx,len) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_string((ctx),i)) {\
-        if(lock_p) pthread_mutex_unlock(lock_p);\
+        if(lock_p) RP_MUNLOCK(lock_p);\
         RP_THROW(ctx, "string required in format string argument %d",i);\
     }\
     const char *s=duk_get_lstring((ctx),i,(len));\
@@ -3845,7 +3834,7 @@ char *to_utf8(const char *in_str)
         s=duk_get_lstring((ctx),i,(len));\
         r=TO_UTF8(s);\
     } else {\
-        if(lock_p) pthread_mutex_unlock(lock_p);\
+        if(lock_p) RP_MUNLOCK(lock_p);\
         RP_THROW(ctx, "string or buffer required in format string argument %d",i);\
     }\
     if(r != s) *(len) = strlen(r);\
@@ -3855,7 +3844,7 @@ char *to_utf8(const char *in_str)
 #define PF_REQUIRE_INT(ctx,idx) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_number((ctx),i)) {\
-        if(lock_p) pthread_mutex_unlock(lock_p);\
+        if(lock_p) RP_MUNLOCK(lock_p);\
         RP_THROW(ctx, "number required in format string argument %d",i);\
     }\
     int r=duk_get_int((ctx),i);\
@@ -3866,7 +3855,7 @@ char *to_utf8(const char *in_str)
 #define PF_REQUIRE_NUMBER(ctx,idx) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_number((ctx),i)) {\
-        if(lock_p) pthread_mutex_unlock(lock_p);\
+        if(lock_p) RP_MUNLOCK(lock_p);\
         RP_THROW(ctx, "number required in format string argument %d",i);\
     }\
     double r=duk_get_number((ctx),i);\
@@ -3876,7 +3865,7 @@ char *to_utf8(const char *in_str)
 #define PF_REQUIRE_BUFFER_DATA(ctx,idx,sz) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_buffer_data((ctx),i)) {\
-        if(lock_p) pthread_mutex_unlock(lock_p);\
+        if(lock_p) RP_MUNLOCK(lock_p);\
         RP_THROW(ctx, "buffer required in format string argument %d",i);\
     }\
     void *r=duk_get_buffer_data((ctx),i,(sz));\
@@ -3892,7 +3881,8 @@ duk_ret_t duk_rp_printf(duk_context *ctx)
 {
     char buffer[1];
     int ret;
-    if (pthread_mutex_lock(&pflock) == EINVAL)
+
+    if (pthread_mutex_lock(&pflock) != 0)
         RP_THROW(ctx, "printf(): error - could not obtain lock\n");
 
     ret = rp_printf(_out_char, buffer, (size_t)-1, ctx,0,&pflock);
@@ -4098,7 +4088,7 @@ duk_ret_t duk_rp_fwrite(duk_context *ctx)
     }
     else
     {
-        if (pthread_mutex_lock(lock_p) == EINVAL)
+        if (pthread_mutex_lock(lock_p) != 0)
             RP_THROW(ctx, "fwrite(): error - could not obtain lock");
     }
 
@@ -4110,7 +4100,10 @@ duk_ret_t duk_rp_fwrite(duk_context *ctx)
             RP_THROW(ctx, "fwrite(): error - could not release lock");
     }
     else
-        pthread_mutex_unlock(lock_p);
+    {
+        if (pthread_mutex_unlock(lock_p) != 0)
+          RP_THROW(ctx, "fwrite(): error - could not release lock");
+    }
 
     if(closefh)
         fclose(f);
@@ -4248,7 +4241,7 @@ duk_ret_t duk_rp_fprintf(duk_context *ctx)
     }
     else
     {
-        if (pthread_mutex_lock(lock_p) == EINVAL)
+        if (pthread_mutex_lock(lock_p) != 0)
             RP_THROW(ctx, "fprintf(): error - could not obtain lock");
     }
 
@@ -4264,7 +4257,10 @@ duk_ret_t duk_rp_fprintf(duk_context *ctx)
             RP_THROW(ctx, "fprintf(): error - could not release lock");
     }
     else
-        pthread_mutex_unlock(lock_p);
+    {
+        if (pthread_mutex_unlock(lock_p) != 0)
+          RP_THROW(ctx, "fprintf(): error - could not release lock");
+    }
 
     if(closefh)
         fclose(f);
@@ -4522,24 +4518,9 @@ void duk_printf_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2,"utils");
     duk_put_global_string(ctx,"rampart");
 
-    if (pthread_mutex_init(&pflock, NULL) == EINVAL)
-    {
-        fprintf(stderr, "could not initialize stdout print lock\n");
-        exit(1);
-    }
-    if (pthread_mutex_init(&pflock_err, NULL) == EINVAL)
-    {
-        fprintf(stderr, "could not initialize stderr print lock\n");
-        exit(1);
-    }
-    if (pthread_mutex_init(&loglock, NULL) == EINVAL)
-    {
-        fprintf(stderr, "could not initialize accessLog lock\n");
-        exit(1);
-    }
-    if (pthread_mutex_init(&errlock, NULL) == EINVAL)
-    {
-        fprintf(stderr, "could not initialize errorLog lock\n");
-        exit(1);
-    }
+    RP_MINIT(&pflock);
+    RP_MINIT(&pflock_err);
+    RP_MINIT(&loglock);
+    RP_MINIT(&errlock);
+
 }

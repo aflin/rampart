@@ -171,9 +171,9 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf);
 #define TXLOCK
 #define TXUNLOCK
 
-#define HLOCK if(!RP_TX_isforked) pthread_mutex_lock(&tx_handle_lock);
+#define HLOCK if(!RP_TX_isforked) RP_MLOCK(&tx_handle_lock);
 //#define HLOCK if(!RP_TX_isforked) {printf("lock from %d\n", thisfork);pthread_mutex_lock(&lock);}
-#define HUNLOCK if(!RP_TX_isforked) pthread_mutex_unlock(&tx_handle_lock);
+#define HUNLOCK if(!RP_TX_isforked) RP_MUNLOCK(&tx_handle_lock);
 
 int db_is_init = 0;
 int tx_rp_cancelled = 0;
@@ -4036,8 +4036,8 @@ duk_ret_t duk_texis_set(duk_context *ctx)
 
 // create db lock, in case a server callback function opens a new
 // texis db with create option, we don't want two threads doing this at once
-#define CRLOCK pthread_mutex_lock(&tx_create_lock);
-#define CRUNLOCK pthread_mutex_unlock(&tx_create_lock);
+#define CRLOCK RP_MLOCK(&tx_create_lock);
+#define CRUNLOCK RP_MUNLOCK(&tx_create_lock);
 
 
 /* **************************************************
@@ -4152,17 +4152,8 @@ duk_ret_t duk_open_module(duk_context *ctx)
         char *TexisArgv[2];
         int nargs=2;
 
-        if (pthread_mutex_init(&tx_handle_lock, NULL) != 0)
-        {
-            printf("\n handle mutex init failed\n");
-            exit(1);
-        }
-
-        if (pthread_mutex_init(&tx_create_lock, NULL) != 0)
-        {
-            printf("\n create mutex init failed\n");
-            exit(1);
-        }
+        RP_MINIT(&tx_handle_lock);
+        RP_MINIT(&tx_create_lock);
 
         REMALLOC(errmap, sizeof(char*));
         errmap[0]=NULL;
