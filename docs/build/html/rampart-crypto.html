@@ -260,35 +260,34 @@ providing a password.</p>
 <span class="kd">var</span> <span class="nx">ciphertext</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">encrypt</span><span class="p">(</span><span class="nx">pass</span><span class="p">,</span> <span class="nx">data</span><span class="p">[,</span> <span class="nx">cipher_mode</span><span class="p">]);</span>
 </pre></div>
 </div>
-<p>Where</p>
-<ul>
+<p>Where:</p>
+<ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">pass</span></code> is a password used to encrypt the data.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">data</span></code> is a <span class="green">String</span> or <span class="green">Buffer</span>, the data to be
 encrypted.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">cipher_mode</span></code> is one of the <a class="reference internal" href="#supported-modes">Supported Modes</a> listed below.  If not specified,
 the default is <code class="docutils literal notranslate"><span class="pre">aes-256-cbc</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> is an <span class="green">Object</span> which may contain the following:</p>
-<ul class="simple">
+<ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">data</span></code> - same as <code class="docutils literal notranslate"><span class="pre">data</span></code> above.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">cipher</span></code> - same as <code class="docutils literal notranslate"><span class="pre">cipher_mode</span></code> above.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">pass</span></code> - a password used to generate a key/iv pair and encrypt the
 data.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">key</span></code> - required if not using a password - a key of the appropriate length for
-the chosen cipher.</p></li>
+the chosen cipher. <code class="docutils literal notranslate"><span class="pre">key</span></code> can be a <span class="green">Buffer</span> or a hex encoded <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">iv</span></code> - required if not using a password - an initialization vector of
-the appropriate length to be used for encrypting the data.</p></li>
+the appropriate length to be used for encrypting the data. <code class="docutils literal notranslate"><span class="pre">iv</span></code> can be
+a <span class="green">Buffer</span> or a hex encoded <span class="green">String</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">iter</span></code> - number of iterations for generating a key and iv from <code class="docutils literal notranslate"><span class="pre">pass</span></code>.
-Default is <code class="docutils literal notranslate"><span class="pre">10000</span></code>.  If provided, the same value must be passed to</p></li>
+Default is <code class="docutils literal notranslate"><span class="pre">10000</span></code>.  If provided, the same value must be passed to
+<a class="reference internal" href="#decrypt">decrypt</a> below in order to decrypt the ciphertext.</p></li>
 </ul>
-<blockquote>
-<div><p><a class="reference internal" href="#decrypt">decrypt</a> below in order to decrypt the ciphertext.</p>
-</div></blockquote>
 </li>
 </ul>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p>A <span class="green">Buffer</span> containing the ciphertext (encrypted data).
 Using <code class="docutils literal notranslate"><span class="pre">crypto.encrypt(&quot;password&quot;,</span> <span class="pre">data)</span></code> produces the same results as
-<code class="docutils literal notranslate"><span class="pre">openssl</span> <span class="pre">enc</span> <span class="pre">-aes-256-cbc</span> <span class="pre">-d</span> <span class="pre">-pbkdf2</span>&#160; <span class="pre">-pass</span> <span class="pre">pass:&quot;password&quot;</span> <span class="pre">-in</span> <span class="pre">myfile.enc</span></code>
+<code class="docutils literal notranslate"><span class="pre">openssl</span> <span class="pre">enc</span> <span class="pre">-aes-256-cbc</span> <span class="pre">-e</span> <span class="pre">-pbkdf2</span>&#160; <span class="pre">-pass</span> <span class="pre">pass:&quot;password&quot;</span> <span class="pre">-in</span> <span class="pre">myfile.txt</span></code>
 using openssl version 1.1.1 from the command line.</p>
 </dd>
 </dl>
@@ -315,7 +314,7 @@ the data.</p>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p>A <span class="green">Buffer</span> containing the decrypted text.
 Calling <code class="docutils literal notranslate"><span class="pre">crypto.decrypt(&quot;password&quot;,</span> <span class="pre">data)</span></code> produces the same results
-as <code class="docutils literal notranslate"><span class="pre">openssl</span> <span class="pre">enc</span> <span class="pre">-aes-256-cbc</span> <span class="pre">-d</span> <span class="pre">-pbkdf2</span>&#160; <span class="pre">-pass</span> <span class="pre">pass:&quot;password&quot;</span> <span class="pre">-in</span> <span class="pre">mydatafile.enc</span></code>
+as <code class="docutils literal notranslate"><span class="pre">openssl</span> <span class="pre">enc</span> <span class="pre">-aes-256-cbc</span> <span class="pre">-d</span> <span class="pre">-pbkdf2</span>&#160; <span class="pre">-pass</span> <span class="pre">pass:&quot;password&quot;</span> <span class="pre">-in</span> <span class="pre">myfile.enc</span></code>
 using openssl version 1.1.1 from the command line.</p>
 </dd>
 </dl>
@@ -400,7 +399,7 @@ using openssl version 1.1.1 from the command line.</p>
 <span class="cm">/*</span>
 <span class="cm">   note that when key/iv is used in encrypt instead of a password, salt</span>
 <span class="cm">   is not stored in the ciphertext, and the ciphertext must be decrypted</span>
-<span class="cm">   with the same key and iv.</span>
+<span class="cm">   with the same key, iv derived using both &#39;password&#39; and &#39;salt&#39;.</span>
 <span class="cm">*/</span>
 
 <span class="kd">var</span> <span class="nx">plaintext</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">decrypt</span><span class="p">({</span>

@@ -64,15 +64,15 @@ testFeature("hexify of crypto.randnum():",function(){
 
 testFeature("en/decrypt with key,iv and aes-256-cbc",function(){
   var encBuffer = crypto.encrypt({
-    key: "01234567890123456789012345678901",
-    iv: "0123456789012345",
+    key: rampart.utils.stringToBuffer("01234567890123456789012345678901"),
+    iv: rampart.utils.stringToBuffer("0123456789012345"),
     cipher: "aes-256-cbc",
     data: "encrypt and decrypt of a string with key,iv and aes-256-cbc"
   });
 
   var decBuffer = crypto.decrypt({
-    key: "01234567890123456789012345678901",
-    iv: "0123456789012345",
+    key: rampart.utils.stringToBuffer("01234567890123456789012345678901"),
+    iv: rampart.utils.stringToBuffer("0123456789012345"),
     cipher: "aes-256-cbc",
     data: encBuffer,
   });

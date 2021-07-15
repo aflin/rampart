@@ -69,7 +69,7 @@ Usage:
     var ciphertext = crypto.encrypt(pass, data[, cipher_mode]);
 
 
-Where
+Where:
 
 * ``pass`` is a password used to encrypt the data.
 
@@ -89,19 +89,20 @@ Where
      data.
 
   * ``key`` - required if not using a password - a key of the appropriate length for
-    the chosen cipher.
+    the chosen cipher. ``key`` can be a :green:`Buffer` or a hex encoded :green:`String`.
 
   * ``iv`` - required if not using a password - an initialization vector of
-    the appropriate length to be used for encrypting the data.
+    the appropriate length to be used for encrypting the data. ``iv`` can be
+    a :green:`Buffer` or a hex encoded :green:`String`.
 
   * ``iter`` - number of iterations for generating a key and iv from ``pass``. 
     Default is ``10000``.  If provided, the same value must be passed to
-   `decrypt`_ below in order to decrypt the ciphertext.
+    `decrypt`_ below in order to decrypt the ciphertext.
 
 Return Value:
   A :green:`Buffer` containing the ciphertext (encrypted data).
   Using ``crypto.encrypt("password", data)`` produces the same results as
-  ``openssl enc -aes-256-cbc -d -pbkdf2  -pass pass:"password" -in myfile.enc``
+  ``openssl enc -aes-256-cbc -e -pbkdf2  -pass pass:"password" -in myfile.txt``
   using openssl version 1.1.1 from the command line.
 
 Example:
@@ -129,7 +130,7 @@ the data.
 Return Value:
     A :green:`Buffer` containing the decrypted text.
     Calling ``crypto.decrypt("password", data)`` produces the same results
-    as ``openssl enc -aes-256-cbc -d -pbkdf2  -pass pass:"password" -in mydatafile.enc``
+    as ``openssl enc -aes-256-cbc -d -pbkdf2  -pass pass:"password" -in myfile.enc``
     using openssl version 1.1.1 from the command line.
 
 Example:
@@ -222,7 +223,7 @@ Example:
     /* 
        note that when key/iv is used in encrypt instead of a password, salt
        is not stored in the ciphertext, and the ciphertext must be decrypted
-       with the same key and iv.
+       with the same key, iv derived using both 'password' and 'salt'.
     */
 
     var plaintext = crypto.decrypt({
