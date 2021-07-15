@@ -3352,6 +3352,8 @@ duk_ret_t duk_texis_reset(duk_context *ctx)
 
     //remove saved settings
     duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sql_settings"));
+    duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("indlist"));
+    duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("explist"));
 
     if (!duk_get_prop_string(ctx, -1, "db"))
         RP_THROW(ctx, "no database is open");
