@@ -1423,8 +1423,8 @@ Example:
 
     /* expected output: first and last line of file "./myfile.txt" */
 
-Rand, Hash and HLL
-""""""""""""""""""
+Rand, Hash and HyperLogLog
+""""""""""""""""""""""""""
 
 Included in rampart.utils are three non-cryptographic functions which have been optimized for speed and ease of use.
 
