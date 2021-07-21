@@ -19,6 +19,8 @@
 #include <limits.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <unistd.h>
+#include <termios.h>
 #include "rampart.h"
 extern char **environ;
 extern char *RP_script_path;
@@ -3983,7 +3985,7 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
     duk_idx_t idx=1;
     int type, retstr=0;;
 
-    f=getreadfile(ctx, 0, "fread", filename, type);
+    f=getreadfile(ctx, 0, "fread", filename, type);//type is set
 
     /* check for boolean in idx 1,2 or 3 */
     if(duk_is_boolean(ctx, idx) || duk_is_boolean(ctx, ++idx) || duk_is_boolean(ctx, ++idx))
@@ -4030,7 +4032,7 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
     if(type!=RTYPE_STDIN)
     {
         if (flock(fileno(f), LOCK_UN) == -1)
-            RP_THROW(ctx, "error fread(): could not get read lock");
+            RP_THROW(ctx, "error fread(): could not release read lock");
     }
 
     if(read > max) read=max;
@@ -4043,6 +4045,111 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
         fclose(f);
 
     return (1);
+}
+
+char getch(duk_context *ctx) {
+        char buf = 0;
+        struct termios old = {0};
+        if (tcgetattr(0, &old) < 0)
+                RP_THROW(ctx,"getchar: tcgetattr() error");
+        old.c_lflag &= ~ICANON;
+//        old.c_lflag &= ~ECHO;
+        old.c_cc[VMIN] = 1;
+        old.c_cc[VTIME] = 0;
+        if (tcsetattr(0, TCSANOW, &old) < 0)
+                RP_THROW(ctx,"getchar: tcsetattr() error");
+        if (read(0, &buf, 1) < 0)
+                RP_THROW(ctx,"getchar: read() error");
+        old.c_lflag |= ICANON;
+//        old.c_lflag |= ECHO;
+        if (tcsetattr(0, TCSADRAIN, &old) < 0)
+                RP_THROW(ctx,"getchar: tcsetattr() error");
+        return (buf);
+}
+
+static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gettype)
+{
+    FILE *f = NULL;
+    char *buf=NULL;
+    size_t r=0, readlen=1;
+    const char *filename="";
+    int ch, type=RTYPE_STDIN;
+    char *fn = (gettype)?"getchar":"fgets";
+
+    if(!gettype)
+    {
+        f=getreadfile(ctx, 0, fn, filename, type);//type is set
+        duk_remove(ctx,0);
+    }
+
+    if (!duk_is_undefined(ctx,0))
+    {
+        readlen = REQUIRE_INT(ctx, 0, "%s: argument bytes must be a Number (positive integer)", fn);
+        if(readlen<1)
+            RP_THROW(ctx, "%s: argument bytes must be a Number (positive integer)", fn);
+    }
+
+
+    if(type!=RTYPE_STDIN)
+    {
+        if (flock(fileno(f), LOCK_SH) == -1)
+            RP_THROW(ctx, "error %s: could not get read lock", fn);            
+    }
+
+
+    REMALLOC(buf, readlen+1);
+
+    if(gettype)
+    {
+        do 
+        {
+            ch = getch(ctx);
+
+            printf("%c",ch);
+            if(ch == EOF)
+                break;
+
+            buf[r]=(char)ch;
+            r++;
+        } while (r<readlen);
+
+        buf[r]='\0';
+    }
+    else
+    {
+        if(!fgets(buf, readlen+1, f))
+        {
+          free(buf);
+          RP_THROW(ctx, "error fgets(): error reading");
+        }
+    }
+
+    if(type!=RTYPE_STDIN)
+    {
+        if (flock(fileno(f), LOCK_UN) == -1)
+        {
+            free(buf);
+            RP_THROW(ctx, "error %s: could not release read lock", fn);
+        }
+    }
+
+    if(type==RTYPE_FILENAME)
+        fclose(f);
+
+    duk_push_string(ctx, buf);
+    free(buf);
+
+    return (1);
+}
+
+duk_ret_t duk_rp_getchar(duk_context *ctx)
+{
+    return duk_rp_fgets_getchar(ctx, 1);
+}
+
+duk_ret_t duk_rp_fgets(duk_context *ctx)
+{
+    return duk_rp_fgets_getchar(ctx, 0);
 }
 
 duk_ret_t duk_rp_fwrite(duk_context *ctx)
@@ -4353,17 +4460,20 @@ duk_ret_t duk_rp_getType(duk_context *ctx)
 #define func_fwrite 6
 #define func_readline 7
 #define func_fclose 8
+#define func_fgets 9
 
-static duk_ret_t (*funcmap[9])(duk_context *ctx) = {
+static duk_ret_t (*funcmap[10])(duk_context *ctx) = {
   duk_rp_fprintf, duk_rp_fseek,    duk_rp_rewind,
   duk_rp_ftell,   duk_rp_fflush,   duk_rp_fread,
-  duk_rp_fwrite,  duk_rp_readline, duk_rp_fclose
+  duk_rp_fwrite,  duk_rp_readline, duk_rp_fclose,
+  duk_rp_fgets
 };
 
-static int f_return_this[9] = {
+static int f_return_this[10] = {
   0, 1, 1,
   0, 1, 0,
-  0, 0, 0
+  0, 0, 0,
+  0
 };
 
 /* for var h=fopen(); h.fprintf, h.fseek, ... */
@@ -4426,9 +4536,10 @@ duk_ret_t duk_rp_fopen(duk_context *ctx)
     pushffunc("rewind",     func_rewind,    0           );
     pushffunc("ftell",      func_ftell,     0           );
     pushffunc("fflush",     func_fflush,    0           );
-    pushffunc("fwrite",     func_fwrite,    2           );
+    pushffunc("fwrite",     func_fwrite,    3           );
     pushffunc("fread",      func_fread,     3           );
     pushffunc("readLine",   func_readline,  0           );
+    pushffunc("fgets",      func_fgets,     1           );
     pushffunc("fclose",     func_fclose,    0           );
 
     return 1;
@@ -4483,6 +4594,12 @@ void duk_printf_init(duk_context *ctx)
     duk_push_c_function(ctx, duk_rp_fread, 4);
     duk_put_prop_string(ctx, -2, "fread");
 
+    duk_push_c_function(ctx, duk_rp_fgets, 2);
+    duk_put_prop_string(ctx, -2, "fgets");
+
+    duk_push_c_function(ctx, duk_rp_getchar, 2);
+    duk_put_prop_string(ctx, -2, "getchar");
+
     duk_push_c_function(ctx, duk_rp_fwrite, 4);
     duk_put_prop_string(ctx, -2, "fwrite");
 
@@ -4494,7 +4611,7 @@ void duk_printf_init(duk_context *ctx)
     duk_put_prop_string(ctx,-2,"stream");
     pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
     pushffunc("fflush",     func_fflush,    0           );
-    pushffunc("fwrite",     func_fwrite,    2           );
+    pushffunc("fwrite",     func_fwrite,    3           );
     duk_put_prop_string(ctx, -2,"accessLog");
 
     duk_push_object(ctx);
@@ -4502,7 +4619,7 @@ void duk_printf_init(duk_context *ctx)
     duk_put_prop_string(ctx,-2,"stream");
     pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
     pushffunc("fflush",     func_fflush,    0           );
-    pushffunc("fwrite",     func_fwrite,    2           );
+    pushffunc("fwrite",     func_fwrite,    3           );
     duk_put_prop_string(ctx, -2,"errorLog");
 
     duk_push_object(ctx);
@@ -4510,7 +4627,7 @@ void duk_printf_init(duk_context *ctx)
     duk_put_prop_string(ctx,-2,"stream");
     pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
     pushffunc("fflush",     func_fflush,    0           );
-    pushffunc("fwrite",     func_fwrite,    2           );
+    pushffunc("fwrite",     func_fwrite,    3           );
     duk_put_prop_string(ctx, -2,"stdout");
 
     duk_push_object(ctx);
@@ -4518,15 +4635,18 @@ void duk_printf_init(duk_context *ctx)
     duk_put_prop_string(ctx,-2,"stream");
     pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
     pushffunc("fflush",     func_fflush,    0           );
-    pushffunc("fwrite",     func_fwrite,    2           );
+    pushffunc("fwrite",     func_fwrite,    3           );
     duk_put_prop_string(ctx, -2,"stderr");
 
     duk_push_object(ctx);
     duk_push_string(ctx,"stdin");
     duk_put_prop_string(ctx,-2,"stream");
-    pushffunc("fread",      func_fread,     2           );
+    pushffunc("fread",      func_fread,     3           );
     pushffunc("readLine",   func_readline,  0           );
-    duk_put_prop_string(ctx, -2,"stdin");
+    pushffunc("fgets",      func_fgets,     1           );
+    duk_push_c_function(ctx, duk_rp_getchar, 1);
+    duk_put_prop_string(ctx, -2, "getchar");
+    duk_put_prop_string(ctx, -2, "stdin");
 
     duk_put_prop_string(ctx, -2,"utils");
     duk_put_global_string(ctx,"rampart");
