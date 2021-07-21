@@ -294,6 +294,7 @@ seekNextDelimiter(CSV *csv,byte *s)
    int   inSingleQuote=0;
    int   inDoubleQuote=0;
    byte  lastChar='\0';
+/*  currently unneeded
    byte *escape;
    byte *translation;
    
@@ -303,6 +304,7 @@ seekNextDelimiter(CSV *csv,byte *s)
       translation=fullEscXlate;
    }
    else escape=translation=smallEscList;
+*/
    
    
    if(s>=csv->end)         // last call, you don't have to go home but you cant stay here
