@@ -24,11 +24,6 @@ set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp)
 
 add_definitions(
 	-DRP_USING_DUKTAPE 
-	-DDUK_CMDLINE_CONSOLE_SUPPORT 
-	-DDUK_CMDLINE_MODULE_SUPPORT 
-	-DDUK_CMDLINE_FANCY
-	-DDUK_CMDLINE_FILEIO 
-	-DDUK_DB_SUPPORT
 	-D_XOPEN_SOURCE 
 	-D_GNU_SOURCE 
 	-D_LARGEFILE_SOURCE 
@@ -54,6 +49,7 @@ add_executable(rampart
 	duktape/globals/hash_random/hyperloglog.c
 	linenoise.c
 	whereami.c
+	setproctitle.c
 	cmdline.c
 )
 
@@ -92,10 +88,6 @@ include_directories(
 	${PROJECT_BINARY_DIR}/texis/contrib/jansson-2.12/include/
 	${PROJECT_SOURCE_DIR}/src/duktape/globals/hash_random/
 )
-
-#this is good for later. Right now it interrupts work flow
-#set (CMAKE_CURRENT_BINARY_DIR ${PROJECT_BINARY_DIR}/bin )
-
 
 ########### ADD MODULES HERE ###############
 
@@ -325,7 +317,7 @@ target_include_directories(rampart-curl PRIVATE
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
   set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb #example_name
           PROPERTIES 
-          LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath,./ -Wl,-rpath,${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/"
+          LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath,./"
           SUFFIX       ".so"
           PREFIX ""
   )
@@ -333,14 +325,14 @@ else()
   if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
     set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb #example_name
             PROPERTIES 
-            LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath,${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/"
+            LINK_FLAGS "-Wl,-rpath,./"
             SUFFIX       ".so"
             PREFIX ""
     )
   else()
     set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-lmdb #example_name
             PROPERTIES 
-            LINK_FLAGS "-Wl,-rpath ./ -Wl,-rpath,${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/"
+            LINK_FLAGS "-Wl,-rpath,./"
             SUFFIX       ".so"
             PREFIX ""
     )
@@ -378,7 +370,7 @@ install(TARGETS
 	rampart-cmark
 	rampart-robots
 	rampart-lmdb
-	DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/"
+	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
 else()
 install(TARGETS
@@ -390,22 +382,16 @@ install(TARGETS
 	rampart-html
 	rampart-cmark
 	rampart-lmdb
-	DESTINATION "${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/"
+	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
 endif()
 
-#install(CODE "execute_process( \
-#    COMMAND ${CMAKE_COMMAND} -E create_symlink \
-#    \"${CMAKE_INSTALL_PREFIX}/bin/rampart\" \
-#    \"/usr/local/bin/rampart\"   \
-#    )"
-#)
 
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_BINARY_DIR}/src/babel.js\" \
-    \"${PROJECT_BINARY_DIR}/src/babel-polyfill.js\" \
-    \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/\"   \
+    \"${PROJECT_SOURCE_DIR}/test/babel.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/babel-polyfill.js\" \
+    \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
     )"
 )
 
@@ -421,52 +407,43 @@ install(CODE "execute_process( \
 )
 
 # test files
-install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rampart/test")
+install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/test")
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_SOURCE_DIR}/test/babel-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/crypto-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/combo-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/curl-server-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/math.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/redis-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/rputils-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/sql-extras-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/wiki_00\" \
+    \"${CMAKE_INSTALL_PREFIX}/test\"   \
+    )"
+)
 if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_SOURCE_DIR}/test/babel-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/crypto-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/combo-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/curl-server-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/math.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/redis-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/robots-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/rputils-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/sql-extras-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/wiki_00\" \
-    \"${CMAKE_INSTALL_PREFIX}/share/rampart/test\"   \
-    )"
-)
-else()
-install(CODE "execute_process( \
-    COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_SOURCE_DIR}/test/babel-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/crypto-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/combo-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/curl-server-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/math.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/redis-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/rputils-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/sql-extras-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/wiki_00\" \
-    \"${CMAKE_INSTALL_PREFIX}/share/rampart/test\"   \
+    \"${CMAKE_INSTALL_PREFIX}/test\"   \
     )"
 )
 endif()
 
 install(CODE "execute_process ( \
-    COMMAND bash -c \"chmod 777 ${CMAKE_INSTALL_PREFIX}/share/rampart/test\"
+    COMMAND bash -c \"chmod 777 ${CMAKE_INSTALL_PREFIX}/test\"
  )"
 )
 
 #js modules
-install(CODE "execute_process( \
-   COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_SOURCE_DIR}/jsmodules/rampart-letsencrypt.js\" \
-    \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules\"   \
-    )"
-)
+#install(CODE "execute_process( \
+#   COMMAND ${CMAKE_COMMAND} -E copy \
+#    NOT READY FOR PRIME TIME
+#    \"${PROJECT_SOURCE_DIR}/jsmodules/rampart-letsencrypt.js\" \
+#    \"${CMAKE_INSTALL_PREFIX}/modules\"   \
+#    )"
+#)
 
 #tsql etc
 install(CODE "execute_process( \
@@ -475,34 +452,36 @@ install(CODE "execute_process( \
     \"${PROJECT_BINARY_DIR}/texis/apps/metamorph\" \
     \"${PROJECT_BINARY_DIR}/texis/apps/rex\" \
     \"${PROJECT_BINARY_DIR}/texis/apps/texislockd\" \
-    \"${PROJECT_BINARY_DIR}/texis/apps/backref\" \
     \"${CMAKE_INSTALL_PREFIX}/bin\"   \
     )"
 )
 
 # example dirs
-install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rampart/examples")
+install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/examples")
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy_directory \
     \"${PROJECT_SOURCE_DIR}/examples\" \
-    \"${CMAKE_INSTALL_PREFIX}/share/rampart/examples\"   \
+    \"${CMAKE_INSTALL_PREFIX}/examples\"   \
     )"
 )
 
 # docs dirs
-install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/share/rampart/docs")
+install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/docs")
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy_directory \
     \"${PROJECT_SOURCE_DIR}/docs/build/html\" \
-    \"${CMAKE_INSTALL_PREFIX}/share/rampart/docs\"   \
+    \"${CMAKE_INSTALL_PREFIX}/docs\"   \
     )"
 )
 
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/rampart-server.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/rampart-crypto.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/rampart-curl.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/rampart-sql.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/rampart-lmdb.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/lib/rampart_modules/rampart-redis.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-server.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-crypto.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-curl.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-sql.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-lmdb.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-redis.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
 
+if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-robots.so\")")
+endif()

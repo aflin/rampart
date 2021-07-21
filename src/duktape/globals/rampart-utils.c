@@ -475,6 +475,17 @@ duk_ret_t duk_process_getppid(duk_context *ctx)
     return 1;
 }
 
+duk_ret_t duk_process_setproctitle(duk_context *ctx)
+{
+    const char *proctitle = REQUIRE_STRING(ctx, 0, "setProcTitle: argument must be a String");
+    
+    if(strlen(proctitle) > 255)
+        RP_THROW(ctx, "setProcTitle: String length must be less than 255 characters");
+    
+    setproctitle("%s", proctitle);
+    return 0;
+}
+
 duk_ret_t duk_rp_realpath(duk_context *ctx)
 {
     const char *path = REQUIRE_STRING(ctx, 0, "realPath requires a String as its sole parameter");
@@ -631,6 +642,8 @@ void duk_process_init(duk_context *ctx)
     duk_put_prop_string(ctx,-2,"getpid");
     duk_push_c_function(ctx,duk_process_getppid,0);
     duk_put_prop_string(ctx,-2,"getppid");
+    duk_push_c_function(ctx,duk_process_setproctitle,1);
+    duk_put_prop_string(ctx,-2,"setProcTitle");
 
     {   /* add process.argv */
         int i=0;

@@ -1911,6 +1911,11 @@ int main(int argc, char *argv[])
     signal(SIGINT, sigint_handler);
     signal(SIGTERM, sigint_handler);
 
+    /* init setproctitle() as required */
+#ifdef RP_SPT_NEEDS_INIT
+    spt_init(argc, argv);
+#endif
+
     /* skip past process name */
     argc--;
     argv++;

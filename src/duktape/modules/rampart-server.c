@@ -4353,9 +4353,6 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         else if(!dpid)
         {   /* child */
-            char *pname=NULL;
-            char portbuf[8];
-            int i=1;
             pid_t dpid2;
 
             close(child2par[0]);
@@ -4402,17 +4399,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             }
             duk_pop(ctx);
 
-            pname=strdup("rampart-server:");
-            snprintf(portbuf,8,"%d",port);
-            pname=strcatdup(pname,portbuf);
-            for (i=1;i<rampart_argc;i++)
-            {
-                pname=strcatdup(pname," ");
-                pname=strcatdup(pname,rampart_argv[i]);
-            }
-            strcpy(rampart_argv[0], pname);
-            free(pname);
-
+            setproctitle("rampart server:%d", port);
         }
         else
         {

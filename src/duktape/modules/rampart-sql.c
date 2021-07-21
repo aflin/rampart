@@ -494,6 +494,8 @@ static SFI *check_fork(DB_HANDLE *h, int create)
             sigemptyset(&sa.sa_mask);
             sigaction(SIGUSR2, &sa, NULL);
 
+            setproctitle("rampart sql_helper");
+
             close(child2par[0]);
             close(par2child[1]);
             finfo->writer = child2par[1];

@@ -19,43 +19,10 @@ extern "C"
 {
 #endif
 
-extern char **rampart_argv;
-extern int   rampart_argc;
-extern char argv0[PATH_MAX];  // in rampart-server argv[0] is changed.  Original is saved here.
-extern char rampart_exec[PATH_MAX]; //the full path to the executable
-extern char rampart_dir[PATH_MAX];  //the base directory
-extern duk_context *main_ctx;
-extern duk_context **thread_ctx;
-extern struct event_base *elbase;
-extern struct event_base **thread_base;
-
-
-/* mutex locking in general */
-#define RP_MLOCK(lock) do{\
-    if (pthread_mutex_lock((lock)) != 0)\
-        {fprintf(stderr,"could not obtain lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
-} while(0)
-
-#define RP_MUNLOCK(lock) do{\
-    if (pthread_mutex_unlock((lock)) != 0)\
-        {fprintf(stderr,"could not release lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
-} while(0)
-
-#define RP_MINIT(lock) do{\
-    if (pthread_mutex_init((lock),NULL) != 0)\
-        {fprintf(stderr,"could not create lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
-} while(0)
-
-/* mutex for locking main_ctx when in a thread with other duk stacks open */
-extern pthread_mutex_t ctxlock;
-#define CTXLOCK RP_MLOCK(&ctxlock)
-#define CTXUNLOCK RP_MUNLOCK(&ctxlock)
-
-
 /* macros to help with require_* and throwing errors with
    a stack trace.
 */
-extern int totnthreads;
+
 #define RP_THROW(ctx,...) do {\
     duk_push_error_object(ctx, DUK_ERR_ERROR, __VA_ARGS__);\
     (void) duk_throw(ctx);\
@@ -163,42 +130,6 @@ extern int totnthreads;
     r;\
 })
 
-#define REMALLOC(s, t) /*printf("malloc=%d\n",(int)t);*/ \
-    (s) = realloc((s), (t));                             \
-    if ((char *)(s) == (char *)NULL)                     \
-    {                                                    \
-        fprintf(stderr, "error: realloc() ");            \
-        exit(1);                                         \
-    }
-
-#define CALLOC(s, t) 					 \
-    (s) = calloc(1, (t));                                \
-    if ((char *)(s) == (char *)NULL)                     \
-    {                                                    \
-        fprintf(stderr, "error: calloc() ");             \
-        exit(1);                                         \
-    }
-
-#ifdef PUTMSG_STDERR
-    pthread_mutex_t printlock;
-#endif
-
-extern void rp_register_functions(duk_context *ctx);
-
-/*
-#define SET_THREAD_UNSAFE(ctx)                                       \
-do                                                               \
-{                                                                \
-    duk_push_false(ctx);                                         \
-    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("threadsafe")); \
-} while (0)
-*/
-
-//currently unused, probably can be removed
-#define SET_THREAD_UNSAFE(ctx) /* nada */
-
-#define RP_TIME_T_FOREVER 2147483647
-
 /* debugging macros */
 #define printstack(ctx)                           \
     do                                            \
@@ -280,6 +211,79 @@ do                                                               \
         }                                                                                \
     } while (0)
 
+
+extern char **rampart_argv;              // same as argv
+extern int   rampart_argc;               // same as argc
+extern char argv0[PATH_MAX];             // in rampart-server argv[0] is changed.  Original is saved here.
+extern char rampart_exec[PATH_MAX];      // the full path to the executable
+extern char rampart_dir[PATH_MAX];       // the base directory
+extern duk_context *main_ctx;            // the context if/when single threaded
+extern duk_context **thread_ctx;         // array of ctxs for server, 2 per thread (http and ws)
+extern struct event_base *elbase;        // the main event base for the main event loop
+extern struct event_base **thread_base;  // each thread (or pair or ctxs) gets an event loop
+extern int totnthreads;                  // when threading in server - number of ctx contexts
+
+
+/* mutex locking in general */
+#define RP_MLOCK(lock) do{\
+    if (pthread_mutex_lock((lock)) != 0)\
+        {fprintf(stderr,"could not obtain lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
+} while(0)
+
+#define RP_MUNLOCK(lock) do{\
+    if (pthread_mutex_unlock((lock)) != 0)\
+        {fprintf(stderr,"could not release lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
+} while(0)
+
+#define RP_MINIT(lock) do{\
+    if (pthread_mutex_init((lock),NULL) != 0)\
+        {fprintf(stderr,"could not create lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
+} while(0)
+
+/* mutex for locking main_ctx when in a thread with other duk stacks open */
+extern pthread_mutex_t ctxlock;
+#define CTXLOCK RP_MLOCK(&ctxlock)
+#define CTXUNLOCK RP_MUNLOCK(&ctxlock)
+
+
+#define REMALLOC(s, t) 					 \
+    (s) = realloc((s), (t));                             \
+    if ((char *)(s) == (char *)NULL)                     \
+    {                                                    \
+        fprintf(stderr, "error: realloc() ");            \
+        exit(1);                                         \
+    }
+
+#define CALLOC(s, t) 					 \
+    (s) = calloc(1, (t));                                \
+    if ((char *)(s) == (char *)NULL)                     \
+    {                                                    \
+        fprintf(stderr, "error: calloc() ");             \
+        exit(1);                                         \
+    }
+
+#ifdef PUTMSG_STDERR
+    pthread_mutex_t printlock;
+#endif
+
+extern void rp_register_functions(duk_context *ctx);
+
+/*
+#define SET_THREAD_UNSAFE(ctx)                                       \
+do                                                               \
+{                                                                \
+    duk_push_false(ctx);                                         \
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("threadsafe")); \
+} while (0)
+*/
+
+//currently unused, probably can be removed
+#define SET_THREAD_UNSAFE(ctx) /* nada */
+
+// used for no timeout in server
+#define RP_TIME_T_FOREVER 2147483647
+
+
 /* func from rampart-utils.c */
 extern void duk_misc_init(duk_context *ctx);
 
@@ -288,7 +292,6 @@ extern void duk_misc_init(duk_context *ctx);
 #define ARRAYCOMMA 2
 #define ARRAYJSON 3
 char *duk_rp_object2querystring(duk_context *ctx, duk_idx_t qsidx, int atype);
-
 void  duk_rp_querystring2object(duk_context *ctx, char *q);
 
 duk_ret_t duk_rp_object2q(duk_context *ctx);
@@ -367,6 +370,17 @@ SLIST_HEAD(slisthead, ev_args) tohead;
       (var) && ((tvar) = SLIST_NEXT((var), field), 1);  \
       (var) = (tvar))
 #endif
+
+#if (defined __NetBSD__ || defined __FreeBSD__ || defined __OpenBSD__ || __linux || defined __APPLE__ )
+#define USE_SETPROCTITLE
+#endif
+
+#if (defined __linux || defined __APPLE__)
+#define RP_SPT_NEEDS_INIT
+void spt_init(int argc, char *argv[]);
+void setproctitle(const char *fmt, ...);
+#endif
+
 
 #if defined(__cplusplus)
 }
