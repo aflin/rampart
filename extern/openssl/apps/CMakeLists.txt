@@ -30,8 +30,10 @@ file( READ ${CMAKE_CURRENT_SOURCE_DIR}/tsget.cmake TSGET )
 string( REPLACE "@VERSION_STRING@" "${VERSION_STRING}" TSGET "${TSGET}" )
 file( WRITE ${CMAKE_CURRENT_BINARY_DIR}/tsget "${TSGET}" )
 
-file( READ ${CMAKE_CURRENT_SOURCE_DIR}/progs.h.cmake PROGS_H )
-file( WRITE ${CMAKE_CURRENT_BINARY_DIR}/progs.h "${PROGS_H}" )
+if(NOT EXISTS "${CMAKE_CURRENT_BINARY_DIR}/progs.h")
+  file( READ ${CMAKE_CURRENT_SOURCE_DIR}/progs.h.cmake PROGS_H )
+  file( WRITE ${CMAKE_CURRENT_BINARY_DIR}/progs.h "${PROGS_H}" )
+endif()
 
 add_definitions( -DMONOLITH )
 
