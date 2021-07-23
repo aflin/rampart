@@ -4047,23 +4047,26 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
     return (1);
 }
 
-char getch(duk_context *ctx) {
+static char getch(duk_context *ctx) {
         char buf = 0;
         struct termios old = {0};
-        if (tcgetattr(0, &old) < 0)
-                RP_THROW(ctx,"getchar: tcgetattr() error");
+        tcgetattr(0, &old);
+        //if (tcgetattr(0, &old) < 0)
+        //        RP_THROW(ctx,"getchar: tcgetattr() error: %s", strerror(errno));
         old.c_lflag &= ~ICANON;
-//        old.c_lflag &= ~ECHO;
+        //old.c_lflag &= ~ECHO;
         old.c_cc[VMIN] = 1;
         old.c_cc[VTIME] = 0;
-        if (tcsetattr(0, TCSANOW, &old) < 0)
-                RP_THROW(ctx,"getchar: tcsetattr() error");
+        tcsetattr(0, TCSANOW, &old);
+        //if (tcsetattr(0, TCSANOW, &old) < 0)
+            //RP_THROW(ctx,"getchar: tcsetattr() error: %s", strerror(errno));
         if (read(0, &buf, 1) < 0)
-                RP_THROW(ctx,"getchar: read() error");
+                RP_THROW(ctx,"getchar: read() error: %s", strerror(errno));
         old.c_lflag |= ICANON;
-//        old.c_lflag |= ECHO;
-        if (tcsetattr(0, TCSADRAIN, &old) < 0)
-                RP_THROW(ctx,"getchar: tcsetattr() error");
+        tcsetattr(0, TCSADRAIN, &old);
+        //old.c_lflag |= ECHO;
+        //if (tcsetattr(0, TCSADRAIN, &old) < 0)
+            //RP_THROW(ctx,"getchar: tcsetattr() error: %s", strerror(errno));
         return (buf);
 }
 
@@ -4105,7 +4108,6 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gettype)
         {
             ch = getch(ctx);
 
-            printf("%c",ch);
             if(ch == EOF)
                 break;
 

@@ -34,7 +34,7 @@ duk_context **thread_ctx = NULL;
 duk_context *main_ctx;
 struct event_base *elbase;
 struct event_base **thread_base=NULL;
-struct termios old_termios_setting = {0};
+
 #define ST_NONE 0
 #define ST_DQ   1
 #define ST_SQ   2
@@ -399,11 +399,6 @@ void duk_rp_exit(duk_context *ctx, int ec)
         free(exit_funcs);
     }
 
-    if (tcsetattr(0, TCSADRAIN, &old_termios_setting))
-    {
-        fprintf(stderr,"failed to restore term settings\n");
-        exit(1);
-    }
     exit(ec);
 }
 
@@ -1784,12 +1779,6 @@ int main(int argc, char *argv[])
     rampart_argc=argc;
     access_fh=stdout;
     error_fh=stderr;
-
-    if (tcgetattr(0, &old_termios_setting) < 0)
-    {
-        fprintf(stderr,"tcgetattr() error getting term settings");
-        exit(1);
-    }
 
     strcpy(argv0, argv[0]);
 
