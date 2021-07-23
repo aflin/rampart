@@ -341,7 +341,6 @@ endif()
 
 ## some examples into src temporarily 
 set(EXAMPLE_FILES
-	"web_server"
 	"wikipedia_search"
 	"metasearch"
 )
@@ -392,6 +391,13 @@ install(CODE "execute_process( \
     \"${PROJECT_SOURCE_DIR}/test/babel.js\" \
     \"${PROJECT_SOURCE_DIR}/test/babel-polyfill.js\" \
     \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
+    )"
+)
+
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_SOURCE_DIR}/src/install.js\" \
+    \"${CMAKE_INSTALL_PREFIX}/\"   \
     )"
 )
 
@@ -465,13 +471,18 @@ install(CODE "execute_process( \
     )"
 )
 
-# docs dirs
-install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/docs")
+# web_server
+install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/web_server")
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy_directory \
-    \"${PROJECT_SOURCE_DIR}/docs/build/html\" \
-    \"${CMAKE_INSTALL_PREFIX}/docs\"   \
+    \"${PROJECT_SOURCE_DIR}/web_server\" \
+    \"${CMAKE_INSTALL_PREFIX}/web_server\"   \
     )"
+)
+
+install(CODE "execute_process ( \
+    COMMAND bash -c \"chown -R nobody ${CMAKE_INSTALL_PREFIX}/web_server\"
+ )"
 )
 
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-server.so\")")

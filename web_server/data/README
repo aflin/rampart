@@ -1,0 +1,2 @@
+This is the standard location for directories containing databases when
+using rampart-server with rampart-sql, rampart-lmdb or rampart-redis.
