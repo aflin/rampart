@@ -401,6 +401,13 @@ install(CODE "execute_process( \
     )"
 )
 
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_SOURCE_DIR}/src/run_tests.sh\" \
+    \"${CMAKE_INSTALL_PREFIX}/\"   \
+    )"
+)
+
 # include files
 install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/include")
 install(CODE "execute_process( \
