@@ -3,7 +3,7 @@ rampart.globalize(rampart.utils);
 
 var crypto=require("rampart-crypto");
 var Sql=require("rampart-sql");
-var sql=new Sql.init("./testdb",true);//create if doesn't exist
+var sql=new Sql.init(process.scriptPath+"/testdb",true);//create if doesn't exist
 
 var sha256=crypto.sha256;
 var md5=crypto.md5;

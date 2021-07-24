@@ -6,8 +6,8 @@ rampart.globalize(rampart.utils);
 var ret = shell("which redis-server");
 
 if (ret.exitStatus != 0) {
-    fprintf(stderr, "Could not find redis-server\n");
-    process.exit(1);
+    fprintf(stderr, "Could not find redis-server!! SKIPPING REDIS TESTS\n");
+    process.exit(0);
 }
 
 var rdexec = trim(ret.stdout);

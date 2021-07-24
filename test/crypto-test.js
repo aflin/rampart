@@ -88,7 +88,7 @@ testFeature("en/decrypt with password, no options", function(){
 
 testFeature("en/decrypt with password, with options", function(){
 
-  var file=readFile("crypto-test.js");
+  var file=readFile(process.script);
 
   var hash=crypto.sha512(file);
 

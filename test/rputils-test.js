@@ -1,6 +1,8 @@
 //first line
 rampart.globalize(rampart.utils);
 
+chdir(process.scriptPath);
+
 function testFeature(name,test)
 {
     var error=false;

@@ -51,13 +51,16 @@ function testFeature(name,test)
     if(error) console.log(error);
 }
 
+var cert = process.scriptPath+'/sample-cert.pem';
+var key = process.scriptPath+'/sample-key.pem';
+var conf = process.scriptPath+'/sample-cert.conf';
 
 if(
-    !(stat("sample-cert.pem") &&
-      stat("sample-key.pem") )
+    !(stat(cert) &&
+      stat(key) )
 )
 {
-    fprintf("sample-cert.conf", '%s',
+    fprintf(conf, '%s',
         "[CA_default]\n" +
         "copy_extensions = copy\n" +
         "\n" +
@@ -86,14 +89,14 @@ if(
         "DNS.1 = localhost\n" +
         "DNS.2 = *.localhost\n"
     );
-    var ret = shell("openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout sample-key.pem -out sample-cert.pem -config sample-cert.conf");
+    var ret = shell(`openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ${key} -out ${cert} -config ${conf}`);
     //console.log(ret);
 }
 
 if(!stat("smods"))
 {
-    mkdir("smods");
-    fprintf("smods/testmod.js", '%s',
+    mkdir(process.scriptPath + "/smods");
+    fprintf(process.scriptPath + "/smods/testmod.js", '%s',
         "module.exports=function(res){return {text:'test'} }\n");
 }
 
@@ -110,8 +113,8 @@ var pid=server.start(
     daemon: true,
 
     secure:true,
-    sslKeyFile:  "./sample-key.pem",
-    sslCertFile: "./sample-cert.pem",
+    sslKeyFile:  key,
+    sslCertFile: cert,
 
     /* sslMinVersion (ssl3|tls1|tls1.1|tls1.2). "tls1.2" is default*/
     // sslMinVersion: "tls1.2",

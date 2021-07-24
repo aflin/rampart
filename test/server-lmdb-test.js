@@ -131,8 +131,8 @@ var pid=server.start(
     useThreads: true, /* make server multi-threaded. */
     daemon: true,
     log: true,
-    accessLog: "./access.log",    //access log location, instead of stdout. Must be set if daemon==true
-    errorLog: "./error.log",     //error log location, instead of stderr. Must be set if daemon==true
+    accessLog: process.scriptPath+"/access.log",    //access log location, instead of stdout. Must be set if daemon==true
+    errorLog: process.scriptPath+"/error.log",     //error log location, instead of stderr. Must be set if daemon==true
     map:
     {
         "/ltest":  ltest
