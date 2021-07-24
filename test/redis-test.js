@@ -1,29 +1,38 @@
 var redis=require("rampart-redis");
 rampart.globalize(rampart.utils);
 
+chdir(process.scriptPath);
 
+var rcl;
+var rpid;
+function start_redis(){
+    var ret = shell("which redis-server");
 
-var ret = shell("which redis-server");
+    if (ret.exitStatus != 0) {
+        fprintf(stderr, "Could not find redis-server!! SKIPPING REDIS TESTS\n");
+        process.exit(0);
+    }
 
-if (ret.exitStatus != 0) {
-    fprintf(stderr, "Could not find redis-server!! SKIPPING REDIS TESTS\n");
-    process.exit(0);
+    var rdexec = trim(ret.stdout);
+
+    ret = exec(rdexec, {background: true}, "--port", "13287");
+
+    sleep(0.5);
+    rpid = ret.pid;
+    if (!kill(rpid, 0)) {
+        fprintf(stderr, "Failed to start redis-server\n");
+        process.exit(1);
+    }
+
+    sleep(0.5);
 }
 
-var rdexec = trim(ret.stdout);
-
-ret = exec(rdexec, {background: true}, "--port", "13287");
-
-sleep(0.5);
-var rpid = ret.pid;
-if (!kill(rpid, 0)) {
-    fprintf(stderr, "Failed to start redis-server\n");
-    process.exit(1);
+try {
+    rcl=new redis.init(13287);
+} catch (e) {
+    start_redis();
+    rcl=new redis.init(13287);
 }
-
-sleep(0.5);
-
-var rcl=new redis.init(13287);
 
 rcl.flushall();
 
@@ -41,6 +50,8 @@ if(vers < 60201) {
 
 
 function cleanup() {
+    if(!rpid)
+        return;
     if(!kill(rpid, 0))
       return;
     kill(rpid, 15);
