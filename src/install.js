@@ -426,8 +426,12 @@ and install in the above location?] [Y/n] `);
     resp = getresp('y');
     printf("\n");
 
-    if(resp != 'y')
+    if(resp != 'y') {
+
+        printf("\nMore information about getting the CA bundle can be found at:\n"+
+               "   https://daniel.haxx.se/blog/2018/11/07/get-the-ca-cert-for-curl/\n\n");
         return;
+    }
 
     var crypto = require('rampart-crypto');
 
