@@ -14,6 +14,7 @@
 #include <inttypes.h>
 #include <curl/curl.h>
 #include <time.h>
+#include "curl_config.h"
 #include "rampart.h"
 
 typedef uint8_t byte;
@@ -2700,6 +2701,9 @@ static const duk_number_list_entry curl_consts[] = {
 duk_ret_t duk_open_module(duk_context *ctx)
 {
     duk_push_object(ctx);
+    duk_push_string(ctx, "default_ca_file");
+    duk_push_string(ctx,CURL_CA_BUNDLE);
+    duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE |DUK_DEFPROP_CLEAR_WEC);
     duk_put_function_list(ctx, -1, curl_funcs);
     duk_put_number_list(ctx, -1, curl_consts);
 
