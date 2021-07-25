@@ -431,6 +431,7 @@ install(CODE "execute_process( \
     \"${PROJECT_SOURCE_DIR}/test/math.js\" \
     \"${PROJECT_SOURCE_DIR}/test/redis-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/rputils-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/server-lmdb-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/sql-extras-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/wiki_00\" \
     \"${CMAKE_INSTALL_PREFIX}/test\"   \
