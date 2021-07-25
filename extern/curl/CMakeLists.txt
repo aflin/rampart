@@ -49,7 +49,9 @@ project(CURL C)
 
 include_directories(/usr/local/include)
 link_directories(/usr/local/lib)
-link_libraries(idn2 ldap z)
+#link_libraries(idn2 ldap z)
+find_library(IDN2 libidn2.a)
+link_libraries(${IDN2} ldap z)
 message(WARNING "the curl cmake build system is poorly maintained. Be aware")
 
 file(STRINGS ${CURL_SOURCE_DIR}/include/curl/curlver.h CURL_VERSION_H_CONTENTS REGEX "#define LIBCURL_VERSION( |_NUM )")
@@ -630,7 +632,8 @@ if(NOT CURL_DISABLE_LDAPS)
 endif()
 
 # Check for idn
-check_library_exists_concat("idn2" idn2_lookup_ul HAVE_LIBIDN2)
+#check_library_exists_concat("idn2" idn2_lookup_ul HAVE_LIBIDN2)
+check_library_exists_concat("libidn2.a" idn2_lookup_ul HAVE_LIBIDN2)
 
 # Check for symbol dlopen (same as HAVE_LIBDL)
 check_library_exists("${CURL_LIBS}" dlopen "" HAVE_DLOPEN)
