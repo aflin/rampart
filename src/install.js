@@ -244,7 +244,7 @@ function do_install(prefix, map, makelinks){
     if(makelinks)
     {
         if(!has_write_perm("/usr/local/bin"))
-            printf("You lack write permissions in '/usr/local/bin'.\nNo links to binaries will be made\n");
+            printf("No links to binaries will be made\n");
         else
             do_make_links(prefix);
     }    
