@@ -390,6 +390,105 @@ Continue? [Y/n]
     } 
 }
 
+function check_curl(){
+    var curl = require("rampart-curl");
+
+    if(stat(curl.default_ca_file))
+        return;
+
+    clear();
+    printf(
+`WARNING:
+
+In order to use the rampart-curl module to securely fetch pages from https
+websites, the CA certificate bundle file:
+
+    '${curl.default_ca_file}'
+
+must be present.  However it is missing on your system. Without this file
+you will either have to download pages from https websites by specifying an
+alternate location, or by specifying that the request be performed
+insecurely (the 'cacert' and 'insecure' options documented at
+'https://rampart.dev/docs/rampart-curl.html#curl-long-options'
+respectively).
+
+Your system may already have the necessary file in a different location, in which
+case you can copy it to '${curl.default_ca_file}'. Or this script can download
+the libcurl maintained version.
+
+Would you like this script to attempt to download the necessary file from
+
+    https://curl.se/ca/cacert.pem
+    
+and install in the above location?] [Y/n] `);
+
+    stdout.fflush();
+    resp = getresp('y');
+    printf("\n");
+
+    if(resp != 'y')
+        return;
+
+    var crypto = require('rampart-crypto');
+
+    var res = curl.fetch("https://curl.se/ca/cacert.pem", {insecure:true});
+
+
+    if(res.status !=200)
+    {
+        console.log(`Error getting '${res.url}'\n  ${res.statusText}\n   ${res.errMsg}`);
+        process.exit(1);
+    }
+
+    var res2 = curl.fetch("https://curl.se/ca/cacert.pem.sha256", {insecure:true});
+
+    if(res2.status !=200)
+    {
+        console.log(`Error getting '${res2.url}'\n  ${res2.statusText}\n   ${res2.errMsg}`);
+        process.exit(1);
+    }
+
+
+    var verified_sha = res2.text.match(/\S{64}/);
+
+    if (verified_sha.length == 1)
+        verified_sha = verified_sha[0]
+    else {
+        console.log("Error getting checksum at 'https://curl.se/ca/cacert.pem.sha256'");
+        process.exit(1);
+    }
+
+    var calc_sha = crypto.sha256(res.text);
+
+    if(verified_sha != calc_sha)
+    {
+        console.log("Error: checksum from https://curl.se/ca/cacert.pem does not match https://curl.se/ca/cacert.pem.sha256");
+        process.exit(1);
+    }
+
+    var certdir = curl.default_ca_file.substring(0, curl.default_ca_file.lastIndexOf('/'));
+    if(! check_create_perm(certdir) )
+    {
+        // 'you don't have write permissions...' printed in check_create_perm
+        printf("Attempting to save cert bundle file to '/tmp/cacert.pem'.\n");
+        fprintf( "/tmp/cacert.pem", '%s', res.text);
+        printf(`
+File has been saved to '/tmp/cacert.pem'.
+You will need to manually copy this file with, e.g.:
+    sudo cp /tmp/cacert.pem ${curl.default_ca_file}
+
+`);
+        return;
+    }
+
+    if(!stat(certdir))
+        mkdir(certdir);
+
+    fprintf( curl.default_ca_file, '%s', res.text);
+    
+    console.log(`${curl.default_ca_file} was successfully created`);
+}
+
 
 /* ************ main ******************* */
 
@@ -416,6 +515,8 @@ clear();
 choose_continue();
 
 clear();
+
+check_curl();
 
 var choice = choose_install();
 
