@@ -292,11 +292,12 @@ add_library(rampart-curl SHARED
 target_link_libraries(rampart-curl PRIVATE
 	${CURL_TARGET_DIR}/lib/libcurl.a
 	rampart-crypto
-	idn2 ldap z
+	ldap z
 )
 target_include_directories(rampart-curl PRIVATE
 	${PROJECT_SOURCE_DIR}/extern/curl/include/
 	${PROJECT_BINARY_DIR}/extern/openssl/include/
+	${PROJECT_BINARY_DIR}/extern/curl/lib/
 )
 
 
