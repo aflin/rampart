@@ -1618,10 +1618,10 @@ a 16384 byte buffer to calculate a distinct count of items added.</p>
 in order to retrieve the same <cite>hll object</cite>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">hllBufferData</span></code> is a <span class="green">Buffer</span> - The raw <cite>hll</cite> buffer to initialize the new
 <code class="docutils literal notranslate"><span class="pre">hll</span></code> <span class="green">Object</span> with data previously extracted using
-<a class="reference external" href="hll.getBuffer">getBuffer</a> () below.</p></li>
+<a class="reference internal" href="#hll-getbuffer"><span class="std std-ref">getBuffer</span></a> below.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">merge_hll1</span></code>, <code class="docutils literal notranslate"><span class="pre">merge_hll2</span></code>, etc. are <cite>hll</cite> <span class="green">Objects</span> created with <code class="docutils literal notranslate"><span class="pre">new</span> <span class="pre">rampart.utils.hll(name)</span></code>
 to be merged into the new (blank) return <cite>hll</cite> <span class="green">Object</span> in the same manner as
-<a class="reference external" href="hll.merge">merge</a> () below.</p></li>
+<a class="reference internal" href="#hll-merge"><span class="std std-ref">merge</span></a> below.</p></li>
 </ul>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p>An opaque <cite>hll</cite> <span class="green">Object</span> containing the following functions: <code class="docutils literal notranslate"><span class="pre">add</span></code>, <code class="docutils literal notranslate"><span class="pre">addFile</span></code>, <code class="docutils literal notranslate"><span class="pre">count</span></code>, <code class="docutils literal notranslate"><span class="pre">merge</span></code>,

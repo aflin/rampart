@@ -1531,11 +1531,11 @@ Where:
 
 * ``hllBufferData`` is a :green:`Buffer` - The raw `hll` buffer to initialize the new
   ``hll`` :green:`Object` with data previously extracted using
-  `getBuffer <hll.getBuffer>`_ \() below.
+  :ref:`getBuffer <rampart-utils:hll.getBuffer>` below.
 
 * ``merge_hll1``, ``merge_hll2``, etc. are `hll` :green:`Objects` created with ``new rampart.utils.hll(name)``
   to be merged into the new (blank) return `hll` :green:`Object` in the same manner as
-  `merge <hll.merge>`_ \() below.
+  :ref:`merge <rampart-utils:hll.merge>` below.
 
 Return Value:
    An opaque `hll` :green:`Object` containing the following functions: ``add``, ``addFile``, ``count``, ``merge``,
