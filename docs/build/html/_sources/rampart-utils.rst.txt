@@ -402,6 +402,29 @@ Example:
    */
 
 
+getchar
+'''''''
+
+Get one or more characters from ``stdin``.  
+
+Usage:
+
+.. code-block:: javascript
+
+   var instr = rampart.utils.getchar([nchar]);
+
+Where ``nchar`` is an optional :green:`number`, the number of characters
+to read from ``stdin``.  The default is ``1``.
+
+Return Value:
+   A :green:`String` of length ``nchars``.
+
+Note:
+   If ``stdin`` is from an interactive terminal, execution
+   will be paused until ``nchar`` chars are input.  Unlike 
+   ``fread(stdin);`` :ref:`below <rampart-utils:fread>`, the terminal will be
+   set to allow characters in without waiting for a newline.
+
 readFile
 ''''''''
 
@@ -539,7 +562,7 @@ Return Value:
    }
 
 See `stat (2) <https://man7.org/linux/man-pages/man2/stat.2.html>`_ for the
-meaning of each property.  The ``is*()`` functions return ``true`` if the
+meaning of each property.  The ``is*`` :green:`Booleans` are set to ``true`` if the
 corresponding file property is true.
 
 Example:
@@ -589,7 +612,7 @@ Where:
    *  ``killSignal`` - :green:`Number`. If timeout is reached, use this signal
 
    *  ``background`` - :green:`Boolean`.  Whether to execute detached and return
-      immediately.  ``stdout`` and ``stderr`` below will be set to ``null``.  Any ``timeout``
+      immediately.  If ``true``, ``stdout`` and ``stderr`` below will be set to ``null``.  Any ``timeout``
       value is ignored.
 
    *  ``env`` - :green:`Object`. Key/value pairs to be used as environment variables for the executed process.
@@ -599,8 +622,7 @@ Where:
       ``true``, variables provided in ``env`` will be appended to :ref:`process.env <rampart-main:env>`.
       Duplicate keys in :ref:`process.env <rampart-main:env>` are replaced with the value from ``env``.
 
-   * ``stdin`` - :green:`String` or :green:`Buffer`.  If specified, the
-   content is piped to the
+   *  ``stdin`` - :green:`String` or :green:`Buffer`.  If specified, the content is piped to the
       command as stdin.
 
 *  ``argn`` - :green:`String`/:green:`Number`/:green:`Object`/:green:`Boolean`/:green:`Null` - Arguments to be passed to
@@ -610,10 +632,10 @@ Where:
 Return Value:
    :green:`Object`.  Properties as follows:
 
-   * ``stdout`` - :green:`String`. Output of command if ``background`` is not set ``false``.
+   * ``stdout`` - :green:`String`. Output of command if ``background`` is not set ``true``.
      Otherwise ``null``.
 
-   * ``stderr`` - :green:`String`. stderr output of command if ``background`` is not set ``false``.
+   * ``stderr`` - :green:`String`. stderr output of command if ``background`` is not set ``true``.
      Otherwise ``null``.
 
    * ``exitStatus`` - :green:`Number`.  The returned exit status of the command.
@@ -1026,7 +1048,7 @@ File Handle Utilities
 """""""""""""""""""""
 
 The functions `fprintf`_ (), `fseek`_\ (), `rewind`_\ (), `ftell`_\ (), `fflush`_\ (),
-`fread`_\ (), `fwrite`_\ (), and `readLine`_\ () take a filehandle, which may be obtained
+`fread`_\ (), `fgets`_\ (), `fwrite`_\ (), and `readLine`_\ () take a filehandle, which may be obtained
 using `fopen`_\ ().
 
 
@@ -1070,7 +1092,7 @@ Pre-opened file handles:
       ``rampart-server`` module.  If not specified, or not loaded, same as
       ``rampart.utils.stderr``.
 
-   The ``rampart.utils.stdin`` handle includes the `fread`_\ (), and `readLine`_\ () functions
+   The ``rampart.utils.stdin`` handle includes the `fread`_\ (), `fgets`_\ () and `readLine`_\ () functions
    while the other four include the `fprintf`_\ (), `fflush`_\ () and `fwrite`_\ () functions.
    Example:
 
@@ -1086,7 +1108,7 @@ fopen
 '''''
 
 Open a filehandle for use with `fprintf`_\ (), `fclose`_\ (), `fseek`_\ (),
-`rewind`_\ (), `ftell`_\ (), `fflush`_\ () `fread`_\ (), `fwrite`_\ () and readLine.
+`rewind`_\ (), `ftell`_\ (), `fflush`_\ () `fread`_\ (), `fgets`_\ (), `fwrite`_\ () and readLine.
 
 Return Value:
    :green:`Object`. An object which opaquely contains the opened file handle along with
@@ -1319,7 +1341,7 @@ Usage:
 
 .. code-block:: javascript
 
-    rampart.utils.fread([handle|file] [, max_size [, chunk_size [,returnString]]]);
+    var data = rampart.utils.fread([handle|file] [, max_size [, chunk_size [,returnString]]]);
 
 +------------+-----------------+---------------------------------------------------+
 |Argument    |Type             |Description                                        |
@@ -1344,6 +1366,26 @@ Usage:
 
 Return Value:
     A :green:`Buffer` or a :green:`String` if ``returnString`` is ``true``.
+
+fgets
+'''''
+
+Similar to ``fread()``, except that ``max_size`` and ``chunk_size`` are set to the same
+value ``nchars``, and a :green:`String` is returned.
+
+Usage:
+
+.. code-block:: javascript
+
+    var instr = rampart.utils.fgets([handle|file] [, nchars]);
+
+Where ``handle`` or ``file`` is identical to `fread`_ above and optional ``nchars``
+is the number of characters (bytes) to read.  The default for ``nchars``, if not
+specified is ``1``;
+
+Return Value:
+   A :green:`String` of length ``nchars``.
+
 
 fwrite
 ''''''

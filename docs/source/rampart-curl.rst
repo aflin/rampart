@@ -206,6 +206,16 @@ submit()
     * ``callback`` is a :green:`Function`, which takes as an argument the
       same :green:`Object` as returned in `fetch() Results`_ above.
 
+default_ca_file
+~~~~~~~~~~~~~~~
+
+The read only variable ``curl.default_ca_file`` is a :green:`String`, the 
+location of where Curl expects to find the CA Certificate Bundle file.
+If this file does not exist on the filesystem, ``https`` requests must
+either provide an alternate location for the file or be set as insecure.
+
+See ``cacert`` and ``insecure`` respectively in `Curl long options`_ below.
+
 Curl Options
 ------------
 

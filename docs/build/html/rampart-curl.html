@@ -109,6 +109,7 @@
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="#submit">submit()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#default-ca-file">default_ca_file</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#curl-options">Curl Options</a><ul>
@@ -377,6 +378,14 @@ set as described in <a class="reference internal" href="#curl-options">Curl Opti
 same <span class="green">Object</span> as returned in <a class="reference internal" href="#fetch-results">fetch() Results</a> above.</p></li>
 </ul>
 </div></blockquote>
+</div>
+<div class="section" id="default-ca-file">
+<h3>default_ca_file<a class="headerlink" href="#default-ca-file" title="Permalink to this headline">¶</a></h3>
+<p>The read only variable <code class="docutils literal notranslate"><span class="pre">curl.default_ca_file</span></code> is a <span class="green">String</span>, the
+location of where Curl expects to find the CA Certificate Bundle file.
+If this file does not exist on the filesystem, <code class="docutils literal notranslate"><span class="pre">https</span></code> requests must
+either provide an alternate location for the file or be set as insecure.</p>
+<p>See <code class="docutils literal notranslate"><span class="pre">cacert</span></code> and <code class="docutils literal notranslate"><span class="pre">insecure</span></code> respectively in <a class="reference internal" href="#curl-long-options">Curl long options</a> below.</p>
 </div>
 </div>
 <div class="section" id="curl-options">

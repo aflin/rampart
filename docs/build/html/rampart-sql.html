@@ -484,12 +484,12 @@ callback below.</p></li>
 </div></blockquote>
 </dd>
 <dt>Caveats for Options, maxRows and skipRows:</dt><dd><ul class="simple">
-<li><p>SQL <code class="docutils literal notranslate"><span class="pre">select</span></code> statements are by default limited to 10</p></li>
+<li><p>SQL <code class="docutils literal notranslate"><span class="pre">select</span></code> statements are by default limited to 10
+rows (<code class="docutils literal notranslate"><span class="pre">{maxRows:10}</span></code>) unless <code class="docutils literal notranslate"><span class="pre">maxRows</span></code> above is set.  This default
+can be changed by setting the special variable <code class="docutils literal notranslate"><span class="pre">sql.selectMaxRows</span></code>.</p></li>
 </ul>
 <blockquote>
-<div><p>rows (<code class="docutils literal notranslate"><span class="pre">{maxRows:10}</span></code>) unless <code class="docutils literal notranslate"><span class="pre">maxRows</span></code> above is set.  This default
-can be changed by setting the special variable <code class="docutils literal notranslate"><span class="pre">sql.selectMaxRows</span></code>.</p>
-<p>Example:</p>
+<div><p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">Sql</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-sql&quot;</span><span class="p">);</span>
 
 <span class="kd">var</span> <span class="nx">sql</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">Sql</span><span class="p">.</span><span class="nx">init</span><span class="p">(</span><span class="s2">&quot;./mytestdb&quot;</span><span class="p">);</span>

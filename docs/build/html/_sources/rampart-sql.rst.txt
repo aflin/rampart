@@ -263,8 +263,8 @@ Options:
 
 Caveats for Options, maxRows and skipRows:
    *  SQL ``select`` statements are by default limited to 10
-     rows (``{maxRows:10}``) unless ``maxRows`` above is set.  This default
-     can be changed by setting the special variable ``sql.selectMaxRows``. 
+      rows (``{maxRows:10}``) unless ``maxRows`` above is set.  This default
+      can be changed by setting the special variable ``sql.selectMaxRows``. 
 
      Example:
 

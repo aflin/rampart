@@ -626,6 +626,23 @@ Usage:
 Return Value:
    :green:`Number`. The pid of the parent process.
 
+setProcTitle
+""""""""""""
+
+Set the name of the current process (as seen by the command line
+utilities ``ps`` and ``top``).
+
+Usage:
+
+.. code-block:: javascript
+
+   process.setProcTitle(newname);
+
+Where ``newname`` is the new name for the current process.
+
+Return Value:
+   ``undefined``.
+
 Using the require Function to Import Modules
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

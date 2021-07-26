@@ -96,6 +96,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#buffertostring">bufferToString</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#objecttoquery">objectToQuery</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#querytoobject">queryToObject</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#getchar">getchar</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#readfile">readFile</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#trim">trim</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#stat">stat</a></li>
@@ -129,6 +130,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#ftell">ftell</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#fflush">fflush</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#fread">fread</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fgets">fgets</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#fwrite">fwrite</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#readline">readLine</a></li>
 </ul>
@@ -575,6 +577,25 @@ separated values will occur and the entire value will be returned as a <span cla
 </pre></div>
 </div>
 </div>
+<div class="section" id="getchar">
+<h3>getchar<a class="headerlink" href="#getchar" title="Permalink to this headline">¶</a></h3>
+<p>Get one or more characters from <code class="docutils literal notranslate"><span class="pre">stdin</span></code>.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">instr</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">getchar</span><span class="p">([</span><span class="nx">nchar</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">nchar</span></code> is an optional <span class="green">number</span>, the number of characters
+to read from <code class="docutils literal notranslate"><span class="pre">stdin</span></code>.  The default is <code class="docutils literal notranslate"><span class="pre">1</span></code>.</p>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">String</span> of length <code class="docutils literal notranslate"><span class="pre">nchars</span></code>.</p>
+</dd>
+<dt>Note:</dt><dd><p>If <code class="docutils literal notranslate"><span class="pre">stdin</span></code> is from an interactive terminal, execution
+will be paused until <code class="docutils literal notranslate"><span class="pre">nchar</span></code> chars are input.  Unlike
+<code class="docutils literal notranslate"><span class="pre">fread(stdin);</span></code> <a class="reference internal" href="#fread"><span class="std std-ref">below</span></a>, the terminal will be
+set to allow characters in without waiting for a newline.</p>
+</dd>
+</dl>
+</div>
 <div class="section" id="readfile">
 <h3>readFile<a class="headerlink" href="#readfile" title="Permalink to this headline">¶</a></h3>
 <p>Read the contents of a file.</p>
@@ -713,7 +734,7 @@ properties:</p>
 </pre></div>
 </div>
 <p>See <a class="reference external" href="https://man7.org/linux/man-pages/man2/stat.2.html">stat (2)</a> for the
-meaning of each property.  The <code class="docutils literal notranslate"><span class="pre">is*()</span></code> functions return <code class="docutils literal notranslate"><span class="pre">true</span></code> if the
+meaning of each property.  The <code class="docutils literal notranslate"><span class="pre">is*</span></code> <span class="green">Booleans</span> are set to <code class="docutils literal notranslate"><span class="pre">true</span></code> if the
 corresponding file property is true.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">st</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">stat</span><span class="p">(</span><span class="s2">&quot;/tmp/file.txt&quot;</span><span class="p">);</span>
@@ -745,28 +766,25 @@ corresponding file property is true.</p>
 </pre></div>
 </div>
 <p>Where:</p>
-<ul>
+<ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">command</span></code> - <span class="green">String</span>. An absolute path to an executable or the name of
 an executable that may be found in the current <code class="docutils literal notranslate"><span class="pre">PATH</span></code> environment variable.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> - <span class="green">Object</span>. Containing the following properties:</p>
-<ul class="simple">
+<ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">timeout</span></code> - <span class="green">Number</span>. Maximum amount of time in milliseconds before
 the process is automatically killed.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">killSignal</span></code> - <span class="green">Number</span>. If timeout is reached, use this signal</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">background</span></code> - <span class="green">Boolean</span>.  Whether to execute detached and return
-immediately.  <code class="docutils literal notranslate"><span class="pre">stdout</span></code> and <code class="docutils literal notranslate"><span class="pre">stderr</span></code> below will be set to <code class="docutils literal notranslate"><span class="pre">null</span></code>.  Any <code class="docutils literal notranslate"><span class="pre">timeout</span></code>
+immediately.  If <code class="docutils literal notranslate"><span class="pre">true</span></code>, <code class="docutils literal notranslate"><span class="pre">stdout</span></code> and <code class="docutils literal notranslate"><span class="pre">stderr</span></code> below will be set to <code class="docutils literal notranslate"><span class="pre">null</span></code>.  Any <code class="docutils literal notranslate"><span class="pre">timeout</span></code>
 value is ignored.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">env</span></code> - <span class="green">Object</span>. Key/value pairs to be used as environment variables for the executed process.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">appendEnv</span></code> - <span class="green">Boolean</span>.  Only used if <code class="docutils literal notranslate"><span class="pre">env</span></code> is provided.  If <code class="docutils literal notranslate"><span class="pre">false</span></code> (the default),
 only the environment variables given in <code class="docutils literal notranslate"><span class="pre">env</span></code> will be available.  If
 <code class="docutils literal notranslate"><span class="pre">true</span></code>, variables provided in <code class="docutils literal notranslate"><span class="pre">env</span></code> will be appended to <a class="reference internal" href="rampart-main.html#env"><span class="std std-ref">process.env</span></a>.
 Duplicate keys in <a class="reference internal" href="rampart-main.html#env"><span class="std std-ref">process.env</span></a> are replaced with the value from <code class="docutils literal notranslate"><span class="pre">env</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">stdin</span></code> - <span class="green">String</span> or <span class="green">Buffer</span>.  If specified, the</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">stdin</span></code> - <span class="green">String</span> or <span class="green">Buffer</span>.  If specified, the content is piped to the
+command as stdin.</p></li>
 </ul>
-<dl class="simple">
-<dt>content is piped to the</dt><dd><p>command as stdin.</p>
-</dd>
-</dl>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">argn</span></code> - <span class="green">String</span>/<span class="green">Number</span>/<span class="green">Object</span>/<span class="green">Boolean</span>/<span class="green">Null</span> - Arguments to be passed to
 <code class="docutils literal notranslate"><span class="pre">command</span></code>.  Non-Strings are converted to a <span class="green">String</span> (e.g. “true”, “null”,
@@ -775,9 +793,9 @@ Duplicate keys in <a class="reference internal" href="rampart-main.html#env"><sp
 <dl class="simple">
 <dt>Return Value:</dt><dd><p><span class="green">Object</span>.  Properties as follows:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">stdout</span></code> - <span class="green">String</span>. Output of command if <code class="docutils literal notranslate"><span class="pre">background</span></code> is not set <code class="docutils literal notranslate"><span class="pre">false</span></code>.
+<li><p><code class="docutils literal notranslate"><span class="pre">stdout</span></code> - <span class="green">String</span>. Output of command if <code class="docutils literal notranslate"><span class="pre">background</span></code> is not set <code class="docutils literal notranslate"><span class="pre">true</span></code>.
 Otherwise <code class="docutils literal notranslate"><span class="pre">null</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">stderr</span></code> - <span class="green">String</span>. stderr output of command if <code class="docutils literal notranslate"><span class="pre">background</span></code> is not set <code class="docutils literal notranslate"><span class="pre">false</span></code>.
+<li><p><code class="docutils literal notranslate"><span class="pre">stderr</span></code> - <span class="green">String</span>. stderr output of command if <code class="docutils literal notranslate"><span class="pre">background</span></code> is not set <code class="docutils literal notranslate"><span class="pre">true</span></code>.
 Otherwise <code class="docutils literal notranslate"><span class="pre">null</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">exitStatus</span></code> - <span class="green">Number</span>.  The returned exit status of the command.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">timedOut</span></code> - <span class="green">Boolean</span>.  Set true if the program was killed after
@@ -1122,7 +1140,7 @@ is used.</p>
 <div class="section" id="file-handle-utilities">
 <h2>File Handle Utilities<a class="headerlink" href="#file-handle-utilities" title="Permalink to this headline">¶</a></h2>
 <p>The functions <a class="reference internal" href="#fprintf">fprintf</a> (), <a class="reference internal" href="#fseek">fseek</a>(), <a class="reference internal" href="#rewind">rewind</a>(), <a class="reference internal" href="#ftell">ftell</a>(), <a class="reference internal" href="#fflush">fflush</a>(),
-<a class="reference internal" href="#fread">fread</a>(), <a class="reference internal" href="#fwrite">fwrite</a>(), and <a class="reference internal" href="#readline">readLine</a>() take a filehandle, which may be obtained
+<a class="reference internal" href="#fread">fread</a>(), <a class="reference internal" href="#fgets">fgets</a>(), <a class="reference internal" href="#fwrite">fwrite</a>(), and <a class="reference internal" href="#readline">readLine</a>() take a filehandle, which may be obtained
 using <a class="reference internal" href="#fopen">fopen</a>().</p>
 <dl>
 <dt>Calling Methods:</dt><dd><p>The above listed functions (functions which take filehandles) may be called using one of
@@ -1157,7 +1175,7 @@ return undefined in the first syntax and <code class="docutils literal notransla
 <code class="docutils literal notranslate"><span class="pre">rampart.utils.stderr</span></code>.</p>
 </dd>
 </dl>
-<p>The <code class="docutils literal notranslate"><span class="pre">rampart.utils.stdin</span></code> handle includes the <a class="reference internal" href="#fread">fread</a>(), and <a class="reference internal" href="#readline">readLine</a>() functions
+<p>The <code class="docutils literal notranslate"><span class="pre">rampart.utils.stdin</span></code> handle includes the <a class="reference internal" href="#fread">fread</a>(), <a class="reference internal" href="#fgets">fgets</a>() and <a class="reference internal" href="#readline">readLine</a>() functions
 while the other four include the <a class="reference internal" href="#fprintf">fprintf</a>(), <a class="reference internal" href="#fflush">fflush</a>() and <a class="reference internal" href="#fwrite">fwrite</a>() functions.
 Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">inf</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">stdin</span><span class="p">.</span><span class="nx">readLine</span><span class="p">();</span>
@@ -1171,7 +1189,7 @@ Example:</p>
 <div class="section" id="fopen">
 <h3>fopen<a class="headerlink" href="#fopen" title="Permalink to this headline">¶</a></h3>
 <p>Open a filehandle for use with <a class="reference internal" href="#fprintf">fprintf</a>(), <a class="reference internal" href="#fclose">fclose</a>(), <a class="reference internal" href="#fseek">fseek</a>(),
-<a class="reference internal" href="#rewind">rewind</a>(), <a class="reference internal" href="#ftell">ftell</a>(), <a class="reference internal" href="#fflush">fflush</a>() <a class="reference internal" href="#fread">fread</a>(), <a class="reference internal" href="#fwrite">fwrite</a>() and readLine.</p>
+<a class="reference internal" href="#rewind">rewind</a>(), <a class="reference internal" href="#ftell">ftell</a>(), <a class="reference internal" href="#fflush">fflush</a>() <a class="reference internal" href="#fread">fread</a>(), <a class="reference internal" href="#fgets">fgets</a>(), <a class="reference internal" href="#fwrite">fwrite</a>() and readLine.</p>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p><span class="green">Object</span>. An object which opaquely contains the opened file handle along with
 the above functions.</p>
@@ -1387,7 +1405,7 @@ write of buffered data.</p>
 <h3>fread<a class="headerlink" href="#fread" title="Permalink to this headline">¶</a></h3>
 <p>Read data from a file, handle opened with <a class="reference internal" href="#fopen">fopen</a>() or the pre-opened handle <code class="docutils literal notranslate"><span class="pre">stdin</span></code>.</p>
 <p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fread</span><span class="p">([</span><span class="nx">handle</span><span class="o">|</span><span class="nx">file</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">max_size</span> <span class="p">[,</span> <span class="nx">chunk_size</span> <span class="p">[,</span><span class="nx">returnString</span><span class="p">]]]);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">data</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fread</span><span class="p">([</span><span class="nx">handle</span><span class="o">|</span><span class="nx">file</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">max_size</span> <span class="p">[,</span> <span class="nx">chunk_size</span> <span class="p">[,</span><span class="nx">returnString</span><span class="p">]]]);</span>
 </pre></div>
 </div>
 <table class="docutils align-default">
@@ -1434,6 +1452,22 @@ if not specified.</p></td>
 </table>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p>A <span class="green">Buffer</span> or a <span class="green">String</span> if <code class="docutils literal notranslate"><span class="pre">returnString</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="fgets">
+<h3>fgets<a class="headerlink" href="#fgets" title="Permalink to this headline">¶</a></h3>
+<p>Similar to <code class="docutils literal notranslate"><span class="pre">fread()</span></code>, except that <code class="docutils literal notranslate"><span class="pre">max_size</span></code> and <code class="docutils literal notranslate"><span class="pre">chunk_size</span></code> are set to the same
+value <code class="docutils literal notranslate"><span class="pre">nchars</span></code>, and a <span class="green">String</span> is returned.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">instr</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">fgets</span><span class="p">([</span><span class="nx">handle</span><span class="o">|</span><span class="nx">file</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">nchars</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">handle</span></code> or <code class="docutils literal notranslate"><span class="pre">file</span></code> is identical to <a class="reference internal" href="#fread">fread</a> above and optional <code class="docutils literal notranslate"><span class="pre">nchars</span></code>
+is the number of characters (bytes) to read.  The default for <code class="docutils literal notranslate"><span class="pre">nchars</span></code>, if not
+specified is <code class="docutils literal notranslate"><span class="pre">1</span></code>;</p>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A <span class="green">String</span> of length <code class="docutils literal notranslate"><span class="pre">nchars</span></code>.</p>
 </dd>
 </dl>
 </div>

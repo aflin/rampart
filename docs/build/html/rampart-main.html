@@ -126,6 +126,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#script">script</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#getpid">getpid</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#getppid">getppid</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#setproctitle">setProcTitle</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#using-the-require-function-to-import-modules">Using the require Function to Import Modules</a><ul>
@@ -804,6 +805,20 @@ canonical path (file) of the currently executing script
 </div>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p><span class="green">Number</span>. The pid of the parent process.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="setproctitle">
+<h3>setProcTitle<a class="headerlink" href="#setproctitle" title="Permalink to this headline">¶</a></h3>
+<p>Set the name of the current process (as seen by the command line
+utilities <code class="docutils literal notranslate"><span class="pre">ps</span></code> and <code class="docutils literal notranslate"><span class="pre">top</span></code>).</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">process</span><span class="p">.</span><span class="nx">setProcTitle</span><span class="p">(</span><span class="nx">newname</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where <code class="docutils literal notranslate"><span class="pre">newname</span></code> is the new name for the current process.</p>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
 </dd>
 </dl>
 </div>
