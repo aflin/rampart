@@ -1118,7 +1118,7 @@ Example:
    Tue Jul 27 01:06:57 2021
    2021-07-27
    12/31/1999 23:59:59 PST
-   Today's lunch:  Sun Jul 27 12:15:00 2021
+   Today's lunch:  Tue Jul 27 12:15:00 2021
    */
 
 scanDate
