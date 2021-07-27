@@ -1044,6 +1044,106 @@ Return Value:
   ``Boolean``, ``Buffer`` (any buffer type), ``Nan``, ``Null``, ``Undefined``,
   ``Date`` or ``Object``.
 
+dateFmt
+'''''''
+
+Format a date :green:`String`.
+
+Usage:
+
+.. code-block:: javascript
+
+    var datestr = rampart.utils.dateFmt(format[, date][, input_format])
+
+Where:
+
+   * ``format`` is a `strftime <https://linux.die.net/man/3/strftime>`_ style format
+     :green:`String`.
+
+   * ``date`` is an optional date as a :green:`String`, :green:`Number` (seconds since 1970-01-01),
+     or a :green:`Date`.  The default value is the current time.
+
+   * ``input_format`` is an optional format if ``date`` is a :green:`String`, in the style of
+     `strptime <https://linux.die.net/man/3/strptime>`_\ .  The default is to try the following in order:
+
+.. code-block:: javascript
+
+    "%Y-%m-%d %H:%M:%S %z"
+    "%A %B %d %H:%M:%S %Y %z"
+    "%Y-%m-%d %H:%M:%S"
+    "%A %B %d %H:%M:%S %Y"
+    "%Y-%m-%dT%H:%M:%S"
+    "%c"
+
+Return Value:
+   The formatted date as a :green:`String`.
+
+Note:
+
+   *  Millisecond notation in the string in the form of ``.123`` or ``.123Z`` is disregarded.
+
+   *  The return :green:`String` is a date in local time.
+
+   *  If year or year/month/day formats are missing, the current year or date respectively is assumed.
+
+   *  If the ``%z`` format is specified in the ``input_format`` :green:`String`,
+      the date will be converted from that timezone offset to local time.
+
+   *  The ``%Z`` format has no effect on the time zone.
+
+Example:
+
+.. code-block:: javascript
+
+   rampart.globalize(rampart.utils);
+
+   var d = new Date();
+
+   printf( "%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n",
+       dateFmt("%c", "Mon Jul 26 12:00:01 2021"),
+       dateFmt("%c", "Mon Jul 26 12:00:01 2021 -04:00"),
+       dateFmt("%c", "1999-12-31 23:59:59 -0000"),
+       dateFmt("%c", "2020", "%Y"),
+       dateFmt("%c", d),
+       dateFmt("%Y-%m-%d"),
+       dateFmt("%m/%d/%Y %H:%M:%S %Z", 946713599),
+       dateFmt("Today's lunch:  %c", "12:15", '%H:%M')
+   );
+
+   /* Expected output:
+   Mon Jul 26 12:00:01 2021
+   Mon Jul 26 09:00:01 2021
+   Fri Dec 31 15:59:59 1999
+   Wed Jan  1 00:00:00 2020
+   Tue Jul 27 01:06:57 2021
+   2021-07-27
+   12/31/1999 23:59:59 PST
+   Today's lunch:  Sun Jul 27 12:15:00 2021
+   */
+
+scanDate
+''''''''
+
+Scan a date :green:`String` and return a JavaScript date.
+
+Usage:
+
+.. code-block:: javascript
+
+   var mydate = rampart.utils.scanDate(dateString[, default_offset][, input_format]);
+
+Where:
+
+   * ``dateString`` is the same as ``date`` (as a :green:`String`) in `dateFmt`_ above.
+   
+   * ``default_offset`` is the time zone offset in seconds to use if not provided in ``dateString``.
+     The default is ``0`` (UTC).
+   
+   * ``input_format`` is the same as in `dateFmt`_ above.
+   
+Return Value:
+   A JavaScript :green:`Date`.
+
 File Handle Utilities
 """""""""""""""""""""
 

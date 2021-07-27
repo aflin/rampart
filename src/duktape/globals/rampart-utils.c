@@ -4551,6 +4551,221 @@ duk_ret_t duk_rp_fopen(duk_context *ctx)
     return 0;
 }
 
+#define N_DATE_FORMATS 6
+#define N_DATE_FORMATS_W_OFFSET 2
+static char *dfmts[N_DATE_FORMATS] = {
+    "%Y-%m-%d %H:%M:%S %z",
+    "%A %B %d %H:%M:%S %Y %z",
+    "%Y-%m-%d %H:%M:%S",
+    "%A %B %d %H:%M:%S %Y",
+    "%Y-%m-%dT%H:%M:%S ",    //javascript style from console.log(new Date()). space is for erased '.123Z' below
+    "%c"
+};
+
+static struct tm * to_local(struct tm *t)
+{
+    time_t g;
+    long off = t->tm_gmtoff;
+    
+    t->tm_isdst=-1;
+    g=timegm(t) - off;
+
+    t=localtime_r(&g,t);
+    return t;
+}
+
+/* scan a string for a date, optionally with format in ifmt if not NULL
+   return -1 on error, 0 for success */
+static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt)
+{
+    int i=0;
+    char *p, *datestr=strdup(dstr);
+
+    // the default day is 1, everything else is 0;
+    dt_p->tm_mday=1;
+
+    // erase milliseconds if present
+    if( (p=strrchr(datestr, '.')) 
+        && isdigit(*(p+1)) && isdigit(*(p+2)) && isdigit(*(p+3))
+    )
+    {
+        *p=' ';
+        *(p+1)=' ';
+        *(p+2)=' ';
+        *(p+3)=' ';
+        if( *(p+4) == 'Z' )
+            *(p+4)=' ';
+    }
+
+    /* if a format is provided, use it */
+    if(ifmt)
+    {
+        p = strptime(datestr, ifmt, dt_p);
+        if(!p || *p!='\0')
+        {
+            free(datestr);
+            return -1;
+        }
+
+        /* if year not specified in custom format */
+        if (
+         dt_p->tm_year == 0 && !strstr(ifmt,"%c") && !strstr(ifmt,"%x") 
+         && !strstr(ifmt,"%C") && !strstr(ifmt,"%Y") && !strstr(ifmt,"%y")
+        )
+        {
+                struct tm t={0},*tmpt=&t;
+
+                time_t now;
+                time(&now);
+                tmpt=localtime_r(&now,tmpt);
+                dt_p->tm_year = tmpt->tm_year;
+                
+                /* if no year and no day and no month*/
+                if( !strstr(ifmt,"%d") && !strstr(ifmt,"%e") && !strstr(ifmt,"%D") 
+                 && !strstr(ifmt,"%U") && !strstr(ifmt,"%W") && !strstr(ifmt,"%w")
+                 && !strstr(ifmt,"%a") && !strstr(ifmt,"%A") && !strstr(ifmt,"%b") 
+                 && !strstr(ifmt,"%B") && !strstr(ifmt,"%h") && !strstr(ifmt,"%j")
+                 && !strstr(ifmt,"%m")  
+                )
+                {
+                    dt_p->tm_mday = tmpt->tm_mday;
+                    dt_p->tm_mon  = tmpt->tm_mon;
+                }
+        }
+
+        if(strstr(ifmt,"%z"))
+            dt_p = to_local(dt_p);
+        
+        free(datestr);
+        return 0;
+    }
+    else /* use default formats defined above */
+    {
+        for(i=0;i<N_DATE_FORMATS;i++)
+        {
+            p = strptime(datestr, dfmts[i], dt_p);
+            if(p && *p=='\0')
+                break;
+        }
+
+        if(i==N_DATE_FORMATS)
+        {
+            free(datestr);
+            return -1;
+        }
+
+    }
+    /* the first few formats include offsets, so we need to conver to local time */
+    if (i < N_DATE_FORMATS_W_OFFSET)
+        dt_p = to_local(dt_p);
+
+    free(datestr);
+    return 0;
+}
+
+/* scan a string date, optionally using a supplied format and an optional tz offset in seconds */
+duk_ret_t duk_rp_scandate(duk_context *ctx)
+{
+    struct tm dt = {0}, *dt_p=&dt;
+    const char *datestr = REQUIRE_STRING(ctx, 0, "scanDate(): first argument must be a String (date/time)"),
+               *ifmt = NULL;
+    double msecs=0;
+    time_t off=0;
+    duk_idx_t off_idx=-1, fmt_idx=-1;
+
+    if(duk_is_number(ctx, 1))
+        off_idx=1;
+    else if(duk_is_string(ctx, 1))
+        fmt_idx=1;
+    else if(!duk_is_undefined(ctx, 1))
+        RP_THROW(ctx, "scanDate(): Optional second argument must be a Number (timezone offset in seconds)");
+        
+    if(off_idx==-1 && fmt_idx==-1 && !duk_is_undefined(ctx, 2))
+        RP_THROW(ctx, "scanDate(): Optional second argument must be a Number (timezone offset in seconds)");
+            
+    if(duk_is_number(ctx, 2) && off_idx==-1)
+        off_idx=2;
+    else if(duk_is_string(ctx, 2) && fmt_idx==-1)
+        fmt_idx=2;
+    else if (!duk_is_undefined(ctx, 2))
+        RP_THROW(ctx, "scanDate(): Optional third argument must be a String (date scan format)");
+
+    if(off_idx!=-1)
+        off = (time_t) duk_get_number(ctx, off_idx);
+
+    if(fmt_idx!=-1)
+        ifmt = duk_get_string(ctx, fmt_idx);
+
+    if(scandate(dt_p, datestr, ifmt))
+    {
+        duk_push_null(ctx);
+        return 1;
+    }
+
+    dt_p->tm_isdst=-1;
+
+    // defaults to timezone in struct.  If no timezone in format, use timezone from 2nd arg.
+    if(dt_p->tm_gmtoff)
+        off = (time_t)dt_p->tm_gmtoff;
+
+    msecs = (double)(timegm(dt_p) - off) * 1000.0;
+    duk_get_global_string(ctx, "Date");
+    duk_push_number(ctx, msecs);
+    duk_new(ctx, 1);
+
+    return 1;
+}
+
+/* scan a date, use a number of seconds or use a JS date, 
+   then return a formatted string using supplied format    */
+duk_ret_t duk_rp_datefmt(duk_context *ctx)
+{
+    struct tm dt = {0}, *dt_p=&dt;
+    const char *fmt = REQUIRE_STRING(ctx, 0, "dateFmt(): first argument must be a String (the format string)");
+    char out[200];
+
+    if(duk_is_string(ctx,1))
+    {
+        const char *datestr = duk_get_string(ctx,1),
+                   *ifmt    = NULL;
+
+        if(duk_is_string(ctx,2))
+            ifmt = duk_get_string(ctx,2);
+        else if (!duk_is_undefined(ctx, 2))
+            RP_THROW(ctx, "dateFmt(): Optional third argument must be a String (date scan format)");
+
+        if(scandate(dt_p, datestr, ifmt))
+        {
+            duk_push_null(ctx);
+            return 1;
+        }
+
+    }
+    else
+    {
+        time_t t;
+        if(duk_is_object(ctx,1) && duk_has_prop_string(ctx, 1, "getMilliseconds") && duk_has_prop_string(ctx, 1, "getTime") )
+        {
+            duk_push_string(ctx, "getTime");
+            duk_call_prop(ctx, 1, 0);
+            t = (time_t)(duk_get_number(ctx, -1)/1000.0);
+        }
+        else if (duk_is_number(ctx, 1))
+            t = (time_t)duk_get_number(ctx, 1);
+        else if (duk_is_undefined(ctx, 1))
+            time(&t);
+        else
+            RP_THROW(ctx, "dateFmt() - second argument must be a String, Date or Number");
+
+        localtime_r(&t,dt_p);
+    }
+
+    strftime(out, sizeof(out), fmt, dt_p);
+    duk_push_string(ctx, out);
+    return 1; 
+}
+
+
 void duk_printf_init(duk_context *ctx)
 {
     if (!duk_get_global_string(ctx, "rampart"))
@@ -4607,6 +4822,12 @@ void duk_printf_init(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_rp_getType, 1);
     duk_put_prop_string(ctx, -2, "getType");
+
+    duk_push_c_function(ctx, duk_rp_datefmt, 3);
+    duk_put_prop_string(ctx, -2, "dateFmt");
+
+    duk_push_c_function(ctx, duk_rp_scandate, 3);
+    duk_put_prop_string(ctx, -2, "scanDate");
 
     duk_push_object(ctx);
     duk_push_string(ctx,"accessLog");

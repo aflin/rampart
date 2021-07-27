@@ -119,6 +119,8 @@
 <li class="toctree-l3"><a class="reference internal" href="#rename">rename</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#sleep">sleep</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#gettype">getType</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#datefmt">dateFmt</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#scandate">scanDate</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#file-handle-utilities">File Handle Utilities</a><ul>
@@ -1133,6 +1135,97 @@ is used.</p>
 <dt>Return Value:</dt><dd><p>A <span class="green">String</span>, one of <code class="docutils literal notranslate"><span class="pre">String</span></code>, <code class="docutils literal notranslate"><span class="pre">Array</span></code>, <code class="docutils literal notranslate"><span class="pre">Number</span></code>, <code class="docutils literal notranslate"><span class="pre">Function</span></code>,
 <code class="docutils literal notranslate"><span class="pre">Boolean</span></code>, <code class="docutils literal notranslate"><span class="pre">Buffer</span></code> (any buffer type), <code class="docutils literal notranslate"><span class="pre">Nan</span></code>, <code class="docutils literal notranslate"><span class="pre">Null</span></code>, <code class="docutils literal notranslate"><span class="pre">Undefined</span></code>,
 <code class="docutils literal notranslate"><span class="pre">Date</span></code> or <code class="docutils literal notranslate"><span class="pre">Object</span></code>.</p>
+</dd>
+</dl>
+</div>
+<div class="section" id="datefmt">
+<h3>dateFmt<a class="headerlink" href="#datefmt" title="Permalink to this headline">¶</a></h3>
+<p>Format a date <span class="green">String</span>.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">datestr</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">dateFmt</span><span class="p">(</span><span class="nx">format</span><span class="p">[,</span> <span class="nx">date</span><span class="p">][,</span> <span class="nx">input_format</span><span class="p">])</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">format</span></code> is a <a class="reference external" href="https://linux.die.net/man/3/strftime">strftime</a> style format
+<span class="green">String</span>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">date</span></code> is an optional date as a <span class="green">String</span>, <span class="green">Number</span> (seconds since 1970-01-01),
+or a <span class="green">Date</span>.  The default value is the current time.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">input_format</span></code> is an optional format if <code class="docutils literal notranslate"><span class="pre">date</span></code> is a <span class="green">String</span>, in the style of
+<a class="reference external" href="https://linux.die.net/man/3/strptime">strptime</a>.  The default is to try the following in order:</p></li>
+</ul>
+</div></blockquote>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="s2">&quot;%Y-%m-%d %H:%M:%S %z&quot;</span>
+<span class="s2">&quot;%A %B %d %H:%M:%S %Y %z&quot;</span>
+<span class="s2">&quot;%Y-%m-%d %H:%M:%S&quot;</span>
+<span class="s2">&quot;%A %B %d %H:%M:%S %Y&quot;</span>
+<span class="s2">&quot;%Y-%m-%dT%H:%M:%S&quot;</span>
+<span class="s2">&quot;%c&quot;</span>
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>The formatted date as a <span class="green">String</span>.</p>
+</dd>
+</dl>
+<p>Note:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>Millisecond notation in the string in the form of <code class="docutils literal notranslate"><span class="pre">.123</span></code> or <code class="docutils literal notranslate"><span class="pre">.123Z</span></code> is disregarded.</p></li>
+<li><p>The return <span class="green">String</span> is a date in local time.</p></li>
+<li><p>If year or year/month/day formats are missing, the current year or date respectively is assumed.</p></li>
+<li><p>If the <code class="docutils literal notranslate"><span class="pre">%z</span></code> format is specified in the <code class="docutils literal notranslate"><span class="pre">input_format</span></code> <span class="green">String</span>,
+the date will be converted from that timezone offset to local time.</p></li>
+<li><p>The <code class="docutils literal notranslate"><span class="pre">%Z</span></code> format has no effect on the time zone.</p></li>
+</ul>
+</div></blockquote>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">d</span> <span class="o">=</span> <span class="k">new</span> <span class="nb">Date</span><span class="p">();</span>
+
+<span class="nx">printf</span><span class="p">(</span> <span class="s2">&quot;%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n&quot;</span><span class="p">,</span>
+    <span class="nx">dateFmt</span><span class="p">(</span><span class="s2">&quot;%c&quot;</span><span class="p">,</span> <span class="s2">&quot;Mon Jul 26 12:00:01 2021&quot;</span><span class="p">),</span>
+    <span class="nx">dateFmt</span><span class="p">(</span><span class="s2">&quot;%c&quot;</span><span class="p">,</span> <span class="s2">&quot;Mon Jul 26 12:00:01 2021 -04:00&quot;</span><span class="p">),</span>
+    <span class="nx">dateFmt</span><span class="p">(</span><span class="s2">&quot;%c&quot;</span><span class="p">,</span> <span class="s2">&quot;1999-12-31 23:59:59 -0000&quot;</span><span class="p">),</span>
+    <span class="nx">dateFmt</span><span class="p">(</span><span class="s2">&quot;%c&quot;</span><span class="p">,</span> <span class="s2">&quot;2020&quot;</span><span class="p">,</span> <span class="s2">&quot;%Y&quot;</span><span class="p">),</span>
+    <span class="nx">dateFmt</span><span class="p">(</span><span class="s2">&quot;%c&quot;</span><span class="p">,</span> <span class="nx">d</span><span class="p">),</span>
+    <span class="nx">dateFmt</span><span class="p">(</span><span class="s2">&quot;%Y-%m-%d&quot;</span><span class="p">),</span>
+    <span class="nx">dateFmt</span><span class="p">(</span><span class="s2">&quot;%m/%d/%Y %H:%M:%S %Z&quot;</span><span class="p">,</span> <span class="mi">946713599</span><span class="p">),</span>
+    <span class="nx">dateFmt</span><span class="p">(</span><span class="s2">&quot;Today&#39;s lunch:  %c&quot;</span><span class="p">,</span> <span class="s2">&quot;12:15&quot;</span><span class="p">,</span> <span class="s1">&#39;%H:%M&#39;</span><span class="p">)</span>
+<span class="p">);</span>
+
+<span class="cm">/* Expected output:</span>
+<span class="cm">Mon Jul 26 12:00:01 2021</span>
+<span class="cm">Mon Jul 26 09:00:01 2021</span>
+<span class="cm">Fri Dec 31 15:59:59 1999</span>
+<span class="cm">Wed Jan  1 00:00:00 2020</span>
+<span class="cm">Tue Jul 27 01:06:57 2021</span>
+<span class="cm">2021-07-27</span>
+<span class="cm">12/31/1999 23:59:59 PST</span>
+<span class="cm">Today&#39;s lunch:  Sun Jul 27 12:15:00 2021</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="scandate">
+<h3>scanDate<a class="headerlink" href="#scandate" title="Permalink to this headline">¶</a></h3>
+<p>Scan a date <span class="green">String</span> and return a JavaScript date.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">mydate</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">scanDate</span><span class="p">(</span><span class="nx">dateString</span><span class="p">[,</span> <span class="nx">default_offset</span><span class="p">][,</span> <span class="nx">input_format</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">dateString</span></code> is the same as <code class="docutils literal notranslate"><span class="pre">date</span></code> (as a <span class="green">String</span>) in <a class="reference internal" href="#datefmt">dateFmt</a> above.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">default_offset</span></code> is the time zone offset in seconds to use if not provided in <code class="docutils literal notranslate"><span class="pre">dateString</span></code>.
+The default is <code class="docutils literal notranslate"><span class="pre">0</span></code> (UTC).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">input_format</span></code> is the same as in <a class="reference internal" href="#datefmt">dateFmt</a> above.</p></li>
+</ul>
+</div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>A JavaScript <span class="green">Date</span>.</p>
 </dd>
 </dl>
 </div>
