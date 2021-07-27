@@ -4630,6 +4630,8 @@ static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt)
                 {
                     dt_p->tm_mday = tmpt->tm_mday;
                     dt_p->tm_mon  = tmpt->tm_mon;
+                    dt_p->tm_wday = tmpt->tm_wday;
+                    dt_p->tm_yday = tmpt->tm_yday;
                 }
         }
 
