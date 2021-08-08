@@ -302,6 +302,9 @@ char *duk_rp_url_decode(char *str, int *len);
 void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase);
 int duk_rp_get_int_default(duk_context *ctx, duk_idx_t i, int def);
 char *to_utf8(const char *in_str);
+/* we might want to do something right before the timeout when using generically */
+typedef int (timeout_callback)(void *, int);
+duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout_callback *cb, void *arg);
 
 #define RPPATH struct rp_path_s
 RPPATH {
@@ -355,6 +358,8 @@ EVARGS {
     struct event *e;
     double key;
     int repeat;
+    timeout_callback *cb;
+    void *cbarg;
     SLIST_ENTRY(ev_args) entries;
 };
 

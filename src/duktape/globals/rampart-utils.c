@@ -1628,7 +1628,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     char **args=NULL, **env=NULL;
     duk_size_t nargs;
     pid_t pid, pid2;
-    int exit_status;
+    int exit_status, return_buffer=0;
     int stdout_pipe[2];
     int stderr_pipe[2];
     int stdin_pipe[2];
@@ -1657,6 +1657,12 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     if(duk_get_prop_string(ctx, -1, "background"))
     {
        background = REQUIRE_BOOL(ctx, -1, "exec(): background value must be a Boolean");
+    }
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, -1, "returnBuffer"))
+    {
+       return_buffer = REQUIRE_BOOL(ctx, -1, "exec(): returnBuffer value must be a Boolean");
     }
     duk_pop(ctx);
 
@@ -1950,7 +1956,14 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         // push return object
         duk_push_object(ctx);
 
-        duk_push_lstring(ctx, stdout_buf, stdout_nread);
+        if(return_buffer)
+        {
+            void *b = duk_push_fixed_buffer(ctx, (duk_size_t) stdout_nread);
+            memcpy(b, stdout_buf, stdout_nread);
+        }
+        else
+            duk_push_lstring(ctx, stdout_buf, stdout_nread);
+
         duk_put_prop_string(ctx, -2, "stdout");
 
         duk_push_lstring(ctx, stderr_buf, stderr_nread);

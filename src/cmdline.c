@@ -842,6 +842,8 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
     EVARGS *evargs = (EVARGS *) arg;
     duk_context *ctx= evargs->ctx;
     double key= evargs->key;
+    duk_idx_t nargs = 0;
+    int cbret=1;
 
     duk_push_global_stash(ctx);
     if( !duk_get_prop_string(ctx,-1, "ev_callback_object") )
@@ -852,30 +854,48 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
     duk_push_number(ctx, evargs->key);
     duk_get_prop(ctx, -2);
 
-    if(duk_pcall(ctx,0) != 0)
+    // check if this is a non setTimeout/setInterval call with an extra variable using the
+    // ugly hack from duk_rp_set_to below
+    duk_push_number(ctx, evargs->key+0.2);
+    if(duk_get_prop(ctx, -3))
+        nargs=1;
+    else
+        duk_pop(ctx);
+
+    // do C timeout callback immediately before the JS callback
+    // this is for a generic callback, not used for setTimeout/setInterval
+    if(evargs->cb)
+        cbret=(evargs->cb)(evargs->cbarg, 0);
+
+    if(!cbret)
+    {
+        duk_pop_2(ctx);
+        goto to_doevent_end;
+    }
+
+    if(duk_pcall(ctx, nargs) != 0)
     {
         if (duk_is_error(ctx, -1) )
         {
             duk_get_prop_string(ctx, -1, "stack");
-            printf("Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
-            /* why won't throw work?  It just aborts with no error message.
-               but I thought that was the point of duk_pcall */
-            //RP_THROW(ctx, duk_safe_to_string(ctx, -1));
+            fprintf(stderr, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
             duk_pop(ctx);
         }
         else if (duk_is_string(ctx, -1))
         {
-            printf("Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
-            //RP_THROW(ctx, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
+            fprintf(stderr, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
         }
         else
         {
-            printf("Error in setTimeout/setInterval callback\n");
-            //RP_THROW(ctx, "Error in setTimeout/setInterval callback\n");
+            fprintf(stderr, "Error in setTimeout/setInterval callback\n");
         }
     }
     //discard return
     duk_pop(ctx);
+
+    // do post callback
+    if(evargs->cb)
+        evargs->repeat=(evargs->cb)(evargs->cbarg, 1);
 
     /* evargs may have been freed if clearInterval was called from within the function */
     /* if so, function stored in ev_callback_object[key] will have been deleted */
@@ -886,6 +906,7 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
         return;
     }
 
+    to_doevent_end:
     if(!evargs->repeat)
     {
         SLISTLOCK;
@@ -895,23 +916,31 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
         event_free(evargs->e);
         duk_push_number(ctx, key);
         duk_del_prop(ctx, -2);
+        duk_push_number(ctx, key+0.2);
+        duk_del_prop(ctx, -2);
         free(evargs);
     }
 
     duk_pop_2(ctx);
 }
+
+
 /* It is not terribly important that this is thread safe (I hope).
    If we are threading, it just needs to be unique on each thread (until it loops).
    The id will be used on separate duk stacks for each thread */
 volatile uint32_t ev_id=0;
 
-duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat)
+duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout_callback *cb, void *arg)
 {
-    REQUIRE_FUNCTION(ctx,0,"setTimeout(): Callback must be a function");
+    REQUIRE_FUNCTION(ctx,0,"%s(): Callback must be a function", fname);
     double to = duk_get_number_default(ctx,1, 0) / 1000.0;
     struct timeval timeout;
     struct event_base *base=NULL;
     EVARGS *evargs=NULL;
+    duk_idx_t extra_var_idx = -1;
+
+    if(duk_get_top(ctx) > 2)
+        extra_var_idx = 2;
 
     /* if we are threaded, base will not be global struct event_base *elbase */
     duk_push_global_stash(ctx);
@@ -927,6 +956,8 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat)
     evargs->key = (double)ev_id++;
     evargs->ctx=ctx;
     evargs->repeat=repeat;
+    evargs->cb=cb;
+    evargs->cbarg=arg;
 
     SLISTLOCK;
     SLIST_INSERT_HEAD(&tohead, evargs, entries);
@@ -936,25 +967,29 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat)
     timeout.tv_sec=(time_t)to;
     timeout.tv_usec=(suseconds_t)1000000.0 * (to - (double)timeout.tv_sec);
 
-    /* get array of callback functions from global stash */
+    /* get object of callback functions from global stash */
     duk_push_global_stash(ctx);
     if( !duk_get_prop_string(ctx,-1, "ev_callback_object") )
     {
         /* if in threads, we need to set this up on new duk_context stack */
-        duk_pop(ctx);//undefined
+        duk_pop(ctx);// remove undefined
         duk_push_object(ctx);//new object
-        duk_push_number(ctx, evargs->key);
-        duk_dup(ctx,0);
-        duk_put_prop(ctx, -3);
-        duk_put_prop_string(ctx, -2, "ev_callback_object");
+        duk_dup(ctx, -1); //make a reference copy
+        duk_put_prop_string(ctx, -3, "ev_callback_object"); // put one reference in stash, leave other reference on top
     }
-    else
+    duk_push_number(ctx, evargs->key); //array-like access with number as key
+    duk_dup(ctx,0); //the JS callback function
+    duk_put_prop(ctx, -3);
+
+    // this is a bit of a hack, but fewer pushes than using an enclosing object for both the cb and the extra variable.
+    // Allow a third parameter when using this in other generic functions besides setTimeout and setInterval 
+    if(extra_var_idx > -1)
     {
-        duk_push_number(ctx, evargs->key);
-        duk_dup(ctx,0);
+        duk_push_number(ctx, evargs->key + 0.2);
+        duk_pull(ctx, extra_var_idx);
         duk_put_prop(ctx, -3);
     }
-    duk_pop(ctx); //global stash
+    duk_pop_2(ctx); //ev_callback_object and global stash
 
     /* create a new event for js callback and specify the c callback to handle it*/
     evargs->e = event_new(base, -1, EV_PERSIST, rp_el_doevent, evargs);
@@ -972,12 +1007,12 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat)
 
 duk_ret_t duk_rp_set_timeout(duk_context *ctx)
 {
-    return duk_rp_set_to(ctx, 0);
+    return duk_rp_set_to(ctx, 0, "setTimeout", NULL, NULL);
 }
 
 duk_ret_t duk_rp_set_interval(duk_context *ctx)
 {
-    return duk_rp_set_to(ctx, 1);
+    return duk_rp_set_to(ctx, 1, "setInterval", NULL, NULL);
 }
 
 duk_ret_t duk_rp_clear_either(duk_context *ctx)
@@ -1001,7 +1036,7 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
     free(evargs);
 
     duk_push_global_stash(ctx);
-    if( !duk_get_prop_string(ctx,-1, "ev_callback_object") )
+    if( !duk_get_prop_string(ctx, -1, "ev_callback_object") )
         RP_THROW(ctx, "internal error in rp_el_doevent()");
 
     if( !duk_get_prop_string(ctx, 0, "eventId" ) )

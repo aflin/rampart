@@ -317,13 +317,16 @@ static void writelog(evhtp_request_t *req, int code)
 }
 
 
-static void sendresp(evhtp_request_t *request, evhtp_res code)
+static void sendresp(evhtp_request_t *request, evhtp_res code, int chunked)
 {
-    evhtp_send_reply(request, code);
+    if (!chunked)
+        evhtp_send_reply(request, code);
+    else
+        evhtp_send_reply_chunk_start(request, code);
+
     if(duk_rp_server_logging)
-    {
         writelog(request, (int)code);
-    }
+
 }
 
 #define putval(key, val) do {                      \
@@ -785,7 +788,7 @@ static DHS *get_dhs(duk_context *ctx)
     dhs->freeme=1;
     duk_push_this(ctx);
     if (duk_is_undefined(ctx, -1))
-        RP_THROW(ctx, "server websockets- reference to req is no longer valid"); 
+        RP_THROW(ctx, "server websockets- reference to req is no longer valid");
     if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("evreq")))
         fprintf(stderr, "FIXME: evreq not found\n");
     else
@@ -879,7 +882,7 @@ evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
 
     if(duk_get_prop(ctx, -2))
     {
-        /* other references might exist, so replace evhtp req with null */        
+        /* other references might exist, so replace evhtp req with null */
         duk_push_pointer(ctx,(void*)NULL);
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("evreq"));
     }
@@ -903,7 +906,7 @@ duk_ret_t duk_server_ws_set_disconnect(duk_context *ctx)
 
     duk_push_this(ctx);
     if (duk_is_undefined(ctx, -1))
-        RP_THROW(ctx, "server req.wsOnDisconnect- reference to req is no longer valid"); 
+        RP_THROW(ctx, "server req.wsOnDisconnect- reference to req is no longer valid");
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("evreq"));
     req = (evhtp_request_t *)duk_get_pointer(ctx, -1);
     duk_pop_2(ctx);
@@ -947,7 +950,7 @@ duk_ret_t duk_server_ws_end(duk_context *ctx)
 
     duk_push_this(ctx);
     if (duk_is_undefined(ctx, -1))
-        RP_THROW(ctx, "server req.wsEnd- reference to req is no longer valid"); 
+        RP_THROW(ctx, "server req.wsEnd- reference to req is no longer valid");
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("req"));
     req = (evhtp_request_t *)duk_get_pointer(ctx, -1);
     duk_pop_2(ctx);
@@ -990,7 +993,6 @@ duk_ret_t duk_server_printf(duk_context *ctx)
     dhs->bufpos += size;
 
     duk_push_int(ctx, (int) size);
-
     return 1;
 }
 
@@ -1453,7 +1455,7 @@ static void send404(evhtp_request_t *req)
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
     char msg[] = "<html><head><title>404 Not Found</title></head><body><h1>Not Found</h1><p>The requested URL was not found on this server.</p></body></html>";
     evbuffer_add(req->buffer_out, msg, strlen(msg));
-    sendresp(req, EVHTP_RES_NOTFOUND);
+    sendresp(req, EVHTP_RES_NOTFOUND, 0);
 }
 
 static void send500(evhtp_request_t *req, char *msg)
@@ -1462,7 +1464,7 @@ static void send500(evhtp_request_t *req, char *msg)
     {
         evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
         evbuffer_add_printf(req->buffer_out, msg500, msg);
-        sendresp(req, 500);
+        sendresp(req, 500, 0);
     }
     else if(dhs404)
     {
@@ -1490,7 +1492,7 @@ static void send403(evhtp_request_t *req)
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
     char msg[] = "<html><head><title>403 Forbidden</title></head><body><h1>Forbidden</h1><p>The requested URL is Forbidden.</p></body></html>";
     evbuffer_add(req->buffer_out, msg, strlen(msg));
-    sendresp(req, 403);
+    sendresp(req, 403, 0);
 }
 
 static void dirlist(evhtp_request_t *req, char *fn)
@@ -1792,7 +1794,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                             snprintf(slen, 64, "%d", (int)len);
                             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
                             rp_evbuffer_add_file(req->buffer_out, cfd, 0, len);
-                            sendresp(req, rescode);
+                            sendresp(req, rescode, 0);
                             return;
                         }
                     }
@@ -1837,7 +1839,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
     snprintf(slen, 64, "%d", (int)len);
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
 
-    sendresp(req, rescode);
+    sendresp(req, rescode, 0);
 }
 
 static void sendredir(evhtp_request_t *req, char *fn)
@@ -1860,10 +1862,10 @@ body, td, th, span { font-family: Geneva,Arial,Helvetica; }\n\
 </body>\n\
 </html>",
                         fn, fn);
-    sendresp(req, EVHTP_RES_FOUND);
+    sendresp(req, EVHTP_RES_FOUND, 0);
 }
-static void
-fileserver(evhtp_request_t *req, void *arg)
+
+static void fileserver(evhtp_request_t *req, void *arg)
 {
     DHMAP *map = (DHMAP *)arg;
     evhtp_path_t *path = req->uri->path;
@@ -2059,7 +2061,7 @@ static void sendbuf(DHS *dhs)
         attachbuf(dhs, -1);
     }
     else
-    /* duk_to_buffer does a copy on a string, so we'll just skip that and copy directly */
+    /* duk_to_buffer does a copy of the string, so we'll just skip adding by reference and copy directly */
     {
         if(duk_is_string(ctx, -1) )
             s = duk_get_lstring(ctx, -1, &sz);
@@ -2067,6 +2069,7 @@ static void sendbuf(DHS *dhs)
             s= duk_safe_to_lstring(ctx, -1, &sz);
         if(s)
         {
+            /* allow string to start with '@' if escaped */
             if (*s == '\\' && *(s + 1) == '@')
             {
                 s++;
@@ -2109,8 +2112,8 @@ static void sendws(DHS *dhs)
 
 /* send the object by mime type
    fill evbuffers with appropriate data
-   for websockets, just send whatever is on top of the stack
-   This function does not remove the object on top of
+   for websockets, just send using object/data on top of the stack
+   This function does not remove the object/data from the top of
    the stack
 */
 static evhtp_res obj_to_buffer(DHS *dhs)
@@ -2123,6 +2126,7 @@ static evhtp_res obj_to_buffer(DHS *dhs)
     const char *setkey=NULL, *accept=NULL;
     int docompress = compress_scripts;
     int complev=1;
+    duk_double_t delay=0.0;
 
     if(!dhs->req)
         return 0;
@@ -2221,16 +2225,48 @@ static evhtp_res obj_to_buffer(DHS *dhs)
                 docompress=0;
             if (complev>10)
             {
-                printerr("server.start: callback -- \"compress\" must be a boolean or an Integer 1-10 (compression level)\n");
+                printerr("server.start: callback -- \"compress\" must be a Boolean or an Integer 1-10 (compression level)\n");
                 complev=10;
             }
             else if (complev<0)
             {
-                printerr("server.start: callback -- \"compress\" must be a boolean or an Integer 1-10 (compression level)\n");
+                printerr("server.start: callback -- \"compress\" must be a Boolean or an Integer 1-10 (compression level)\n");
                 docompress=0;
             }
         }
         duk_del_prop_string(ctx, -2, "compress");
+    }
+    duk_pop(ctx);
+
+    if (duk_get_prop_string(ctx, -1, "chunk"))
+    {
+        if (duk_is_boolean(ctx, -1))
+        {
+            // this is going to be set anyway in evhtp_send_reply_chunk_start and it is a suitable flag
+            dhs->req->flags |= EVHTP_REQ_FLAG_CHUNKED;
+        }
+        else
+        {
+            printerr("server.start: callback -- \"chunk\" must be a Boolean\n");
+        }
+        duk_del_prop_string(ctx, -2, "chunk");
+        docompress=0; //todo: support compression and chunking together.
+    }
+    duk_pop(ctx);
+
+    if (duk_get_prop_string(ctx, -1, "chunkDelay"))
+    {
+        if(duk_is_number(ctx, -1))
+            delay=duk_get_number(ctx, -1);
+        else
+            printerr("server.start: callback -- \"chunkDelay\" must be a positive Number\n");
+
+        if(delay < 0)
+        {
+             printerr("server.start: callback -- \"chunkDelay\" must be a positive Number\n");
+             delay=0.0;
+        }
+        duk_del_prop_string(ctx, -2, "chunkDelay");
     }
     duk_pop(ctx);
 
@@ -2267,6 +2303,14 @@ static evhtp_res obj_to_buffer(DHS *dhs)
                     rp_sendfile(dhs->req, (char *)d+1, 1, NULL);
                     return (0);
                 }
+            }
+            else if (dhs->req->flags & EVHTP_REQ_FLAG_CHUNKED && duk_is_function(ctx, -1) )
+            {
+                duk_remove(ctx, -3);//enum
+                duk_push_number(ctx, delay);
+                duk_replace(ctx, -3);//key
+                //leave function (val) on top
+                return res;
             }
             else if (duk_is_object(ctx, -1))
             {
@@ -2910,7 +2954,7 @@ static void clean_reqobj(duk_context *ctx, int has_content, int keepreq)
                                 variant = duk_get_int_default(ctx, -1, 0);
                                 duk_pop_2(ctx);
 
-                                if(variant == 2)
+                                if(variant == 2) //yes, so null out buffer
                                     duk_config_buffer(ctx, -1, NULL, 0);
                             }
                             duk_pop(ctx);//content
@@ -2941,6 +2985,308 @@ static void clean_reqobj(duk_context *ctx, int has_content, int keepreq)
     duk_pop(ctx);//reqobj
 }
 
+static duk_ret_t rp_post_req(duk_context *ctx)
+{
+//printf("in finalizer for req\n");
+    evhtp_request_t *req=NULL;
+
+    if(duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("evreq")) )
+        req = duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+//printf("req=%p\n", req);
+
+    if(req)
+        evhtp_send_reply_chunk_end(req);
+
+    return 0;
+}
+
+static duk_ret_t send_chunk_chunkend(duk_context *ctx, int end) {
+    struct evbuffer * buffer = evbuffer_new();
+    evhtp_request_t *req=NULL;
+    int nargs = (int)duk_get_top(ctx);
+    DHS *dhs;
+
+    duk_push_this(ctx); //idx == 1
+
+//printstack(ctx);
+
+    if(!duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs")))
+    {
+        printerr("server.start - req.chunkSend - internal error line %d\n",__LINE__);
+        duk_push_false(ctx);
+        return 1;
+    }
+    dhs=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("evreq")) )
+        req = duk_get_pointer(ctx, -1);
+
+    duk_pop(ctx);
+
+//printf("in send_chunk, req=%p\n", req);
+
+    if(req)
+    {
+        if(nargs)
+        {
+            const char *d;
+
+            duk_pull(ctx, 0);
+
+            if (duk_is_string(ctx, -1) && ((d = duk_get_string(ctx, -1)) || 1) && *d == '@')
+            {
+                if(dhs->bufpos)
+                {
+                    sendmem(dhs);
+                    attachfile(dhs->req, (char *)d+1);
+                }
+                else
+                    rp_sendfile(dhs->req, (char *)d+1, 1, NULL);
+            }
+            else if(duk_is_string(ctx, -1) || duk_is_buffer_data(ctx, -1))
+            {
+                sendbuf(dhs);
+            }
+            else
+            {
+                printerr("server.start - req.chunkSend - Argument must be a String or Buffer\n");
+            }
+            evhtp_send_reply_chunk(req, dhs->req->buffer_out);
+            dhs->freeme=1;
+        }
+
+        if(end)
+        {
+            evhtp_send_reply_chunk_end(req);
+            duk_del_prop_string(ctx, 1, DUK_HIDDEN_SYMBOL("evreq"));
+            dhs->freeme=1;
+        }
+        duk_push_true(ctx);
+    }
+    else
+        duk_push_false(ctx);
+
+    evhtp_safe_free(buffer, evbuffer_free);
+    return 1;
+}
+
+static duk_ret_t send_chunk(duk_context *ctx)
+{
+    return send_chunk_chunkend(ctx, 0);
+}
+
+static duk_ret_t send_chunk_end(duk_context *ctx)
+{
+    return send_chunk_chunkend(ctx, 1);
+}
+
+#define THISPTR struct this_pointer_s
+
+THISPTR {
+    duk_context *ctx;
+    void *this_heap_ptr;
+    DHS *dhs;
+    unsigned int count;
+    duk_double_t delay;
+    struct timespec start_time;
+};
+
+int setdhs(void *arg, int is_post)
+{
+    DHS *dhs = (DHS *)arg;
+    duk_context *ctx = dhs->ctx;
+
+    if(is_post)//called after the JS callback
+    {
+        if(!dhs->freeme)
+            return 1; //nothing was sent, do it again after another timeout.
+
+        duk_push_pointer(ctx, (void*)NULL);
+        duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
+        if(dhs->bufsz)
+            free(dhs->auxbuf);
+        free(dhs);
+        return 0;//don't repeat.
+    }
+    else //called before the JS callback
+    {
+        if(dhs->req)
+        {
+            dhs->freeme=0;// this will be changed to 1 if data is sent;
+            evbuffer_drain(dhs->req->buffer_out, -1);
+        }
+        else
+        {
+            if(dhs->bufsz)
+                free(dhs->auxbuf);
+            free(dhs);
+            return 0;//don't do JS callback
+        }
+        duk_push_pointer(ctx, (void*)dhs);
+        duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
+    }
+    return 1;
+}
+
+static void timespec_add_ms(struct timespec *ts, duk_double_t add)
+{
+    time_t secs = (time_t) add / 1000;
+
+    add -= (double) secs;
+    add *= 1000000;
+
+    ts->tv_sec += secs;
+
+    ts->tv_nsec += (long)add;
+
+    if(ts->tv_nsec > 1000000000)
+        ts->tv_sec++;
+    else if (ts->tv_nsec < 0)
+        ts->tv_sec--;
+    else
+        return;
+
+    ts->tv_nsec = ts->tv_nsec % 1000000000;
+}
+
+static duk_double_t timespec_diff_ms(struct timespec *ts1, struct timespec *ts2)
+{
+    double ret;
+
+    ret = 1000.0 * ( (double)ts1->tv_sec - (double)ts2->tv_sec );
+
+    ret += ( (double)ts1->tv_nsec - (double)ts2->tv_nsec ) / 1000000.0;
+
+    return ret;
+}
+
+
+// insert chunk callback function into loop using setTimeout
+static evhtp_res rp_chunk_callback(evhtp_connection_t * conn, void * arg)
+{
+    THISPTR *tp = (THISPTR *) arg;
+    evhtp_request_t *req=NULL;
+    duk_context *ctx = tp->ctx;
+    DHS *dhs=NULL;
+    struct timespec now;
+    duk_double_t timediff_ms = 0.0;
+
+    /* minimum dhs required for req.printf et al */
+    REMALLOC(dhs, sizeof(DHS));
+    dhs->ctx = ctx;
+    dhs->auxbuf = NULL;
+    dhs->bufsz = 0;
+    dhs->bufpos = 0;
+
+    tp->dhs=dhs;
+
+    duk_push_heapptr(ctx, tp->this_heap_ptr);
+
+    if(duk_get_prop_string(tp->ctx, -1, DUK_HIDDEN_SYMBOL("evreq")) )
+        req = duk_get_pointer(tp->ctx, -1);
+    duk_pop(ctx);
+
+    if(!req)
+    {
+        duk_pop(ctx); // JS req object from heapptr
+        return EVHTP_RES_OK;
+    }
+
+    dhs->req = req;
+
+    /* remove the temporary reference to the JS req object
+       see end of http_dothread for explanation            */
+    tp->count++;
+    if(!tp->count)
+    {
+        char reqobj_tempname[24];
+
+        duk_push_global_object(ctx);
+        sprintf(reqobj_tempname,"\xFFreq_%p", req);
+        duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("reqobj"));
+        duk_pop(ctx);
+    }
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("chunk_cb"));
+    duk_insert(ctx, 0);
+
+    if(tp->delay > 0.0)
+    {
+        if( tp->start_time.tv_sec)
+        {
+            clock_gettime(CLOCK_MONOTONIC, &now);
+
+            //add next time to our clock.  That is the time we were aiming for.
+            timespec_add_ms(&tp->start_time, tp->delay);
+
+            //printf("now_ns = %d, now_ms = %d  ", (int) now.tv_nsec, (int)((now.tv_nsec+500000)/1000000));
+
+            //get the actual amount of time
+            timediff_ms = tp->delay + timespec_diff_ms(&now, &tp->start_time);
+
+            /* we may need to skip "frames", but will attempt to keep the timing */
+            while( timediff_ms > tp->delay)
+            {
+                timespec_add_ms(&tp->start_time, tp->delay);
+                timediff_ms -= tp->delay;
+            }
+
+            //printf("timediff = %f\n", timediff_ms);
+        }
+        else //set target time from clock once, then keep schedule by adding the delay.
+            clock_gettime(CLOCK_MONOTONIC, &tp->start_time);
+
+        duk_push_number(ctx, (tp->delay -( (timediff_ms>0.0)? timediff_ms : 0.0) ) );
+    }
+    else
+        duk_push_number(ctx, tp->delay);
+
+    duk_insert(ctx, 1);
+
+    // keep JS req object at position 2
+    // duk_pop(ctx); // JS req object from heapptr
+
+    // put count into the req object
+    duk_push_number(ctx, (double) tp->count);
+    duk_put_prop_string(ctx, -2, "chunkIndex");
+
+    duk_rp_set_to(ctx, 0, "server callback return value - chunking function", setdhs, dhs);
+    while(duk_get_top(ctx) > 0) duk_pop(ctx);
+    return EVHTP_RES_OK;
+}
+
+// libevhtp finisher callback for chunking
+static evhtp_res chunk_finalize(struct evhtp_connection *conn, void * arg)
+{
+    THISPTR *tp = (THISPTR *) arg;
+    evhtp_request_t *req=NULL;
+    duk_context *ctx = tp->ctx;
+//printf("INVALIDATING req\n");
+
+    duk_push_heapptr(ctx, tp->this_heap_ptr);
+
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("evreq")) )
+        req = duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    if(req)
+        evhtp_connection_unset_hook(req->conn, evhtp_hook_on_write);
+
+//    evbuffer_drain(req->buffer_out, -1);
+
+    duk_push_pointer(ctx, NULL);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("evreq"));
+
+    // mark the request null in case of a delayed callback in rp_chunk_callback/setdhs
+    tp->dhs->req=NULL;
+
+    duk_pop(ctx);
+    free(tp);
+    return EVHTP_RES_OK;
+}
 
 static void *http_dothread(void *arg)
 {
@@ -2949,8 +3295,7 @@ static void *http_dothread(void *arg)
     DHS *dhs = dhr->dhs;
     duk_context *ctx=dhs->ctx;
     evhtp_res res = 200;
-    int eno;
-    int has_content=-1;
+    int eno, has_content=-1;
 
 #ifdef RP_TIMEO_DEBUG
     pthread_t x = dhr->par;
@@ -3087,21 +3432,84 @@ static void *http_dothread(void *arg)
             duk_put_prop_string(ctx, -2, "text");
         }
     }
+
     res = obj_to_buffer(dhs);
 
-    if (res)
-        sendresp(req, res);
+    if(dhs->req->flags & EVHTP_REQ_FLAG_CHUNKED)
+    {
+        /* delete our copy of req, add a finalizer and http res number and return */
+        THISPTR *tp = NULL;
 
-    duk_pop(ctx);
+        REMALLOC(tp, sizeof(THISPTR));
+        tp->ctx=ctx;
+        tp->dhs=NULL;
+        tp->count=-1;
+        // the JS request object, save location to use as 'this' later
+        duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("reqobj"));
+        tp->this_heap_ptr = duk_get_heapptr(ctx, -1);
+        /* check if return object included a callback */
+        if(duk_is_function(ctx, -2))
+        {
+            //save it in JS request object
+            duk_pull(ctx, -2);
+            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("chunk_cb"));
+
+            //we also have the timeout delay one below on the stack
+            tp->delay = duk_get_number(ctx, -2);
+            duk_remove(ctx, 2);
+        }
+        duk_push_c_function(ctx, rp_post_req, 1);
+        duk_set_finalizer(ctx, -2);
+        duk_push_c_function(ctx, send_chunk, 1);
+        duk_put_prop_string(ctx, -2, "chunkSend");
+        duk_push_c_function(ctx, send_chunk_end, 1);
+        duk_put_prop_string(ctx, -2, "chunkEnd");
+        duk_pop(ctx); //reqobj
+//printf("finalizer should use req %p\n", dhs->req);
+
+        evhtp_connection_set_hook(req->conn, evhtp_hook_on_write, rp_chunk_callback, tp);
+        evhtp_connection_set_hook(req->conn, evhtp_hook_on_connection_fini, chunk_finalize, tp);
+        evhtp_connection_set_timeouts(req->conn, NULL, NULL);
+        sendresp(req, res, 1); //1 for chunked
+
+        tp->start_time.tv_sec=0; //first run, no time keeping
+
+        if(dhs->bufsz)
+        {
+            sendmem(dhs);
+            evhtp_send_reply_chunk(req, dhs->req->buffer_out);
+        }
+    }
+    else
+    if (res)
+        sendresp(req, res, 0);
+
+    duk_pop(ctx);//return from JS callback
 
     debugf("0x%x, UNLOCKING in thread_cb\n", (int)x);
-    fflush(stdout);
+//    fflush(stdout);
     if (dhr->have_timeout)
         RP_MUNLOCK(&(dhr->lock));
 
     clean_reqobj(ctx, has_content, req->cb_has_websock);
+
+    if(dhs->req->flags & EVHTP_REQ_FLAG_CHUNKED)
+    {
+        char reqobj_tempname[24];
+
+        duk_push_global_object(ctx);
+        // we need the global "reqobj" gone. but we need to save the reference to it in a unique spot
+        // until rp_chunk_callback, otherwise the finalizer will be called.  We can remove it there.
+        sprintf(reqobj_tempname,"\xFFreq_%p", req); //use the libevhtp req pointer as an index for the JS req
+        duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("reqobj"));
+        duk_put_prop_string(ctx, -2, reqobj_tempname);
+        duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("reqobj"));
+        duk_pop(ctx);
+    }
+
     return NULL;
 }
+
 
 static duk_context *redo_ctx(int thrno)
 {
@@ -3235,7 +3643,6 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
     int ret = 0;
 	uint64_t nsec=0;
 
-    //printf("in thread\n");
 #ifdef RP_TIMEO_DEBUG
     pthread_t x = pthread_self();
     printf("%d, start\n", (int)x);
@@ -3675,6 +4082,9 @@ static void http_callback(evhtp_request_t *req, void *arg)
     newdhs.freeme=0;
     dhs = &newdhs;
 
+    /* stack must start empty */
+//    while (duk_get_top(dhs->ctx) > 0) duk_pop(dhs->ctx);
+
     /* if a ws callback has been set */
     if(req->cb_has_websock)
     {
@@ -3756,6 +4166,8 @@ static void http_callback(evhtp_request_t *req, void *arg)
     duk_push_pointer(dhs->ctx, (void*) dhs);
     duk_put_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("dhs"));
 
+    /* do JS callback in a thread if there is a scriptTimeout
+       otherwise, just do callback.  Then send output to client */
     http_thread_callback(req, dhs, thrno);
 
     /* cleanup */
@@ -3770,8 +4182,8 @@ static void http_callback(evhtp_request_t *req, void *arg)
 
 //    duk_push_undefined(dhs->ctx);
 //    duk_put_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("clreq"));
-    // should only be thread_funcstash, but remove everything
-    while (duk_get_top(dhs->ctx) > 0) duk_pop(dhs->ctx); // DUK_HIDDEN_SYMBOL("thread_funcstash")
+    // we should only have thread_funcstash on top, but remove everything
+    while (duk_get_top(dhs->ctx) > 0) duk_pop(dhs->ctx);
     return;
 }
 
