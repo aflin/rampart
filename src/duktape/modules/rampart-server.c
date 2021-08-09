@@ -28,6 +28,32 @@
 #endif
 #include <pwd.h>
 
+//clock_gettime for macos < sierra
+#ifndef CLOCK_MONOTONIC
+
+#include <mach/mach.h>
+#include <mach/clock.h>
+#include <mach/mach_time.h>
+#define CLOCK_REALTIME CALENDAR_CLOCK
+#define CLOCK_MONOTONIC SYSTEM_CLOCK
+typedef int clockid_t;
+int clock_gettime(clockid_t type, struct timespec *rettime)
+{
+    mach_timespec_t clk_ts;
+    clock_serv_t clksrv;
+    int ret=0;
+
+    host_get_clock_service(mach_host_self(), type, &clksrv);
+    ret = (int)clock_get_time(clksrv, &clk_ts);
+    mach_port_deallocate(mach_task_self(), clksrv);
+    rettime->tv_sec = clk_ts.tv_sec;
+    rettime->tv_nsec = clk_ts.tv_nsec;
+
+    return ret;
+}
+
+#endif //CLOCK_MONOTONIC
+
 #include "evhtp/evhtp.h"
 #include "../ws/evhtp_ws.h"
 #include "rampart.h"
