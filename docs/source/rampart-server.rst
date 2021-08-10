@@ -1401,7 +1401,7 @@ chunkSend).
 req.chunkIndex
 """"""""""""""
 
-The ``req.chunkIndex`` variable is only from within `The Chunk Callback`
+The ``req.chunkIndex`` variable is available only from within `The Chunk Callback`
 and is set to the current 0 based chunk index.
 
 Chunking Examples
@@ -1501,7 +1501,6 @@ Sending mjpeg, using ffmpeg and webcam on Linux:
 .. code-block:: javascript
 
     var server=require("rampart-server");
-    var curl = require("rampart-curl");
     rampart.globalize(rampart.utils);
 
 
