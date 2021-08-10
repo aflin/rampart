@@ -895,7 +895,8 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
 
     // do post callback
     if(evargs->cb)
-        evargs->repeat=(evargs->cb)(evargs->cbarg, 1);
+        evargs->repeat=(evargs->cb)(evargs->cbarg, 1); // if returns 1, we repeat
+
 
     /* evargs may have been freed if clearInterval was called from within the function */
     /* if so, function stored in ev_callback_object[key] will have been deleted */
@@ -920,7 +921,12 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
         duk_del_prop(ctx, -2);
         free(evargs);
     }
-
+    else if ( ! event_pending(evargs->e, 0, NULL) )// the event expired
+    {
+        //setInterval callback may have taken longer than the given interval.
+        event_del(evargs->e);
+        event_add(evargs->e, &evargs->timeout);
+    }
     duk_pop_2(ctx);
 }
 
@@ -934,7 +940,6 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout
 {
     REQUIRE_FUNCTION(ctx,0,"%s(): Callback must be a function", fname);
     double to = duk_get_number_default(ctx,1, 0) / 1000.0;
-    struct timeval timeout;
     struct event_base *base=NULL;
     EVARGS *evargs=NULL;
     duk_idx_t extra_var_idx = -1;
@@ -964,8 +969,8 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout
     SLISTUNLOCK;
 
     /* get the timeout */
-    timeout.tv_sec=(time_t)to;
-    timeout.tv_usec=(suseconds_t)1000000.0 * (to - (double)timeout.tv_sec);
+    evargs->timeout.tv_sec=(time_t)to;
+    evargs->timeout.tv_usec=(suseconds_t)1000000.0 * (to - (double)evargs->timeout.tv_sec);
 
     /* get object of callback functions from global stash */
     duk_push_global_stash(ctx);
@@ -995,7 +1000,7 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout
     evargs->e = event_new(base, -1, EV_PERSIST, rp_el_doevent, evargs);
 
     /* add event; return object { hidden(eventargs): evargs_pointer, eventId: evargs->key} */
-    event_add(evargs->e, &timeout);
+    event_add(evargs->e, &evargs->timeout);
     duk_push_object(ctx);
     duk_push_pointer(ctx,(void*)evargs);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("eventargs") );

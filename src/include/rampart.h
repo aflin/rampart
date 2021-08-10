@@ -358,6 +358,7 @@ EVARGS {
     struct event *e;
     double key;
     int repeat;
+    struct timeval timeout;
     timeout_callback *cb;
     void *cbarg;
     SLIST_ENTRY(ev_args) entries;
