@@ -1229,6 +1229,8 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
 
     if(length < 1)
         length = ((int64_t)filestat.st_size + length) - offset;
+    else if( filestat.st_size < offset + length)
+        length = filestat.st_size - offset;
 
     if( length < 1 )
         RP_THROW(ctx, "readFile(\"%s\") - negative length puts end of read before offset or start of file", filename);
