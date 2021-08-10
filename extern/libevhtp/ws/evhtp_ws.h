@@ -46,7 +46,6 @@ struct evhtp_ws_frame_s {
 
     uint32_t masking_key;
     uint64_t payload_len;
-    char     payload[];
 };
 
 typedef enum evhtp_ws_parser_state evhtp_ws_parser_state;
