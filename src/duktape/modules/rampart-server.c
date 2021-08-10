@@ -2058,31 +2058,36 @@ static void attachbuf(DHS *dhs, duk_idx_t idx)
    after, send auxbuf if exists
    in whatever form
 */
-static void sendmem(DHS *dhs)
+static int sendmem(DHS *dhs)
 {
     if(!dhs->bufpos)
-        return;
+        return 0;
     evbuffer_add_reference(dhs->req->buffer_out, dhs->auxbuf, dhs->bufpos, frefcb, NULL);
     dhs->auxbuf=NULL;
     dhs->bufpos=0;
     dhs->bufsz=0;
+    return 1;
 }
 
 /* send a buffer or a string
    will send content of req.printf first
+   if there is nothing to be sent, returns 0
 */
-static void sendbuf(DHS *dhs)
+static int sendbuf(DHS *dhs)
 {
     const char *s;
     duk_context *ctx = dhs->ctx;
     duk_size_t sz;
+    int ret = 0;
 
-    sendmem(dhs);
+    ret = sendmem(dhs);
+
     /* null or empty string */
     if(!duk_get_length(ctx, -1) )
     {
-        return;
+        return ret;
     }
+
     if ( duk_is_buffer_data(ctx, -1) )
     {
         attachbuf(dhs, -1);
@@ -2092,6 +2097,11 @@ static void sendbuf(DHS *dhs)
     {
         if(duk_is_string(ctx, -1) )
             s = duk_get_lstring(ctx, -1, &sz);
+        else if (duk_is_object(ctx, -1))
+        {
+            duk_json_encode(ctx, -1);
+            s = duk_get_lstring(ctx, -1, &sz);
+        }
         else
             s= duk_safe_to_lstring(ctx, -1, &sz);
         if(s)
@@ -2106,6 +2116,7 @@ static void sendbuf(DHS *dhs)
                 evbuffer_add(dhs->req->buffer_out,s,(size_t)sz);
         }
     }
+    return 1;
 }
 
 static void sendws(DHS *dhs)
@@ -2117,9 +2128,7 @@ static void sendws(DHS *dhs)
     if(!req)
         return;
 
-    if(duk_is_object(dhs->ctx, -1))
-        duk_json_encode(dhs->ctx, -1);
-    else if (duk_is_buffer_data(dhs->ctx, -1))
+    if (duk_is_buffer_data(dhs->ctx, -1))
         opcode = OP_BIN;
 
     /* put everything into buffer_out */
@@ -2338,11 +2347,6 @@ static evhtp_res obj_to_buffer(DHS *dhs)
                 duk_replace(ctx, -3);//key
                 //leave function (val) on top
                 return res;
-            }
-            else if (duk_is_object(ctx, -1))
-            {
-                duk_json_encode(ctx, -1);
-                sendbuf(dhs);
             }
             else
                 sendbuf(dhs); /* send buffer or string contents at idx=-1 */
@@ -3051,10 +3055,10 @@ static duk_ret_t send_chunk_chunkend(duk_context *ctx, int end) {
 
     if(req)
     {
-        if(!end || !duk_is_undefined(ctx,0))
+        if(!end || ( !duk_is_undefined(ctx,0) && !duk_is_null(ctx, 0)) )
         {
             const char *d;
-
+            
             duk_pull(ctx, 0);
 
             if (duk_is_string(ctx, -1) && ((d = duk_get_string(ctx, -1)) || 1) && *d == '@')
@@ -3066,17 +3070,21 @@ static duk_ret_t send_chunk_chunkend(duk_context *ctx, int end) {
                 }
                 else
                     rp_sendfile(dhs->req, (char *)d+1, 1, NULL);
-            }
-            else if(duk_is_string(ctx, -1) || duk_is_buffer_data(ctx, -1))
-            {
-                sendbuf(dhs);
+
+                evhtp_send_reply_chunk(req, dhs->req->buffer_out);
+                dhs->freeme=1;
             }
             else
             {
-                printerr("server.start - req.chunkSend - Argument must be a String or Buffer\n");
+                
+                if(sendbuf(dhs))
+                {
+                    evhtp_send_reply_chunk(req, dhs->req->buffer_out);
+                    dhs->freeme=1;
+                }
+                //else dhs->freeme=0;//this flags setTimeout to repeat.
+
             }
-            evhtp_send_reply_chunk(req, dhs->req->buffer_out);
-            dhs->freeme=1;
         }
 
         if(end)
