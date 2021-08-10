@@ -28,32 +28,6 @@
 #endif
 #include <pwd.h>
 
-//clock_gettime for macos < sierra
-#ifndef CLOCK_MONOTONIC
-
-#include <mach/mach.h>
-#include <mach/clock.h>
-#include <mach/mach_time.h>
-#define CLOCK_REALTIME CALENDAR_CLOCK
-#define CLOCK_MONOTONIC SYSTEM_CLOCK
-typedef int clockid_t;
-int clock_gettime(clockid_t type, struct timespec *rettime)
-{
-    mach_timespec_t clk_ts;
-    clock_serv_t clksrv;
-    int ret=0;
-
-    host_get_clock_service(mach_host_self(), type, &clksrv);
-    ret = (int)clock_get_time(clksrv, &clk_ts);
-    mach_port_deallocate(mach_task_self(), clksrv);
-    rettime->tv_sec = clk_ts.tv_sec;
-    rettime->tv_nsec = clk_ts.tv_nsec;
-
-    return ret;
-}
-
-#endif //CLOCK_MONOTONIC
-
 #include "evhtp/evhtp.h"
 #include "../ws/evhtp_ws.h"
 #include "rampart.h"
@@ -3183,39 +3157,6 @@ int setdhs(void *arg, int is_post)
     return 1;
 }
 
-static void timespec_add_ms(struct timespec *ts, duk_double_t add)
-{
-    time_t secs = (time_t) add / 1000;
-
-    add -= (double) secs;
-    add *= 1000000;
-
-    ts->tv_sec += secs;
-
-    ts->tv_nsec += (long)add;
-
-    if(ts->tv_nsec > 1000000000)
-        ts->tv_sec++;
-    else if (ts->tv_nsec < 0)
-        ts->tv_sec--;
-    else
-        return;
-
-    ts->tv_nsec = ts->tv_nsec % 1000000000;
-}
-
-static duk_double_t timespec_diff_ms(struct timespec *ts1, struct timespec *ts2)
-{
-    double ret;
-
-    ret = 1000.0 * ( (double)ts1->tv_sec - (double)ts2->tv_sec );
-
-    ret += ( (double)ts1->tv_nsec - (double)ts2->tv_nsec ) / 1000000.0;
-
-    return ret;
-}
-
-
 // insert chunk callback function into loop using setTimeout
 static evhtp_res rp_chunk_callback(evhtp_connection_t * conn, void * arg)
 {
@@ -3272,8 +3213,6 @@ static evhtp_res rp_chunk_callback(evhtp_connection_t * conn, void * arg)
             //add next time to our clock.  That is the time we were aiming for.
             timespec_add_ms(&chunkp->start_time, chunkp->delay);
 
-            //printf("now_ns = %d, now_ms = %d  ", (int) now.tv_nsec, (int)((now.tv_nsec+500000)/1000000));
-
             //get the actual amount of time
             timediff_ms = chunkp->delay + timespec_diff_ms(&now, &chunkp->start_time);
 
@@ -3284,7 +3223,6 @@ static evhtp_res rp_chunk_callback(evhtp_connection_t * conn, void * arg)
                 timediff_ms -= chunkp->delay;
             }
 
-            //printf("timediff = %f\n", timediff_ms);
         }
         else //set target time from clock once, then keep schedule by adding the delay.
             clock_gettime(CLOCK_MONOTONIC, &chunkp->start_time);

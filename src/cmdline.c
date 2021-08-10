@@ -26,6 +26,49 @@
 #include "sys/queue.h"
 #include "whereami.h"
 
+//clock_gettime for macos < sierra
+#ifndef CLOCK_MONOTONIC
+
+#include <mach/mach.h>
+#include <mach/clock.h>
+#include <mach/mach_time.h>
+#define CLOCK_REALTIME CALENDAR_CLOCK
+#define CLOCK_MONOTONIC SYSTEM_CLOCK
+typedef int clockid_t;
+int clock_gettime(clockid_t type, struct timespec *rettime)
+{
+    mach_timespec_t clk_ts;
+    clock_serv_t clksrv;
+    int ret=0;
+
+    host_get_clock_service(mach_host_self(), type, &clksrv);
+    ret = (int)clock_get_time(clksrv, &clk_ts);
+    mach_port_deallocate(mach_task_self(), clksrv);
+    rettime->tv_sec = clk_ts.tv_sec;
+    rettime->tv_nsec = clk_ts.tv_nsec;
+
+    return ret;
+}
+
+#endif //CLOCK_MONOTONIC
+
+#ifdef NEEDS_CLOCK_GETTIME
+int clock_gettime(clockid_t type, struct timespec *rettime)
+{
+    mach_timespec_t clk_ts;
+    clock_serv_t clksrv;
+    int ret=0;
+
+    host_get_clock_service(mach_host_self(), type, &clksrv);
+    ret = (int)clock_get_time(clksrv, &clk_ts);
+    mach_port_deallocate(mach_task_self(), clksrv);
+    rettime->tv_sec = clk_ts.tv_sec;
+    rettime->tv_nsec = clk_ts.tv_nsec;
+
+    return ret;
+}
+#endif
+
 int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 int totnthreads=0;
 char *RP_script_path=NULL;
@@ -836,6 +879,37 @@ static void free_tos (void *arg)
     SLISTUNLOCK;
 }
 
+void timespec_add_ms(struct timespec *ts, duk_double_t add)
+{
+    time_t secs = (time_t) add / 1000;
+
+    add -= (double) (secs*1000.0);
+    add *= 1000000;
+
+    ts->tv_sec += secs;
+
+    ts->tv_nsec += (long)add;
+
+    if(ts->tv_nsec > 1000000000)
+        ts->tv_sec++;
+    else if (ts->tv_nsec < 0)
+        ts->tv_sec--;
+    else
+        return;
+
+    ts->tv_nsec = ts->tv_nsec % 1000000000;
+}
+
+duk_double_t timespec_diff_ms(struct timespec *ts1, struct timespec *ts2)
+{
+    double ret;
+
+    ret = 1000.0 * ( (double)ts1->tv_sec - (double)ts2->tv_sec );
+
+    ret += ( (double)ts1->tv_nsec - (double)ts2->tv_nsec ) / 1000000.0;
+
+    return ret;
+}
 
 static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
 {
@@ -893,11 +967,6 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
     //discard return
     duk_pop(ctx);
 
-    // do post callback
-    if(evargs->cb)
-        evargs->repeat=(evargs->cb)(evargs->cbarg, 1); // if returns 1, we repeat
-
-
     /* evargs may have been freed if clearInterval was called from within the function */
     /* if so, function stored in ev_callback_object[key] will have been deleted */
     duk_push_number(ctx, key);
@@ -907,8 +976,14 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
         return;
     }
 
+    // do post callback
+    if(evargs->cb)
+        evargs->repeat=(evargs->cb)(evargs->cbarg, 1); // if returns 1, we repeat
+
+
     to_doevent_end:
-    if(!evargs->repeat)
+    //setTimeout
+    if(evargs->repeat==0)
     {
         SLISTLOCK;
         SLIST_REMOVE(&tohead, evargs, ev_args, entries);
@@ -921,11 +996,45 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
         duk_del_prop(ctx, -2);
         free(evargs);
     }
-    else if ( ! event_pending(evargs->e, 0, NULL) )// the event expired
+    //setInterval, but event has expired.
+    else if (evargs->repeat==1 && ( !event_pending(evargs->e, 0, NULL) )) // the event expired
     {
         //setInterval callback may have taken longer than the given interval.
         event_del(evargs->e);
         event_add(evargs->e, &evargs->timeout);
+    }
+    //setMetronome
+    else if(evargs->repeat==2)
+    {
+        duk_double_t delay=0.0;
+        struct timespec now;
+        duk_double_t timediff_ms = 0.0;
+        struct timeval newto;
+
+        delay = ( (duk_double_t)evargs->timeout.tv_sec * 1000.0) + 
+                ( (duk_double_t)evargs->timeout.tv_usec/ 1000);
+
+        clock_gettime(CLOCK_MONOTONIC, &now);
+
+        //add next time to our clock.  That is the time we were aiming for.
+        timespec_add_ms(&evargs->start_time, delay);
+
+        //get the actual amount of time
+        timediff_ms = delay + timespec_diff_ms(&now, &evargs->start_time);
+
+        /* we may need to skip "frames", but will attempt to keep the timing */
+        while( timediff_ms > delay)
+        {
+            timespec_add_ms(&evargs->start_time, delay);
+            timediff_ms -= delay;
+        }
+
+        if(timediff_ms<0.0) timediff_ms=0.0;
+        delay = (delay - timediff_ms)/1000.0;
+        newto.tv_sec=(time_t) delay;
+        newto.tv_usec=(suseconds_t)1000000.0 * (delay - (double)newto.tv_sec);
+        event_del(evargs->e);
+        event_add(evargs->e, &newto);
     }
     duk_pop_2(ctx);
 }
@@ -963,7 +1072,8 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout
     evargs->repeat=repeat;
     evargs->cb=cb;
     evargs->cbarg=arg;
-
+    clock_gettime(CLOCK_MONOTONIC, &evargs->start_time);        
+  
     SLISTLOCK;
     SLIST_INSERT_HEAD(&tohead, evargs, entries);
     SLISTUNLOCK;
@@ -1018,6 +1128,11 @@ duk_ret_t duk_rp_set_timeout(duk_context *ctx)
 duk_ret_t duk_rp_set_interval(duk_context *ctx)
 {
     return duk_rp_set_to(ctx, 1, "setInterval", NULL, NULL);
+}
+
+duk_ret_t duk_rp_set_metronome(duk_context *ctx)
+{
+    return duk_rp_set_to(ctx, 2, "setInterval", NULL, NULL);
 }
 
 duk_ret_t duk_rp_clear_either(duk_context *ctx)
@@ -2079,6 +2194,8 @@ int main(int argc, char *argv[])
             duk_put_global_string(ctx,"clearTimeout");
             duk_push_c_function(ctx,duk_rp_set_interval,2);
             duk_put_global_string(ctx,"setInterval");
+            duk_push_c_function(ctx,duk_rp_set_metronome,2);
+            duk_put_global_string(ctx,"setMetronome");
             duk_push_c_function(ctx, duk_rp_clear_either, 1);
             duk_put_global_string(ctx,"clearInterval");
 

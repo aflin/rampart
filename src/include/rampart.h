@@ -305,6 +305,8 @@ char *to_utf8(const char *in_str);
 /* we might want to do something right before the timeout when using generically */
 typedef int (timeout_callback)(void *, int);
 duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout_callback *cb, void *arg);
+void timespec_add_ms(struct timespec *ts, duk_double_t add);
+duk_double_t timespec_diff_ms(struct timespec *ts1, struct timespec *ts2);
 
 #define RPPATH struct rp_path_s
 RPPATH {
@@ -359,6 +361,7 @@ EVARGS {
     double key;
     int repeat;
     struct timeval timeout;
+    struct timespec start_time;
     timeout_callback *cb;
     void *cbarg;
     SLIST_ENTRY(ev_args) entries;
@@ -386,6 +389,18 @@ SLIST_HEAD(slisthead, ev_args) tohead;
 void spt_init(int argc, char *argv[]);
 void setproctitle(const char *fmt, ...);
 #endif
+
+//clock_gettime for macos < sierra
+#ifndef CLOCK_MONOTONIC
+#include <mach/mach.h>
+#include <mach/clock.h>
+#include <mach/mach_time.h>
+#define CLOCK_REALTIME CALENDAR_CLOCK
+#define CLOCK_MONOTONIC SYSTEM_CLOCK
+#define NEEDS_CLOCK_GETTIME
+typedef int clockid_t;
+int clock_gettime(clockid_t type, struct timespec *rettime);
+#endif //CLOCK_MONOTONIC
 
 
 #if defined(__cplusplus)
