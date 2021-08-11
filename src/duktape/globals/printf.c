@@ -31,7 +31,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // FROM: https://github.com/mpaland/printf - with gratitude!
 // MODIFIED BY Aaron Flin for use in duktape
-// and with 'B', 'J', 's', 'U' and 'P' new/altered % format codes
+// and with 'B', 'J', 's', 'S', 'U' and 'P' new/altered % format codes
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -101,6 +101,9 @@
 #define FLAGS_PRECISION (1U << 10U)
 #define FLAGS_ADAPT_EXP (1U << 11U)
 #define FLAGS_BANG (1U << 12U)
+#define FLAGS_SQUOTE (1U << 13U)
+#define FLAGS_FFORMAT (1U << 14U)
+
 #include <float.h>
 // wrapper (used as buffer) for output function type
 typedef struct
@@ -310,6 +313,7 @@ static size_t _ntoa_long_long(out_fct_type out, char *buffer, size_t idx, size_t
     }
     return _ntoa_format(out, buffer, idx, maxlen, buf, len, negative, (unsigned int)base, prec, width, flags);
 }
+/*  Scrapped - new version below
 // forward declaration so that _ftoa can switch to exp notation for values > PRINTF_MAX_FLOAT
 static size_t _etoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, double value, unsigned int prec, unsigned int width, unsigned int flags);
 // internal ftoa for fixed decimal floating point
@@ -560,6 +564,86 @@ static size_t _etoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
     }
     return idx;
 }
+*/
+
+/* we are gonna cheat and just used sprintf for this */
+#define FLOAT_MAX_BUF 512
+static size_t _ftoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, double value, unsigned int prec, unsigned int width, unsigned int flags)
+{
+    char buf[FLOAT_MAX_BUF];
+    char fmt[16];
+    int i=0;
+    int len=0;
+    char formatflag;
+
+    if(width >= FLOAT_MAX_BUF)
+        width = FLOAT_MAX_BUF - 1;
+
+    if(flags & FLAGS_FFORMAT)
+        formatflag='f';
+    else if (flags & FLAGS_ADAPT_EXP)
+        formatflag='g';
+    else
+        formatflag='e';
+
+    if(flags & FLAGS_UPPERCASE)
+        formatflag = toupper(formatflag);
+    
+    if(flags & FLAGS_PRECISION)
+    {
+        sprintf(fmt, "%%%s%s%s%s%s%s*.*%c",
+            (flags & FLAGS_LEFT)?"-":"",
+            (flags & FLAGS_SPACE)?" ":"",
+            (flags & FLAGS_PLUS)?"+":"",
+            (flags & FLAGS_HASH)?"#":"",
+            (flags & FLAGS_ZEROPAD)?"0":"",
+            (flags & FLAGS_SQUOTE)?"'":"",
+            formatflag
+            );
+        len=snprintf(buf, FLOAT_MAX_BUF, fmt, width, prec, value);
+    } 
+    else
+    {
+        sprintf(fmt, "%%%s%s%s%s%s%s*%c",
+            (flags & FLAGS_LEFT)?"-":"",
+            (flags & FLAGS_SPACE)?" ":"",
+            (flags & FLAGS_PLUS)?"+":"",
+            (flags & FLAGS_HASH)?"#":"",
+            (flags & FLAGS_ZEROPAD)?"0":"",
+            (flags & FLAGS_SQUOTE)?"'":"",
+            formatflag
+            );
+        len=snprintf(buf, FLOAT_MAX_BUF, fmt, width, value);
+    }
+
+    if(flags & FLAGS_BANG)
+    {
+        int nsig=0;
+
+        if(buf[i]=='-')i++;
+
+        while (i<len && buf[i]=='0') i++;
+
+        //skip past first 17 digits
+        while(i<len && nsig<17)
+        {
+            if(isdigit(buf[i++]))
+                nsig++;
+        }
+        while(i<len)
+        {
+            if(isdigit(buf[i]))
+                buf[i]='0';
+            i++;
+        }
+    }
+    i=0;
+    while (i<len)
+        out(buf[i++], buffer, idx++, maxlen);
+
+    return idx;
+}
+
 
 int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *ctx, duk_idx_t fidx, pthread_mutex_t *lock_p)
 {
@@ -624,6 +708,11 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 break;
             case '!':
                 flags |= FLAGS_BANG;
+                format++;
+                n = 1U;
+                break;
+            case '\'':
+                flags |= FLAGS_SQUOTE;
                 format++;
                 n = 1U;
                 break;
@@ -788,6 +877,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         }
         case 'f':
         case 'F':
+            flags |= FLAGS_FFORMAT;
             if (*format == 'F')
                 flags |= FLAGS_UPPERCASE;
             idx = _ftoa(out, buffer, idx, maxlen, PF_REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
@@ -801,7 +891,8 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 flags |= FLAGS_ADAPT_EXP;
             if ((*format == 'E') || (*format == 'G'))
                 flags |= FLAGS_UPPERCASE;
-            idx = _etoa(out, buffer, idx, maxlen, PF_REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
+            //idx = _etoa(out, buffer, idx, maxlen, PF_REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
+            idx = _ftoa(out, buffer, idx, maxlen, PF_REQUIRE_NUMBER(ctx, fidx++), precision, width, flags);
             format++;
             break;
         case 'c':
