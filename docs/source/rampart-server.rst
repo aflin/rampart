@@ -1322,7 +1322,7 @@ Chunking Replies
 The Basics
 """"""""""
 The server can also send back content with ``Transfer-Encoding: Chunked``.
-This allows you to assemble a response in sections and write back to the
+This allows the server to assemble a response in sections and write back to the
 client one section at a time.  The client web browser will reassemble the
 document as it is being sent.  This is useful, in particular when sending
 a large file, or when sending an `mjpeg <https://en.wikipedia.org/wiki/Motion_JPEG>`_\ .
@@ -1333,9 +1333,10 @@ service other requests in between each sent chunk.
 For mjpegs, it allow a continuous stream of JPEGs to be sent, also allowing
 for other requests to be serviced between chunks.
 
-A chunked document is initiated by setting ``chunk:true`` in
+A chunked document is specified by setting ``chunk:true`` in
 `The Return Object`_\ .  A delay between chunks can be set in milliseconds
-with the following: ``chunkDelay:delay_in_ms``.
+with the following: ``chunkDelay:delay_in_ms``. This delay works in the same
+manner as :ref:`rampart-main:setMetronome()`.
 
 In addition, the extension/mime property of `The Return Object`_\ a  may be
 a :green:`Function` (`The Chunk Callback`), which will be called for every
@@ -1471,7 +1472,7 @@ Sending mjpeg, simple:
         );
     }
 
-    /* we don't need a chunk delay, the fetch takes a bit of time.
+    /* we don't need a chunk delay, the fetch takes a bit of time. */
     function mjpeg(req) {
         return {"data":sendpic, chunk:true, headers:
             {"Content-Type": "multipart/x-mixed-replace;boundary=myboundary"}
@@ -1588,11 +1589,12 @@ the same as a normal http callback, with a few exceptions:
 * The mapped callback is run every time the client sends data over
   the websocket.
 
-* Headers and any GET/POST variables are set once upon connection
-  in the ``req`` object.  Subsequent connections supply the same ``req``
-  object every time new data from the client is received.
+* Headers and any GET/POST variables are set once in the ``req`` object and
+  are provided in the callback when the client first connects.  Subsequent
+  callbacks are supplied with the same ``req`` object every time new data
+  from the client is received.
 
-* Replies to the connected clinetmay be returned asynchronously using 
+* Replies to the connected client may be returned asynchronously using 
   :ref:`rampart.event <rampart-main:rampart.event>` functions or
   :ref:`setTimeout <rampart-main:setTimeout()>`.
 
@@ -1795,19 +1797,20 @@ A rampart server script is broken into 3 stages:
 
 
 At "begin code", code is run in the main thread.  Global functions and
-variables declared here will be copied when the server starts.
+variables declared here will be copied to server threads when the server starts.
 
 At "server.start" new threads are created, each beginning its own event loop.
 
 At "end of script" the main thread's event loop starts and "server.start" is
-initialized from within the main thread's event loop.
+initialized from within the main thread's event loop.  The main thread
+accepts requests and forwards them to the least busy server thread.
 
 
 Server.start creates the configured number of threads (as specified or equal
 to the number of cpu cores on the system).  Upon creation several things
 happen:
 
-    * Two duktape contexts are created for each thread.  One for http
+    * Two duktape contexts are created for each thread.  One for HTTP
       requests and one for websockets conversations.
 
     * Each duktape context is a separate JavaScript interpreter.  In
@@ -1819,8 +1822,8 @@ happen:
       main thread's duktape context to all the duktape thread contexts. 
       Local variables are lost.
 
-    * The main thread listens for http connections in its event loop and
-      assigns them to the least busy thread's event loops.
+    * The main thread listens for HTTP connections in its event loop and
+      assigns them to the least busy server thread's event loops.
 
     * The thread event loops accept the http connections and pass the http
       request data to the appropriate duktape context for that thread.  That
@@ -1831,14 +1834,15 @@ happen:
       connections at the same time from within its event loop.
 
     * The duktape context for http requests may be destroyed and recreated
-      upon timeout while the websockets context will always persist.
+      upon timeout. In contrast, the websocket duktape context will always persist.
 
     * Any events or setTimeouts set from within server callbacks are run
       within that thread's event loop.  Events and setTimeouts run outside
       the server (in "begin code" or before "end of script") are run in the
-      main event loop.
+      main event loop.  Certain event data is stored in the main thread so
+      events can be triggered regardless on which thread they reside.
       
-    * Http requests which have a timeout are run from a new thread which can
+    * HTTP requests which have a timeout are run from a new thread which can
       be interrupted.  If the timeout is reached before the callback
       function finishes, the thread is cancelled and the threads duktape
       context is destroyed and recreated in order to serve the next request.
@@ -1863,7 +1867,7 @@ Modules vs Global callback functions:
 
 Return values from server callback function.
 
-    * strings are copied from duktape to the buffer that will be returned to
+    * Strings are copied from duktape to the buffer that will be returned to
       the client.
 
     * Wherever possible, buffers are passed by reference without copy to be

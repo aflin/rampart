@@ -1191,269 +1191,8 @@ buffer.
 Return Value:
     A :green:`Buffer` - the contents of the server buffer.
 
-Chunking Replies
-~~~~~~~~~~~~~~~~
-
-The Basics
-""""""""""
-The server can also send back content with ``Transfer-Encoding: Chunked``.
-This allows you to assemble a response in sections and write back to the
-client one section at a time.  The client web browser will reassemble the
-document as it is being sent.  This is useful, in particular when sending
-a large file, or when sending an `mjpeg <https://en.wikipedia.org/wiki/Motion_JPEG>`_\ .
-
-For a large file, sending in chunks allows the current server thread to
-service other requests in between each sent chunk.
-
-For mjpegs, it allow a continuous stream of JPEGs to be sent, also allowing
-for other requests to be serviced between chunks.
-
-A chunked document is initiated by setting ``chunk:true`` in
-`The Return Object`_\ .  A delay between chunks can be set in milliseconds
-with the following: ``chunkDelay:delay_in_ms``.
-
-In addition, the extension/mime property of `The Return Object`_\ a  may be
-a :green:`Function` (`The Chunk Callback`), which will be called for every
-chunk to be written.
-
-Example Callback Return Object:
-
-.. code-block:: javascript
-
-    function send_mp4_chunk(req)
-    {
-        ...
-    }
-
-    function mycallback(req) {
-        ...
-        return {
-            chunk:      true
-            chunkDelay: 100,
-            mp4:        send_mp4
-        }
-    }
-
-req.chunkSend()
-"""""""""""""""
-
-The ``req.chunkSend()`` function is available only from within `The Chunk Callback`
-and is used to send a chunk to the client.
-
-Usage:
-
-.. code-block:: javascript
-
-    req.chunkSend(data);
-
-Where ``data`` is a :green:`String`, :green:`Buffer` (or optionally a :green:`Number`,
-:green`Boolean` or :green`Object`, in which case it is converted to a
-:green:`String`) - The data to send back to the client.
-
-A string starting with `@` is used to send the contents of the file
-specified (see `The Return Object`_\ for details).
-
-In addition ``data`` may be ``null`` or ``undefined``, in which case, any
-data in the server buffer (e.g., when using `req.printf()` or `req.put()` 
-above) will be sent to the client.  Note that the server buffer is reset
-between invocations of `The Chunk Callback`.
-
-req.chunkEnd()
-"""""""""""""""
-
-The ``req.chunkEnd()`` function is available only from within `The Chunk Callback`
-and is used to terminate the file being sent and the repetition of the callback.
-
-Usage:
-
-.. code-block:: javascript
-
-    req.chunkEnd([data]);
-
-Where ``data`` is optionally a final chunk of data to send (same as in
-chunkSend).
-
-req.chunkIndex
-""""""""""""""
-
-The ``req.chunkIndex`` variable is only from within `The Chunk Callback`
-and is set to the current 0 based chunk index.
-
-Chunking Examples
-"""""""""""""""""
-
-Sending a large file in chunks:
-
-.. code-block:: javascript
-
-    var server=require("rampart-server");
-    rampart.globalize(rampart.utils);
-
-    function sendchunk(req){
-        var chunk = readFile(req.file, req.chunkIndex * req.chunkSize, req.chunkSize);
-
-        if(req.stat.size > (req.chunkIndex+1) * req.chunkSize)
-            req.chunkSend(chunk);
-        else
-            req.chunkEnd(chunk);
-    }
-
-    function sendfile(req) {
-
-        req.chunkSize = 4096; //for convenience and available in sendchunk above
-        req.file="/path/to/myfile.mp4";
-        req.stat= stat(req.file);
-        return {
-            "mp4": sendchunk, 
-            chunk:  true,
-            headers: {
-                'Content-Disposition': 'attachment; filename="myfile.mp4"'
-            }
-        };
-    }
-
-    /****** START SERVER *******/
-    printf("Starting https server\nmp4 is at http://localhost:8088/myfile.mp4\n\n");
-    var serverpid=server.start(
-    {
-        map:
-        {
-            "/":            function(req){ 
-                                return { 
-                                    status:302,
-                                    headers:{location:'/myfile.mp4'}
-                                } 
-                            },
-            "/myfile.mp4":  sendfile
-        }
-    });
-
-Sending mjpeg, simple:
-
-.. code-block:: javascript
-
-    var server=require("rampart-server");
-    var curl = require("rampart-curl");
-    rampart.globalize(rampart.utils);
-
-    function sendpic(req){
-        
-        msg=curl.fetch('https://jpg.nyctmc.org/5',{insecure:true});
-
-        req.chunkSend(
-            sprintf("--myboundary\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n%s",
-                msg.body.length,msg.body)
-        );
-    }
-
-    /* we don't need a chunk delay, the fetch takes a bit of time.
-    function mjpeg(req) {
-        return {"data":sendpic, chunk:true, headers:
-            {"Content-Type": "multipart/x-mixed-replace;boundary=myboundary"}
-        };
-    }
-
-    /****** START SERVER *******/
-    printf("Starting https server\nmjpeg is at http://localhost:8088/mjpeg.jpg\n\n");
-    var serverpid=server.start(
-    {
-        map:
-        {
-            "/":  function(req){ 
-                        return { 
-                            status:302,
-                            headers: {
-                                location:'/mjpeg.jpg'
-                            }
-                        }
-                  },
-            "/mjpeg.jpg": mjpeg
-        }
-    });
-
-Sending mjpeg, using ffmpeg and webcam on Linux:
-
-.. code-block:: javascript
-
-    var server=require("rampart-server");
-    var curl = require("rampart-curl");
-    rampart.globalize(rampart.utils);
-
-
-    function sendpic_wcam(req){
-        var file;
-
-        //skip the first callback if first jpeg is not ready.
-        try { file = trim(readFile("test.list",0 ,0, true)); } catch(e){}
-
-        if(file)
-        {
-            req.printf("--myboundary\r\nContent-Type: image/jpeg\r\n\r\n"); //write header
-            req.chunkSend('@'+file); //send jpeg directly from file
-        }
-    }
-
-
-    function start_ffmpeg(){
-        var pid=0;
-        try{ 
-            pid=parseInt(readFile("./ffmpeg.pid")); 
-        } catch(e){}
-        
-        if( pid && kill(pid,0))
-            return; //it's running
-
-        /* save video from webcam at 10 fps*/
-        ret = exec(
-            "ffmpeg", {background:true},
-            '-hide_banner',
-            '-loglevel',           'error',
-            '-f',                  'video4linux2',
-            '-i',                  '/dev/video0',
-            '-vf',                 'fps=10',
-            '-q:v',                '8',
-            '-f',                  'segment',
-            '-segment_time',       '0.0001',
-            '-segment_format',     'singlejpeg',
-            '-segment_wrap',       '4',
-            '-segment_list',       'test.list',
-            '-segment_list_size',  '1',
-            'test%02d.jpg',
-            '-y'
-        );
-        fprintf("./ffmpeg.pid", "%d", ret.pid);
-    }
-
-    function mjpeg(req) {
-        start_ffmpeg();
-
-        return {"data":sendpic_wcam, chunk:true, chunkDelay: 100, headers:
-            {"Content-Type": "multipart/x-mixed-replace;boundary=myboundary"}
-        };
-    }
-
-    /****** START SERVER *******/
-    printf("Starting https server\nmjpeg is at http://localhost:8088/mjpeg.jpg\n\n");
-    var serverpid=server.start(
-    {
-        user:'root',
-        map:
-        {
-            "/":  function(req){ 
-                        return { 
-                            status:302,
-                            headers: {
-                                location:'/mjpeg.jpg'
-                            }
-                        }
-                  },
-            "/mjpeg.jpg": mjpeg
-        }
-    });
-
-
-Full Example
-~~~~~~~~~~~~
+Full Server Example
+~~~~~~~~~~~~~~~~~~~
 
 Below is a full example:
 
@@ -1577,6 +1316,266 @@ Below is a full example:
 
     console.log("server started with pid: "+pid);
 
+Chunking Replies
+~~~~~~~~~~~~~~~~
+
+The Basics
+""""""""""
+The server can also send back content with ``Transfer-Encoding: Chunked``.
+This allows the server to assemble a response in sections and write back to the
+client one section at a time.  The client web browser will reassemble the
+document as it is being sent.  This is useful, in particular when sending
+a large file, or when sending an `mjpeg <https://en.wikipedia.org/wiki/Motion_JPEG>`_\ .
+
+For a large file, sending in chunks allows the current server thread to
+service other requests in between each sent chunk.
+
+For mjpegs, it allow a continuous stream of JPEGs to be sent, also allowing
+for other requests to be serviced between chunks.
+
+A chunked document is specified by setting ``chunk:true`` in
+`The Return Object`_\ .  A delay between chunks can be set in milliseconds
+with the following: ``chunkDelay:delay_in_ms``. This delay works in the same
+manner as :ref:`rampart-main:setMetronome()`.
+
+In addition, the extension/mime property of `The Return Object`_\ a  may be
+a :green:`Function` (`The Chunk Callback`), which will be called for every
+chunk to be written.
+
+Example Callback Return Object:
+
+.. code-block:: javascript
+
+    function send_mp4_chunk(req)
+    {
+        ...
+    }
+
+    function mycallback(req) {
+        ...
+        return {
+            chunk:      true
+            chunkDelay: 100,
+            mp4:        send_mp4
+        }
+    }
+
+req.chunkSend()
+"""""""""""""""
+
+The ``req.chunkSend()`` function is available only from within `The Chunk Callback`
+and is used to send a chunk to the client.
+
+Usage:
+
+.. code-block:: javascript
+
+    req.chunkSend(data);
+
+Where ``data`` is a :green:`String`, :green:`Buffer` (or optionally a :green:`Number`,
+:green`Boolean` or :green`Object`, in which case it is converted to a
+:green:`String`) - The data to send back to the client.
+
+A string starting with `@` is used to send the contents of the file
+specified (see `The Return Object`_\ for details).
+
+In addition ``data`` may be ``null`` or ``undefined``, in which case, any
+data in the server buffer (e.g., when using `req.printf()` or `req.put()` 
+above) will be sent to the client.  Note that the server buffer is reset
+between invocations of `The Chunk Callback`.
+
+req.chunkEnd()
+"""""""""""""""
+
+The ``req.chunkEnd()`` function is available only from within `The Chunk Callback`
+and is used to terminate the file being sent and the repetition of the callback.
+
+Usage:
+
+.. code-block:: javascript
+
+    req.chunkEnd([data]);
+
+Where ``data`` is optionally a final chunk of data to send (same as in
+chunkSend).
+
+req.chunkIndex
+""""""""""""""
+
+The ``req.chunkIndex`` variable is available only from within `The Chunk Callback`
+and is set to the current 0 based chunk index.
+
+Chunking Examples
+"""""""""""""""""
+
+Sending a large file in chunks:
+
+.. code-block:: javascript
+
+    var server=require("rampart-server");
+    rampart.globalize(rampart.utils);
+
+    function sendchunk(req){
+        var chunk = readFile(req.file, req.chunkIndex * req.chunkSize, req.chunkSize);
+
+        if(req.stat.size > (req.chunkIndex+1) * req.chunkSize)
+            req.chunkSend(chunk);
+        else
+            req.chunkEnd(chunk);
+    }
+
+    function sendfile(req) {
+
+        req.chunkSize = 4096; //for convenience and available in sendchunk above
+        req.file="/path/to/myfile.mp4";
+        req.stat= stat(req.file);
+        return {
+            "mp4": sendchunk, 
+            chunk:  true,
+            headers: {
+                'Content-Disposition': 'attachment; filename="myfile.mp4"'
+            }
+        };
+    }
+
+    /****** START SERVER *******/
+    printf("Starting https server\nmp4 is at http://localhost:8088/myfile.mp4\n\n");
+    var serverpid=server.start(
+    {
+        map:
+        {
+            "/":            function(req){ 
+                                return { 
+                                    status:302,
+                                    headers:{location:'/myfile.mp4'}
+                                } 
+                            },
+            "/myfile.mp4":  sendfile
+        }
+    });
+
+Sending mjpeg, simple:
+
+.. code-block:: javascript
+
+    var server=require("rampart-server");
+    var curl = require("rampart-curl");
+    rampart.globalize(rampart.utils);
+
+    function sendpic(req){
+        
+        msg=curl.fetch('https://jpg.nyctmc.org/5',{insecure:true});
+
+        req.chunkSend(
+            sprintf("--myboundary\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n%s",
+                msg.body.length,msg.body)
+        );
+    }
+
+    /* we don't need a chunk delay, the fetch takes a bit of time. */
+    function mjpeg(req) {
+        return {"data":sendpic, chunk:true, headers:
+            {"Content-Type": "multipart/x-mixed-replace;boundary=myboundary"}
+        };
+    }
+
+    /****** START SERVER *******/
+    printf("Starting https server\nmjpeg is at http://localhost:8088/mjpeg.jpg\n\n");
+    var serverpid=server.start(
+    {
+        map:
+        {
+            "/":  function(req){ 
+                        return { 
+                            status:302,
+                            headers: {
+                                location:'/mjpeg.jpg'
+                            }
+                        }
+                  },
+            "/mjpeg.jpg": mjpeg
+        }
+    });
+
+Sending mjpeg, using ffmpeg and webcam on Linux:
+
+.. code-block:: javascript
+
+    var server=require("rampart-server");
+    rampart.globalize(rampart.utils);
+
+
+    function sendpic_wcam(req){
+        var file;
+
+        //skip the first callback if first jpeg is not ready.
+        try { file = trim(readFile("test.list",0 ,0, true)); } catch(e){}
+
+        if(file)
+        {
+            req.printf("--myboundary\r\nContent-Type: image/jpeg\r\n\r\n"); //write header
+            req.chunkSend('@'+file); //send jpeg directly from file
+        }
+    }
+
+
+    function start_ffmpeg(){
+        var pid=0;
+        try{ 
+            pid=parseInt(readFile("./ffmpeg.pid")); 
+        } catch(e){}
+        
+        if( pid && kill(pid,0))
+            return; //it's running
+
+        /* save video from webcam at 10 fps*/
+        ret = exec(
+            "ffmpeg", {background:true},
+            '-hide_banner',
+            '-loglevel',           'error',
+            '-f',                  'video4linux2',
+            '-i',                  '/dev/video0',
+            '-vf',                 'fps=10',
+            '-q:v',                '8',
+            '-f',                  'segment',
+            '-segment_time',       '0.0001',
+            '-segment_format',     'singlejpeg',
+            '-segment_wrap',       '4',
+            '-segment_list',       'test.list',
+            '-segment_list_size',  '1',
+            'test%02d.jpg',
+            '-y'
+        );
+        fprintf("./ffmpeg.pid", "%d", ret.pid);
+    }
+
+    function mjpeg(req) {
+        start_ffmpeg();
+
+        return {"data":sendpic_wcam, chunk:true, chunkDelay: 100, headers:
+            {"Content-Type": "multipart/x-mixed-replace;boundary=myboundary"}
+        };
+    }
+
+    /****** START SERVER *******/
+    printf("Starting https server\nmjpeg is at http://localhost:8088/mjpeg.jpg\n\n");
+    var serverpid=server.start(
+    {
+        user:'root',
+        map:
+        {
+            "/":  function(req){ 
+                        return { 
+                            status:302,
+                            headers: {
+                                location:'/mjpeg.jpg'
+                            }
+                        }
+                  },
+            "/mjpeg.jpg": mjpeg
+        }
+    });
+
 Websockets
 ~~~~~~~~~~
 
@@ -1590,11 +1589,12 @@ the same as a normal http callback, with a few exceptions:
 * The mapped callback is run every time the client sends data over
   the websocket.
 
-* Headers and any GET/POST variables are set once upon connection
-  in the ``req`` object.  Subsequent connections supply the same ``req``
-  object every time new data from the client is received.
+* Headers and any GET/POST variables are set once in the ``req`` object and
+  are provided in the callback when the client first connects.  Subsequent
+  callbacks are supplied with the same ``req`` object every time new data
+  from the client is received.
 
-* Replies to the connected clinetmay be returned asynchronously using 
+* Replies to the connected client may be returned asynchronously using 
   :ref:`rampart.event <rampart-main:rampart.event>` functions or
   :ref:`setTimeout <rampart-main:setTimeout()>`.
 
@@ -1797,19 +1797,20 @@ A rampart server script is broken into 3 stages:
 
 
 At "begin code", code is run in the main thread.  Global functions and
-variables declared here will be copied when the server starts.
+variables declared here will be copied to server threads when the server starts.
 
 At "server.start" new threads are created, each beginning its own event loop.
 
 At "end of script" the main thread's event loop starts and "server.start" is
-initialized from within the main thread's event loop.
+initialized from within the main thread's event loop.  The main thread
+accepts requests and forwards them to the least busy server thread.
 
 
 Server.start creates the configured number of threads (as specified or equal
 to the number of cpu cores on the system).  Upon creation several things
 happen:
 
-    * Two duktape contexts are created for each thread.  One for http
+    * Two duktape contexts are created for each thread.  One for HTTP
       requests and one for websockets conversations.
 
     * Each duktape context is a separate JavaScript interpreter.  In
@@ -1821,8 +1822,8 @@ happen:
       main thread's duktape context to all the duktape thread contexts. 
       Local variables are lost.
 
-    * The main thread listens for http connections in its event loop and
-      assigns them to the least busy thread's event loops.
+    * The main thread listens for HTTP connections in its event loop and
+      assigns them to the least busy server thread's event loops.
 
     * The thread event loops accept the http connections and pass the http
       request data to the appropriate duktape context for that thread.  That
@@ -1833,14 +1834,15 @@ happen:
       connections at the same time from within its event loop.
 
     * The duktape context for http requests may be destroyed and recreated
-      upon timeout while the websockets context will always persist.
+      upon timeout. In contrast, the websocket duktape context will always persist.
 
     * Any events or setTimeouts set from within server callbacks are run
       within that thread's event loop.  Events and setTimeouts run outside
       the server (in "begin code" or before "end of script") are run in the
-      main event loop.
+      main event loop.  Certain event data is stored in the main thread so
+      events can be triggered regardless on which thread they reside.
       
-    * Http requests which have a timeout are run from a new thread which can
+    * HTTP requests which have a timeout are run from a new thread which can
       be interrupted.  If the timeout is reached before the callback
       function finishes, the thread is cancelled and the threads duktape
       context is destroyed and recreated in order to serve the next request.
@@ -1865,7 +1867,7 @@ Modules vs Global callback functions:
 
 Return values from server callback function.
 
-    * strings are copied from duktape to the buffer that will be returned to
+    * Strings are copied from duktape to the buffer that will be returned to
       the client.
 
     * Wherever possible, buffers are passed by reference without copy to be

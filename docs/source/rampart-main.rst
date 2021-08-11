@@ -1082,6 +1082,88 @@ Where:
 Return Value:
     ``undefined``
 
+setMetronome()
+""""""""""""""
+
+Similar to `setInterval()`_ except it repeats every ``interval`` milliseconds
+as close to the scheduled time as possible, possibly skipping intervals 
+(aims for the absolute value of ``starttime + count * interval`` and skips
+if past that time).
+
+Usage:
+
+.. code-block:: javascript
+
+   var id = setMetronome(callback, interval);
+
+Where:
+
+* ``callback`` is a :green:`Function` to be run when the elapsed time is reached.
+* ``interval`` is the amount of time in milliseconds between calls to ``callback``.
+
+Return Value:
+    An id which may be used with `clearMetronome()`_\ .
+
+Example:
+
+.. code-block:: javascript
+
+    rampart.globalize(rampart.utils);
+
+    var x=0;
+    var id=setMetronome(function(){
+        var r = Math.random()*2;
+
+        printf("%d %.3f %.3f\n", x++, r, (performance.now()/1000)%100);
+
+        if(x>9)
+            clearMetronome(id);
+
+        sleep(r); //sleep a random amount of time between 0 and 2 seconds
+    },1000);
+
+    /* Output will be similar to:
+
+    0 0.884 45.759
+    1 0.574 46.759
+    2 1.737 47.759
+    3 0.810 49.759
+    4 0.792 50.759
+    5 1.616 51.759
+    6 1.989 53.759
+    7 1.959 55.759
+    8 1.275 57.758
+    9 0.324 59.760
+
+    NOTE: where the sleep time is greater than 1 second, that
+          second is skipped in order to keep the timing.
+    */
+
+clearMetronome()
+"""""""""""""""
+
+Clear a pending `setInterval()`_ timer, breaking the loop.
+
+Usage:
+
+.. code-block:: javascript
+
+   var id = setInterval(callback, interval);
+
+   clearInterval(id);
+
+Where:
+
+* ``id`` is the return value from a call to `setInterval()`_\ .
+
+Return Value:
+    ``undefined``
+
+NOTE:  
+    `clearTimeout()`_, `clearInterval()`_ and `clearMetronome()`_ internally are
+    aliases for the same function.
+
+
 Additional Global Variables and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

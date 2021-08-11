@@ -145,6 +145,8 @@
 <li class="toctree-l3"><a class="reference internal" href="#cleartimeout">clearTimeout()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#setinterval">setInterval()</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#clearinterval">clearInterval()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#setmetronome">setMetronome()</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#clearmetronome">clearMetronome()</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#additional-global-variables-and-functions">Additional Global Variables and Functions</a></li>
@@ -1158,6 +1160,80 @@ function returns.  At that time, the clock will have expired and the
 </ul>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code></p>
+</dd>
+</dl>
+</div>
+<div class="section" id="setmetronome">
+<h3>setMetronome()<a class="headerlink" href="#setmetronome" title="Permalink to this headline">¶</a></h3>
+<p>Similar to <a class="reference internal" href="#setinterval">setInterval()</a> except it repeats every <code class="docutils literal notranslate"><span class="pre">interval</span></code> milliseconds
+as close to the scheduled time as possible, possibly skipping intervals
+(aims for the absolute value of <code class="docutils literal notranslate"><span class="pre">starttime</span> <span class="pre">+</span> <span class="pre">count</span> <span class="pre">*</span> <span class="pre">interval</span></code> and skips
+if past that time).</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">id</span> <span class="o">=</span> <span class="nx">setMetronome</span><span class="p">(</span><span class="nx">callback</span><span class="p">,</span> <span class="nx">interval</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">callback</span></code> is a <span class="green">Function</span> to be run when the elapsed time is reached.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">interval</span></code> is the amount of time in milliseconds between calls to <code class="docutils literal notranslate"><span class="pre">callback</span></code>.</p></li>
+</ul>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>An id which may be used with <a class="reference internal" href="#clearmetronome">clearMetronome()</a>.</p>
+</dd>
+</dl>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">x</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span>
+<span class="kd">var</span> <span class="nx">id</span><span class="o">=</span><span class="nx">setMetronome</span><span class="p">(</span><span class="kd">function</span><span class="p">(){</span>
+    <span class="kd">var</span> <span class="nx">r</span> <span class="o">=</span> <span class="nb">Math</span><span class="p">.</span><span class="nx">random</span><span class="p">()</span><span class="o">*</span><span class="mi">2</span><span class="p">;</span>
+
+    <span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%d %.3f %.3f\n&quot;</span><span class="p">,</span> <span class="nx">x</span><span class="o">++</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="p">(</span><span class="nx">performance</span><span class="p">.</span><span class="nx">now</span><span class="p">()</span><span class="o">/</span><span class="mi">1000</span><span class="p">)</span><span class="o">%</span><span class="mi">100</span><span class="p">);</span>
+
+    <span class="k">if</span><span class="p">(</span><span class="nx">x</span><span class="o">&gt;</span><span class="mi">9</span><span class="p">)</span>
+        <span class="nx">clearMetronome</span><span class="p">(</span><span class="nx">id</span><span class="p">);</span>
+
+    <span class="nx">sleep</span><span class="p">(</span><span class="nx">r</span><span class="p">);</span> <span class="c1">//sleep a random amount of time between 0 and 2 seconds</span>
+<span class="p">},</span><span class="mi">1000</span><span class="p">);</span>
+
+<span class="cm">/* Output will be similar to:</span>
+
+<span class="cm">0 0.884 45.759</span>
+<span class="cm">1 0.574 46.759</span>
+<span class="cm">2 1.737 47.759</span>
+<span class="cm">3 0.810 49.759</span>
+<span class="cm">4 0.792 50.759</span>
+<span class="cm">5 1.616 51.759</span>
+<span class="cm">6 1.989 53.759</span>
+<span class="cm">7 1.959 55.759</span>
+<span class="cm">8 1.275 57.758</span>
+<span class="cm">9 0.324 59.760</span>
+
+<span class="cm">NOTE: where the sleep time is greater than 1 second, that</span>
+<span class="cm">      second is skipped in order to keep the timing.</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="clearmetronome">
+<h3>clearMetronome()<a class="headerlink" href="#clearmetronome" title="Permalink to this headline">¶</a></h3>
+<p>Clear a pending <a class="reference internal" href="#setinterval">setInterval()</a> timer, breaking the loop.</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">id</span> <span class="o">=</span> <span class="nx">setInterval</span><span class="p">(</span><span class="nx">callback</span><span class="p">,</span> <span class="nx">interval</span><span class="p">);</span>
+
+<span class="nx">clearInterval</span><span class="p">(</span><span class="nx">id</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Where:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">id</span></code> is the return value from a call to <a class="reference internal" href="#setinterval">setInterval()</a>.</p></li>
+</ul>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code></p>
+</dd>
+<dt>NOTE:</dt><dd><p><a class="reference internal" href="#cleartimeout">clearTimeout()</a>, <a class="reference internal" href="#clearinterval">clearInterval()</a> and <a class="reference internal" href="#clearmetronome">clearMetronome()</a> internally are
+aliases for the same function.</p>
 </dd>
 </dl>
 </div>
