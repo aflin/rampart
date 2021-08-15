@@ -168,6 +168,577 @@ printf("using openssl 1.1, you can decode the written file with this:\n%s\n",
         '    openssl aes-256-cbc -d -in crypto-copy.js.enc -out crypto-copy.js -p -pbkdf2 -iter 50000 -k "whodathunk"');
 */
 
+
+var JSBI= crypto.JSBI;
+
+var intn_data = [
+  {expected: '-1', n: 3, x: '15'},
+  {expected: '-2', n: 3, x: '14'},
+  {expected: '-3', n: 3, x: '13'},
+  {expected: '-4', n: 3, x: '12'},
+  {expected: '3', n: 3, x: '11'},
+  {expected: '2', n: 3, x: '10'},
+  {expected: '1', n: 3, x: '9'},
+  {expected: '0', n: 3, x: '8'},
+  {expected: '-1', n: 3, x: '7'},
+  {expected: '-2', n: 3, x: '6'},
+  {expected: '-3', n: 3, x: '5'},
+  {expected: '-4', n: 3, x: '4'},
+  {expected: '3', n: 3, x: '3'},
+  {expected: '2', n: 3, x: '2'},
+  {expected: '1', n: 3, x: '1'},
+  {expected: '0', n: 3, x: '0'},
+  {expected: '-1', n: 3, x: '-1'},
+  {expected: '-2', n: 3, x: '-2'},
+  {expected: '-3', n: 3, x: '-3'},
+  {expected: '-4', n: 3, x: '-4'},
+  {expected: '3', n: 3, x: '-5'},
+  {expected: '2', n: 3, x: '-6'},
+  {expected: '1', n: 3, x: '-7'},
+  {expected: '0', n: 3, x: '-8'},
+  {expected: '-1', n: 3, x: '-9'},
+  {expected: '-2', n: 3, x: '-10'},
+  {expected: '-3', n: 3, x: '-11'},
+  {expected: '-4', n: 3, x: '-12'},
+  {expected: '3', n: 3, x: '-13'},
+  {expected: '2', n: 3, x: '-14'},
+  {expected: '1', n: 3, x: '-15'},
+
+  {expected: '254', n: 10, x: '254'},
+  {expected: '255', n: 10, x: '255'},
+  {expected: '256', n: 10, x: '256'},
+  {expected: '257', n: 10, x: '257'},
+  {expected: '510', n: 10, x: '510'},
+  {expected: '511', n: 10, x: '511'},
+  {expected: '-512', n: 10, x: '512'},
+  {expected: '-511', n: 10, x: '513'},
+  {expected: '-2', n: 10, x: '1022'},
+  {expected: '-1', n: 10, x: '1023'},
+  {expected: '0', n: 10, x: '1024'},
+  {expected: '1', n: 10, x: '1025'},
+
+  {expected: '-254', n: 10, x: '-254'},
+  {expected: '-255', n: 10, x: '-255'},
+  {expected: '-256', n: 10, x: '-256'},
+  {expected: '-257', n: 10, x: '-257'},
+  {expected: '-510', n: 10, x: '-510'},
+  {expected: '-511', n: 10, x: '-511'},
+  {expected: '-512', n: 10, x: '-512'},
+  {expected: '511', n: 10, x: '-513'},
+  {expected: '2', n: 10, x: '-1022'},
+  {expected: '1', n: 10, x: '-1023'},
+  {expected: '0', n: 10, x: '-1024'},
+  {expected: '-1', n: 10, x: '-1025'},
+
+  {expected: '0', n: 0, x: '0'},
+  {expected: '0', n: 1, x: '0'},
+  {expected: '0', n: 16, x: '0'},
+  {expected: '0', n: 31, x: '0'},
+  {expected: '0', n: 32, x: '0'},
+  {expected: '0', n: 33, x: '0'},
+  {expected: '0', n: 63, x: '0'},
+  {expected: '0', n: 64, x: '0'},
+  {expected: '0', n: 65, x: '0'},
+  {expected: '0', n: 127, x: '0'},
+  {expected: '0', n: 128, x: '0'},
+  {expected: '0', n: 129, x: '0'},
+
+  {expected: '0', n: 0, x: '42'},
+  {expected: '0', n: 1, x: '42'},
+  {expected: '42', n: 16, x: '42'},
+  {expected: '42', n: 31, x: '42'},
+  {expected: '42', n: 32, x: '42'},
+  {expected: '42', n: 33, x: '42'},
+  {expected: '42', n: 63, x: '42'},
+  {expected: '42', n: 64, x: '42'},
+  {expected: '42', n: 65, x: '42'},
+  {expected: '42', n: 127, x: '42'},
+  {expected: '42', n: 128, x: '42'},
+  {expected: '42', n: 129, x: '42'},
+
+  {expected: '0', n: 0, x: '-42'},
+  {expected: '0', n: 1, x: '-42'},
+  {expected: '-42', n: 16, x: '-42'},
+  {expected: '-42', n: 31, x: '-42'},
+  {expected: '-42', n: 32, x: '-42'},
+  {expected: '-42', n: 33, x: '-42'},
+  {expected: '-42', n: 63, x: '-42'},
+  {expected: '-42', n: 64, x: '-42'},
+  {expected: '-42', n: 65, x: '-42'},
+  {expected: '-42', n: 127, x: '-42'},
+  {expected: '-42', n: 128, x: '-42'},
+  {expected: '-42', n: 129, x: '-42'},
+
+  {expected: '0', n: 0, x: '4294967295'},
+  {expected: '-1', n: 1, x: '4294967295'},
+  {expected: '-1', n: 16, x: '4294967295'},
+  {expected: '-1', n: 31, x: '4294967295'},
+  {expected: '-1', n: 32, x: '4294967295'},
+  {expected: '4294967295', n: 33, x: '4294967295'},
+  {expected: '4294967295', n: 63, x: '4294967295'},
+  {expected: '4294967295', n: 64, x: '4294967295'},
+  {expected: '4294967295', n: 65, x: '4294967295'},
+  {expected: '4294967295', n: 127, x: '4294967295'},
+  {expected: '4294967295', n: 128, x: '4294967295'},
+  {expected: '4294967295', n: 129, x: '4294967295'},
+
+  {expected: '0', n: 0, x: '-4294967295'},
+  {expected: '-1', n: 1, x: '-4294967295'},
+  {expected: '1', n: 16, x: '-4294967295'},
+  {expected: '1', n: 31, x: '-4294967295'},
+  {expected: '1', n: 32, x: '-4294967295'},
+  {expected: '-4294967295', n: 33, x: '-4294967295'},
+  {expected: '-4294967295', n: 63, x: '-4294967295'},
+  {expected: '-4294967295', n: 64, x: '-4294967295'},
+  {expected: '-4294967295', n: 65, x: '-4294967295'},
+  {expected: '-4294967295', n: 127, x: '-4294967295'},
+  {expected: '-4294967295', n: 128, x: '-4294967295'},
+  {expected: '-4294967295', n: 129, x: '-4294967295'},
+
+  {expected: '42', n: 2**32, x: '42'},
+  {expected: '4294967295', n: 2**32, x: '4294967295'},
+  {expected: '4294967296', n: 2**32, x: '4294967296'},
+  {expected: '4294967297', n: 2**32, x: '4294967297'},
+
+  {expected: '0', n: {}, x: '12'},
+  {expected: '0', n: 2.9999, x: '12'},
+  {expected: '-4', n: 3.1234, x: '12'},
+
+  {expected: '-4', n: 3, x: '12'},
+  {expected: '0x123456789abcdef', n: 64, x: '0xabcdef0123456789abcdef'},
+
+  // Regression test for crbug.com/v8/8426.
+  {expected: '-0x8000000000000000', n: 64, x: '-0x8000000000000000'},
+];
+
+var uintn_data = [
+  {expected: '7', n: 3, x: '15'},
+  {expected: '6', n: 3, x: '14'},
+  {expected: '5', n: 3, x: '13'},
+  {expected: '4', n: 3, x: '12'},
+  {expected: '3', n: 3, x: '11'},
+  {expected: '2', n: 3, x: '10'},
+  {expected: '1', n: 3, x: '9'},
+  {expected: '0', n: 3, x: '8'},
+  {expected: '7', n: 3, x: '7'},
+  {expected: '6', n: 3, x: '6'},
+  {expected: '5', n: 3, x: '5'},
+  {expected: '4', n: 3, x: '4'},
+  {expected: '3', n: 3, x: '3'},
+  {expected: '2', n: 3, x: '2'},
+  {expected: '1', n: 3, x: '1'},
+  {expected: '0', n: 3, x: '0'},
+  {expected: '7', n: 3, x: '-1'},
+  {expected: '6', n: 3, x: '-2'},
+  {expected: '5', n: 3, x: '-3'},
+  {expected: '4', n: 3, x: '-4'},
+  {expected: '3', n: 3, x: '-5'},
+  {expected: '2', n: 3, x: '-6'},
+  {expected: '1', n: 3, x: '-7'},
+  {expected: '0', n: 3, x: '-8'},
+  {expected: '7', n: 3, x: '-9'},
+  {expected: '6', n: 3, x: '-10'},
+  {expected: '5', n: 3, x: '-11'},
+  {expected: '4', n: 3, x: '-12'},
+  {expected: '3', n: 3, x: '-13'},
+  {expected: '2', n: 3, x: '-14'},
+  {expected: '1', n: 3, x: '-15'},
+
+  {expected: '254', n: 10, x: '254'},
+  {expected: '255', n: 10, x: '255'},
+  {expected: '256', n: 10, x: '256'},
+  {expected: '257', n: 10, x: '257'},
+  {expected: '510', n: 10, x: '510'},
+  {expected: '511', n: 10, x: '511'},
+  {expected: '512', n: 10, x: '512'},
+  {expected: '513', n: 10, x: '513'},
+  {expected: '1022', n: 10, x: '1022'},
+  {expected: '1023', n: 10, x: '1023'},
+  {expected: '0', n: 10, x: '1024'},
+  {expected: '1', n: 10, x: '1025'},
+
+  {expected: '770', n: 10, x: '-254'},
+  {expected: '769', n: 10, x: '-255'},
+  {expected: '768', n: 10, x: '-256'},
+  {expected: '767', n: 10, x: '-257'},
+  {expected: '514', n: 10, x: '-510'},
+  {expected: '513', n: 10, x: '-511'},
+  {expected: '512', n: 10, x: '-512'},
+  {expected: '511', n: 10, x: '-513'},
+  {expected: '2', n: 10, x: '-1022'},
+  {expected: '1', n: 10, x: '-1023'},
+  {expected: '0', n: 10, x: '-1024'},
+  {expected: '1023', n: 10, x: '-1025'},
+
+  {expected: '0', n: 0, x: '0'},
+  {expected: '0', n: 1, x: '0'},
+  {expected: '0', n: 16, x: '0'},
+  {expected: '0', n: 31, x: '0'},
+  {expected: '0', n: 32, x: '0'},
+  {expected: '0', n: 33, x: '0'},
+  {expected: '0', n: 63, x: '0'},
+  {expected: '0', n: 64, x: '0'},
+  {expected: '0', n: 65, x: '0'},
+  {expected: '0', n: 127, x: '0'},
+  {expected: '0', n: 128, x: '0'},
+  {expected: '0', n: 129, x: '0'},
+
+  {expected: '0', n: 0, x: '42'},
+  {expected: '0', n: 1, x: '42'},
+  {expected: '42', n: 16, x: '42'},
+  {expected: '42', n: 31, x: '42'},
+  {expected: '42', n: 32, x: '42'},
+  {expected: '42', n: 33, x: '42'},
+  {expected: '42', n: 63, x: '42'},
+  {expected: '42', n: 64, x: '42'},
+  {expected: '42', n: 65, x: '42'},
+  {expected: '42', n: 127, x: '42'},
+  {expected: '42', n: 128, x: '42'},
+  {expected: '42', n: 129, x: '42'},
+
+  {expected: '0', n: 0, x: '-42'},
+  {expected: '0', n: 1, x: '-42'},
+  {expected: '65494', n: 16, x: '-42'},
+  {expected: '2147483606', n: 31, x: '-42'},
+  {expected: '4294967254', n: 32, x: '-42'},
+  {expected: '8589934550', n: 33, x: '-42'},
+  {expected: '9223372036854775766', n: 63, x: '-42'},
+  {expected: '18446744073709551574', n: 64, x: '-42'},
+  {expected: '36893488147419103190', n: 65, x: '-42'},
+  {expected: '170141183460469231731687303715884105686', n: 127, x: '-42'},
+  {expected: '340282366920938463463374607431768211414', n: 128, x: '-42'},
+  {expected: '680564733841876926926749214863536422870', n: 129, x: '-42'},
+
+  {expected: '0', n: 0, x: '4294967295'},
+  {expected: '1', n: 1, x: '4294967295'},
+  {expected: '65535', n: 16, x: '4294967295'},
+  {expected: '2147483647', n: 31, x: '4294967295'},
+  {expected: '4294967295', n: 32, x: '4294967295'},
+  {expected: '4294967295', n: 33, x: '4294967295'},
+  {expected: '4294967295', n: 63, x: '4294967295'},
+  {expected: '4294967295', n: 64, x: '4294967295'},
+  {expected: '4294967295', n: 65, x: '4294967295'},
+  {expected: '4294967295', n: 127, x: '4294967295'},
+  {expected: '4294967295', n: 128, x: '4294967295'},
+  {expected: '4294967295', n: 129, x: '4294967295'},
+
+  {expected: '0', n: 0, x: '-4294967295'},
+  {expected: '1', n: 1, x: '-4294967295'},
+  {expected: '1', n: 16, x: '-4294967295'},
+  {expected: '1', n: 31, x: '-4294967295'},
+  {expected: '1', n: 32, x: '-4294967295'},
+  {expected: '4294967297', n: 33, x: '-4294967295'},
+  {expected: '9223372032559808513', n: 63, x: '-4294967295'},
+  {expected: '18446744069414584321', n: 64, x: '-4294967295'},
+  {expected: '36893488143124135937', n: 65, x: '-4294967295'},
+  {expected: '170141183460469231731687303711589138433', n: 127, x: '-4294967295'},
+  {expected: '340282366920938463463374607427473244161', n: 128, x: '-4294967295'},
+  {expected: '680564733841876926926749214859241455617', n: 129, x: '-4294967295'},
+
+  {expected: '42', n: 2**32, x: '42'},
+  {expected: '4294967295', n: 2**32, x: '4294967295'},
+  {expected: '4294967296', n: 2**32, x: '4294967296'},
+  {expected: '4294967297', n: 2**32, x: '4294967297'},
+
+  {expected: '0x7234567812345678', n: 63, x: '0xf234567812345678'},
+
+  {expected: '0', n: {}, x: '12'},
+  {expected: '0', n: 2.9999, x: '12'},
+  {expected: '4', n: 3.1234, x: '12'},
+
+  {expected: '4', n: 3, x: '12'},
+
+  // crbug.com/936506
+  {expected: '1', n: 15, x: '0x100000001'},
+  {expected: '1', n: 15, x: '0x10000000000000001'},
+];
+
+for (var i = 0; i<intn_data.length; i++) {
+  var test = intn_data[i]
+
+  var x = JSBI.BigInt(test.x);
+
+  var expected = JSBI.BigInt(test.expected);
+  var result = JSBI.asIntN(test.n, x);
+
+  testFeature(`BigInt asIntN ${i+1}`,JSBI.equal(expected, result));
+
+}
+for (var i = 0; i<uintn_data.length; i++) {
+  var test = uintn_data[i];
+
+  var x = JSBI.BigInt(test.x);
+  var expected = JSBI.BigInt(test.expected);
+  var result = JSBI.asUintN(test.n, x);
+
+  testFeature(`BigInt asUintN ${i+1}`,JSBI.equal(expected, result));
+}
+
+
+// tests.mjs
+{
+  // Test the example from the README.
+  var max = JSBI.BigInt(Number.MAX_SAFE_INTEGER);
+  // → 9007199254740991
+  var other = JSBI.BigInt(2);
+  var result = JSBI.add(max, other);
+  // → 9007199254740993
+  testFeature("BigInt MAX_SAFE_INTEGER string", '9007199254740993' === result.toString());
+  // Test `JSBI.toNumber` as well.
+  testFeature("BigIntMAX_SAFE_INTEGER number", 9007199254740993 === JSBI.toNumber(result));
+
+  // Corner cases near the single digit threshold.
+  testFeature("BigInt Corner Case", JSBI.LT(JSBI.BigInt('0x100000000'), 0x100000001));
+  testFeature("BigInt Corner Case", JSBI.EQ(JSBI.BigInt('0xFFFFFFFF'), 0xFFFFFFFF));
+  testFeature("BigInt Corner Case", JSBI.EQ(JSBI.BigInt('0x7FFFFFFF'), 0x7FFFFFFF));
+  testFeature("BigInt Corner Case", JSBI.EQ(JSBI.BigInt(0x7FFFFFFF), 0x7FFFFFFF));
+  testFeature("BigInt Corner Case", JSBI.EQ(JSBI.BigInt(-0x7FFFFFFF), -0x7FFFFFFF));
+  testFeature("BigInt Corner Case", JSBI.LT(JSBI.BigInt(0x7FFFFFF0), 0x7FFFFFFF));
+  testFeature("BigInt Corner Case", JSBI.GT(JSBI.BigInt(-0x7FFFFFF0), -0x7FFFFFFF));
+
+  // Regression test for issue #63.
+  testFeature("BigInt exponential to bignum",
+      JSBI.BigInt(4.4384296245614243e+42).toString() ===
+      '4438429624561424320047307980392507864252416');
+  var str = '3361387880631608742970259577528807057005903';
+  console.assert(JSBI.toNumber(JSBI.BigInt(str)) === 3.361387880631609e+42);
+}
+
+var TESTS = [
+  {
+    operation: 'add',
+    a: '-0xF72AAE64D54951CAE560D9B4531CE6CF02426F8CD601B77',
+    b: '-0xF3CF5EDD759DBCC7449962CDB52AE0295BE7306D51555C70',
+    expected: '-0x1034209C3C2F251E3F2EF7068FA5CAE964C0B57661EB577E7',
+  },
+  { // https://github.com/GoogleChromeLabs/jsbi/pull/14
+    operation: 'remainder',
+    a: '0x62A49213A5CD1793CB4518A12CA4FB5F3AB6DBD8B465D0D86975CEBDA6B6093',
+    b: '0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',
+    expected: '0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE',
+  },
+  { // https://github.com/GoogleChromeLabs/jsbi/pull/14#issuecomment-439484605
+    operation: 'remainder',
+    a: '0x10000000000000000',
+    b: '0x100000001',
+    expected: '0x1',
+  },
+  { 
+    operation: 'remainder',
+    a: '-123791497293754987123',
+    b: '-123',
+    expected: '-40',
+  },
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseAnd',
+    a: '0b10000010001000100010001000100010001000100010001000100010001000100',
+    b: '-0b10000000000000000000000000000000000000000000000000000000000000001',
+    expected: '0b10001000100010001000100010001000100010001000100010001000100',
+  },
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseAnd',
+    a: '-0b10000010001000100010001000100010001000100010001000100010001000100',
+    b: '-0b10000000000000000000000000000000000000000000000000000000000000001',
+    expected: '-18754189808271377476'
+  },
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseAnd',
+    b: '-0b10000010001000100010001000100010001000100010001000100010001000100',
+    a: '-0b10000000000000000000000000000000000000000000000000000000000000001',
+    expected: '-18754189808271377476'
+  },
+
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseAnd',
+    b: '-0b10000010001000100010001000100010001000100010001000100010001000100',
+    a: '-0b10000000000000000000000000001',
+    expected: '-18754189808539812932'
+  },
+
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseXor',
+    a: '0',
+    b: '-0b1111111111111111111111111111111111111111111111111111111111111111',
+    expected: '-0b1111111111111111111111111111111111111111111111111111111111111111',
+  },
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseXor',
+    b: '0',
+    a: '-0b1111111111111111111111111111111111111111111111111111111111111111',
+    expected: '-0b1111111111111111111111111111111111111111111111111111111111111111',
+  },
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseXor',
+    a: '0',
+    b: '0b1111111111111111111111111111111111111111111111111111111111111111',
+    expected: '0b1111111111111111111111111111111111111111111111111111111111111111',
+  },
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseXor',
+    a: '-1',
+    b: '0b1111111111111111111111111111111111111111111111111111111111111111',
+    expected: '-0b10000000000000000000000000000000000000000000000000000000000000000',
+  },
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseXor',
+    b: '-1',
+    a: '0b1111111111111111111111111111111111111111111111111111111111111111',
+    expected: '-0b10000000000000000000000000000000000000000000000000000000000000000',
+  },
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseXor',
+    a: '-1',
+    b: '-0b1111111111111111111111111111111111111111111111111111111111111111',
+    expected: '0b1111111111111111111111111111111111111111111111111111111111111110',
+  },
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseXor',
+    b: '-1',
+    a: '-0b1111111111111111111111111111111111111111111111111111111111111111',
+    expected: '0b1111111111111111111111111111111111111111111111111111111111111110',
+  },
+
+
+
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseXor',
+    a: '1',
+    b: '0b11111111',
+    expected: '0b11111110',
+  },
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseXor',
+    a: '-1',
+    b: '-0b11111111',
+    expected: '0b11111110',
+  },
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseXor',
+    a: '-1',
+    b: '0b11111111',
+    expected: '-0b100000000',
+  },
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseXor',
+    a: '1',
+    b: '-0b11111111',
+    expected: '-0b100000000',
+  },
+  { // https://github.com/GoogleChromeLabs/jsbi/issues/44#issue-630518844
+    operation: 'bitwiseXor',
+    a: '165',
+    b: '-128',
+    expected: '-219',
+  },
+
+
+
+  {  // https://github.com/GoogleChromeLabs/jsbi/issues/57
+    operation: 'signedRightShift',
+    a: '-0xFFFFFFFFFFFFFFFF',
+    b: '32',
+    expected: '-0x100000000',
+  },
+
+  {
+    operation: 'bitwiseOr',
+    a: '1',
+    b: '0b11111111',
+    expected: '0b11111111',
+  },
+  {
+    operation: 'bitwiseOr',
+    a: '-1',
+    b: '0b11111111',
+    expected: '-0b1',
+  },
+  {
+    operation: 'bitwiseOr',
+    a: '1',
+    b: '-0b11111111',
+    expected: '-0255',
+  },
+  {
+    operation: 'bitwiseOr',
+    a: '0',
+    b: '-0b11111111',
+    expected: '-255',
+  },
+  {
+    operation: 'bitwiseOr',
+    a: '61234',
+    b: '0b1010101010',
+    expected: '61370',
+  },
+  {
+    operation: 'bitwiseOr',
+    a: '-61234',
+    b: '-0b1010101010',
+    expected: '-546',
+  },
+  {
+    operation: 'bitwiseOr',
+    a: '61234',
+    b: '-0b1010101010',
+    expected: '-138',
+  },
+  {
+    operation: 'bitwiseOr',
+    a: '-61234',
+    b: '0b1010101010',
+    expected: '-60690',
+  },
+
+
+];
+
+// https://github.com/GoogleChromeLabs/jsbi/issues/36
+(function() {
+  var VALID = ['123', ' 123 ', '   123   '];
+  var INVALID = ['x123', 'x 123', ' 123x', '123 x', '123  xx', '123 ?a',
+                   '-0o0', /* wont fix: '-0x0',  '-0b0', '-0x1'*/];
+  for (var i=0; i<VALID.length; i++) {
+    v=VALID[i]
+    var result = JSBI.BigInt(v);
+    testFeature(`BigInt valid string ${i+1}`,
+      JSBI.equal(result, JSBI.BigInt(123)));
+  }
+
+  for (var i=0; i<INVALID.length; i++) {
+    var inv=INVALID[i];
+    var isInvalid=0;
+    try {
+      var result = JSBI.BigInt(inv);
+    } catch (exception) {
+      isInvalid=1;
+    }
+    testFeature(`BigInt invalid string`, isInvalid);
+  }
+})();
+
+var zero = JSBI.BigInt(0);
+
+function hex(jsb) {
+  if (JSBI.lessThan(jsb, zero)) {
+    return `-0x${ jsb.toString(16).slice(1).toUpperCase() }`;
+  }
+  return `0x${ jsb.toString(16).toUpperCase() }`;
+}
+
+for (var i = 0; i<TESTS.length; i++){
+  var test = TESTS[i];
+  var operation = test.operation;
+  var a = JSBI.BigInt(test.a);
+  var b = JSBI.BigInt(test.b);
+  var expected = JSBI.BigInt(test.expected);
+  var result = JSBI[operation](a, b);
+
+  testFeature(`BigInt op test ${i+1} - ${operation}`,
+    JSBI.equal(result, expected) );
+
+}
+
+
 function testmodes()
 {
   printf("working modes:\n");
@@ -266,3 +837,4 @@ function testmodes()
       printf(">>>>> FAILED <<<<<\n");
   }
 }
+
