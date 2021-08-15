@@ -485,7 +485,7 @@ for (var i = 0; i<uintn_data.length; i++) {
   // → 9007199254740993
   testFeature("BigInt MAX_SAFE_INTEGER string", '9007199254740993' === result.toString());
   // Test `JSBI.toNumber` as well.
-  testFeature("BigIntMAX_SAFE_INTEGER number", 9007199254740993 === JSBI.toNumber(result));
+  testFeature("BigInt MAX_SAFE_INTEGER number", 9007199254740993 === JSBI.toNumber(result));
 
   // Corner cases near the single digit threshold.
   testFeature("BigInt Corner Case", JSBI.LT(JSBI.BigInt('0x100000000'), 0x100000001));
