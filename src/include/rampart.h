@@ -28,6 +28,11 @@ extern "C"
     (void) duk_throw(ctx);\
 } while(0)
 
+#define RP_SYNTAX_THROW(ctx,...) do {\
+    duk_push_error_object(ctx, DUK_ERR_SYNTAX_ERROR, __VA_ARGS__);\
+    (void) duk_throw(ctx);\
+} while(0)
+
 #define REQUIRE_STRING(ctx,idx,...) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_string((ctx),i)) {\

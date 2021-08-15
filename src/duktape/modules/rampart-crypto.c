@@ -2106,6 +2106,1366 @@ duk_ret_t duk_rsa_pub_encrypt(duk_context *ctx)
     return 1;
 }
 
+duk_ret_t duk_rp_bigint_tostring(duk_context *ctx);
+duk_ret_t duk_rp_bigint_tosignedstring(duk_context *ctx);
+
+#define get_bn(ctx, bnp, idx) do {\
+    if(!duk_get_prop_string(ctx, idx, DUK_HIDDEN_SYMBOL("bn")))\
+        RP_THROW(ctx, "bigint: argument #%d is not a BigInt",(int)idx+1);\
+    bnp = duk_get_pointer(ctx, -1);\
+    duk_pop(ctx);\
+} while (0)
+
+#define get_bn_or_i(ctx, bnp, idx) ({\
+    int64_t r=0;\
+    if(duk_is_number(ctx, idx))\
+        r=(int64_t)duk_get_int(ctx, idx);\
+    else if(duk_get_prop_string(ctx, idx, DUK_HIDDEN_SYMBOL("bn")))\
+        bnp = duk_get_pointer(ctx, -1);\
+    else\
+        RP_THROW(ctx, "bigint: argument #%d is not a BigInt",(int)idx+1);\
+    duk_pop(ctx);\
+    r;\
+})
+
+duk_ret_t duk_rp_bigint_finalizer(duk_context *ctx)
+{
+    BIGNUM *bn;
+
+    if(duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("bn")))
+    {
+        bn=duk_get_pointer(ctx, -1);
+        BN_free(bn);
+    }
+    duk_pop(ctx);
+    return 0;
+}
+
+static const char * hex2binmap[] = {
+    "0000", "0001", "0010", "0011",
+    "0100", "0101", "0110", "0111",
+    "1000", "1001", "1010", "1011",
+    "1100", "1101", "1110", "1111"
+};
+
+static char *hextobin(char *hex)
+{
+    size_t len, outsz, begsz;
+    char *ret=NULL, *out, *in;
+    int firstbit=0;
+
+    if(!hex)
+        return NULL;
+
+    len = strlen(hex);
+
+    if( len > 2 && !strncasecmp("0x", hex, 2) )
+        begsz = 2;
+    else if ( len > 3 && !strncasecmp("-0x", hex, 3) )
+        begsz = 3;
+    else if(*hex=='-')
+        begsz = 1;
+    else
+        begsz=0;
+
+    outsz = (len-begsz)*4 + 1 +begsz;
+
+    REMALLOC(ret, outsz);
+    
+    out=ret;
+    in=hex;
+
+    if(begsz)
+    {
+        if(begsz == 3 || begsz == 1)
+            *out++ = *in++;
+        if(begsz > 1)
+        {
+            *out++='0';
+            *out++='b';
+            in+=2;
+        }
+    }
+
+    if(hex[begsz]=='0' && hex[begsz+1]=='\0')
+    {
+        *out++='0';
+        *out++='\0';
+        return ret;
+    }
+
+    while(*in)
+    {
+        int c,i;
+
+        if(*in < 58 ) c= *in - 48;
+        else if (*in < 71) c = *in - 55;
+        else c = *in - 87;
+        
+        if(c < 0 || c > 15)
+        {
+            free(ret);
+            return NULL;
+        }
+
+        if(!firstbit)//strip leading 0s
+        {
+            for(i=0;i<4;i++)
+            {
+                if(firstbit || hex2binmap[c][i]=='1')
+                {
+                    *out++=hex2binmap[c][i];
+                    firstbit=1;
+                }
+            }
+        }
+        else
+        {
+            for(i=0;i<4;i++)
+                *out++=hex2binmap[c][i];
+        }
+        in++;
+    }    
+    *out='\0';
+
+    return ret;
+}
+
+static void push_bn(duk_context *ctx, BIGNUM *bn)
+{
+    duk_push_object(ctx);
+    duk_push_pointer(ctx, bn);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("bn"));
+    duk_push_c_function(ctx, duk_rp_bigint_finalizer, 1);
+    duk_set_finalizer(ctx, -2);
+    duk_push_c_function(ctx, duk_rp_bigint_tostring, 1);
+    duk_put_prop_string(ctx, -2, "toString");
+    duk_push_c_function(ctx, duk_rp_bigint_tosignedstring, 1);
+    duk_put_prop_string(ctx, -2, "toSignedString");
+}
+
+char * bintohex(char *bin)
+{
+    size_t len, outsz, begsz, i;
+    char *ret=NULL;
+    char *s;
+    int bit, val=0;
+
+    if(!bin)
+        return NULL;
+
+    len = strlen(bin);
+
+    if( len > 2 && !strncasecmp("0b", bin, 2) )
+        begsz = 2;
+    else if ( len > 3 && !strncasecmp("-0b", bin, 3) )
+        begsz = 3;
+    else
+        return NULL;
+
+    s=&bin[len-1];
+
+    len -= begsz;
+
+    outsz = (len-1)/4 + begsz + 2;
+
+    if(!( (outsz-begsz) % 2 ))
+        outsz++;
+
+    REMALLOC(ret, outsz);
+
+    i=0;
+    val=0;
+    outsz--;
+    ret[outsz--]='\0';
+
+    while (len--) 
+    {
+        bit = i%4;
+
+        if( i && !bit )
+        {
+            ret[outsz--]=(char)( ( (val>9) ? 87 : 48 ) + val);
+            val=0;
+        }
+
+        if(*s == '1')
+            val |= 1 << bit;
+        else if(*s != '0')
+        {
+            free(ret);
+            return NULL;
+        }
+        s--;
+        i++;
+    }
+
+    if( i )
+        ret[outsz--]=(char)( ( (val>9) ? 87 : 48 ) + val);
+
+    if(outsz != begsz-1)
+        ret[outsz--]='0';
+
+    ret[outsz--]='X';
+    ret[outsz--]='0';
+
+    if( begsz == 3 )
+        ret[outsz--]='-';
+
+    return ret;
+}
+
+static inline BIGNUM * new_bn(duk_context *ctx, const char *cnum, int make_object)
+{
+    BIGNUM *bn=BN_new();
+    char *num = (char *)cnum;
+    if(num)
+    {
+        int nchar=0, len;
+        char *s=num;
+
+        if(*s=='-') s++;
+
+        if( *s=='0' && (s[1]=='b'||s[1]=='B'||s[1]=='x'||s[1]=='X') )
+        {
+            char *freeme = NULL;
+
+            if(s[1]=='b' || s[1]=='B' )
+            {
+                num = bintohex(num);
+                freeme=num;
+            }
+
+            if(!num)
+            {
+                BN_free(bn);
+                RP_SYNTAX_THROW(ctx, "bigint: invalid value");
+            }
+
+            if(*num == '-'){
+                if(!freeme) //num is currently a const char
+                {
+                    freeme = strdup(num);
+                    num = freeme;
+                }
+
+                num+=2;
+                *num = '-';
+            }
+            else
+                num+=2;
+
+            if(!(nchar=BN_hex2bn(&bn, num)))
+            {
+                if(freeme)
+                    free(freeme);
+                BN_free(bn);
+                RP_SYNTAX_THROW(ctx, "bigint: invalid value");
+            }
+            len = strlen(num);
+
+            if(freeme)
+                free(freeme);
+        }
+        else
+        {
+            if(!(nchar=BN_dec2bn(&bn, num)))
+            {
+                BN_free(bn);
+                RP_SYNTAX_THROW(ctx, "bigint: invalid value");
+            }
+            len = strlen(num);
+        }
+
+        if(len != nchar)
+            RP_SYNTAX_THROW(ctx, "bigint: invalid value");
+
+    }
+
+    if(make_object)
+        push_bn(ctx, bn);
+
+    return bn;
+}
+
+duk_ret_t _bigint(duk_context *ctx)
+{
+    if(duk_is_number(ctx,0))
+    {
+        double numval = duk_get_number(ctx, 0);
+        duk_push_sprintf(ctx, "%.0f",numval);
+        duk_replace(ctx, 0);
+    }
+
+    if(duk_is_string(ctx, 0))
+    {
+        duk_trim(ctx, 0);
+        (void)new_bn(ctx, duk_get_string(ctx, 0),1);
+    }
+    else
+        goto bnerr;
+
+    return 1;
+
+    bnerr:
+    RP_SYNTAX_THROW(ctx, "bigint: invalid value");
+    return 0;
+}
+
+#define BNOP_ADD 0
+#define BNOP_SUB 1
+#define BNOP_MUL 2
+#define BNOP_DIV 3
+#define BNOP_MOD 4
+#define BNOP_EXP 5
+#define BNOP_NEG 6
+static duk_ret_t duk_rp_bigint_op(duk_context *ctx, int op)
+{
+    BIGNUM *bna, *bnb=NULL, *bnr;
+
+    get_bn(ctx, bna, 0);
+    if(duk_get_top(ctx)>1)
+        get_bn(ctx, bnb, 1);
+
+    bnr = new_bn(ctx,NULL,1);
+    switch(op)
+    {
+        case BNOP_ADD:
+            BN_add(bnr, bna, bnb);
+            break;
+        case BNOP_SUB:
+            BN_sub(bnr, bna, bnb);
+            break;        
+        case BNOP_MUL:
+        {
+            BN_CTX *tmp=BN_CTX_new();
+            BN_mul(bnr, bna, bnb, tmp);
+            BN_CTX_free(tmp);
+            break;        
+        }
+        case BNOP_DIV:
+        {
+            BN_CTX *tmp=BN_CTX_new();
+            BN_div(bnr, NULL, bna, bnb, tmp);
+            BN_CTX_free(tmp);
+            break;        
+        }
+        case BNOP_MOD:
+        {
+            BN_CTX *tmp=BN_CTX_new();
+            BN_div(NULL, bnr, bna, bnb, tmp);
+            BN_CTX_free(tmp);
+            break;        
+        }
+        case BNOP_EXP:
+        {
+            BN_CTX *tmp=BN_CTX_new();
+            BN_exp(bnr, bna, bnb, tmp);
+            BN_CTX_free(tmp);
+            break;        
+        }
+        case BNOP_NEG:
+        {
+            BN_CTX *tmp=BN_CTX_new();
+            bnb = BN_new();
+            BN_dec2bn(&bnb, "-1"); 
+            BN_mul(bnr, bna, bnb, tmp);
+            BN_CTX_free(tmp);
+            BN_free(bnb);
+            break;        
+        }
+    }
+    return 1;
+}
+
+duk_ret_t duk_rp_bigint_add(duk_context *ctx)
+{
+    return duk_rp_bigint_op(ctx, BNOP_ADD);
+}
+duk_ret_t duk_rp_bigint_sub(duk_context *ctx)
+{
+    return duk_rp_bigint_op(ctx, BNOP_SUB);
+}
+duk_ret_t duk_rp_bigint_mul(duk_context *ctx)
+{
+    return duk_rp_bigint_op(ctx, BNOP_MUL);
+}
+duk_ret_t duk_rp_bigint_div(duk_context *ctx)
+{
+    return duk_rp_bigint_op(ctx, BNOP_DIV);
+}
+duk_ret_t duk_rp_bigint_mod(duk_context *ctx)
+{
+    return duk_rp_bigint_op(ctx, BNOP_MOD);
+}
+duk_ret_t duk_rp_bigint_exp(duk_context *ctx)
+{
+    return duk_rp_bigint_op(ctx, BNOP_EXP);
+}
+duk_ret_t duk_rp_bigint_neg(duk_context *ctx)
+{
+    return duk_rp_bigint_op(ctx, BNOP_NEG);
+}
+
+#define BNCMP_EQL 0
+#define BNCMP_NEQ 1
+#define BNCMP_LT  2
+#define BNCMP_LTE 3
+#define BNCMP_GT  4
+#define BNCMP_GTE 5
+
+static duk_ret_t duk_rp_bigint_cmp(duk_context *ctx, int cmp)
+{
+    BIGNUM *bna, *bnb;
+    int res;
+
+    get_bn(ctx, bna, 0);
+    get_bn(ctx, bnb, 1);
+
+    res = BN_cmp(bna, bnb);
+
+    switch (cmp)
+    {
+        case BNCMP_EQL:
+            if(res)
+                duk_push_false(ctx);
+            else
+                duk_push_true(ctx);
+            break;
+        case BNCMP_NEQ:
+            if(!res)
+                duk_push_false(ctx);
+            else
+                duk_push_true(ctx);
+            break;
+        case BNCMP_LT:
+            if(res>-1)
+                duk_push_false(ctx);
+            else
+                duk_push_true(ctx);
+            break;
+        case BNCMP_LTE:
+            if(res>0)
+                duk_push_false(ctx);
+            else
+                duk_push_true(ctx);
+            break;
+        case BNCMP_GT:
+            if(res<1)
+                duk_push_false(ctx);
+            else
+                duk_push_true(ctx);
+            break;
+        case BNCMP_GTE:
+            if(res<0)
+                duk_push_false(ctx);
+            else
+                duk_push_true(ctx);
+            break;
+    }
+    return 1;            
+}
+
+duk_ret_t duk_rp_bigint_eql(duk_context *ctx)
+{
+    return duk_rp_bigint_cmp(ctx, BNCMP_EQL);
+}
+duk_ret_t duk_rp_bigint_neq(duk_context *ctx)
+{
+    return duk_rp_bigint_cmp(ctx, BNCMP_NEQ);
+}
+duk_ret_t duk_rp_bigint_lt(duk_context *ctx)
+{
+    return duk_rp_bigint_cmp(ctx, BNCMP_LT);
+}
+duk_ret_t duk_rp_bigint_lte(duk_context *ctx)
+{
+    return duk_rp_bigint_cmp(ctx, BNCMP_LTE);
+}
+duk_ret_t duk_rp_bigint_gt(duk_context *ctx)
+{
+    return duk_rp_bigint_cmp(ctx, BNCMP_GT);
+}
+duk_ret_t duk_rp_bigint_gte(duk_context *ctx)
+{
+    return duk_rp_bigint_cmp(ctx, BNCMP_GTE);
+}
+
+//returns 1 if coerced to bigint and bigint replaces whatever is at idx
+//returns 0 if no coercion possible and stack remains unchanged
+static int bigint_coerce(duk_context *ctx, duk_idx_t idx)
+{
+    if( duk_is_object(ctx, idx) )
+    { 
+        if (duk_has_prop_string(ctx, idx, DUK_HIDDEN_SYMBOL("bn")) )
+        {
+            return 1;
+        }
+        return 0;
+    }
+
+    if(duk_is_number(ctx, idx))
+    {
+        double numval = duk_get_number(ctx, idx);
+        duk_push_sprintf(ctx, "%.0f",numval);
+        duk_replace(ctx, idx);
+    }
+
+    if(duk_is_string(ctx, idx))
+    {
+        duk_trim(ctx, idx);
+        new_bn(ctx, duk_get_string(ctx, idx), 1);
+        duk_replace(ctx, idx);
+        return 1;
+    }
+
+    return 0;
+}
+
+#define DOCOERCE \
+if(!bigint_coerce(ctx, 0))\
+{\
+    duk_push_false(ctx);\
+    return 1;\
+}\
+if(!bigint_coerce(ctx, 1))\
+{\
+    duk_push_false(ctx);\
+    return 1;\
+}
+
+
+duk_ret_t duk_rp_bigint_Eql(duk_context *ctx)
+{
+    DOCOERCE
+    return duk_rp_bigint_cmp(ctx, BNCMP_EQL);
+}
+duk_ret_t duk_rp_bigint_Neq(duk_context *ctx)
+{
+    DOCOERCE
+    return duk_rp_bigint_cmp(ctx, BNCMP_NEQ);
+}
+duk_ret_t duk_rp_bigint_Lt(duk_context *ctx)
+{
+    DOCOERCE
+    return duk_rp_bigint_cmp(ctx, BNCMP_LT);
+}
+duk_ret_t duk_rp_bigint_Lte(duk_context *ctx)
+{
+    DOCOERCE
+    return duk_rp_bigint_cmp(ctx, BNCMP_LTE);
+}
+duk_ret_t duk_rp_bigint_Gt(duk_context *ctx)
+{
+    DOCOERCE
+    return duk_rp_bigint_cmp(ctx, BNCMP_GT);
+}
+duk_ret_t duk_rp_bigint_Gte(duk_context *ctx)
+{
+    DOCOERCE
+    return duk_rp_bigint_cmp(ctx, BNCMP_GTE);
+}
+
+duk_ret_t duk_rp_bigint_Add(duk_context *ctx)
+{
+    int aisbi=0, bisbi=0;
+    duk_idx_t bi_idx=0;
+
+    if(duk_is_object(ctx, 0) && duk_has_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("bn")))
+        aisbi=1;
+    if(duk_is_object(ctx, 1) && duk_has_prop_string(ctx, 1, DUK_HIDDEN_SYMBOL("bn")))
+        bisbi=1;
+    
+    if (aisbi && bisbi)
+        return duk_rp_bigint_add(ctx);
+    else if (aisbi || bisbi)
+    {
+        if(bisbi)
+            bi_idx=1;
+        duk_push_string(ctx, "toString");
+        duk_call_prop(ctx, bi_idx, 0);
+        duk_replace(ctx, bi_idx);
+    }        
+    duk_concat(ctx, 2);
+    return 1;
+}
+
+
+static duk_ret_t doshift(duk_context *ctx, BIGNUM *bn, int64_t nshift)
+{
+    BIGNUM *bnr = BN_dup(bn),
+           *bn_neg1,
+           *bn_zero;
+    int bncmp;
+    int left = (nshift>0);
+
+    duk_push_this(ctx);
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("bigint_zero"));
+    get_bn(ctx, bn_zero, -1);
+    duk_pop(ctx);
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("bigint_neg1"));
+    get_bn(ctx, bn_neg1, -1);
+    duk_pop_2(ctx);
+
+    bncmp = BN_cmp(bn, bn_zero);
+
+    if(!left)
+        nshift *= -1;
+
+    if(!bncmp)
+    {
+        push_bn(ctx, bnr);
+        return 1;
+    }
+    
+    
+    if (bncmp < 0)
+    {
+        /* shift must be done on positive number */
+        BN_sub(bnr, bn_zero, bnr);
+    }
+
+    if(left)
+        BN_lshift(bnr, bnr, (int)nshift); 
+    else
+        BN_rshift(bnr, bnr, (int)nshift);
+
+    if(bncmp < 0)
+    {
+        if(BN_is_zero(bnr)) //if was negative and now shifted to zero bnr should be -1
+        {
+            BN_free(bnr);
+            bnr=bn_neg1;// use existing -1
+        }
+        else
+        {
+            /* undo negation and subtract 1*/
+            BN_sub(bnr, bn_neg1, bnr);
+        }
+    }
+
+    push_bn(ctx, bnr);
+    return 1;
+}
+
+static duk_ret_t duk_rp_bigint_shift(duk_context *ctx, int left)
+{
+    BIGNUM *bna,
+           *bnb=NULL;
+    int64_t nshift = get_bn_or_i(ctx, bnb, 1);
+    get_bn(ctx, bna, 0);
+
+    if(bnb)
+    {
+        char *num = BN_bn2dec(bnb);
+        errno=0;
+        nshift = strtoll(num, NULL, 10);
+        OPENSSL_free(num);
+        if(errno)
+            RP_THROW(ctx, "bigint: range error");
+    }
+
+    if(!left) nshift*=-1;
+
+    //if(nshift > 1073741815) //this is the limit in node's JSBI
+    if(nshift >    536870775)  //openssl bignum is about half that
+        RP_THROW(ctx, "bigint: range error");
+
+    if(nshift)
+        return doshift(ctx, bna, nshift);
+    else
+    {
+        BIGNUM *bnr = BN_dup(bna);
+
+        push_bn(ctx, bnr);
+    }    
+
+    return 1;
+}
+
+duk_ret_t duk_rp_bigint_sl(duk_context *ctx)
+{
+    return duk_rp_bigint_shift(ctx, 1);
+}
+
+duk_ret_t duk_rp_bigint_sr(duk_context *ctx)
+{
+    return duk_rp_bigint_shift(ctx, 0);
+}
+
+#define bn_printat(ctx, idx) do{\
+    BIGNUM *b;\
+    get_bn(ctx, b, idx);\
+    printf("at %d ", (int)idx);\
+    BN_print_fp(stdout, b);\
+    putchar('\n');\
+} while(0)
+
+static BIGNUM *bn_negate(BIGNUM *bn)
+{
+    BIGNUM *bnr;
+    int i=0, alen=0;
+    unsigned char *bufa=NULL;
+
+    alen = BN_num_bytes(bn);
+    REMALLOC(bufa, alen);
+    BN_bn2lebinpad(bn, bufa, alen);
+
+    while(i<alen)
+    {
+        bufa[i]=~bufa[i];                
+        i++;
+    }
+
+    bnr = BN_new();
+    BN_lebin2bn(bufa, alen, bnr);
+
+    free(bufa);
+    return bnr;
+}
+
+static duk_ret_t duk_rp_bigint_x_or(duk_context *ctx, int xor)
+{
+    BIGNUM *bna, *bnb=NULL, *bnr, *bn_zero, *bn_neg1, *bnan=NULL, *bnbn=NULL;
+    int i=0, alen=0, blen=0, slen=0, llen=0, a_is_neg=0, b_is_neg=0;
+    unsigned char *bufa=NULL, *bufb=NULL, empty = 0;
+
+    duk_push_this(ctx);
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("bigint_zero"));
+    get_bn(ctx, bn_zero, -1);
+    duk_pop(ctx);
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("bigint_neg1"));
+    get_bn(ctx, bn_neg1, -1);
+    duk_pop_2(ctx);
+
+    get_bn(ctx, bna, 0);
+
+    /* bits are as if positive and there is a negative flag 
+       to do bitwise op, must convert to signed int         */
+    if(BN_cmp(bna, bn_zero)<0)
+    {
+        int nbits = BN_num_bytes(bna) * 8;
+        a_is_neg=1;
+
+        bnan=bn_negate(bna);
+        bna=bnan;
+        BN_sub(bna, bna, bn_neg1);
+
+        BN_set_bit(bna, nbits); // expand buffer by one byte. set to ff below
+
+    }
+    alen = BN_num_bytes(bna);
+
+    get_bn(ctx, bnb, 1);
+
+    if(BN_cmp(bnb, bn_zero)<0)
+    {
+        int nbits = BN_num_bytes(bnb) * 8;
+        b_is_neg=1;
+
+        bnbn=bn_negate(bnb);
+        bnb=bnbn;
+
+        BN_sub(bnb, bnb, bn_neg1);
+
+        BN_set_bit(bnb, nbits);
+
+    }
+    blen = BN_num_bytes(bnb);
+
+    REMALLOC(bufa, alen);
+    BN_bn2lebinpad(bna, bufa, alen);
+
+    if(bnan)
+    {
+        bufa[alen-1]=255;
+        BN_free(bnan);
+    }
+
+    REMALLOC(bufb, blen);
+    BN_bn2lebinpad(bnb, bufb, blen);
+
+    if(bnbn)
+    {
+        BN_free(bnbn);
+        bufb[blen-1]=255;
+    }
+
+    slen = (alen<blen) ? alen : blen;
+
+    i=0;
+
+    llen=alen;
+
+    if(slen == alen) //use the longer as ret
+    {
+        unsigned char *t = bufa;
+        alen=blen;
+        llen=blen;
+        bufa=bufb;
+        bufb=t;
+        if(a_is_neg)
+            empty=255;
+    }
+    else if (b_is_neg)
+        empty=255;
+
+    if(xor)
+        while(i<llen)
+        {
+            if(i<slen)
+                bufa[i] ^= bufb[i];
+            else
+                bufa[i] ^= empty;
+            i++;
+        }
+    else
+        while(i<llen)
+        {
+            if(i<slen)
+                bufa[i] |= bufb[i];
+            else
+                bufa[i] |= empty;
+            i++;
+        }
+
+    if(bufb)
+        free(bufb);
+
+    bnr = new_bn(ctx,NULL,1);
+    if( (xor && a_is_neg ^ b_is_neg) || (!xor && a_is_neg | b_is_neg) )
+    {
+        i=0;
+        while(i<alen)
+        {
+            bufa[i]=~bufa[i];                
+            i++;
+        }
+        BN_lebin2bn(bufa, alen, bnr);
+        BN_sub(bnr, bn_neg1, bnr);
+    }
+    else
+        BN_lebin2bn(bufa, alen, bnr);
+
+    free(bufa);
+    return 1;    
+}
+
+static duk_ret_t duk_rp_bigint_or(duk_context *ctx)
+{
+    return duk_rp_bigint_x_or(ctx, 0);
+}
+
+static duk_ret_t duk_rp_bigint_xor(duk_context *ctx)
+{
+    return duk_rp_bigint_x_or(ctx, 1);
+}
+
+static duk_ret_t duk_rp_bigint_and(duk_context *ctx)
+{
+    BIGNUM *bna, *bnb=NULL, *bnr, *bn_zero, *bn_neg1, *bnan=NULL, *bnbn=NULL;
+    int i=0, alen=0, blen=0, slen=0, llen=0, a_is_neg=0, b_is_neg=0;
+    unsigned char *bufa=NULL, *bufb=NULL, empty=0;
+    duk_push_this(ctx);
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("bigint_zero"));
+    get_bn(ctx, bn_zero, -1);
+    duk_pop(ctx);
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("bigint_neg1"));
+    get_bn(ctx, bn_neg1, -1);
+    duk_pop_2(ctx);
+
+    get_bn(ctx, bna, 0);
+
+    /* bits are as if positive and there is a negative flag 
+       to do bitwise op, must convert to signed int         */
+    if(BN_cmp(bna, bn_zero)<0)
+    {
+        a_is_neg=1;
+
+        bnan=bn_negate(bna);
+        bna=bnan;
+        BN_sub(bna, bna, bn_neg1);
+    }
+    alen = BN_num_bytes(bna);
+
+    get_bn(ctx, bnb, 1);
+
+    if(BN_cmp(bnb, bn_zero)<0)
+    {
+        b_is_neg=1;
+
+        bnbn=bn_negate(bnb);
+        bnb=bnbn;
+
+        BN_sub(bnb, bnb, bn_neg1);
+    }
+    blen = BN_num_bytes(bnb);
+
+    REMALLOC(bufa, alen);
+    BN_bn2lebinpad(bna, bufa, alen);
+
+    if(bnan)
+        BN_free(bnan);
+
+    REMALLOC(bufb, blen);
+    BN_bn2lebinpad(bnb, bufb, blen);
+
+    if(bnbn)
+        BN_free(bnbn);
+
+    slen = (alen<blen) ? alen : blen;
+
+    i=0;
+
+    llen=alen;
+
+    if(slen == alen) //use the longer as ret
+    {
+        unsigned char *t = bufa;
+        alen=blen;
+        llen=blen;
+        bufa=bufb;
+        bufb=t;
+        if(a_is_neg)
+            empty=255;
+    }
+    else if (b_is_neg)
+        empty=255;
+
+    while(i<llen)
+    {
+        
+        if(i<slen)
+            bufa[i] &= bufb[i];
+        else
+            bufa[i] &= empty;
+        i++;
+    }
+
+    if(bufb)
+        free(bufb);
+
+    bnr = new_bn(ctx,NULL,1);
+    if(a_is_neg & b_is_neg)
+    {
+        i=0;
+        while(i<alen)
+        {
+            bufa[i]=~bufa[i];                
+            i++;
+        }
+        BN_lebin2bn(bufa, alen, bnr);
+        BN_sub(bnr, bn_neg1, bnr);
+    }
+    else
+        BN_lebin2bn(bufa, alen, bnr);
+
+    free(bufa);
+    return 1;    
+}
+
+static duk_ret_t _bigint_tostring(duk_context *ctx, const char *fname, int binary_signed)
+{
+    int radix = 10;
+    BIGNUM *bn;
+    char *val;
+
+    if(!duk_is_undefined(ctx, 0))
+    {
+        radix = REQUIRE_INT(ctx, 0, "bigint: %s requires an int (2, 10 or 16)", fname);
+        if(radix!=16 && radix!=10 && radix!=2)
+            RP_THROW(ctx, "bigint: %s requires an int (2, 10 or 16)", fname);
+    }
+    
+    get_bn(ctx, bn, 1);
+
+    if(radix == 10)
+    {
+        val = BN_bn2dec(bn);
+        duk_push_string(ctx, val);
+        OPENSSL_free(val);
+    }
+    else
+    {
+        val = BN_bn2hex(bn);
+
+        if(radix == 2)
+        {
+            char *s = hextobin(val);
+            if(binary_signed)
+                duk_push_string(ctx, s+1);
+            else
+                duk_push_string(ctx, s);
+            free(s);
+        }
+        else
+            duk_push_string(ctx, val);
+
+        OPENSSL_free(val);
+    }
+
+    return 1;
+}
+
+duk_ret_t duk_rp_bigint_tostring(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    return _bigint_tostring(ctx, "toString", 0);
+}
+
+
+static void bi_sign_negate(duk_context *ctx, duk_idx_t idx)
+{
+    BIGNUM *bn, *bnr, *neg1;
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("bigint_neg1"));
+    get_bn(ctx, neg1, -1);
+    duk_pop(ctx);
+
+    get_bn(ctx, bn, idx);
+
+    duk_pull(ctx, idx);
+    duk_insert(ctx, 0);
+
+    bnr = bn_negate(bn);
+    BN_sub(bnr, neg1, bnr);
+    push_bn(ctx, bnr);
+    duk_remove(ctx, 0);
+}
+
+duk_ret_t duk_rp_bigint_not(duk_context *ctx)
+{
+    BIGNUM *bna, *bnr, *bn_neg1;
+
+    duk_push_this(ctx);
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("bigint_neg1"));
+    get_bn(ctx, bn_neg1, -1);
+    duk_pop_2(ctx);
+
+    get_bn(ctx, bna, 0);
+    bnr = BN_dup(bna);
+    BN_sub(bnr, bn_neg1, bnr);
+    push_bn(ctx, bnr);
+
+    return 1;
+    
+}
+
+
+
+duk_ret_t duk_rp_bigint_tosignedstring(duk_context *ctx)
+{
+    BIGNUM *bna, *bnr, *bn_zero;
+    int radix=10;
+
+    if(!duk_is_undefined(ctx, 0))
+    {
+        radix = REQUIRE_INT(ctx, 0, "bigint: toSignedString requires an int (2, 10 or 16)");
+        if(radix!=16 && radix!=10 && radix!=2)
+            RP_THROW(ctx, "bigint: toSignedString requires an int (2, 10 or 16)");
+    }
+    
+    duk_push_this(ctx);
+
+    get_bn(ctx, bna, -1);
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("bigint_zero"));
+    get_bn(ctx, bn_zero, -1);
+    duk_pop(ctx);
+
+    if(BN_cmp(bna, bn_zero) > -1 || radix!=2)
+    {
+        duk_pop(ctx);
+        return duk_rp_bigint_tostring(ctx);
+    }
+
+    bnr = BN_dup(bna);    
+
+    push_bn(ctx, bnr);
+    bi_sign_negate(ctx, -1);
+
+    duk_replace(ctx, 0);
+    duk_push_int(ctx, radix);
+    duk_insert(ctx, 0);
+
+    return _bigint_tostring(ctx, "toSignedString", 1);
+}
+
+
+duk_ret_t duk_rp_bigint_ton(duk_context *ctx)
+{
+    if( duk_is_object(ctx, 0) )
+    { 
+        if (duk_has_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("bn")) )
+        {
+            duk_get_global_string(ctx, "parseFloat");
+            duk_push_string(ctx, "toString");
+            duk_call_prop(ctx, 0, 0);
+            duk_call(ctx, 1);
+            return 1;
+        }
+        RP_THROW(ctx, "bigint: value is not a bigint");
+        return 0;
+    }
+    RP_THROW(ctx, "bigint: value is not a bigint");
+    return 0;
+}
+duk_ret_t duk_rp_bigint_const(duk_context *ctx);
+
+duk_ret_t duk_rp_bigint(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    duk_pull(ctx, 0);
+    duk_new(ctx, 1);
+    return 1;
+}
+//https://stackoverflow.com/questions/101439/the-most-efficient-way-to-implement-an-integer-based-power-function-powint-int
+/*
+static BN_ULONG bn_pow(BN_ULONG base, int exp)
+{
+    BN_ULONG result = 1;
+    for (;;)
+    {
+        if (exp & 1)
+            result *= base;
+        exp >>= 1;
+        if (!exp)
+            break;
+        base *= base;
+    }
+
+    return result;
+}
+*/
+
+
+static duk_ret_t duk_rp_bigint_asi(duk_context *ctx)
+{
+    int is_positive = 1, bits = duk_get_int_default(ctx, 0, 0);
+    BIGNUM *bna, *bnr, *bn_neg1, *bn_zero;
+
+    duk_remove(ctx,0);
+
+    if(bits < 0)
+        RP_THROW(ctx, "bigint: first agrument - number of bits must be a positive number");
+    get_bn(ctx, bna, 0);
+
+    duk_pop(ctx);// empty stack
+
+    duk_push_this(ctx);
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("bigint_zero"));
+    get_bn(ctx, bn_zero, -1);
+    duk_pop(ctx);
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("bigint_neg1"));
+    get_bn(ctx, bn_neg1, -1);
+    duk_pop_2(ctx);// empty stack
+
+    if( BN_cmp(bna, bn_zero) < 0)
+        is_positive=0;
+
+    bnr = BN_dup(bna);
+    BN_mask_bits(bnr, bits);
+
+    if(BN_is_bit_set(bnr, bits-1))
+    {
+        int i=0, nsetbits = 8 - (bits % 8);//need to set these so they will clear in negation
+        BIGNUM *bn_temp;
+
+        while(nsetbits--)
+        {
+            BN_set_bit(bnr, bits + i++);
+        }
+
+        bn_temp = bn_negate(bnr);
+        BN_free(bnr);
+        bnr=bn_temp;
+
+        if(!is_positive)
+        {
+            BN_sub(bnr, bn_neg1, bnr);
+            if(!BN_is_bit_set(bnr, bits-1))
+                BN_sub(bnr, bn_zero, bnr);
+        }
+        else
+        {
+            BN_sub(bnr, bn_zero, bnr);
+            BN_add(bnr, bn_neg1, bnr);
+        }
+    }
+
+    push_bn(ctx, bnr);        
+
+    return 1;
+}
+
+
+duk_ret_t duk_rp_bigint_asu(duk_context *ctx)
+{
+    int bits = duk_get_int_default(ctx, 0, 0);
+    BIGNUM *bna, *bnr, 
+           *bn_neg1, *bn_zero;
+
+    duk_push_this(ctx);
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("bigint_zero"));
+    get_bn(ctx, bn_zero, -1);
+    duk_pop(ctx);
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("bigint_neg1"));
+    get_bn(ctx, bn_neg1, -1);
+    duk_pop_2(ctx);
+
+    get_bn(ctx, bna, 1);
+    bnr = BN_dup(bna);
+
+    if(BN_cmp(bnr, bn_zero) >= 0)
+    {
+
+        BN_mask_bits(bnr, bits);
+        push_bn(ctx, bnr);
+
+        return 1;
+    }
+    else
+    {
+        int i=0, nsetbits = 8 - (bits % 8);//need to set these so they will clear in negation
+        BIGNUM *bn_temp;
+
+        BN_sub(bnr, bn_zero, bnr);
+        BN_mask_bits(bnr, bits);
+
+        while(nsetbits--)
+        {
+            BN_set_bit(bnr, bits + i++);
+        }        
+
+        duk_pop_2(ctx);
+        bn_temp = bn_negate(bnr);
+        BN_free(bnr);
+        bnr = bn_temp;
+        BN_sub(bnr, bnr, bn_neg1);//add 1
+        BN_clear_bit(bnr, bits);
+        push_bn(ctx, bnr);
+
+        return 1;
+    }
+}
+
+const duk_function_list_entry bigint_funcs[] = {
+    {"BigInt",             duk_rp_bigint,     1},
+    {"add"   ,             duk_rp_bigint_add, 2},
+    {"subtract",           duk_rp_bigint_sub, 2},
+    {"multiply",           duk_rp_bigint_mul, 2},
+    {"divide",             duk_rp_bigint_div, 2},
+    {"remainder",          duk_rp_bigint_mod, 2},
+    {"exponentiate",       duk_rp_bigint_exp, 2},
+    {"unaryMinus",         duk_rp_bigint_neg, 1},
+    {"equal",              duk_rp_bigint_eql, 2},
+    {"notEqual",           duk_rp_bigint_neq, 2},
+    {"lessThan",           duk_rp_bigint_lt,  2},
+    {"lessThanOrEqual",    duk_rp_bigint_lte, 2},
+    {"greaterThan",        duk_rp_bigint_gt,  2},
+    {"greaterThanOrEqual", duk_rp_bigint_gte, 2},
+    {"EQ",                 duk_rp_bigint_Eql, 2},
+    {"NE",                 duk_rp_bigint_Neq, 2},
+    {"LT",                 duk_rp_bigint_Lt,  2},
+    {"LE",                 duk_rp_bigint_Lte, 2},
+    {"GT",                 duk_rp_bigint_Gt,  2},
+    {"GE",                 duk_rp_bigint_Gte, 2},
+    {"ADD",                duk_rp_bigint_Add, 2},
+    {"leftShift",          duk_rp_bigint_sl,  2},
+    {"signedRightShift",   duk_rp_bigint_sr,  2},
+    {"bitwiseNot",         duk_rp_bigint_not, 1},
+    {"bitwiseAnd",         duk_rp_bigint_and, 2},
+    {"bitwiseOr",          duk_rp_bigint_or,  2},
+    {"bitwiseXor",         duk_rp_bigint_xor, 2},
+    {"toNumber",           duk_rp_bigint_ton, 1},
+    {"asIntN",             duk_rp_bigint_asi, 2},
+    {"asUintN",            duk_rp_bigint_asu, 2},
+    {NULL, NULL, 0}
+};
+
+/* all this constructor stuff is to make 
+        (a instanceof JSBI)
+    work.
+*/
+duk_ret_t duk_rp_bigint_const(duk_context *ctx)
+{
+    if(duk_is_constructor_call(ctx))
+    {
+        duk_push_this(ctx);
+        duk_push_c_function(ctx, _bigint, 1);
+        if(duk_is_number(ctx,0) || duk_is_string(ctx,0))
+            duk_pull(ctx,0);
+        else
+            duk_push_number(ctx, 0.0);
+        duk_call(ctx, 1);
+
+        if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("bn")))
+        {
+            duk_put_prop_string(ctx, -3, DUK_HIDDEN_SYMBOL("bn"));
+            duk_get_prop_string(ctx, -1, "toString");
+            duk_put_prop_string(ctx, -3, "toString");
+            duk_get_prop_string(ctx, -1, "toSignedString");
+            duk_put_prop_string(ctx, -3, "toSignedString");
+            duk_push_undefined(ctx);
+            duk_set_finalizer(ctx, -2);
+            duk_pop(ctx);
+            duk_push_c_function(ctx, duk_rp_bigint_finalizer, 1);
+            duk_set_finalizer(ctx, -2);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+duk_ret_t jsbi_finalizer(duk_context *ctx)
+{
+    BIGNUM *bn_neg1, *bn_zero;
+
+    duk_push_global_object(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("bigint_zero"));
+    get_bn(ctx, bn_zero, -1);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("bigint_neg1"));
+    get_bn(ctx, bn_neg1, -1);
+    duk_pop(ctx);
+
+    duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("bigint_zero"));
+    duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("bigint_neg1"));
+    BN_free(bn_neg1);
+    BN_free(bn_zero);
+
+    return 0;
+}
+
+static void duk_rp_create_jsbi(duk_context *ctx)
+{
+    duk_push_c_function(ctx, duk_rp_bigint_const, 1);
+    duk_put_function_list(ctx, -1, bigint_funcs);
+    duk_push_object(ctx);
+    duk_put_prop_string(ctx, -2, "prototype");
+//    duk_push_c_function(ctx, jsbi_finalizer, 1);
+//    duk_set_finalizer(ctx, -2);
+
+    new_bn(ctx, "0", 1);
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("bigint_zero"));
+    new_bn(ctx, "-1", 1);
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("bigint_neg1"));
+
+}
+
+
 const duk_function_list_entry crypto_funcs[] = {
     {"encrypt", duk_encrypt, 3},
     {"decrypt", duk_decrypt, 3},
@@ -2146,12 +3506,15 @@ const duk_function_list_entry crypto_funcs[] = {
     {"rsa_import_priv_key", duk_rsa_import_priv_key, 3},
     {"cert_info", duk_cert_info,1},
     {"passToKeyIv", duk_rp_pass_to_keyiv, 1},
-    {NULL, NULL, 0}};
+    {NULL, NULL, 0}
+};
 
 duk_ret_t duk_open_module(duk_context *ctx)
 {
     OpenSSL_add_all_digests() ;
     duk_push_object(ctx);
     duk_put_function_list(ctx, -1, crypto_funcs);
+    duk_rp_create_jsbi(ctx);
+    duk_put_prop_string(ctx, -2, "JSBI");
     return 1;
 }

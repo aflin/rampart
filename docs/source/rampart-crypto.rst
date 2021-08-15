@@ -979,4 +979,93 @@ properties:
 
 * ``bytes`` - a :green:`Number` - Number of bytes to retrieve from ``file``. 
   Default is ``32``.
+
+BigInt
+------
+
+The rampart-crypto module includes functions which handle arbitrarly long
+integers using openssl's ``BIGNUM`` library.  It is designed to be compatible with the 
+`JSBI <https://github.com/GoogleChromeLabs/jsbi>`_ library and includes the
+same published functions.  See `JSBI Node Module <https://www.npmjs.com/package/jsbi>`_
+for more information.
+
+Usage as documented below is as such:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+
+    var JSBI = crypto.JSBI;
+
+JSBI.BigInt
+~~~~~~~~~~~
+
+Create a BigInt from a :green:`String` or :green:`Number`.
+
+Possible Strings:
+
+* ``1234``
+* ``-1234``
+* ``0x123e``
+* ``-0x123e``
+* ``-0b11110011``
+* ``-0b11110011``
+
+
+Example:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+
+    var JSBI = crypto.JSBI;
+
+    var mybignum = JSBI.BigInt("123456789012345678901234567890");
+
+JSBI Compatible functions
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+JSBI functions aspire to operate in a manner that mirrors the 
+`JSBI <https://www.npmjs.com/package/jsbi>`_ library.  Please
+see that library for details.  Available commands include:
+
+``JSBI.BigInt(num).toString()``, ``JSBI.toNumber()``, ``JSBI.asIntN()``, ``JSBI.asUintN()``,
+``a instanceof JSBI``, ``JSBI.add()``, ``JSBI.subtract()``, ``JSBI.multiply()``,
+``JSBI.divide()``, ``JSBI.remainder()``, ``JSBI.exponentiate()``, ``JSBI.unaryMinus()``,
+``JSBI.bitwiseNot()``, ``JSBI.leftShift()``, ``JSBI.signedRightShift()``,
+``JSBI.bitwiseAnd()``, ``JSBI.bitwiseOr()``, ``JSBI.bitwiseXor()``, ``JSBI.equal()``,
+``JSBI.notEqual()``, ``JSBI.lessThan()``, ``JSBI.lessThanOrEqual()``,
+``JSBI.greaterThan()``, ``JSBI.greaterThanOrEqual()``, ``JSBI.EQ()``, ``JSBI.NE()``,
+``JSBI.LT()``, ``JSBI.LE()``, ``JSBI.GT()``, ``JSBI.GE()``, ``JSBI.ADD()``.
+
+
+Note that in rampart, ``JSBI.BigInt().toString()`` only accepts ``2``, ``10`` and ``16``
+as possible arguments, with ``10`` being the default.
  
+toSignedString
+~~~~~~~~~~~~~~
+
+``JSBI.BigInt().toSignedString()`` will convert a BigInt into a 
+string representing the equivalent signed number.  This differs from ``JSBI.BigInt().toString()``
+only when used for a signed binary integer (using ``JSBI.BigInt(num).toSignedString(2)``.
+
+Example:
+
+.. code-block:: javascript
+
+    var crypto = require("rampart-crypto");
+
+    var JSBI = crypto.JSBI;
+
+    var mybignum = JSBI.BigInt("-256");
+
+    console.log( mybignum.toString(2) );
+
+    console.log( mybignum.toSignedString(2) );
+
+    /* expected output:
+
+    -100000000
+    1111111100000000
+
+    */

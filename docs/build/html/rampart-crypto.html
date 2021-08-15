@@ -133,6 +133,12 @@
 <li class="toctree-l3"><a class="reference internal" href="#seed">seed</a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#bigint">BigInt</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#jsbi-bigint">JSBI.BigInt</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#jsbi-compatible-functions">JSBI Compatible functions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#tosignedstring">toSignedString</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-curl.html">The rampart-curl module</a></li>
@@ -1177,6 +1183,82 @@ properties:</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">bytes</span></code> - a <span class="green">Number</span> - Number of bytes to retrieve from <code class="docutils literal notranslate"><span class="pre">file</span></code>.
 Default is <code class="docutils literal notranslate"><span class="pre">32</span></code>.</p></li>
 </ul>
+</div>
+</div>
+<div class="section" id="bigint">
+<h2>BigInt<a class="headerlink" href="#bigint" title="Permalink to this headline">¶</a></h2>
+<p>The rampart-crypto module includes functions which handle arbitrarly long
+integers using openssl’s <code class="docutils literal notranslate"><span class="pre">BIGNUM</span></code> library.  It is designed to be compatible with the
+<a class="reference external" href="https://github.com/GoogleChromeLabs/jsbi">JSBI</a> library and includes the
+same published functions.  See <a class="reference external" href="https://www.npmjs.com/package/jsbi">JSBI Node Module</a>
+for more information.</p>
+<p>Usage as documented below is as such:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">JSBI</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">JSBI</span><span class="p">;</span>
+</pre></div>
+</div>
+<div class="section" id="jsbi-bigint">
+<h3>JSBI.BigInt<a class="headerlink" href="#jsbi-bigint" title="Permalink to this headline">¶</a></h3>
+<p>Create a BigInt from a <span class="green">String</span> or <span class="green">Number</span>.</p>
+<p>Possible Strings:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">1234</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">-1234</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">0x123e</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">-0x123e</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">-0b11110011</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">-0b11110011</span></code></p></li>
+</ul>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">JSBI</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">JSBI</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">mybignum</span> <span class="o">=</span> <span class="nx">JSBI</span><span class="p">.</span><span class="nx">BigInt</span><span class="p">(</span><span class="s2">&quot;123456789012345678901234567890&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="jsbi-compatible-functions">
+<h3>JSBI Compatible functions<a class="headerlink" href="#jsbi-compatible-functions" title="Permalink to this headline">¶</a></h3>
+<p>JSBI functions aspire to operate in a manner that mirrors the
+<a class="reference external" href="https://www.npmjs.com/package/jsbi">JSBI</a> library.  Please
+see that library for details.  Available commands include:</p>
+<p><code class="docutils literal notranslate"><span class="pre">JSBI.BigInt(num).toString()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.toNumber()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.asIntN()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.asUintN()</span></code>,
+<code class="docutils literal notranslate"><span class="pre">a</span> <span class="pre">instanceof</span> <span class="pre">JSBI</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.add()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.subtract()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.multiply()</span></code>,
+<code class="docutils literal notranslate"><span class="pre">JSBI.divide()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.remainder()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.exponentiate()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.unaryMinus()</span></code>,
+<code class="docutils literal notranslate"><span class="pre">JSBI.bitwiseNot()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.leftShift()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.signedRightShift()</span></code>,
+<code class="docutils literal notranslate"><span class="pre">JSBI.bitwiseAnd()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.bitwiseOr()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.bitwiseXor()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.equal()</span></code>,
+<code class="docutils literal notranslate"><span class="pre">JSBI.notEqual()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.lessThan()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.lessThanOrEqual()</span></code>,
+<code class="docutils literal notranslate"><span class="pre">JSBI.greaterThan()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.greaterThanOrEqual()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.EQ()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.NE()</span></code>,
+<code class="docutils literal notranslate"><span class="pre">JSBI.LT()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.LE()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.GT()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.GE()</span></code>, <code class="docutils literal notranslate"><span class="pre">JSBI.ADD()</span></code>.</p>
+<p>Note that in rampart, <code class="docutils literal notranslate"><span class="pre">JSBI.BigInt().toString()</span></code> only accepts <code class="docutils literal notranslate"><span class="pre">2</span></code>, <code class="docutils literal notranslate"><span class="pre">10</span></code> and <code class="docutils literal notranslate"><span class="pre">16</span></code>
+as possible arguments, with <code class="docutils literal notranslate"><span class="pre">10</span></code> being the default.</p>
+</div>
+<div class="section" id="tosignedstring">
+<h3>toSignedString<a class="headerlink" href="#tosignedstring" title="Permalink to this headline">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">JSBI.BigInt().toSignedString()</span></code> will convert a BigInt into a
+string representing the equivalent signed number.  This differs from <code class="docutils literal notranslate"><span class="pre">JSBI.BigInt().toString()</span></code>
+only when used for a signed binary integer (using <code class="docutils literal notranslate"><span class="pre">JSBI.BigInt(num).toSignedString(2)</span></code>.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">crypto</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-crypto&quot;</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">JSBI</span> <span class="o">=</span> <span class="nx">crypto</span><span class="p">.</span><span class="nx">JSBI</span><span class="p">;</span>
+
+<span class="kd">var</span> <span class="nx">mybignum</span> <span class="o">=</span> <span class="nx">JSBI</span><span class="p">.</span><span class="nx">BigInt</span><span class="p">(</span><span class="s2">&quot;-256&quot;</span><span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span> <span class="nx">mybignum</span><span class="p">.</span><span class="nx">toString</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="p">);</span>
+
+<span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span> <span class="nx">mybignum</span><span class="p">.</span><span class="nx">toSignedString</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="p">);</span>
+
+<span class="cm">/* expected output:</span>
+
+<span class="cm">-100000000</span>
+<span class="cm">1111111100000000</span>
+
+<span class="cm">*/</span>
+</pre></div>
+</div>
 </div>
 </div>
 </div>
