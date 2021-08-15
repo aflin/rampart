@@ -1047,7 +1047,7 @@ toSignedString
 
 ``JSBI.BigInt().toSignedString()`` will convert a BigInt into a 
 string representing the equivalent signed number.  This differs from ``JSBI.BigInt().toString()``
-only when used for a signed binary integer (using ``JSBI.BigInt(num).toSignedString(2)``.
+only when used for a signed binary integer (using ``JSBI.BigInt(num).toSignedString(2)``).
 
 Example:
 
