@@ -585,8 +585,8 @@ lstat
 Same as `stat`_\ () except if ``file`` is a link, return information about the link itself.
 
 Return Value:
-   Same as `stat`_\ () with the addition of the property/function
-   ``isSymbolicLink()`` to test whether the file is a symbolic link.
+   Same as `stat`_\ () with the addition of the property
+   ``isSymbolicLink`` which is set ``true`` if the file is a symbolic link.
 
 exec
 ''''
@@ -624,6 +624,11 @@ Where:
 
    *  ``stdin`` - :green:`String` or :green:`Buffer`.  If specified, the content is piped to the
       command as stdin.
+
+   *  ``returnBuffer`` - :green:`Boolean`.  Whether content is returned in a
+      :green:`Buffer` rather than a :green:`String`.  Useful for capturing
+      binary data output.
+
 
 *  ``argn`` - :green:`String`/:green:`Number`/:green:`Object`/:green:`Boolean`/:green:`Null` - Arguments to be passed to
    ``command``.  Non-Strings are converted to a :green:`String` (e.g. "true", "null",
@@ -1208,7 +1213,8 @@ fopen
 '''''
 
 Open a filehandle for use with `fprintf`_\ (), `fclose`_\ (), `fseek`_\ (),
-`rewind`_\ (), `ftell`_\ (), `fflush`_\ () `fread`_\ (), `fgets`_\ (), `fwrite`_\ () and readLine.
+`rewind`_\ (), `ftell`_\ (), `fflush`_\ () `fread`_\ (), `fgets`_\ (), `fwrite`_\ () and
+`readLine`_\ ().
 
 Return Value:
    :green:`Object`. An object which opaquely contains the opened file handle along with
@@ -1270,7 +1276,7 @@ Return Value:
 fprintf
 '''''''
 
-Same as ``printf()`` except output is sent to the file provided by
+Same as `printf`_\ () except output is sent to the file provided by
 a :green:`String` or filehandle :green:`Object` opened and returned from `fopen`_\ ().
 
 Usage:
@@ -1304,6 +1310,8 @@ Return Value:
 Example:
 
 .. code-block:: javascript
+
+   rampart.globalize(rampart.utils);
 
    var handle = fopen("/tmp/out.txt", "w+");
    fprintf(handle, "A number: %d\n", 123);

@@ -492,7 +492,7 @@ Note that `examples`_ are provided below.
       For POSTing content to a server using HTTP or HTTPS.
 
       * If an :green:`Object`, data is automatically converted and posted
-        similar to ``get`` using :ref:`rampart-main:objectToQuery`.
+        similar to ``get`` using :ref:`rampart-utils:objectToQuery`.
       
       * If a :green:`String` or :green:`Buffer`, data is sent as is.  By
         default the header ``Content-Type: application/x-www-form-urlencoded`` 

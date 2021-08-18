@@ -270,9 +270,7 @@ sql functions are executed from within a function or module, rampart may
 create a fork, one per thread, in order to handle such functions.</p>
 <p>A timeout for script execution may also be set.  Should the script timeout,
 the serving thread will cancel the request and re-initialize the JavaScript
-context in order to serve new requests.  Should the script timeout from
-within a forked process, that process will be terminated and the thread will
-fork again upon the next request.</p>
+context in order to serve new requests.</p>
 </div>
 </div>
 <div class="section" id="loading-and-using-the-module">
@@ -384,14 +382,6 @@ to after binding to the specified ip address and port.  Only valid if
 server is started as <code class="docutils literal notranslate"><span class="pre">root</span></code>.  This setting is used for binding to
 privileged ports as <code class="docutils literal notranslate"><span class="pre">root</span></code> and then dropping privileges.  If the server
 is started as root, <code class="docutils literal notranslate"><span class="pre">user</span></code> must be set.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">bufferMem</span></code>: A positive <span class="green">Number</span>.  If equal to or below 100,
-the percent of system memory to use for buffers for printing
-directly to the client.  If above 100, the amount in kilobytes of
-system memory to use for buffers for printing directly to the client.
-This amount is divided by the number of threads, with each thread
-using a buffer of the resulting size.  The default, if not specified
-is <code class="docutils literal notranslate"><span class="pre">10</span></code> (10% of the system’s physical memory).  See
-<a class="reference internal" href="#advanced-functions">Advanced Functions</a> below.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">cacheControl</span></code>: A <span class="green">String</span> or a <span class="green">Boolean</span>.  If a
 <span class="green">String</span> - the text to set the “Cache-Control” header when
 serving files off of the filesystem.  The default is “max-age=84600,
@@ -402,7 +392,7 @@ use gzip compression for files served from the filesystem.  Default is
 <code class="docutils literal notranslate"><span class="pre">false</span></code>.  If an <span class="green">Array</span>. is given, it is a list of file
 extension which will be compressed.  If <code class="docutils literal notranslate"><span class="pre">true</span></code> - the following default
 <span class="green">Array</span> of extensions will be used:
-<code class="docutils literal notranslate"><span class="pre">[&quot;html&quot;,</span> <span class="pre">&quot;css&quot;,</span> <span class="pre">&quot;js&quot;,</span> <span class="pre">&quot;xml&quot;,</span> <span class="pre">&quot;&quot;json&quot;&quot;]</span></code>.</p>
+<code class="docutils literal notranslate"><span class="pre">[&quot;html&quot;,</span> <span class="pre">&quot;css&quot;,</span> <span class="pre">&quot;js&quot;,</span> <span class="pre">&quot;json,</span> <span class="pre">&quot;xml&quot;,</span> <span class="pre">&quot;txt&quot;,</span> <span class="pre">&quot;text&quot;,</span> <span class="pre">&quot;htm&quot;]</span></code>.</p>
 <p>Note that compressed files will be cached in a directory named “.gzipcache/”
 in the directory in which the files are located.</p>
 </li>
@@ -417,10 +407,10 @@ default, if not specified, is <code class="docutils literal notranslate"><span c
 <li><p><code class="docutils literal notranslate"><span class="pre">compressMinSize</span></code>: A <span class="green">Number</span>. The minimum size in bytes any file or
 script output must be in order for the content to be compressed.  The default,
 if not specified, is <code class="docutils literal notranslate"><span class="pre">1000</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">mimeMap</span></code>: An <span class="green">Object</span>, additions or changes to the standart extension
+<li><p><code class="docutils literal notranslate"><span class="pre">mimeMap</span></code>: An <span class="green">Object</span>, additions or changes to the standard extension
 to mime mappings.  Normally, if, e.g., <code class="docutils literal notranslate"><span class="pre">return</span> <span class="pre">{</span> <span class="pre">&quot;m4v&quot;:</span> <span class="pre">mymovie</span> <span class="pre">};</span></code> is
 set as <a class="reference internal" href="#the-return-object">The Return Object</a> to a mapped function, the header
-<code class="docutils literal notranslate"><span class="pre">content-type:</span> <span class="pre">video/x-m4v</span></code> is sent.  Thought the ‘’content-type” header
+<code class="docutils literal notranslate"><span class="pre">content-type:</span> <span class="pre">video/x-m4v</span></code> is sent.  Though the ‘’content-type” header
 can be changed using the <code class="docutils literal notranslate"><span class="pre">headers</span></code> object in <a class="reference internal" href="#the-return-object">The Return Object</a>, it
 does not affect files served from the filesystem. If it is necessary to change
 the “content-type” for both <a class="reference internal" href="#mapped-functions">Mapped Functions</a> and files served from
@@ -551,6 +541,42 @@ in <a class="reference internal" href="#the-return-object">The Return Object</a>
 <li><p>A mapped function path/key must start with <code class="docutils literal notranslate"><span class="pre">ws:</span></code> for websocket
 connections.  See <a class="reference internal" href="#websockets">Websockets</a> below.</p></li>
 </ul>
+</div></blockquote>
+<dl>
+<dt>NOTE:</dt><dd><p>Modules may also return its own mapped functions. The url will
+be a concatenation of the <code class="docutils literal notranslate"><span class="pre">map</span></code> object key and the return object keys.</p>
+<p>Example:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">server</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-server&quot;</span><span class="p">);</span>
+
+<span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">({</span>
+  <span class="cm">/* requests to http://localhost:8088/multi/ will be handled by *</span>
+<span class="cm">   * modules/multi_function.js                                   */</span>
+  <span class="nx">map</span><span class="o">:</span> <span class="p">{</span>
+     <span class="s2">&quot;/multi/&quot;</span><span class="o">:</span>            <span class="p">{</span><span class="nx">module</span><span class="o">:</span> <span class="s2">&quot;modules/multi_function.js&quot;</span> <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="cm">/* Here modules/multi_function.js is a module which sets exports *</span>
+<span class="cm"> * to an Object with keys as paths set to functions. Example:    */</span>
+
+        <span class="cm">/* functions indexpage, firstpage, etc not shown */</span>
+        <span class="nx">module</span><span class="p">.</span><span class="nx">exports</span><span class="o">=</span><span class="p">{</span>
+            <span class="s2">&quot;/&quot;</span>                  <span class="o">:</span> <span class="nx">indexpage</span><span class="p">,</span>   <span class="c1">// the indexpage function</span>
+            <span class="s2">&quot;/index.html&quot;</span>        <span class="o">:</span> <span class="nx">indexpage</span><span class="p">,</span>   <span class="c1">// same</span>
+            <span class="s2">&quot;/page1.html&quot;</span>        <span class="o">:</span> <span class="nx">firstpage</span><span class="p">,</span>   <span class="c1">// function handles page 1</span>
+            <span class="s2">&quot;/page2.html&quot;</span>        <span class="o">:</span> <span class="nx">secondpage</span><span class="p">,</span>  <span class="c1">// function handles page 2</span>
+            <span class="s2">&quot;/virtdir/page3.html&quot;</span><span class="o">:</span> <span class="nx">thirdpage</span>    <span class="c1">// function handles page 3</span>
+        <span class="p">};</span>
+<span class="cm">/*</span>
+<span class="cm">        These would then map to:</span>
+<span class="cm">            http://localhost:8088/multi/</span>
+<span class="cm">            http://localhost:8088/multi/index.html</span>
+<span class="cm">            http://localhost:8088/multi/page1.html</span>
+<span class="cm">            http://localhost:8088/multi/page2.html</span>
+<span class="cm">            http://localhost:8088/multi/virtdir/page3.html</span>
+<span class="cm">*/</span>
+</pre></div>
+</div>
 <p>For normal use, it is always preferable to use modules.  The
 advantage of using modules is that they can be changed at any time without
 having to restart the server and that variables declared in the module
@@ -617,7 +643,8 @@ between threads).</p>
 <p>In the above example, <code class="docutils literal notranslate"><span class="pre">var</span> <span class="pre">html</span></code> would be set once when the module is
 loaded.  It is then accessible from the exported function and its scope is
 limited to the <code class="docutils literal notranslate"><span class="pre">mymod.js</span></code> file.</p>
-</div></blockquote>
+</dd>
+</dl>
 </div>
 <div class="section" id="mapped-directories">
 <h4>Mapped Directories<a class="headerlink" href="#mapped-directories" title="Permalink to this headline">¶</a></h4>
@@ -737,7 +764,7 @@ object passed to the function might look something like this:</p>
 <span class="p">{</span>
     <span class="p">...,</span>
     <span class="nx">map</span> <span class="o">:</span> <span class="p">{</span>
-        <span class="s2">&quot;/showreq.html&quot;</span> <span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
+        <span class="s2">&quot;/showreq.txt&quot;</span> <span class="o">:</span> <span class="kd">function</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
         <span class="k">return</span><span class="p">(</span> <span class="p">{</span> <span class="nx">txt</span><span class="o">:</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">sprintf</span><span class="p">(</span><span class="s2">&quot;%3J&quot;</span><span class="p">,</span><span class="nx">req</span><span class="p">)</span> <span class="p">}</span> <span class="p">);</span>
       <span class="p">}</span>
     <span class="p">}</span>
@@ -1118,7 +1145,7 @@ must be a known extension):</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">jpg</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">readFile</span><span class="p">(</span><span class="s2">&quot;/path/to/my/jpeg.jpg&quot;</span><span class="p">);</span>
 <span class="cm">/* overwrite the bin -&gt; &quot;application/octet-stream&quot; header */</span>
 <span class="k">return</span> <span class="p">{</span>
-   <span class="nx">bin</span><span class="o">:</span><span class="nx">jpg</span>
+   <span class="nx">bin</span><span class="o">:</span><span class="nx">jpg</span><span class="p">,</span>
    <span class="nx">headers</span><span class="o">:</span> <span class="p">{</span><span class="s2">&quot;content-type&quot;</span><span class="o">:</span> <span class="s2">&quot;image/jpeg&quot;</span><span class="p">}</span>
 <span class="p">};</span>
 </pre></div>

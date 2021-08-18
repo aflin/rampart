@@ -755,8 +755,8 @@ corresponding file property is true.</p>
 <h3>lstat<a class="headerlink" href="#lstat" title="Permalink to this headline">¶</a></h3>
 <p>Same as <a class="reference internal" href="#stat">stat</a>() except if <code class="docutils literal notranslate"><span class="pre">file</span></code> is a link, return information about the link itself.</p>
 <dl class="simple">
-<dt>Return Value:</dt><dd><p>Same as <a class="reference internal" href="#stat">stat</a>() with the addition of the property/function
-<code class="docutils literal notranslate"><span class="pre">isSymbolicLink()</span></code> to test whether the file is a symbolic link.</p>
+<dt>Return Value:</dt><dd><p>Same as <a class="reference internal" href="#stat">stat</a>() with the addition of the property
+<code class="docutils literal notranslate"><span class="pre">isSymbolicLink</span></code> which is set <code class="docutils literal notranslate"><span class="pre">true</span></code> if the file is a symbolic link.</p>
 </dd>
 </dl>
 </div>
@@ -786,6 +786,9 @@ only the environment variables given in <code class="docutils literal notranslat
 Duplicate keys in <a class="reference internal" href="rampart-main.html#env"><span class="std std-ref">process.env</span></a> are replaced with the value from <code class="docutils literal notranslate"><span class="pre">env</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">stdin</span></code> - <span class="green">String</span> or <span class="green">Buffer</span>.  If specified, the content is piped to the
 command as stdin.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">returnBuffer</span></code> - <span class="green">Boolean</span>.  Whether content is returned in a
+<span class="green">Buffer</span> rather than a <span class="green">String</span>.  Useful for capturing
+binary data output.</p></li>
 </ul>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">argn</span></code> - <span class="green">String</span>/<span class="green">Number</span>/<span class="green">Object</span>/<span class="green">Boolean</span>/<span class="green">Null</span> - Arguments to be passed to
@@ -1282,7 +1285,8 @@ Example:</p>
 <div class="section" id="fopen">
 <h3>fopen<a class="headerlink" href="#fopen" title="Permalink to this headline">¶</a></h3>
 <p>Open a filehandle for use with <a class="reference internal" href="#fprintf">fprintf</a>(), <a class="reference internal" href="#fclose">fclose</a>(), <a class="reference internal" href="#fseek">fseek</a>(),
-<a class="reference internal" href="#rewind">rewind</a>(), <a class="reference internal" href="#ftell">ftell</a>(), <a class="reference internal" href="#fflush">fflush</a>() <a class="reference internal" href="#fread">fread</a>(), <a class="reference internal" href="#fgets">fgets</a>(), <a class="reference internal" href="#fwrite">fwrite</a>() and readLine.</p>
+<a class="reference internal" href="#rewind">rewind</a>(), <a class="reference internal" href="#ftell">ftell</a>(), <a class="reference internal" href="#fflush">fflush</a>() <a class="reference internal" href="#fread">fread</a>(), <a class="reference internal" href="#fgets">fgets</a>(), <a class="reference internal" href="#fwrite">fwrite</a>() and
+<a class="reference internal" href="#readline">readLine</a>().</p>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p><span class="green">Object</span>. An object which opaquely contains the opened file handle along with
 the above functions.</p>
@@ -1335,7 +1339,7 @@ file.</p></li>
 </div>
 <div class="section" id="fprintf">
 <h3>fprintf<a class="headerlink" href="#fprintf" title="Permalink to this headline">¶</a></h3>
-<p>Same as <code class="docutils literal notranslate"><span class="pre">printf()</span></code> except output is sent to the file provided by
+<p>Same as <a class="reference internal" href="#printf">printf</a>() except output is sent to the file provided by
 a <span class="green">String</span> or filehandle <span class="green">Object</span> opened and returned from <a class="reference internal" href="#fopen">fopen</a>().</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">filename</span> <span class="o">=</span> <span class="s2">&quot;/home/user/myfile.txt&quot;</span><span class="p">;</span>
@@ -1363,7 +1367,9 @@ overwrite an existing file.</p></li>
 </dd>
 </dl>
 <p>Example:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">handle</span> <span class="o">=</span> <span class="nx">fopen</span><span class="p">(</span><span class="s2">&quot;/tmp/out.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;w+&quot;</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">);</span>
+
+<span class="kd">var</span> <span class="nx">handle</span> <span class="o">=</span> <span class="nx">fopen</span><span class="p">(</span><span class="s2">&quot;/tmp/out.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;w+&quot;</span><span class="p">);</span>
 <span class="nx">fprintf</span><span class="p">(</span><span class="nx">handle</span><span class="p">,</span> <span class="s2">&quot;A number: %d\n&quot;</span><span class="p">,</span> <span class="mi">123</span><span class="p">);</span>
 <span class="nx">fclose</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
 

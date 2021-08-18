@@ -58,9 +58,7 @@ create a fork, one per thread, in order to handle such functions.
 
 A timeout for script execution may also be set.  Should the script timeout,
 the serving thread will cancel the request and re-initialize the JavaScript
-context in order to serve new requests.  Should the script timeout from
-within a forked process, that process will be terminated and the thread will
-fork again upon the next request.
+context in order to serve new requests.
 
 Loading and Using the Module
 ----------------------------
@@ -200,15 +198,6 @@ Where:
       privileged ports as ``root`` and then dropping privileges.  If the server
       is started as root, ``user`` must be set.
 
-    * ``bufferMem``: A positive :green:`Number`.  If equal to or below 100, 
-      the percent of system memory to use for buffers for printing
-      directly to the client.  If above 100, the amount in kilobytes of
-      system memory to use for buffers for printing directly to the client.
-      This amount is divided by the number of threads, with each thread
-      using a buffer of the resulting size.  The default, if not specified
-      is ``10`` (10% of the system's physical memory).  See 
-      `Advanced Functions`_ below.
-
     * ``cacheControl``: A :green:`String` or a :green:`Boolean`.  If a
       :green:`String` - the text to set the "Cache-Control" header when
       serving files off of the filesystem.  The default is "max-age=84600,
@@ -220,7 +209,7 @@ Where:
       ``false``.  If an :green:`Array`. is given, it is a list of file
       extension which will be compressed.  If ``true`` - the following default
       :green:`Array` of extensions will be used: 
-      ``["html", "css", "js", "xml", ""json""]``.
+      ``["html", "css", "js", "json, "xml", "txt", "text", "htm"]``.
       
       Note that compressed files will be cached in a directory named ".gzipcache/"
       in the directory in which the files are located.
@@ -239,10 +228,10 @@ Where:
       script output must be in order for the content to be compressed.  The default,
       if not specified, is ``1000``.
 
-    * ``mimeMap``: An :green:`Object`, additions or changes to the standart extension
+    * ``mimeMap``: An :green:`Object`, additions or changes to the standard extension
       to mime mappings.  Normally, if, e.g., ``return { "m4v": mymovie };`` is
       set as `The Return Object`_ to a mapped function, the header
-      ``content-type: video/x-m4v`` is sent.  Thought the ''content-type" header
+      ``content-type: video/x-m4v`` is sent.  Though the ''content-type" header
       can be changed using the ``headers`` object in `The Return Object`_\ , it
       does not affect files served from the filesystem. If it is necessary to change
       the "content-type" for both `Mapped Functions`_ and files served from
@@ -382,6 +371,44 @@ Mapped Functions
 
   * A mapped function path/key must start with ``ws:`` for websocket
     connections.  See `Websockets`_ below.
+
+NOTE:
+  Modules may also return its own mapped functions. The url will
+  be a concatenation of the ``map`` object key and the return object keys.
+
+  Example:
+
+  .. code-block:: javascript
+     
+    var server = require("rampart-server");
+
+    server.start({
+      /* requests to http://localhost:8088/multi/ will be handled by *
+       * modules/multi_function.js                                   */
+      map: {
+         "/multi/":            {module: "modules/multi_function.js" }
+      }
+    }
+
+    /* Here modules/multi_function.js is a module which sets exports *
+     * to an Object with keys as paths set to functions. Example:    */
+
+            /* functions indexpage, firstpage, etc not shown */
+            module.exports={
+                "/"                  : indexpage,   // the indexpage function
+                "/index.html"        : indexpage,   // same
+                "/page1.html"        : firstpage,   // function handles page 1
+                "/page2.html"        : secondpage,  // function handles page 2
+                "/virtdir/page3.html": thirdpage    // function handles page 3
+            };
+    /*
+            These would then map to:
+                http://localhost:8088/multi/
+                http://localhost:8088/multi/index.html
+                http://localhost:8088/multi/page1.html
+                http://localhost:8088/multi/page2.html
+                http://localhost:8088/multi/virtdir/page3.html
+    */
 
   For normal use, it is always preferable to use modules.  The
   advantage of using modules is that they can be changed at any time without
@@ -587,7 +614,7 @@ The Request Object
         {
             ...,
             map : {
-                "/showreq.html" : function(req) {
+                "/showreq.txt" : function(req) {
                 return( { txt: rampart.utils.sprintf("%3J",req) } );
               }
             }
@@ -978,7 +1005,7 @@ The Return Object
     var jpg = rampart.utils.readFile("/path/to/my/jpeg.jpg"); 
     /* overwrite the bin -> "application/octet-stream" header */
     return {
-       bin:jpg
+       bin:jpg,
        headers: {"content-type": "image/jpeg"}
     };
     

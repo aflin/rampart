@@ -983,7 +983,7 @@ properties:
 BigInt
 ------
 
-The rampart-crypto module includes functions which handle arbitrarly long
+The rampart-crypto module includes functions which handle arbitrarily long
 integers using openssl's ``BIGNUM`` library.  It is designed to be compatible with the 
 `JSBI <https://github.com/GoogleChromeLabs/jsbi>`_ library and includes the
 same published functions.  See `JSBI Node Module <https://www.npmjs.com/package/jsbi>`_
