@@ -2378,8 +2378,10 @@ static inline BIGNUM * new_bn(duk_context *ctx, const char *cnum, int make_objec
         }
 
         if(len != nchar)
+        {
+            BN_free(bn);
             RP_SYNTAX_THROW(ctx, "bigint: invalid value");
-
+        }
     }
 
     if(make_object)
