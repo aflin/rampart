@@ -312,7 +312,7 @@ other async functions via, e.g., <a class="reference internal" href="rampart-ser
 <a class="reference internal" href="rampart-redis.html#the-rampart-redis-module"><span class="std std-ref">rampart-redis</span></a>, Babel, etc),
 all functions included in the <a class="reference external" href="https://duktape.org">Duktape</a> JavaScript
 engine (as well as most of the functions added to Rampart) are synchronous.  Raw
-JavaScript execution ismore memory efficient, but far slower than with, e.g.,
+JavaScript execution is more memory efficient, but far slower than with, e.g.,
 node.js.  However, the functionality and speed of the available C functions provide
 comparable efficacy, excellent performance and are a viable alternative to
 <a class="reference external" href="https://en.wikipedia.org/wiki/LAMP_(software_bundle)">LAMP</a>,
@@ -1218,22 +1218,23 @@ if past that time).</p>
 </div>
 <div class="section" id="clearmetronome">
 <h3>clearMetronome()<a class="headerlink" href="#clearmetronome" title="Permalink to this headline">¶</a></h3>
-<p>Clear a pending <a class="reference internal" href="#setinterval">setInterval()</a> timer, breaking the loop.</p>
+<p>Clear a pending <a class="reference internal" href="#setmetronome">setMetronome()</a> timer, breaking the loop.</p>
 <p>Usage:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">id</span> <span class="o">=</span> <span class="nx">setInterval</span><span class="p">(</span><span class="nx">callback</span><span class="p">,</span> <span class="nx">interval</span><span class="p">);</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">id</span> <span class="o">=</span> <span class="nx">setMetronome</span><span class="p">(</span><span class="nx">callback</span><span class="p">,</span> <span class="nx">interval</span><span class="p">);</span>
 
-<span class="nx">clearInterval</span><span class="p">(</span><span class="nx">id</span><span class="p">);</span>
+<span class="nx">clearMetronome</span><span class="p">(</span><span class="nx">id</span><span class="p">);</span>
 </pre></div>
 </div>
 <p>Where:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">id</span></code> is the return value from a call to <a class="reference internal" href="#setinterval">setInterval()</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">id</span></code> is the return value from a call to <a class="reference internal" href="#setmetronome">setMetronome()</a>.</p></li>
 </ul>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code></p>
 </dd>
 <dt>NOTE:</dt><dd><p><a class="reference internal" href="#cleartimeout">clearTimeout()</a>, <a class="reference internal" href="#clearinterval">clearInterval()</a> and <a class="reference internal" href="#clearmetronome">clearMetronome()</a> internally are
-aliases for the same function.</p>
+aliases for the same function and will clear whichever id is specified,
+regardless of type.</p>
 </dd>
 </dl>
 </div>

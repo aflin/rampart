@@ -97,7 +97,7 @@ other async functions via, e.g., :ref:`websockets <rampart-server:websockets>`,
 :ref:`rampart-redis <rampart-redis:The rampart-redis module>`, Babel, etc), 
 all functions included in the `Duktape <https://duktape.org>`_ JavaScript
 engine (as well as most of the functions added to Rampart) are synchronous.  Raw 
-JavaScript execution ismore memory efficient, but far slower than with, e.g., 
+JavaScript execution is more memory efficient, but far slower than with, e.g., 
 node.js.  However, the functionality and speed of the available C functions provide 
 comparable efficacy, excellent performance and are a viable alternative to 
 `LAMP <https://en.wikipedia.org/wiki/LAMP_(software_bundle)>`_, 
@@ -1140,28 +1140,29 @@ Example:
     */
 
 clearMetronome()
-"""""""""""""""
+""""""""""""""""
 
-Clear a pending `setInterval()`_ timer, breaking the loop.
+Clear a pending `setMetronome()`_ timer, breaking the loop.
 
 Usage:
 
 .. code-block:: javascript
 
-   var id = setInterval(callback, interval);
+   var id = setMetronome(callback, interval);
 
-   clearInterval(id);
+   clearMetronome(id);
 
 Where:
 
-* ``id`` is the return value from a call to `setInterval()`_\ .
+* ``id`` is the return value from a call to `setMetronome()`_\ .
 
 Return Value:
     ``undefined``
 
 NOTE:  
     `clearTimeout()`_, `clearInterval()`_ and `clearMetronome()`_ internally are
-    aliases for the same function.
+    aliases for the same function and will clear whichever id is specified,
+    regardless of type.
 
 
 Additional Global Variables and Functions
