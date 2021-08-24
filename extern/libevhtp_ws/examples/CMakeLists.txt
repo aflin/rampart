@@ -11,6 +11,7 @@ add_executable(example_pause EXCLUDE_FROM_ALL example_pause.c)
 add_executable(example_chunked EXCLUDE_FROM_ALL example_chunked.c)
 add_executable(example_request_fini EXCLUDE_FROM_ALL example_request_fini.c)
 add_executable(example_basic EXCLUDE_FROM_ALL example_basic.c)
+add_executable(example_ws EXCLUDE_FROM_ALL example_ws.c)
 
 if(NOT EVHTP_DISABLE_EVTHR)
     if ("${CMAKE_SYSTEM}" MATCHES "Linux")
@@ -40,6 +41,7 @@ target_link_libraries(example_pause evhtp ${LIBEVHTP_EXTERNAL_LIBS} ${SYS_LIBS})
 target_link_libraries(example_chunked evhtp ${LIBEVHTP_EXTERNAL_LIBS} ${SYS_LIBS})
 target_link_libraries(example_request_fini evhtp ${LIBEVHTP_EXTERNAL_LIBS} ${SYS_LIBS})
 target_link_libraries(example_basic evhtp ${LIBEVHTP_EXTERNAL_LIBS} ${SYS_LIBS})
+target_link_libraries(example_ws evhtp ${LIBEVHTP_EXTERNAL_LIBS} ${SYS_LIBS})
 
 if(NOT EVHTP_DISABLE_SSL)
     file(COPY
@@ -66,4 +68,5 @@ add_dependencies(examples
   example_vhost test_extensive
   test_basic
   test_vhost test_client
-  test_query test_perf example_basic)
+  test_query test_perf example_basic 
+  example_ws)

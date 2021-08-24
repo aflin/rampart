@@ -866,11 +866,11 @@ EVHTP_EXPORT int evhtp_bind_socket(evhtp_t * htp, const char * addr, uint16_t po
 
 
 /**
- * @brief stops the listening socket.
+ * @brief stops the listening sockets.
  *
  * @param htp
  */
-EVHTP_EXPORT void evhtp_unbind_socket(evhtp_t * htp);
+EVHTP_EXPORT void evhtp_unbind_sockets(evhtp_t * htp);
 
 
 /**
