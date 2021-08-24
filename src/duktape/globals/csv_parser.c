@@ -66,6 +66,10 @@ openCSV(char *fileName)
       
       if(fh)
          fclose(fh);
+
+      if(csv->buf)  // thanks for the catch Ben
+         free(csv->buf);
+
       if(csv)
          free(csv);
       return(NULL);

@@ -3,7 +3,7 @@ set(CMAKE_BUILD_TYPE Debug)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
-project(libevhtp VERSION "1.2.18")
+project(libevhtp_ws VERSION "1.2.18")
 
 # For us YCM users.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -126,25 +126,25 @@ endif()
 #-fPIC :
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 #add_library(evhtp SHARED ${LIBEVHTP_SOURCE_FILES})
-add_library(evhtp STATIC ${LIBEVHTP_SOURCE_FILES})
-target_link_libraries(evhtp PUBLIC ${LIBEVHTP_EXTERNAL_LIBS})
-target_include_directories(evhtp PUBLIC ${LIBEVHTP_EXTERNAL_INCLUDES})
-# set_target_properties(evhtp PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_compile_definitions(evhtp PUBLIC "PROJECT_VERSION=${PROJECT_VERSION}")
+add_library(evhtp_ws STATIC ${LIBEVHTP_SOURCE_FILES})
+target_link_libraries(evhtp_ws PUBLIC ${LIBEVHTP_EXTERNAL_LIBS})
+target_include_directories(evhtp_ws PUBLIC ${LIBEVHTP_EXTERNAL_INCLUDES})
+# set_target_properties(evhtp_ws PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_compile_definitions(evhtp_ws PUBLIC "PROJECT_VERSION=${PROJECT_VERSION}")
 if(has_stack_protector)
-    target_compile_options(evhtp PUBLIC -fstack-protector-strong)
+    target_compile_options(evhtp_ws PUBLIC -fstack-protector-strong)
 endif()
 
 if(EVHTP_THR_SHARED_PIPE)
-    target_compile_definitions(evhtp PUBLIC EVTHR_SHARED_PIPE)
+    target_compile_definitions(evhtp_ws PUBLIC EVTHR_SHARED_PIPE)
 endif()
 
 if(has_c99)
-    target_compile_definitions(evhtp PUBLIC EVHTP_HAS_C99)
+    target_compile_definitions(evhtp_ws PUBLIC EVHTP_HAS_C99)
 endif()
 
 if (HAVE_SYS_TYPES_H)
-    target_compile_definitions(evhtp PUBLIC EVHTP_HAS_SYS_TYPES)
+    target_compile_definitions(evhtp_ws PUBLIC EVHTP_HAS_SYS_TYPES)
 endif()
 
 if(NOT HAVE_SYS_TREE)
@@ -162,48 +162,48 @@ if(NOT HAVE_SYS_QUEUE)
 endif()
 
 if(NOT HAVE_SYS_TREE OR NOT HAVE_SYS_QUEUE)
-    target_include_directories(evhtp PUBLIC
+    target_include_directories(evhtp_ws PUBLIC
       $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/compat>)
 endif()
 
 if(NOT HAVE_STRNDUP)
-    target_compile_definitions(evhtp PUBLIC NO_STRNDUP)
+    target_compile_definitions(evhtp_ws PUBLIC NO_STRNDUP)
 endif()
 
 if(NOT HAVE_STRNLEN)
-    target_compile_definitions(evhtp PUBLIC NO_STRNLEN)
+    target_compile_definitions(evhtp_ws PUBLIC NO_STRNLEN)
 endif()
 
 if(NOT HAVE_SYS_UN)
-    target_compile_definitions(evhtp PUBLIC NO_SYS_UN)
+    target_compile_definitions(evhtp_ws PUBLIC NO_SYS_UN)
 endif()
 
 if(HOST_BIG_ENDIAN)
-    target_compile_definitions(evhtp PUBLIC HOST_BIG_ENDIAN)
+    target_compile_definitions(evhtp_ws PUBLIC HOST_BIG_ENDIAN)
 endif()
 
 # Test 32/64 bits
 if("${CMAKE_SIZEOF_VOID_P}" EQUAL "8")
-    target_compile_definitions(evhtp PUBLIC EVHTP_SYS_ARCH=64)
+    target_compile_definitions(evhtp_ws PUBLIC EVHTP_SYS_ARCH=64)
 elseif("${CMAKE_SIZEOF_VOID_P}" EQUAL "4")
-    target_compile_definitions(evhtp PUBLIC EVHTP_SYS_ARCH=32)
+    target_compile_definitions(evhtp_ws PUBLIC EVHTP_SYS_ARCH=32)
 else()
     message(ERROR "Unable to determine architecture")
 endif()
 
 if(EVHTP_USE_DEFER_ACCEPT)
-    target_compile_definitions(evhtp PUBLIC USE_DEFER_ACCEPT)
+    target_compile_definitions(evhtp_ws PUBLIC USE_DEFER_ACCEPT)
 endif()
 
 if(OPENSSL_FOUND AND APPLE)
     # Darwin based hosts have deprecated normal openssl functions, which is
     # annoying to see warnings, for now, just ignore them.
-    target_compile_options(evhtp PRIVATE -Wno-deprecated-declarations)
+    target_compile_options(evhtp_ws PRIVATE -Wno-deprecated-declarations)
 endif()
 
 if(WIN32)
-    target_compile_definitions(evhtp PUBLIC WIN32)
-    target_compile_options(evhtp PUBLIC -march=i486)
+    target_compile_definitions(evhtp_ws PUBLIC WIN32)
+    target_compile_options(evhtp_ws PUBLIC -march=i486)
     find_library(LIB_WS32 ws2_32)
     list(APPEND SYS_LIBS ${LIB_WS32})
 endif()
@@ -215,16 +215,16 @@ configure_file(
 list(APPEND evhtp_dir_headers
     "${CMAKE_CURRENT_BINARY_DIR}/include/evhtp/config.h")
 
-target_include_directories(evhtp PUBLIC
+target_include_directories(evhtp_ws PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
 if(BUILD_SHARED_LIBS)
-    set_target_properties(evhtp PROPERTIES
+    set_target_properties(evhtp_ws PROPERTIES
         VERSION "${PROJECT_VERSION}"
         SOVERSION 0
-        OUTPUT_NAME "evhtp"
+        OUTPUT_NAME "evhtp_ws"
         C_VISIBILITY_PRESET hidden)
 endif()
 
@@ -268,7 +268,7 @@ add_subdirectory(examples)
 # )
 
 # # Targets:
-# #   * <prefix>/lib/libevhtp.a
+# #   * <prefix>/lib/libevhtp_ws.a
 # #   * header location after install: <prefix>/include/evhtp.h
 # #   * headers can be included by C code `#include <evhtp.h>`
 # install(
@@ -302,15 +302,15 @@ add_subdirectory(examples)
 # )
 
 # # Config
-# #   * <prefix>/lib/cmake/libevhtp/libevhtpConfig.cmake
-# #   * <prefix>/lib/cmake/libevhtp/libevhtpConfigVersion.cmake
+# #   * <prefix>/lib/cmake/libevhtp_ws/libevhtpConfig.cmake
+# #   * <prefix>/lib/cmake/libevhtp_ws/libevhtpConfigVersion.cmake
 # install(
 #     FILES "${project_config}" "${version_config}"
 #     DESTINATION "${config_install_dir}"
 # )
 
 # # Config
-# #   * <prefix>/lib/cmake/libevhtp/libevhtpTargets.cmake
+# #   * <prefix>/lib/cmake/libevhtp_ws/libevhtpTargets.cmake
 # install(
 #     EXPORT "${TARGETS_EXPORT_NAME}"
 #     NAMESPACE "${namespace}"

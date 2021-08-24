@@ -20,7 +20,7 @@ set(LIBEVENT_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevent)
 set(OPENSSL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/openssl)
 set(ONIGURUMA_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/oniguruma)
 set(CURL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/curl)
-set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp)
+set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp_ws)
 
 add_definitions(
 	-DRP_USING_DUKTAPE 
@@ -248,7 +248,7 @@ add_library(rampart-server SHARED
  duktape/modules/rampart-server.c
 )
 target_link_libraries(rampart-server 
-	${LIBEVHTP_TARGET_DIR}/libevhtp.a
+	${LIBEVHTP_TARGET_DIR}/libevhtp_ws.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a
   	rampart-crypto
 	${ONIGURUMA_TARGET_DIR}/libonig.a
@@ -261,8 +261,8 @@ target_include_directories(rampart-server PRIVATE
 	${PROJECT_BINARY_DIR}/extern/openssl/include/
 	${PROJECT_SOURCE_DIR}/extern/libevent/include/
 	${PROJECT_BINARY_DIR}/extern/libevent/include/
-	${PROJECT_SOURCE_DIR}/extern/libevhtp/include/
-	${PROJECT_BINARY_DIR}/extern/libevhtp/include/
+	${PROJECT_SOURCE_DIR}/extern/libevhtp_ws/include/
+	${PROJECT_BINARY_DIR}/extern/libevhtp_ws/include/
 	${PROJECT_BINARY_DIR}/extern/libdeflate/
 )
 
