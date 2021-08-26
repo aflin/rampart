@@ -228,7 +228,7 @@
 <div class="section" id="acknowledgment">
 <h3>Acknowledgment<a class="headerlink" href="#acknowledgment" title="Permalink to this headline">¶</a></h3>
 <p>The rampart-server module uses the
-<a class="reference external" href="https://github.com/criticalstack/libevhtp">libevhtp</a> library,
+<a class="reference external" href="https://github.com/aflin/libevhtp_ws">libevhtp_ws</a> library,
 a fast, embedded, event driven http/https server
 which itself uses the <a class="reference external" href="https://libevent.org/">libevent2</a> library.</p>
 <p>The developers of Rampart are extremely grateful for the excellent APIs and ease
@@ -237,10 +237,10 @@ of use of these libraries.</p>
 <div class="section" id="license">
 <h3>License<a class="headerlink" href="#license" title="Permalink to this headline">¶</a></h3>
 <p>The rampart-server module is released under the MIT license.
-The <a class="reference external" href="https://github.com/criticalstack/libevhtp">libevhtp</a> library
+The <a class="reference external" href="https://github.com/aflin/libevhtp_ws">libevhtp_ws</a> library
 and the <a class="reference external" href="https://libevent.org/">libevent2</a> library
 are both provided under a
-<a class="reference external" href="https://github.com/criticalstack/libevhtp/blob/develop/LICENSE">BSD-3-Clause License</a>.</p>
+<a class="reference external" href="https://github.com/aflin/libevhtp_ws/blob/main/LICENSE">BSD-3-Clause License</a>.</p>
 </div>
 <div class="section" id="what-does-it-do">
 <h3>What does it do?<a class="headerlink" href="#what-does-it-do" title="Permalink to this headline">¶</a></h3>
@@ -1504,7 +1504,7 @@ and is used to send a chunk to the client.</p>
 </pre></div>
 </div>
 <p>Where <code class="docutils literal notranslate"><span class="pre">data</span></code> is a <span class="green">String</span>, <span class="green">Buffer</span> (or optionally a <span class="green">Number</span>,
-:green`Boolean` or :green`Object`, in which case it is converted to a
+<span class="green">Boolean</span> or <span class="green">Object</span>, in which case it is converted to a
 <span class="green">String</span>) - The data to send back to the client.</p>
 <p>A string starting with <cite>&#64;</cite> is used to send the contents of the file
 specified (see <a class="reference internal" href="#the-return-object">The Return Object</a>for details).</p>
@@ -1616,7 +1616,7 @@ and is set to the current 0 based chunk index.</p>
 <span class="p">});</span>
 </pre></div>
 </div>
-<p>Sending mjpeg, using ffmpeg and webcam on Linux:</p>
+<p>Sending mjpeg, using ffmpeg and a webcam on Linux:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">server</span><span class="o">=</span><span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-server&quot;</span><span class="p">);</span>
 <span class="nx">rampart</span><span class="p">.</span><span class="nx">globalize</span><span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">);</span>
 

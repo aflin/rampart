@@ -8,7 +8,7 @@ Acknowledgment
 ~~~~~~~~~~~~~~
 
 The rampart-server module uses the 
-`libevhtp <https://github.com/criticalstack/libevhtp>`_ library,
+`libevhtp_ws <https://github.com/aflin/libevhtp_ws>`_ library,
 a fast, embedded, event driven http/https server 
 which itself uses the `libevent2 <https://libevent.org/>`_ library.
  
@@ -19,10 +19,10 @@ License
 ~~~~~~~
 
 The rampart-server module is released under the MIT license. 
-The `libevhtp <https://github.com/criticalstack/libevhtp>`_ library
+The `libevhtp_ws <https://github.com/aflin/libevhtp_ws>`_ library
 and the `libevent2 <https://libevent.org/>`_ library
 are both provided under a 
-`BSD-3-Clause License <https://github.com/criticalstack/libevhtp/blob/develop/LICENSE>`_\ .
+`BSD-3-Clause License <https://github.com/aflin/libevhtp_ws/blob/main/LICENSE>`_\ .
 
 What does it do?
 ~~~~~~~~~~~~~~~~
@@ -1400,7 +1400,7 @@ Usage:
     req.chunkSend(data);
 
 Where ``data`` is a :green:`String`, :green:`Buffer` (or optionally a :green:`Number`,
-:green`Boolean` or :green`Object`, in which case it is converted to a
+:green:`Boolean` or :green:`Object`, in which case it is converted to a
 :green:`String`) - The data to send back to the client.
 
 A string starting with `@` is used to send the contents of the file
@@ -1524,7 +1524,7 @@ Sending mjpeg, simple:
         }
     });
 
-Sending mjpeg, using ffmpeg and webcam on Linux:
+Sending mjpeg, using ffmpeg and a webcam on Linux:
 
 .. code-block:: javascript
 

@@ -210,7 +210,8 @@ default_ca_file
 ~~~~~~~~~~~~~~~
 
 The read only variable ``curl.default_ca_file`` is a :green:`String`, the 
-location of where Curl expects to find the CA Certificate Bundle file.
+location of where Curl expects to find the 
+`CA Certificate Bundle file <https://curl.se/docs/caextract.html>`_\ .
 If this file does not exist on the filesystem, ``https`` requests must
 either provide an alternate location for the file or be set as insecure.
 
@@ -526,7 +527,7 @@ Note that `examples`_ are provided below.
         * If an :green:`Object`, and the :green:`Object` has the key/property
           ``data`` is **NOT** set, the Object is converted to JSON.
   
-        * If an :green:`Array`, it must be an :green:`Array` of green:`Object`
+        * If an :green:`Array`, it must be an :green:`Array` of :green:`Object`
           with ``data`` and optionally ``filename`` and/or ``type`` set as above.
 
 

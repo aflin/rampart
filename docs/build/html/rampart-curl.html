@@ -382,7 +382,8 @@ same <span class="green">Object</span> as returned in <a class="reference intern
 <div class="section" id="default-ca-file">
 <h3>default_ca_file<a class="headerlink" href="#default-ca-file" title="Permalink to this headline">¶</a></h3>
 <p>The read only variable <code class="docutils literal notranslate"><span class="pre">curl.default_ca_file</span></code> is a <span class="green">String</span>, the
-location of where Curl expects to find the CA Certificate Bundle file.
+location of where Curl expects to find the
+<a class="reference external" href="https://curl.se/docs/caextract.html">CA Certificate Bundle file</a>.
 If this file does not exist on the filesystem, <code class="docutils literal notranslate"><span class="pre">https</span></code> requests must
 either provide an alternate location for the file or be set as insecure.</p>
 <p>See <code class="docutils literal notranslate"><span class="pre">cacert</span></code> and <code class="docutils literal notranslate"><span class="pre">insecure</span></code> respectively in <a class="reference internal" href="#curl-long-options">Curl long options</a> below.</p>
@@ -689,7 +690,7 @@ header) and <code class="docutils literal notranslate"><span class="pre">type</s
 to an appropriate <span class="green">String</span>.</p></li>
 <li><p>If an <span class="green">Object</span>, and the <span class="green">Object</span> has the key/property
 <code class="docutils literal notranslate"><span class="pre">data</span></code> is <strong>NOT</strong> set, the Object is converted to JSON.</p></li>
-<li><p>If an <span class="green">Array</span>, it must be an <span class="green">Array</span> of green:<cite>Object</cite>
+<li><p>If an <span class="green">Array</span>, it must be an <span class="green">Array</span> of <span class="green">Object</span>
 with <code class="docutils literal notranslate"><span class="pre">data</span></code> and optionally <code class="docutils literal notranslate"><span class="pre">filename</span></code> and/or <code class="docutils literal notranslate"><span class="pre">type</span></code> set as above.</p></li>
 </ul>
 </div></blockquote>
