@@ -22,11 +22,11 @@ make install
 
 ## Compiling on Linux (including raspberry pi) ##
 ```
-apt install flex bison libidn2-dev libldap2-dev python3
+apt install flex bison libidn2-dev libldap2-dev python3 zlib1g-dev
 ```
 or
 ```
-yum install libidn2-devel openldap-devel flex bison python3
+yum install libidn2-devel openldap-devel flex bison python3 zlib-devel
 ```
 Then, after cloning, you can do the following to build:
 
