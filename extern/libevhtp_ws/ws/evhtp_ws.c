@@ -417,8 +417,8 @@ evhtp_ws_gen_handshake(evhtp_kvs_t * hdrs_in, evhtp_kvs_t * hdrs_out) {
 /* use and prepend existing evbuffer with websocket header */
 struct evbuffer * evhtp_ws_add_header(struct evbuffer *buf, uint8_t opcode)
 {
-    size_t          len = evbuffer_get_length(buf),
-                    bufsz = 10;
+    uint64_t        len = (uint64_t)evbuffer_get_length(buf);
+    size_t          bufsz = 10;
     uint8_t         pbuf[bufsz];
 
     pbuf[0] = opcode | 0x80;
