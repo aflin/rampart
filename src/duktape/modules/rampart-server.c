@@ -2057,7 +2057,9 @@ static int sendbuf(DHS *dhs)
     ret = sendmem(dhs);
 
     /* null or empty string */
-    if(!duk_get_length(ctx, -1) )
+    if( duk_is_null(ctx, -1) || duk_is_undefined(ctx, -1) || 
+        ( duk_is_string(ctx, -1) && !duk_get_length(ctx, -1) )
+      )
     {
         return ret;
     }
