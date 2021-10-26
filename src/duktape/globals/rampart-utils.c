@@ -1919,12 +1919,12 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         struct exec_thread_waitpid_arg arg;
         pthread_t thread;
 
+        arg.killed = 0;
         if (timeout > 0)
         {
             arg.signal = kill_signal;
             arg.pid = pid;
             arg.timeout = timeout;
-            arg.killed = 0;
             pthread_create(&thread, NULL, duk_rp_exec_thread_waitpid, &arg);
         }
 
