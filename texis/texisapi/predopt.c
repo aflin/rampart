@@ -61,7 +61,7 @@ static CONST char	ForColOpParamFmt[] = " for `%s %s %s'";
    TXfldopname(op), ((paramIsRhs) ? (paramStr) : (colName))), \
    forBuf) : MtStr)
 
-static CONST char	FieldNonexistentFmt[] = "Field %s non-existent";
+static CONST char	FieldNonexistentFmt[] = "Field `%s' non-existent";
 static const char	FieldNonexistentInOrgFmt[] =
 	"Field `%s' non-existent in original table";
 static const char	TypeMismatchFmt[] =
@@ -4310,7 +4310,7 @@ TBSPEC *tbspec;
 					goto fopMatDone;
 				}
 			}
-			if (globalcp == APICPPN) globalcp = TXopenapicp();
+			TXget_globalcp();
 			rc = sregprefix(s, prefix, szq + 5, &sz,
 			    (TXCFF_GET_CASESTYLE(globalcp->stringcomparemode)
 				 == TXCFF_CASESTYLE_IGNORE) ? 1 : 0);

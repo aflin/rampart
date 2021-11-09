@@ -43,7 +43,7 @@ TXfunc_stringcompare(FLD *aFld, FLD *bFld, FLD *modeFld)
   if (aStr == CHARPN || bStr == CHARPN) goto nullStrs;
 
   /* Get the mode: - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-  if (globalcp == APICPPN) globalcp = TXopenapicp();
+  TXget_globalcp();
   if (modeFld != FLDPN)
     {
       modeStr = (char *)getfld(modeFld, &modeLen);

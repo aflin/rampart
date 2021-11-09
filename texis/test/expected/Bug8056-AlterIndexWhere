@@ -1,0 +1,78 @@
+Texis Version ...
+
+SQL 1 line 1> CREATE TABLE test (Data varchar(20));
+    Data    
+------------+
+
+SQL 1 line 2> INSERT INTO test VALUES('indexed.row');
+    Data    
+------------+
+indexed.row
+
+SQL 1 line 3> INSERT INTO test VALUES('indexed.row');
+    Data    
+------------+
+indexed.row
+
+SQL 1 line 4> INSERT INTO test VALUES('indexed.row');
+    Data    
+------------+
+indexed.row
+
+SQL 1 line 5> SELECT COUNT(*) N from test where Data like 'indexed-row';
+115 Query `indexed-row' would require linear search
+     N      
+------------+
+           0
+
+SQL 1 line 6> CREATE METAMORPH INDEX ix1 on test(Data);
+
+SQL 1 line 7> SELECT COUNT(*) N from test where Data like 'indexed-row';
+     N      
+------------+
+           3
+
+SQL 1 line 8> INSERT INTO test VALUES('indexed.row');
+    Data    
+------------+
+indexed.row
+
+SQL 1 line 9> INSERT INTO test VALUES('indexed.row');
+    Data    
+------------+
+indexed.row
+
+SQL 1 line 10> INSERT INTO test VALUES('indexed.row');
+    Data    
+------------+
+indexed.row
+
+SQL 1 line 11> SELECT COUNT(*) N from test where Data like 'indexed-row';
+     N      
+------------+
+           3
+
+SQL 1 line 12> ALTER INDEX ix1 OPTIMIZE HAVING COUNT(NewRows) > 5;
+
+SQL 1 line 13> SELECT COUNT(*) N from test where Data like 'indexed-row';
+     N      
+------------+
+           3
+
+SQL 1 line 14> ALTER INDEX ix1 OPTIMIZE HAVING COUNT(NewRows) > 1;
+
+SQL 1 line 15> SELECT COUNT(*) N from test where Data like 'indexed-row';
+     N      
+------------+
+           6
+
+SQL 1 line 16> ALTER INDEX ix1 OPTIMIZE;
+
+SQL 1 line 17> SELECT COUNT(*) N from test where Data like 'indexed-row';
+     N      
+------------+
+           6
+
+SQL 1 line 18> DROP TABLE test;
+
+SQL 1 line 19> 

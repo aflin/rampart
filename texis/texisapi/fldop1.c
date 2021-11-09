@@ -232,6 +232,10 @@ int op;
 			if(f2->issorted)
 			{
 				int l, r;
+
+                                if (TXfldmathverb >= 4)
+                                  putmsg(MINFO, __FUNCTION__,
+                                         "Binary searching numeric field");
 				l = 0;
 				r = n2;
 				while(l < r)
@@ -249,7 +253,12 @@ int op;
 						l = i + 1;
 				}
 			}
-			else for (i = 0; i < n2; i++)
+			else
+                        {
+                        if (TXfldmathverb >= 4)
+                          putmsg(MINFO, __FUNCTION__,
+                                 "Linear searching numeric field");
+                        for (i = 0; i < n2; i++)
 			{
 				if (ISEQ(ITEM1(0), ITEM2(i)))
 				{
@@ -258,6 +267,7 @@ int op;
 					return rc;
 				}
 			}
+                        }
 			rc = fld2finv(f3, (op == FOP_INTERSECT_IS_EMPTY));
 			break;
 		case FOP_INTERSECT:

@@ -153,12 +153,10 @@ QNODE_OP	op;
 	static CONST char	fn[] = "openqnode";
 	QNODE			*query;
 
-#ifdef RETURN_NULL_FOR_UNKNOWN
 	if(op == QNODE_OP_UNKNOWN)
 	{
 		return(QNODEPN);
 	}
-#endif
 	if (!(query = (QNODE *)TXcalloc(TXPMBUFPN, fn, 1, sizeof(QNODE))))
 		return(QNODEPN);
 	query->op = op;

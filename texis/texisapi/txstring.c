@@ -40,11 +40,16 @@ TX_Stringcmp(const void *a, const void *b)
 int
 TX_fldSortStringList(FLD *f2)
 {
+	TXPMBUF	*pmbuf = TXPMBUFPN;
+
 	if(f2->dsc.ptrsused > 0
 	  && (f2->dsc.ptrsused == f2->dsc.ptrsalloced))
 	{
 		if(!f2->issorted)
 		{
+			if (TXfldmathverb >= 4)
+				txpmbuf_putmsg(pmbuf, MINFO, __FUNCTION__,
+					       "Sorting strlst field");
 			qsort(f2->dsc.dptrs.strings,f2->dsc.ptrsused,sizeof(TX_String), TX_Stringcmp);
 			f2->issorted=1;
 		}

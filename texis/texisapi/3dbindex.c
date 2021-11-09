@@ -1111,7 +1111,7 @@ TX3dbiScoreIndex(int indexType,			/* (in) INDEX_ type (M/F) */
 	 */
 	paramRes = TXtextParamsTo3dbi(&dbi, sysindexParams, indexPath, 0x2);
 	if (paramRes < -1) goto err;		/* severe error parsing */
-	if (globalcp == APICPPN) globalcp = TXopenapicp();
+	TXget_globalcp();
 	/* We prefer an index that agrees with current settings,
 	 * so that we search as expected (i.e. if case-sensitive and
 	 * ignore-case indexes are both present, select appropriate),
@@ -1858,7 +1858,7 @@ void *auxfld;
 				   If the types differ, try and downconvert type.
 				   Don't do if the Compound index contains character
 				   data as we may run into prefix issues.
-				   WTF JMT 2000-08-01 
+				   WTF JMT 2000-08-01
 				   KNG 20060707 for "... where Text like
 				     'query' and LongField between (9, 12)":
 				   varlong(2) FOP_CNV long(1) now would give
@@ -3418,7 +3418,7 @@ setf3dbi(DBI_SEARCH *dbisearch)
 		 */
 		exs->haveOrderByNum = tbspec->haveOrderByNum;
 	}
-		
+
 	switch (op)
 	{
 	case FOP_PROXIM:	/* LIKEP */
@@ -3630,8 +3630,7 @@ setf3dbi(DBI_SEARCH *dbisearch)
 	}
 	else if ((mq = mmrip(ddmmapi->mmapi, 1)) == MMQLPN)
 		goto err;
-	if (!globalcp &&
-	    !(globalcp = TXopenapicp()))
+	if (!TXget_globalcp())
 		goto err;
 	tmpsm = globalcp->stringcomparemode;
 	globalcp->stringcomparemode |= TXCFF_PREFIX;

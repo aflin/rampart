@@ -1,0 +1,11 @@
+create table test(x int);
+create index ix1 on test(x);
+insert into test values(1);
+delete from test;
+set nolocking=1;
+insert into test values(1);
+delete from test;
+set singleuser=1;
+insert into test values(1);
+delete from test;
+drop table test;

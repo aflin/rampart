@@ -108,7 +108,7 @@ DD	*dd;		/* (in) dup'd */
 
 	if(fname)
 		rc->fname = TXstrdup(pmbuf, fn, fname);
-	else	
+	else
 		rc->fname = NULL;
 	rc->keysz = TX_ALIGN_UP_SIZE_T(keysz);
 	rc->ranksz = ranksize;
@@ -723,7 +723,7 @@ FLDCMP *fldcmp;
 
 /******************************************************************/
 /*	Compare two fields using the field math stuff.  Takes a
- *	buffer as would be stored in BTREE. 
+ *	buffer as would be stored in BTREE.
  *
  *	The usr structure is intended to have a FLDCMP structure
  *	which will contain a table to decode the fields.
@@ -821,7 +821,7 @@ locfldcmp2(void *vp1, void *vp2, int type, int *status, int rev)
 
 			v1 = vp1;
 			v2 = vp2;
-			if (globalcp == APICPPN) globalcp = TXopenapicp();
+			TXget_globalcp();
 			mode = globalcp->stringcomparemode;
 			if (rev & OF_IGN_CASE)
 				mode = TXCFF_SUBST_CASESTYLE(mode,
@@ -987,7 +987,7 @@ FLDCMP *usr;
 		fopush(fo, fld2);
 		if(rev & OF_IGN_CASE)
 		{
-			if (globalcp == APICPPN) globalcp = TXopenapicp();
+			TXget_globalcp();
 			oign = globalcp->stringcomparemode;
 			globalcp->stringcomparemode = TXCFF_SUBST_CASESTYLE(
 			  globalcp->stringcomparemode, TXCFF_CASESTYLE_IGNORE);
@@ -1084,7 +1084,7 @@ fldcmp3(byte *buf1, size_t fld1sz, byte *buf2, size_t fld2sz,
 		fopush(fo, fld2);
 		if(rev & OF_IGN_CASE)
 		{
-			if (globalcp == APICPPN) globalcp = TXopenapicp();
+			TXget_globalcp();
 			oign = globalcp->stringcomparemode;
 			globalcp->stringcomparemode = TXCFF_SUBST_CASESTYLE(
 			  globalcp->stringcomparemode, TXCFF_CASESTYLE_IGNORE);

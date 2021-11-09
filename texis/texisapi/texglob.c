@@ -157,7 +157,7 @@ static CONST char TXPatchedInstallPath[1028] = "@(#)installpath=" TEXIS_INSTALL_
 static CONST char TXPatchedInstallPath[1028] = "@(#)installpath=c:\\morph3\0";
 #endif /* unix */
 char    TXInstallPath[1028] = "";
-int	TXinstallpathset = 0;	/* 0: no  1: install path  2: custom */
+TXInstallPathSrc	TXinstallpathset = TXInstallPathSrc_Unset;
 char	*TXMonitorPath = NULL;
 int	TXintsem = -1;
 TXbool	TXclearStuckSemaphoreAlarmed = TXbool_False;
@@ -303,7 +303,7 @@ char *buf;	/* (in) (opt.) install dir */
 	if(buf)
 	{
 		TXstrncpy(TXINSTALLPATH_VAL, buf, 1015);
-		TXinstallpathset = 2;
+		TXinstallpathset = TXInstallPathSrc_CmdLineDynamic;
 		TXMonitorPath = TXfree(TXMonitorPath);
 		return 0;
 	}
@@ -311,7 +311,7 @@ char *buf;	/* (in) (opt.) install dir */
 	{
 #ifdef unix
 		TXstrncpy(TXInstallPath, TXPatchedInstallPath, sizeof(TXInstallPath));
-		TXinstallpathset = 1;
+		TXinstallpathset = TXInstallPathSrc_DefaultOrPatched;
 		TXMonitorPath = TXfree(TXMonitorPath);
 		return 0;
 #elif defined(_WIN32)
@@ -328,7 +328,7 @@ char *buf;	/* (in) (opt.) install dir */
 				TXINSTALLPATH_VAL,
 				&sz);
 			RegCloseKey(hkey);
-			TXinstallpathset = 1;
+			TXinstallpathset = TXInstallPathSrc_Registry;
 			TXMonitorPath = TXfree(TXMonitorPath);
 			if(rc == 0 && type == REG_SZ)
 			{
@@ -347,7 +347,7 @@ char *buf;	/* (in) (opt.) install dir */
 		}
 		/* fall back: */
 		TXstrncpy(TXInstallPath, TXPatchedInstallPath, sizeof(TXInstallPath));
-		TXinstallpathset = 1;
+		TXinstallpathset = TXInstallPathSrc_DefaultOrPatched;
 		TXMonitorPath = TXfree(TXMonitorPath);
 		return -1;
 #else /* !unix && !_WIN32 */
@@ -1118,7 +1118,8 @@ TXAppSetCompatibilityVersion(TXAPP *app, const char *texisVersion,
 	int			requestedMinorVersion = 0;
 	TXbool			ret;
 
-	if (!TXparseTexisVersion(texisVersion, NULL, 6, 0,
+	if (!TXparseTexisVersion(texisVersion, NULL,
+				 6 /* earliestMajor */, 0 /* earliestMinor */,
 				 TX_VERSION_MAJOR, TX_VERSION_MINOR,
 				 &requestedMajorVersion,
 				 &requestedMinorVersion, errBuf, errBufSz))
@@ -1366,6 +1367,7 @@ char	***argvStripped;	/* (out, opt.) "" `argv', dup'd */
 	int			i, force = 0, didConfOpen = 0;
 	EPI_STAT_S		st;
 	int			ret;
+	int			openconffileYap = 0;	/* silent for texis */
 	double			doubleVal;
 	char			tmp[16 /* sizeof("Trace License") */];
 
@@ -1724,7 +1726,13 @@ TXApp->NoMonitorStart = 1;
 		}
 	}
 	if (optVal != CHARPN)			/* conf file specified */
+	{
 		TXstrncpy(TxConfFile, optVal, TxConfFile_SZ);
+		/* If they gave --texis-conf, probably want to know
+		 * if not found:
+		 */
+		openconffileYap = 2;
+	}
 #ifdef _WIN32
 #  ifdef EPI_ENABLE_CONF_TEXIS_INI
 	else					/* check registry */
@@ -1743,6 +1751,7 @@ TXApp->NoMonitorStart = 1;
 			if (d != CHARPN)
 			{
 				TXstrncpy(TxConfFile, d, TxConfFile_SZ);
+				openconffileYap = 2;
 				optVal = TxConfFile;	/* flag as set */
 				free(d);
 			}
@@ -1763,7 +1772,7 @@ TXApp->NoMonitorStart = 1;
 		{
 			TXstrncpy(d, confSuffixes[i],
 				  (TxConfFile + TxConfFile_SZ) - d);
-			TxConf = openconffile(TxConfFile, 0);
+			TxConf = openconffile(TxConfFile, openconffileYap);
 			if (TxConf != CONFFILEPN) break;
 		}
 		/* If none succeeded, fall back to preferred name: */
@@ -1779,7 +1788,7 @@ TXApp->NoMonitorStart = 1;
 
 	/* 4th: open TxConfFile (after --texis-conf/default): */
 	if (!didConfOpen)
-		TxConf = openconffile(TxConfFile, 0);	/* silent for texis */
+		TxConf = openconffile(TxConfFile, openconffileYap);
 
 	/* These stripped options will be passed to exec'd monitor,
 	 * anytotx, etc.  Set this after TXsetargv() called:
@@ -1958,9 +1967,44 @@ TXApp->NoMonitorStart = 1;
 			if (i != -1)
 				TXApp->texisDefaultsWarning = (byte)i;
 		}
-		TXApp->blobCompressExe = getconfstring(TxConf, texisSectionName,"Blob Compress EXE",CHARPN);
-		TXApp->blobUncompressExe = getconfstring(TxConf, texisSectionName,"Blob Uncompress EXE",CHARPN);
+		TXApp->blobzExternalCompressExe = getconfstring(TxConf, texisSectionName, "Blobz External Compress Exe", NULL);
+		TXApp->blobzExternalUncompressExe = getconfstring(TxConf, texisSectionName, "Blobz External Uncompress Exe", NULL);
+		{
+			/* Most common desire when using external exe
+			 * is probably both more compression than
+			 * internal gzip, *and* also speed where
+			 * possible.  And most/all compressors, even
+			 * better ones than gzip, generally output
+			 * larger than input size for small inputs: a
+			 * test of bzip2 -9 for 0 to 256 spaces
+			 * (really compressible) yields a minimum
+			 * output size of 37 bytes.  So our SWAG
+			 * default is 32: nonzero to skip the exe for
+			 * small/empty inputs for speed, but small
+			 * enough to still hopefully gain compression
+			 * w/exe (over internal gzip) for larger inputs:
+			 */
+			static const char	def[] = "32";
+			char	*s;
+			int	errnum;
 
+			s = getconfstring(TxConf, texisSectionName,
+					  "Blobz External Compress Min Size",
+					  (char *)def);
+			TXApp->blobzExternalCompressMinSize =
+				TXstrtosize_t(s, NULL, NULL,
+				    (0 | TXstrtointFlag_ConsumeTrailingSpace |
+				         TXstrtointFlag_TrailingSourceIsError),
+					      &errnum);
+			if (errnum)
+			{
+				txpmbuf_putmsg(pmbuf, MWARN + UGE, NULL,
+    "Invalid [%s] Blobz External Compress Min Size `%s': using default of %s",
+					       texisSectionName, s, def);
+				TXApp->blobzExternalCompressMinSize =
+					TXstrtosize_t(def, NULL, NULL, 0,NULL);
+			}
+		}
 		s = getconfstring(TxConf, texisSectionName,
 				  legacyVersion7OrderByRank, CHARPN);
 		if (s)
@@ -2112,7 +2156,8 @@ TXcloseapp()
 
   TXApp->fmtcp = TxfmtcpClose(TXApp->fmtcp);
 	TXApp = TXfree(TXApp);
-
+  TXclosedummy();
+  
 	TXsetlibpath(TXPMBUFPN, CHARPN);
 	TXfreeabendcache();
 	TXfreeAllProcs();

@@ -1,62 +1,3 @@
-/*
- * $Log$
- * Revision 1.18  2010/12/26 23:27:31  john
- * Private: SQL, Enhancement, Texis: Start of support for blobz
- *
- * Revision 1.17  2001/12/28 22:26:28  john
- * Use config.h
- *
- * Revision 1.16  2001-07-09 16:23:28-04  john
- * Function Name
- * 
- * Revision 1.15  1999-12-16 16:40:19-05  john
- * Define compatible types.
- * 
- * Revision 1.14  95/12/19  14:46:46  john
- * Get field name from right table.
- * Improve handline.
- * 
- * Revision 1.13  95/08/07  13:50:00  john
- * Make sure base types match.
- * 
- * Revision 1.12  94/09/23  12:55:32  john
- * remove name restriction.
- * 
- * Revision 1.11  94/09/06  16:21:09  john
- * Return a result code.
- * 
- * Revision 1.10  94/08/09  13:56:00  john
- * Add FLDOP arg.
- * 
- * Revision 1.9  94/06/16  13:43:54  john
- * Def out some declarations.
- * 
- * Revision 1.8  94/03/18  17:33:01  john
- * remove decl
- * 
- * Revision 1.7  94/03/09  13:33:17  john
- * Windows code
- * 
- * Revision 1.6  93/11/02  13:07:43  john
- * Modified for the single row at a time model.
- *
- * Revision 1.5  93/10/21  16:05:05  john
- * Get headers right
- *
- * Revision 1.4  93/10/20  12:44:58  john
- * Remove references to DD, not needed.
- *
- * Revision 1.3  93/10/11  16:31:05  john
- * -> K&R
- *
- * Revision 1.2  93/09/10  14:38:29  john
- * Closedd.
- *
- * Revision 1.1  93/08/24  11:16:33  john
- * Initial revision
- *
-*/
-
 #include "txcoreconfig.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -76,131 +17,54 @@
  *
  */
 
-int
-TXcompatibletypes(type1, type2)
-int type1, type2;
+TXbool
+TXcompatibletypes(FTN type1, FTN type2)
 {
-	int ttype1, ttype2;
-	int tt;
+	FTN ttype1, ttype2;
+	FTN tt;
 
 	ttype1 = type1 & DDTYPEBITS;
 	ttype2 = type2 & DDTYPEBITS;
 
 	if(ttype1 == ttype2)
-		return 1;
+		return TXbool_True;
 	if((ttype1 == FTN_BLOB || ttype1 == FTN_BLOBZ) && ttype2 == FTN_BLOBI)
-		return 1;
+		return TXbool_True;
 	if(ttype1 == FTN_BLOBI && (ttype2 == FTN_BLOB || ttype2 == FTN_BLOBZ))
-		return 1;
+		return TXbool_True;
+	/* Sort types; we are assuming commutativity, this saves us
+	 * checking each type pair twice:
+	 */
 	if(ttype2 < ttype1)
 	{
 		tt = ttype1;
 		ttype1 = ttype2;
 		ttype2 = tt;
 	}
+	if (TXftnIsNumeric(ttype1) &&
+	    TXftnIsNumeric(ttype2))
+		return TXbool_True;
 	switch (ttype1)
 	{
 		case FTN_BYTE:
 			switch(ttype2)
 			{
 				case FTN_CHAR:
-					return 1;
-				default: return 0;
+					return TXbool_True;
+				default: return TXbool_False;
 			}
 		case FTN_CHAR:
 			switch(ttype2)
 			{
 				case FTN_BLOB:
 				case FTN_BLOBI:
-					return 1;
-				default: return 0;
+					return TXbool_True;
+				default: return TXbool_False;
 			}
-		case FTN_DOUBLE:
-			switch(ttype2)
-			{
-				case FTN_FLOAT:
-				case FTN_INT:
-				case FTN_INTEGER:
-				case FTN_LONG:
-				case FTN_SHORT:
-				case FTN_SMALLINT:
-				case FTN_WORD:
-				case FTN_DWORD:
-					return 1;
-				default: return 0;
-			}
-		case FTN_FLOAT:
-			switch(ttype2)
-			{
-				case FTN_INT:
-				case FTN_INTEGER:
-				case FTN_LONG:
-				case FTN_SHORT:
-				case FTN_SMALLINT:
-				case FTN_WORD:
-				case FTN_DWORD:
-					return 1;
-				default: return 0;
-			}
-		case FTN_INT:
-			switch(ttype2)
-			{
-				case FTN_INTEGER:
-				case FTN_LONG:
-				case FTN_SHORT:
-				case FTN_SMALLINT:
-				case FTN_WORD:
-				case FTN_DWORD:
-					return 1;
-				default: return 0;
-			}
-		case FTN_INTEGER:
-			switch(ttype2)
-			{
-				case FTN_LONG:
-				case FTN_SHORT:
-				case FTN_SMALLINT:
-				case FTN_WORD:
-				case FTN_DWORD:
-					return 1;
-				default: return 0;
-			}
-		case FTN_LONG:
-			switch(ttype2)
-			{
-				case FTN_SHORT:
-				case FTN_SMALLINT:
-				case FTN_WORD:
-				case FTN_DWORD:
-					return 1;
-				default: return 0;
-			}
-		case FTN_SHORT:
-			switch(ttype2)
-			{
-				case FTN_SMALLINT:
-				case FTN_WORD:
-				case FTN_DWORD:
-					return 1;
-				default: return 0;
-			}
-		case FTN_SMALLINT:
-			switch(ttype2)
-			{
-				case FTN_WORD:
-				case FTN_DWORD:
-					return 1;
-				default: return 0;
-			}
-		case FTN_WORD:
-			switch(ttype2)
-			{
-				case FTN_DWORD:
-					return 1;
-				default: return 0;
-			}
+		default:
+			return TXbool_False;
 	}
-	return 0;
+	return TXbool_False;
 }
 
 /****************************************************************************/
@@ -298,4 +162,3 @@ FLDOP *fo;
 }
 
 /****************************************************************************/
-

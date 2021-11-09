@@ -62,7 +62,6 @@ static int TXgetstddic(void);
 
 
 
-static CONST char	TypeOpTypeUndefined[] = "%s %s %s behavior undefined";
 
 /******************************************************************/
 /*	Takes a buffer and returns a name of a tempfile.  The
@@ -1092,7 +1091,7 @@ int op;
 		if (end2 > buf2 && !end2[-1]) end2--;
 		if (TXApp->useStringcomparemodeForStrlst)	/* Bug 3677 */
 		{
-			if (!globalcp) globalcp = TXopenapicp();
+			TXget_globalcp();
 			/* Item nuls count; TXstringcompare() stops at nul: */
 			p1 = (CONST char *)buf1;
 			p2 = (CONST char *)buf2;
@@ -1124,7 +1123,7 @@ int op;
 		if (end2 > buf2 && !end2[-1]) end2--;
 		if (TXApp->useStringcomparemodeForStrlst)	/* Bug 3677 */
 		{
-			if (!globalcp) globalcp = TXopenapicp();
+			TXget_globalcp();
 			/* Item nuls count; TXstringcompare() stops at nul: */
 			p1 = (CONST char *)buf1;
 			p2 = (CONST char *)buf2;
@@ -1299,20 +1298,7 @@ int op;
 		/* Bug 3677: do not support multi-item RHS of MATCHES until
 		 * properly supported; see also TXprepMatchesExpression():
 		 */
-		{static int yapped = 0;
-		/* Could be called many times on a large table; only yap once.
-		 * WTF this prevents yapping on future new SQL statement:
-		 */
-		if (!yapped)
-		{
-			putmsg(MWARN + UGE, fn, TypeOpTypeUndefined,
-				ddfttypename(f1->type),
-				TXqnodeOpToStr(op, NULL, 0),
-				ddfttypename(f2->type));
-			yapped = 1;
-		}
-		}
-		rc = FOP_EILLEGAL;
+		rc = FOP_EILLEGAL;	/* should be putmsg'd by foop[2]()? */
 		break;
 	default:
 		rc = FOP_EINVAL;
@@ -1737,7 +1723,7 @@ int op;
 					rc = (cse == cs); /* true iff LHS mt*/
 				else
 				{
-				  if (!globalcp) globalcp = TXopenapicp();
+				  TXget_globalcp();
 				  /* TXstringcompare stops @nul; do not use:*/
 				  p1 = (CONST char *)cs;
 				  p2 = (CONST char *)vp2;
@@ -1784,7 +1770,7 @@ int op;
 			/* based on foslsl(); -2 == strlst-term + str-term: */
 			if (TXApp->useStringcomparemodeForStrlst)
 			{			/* Bug 3677 */
-				if (!globalcp) globalcp = TXopenapicp();
+				TXget_globalcp();
 				/* TXstringcompare stops at nul; do not use:*/
 				p1 = (CONST char *)cs;
 				p2 = (CONST char *)vp2;
@@ -1806,24 +1792,7 @@ int op;
 			case FOP_GTE:	rc = (rc >= 0);	break;
 			case FOP_COM:	/* rc as-is */	break;
 			default:		/* MMIN TWIXT */
-				{static int yapped = 0;
-				/* WTF: */
-				/* Could be called many times on a
-				 * large table; only yap once.  WTF
-				 * this prevents yapping on future new
-				 * SQL statement:
-				 */
-				if (!yapped)
-				{
-					putmsg(MWARN + UGE, fn,
-						TypeOpTypeUndefined,
-						ddfttypename(f1->type),
-						TXqnodeOpToStr(op, NULL, 0),
-						ddfttypename(f2->type));
-					yapped = 1;
-				}
-				}
-				rc = FOP_EILLEGAL;
+				rc = FOP_EILLEGAL;	/* should be putmsg'd by foop[2]()? */
 				goto done;
 			}
 			rc = fld2finv(f3, rc);
@@ -1986,6 +1955,9 @@ int op;
 				{
 					int l, r;
 
+					if (TXfldmathverb >= 4)
+					  putmsg(MINFO, __FUNCTION__,
+                                                 "Binary searching strlst field with pointers");
 					l = 0;
 					r = f2->dsc.ptrsused;
 					while (l < r)
@@ -2013,6 +1985,10 @@ int op;
 					rc = fld2finv(f3, (op == FOP_INTERSECT_IS_EMPTY));
 					goto done;
 				}
+
+                                if (TXfldmathverb >= 4)
+                                  putmsg(MINFO, __FUNCTION__,
+                               "Linear searching strlst field with pointers");
 				for(j = 0; j < f2->dsc.ptrsused; j++)
 				{
 					cs = f2->dsc.dptrs.strings[j].v;
@@ -2035,6 +2011,10 @@ int op;
 				rc = fld2finv(f3, (op == FOP_INTERSECT_IS_EMPTY));
 				goto done;
 			}
+
+                        if (TXfldmathverb >= 4)
+                          putmsg(MINFO, __FUNCTION__,
+                                 "Linear searching strlst field");
 			e = buf2 + sl2.nb;
 			if (e > buf2 && !e[-1]) e--;	/* ign. strlst-term.*/
 			for (cs = buf2; cs < e; cs += cslen + 1)
@@ -2082,20 +2062,7 @@ int op;
 		/* Bug 3677: do not support multi-item RHS of MATCHES until
 		 * properly supported; see also TXprepMatchesExpression():
 		 */
-		{static int yapped = 0;
-		/* Could be called many times on a large table; only yap once.
-		 * WTF this prevents yapping on future new SQL statement:
-		 */
-		if (!yapped)
-		{
-			putmsg(MWARN + UGE, Fn, TypeOpTypeUndefined,
-				ddfttypename(f1->type),
-				TXqnodeOpToStr(op, NULL, 0),
-				ddfttypename(f2->type));
-			yapped = 1;
-		}
-		}
-		rc = FOP_EILLEGAL;
+		rc = FOP_EILLEGAL;	/* should be reported by foop[2]()? */
 		goto done;
 	default:
 		if (TXApp->strlstRelopVarcharPromoteViaCreate && (op & FOP_CMP))
@@ -2130,23 +2097,7 @@ int op;
 				}
 				goto done;
 			default:		/* MMIN TWIXT */
-				{static int yapped = 0;
-				/* Could be called many times on a
-				 * large table; only yap once.  WTF
-				 * this prevents yapping on future new
-				 * SQL statement:
-				 */
-				if (!yapped)
-				{
-					putmsg(MWARN + UGE, Fn,
-						TypeOpTypeUndefined,
-						ddfttypename(f1->type),
-						TXqnodeOpToStr(op, NULL, 0),
-						ddfttypename(f2->type));
-					yapped = 1;
-				}
-				}
-				rc = FOP_EILLEGAL;
+				rc = FOP_EILLEGAL;	/* foop[2]() reports?*/
 				goto done;
 			}
 		}
@@ -2324,7 +2275,7 @@ int op;
 /**********************************************************************/
 
 #undef EXTRAVARS
-#define EXTRAVARS
+#define EXTRAVARS	int errnum;
 
 #undef foxxsl
 #undef foslxx
@@ -2343,7 +2294,13 @@ int op;
 #define ft_xx		ft_int
 #define ctype		int
 #define fmt		"%d"
-#define cvtxx(a, b)	(*(b) = (ft_xx)strtol((a), &e, 0), e > (char *)(a))
+/* Bug 7971: strtol("0xff000000") will return MAXINT on 32-bit platforms,
+ * but 0x00000000ff000000 (cast to -16777216 here) on 64-bit.
+ * Use 64-bit strtol() replacement for consistency, since SQL int is defined
+ * to be consistently 32-bit on all platforms:
+ */
+#define cvtxx(a, b)	(*(b) = (ft_xx)TXstrtoh((a), NULL, &e, 0, &errnum), \
+			 (e > (char *)(a) && errnum == 0))
 #define strsz		(EPI_OS_INT_BITS/3 + 3)
 #include "fonumsl.c"
 #undef foxxsl
@@ -2363,7 +2320,9 @@ int op;
 #define ft_xx		ft_long
 #define ctype		long
 #define fmt		"%ld"
-#define cvtxx(a, b)	(*(b) = (ft_xx)strtol((a), &e, 0), e > (char *)(a))
+/* See Bug 7971 comment above: */
+#define cvtxx(a, b)	(*(b) = (ft_xx)TXstrtoh((a), NULL, &e, 0, &errnum), \
+			 (e > (char *)(a) && errnum == 0))
 #define strsz		(EPI_OS_LONG_BITS/3 + 3)
 #include "fonumsl.c"
 #undef foxxsl

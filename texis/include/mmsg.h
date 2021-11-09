@@ -94,12 +94,12 @@ XXX filename block_offset block_size [hit_offset1 hit_size1] [...]\n
 #define HV_MSG_RequestHeaders           (MINFO + 28)
 #define HV_MSG_ResponseConnection       (MINFO + 29)
 #define HV_MSG_RequestConnection        (MINFO + 30)
-#define HV_MSG_ResponseFormattedText    (MINFO + 31)
-#define HV_MSG_ResponseRawText          (MINFO + 32)
-#define HV_MSG_ResponseBinary           (MINFO + 33)
-#define HV_MSG_RequestFormattedText     (MINFO + 34)
-#define HV_MSG_RequestRawText           (MINFO + 35)
-#define HV_MSG_RequestBinary            (MINFO + 36)
+#define HV_MSG_ResponseFormattedIfText  (MINFO + 31)
+#define HV_MSG_ResponseRawdocIfText     (MINFO + 32)
+#define HV_MSG_ResponseRawdocHexIfBinary (MINFO + 33)
+#define HV_MSG_RequestFormattedIfText   (MINFO + 34)
+#define HV_MSG_RequestRawdocIfText      (MINFO + 35)
+#define HV_MSG_RequestRawdocHexIfBinary (MINFO + 36)
 
 /* future TXfetchVerbose_... values would follow */
 

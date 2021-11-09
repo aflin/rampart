@@ -102,7 +102,7 @@ int             flags;          /* bit 0: no msg/err for EACCES */
         }
     }
   return(1);
-}    
+}
 
 /******************************************************************/
 
@@ -215,7 +215,7 @@ A3DBI   *index;
   char                  buf[PATH_MAX];
 
   stok = (EPI_FSTAT(getdbffh(index->newrec->dbf), &stb) == 0);
-  
+
   TXcatpath(buf, index->name, "_Z");
   index->mnew = openbtree(buf, index->newrec->order, BTCSIZE, index->newrec->flags, O_RDWR | O_CREAT | O_EXCL);
   if (index->mnew == BTREEPN)
@@ -1978,16 +1978,20 @@ char **cl;
 }
 
 /******************************************************************/
+/**
+  * Updates Metamorph index named `indname' (or rebuilds any type index).
+  *
+	* Returns 0 on success, -1 on error.
+  *
+	* @param ddic data dictionary
+	* @param indname index name
+	* @param flags
+	* @param options WITH options
+	* @param conditions conditional update
+	*/
 
 int
-updindex(ddic, indname, flags, options)
-DDIC	*ddic;		/* (in) data dictionary */
-char	*indname;	/* (in) name of index to update */
-int	flags;		/* (in) bit flags:  0x2: rebuild */
-TXindOpts	*options;	/* (in) `WITH ...' options; may be modified */
-/* Updates Metamorph index named `indname' (or rebuilds any type index).
- * Returns 0 on success, -1 on error.
- */
+updindex(DDIC *ddic, char *indname, int flags, TXindOpts *options, PRED *conditions)
 {
 	static CONST char	Fn[] = "updindex";
 	A3DBI   *dbi = NULL;
@@ -2164,7 +2168,44 @@ TXindOpts	*options;	/* (in) `WITH ...' options; may be modified */
            */
           if (!(flags & 0x2))			/* not rebuilding */
 	  {
-		  TXfdbiIndOpts	fdbiOptions;
+			TXfdbiIndOpts	fdbiOptions;
+			FLDOP *fo = TXgetFldopFromCache();
+			int conditions_match = 1;
+
+			if(conditions) {
+				DBTBL *vTbl = TXnewDbtbl(NULL);
+				NFLDSTAT *nf;
+
+				TXaddnewstatsfrompred(vTbl, conditions, fo);
+				for(nf = vTbl->nfldstat; nf; nf = nf->next) {
+					PRED *p = nf->pred;
+
+					if(p && p->op == AGG_FUN_OP && p->lt == NAME_OP && p->rt == NAME_OP) {
+						if((TXstrcmp(p->left, "count") == 0) && (TXstrcmp(p->right, "NewRows") == 0)) {
+							long NewRowCnt = 0;
+							BTLOC recid;
+
+							rewindbtree(dbi->newrec);
+							for(recid = btgetnext(dbi->newrec, NULL, NULL, NULL);
+									TXrecidvalid(&recid);
+									recid = btgetnext(dbi->newrec, NULL, NULL, NULL)) {
+								NewRowCnt++;
+							}
+							TXsetcountstat(nf,NewRowCnt);
+						}
+					}
+				}
+				conditions_match = tup_match(vTbl, conditions, fo);
+
+				vTbl = closedbtbl(vTbl);
+			}
+
+			fo = TXreleaseFldopToCache(fo);
+			if(conditions_match == 0) {
+				dbi = close3dbi(dbi);
+				ret = 0;
+				goto done;
+			}
 
 		  /* Must preserve (most?) index options from original index,
 		   * e.g. word expressions etc., so init from DBI:

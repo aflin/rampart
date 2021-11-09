@@ -408,7 +408,8 @@ EWM;
 #define EWM_RETMASK     (EWM_READ | EWM_WRITE | EWM_EXCEPTION | EWM_ERR)
 int   TXezWaitForMultipleSockets(TXPMBUF *pmbuf, TXtraceSkt traceSkt,
                                  const char *func, const int *fds, EWM *stats,
-                                 int num, double timeout, TXbool okIntr);
+                                 int num, const char **sktNames,
+                                 double timeout, TXbool okIntr);
 #ifdef _WIN32
 int
 TXezWaitForMultipleObjects(TXPMBUF *pmbuf, TXtraceSkt traceSkt,

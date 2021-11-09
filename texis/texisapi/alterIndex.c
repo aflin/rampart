@@ -56,17 +56,11 @@ TXAITOK tok;
   return("unknown");
 }
 
-static int TXalterIndex ARGS((DDIC *ddic, CONST char *indexName,
-                              TXAITOK action, TXAITOK option));
-static int
-TXalterIndex(ddic, indexName, action, option)
-DDIC            *ddic;
-CONST char      *indexName;
-TXAITOK         action;
-TXAITOK         option;
 /* Does actual work of altering index `indexName'.
  * Returns 2 if ok, 1 if not found live (silent), 0 on error.
  */
+static int
+TXalterIndex(DDIC *ddic, CONST char *indexName, TXAITOK action, TXAITOK option, PRED *conditions)
 {
   static CONST char     fn[] = "TXalterIndex";
   int                   numIndexes = 0, ret, i, updindexFlags;
@@ -133,8 +127,7 @@ TXAITOK         option;
       case INDEX_FULL:
       case INDEX_MM:
         if (!(options = TXindOptsOpen(ddic))) goto err;
-        ret = (updindex(ddic, (char *)indexName, updindexFlags,
-                        options) == 0 ? 2 : 0);
+        ret = (updindex(ddic, (char *)indexName, updindexFlags, options, conditions) == 0 ? 2 : 0);
         goto done;
       case INDEX_BTREE:
       case INDEX_INV:
@@ -146,8 +139,7 @@ TXAITOK         option;
             break;
           case TXAITOK_REBUILD:
             if (!(options = TXindOptsOpen(ddic))) goto err;
-            ret = (updindex(ddic, (char *)indexName, updindexFlags,
-                            options) == 0 ? 2 : 0);
+            ret = (updindex(ddic, (char *)indexName, updindexFlags, options, conditions) == 0 ? 2 : 0);
             break;
           default:
             goto unknownAction;
@@ -200,16 +192,20 @@ done:
   return(ret);
 }
 
-int
-TXalterIndexes(ddic, indexName, tableName, actionOptions)
-DDIC            *ddic;          /* (in/out) data dictionary */
-CONST char      *indexName;     /* (in, opt.) index name (NULL: all) */
-CONST char      *tableName;     /* (in, opt.) table name (NULL: any/all) */
-CONST char      *actionOptions; /* (in) space-separated action and options */
-/* Does ALTER INDEX action: OPTIMIZE | {REBUILD [DROPFIRST]} for all
+/**
+ * Does ALTER INDEX action: OPTIMIZE | {REBUILD [DROPFIRST]} for all
  * indexes matched by `indexName' and/or `tableName'.
+ *
  * Returns 0 on error.
+ *
+ * @param ddic          data dictionary
+ * @param indexName     index name (NULL: all)
+ * @param tableNames    table name (NULL: all)
+ * @param actionOptions space-separated action and options
+ * @param conditions    predicate with condition when to perform action
  */
+int
+TXalterIndexes(DDIC *ddic, CONST char *indexName, CONST char *tableName, CONST char *actionOptions, PRED *conditions)
 {
   static CONST char     fn[] = "TXalterIndexes";
   int                   ret, numIndexes = 0, i, foundLive, foundIndex = 0;
@@ -306,7 +302,7 @@ CONST char      *actionOptions; /* (in) space-separated action and options */
   /* Alter each index per `action'/`option': */
   foundLive = 0;
   for (i = 0; i < numIndexes; i++)
-    switch (TXalterIndex(ddic, indexNames[i], action, option))
+    switch (TXalterIndex(ddic, indexNames[i], action, option, conditions))
       {
       case 2:                                   /* success */
         foundLive = 1;

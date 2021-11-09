@@ -103,8 +103,10 @@ typedef void PKCS7;
 #endif /* < 1.0.x */
 #if TX_SSL_GET_MAJOR_MINOR_NUM(OPENSSL_VERSION_NUMBER) >= 0x300 /* >= 3.0.x */
 #  define TX_SSL_30x_CONST      const
+#  define TX_SSL_OPTION_TYPE    uint64_t
 #else /* < 3.0.x */
 #  define TX_SSL_30x_CONST
+#  define TX_SSL_OPTION_TYPE    unsigned long
 #endif /* < 3.0.x */
 
 /* use typedef to avoid `declared inside parameter list' warnings: */
@@ -144,6 +146,7 @@ I(void,         ERR_clear_error,        (void))                         \
 I(void,         ERR_error_string_n, (unsigned long e, char *buf, size_t len))\
 I(unsigned long, ERR_get_error,         (void))                         \
 I(unsigned long, ERR_peek_error,        (void))                         \
+I(unsigned long, ERR_peek_last_error,   (void))                         \
 I(int,          EVP_DigestFinal_ex,     (EVP_MD_CTX *, unsigned char *, \
                                          unsigned int *))               \
 I(int,          EVP_DigestInit_ex, (EVP_MD_CTX *, CONST EVP_MD *, ENGINE *)) \
@@ -240,12 +243,12 @@ I(int,          OPENSSL_init_ssl, (uint64_t opts,                       \
 I(TX_SSL_10x_CONST SSL_METHOD *, TLS_client_method,     (void))         \
 I(TX_SSL_10x_CONST SSL_METHOD *, TLS_server_method,     (void))         \
 I(long,         SSL_ctrl,   (SSL *ssl, int cmd, long larg, void *parg)) \
-I(unsigned long, SSL_clear_options, (SSL *ssl, unsigned long options))  \
-I(unsigned long, SSL_set_options, (SSL *ssl, unsigned long options))    \
+I(TX_SSL_OPTION_TYPE, SSL_clear_options,(SSL *ssl,TX_SSL_OPTION_TYPE options))\
+I(TX_SSL_OPTION_TYPE, SSL_set_options, (SSL *ssl, TX_SSL_OPTION_TYPE options))\
 I(STACK_OF(X509_NAME) *, SSL_get_client_CA_list, (TX_SSL_10x_CONST SSL *ssl))\
 I(void *,       SSL_get_ex_data,        (TX_SSL_10x_CONST SSL *ssl, int idx))\
 I(int,          SSL_get_ex_data_X509_STORE_CTX_idx, (void))             \
-I(X509 *,       SSL_get_peer_certificate, (TX_SSL_10x_CONST SSL *ssl))  \
+I(X509 *,       SSL_get1_peer_certificate, (TX_SSL_10x_CONST SSL *ssl)) \
 I(long,         SSL_get_verify_result,  (TX_SSL_10x_CONST SSL *ssl))    \
 I(CONST char *, SSL_get_version,        (TX_SSL_10x_CONST SSL *s))      \
 I(int,          SSL_set_ex_data,        (SSL *ssl, int idx, void *arg)) \

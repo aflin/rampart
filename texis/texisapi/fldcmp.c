@@ -147,7 +147,7 @@ TXOF	orderFlags;
 			v2 = getfld(f2, &sz);
 			if(sz != 1) goto err;
 			if (TXfldIsNull(f1) || TXfldIsNull(f2))
-				rc = TX_FLD_NULL_CMP(v1, v2, 
+				rc = TX_FLD_NULL_CMP(v1, v2,
 				     (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1)));
 			else
 				rc = (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1));
@@ -162,7 +162,7 @@ TXOF	orderFlags;
 			v2 = getfld(f2, &sz);
 			if(sz != 1) goto err;
 			if (TXfldIsNull(f1) || TXfldIsNull(f2))
-				rc = TX_FLD_NULL_CMP(v1, v2, 
+				rc = TX_FLD_NULL_CMP(v1, v2,
 				     (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1)));
 			else
 				rc = (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1));
@@ -177,7 +177,7 @@ TXOF	orderFlags;
 			v2 = getfld(f2, &sz);
 			if(sz != 1) goto err;
 			if (TXfldIsNull(f1) || TXfldIsNull(f2))
-				rc = TX_FLD_NULL_CMP(v1, v2, 
+				rc = TX_FLD_NULL_CMP(v1, v2,
 				     (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1)));
 			else
 				rc = (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1));
@@ -192,7 +192,7 @@ TXOF	orderFlags;
 			v2 = getfld(f2, &sz);
 			if(sz != 1) goto err;
 			if (TXfldIsNull(f1) || TXfldIsNull(f2))
-				rc = TX_FLD_NULL_CMP(v1, v2, 
+				rc = TX_FLD_NULL_CMP(v1, v2,
 				     (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1)));
 			else
 				rc = (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1));
@@ -207,7 +207,7 @@ TXOF	orderFlags;
 			v2 = getfld(f2, &sz);
 			if(sz != 1) goto err;
 			if (TXfldIsNull(f1) || TXfldIsNull(f2))
-				rc = TX_FLD_NULL_CMP(v1, v2, 
+				rc = TX_FLD_NULL_CMP(v1, v2,
 				     (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1)));
 			else
 				rc = (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1));
@@ -236,13 +236,13 @@ TXOF	orderFlags;
 
 			v1 = getfld(f1, &sz);
 			v2 = getfld(f2, &sz);
-			if (globalcp == APICPPN) globalcp = TXopenapicp();
+			TXget_globalcp();
 			mode = globalcp->stringcomparemode;
 			if (orderFlags & OF_IGN_CASE)
 				mode = TXCFF_SUBST_CASESTYLE(mode,
 						TXCFF_CASESTYLE_IGNORE);
 			if (TXfldIsNull(f1) || TXfldIsNull(f2))
-				rc = TX_FLD_NULL_CMP(v1, v2, 
+				rc = TX_FLD_NULL_CMP(v1, v2,
 				  TXunicodeStrFoldCmp(&v1, -1, &v2, -1, mode));
 
 			else
@@ -259,7 +259,7 @@ TXOF	orderFlags;
 			v2 = getfld(f2, &sz);
 			if(sz != 1) goto err;
 			if (TXfldIsNull(f1) || TXfldIsNull(f2))
-				rc = TX_FLD_NULL_CMP(v1, v2, 
+				rc = TX_FLD_NULL_CMP(v1, v2,
 				     (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1)));
 			else
 				rc = (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1));
@@ -274,7 +274,7 @@ TXOF	orderFlags;
 			v2 = getfld(f2, &sz);
 			if(sz != 1) goto err;
 			if (TXfldIsNull(f1) || TXfldIsNull(f2))
-				rc = TX_FLD_NULL_CMP(v1, v2, 
+				rc = TX_FLD_NULL_CMP(v1, v2,
 				     (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1)));
 			else
 				rc = (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1));
@@ -289,7 +289,7 @@ TXOF	orderFlags;
 			v2 = getfld(f2, &sz);
 			if(sz != 1) goto err;
 			if (TXfldIsNull(f1) || TXfldIsNull(f2))
-				rc = TX_FLD_NULL_CMP(v1, v2, 
+				rc = TX_FLD_NULL_CMP(v1, v2,
 				     (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1)));
 			else
 				rc = (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1));
@@ -304,7 +304,7 @@ TXOF	orderFlags;
 			v2 = getfld(f2, &sz);
 			if(sz != 1) goto err;
 			if (TXfldIsNull(f1) || TXfldIsNull(f2))
-				rc = TX_FLD_NULL_CMP(v1, v2, 
+				rc = TX_FLD_NULL_CMP(v1, v2,
 				     (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1)));
 			else
 				rc = (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1));
@@ -319,7 +319,7 @@ TXOF	orderFlags;
 			v2 = getfld(f2, &sz);
 			if(sz != 1) goto err;
 			if (TXfldIsNull(f1) || TXfldIsNull(f2))
-				rc = TX_FLD_NULL_CMP(v1, v2, 
+				rc = TX_FLD_NULL_CMP(v1, v2,
 						     TXFLOAT_CMP(*v1, *v2));
 			else
 				rc = TXFLOAT_CMP(*v1, *v2);
@@ -393,7 +393,7 @@ TXOF	orderFlags;
 			v2 = getfld(f2, &sz);
 			if(sz != 1) goto err;
 			if (TXfldIsNull(f1) || TXfldIsNull(f2))
-				rc = TX_FLD_NULL_CMP(v1, v2, 
+				rc = TX_FLD_NULL_CMP(v1, v2,
 				     (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1)));
 			else
 				rc = (*v1 == *v2 ? 0 : (*v1 > *v2 ? 1 : -1));
@@ -429,7 +429,7 @@ TXOF	orderFlags;
 
 /******************************************************************/
 /*	Compare two fields using the field math stuff.  Takes a
- *	buffer as would be stored in BTREE. 
+ *	buffer as would be stored in BTREE.
  *
  *	The usr structure is intended to have a FLDCMP structure
  *	which will contain a table to decode the fields.
@@ -490,7 +490,7 @@ FLDCMP *usr;
 #ifndef JMT_COMP
 		if(orderFlags & OF_IGN_CASE)
 		{
-			if (globalcp == APICPPN) globalcp = TXopenapicp();
+			TXget_globalcp();
 			oign = globalcp->stringcomparemode;
 			globalcp->stringcomparemode = TXCFF_SUBST_CASESTYLE(
 			  globalcp->stringcomparemode, TXCFF_CASESTYLE_IGNORE);
@@ -548,4 +548,3 @@ FLDCMP *usr;
 	}
 	return 0;
 }
-

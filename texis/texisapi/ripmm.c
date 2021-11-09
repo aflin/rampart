@@ -1,3 +1,4 @@
+/* -=- kai-mode: John -=- */
 /*
  *    JMT - Rework the code for relevancy
  */
@@ -29,8 +30,7 @@
 #define NELS  mm->mme->nels
 
 static int CDECL
-ripcmp(a, b)
-MMQI *a, *b;
+ripcmp(MMQI *a, MMQI *b)
 {
 	int cmp = strcmp((char *) a->s, (char *) b->s);
 
@@ -351,67 +351,92 @@ MMQL *
 mmripq(query)
 char *query;
 {
-	int n;
-	MMQL *ql = (MMQL *) calloc(1, sizeof(MMQL));
-	char *t, *q2;
+	/* Similar sep as Metamorph query parser?  But we are actually
+	 * parsing a document (for LIKEIN)?:
+	 */
+	static const char	sep[] = " \t\r\n\v\f";
+#define SEP_LEN	(sizeof(sep) - 1)
+	TXPMBUF *pmbuf = TXPMBUFPN;
+	MMQL *ql = NULL;
+	const char	*item, *queryEnd = query + strlen(query);
+	size_t	numItems = 0, numItemsAlloced = 0, itemLen;
 
-	if (ql != MMQLPN)
+	ql = TX_NEW(pmbuf, MMQL);
+	if (!ql) goto err;
+
+	/* Count and parse in one pass, to avoid Bug 8048: */
+	for (item = query; *item; item += itemLen)
 	{
-		q2 = strdup(query);
-		t = strtok(q2, " ");
-		while (t)
-		{
-			ql->n++;
-			t = strtok(NULL, " ");
-		}
-		ql->n = ql->n << 1;
-		free(q2);
-		if ((ql->lst = (MMQI *) calloc(ql->n, sizeof(MMQI))) == (MMQI *) NULL)
-		{
-			free(ql);
-			return (MMQLPN);
-		}
-		q2 = strdup(query);
-		n = 0;
-		t = strtok(q2, " ");
-		while (t)
-		{
-			while(*t=='-'||*t=='+')t++;
-			if(!*t)break;
-			ql->lst[n].s = (byte *)strdup(t);
-			ql->lst[n].len = strlen(t);
-			t = strtok(NULL, " ");
-			ql->lst[n].setno = n;
-			ql->lst[n].suffixproc = 0;
-			ql->lst[n].wild = 0;
-			ql->lst[n].logic = LOGISET;
-			ql->lst[n].orpos = n;
-			ql->lst[n].nwords = 1;
-			ql->lst[n].words = (byte **)calloc(1, sizeof(byte *));
-			ql->lst[n].lens = (size_t *)calloc(1, sizeof(size_t));
-			ql->lst[n].words[0] = ql->lst[n].s;
-			ql->lst[n].lens[0] = ql->lst[n].len;
-			n++;
+		/* Get next whitespace-separated `item'/`itemLen': */
+		item += TXstrspnBuf(item, queryEnd, sep, SEP_LEN);
+		itemLen = TXstrcspnBuf(item, queryEnd, sep, SEP_LEN);
 
-			ql->lst[n].s = (byte *)TXstrcat2("-", (char *)ql->lst[n-1].s);
-			ql->lst[n].len = strlen((char *)ql->lst[n].s);
-			ql->lst[n].setno = n;
-			ql->lst[n].suffixproc = 0;
-			ql->lst[n].wild = 0;
-			ql->lst[n].logic = LOGINOT;
-			ql->lst[n].orpos = n;
-			ql->lst[n].nwords = 1;
-			ql->lst[n].words=(byte **)calloc(1, sizeof(byte *));
-			ql->lst[n].lens =(size_t *)calloc(1,sizeof(size_t));
-			ql->lst[n].words[0] = ql->lst[n].s;
-			ql->lst[n].lens[0] = ql->lst[n].len;
-			n++;
-		}
-		if(q2)
-			free(q2);
-		qsort(ql->lst, ql->n, sizeof(MMQI), (int (CDECL *) ARGS((CONST void *, CONST void *))) ripcmp);
-	}
+		/* Skip leading `-' and/or `+': */
+		for (;
+		     item < queryEnd && itemLen > 0 &&
+			     (*item == '-' || *item == '+');
+		     item++, itemLen--)
+			;
+		if (itemLen <= 0) continue;     /* empty item */
+
+                /* Add the item to `ql': */
+		if (!TX_INC_ARRAY(pmbuf, &ql->lst, numItems, &numItemsAlloced))
+			goto err;
+		ql->lst[numItems].s = (byte *)TXstrndup(pmbuf, __FUNCTION__,
+                                                        item, itemLen);
+		if (!ql->lst[numItems].s) goto err;
+                ql->n++;                        /* after item alloced */
+		ql->lst[numItems].len = itemLen;
+		ql->lst[numItems].setno = numItems;
+		ql->lst[numItems].suffixproc = 0;
+		ql->lst[numItems].wild = 0;
+		ql->lst[numItems].logic = LOGISET;
+		ql->lst[numItems].orpos = numItems;
+		ql->lst[numItems].nwords = 1;
+		ql->lst[numItems].words = (byte **)TXcalloc(pmbuf,__FUNCTION__,
+                                                            1, sizeof(byte *));
+                if (!ql->lst[numItems].words) goto err;
+		ql->lst[numItems].lens = (size_t *)TXcalloc(pmbuf,__FUNCTION__,
+                                                            1, sizeof(size_t));
+                if (!ql->lst[numItems].lens) goto err;
+		ql->lst[numItems].words[0] = ql->lst[numItems].s;
+		ql->lst[numItems].lens[0] = ql->lst[numItems].len;
+		numItems++;
+
+                /* Add the item's negation to `ql': */
+		if (!TX_INC_ARRAY(pmbuf, &ql->lst, numItems, &numItemsAlloced))
+			goto err;
+                ql->lst[numItems].s = (byte *)TXstrcat2("-",
+                                               (char *)ql->lst[numItems-1].s);
+                if (!ql->lst[numItems].s) goto err;
+                ql->n++;                        /* after item alloced */
+                ql->lst[numItems].len = strlen((char *)ql->lst[numItems].s);
+                ql->lst[numItems].setno = numItems;
+                ql->lst[numItems].suffixproc = 0;
+                ql->lst[numItems].wild = 0;
+                ql->lst[numItems].logic = LOGINOT;
+                ql->lst[numItems].orpos = numItems;
+                ql->lst[numItems].nwords = 1;
+                ql->lst[numItems].words=(byte **)TXcalloc(pmbuf, __FUNCTION__,
+                                                          1, sizeof(byte *));
+                if (!ql->lst[numItems].words) goto err;
+                ql->lst[numItems].lens =(size_t *)TXcalloc(pmbuf, __FUNCTION__,
+                                                           1,sizeof(size_t));
+                if (!ql->lst[numItems].lens) goto err;
+                ql->lst[numItems].words[0] = ql->lst[numItems].s;
+                ql->lst[numItems].lens[0] = ql->lst[numItems].len;
+                numItems++;
+        }
+
+        qsort(ql->lst, ql->n, sizeof(MMQI),
+              (int (CDECL *)(const void *, const void *)) ripcmp);
+        goto finally;
+
+err:
+	ql = TXclosemmql(ql, 1);
+finally:
 	return (ql);
+#undef SEP_LEN
 }
 
 

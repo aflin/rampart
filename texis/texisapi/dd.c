@@ -377,21 +377,21 @@ ddft2ddfd(DDFT *tp, int n, int nonull, char *name, DDFD *fd)
 	return 0;
 }
 
-DDFD *
-ftn2ddfd_quick(type, n)
-int     type;
-size_t  n;
+TXbool
+TXftnToDdfdQuick(FTN type, size_t n, DDFD *fd)
 /* Quick fakery to help init a field fast.  KNG 981111
+ * Sets `*fd'.
+ * Returns TXbool_False on error.
  */
 {
-  static DDFD   fd;
-  DDFT          *ft;
+  DDFT	*ft;
 
-  if ((ft = ddftype(type)) == (DDFT *)NULL) return((DDFD *)NULL);
-  fd.type = type;
-  fd.size = n*ft->size;
-  fd.elsz = ft->size;
-  return(&fd);
+  memset(fd, 0, sizeof(DDFD));
+  if ((ft = ddftype(type)) == (DDFT *)NULL) return(TXbool_False);
+  fd->type = type;
+  fd->size = n*ft->size;
+  fd->elsz = ft->size;
+  return(TXbool_True);
 }
 
 /******************************************************************/

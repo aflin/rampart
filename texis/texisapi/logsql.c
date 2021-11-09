@@ -36,6 +36,9 @@ int
 TXlogsqlstatement(LPSTMT lpstmt)
 {
 	DDIC *ddic;
+	const char	*uFmt;
+
+	uFmt = (TX_LEGACY_VERSION_7_URL_CODING_CURRENT(TXApp) ? "%U" : "%qU");
 
 	ddic = lpstmt->dbc->ddic;
 	if(ddic->options[DDIC_OPTIONS_LOG_SQL_STATEMENTS] && (ddic->ihstmt != lpstmt) && !lpstmt->noresults)
@@ -59,7 +62,9 @@ TXlogsqlstatement(LPSTMT lpstmt)
 			}
 			for (i = 1; i <= lpstmt->nparams; i++)
 			{
-				htbuf_pf(buf, "&P%d=%U", i, fldtostr(lpstmt->param[i].fld));
+				htbuf_pf(buf, "&P%d=", i);
+				htbuf_pf(buf, uFmt,
+					 fldtostr(lpstmt->param[i].fld));
 			}
 			htbuf_getdata(buf, &params, 0);
 			if(params)

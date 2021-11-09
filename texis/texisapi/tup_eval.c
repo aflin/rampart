@@ -364,7 +364,7 @@ FLDOP	*fo;
 		PRED *p2;
 
 		p2 = duppred(p);
-		free(p2->left);
+		p2->left = TXfree(p2->left);
 		p2->left = strdup("sum");
 		fld = TXgetstatfld(t, p2);
 		if(!fld)
@@ -373,8 +373,6 @@ FLDOP	*fo;
 			putmsg(MERR, NULL, "Could not evaluate avg()");
 			return -1;
 		}
-		fopush(fo, fld);
-		free(p2->left);
 		if(!getfld(fld, NULL))
 		{
 			p2 = closepred(p2);
@@ -382,6 +380,8 @@ FLDOP	*fo;
 			fodisc(fo);
 			return -1;
 		}
+		fopush(fo, fld);
+		p2->left = TXfree(p2->left);
 		p2->left = strdup("count");
 		fld = TXgetstatfld(t, p2);
 		if(!fld)
@@ -574,7 +574,7 @@ TXpredGetFirstUsedColumnName(PRED *pred)
 	default:
 		return(NULL);
 	}
-}		
+}
 
 /******************************************************************/
 
@@ -596,6 +596,8 @@ FLDOP *fo;
 	int retval = 1;
 	void	*v;
 	ft_int	*intVal, *intVal2;
+	FTN	stkTop1Type = -1, stkTop2Type = -1;
+	size_t	stkTop1Len = 0, stkTop2Len = 0;
 
 #define IS_LINEAR(dbtbl)        (!(dbtbl)->index.btree)
 
@@ -878,7 +880,7 @@ FLDOP *fo;
 				TXsetshadownonalloc(tf1);
 			if (rc == 0)
 				retval = 1;
-			else 
+			else
 				retval = 0;
 			goto done;
 		}
@@ -1169,11 +1171,51 @@ FLDOP *fo;
 		case FOP_INTERSECT_IS_NOT_EMPTY :
 		case FOP_MAT :
 		case FOP_TWIXT :
+			/* Get types of top two items, before foop2(): */
+		      { FLD *f1, *f2;
+			  /* optimized version of fopeek[2](): */
+			if (fo->fs->numUsed < 2)
+			{
+			  stkTop1Type = stkTop2Type = -1;
+			  stkTop1Len = stkTop2Len = 0;
+			}
+			else
+			{
+			  f2 = fo->fs->f + (fo->fs->numUsed - 1);
+			  f1 = f2 - 1;
+			  stkTop1Type = TXfldType(f1);
+			  stkTop2Type = TXfldType(f2);
+			  stkTop1Len = f1->n;
+			  stkTop2Len = f2->n;
+			}
+
 			rc2 = foop2(fo, p->op, p->resultfld, &p->fldmathfunc);
 #ifdef DEBUG
 			if(rc2 != 0)
 				DBGMSG(2,(999, "foop", "Error %d, Op %d", rc2, p->op));
 #endif
+	reportrc2:
+			if (rc2 != FOP_EOK) /* wtf foop[2]() should report */
+			{
+				if(TXfldmathverb == 0) {
+					putmsg(MERR, __FUNCTION__, "%s %s %s failed: %s",
+						(stkTop1Type != (FTN)(-1) ? ddfttypename(stkTop1Type) : "?"),
+						TXfldopname(p->op),
+						(stkTop2Type != (FTN)(-1) ? ddfttypename(stkTop2Type) : "?"),
+						TXfldopname(rc2)
+					);
+				} else {
+					putmsg(MERR, __FUNCTION__,
+				      "Fldmath op %s(%u) %s %s(%u) failed: %s",
+				       (stkTop1Type != (FTN)(-1) ? ddfttypename(stkTop1Type) : "?"),
+				       (unsigned)stkTop1Len,
+				       TXfldopname(p->op),
+				       (stkTop2Type != (FTN)(-1) ? ddfttypename(stkTop2Type) : "?"),
+				       (unsigned)stkTop2Len, TXfldopname(rc2));
+				}
+				goto err;
+			}
+		      }
 			break;
 		case FOP_AND :
 			/* Bug 4292: value of some AND children (e.g.
@@ -1203,7 +1245,30 @@ FLDOP *fo;
 			}
 			else
 				n = 0;
-			foop(fo, FOP_MUL);
+		      { int rc3; FLD *f1, *f2;
+			  /* optimized version of fopeek[2](): */
+			if (fo->fs->numUsed < 2)
+			{
+			  stkTop1Type = stkTop2Type = -1;
+			  stkTop1Len = stkTop2Len = 0;
+			}
+			else
+			{
+			  f2 = fo->fs->f + (fo->fs->numUsed - 1);
+			  f1 = f2 - 1;
+			  stkTop1Type = TXfldType(f1);
+			  stkTop2Type = TXfldType(f2);
+			  stkTop1Len = f1->n;
+			  stkTop2Len = f2->n;
+			}
+
+			rc3 = foop(fo, FOP_MUL);
+			if (rc3 != FOP_EOK)
+			{
+				rc2 = rc3;
+				goto reportrc2;
+			}
+		      }
 			if (n && (r = fopeek(fo)) != NULL)
 				fld2finv(r, rc2);
 			break;
@@ -1256,7 +1321,15 @@ FLDOP *fo;
 				fopush(fo, r2);
 			}
 			else
-				foop(fo, FOP_ADD);
+			{
+				int	rc3;
+				rc3 = foop(fo, FOP_ADD);
+				if (rc3 != FOP_EOK)
+				{
+					rc2 = rc3;
+					goto reportrc2;
+				}
+			}
 			if (n && (r = fopeek(fo)) != NULL)
 				fld2finv(r, rc2);
 			break;
@@ -1332,7 +1405,7 @@ FLDOP *fo;
 			rc = *ip;
 			if((p->op & FOP_CMP) && !p->resultfld)
 				p->resultfld = dupfld(r);
-			if (globalcp == APICPPN) globalcp = TXopenapicp();
+			TXget_globalcp();
 			if(p->handled &&
 			   (globalcp->stringcomparemode & TXCFF_PREFIX) &&
 			   (p->op & FOP_CMP) && rc == TX_STRFOLDCMP_ISPREFIX)
@@ -1501,4 +1574,3 @@ FTN	*type;	/* (out, opt.) type of returned data */
 	else if (type) *type = (FTN)0;
 	return rc;
 }
-

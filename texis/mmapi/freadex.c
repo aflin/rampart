@@ -210,7 +210,7 @@ FFS  *ex;
  byte *loc;
  static char Fn[]="freadex";
 
-#if defined(MVS) || defined(VMS)  /* MAW 02-20-90 - no seeking on mvs */
+#if defined(MVS) /* MAW 02-20-90 - no seeking on mvs */
  return(pipereadex(fh,buf,len,ex));
 #else
 #ifndef _WIN32 /* wtf? */

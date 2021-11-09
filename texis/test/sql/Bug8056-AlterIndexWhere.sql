@@ -1,0 +1,18 @@
+CREATE TABLE test (Data varchar(20));
+INSERT INTO test VALUES('indexed.row');
+INSERT INTO test VALUES('indexed.row');
+INSERT INTO test VALUES('indexed.row');
+SELECT COUNT(*) N from test where Data like 'indexed-row';
+CREATE METAMORPH INDEX ix1 on test(Data);
+SELECT COUNT(*) N from test where Data like 'indexed-row';
+INSERT INTO test VALUES('indexed.row');
+INSERT INTO test VALUES('indexed.row');
+INSERT INTO test VALUES('indexed.row');
+SELECT COUNT(*) N from test where Data like 'indexed-row';
+ALTER INDEX ix1 OPTIMIZE HAVING COUNT(NewRows) > 5;
+SELECT COUNT(*) N from test where Data like 'indexed-row';
+ALTER INDEX ix1 OPTIMIZE HAVING COUNT(NewRows) > 1;
+SELECT COUNT(*) N from test where Data like 'indexed-row';
+ALTER INDEX ix1 OPTIMIZE;
+SELECT COUNT(*) N from test where Data like 'indexed-row';
+DROP TABLE test;

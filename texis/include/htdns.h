@@ -73,11 +73,12 @@ HTDF;
 
 typedef enum HTDNS_SERVICE_tag                  /* host lookup services */
 {
-  HTDNS_SERVICE_NONE,
+  HTDNS_SERVICE_NONE,                           /* must be first/0 */
   HTDNS_SERVICE_BIND,
   HTDNS_SERVICE_HOSTS,
   HTDNS_SERVICE_NIS,                            /* not used currently */
   HTDNS_SERVICE_NUM                             /* must be last */
+  /* see TXhtdnsServiceTokenToString() if list changes */
 }
 HTDNS_SERVICE;
 #define HTDNS_SERVICEPN ((HTDNS_SERVICE *)NULL)
@@ -233,6 +234,8 @@ typedef struct HTDNSMSG_tag                     /* an entire parsed message */
 HTDNSMSG;
 #define HTDNSMSGPN      ((HTDNSMSG *)NULL)
 
+const char *TXhtdnsServiceTokenToString(HTDNS_SERVICE service);
+
 HTDNS   *openhtdns ARGS((TXPMBUF *pmbufclone));
 TXbool  TXhtdnsInit(HTDNS *dns);
 HTDNS   *closehtdns ARGS((HTDNS *dns));
@@ -282,6 +285,12 @@ int     htdns_getretry(HTDNS *dns, int *retry);
 int     htdns_setservices ARGS((HTDNS *dns, HTDNS_SERVICE *svc));
 char    **TXhtdnsGetNameServers(HTDNS *dns);
 TXbool  TXhtdnsSetNameServers(HTDNS *dns, char **svrs);
+const char *TXhtdnsGetResolvConfFile(HTDNS *dns);
+TXbool      TXhtdnsSetResolvConfFile(HTDNS *dns, const char *file);
+const char *TXhtdnsGetNsSwitchConfFile(HTDNS *dns);
+TXbool      TXhtdnsSetNsSwitchConfFile(HTDNS *dns, const char *file);
+const char *TXhtdnsGetHostConfFile(HTDNS *dns);
+TXbool      TXhtdnsSetHostConfFile(HTDNS *dns, const char *file);
 const char *TXhtdnsGetHostsFile(HTDNS *dns);
 TXbool      TXhtdnsSetHostsFile(HTDNS *dns, const char *file);
 int     htdns_setdomains ARGS((HTDNS *dns, char **doms));

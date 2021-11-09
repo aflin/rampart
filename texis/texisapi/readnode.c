@@ -65,7 +65,7 @@ static int counttypes(QNODE *q, long *nChar, long *nLong, long *nDouble, long *n
 
 static int convertfield(QNODE *q, FLDOP *fo)
 {
-	FLD *f1, *f2, *f3;
+	FLD *f1, *f2;
 
 	if(q->op != FIELD_OP)
 		return -1;
@@ -80,7 +80,7 @@ static int convertfield(QNODE *q, FLDOP *fo)
 	f2 = fopop(fo);
 	f1 = closefld(f1);
 	q->tname = f2;
-	return 0;
+	return(1);
 }
 static int convertfields(QNODE * q, FLDOP *fo)
 {
@@ -181,27 +181,35 @@ size_t	n;
 
 /******************************************************************/
 
-static size_t walknaddlong(QNODE *q,ft_long *v, FLD *f, size_t n)
-{
-	if(q->op == FIELD_OP)
-	{
-		v[n] = *(ft_long *)getfld(q->tname, NULL);
-		if(f->issorted && n > 0)
-		{
-			if(v[n-1] > v[n])
-				f->issorted = 0;
-		}
-		n++;
-		return n;
-	}
-	if(q->op == LIST_OP)
-	{
-		n = walknaddlong(q->left, v, f, n);
-		n = walknaddlong(q->right, v, f, n);
-		return n;
-	}
-	return n;
+#define WALK_AND_ADD_FUNC(ftType)                               \
+static size_t                                                   \
+walknadd##ftType(QNODE *q, ftType *v, FLD *f, size_t n)         \
+{                                                               \
+	if(q->op == FIELD_OP)                                   \
+	{                                                       \
+		v[n] = *(ftType *)getfld(q->tname, NULL);       \
+		if(f->issorted && n > 0)                        \
+		{                                               \
+			if(v[n-1] > v[n])                       \
+				f->issorted = 0;                \
+		}                                               \
+		n++;                                            \
+		return n;                                       \
+	}                                                       \
+	if(q->op == LIST_OP)                                    \
+	{                                                       \
+		n = walknadd##ftType(q->left, v, f, n);         \
+		n = walknadd##ftType(q->right, v, f, n);        \
+		return n;                                       \
+	}                                                       \
+	return n;                                               \
 }
+
+WALK_AND_ADD_FUNC(ft_long)
+WALK_AND_ADD_FUNC(ft_int64)
+WALK_AND_ADD_FUNC(ft_uint64)
+
+#undef WALK_AND_ADD_FUNC
 
 /******************************************************************/
 
@@ -283,16 +291,21 @@ convlisttovarfld(QNODE *q, DDIC *ddic, FLDOP *fo)
 	{
 		switch(nf->type & DDTYPEBITS)
 		{
-		case FTN_LONG:
-			nf->issorted=ddic->optimizations[OPTIMIZE_SORTED_VARFLDS];
-			v = (void *)TXmalloc(pmbuf, fn, n * nf->elsz);
-			walknaddlong(q, (ft_long *)v, nf, 0);
-			putfld(nf, v, n);
-			break;
+#define HANDLE_TYPE(ftnType, ftType)                                    \
+		case ftnType:                                           \
+			nf->issorted=ddic->optimizations[OPTIMIZE_SORTED_VARFLDS]; \
+			v = (void *)TXmalloc(pmbuf, fn, n * nf->elsz);  \
+			walknadd##ftType(q, (ftType *)v, nf, 0);        \
+			putfld(nf, v, n);                               \
+			break
+		HANDLE_TYPE(FTN_LONG, ft_long);
+		HANDLE_TYPE(FTN_INT64, ft_int64);
+		HANDLE_TYPE(FTN_UINT64, ft_uint64);
 		default:
 			v = (void *)TXmalloc(pmbuf, fn, n * nf->elsz);
 			walknadd(q, v, nf->elsz);
 			putfld(nf, v, n);
+#undef HANDLE_TYPE
 		}
 	}
 	else
@@ -473,23 +486,21 @@ ireadlstnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, FLDOP *fo)
 
 /******************************************************************/
 
-#define READNEXTNODE ireadnode(ddic, toke, depth + 1, this, 0, fo)
+#define READNEXTNODE ireadnode(ddic, toke, depth + 1, this, QNODE_OP_UNKNOWN, fo)
 
 static QNODE *
 ireadnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, QTOKEN x, FLDOP *fo)
 {
 	static CONST char Fn[]="readnode";
 	TXPMBUF	*pmbuf = (ddic ? ddic->pmbuf : TXPMBUFPN);
-	QNODE	*this;
+	QNODE	*this, *t1, *t2;
 	int	size, notnull;
-	unsigned long	t;
-	long	t2;
 	double	d;
 	char	*name, *type;
 	DD	*dd;
 	FLD	*f;
 
-	if(x == 0)
+	if(x == QNODE_OP_UNKNOWN)
 		x = readtoken(toke);
 	this = openqnode(x);
 	if(!this)
@@ -861,14 +872,62 @@ ireadnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, QTOKEN x, FLDOP
 			break;
 		case TX_QNODE_NUMBER:
 		      {
-			int	errNum;
+			int		errNum;
+			EPI_INT64	int64Val;
+			EPI_UINT64	uint64Val;
+			char	        *fldType = "int64";
+                        void            *fldData = NULL;
+                        size_t          fldSz = 0;
 
-			t = TXstrtoul(ZZTEXT, NULL, NULL,
+			/* Bug 7467: parse as int64 for consistency across
+			 * platforms (sizeof(ft_long) varies), and to avoid
+			 * sign loss from ulong -> long conversion at fld asgn.
+                         * Note: update convlisttovarfld()'s `issorted'
+                         * maintenance, if this type changes again:
+			 */
+			int64Val = TXstrtoi64(ZZTEXT, NULL, NULL,
 				      (0 | TXstrtointFlag_NoLeadZeroOctal |
 				       TXstrtointFlag_ConsumeTrailingSpace |
 				       TXstrtointFlag_TrailingSourceIsError),
 				      &errNum);
-			this->tname = createfld("long", 1, 0);
+			if (errNum)
+			{
+                          /* Might fit in a uint64: */
+                          uint64Val = TXstrtoui64(ZZTEXT, NULL, NULL,
+				      (0 | TXstrtointFlag_NoLeadZeroOctal |
+				       TXstrtointFlag_ConsumeTrailingSpace |
+				       TXstrtointFlag_TrailingSourceIsError),
+				      &errNum);
+                          if (errNum)
+                            {
+                              txpmbuf_putmsg(pmbuf, MERR + UGE, NULL,
+             "Integral literal `%s' cannot be converted to integral type: %s",
+                                             ZZTEXT, strerror(errNum));
+                              /* Fail the statement: this value is part
+                               * of the statement, will always fail,
+                               * and is from the programmer.  I.e. this
+                               * is much like a syntax error:
+                               */
+                              goto err;
+                            }
+                          else
+                            {
+                              fldData = TX_NEW_ARRAY(pmbuf, 2, ft_uint64);
+                              if (!fldData) goto err;
+                              *(ft_uint64 *)fldData = uint64Val;
+                              fldType = "uint64";
+                              fldSz = sizeof(ft_uint64) + 1;
+                            }
+			}
+                        else
+                        {
+                          fldData = TX_NEW_ARRAY(pmbuf, 2, ft_int64);
+                          if (!fldData) goto err;
+                          *(ft_int64 *)fldData = int64Val;
+                          fldType = "int64";
+                          fldSz = sizeof(ft_int64) + 1;
+                        }
+			this->tname = createfld(fldType, 1, 0);
 			if (!this->tname) goto err;
 #if DEBUG
 			if (dq)
@@ -877,30 +936,45 @@ ireadnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, QTOKEN x, FLDOP
 			setfldv((FLD *)this->tname);
 			if (errNum)
 				TXfldSetNull((FLD *)this->tname);
-			else
-			{
-				ft_long	*v;
-
-				if (!(v = TX_NEW_ARRAY(pmbuf, 2, ft_long)))
-					goto err;
-				*v = t;
-				if (setfldandsize((FLD *)this->tname, v,
-						  sizeof(ft_long) + 1, FLD_FORCE_NORMAL) < 0)
-					goto err;
-			}
+			else if (setfldandsize((FLD *)this->tname, fldData,
+                                               fldSz, FLD_FORCE_NORMAL) < 0)
+                          goto err;
 		      }
 			this->op = FIELD_OP;
 			break;
 		case NNUMBER :
 		      {
-			int	errNum;
+			int		errNum;
+			EPI_INT64	int64Val;
+                        ft_int64	*fldData = NULL;
 
-			t2 = TXstrtol(ZZTEXT, NULL, NULL,
+			/* Bug 7467: parse as int64 for consistency across
+			 * platforms (sizeof(ft_long) varies):
+			 */
+			int64Val = TXstrtoi64(ZZTEXT, NULL, NULL,
 				      (0 | TXstrtointFlag_NoLeadZeroOctal |
 				       TXstrtointFlag_ConsumeTrailingSpace |
 				       TXstrtointFlag_TrailingSourceIsError),
 				      &errNum);
-			this->tname = createfld("long", 1, 0);
+			if (errNum)
+			{
+				txpmbuf_putmsg(pmbuf, MERR + UGE, NULL,
+	     "Integral literal `%s' cannot be converted to integral type: %s",
+					       ZZTEXT, strerror(errNum));
+				/* Fail the statement: this value is part
+				 * of the statement, will always fail,
+				 * and is from the programmer.  I.e. this
+				 * is much like a syntax error:
+				 */
+				goto err;
+                        }
+                        else
+                        {
+				fldData = TX_NEW_ARRAY(pmbuf, 2, ft_int64);
+				if (!fldData) goto err;
+				*fldData = int64Val;
+                        }
+			this->tname = createfld("int64", 1, 0);
 			if (!this->tname) goto err;
 #if DEBUG
 			if (dq)
@@ -909,17 +983,9 @@ ireadnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, QTOKEN x, FLDOP
 			setfldv((FLD *)this->tname);
 			if (errNum)
 				TXfldSetNull((FLD *)this->tname);
-			else
-			{
-				ft_long	*v;
-
-				if (!(v = TX_NEW_ARRAY(pmbuf, 2, ft_long)))
-					goto err;
-				*v = t2;
-				if (setfldandsize((FLD *)this->tname, v,
-						  sizeof(ft_long) + 1, FLD_FORCE_NORMAL) < 0)
-					goto err;
-			}
+			else if (setfldandsize((FLD *)this->tname, fldData,
+                                               sizeof(ft_int64) + 1, FLD_FORCE_NORMAL) < 0)
+                          goto err;
 		      }
 			this->op = FIELD_OP;
 			break;
@@ -1282,7 +1348,10 @@ ireadnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, QTOKEN x, FLDOP
 				if (!this->left) goto err;
 				this->left->left = READNEXTNODE; /* index */
 				this->left->right = READNEXTNODE; /* table */
-				this->right = READNEXTNODE;	/* actions */
+				t1 = READNEXTNODE; /* actions */
+				t2 = READNEXTNODE; /* HAVING */
+				this->right = t1;	/* actions */
+				this->predicate_node = t2; /* HAVING */
 			}
 			else			/* CREATE, or ALTER !INDEX */
 			{
@@ -1316,6 +1385,11 @@ ireadnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, QTOKEN x, FLDOP
 			this->tname = createfld("varchar", 1, 0);
 			this->op = FIELD_OP;
 			break;
+		case LOCK_TABLES_OP:
+		case UNLOCK_TABLES_OP:
+			putmsg(MERR+UGE, Fn, "LOCK TABLES not yet supported");
+			this = closeqnode(this);
+			return (QNODE *)NULL;
 		case 0 :
 			break;
 		default :
@@ -1346,7 +1420,7 @@ readnode(DDIC *ddic, FLDOP *fo, TX_READ_TOKEN *toke, int depth)
 QNODE *
 readnode(DDIC *ddic, FLDOP *fo, int depth)
 {
-	return ireadnode(ddic, NULL, depth, NULL, 0, fo);
+	return ireadnode(ddic, NULL, depth, NULL, QNODE_OP_UNKNOWN, fo);
 }
 #endif
 

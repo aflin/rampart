@@ -33,7 +33,7 @@
 #define EBOL ':'
 #else
 				  /* MAW 07-20-92 - add macintosh def */
-#if defined(MSDOS) || defined(unix) || defined(macintosh) || defined(AOSVS) || defined(VMS)
+#if defined(MSDOS) || defined(unix) || defined(macintosh) || defined(AOSVS)
 #define EESC '\\'
 #define OSET '['
 #define CSET ']'
@@ -305,7 +305,7 @@ size_t	*replLen;		/* (out) length of returned buffer */
 		for (i = 0; ra[i] != EORS; i++)
 		{
 			if (ra[i] > EORS && ra[i] < 0)
-			{
+			{                       /* "{n}"/EBEG: char at "n" */
 				bl = loc - (ra[i] + 1);
 				if (INBOUND(bl))
 					OUTPUT(bl, 1);
@@ -376,7 +376,7 @@ size_t	*replLen;		/* (out) length of returned buffer */
 				else
 					OUTPUT("?", 1);
 				break;
-			default:
+			default:		/* as-is literal character */
 				tmpBuf[0] = ra[i];
 				OUTPUT(tmpBuf, 1);
 				break;

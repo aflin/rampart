@@ -151,6 +151,7 @@ int stxalrevoke(int f) {int o=txalrevoke; txalrevoke=f; return(o);}
 %token COBOL FORTRAN TX_PASCAL PLI ADA INVERTED UNSIGNED NOCASE
 %token VARCHAR INDEX TDB TX_BLOB DROP REVOKE TX_BYTE VARBYTE REFERENCING TX_TRIGGER
 %token AFTER INSTEAD OLD NEW EACH STATEMENT ROW WHEN SHELL TX_IF
+%token TX_LOCK TX_UNLOCK TABLES READ WRITE
 
 %type <strval>	selection table_exp scalar_exp_commalist from_clause
 %type <strval>	table_ref_commalist table_ref_hint table_ref table hintlist
@@ -184,7 +185,7 @@ int stxalrevoke(int f) {int o=txalrevoke; txalrevoke=f; return(o);}
 %type <strval>	open_statement rollback_statement select_statement atom
 %type <strval>	update_statement_positioned select_body
 %type <strval>	cursor opt_for_each opt_table_type stringlit atom_commalist
-%type <strval>	create_table_as_head subset_predicate_head
+%type <strval>	create_table_as_head create_table_referencing_head subset_predicate_head
 %type <strval>	opt_ign_case query_exp query_term opt_with_check_option
 /*
 %type <strval>	procedure module
@@ -195,6 +196,7 @@ int stxalrevoke(int f) {int o=txalrevoke; txalrevoke=f; return(o);}
 %type <strval>	create_index_option_list opt_create_index_options
 %type <strval>  opt_if_exists
 %type <strval>  json_subpath
+%type <strval>  lock_table_def lock_table_commalist lock_type
 
 %%
 
@@ -462,7 +464,7 @@ alter_index_action_options:	cname
 		}
 	;
 
-index_change:	ALTER INDEX {yycontext = 18;} index_or_all opt_on_table alter_index_action_options
+index_change:	ALTER INDEX {yycontext = 18;} index_or_all opt_on_table alter_index_action_options opt_having_clause
 		{
 			if(!txalcrndx)
 			{
@@ -475,6 +477,8 @@ index_change:	ALTER INDEX {yycontext = 18;} index_or_all opt_on_table alter_inde
 			genout($5);		/* "table-name" or ALL_OP */
 			genout(" ");
 			genout($6);		/* actions */
+			genout(" ");
+			genout($7);		/* having */
 			genout("\n");
 			$4 = TXfree($4);
 			$5 = TXfree($5);
@@ -799,33 +803,38 @@ opt_table_type:	cname
 	;
 base_table_def:
 		CREATE opt_table_type TABLE table {yycontext = 4;} '(' base_table_element_commalist ')'
+	{
+		if(!txalcrtbl && strcmp($2, "R"))
 		{
-
-			if(!txalcrtbl && strcmp($2, "R"))
-			{
-				putmsg(MERR+UGE, NULL, "Feature Disabled");
-				YYERROR;
-			}
-			genout("_T ");
-			genout($2);		/* table type */
-			genout(" ");
-			genout($7);		/* schema */
-			genout(" ");
-			genout($4);		/* table name */
-			genout("\n");
-			free($2);
-			free($4);
-			free($7);
+			putmsg(MERR+UGE, NULL, "Feature Disabled");
+			YYERROR;
 		}
+		genout("_T ");
+		genout($2);		/* table type */
+		genout(" ");
+		genout($7);		/* schema */
+		genout(" ");
+		genout($4);		/* table name */
+		genout("\n");
+		free($2);
+		free($4);
+		free($7);
+	}
 	|	create_table_as_head query_spec
-		{
-			genout($2);
-			genout(" ");
-			genout($1);
-			genout("\n");
-			free($1);
-			free($2);
-		}
+	{
+		genout($2);
+		genout(" ");
+		genout($1);
+		genout("\n");
+		free($1);
+		free($2);
+	}
+	| create_table_referencing_head atom
+	{
+		genout($2);
+		genout("\n");
+		free($2);
+	}
 	;
 
 create_table_as_head:
@@ -843,6 +852,21 @@ create_table_as_head:
 			$$ = $4;
 		}
 	;
+
+create_table_referencing_head:
+	CREATE opt_table_type TABLE table {yycontext = 4;} REFERENCING
+	{
+		if(!txalcrtbl)
+		{
+			putmsg(MERR+UGE, NULL, "Feature Disabled");
+			YYERROR;
+		}
+		genout("_M table ");
+		genout($4);
+		genout(" ,fileref ");
+		free($2);
+		free($4);
+	}
 
 base_table_element_commalist:
 		base_table_element
@@ -1311,7 +1335,62 @@ parameter_def:
 	;
 */
 
+sql:  lock_statment
+	{
+	}
+	;
+
+lock_statment:
+		lock_tables
+	|	unlock_tables
+	;
+
+lock_tables:
+	TX_LOCK TABLES lock_table_commalist
+	{
+		genout("_K ");
+		genout($3);
+		genout("\n");
+	};
 	/* manipulative statements */
+
+lock_table_commalist:
+		lock_table_def
+		{
+			$$ = $1;
+		}
+	| lock_table_commalist "," lock_table_def
+		{
+			$$ = TXstrcat4(", ", $1, " ", $3);
+			free($1);
+			free($3);
+		}
+	;
+
+lock_table_def:
+	table_ref lock_type
+	{
+		$$=TXstrcat3($1, " ", $2);
+		free($1);
+		free($2);
+	}
+
+lock_type:
+		WRITE
+		{
+			$$ = strdup("_W");
+		}
+	| READ
+	{
+		$$ = strdup("_R");
+	}
+	;
+
+unlock_tables:
+	TX_UNLOCK TABLES
+	{
+		genout("_k\n");
+	};
 
 sql:		manipulative_statement
 	{

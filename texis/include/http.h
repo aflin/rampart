@@ -171,7 +171,8 @@ I(IPv6ScopeIdInHostHeader)          /* leave IPv6 scope id in Host: hdrs */ \
 I(PreserveCanonPortCleanUrl)        /* save canon port when cleaning URLs */\
 I(MetaCookies)                      /* accept <meta http-equiv> cookies */  \
 I(OffSiteFetchMsgsAndErr)           /* `Not fetching off-site' msgs+err */  \
-I(UserDataFetchMsgsAndErr)          /* `... User-data fetch ...' msgs+err */
+I(UserDataFetchMsgsAndErr)          /* `... User-data fetch ...' msgs+err */\
+I(SslLegacyServerConnect)           /* set SSL_OP_LEGACY_SERVER_CONNECT */
 /* >>>>> NOTE: if adding more flags, must update JDOM_VERSION, <<<<<
  * >>>>> as HTOBJ struct size will change (`flags' increases)  <<<<<
  */
@@ -1379,8 +1380,8 @@ struct HTPAGE_tag
   unsigned      cachehash;              /* hash of URL */
   /* internal formatter use: */
   TXrefInfo     *curScriptRef;          /*running script's `javascript:' ref*/
-   /* these are only set by htformatpage(): */
   int		flags;			/* flags (see HTF below) */
+   /* these are only set by htformatpage(): */
   char		*title, *txt;		/* formatted title and document text */
   size_t	titlesz, txtsz;		/* "" size  (`txt' may == `rawdoc') */
   TXrefInfo    **refInfos;              /* js-mod */
@@ -1428,7 +1429,7 @@ HTFPINFO;
 #define HTFPINFO_EMPTY_VAL      { NULL, 0 }
 
 
-/* Flags set by formatting.  These are not errors: */
+/* Flags set (mostly) by formatting.  These are not errors: */
 #define HTF_SYMBOLS_LIST                                        \
 I(REDIR)        /* page was redirected (see redirs field) */    \
 I(FRAME)        /* page has a frame (set by htformatpage() */   \
@@ -1441,7 +1442,8 @@ I(IFRAME)       /* page has an <IFRAME> */                      \
 I(REQSECURE)    /* request was secure */                        \
 I(RESPSECURE)   /* response was secure */                       \
 I(ANCSECURE)    /* ancestors (redirs) exist and were secure */  \
-I(DESCSECURE)   /* descendants (frames) exist and were secure */
+I(DESCSECURE)   /* descendants (frames) exist and were secure */\
+I(SavedContent) /* content was saved via TOFILE; rawdoc empty */
 
 typedef enum HTFint_tag
 {
@@ -1810,24 +1812,25 @@ typedef enum TXfetchVerbose_tag
     TXfetchVerbose_RequestLine                  = 0x000008,
     TXfetchVerbose_ResponseHeaders              = 0x000010,
     TXfetchVerbose_RequestHeaders               = 0x000020,
-    TXfetchVerbose_ResponseTextAlsoBinary       = 0x000040,
-    TXfetchVerbose_RequestTextAlsoBinary        = 0x000080,
+    /* do ...IfBinary flags also for text MIMEs: */
+    TXfetchVerbose_ResponseBinaryFlagsAlsoIfText= 0x000040,
+    TXfetchVerbose_RequestBinaryFlagsAlsoIfText = 0x000080,
     /* Note: these are set for TXfetchVerbose_SMALL_TO_MEDIUM() to work: */
-    TXfetchVerbose_ResponseSmallBinary          = 0x000100, /* 16 lines/256B */
-    TXfetchVerbose_ResponseSmallRawText         = 0x000200, /* 16 lines */
-    TXfetchVerbose_ResponseSmallFormattedText   = 0x000400, /* 16 lines */
+    TXfetchVerbose_ResponseSmallRawdocHexIfBinary=0x000100,/* 16 lines/256B*/
+    TXfetchVerbose_ResponseSmallRawdocIfText    = 0x000200, /* 16 lines */
+    TXfetchVerbose_ResponseSmallFormattedIfText = 0x000400, /* 16 lines */
                                                /* 0x000800 future anytotx? */
-    TXfetchVerbose_ResponseMediumBinary         = 0x001000, /* 128 lines/2KB */
-    TXfetchVerbose_ResponseMediumRawText        = 0x002000, /* 128 lines */
-    TXfetchVerbose_ResponseMediumFormattedText  = 0x004000, /* 128 lines */
+    TXfetchVerbose_ResponseMediumRawdocHexIfBinary=0x001000,/*128 lines/2KB*/
+    TXfetchVerbose_ResponseMediumRawdocIfText   = 0x002000, /* 128 lines */
+    TXfetchVerbose_ResponseMediumFormattedIfText= 0x004000, /* 128 lines */
                                                /* 0x800000 future anytotx? */
-    TXfetchVerbose_RequestSmallBinary           = 0x010000, /* 16 lines/256B */
-    TXfetchVerbose_RequestSmallRawText          = 0x020000, /* 16 lines */
-    TXfetchVerbose_RequestSmallFormattedText    = 0x040000, /* 16 lines */
+    TXfetchVerbose_RequestSmallRawdocHexIfBinary=0x010000, /* 16 lines/256B*/
+    TXfetchVerbose_RequestSmallRawdocIfText     = 0x020000, /* 16 lines */
+    TXfetchVerbose_RequestSmallFormattedIfText  = 0x040000, /* 16 lines */
                                                /* 0x080000 future anytotx? */
-    TXfetchVerbose_RequestMediumBinary          = 0x100000, /* 128 lines/2KB */
-    TXfetchVerbose_RequestMediumRawText         = 0x200000, /* 128 lines */
-    TXfetchVerbose_RequestMediumFormattedText   = 0x400000, /* 128 lines */
+    TXfetchVerbose_RequestMediumRawdocHexIfBinary=0x100000, /*128 lines/2KB*/
+    TXfetchVerbose_RequestMediumRawdocIfText    = 0x200000, /* 128 lines */
+    TXfetchVerbose_RequestMediumFormattedIfText = 0x400000, /* 128 lines */
                                                /* 0x800000 future anytotx? */
   }
 TXfetchVerbose;

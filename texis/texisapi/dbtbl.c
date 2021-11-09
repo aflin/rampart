@@ -1661,6 +1661,7 @@ int type;	/* (in) lock type: {R,W}_LCK [ | V_LCK] */
 	static const char	fn[] = "TXlocktable";
 	int rc;
 	int attempts;
+	LOCKTABLES_RETURN ltr;
 
 	attempts = 0;
 	if ((!db->ddic) || db->ddic->manuallocking)
@@ -1670,6 +1671,13 @@ int type;	/* (in) lock type: {R,W}_LCK [ | V_LCK] */
 	if (!db->rname)
 		return 0;
       retrytlock:
+	ltr = LockTablesLock(db, type);
+	switch (ltr) {
+		case LOCKTABLES_SKIP: break;
+		case LOCKTABLES_ERR: return -1;
+		case LOCKTABLES_OK: return 0;
+		case LOCKTABLES_MODIFIED: return -2;
+	}
 #ifdef USE_FLOCK
 	switch (type)
 	{
@@ -1773,11 +1781,19 @@ DBTBL *db;
 int type;
 {
 	int rc;
+	LOCKTABLES_RETURN ltr;
 
 	if ((!db->ddic) || db->ddic->manuallocking)
 		return 0;
 	if (isramdbtbl(db))
 		return 0;
+	ltr = LockTablesUnlock(db, type);
+	switch (ltr) {
+		case LOCKTABLES_SKIP: break;
+		case LOCKTABLES_ERR: return -1;
+		case LOCKTABLES_OK: return 0;
+		case LOCKTABLES_MODIFIED: return -2;
+	}
 	switch (type)
 	{
 	case R_LCK:
@@ -2607,11 +2623,13 @@ setRet:
 	retData = (ft_long *)TXcalloc(TXPMBUFPN, fn, 1, sizeof(ft_long) + 1);
 	if (!retData) return(FOP_ENOMEM);
 	*retData = (ft_long)n;
-	f1->type = FTN_LONG;
-	f1->elsz = sizeof(ft_long);
-	setfldandsize(f1, retData, sizeof(ft_long) + 1, FLD_FORCE_NORMAL);
+	/* Bug 8000: set return field properly: */
+	if (!TXsqlSetFunctionReturnData(__FUNCTION__, f1, retData, FTN_LONG,
+					FTI_UNKNOWN, sizeof(ft_long),
+					1, 0))
+		return(FOP_EUNKNOWN);
 
-	return 0;				/* success */
+	return(FOP_EOK);
 }
 
 int

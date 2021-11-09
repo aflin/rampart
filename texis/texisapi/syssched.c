@@ -820,8 +820,7 @@ TXdelscheduledevent(DDIC * ddic, char *path, char *suffix, char *schedule,
 		else
 			strcat(stmt, " AND OPTIONS NOT LIKE 'istag'");
 		/* Version 6+ Texis has query protect on by default: */
-		if (globalcp == APICPPN) globalcp = TXopenapicp();
-		if (globalcp != APICPPN)
+		if (TXget_globalcp() != APICPPN)
 		{
 			saveAllinear = globalcp->allinear;
 			globalcp->allinear = 1;
@@ -1005,8 +1004,7 @@ int     istag;
 	}
 
 	/* Version 6+ Texis has query protect on by default: */
-	if (globalcp == APICPPN) globalcp = TXopenapicp();
-	if (globalcp != APICPPN)
+	if (TXget_globalcp() != APICPPN)
 	{
 		saveAllinear = globalcp->allinear;
 		globalcp->allinear = 1;
@@ -1613,7 +1611,7 @@ int		lockFlags;	/* (in) 0x1: have ObjMutex lock already */
  */
 {
 	static CONST char	fn[] = "runjob";
-	
+
 #ifdef _WIN32
 	PROCESS_INFORMATION piProcInfo;
 	SECURITY_ATTRIBUTES saAttr;

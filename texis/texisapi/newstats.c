@@ -215,6 +215,13 @@ NFLDSTAT **fs;
 
 /******************************************************************/
 
+int
+TXaddnewstatsfrompred(DBTBL *table, PRED *pred, FLDOP *fo)
+{
+	return addstatpred(table, pred, fo, &table->nfldstat);
+}
+/******************************************************************/
+
 NFLDSTAT *
 TXdupnewstats(fs)
 NFLDSTAT *fs;

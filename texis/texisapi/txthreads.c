@@ -902,12 +902,12 @@ TXgetCurrentThreadAsyncId(void)
  * Will not call putmsg() (assumed by vxPutmsgBuf.c).
  */
 {
-#ifdef EPI_HAVE_SYSCALL_GETTID
+#  ifdef EPI_HAVE_SYSCALL_GETTID
   return((TXthreadAsyncId)syscall(SYS_gettid));
-#else
-  /* should hopwfully be LinuxThreads, where each thread has unique PID */
+#  else /* !EPI_HAVE_SYSCALL_GETTID */
+  /* should hopefully be LinuxThreads, where each thread has unique PID */
   return(getpid());
-#endif
+#  endif /* !EPI_HAVE_SYSCALL_GETTID */
 }
 #endif /* !_WIN32 && EPI_USE_PTHREADS */
 
@@ -959,13 +959,18 @@ TXthreadIsAlive(TXTHREAD thread)
 #ifdef _WIN32
   DWORD res;
 
+  TXclearError();
   switch (res = WaitForSingleObject(thread, 0))
     {
     case WAIT_TIMEOUT:  return(1);
     case WAIT_OBJECT_0: return(0);
+    case WAIT_FAILED:
+      putmsg(MERR, __FUNCTION__, "WaitForSingleObject() failed: %s",
+             TXstrerror(TXgeterror()));
+      return(0);
     default:
-      putmsg(MERR, __FUNCTION__, "WaitForSingleObject() returned 0x%x",
-             (int)res);
+      putmsg(MERR, __FUNCTION__, "WaitForSingleObject() returned 0x%x: %s",
+             (int)res, TXstrerror(TXgeterror()));
       return(0);
     }
 #elif defined(EPI_USE_PTHREADS)

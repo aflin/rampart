@@ -623,9 +623,7 @@ int *success;		/* Where to store a success code */
 		return q->out;
 	case SELECT_OP:
 		prepinfo->preq |= PM_SELECT;
-		pred=TXtreetopred(ddic, query->right,
-				  TXgetDiscardUnsetParameterClauses(), fo,
-				  dbtbl);
+		pred=TXtreetopred(ddic, query->right, TXgetDiscardUnsetParameterClauses(), fo, dbtbl);
 		if(parentquery)
 			query->pfldlist = parentquery->fldlist;
 		if(analyze)
@@ -1464,6 +1462,31 @@ orderproj:
 			pass = TXfree(pass);
 			*success = (rc2 == 0 ? 1 : 0);
 		}
+		else if (strcmp(query->tname, "table") == 0)
+		{
+			char *tablename = NULL;
+			char *filename = NULL;
+
+			if(query->left && query->left->op == NAME_OP) {
+				tablename = query->left->tname;
+			} else {
+				putmsg(MERR+UGE, __FUNCTION__, "Need table name");
+				goto alterErr;
+			}
+			if(query->right && query->right->op == LIST_OP) {
+				QNODE *type_node = NULL;
+				QNODE *file_node = NULL;
+
+				type_node = query->right->left;
+				file_node = query->right->right;
+				if(type_node && type_node->op == NAME_OP && strcmp(type_node->tname, "fileref") == 0) {
+					if(file_node && file_node->op == FIELD_OP) {
+						filename = getfld(file_node->tname, NULL);
+					}
+				}
+			}
+			putmsg(MINFO, __FUNCTION__, "CREATE TABLE %s ADDTABLE %s", tablename, filename);
+		}
 		else
 		{
 			putmsg(MERR + UGE, __FUNCTION__,
@@ -1550,6 +1573,7 @@ orderproj:
 		else if (strcmpi(query->tname, "index") == 0)
 		{				/* ALTER INDEX */
 			CONST char	*indexName, *tableName, *actionOptions;
+			PRED *conditions = NULL;
 			STRBUF		*sb = NULL;
 
 			/* wtf no perm check, as per CREATE INDEX */
@@ -1569,13 +1593,15 @@ orderproj:
 				     query->left->left->tname : CHARPN);
 			tableName = (query->left->right->op == NAME_OP ?
 				     query->left->right->tname : CHARPN);
+			if(query->predicate_node) {
+				q->pred = TXtreetopred(ddic, query->predicate_node->right, TXgetDiscardUnsetParameterClauses(), fo, NULL);
+			}
 			if (!(sb = openstrbuf()) ||
-			    !(actionOptions = querytotext(sb, query->right)))
+			    !(actionOptions = querytotext(sb, query->right))) {
 				*success = 0;
-			else
-				*success = TXalterIndexes(ddic, indexName,
-							  tableName,
-							  actionOptions);
+			} else {
+				*success = TXalterIndexes(ddic, indexName, tableName, actionOptions, q->pred);
+			}
 			sb = closestrbuf(sb);
 		}
 		else if (strcmpi(query->tname, "user") == 0)

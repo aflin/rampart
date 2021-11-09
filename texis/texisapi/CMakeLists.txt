@@ -67,6 +67,7 @@ IF(PARSERS_FOUND)
     #WTF		vxglobs.o
     ###########################################################################
     #Locking
+        locktables.c
     		ndblock.c
     		nlock.c
     		sem.c
@@ -223,6 +224,7 @@ IF(PARSERS_FOUND)
         ezsockbuf.c
     		ftiValueWithCooked.c
     		getpid.c
+        globalcp.c
     		h_errnoNames.c
         incarray.c
     		jtreadex.c
@@ -287,7 +289,7 @@ if(LOCK_SERVER)
     lockd_launch.c
     lockd_lock.c
     lockd_resource.c
-  )    
+  )
 endif(LOCK_SERVER)
   add_library(texisbuild
     ${BUILD_SRCS}

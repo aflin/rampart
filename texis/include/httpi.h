@@ -783,6 +783,7 @@ struct HTOBJ_tag
   HTSKT         *saveskt;       /* write socket for HTFA savefile|savedesc */
   HTIOFUNC      *savefunc;      /* function to save content via */
   void          *savefuncdata;
+  TXbool        skipSaveContent;/* e.g. if 301/302 redirect */
   char          *renameto;      /* FTP RENAME destination file path */
   double        start;          /* start time of current DNS/fetch */
   double        lastuse;        /* last net activity */
@@ -980,11 +981,12 @@ size_t httransbuf ARGS((HTPFOBJ *obj, HTCHARSET charset,
     CONST char *buf, size_t sz, char **ret));
 
 void TXfetchVerboseTextMsgs(HTOBJ *obj, TXfetchVerbose smallFlag,
-                            TXbool outBound, const char *text, size_t textSz);
+                            const char *text, size_t textSz,
+                            TXbool hadSavedContent);
 void TXfetchVerboseAllMsgsForTextRequests(HTOBJ *obj, const char *url,
                                       const char *rawText, size_t rawTextSz);
 void TXfetchVerboseBinaryMsgs(HTOBJ *obj, TXfetchVerbose smallFlag,
-                            TXbool outBound, const void *data, size_t dataSz);
+                              const void *data, size_t dataSz);
 
 HTGT  htgophertype ARGS((CONST char *path));
 CONST char *htgophercontype ARGS((HTGT gt));

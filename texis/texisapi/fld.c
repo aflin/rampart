@@ -311,10 +311,10 @@ size_t  n;
  * Used in conjunction with releasefld().  Returns 0 on error.
  */
 {
-  DDFD  *fd;
+  DDFD  fd;
 
-  if ((fd = ftn2ddfd_quick(type, n)) == (DDFD *)NULL) return(0);
-  return(initfldfd(f, fd, 1));
+  if (!TXftnToDdfdQuick(type, n, &fd)) return(0);
+  return(initfldfd(f, &fd, 1));
 }
 
 void
@@ -1934,7 +1934,7 @@ size_t	*itemLen;	/* (out) number of elements in returned item */
 	FLD		tmpFld;
 	ft_strlst	slHdr;
 	char		*s, *e, *slEnd;
-	DDFD		*fd;
+	DDFD		fd;
 
 	type = TXfldType(fld);
 	v = getfld(fld, &n);
@@ -1947,8 +1947,10 @@ size_t	*itemLen;	/* (out) number of elements in returned item */
 	{
 		v = TXftiValueWithCooked_GetValue(valueWithCooked, &type, &n,
 						  &size);
-		fd = ftn2ddfd_quick(type, n);
-		elsz = (fd ? fd->elsz : 1);
+		if (TXftnToDdfdQuick(type, n, &fd))
+			elsz = fd.elsz;
+		else
+			elsz = 1;
 		fld = NULL;
 	}
 	vEnd = (byte *)v + size;
@@ -2049,7 +2051,7 @@ size_t	*itemLen;	/* (in/out) `*itemPtr' length */
 	FLD		tmpFld;
 	ft_strlst	slHdr;
 	char		*s, *e, *slEnd;
-	DDFD		*fd;
+	DDFD		fd;
 	FLD		itemFld;
 
 	type = TXfldType(fld);
@@ -2063,8 +2065,10 @@ size_t	*itemLen;	/* (in/out) `*itemPtr' length */
 	{
 		v = TXftiValueWithCooked_GetValue(valueWithCooked, &type, &n,
 						  &size);
-		fd = ftn2ddfd_quick(type, n);
-		elsz = (fd ? fd->elsz : 1);
+		if (TXftnToDdfdQuick(type, n, &fd))
+			elsz = fd.elsz;
+		else
+			elsz = 1;
 		fld = NULL;
 	}
 	vEnd = (byte *)v + size;

@@ -133,6 +133,8 @@ typedef enum QNODE_OP
 #endif /* TX_USE_ORDERING_SPEC_NODE */
 	ARRAY_OP,
 	BUFFER_OP,
+	LOCK_TABLES_OP,
+	UNLOCK_TABLES_OP,
 } QNODE_OP;
 
 /******************************************************************/
@@ -656,6 +658,7 @@ struct DDIC_tag {
 	int	options[10];	/* DDIC options */
 	int	rlocks, wlocks;	/* Total index+table read/write locks */
 	TXPMBUF	*pmbuf;		/* (opt.) owned/cloned putmsg buffer */
+	struct LOCKTABLES_ENTRY *locktables_entry;
 };
 
 #define DDIC_OPTIONS_NO_TRIGGERS	0
@@ -902,10 +905,12 @@ struct QNODE {
 	QNODE_OP op;
 	Q_STATE	 state;
 	int	 ordered;	/* Determined that the query is ordered */
-	QNODE	*org,		/* KNG 20071107 original version of node */
+	QNODE
+		*org,		/* KNG 20071107 original version of node */
 		*parentqn,	/* JMT 20100924 ability to walk up tree */
 		*left,
-		*right;
+		*right,
+		*predicate_node; /** Predicate (condition) clause */
 	QUERY	*q;
 	void	*tname;
 	SLIST	*fldlist;	/* Fields for this, and later operations */

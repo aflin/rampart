@@ -593,7 +593,7 @@ char *rc=d;
 /**********************************************************************/
 #endif                                          /* sparc && !__stdc__ */
 
-#if defined(MVS) || defined(macintosh) || defined(AOSVS) || defined(VMS)
+#if defined(MVS) || defined(macintosh) || defined(AOSVS)
 #if !defined(sparc) && !defined(sgi) && !defined(_AIX) && !defined(hpux) && !defined(linux)/* MAW 08-11-95 */
 /**********************************************************************/
 int
@@ -641,7 +641,7 @@ static char ss1[2]=" ", ss2[2]=" ";
 #endif /* !EPI_HAVE_STRNICMP && !EPI_HAVE_STRNCASE_CMP */
 #endif                                   /* !sparc  && !sgi  && !_AIX */
 
-#if defined(bsd) || defined(macintosh) || defined(VMS)/* MAW 07-20-92 - add macintosh */
+#if defined(bsd) || defined(macintosh) /* MAW 07-20-92 - add macintosh */
 #undef strdup
 /**********************************************************************/
 char *

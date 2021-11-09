@@ -1817,7 +1817,7 @@ int		paramIsRHS;		/* (in) nonzero: param is right-side*/
                                          0x2);
 	if (paramRes < -1) return(0);		/* severe error parsing */
 	score = 1;				/* at least non-zero */
-	if (globalcp == APICPPN) globalcp = TXopenapicp();
+	TXget_globalcp();
 	/* We prefer an index that agrees with current settings,
 	 * so that we search as expected (i.e. if case-sensitive and
 	 * ignore-case indexes are both present, select appropriate),

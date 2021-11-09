@@ -422,7 +422,7 @@ int	*nn;
 			if (TXisRankName(p->left))
 				return((char *)TXrankColumnTypeStr);
 #endif
-			putmsg(MWARN+UGE,NULL,"Field %s non-existent",p->left);
+			putmsg(MWARN+UGE,NULL,"Field `%s' non-existent",p->left);
 			return (char *)NULL;
 		}
 	}
@@ -497,7 +497,7 @@ int	*nn;
 		}
 		else
 		{
-			putmsg(MWARN+UGE,NULL,"Function %s non-existent",p->left);
+			putmsg(MWARN+UGE,NULL,"Function `%s' non-existent",p->left);
 			return NULL;
 		}
 	}
@@ -538,7 +538,7 @@ int	*nn;
 			}
 			else
 			{
-				putmsg(MWARN+UGE,NULL,"Field %s non-existent",p->left);
+				putmsg(MWARN+UGE,NULL,"Field `%s' non-existent",p->left);
 				return (char *)NULL;
 			}
 		}
@@ -576,7 +576,7 @@ int	*nn;
 			else
 #endif
 			{
-				putmsg(MWARN+UGE,NULL,"Field %s non-existent",p->left);
+				putmsg(MWARN+UGE,NULL,"Field `%s' non-existent",p->left);
 				return(NULL);
 			}
 		}
@@ -618,7 +618,7 @@ int	*nn;
 			else
 #endif
 			{
-				putmsg(MWARN+UGE,NULL,"Field %s non-existent",p->right);
+				putmsg(MWARN+UGE,NULL,"Field `%s' non-existent",p->right);
 				return(NULL);
 			}
 		}
@@ -741,7 +741,7 @@ int	flags;	/* 0x1: allow fast copy  0x2: no-op DBF for returned table */
 		DBGMSG(1, (999, NULL, "ProjS %s", fname));
 		if (nname == (char *)NULL)
 		{
-			putmsg(MWARN+UGE,NULL,"Field non-existent or type error in %s",fname);
+			putmsg(MWARN+UGE,NULL,"Field non-existent or type error in `%s'",fname);
 #ifdef NO_TRY_FAST_CONV
 			fname = TXfree(fname);
 #endif

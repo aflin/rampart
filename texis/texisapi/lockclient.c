@@ -103,22 +103,44 @@ getcounter(DDIC *ddic)
 int
 rgetcounter(DDIC *ddic, ft_counter *rc, int lock)
 {
-  TXLockRequest *request, *response;
+  TXLockRequest *request = NULL, *response = NULL;
   json_t *j_resp, *t;
   const char *counter_rc;
   int ret = -2;
+  DBLOCK *dblock = ddic->dblock;
+  static ft_counter	lcount = { 0L, 0L }, *l = &lcount;
 
-  request = TXlockRequest_CreateStaticString("{\"counter\":null}\n", -1);
-  response = TXlockRequest(ddic->dblock->lockServerSocket, request);
-  if(response) {
-    j_resp = TXlockRequest_GetJson(response);
-    t = json_object_get(j_resp, "counter");
-    if(t) {
-      counter_rc = json_string_value(t);
-      TXparseHexCounter(rc, counter_rc, NULL);
-      ret = 0;
+  rc->date = time(NULL);
+  if(lock && dblock) {
+    request = TXlockRequest_CreateStaticString("{\"counter\":null}\n", -1);
+    response = TXlockRequest(ddic->dblock->lockServerSocket, request);
+    if(response) {
+      j_resp = TXlockRequest_GetJson(response);
+      t = json_object_get(j_resp, "counter");
+      if(t) {
+        counter_rc = json_string_value(t);
+        TXparseHexCounter(rc, counter_rc, NULL);
+        ret = 0;
+        lcount = *rc;
+      }
+      json_decref(j_resp);
     }
-    json_decref(j_resp);
+  }
+  if(ret < 0)
+  {
+    ret = lock ? -1 : 0;
+    if (rc->date <= l->date)
+    {
+      l->seq++;
+      rc->seq = l->seq;
+      rc->date = l->date;
+    }
+    else
+    {
+      l->seq = 0;
+      l->date = rc->date;
+      rc->seq = 0;
+    }
   }
 done:
   if(request) TXlockRequest_Close(request);

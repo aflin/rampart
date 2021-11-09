@@ -43,7 +43,7 @@ b,
 SQL 1 line 15> select * from test where 'b%' matches x;
      x      
 ------------+
-115 varchar MATCHES varstrlst behavior undefined in the function: fochsl
+000 varchar MATCHES varstrlst failed: FOP_EILLEGAL in the function: pred_eval
 
 SQL 1 line 16> drop table test;
 

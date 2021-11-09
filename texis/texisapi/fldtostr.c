@@ -46,15 +46,14 @@ FLD *f;
 	TXftiValueWithCooked	*valueWithCooked;
 	const char	*fmtInt = "%d", *fmtLong = "%ld";
 	const char	*fmtUnsigned = "%u";
-	const char	*fmtIntComma = "%d,", *fmtCommaLong = ",%ld";
-	const char	*fmtUnsignedComma = "%u,";
+	const char	*fmtCommaInt = ",%d";
+	const char	*fmtCommaUnsigned = ",%u";
 
 	if (TXfldmathVerboseHexInts)
 	{
 		fmtInt = fmtUnsigned = "0x%x";
-		fmtIntComma = fmtUnsignedComma = "0x%x,";
+		fmtCommaInt = fmtCommaUnsigned = ",0x%x";
 		fmtLong = "0x%lx";
-		fmtCommaLong = ",0x%lx";
 	}
 
 	/* see also below: */
@@ -274,31 +273,7 @@ FLD *f;
 			   *d = '\0';
                         }
                         break;
-                case FTN_LONG    |DDVARBIT:           /* JMT 96-02-19 */
-		{
-			size_t	i;
-			char	*d;
-
-			for (i = 0, d = buf;
-			     i < n && d < EOB - (EPI_OS_LONG_BITS/3 + 4);
-			     i++)
-			{
-				htsnpf(d, EOB - buf, fmtCommaLong,
-					(long)(((ft_long *)v)[i]));
-				d += strlen(d);
-			}
-			if (d == buf) d++;		/* nothing printed */
-			if (i < n)			/* ran out of space */
-			{
-				htsnpf(d, EOB - buf, "...");
-				d += 3;
-			}
-			*(d++) = ')';
-			*(d++) = '\0';
-			*buf = '(';
-			break;
-		}
-#define VARNUM(fttype, fmt, fmttype)					\
+#define VARNUM(fttype, fmtCommaType, fmttype)				\
 	{								\
 		size_t	i;						\
 		char	*d;						\
@@ -314,7 +289,7 @@ FLD *f;
 			     i++)					\
 			{						\
 				d += htsnpf(d, (EOB - sizeof(ellipsecomma))\
-						- d, fmt,		\
+						- d, fmtCommaType,	\
 					    (fmttype)ITEM(fttype, i));	\
 			}						\
 			if (i < n)			/* short buf */	\
@@ -322,32 +297,43 @@ FLD *f;
 				strcpy(d, ellipsecomma);		\
 				d += 3;					\
 			}						\
+			/* fldtostr() generally used for display */	\
+			/* not convert() etc., so visual distinctness */\
+			/* e.g. in a stmt dump `... IN (1,2,3)' is */	\
+			/* valued over compatibility with convert() */	\
+			/* to strlst: parenthesize per JMT as varlong */\
+			/* has been historically: */			\
+			*(d++) = ')';					\
 			*(d++) = '\0';					\
+			*buf = '(';					\
 		}							\
 	}
+		case FTN_LONG | DDVARBIT:
+			VARNUM(ft_long, ",%wd", EPI_HUGEINT);
+			break;
 		case FTN_INT | DDVARBIT:
-			VARNUM(ft_int, fmtIntComma, int);
+			VARNUM(ft_int, fmtCommaInt, int);
 			break;
 		case FTN_SHORT   |DDVARBIT:
-			VARNUM(ft_short, fmtIntComma, int);
+			VARNUM(ft_short, fmtCommaInt, int);
 			break;
 		case FTN_SMALLINT|DDVARBIT:
-			VARNUM(ft_smallint, fmtIntComma, int);
+			VARNUM(ft_smallint, fmtCommaInt, int);
 			break;
 		case FTN_INTEGER |DDVARBIT:
-			VARNUM(ft_integer, fmtIntComma, int);
+			VARNUM(ft_integer, fmtCommaInt, int);
 			break;
 		case FTN_DOUBLE  |DDVARBIT:
-			VARNUM(ft_double, "%g,", double);
+			VARNUM(ft_double, ",%g", double);
 			break;
 		case FTN_FLOAT   |DDVARBIT:
-			VARNUM(ft_float, "%g,", double);
+			VARNUM(ft_float, ",%g", double);
 			break;
 		case FTN_DWORD   |DDVARBIT:
-			VARNUM(ft_dword, fmtUnsignedComma, unsigned);
+			VARNUM(ft_dword, fmtCommaUnsigned, unsigned);
 			break;
 		case FTN_WORD    |DDVARBIT:
-			VARNUM(ft_word, fmtUnsignedComma, unsigned);
+			VARNUM(ft_word, fmtCommaUnsigned, unsigned);
 			break;
 		case FTN_INT64:
 			FIXNUM(ft_int64, "%wd", EPI_HUGEINT);
@@ -356,17 +342,17 @@ FLD *f;
 			FIXNUM(ft_uint64, "%wu", EPI_HUGEUINT);
 			break;
 		case FTN_INT64 | DDVARBIT:
-			VARNUM(ft_int64, "%wd,", EPI_HUGEINT);
+			VARNUM(ft_int64, ",%wd", EPI_HUGEINT);
 			break;
 		case FTN_UINT64 | DDVARBIT:
-			VARNUM(ft_uint64, "%wu,", EPI_HUGEUINT);
+			VARNUM(ft_uint64, ",%wu", EPI_HUGEUINT);
 			break;
 		case FTN_HANDLE:
 			/* Width 4 for negative sign: */
 #define RANK_DEC_FMT		\
 		(TXApp && TXApp->legacyVersion7OrderByRank ? "%4wd" : "%3wd")
 #define RANK_DEC_FMT_VAR	\
-		(TXApp && TXApp->legacyVersion7OrderByRank ? "%4wd," : "%3wd,")
+		(TXApp && TXApp->legacyVersion7OrderByRank ? ",%4wd" : ",%3wd")
 			/* We want the correct number of leading `ffff...'
 			 * digits for negative off_t, so pick exact-size type:
 			 */
@@ -383,10 +369,10 @@ FLD *f;
 		case FTN_HANDLE | DDVARBIT:
 #if TX_FT_HANDLE_BITS == EPI_HUGEINT_BITS
 			VARNUM(ft_handle, (TXfldtostrHandleBase10 > 0 ?
-			    RANK_DEC_FMT_VAR : "0x%08wx,"), EPI_HUGEINT);
+			    RANK_DEC_FMT_VAR : ",0x%08wx"), EPI_HUGEINT);
 #elif TX_FT_HANDLE_BITS == EPI_OS_INT_BITS
 			VARNUM(ft_handle, (TXfldtostrHandleBase10 > 0 ?
-			    RANK_DEC_FMT_VAR : "0x%08wx,"), EPI_HUGEINT);
+			    RANK_DEC_FMT_VAR : ",0x%08wx"), EPI_HUGEINT);
 #else
 #  error Need right-sized type
 #endif

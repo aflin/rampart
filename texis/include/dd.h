@@ -170,7 +170,8 @@ typedef char            ft_indirect;
 typedef enum TX_BLOBZ_TYPE_tag
 {
 	TX_BLOBZ_TYPE_ASIS	= ' ',		/* as-is, no VSH org size */
-	TX_BLOBZ_TYPE_GZIP	= 'G'		/* VSH org size + gzip */
+	TX_BLOBZ_TYPE_GZIP	= 'G',		/* VSH org size + gzip */
+	TX_BLOBZ_TYPE_EXTERNAL	= 'E'		/* VSH+... Compress Exe data */
 }
 TX_BLOBZ_TYPE;
 

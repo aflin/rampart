@@ -12,7 +12,6 @@
 #  include <errno.h>
 #  include <winsock.h>
 #  include <io.h>                               /* for read(), write() */
-struct hostent *TXgethostbyname(const char *);
 /*#  include "fmsws.h"*/
 #  ifndef ENOTEMPTY
 #     define ENOTEMPTY               WSAENOTEMPTY
@@ -53,6 +52,7 @@ struct hostent *TXgethostbyname(const char *);
 #    include <sys/inet.h>
 #  else /* !u3b2 */
 #    include <netinet/in.h>
+#    include <sys/un.h>
 #    ifndef macintosh
 #      include <arpa/inet.h>
 #    endif /* !macintosh */
@@ -1015,6 +1015,42 @@ TXsockaddrGetTXaddrFamily(const TXsockaddr *sockaddr)
 {
   return(TXAFFamilyToTXaddrFamily(TXPMBUF_SUPPRESS,
                                   TXsockaddrGetAFFamily(sockaddr)));
+}
+
+static EPI_SOCKLEN_T
+TXsockaddrGetSockaddrSize(const TXsockaddr *sockaddr)
+/* Returns size of sockaddr->storage to use for connect() etc.
+ * For Bug 7945.
+ */
+{
+  EPI_SOCKLEN_T sz;
+
+  switch (sockaddr->storage.ss_family)
+    {
+    case AF_INET:
+      sz = sizeof(struct sockaddr_in);
+      break;
+    case AF_INET6:
+      sz = sizeof(struct sockaddr_in6);
+      break;
+#ifndef _WIN32
+      /* Windows does not seem to have sockaddr_un.  But maybe soon:
+       * https://devblogs.microsoft.com/commandline/af_unix-comes-to-windows/
+       */
+    case AF_UNIX:
+      sz = sizeof(struct sockaddr_un);
+      break;
+#endif /* !_WIN32 */
+    default:
+      /* Fallback.  sizeof(struct sockaddr_storage) works for
+       * AF_INET[6] on Linux/Unix, so try it for unknown here.
+       * May still fail at connect() etc., but that is probably no
+       * worse than failing here, and maybe it will work.
+       */
+      sz = sizeof(struct sockaddr_storage);
+      break;
+    }
+  return(sz);
 }
 
 TXbool
@@ -2637,7 +2673,7 @@ TXezServerSocket(TXPMBUF *pmbuf, TXtraceSkt traceSkt, const char *func,
     }
 
   if (bind(sock, (const struct sockaddr *)&sockaddr->storage,
-           sizeof(sockaddr->storage)) != 0)
+           TXsockaddrGetSockaddrSize(sockaddr)) != 0)
     {
       TX_PUSHERROR();
       txpmbuf_putmsg(pmbuf, MERR, MERGE_FUNC(func),
@@ -2882,7 +2918,7 @@ TXezServerSocketNonBlocking(
 
   /* Bind address to socket: */
   if (bind(sock, (const struct sockaddr *)&sockaddr->storage,
-           sizeof(sockaddr->storage)) != 0)
+           TXsockaddrGetSockaddrSize(sockaddr)) != 0)
     {
       TX_PUSHERROR();
       txpmbuf_putmsg(pmbuf, MERR, MERGE_FUNC(func),
@@ -3115,7 +3151,7 @@ TXezGetIPProtocolsAvailable(TXPMBUF *pmbuf, TXtraceSkt traceSkt,
   goto finally;
 
 err:
-  ret = TXbool_False;
+  ret = *okIPv4 = *okIPv6 = TXbool_False;
 finally:
   TXezCloseSocket(pmbuf, traceSkt, MERGE_FUNC(func), skt);
   skt = TXSOCKET_INVALID;
@@ -3721,12 +3757,8 @@ again:
                      skt, addrBuf);
   HTS_TRACE_BEFORE_END()
   TXclearError();
-  switch(sockaddrActual.storage.ss_family) {
-    case AF_INET:  sa_size = sizeof(struct sockaddr_in); break;
-    case AF_INET6: sa_size = sizeof(struct sockaddr_in6); break;
-    default:       sa_size = sizeof(struct sockaddr_storage); break;
-  }
-  rc = connect(skt, (const struct sockaddr *)&sockaddrActual.storage, sa_size);
+  rc = connect(skt, (const struct sockaddr *)&sockaddrActual.storage,
+               TXsockaddrGetSockaddrSize(&sockaddrActual));
   HTS_TRACE_AFTER_START_ARG(traceSkt, HTS_OPEN)
   {
     TXsockaddr  localAddr;
@@ -3931,7 +3963,7 @@ TXezWaitForSocketReadability(
 #endif /* _WIN32 */
            );
   res = TXezWaitForMultipleSockets(pmbuf, traceSkt, MERGE_FUNC(func), &fd,
-                                   &stats, 1, timeout, TXbool_False);
+                                   &stats, 1, NULL, timeout, TXbool_False);
   switch (res)
     {
     case 0:                                     /* ok */
@@ -3990,7 +4022,7 @@ TXezWaitForSocketWritability(
 #endif /* _WIN32 */
            );
   res = TXezWaitForMultipleSockets(pmbuf, traceSkt, MERGE_FUNC(func), &fd,
-                                   &stats, 1, timeout, TXbool_False);
+                                   &stats, 1, NULL, timeout, TXbool_False);
   switch (res)
     {
     case 0:                                     /* ok */
@@ -4028,12 +4060,14 @@ int
 TXezWaitForMultipleSockets(TXPMBUF *pmbuf, TXtraceSkt traceSkt,
                            const char *func,    /* (in, opt.) C func; msgs */
                            const int *fds, EWM *stats, int num,
+                           const char **sktNames, /* (in, opt.) for msgs */
                            double timeout,    /* < 0: infinite */
                            TXbool okIntr)
 /* Like ezswait[read|write]err(), but for multiple sockets.  Waits
  * up to `timeout' seconds for any of the `num' `fds' sockets to change
  * status according to the parallel `stats' array: EWM_READ/WRITE/EXCEPTION.
  * Sets `stats' array on return, including EWM_ERR flag if error.
+ * `sktNames' is optional parallel-to-`fds' array of socket names, for msgs.
  * Returns 0 if ok (check `stats' array), -1 if overall error (reported),
  * -2 (silently) iff `okIntr' and interrupted.  -1 sockets silently ignored.
  * Ignores HTS_DATAGRAM, as datagram/stream nature of each `fds' not known.
@@ -4084,7 +4118,9 @@ TXezWaitForMultipleSockets(TXPMBUF *pmbuf, TXtraceSkt traceSkt,
         }
       if ((traceSkt & (HTS_SELECT | HTS_BEFORE(HTS_SELECT))) &&
           prePtr < preBufEnd)
-        prePtr += htsnpf(prePtr, preBufEnd - prePtr, " skt %d=", fd);
+        prePtr += htsnpf(prePtr, preBufEnd - prePtr, " skt %s%s%d=",
+                         (sktNames && sktNames[i] ? sktNames[i] : ""),
+                         (sktNames && sktNames[i] ? "=" : ""), fd);
       if (stats[i] & EWM_READ)
         {
           FD_SET(fd, &readbits);
@@ -4185,7 +4221,9 @@ TXezWaitForMultipleSockets(TXPMBUF *pmbuf, TXtraceSkt traceSkt,
         {
           fd = fds[i];
           if ((traceSkt & HTS_SELECT) && bufPtr < bufEnd)
-            bufPtr += htsnpf(bufPtr, bufEnd - bufPtr, " skt %d=", fd);
+            bufPtr += htsnpf(bufPtr, bufEnd - bufPtr, " skt %s%s%d=",
+                             (sktNames && sktNames[i] ? sktNames[i] : ""),
+                             (sktNames && sktNames[i] ? "=" : ""), fd);
           if (fd == -1)                         /* unused socket entry */
             {
               if (!retrying) stats[i] = (EWM)0;
@@ -4272,7 +4310,9 @@ TXezWaitForMultipleSockets(TXPMBUF *pmbuf, TXtraceSkt traceSkt,
       char      sktBuf[128];
 
       if (num == 1)
-        htsnpf(sktBuf, sizeof(sktBuf), "skt %d", (int)fds[0]);
+        htsnpf(sktBuf, sizeof(sktBuf), "skt %s%s%d",
+               (sktNames && sktNames[0] ? sktNames[0] : ""),
+               (sktNames && sktNames[0] ? "=" : ""), (int)fds[0]);
       else
         *sktBuf = '\0';
       txpmbuf_putmsg(pmbuf, MERR, MERGE_FUNC(func), "select(%s) failed: %s",
@@ -4775,15 +4815,6 @@ struct hostent *he;
         buf = TXfree(buf);
       }else{
         TX_EZSOCK_CLEAR_ERROR();
-#ifdef _WIN32
-         if((he=gethostbyname(buf))== HOSTENTPN && (he=TXgethostbyname(buf))==HOSTENTPN){
-           buf = TXfree(buf);
-         }else{
-           if((buf=(char *)TXrealloc(pmbuf, Fn, buf,strlen(he->h_name)+1))!=(char *)NULL){
-               strcpy(buf,he->h_name);
-	    }
-         }
-#else
          if((he=gethostbyname(buf))== HOSTENTPN){
             buf = TXfree(buf);
          }else{
@@ -4791,7 +4822,6 @@ struct hostent *he;
                strcpy(buf,he->h_name);
 	    }
          }
-#endif
       }
    }
    DEBUGA(fprintf(stderr,"ezshostname()=%s\n",buf);)
@@ -5153,6 +5183,7 @@ TXezSocketWrite(TXPMBUF *pmbuf, TXtraceSkt traceSkt, const char *func,
   int           tries;
   EPI_SSIZE_T   bufWritten, attemptThisTry, writtenThisTry;
   TXbool        gotOkWrite;
+  EPI_SOCKLEN_T destSockaddrSz;
   char          destAddrBuf[TX_SOCKADDR_MAX_STR_SZ + 4 /* for `...' */];
   HTS_TRACE_VARS;
   MERGE_FUNC_VARS;
@@ -5172,6 +5203,7 @@ TXezSocketWrite(TXPMBUF *pmbuf, TXtraceSkt traceSkt, const char *func,
     }
   else
     *destAddrBuf = '\0';
+  destSockaddrSz = (dest ? TXsockaddrGetSockaddrSize(dest) : 0);
 
   bufWritten = 0;
   gotOkWrite = TXbool_False;
@@ -5209,8 +5241,7 @@ TXezSocketWrite(TXPMBUF *pmbuf, TXtraceSkt traceSkt, const char *func,
                                   CAST attemptThisTry, 0,
                                   (dest ?
                                    (const struct sockaddr *)&dest->storage :
-                                   NULL),
-                                  (dest ? sizeof(dest->storage) : 0));
+                                   NULL), destSockaddrSz);
           FIXERRNO();
           HTS_TRACE_AFTER_START_ARG(traceSkt, (HTS_WRITE | HTS_WRITE_DATA))
             if (traceSkt & HTS_WRITE)

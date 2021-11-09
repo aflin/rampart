@@ -190,7 +190,7 @@ size_t an, bn;
 	if (!a) return(b ? 1 : 0);
 	if (!b) return(-1);
 
-	if (globalcp == APICPPN) globalcp = TXopenapicp();
+	TXget_globalcp();
 	/* TXunicodeStrFoldCmp() does not stop at nul if length(s) given
 	 * (for binary data support eg. <xtree>), but some char fields
 	 * have nul padding (eg. fixed-width SYSMETAINDEX fields),
@@ -216,7 +216,7 @@ size_t an, bn;
 			else cmp = -1;
 		}
 	}
-	return(cmp);	
+	return(cmp);
 }
 
 #endif

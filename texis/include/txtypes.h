@@ -733,7 +733,10 @@ char	*TXstrerror(int err);
    (n) == ERROR_SHARING_VIOLATION ||    \
    /* Bug 5781: stat()/open() of UNC share can give ERROR_LOGON_FAILURE */  \
    /* (e.g. if Windows tries to forward its credentials?) */                \
-   (n) == ERROR_LOGON_FAILURE)
+   (n) == ERROR_LOGON_FAILURE ||        \
+   /* KNG 20210913 got this from non-local UNC file:// fetch on pound, */  \
+   /* no creds, Vortex test235: */      \
+   (n) == ERROR_DOWNGRADE_DETECTED)
 #  define TX_ERROR_IS_WIN_TOK(val, tok) ((val) == WSA##tok)
 #  ifdef WSAEPIPE
 #    define TX_ERROR_IS_WSAEPIPE(val)   ((val) == WSAEPIPE)

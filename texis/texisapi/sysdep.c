@@ -27,6 +27,9 @@
 /* #  include <ntsecapi.h>                 /\* for NTSTATUS on x86 *\/ */
 #  include <direct.h>                           /* for chdir() */
 #  include <DbgHelp.h>                          /* for SYMBOL_INFO */
+#  define SECURITY_WIN32                        /* for sspi.h */
+#  include <sspi.h>                             /* for secext.h */
+#  include <secext.h>                           /* for GetUserNameEx() */
 #endif /* _WIN32 */
 #include <fcntl.h>
 #ifdef EPI_HAVE_UNISTD_H
@@ -171,7 +174,6 @@ extern int getdtablesize(void);
 #include "cgi.h"                /* for htsnpf() */
 #include "httpi.h"              /* wtf for HTBUF drill */
 #include "authNegotiate.h"		/* for TXsaslProcessInit() */
-#define TXgetTexisVersionNumString(a,b,c,d) (TXtexisver())
 
 /* TX_PIPE_MAX could be MAXINT; pick an upper bound for buffer allocation: */
 #if TX_PIPE_MAX > 8192
@@ -1450,23 +1452,14 @@ TXgetUserProcParams(TXPMBUF *pmbuf, PID_T pid, char **cmdLine, char **exePath,
     {
       TOKEN_USER        *tokenUser;
       DWORD             resLen;
-      char              buf[1024], *s;
+      char              buf[1024];
 
       resLen = sizeof(buf);
       if (GetTokenInformation(tokenHandle, TokenUser, buf, sizeof(buf),
                               &resLen))
         {
           tokenUser = (TOKEN_USER *)buf;
-          if (ConvertSidToStringSid(tokenUser->User.Sid, &s))
-            {
-              user = TXstrdup(pmbuf, fn, s);
-              LocalFree(s);
-              s = NULL;
-            }
-          else
-            txpmbuf_putmsg(pmbuf, MERR, fn,
-                "Cannot get process user: ConvertSidToStringSid() failed: %s",
-                           TXstrerror(TXgeterror()));
+          user = TXsidToString(pmbuf, tokenUser->User.Sid);
         }
       else
         txpmbuf_putmsg(pmbuf, MERR, fn,
@@ -5321,6 +5314,44 @@ finally:
 
 /* ------------------------------------------------------------------------- */
 
+int
+TXopenFileUsingPrivs(const char *file, int flags, int perms)
+/* open()s `file' with `flags'/`perms', using real UID if root and
+ * effective is not root, i.e. to open error/transfer log if setuid
+ * non-root but run as root.  Does not report error, but preserves it.
+ * Returns file handle, or < 0 on error.
+ */
+{
+	int		ret;
+	TXERRTYPE	retErr = 0;
+#ifndef _WIN32
+        UID_T           ruid = UID_T_UNKNOWN, euid = UID_T_UNKNOWN;
+        TXbool          didSeteuid = TXbool_False;
+
+        /* We might be run by root, but setuid != root.  Temp flip
+         * back to root so open() works on a root-owned file:
+         */
+        if ((ruid = getuid()) == 0 &&           /* real UID is root */
+            (euid = geteuid()) != 0)            /* but effective is not */
+          didSeteuid = (seteuid(ruid) == 0);    /* then switch to root */
+#endif /* !_WIN32 */
+
+	ret = open(file, flags, perms);
+	retErr = TXgeterror();
+
+#ifndef _WIN32
+	if (didSeteuid)
+	{
+		seteuid(euid);
+		didSeteuid = TXbool_False;
+	}
+#endif /* !_WIN32 */
+	TXseterror(retErr);
+	return(ret);
+}
+
+/* ------------------------------------------------------------------------- */
+
 TXSHMINFO *
 TXgetshminfo(key)
 int             key;
@@ -7034,31 +7065,144 @@ CONST char	*pipePath;
 
 #ifdef _WIN32
 
-int
-TXgetfileinfo(char *filename, LPDWORD ownsize, char *owner, LPDWORD grpsize, char *group)
+char *
+TXsidToString(TXPMBUF *pmbuf, SID *sid)
+/* Returns alloc'd string representation of `*sid'.
+ */
+{
+  LPSTR sidStr = NULL;
+  char  *ret = NULL;
+
+  if (!ConvertSidToStringSid(sid, &sidStr))
+    {
+      txpmbuf_putmsg(pmbuf, MERR, __FUNCTION__,
+                     "Cannot convert SID to string: %s",
+                     TXstrerror(TXgeterror()));
+      goto err;
+    }
+  ret = TXstrdup(pmbuf, __FUNCTION__, sidStr);
+  if (!ret) goto err;
+  goto finally;
+
+err:
+  ret = TXfree(ret);
+finally:
+  if (sidStr) LocalFree(sidStr);
+  return(ret);
+}
+
+TXbool
+TXgetfileinfo(TXPMBUF *pmbuf, const char *filename, char **ownerSid,
+	      char **ownerName, char **groupSid, char **groupName)
+/* If non-NULL, sets `*ownerName'/`*groupName' to alloced owner/group
+ * name of `filename', as DOMAIN\user.  If non-NULL, same for string
+ * SIDs in `*ownerSid'/`*groupSid'.  wtf does not report all errors.
+ * Returns true on success (even if partial: 1+ of owner/group may
+ * be NULL), false on complete error.
+ */
 {
 	SECURITY_DESCRIPTOR secdesc[8];
 	DWORD copied;
 	char domain[128];
-	DWORD domsize=127;
+	DWORD domsize, userBufSz;
 	PSID ownpsid, grppsid;
 	SID_NAME_USE peuse;
-	BOOL defaulted, rc;
+	BOOL defaulted;
+	char	userBuf[256], mergeBuf[512];
+	TXbool	ret;
 
-	owner[0] = '\0';
-	group[0] = '\0';
-	InitializeSecurityDescriptor(&secdesc, SECURITY_DESCRIPTOR_REVISION);
-	if(!GetFileSecurity(filename, OWNER_SECURITY_INFORMATION |
-		GROUP_SECURITY_INFORMATION, &secdesc, sizeof(secdesc), &copied))
-		return -1;
-	if(copied > sizeof(secdesc))
-		return -1;
-	rc = GetSecurityDescriptorOwner(&secdesc, &ownpsid, &defaulted);
-	rc = GetSecurityDescriptorGroup(&secdesc, &grppsid, &defaulted);
-	rc = LookupAccountSid(NULL, ownpsid, owner, ownsize, domain, &domsize, &peuse);
-	domsize=127;
-	rc = LookupAccountSid(NULL, grppsid, group, grpsize, domain, &domsize, &peuse);
-	return 0;
+	if (ownerSid) *ownerSid = NULL;
+	if (ownerName) *ownerName = NULL;
+	if (groupSid) *groupSid = NULL;
+	if (groupName) *groupName = NULL;
+
+	if (!InitializeSecurityDescriptor(&secdesc,
+					  SECURITY_DESCRIPTOR_REVISION))
+		goto err;
+	if (!GetFileSecurity(filename, (OWNER_SECURITY_INFORMATION |
+					GROUP_SECURITY_INFORMATION), &secdesc,
+			     sizeof(secdesc), &copied))
+		goto err;
+	if (copied > sizeof(secdesc))
+		goto err;
+
+	/* Get owner: */
+	if ((ownerSid || ownerName) &&
+	    GetSecurityDescriptorOwner(&secdesc, &ownpsid, &defaulted))
+	{
+		if (ownerSid)
+			*ownerSid = TXsidToString(pmbuf, ownpsid);
+		if (ownerName)
+		{
+			userBufSz = sizeof(userBuf);
+			domsize = sizeof(domain);
+			/* This can timeout (15 seconds) if DC does
+			 * not know the SID, or is otherwise wonky.
+			 * Hence the reason `ownerName' is optional:
+			 */
+			if (LookupAccountSid(NULL, ownpsid, userBuf,
+					     &userBufSz, domain, &domsize,
+					     &peuse) &&
+			    domsize + 1 /* `\' */ + userBufSz + 1 /* nul */
+			    <= sizeof(mergeBuf))
+			{
+				htsnpf(mergeBuf, sizeof(mergeBuf), "%s\\%s",
+				       domain, userBuf);
+				*ownerName = TXstrdup(pmbuf, __FUNCTION__,
+						      mergeBuf);
+			}
+			else			/* failed */
+				*ownerName = NULL;
+		}
+	}
+
+	/* Get group: */
+	if ((groupSid || groupName) &&
+	    GetSecurityDescriptorGroup(&secdesc, &grppsid, &defaulted))
+	{
+		if (groupSid)
+			*groupSid = TXsidToString(pmbuf, grppsid);
+		if (groupName)
+		{
+			userBufSz = sizeof(userBuf);
+			domsize = sizeof(domain);
+			/* This can timeout (15 seconds) if DC does
+			 * not know the SID, or is otherwise wonky.
+			 * Hence the reason `groupName' is optional:
+			 */
+			if (LookupAccountSid(NULL, grppsid, userBuf,
+					     &userBufSz, domain, &domsize,
+					     &peuse) &&
+			    domsize + 1 /* `\' */ + userBufSz + 1 /* nul */
+			    <= sizeof(mergeBuf))
+			{
+				htsnpf(mergeBuf, sizeof(mergeBuf), "%s\\%s",
+				       domain, userBuf);
+				*groupName = TXstrdup(pmbuf, __FUNCTION__,
+						      mergeBuf);
+			}
+			else			/* failed */
+				*groupName = NULL;
+		}
+	}
+
+	/* Check for at least partial success: */
+	ret = TXbool_False;
+	if (ownerSid && *ownerSid) ret = TXbool_True;
+	if (ownerName && *ownerName) ret = TXbool_True;
+	if (groupSid && *groupSid) ret = TXbool_True;
+	if (groupName && *groupName) ret = TXbool_True;
+
+	goto finally;
+
+err:
+	ret = TXbool_False;
+	if (ownerSid) *ownerSid = TXfree(*ownerSid);
+	if (ownerName) *ownerName = TXfree(*ownerName);
+	if (groupSid) *groupSid = TXfree(*groupSid);
+	if (groupName) *groupName = TXfree(*groupName);
+finally:
+	return(ret);
 }
 
 /******************************************************************/
@@ -9110,12 +9254,12 @@ TXunsetallalarms()
 /* ------------------------------------------------------------------------ */
 
 TXEVENT *
-opentxevent(int manualReset)
+opentxevent(TXPMBUF *pmbuf, TXbool manualReset)
 /* Creates an event for thread synchronization.
+ * `pmbuf' is only used here, it is not cloned/saved.
  * Thread-safe.
  */
 {
-	static CONST char	fn[] = "opentxevent";
 #ifdef _WIN32
 	HANDLE			hn;
 
@@ -9125,8 +9269,9 @@ opentxevent(int manualReset)
 			 NULL);		/* unnamed */
 	if (hn == NULL)
 	{
-		putmsg(MERR, fn, "Cannot CreateEvent(): %s",
-			TXstrerror(TXgeterror()));
+		txpmbuf_putmsg(pmbuf, MERR, __FUNCTION__,
+			       "Cannot CreateEvent(): %s",
+			       TXstrerror(TXgeterror()));
 		return(TXEVENTPN);
 	}
 	return((TXEVENT *)hn);
@@ -9135,26 +9280,23 @@ opentxevent(int manualReset)
 
 	if (manualReset)
 	{
-		putmsg(MERR + UGE, __FUNCTION__,
+		txpmbuf_putmsg(pmbuf, MERR + UGE, __FUNCTION__,
 		       "Internal error: manual-reset events not supported on this platform");
 		/* wtf could implement it with wrapper if needed */
 		return(NULL);
 	}
-	event = (pthread_cond_t *)calloc(1, sizeof(pthread_cond_t));
-	if (event == (pthread_cond_t *)NULL)
-	{
-		putmsg(MERR + MAE, fn, OutOfMem);
-		return(TXEVENTPN);
-	}
+	event = TX_NEW(pmbuf, pthread_cond_t);
+	if (!event) return(NULL);
 	if (pthread_cond_init(event, (pthread_condattr_t *)NULL) != 0)
 	{
-		putmsg(MERR, __FUNCTION__, "pthread_cond_init() failed: %s",
+		txpmbuf_putmsg(pmbuf, MERR, __FUNCTION__,
+			       "pthread_cond_init() failed: %s",
 		       TXstrerror(TXgeterror()));
 		event = closetxevent(event);
 	}
 	return((TXEVENT *)event);
 #else /* !_WIN32 && !EPI_USE_PTHREADS */
-	putmsg(MERR + UGE, fn, NoThreadsPlatform);
+	txpmbuf_putmsg(MERR + UGE, __FUNCTION__, NoThreadsPlatform);
 	return(TXEVENTPN);
 #endif /* !_WIN32 && !EPI_USE_PTHREADS */
 }
@@ -9187,19 +9329,16 @@ finally:
 #endif /* !_WIN32 && !EPI_USE_PTHREADS */
 }
 
-int
-TXunlockwaitforevent(event, mutex)
-TXEVENT	*event;
-TXMUTEX	*mutex;
+TXbool
+TXunlockwaitforevent(TXPMBUF *pmbuf, TXEVENT *event, TXMUTEX *mutex)
 /* Atomically unlocks `mutex' and blocks current thread waiting for both
  * `event' to be signalled and an exclusive lock on `mutex'.  Current
  * thread must have `mutex' locked.  Only call once at a time per thread.
- * Returns 0 on error, 1 if event signalled and lock obtained.
+ * Returns false on error, true if event signalled and lock obtained.
  * Thread-safe.
  */
 {
 #ifdef _WIN32
-	static CONST char	fn[] = "TXunlockwaitforevent";
 	HANDLE			handles[2];
 
 	/* We cannot atomically unlock `mutex' and block here.
@@ -9211,22 +9350,23 @@ TXMUTEX	*mutex;
 	handles[1] = (HANDLE)mutex;
 	if (!ReleaseMutex((HANDLE)mutex))
 	{
-		putmsg(MERR, fn, "Cannot ReleaseMutex(): %s",
-			TXstrerror(TXgeterror()));
-		return(0);
+		txpmbuf_putmsg(pmbuf, MERR, __FUNCTION__,
+			       "Cannot ReleaseMutex(): %s",
+			       TXstrerror(TXgeterror()));
+		return(TXbool_False);
 	}
 	switch (WaitForMultipleObjects(2, handles, TRUE, INFINITE))
 	{
 	case WAIT_OBJECT_0:		/* we have both event and mutex */
 	case WAIT_ABANDONED:
-		return(1);
+		return(TXbool_True);
 	}
-	putmsg(MERR, fn, "Cannot WaitForMultipleObjects(): %s",
-			TXstrerror(TXgeterror()));
-	return(0);
+	txpmbuf_putmsg(pmbuf, MERR, __FUNCTION__,
+		       "Cannot WaitForMultipleObjects(): %s",
+		       TXstrerror(TXgeterror()));
+	return(TXbool_False);
 #elif defined(EPI_USE_PTHREADS)
-	static CONST char	fn[] = "TXunlockwaitforevent";
-	int			res;
+	int	res;
 
 	do
 		res = pthread_cond_wait((pthread_cond_t *)event,
@@ -9234,48 +9374,51 @@ TXMUTEX	*mutex;
 	while (res == EINTR);
 	if (res != 0)
 	{
-		putmsg(MERR, fn, "Cannot pthread_cond_wait(): %s",
-		       strerror(res));
-		return(0);
+		txpmbuf_putmsg(pmbuf, MERR, __FUNCTION__,
+			       "Cannot pthread_cond_wait(): %s",
+			       strerror(res));
+		return(TXbool_False);
 	}
-	return(1);
+	return(TXbool_True);
 #else /* !_WIN32 && !EPI_USE_PTHREADS */
-	return(0);
+	txpmbuf_putmsg(pmbuf, MERR, __FUNCTION__,
+		       "Unsupported platform: no threads");
+	return(TXbool_False);
 #endif /* !_WIN32 && !EPI_USE_PTHREADS */
 }
 
-int
-TXsignalevent(event)
-TXEVENT	*event;
+TXbool
+TXsignalevent(TXPMBUF *pmbuf, TXEVENT *event)
 /* Signals one of the thread(s) waiting on `event' to wake up.
  * NOTE: Current thread should have lock on associated mutex.
- * Returns 0 on error, 1 if ok.
+ * Returns false on error, true if ok.
  * Thread-safe.
  */
 {
 #ifdef _WIN32
-	static CONST char	fn[] = "TXsignalevent";
-
 	if (!SetEvent((HANDLE)event))
 	{
-		putmsg(MERR, fn, "Cannot SetEvent(): %s",
-			TXstrerror(TXgeterror()));
-		return(0);
+		txpmbuf_putmsg(pmbuf, MERR, __FUNCTION__,
+			       "Cannot SetEvent(): %s",
+			       TXstrerror(TXgeterror()));
+		return(TXbool_False);
 	}
-	return(1);
+	return(TXbool_True);
 #elif defined(EPI_USE_PTHREADS)
-	static CONST char	fn[] = "TXsignalevent";
-	int			n;
+	int	n;
 
 	if ((n = pthread_cond_signal((pthread_cond_t *)event)) != 0)
 	{
-		putmsg(MERR, fn, "Cannot pthread_cond_signal(): %s",
-		       strerror(n));
-		return(0);
+		txpmbuf_putmsg(pmbuf, MERR, __FUNCTION__,
+			       "Cannot pthread_cond_signal(): %s",
+			       strerror(n));
+		return(TXbool_False);
 	}
-	return(1);
+	return(TXbool_True);
 #else /* !_WIN32 && !EPI_USE_PTHREADS */
-	return(0);
+	txpmbuf_putmsg(pmbuf, MERR, __FUNCTION__,
+		       "Unsupported platform: no threads");
+	return(TXbool_False);
 #endif /* !_WIN32 && !EPI_USE_PTHREADS */
 }
 
@@ -9434,15 +9577,18 @@ TXPMBUF *pmbuf; /* (out) for messages */
 /* Returns alloced real user name, or NULL on error.
  */
 {
-  static CONST char     fn[] = "TXgetRealUserName";
   char                  tmp[1024];
 #ifdef _WIN32
   DWORD                 dwSz;
 
   dwSz = sizeof(tmp);
-  if (GetUserName(tmp, &dwSz))
-    return(TXstrdup(pmbuf, fn, tmp));
-  txpmbuf_putmsg(pmbuf, MERR, fn, "Cannot GetUserName(): %s",
+  /* NameSamCompatible seems to give DOMAIN\user, to complement
+   * TXgetfileinfo() return.  For just user, use GetUserName()
+   * (and no longer need sspi.h, secext.h, secur32.lib):
+   */
+  if (GetUserNameEx(NameSamCompatible, tmp, &dwSz))
+    return(TXstrdup(pmbuf, __FUNCTION__, tmp));
+  txpmbuf_putmsg(pmbuf, MERR, __FUNCTION__, "Cannot GetUserName(): %s",
                  TXstrerror(TXgeterror()));
   return(CHARPN);
 #else /* !_WIN32 */
@@ -9459,7 +9605,7 @@ TXPMBUF *pmbuf; /* (out) for messages */
     }
   else
     res = pw->pw_name;
-  return(TXstrdup(pmbuf, fn, res));
+  return(TXstrdup(pmbuf, __FUNCTION__, res));
 #endif /* !_WIN32 */
 }
 
@@ -9472,7 +9618,6 @@ TXPMBUF *pmbuf; /* (out) for messages */
 #ifdef _WIN32
   return(TXgetRealUserName(pmbuf));
 #else /* !_WIN32 */
-  static CONST char     fn[] = "TXgetRealUserName";
   char                  tmp[1024];
   UID_T                 uid;
   struct passwd         *pw, pwbuf;
@@ -9487,7 +9632,7 @@ TXPMBUF *pmbuf; /* (out) for messages */
     }
   else
     res = pw->pw_name;
-  return(TXstrdup(pmbuf, fn, res));
+  return(TXstrdup(pmbuf, __FUNCTION__, res));
 #endif /* !_WIN32 */
 }
 
@@ -9806,6 +9951,27 @@ TXgetCodeDescription(const TXCODEDESC *list, int code, const char *unkCodeDesc)
   for ( ; list->description; list++)
     if (list->code == code) return(list->description);
   return(unkCodeDesc);
+}
+
+const char *
+TXgetOsErrName(TXERRTYPE osErrnum, const char *unkCodeDesc)
+/* Returns `E...' or (Windows) `ERROR_...' OS error name for `osErrnum',
+ * or `unkCodeDesc' if unknown.  This is a function so it is easily
+ * hand-callable from gdb if needed.
+ * Thread-safe.  Async-signal-safe.
+ */
+{
+  return(TXgetCodeDescription(TX_OS_ERR_NAMES, osErrnum, unkCodeDesc));
+}
+
+const char *
+TXgetHerrnoName(int herrnum, const char *unkCodeDesc)
+/* Returns macro name for DNS h_errno value `herrnum',
+ * or `unkCodeDesc' if unknown.
+ * Thread-safe.  Async-signal-safe.
+ */
+{
+  return(TXgetCodeDescription(TXh_errnoNames, herrnum, unkCodeDesc));
 }
 
 /****************************************************************************/
@@ -10443,22 +10609,25 @@ done:
 #else /* !_WIN32 ---------------------------------------------------------- */
 
 PID_T
-TXfork(TXPMBUF *pmbuf, const char *description, const char *cmdArgs,
-       int flags)
+TXfork2(TXPMBUF *pmbuf, const char *description, const char *cmdArgs,
+        int flags, const char * const *exitDescList,
+        TXprocExitCallback *exitCallback, void *exitUserData)
 /* Wrapper for fork() that does some Texis housekeeping.
- * `description' is optional; process description for non-zero exit message.
+ * `description'/`cmdArgs' optional; process description and command + args
+ * for non-zero exit message.
  * Valid `flags':
  *   0x01  no reaping (no TxInForkFunc nor TXaddproc calls)
  *   0x02  regroup
  *   0x04  close descriptors > stdio (but not tx_savefd() descriptors)
  *   0x08  close stdio and tx_savefd() descriptors
+ *   0x10  TXPMF_SAVE
  * NOTE: see also fork() in TXpopenduplex(), which does not call this.
  */
 {
-  static const char     fn[] = "TXfork";
-  PID_T                 pid;
-  TXERRTYPE             saveErr;
-  TXTHREADID            parentTid;
+  PID_T         pid;
+  TXERRTYPE     saveErr;
+  TXTHREADID    parentTid;
+  TRACEPIPE_VARS;
 
   if (!(flags & 0x01) && TxInForkFunc) TxInForkFunc(1);
 
@@ -10468,8 +10637,14 @@ TXfork(TXPMBUF *pmbuf, const char *description, const char *cmdArgs,
     {
     case -1:                                    /* failed */
       saveErr = TXgeterror();
+      TRACEPIPE_AFTER_START(TPF_OPEN)
+        txpmbuf_putmsg(pmbuf, TPF_MSG_AFTER, NULL,
+                       "fork(): %1.3lf sec ret -1 err %d=%s",
+                       TRACEPIPE_TIME(), (int)saveErr,
+                       TXgetOsErrName(saveErr, Ques));
+      TRACEPIPE_AFTER_END()
       if (!(flags & 0x01) && TxInForkFunc) TxInForkFunc(0);
-      txpmbuf_putmsg(pmbuf, MERR + FRK, fn, "Cannot fork(): %s",
+      txpmbuf_putmsg(pmbuf, MERR + FRK, __FUNCTION__, "Cannot fork(): %s",
                      TXstrerror(saveErr));
       break;
     case 0:                                     /* in child process */
@@ -10486,17 +10661,31 @@ TXfork(TXPMBUF *pmbuf, const char *description, const char *cmdArgs,
                            ((flags & 0x08) ? 0x5 : 0x0));
       break;
     default:                                    /* parent process */
+      TRACEPIPE_AFTER_START(TPF_OPEN)
+        txpmbuf_putmsg(pmbuf, TPF_MSG_AFTER, NULL,
+                       "fork(): %1.3lf sec pid %u err %d=%s",
+                       TRACEPIPE_TIME(), (unsigned)pid, (int)saveErr,
+                       TXgetOsErrName(saveErr, Ques));
+      TRACEPIPE_AFTER_END()
       if (!(flags & 0x01))
         {
           TXaddproc(pid, (char *)(description ? description : "Process"),
                     (char *)(cmdArgs ? cmdArgs : ""),
-                    (TXPMF)0 /* wtf TXPMF_SAVE? */, TxExitDescList,
-                    NULL, NULL);
+                    ((flags & 0x10) ? TXPMF_SAVE : (TXPMF)0), exitDescList,
+                    exitCallback, exitUserData);
           if (TxInForkFunc) TxInForkFunc(0);    /* after TXaddproc */
         }
       break;
     }
   return(pid);
+}
+
+PID_T
+TXfork(TXPMBUF *pmbuf, const char *description, const char *cmdArgs,
+       int flags)
+{
+  return(TXfork2(pmbuf, description, cmdArgs, flags, TxExitDescList,
+                 NULL, NULL));
 }
 #endif /* !_WIN32 */
 
@@ -10709,6 +10898,8 @@ TXPIPEARGS              *pa;    /* (returned) args for TXpreadwrite() */
       TRACEPIPE_AFTER_END()
     }
   pass = (po->pass != CHARPN ? po->pass : "");
+
+  /* Ignore TXPDF_SEARCHPATH: Windows always searches path */
 
   /* We were setting our (`parent') stdio handles non-inherit -- but
    * only for exec bkgnd.  Bug 6028: We should do it always, to
@@ -11260,7 +11451,9 @@ TXPIPEARGS              *pa;    /* (returned) args for TXpreadwrite() */
       if (!(po->flags & TXPDF_QUIET))
         {
           TX_PUSHERROR();
-          txpmbuf_putmsg(po->pmbuf, MERR + EXE, fn, "Cannot exec `%s': %s",
+          txpmbuf_putmsg(po->pmbuf, MERR + EXE, __FUNCTION__,
+                         "Cannot exec%s%s `%s': %s",
+                         (po->desc ? " " : ""), (po->desc ? po->desc : ""),
                          po->cmd, TXstrerror(TXgeterror()));
           TX_POPERROR();
         }
@@ -11401,11 +11594,11 @@ TXPIPEARGS              *pa;    /* (returned) args for TXpreadwrite() */
 
 #else /* !_WIN32 - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
   static CONST char     devnull[] = "/dev/null";
-  int                   i, res;
+  int                   i, res, txForkFlags;
   TXFHANDLE             pfh[2*TX_NUM_STDIO_HANDLES];
-  TXERRTYPE             serr;
 #  define RD    0
 #  define WR    1
+  char                  *cmdToExec = NULL;
 
   TXPIPEARGS_INIT(pa);
   for (i = 0; i < 2*TX_NUM_STDIO_HANDLES; i++)
@@ -11423,6 +11616,26 @@ TXPIPEARGS              *pa;    /* (returned) args for TXpreadwrite() */
         }
       goto err;
     }
+
+  if (po->flags & TXPDF_SEARCHPATH)
+    {
+      cmdToExec = epipathfindmode(po->cmd, getenv("PATH"), (X_OK | 8));
+      if (!cmdToExec)
+        {
+          if (!(po->flags & TXPDF_QUIET))
+            {
+              TX_PUSHERROR();
+              txpmbuf_putmsg(po->pmbuf, MERR + EXE, __FUNCTION__,
+                             "Cannot exec%s%s `%s': %s",
+                             (po->desc ? " " : ""), (po->desc ? po->desc : ""),
+                             po->cmd, TXstrerror(TXgeterror()));
+              TX_POPERROR();
+            }
+          goto err;
+        }
+    }
+  else
+    cmdToExec = po->cmd;
 
   for (i = 0; i < TX_NUM_STDIO_HANDLES; i++)
     if (po->fh[i] == TXFHANDLE_CREATE_PIPE_VALUE)
@@ -11482,36 +11695,26 @@ TXPIPEARGS              *pa;    /* (returned) args for TXpreadwrite() */
           strcpy(argBuf, "NULL");
         txpmbuf_putmsg(po->pmbuf, TPF_MSG_BEFORE, CHARPN,
                        "fork()/execve(`%s', %s, env): starting",
-                       po->cmd, argBuf);
+                       cmdToExec, argBuf);
       }
   TRACEPIPE_BEFORE_END()
   if ((po->flags & TXPDF_REAP) && TxInForkFunc != NULL) TxInForkFunc(1);
 
-  switch (pa->pid = fork())
+  txForkFlags = 0;
+  if (!(po->flags & TXPDF_REAP)) txForkFlags |= 0x01;
+  if (po->flags & (TXPDF_BKGND | TXPDF_NEWPROCESSGROUP)) txForkFlags |= 0x02;
+  if (po->flags & TXPDF_SAVE) txForkFlags |= 0x10;
+  pa->pid = TXfork2(((po->flags & TXPDF_QUIET) ? TXPMBUF_SUPPRESS : po->pmbuf),
+                    po->desc, po->cmd, txForkFlags, NULL, po->exitCallback,
+                    po->exitUserData);
+  switch (pa->pid)
     {
     case -1:                                    /* failed */
-      serr = TXgeterror();
-      if ((po->flags & TXPDF_REAP) && TxInForkFunc != NULL) TxInForkFunc(0);
-      TRACEPIPE_AFTER_START(TPF_OPEN)
-        txpmbuf_putmsg(po->pmbuf, TPF_MSG_AFTER, CHARPN,
-                       "fork(): %1.3lf sec ret -1 err %d",
-                       TRACEPIPE_TIME(), (int)serr);
-      TRACEPIPE_AFTER_END()
-      if (!(po->flags & TXPDF_QUIET))
-        {
-          TX_PUSHERROR();
-          txpmbuf_putmsg(po->pmbuf, MERR + FRK, fn, "Cannot fork(): %s",
-                         TXstrerror(TXgeterror()));
-          TX_POPERROR();
-        }
       goto err;
     case 0:                                     /* in child process */
       /* do not call TxInForkFunc(0): may try to reap? */
-      TXpid = 0;                                /* invalidate cache */
-      TXprocessStartTime = -1.0;                /* "" */
       if (po->childpostfork != TXPOPENFUNCPN)
         po->childpostfork(po->usr, pa->pid, TXHANDLE_NULL);
-      if (po->flags & (TXPDF_BKGND|TXPDF_NEWPROCESSGROUP)) TXregroup();
 
       /* set up stdin with appropriate pipe: */
       if (po->fh[STDIN_FILENO] == TXFHANDLE_INVALID_VALUE)
@@ -11630,31 +11833,19 @@ TXPIPEARGS              *pa;    /* (returned) args for TXpreadwrite() */
       TXclosedescriptors(0x6);                  /* clean up Texis, etc. */
       if (po->cwd && chdir(po->cwd) != 0) {}
       /* Now run program: */
-      execve(po->cmd, po->argv, (po->envp != CHARPPN ? po->envp : _environ));
+      execve(cmdToExec, po->argv, (po->envp != CHARPPN ? po->envp : _environ));
       /* if we get here, the exec() failed: */
       if (!(po->flags & TXPDF_QUIET))
-        txpmbuf_putmsg(po->pmbuf, MERR + EXE, fn, "Cannot exec `%s': %s",
-                       po->cmd, TXstrerror(TXgeterror()));
+        txpmbuf_putmsg(po->pmbuf, MERR + EXE, __FUNCTION__,
+                       "Cannot exec%s%s `%s': %s",
+                       (po->desc ? " " : ""), (po->desc ? po->desc : ""),
+                       cmdToExec, TXstrerror(TXgeterror()));
     childbail:
       if (po->childerrexit != TXPOPENFUNCPN)
         po->childerrexit(po->usr, pa->pid, TXHANDLE_NULL);
       _exit(TXEXIT_CANNOTEXECSUBPROCESS);
     }
   /* back in parent process: */
-  if (po->flags & TXPDF_REAP)
-    {
-      TXaddproc(pa->pid, (po->desc != CHARPN ? po->desc : "Process"),
-                po->cmd, ((po->flags & TXPDF_SAVE) ? TXPMF_SAVE : (TXPMF)0),
-                (CONST char * CONST *)NULL, po->exitCallback,
-                po->exitUserData);
-      if (TxInForkFunc != NULL) TxInForkFunc(0);        /* after TXaddproc */
-    }
-  TRACEPIPE_AFTER_START(TPF_OPEN)
-    txpmbuf_putmsg(po->pmbuf, TPF_MSG_AFTER, CHARPN,
-                   "fork(): %1.3lf sec pid %u err %d=%s",
-                   TRACEPIPE_TIME(), (unsigned)pa->pid, (int)saveErr,
-                   TXgetOsErrName(saveErr, Ques));
-  TRACEPIPE_AFTER_END()
   /* Save parent handles to return: */
   pa->pipe[STDIN_FILENO].fh = pfh[2*STDIN_FILENO + WR];
   pfh[2*STDIN_FILENO + WR] = TXFHANDLE_INVALID_VALUE;
@@ -11771,6 +11962,8 @@ done:
         pfh[i] = TXFHANDLE_INVALID_VALUE;
       }
   pa->proc = TXHANDLE_NULL;
+  if (cmdToExec != po->cmd) TXfree(cmdToExec);
+  cmdToExec = NULL;
 #endif /* !_WIN32 */
   TX_POPERROR();
   return(pa->pid != (PID_T)0);
@@ -11946,7 +12139,7 @@ int             std;    /* (in) >= 0: wait for that handle only (closing) */
     case WAIT_ABANDONED_0 + 5:                  /*  ""  */
       /* an "abandoned" thread is not possible? */
       i = stdnum[(((res - WAIT_ABANDONED_0) - 1) >> 1)];
-      msgfmt = "I/O thread for %s for %s %s abandoned";
+      msgfmt = "I/O thread for %s for %s `%s' abandoned";
       goto perr1;
     case WAIT_OBJECT_0 + 1:                     /* I/O thread died */
     case WAIT_OBJECT_0 + 3:                     /*  ""  */
@@ -11972,14 +12165,14 @@ int             std;    /* (in) >= 0: wait for that handle only (closing) */
       TRACEPIPE_AFTER_END()
       pobj->iothread = TXTHREAD_NULL;
       pobj->haveIoThread = 0;
-      msgfmt = "I/O thread for %s for %s %s died";
+      msgfmt = "I/O thread for %s for %s `%s' died";
       goto perr1;
     case WAIT_ABANDONED_0:                      /* ioendevent abandoned (?) */
     case WAIT_ABANDONED_0 + 2:                  /*  ""  */
     case WAIT_ABANDONED_0 + 4:                  /*  ""  */
       /* an abandoned event is not possible? */
       i = stdnum[((res - WAIT_ABANDONED_0) >> 1)];
-      msgfmt = "I/O end event for %s for %s %s abandoned";
+      msgfmt = "I/O end event for %s for %s `%s' abandoned";
     perr1:
       tx_prw_procname(pa->pid, tmp, sizeof(tmp), &desc, &cmd);
       txpmbuf_putmsg(pa->pmbuf, MERR, fn, msgfmt, StdioName[i], desc, cmd);
@@ -11997,7 +12190,7 @@ int             std;    /* (in) >= 0: wait for that handle only (closing) */
       saverrnum = TXgeterror();
       tx_prw_procname(pa->pid, tmp, sizeof(tmp), &desc, &cmd);
       txpmbuf_putmsg(pa->pmbuf, MERR, fn,
-         "WaitForMultipleObjectsEx() failed for I/O end events for %s %s: %s",
+       "WaitForMultipleObjectsEx() failed for I/O end events for %s `%s': %s",
                      desc, cmd, TXstrerror(saverrnum));
       break;                                    /* error */
     }
@@ -12095,7 +12288,7 @@ int             closing;        /* (in) nonzero: closing; do not finish */
         badtask:
           tx_prw_procname(pa->pid, tmp, sizeof(tmp), &desc, &cmd);
           txpmbuf_putmsg(pa->pmbuf, MERR, fn,
-                         "Internal error: Invalid task %d for %s for %s %s",
+                         "Internal error: Invalid task %d for %s for %s `%s'",
                          orgtask, StdioName[std], desc, cmd);
           goto err;
         }
@@ -12111,7 +12304,7 @@ int             closing;        /* (in) nonzero: closing; do not finish */
         yapcloseit:
           ret = 0;                              /* indicate I/O error */
           tx_prw_procname(pa->pid, tmp, sizeof(tmp), &desc, &cmd);
-          txpmbuf_putmsg(pa->pmbuf, MERR, fn, "Cannot %s %s for %s %s: %s",
+          txpmbuf_putmsg(pa->pmbuf, MERR, fn, "Cannot %s %s for %s `%s': %s",
                          (orgtask == TPOTASK_READ ? "read from" : "write to"),
                          StdioName[std], desc, cmd,
                          TXstrerror(pobj->resulterrnum));
@@ -12219,7 +12412,7 @@ int             std;
     {
       tx_prw_procname(pa->pid, tmp, sizeof(tmp), &desc, &cmd);
       txpmbuf_putmsg(pa->pmbuf, MERR, fn,
-                     "Cannot write %ld bytes to %s for %s %s: Handle closed",
+                     "Cannot write %ld bytes to %s for %s `%s': Handle closed",
                      (long)htbuf_getsendsz(pobj->buf), StdioName[std], desc,
                      cmd);
       goto err;
@@ -12253,7 +12446,7 @@ int             std;
     {
       tx_prw_procname(pa->pid, tmp, sizeof(tmp), &desc, &cmd);
       txpmbuf_putmsg(pa->pmbuf, MERR, fn,
-                     "ResetEvent() for %s I/O end event for %s %s failed: %s",
+                   "ResetEvent() for %s I/O end event for %s `%s' failed: %s",
                      StdioName[std], desc, cmd, TXstrerror(TXgeterror()));
       goto err;
     }
@@ -12278,7 +12471,7 @@ int             std;
     {
       tx_prw_procname(pa->pid, tmp, sizeof(tmp), &desc, &cmd);
       txpmbuf_putmsg(pa->pmbuf, MERR, fn,
-                     "SetEvent() for %s I/O begin event for %s %s failed: %s",
+                   "SetEvent() for %s I/O begin event for %s `%s' failed: %s",
                      StdioName[std], desc, cmd, TXstrerror(TXgeterror()));
       pobj->task = TPOTASK_IDLE;                /* just in case? */
       goto err;
@@ -12312,7 +12505,7 @@ int             std;    /* (in) which STDIN_... thread to close */
 
   pobj = pa->pipe + std;
   tx_prw_procname(pa->pid, tmp, sizeof(tmp), &desc, &cmd);
-  txpmbuf_putmsg(pa->pmbuf, MWARN, fn, "Terminating %s I/O thread for %s %s",
+  txpmbuf_putmsg(pa->pmbuf, MWARN, fn, "Terminating %s I/O thread for %s `%s'",
                  StdioName[std], desc, cmd);
   TRACEPIPE_BEFORE_START(TPF_OPEN)
     if (TxTracePipe & TPF_BEFORE(TPF_OPEN))
@@ -12693,7 +12886,7 @@ int             timeout;        /* optional timeout (-1 for infinite) */
           if (errNum == EINTR && tries < 25) continue; /* try again */
           tx_prw_procname(pa->pid, tmp, sizeof(tmp), &desc, &cmd);
           txpmbuf_putmsg(pa->pmbuf, MERR, fn,
-                         "Cannot select() on stdio for %s %s: %s",
+                         "Cannot select() on stdio for %s `%s': %s",
                          desc, cmd, TXstrerror(errNum));
           goto err;
         }
@@ -12737,7 +12930,7 @@ int             timeout;        /* optional timeout (-1 for infinite) */
               if (TXgeterror() == EINTR && tries < 25) continue;
               tx_prw_procname(pa->pid, tmp, sizeof(tmp), &desc, &cmd);
               txpmbuf_putmsg(pa->pmbuf, MERR + FWE, fn,
-                             "Cannot write to %s for %s %s: %s",
+                             "Cannot write to %s for %s `%s': %s",
                              StdioName[STDIN_FILENO], desc, cmd,
                              TXstrerror(TXgeterror()));
               nr = (size_t)(-1);                /* propagate error below */
@@ -12780,7 +12973,7 @@ int             timeout;        /* optional timeout (-1 for infinite) */
                     {
                       tx_prw_procname(pa->pid, tmp, sizeof(tmp), &desc, &cmd);
                       txpmbuf_putmsg(pa->pmbuf, MERR + FWE, fn,
-                                     "Cannot read from %s for %s %s: %s",
+                                     "Cannot read from %s for %s `%s': %s",
                                      StdioName[std], desc, cmd,
                                      TXstrerror(TXgeterror()));
                     }
@@ -12803,7 +12996,7 @@ int             timeout;        /* optional timeout (-1 for infinite) */
                     {
                       tx_prw_procname(pa->pid, tmp, sizeof(tmp), &desc, &cmd);
                       txpmbuf_putmsg(pa->pmbuf, MERR + FCE, fn,
-                                "Cannot close parent end of %s for %s %s: %s",
+                              "Cannot close parent end of %s for %s `%s': %s",
                                      StdioName[std], desc, cmd,
                                      TXstrerror(TXgeterror()));
                     }
@@ -12839,7 +13032,7 @@ stop:
         {
           tx_prw_procname(pa->pid, tmp, sizeof(tmp), &desc, &cmd);
           txpmbuf_putmsg(pa->pmbuf, MERR + FWE, fn,
-                         "Cannot completely write to %s for %s %s",
+                         "Cannot completely write to %s for %s `%s'",
                          StdioName[STDIN_FILENO], desc, cmd);
         }
       goto err;

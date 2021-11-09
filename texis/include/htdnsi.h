@@ -128,15 +128,23 @@ typedef struct HTDSSI_tag                       /* additional settings */
   char                  *trimdomain[HTDNS_MAXTRIMDOMAINS];
   char                  trimdomainbuf[256];
   int                   numtrimdomains;
-  char                  hostsfile[256];
+  char                  *nsSwitchConfFile;      /* alloced, opt. */
+  char                  *hostConfFile;          /* alloced, opt. */
+  char                  *hostsFile;             /* alloced */
+  TXbool                hostsFileSetByUser;
   char                  *defaultHostsFile;      /* alloced */
 }
 HTDSSI;
 
 struct HTDNS_tag
 {
+  char                  *resolvConfFile;        /* alloced, opt. */
   struct __res_state    res;                    /* state info */
+  char                  **userDomains;          /* alloced; set by user */
+  int                   userRetrans;            /* (>= 0: set by user) */
+  int                   userRetry;              /* (>= 0: set by user) */
   TXsockaddr            nameservers[HTDNS_MAXNS];
+  TXbool                nameserversAreUserSet;
   HTDF                  flags;
   int                   timeout;
   HTDNSERR              errnum;                 /* last error */
@@ -144,6 +152,8 @@ struct HTDNS_tag
 
   /* settings filled out by htdns_initservices(): */
   HTDSSI                si;
+  HTDNS_SERVICE         userServices[HTDNS_SERVICE_NUM];
+  TXbool                haveUserServices;
 
   TXbool                queryForIPv4;
   TXbool                queryForIPv6;
@@ -237,7 +247,7 @@ TXbool htdns_startsearch(HTDNS *dns, HTDNSCLASS theclass);
 int  htdns_searchtillwait ARGS((HTDNS *dns));
 
 TXbool  TXhtdnsInitRes(TXPMBUF *pmbuf, TXtraceDns traceDns,
-                       struct __res_state *res,
+                       const char *resolvConfFile, struct __res_state *res,
                        TXsockaddr nameservers[HTDNS_MAXNS], HTDSSI *si);
 void htdns_initservices(HTDSSI *si, int noenv, TXPMBUF *pmbuf,
                         TXtraceDns traceDns);

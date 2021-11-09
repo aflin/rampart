@@ -175,13 +175,7 @@ openddmmapi(QNODE_OP qnodeOp, void *data, FOP mmOp)
 	mapi = TX_NEW(pmbuf, DDMMAPI);
 	if (!mapi) goto err;
 	mapi->self = mapi;
-	if (globalcp)
-		cp = globalcp;
-	else
-	{
-		cp = TXopenapicp();
-		globalcp = cp;
-	}
+	cp = TXget_globalcp();
 	mapi->cp = dupapicp(cp);
 	if(!mapi->cp) goto err;
 	if(mmOp == FOP_NMM) /* Like is the only one to care about delims */

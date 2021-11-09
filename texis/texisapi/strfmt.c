@@ -324,6 +324,24 @@ TXstringformatArgCb(HTPFT type, HTPFW what, void *data, char **fmterr,
                   case FTN_INTEGER:
                     us.c = (char)(*((ft_int *)ret));
                     break;
+                  case FTN_SHORT:
+                    us.c = (char)(*((ft_short *)ret));
+                    break;
+                  case FTN_SMALLINT:
+                    us.c = (char)(*((ft_smallint *)ret));
+                    break;
+                  case FTN_WORD:
+                    us.c = (char)(*((ft_word *)ret));
+                    break;
+                  case FTN_DWORD:
+                    us.c = (char)(*((ft_dword *)ret));
+                    break;
+                  case FTN_INT64:
+                    us.c = (char)(*((ft_int64 *)ret));
+                    break;
+                  case FTN_UINT64:
+                    us.c = (char)(*((ft_uint64 *)ret));
+                    break;
                   case FTN_DOUBLE:
                     us.c = (char)(*((ft_double *)ret));
                     FPERR();

@@ -75,7 +75,7 @@ DD	*outputDd;	/* (in/out, opt.) Projection output DD to alter */
 #endif
 		nname = predtype(proj->preds[i], tin, fo, &sz, &nn);
 		if (nname == (char *)NULL)
-			putmsg(MWARN+UGE,NULL,"Field non-existent in %s",fname);
+			putmsg(MWARN+UGE,NULL,"Field non-existent in `%s'",fname);
 		else
 		{
 			/* If GROUP BY/DISTINCT on sole strlst field, change

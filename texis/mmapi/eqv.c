@@ -39,11 +39,7 @@ extern CONST int nequivs;                                   /* MAW 02-02-99 */
 #ifndef max
 #  define max(a,b) ((a)>(b)?(a):(b))
 #endif
-#ifdef VMS
-#define BINARYREADMODE "rb","ctx=bin","ctx=stm"
-#else
 #define BINARYREADMODE "rb"
-#endif
 
 #ifdef TEST
    int cahit, camiss;

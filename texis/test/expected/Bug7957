@@ -1,0 +1,45 @@
+Texis Version ...
+
+SQL 1 line 1> create table test(x int);
+     x      
+------------+
+
+SQL 1 line 2> create index ix1 on test(x);
+
+SQL 1 line 3> insert into test values(1);
+     x      
+------------+
+           1
+
+SQL 1 line 4> delete from test;
+     x      
+------------+
+           1
+
+SQL 1 line 5> set nolocking=1;
+
+SQL 1 line 6> insert into test values(1);
+     x      
+------------+
+           1
+
+SQL 1 line 7> delete from test;
+     x      
+------------+
+           1
+
+SQL 1 line 8> set singleuser=1;
+
+SQL 1 line 9> insert into test values(1);
+     x      
+------------+
+           1
+
+SQL 1 line 10> delete from test;
+     x      
+------------+
+           1
+
+SQL 1 line 11> drop table test;
+
+SQL 1 line 12> 

@@ -69,7 +69,7 @@
 200 Setting pred b% MATCHES x on table test in the function: settablepred
 200 Looking for index on test (x) in the function: ddgetindex
 200 Handling a table select in the function: TXdotree
-115 varchar MATCHES varstrlst behavior undefined in the function: fochsl
+000 varchar MATCHES varstrlst failed: FOP_EILLEGAL in the function: pred_eval
 200 No more rows [0] from test
 200 Setting pred x MATCHES b% on table test in the function: settablepred
 200 Looking for index on test (x) in the function: ddgetindex

@@ -7,6 +7,8 @@
 #include <sys/stat.h>
 #include "dbquery.h"
 #include "texint.h"
+#include "cgi.h"
+#include "httpi.h"
 
 
 static const char	CorruptBlobzFmt[] =
@@ -23,11 +25,11 @@ TXblobzGetUncompressedSize(TXPMBUF *pmbuf, const char *file, EPI_OFF_T offset,
  * Returns uncompressed size, -1 if unknown.
  */
 {
-	static const char	fn[] = "TXblobzGetUncompressedSize";
-	EPI_HUGEUINT		hu;
-	size_t			ret;
+	EPI_HUGEUINT	hu;
+	size_t		ret;
+	char		verBuf[128];
 
-	/* NOTE: see also TXblobzDoInternalCompression() */
+	/* NOTE: see also TXblobzDoCompressOrUncompress() */
 	if (bufSz < 1)				/* zero lengh: no ...TYPE */
 	{
 		ret = 0;
@@ -40,29 +42,26 @@ TXblobzGetUncompressedSize(TXPMBUF *pmbuf, const char *file, EPI_OFF_T offset,
 		ret = fullSz - 1;		/* -1: skip TX_BLOBZ_TYPE */
 		break;
 	case TX_BLOBZ_TYPE_GZIP:
+	case TX_BLOBZ_TYPE_EXTERNAL:
 		buf++;				/* skip TX_BLOBZ_TYPE */
 		bufSz--;
 		/* Decode our VSH original-size header: */
-		if (bufSz < VSH_MAXLEN)
-		{
-			txpmbuf_putmsg(pmbuf, MERR + FRE, fn,
-				       CorruptBlobzFmt,
-				       file, (EPI_HUGEINT)offset,
-				       "Truncated at VSH size");
-			goto err;
-		}
 		INVSH(buf, hu, goto invshErr);
 		ret = (size_t)hu;
 		break;
 	invshErr:
-		txpmbuf_putmsg(pmbuf, MERR + FRE, fn, CorruptBlobzFmt,
-			       file, (EPI_HUGEINT)offset,
+		txpmbuf_putmsg(pmbuf, MERR + FRE, __FUNCTION__,
+			       CorruptBlobzFmt, file, (EPI_HUGEINT)offset,
 			       "Bad VSH size encoding");
 		goto err;
 	default:			/* unknown TX_BLOBZ_TYPE... */
-		txpmbuf_putmsg(pmbuf, MERR + FRE, fn, CorruptBlobzFmt,
-			       file, (EPI_HUGEINT)offset,
-	  "Unknown blobz type; data possibly created by newer Texis version");
+		TXgetTexisVersionNumString(verBuf, sizeof(verBuf),
+					   TXbool_False /* !vortexStyle */,
+					   TXbool_False /* !forHtml */);
+		txpmbuf_putmsg(pmbuf, MERR + FRE, __FUNCTION__,
+			       CorruptBlobzFmt, file, (EPI_HUGEINT)offset,
+   "Unknown blobz type; data possibly created by version newer than Texis %s",
+			       verBuf);
 		goto err;
 	}
 	goto finally;
@@ -74,27 +73,155 @@ finally:
 }
 
 static byte *
-TXblobzDoInternalCompression(TXPMBUF *pmbuf, const char *file,
-			     EPI_OFF_T offset, byte *inBuf, size_t inBufSz,
-			     TXFILTERFLAG flags, size_t *outBufSz)
-/* Internal use.  Does internal (ZLIB etc.) compress/uncompress
- * (per `flags') of `inBuf'.  Sets `*outBufSz' to output size
- * (not including nul terminator).  `file' and `offset' are for messages.
+TXblobzDoExternalCompressOrUncompress(TXPMBUF *pmbuf, const char *file,
+				      EPI_OFF_T offset, const byte *inBuf,
+				      size_t inBufSz, TXFILTERFLAG flags,
+				      size_t *outBufSz)
+/* Internal use.  Does [Texis] Blobz External [Un]compress Exe compression
+ * or uncompression (per `flags') of `inBuf', which is raw (un)compressed
+ * data (i.e. sans blobz header).  Sets `*outBufSz' to output size (not
+ * including nul terminator).  `file' and `offset' (-1 if unknown) are
+ * for messages.
+ * Returns alloced, nul-terminated output buffer, with blobz header if
+ * compressing.
+ */
+{
+	char		*cmd;
+	TXPOPENARGS	po;
+	TXPIPEARGS	pa;
+	int		exitCode, isSig, getExitCodeStatus = -1;
+	byte		prefix[TX_BLOBZ_MAX_HDR_SZ], *d, *outBuf;
+	char		offsetBuf[40 + EPI_HUGEUINT_BITS];
+
+	TXPOPENARGS_INIT(&po);
+	TXPIPEARGS_INIT(&pa);
+
+	/* Get the executable to use: */
+	cmd = (TXApp ? ((flags & TXFILTERFLAG_DECODE) ?
+			TXApp->blobzExternalUncompressExe :
+			TXApp->blobzExternalCompressExe) :
+	       NULL);
+	if (!cmd || !*cmd)
+	{
+		if (offset == (EPI_OFF_T)(-1))
+			*offsetBuf = '\0';
+		else
+			htsnpf(offsetBuf, sizeof(offsetBuf),
+			       " at offset 0x%wu", (EPI_HUGEUINT)offset);
+		txpmbuf_putmsg(pmbuf, MERR + UGE, __FUNCTION__,
+			       ((flags & TXFILTERFLAG_DECODE) ?
+				"Cannot uncompress external-compressor blobz data from file `%s'%s: [Texis] Blobz External Uncompress Exe is undefined" :
+				"Cannot compress external-compressor blobz data to file `%s'%s: [Texis] Blobz External Compress Exe is undefined"),
+			       file, offsetBuf);
+		goto err;
+	}
+
+	/* Set up and start external command: */
+	po.desc = ((flags & TXFILTERFLAG_DECODE) ?
+		   "Blobz External Uncompress Exe" :
+		   "Blobz External Compress Exe");
+	po.argv = tx_dos2cargv(cmd, 1 /* remove quotes */);
+	if (!po.argv) goto err;
+	po.cmd = po.argv[0];
+	po.flags = (TXPDF_QUOTEARGS | TXPDF_REAP | TXPDF_SAVE |
+		    TXPDF_SEARCHPATH);
+	po.fh[STDIN_FILENO] = TXFHANDLE_CREATE_PIPE_VALUE;
+	po.fh[STDOUT_FILENO] = TXFHANDLE_CREATE_PIPE_VALUE;
+	po.fh[STDERR_FILENO] = TXFHANDLE_STDERR;	/* wtf read it too */
+	/* wtf set childpostfork, childerrexit? */
+	if (!TXpopenduplex(&po, &pa)) goto err;
+	/* stdin from our `uncompressedData': */
+	htbuf_setdata(pa.pipe[STDIN_FILENO].buf, (char *)inBuf, inBufSz,
+		      inBufSz + 1 /* wtf assumed nul-term. */,
+		      0 /* const data */);
+
+	if (!(flags & TXFILTERFLAG_DECODE))
+	{
+		/* Prepend blobz header to stdout, to avoid dup bloat: */
+		d = prefix;
+		*(d++) = TX_BLOBZ_TYPE_EXTERNAL;
+		d = outvsh(d, inBufSz);
+		if (!htbuf_write(pa.pipe[STDOUT_FILENO].buf,
+				 (char *)prefix, d - prefix))
+			goto err;
+	}
+
+	/* Run the command: */
+	while (TXFHANDLE_IS_VALID(pa.pipe[STDIN_FILENO].fh) ||
+	       TXFHANDLE_IS_VALID(pa.pipe[STDOUT_FILENO].fh))
+	{					/* while cmd runs */
+		if (TXFHANDLE_IS_VALID(pa.pipe[STDIN_FILENO].fh) &&
+		    htbuf_getsendsz(pa.pipe[STDIN_FILENO].buf) <= 0 /* EOF */)
+			TXpendio(&pa, 0); 	/* send EOF to child stdin */
+		TXpreadwrite(&pa, -1 /* no timeout */);
+	}
+
+	/* End cmd and report non-zero exit: */
+	TXpendio(&pa, 1 /* close all handles */);
+	exitCode = TXEXIT_OK;
+	isSig = 0;
+	getExitCodeStatus = !!TXpgetexitcode(&pa, 1, &exitCode, &isSig);
+	if (!getExitCodeStatus)
+		/* already reported by TXpgetexitcode() */;
+	else if ((exitCode != TXEXIT_OK && exitCode!=TXEXIT_TIMEOUT) || isSig)
+		TXreportProcessExit(pmbuf, __FUNCTION__, po.desc,
+				    po.cmd, pa.pid, exitCode, isSig, NULL);
+
+	/* Take the (un)compressed data: */
+	*outBufSz = htbuf_getdata(pa.pipe[STDOUT_FILENO].buf,
+				  (char **)&outBuf, 1);
+	goto finally;
+
+err:
+	if (pa.pid != (PID_T)0) TXpkill(&pa, 1);
+	outBuf = NULL;
+	*outBufSz = 0;
+finally:
+	/* Last-ditch effort at reporting exit code, if not reported: */
+	if (pa.pid && getExitCodeStatus == -1)
+	{
+		/* do not wait: we are done here */
+		getExitCodeStatus = !!TXpgetexitcode(&pa, 0x3, &exitCode,
+						     &isSig);
+		if (!getExitCodeStatus)
+			/* already reported by TXpgetexitcode() */;
+		else if ((exitCode != TXEXIT_OK && exitCode != TXEXIT_TIMEOUT)
+			 || isSig)
+			TXreportProcessExit(pmbuf, __FUNCTION__, po.desc,
+					    po.cmd, pa.pid, exitCode, isSig,
+					    NULL);
+	}
+	TXpcloseduplex(&pa, 1);
+	po.argv = TXfreeStrList(po.argv, -1);
+	return(outBuf);
+}
+
+static byte *
+TXblobzDoCompressOrUncompress(TXPMBUF *pmbuf, const char *file,
+			      EPI_OFF_T offset, byte *inBuf, size_t inBufSz,
+			      TXFILTERFLAG flags, size_t *outBufSz)
+/* Internal use.  Does internal (ZLIB gzip) or external (Blobz
+ * External [Un]Compress Exe) compression/uncompression (per `flags')
+ * of `inBuf'.
+ * `inBuf' is uncompressed data iff TXFILTERFLAG_ENCODE,
+ * compressed data with TX_BLOBZ_TYPE + VSH header if TXFILTERFLAG_DECODE.
+ * Sets `*outBufSz' to output size (not including nul terminator).
+ * `file' and `offset' (-1 if unknown) are for messages.
  * Returns alloced, nul-terminated output buffer.
  */
 {
-	static const char	fn[] = "TXblobzDoInternalCompression";
-	TXZLIB			*zlibHandle = NULL;
-	size_t			outBufUsedSz = 0, curOutLen;
-	size_t			outBufAllocedSz = 0, outBufGuessSz = -1;
-	size_t			outBufGzipOffset = -1;
-	TXCTEHF			cteFlags;
-	int			gzipTransRes = 0, noProgressNum = 0;
-	int			badGzip = 0;
-	byte			*curInBuf, *prevInBuf, *inBufEnd, *newOutBuf;
-	byte			*curOutBuf, *outBuf = NULL, *p;
-	EPI_HUGEUINT		hu;
-#define MIN_OUTBUF_SZ		65536
+	TXZLIB		*zlibHandle = NULL;
+	size_t		outBufUsedSz = 0, curOutLen;
+	size_t		outBufAllocedSz = 0, outBufGuessSz = -1;
+	size_t		outBufGzipOffset = -1;
+	TXCTEHF		cteFlags;
+	int		gzipTransRes = 0, noProgressNum = 0;
+	int		badGzip = 0;
+	byte		*curInBuf, *prevInBuf, *inBufEnd, *newOutBuf;
+	byte		*curOutBuf, *outBuf = NULL, *p;
+	EPI_HUGEUINT	hu;
+#define MIN_OUTBUF_SZ	65536
+	TX_BLOBZ_TYPE	blobzType;
 
 	inBufEnd = inBuf + inBufSz;
 
@@ -106,43 +233,45 @@ TXblobzDoInternalCompression(TXPMBUF *pmbuf, const char *file,
 		{
 			outBufUsedSz = 0;
 			outBufAllocedSz = 1;
-			outBuf = (byte *)TXstrdup(pmbuf, fn, "");
+			outBuf = (byte *)TXstrdup(pmbuf, __FUNCTION__, "");
 			if (!outBuf) goto err;
 			goto finally;
 		}
-		switch ((TX_BLOBZ_TYPE)(inBuf[0]))
+		blobzType = (TX_BLOBZ_TYPE)(inBuf[0]);
+		switch (blobzType)
 		{
 		case TX_BLOBZ_TYPE_ASIS:	/* just copy the data */
 			outBufUsedSz = inBufSz - 1;    /* -1: TYPE stripped */
 			outBufAllocedSz = outBufUsedSz + 1;    /* +1 for nul*/
-			outBuf = (byte *)TXmalloc(pmbuf, fn, outBufAllocedSz);
+			outBuf = (byte *)TXmalloc(pmbuf, __FUNCTION__,
+						  outBufAllocedSz);
 			if (!outBuf) goto err;
 			memcpy(outBuf, inBuf + 1, outBufUsedSz);
 			outBuf[outBufUsedSz] = '\0';
 			goto finally;
 		case TX_BLOBZ_TYPE_GZIP:
-			inBuf++;		/* skip TX_BLOBZ_TYPE_GZIP */
+		case TX_BLOBZ_TYPE_EXTERNAL:
+			inBuf++;		/* skip TX_BLOBZ_TYPE */
 			inBufSz--;
 			/* Skip our VSH original-size header: */
-			if (inBufSz < VSH_MAXLEN)
-			{
-				txpmbuf_putmsg(pmbuf, MERR + FRE, fn,
-					       CorruptBlobzFmt,
-					       file, (EPI_HUGEINT)offset,
-					       "Truncated at VSH size");
-				goto err;
-			}
 			INVSH(inBuf, hu, goto invshErr);
-			inBufSz = inBufEnd - inBuf;
+			inBufSz = inBufEnd - inBuf;	/* `inBuf' advanced */
 			if (hu < 256*1024*1024)	/* sanity */
 				outBufGuessSz = (size_t)hu;
+			if (blobzType == TX_BLOBZ_TYPE_EXTERNAL)
+			{
+				outBuf = TXblobzDoExternalCompressOrUncompress(
+					pmbuf, file, offset, inBuf, inBufSz,
+					flags, &outBufUsedSz);
+				goto finally;
+			}
 			break;			/* gunzip below */
 		invshErr:
 			/* Bad VSH; try to recover.  Look for gzip start: */
 			p = memchr(inBuf, TX_GZIP_START_BYTE, inBufSz);
 			if (!p)			/* not gzip header either */
 			{
-				txpmbuf_putmsg(pmbuf, MERR + FRE, fn,
+				txpmbuf_putmsg(pmbuf, MERR + FRE, __FUNCTION__,
 					       CorruptBlobzFmt,
 					       file, (EPI_HUGEINT)offset,
 				  "Bad VSH size encoding and no gzip header");
@@ -150,14 +279,17 @@ TXblobzDoInternalCompression(TXPMBUF *pmbuf, const char *file,
 			}
 			inBuf = p;
 			inBufSz = inBufEnd - inBuf;
-			txpmbuf_putmsg(pmbuf, MWARN + FRE, fn, CorruptBlobzFmt,
+			txpmbuf_putmsg(pmbuf, MWARN + FRE, __FUNCTION__,
+				       CorruptBlobzFmt,
 				       file, (EPI_HUGEINT)offset,
-				   "Bad VSH size encoding; will work around");
+		     "Bad VSH size encoding for gzip data; will work around");
 			break;
 		default:			/* unknown TX_BLOBZ_TYPE... */
-			txpmbuf_putmsg(pmbuf, MERR + FRE, fn, CorruptBlobzFmt,
+			txpmbuf_putmsg(pmbuf, MERR + FRE, __FUNCTION__,
+				       CorruptBlobzFmt,
 				       file, (EPI_HUGEINT)offset,
-	  "Unknown blobz type; data possibly created by newer Texis version");
+	"Unknown blobz type %d; data possibly created by newer Texis version",
+				       (int)blobzType);
 			goto err;
 		}
 	}
@@ -165,8 +297,22 @@ TXblobzDoInternalCompression(TXPMBUF *pmbuf, const char *file,
 	{
 		byte	*d;
 
-		outBufAllocedSz = MIN_OUTBUF_SZ + TX_MAX(1 + VSH_MAXLEN, 64);
-		if (!(outBuf = (byte *)TXmalloc(pmbuf, fn, outBufAllocedSz)))
+		/* Use external compression, if defined and over threshold: */
+		if (TXApp &&
+		    TXApp->blobzExternalCompressExe &&
+		    *TXApp->blobzExternalCompressExe &&
+		    inBufSz >= TXApp->blobzExternalCompressMinSize)
+		{
+			outBuf = TXblobzDoExternalCompressOrUncompress(pmbuf,
+				  file, offset, inBuf, inBufSz, flags,
+				  &outBufUsedSz);
+			goto finally;
+		}
+
+		outBufAllocedSz = MIN_OUTBUF_SZ +
+			TX_MAX(TX_BLOBZ_MAX_HDR_SZ, 64);
+		if (!(outBuf = (byte *)TXmalloc(pmbuf, __FUNCTION__,
+						outBufAllocedSz)))
 			goto err;
 		/* Header is TX_BLOBZ_TYPE_GZIP + VSH(inBufSz);
 		 * while gzip does store original data size, it puts
@@ -197,7 +343,8 @@ TXblobzDoInternalCompression(TXPMBUF *pmbuf, const char *file,
 			else
 				outBufAllocedSz += outBufAllocedSz/4 +
 					MIN_OUTBUF_SZ;
-			newOutBuf = (byte *)TXrealloc(pmbuf, fn, outBuf,
+			newOutBuf = (byte *)TXrealloc(pmbuf, __FUNCTION__,
+						      outBuf,
 						      outBufAllocedSz);
 			if (!newOutBuf)
 			{
@@ -243,23 +390,24 @@ TXblobzDoInternalCompression(TXPMBUF *pmbuf, const char *file,
 	if (noProgressNum > 5)
 	{
 		if (flags & TXFILTERFLAG_DECODE)
-			txpmbuf_putmsg(pmbuf, MERR + FRE, fn, CorruptBlobzFmt,
+			txpmbuf_putmsg(pmbuf, MERR + FRE, __FUNCTION__,
+				       CorruptBlobzFmt,
 				       file, (EPI_HUGEINT)offset,
 				     "No forward progress decoding gzip data");
 		else
-			txpmbuf_putmsg(pmbuf, MWARN + FWE, fn,
+			txpmbuf_putmsg(pmbuf, MWARN + FWE, __FUNCTION__,
 				       "Internal error with blobz file `%s': No forward progress gzipping data; will store as-is",
 				       file /* offset likely -1 */);
 		badGzip = 1;
 	}
-	/* Sanity check: encoded data must start with TX_BLOBZ_TYPE_GZIP,
-	 * so we can recognize it on read:
+	/* Sanity check: encoded data must start with TX_GZIP_START_BYTE,
+	 * so zlib can recognize it on read:
 	 */
 	if (outBufGzipOffset != (size_t)(-1) &&
 	    (outBufGzipOffset > outBufUsedSz ||
 	     outBuf[outBufGzipOffset] != TX_GZIP_START_BYTE))
 	{
-		txpmbuf_putmsg(pmbuf, MWARN + FWE, fn,
+		txpmbuf_putmsg(pmbuf, MWARN + FWE, __FUNCTION__,
 			       "Internal error with blobz file `%s': buffer lacks gzip header byte after gzipping; will store data as-is",
 			       file /* offset likely -1 */);
 		badGzip = 1;
@@ -277,7 +425,8 @@ TXblobzDoInternalCompression(TXPMBUF *pmbuf, const char *file,
 		outBuf = TXfree(outBuf);
 		outBufUsedSz = 1 + inBufSz;	/* +1 for ...TYPE */
 		outBufAllocedSz = outBufUsedSz + 1;	/* +1 for nul */
-		outBuf = (byte *)TXmalloc(pmbuf, fn, outBufAllocedSz);
+		outBuf = (byte *)TXmalloc(pmbuf, __FUNCTION__,
+					  outBufAllocedSz);
 		if (!outBuf) goto err;
 		outBuf[0] = TX_BLOBZ_TYPE_ASIS;
 		memcpy(outBuf + 1, inBuf, inBufSz);
@@ -289,7 +438,7 @@ TXblobzDoInternalCompression(TXPMBUF *pmbuf, const char *file,
 	if (outBufAllocedSz != outBufUsedSz + 1)
 	{
 		outBufAllocedSz = outBufUsedSz + 1;
-		newOutBuf = (byte *)TXrealloc(pmbuf, fn, outBuf,
+		newOutBuf = (byte *)TXrealloc(pmbuf, __FUNCTION__, outBuf,
 					      outBufAllocedSz);
 		if (!newOutBuf)
 		{
@@ -331,9 +480,7 @@ size_t *sz;	/* (out) size of returned data (not including nul) */
 {
 	static CONST char	fn[] = "TXagetblobz";
 	void *rc;
-	FLD *tvcfld = NULL, *tvdfld = NULL;
 	char *buf;
-	char *unzipcmd;
 	TXPMBUF	*pmbuf = TXPMBUFPN;
 
 	if (!v) goto err;			/* No pointer given */
@@ -380,29 +527,11 @@ size_t *sz;	/* (out) size of returned data (not including nul) */
 
 	rc = getdbf((DBF *)v->dbf, v->off, sz);
 	if (!rc) goto err;			/* block read failed */
-	if(TXApp && TXApp->blobUncompressExe && TXApp->blobUncompressExe[0])
-	{					/* external uncompress */
-		unzipcmd = TXApp->blobUncompressExe;
-		tvcfld = createfld("varchar",15,1);
-		setfld(tvcfld, unzipcmd, strlen(unzipcmd));
-		TXsetshadownonalloc(tvcfld);
-		tvdfld = createfld("varbyte",80,1);
-		setfldandsize(tvdfld, rc, *sz + 1, FLD_FORCE_NORMAL);
-		dobshell(tvcfld, tvdfld, NULL, NULL, NULL);
-		buf = getfld(tvcfld, sz);
-		TXsetshadownonalloc(tvcfld);
-		TXsetshadownonalloc(tvdfld);
-		closefld(tvdfld);
-		closefld(tvcfld);
-		return buf;
-	}
-	else					/* internal uncompress */
-	{
-		buf = (char *)TXblobzDoInternalCompression(pmbuf,
-				getdbffn((DBF *)v->dbf), v->off, rc, *sz,
-				TXFILTERFLAG_DECODE, sz);
-		return(buf);
-	}
+	buf = (char *)TXblobzDoCompressOrUncompress(pmbuf,
+					   getdbffn((DBF *)v->dbf),
+					   v->off, rc, *sz,
+					   TXFILTERFLAG_DECODE, sz);
+	return(buf);
 err:
 	*sz = 0;
 	return(NULL);
@@ -489,28 +618,12 @@ TBL	*outtbl;
 	}
 	else
 	{
-		if(TXApp && TXApp->blobCompressExe && TXApp->blobCompressExe[0])
-		{				/* external compress */
-			char *zipcmd;
-
-			zipcmd = TXApp->blobCompressExe;
-			tvcfld = createfld("varchar",15,1);
-			setfld(tvcfld, strdup(zipcmd), strlen(zipcmd));
-			tvdfld = createfld("varchar",sz,1);
-			setfld(tvdfld, buf, sz);
-			TXsetshadownonalloc(tvdfld);
-			dobshell(tvcfld, tvdfld, NULL, NULL, NULL);
-			buf = getfld(tvcfld, &sz);
-		}
-		else				/* internal compress */
-		{
-			compressedBuf = TXblobzDoInternalCompression(pmbuf,
+		compressedBuf = TXblobzDoCompressOrUncompress(pmbuf,
 					getdbffn(outtbl->bf), -1L,
 					(byte *)buf, sz, TXFILTERFLAG_ENCODE,
 					&compressedBufSz);
-			buf = (char *)compressedBuf;
-			sz = compressedBufSz;
-		}
+		buf = (char *)compressedBuf;
+		sz = compressedBufSz;
 		r = putdbf(outtbl->bf, -1L, buf, sz);
 	}
 	goto finally;

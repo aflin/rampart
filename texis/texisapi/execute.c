@@ -49,6 +49,16 @@ err:
 
 /* ------------------------------------------------------------------------ */
 
+TXbool
+TXsqlResetOncePerSqlMsgs(void)
+{
+	if (TXApp)
+		memset(TXApp->didOncePerSqlMsg, 0, TXoncePerSqlMsg_NUM);
+	return(TXbool_True);
+}
+
+/* ------------------------------------------------------------------------ */
+
 RETCODE SQL_API SQLExecute(hstmt)
 HSTMT	hstmt;			/* statement to execute. */
 {
@@ -57,7 +67,7 @@ HSTMT	hstmt;			/* statement to execute. */
 	int	results, i;
 
 	lpstmt->nrows = 0;
-	memset(TXApp->didOncePerSqlMsg, 0, TXoncePerSqlMsg_NUM);
+	TXsqlResetOncePerSqlMsgs();
 	TXfdbiResetGlobalHacks();
 
 	if (TXApp->failIfIncompatible &&

@@ -155,8 +155,8 @@ SQL 1 line 37> select json_query(Json, '$.info.address.town') from test;
 SQL 1 line 38> select json_query(Json, '$.info."address"') from test;
 json_query(Json, $.info."address")
 ----------------------------------+
-
-
+{"town":"Cleveland","county":"Cuyahoga","country":"United States"}
+{"town":"Bristol","county":"Avon","country":"England"}
 
 
 SQL 1 line 39> select json_query(Json, '$.info.tags') from test;

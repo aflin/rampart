@@ -378,20 +378,20 @@ int yap;			/* 0: silent  1: non-ENOENT errors  2: all errors */
 
 	roFlags = TXrawOpenFlag_None;
 	if (yap == 1) roFlags |= TXrawOpenFlag_SuppressNoSuchFileErr;
-	fh = TXrawOpen((yap > 0 ? TXPMBUFPN : TXPMBUF_SUPPRESS), __FUNCTION__,
+	fh = TXrawOpen(pmbuf, __FUNCTION__,
 		       "Texis config file", filename, roFlags,
 		       (O_RDONLY | TX_O_BINARY), 0666);
 	if (fh == -1) goto err;
 	buf = tmp;
-	/* don't yap: file may be shorter than our read: */
-	sz = (size_t) tx_rawread(TXPMBUFPN, fh, filename, (byte *)buf,
-				 sizeof(tmp) - 1, 0);
+	sz = (size_t) tx_rawread(pmbuf, fh, filename, (byte *)buf,
+				 sizeof(tmp) - 1,
+			0 /* don't yap: file may be shorter than our read */);
 	if (sz == sizeof(tmp) - 1)	/* could be more data */
 	{
 		if (EPI_FSTAT(fh, &st) != 0)
 		{
 			if (yap >= 2 || (yap >= 1 && errno != ENOENT))
-				putmsg(MERR + FOE, NULL,
+				txpmbuf_putmsg(pmbuf, MERR + FOE, NULL,
 				       "Could not open Texis config file %s: %s",
 				       filename, strerror(errno));
 			goto err;
@@ -401,7 +401,7 @@ int yap;			/* 0: silent  1: non-ENOENT errors  2: all errors */
 			goto err;
 		memcpy(buf, tmp, sizeof(tmp) - 1);
 		sz +=
-			(size_t) tx_rawread(TXPMBUFPN, fh, filename,
+			(size_t) tx_rawread(pmbuf, fh, filename,
                                             (byte *)buf + sizeof(tmp) - 1,
 					      (size_t) st.st_size -
 					      (sizeof(tmp) - 1), (yap >= 1));
@@ -480,9 +480,9 @@ int yap;			/* 0: silent  1: non-ENOENT errors  2: all errors */
 		case '[':			/* new section starting */
 			if (nsections >= nasections)
 			{			/* should never happen */
-				if (yap && !saidTooManySections)
+				if (!saidTooManySections)
 				{
-					putmsg(MERR, __FUNCTION__,
+					txpmbuf_putmsg(pmbuf, MERR, __FUNCTION__,
      "%s: Miscalculated number of sections; extra ignored at `%s' offset %wd",
 					       filename, ln,
 					       (EPI_HUGEINT)(ln - buf));
@@ -506,8 +506,7 @@ int yap;			/* 0: silent  1: non-ENOENT errors  2: all errors */
 			t = strchr(ln, '=');
 			if (!t)			/* no value */
 			{
-				if (yap)
-					putmsg(MWARN + UGE, __FUNCTION__,
+				txpmbuf_putmsg(pmbuf, MWARN + UGE, __FUNCTION__,
 		      "%s: Setting `%s' missing value at offset %wd; ignored",
 					       filename, ln,
 					       (EPI_HUGEINT)(ln - buf));
@@ -515,8 +514,7 @@ int yap;			/* 0: silent  1: non-ENOENT errors  2: all errors */
 			}
 			if (nsections <= 0)
 			{
-				if (yap)
-					putmsg(MWARN + UGE, CHARPN,
+				txpmbuf_putmsg(pmbuf, MWARN + UGE, CHARPN,
  "%s: Configuration setting `%s' is not in a section, at offset %wd; ignored",
 					       filename, ln,
 					       (EPI_HUGEINT)(ln - buf));
@@ -524,9 +522,9 @@ int yap;			/* 0: silent  1: non-ENOENT errors  2: all errors */
 			}
 			if (nsettings >= nasettings)
 			{			/* should never happen */
-				if (yap && !saidTooManySettings)
+				if (!saidTooManySettings)
 				{
-					putmsg(MERR, __FUNCTION__,
+					txpmbuf_putmsg(pmbuf, MERR, __FUNCTION__,
      "%s: Miscalculated number of settings; extra ignored at `%s' offset %wd",
 					       filename, ln,
 					       (EPI_HUGEINT)(ln - buf));

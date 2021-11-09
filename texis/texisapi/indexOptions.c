@@ -287,7 +287,7 @@ DDIC    *ddic;  /* (in) DDIC for some defaults */
   static CONST char     fn[] = "TXindOptsOpen";
   TXindOpts             *options = NULL;
 
-  if (!globalcp && !(globalcp = TXopenapicp())) goto err;
+  if (!TXget_globalcp()) goto err;
 
   options = (TXindOpts *)TXcalloc(TXPMBUFPN, fn, 1, sizeof(TXindOpts));
   if (!options) goto err;
@@ -516,7 +516,7 @@ int             forUpdate;      /* (in) nonzero: index update not create */
           /* `WITH ...' options stringcomparemode can be relative,
            * because we can get the current/default setting:
            */
-          if (!globalcp && !(globalcp = TXopenapicp())) goto err;
+          if (!TXget_globalcp()) goto err;
           if (!TXstrToTxcff(options->values[optIdx][0], CHARPN,
                             globalcp->textsearchmode,
                             globalcp->stringcomparemode,
@@ -550,7 +550,7 @@ int             forUpdate;      /* (in) nonzero: index update not create */
           /* `WITH ...' options textsearchmode can be relative,
            * because we can get the current/default setting:
            */
-          if (!globalcp && !(globalcp = TXopenapicp())) goto err;
+          if (!TXget_globalcp()) goto err;
           if (!TXstrToTxcff(options->values[optIdx][0], CHARPN,
                             globalcp->textsearchmode,
                             globalcp->stringcomparemode,

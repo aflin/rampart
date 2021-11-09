@@ -91,6 +91,46 @@ readtoken ARGS((void))
 		if (bufend == curpos) goto err;
 		c = ((unsigned char *)inbuf)[curpos];
 		zztext = &inbuf[curpos];
+		/*
+		  ASCII ordered is graph meanings
+
+			!: FLDMATH_NEQ
+			": QUOTED_NAME
+			#: FLDMATH_MAT / like
+			$: NAME_OP
+			%: FLDMATH_MOD
+			&: FLDMATH_AND
+			': STRING_OP
+			(: ignore (whitespace)
+			): ignore (whitespace)
+			*: FLDMATH_MUL
+			+: FLDMATH_ADD
+			,: LIST_OP
+			-: TX_QNODE_NUMBER
+			.: FLOAT_OP
+			/: FLDMATH_DIV
+			0-9: TX_QNODE_NUMBER
+			:: NAME_OP (valid sql?)
+			;: NAME_OP (invalid sql)
+			<: FLDMATH_LT
+			=: FLDMATH_EQ
+			>: FLDMATH_GT
+			?: PARAM_OP
+			@: FLDMATH_RELEV
+			A-Z: NAME_OP
+			[: FLDMATH_IN
+			\: NAME_OP (invalid sql)
+			]: FLDMATH_TWIXT
+			^: NOT_OP
+			_: SUBCOMMAND
+			`: NAME_OP (invalid sql)
+			a-z: NAME_OP
+			{: FLDMATH_IS_SUBSET
+			|: FLDMATH_OR
+			}: FLDMATH_INTERSECT[*]
+			~: like / FLDMATH_MAT
+
+		*/
 		switch (c)
 		{
 			case ',' :
@@ -211,6 +251,96 @@ readtoken ARGS((void))
 				break;
 			case '_' :
 				curpos++;
+				/*
+				ASCII ordered is graph usage:
+
+				!:
+				":
+				#: FLDMATH_MMIN
+				$:
+				%:
+				&:
+				':
+				(:
+				):
+				*: DROP_OP
+				+:
+				,:
+				-: FLDMATH_SUB
+				.:
+				/:
+				0-9: NAMENUM_OP
+				::
+				;:
+				<:
+				=:
+				>:
+				?:
+				@: FLDMATH_PROXIM
+				A: ALTER_OP
+				B:
+				C: COLUMN_OP
+				D: DEL_SEL_OP
+				E:
+				F: AGG_FUN_OP
+				G: GRANT_OP (g = REVOKE_OP)
+				H: HAVING_OP
+				I: INSERT_OP
+				J: PRODUCT_OP (JOIN)
+				K: LOCK_TABLES_OP (k = UNLOCK_TABLES_OP)
+				L:
+				M: CREATE_OP (MAKE)
+				N: NULL_OP
+				O: ORDER_OP
+				P: PROJECT_OP
+				Q: SUBQUERY_OP
+				R: RENAME_OP
+				S: SELECT_OP
+				T: TABLE_OP
+				U: UPD_SEL_OP
+				V: VALUE_OP
+				W: VIEW_OP
+				X:
+				Y:
+				Z:
+				[: ARRAY_OP
+				\:
+				]:
+				^:
+				_:
+				`:
+				a:
+				b:
+				c: COUNTER_OP
+				d: DEL_ALL_OP
+				e: EXISTS_OP
+				f: REG_FUN_OP
+				g: REVOKE_OP
+				h: HINT_OP
+				i:
+				j:
+				k: UNLOCK_TABLES_OP
+				l: ALL_OP
+				m:
+				n: UNION_OP
+				o: ORDERING_SPEC_OP
+				p: GROUP_BY_OP
+				q: PROP_OP
+				r: FLOAT_OP
+				s: DISTINCT_OP
+				t: TABLE_AS_OP
+				u: UPD_ALL_OP
+				v: CONVERT_OP
+				w:
+				x: TX_QNODE_NUMBER (HEX Constant)
+				y:
+				z:
+				{:
+				|:
+				}:
+				~: FLDMATH_NMM
+
+				*/
 				switch(inbuf[curpos++])
 				{
 					case '#' :
@@ -275,6 +405,9 @@ readtoken ARGS((void))
 					case 'J' :
 						ret = PRODUCT_OP;
 						goto finally;
+					case 'K' :
+						ret = LOCK_TABLES_OP;
+						goto finally;
 					case 'M' :
 						ret = CREATE_OP;
 						goto finally;
@@ -328,6 +461,9 @@ readtoken ARGS((void))
 						goto finally;
 					case 'h' :
 						ret = HINT_OP;
+						goto finally;
+					case 'k' :
+						ret = UNLOCK_TABLES_OP;
 						goto finally;
 					case 'l' :
 						ret = ALL_OP;

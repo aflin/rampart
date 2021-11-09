@@ -269,6 +269,8 @@ LIKER		{ return LIKER; }
 liker		{ return LIKER; }
 LINK		{ return LINK; }
 link		{ return LINK; }
+LOCK		{ return TX_LOCK; }
+lock		{ return TX_LOCK; }
 MATCHES		{ return MATCHES; }
 matches		{ return MATCHES; }
 MODULE		{ return MODULE; }
@@ -311,6 +313,8 @@ PROCEDURE	{ return PROCEDURE; }
 procedure	{ return PROCEDURE; }
 PUBLIC		{ return PUBLIC; }
 public		{ return PUBLIC; }
+READ		{ return READ; }
+read		{ return READ; }
 REAL		{ return REAL; }
 real		{ return REAL; }
 REFERENCES	{ return REFERENCES; }
@@ -345,6 +349,8 @@ SUBSET		{ return TX_SUBSET; }
 subset		{ return TX_SUBSET; }
 TABLE		{ return TABLE; }
 table		{ return TABLE; }
+TABLES  { return TABLES; }
+tables  { return TABLES; }
 TO		{ return TO; }
 to		{ return TO; }
 TRIGGER		{ return TX_TRIGGER; }
@@ -353,6 +359,8 @@ UNION		{ return UNION; }
 union		{ return UNION; }
 UNIQUE		{ return UNIQUE; }
 unique		{ return UNIQUE; }
+UNLOCK    { return TX_UNLOCK; }
+unlock    { return TX_UNLOCK; }
 UNSIGNED	{ return UNSIGNED; /* JMT 06/27/94 */}
 unsigned	{ return UNSIGNED; }
 UPDATE		{ return TX_UPDATE; }
@@ -379,6 +387,8 @@ WITH		{ return WITH; }
 with		{ return WITH; }
 WORK		{ return WORK; }
 work		{ return WORK; }
+WRITE   { return WRITE; }
+write   { return WRITE; }
 
 	/* punctuation */
 

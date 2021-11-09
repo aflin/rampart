@@ -21,7 +21,10 @@ extern "C"
 #  include <sys/resource.h>
 #endif /* _WIN32 */
 #include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "sizes.h"
+#include "dbquery.h"
 #include "rppm.h"
 #include "fldcmp.h"
 #include "keyrec.h"
@@ -37,6 +40,7 @@ extern "C"
 #include "cgi.h"
 #include "ezsockbuf.h"
 #include "dirio.h"
+#include "locktables.h"
 
 #ifndef EPI_HAVE_RLIM_T
 typedef long rlim_t;
@@ -254,6 +258,11 @@ size_t	TXprintSigCodeAddr(char *buf, size_t bufSz,
 
 int     TXkill ARGS((PID_T pid, int sig));
 
+/* Optional callback when process exits: */
+typedef void TXprocExitCallback ARGS((void *userData, PID_T pid,
+                                      int signalNum, int exitCode));
+#define TXprocExitCallbackPN        ((TXprocExitCallback *)NULL)
+
 /* Does a process exist */
 int	TXprocessexists ARGS((PID_T));
 #ifdef _WIN32
@@ -261,6 +270,9 @@ int	TXprocessexists_handle ARGS((HANDLE proc));
 #else /* !_WIN32 */
 PID_T   TXfork(TXPMBUF *pmbuf, const char *description, const char *cmdArgs,
                int flags);
+PID_T   TXfork2(TXPMBUF *pmbuf, const char *description, const char *cmdArgs,
+		int flags, const char * const *exitDescList,
+		TXprocExitCallback *exitCallback, void *exitUserdata);
 #endif /* !_WIN32 */
 int     TXgetInForkedChild(void);
 char	*TXgetprocname ARGS((int));
@@ -516,8 +528,8 @@ EPI_OFF_T	TXsetrecid ARGS((RECID *, EPI_OFF_T));
 #define TXgetoff2(r)            ((r)->off)
 #define TXsetrecid(r, o)        ((r)->off = (EPI_OFF_T)(o))
 
-size_t TXgetTexisVersionNumString(char *buf, size_t bufSz, TXbool vortexStyle,
-				  TXbool forHtml);
+#define TXgetTexisVersionNumString(a,b,c,d) (TXtexisver())
+// size_t TXgetTexisVersionNumString(char *buf, size_t bufSz, TXbool vortexStyle, TXbool forHtml);
 
 /******************************************************************/
 
@@ -894,6 +906,7 @@ TXbool	TXmkdir(TXPMBUF *pmbuf, const char *path, unsigned mode);
 TXbool TXcreateDirOfFileIfNotExist(TXPMBUF *pmbuf, const char *file,
 				   UID_T uidChown, GID_T gidChown);
 #endif /* EPI_ENABLE_LOGDIR_RUNDIR */
+int	TXopenFileUsingPrivs(const char *file, int flags, int perms);
 char    *TXproff_t ARGS((EPI_OFF_T at));
 char    *TXprkilo ARGS((char *buf, size_t bufsz, EPI_HUGEUINT sz));
 int     TXparseCEscape ARGS((TXPMBUF *pmbuf, CONST char **buf,
@@ -976,11 +989,6 @@ typedef enum TXPMF_tag
 TXPMF;
 #define TXPMFPN ((TXPMF *)NULL)
 
-/* Optional callback when process exits: */
-typedef void TXprocExitCallback ARGS((void *userData, PID_T pid,
-                                      int signalNum, int exitCode));
-#define TXprocExitCallbackPN        ((TXprocExitCallback *)NULL)
-
 int     TXinitChildProcessManagement(void);
 int     TXsetInProcessWait(int on);
 int     TXaddproc ARGS((PID_T pid, char *desc, char *cmd, TXPMF flags,
@@ -1009,8 +1017,9 @@ char    *TXgetentropypipe ARGS((void));
 int     TXsetentropypipe ARGS((CONST char *pipe));
 
 #ifdef _WIN32
-int     TXgetfileinfo ARGS((char *filename, LPDWORD ownsize, char *owner,
-                            LPDWORD grpsize, char *group));
+char 	*TXsidToString(TXPMBUF *pmbuf, SID *sid);
+TXbool	TXgetfileinfo(TXPMBUF *pmbuf, const char *filename, char **ownerSid,
+		      char **ownerName, char **groupSid, char **groupName);
 char    **queryregistry ARGS((TXPMBUF *pmbuf, char *key, char *subkey,
                   char *value, char *defaultvalue, size_t expectedsize));
 #  ifdef _INC_EXCPT             /* <excpt.h> included alreadu */
@@ -1058,10 +1067,10 @@ size_t   TXlib_getaddrs(TXLIB *lib, TXPMBUF *pmbuf, const char * const *names,
 
 #define TXEVENTPN       ((TXEVENT *)NULL)
 
-TXEVENT *opentxevent(int manualReset);
+TXEVENT *opentxevent(TXPMBUF *pmbuf, TXbool manualReset);
 TXEVENT *closetxevent ARGS((TXEVENT *event));
-int TXunlockwaitforevent ARGS((TXEVENT *event, TXMUTEX *mutex));
-int TXsignalevent ARGS((TXEVENT *event));
+TXbool TXunlockwaitforevent(TXPMBUF *pmbuf, TXEVENT *event, TXMUTEX *mutex);
+TXbool TXsignalevent(TXPMBUF *pmbuf, TXEVENT *event);
 
 /* - - - - - - - - - - - - - txFhandleEvent.c: - - - - - - - - - - - - - - */
 
@@ -1077,11 +1086,12 @@ typedef TXEVENT				TXFHANDLE_EVENT;
 typedef struct TXFHANDLE_EVENT_tag	TXFHANDLE_EVENT;
 #endif /* !_WIN32 */
 
-TXFHANDLE_EVENT *TXfhandleEventOpen(void);
-TXFHANDLE_EVENT *TXfhandleEventClose(TXFHANDLE_EVENT *fEvent);
-int	         TXfhandleEventSignal(TXFHANDLE_EVENT *fEvent);
-int		 TXfhandleEventClear(TXFHANDLE_EVENT *fEvent);
-TXFHANDLE	 TXfhandleEventGetWaitableFhandle(TXFHANDLE_EVENT *fEvent);
+TXFHANDLE_EVENT *TXfhandleEventOpen(TXPMBUF *pmbuf);
+TXFHANDLE_EVENT *TXfhandleEventClose(TXPMBUF *pmbuf, TXFHANDLE_EVENT *fEvent);
+TXbool	         TXfhandleEventSignal(TXPMBUF *pmbuf, TXFHANDLE_EVENT *fEvent);
+TXbool		 TXfhandleEventClear(TXPMBUF *pmbuf, TXFHANDLE_EVENT *fEvent);
+TXFHANDLE	 TXfhandleEventGetWaitableFhandle(TXPMBUF *pmbuf,
+						  TXFHANDLE_EVENT *fEvent);
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
@@ -1173,7 +1183,8 @@ typedef enum TXPDF_tag
   TXPDF_SAVE            = (1 << 4),     /* (Unix wtf) save */
   TXPDF_QUIET           = (1 << 5),     /* do not report error messages */
   TXPDF_ANYDATARD       = (1 << 6),     /* RWO write all, return @ 1st rd */
-  TXPDF_NEWPROCESSGROUP = (1 << 7)      /* create new process group */
+  TXPDF_NEWPROCESSGROUP = (1 << 7),     /* create new process group */
+  TXPDF_SEARCHPATH      = (1 << 8)      /* search PATH for `cmd' (Unix) */
 }
 TXPDF;
 #define TXPDFPN ((TXPDF *)NULL)
@@ -1327,11 +1338,8 @@ extern const TXCODEDESC	TXwin32ErrNames[];
 #else /* !_WIN32 */
 #  define TX_OS_ERR_NAMES	TXerrnoNames
 #endif /* !_WIN32 */
-/* TXgetOsErrName() must be thread-safe and async-signal-safe: */
-#define TXgetOsErrName(err, unkName)	\
-	TXgetCodeDescription(TX_OS_ERR_NAMES, (err), (unkName))
-#define TXgetHerrnoName(err, unkName)	\
-	TXgetCodeDescription(TXh_errnoNames, (err), (unkName))
+const char *TXgetOsErrName(TXERRTYPE osErrnum, const char *unkCodeDesc);
+const char *TXgetHerrnoName(int herrnum, const char *unkCodeDesc);
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
@@ -1678,14 +1686,21 @@ double	          TXwatchPathEventGetEventTime(TXwatchPathEvent *event);
 
 extern void (*tx_fti_watchPath_closeHook)(void *obj);
 
-/* TXtraceWatchPath:
- * 0x0001  open/close
- * 0x0002  events opened
- * 0x0004  events closed
- * 0x0040  select()/Wait...() before
- * 0x0080  select()/Wait...() after
- */
-extern int      TXtraceWatchPath;
+typedef enum TXtraceWatchPath_tag
+  {
+    TXtraceWatchPath_AfterOpenClose     = 0x00001,      /* watch/event/etc. */
+    TXtraceWatchPath_AfterSelect        = 0x00002,
+    TXtraceWatchPath_AfterRead          = 0x00004,
+    TXtraceWatchPath_AfterWrite         = 0x00008,
+    /* ioctl/data TBD */
+    TXtraceWatchPath_WorkerThreadBeginEnd=0x00100,
+    TXtraceWatchPath_FullPaths          = 0x00200,
+    TXtraceWatchPath_BeforeSelect       = 0x20000,
+    TXtraceWatchPath_BeforeRead         = 0x40000,
+    TXtraceWatchPath_BeforeWrite        = 0x80000,
+  }
+  TXtraceWatchPath;
+extern TXtraceWatchPath TXtraceWatchPathValue;
 
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
@@ -1777,7 +1792,14 @@ int	TXregsetinstallpath ARGS((char *));
 extern char TXInstallPath[];
 #define TXINSTALLPATH_VAL       (TXInstallPath + 16)
 
-extern int TXinstallpathset;
+typedef enum {
+	TXInstallPathSrc_Unset = 0,
+	TXInstallPathSrc_DefaultOrPatched,
+	TXInstallPathSrc_Registry,
+	TXInstallPathSrc_CmdLineDynamic,
+}
+	TXInstallPathSrc;
+extern TXInstallPathSrc	TXinstallpathset;
 extern char *TXMonitorPath;
 extern APICP *globalcp;
 extern int TxUniqNewList;                           /* KNG 000127 */
@@ -1800,6 +1822,8 @@ extern int TXminserver;
 #endif
 extern const char TXWhitespace[];
 
+APICP *TXget_globalcp(void);
+APICP *TXreinit_globalcp(void);
 int	TXsetTexisApicpDefaults ARGS((APICP *cp, int setBuiltin,
                                       int setTexis5));
 int     TXgetMonitorRunLevel(void);
@@ -1894,7 +1918,7 @@ int	TXcalcrank ARGS((DBTBL *, PRED *, int *nrank, FLDOP *));
 int     TXpredHasOp(PRED *p, QNODE_OP op);
 int	TXtrybubble ARGS((DBTBL *, PRED *, PROJ *, FLDOP *, TBSPEC *));
 
-int	TXcompatibletypes ARGS((int, int));
+TXbool	TXcompatibletypes(FTN type1, FTN type2);
 
 int	TXcodesintersect ARGS((long, long, long, long));
 int	TXcodesintersect1 ARGS((long, long, long));
@@ -2235,7 +2259,6 @@ int TX_fldSortStringList(FLD *f);
 
 /******************************************************************/
 
-int	TXcompatibletypes ARGS((int, int));
 int	TXddicstmt ARGS((DDIC *));
 int	TXddicBeginInternalStmt(const char *fn, DDIC *ddic);
 int	TXddicEndInternalStmt(DDIC *ddic);
@@ -3335,8 +3358,9 @@ struct TXAPP
 	 * 0x00002: Report recursive locks obtained (always on)
 	 * 0x00004: Report TXlockmutex() timeouts
 	 */
-	char *blobCompressExe;
-	char *blobUncompressExe;
+	char *blobzExternalCompressExe;
+	char *blobzExternalUncompressExe;
+	size_t	blobzExternalCompressMinSize;
 
 	char	*traceLocksDatabase;		/* NULL if unset */
 	char	*traceLocksTable;		/* NULL if unset */

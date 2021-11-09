@@ -710,7 +710,7 @@ char	*argv[];
 				break;
 		}
 	}
-	globalcp = TXopenapicp();
+	TXget_globalcp();
         if (SQLAllocEnv(&henv) != SQL_SUCCESS)
                 exit(1);
         if (SQLAllocConnect(henv, &hdbc) != SQL_SUCCESS)
@@ -756,4 +756,3 @@ char	*argv[];
 }
 
 #endif
-

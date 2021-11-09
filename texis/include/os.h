@@ -353,6 +353,15 @@ typedef int     TXFHANDLE;
 #define TXFHANDLE_CREATE_PIPE_VALUE     ((TXFHANDLE)(-2))
 #define TX_NUM_STDIO_HANDLES    3
 
+/* pipe[2]() indexes: */
+typedef enum TXpipeEnd_tag
+  {
+    TXpipeEnd_Read      = 0,
+    TXpipeEnd_Write     = 1,
+    TXpipeEnd_NUM
+  }
+  TXpipeEnd;
+
 /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
 
 #ifndef byte                                           /* 8 bit value */
@@ -915,14 +924,6 @@ extern int strnicmp ARGS((CONST char *d1, CONST char *s2, size_t n));
 #     define TX_PATH_SEP_REPLACE_EXPR "."
 #     define TX_PATH_SEP_REPLACE_EXPR_LEN       1
 #     define TX_PATH_SEP_CHARS_S        PATH_SEP_S
-#  elif defined(VMS)
-#     define PATH_SEP   ':'
-#     define PATH_SEP_S ":"
-#     define TX_PATH_SEP_REX_CHAR_CLASS "[:]"
-#     define TX_PATH_SEP_REX_CHAR_CLASS_LEN     3
-#     define TX_PATH_SEP_REPLACE_EXPR ":"
-#     define TX_PATH_SEP_REPLACE_EXPR_LEN       1
-#     define TX_PATH_SEP_CHARS_S        PATH_SEP_S
 #  elif defined(macintosh)
 #     define PATH_SEP   ':'
 #     define PATH_SEP_S ":"
@@ -1003,111 +1004,6 @@ int	mac_lseek(int, off_t, int, char *, int);
 #endif
 
 /**********************************************************************/
-#ifdef MEMDEBUG
-# ifdef EPI_HAVE_UNISTD_H
-  /* KNG 20070723 OS/X <unistd.h> has getcwd() prototype; get it before
-   * macro rename below:
-   */
-#  include <unistd.h>
-# endif /* EPI_HAVE_UNISTD_H */
-# ifdef linux
-#  undef malloc
-#  undef calloc
-# endif
-#  define malloc(a)        mac_malloc(a, __FILE__, __LINE__, CHARPN)
-#  define calloc(a,b)      mac_calloc(a, b, __FILE__, __LINE__, CHARPN)
-#  define realloc(a,b)     mac_remalloc(a, b, __FILE__, __LINE__, CHARPN)
-#  define recalloc(a,b,c)  mac_recalloc(a, b, c, __FILE__, __LINE__, CHARPN)
-#  define free(a)          mac_free(a, __FILE__, __LINE__, CHARPN)
-
-#  define exit(a)          mac_exit(a)
-#  undef strdup
-#  define strdup(s)        mac_strdup((CONST char *)(s), __FILE__, __LINE__, CHARPN)
-#  define tempnam(a,b)     mac_tempnam(a, b, __FILE__, __LINE__, CHARPN)
-#  define getcwd(a,b)      mac_getcwd(a, b, __FILE__, __LINE__, CHARPN)
-#ifndef FPATH_C
-#  define fullpath(a,b,c)  mac_fullpath(a, b, c, __FILE__, __LINE__, CHARPN)
-#endif
-#  ifdef EPI_HAVE_REALPATH_ALLOC
-#    undef realpath
-#    define realpath(path, resolvedPath)        \
-  mac_realpath(path, resolvedPath, __FILE__, __LINE__, CHARPN)
-#  endif /* EPI_HAVE_REALPATH_ALLOC */
-
-#  define mac_on()         (mac_ton=1)
-#  define mac_off()        (mac_ton=0)
-#  define mac_won()        (mac_ndx=(size_t)(-1),mac_watch=1)
-#  define mac_woff()       (mac_watch=0)
-#  define mac_wptr(p)      mac_ptrwatch(p,__FILE__,__LINE__)
-#  define mac_sum(p)       mac_dosum(p,__FILE__,__LINE__)
-#  define mac_vsum()       mac_dovsum(__FILE__,__LINE__)
-#  define mac_check(f)     mac_docheck(f,__FILE__,__LINE__)
-#  define mac_ovchk()      mac_doovchk(__FILE__,__LINE__)
-#  define mac_dump()       mac_dodump(__FILE__,__LINE__)
-#  define mac_sndx(a)      (mac_ndx=(a))
-#  define mac_squiet(a)    (mac_quiet=(a))
-#  define mac_ssayunfree(a) (mac_sayunfree=(a))
-
-   extern int        FAR mac_ton;
-   extern int        FAR mac_watch;
-   extern size_t     FAR mac_ndx;
-   extern int        FAR mac_quiet;
-   extern int        FAR mac_sayunfree;
-
-   extern void       FAR mac_dosum    ARGS((void FAR *mem,CONST char FAR *fn,int ln));
-   extern void FAR * FAR mac_calloc   ARGS((uint n, uint size, CONST char FAR *fn, int ln, CONST char *memo));
-   extern void FAR * FAR mac_malloc   ARGS((uint n, CONST char FAR *fn, int ln, CONST char *memo));
-   extern void FAR * FAR mac_remalloc ARGS((void FAR *mem, uint size, CONST char FAR *fn, int ln, CONST char *memo));
-   extern void FAR * FAR mac_recalloc ARGS((void FAR *mem, uint n, uint size, CONST char FAR *fn, int ln, CONST char *memo));
-   extern void FAR * FAR mac_free     ARGS((void FAR *mem, CONST char FAR *fn, int ln, CONST char *memo));
-   extern void       FAR mac_exit     ARGS((int n));
-   extern char FAR * FAR mac_strdup   ARGS((CONST char FAR *s, CONST char FAR *fn, int ln, CONST char *memo));
-   extern char FAR * FAR mac_tempnam  ARGS((CONST char FAR *dir, CONST char FAR *pfx, CONST char FAR *fn, int ln, CONST char *memo));
-   extern char FAR * FAR mac_getcwd   ARGS((char FAR *buf, int len, CONST char FAR *fn, int ln, CONST char *memo));
-   extern char FAR * FAR mac_fullpath ARGS((char FAR *buf, char FAR *fname, int blen, CONST char FAR *fn, int ln, CONST char *memo));
-   extern void       FAR mac_docheck  ARGS((int fre,CONST char *fn,int ln));
-   extern void       FAR mac_doovchk  ARGS((CONST char *fn,int ln));
-   extern void       FAR mac_ptrwatch ARGS((void *mem,CONST char *fn,int ln));
-   extern void       FAR mac_dodump   ARGS((CONST char *fn,int ln));
-#  ifdef EPI_HAVE_REALPATH_ALLOC
-  extern char FAR * FAR mac_realpath   ARGS((CONST char FAR *path, char *resolvedPath, CONST char FAR *fn, int ln, CONST char *memo));
-#  endif /* EPI_HAVE_REALPATH_ALLOC */
-  extern size_t TXmemGetCurrentAllocedBytes ARGS((void));
-#else                                                   /* ! MEMDEBUG */
-#  define mac_on()
-#  define mac_off()
-#  define mac_won()
-#  define mac_woff()
-#  define mac_wptr(a)
-#  define mac_sum(a)
-#  define mac_vsum()
-#  define mac_check(a)
-#  define mac_ovchk()
-#  define mac_dump()
-#  define mac_sndx(a)
-#  define mac_squiet(a)
-#  define mac_ssayunfree(a)
-
-#  define malloc(a)        epi_malloc(a)
-#  define calloc(a,b)      epi_calloc(a,b)
-#  define realloc(a,b)     epi_remalloc(a,b)
-#  define recalloc(a,b,c)  epi_recalloc(a,b,c)
-#  define free(a)          epi_free(a)
-#  define exit(a)          epi_exit(a)
-#  undef strdup
-#  define strdup(a)        epi_strdup(a)
-#  define tempnam(a,b)     epi_tempnam(a,b)
-#  define getcwd(a,b)      epi_getcwd(a,b)
-#ifndef FPATH_C
-#  define fullpath(a,b,c)  epi_fullpath(a,b,c)
-#endif
-
-   extern void FAR * FAR epi_malloc   ARGS((uint));
-   extern void FAR * FAR epi_calloc   ARGS((uint,uint));
-   extern void FAR * FAR epi_remalloc ARGS((void FAR *,uint));
-   extern void FAR * FAR epi_recalloc ARGS((void FAR *,uint,uint));
-   extern void FAR * FAR epi_free     ARGS((void FAR *));
-#endif                                                    /* !MEMDEBUG */
 
 extern void       FAR epi_exit     ARGS((int rc));
 extern char FAR * FAR epi_strdup   ARGS((char FAR *));

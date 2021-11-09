@@ -33,7 +33,7 @@ tryagain:
 	if (!var1)
 	{
 		if (n1 < na)
-			return FOP_ENOMEM;
+			return FOP_ERANGE;	/* does not fit */
 		else
 			na = n1;
 	}

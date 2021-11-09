@@ -217,10 +217,7 @@ WTIX *ix;
 	}
 	if (!cp)
 	{
-		if (!globalcp)
-		{
-			globalcp = TXopenapicp();
-		}
+		TXget_globalcp();
 		cp = dupapicp(globalcp);
 	}
 	if (!cp)
@@ -932,10 +929,7 @@ TXindOpts	*options;	/* (in) parameters/options */
 	A3DBI	*dbi = NULL;
 	TXfdbiIndOpts	fdbiOptions;
 
-	if(!globalcp)
-	{
-		globalcp=TXopenapicp();
-	}
+	TXget_globalcp();
 	if ((ind = (TXMKIND *) TXcalloc(TXPMBUFPN, Fn, 1, sizeof(TXMKIND))) == TXMKINDPN)
 		goto err;
 	ind->itype = itype;
@@ -1988,8 +1982,7 @@ TXindOpts	*options;	/* (in/out) options, opt. w/`WITH ...' */
 				if (!strcmp(indexTables[i], table)
 				    && !strcmp(indexFields[i], field))
 				{
-					if (updindex(ddic, indname, 0,
-						     options) == 0)
+					if (updindex(ddic, indname, 0, options, NULL) == 0)
 						rc = 0;	/* success */
 				}
 				else

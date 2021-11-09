@@ -212,9 +212,7 @@ char *name;
 		{
 			DD *dd = opennewdd(1);
 
-			dummy =
-				createdbtbl(ddic, dd, NULL, "SYSDUMMY", "",
-					    'T');
+			dummy =	createdbtbl(ddic, dd, NULL, "SYSDUMMY", "", 'T');
 			putdbtblrow(dummy, NULL);
 			closedd(dd);
 		}

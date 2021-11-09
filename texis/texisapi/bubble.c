@@ -859,7 +859,7 @@ letsgo:
 				(prefix1 = (char *)TXmalloc(TXPMBUFPN, Fn, szq + 5)) == CHARPN)
 				goto fopmatbad;
 			  }
-			if (globalcp == APICPPN) globalcp = TXopenapicp();
+			TXget_globalcp();
 			rc = sregprefix(s, prefix, szq+5, &sz,
 			    (TXCFF_GET_CASESTYLE(globalcp->stringcomparemode)
 				== TXCFF_CASESTYLE_IGNORE) ? 1 : 0);

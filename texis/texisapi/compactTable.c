@@ -1738,7 +1738,7 @@ TXcompactTable(DDIC *ddic, QUERY *q, int overwrite)
   TXclosecacheindex(ddic, ct->tableName);       /* avoid potential Bug 7015 */
   closeindexes(ct->dbtbl);                      /* avoid Bug 7015 */
   for (i = 0; i < numFdbiIndexNames; i++)       /* each Metamorph index */
-    if (updindex(ddic, fdbiIndexNames[i], 0, options) != 0)
+    if (updindex(ddic, fdbiIndexNames[i], 0, options, NULL) != 0)
       goto err;
   options = TXindOptsClose(options);
   fdbiIndexNames = TXfreeStrList(fdbiIndexNames, numFdbiIndexNames);

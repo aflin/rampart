@@ -159,8 +159,9 @@ TXjsonPath(json_t *j, char *path, char **unfoundpath)
             {
                e++;
                switch(*e){
-                  case '\0':
                   case '\"':
+                     e++;
+                  case '\0':
                      endofkey = 1;
                      break;
                   default:
@@ -169,7 +170,6 @@ TXjsonPath(json_t *j, char *path, char **unfoundpath)
             }
             key = TXcalloc(TXPMBUFPN, __FUNCTION__, keylen+1, sizeof(char));
             strncpy(key, path+2, keylen);
-            TXfree(key);
          }
          else
          {
@@ -197,15 +197,15 @@ TXjsonPath(json_t *j, char *path, char **unfoundpath)
             }
             key = TXcalloc(TXPMBUFPN, __FUNCTION__, keylen+1, sizeof(char));
             strncpy(key, path+1, keylen);
-            next_j = json_object_get(j, key);
-            key = TXfree(key);
-            if(next_j) {
-               return TXjsonPath(next_j, e, unfoundpath);
-            }
-            else {
-               if(unfoundpath) *unfoundpath = path;
-               return NULL;
-            }
+         }
+         next_j = json_object_get(j, key);
+         key = TXfree(key);
+         if(next_j) {
+            return TXjsonPath(next_j, e, unfoundpath);
+         }
+         else {
+            if(unfoundpath) *unfoundpath = path;
+            return NULL;
          }
       case '[':
          p = path+1;
@@ -998,34 +998,44 @@ static int
 parsejsonfmt(char *prop)
 {
   size_t indent = 1; /* Default Indent Level if INDENT specified with no value */
-  char *flag, *lflag = NULL;
+  char *flag, *lprop = NULL;
+#ifdef _WIN32
+  /* Windows has no strtok_r().  MSDN docs say MS strtok() uses
+   * thread-local storage, so ok to use?
+   */
+#  define STRTOK(a, b)  strtok(a, b)
+#else /* !_WIN32 */
+  char  *saveptr = NULL;
+#  define STRTOK(a, b)  strtok_r(a, b, &saveptr)
+#endif /* !_WIN32 */
   int TXjsonFlags;
 
-  flag = strtok(prop, " ,");
+/* Dup and lower first.  Lets strtok write to string, and no repeated dups */
+  lprop = TXstrdup(NULL, __FUNCTION__, prop);
+  if(!lprop) return -1;
+  strlwr(lprop);
+  flag = STRTOK(lprop, " ,");
   TXjsonFlags = 0; /* Start with no flags, add flags */
   while (flag)
   {
-     lflag = TXstrdup(NULL, __FUNCTION__, flag);
-     if(!lflag) return -1;
-     strlwr(lflag);
-          if(!strcmp(lflag, "compact")) TXjsonFlags |= JSON_COMPACT;
-     else if(!strcmp(lflag, "ensure_ascii")) TXjsonFlags |= JSON_ENSURE_ASCII;
-     else if(!strcmp(lflag, "sort_keys")) TXjsonFlags |= JSON_SORT_KEYS;
-     else if(!strcmp(lflag, "preserve_order")) TXjsonFlags |= JSON_PRESERVE_ORDER; /* Deprecated/default */
-     else if(!strcmp(lflag, "encode_any")) TXjsonFlags |= JSON_ENCODE_ANY;
-     else if(!strcmp(lflag, "escape_slash")) TXjsonFlags |= JSON_ESCAPE_SLASH;
-     else if(!strcmp(lflag, "embed")) TXjsonFlags |= JSON_EMBED;
-     else if(!strcmp(lflag, "indent")) TXjsonFlags |= JSON_INDENT(indent);
-     else if(!strncmp(lflag, "indent(", 7))
+          if(!strcmp(flag, "compact")) TXjsonFlags |= JSON_COMPACT;
+     else if(!strcmp(flag, "ensure_ascii")) TXjsonFlags |= JSON_ENSURE_ASCII;
+     else if(!strcmp(flag, "sort_keys")) TXjsonFlags |= JSON_SORT_KEYS;
+     else if(!strcmp(flag, "preserve_order")) TXjsonFlags |= JSON_PRESERVE_ORDER; /* Deprecated/default */
+     else if(!strcmp(flag, "encode_any")) TXjsonFlags |= JSON_ENCODE_ANY;
+     else if(!strcmp(flag, "escape_slash")) TXjsonFlags |= JSON_ESCAPE_SLASH;
+     else if(!strcmp(flag, "embed")) TXjsonFlags |= JSON_EMBED;
+     else if(!strcmp(flag, "indent")) TXjsonFlags |= JSON_INDENT(indent);
+     else if(!strncmp(flag, "indent(", 7))
           {
-              indent = strtol(lflag+7,NULL, 10);
+              indent = strtol(flag+7,NULL, 10);
               TXjsonFlags |= JSON_INDENT(indent);
           }
-
-     lflag = TXfree(lflag);
-     flag = strtok(NULL, " ,");
+     flag = STRTOK(NULL, " ,");
   }
+  TXfree(lprop);
   return TXjsonFlags;
+#undef STRTOK
 }
 
 /*************************************************************************/

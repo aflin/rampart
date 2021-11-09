@@ -38,7 +38,7 @@ static CONST char	NullFtInternal[] = "NULL";
 
 static char	*TXtransexp ARGS((CONST char *, int));
 
-static char *TXtransexp(expr, mode)  
+static char *TXtransexp(expr, mode)
 CONST char	*expr;
 int	mode;
 {
@@ -52,7 +52,7 @@ int	mode;
 #endif
 	char	mce, sce, ignorecase;
 
-	if (globalcp == APICPPN) globalcp = TXopenapicp();
+	TXget_globalcp();
 	ignorecase = (TXCFF_GET_CASESTYLE(globalcp->stringcomparemode) ==
 		      TXCFF_CASESTYLE_IGNORE);
 

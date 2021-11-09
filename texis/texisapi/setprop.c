@@ -16,9 +16,7 @@
 #include "merge.h"
 #include "cgi.h"
 
-#define CHKCP()	if(!globalcp) {globalcp=TXopenapicp();}
-#define TXglobalcpchanged() if(TXApp->fmtcp) {TXApp->fmtcp->apicp = globalcp; }
-
+#define CHKCP()	TXget_globalcp()
 /******************************************************************/
 
 extern int TXexttrig;
@@ -761,21 +759,15 @@ char	*value;
 			/* We are in a Texis function, so `defaults'
 			 * means Texis defaults:
 			 */
-			globalcp = closeapicp(globalcp);
-      TXglobalcpchanged();
-			if ((globalcp = TXopenapicp()) == APICPPN)
+			if ((globalcp = TXreinit_globalcp()) == APICPPN)
 				return(-1);
-      TXglobalcpchanged();
 			return(0);		/* success */
 		}
 		else if (n == API3_QUERYSETTINGS_TEXIS5DEFAULTS ||
 			 strcmpi(value, "texis5defaults") == 0)
 		{
-			globalcp = closeapicp(globalcp);
-      TXglobalcpchanged();
-		  if ((globalcp = openapicp()) == APICPPN)
+			if ((globalcp = TXreinit_globalcp()) == APICPPN)
 				return(-1);
-      TXglobalcpchanged();
 			if (!TXsetTexisApicpDefaults(globalcp, 0, 1))
 				return(-1);
 			return(0);		/* success */
@@ -2016,6 +2008,9 @@ DDIC *ddic;
 {
 	int	ret = 0;
 
+  /* Reset Global CP */
+  
+  TXreinit_globalcp();
 	/* Index expressions */
 	TXresetexpressions();
 

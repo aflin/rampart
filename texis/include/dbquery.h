@@ -477,7 +477,7 @@ MMLST	*getmmlst ARGS((HSTMT));
 /******************************************************************/
 /*	QNODE represents the query in an unprepared state.        */
 
-#define QTOKEN int
+#define QTOKEN QNODE_OP
 QNODE	*openqnode ARGS((QNODE_OP op));
 QNODE	*closeqnode ARGS((QNODE *));
 PRED	*treetopred ARGS((DDIC *, QNODE *, int, FLDOP *));
@@ -613,8 +613,7 @@ typedef struct TXindOpts_tag    TXindOpts;
 int	createindex ARGS((DDIC *ddic, char *idxfile, char *indname,
                           char *table, char *field, int unique, int itype,
                           TXindOpts *options));
-int	TXalterIndexes ARGS((DDIC *ddic, CONST char *indexName,
-			  CONST char *tableName, CONST char *actionOptions));
+int	TXalterIndexes (DDIC *ddic, CONST char *indexName, CONST char *tableName, CONST char *actionOptions, PRED *conditions);
 
 /******************************************************************/
 
@@ -635,8 +634,7 @@ extern CONST char TXxPidExt[TXxPidExtLen + 1];
 int     tx_updateparamtbl ARGS((char *path, int indexType,
                                 CONST TXMMPARAMTBLINFO *paramTblInfo,
                                 int fdbiVersion));
-int	updindex ARGS((DDIC *ddic, char *indname, int flags,
-                       TXindOpts *options));
+int	updindex (DDIC *ddic, char *indname, int flags, TXindOpts *option, PRED *conditions);
 int TXcreateTempIndexOrTableEntry ARGS((DDIC *ddic, CONST char *dir,
     CONST char *logicalName, CONST char *parentTblName,
     CONST char *indexFldNames, int numTblFlds, int flags,
