@@ -41,6 +41,20 @@ var iam = trim(exec('whoami').stdout);
 if(serverConf.bindPort < 1024 && iam != "root")
     throw("Error: script must be started as root to bind to port " + port);
 
+/* check for /logs dir */
+
+var ldir = stat(process.scriptPath + "/logs");
+
+// doesnt exist
+if (!ldir) {
+    printf("Log folder/directory does not exist, creating \"" + process.scriptPath + "/logs\"\n");
+    mkdir(process.scriptPath + "/logs");
+// isn't a directory
+} else if (!ldir.isDirectory) {
+    fprintf(stderr, process.scriptPath + "/logs must be a directory\n");
+    process.exit(1);
+}
+
 /*** CUSTOM 404 PAGE ***/
 function notfound(req){
     return {
