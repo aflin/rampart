@@ -122,7 +122,6 @@ static void
 convertCSVItem(CSVITEM *item,enum CSVitemType toType)
 {
    time_t T;
-   
    if(item->type==toType)     // nothing needs to be done
       return;
       
@@ -180,13 +179,27 @@ normalizeCSVColumn(CSV *csv,int columnN,int startRow)
   int i;
   int max=0;
   enum CSVitemType maxtype=nil;
-  
+  int stagen= 2*columnN +2; // --ajf 12/30/2021
+
    for(i=0;i<NCSVITEMTYPES;i++)        // zero out counters
       typeCount[i]=0;
    
-   for(i=startRow;i<csv->rows;i++)
-      typeCount[csv->item[i][columnN].type]+=1;
-   
+   if(csv->cb)  // --ajf 12/30/2021
+   {
+       for(i=startRow;i<csv->rows;i++)
+       {
+          typeCount[csv->item[i][columnN].type]+=1;
+          if(i % csv->cb_step == csv->step_mod )
+             csv->cb(stagen,i,csv);
+       }
+       stagen++;
+   }
+   else
+   {
+      for(i=startRow;i<csv->rows;i++)
+         typeCount[csv->item[i][columnN].type]+=1;
+   }
+
    for(i=0;i<NCSVITEMTYPES;i++)
       if(typeCount[i]>max)
       {
@@ -201,9 +214,20 @@ normalizeCSVColumn(CSV *csv,int columnN,int startRow)
    && typeCount[floatingPoint]>0
    ) maxtype=floatingPoint;
    
-   for(i=startRow;i<csv->rows;i++)
-      convertCSVItem(&csv->item[i][columnN],maxtype);
-      
+   if(csv->cb)  // --ajf 12/30/2021
+   {
+      for(i=startRow;i<csv->rows;i++)
+      {
+         convertCSVItem(&csv->item[i][columnN],maxtype);
+         if(i % csv->cb_step == csv->step_mod )
+             csv->cb(stagen,i,csv);
+      }
+   }
+   else
+   {
+      for(i=startRow;i<csv->rows;i++)
+         convertCSVItem(&csv->item[i][columnN],maxtype);
+   }
 }
 
 
@@ -332,8 +356,8 @@ seekNextDelimiter(CSV *csv,byte *s)
             goto ignore;
          
          
-         if((lastChar=='"' || *(s+1)=='"') && csv->doubleQuoteEscape)
-            goto ignore;
+//         if((lastChar=='"' || *(s+1)=='"') && csv->doubleQuoteEscape)
+//            goto ignore;
       
          if(lastChar=='\\' && csv->backslashEscape)
             goto ignore;
@@ -351,8 +375,10 @@ seekNextDelimiter(CSV *csv,byte *s)
       else if(*s=='\n')
       {
          if(inSingleQuote || inDoubleQuote)
+         {
+            ++csv->lines; //--ajf 12/17/2021
             goto ignore;
-         
+         }
          return(s);
       }
       ignore:
@@ -386,7 +412,7 @@ static int
 dimensionCSV(CSV *csv)
 {
   byte  *s;
-  byte  *lastS;
+  //byte  *lastS;
   int    nCells=0;
   int    row=0;
   int    col=0;
@@ -395,13 +421,15 @@ dimensionCSV(CSV *csv)
   
   csv->errorMsg[0]='\0';
   csv->rows=csv->cols=0;
-  lastS=s=csv->buf;
+  csv->lines=1; // --ajf 12/17/2021
+  //lastS=
+  s=csv->buf;
   
    while((s=seekNextDelimiter(csv,s))!=NULL)
    {
       ++nCells;
       ++col;
-      if(*s=='\n')
+      if(*s=='\n' || *s == '\0') //-ajf
       {
          if(!csv->rows)       // first row determines how many columns there are
             csv->cols=nCells;
@@ -409,20 +437,31 @@ dimensionCSV(CSV *csv)
          {
             if(col!=csv->cols)
             {
-              snprintf(csv->errorMsg,MAXCSVERRORMSG,"line: %d has %d columns, expected %d",csv->rows+1,col,csv->cols);
+              snprintf(csv->errorMsg,MAXCSVERRORMSG,"line %d: record %d has %d columns, expected %d",csv->lines,csv->rows+1,col,csv->cols); // -ajf - added ->lines 12/23/2021
               return(0);
             }
          }
+
+         if(csv->cb && csv->rows%csv->cb_step == csv->step_mod ) // -ajf 12/30/2021
+            csv->cb(0,csv->rows,csv);
+
          ++csv->rows;
+         ++csv->lines; // -ajf 12/17/2021
+
          col=0;
       }
-      lastS=s;
+      //lastS=s;
       ++s;
+      //printf("%d: '%.*s'\n",nCells, (int)(s-lastS),lastS);
    }
   
-   if(*lastS!='\n')           // in the event that the last line (row) did not have a \n
-      ++csv->rows;
-   
+
+//   if(csv->cb && csv->rows%csv->cb_step == 0 ) // -ajf 12/29/2021
+//      csv->cb(0,csv);
+
+//   if(*lastS!='\n' && *lastS!='\0')           // in the event that the last line (row) did not have a \n
+//      ++csv->rows;
+
    if(!csv->cols)             // if there was only one row the number of cols needs to be set
       csv->cols=nCells;
    
@@ -430,11 +469,14 @@ dimensionCSV(CSV *csv)
    if( (csv->item=calloc(csv->rows,sizeof(CSVITEM *)))==NULL
    ||  (itemP=calloc(nCells,sizeof(CSVITEM)))==NULL
    )
+   {
+      snprintf(csv->errorMsg,MAXCSVERRORMSG,"out of memory"); // -ajf 12/29/2021
       return(0);
-   
+   }
+
    for(row=0;row<csv->rows;row++,itemP+=csv->cols)  // init the matrix pointers
       csv->item[row]=itemP;
-   
+
    return(1);
 }
 
@@ -630,7 +672,7 @@ normalizeNumerics(CSV *csv,byte *s,byte *p,int maxLen)
    }
    *p='\0';
 }
-
+/*
 static byte *
 collapseEscapements(CSV *csv,byte *s)
 {
@@ -683,8 +725,65 @@ collapseEscapements(CSV *csv,byte *s)
    }
   return(p);
 }
-
-
+*/
+static byte *
+collapseEscapements(CSV *csv,byte *s)
+{
+   int   inSingleQuote  =0;   // where we're inside ' 's
+   int   inDoubleQuote  =0;   // where we're insde " "s
+   int   doubleQuoteEsc =0;   // where two "s mean ignore the "s eg : "A""B" becomes A"B
+   byte  *p=s;
+   byte  *t=s;
+   
+   for(;*s;++s,++t)
+   {
+      if(*t=='\\')
+      {
+         byte translated=isBackslashEscape(csv,*(t+1));   // is it a legitimate \ escapement?
+        
+         if(translated)
+         {
+            ++t;
+            *s=translated;
+         }
+         else *s=*t;
+      }
+      else
+      if(*t=='"')
+      {
+         if(!inSingleQuote)                     // if we're in single quotes we ignore all the double quotes
+         {
+            if(doubleQuoteEsc)
+            {
+                  doubleQuoteEsc=0;
+                   *s=*(++t);
+            }
+            else
+            {
+               *s=*(++t);
+               
+               if(*t=='"' && csv->doubleQuoteEscape) // this is the case where "" means a single "
+               {
+                  doubleQuoteEsc=1;
+                  continue;
+               }
+               inDoubleQuote=inDoubleQuote ? 0:1;  // toggle the quote state
+               continue;
+            }
+         }
+      }
+      else
+      if(*t=='\'' && csv->singleQuoteNest && !inDoubleQuote)
+      {
+         *s=*(++t);
+         inSingleQuote=inSingleQuote ? 0:1;
+      }
+      else
+         *s=*t;
+   }
+  *s='\0';
+  return(p);
+}
 
 /*
 * Tries to determine the type of a CSV cell and then inits the CSVITEM with that
@@ -704,7 +803,7 @@ parseCSVItem(CSV *csv,CSVITEM *item,byte *s)
    
    item->string=s;      // we're defaulting to string
    item->type=string;
-      
+
    if(!*s)
    {
       item->type=nil;
@@ -755,6 +854,7 @@ parseCSVItem(CSV *csv,CSVITEM *item,byte *s)
    
    if(item->type==string && !csv->tryParsingStrings)
       item->string=collapseEscapements(csv,item->string);
+
 }
 
 /*
@@ -767,11 +867,14 @@ parseCSV(CSV *csv)
    byte *s;
    byte *endOfS;
    CSVITEM *itemP=NULL;
-   
+   int item_count=0, row_count=0;   // --ajf - 12/30/2021
+
    // the two options are mutually exclusive, so silently change the delimeter
    if(csv->europeanDecimal && csv->delimiter==',')
       csv->delimiter=';';
    
+   if(csv->cb_step<1) csv->cb_step=1; //sanity check --ajf 12/29/2021
+
    if(!dimensionCSV(csv))
       return(-1);
    
@@ -790,10 +893,18 @@ parseCSV(CSV *csv)
       
       parseCSVItem(csv,itemP,s);
    
+      if(csv->cb && item_count % csv->cols == 0)
+      {
+         if(row_count % csv->cb_step == csv->step_mod )
+            csv->cb(1,row_count,csv);
+         row_count++;
+      }
       s=endOfS+1;
       ++itemP;
+      ++item_count;
+
    }
-   
+
   return(csv->rows);
 }
 

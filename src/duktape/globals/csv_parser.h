@@ -38,6 +38,7 @@ CSVITEM
    enum CSVitemType  type;
 };
 
+
 #define CSV struct csvTableStruct
 CSV
 {
@@ -59,7 +60,20 @@ CSV
    
    int      rows;                // number of rows located
    int      cols;                // number of columns located
+   int      lines;               // number of newlines regardless of quotes -ajf 12/17/2021
    
+   void     (*cb)(int, int, CSV*);
+                                 // callback during load/normalize (int stage, CSV *csv) --ajf 12/29/2021
+                                 //                                   - Stage 0: Counting rows (dimensionCSV)
+                                 //                                   - Stage 1: Parsing cells (parseCSVitem)
+                                 //                                   - Stage n: Optional normalizing (normalizeCSVColumn - scan)
+                                 //                                              n = 2 * colno +2;
+                                 //                                   - Stage p: Optional normalizing (normalizeCSVColumn - convert)
+                                 //                                              p = 2 * colno + 3;
+   unsigned int cb_step;         // mod callback --ajf 12/29/2021
+   unsigned char step_mod;       // mod match --ajf 12/30/2021
+   void     *cbarg;              // void pointer for callback --ajf 12/29/202
+
    CSVITEM **item;               // the row and column data itself e.g. item[5][3].string will access the string in row 5 column
    
    char     errorMsg[MAXCSVERRORMSG]; // where to look for what went wrong
@@ -80,6 +94,9 @@ CSV
 (csv)->tryParsingStrings  =1;    \
 (csv)->delimiter          =',';  \
 (csv)->timeFormat         = "%Y-%m-%d %H:%M:%S";\
+(csv)->cb                 = NULL; /* --ajf 12/29/2021 */\
+(csv)->cb_step            = 1; /* --ajf 12/29/2021 */\
+(csv)->step_mod           = 0; /* --ajf 12/30/2021 */\
 }
 
 
@@ -144,10 +161,13 @@ void normalizeCSVColumn(CSV *csv,int columnN,int startRow);
 
 /* csv parser */
 
+/* rampart stuff */
+#ifdef RP_H_INCLUDED
 #define DCSV struct duk_csv_s
 
 DCSV {
     CSV *csv;
+    duk_context *ctx;
     char **hnames;
     const char *tbname;
     duk_idx_t obj_idx;
@@ -155,6 +175,7 @@ DCSV {
     duk_idx_t col_idx;
     duk_idx_t func_idx;
     duk_idx_t arr_idx;
+    duk_idx_t prog_idx;
     int cbstep;
     char retType;
     char hasHeader;
@@ -164,5 +185,6 @@ DCSV {
 };
 
 DCSV duk_rp_parse_csv(duk_context *ctx, int isfile, int normalize, const char *func_name);
+#endif /* rampart stuff */
 
 #endif /* csv_parser_h */
