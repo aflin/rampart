@@ -3096,7 +3096,7 @@ static duk_ret_t send_chunk_end(duk_context *ctx)
     duk_push_pointer(ctx, (void*)NULL);\
     duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));\
     /* free server buffer for next chunk */\
-    if(dhs->auxbuf){\
+    if(dhs && dhs->auxbuf){\
         free(dhs->auxbuf);\
         dhs->bufsz = dhs->bufpos = 0;\
         dhs->auxbuf=NULL;\
@@ -3252,12 +3252,19 @@ static evhtp_res rp_chunk_callback(evhtp_connection_t * conn, void * arg)
 static evhtp_res chunk_finalize(struct evhtp_connection *conn, void * arg)
 {
     CHUNKPTR *chunkp = (CHUNKPTR *) arg;
-    DHS *dhs = chunkp->dhs;
-    evhtp_request_t *req=chunkp->dhs->req;
-    duk_context *ctx = chunkp->ctx;
+    DHS *dhs=NULL;
+    evhtp_request_t *req=NULL;
+    duk_context *ctx=NULL;
     char reqobj_tempname[24];
 
-//printf("INVALIDATING req %p\n", req);
+    if(!chunkp || !chunkp->dhs || !chunkp->ctx)
+        return EVHTP_RES_500;
+
+    dhs = chunkp->dhs;
+    ctx = chunkp->ctx;
+
+    if(chunkp->dhs)
+        req=chunkp->dhs->req;
 
     if(req)
     {
@@ -3488,7 +3495,12 @@ static void *http_dothread(void *arg)
         evhtp_connection_set_hook(req->conn, evhtp_hook_on_connection_fini, chunk_finalize, chunkp);
         /* when we disconnect */
         evhtp_connection_set_hook(req->conn, evhtp_hook_on_request_fini, chunk_finalize, chunkp);
-        evhtp_connection_set_timeouts(req->conn, NULL, &ctimeout);
+
+        if(ctimeout.tv_sec==RP_TIME_T_FOREVER)
+            evhtp_connection_set_timeouts(req->conn, NULL, NULL);
+        else
+            evhtp_connection_set_timeouts(req->conn, NULL, &ctimeout);
+
         sendresp(req, res, 1); //1 for chunked
 
         chunkp->start_time.tv_sec=0; //first run, no time keeping
@@ -5783,6 +5795,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     if(ctimeout.tv_sec != RP_TIME_T_FOREVER)
         evhtp_set_timeouts(htp, &ctimeout, &ctimeout);
+    else
+        evhtp_set_timeouts(htp, NULL, NULL);
 
     evhtp_set_pre_accept_cb(htp, pre_accept_callback, NULL);
 
