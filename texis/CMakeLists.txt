@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.13)
 project(TexisCore VERSION 8.0.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_BUILD_TYPE Debug)
 
 #set(INSTALL_SELF_CONTAINED ON CACHE BOOL "Install to a self contained directory")
 #set(INSTALL_SELF_CONTAINED ON)
