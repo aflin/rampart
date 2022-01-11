@@ -47,7 +47,7 @@ QUERY_STRUCT
     duk_idx_t arg_idx;  /* location of extra argument for callback */ 
     duk_idx_t callback; /* location of callback in ctx, or -1 */
     int skip;           /* number of results to skip */
-    int max;            /* maximum number of results to return */
+    uint64_t max;       /* maximum number of results to return */
     signed char rettype;/* 0 for return object with key as column names, 
                            1 for array
                            2 for novars                                           */
@@ -2273,9 +2273,10 @@ void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
    ************************************************** */
 int duk_rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
 {
-    int rown = 0, i = 0,
-        resmax = q->max,
+    int i       = 0,
         rettype = q->rettype;
+    uint64_t rown   = 0,
+             resmax = q->max;
     FLDLST *fl;
     TXCOUNTINFO cinfo;
 
@@ -2396,10 +2397,13 @@ int duk_rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
    ************************************************** */
 int duk_rp_fetchWCallback(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
 {
-    int rown = 0, i = 0,
-        resmax = q->max,
+    int i       = 0,
         rettype = q->rettype;
-    duk_idx_t callback_idx = q->callback, colnames_idx=0, count_idx=-1;
+    uint64_t rown   = 0,
+             resmax = q->max;
+    duk_idx_t callback_idx = q->callback,
+              colnames_idx = 0,
+              count_idx    =-1;
     FLDLST *fl;
     TXCOUNTINFO cinfo;
 
