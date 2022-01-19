@@ -4,7 +4,6 @@ project(Rampart VERSION 0.0.1 LANGUAGES C CXX)
 
 #set(CMAKE_BUILD_TYPE Debug)
 
-
 message("###### CONFIGURING DEPENDENCIES ######")
 
 include(extern/extern.cmake)
