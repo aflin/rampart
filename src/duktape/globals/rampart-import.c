@@ -40,6 +40,8 @@ static void putcol_prim(duk_context *ctx, CSVITEM item)
         case nil:
             duk_push_null(ctx);
             break;
+        default:
+            RP_THROW(ctx,"csv parse: error - uninitialized value");
     }
 }
 
@@ -120,6 +122,19 @@ CSV *openCSVstr(duk_context *ctx, duk_idx_t str_idx, int inplace)
     return(csv);
 }
 
+void progresscb(int stage, int count, CSV *csv)
+{
+    DCSV *dcsv = (DCSV*)csv->cbarg;
+    duk_context *ctx=dcsv->ctx;
+
+    duk_dup(ctx, dcsv->prog_idx);
+    duk_push_int(ctx, stage);
+    duk_push_int(ctx, count - (int)dcsv->hasHeader);
+    duk_call(ctx, 2);
+    duk_pop(ctx);
+}
+
+
 DCSV duk_rp_parse_csv(duk_context *ctx, int isfile, int normalize, const char *func_name)
 {
     const char *filename = "";
@@ -130,6 +145,7 @@ DCSV duk_rp_parse_csv(duk_context *ctx, int isfile, int normalize, const char *f
     int col=0;
 
     dcsv.csv=NULL;
+    dcsv.ctx=ctx;
     dcsv.hnames=NULL;
     dcsv.tbname="";
     dcsv.obj_idx=-1;
@@ -137,6 +153,7 @@ DCSV duk_rp_parse_csv(duk_context *ctx, int isfile, int normalize, const char *f
     dcsv.arr_idx=-1;
     dcsv.col_idx=-1;
     dcsv.func_idx=-1;
+    dcsv.prog_idx=-1;
     dcsv.retType=0;
     dcsv.hasHeader=0;
     dcsv.inplace=0;        
@@ -194,7 +211,7 @@ DCSV duk_rp_parse_csv(duk_context *ctx, int isfile, int normalize, const char *f
         {
             dcsv.cbstep=REQUIRE_INT(ctx, -1, "%s(): option cbstep requires an Integer greater than 0", func_name);
             if (dcsv.cbstep<1)
-                RP_THROW(ctx, "%s(): option cbstep requires an Integer greater than 0", func_name);
+                RP_THROW(ctx, "%s(): option callbackStep requires an Integer greater than 0", func_name);
         }
         duk_pop(ctx);
 
@@ -203,15 +220,18 @@ DCSV duk_rp_parse_csv(duk_context *ctx, int isfile, int normalize, const char *f
                 dcsv.include_rawstring=1;
         duk_pop(ctx);
 
-        /* not working.  csv_parse requires a null terminated string
-        if (duk_get_prop_string(ctx, obj_idx, "bufferInPlace") )
+        if (duk_get_prop_string(ctx, obj_idx, "progressFunc") )
         {
-            if(duk_is_buffer_data(ctx, str_idx))
-                inplace=1;
+            if(duk_is_function(ctx, -1))
+                dcsv.prog_idx=duk_get_top_index(ctx); //no pop, leave on stack.
+            else
+                RP_THROW(ctx, "%s(): progressFunc must be a function", func_name);
         }
-        duk_pop(ctx);
-        */
+        else /* keep copy pulled from object if the function exists */
+            duk_pop(ctx);
+
     }
+
     if (dcsv.str_idx>-1)
     {
         if (isfile)
@@ -233,6 +253,13 @@ DCSV duk_rp_parse_csv(duk_context *ctx, int isfile, int normalize, const char *f
     if(csv==NULL)
     {
         RP_THROW(ctx, "%s: error - %s - %s", func_name, filename, strerror(csvErrNo));
+    }
+
+    if(dcsv.prog_idx>-1)
+    {
+        csv->cbarg=&dcsv; //dcsv is used in the callback which is called in parseCSV and normalizeCSV in this function
+        csv->cb=progresscb; // the c callback that executes the js callback.
+        csv->step_mod=dcsv.hasHeader; //trigger step on i % count == 1 if it has a header row
     }
 
 #define closecsv do {\
@@ -292,12 +319,21 @@ duk_pop(ctx);\
             csv->timeFormat = (char *)duk_get_string(ctx, -1);
         }
         duk_pop(ctx);
+
+        if (duk_get_prop_string(ctx, obj_idx, "progressStep") )
+        {
+            csv->cb_step=REQUIRE_INT(ctx, -1, "%s(): option progressStep requires an Integer greater than 0", func_name);
+            if (dcsv.cbstep<1)
+                RP_THROW(ctx, "%s(): option progressStep requires an Integer greater than 0", func_name);
+        }
+        duk_pop(ctx);
     }
 
     if(parseCSV(csv)<0)      // now actually parse the file
     {
         closeCSV(dcsv.csv);
-        RP_THROW(ctx, "%s(): parse error: %s\n", func_name, csv->errorMsg);
+        RP_THROW(ctx, "%s(): parse error on line %d: %s\n", func_name, csv->lines, csv->errorMsg);
+        //RP_THROW(ctx, "%s(): parse error: %s\n", func_name, csv->errorMsg);
     }
 
     if(normalize)
@@ -415,6 +451,7 @@ duk_ret_t duk_rp_import_csv(duk_context *ctx, int isfile)
     /* return an array of arrays or return array as first param to callback*/
     {
         if(dcsv.hasHeader) start=1;
+
         for(row=start;row<csv->rows;row++)      // iterate through the CSVITEMS contained in each row and column
         {
             if(dcsv.func_idx > -1)
