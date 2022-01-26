@@ -2373,10 +2373,10 @@ int duk_rp_fetch(duk_context *ctx, DB_HANDLE *h, QUERY_STRUCT *q)
             duk_put_prop_index(ctx, -2, rown++);
         }
     }
-    /* added "rows", "results" to be removed */
+    /* added "rows", "results" to be removed 
     duk_dup(ctx, -1);
     duk_put_prop_string(ctx,-3,"results");
-
+    */
     duk_put_prop_string(ctx,-2,"rows");
     if(q->getCounts)
     {
