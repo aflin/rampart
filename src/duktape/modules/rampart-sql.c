@@ -47,7 +47,7 @@ QUERY_STRUCT
     duk_idx_t arg_idx;  /* location of extra argument for callback */ 
     duk_idx_t callback; /* location of callback in ctx, or -1 */
     int skip;           /* number of results to skip */
-    uint64_t max;       /* maximum number of results to return */
+    int64_t max;        /* maximum number of results to return */
     signed char rettype;/* 0 for return object with key as column names, 
                            1 for array
                            2 for novars                                           */
@@ -1952,7 +1952,7 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
         q->max = selectmax;
 
     if (q->max < 0)
-        q->max = INT_MAX;
+        q->max = INT64_MAX;
 
     if (q->skip < 0)
         q->skip = 0;
