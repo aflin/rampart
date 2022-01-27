@@ -471,7 +471,9 @@ static int repl(duk_context *ctx)
         duk_push_string(ctx, line);
 
         if(multiline){
-            duk_concat(ctx,2);  //combine with last line if last loop set multiline=1
+            duk_push_string(ctx,"\n");
+            duk_pull(ctx, -2);
+            duk_concat(ctx,3);  //combine with last line if last loop set multiline=1
             char *newline = (char *)duk_get_string(ctx, -1);
             char *tickline = tickify(newline, strlen(newline), &err, &ln);
             if(tickline)
