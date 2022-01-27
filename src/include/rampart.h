@@ -396,6 +396,7 @@ void setproctitle(const char *fmt, ...);
 #endif
 
 //clock_gettime for macos < sierra
+#ifdef __APPLE__
 #ifndef CLOCK_MONOTONIC
 #include <mach/mach.h>
 #include <mach/clock.h>
@@ -406,7 +407,7 @@ void setproctitle(const char *fmt, ...);
 typedef int clockid_t;
 int clock_gettime(clockid_t type, struct timespec *rettime);
 #endif //CLOCK_MONOTONIC
-
+#endif //__APPLE__
 
 #if defined(__cplusplus)
 }
