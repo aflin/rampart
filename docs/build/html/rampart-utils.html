@@ -340,7 +340,9 @@ Remove all leading white space from each line and don’t wrap lines.</p></li>
  <span class="s2">&quot;&lt;/html&gt;\n&quot;</span><span class="p">;</span>
 
  <span class="cm">/* remove leading white space */</span>
- <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%!-.1000P&quot;</span><span class="p">,</span> <span class="nx">html</span><span class="p">);</span>
+ <span class="cm">/* rampart.utils.printf(&quot;%!-.1000P&quot;, html); */</span>
+ <span class="cm">/* or more simply as */</span>
+ <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%w&quot;</span><span class="p">,</span> <span class="nx">html</span><span class="p">);</span>
 
  <span class="cm">/* expected output</span>
 <span class="cm"> &lt;html&gt;</span>
@@ -465,20 +467,20 @@ string in an HTTP request.</p>
 </pre></div>
 </div>
 <p>Where <code class="docutils literal notranslate"><span class="pre">kvObj</span></code> is an <span class="green">Object</span> containing the key/value pairs and <code class="docutils literal notranslate"><span class="pre">arrayOpt</span></code>
-controls how <span class="green">Array</span> values are treated, and is
+controls how <span class="green">Array</span> values are treated. A <span class="green">String</span>,
 one of the following:</p>
 <blockquote>
 <div><ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">repeat</span></code> - default value if not specified.  Repeat the key in the
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;repeat&quot;</span></code> - default value if not specified.  Repeat the key in the
 query string with each value from the array.  Example:
 <code class="docutils literal notranslate"><span class="pre">{key1:</span> <span class="pre">[&quot;val1&quot;,</span> <span class="pre">&quot;val2&quot;]}</span></code> becomes <code class="docutils literal notranslate"><span class="pre">key1=val1&amp;key1=val2</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">bracket</span></code> - similar to repeat, except url encoded <code class="docutils literal notranslate"><span class="pre">[]</span></code> is appended
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;bracket&quot;</span></code> - similar to repeat, except url encoded <code class="docutils literal notranslate"><span class="pre">[]</span></code> is appended
 to the keys.  Example: <code class="docutils literal notranslate"><span class="pre">{key1:</span> <span class="pre">[&quot;val1&quot;,</span> <span class="pre">&quot;val2&quot;]}</span></code> becomes
 <code class="docutils literal notranslate"><span class="pre">key1%5B%5D=val1&amp;key1%5B%5D=val2</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">comma</span></code> - One key with corresponding values separated by a <code class="docutils literal notranslate"><span class="pre">,</span></code>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;comma&quot;</span></code> - One key with corresponding values separated by a <code class="docutils literal notranslate"><span class="pre">,</span></code>
 (comma).  Example: <code class="docutils literal notranslate"><span class="pre">{key1:</span> <span class="pre">[&quot;val1&quot;,</span> <span class="pre">&quot;val2&quot;]}</span></code> becomes
 <code class="docutils literal notranslate"><span class="pre">key1=val1,val2</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">json</span></code> - encode array as JSON.  Example:
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;json&quot;</span></code> - encode array as JSON.  Example:
 <code class="docutils literal notranslate"><span class="pre">{key1:</span> <span class="pre">[&quot;val1&quot;,</span> <span class="pre">&quot;val2&quot;]}</span></code> becomes
 <code class="docutils literal notranslate"><span class="pre">key1=%5b%22val1%22%2c%22val2%22%5d</span></code>.</p></li>
 </ul>
@@ -497,7 +499,8 @@ themselves are <span class="green">Objects</span> will be converted to JSON.</p>
 </div>
 <p>Caveats:</p>
 <ul class="simple">
-<li><p>All primitive values will be converted to <span class="green">Strings</span>.</p></li>
+<li><p>All primitive values will be converted to <span class="green">Strings</span> unless
+<code class="docutils literal notranslate"><span class="pre">json</span></code> was used.</p></li>
 <li><p>If <code class="docutils literal notranslate"><span class="pre">repeat</span></code> or <code class="docutils literal notranslate"><span class="pre">bracket</span></code> was used to create the
 query string, all values will be returned as strings (even if an <span class="green">Array</span> of
 <span class="green">Numbers</span> was given to <a class="reference internal" href="#objecttoquery">objectToQuery</a>().</p></li>
@@ -594,7 +597,7 @@ to read from <code class="docutils literal notranslate"><span class="pre">stdin<
 <dt>Note:</dt><dd><p>If <code class="docutils literal notranslate"><span class="pre">stdin</span></code> is from an interactive terminal, execution
 will be paused until <code class="docutils literal notranslate"><span class="pre">nchar</span></code> chars are input.  Unlike
 <code class="docutils literal notranslate"><span class="pre">fread(stdin);</span></code> <a class="reference internal" href="#fread"><span class="std std-ref">below</span></a>, the terminal will be
-set to allow characters in without waiting for a newline.</p>
+set to return characters in without waiting for a newline.</p>
 </dd>
 </dl>
 </div>
@@ -774,18 +777,21 @@ an executable that may be found in the current <code class="docutils literal not
 <li><p><code class="docutils literal notranslate"><span class="pre">options</span></code> - <span class="green">Object</span>. Containing the following properties:</p>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">timeout</span></code> - <span class="green">Number</span>. Maximum amount of time in milliseconds before
-the process is automatically killed.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">killSignal</span></code> - <span class="green">Number</span>. If timeout is reached, use this signal</p></li>
+the process is automatically killed.  Valid if <code class="docutils literal notranslate"><span class="pre">background</span></code> is unset
+or <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">killSignal</span></code> - <span class="green">Number</span>. If timeout is reached, use this
+signal.  Valid if Valid if <code class="docutils literal notranslate"><span class="pre">background</span></code> is unset
+or <code class="docutils literal notranslate"><span class="pre">false</span></code> and a <code class="docutils literal notranslate"><span class="pre">timeout</span></code> value is set.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">background</span></code> - <span class="green">Boolean</span>.  Whether to execute detached and return
 immediately.  If <code class="docutils literal notranslate"><span class="pre">true</span></code>, <code class="docutils literal notranslate"><span class="pre">stdout</span></code> and <code class="docutils literal notranslate"><span class="pre">stderr</span></code> below will be set to <code class="docutils literal notranslate"><span class="pre">null</span></code>.  Any <code class="docutils literal notranslate"><span class="pre">timeout</span></code>
 value is ignored.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">env</span></code> - <span class="green">Object</span>. Key/value pairs to be used as environment variables for the executed process.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">appendEnv</span></code> - <span class="green">Boolean</span>.  Only used if <code class="docutils literal notranslate"><span class="pre">env</span></code> is provided.  If <code class="docutils literal notranslate"><span class="pre">false</span></code> (the default),
+<li><p><code class="docutils literal notranslate"><span class="pre">appendEnv</span></code> - <span class="green">Boolean</span>.  Only valid if <code class="docutils literal notranslate"><span class="pre">env</span></code> is provided.  If <code class="docutils literal notranslate"><span class="pre">false</span></code> (the default),
 only the environment variables given in <code class="docutils literal notranslate"><span class="pre">env</span></code> will be available.  If
 <code class="docutils literal notranslate"><span class="pre">true</span></code>, variables provided in <code class="docutils literal notranslate"><span class="pre">env</span></code> will be appended to <a class="reference internal" href="rampart-main.html#env"><span class="std std-ref">process.env</span></a>.
 Duplicate keys in <a class="reference internal" href="rampart-main.html#env"><span class="std std-ref">process.env</span></a> are replaced with the value from <code class="docutils literal notranslate"><span class="pre">env</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">stdin</span></code> - <span class="green">String</span> or <span class="green">Buffer</span>.  If specified, the content is piped to the
-command as stdin.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">stdin</span></code> - <span class="green">String</span> or <span class="green">Buffer</span>.  If specified, the content
+of the <span class="green">String</span> or <span class="green">Buffer</span> is piped to the command as stdin.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">returnBuffer</span></code> - <span class="green">Boolean</span>.  Whether content is returned in a
 <span class="green">Buffer</span> rather than a <span class="green">String</span>.  Useful for capturing
 binary data output.</p></li>
@@ -847,11 +853,12 @@ passed to bash and <code class="docutils literal notranslate"><span class="pre">
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">ret</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">kill</span><span class="p">(</span><span class="nx">pid</span> <span class="p">[,</span> <span class="nx">signal</span><span class="p">]);</span>
 </pre></div>
 </div>
-<p>Where <code class="docutils literal notranslate"><span class="pre">pid</span></code> is a <span class="green">Number</span>, the process id of process to be sent a signal and
-<code class="docutils literal notranslate"><span class="pre">signal</span></code> is a <span class="green">Number</span>, the signal to send.  If <code class="docutils literal notranslate"><span class="pre">signal</span></code> is not specified,
-<code class="docutils literal notranslate"><span class="pre">15</span></code> (<code class="docutils literal notranslate"><span class="pre">SIGTERM</span></code>) is used.  See manual page for kill(1) for a list of
-signals, which may vary by platform.  Setting <code class="docutils literal notranslate"><span class="pre">signal</span></code> to <code class="docutils literal notranslate"><span class="pre">0</span></code> sends no
-signal, but checks for the existence of the process identified by <code class="docutils literal notranslate"><span class="pre">pid</span></code>.</p>
+<p>Where <code class="docutils literal notranslate"><span class="pre">pid</span></code> is a <span class="green">Number</span>, the process id of process which will
+receive the signal and <code class="docutils literal notranslate"><span class="pre">signal</span></code> is a <span class="green">Number</span>, the signal to send.
+If <code class="docutils literal notranslate"><span class="pre">signal</span></code> is not specified, <code class="docutils literal notranslate"><span class="pre">15</span></code> (<code class="docutils literal notranslate"><span class="pre">SIGTERM</span></code>) is used.  See manual
+page for kill(1) for a list of signals, which may vary by platform.  Setting
+<code class="docutils literal notranslate"><span class="pre">signal</span></code> to <code class="docutils literal notranslate"><span class="pre">0</span></code> sends no signal, but checks for the existence of the
+process identified by <code class="docutils literal notranslate"><span class="pre">pid</span></code>.</p>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p><span class="green">Boolean</span>.  <code class="docutils literal notranslate"><span class="pre">true</span></code> if the signal was successfully sent.  <code class="docutils literal notranslate"><span class="pre">false</span></code> if there was
 an error or process does not exist.</p>
@@ -864,6 +871,7 @@ an error or process does not exist.</p>
 <span class="k">if</span> <span class="p">(</span><span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">kill</span><span class="p">(</span><span class="nx">pid</span><span class="p">,</span><span class="mi">0</span><span class="p">))</span> <span class="p">{</span>
     <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;process is still running&quot;</span><span class="p">);</span>
     <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">kill</span><span class="p">(</span><span class="nx">pid</span><span class="p">);</span>
+    <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">sleep</span><span class="p">(</span><span class="mf">0.2</span><span class="p">);</span>
     <span class="k">if</span><span class="p">(</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">kill</span><span class="p">(</span><span class="nx">pid</span><span class="p">,</span><span class="mi">0</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span> <span class="p">)</span>
        <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;and now is dead&quot;</span><span class="p">);</span>
 <span class="p">}</span> <span class="k">else</span>
@@ -915,7 +923,8 @@ do not exist will also be created.  Throws error if lacking permissions or
 if another error was encountered.</p>
 <p>Note that <code class="docutils literal notranslate"><span class="pre">mode</span></code> is normally given as an octal.  As such it can be, e.g.,
 <code class="docutils literal notranslate"><span class="pre">0755</span></code> (octal number) or <code class="docutils literal notranslate"><span class="pre">&quot;755&quot;</span></code> (<span class="green">String</span> representation of an octal
-number), but <code class="docutils literal notranslate"><span class="pre">755</span></code>, as a decimal number may not work as intended.</p>
+number), but <code class="docutils literal notranslate"><span class="pre">755</span></code>, as a decimal number will give the octal <code class="docutils literal notranslate"><span class="pre">01363</span></code>,
+which is likely not what was intended.</p>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
 </dd>
@@ -1274,9 +1283,9 @@ return undefined in the first syntax and <code class="docutils literal notransla
 <p>The <code class="docutils literal notranslate"><span class="pre">rampart.utils.stdin</span></code> handle includes the <a class="reference internal" href="#fread">fread</a>(), <a class="reference internal" href="#fgets">fgets</a>() and <a class="reference internal" href="#readline">readLine</a>() functions
 while the other four include the <a class="reference internal" href="#fprintf">fprintf</a>(), <a class="reference internal" href="#fflush">fflush</a>() and <a class="reference internal" href="#fwrite">fwrite</a>() functions.
 Example:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">inf</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">stdin</span><span class="p">.</span><span class="nx">readLine</span><span class="p">();</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">line</span><span class="p">,</span> <span class="nx">inf</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">stdin</span><span class="p">.</span><span class="nx">readLine</span><span class="p">();</span>
 
-<span class="k">while</span> <span class="p">(</span> <span class="p">(</span><span class="kd">var</span> <span class="nx">line</span> <span class="o">=</span> <span class="nx">inf</span><span class="p">.</span><span class="nx">next</span><span class="p">())</span> <span class="p">)</span>
+<span class="k">while</span> <span class="p">(</span> <span class="nx">line</span> <span class="o">=</span> <span class="nx">inf</span><span class="p">.</span><span class="nx">next</span><span class="p">()</span> <span class="p">)</span>
    <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">stdout</span><span class="p">.</span><span class="nx">fprintf</span><span class="p">(</span><span class="s2">&quot;%s&quot;</span><span class="p">,</span> <span class="nx">line</span><span class="p">);</span> <span class="c1">//same as rampart.utils.printf</span>
 </pre></div>
 </div>
@@ -1375,7 +1384,7 @@ overwrite an existing file.</p></li>
 
 <span class="cm">/* OR */</span>
 
-<span class="nx">fprintf</span><span class="p">(</span><span class="s2">&quot;/tmp/out.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;A number: %d\n&quot;</span><span class="p">,</span> <span class="mi">456</span><span class="p">);</span> <span class="cm">/* implicit fclose */</span>
+<span class="nx">fprintf</span><span class="p">(</span><span class="s2">&quot;/tmp/out.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;A number: %d\n&quot;</span><span class="p">,</span> <span class="mi">123</span><span class="p">);</span> <span class="cm">/* implicit fclose */</span>
 </pre></div>
 </div>
 </div>
@@ -1437,8 +1446,11 @@ overwrite an existing file.</p></li>
 
 <span class="kd">var</span> <span class="nx">out</span><span class="o">=</span><span class="nx">fread</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
 
-<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%s&quot;</span><span class="p">,</span> <span class="nx">out</span><span class="p">);</span>
-<span class="cm">/* expect output: &quot;abcdef&quot; */</span>
+<span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;&#39;%s&#39;\n&quot;</span><span class="p">,</span> <span class="nx">out</span><span class="p">);</span>
+<span class="cm">/*</span>
+<span class="cm">expect output:</span>
+<span class="cm">&#39;abcdef&#39;</span>
+<span class="cm">*/</span>
 
 <span class="nx">fclose</span><span class="p">(</span><span class="nx">handle</span><span class="p">);</span>
 </pre></div>
@@ -1631,7 +1643,7 @@ in which case the file will be truncated.</p></td>
 <p>Read a text file line-by-line.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">rl</span> <span class="o">=</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">readLine</span><span class="p">(</span><span class="nx">file</span><span class="p">);</span>
-<span class="kd">var</span> <span class="nx">line</span><span class="o">=</span><span class="nx">rl</span><span class="p">.</span><span class="nx">next</span><span class="p">();</span>
+<span class="kd">var</span> <span class="nx">line</span> <span class="o">=</span> <span class="nx">rl</span><span class="p">.</span><span class="nx">next</span><span class="p">();</span>
 </pre></div>
 </div>
 <p>Where <code class="docutils literal notranslate"><span class="pre">file</span></code> is a <span class="green">String</span> (name of file to be read) or a file handle opened
@@ -1711,14 +1723,14 @@ an <span class="green">Object</span> with the following optional properties:</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">type</span></code> - the type of hash to be calculated. A <span class="green">String</span>, one of:</p>
 <blockquote>
 <div><ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">murmur</span></code> - A 64 bit hash using the <cite>murmur</cite> algorithm.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">city</span></code> - A 64 bit hash using the <cite>city</cite> algorithm.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">city128</span></code> - A 128 bit hash using the <cite>city</cite> algorithm.  This is the default if not specified.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">both</span></code> - A 192 bit hash – the <code class="docutils literal notranslate"><span class="pre">city128</span></code> hash concatenated with the <code class="docutils literal notranslate"><span class="pre">murmur</span></code> hash.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;murmur&quot;</span></code> - A 64 bit hash using the <cite>murmur</cite> algorithm.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;city&quot;</span></code> - A 64 bit hash using the <cite>city</cite> algorithm.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;city128&quot;</span></code> - A 128 bit hash using the <cite>city</cite> algorithm.  This is the default if not specified.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;both&quot;</span></code> - A 192 bit hash – the <code class="docutils literal notranslate"><span class="pre">city128</span></code> hash concatenated with the <code class="docutils literal notranslate"><span class="pre">murmur</span></code> hash.</p></li>
 </ul>
 </div></blockquote>
 </li>
-<li><p><code class="docutils literal notranslate"><span class="pre">function</span></code> - Same as <code class="docutils literal notranslate"><span class="pre">type</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">function</span></code> - Alias for <code class="docutils literal notranslate"><span class="pre">type</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">returnBuffer</span></code> - a <span class="green">Boolean</span>, if <code class="docutils literal notranslate"><span class="pre">true</span></code>, the hash will be returned as the binary value of the hash
 in a a <span class="green">Buffer</span>.  If <code class="docutils literal notranslate"><span class="pre">false</span></code> (the default), the return value will be a <span class="green">String</span> - a hex encoded representation
 of the hash.</p></li>
@@ -1803,7 +1815,7 @@ as a line separator.  The default value is <code class="docutils literal notrans
 </div>
 <div class="section" id="hll-count">
 <h3>hll.count<a class="headerlink" href="#hll-count" title="Permalink to this headline">¶</a></h3>
-<p>Get a current count of distinct items added to the <a class="reference internal" href="#hll">hll</a>.</p>
+<p>Get a current estimate count of distinct items added to the <a class="reference internal" href="#hll">hll</a>.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">myhll</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">hll</span><span class="p">(</span><span class="nx">name</span><span class="p">);</span>
 

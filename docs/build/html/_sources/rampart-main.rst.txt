@@ -73,7 +73,7 @@ following:
 
 * Full Text Search and SQL databasing via ``rampart-sql``.
 
-* Multi-threaded http(s) server from libevhtp via ``rampart-server``.
+* Multi-threaded http(s) server from libevhtp_ws via ``rampart-server``.
 
 * http, ftp, etc. client functionality via ``rampart-curl``.
 
@@ -128,10 +128,12 @@ Put all or named properties of an :green:`Object` in the global namespace.
 +------------+----------------+-----------------------------------------------------------+
 |prop_names  |:green:`Array`  | optional :green:`Array` of property names to be           |
 |            |                | put into the global namespace.  If specified, only        |
-|            |                | the named properties will be exported.                    |
+|            |                | the named properties will be copied.                      |
 +------------+----------------+-----------------------------------------------------------+
 
 Without ``prop_names``, this is equivalent to ``Object.assign(global, var_obj);``.
+
+With ``prop_names``, this is equivalent to ``for (var k in prop_names) global[[prop_names[k]]] = var_obj[[prop_names[k]]];``
 
 Return value: 
    ``undefined``.
@@ -278,9 +280,10 @@ Example
 
 See also: the :ref:`Echo/Chat Server Example <rampart-server:Example echo/chat server>`.
 
-For a more complete example of events using the webserver and websockets,
-see the ``rampart/examples/web_server/modules/wschat.js``
-script.
+.. this was moved out.  update new location
+    For a more complete example of events using the webserver and websockets,
+    see the ``rampart/examples/web_server/modules/wschat.js``
+    script.
 
 rampart.include
 """""""""""""""
@@ -400,10 +403,22 @@ options:
         to the majority type, or set it to ``null`` if it is
         unable to do so. If ``false``, each cell is individually normalized.
 
-      * ``includeRawString`` :green:`Boolean` (default ``false``): if
-        ``true``, return each cell as an object containing 
-	``{value: normalized value, raw: originalString}``.  If false, each
-	cell value is the primitive normalized value.
+
+      * ``includeRawString`` - :green:`Boolean` (default ``false``): if
+        ``true``, return each cell as an object 
+        containing ``{value: normalized value, raw: originalString}``.  
+        If false, each cell value is the primitive normalized value.
+
+      * ``progressFunc`` - :green:`Function`: A function to monitor the progress
+        of the passes over the csv data.  It takes as arguments ``function (stage, i)``
+        The variable ``stage`` is ``0`` for the initial counting of rows, ``1`` for the parsing
+        of the cells in each row and ``2+`` optionally if ``normalize`` is ``true`` for the
+        two stages of the analysis of each column in the csv (e.g. ``2`` for column 0 first pass,
+        ``3`` for column 0 second pass, etc.).  The variable ``i`` is the row number.
+
+      * ``progressStep`` :green:`Number`: Where number is ``n``, execute
+        ``progresFunc`` callback, if provided, for every nth row in each stage.
+        
 
 callback:
    A :green:`Function` taking as parameters (``result_row``, ``index``, ``columns``).
@@ -529,7 +544,7 @@ Example:
 Process Global Variable and Functions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The ``process`` global variable contains the following properties:
+The ``process`` global variable has the following properties:
 
 exit
 """"
@@ -630,7 +645,7 @@ setProcTitle
 """"""""""""
 
 Set the name of the current process (as seen by the command line
-utilities ``ps`` and ``top``).
+utilities such as ``ps`` and ``top``).
 
 Usage:
 
@@ -749,6 +764,10 @@ This could be compiled with GCC as follows:
 
 ``cc -I/usr/local/rampart/include -fPIC -shared -Wl,-soname,times3.so -o times3.so times3.c``
 
+On MacOs, the following might be used:
+
+``cc -I/usr/local/rampart/include -dynamiclib -undefined dynamic_lookup -install_name times3.so -o times3.so times3.c``
+
 The module could then be imported using the ``require()`` function.
 
 .. code-block:: javascript
@@ -762,7 +781,7 @@ The module could then be imported using the ``require()`` function.
 
 
 See `The Duktape API Documentation <https://duktape.org/api.html>`_
-for a full listing of functions available.
+for a detailed listing of available Duktape C API functions.
 
 Module Search Path
 """"""""""""""""""
@@ -969,7 +988,7 @@ setTimeout()
 
 Also added to Rampart is the ``setTimeout()`` function.  It supports the
 asynchronous calling of functions from within Rampart's event loop in the same
-manner as ``setTimeout`` in ``node.js`` or a browser.
+manner as ``setTimeout`` in ``node.js`` or a browser such as Firefox or Chrome.
 
 Usage:
 
@@ -1030,7 +1049,8 @@ Return Value:
 setInterval()
 """""""""""""
 
-Similar to `setTimeout()`_ except it repeats every ``interval`` milliseconds.
+Similar to `setTimeout()`_ except it repeats every ``interval`` milliseconds
+until cancelled via `clearInterval()`_.
 
 Usage:
 
@@ -1295,9 +1315,8 @@ the script has not changed since last run, the execution speed will be
 normal as the cached/transpiled code will be used and thus no traspiling
 will occur.
 
-Though nearly all rampart functions are synchronous, asynchronous code may
-also be used with babel.  For example, the following code produces the same
-output in Rampart and Node.js.
+Asynchronous code may also be used with babel.  For example, the following code 
+produces the same output in Rampart and Node.js.
 
 .. code-block:: javascript
 

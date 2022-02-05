@@ -294,7 +294,7 @@ following:</p>
 <li><p>ECMA 2015, 2016, 2017 and 2018 support using the <a class="reference external" href="https://babeljs.io/">Babel</a>
 JavaScript transpiler.</p></li>
 <li><p>Full Text Search and SQL databasing via <code class="docutils literal notranslate"><span class="pre">rampart-sql</span></code>.</p></li>
-<li><p>Multi-threaded http(s) server from libevhtp via <code class="docutils literal notranslate"><span class="pre">rampart-server</span></code>.</p></li>
+<li><p>Multi-threaded http(s) server from libevhtp_ws via <code class="docutils literal notranslate"><span class="pre">rampart-server</span></code>.</p></li>
 <li><p>http, ftp, etc. client functionality via <code class="docutils literal notranslate"><span class="pre">rampart-curl</span></code>.</p></li>
 <li><p>Cryptography functions from Openssl via <code class="docutils literal notranslate"><span class="pre">rampart-crypto</span></code>.</p></li>
 <li><p>Html parsing and and error correcting via <code class="docutils literal notranslate"><span class="pre">rampart-html</span></code>.</p></li>
@@ -352,11 +352,12 @@ a listing of these added functions.</p>
 <td><p><span class="green">Array</span></p></td>
 <td><p>optional <span class="green">Array</span> of property names to be
 put into the global namespace.  If specified, only
-the named properties will be exported.</p></td>
+the named properties will be copied.</p></td>
 </tr>
 </tbody>
 </table>
 <p>Without <code class="docutils literal notranslate"><span class="pre">prop_names</span></code>, this is equivalent to <code class="docutils literal notranslate"><span class="pre">Object.assign(global,</span> <span class="pre">var_obj);</span></code>.</p>
+<p>With <code class="docutils literal notranslate"><span class="pre">prop_names</span></code>, this is equivalent to <code class="docutils literal notranslate"><span class="pre">for</span> <span class="pre">(var</span> <span class="pre">k</span> <span class="pre">in</span> <span class="pre">prop_names)</span> <span class="pre">global[[prop_names[k]]]</span> <span class="pre">=</span> <span class="pre">var_obj[[prop_names[k]]];</span></code></p>
 <dl class="simple">
 <dt>Return value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
 </dd>
@@ -488,9 +489,6 @@ function above.</p></li>
 </pre></div>
 </div>
 <p>See also: the <a class="reference internal" href="rampart-server.html#example-echo-chat-server"><span class="std std-ref">Echo/Chat Server Example</span></a>.</p>
-<p>For a more complete example of events using the webserver and websockets,
-see the <code class="docutils literal notranslate"><span class="pre">rampart/examples/web_server/modules/wschat.js</span></code>
-script.</p>
 </div>
 </div>
 <div class="section" id="rampart-include">
@@ -604,10 +602,18 @@ examine each column in the parsed CSV object to find the majority
 type of that column.  It then casts all the members of that column
 to the majority type, or set it to <code class="docutils literal notranslate"><span class="pre">null</span></code> if it is
 unable to do so. If <code class="docutils literal notranslate"><span class="pre">false</span></code>, each cell is individually normalized.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">includeRawString</span></code> <span class="green">Boolean</span> (default <code class="docutils literal notranslate"><span class="pre">false</span></code>): if
-<code class="docutils literal notranslate"><span class="pre">true</span></code>, return each cell as an object containing
-<code class="docutils literal notranslate"><span class="pre">{value:</span> <span class="pre">normalized</span> <span class="pre">value,</span> <span class="pre">raw:</span> <span class="pre">originalString}</span></code>.  If false, each
-cell value is the primitive normalized value.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">includeRawString</span></code> - <span class="green">Boolean</span> (default <code class="docutils literal notranslate"><span class="pre">false</span></code>): if
+<code class="docutils literal notranslate"><span class="pre">true</span></code>, return each cell as an object
+containing <code class="docutils literal notranslate"><span class="pre">{value:</span> <span class="pre">normalized</span> <span class="pre">value,</span> <span class="pre">raw:</span> <span class="pre">originalString}</span></code>.
+If false, each cell value is the primitive normalized value.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">progressFunc</span></code> - <span class="green">Function</span>: A function to monitor the progress
+of the passes over the csv data.  It takes as arguments <code class="docutils literal notranslate"><span class="pre">function</span> <span class="pre">(stage,</span> <span class="pre">i)</span></code>
+The variable <code class="docutils literal notranslate"><span class="pre">stage</span></code> is <code class="docutils literal notranslate"><span class="pre">0</span></code> for the initial counting of rows, <code class="docutils literal notranslate"><span class="pre">1</span></code> for the parsing
+of the cells in each row and <code class="docutils literal notranslate"><span class="pre">2+</span></code> optionally if <code class="docutils literal notranslate"><span class="pre">normalize</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code> for the
+two stages of the analysis of each column in the csv (e.g. <code class="docutils literal notranslate"><span class="pre">2</span></code> for column 0 first pass,
+<code class="docutils literal notranslate"><span class="pre">3</span></code> for column 0 second pass, etc.).  The variable <code class="docutils literal notranslate"><span class="pre">i</span></code> is the row number.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">progressStep</span></code> <span class="green">Number</span>: Where number is <code class="docutils literal notranslate"><span class="pre">n</span></code>, execute
+<code class="docutils literal notranslate"><span class="pre">progresFunc</span></code> callback, if provided, for every nth row in each stage.</p></li>
 </ul>
 </div></blockquote>
 </dd>
@@ -728,7 +734,7 @@ the csv data is passed as a parameter.</p>
 </div>
 <div class="section" id="process-global-variable-and-functions">
 <h2>Process Global Variable and Functions<a class="headerlink" href="#process-global-variable-and-functions" title="Permalink to this headline">¶</a></h2>
-<p>The <code class="docutils literal notranslate"><span class="pre">process</span></code> global variable contains the following properties:</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">process</span></code> global variable has the following properties:</p>
 <div class="section" id="exit">
 <h3>exit<a class="headerlink" href="#exit" title="Permalink to this headline">¶</a></h3>
 <p>The exit function terminates the execution of the current script.</p>
@@ -813,7 +819,7 @@ canonical path (file) of the currently executing script
 <div class="section" id="setproctitle">
 <h3>setProcTitle<a class="headerlink" href="#setproctitle" title="Permalink to this headline">¶</a></h3>
 <p>Set the name of the current process (as seen by the command line
-utilities <code class="docutils literal notranslate"><span class="pre">ps</span></code> and <code class="docutils literal notranslate"><span class="pre">top</span></code>).</p>
+utilities such as <code class="docutils literal notranslate"><span class="pre">ps</span></code> and <code class="docutils literal notranslate"><span class="pre">top</span></code>).</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">process</span><span class="p">.</span><span class="nx">setProcTitle</span><span class="p">(</span><span class="nx">newname</span><span class="p">);</span>
 </pre></div>
@@ -911,6 +917,8 @@ and/or other JavaScript variables.</p>
 </div>
 <p>This could be compiled with GCC as follows:</p>
 <p><code class="docutils literal notranslate"><span class="pre">cc</span> <span class="pre">-I/usr/local/rampart/include</span> <span class="pre">-fPIC</span> <span class="pre">-shared</span> <span class="pre">-Wl,-soname,times3.so</span> <span class="pre">-o</span> <span class="pre">times3.so</span> <span class="pre">times3.c</span></code></p>
+<p>On MacOs, the following might be used:</p>
+<p><code class="docutils literal notranslate"><span class="pre">cc</span> <span class="pre">-I/usr/local/rampart/include</span> <span class="pre">-dynamiclib</span> <span class="pre">-undefined</span> <span class="pre">dynamic_lookup</span> <span class="pre">-install_name</span> <span class="pre">times3.so</span> <span class="pre">-o</span> <span class="pre">times3.so</span> <span class="pre">times3.c</span></code></p>
 <p>The module could then be imported using the <code class="docutils literal notranslate"><span class="pre">require()</span></code> function.</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">x3</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;times3&quot;</span><span class="p">);</span>
 
@@ -920,7 +928,7 @@ and/or other JavaScript variables.</p>
 </pre></div>
 </div>
 <p>See <a class="reference external" href="https://duktape.org/api.html">The Duktape API Documentation</a>
-for a full listing of functions available.</p>
+for a detailed listing of available Duktape C API functions.</p>
 </div>
 <div class="section" id="module-search-path">
 <h3>Module Search Path<a class="headerlink" href="#module-search-path" title="Permalink to this headline">¶</a></h3>
@@ -1064,7 +1072,7 @@ called.</p>
 <h3>setTimeout()<a class="headerlink" href="#settimeout" title="Permalink to this headline">¶</a></h3>
 <p>Also added to Rampart is the <code class="docutils literal notranslate"><span class="pre">setTimeout()</span></code> function.  It supports the
 asynchronous calling of functions from within Rampart’s event loop in the same
-manner as <code class="docutils literal notranslate"><span class="pre">setTimeout</span></code> in <code class="docutils literal notranslate"><span class="pre">node.js</span></code> or a browser.</p>
+manner as <code class="docutils literal notranslate"><span class="pre">setTimeout</span></code> in <code class="docutils literal notranslate"><span class="pre">node.js</span></code> or a browser such as Firefox or Chrome.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">id</span> <span class="o">=</span> <span class="nx">setTimeout</span><span class="p">(</span><span class="nx">callback</span><span class="p">,</span> <span class="nx">timeOut</span><span class="p">);</span>
 </pre></div>
@@ -1116,7 +1124,8 @@ function returns.  At that time, the clock will have expired and the
 </div>
 <div class="section" id="setinterval">
 <h3>setInterval()<a class="headerlink" href="#setinterval" title="Permalink to this headline">¶</a></h3>
-<p>Similar to <a class="reference internal" href="#settimeout">setTimeout()</a> except it repeats every <code class="docutils literal notranslate"><span class="pre">interval</span></code> milliseconds.</p>
+<p>Similar to <a class="reference internal" href="#settimeout">setTimeout()</a> except it repeats every <code class="docutils literal notranslate"><span class="pre">interval</span></code> milliseconds
+until cancelled via <a class="reference internal" href="#clearinterval">clearInterval()</a>.</p>
 <p>Usage:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">id</span> <span class="o">=</span> <span class="nx">setInterval</span><span class="p">(</span><span class="nx">callback</span><span class="p">,</span> <span class="nx">interval</span><span class="p">);</span>
 </pre></div>
@@ -1349,9 +1358,8 @@ transpiled script will be run directly.</p>
 the script has not changed since last run, the execution speed will be
 normal as the cached/transpiled code will be used and thus no traspiling
 will occur.</p>
-<p>Though nearly all rampart functions are synchronous, asynchronous code may
-also be used with babel.  For example, the following code produces the same
-output in Rampart and Node.js.</p>
+<p>Asynchronous code may also be used with babel.  For example, the following code
+produces the same output in Rampart and Node.js.</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="s2">&quot;use babel&quot;</span> <span class="cm">/* ignored in node */</span>
 
 <span class="kd">function</span> <span class="nx">resolveme</span><span class="p">()</span> <span class="p">{</span>

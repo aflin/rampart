@@ -135,7 +135,9 @@ Example:
     "</html>\n";
 
     /* remove leading white space */
-    rampart.utils.printf("%!-.1000P", html);
+    /* rampart.utils.printf("%!-.1000P", html); */
+    /* or more simply as */
+    rampart.utils.printf("%w", html);
 
     /* expected output
     <html>
@@ -278,22 +280,22 @@ Usage:
    var qs = rampart.utils.objectToQuery(kvObj [, arrayOpt]);
 
 Where ``kvObj`` is an :green:`Object` containing the key/value pairs and ``arrayOpt``
-controls how :green:`Array` values are treated, and is
+controls how :green:`Array` values are treated. A :green:`String`,
 one of the following:
 
-   * ``repeat`` - default value if not specified.  Repeat the key in the
+   * ``"repeat"`` - default value if not specified.  Repeat the key in the
      query string with each value from the array.  Example:
      ``{key1: ["val1", "val2"]}`` becomes ``key1=val1&key1=val2``.
 
-   * ``bracket`` - similar to repeat, except url encoded ``[]`` is appended
+   * ``"bracket"`` - similar to repeat, except url encoded ``[]`` is appended
      to the keys.  Example: ``{key1: ["val1", "val2"]}`` becomes
      ``key1%5B%5D=val1&key1%5B%5D=val2``.
 
-   * ``comma`` - One key with corresponding values separated by a ``,``
+   * ``"comma"`` - One key with corresponding values separated by a ``,``
      (comma).  Example: ``{key1: ["val1", "val2"]}`` becomes
      ``key1=val1,val2``.
 
-   * ``json`` - encode array as JSON.  Example:
+   * ``"json"`` - encode array as JSON.  Example:
      ``{key1: ["val1", "val2"]}`` becomes
      ``key1=%5b%22val1%22%2c%22val2%22%5d``.
 
@@ -315,7 +317,8 @@ Usage:
 
 Caveats:
 
-*  All primitive values will be converted to :green:`Strings`.
+*  All primitive values will be converted to :green:`Strings` unless
+   ``json`` was used.
 
 *  If ``repeat`` or ``bracket`` was used to create the
    query string, all values will be returned as strings (even if an :green:`Array` of
@@ -423,7 +426,7 @@ Note:
    If ``stdin`` is from an interactive terminal, execution
    will be paused until ``nchar`` chars are input.  Unlike 
    ``fread(stdin);`` :ref:`below <rampart-utils:fread>`, the terminal will be
-   set to allow characters in without waiting for a newline.
+   set to return characters in without waiting for a newline.
 
 readFile
 ''''''''
@@ -607,9 +610,12 @@ Where:
 *  ``options`` - :green:`Object`. Containing the following properties:
 
    *  ``timeout`` - :green:`Number`. Maximum amount of time in milliseconds before
-      the process is automatically killed.
+      the process is automatically killed.  Valid if ``background`` is unset
+      or ``false``.
 
-   *  ``killSignal`` - :green:`Number`. If timeout is reached, use this signal
+   *  ``killSignal`` - :green:`Number`. If timeout is reached, use this
+      signal.  Valid if Valid if ``background`` is unset
+      or ``false`` and a ``timeout`` value is set.
 
    *  ``background`` - :green:`Boolean`.  Whether to execute detached and return
       immediately.  If ``true``, ``stdout`` and ``stderr`` below will be set to ``null``.  Any ``timeout``
@@ -617,13 +623,13 @@ Where:
 
    *  ``env`` - :green:`Object`. Key/value pairs to be used as environment variables for the executed process.
 
-   *  ``appendEnv`` - :green:`Boolean`.  Only used if ``env`` is provided.  If ``false`` (the default),
+   *  ``appendEnv`` - :green:`Boolean`.  Only valid if ``env`` is provided.  If ``false`` (the default),
       only the environment variables given in ``env`` will be available.  If
       ``true``, variables provided in ``env`` will be appended to :ref:`process.env <rampart-main:env>`.
       Duplicate keys in :ref:`process.env <rampart-main:env>` are replaced with the value from ``env``.
 
-   *  ``stdin`` - :green:`String` or :green:`Buffer`.  If specified, the content is piped to the
-      command as stdin.
+   *  ``stdin`` - :green:`String` or :green:`Buffer`.  If specified, the content
+      of the :green:`String` or :green:`Buffer` is piped to the command as stdin.
 
    *  ``returnBuffer`` - :green:`Boolean`.  Whether content is returned in a
       :green:`Buffer` rather than a :green:`String`.  Useful for capturing
@@ -696,11 +702,12 @@ Usage:
 
    var ret = rampart.utils.kill(pid [, signal]);
 
-Where ``pid`` is a :green:`Number`, the process id of process to be sent a signal and
-``signal`` is a :green:`Number`, the signal to send.  If ``signal`` is not specified,
-``15`` (``SIGTERM``) is used.  See manual page for kill(1) for a list of
-signals, which may vary by platform.  Setting ``signal`` to ``0`` sends no
-signal, but checks for the existence of the process identified by ``pid``.
+Where ``pid`` is a :green:`Number`, the process id of process which will
+receive the signal and ``signal`` is a :green:`Number`, the signal to send. 
+If ``signal`` is not specified, ``15`` (``SIGTERM``) is used.  See manual
+page for kill(1) for a list of signals, which may vary by platform.  Setting
+``signal`` to ``0`` sends no signal, but checks for the existence of the
+process identified by ``pid``.
 
 Return Value:
    :green:`Boolean`.  ``true`` if the signal was successfully sent.  ``false`` if there was
@@ -716,6 +723,7 @@ Example:
    if (rampart.utils.kill(pid,0)) {
        console.log("process is still running");
        rampart.utils.kill(pid);
+       rampart.utils.sleep(0.2);
        if( rampart.utils.kill(pid,0) == 0 )
           console.log("and now is dead");
    } else
@@ -776,7 +784,8 @@ if another error was encountered.
 
 Note that ``mode`` is normally given as an octal.  As such it can be, e.g.,
 ``0755`` (octal number) or ``"755"`` (:green:`String` representation of an octal
-number), but ``755``, as a decimal number may not work as intended.
+number), but ``755``, as a decimal number will give the octal ``01363``,
+which is likely not what was intended.
 
 
 
@@ -1203,9 +1212,9 @@ Pre-opened file handles:
 
    .. code-block:: javascript
 
-      var inf = rampart.utils.stdin.readLine();
+      var line, inf = rampart.utils.stdin.readLine();
 
-      while ( (var line = inf.next()) )
+      while ( line = inf.next() )
          rampart.utils.stdout.fprintf("%s", line); //same as rampart.utils.printf
 
 
@@ -1319,7 +1328,7 @@ Example:
 
    /* OR */
 
-   fprintf("/tmp/out.txt", "A number: %d\n", 456); /* implicit fclose */
+   fprintf("/tmp/out.txt", "A number: %d\n", 123); /* implicit fclose */
 
 fseek
 '''''
@@ -1368,8 +1377,11 @@ Example
 
    var out=fread(handle);
 
-   printf("%s", out);
-   /* expect output: "abcdef" */
+   printf("'%s'\n", out);
+   /* 
+   expect output:
+   'abcdef'
+   */
 
    fclose(handle);
 
@@ -1542,7 +1554,7 @@ Usage:
 .. code-block:: javascript
 
    var rl = rampart.utils.readLine(file);
-   var line=rl.next();
+   var line = rl.next();
 
 Where ``file`` is a :green:`String` (name of file to be read) or a file handle opened
 with with `fopen`_\ () or ``rampart.utils.stdin``. It returns a :green:`Object`
@@ -1636,15 +1648,15 @@ an :green:`Object` with the following optional properties:
 
 * ``type`` - the type of hash to be calculated. A :green:`String`, one of:
 
-   * ``murmur`` - A 64 bit hash using the `murmur` algorithm.
+   * ``"murmur"`` - A 64 bit hash using the `murmur` algorithm.
 
-   * ``city`` - A 64 bit hash using the `city` algorithm.
+   * ``"city"`` - A 64 bit hash using the `city` algorithm.
 
-   * ``city128`` - A 128 bit hash using the `city` algorithm.  This is the default if not specified.
+   * ``"city128"`` - A 128 bit hash using the `city` algorithm.  This is the default if not specified.
 
-   * ``both`` - A 192 bit hash -- the ``city128`` hash concatenated with the ``murmur`` hash.
+   * ``"both"`` - A 192 bit hash -- the ``city128`` hash concatenated with the ``murmur`` hash.
 
-* ``function`` - Same as ``type``.
+* ``function`` - Alias for ``type``.
 
 * ``returnBuffer`` - a :green:`Boolean`, if ``true``, the hash will be returned as the binary value of the hash
   in a a :green:`Buffer`.  If ``false`` (the default), the return value will be a :green:`String` - a hex encoded representation
@@ -1739,7 +1751,7 @@ Return Value:
 hll.count
 '''''''''
 
-Get a current count of distinct items added to the `hll`_\ .
+Get a current estimate count of distinct items added to the `hll`_\ .
 
 Usage:
 

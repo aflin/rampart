@@ -460,7 +460,7 @@ where the return value would normally not be used.</p></li>
 <li><p><strong>Note</strong>: If the values of a deleted, inserted or updated row are needed,
 <code class="docutils literal notranslate"><span class="pre">returnType</span></code> can be set to either <code class="docutils literal notranslate"><span class="pre">&quot;object&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;array&quot;</span></code> and
 the statement will be executed as normal with <code class="docutils literal notranslate"><span class="pre">rows</span></code> set as if
-the row or rows operated upon were selected.</p></li>
+the row or rows operated upon were <code class="docutils literal notranslate"><span class="pre">select</span></code>ed.</p></li>
 </ul>
 </div></blockquote>
 </li>
@@ -1105,6 +1105,14 @@ unable to do so. If <code class="docutils literal notranslate"><span class="pre"
 NOTE: unlike the
 <a class="reference internal" href="rampart-main.html#csvfile"><span class="std std-ref">rampart.import.csvFile</span></a> <span class="green">Function</span>,
 the default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">progressFunc</span></code> - <span class="green">Function</span>: A function to monitor the progress
+of the passes over the csv data.  It takes as arguments <code class="docutils literal notranslate"><span class="pre">function</span> <span class="pre">(stage,</span> <span class="pre">i)</span></code>
+The variable <code class="docutils literal notranslate"><span class="pre">stage</span></code> is <code class="docutils literal notranslate"><span class="pre">0</span></code> for the initial counting of rows, <code class="docutils literal notranslate"><span class="pre">1</span></code> for the parsing
+of the cells in each row and <code class="docutils literal notranslate"><span class="pre">2+</span></code> optionally if <code class="docutils literal notranslate"><span class="pre">normalize</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code> for the
+two stages of the analysis of each column in the csv (e.g. <code class="docutils literal notranslate"><span class="pre">2</span></code> for column 0 first pass,
+<code class="docutils literal notranslate"><span class="pre">3</span></code> for column 0 second pass, etc.).  The variable <code class="docutils literal notranslate"><span class="pre">i</span></code> is the row number.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">progressStep</span></code> <span class="green">Number</span>: Where number is <code class="docutils literal notranslate"><span class="pre">n</span></code>, execute
+<code class="docutils literal notranslate"><span class="pre">progresFunc</span></code> callback, if provided, for every nth row in each stage.</p></li>
 </ul>
 </div></blockquote>
 </dd>

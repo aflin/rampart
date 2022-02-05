@@ -240,7 +240,7 @@ Options:
       * **Note**: If the values of a deleted, inserted or updated row are needed,
         ``returnType`` can be set to either ``"object"`` or ``"array"`` and
         the statement will be executed as normal with ``rows`` set as if
-        the row or rows operated upon were selected.
+        the row or rows operated upon were ``select``\ ed.
 
    * ``returnRows`` (:green:`Boolean`): If set ``true``, performs the same
      function as ``{returnType: "object"}`` above.  If set ``false``,
@@ -945,6 +945,17 @@ options:
 	NOTE: unlike the 
 	:ref:`rampart.import.csvFile <rampart-main:csvFile>` :green:`Function`,
 	the default is ``true``.
+
+      * ``progressFunc`` - :green:`Function`: A function to monitor the progress
+        of the passes over the csv data.  It takes as arguments ``function (stage, i)``
+        The variable ``stage`` is ``0`` for the initial counting of rows, ``1`` for the parsing
+        of the cells in each row and ``2+`` optionally if ``normalize`` is ``true`` for the
+        two stages of the analysis of each column in the csv (e.g. ``2`` for column 0 first pass,
+        ``3`` for column 0 second pass, etc.).  The variable ``i`` is the row number.
+
+      * ``progressStep`` :green:`Number`: Where number is ``n``, execute
+        ``progresFunc`` callback, if provided, for every nth row in each stage.
+
 
 ordering:
    An :green:`Array` of :green:`Strings` or :green:`Numbers` corresponding
