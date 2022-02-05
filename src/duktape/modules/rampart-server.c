@@ -3540,6 +3540,7 @@ static void *http_dothread(void *arg)
     return NULL;
 }
 
+extern struct slisthead tohead;
 
 static duk_context *redo_ctx(int thrno)
 {

@@ -376,7 +376,7 @@ extern pthread_mutex_t slistlock;
 #define SLISTLOCK RP_MLOCK(&slistlock)
 #define SLISTUNLOCK RP_MUNLOCK(&slistlock)
 
-SLIST_HEAD(slisthead, ev_args) tohead;
+SLIST_HEAD(slisthead, ev_args);
 
 #ifndef SLIST_FOREACH_SAFE
 #define SLIST_FOREACH_SAFE(var, head, field, tvar)      \

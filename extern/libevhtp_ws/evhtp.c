@@ -3041,6 +3041,8 @@ htp__default_request_cb_(evhtp_request_t * request, void * arg)
     evhtp_send_reply(request, EVHTP_RES_NOTFOUND);
 }
 
+struct connhead_s conn_head = {0};
+
 static evhtp_connection_t *
 htp__connection_new_(evhtp_t * htp, evutil_socket_t sock, evhtp_type type)
 {

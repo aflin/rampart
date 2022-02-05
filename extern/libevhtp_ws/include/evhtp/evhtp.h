@@ -503,7 +503,7 @@ struct evhtp_connection {
 };
 
 #ifdef EVHTP_VALGRIND_FORK_SAFE
-TAILQ_HEAD(connhead_s, evhtp_connection) conn_head; //-ajf connection tracker
+TAILQ_HEAD(connhead_s, evhtp_connection); //-ajf connection tracker
 //void evhtp_free_open_connections(); //-ajf connection tracker
 #endif
 

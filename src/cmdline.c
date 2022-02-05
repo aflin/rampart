@@ -842,6 +842,11 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     return (const char*) (strlen(babelsrc)) ? strdup(babelsrc): strdup(fn);
 }
 
+struct slisthead tohead={0};
+
+/* Pretty sure there should be unfreed timeout structs only if 
+   there is an explicit process.exit() before the timeout expires */
+
 static void free_tos (void *arg)
 {
     EVARGS *e;
@@ -1906,6 +1911,8 @@ int main(int argc, char *argv[])
     int filelimit = 16384, lflimit = filelimit, isstdin=0, len, dirlen;
     char *ptr;
     struct stat entry_file_stat;
+
+    SLIST_INIT(&tohead);
 
     /* for later use */
     rampart_argv=argv;
