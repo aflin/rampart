@@ -42,6 +42,9 @@ extern "C"
 #include "dirio.h"
 #include "locktables.h"
 
+int TXaddnewstatsfrompred(DBTBL *table, PRED *pred, FLDOP *fo); //--ajf
+TXbool TXftnToDdfdQuick(FTN type, size_t n, DDFD *fd); //--ajf
+
 #ifndef EPI_HAVE_RLIM_T
 typedef long rlim_t;
 #endif /* !EPI_HAVE_RLIM_T */
