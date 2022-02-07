@@ -25,7 +25,7 @@ if(ret.rows.length==0) {
 
 
 
-/* import using re2 */
+/* import using re2 - NOT IN USE*/
 function procfile2(file){
   //                           
   return re2File( /<doc id="(\d+).*title="([^"]+)[^>]+>([^<]+)/,
@@ -41,8 +41,8 @@ function procfile2(file){
 
 /* import using rex */
 function procfilex(file){
-  //                           0      1      2        3    4    5 6        7
-  return rexFile( />><doc id\="=\digit+!title*title\="=[^"]+[^>]+>=!<\/doc>*/,
+  //                           0       1      2         3    4    5 6       7
+  return rexFile('>><doc id\\="=\\digit+!title*title\\="=[^"]+[^>]+>=!</doc>*',
            file,
            function(match,matchinfo,i){
              var sm=matchinfo.submatches;
@@ -89,6 +89,7 @@ function wimport() {
             ret=procfilex(file);
             ndocs+=ret;
             printf("Finished: %d of %d, %s\r", ndocs, total, file);
+            fflush(stdout);
         }
         printf("\n");
     }
