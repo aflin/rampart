@@ -352,7 +352,7 @@ with <a class="reference internal" href="#initconst"><span class="std std-ref">i
 statement and an optional <span class="green">Object</span> or <span class="green">Array</span> of sql
 parameters, an optional <span class="green">Object</span> of options and an optional callback
 <span class="green">Function</span>.  The parameters may be specified in any order.</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="nx">statement</span> <span class="p">[,</span> <span class="nx">options</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">sql_parameters</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">callback</span><span class="p">])</span>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="nx">statement</span> <span class="p">[,</span> <span class="nx">options</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">sql_parameters</span><span class="p">]</span> <span class="p">[,</span> <span class="nx">callback</span><span class="p">]);</span>
 </pre></div>
 </div>
 <table class="docutils align-default">
@@ -942,18 +942,27 @@ be caught with <code class="docutils literal notranslate"><span class="pre">catc
 <p>The <code class="docutils literal notranslate"><span class="pre">one</span></code> <span class="green">Function</span> is a shortcut for executing sql
 where only one row is desired and the extra information normally
 returned from <a class="reference internal" href="#exec">exec()</a> is not needed.</p>
-<p>With <code class="docutils literal notranslate"><span class="pre">exec()</span></code>, this:</p>
+<p>Usage:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">one</span><span class="p">(</span><span class="nx">statement</span> <span class="p">[,</span> <span class="nx">sql_parameters</span><span class="p">]);</span>
+</pre></div>
+</div>
+<p>This allows:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">res</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">exec</span><span class="p">(</span><span class="s2">&quot;select email from Users where user=?user&quot;</span><span class="p">,</span> <span class="p">{</span><span class="nx">maxRows</span><span class="o">:</span><span class="mi">1</span><span class="p">},</span> <span class="p">{</span><span class="nx">user</span><span class="o">:</span><span class="nx">user_name</span><span class="p">});</span>
 <span class="kd">var</span> <span class="nx">row</span><span class="o">=</span><span class="nx">res</span><span class="p">.</span><span class="nx">rows</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
 <span class="cm">/* row = { email : &quot;user@example.com&quot; } */</span>
 </pre></div>
 </div>
-<p>can be more easily written as:</p>
-<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">row</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">one</span><span class="p">(</span><span class="s2">&quot;select user from Users where user=?user&quot;</span><span class="p">,{</span><span class="nx">user</span><span class="o">:</span><span class="nx">user_name</span><span class="p">});</span>
+<p>to be more easily written as:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">row</span> <span class="o">=</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">one</span><span class="p">(</span><span class="s2">&quot;select email from Users where user=?user&quot;</span><span class="p">,{</span><span class="nx">user</span><span class="o">:</span><span class="nx">user_name</span><span class="p">});</span>
 <span class="cm">/* row = { email : &quot;user@example.com&quot; } */</span>
 </pre></div>
 </div>
-<p>Note: <code class="docutils literal notranslate"><span class="pre">one</span></code> returns <code class="docutils literal notranslate"><span class="pre">undefined</span></code> if a matching row is not found.</p>
+<p>Note: <code class="docutils literal notranslate"><span class="pre">one</span></code> returns <code class="docutils literal notranslate"><span class="pre">undefined</span></code> if a matching row is not found. It thus
+can be used in an <code class="docutils literal notranslate"><span class="pre">if</span></code> statement to test the existence of a row:</p>
+<div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="k">if</span><span class="p">(</span><span class="o">!</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">one</span><span class="p">(</span><span class="s2">&quot;select email from Users where user=?&quot;</span><span class="p">,</span> <span class="p">[</span><span class="nx">user_name</span><span class="p">])</span> <span class="p">)</span>
+   <span class="nx">console</span><span class="p">.</span><span class="nx">log</span><span class="p">(</span><span class="s2">&quot;user &quot;</span> <span class="o">+</span> <span class="nx">user_name</span> <span class="o">+</span> <span class="s2">&quot; does not exist in the database.&quot;</span><span class="p">);</span>
+</pre></div>
+</div>
 </div>
 <div class="section" id="set">
 <h2>set()<a class="headerlink" href="#set" title="Permalink to this headline">¶</a></h2>

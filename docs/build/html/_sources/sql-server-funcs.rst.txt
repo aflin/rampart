@@ -2,10 +2,12 @@
 Server Functions
 ----------------
 
-The SQL Module has a number of functions built into it which can operate
-on fields.  This can occur anywhere that an expression can occur in a SQL
-statement. Each of the arguments can be either a single field name, or
-another expression.
+The SQL module and engine has a number of functions built into it which can
+operate on fields within a SQL statement.
+
+The functions below may be called anywhere that a field or an expression
+normally occurs in a SQL statement.  Arguments to a function can be either a
+single field name, another function or another expression.
 
 
 General Functions

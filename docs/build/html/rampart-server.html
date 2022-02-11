@@ -393,8 +393,12 @@ use gzip compression for files served from the filesystem.  Default is
 extension which will be compressed.  If <code class="docutils literal notranslate"><span class="pre">true</span></code> - the following default
 <span class="green">Array</span> of extensions will be used:
 <code class="docutils literal notranslate"><span class="pre">[&quot;html&quot;,</span> <span class="pre">&quot;css&quot;,</span> <span class="pre">&quot;js&quot;,</span> <span class="pre">&quot;json,</span> <span class="pre">&quot;xml&quot;,</span> <span class="pre">&quot;txt&quot;,</span> <span class="pre">&quot;text&quot;,</span> <span class="pre">&quot;htm&quot;]</span></code>.</p>
-<p>Note that compressed files will be cached in a directory named “.gzipcache/”
-in the directory in which the files are located.</p>
+<p>Note that compressed files will be cached in a directory named
+“.gzipcache/” in the directory in which the files are located.
+Compressed cached files are updated based on the date of the original.
+The webserver’s <code class="docutils literal notranslate"><span class="pre">user</span></code> must have write permissions in the directory
+in which the files are located in order for compressed files to be
+cached.</p>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">compressScripts</span></code>:  A <span class="green">Boolean</span>. Whether to compress the
 output from scripts by default.  If not set, the default is <code class="docutils literal notranslate"><span class="pre">false</span></code>.
@@ -408,13 +412,14 @@ default, if not specified, is <code class="docutils literal notranslate"><span c
 script output must be in order for the content to be compressed.  The default,
 if not specified, is <code class="docutils literal notranslate"><span class="pre">1000</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">mimeMap</span></code>: An <span class="green">Object</span>, additions or changes to the standard extension
-to mime mappings.  Normally, if, e.g., <code class="docutils literal notranslate"><span class="pre">return</span> <span class="pre">{</span> <span class="pre">&quot;m4v&quot;:</span> <span class="pre">mymovie</span> <span class="pre">};</span></code> is
-set as <a class="reference internal" href="#the-return-object">The Return Object</a> to a mapped function, the header
-<code class="docutils literal notranslate"><span class="pre">content-type:</span> <span class="pre">video/x-m4v</span></code> is sent.  Though the ‘’content-type” header
-can be changed using the <code class="docutils literal notranslate"><span class="pre">headers</span></code> object in <a class="reference internal" href="#the-return-object">The Return Object</a>, it
-does not affect files served from the filesystem. If it is necessary to change
-the “content-type” for both <a class="reference internal" href="#mapped-functions">Mapped Functions</a> and files served from
-<a class="reference internal" href="#mapped-directories">Mapped Directories</a>, extension:mime-types mappings may be set or changed as follows:</p>
+to mime mappings.  Normally, if, e.g., <code class="docutils literal notranslate"><span class="pre">return</span> <span class="pre">{</span> <span class="pre">&quot;m4v&quot;:</span> <span class="pre">mymovie</span> <span class="pre">};</span></code>
+is set as <a class="reference internal" href="#the-return-object">The Return Object</a> to a mapped function, the header
+<code class="docutils literal notranslate"><span class="pre">content-type:</span> <span class="pre">video/x-m4v</span></code> is sent.  Though the <code class="docutils literal notranslate"><span class="pre">content-type</span></code>
+header can be changed using the <code class="docutils literal notranslate"><span class="pre">headers</span></code> object in <a class="reference internal" href="#the-return-object">The Return
+Object</a>, it does not affect files served from the filesystem.  If
+it is necessary to change the default “content-type” for both <a class="reference internal" href="#mapped-functions">Mapped
+Functions</a> and files served from <a class="reference internal" href="#mapped-directories">Mapped Directories</a>,
+extension:mime-types mappings may be set or changed as follows:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">({</span>
     <span class="p">...,</span>
     <span class="nx">mimeMap</span><span class="o">:</span> <span class="p">{</span>
@@ -430,19 +435,6 @@ the “content-type” for both <a class="reference internal" href="#mapped-func
 </pre></div>
 </div>
 <p>For a complete list of defaults, see <a class="reference internal" href="#key-to-mime-mappings">Key to Mime Mappings</a> below.</p>
-</li>
-<li><p><code class="docutils literal notranslate"><span class="pre">mapSort</span></code>: A <span class="green">Boolean</span>, whether to automatically sort the
-mapped paths given as keys to the <span class="green">Object</span> passed to <code class="docutils literal notranslate"><span class="pre">map</span></code> below.
-Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.  If <code class="docutils literal notranslate"><span class="pre">false</span></code>, paths from the <code class="docutils literal notranslate"><span class="pre">map</span></code> <span class="green">Object</span>
-will be matched in the order they are given.</p>
-<p>Note that regardless of this setting, paths are match by type of path (see
-below) with Exact paths tested first, then regular expression paths and
-lastly glob paths.  However, it is usually desirable for longer paths to
-have priority over shorter ones.  For example, if <code class="docutils literal notranslate"><span class="pre">/</span></code> and
-<code class="docutils literal notranslate"><span class="pre">/search.html</span></code> are both specified (both are “Exact” paths),
-<code class="docutils literal notranslate"><span class="pre">/search.html</span></code> should be checked first, otherwise <code class="docutils literal notranslate"><span class="pre">/</span></code> will match and
-<code class="docutils literal notranslate"><span class="pre">/search.html</span></code> will never match.  When <code class="docutils literal notranslate"><span class="pre">mapSort</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code>,
-key/paths are automatically sorted by length.</p>
 </li>
 <li><p><code class="docutils literal notranslate"><span class="pre">map</span></code>: An <span class="green">Object</span> of url to function or filesystem mapping.
 The keys of the object are exact paths, regular expressions, partial
@@ -479,10 +471,11 @@ mapping to a filesystem path may also include headers.</p>
 <span class="p">});</span>
 </pre></div>
 </div>
-<p>In the above example, the <code class="docutils literal notranslate"><span class="pre">&quot;/search.html&quot;</span></code> key will have priority over
-<code class="docutils literal notranslate"><span class="pre">&quot;/&quot;</span></code> key, so that a request <code class="docutils literal notranslate"><span class="pre">http://localhost:8088/search.html</span></code> will
-cause the function to be executed while anything else will match <code class="docutils literal notranslate"><span class="pre">&quot;/&quot;</span></code>
-(assuming <code class="docutils literal notranslate"><span class="pre">mapSort</span></code> is not set to <code class="docutils literal notranslate"><span class="pre">false</span></code>).</p>
+<p>In the above example, as the longer path, the <code class="docutils literal notranslate"><span class="pre">&quot;/search.html&quot;</span></code> key
+will have priority over <code class="docutils literal notranslate"><span class="pre">&quot;/&quot;</span></code> key, so that a request
+<code class="docutils literal notranslate"><span class="pre">http://localhost:8088/search.html</span></code> will cause the function to be
+executed while anything else will match <code class="docutils literal notranslate"><span class="pre">&quot;/&quot;</span></code> (assuming <code class="docutils literal notranslate"><span class="pre">mapSort</span></code>
+is not set to <code class="docutils literal notranslate"><span class="pre">false</span></code>).</p>
 <p>Keys/paths used for mapping a <span class="green">Function</span> may be given in one of
 four different formats, which are tested for a match in the following order:</p>
 <ul class="simple">
@@ -499,6 +492,19 @@ both these examples were present, <code class="docutils literal notranslate"><sp
 </ul>
 <p>Keys/paths used for mapping to the <strong>filesystem</strong> are always taken as an Exact path.
 Regular expressions and globs are not allowed.</p>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mapSort</span></code>: A <span class="green">Boolean</span>, whether to automatically sort the
+mapped paths given as keys to the <span class="green">Object</span> passed to <code class="docutils literal notranslate"><span class="pre">map</span></code> below.
+Default is <code class="docutils literal notranslate"><span class="pre">true</span></code>.  If <code class="docutils literal notranslate"><span class="pre">false</span></code>, paths from the <code class="docutils literal notranslate"><span class="pre">map</span></code> <span class="green">Object</span>
+will be matched in the order they are given.</p>
+<p>Note that regardless of this setting, paths are match by type of path (see
+below) with Exact paths tested first, then regular expression paths and
+lastly glob paths.  However, it is usually desirable for longer paths to
+have priority over shorter ones.  For example, if <code class="docutils literal notranslate"><span class="pre">/</span></code> and
+<code class="docutils literal notranslate"><span class="pre">/search.html</span></code> are both specified (both are “Exact” paths),
+<code class="docutils literal notranslate"><span class="pre">/search.html</span></code> should be checked first, otherwise <code class="docutils literal notranslate"><span class="pre">/</span></code> will match and
+<code class="docutils literal notranslate"><span class="pre">/search.html</span></code> will never match.  When <code class="docutils literal notranslate"><span class="pre">mapSort</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code>,
+key/paths are automatically sorted by length.</p>
 </li>
 </ul>
 </div></blockquote>
@@ -531,19 +537,20 @@ function declared <strong>globally</strong> in the current script.</p></li>
 <code class="docutils literal notranslate"><span class="pre">map:</span> <span class="pre">{&quot;/search.html&quot;</span> <span class="pre">:</span> <span class="pre">{module:&quot;mysearchmod&quot;}</span> <span class="pre">}</span></code> where mysearchmod.js is
 in a <a class="reference internal" href="rampart-main.html#module-search-path"><span class="std std-ref">standard module search path</span></a>.</p></li>
 <li><p>A directory of modules where the directory contains one or more modules
-with <code class="docutils literal notranslate"><span class="pre">module.exports</span></code> set to functions.  Example:
-<code class="docutils literal notranslate"><span class="pre">map:</span> <span class="pre">{&quot;/scripts/&quot;:</span> <span class="pre">{modulePath:</span> <span class="pre">&quot;/path/to/myscriptsdir/&quot;}</span> <span class="pre">}</span></code>.  In this
-case, if <code class="docutils literal notranslate"><span class="pre">/path/to/myscriptsdir/mymod.js</span></code> script exists, it might be
-available from the URL <code class="docutils literal notranslate"><span class="pre">http://localhost:8088/scripts/mymod.ext</span></code>
-where <code class="docutils literal notranslate"><span class="pre">.ext</span></code> can be <code class="docutils literal notranslate"><span class="pre">.html</span></code>, <code class="docutils literal notranslate"><span class="pre">.txt</span></code> or any other extension desired.
-Note that regardless of the extension used, the mime-type is set
-in <a class="reference internal" href="#the-return-object">The Return Object</a>.</p></li>
+with <code class="docutils literal notranslate"><span class="pre">module.exports</span></code> set to <span class="green">Functions</span> or an <span class="green">Object</span>
+containing <span class="green">Functions</span>.  Example: <code class="docutils literal notranslate"><span class="pre">map:</span> <span class="pre">{&quot;/scripts/&quot;:</span> <span class="pre">{modulePath:</span>
+<span class="pre">&quot;/path/to/myscriptsdir/&quot;}</span> <span class="pre">}</span></code>.  In this case, if
+<code class="docutils literal notranslate"><span class="pre">/path/to/myscriptsdir/mymod.js</span></code> script exists, it might be available
+from the URL <code class="docutils literal notranslate"><span class="pre">http://localhost:8088/scripts/mymod.ext</span></code> where <code class="docutils literal notranslate"><span class="pre">.ext</span></code>
+can be <code class="docutils literal notranslate"><span class="pre">.html</span></code>, <code class="docutils literal notranslate"><span class="pre">.txt</span></code> or any other extension desired.  Note that
+regardless of the extension used, the mime-type is set in <a class="reference internal" href="#the-return-object">The Return
+Object</a>.</p></li>
 <li><p>A mapped function path/key must start with <code class="docutils literal notranslate"><span class="pre">ws:</span></code> for websocket
 connections.  See <a class="reference internal" href="#websockets">Websockets</a> below.</p></li>
 </ul>
 </div></blockquote>
 <dl>
-<dt>NOTE:</dt><dd><p>Modules may also return its own mapped functions. The url will
+<dt>NOTE:</dt><dd><p>A module may also return its own mapped functions. The url will
 be a concatenation of the <code class="docutils literal notranslate"><span class="pre">map</span></code> object key and the return object keys.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">server</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-server&quot;</span><span class="p">);</span>
@@ -583,16 +590,16 @@ having to restart the server and that variables declared in the module
 have their scopes appropriately set.</p>
 <p>See <a class="reference internal" href="rampart-main.html#using-the-require-function-to-import-modules"><span class="std std-ref">Using the require Function to Import Modules</span></a>
 for details on writing and using modules.</p>
-<p>It is also important to note that only global variables and functions, and
-inline functions are copied to each JavaScript context for each server
-thread.  Any other variable or function that might otherwise appear to be
-in scope when <code class="docutils literal notranslate"><span class="pre">server.start()</span></code> is executed will not be available from
-within each server thread.  This is true regardless of the state of <code class="docutils literal notranslate"><span class="pre">useThreads</span></code>
-setting above.  Any semantic confusion that might be caused by this
-limitation can be mostly avoided by placing functions in separate scripts
-as modules, since variables declared in the module will be available and
-properly scoped (though separately and distintly; variables are not shared
-between threads).</p>
+<p>It is also important to note that only global variables and functions from
+the main script, along with inline functions are copied to each JavaScript
+context for each server thread.  Any other variable or function that might
+otherwise appear to be in scope when <code class="docutils literal notranslate"><span class="pre">server.start()</span></code> is executed will
+not be available from within each server thread.  This is true regardless
+of the state of <code class="docutils literal notranslate"><span class="pre">useThreads</span></code> setting above.  Any semantic confusion that
+might be caused by this limitation can be mostly avoided by placing
+functions in separate scripts as modules, since variables declared in the
+module will be available and properly scoped (though separately and
+distintly; variables are never shared between threads).</p>
 <p>Example of a scoped variable that would not be available:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">server</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-server&quot;</span><span class="p">);</span>
 
@@ -754,12 +761,12 @@ object passed to the function might look something like this:</p>
       <span class="s2">&quot;Sec-Fetch-Dest&quot;</span><span class="o">:</span> <span class="s2">&quot;document&quot;</span><span class="p">,</span>
       <span class="s2">&quot;Accept-Encoding&quot;</span><span class="o">:</span> <span class="s2">&quot;gzip, deflate, br&quot;</span><span class="p">,</span>
       <span class="s2">&quot;Accept-Language&quot;</span><span class="o">:</span> <span class="s2">&quot;en-US,en;q=0.9&quot;</span><span class="p">,</span>
-      <span class="s2">&quot;Cookie&quot;</span><span class="o">:</span> <span class="s2">&quot;mycookie=cookietext; cookiewquote=my\&quot;cookie\&quot;&quot;</span>
+      <span class="s2">&quot;Cookie&quot;</span><span class="o">:</span> <span class="s2">&quot;mycookie=cookietext&quot;</span>
    <span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>The above example could be printed out to the client using the following function:</p>
+<p>The above example could be printed out to the web client using the following function:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="nx">server</span><span class="p">.</span><span class="nx">start</span><span class="p">(</span>
 <span class="p">{</span>
     <span class="p">...,</span>
@@ -819,7 +826,7 @@ property <code class="docutils literal notranslate"><span class="pre">body</span
 <span class="cm">   might include:</span>
 
 <span class="cm">    {</span>
-<span class="cm">       &quot;ip&quot;: &quot;::1&quot;,</span>
+<span class="cm">       &quot;ip&quot;: &quot;127.0.0.1&quot;,</span>
 <span class="cm">       &quot;port&quot;: 38680,</span>
 <span class="cm">       &quot;method&quot;: &quot;POST&quot;,</span>
 <span class="cm">       &quot;path&quot;: {</span>
@@ -1098,8 +1105,8 @@ the text or data (a <span class="green">String</span> or <span class="green">Buf
 returned to the client.  The name of the key (which usually matches the
 well known file extension) determines the mime-type that is returned.  For
 example: to return an HTML (<code class="docutils literal notranslate"><span class="pre">text/html</span></code> mime type) document to the
-client, <code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">html:</span> <span class="pre">myhtmlvar}</span></code> would be specified where the variable
-<code class="docutils literal notranslate"><span class="pre">myhtmlvar</span></code> contains the HTML text to be sent to the client.  The name
+client, <code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">html:</span> <span class="pre">myhtmlcontent}</span></code> would be specified where the variable
+<code class="docutils literal notranslate"><span class="pre">myhtmlcontent</span></code> contains the HTML text to be sent to the client.  The name
 of the key (<code class="docutils literal notranslate"><span class="pre">html</span></code>) controls which mime-type will be sent to the
 connecting client.  Supported key-names to mime-types are listed
 <a class="reference internal" href="#key-to-mime-mappings"><span class="std std-ref">below</span></a>.</p>
@@ -1255,9 +1262,9 @@ returned to the client.</p>
 </div>
 <p>Example using <code class="docutils literal notranslate"><span class="pre">req.printf</span></code> from a server callback function:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">function</span> <span class="nx">mycallback</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
-    <span class="kd">var</span> <span class="nx">html</span><span class="p">;</span>
+    <span class="kd">var</span> <span class="nx">content</span><span class="o">=</span><span class="s2">&quot;&lt;html&gt;&lt;body&gt;&quot;</span><span class="p">;</span>
     <span class="kd">var</span> <span class="nx">end_cont</span> <span class="o">=</span> <span class="s2">&quot;&lt;/body&gt;&lt;/html&gt;&quot;</span><span class="p">;</span>
-    <span class="c1">// add content to html</span>
+    <span class="c1">// add more html to content variable ...</span>
     <span class="nx">req</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;%s&quot;</span><span class="p">,</span> <span class="nx">content</span><span class="p">);</span>
     <span class="k">return</span> <span class="p">{</span><span class="nx">html</span><span class="o">:</span> <span class="nx">end_cont</span><span class="p">};</span>
 <span class="p">}</span>
@@ -1285,9 +1292,9 @@ that make up the totality of the data sent to the client, using
 to the client.</p>
 <p>Example:</p>
 <div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">function</span> <span class="nx">mycallback</span><span class="p">(</span><span class="nx">req</span><span class="p">)</span> <span class="p">{</span>
-    <span class="kd">var</span> <span class="nx">html</span><span class="p">;</span>
+    <span class="kd">var</span> <span class="nx">content</span><span class="o">=</span><span class="s2">&quot;&lt;html&gt;&lt;body&gt;&quot;</span><span class="p">;</span>
     <span class="kd">var</span> <span class="nx">end_cont</span> <span class="o">=</span> <span class="s2">&quot;&lt;/body&gt;&lt;/html&gt;&quot;</span><span class="p">;</span>
-    <span class="p">...</span> <span class="nx">add</span> <span class="nx">content</span> <span class="nx">to</span> <span class="nx">html</span> <span class="p">...</span>
+    <span class="c1">// add more html to content variable ...</span>
     <span class="nx">req</span><span class="p">.</span><span class="nx">put</span><span class="p">(</span><span class="nx">content</span><span class="p">);</span>
     <span class="k">return</span> <span class="p">{</span><span class="nx">html</span><span class="o">:</span> <span class="nx">end_cont</span><span class="p">};</span>
 <span class="p">}</span>
@@ -1475,7 +1482,7 @@ for other requests to be serviced between chunks.</p>
 <a class="reference internal" href="#the-return-object">The Return Object</a>.  A delay between chunks can be set in milliseconds
 with the following: <code class="docutils literal notranslate"><span class="pre">chunkDelay:delay_in_ms</span></code>. This delay works in the same
 manner as <a class="reference internal" href="rampart-main.html#setmetronome"><span class="std std-ref">setMetronome()</span></a>.</p>
-<p>In addition, the extension/mime property of <a class="reference internal" href="#the-return-object">The Return Object</a>a  may be
+<p>In addition, the extension/mime property of <a class="reference internal" href="#the-return-object">The Return Object</a> may be
 a <span class="green">Function</span> (<cite>The Chunk Callback</cite>), which will be called for every
 chunk to be written.</p>
 <p>Example Callback Return Object:</p>
@@ -1880,9 +1887,6 @@ and <a class="reference internal" href="rampart-main.html#rampart-event"><span c
 <span class="nx">rampart</span><span class="p">.</span><span class="nx">utils</span><span class="p">.</span><span class="nx">printf</span><span class="p">(</span><span class="s2">&quot;\nWebchat is available here:\nhttp://127.0.0.1:8088/\n&quot;</span><span class="p">);</span>
 </pre></div>
 </div>
-<p>For a more complete example of using events and websockets,
-see the <code class="docutils literal notranslate"><span class="pre">rampart/examples/web_server/modules/wschat.js</span></code>
-script.</p>
 </div>
 </div>
 </div>
@@ -1907,10 +1911,11 @@ to the number of cpu cores on the system).  Upon creation several things
 happen:</p>
 <blockquote>
 <div><ul class="simple">
-<li><p>Two duktape contexts are created for each thread.  One for HTTP
+<li><p>Two JavaScript contexts are created for each thread.  One for HTTP
 requests and one for websockets conversations.</p></li>
-<li><p>Each duktape context is a separate JavaScript interpreter.  In
-general, no data is shared between them.</p></li>
+<li><p>Each JavaScript context is a separate JavaScript interpreter.  In
+general, no data is shared between them.  Exceptions to this rule
+include</p></li>
 <li><p>An event loop is created for each thread.</p></li>
 <li><p>Global variables and functions from “begin code” are copied from the
 main thread’s duktape context to all the duktape thread contexts.

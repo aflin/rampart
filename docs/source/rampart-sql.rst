@@ -142,7 +142,7 @@ parameters, an optional :green:`Object` of options and an optional callback
 
 .. code-block:: javascript
 
-    var res = sql.exec(statement [, options] [, sql_parameters] [, callback])
+    var res = sql.exec(statement [, options] [, sql_parameters] [, callback]);
 
 +--------------+------------------+--------------------------------------------------------+
 |Argument      |Type              |Description                                             |
@@ -772,7 +772,13 @@ The ``one`` :green:`Function` is a shortcut for executing sql
 where only one row is desired and the extra information normally
 returned from `exec()`_ is not needed.
 
-With ``exec()``, this:
+Usage:
+
+.. code-block:: javascript
+
+    var res = sql.one(statement [, sql_parameters]);
+
+This allows:
 
 .. code-block:: javascript
 
@@ -780,14 +786,20 @@ With ``exec()``, this:
    var row=res.rows[0];
    /* row = { email : "user@example.com" } */
 
-can be more easily written as:
+to be more easily written as:
     
 .. code-block:: javascript
 
-   var row = sql.one("select user from Users where user=?user",{user:user_name});
+   var row = sql.one("select email from Users where user=?user",{user:user_name});
    /* row = { email : "user@example.com" } */
 
-Note: ``one`` returns ``undefined`` if a matching row is not found.
+Note: ``one`` returns ``undefined`` if a matching row is not found. It thus
+can be used in an ``if`` statement to test the existence of a row:
+
+.. code-block:: javascript
+
+   if(! sql.one("select email from Users where user=?", [user_name]) )
+      console.log("user " + user_name + " does not exist in the database.");
 
 set()
 ~~~~~

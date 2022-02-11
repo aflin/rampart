@@ -211,8 +211,12 @@ Where:
       :green:`Array` of extensions will be used: 
       ``["html", "css", "js", "json, "xml", "txt", "text", "htm"]``.
       
-      Note that compressed files will be cached in a directory named ".gzipcache/"
-      in the directory in which the files are located.
+      Note that compressed files will be cached in a directory named
+      ".gzipcache/" in the directory in which the files are located. 
+      Compressed cached files are updated based on the date of the original. 
+      The webserver's ``user`` must have write permissions in the directory
+      in which the files are located in order for compressed files to be
+      cached.
 
     * ``compressScripts``:  A :green:`Boolean`. Whether to compress the
       output from scripts by default.  If not set, the default is ``false``. 
@@ -229,13 +233,14 @@ Where:
       if not specified, is ``1000``.
 
     * ``mimeMap``: An :green:`Object`, additions or changes to the standard extension
-      to mime mappings.  Normally, if, e.g., ``return { "m4v": mymovie };`` is
-      set as `The Return Object`_ to a mapped function, the header
-      ``content-type: video/x-m4v`` is sent.  Though the ''content-type" header
-      can be changed using the ``headers`` object in `The Return Object`_\ , it
-      does not affect files served from the filesystem. If it is necessary to change
-      the "content-type" for both `Mapped Functions`_ and files served from
-      `Mapped Directories`_\ , extension:mime-types mappings may be set or changed as follows:
+      to mime mappings.  Normally, if, e.g., ``return { "m4v": mymovie };``
+      is set as `The Return Object`_ to a mapped function, the header
+      ``content-type: video/x-m4v`` is sent.  Though the ``content-type``
+      header can be changed using the ``headers`` object in `The Return
+      Object`_\ , it does not affect files served from the filesystem.  If
+      it is necessary to change the default "content-type" for both `Mapped
+      Functions`_ and files served from `Mapped Directories`_\ ,
+      extension:mime-types mappings may be set or changed as follows:
       
       .. code-block:: javascript
       
@@ -254,20 +259,6 @@ Where:
 
       For a complete list of defaults, see `Key to Mime Mappings`_ below.
 
-    * ``mapSort``: A :green:`Boolean`, whether to automatically sort the
-      mapped paths given as keys to the :green:`Object` passed to ``map`` below. 
-      Default is ``true``.  If ``false``, paths from the ``map`` :green:`Object`
-      will be matched in the order they are given.  
-
-      Note that regardless of this setting, paths are match by type of path (see
-      below) with Exact paths tested first, then regular expression paths and
-      lastly glob paths.  However, it is usually desirable for longer paths to
-      have priority over shorter ones.  For example, if ``/`` and
-      ``/search.html`` are both specified (both are "Exact" paths),
-      ``/search.html`` should be checked first, otherwise ``/`` will match and
-      ``/search.html`` will never match.  When ``mapSort`` is ``true``,
-      key/paths are automatically sorted by length.
-      
     * ``map``: An :green:`Object` of url to function or filesystem mapping.
       The keys of the object are exact paths, regular expressions, partial
       paths or globbed paths to be matched against incoming requests.  For
@@ -308,10 +299,11 @@ Where:
             }
         });
 
-      In the above example, the ``"/search.html"`` key will have priority over
-      ``"/"`` key, so that a request ``http://localhost:8088/search.html`` will
-      cause the function to be executed while anything else will match ``"/"``
-      (assuming ``mapSort`` is not set to ``false``).
+      In the above example, as the longer path, the ``"/search.html"`` key
+      will have priority over ``"/"`` key, so that a request
+      ``http://localhost:8088/search.html`` will cause the function to be
+      executed while anything else will match ``"/"`` (assuming ``mapSort``
+      is not set to ``false``).
 
       Keys/paths used for mapping a :green:`Function` may be given in one of
       four different formats, which are tested for a match in the following order:
@@ -332,6 +324,20 @@ Where:
       Keys/paths used for mapping to the **filesystem** are always taken as an Exact path. 
       Regular expressions and globs are not allowed.
 
+    * ``mapSort``: A :green:`Boolean`, whether to automatically sort the
+      mapped paths given as keys to the :green:`Object` passed to ``map`` below. 
+      Default is ``true``.  If ``false``, paths from the ``map`` :green:`Object`
+      will be matched in the order they are given.  
+
+      Note that regardless of this setting, paths are match by type of path (see
+      below) with Exact paths tested first, then regular expression paths and
+      lastly glob paths.  However, it is usually desirable for longer paths to
+      have priority over shorter ones.  For example, if ``/`` and
+      ``/search.html`` are both specified (both are "Exact" paths),
+      ``/search.html`` should be checked first, otherwise ``/`` will match and
+      ``/search.html`` will never match.  When ``mapSort`` is ``true``,
+      key/paths are automatically sorted by length.
+      
 Return Value
   A :green:`Number`, the pid of the current process, or if ``daemon`` is
   set to ``true``, the pid of the forked server.
@@ -361,19 +367,20 @@ Mapped Functions
     in a :ref:`standard module search path <rampart-main:Module Search Path>`.
 
   * A directory of modules where the directory contains one or more modules
-    with ``module.exports`` set to functions.  Example:
-    ``map: {"/scripts/": {modulePath: "/path/to/myscriptsdir/"} }``.  In this
-    case, if ``/path/to/myscriptsdir/mymod.js`` script exists, it might be
-    available from the URL ``http://localhost:8088/scripts/mymod.ext`` 
-    where ``.ext`` can be ``.html``, ``.txt`` or any other extension desired.
-    Note that regardless of the extension used, the mime-type is set
-    in `The Return Object`_\ .
+    with ``module.exports`` set to :green:`Functions` or an :green:`Object`
+    containing :green:`Functions`.  Example: ``map: {"/scripts/": {modulePath:
+    "/path/to/myscriptsdir/"} }``.  In this case, if
+    ``/path/to/myscriptsdir/mymod.js`` script exists, it might be available
+    from the URL ``http://localhost:8088/scripts/mymod.ext`` where ``.ext``
+    can be ``.html``, ``.txt`` or any other extension desired.  Note that
+    regardless of the extension used, the mime-type is set in `The Return
+    Object`_\ .
 
   * A mapped function path/key must start with ``ws:`` for websocket
     connections.  See `Websockets`_ below.
 
 NOTE:
-  Modules may also return its own mapped functions. The url will
+  A module may also return its own mapped functions. The url will
   be a concatenation of the ``map`` object key and the return object keys.
 
   Example:
@@ -418,16 +425,16 @@ NOTE:
   See :ref:`rampart-main:Using the require Function to Import Modules` 
   for details on writing and using modules.
 
-  It is also important to note that only global variables and functions, and
-  inline functions are copied to each JavaScript context for each server
-  thread.  Any other variable or function that might otherwise appear to be
-  in scope when ``server.start()`` is executed will not be available from
-  within each server thread.  This is true regardless of the state of ``useThreads``
-  setting above.  Any semantic confusion that might be caused by this
-  limitation can be mostly avoided by placing functions in separate scripts
-  as modules, since variables declared in the module will be available and
-  properly scoped (though separately and distintly; variables are not shared
-  between threads).
+  It is also important to note that only global variables and functions from
+  the main script, along with inline functions are copied to each JavaScript
+  context for each server thread.  Any other variable or function that might
+  otherwise appear to be in scope when ``server.start()`` is executed will
+  not be available from within each server thread.  This is true regardless
+  of the state of ``useThreads`` setting above.  Any semantic confusion that
+  might be caused by this limitation can be mostly avoided by placing
+  functions in separate scripts as modules, since variables declared in the
+  module will be available and properly scoped (though separately and
+  distintly; variables are never shared between threads).
 
   Example of a scoped variable that would not be available:
   
@@ -602,11 +609,11 @@ The Request Object
               "Sec-Fetch-Dest": "document",
               "Accept-Encoding": "gzip, deflate, br",
               "Accept-Language": "en-US,en;q=0.9",
-              "Cookie": "mycookie=cookietext; cookiewquote=my\"cookie\""
+              "Cookie": "mycookie=cookietext"
            }
         }
 
-  The above example could be printed out to the client using the following function:
+  The above example could be printed out to the web client using the following function:
 
   .. code-block:: javascript
 
@@ -672,7 +679,7 @@ Posting Form Data
            might include:
 
             {
-               "ip": "::1",
+               "ip": "127.0.0.1",
                "port": 38680,
                "method": "POST",
                "path": {
@@ -948,8 +955,8 @@ The Return Object
   returned to the client.  The name of the key (which usually matches the
   well known file extension) determines the mime-type that is returned.  For
   example: to return an HTML (``text/html`` mime type) document to the
-  client, ``{ html: myhtmlvar}`` would be specified where the variable
-  ``myhtmlvar`` contains the HTML text to be sent to the client.  The name
+  client, ``{ html: myhtmlcontent}`` would be specified where the variable
+  ``myhtmlcontent`` contains the HTML text to be sent to the client.  The name
   of the key (``html``) controls which mime-type will be sent to the
   connecting client.  Supported key-names to mime-types are listed
   :ref:`below <rampart-server:Key to Mime Mappings>`.
@@ -1133,9 +1140,9 @@ Example using ``req.printf`` from a server callback function:
 .. code-block:: javascript
 
     function mycallback(req) {
-        var html;
+        var content="<html><body>";
         var end_cont = "</body></html>";
-        // add content to html
+        // add more html to content variable ...
         req.printf("%s", content);
         return {html: end_cont};
     }
@@ -1168,9 +1175,9 @@ Example:
 .. code-block:: javascript
 
     function mycallback(req) {
-        var html;
+        var content="<html><body>";
         var end_cont = "</body></html>";
-        ... add content to html ...
+        // add more html to content variable ...
         req.put(content);
         return {html: end_cont};
     }
@@ -1365,7 +1372,7 @@ A chunked document is specified by setting ``chunk:true`` in
 with the following: ``chunkDelay:delay_in_ms``. This delay works in the same
 manner as :ref:`rampart-main:setMetronome()`.
 
-In addition, the extension/mime property of `The Return Object`_\ a  may be
+In addition, the extension/mime property of `The Return Object`_ may be
 a :green:`Function` (`The Chunk Callback`), which will be called for every
 chunk to be written.
 
@@ -1805,9 +1812,11 @@ and :ref:`rampart.event <rampart-main:rampart.event>` functions.
 
     rampart.utils.printf("\nWebchat is available here:\nhttp://127.0.0.1:8088/\n");
 
-For a more complete example of using events and websockets,
-see the ``rampart/examples/web_server/modules/wschat.js``
-script.
+.. THIS WAS REMOVED AND WILL BE IN A REPO OF ITS OWN EVENTUALLY
+
+    For a more complete example of using events and websockets,
+    see the ``rampart/examples/web_server/modules/wschat.js``
+    script.
 
 Technical Notes
 ---------------
@@ -1837,10 +1846,10 @@ Server.start creates the configured number of threads (as specified or equal
 to the number of cpu cores on the system).  Upon creation several things
 happen:
 
-    * Two duktape contexts are created for each thread.  One for HTTP
+    * Two JavaScript contexts are created for each thread.  One for HTTP
       requests and one for websockets conversations.
 
-    * Each duktape context is a separate JavaScript interpreter.  In
+    * Each JavaScript context is a separate JavaScript interpreter.  In
       general, no data is shared between them.
 
     * An event loop is created for each thread.
