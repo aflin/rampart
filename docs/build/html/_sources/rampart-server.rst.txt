@@ -1812,7 +1812,7 @@ and :ref:`rampart.event <rampart-main:rampart.event>` functions.
 
     rampart.utils.printf("\nWebchat is available here:\nhttp://127.0.0.1:8088/\n");
 
-.. THIS WILL BE IN A REPO OF ITS OWN EVENTUALLY
+.. THIS WAS REMOVED AND WILL BE IN A REPO OF ITS OWN EVENTUALLY
 
     For a more complete example of using events and websockets,
     see the ``rampart/examples/web_server/modules/wschat.js``
@@ -1850,8 +1850,7 @@ happen:
       requests and one for websockets conversations.
 
     * Each JavaScript context is a separate JavaScript interpreter.  In
-      general, no data is shared between them.  Exceptions to this rule
-      include 
+      general, no data is shared between them.
 
     * An event loop is created for each thread.
 

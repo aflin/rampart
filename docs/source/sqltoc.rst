@@ -9,4 +9,4 @@ The rampart-sql module
    rampart-sql
    sql-server-funcs
    sql-set
-   tsql
+   sql-utils
