@@ -201,6 +201,11 @@ format
             * ``%b``  the corresponding parameter is a :green:`Buffer` or a
               :green:`String` and will be sent as buffer data.
 
+    Return Value:
+        An :green:`Array`, the return values from the server.  Note that
+        unlike commands below, ``format`` does not attempt to organize return
+        values into :green:`Objects` based on the command given.  Instead the raw
+        values returned from redis are each members of the :green:`Array`.
 
     Example:
 

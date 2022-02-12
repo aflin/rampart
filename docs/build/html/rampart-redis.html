@@ -380,6 +380,13 @@ will be sent as a double float.</p></li>
 </li>
 </ul>
 </div></blockquote>
+<dl class="simple">
+<dt>Return Value:</dt><dd><p>An <span class="green">Array</span>, the return values from the server.  Note that
+unlike commands below, <code class="docutils literal notranslate"><span class="pre">format</span></code> does not attempt to organize return
+values into <span class="green">Objects</span> based on the command given.  Instead the raw
+values returned from redis are each members of the <span class="green">Array</span>.</p>
+</dd>
+</dl>
 <p>Example:</p>
 <blockquote>
 <div><div class="highlight-javascript notranslate"><div class="highlight"><pre><span></span><span class="kd">var</span> <span class="nx">redis</span> <span class="o">=</span> <span class="nx">require</span><span class="p">(</span><span class="s2">&quot;rampart-redis&quot;</span><span class="p">);</span>

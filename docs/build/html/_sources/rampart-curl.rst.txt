@@ -1100,9 +1100,6 @@ The following example sends a preformatted email through gmail.
     var pass ='xxxxxxxx';
     var to_email  = "example_recip@example.com"
      
-
-    var curl = require("rampart-curl");
-
     var res=curl.fetch("smtps://smtp.gmail.com:465",
     {
         "mail-rcpt": to_email,
@@ -1162,9 +1159,6 @@ inline in the HTML mail.
     var user = "example_user@gmail.com";
     var pass ='xxxxxxxx';
     var to_email  = "example_recip@example.com"
-     
-
-    var curl = require("rampart-curl");
 
     var img=readFile("/path/to/myimage.jpg");
 

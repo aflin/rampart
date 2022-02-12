@@ -39,7 +39,7 @@
         <link rel="search" title="Search" href="search.html"/>
     <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
         <link rel="up" title="The rampart-sql module" href="sqltoc.html"/>
-        <link rel="next" title="Texis Command Line Utilities" href="sql-utils.html"/>
+        <link rel="next" title="The rampart-sql Command Line Utilities" href="sql-utils.html"/>
         <link rel="prev" title="Server Functions" href="sql-server-funcs.html"/> 
 
   
@@ -195,16 +195,6 @@
 <li class="toctree-l4"><a class="reference internal" href="#tablereadbufsz">tableReadBufSz</a></li>
 </ul>
 </li>
-<li class="toctree-l3"><a class="reference internal" href="#locking-properties">Locking Properties</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#singleuser">singleUser</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#lockmode">lockMode</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#locksleepmethod">lockSleepMethod</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#locksleeptime">lockSleepTime</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#locksleepmaxtime">lockSleepMaxTime</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#fairlock">fairLock</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#lockverbose">lockVerbose</a></li>
-</ul>
-</li>
 <li class="toctree-l3"><a class="reference internal" href="#miscellaneous-properties">Miscellaneous Properties</a><ul>
 <li class="toctree-l4"><a class="reference internal" href="#tablespace">tableSpace</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#datefmt">dateFmt</a></li>
@@ -248,7 +238,7 @@
 </li>
 </ul>
 </li>
-<li class="toctree-l2"><a class="reference internal" href="sql-utils.html">Texis Command Line Utilities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-utils.html">The rampart-sql Command Line Utilities</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
@@ -330,7 +320,7 @@
 They do not need to be changed unless a change in the  behavior of
 the system is desired.</p>
 <p>Using the command line utility
-<a class="reference internal" href="tsql.html#tsql-command-line-utility"><span class="std std-ref">tsql</span></a>
+<span class="xref std std-ref">tsql</span>
 the properties are set using the following SQL syntax:</p>
 <div class="highlight-sql notranslate"><div class="highlight"><pre><span></span><span class="k">SET</span> <span class="n">property</span> <span class="o">=</span> <span class="n">value</span><span class="p">;</span>
 </pre></div>
@@ -346,11 +336,11 @@ the properties are set using the following SQL syntax:</p>
 <p>The <code class="docutils literal notranslate"><span class="pre">property</span></code> names are case insensitive and may be specified in
 <em>camelCase</em>, <em>lower case</em>, <em>UPPER CASE</em> or as you prefer.</p>
 <p>The <cite>Server Properties</cite> set using either
-<a class="reference internal" href="tsql.html#tsql-command-line-utility"><span class="std std-ref">tsql</span></a>
+<span class="xref std std-ref">tsql</span>
 or <a class="reference internal" href="rampart-sql.html#set"><span class="std std-ref">set()</span></a> are for the most part identical.
 However, note below that a few properties (such as <code class="docutils literal notranslate"><span class="pre">noiseList</span></code>) can only
 be set using the <a class="reference internal" href="rampart-sql.html#set"><span class="std std-ref">set()</span></a> function.</p>
-<p>In <a class="reference internal" href="tsql.html#tsql-command-line-utility"><span class="std std-ref">tsql</span></a>
+<p>In <span class="xref std std-ref">tsql</span>
 the <code class="docutils literal notranslate"><span class="pre">value</span></code> can be one of four types depending on the property: Number,
 Boolean, Array or String.  A Boolean value is either an integer  – <code class="docutils literal notranslate"><span class="pre">0</span></code> is false,
 <code class="docutils literal notranslate"><span class="pre">1</span></code> is true. Using the <a class="reference internal" href="rampart-sql.html#set"><span class="std std-ref">set()</span></a>
@@ -1844,100 +1834,6 @@ disable read buffering. Aka <code class="docutils literal notranslate"><span cla
 </div></blockquote>
 </div>
 </div>
-<div class="section" id="locking-properties">
-<h2>Locking Properties<a class="headerlink" href="#locking-properties" title="Permalink to this headline">¶</a></h2>
-<p><span class="orange">THIS SECTION SHOULD BE REDONE WITH NEW LOCKSERVER</span></p>
-<p>These properties affect the way that locking occurs in the database
-engine. Setting these properties without understanding the consequences
-can lead to inaccurate results, and even corrupt tables.</p>
-<div class="section" id="singleuser">
-<h3>singleUser<a class="headerlink" href="#singleuser" title="Permalink to this headline">¶</a></h3>
-<blockquote>
-<div><p>This will turn off locking completely. <strong>This should be used with
-extreme caution</strong>. The times when it is safe to use this option are
-if the database is read-only, or if there is only one connection to
-the database. Default <code class="docutils literal notranslate"><span class="pre">false</span></code>.</p>
-</div></blockquote>
-</div>
-<div class="section" id="lockmode">
-<h3>lockMode<a class="headerlink" href="#lockmode" title="Permalink to this headline">¶</a></h3>
-<blockquote>
-<div><p><strong>HOW DO YOU MANUALLY DO THIS???</strong>
-This can be set to either manual or automatic. In manual mode the
-person writing the program is responsible for getting and releasing
-locks. In automatic mode Texis will do this itself. Manual mode can
-reduce the number of locks required, or implement specific
-application logic. In manual mode care must be taken that reads and
-writes can not occur at the same time. The two modes can co-exist,
-in that one process can have manual mode, and the other automatic.
-Default automatic.</p>
-</div></blockquote>
-</div>
-<div class="section" id="locksleepmethod">
-<h3>lockSleepMethod<a class="headerlink" href="#locksleepmethod" title="Permalink to this headline">¶</a></h3>
-<blockquote>
-<div><p>Determines whether to use a portable or OS specific method of
-sleeping while waiting for a lock. By default the OS specific method
-is used. This should not need to be changed.</p>
-</div></blockquote>
-</div>
-<div class="section" id="locksleeptime">
-<h3>lockSleepTime<a class="headerlink" href="#locksleeptime" title="Permalink to this headline">¶</a></h3>
-<blockquote>
-<div><p>How long to wait between attempts to check the lock. If this value
-is too small locks will be checked too often, wasting CPU time. If
-it is too high then the process might be sleeping when there is no
-lock, delaying database access. Generally the busier the system the
-higher this setting should be. It is measured in thousandths of a
-second. The default is 20.</p>
-</div></blockquote>
-</div>
-<div class="section" id="locksleepmaxtime">
-<h3>lockSleepMaxTime<a class="headerlink" href="#locksleepmaxtime" title="Permalink to this headline">¶</a></h3>
-<blockquote>
-<div><p>The lock sleep time automatically increments the if unable to get a
-lock to allow other processes an opportunity to get the CPU. This
-sets a limit on how lock to sleep. It is measured in thousandths of
-a second. The default is 100.</p>
-</div></blockquote>
-</div>
-<div class="section" id="fairlock">
-<h3>fairLock<a class="headerlink" href="#fairlock" title="Permalink to this headline">¶</a></h3>
-<blockquote>
-<div><p>Whether to be fair or not. A process which is running in fair mode
-will not obtain a lock if the lock which has been waiting longest
-would conflict. A process which is not in fair mode will obtain the
-lock as soon as it can. This can cause a process to wait forever for
-a lock. This typically happens if there are lots of processes
-reading the table, and one trying to write. Setting <code class="docutils literal notranslate"><span class="pre">fairlock</span></code> to
-true will guarantee that the writer can obtain the lock as long as
-the readers are getting and releasing locks. Without <code class="docutils literal notranslate"><span class="pre">fairlock</span></code>
-there is no such guarantee, however the readers will see better
-performance as they will rarely if ever wait for the writer. This
-flag only affects the process which sets the flag. It is not
-possible to force another process to be fair. The default is that it
-operates in fair mode.</p>
-</div></blockquote>
-</div>
-<div class="section" id="lockverbose">
-<h3>lockVerbose<a class="headerlink" href="#lockverbose" title="Permalink to this headline">¶</a></h3>
-<blockquote>
-<div><p><strong>HOW MUCH OF THIS STILL APPLIES??</strong>
-How verbose the lock code should be. The default minimum level of 0
-will report all serious problems in the lock manager, as they are
-detected and corrected. A verbosity level of 1 will also display
-messages about less serious problems, such as processes that have
-exited without closing the lock structure. Level 2 will also show
-when a lock can not be immediately obtained. Level 3 will show every
-lock as it is released. In version 5.01.1160010000 20061004 and
-later, the level can be bitwise OR’d with 0x10 and/or 0x20 to report
-system calls before and after (respectively). Levels 1 and above
-should generally only be used for debugging. In version
-7.07.1565800000 20190814 and later, 0x40 and 0x80 may be set to
-report before and after semaphore locking/unlocking.</p>
-</div></blockquote>
-</div>
-</div>
 <div class="section" id="miscellaneous-properties">
 <h2>Miscellaneous Properties<a class="headerlink" href="#miscellaneous-properties" title="Permalink to this headline">¶</a></h2>
 <p>These properties do not fit nicely into a group, and are presented here.</p>
@@ -2521,7 +2417,7 @@ one of the following:</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="sql-utils.html" class="btn btn-neutral float-right" title="Texis Command Line Utilities" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+        <a href="sql-utils.html" class="btn btn-neutral float-right" title="The rampart-sql Command Line Utilities" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
       
       
         <a href="sql-server-funcs.html" class="btn btn-neutral" title="Server Functions" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>

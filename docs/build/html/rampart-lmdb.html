@@ -380,9 +380,9 @@ flags are available in the return object:</p>
 </div>
 <p>Where:</p>
 <blockquote>
-<div><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <span class="green">String</span>, the name of the database
-to be accessed.  If <code class="docutils literal notranslate"><span class="pre">undefined</span></code>, the lmdb default database
-for the database envirnoment will be opened.</p>
+<div><p><code class="docutils literal notranslate"><span class="pre">dbase</span></code> is a <span class="green">String</span>, the name of the database to be accessed.
+If <code class="docutils literal notranslate"><span class="pre">undefined</span></code> or <code class="docutils literal notranslate"><span class="pre">null</span></code>, the lmdb default database for the database
+envirnoment will be opened.</p>
 <p><code class="docutils literal notranslate"><span class="pre">create</span></code> is a <span class="green">Boolean</span>, if <code class="docutils literal notranslate"><span class="pre">true</span></code> openDb will be
 a write transaction which creates the database, if it does not
 exist.</p>
@@ -781,7 +781,8 @@ be use.  This database will be the default for all operations
 below.  However, more than one database may be used per transaction.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">open_rw</span></code> is an <span class="green">Boolean</span>, if <code class="docutils literal notranslate"><span class="pre">true</span></code>, open the transaction
 for read/write.  This is needed if any data will be added or deleted
-from a database.  If <code class="docutils literal notranslate"><span class="pre">false</span></code>, the transaction will be read only.</p></li>
+from a database.  If <code class="docutils literal notranslate"><span class="pre">false</span></code> (the default), the transaction will be
+read only.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">commit_by_default</span></code> is an <span class="green">Boolean</span>.  When a transaction is
 opened, it must be eventually closed using either <a class="reference internal" href="#txn-commit">txn.commit</a> or
 <a class="reference internal" href="#txn-abort">txn.abort</a>.  If the script exits or <code class="docutils literal notranslate"><span class="pre">var</span> <span class="pre">txn</span></code> goes out of
@@ -1054,7 +1055,8 @@ If <code class="docutils literal notranslate"><span class="pre">false</span></co
 </div></blockquote>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p>An <span class="green">Object</span> with the propertis <code class="docutils literal notranslate"><span class="pre">key</span></code> and <code class="docutils literal notranslate"><span class="pre">value</span></code> set to the
-key and value of the retrieved item (e.g. <code class="docutils literal notranslate"><span class="pre">{&quot;key&quot;:</span> <span class="pre">dbkey,</span> <span class="pre">&quot;value&quot;:</span> <span class="pre">dbval}</span></code>).</p>
+key and value of the retrieved item (e.g.
+<code class="docutils literal notranslate"><span class="pre">{&quot;key&quot;:</span> <span class="pre">&quot;database_key&quot;,</span> <span class="pre">&quot;value&quot;:</span> <span class="pre">&quot;database_value&quot;}</span></code>).</p>
 </dd>
 </dl>
 </div>
@@ -1155,7 +1157,7 @@ the return <code class="docutils literal notranslate"><span class="pre">key</spa
 If <code class="docutils literal notranslate"><span class="pre">false</span></code> (the default) the return <code class="docutils literal notranslate"><span class="pre">key</span></code> will be a <span class="green">Buffer</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">val_is_string</span></code> is a <span class="green">Boolean</span>. If <code class="docutils literal notranslate"><span class="pre">true</span></code> the returned
 <code class="docutils literal notranslate"><span class="pre">value</span></code> will be converted to a <span class="green">String</span>.  If <code class="docutils literal notranslate"><span class="pre">false</span></code>
-(the default)``value`` will be a <span class="green">Buffer</span>.</p></li>
+(the default) <code class="docutils literal notranslate"><span class="pre">value</span></code> will be a <span class="green">Buffer</span>.</p></li>
 </ul>
 </div></blockquote>
 <p>This operates identical to:</p>
@@ -1231,7 +1233,7 @@ the return <code class="docutils literal notranslate"><span class="pre">key</spa
 If <code class="docutils literal notranslate"><span class="pre">false</span></code> (the default) the return <code class="docutils literal notranslate"><span class="pre">key</span></code> will be a <span class="green">Buffer</span>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">val_is_string</span></code> is a <span class="green">Boolean</span>. If <code class="docutils literal notranslate"><span class="pre">true</span></code> the returned
 <code class="docutils literal notranslate"><span class="pre">value</span></code> will be converted to a <span class="green">String</span>.  If <code class="docutils literal notranslate"><span class="pre">false</span></code>
-(the default)``value`` will be a <span class="green">Buffer</span>.</p></li>
+(the default) <code class="docutils literal notranslate"><span class="pre">value</span></code> will be a <span class="green">Buffer</span>.</p></li>
 </ul>
 </div></blockquote>
 <p>This operates identical to:</p>
@@ -1263,7 +1265,7 @@ If <code class="docutils literal notranslate"><span class="pre">false</span></co
 <span class="cm">/*</span>
 <span class="cm">    Get every item in the database in reverse order.</span>
 <span class="cm">    If cursor has not been previously set cursorPrev()</span>
-<span class="cm">      starts at the last item.</span>
+<span class="cm">      it starts at the last item.</span>
 <span class="cm">*/</span>
 <span class="k">while</span><span class="p">(</span> <span class="p">(</span><span class="nx">res</span> <span class="o">=</span> <span class="nx">txn</span><span class="p">.</span><span class="nx">cursorPrev</span><span class="p">())</span> <span class="p">)</span>
 <span class="p">{</span>
@@ -1395,7 +1397,7 @@ significantly improved.</p>
 <span class="c1">// sync now, or sync will happen upon script exit.</span>
 <span class="c1">//lmdb.sync();</span>
 
-<span class="cm">/* this must be done while not in a transaction */</span>
+<span class="cm">/* this must be done while outside a transaction */</span>
 <span class="kd">var</span> <span class="nx">total</span> <span class="o">=</span> <span class="nx">lmdb</span><span class="p">.</span><span class="nx">getCount</span><span class="p">(</span><span class="nx">dbi</span><span class="p">);</span>
 
 <span class="cm">/* get all the Sofías in the database */</span>

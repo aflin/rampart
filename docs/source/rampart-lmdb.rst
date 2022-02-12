@@ -199,9 +199,9 @@ Usage:
 
 Where:
 
-    ``dbase`` is a :green:`String`, the name of the database
-    to be accessed.  If ``undefined``, the lmdb default database
-    for the database envirnoment will be opened.
+    ``dbase`` is a :green:`String`, the name of the database to be accessed. 
+    If ``undefined`` or ``null``, the lmdb default database for the database
+    envirnoment will be opened.
 
     ``create`` is a :green:`Boolean`, if ``true`` openDb will be 
     a write transaction which creates the database, if it does not
@@ -642,7 +642,8 @@ Where:
 
     * ``open_rw`` is an :green:`Boolean`, if ``true``, open the transaction
       for read/write.  This is needed if any data will be added or deleted
-      from a database.  If ``false``, the transaction will be read only.
+      from a database.  If ``false`` (the default), the transaction will be
+      read only.
 
     * ``commit_by_default`` is an :green:`Boolean`.  When a transaction is
       opened, it must be eventually closed using either `txn.commit`_ or
@@ -939,7 +940,8 @@ Where:
 
 Return Value:
     An :green:`Object` with the propertis ``key`` and ``value`` set to the 
-    key and value of the retrieved item (e.g. ``{"key": dbkey, "value": dbval}``).
+    key and value of the retrieved item (e.g. 
+    ``{"key": "database_key", "value": "database_value"}``).
 
 txn.cursorPut
 ~~~~~~~~~~~~~
@@ -1045,7 +1047,7 @@ Where:
 
     * ``val_is_string`` is a :green:`Boolean`. If ``true`` the returned
       ``value`` will be converted to a :green:`String`.  If ``false``
-      (the default)``value`` will be a :green:`Buffer`.
+      (the default) ``value`` will be a :green:`Buffer`.
 
 This operates identical to:
 
@@ -1128,7 +1130,7 @@ Where:
 
     * ``val_is_string`` is a :green:`Boolean`. If ``true`` the returned
       ``value`` will be converted to a :green:`String`.  If ``false``
-      (the default)``value`` will be a :green:`Buffer`.
+      (the default) ``value`` will be a :green:`Buffer`.
 
 
 
@@ -1167,7 +1169,7 @@ It allows the following:
     /* 
         Get every item in the database in reverse order.
         If cursor has not been previously set cursorPrev()
-          starts at the last item.
+          it starts at the last item.
     */
     while( (res = txn.cursorPrev()) )
     {
@@ -1307,7 +1309,7 @@ significantly improved.
     // sync now, or sync will happen upon script exit.
     //lmdb.sync(); 
 
-    /* this must be done while not in a transaction */
+    /* this must be done while outside a transaction */
     var total = lmdb.getCount(dbi);
 
     /* get all the Sofías in the database */
