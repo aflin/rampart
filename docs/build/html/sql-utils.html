@@ -1,0 +1,451 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>The rampart-sql Command Line Utilities &mdash; Rampart 0.1.0 documentation</title>
+  
+
+  
+  
+
+  
+
+  
+  
+    
+
+  
+
+  
+  
+    <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  
+
+  
+    <link rel="stylesheet" href="_static/theme_overrides.css" type="text/css" />
+  
+    <link rel="stylesheet" href="_static/hacks.css" type="text/css" />
+  
+
+  
+        <link rel="index" title="Index"
+              href="genindex.html"/>
+        <link rel="search" title="Search" href="search.html"/>
+    <link rel="top" title="Rampart 0.1.0 documentation" href="index.html"/>
+        <link rel="up" title="The rampart-sql module" href="sqltoc.html"/>
+        <link rel="next" title="The rampart-server HTTP module" href="rampart-server.html"/>
+        <link rel="prev" title="Server Properties" href="sql-set.html"/> 
+
+  
+  <script src="_static/js/modernizr.min.js"></script>
+
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+   
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search">
+          
+
+          
+            <a href="index.html" class="icon icon-home"> Rampart
+          
+
+          
+          </a>
+
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+                <p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart JavaScript</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-utils.html">Rampart Utility Functions</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="sqltoc.html">The rampart-sql module</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html">Preface</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#loading-the-javascript-module">Loading the Javascript Module</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#database-functions">Database Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="rampart-sql.html#string-functions">String Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-server-funcs.html">Server Functions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sql-set.html">Server Properties</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">The rampart-sql Command Line Utilities</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#the-tsql-command-line-utility">The tsql Command Line Utility</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#the-kdbfchk-command-line-utility">The kdbfchk Command Line Utility</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#the-addtable-command-line-utility">The addtable Command Line Utility</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#the-rex-command-line-utility">The rex Command Line Utility</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#the-metamorph-command-line-utility">The metamorph Command Line Utility</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-server.html">The rampart-server module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-html.html">The rampart-html module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-crypto.html">The rampart-crypto module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-curl.html">The rampart-curl module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-lmdb.html">The rampart-lmdb module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-redis.html">The rampart-redis module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-robots.html">The rampart-robots module</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rampart-cmark.html">The rampart-cmark module</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Rampart</a>
+        
+      </nav>
+
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="sqltoc.html">The rampart-sql module</a> &raquo;</li>
+        
+      <li>The rampart-sql Command Line Utilities</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/sql-utils.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="the-rampart-sql-command-line-utilities">
+<h1>The rampart-sql Command Line Utilities<a class="headerlink" href="#the-rampart-sql-command-line-utilities" title="Permalink to this headline">¶</a></h1>
+<p>Several command line utilities are included with the Rampart SQL module.
+They include <code class="docutils literal notranslate"><span class="pre">tsql</span></code>, <code class="docutils literal notranslate"><span class="pre">kdbfchk</span></code>, <code class="docutils literal notranslate"><span class="pre">addtable</span></code>, <code class="docutils literal notranslate"><span class="pre">rex</span></code> and <code class="docutils literal notranslate"><span class="pre">metamorph</span></code>.</p>
+<p>Note that the <code class="docutils literal notranslate"><span class="pre">texislockd</span></code> is used by tsql/rampart-sql to coordinate locks
+and is run automatically.  It should stay in the provided directory or
+otherwise be available in the systems <code class="docutils literal notranslate"><span class="pre">PATH</span></code>.</p>
+<div class="section" id="the-tsql-command-line-utility">
+<h2>The tsql Command Line Utility<a class="headerlink" href="#the-tsql-command-line-utility" title="Permalink to this headline">¶</a></h2>
+<p>The tsql utility is the main program provided for interactive use of a
+Rampart sql database.  It should either be executed the database directory,
+or else specified on the command line as the -d &lt;database&gt; option.</p>
+<p>If a query is present on the command line then tsql will execute that
+statement, and display the results on stdout (the screen).  If no query is
+present then queries will be accepted on stdin (the keyboard) in an
+interactive SQL shell. Queries on stdin must be terminated by a semicolon.
+To exit from tsql you should produce EOF on it’s stdin.  On Unix systems
+this is usually done with Control-D (a Control-C should also exit the
+program).</p>
+<p>The tsql utility also provides facilities for doing many administrative tasks.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>Usage: tsql [-a command] [-c [-w width]] [-l rows] [-hmqrv?]
+            [-d database] [-u username] [-p password] [-i file]
+            [-R profile] sql-statement
+
+Options:
+  --install-dir[-force]{=| }dir    Alternate installation dir
+                               (default is `/usr/local/morph3&#39;)
+  --texis-conf{=| }file            Alternate conf/texis.ini file
+  -a command       Enter Admin mode; respects -d -u -p
+      Commands:
+         (A)dd     add a user
+         (C)hange  change a password
+         (D)elete  delete a user
+  -h               Suppress column headings
+  -v               Display inserted/deleted rows
+  -n               Display total row count with -v
+  -q               Suppress SQL&gt; prompt
+  -c               Format one field per line
+  -w width         Make field headings width characters long
+                   (0: align to longest heading)
+  -l rows          Limit output to rows
+  -s rows          Skip rows of output
+  -u username      Login as username
+                   (if -p not given, password will be prompted for)
+  -p password      Login using password
+  -P password      _SYSTEM password for admin
+  -d database      Use database as the data dictionary
+  -m               Create the database named with -d
+  -i file          Read SQL commands from file instead of the keyboard
+  -r               Read default profile
+  -R profile       Read specified profile
+  -f delim         Specify a delimiter or format; 1 or 2 chars:
+     t             same as -c option
+     c             default behavior
+     other char    field separator e.g. `-f ,&#39; for CSV
+                   (follow with q/n to suppress quotes/newlines)
+  -t               Show timing information
+  -V               Increase Texis verbosity (may be used multiple times)
+  -x               Debug: do not capture ABEND etc. signals
+  --show-counts    Show min/max counts of rows matched and returned
+  --lockverbose n  Set lockverbose (tracing) level n
+  --timeout n[.n]  Set timeout of n[.n] seconds (-1 none; may cause corruption)
+  -?               Show this help
+</pre></div>
+</div>
+</div>
+<div class="section" id="the-kdbfchk-command-line-utility">
+<h2>The kdbfchk Command Line Utility<a class="headerlink" href="#the-kdbfchk-command-line-utility" title="Permalink to this headline">¶</a></h2>
+<p>The kdbfchk utility scans database tables (files ending in <code class="docutils literal notranslate"><span class="pre">.tbl</span></code>) for
+errors, and optionally writes a repaired file which may be added or readded
+to the Database using <code class="docutils literal notranslate"><span class="pre">addtable</span></code> below.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>Usage:  kdbfchk [options] &lt;infile&gt; [&lt;infile&gt; ...]
+
+Default action is to scan given &lt;infile&gt;s.
+
+Other actions (offset/size values are decimal or 0x hex):
+  -q                  Quick fix: skip orphan scan, just repair tail of file
+  -d &lt;off&gt; [&lt;totsz&gt;]  Delete/free block at offset &lt;off&gt;; &lt;totsz&gt; forces write
+                      of total size (including header) &lt;totsz&gt; (caution!).
+  -p &lt;off&gt; [&lt;totsz&gt;]  Print block data at offset &lt;off&gt;.  &lt;totsz&gt; forces size.
+  -r &lt;hexfile&gt; &lt;off&gt; [&lt;totsz&gt;]  Replace block data at offset &lt;off&gt; with hex
+                      dump data from &lt;hexfile&gt; (e.g. edited -p output).
+                      &lt;totsz&gt; forces total size and raw write (no KDBF header).
+  -l [&lt;off&gt;]          List data blocks&#39; offsets and data sizes, optionally
+                      starting at valid offset &lt;off&gt; (default start of file)
+  -L [&lt;off&gt;]          Scan for any headers, starting at offset &lt;off&gt; (default
+                      start of file).  Lower -v values print less info.
+Options:
+  --install-dir[-force]{=| }&lt;dir&gt; Alternate installation &lt;dir&gt;
+                      (default is `&#39;)
+  --texis-conf{=| }&lt;file&gt;         Alternate conf/texis.ini &lt;file&gt;
+  -o &lt;outfile&gt;        Output repaired file to &lt;outfile&gt;
+  -O                  Overwrite &lt;infile&gt; (required for -q, -d, -r)
+  -s                  Save truncated data blocks instead of deleting
+  -k                  Assume file is KDBF even if it doesn&#39;t look like KDBF
+  -i                  Ignore orphaned free blocks in scan (i.e. assume bad)
+  -f &lt;file&gt;           Print non-data (free) blocks info to &lt;file&gt;
+  -b &lt;file&gt;           Print bad blocks info to &lt;file&gt;:
+     -n               Don&#39;t list orphaned free blocks/pages
+     -m &lt;n&gt;           Limit info to &lt;n&gt; messages (default 1000, 0 = no limit)
+  -t &lt;dir&gt;            Use &lt;dir&gt; as temporary directory for internal tree
+  -bufsz &lt;n&gt;          Use disk buffer size &lt;n&gt; (default 128K)
+  -a                  Align hex dumps on 1-byte instead of 16-byte boundary
+  -v &lt;n&gt;              Set verbosity level &lt;n&gt; (default 2):
+     0                No output except severe errors
+     1                Also print current filename and all corruption info
+     2                Also print progress meter
+  -M none|simple|pct  Meter type to print
+  -version            Print version information
+  -h                  Print this message
+Exit codes:
+   0                  File checks ok
+  23                  Incorrect usage
+  26                  File is not KDBF
+  27                  Internal error
+  28                  Unknown error
+  29                  File is corrupt
+  45                  Cannot write to file
+</pre></div>
+</div>
+</div>
+<div class="section" id="the-addtable-command-line-utility">
+<h2>The addtable Command Line Utility<a class="headerlink" href="#the-addtable-command-line-utility" title="Permalink to this headline">¶</a></h2>
+<p>A table file (created with tsql or the SQL module and ending in <code class="docutils literal notranslate"><span class="pre">.tbl</span></code>)
+from another database or as repaired using <code class="docutils literal notranslate"><span class="pre">kdbfchk</span></code> above may be added to
+the database usin the <code class="docutils literal notranslate"><span class="pre">addtable</span></code> command.  Note that the table must have
+been created on a similar system (32 vs 64 bit).  Note also that after
+adding a table, any indexes which existed on the original table (either from
+another database, or as repaired by <code class="docutils literal notranslate"><span class="pre">kdbfchk</span></code>) will need to be recreated.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>Usage: addtable [-d database] [-l tablename] [-c comment] [-u user] [-p password] [-b bits] filename
+     --install-dir[-force]{=| }dir   Alternate installation dir
+                     (default is `&#39;)
+     --texis-conf{=| }file           Alternate conf/texis.ini file
+     -h              This help summary.
+     -d database     Database to add table to.
+     -l tablename    Name of table within Texis.
+     -c comment      Comment to put in SYSTABLES.
+     -u user         Username.
+     -p password     Password.
+     -b bits File size bits file created with (e.g. 32).
+     &lt;filename&gt;      File to add.
+</pre></div>
+</div>
+</div>
+<div class="section" id="the-rex-command-line-utility">
+<h2>The rex Command Line Utility<a class="headerlink" href="#the-rex-command-line-utility" title="Permalink to this headline">¶</a></h2>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">The</span> <span class="n">rex</span> <span class="n">utility</span> <span class="n">locates</span> <span class="ow">and</span> <span class="n">prints</span> <span class="n">lines</span> <span class="n">containing</span> <span class="n">occurrences</span> <span class="n">of</span>
+<span class="n">regular</span> <span class="n">expressions</span><span class="o">.</span>  <span class="n">If</span> <span class="n">files</span> <span class="n">are</span> <span class="ow">not</span> <span class="n">specified</span><span class="p">,</span> <span class="n">standard</span> <span class="nb">input</span> <span class="ow">is</span> <span class="n">used</span><span class="o">.</span>
+<span class="n">If</span> <span class="n">files</span> <span class="n">are</span> <span class="n">specified</span><span class="p">,</span> <span class="n">the</span> <span class="n">filename</span> <span class="n">will</span> <span class="n">be</span> <span class="n">printed</span> <span class="n">before</span> <span class="n">the</span> <span class="n">line</span>
+<span class="n">containing</span> <span class="n">the</span> <span class="n">expression</span> <span class="k">if</span> <span class="n">the</span> <span class="s2">&quot;-n&quot;</span> <span class="n">option</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">used</span><span class="o">.</span>
+
+<span class="n">SYNTAX</span>
+
+    <span class="n">rex</span> <span class="p">[</span><span class="n">options</span><span class="p">]</span> <span class="n">expression</span> <span class="p">[</span><span class="n">files</span><span class="p">]</span>
+
+<span class="n">OPTIONS</span>
+    <span class="o">-</span><span class="n">c</span>       <span class="n">Do</span> <span class="ow">not</span> <span class="nb">print</span> <span class="n">control</span> <span class="n">characters</span><span class="p">;</span> <span class="n">replace</span> <span class="k">with</span> <span class="n">space</span><span class="o">.</span>
+    <span class="o">-</span><span class="n">C</span>       <span class="n">Count</span> <span class="n">the</span> <span class="n">number</span> <span class="n">of</span> <span class="n">times</span> <span class="n">the</span> <span class="n">expression</span> <span class="n">occurs</span><span class="o">.</span>
+    <span class="o">-</span><span class="n">l</span>       <span class="n">List</span> <span class="n">file</span> <span class="n">names</span> <span class="n">that</span> <span class="n">contain</span> <span class="n">the</span> <span class="n">expression</span><span class="o">.</span>
+    <span class="o">-</span><span class="n">E</span><span class="s2">&quot;EX&quot;</span>   <span class="n">Specify</span> <span class="ow">and</span> <span class="nb">print</span> <span class="n">the</span> <span class="n">ending</span> <span class="n">delimiting</span> <span class="n">expression</span><span class="o">.</span>
+    <span class="o">-</span><span class="n">e</span><span class="s2">&quot;EX&quot;</span>   <span class="n">Specify</span> <span class="n">the</span> <span class="n">ending</span> <span class="n">delimiting</span> <span class="n">expression</span><span class="o">.</span>
+    <span class="o">-</span><span class="n">S</span><span class="s2">&quot;EX&quot;</span>   <span class="n">Specify</span> <span class="ow">and</span> <span class="nb">print</span> <span class="n">the</span> <span class="n">starting</span> <span class="n">delimiting</span> <span class="n">expression</span><span class="o">.</span>
+    <span class="o">-</span><span class="n">s</span><span class="s2">&quot;EX&quot;</span>   <span class="n">Specify</span> <span class="n">the</span> <span class="n">starting</span> <span class="n">delimiting</span> <span class="n">expression</span><span class="o">.</span>
+    <span class="o">-</span><span class="n">p</span>       <span class="n">Begin</span> <span class="n">printing</span> <span class="n">at</span> <span class="n">the</span> <span class="n">start</span> <span class="n">of</span> <span class="n">the</span> <span class="n">expression</span><span class="o">.</span>
+    <span class="o">-</span><span class="n">P</span>       <span class="n">Stop</span> <span class="n">printing</span> <span class="n">at</span> <span class="n">the</span> <span class="n">end</span> <span class="n">of</span> <span class="n">the</span> <span class="n">expression</span><span class="o">.</span>
+    <span class="o">-</span><span class="sa">r</span><span class="s2">&quot;STR&quot;</span>  <span class="n">Replace</span> <span class="n">the</span> <span class="n">expression</span> <span class="k">with</span> <span class="s2">&quot;STR&quot;</span> <span class="n">to</span> <span class="n">standard</span> <span class="n">output</span><span class="o">.</span>
+    <span class="o">-</span><span class="sa">R</span><span class="s2">&quot;STR&quot;</span>  <span class="n">Replace</span> <span class="n">the</span> <span class="n">expression</span> <span class="k">with</span> <span class="s2">&quot;STR&quot;</span> <span class="n">to</span> <span class="n">original</span> <span class="n">file</span><span class="o">.</span>
+    <span class="o">-</span><span class="n">t</span><span class="s2">&quot;Fn&quot;</span>   <span class="n">Use</span> <span class="s2">&quot;Fn&quot;</span> <span class="k">as</span> <span class="n">the</span> <span class="n">temporary</span> <span class="n">file</span> <span class="p">(</span><span class="n">default</span><span class="p">:</span> <span class="s2">&quot;rextmp&quot;</span><span class="p">)</span><span class="o">.</span>
+    <span class="o">-</span><span class="n">f</span><span class="s2">&quot;Fn&quot;</span>   <span class="n">Read</span> <span class="n">the</span> <span class="n">expression</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="kn">from</span> <span class="nn">the</span> <span class="n">file</span> <span class="s2">&quot;Fn&quot;</span><span class="o">.</span>
+    <span class="o">-</span><span class="n">n</span>       <span class="n">Do</span> <span class="ow">not</span> <span class="nb">print</span> <span class="n">the</span> <span class="n">file</span> <span class="n">name</span><span class="o">.</span>
+    <span class="o">-</span><span class="n">O</span>       <span class="n">Generate</span> <span class="s2">&quot;FNAME@OFFSET,LEN&quot;</span> <span class="n">entries</span> <span class="k">for</span> <span class="n">mm3</span> <span class="n">subfile</span> <span class="nb">list</span><span class="o">.</span>
+    <span class="o">-</span><span class="n">x</span>       <span class="n">Translate</span> <span class="n">the</span> <span class="n">expression</span> <span class="n">into</span> <span class="n">pseudo</span><span class="o">-</span><span class="n">code</span> <span class="p">(</span><span class="n">debug</span><span class="p">)</span><span class="o">.</span>
+    <span class="o">-</span><span class="n">v</span>       <span class="n">Print</span> <span class="n">lines</span> <span class="p">(</span><span class="ow">or</span> <span class="n">delimiters</span><span class="p">)</span> <span class="ow">not</span> <span class="n">containing</span> <span class="n">the</span> <span class="n">expression</span><span class="o">.</span>
+
+ <span class="n">o</span>  <span class="n">Each</span> <span class="n">option</span> <span class="n">must</span> <span class="n">be</span> <span class="n">placed</span> <span class="n">individually</span> <span class="n">on</span> <span class="n">the</span> <span class="n">command</span> <span class="n">line</span><span class="o">.</span>
+
+ <span class="n">o</span>  <span class="s2">&quot;EX&quot;</span>  <span class="ow">is</span> <span class="n">a</span> <span class="n">REX</span> <span class="n">expression</span><span class="o">.</span>
+
+ <span class="n">o</span>  <span class="s2">&quot;Fn&quot;</span>  <span class="ow">is</span> <span class="n">a</span> <span class="n">file</span> <span class="n">name</span><span class="o">.</span>
+
+ <span class="n">o</span>  <span class="s2">&quot;STR&quot;</span> <span class="ow">is</span> <span class="n">a</span> <span class="n">replacement</span> <span class="n">string</span><span class="o">.</span>
+</pre></div>
+</div>
+<p>See <a class="reference internal" href="rampart-sql.html#rex"><span class="std std-ref">the rex function</span></a> and
+<a class="reference internal" href="rampart-sql.html#sandr"><span class="std std-ref">the sandr function</span></a> for details.</p>
+</div>
+<div class="section" id="the-metamorph-command-line-utility">
+<h2>The metamorph Command Line Utility<a class="headerlink" href="#the-metamorph-command-line-utility" title="Permalink to this headline">¶</a></h2>
+<p>The metamorph command performs full texis searches against files.  It is
+similar to the <a class="reference internal" href="rampart-sql.html#searchfile"><span class="std std-ref">searchFile</span></a> command.</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">Usage</span><span class="p">:</span>
+     <span class="n">metamorph</span> <span class="p">[</span><span class="o">-</span><span class="n">option</span><span class="o">=</span><span class="n">value</span> <span class="p">[</span><span class="o">...</span><span class="p">]]</span> <span class="s2">&quot;query&quot;</span> <span class="n">filename</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
+<span class="n">Where</span><span class="p">:</span>
+     <span class="s2">&quot;query&quot;</span> <span class="ow">is</span> <span class="nb">any</span> <span class="n">valid</span> <span class="n">Metamorph</span> <span class="n">query</span>
+     <span class="n">filename</span> <span class="ow">is</span> <span class="n">the</span> <span class="n">name</span> <span class="n">of</span> <span class="n">the</span> <span class="n">file</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="n">to</span> <span class="n">be</span> <span class="n">searched</span><span class="o">.</span> <span class="p">(</span><span class="n">default</span> <span class="n">stdin</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+
+
+           </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="rampart-server.html" class="btn btn-neutral float-right" title="The rampart-server HTTP module" accesskey="n">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="sql-set.html" class="btn btn-neutral" title="Server Properties" accesskey="p"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2022, Moat Crossing Systems.
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> and ❤️  using a custom <a href="https://github.com/LinxiFan/Sphinx-theme">theme</a> based on <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  
+
+    <script type="text/javascript">
+        var DOCUMENTATION_OPTIONS = {
+            URL_ROOT:'./',
+            VERSION:'0.1.0',
+            COLLAPSE_INDEX:false,
+            FILE_SUFFIX:'.html',
+            HAS_SOURCE:  true,
+            SOURCELINK_SUFFIX: '.txt'
+        };
+    </script>
+      <script type="text/javascript" src="_static/jquery.js"></script>
+      <script type="text/javascript" src="_static/underscore.js"></script>
+      <script type="text/javascript" src="_static/doctools.js"></script>
+      <script type="text/javascript" src="_static/language_data.js"></script>
+      <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+
+  
+
+  
+  
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+  
+
+  
+  
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.StickyNav.enable();
+      });
+  </script>
+   
+
+</body>
+</html>
