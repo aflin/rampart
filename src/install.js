@@ -57,7 +57,7 @@ permissive open source licenses.
 
 The one exception is rampart-sql and the texis library used in rampart-sql,
 which uses a source available license and is available without charge for
-certain non-profit and not-for-profit uses.
+certain uses.  See license for details.
 
 The respective licenses are listed at the beginning of each major section in
 the documentation at 'https://rampart.dev/docs/'.
@@ -68,7 +68,7 @@ above.
 
     resp = trim (readLine(stdin).next());
 
-    if(resp!="yes")
+    if(resp.toLowerCase()!="yes")
         process.exit();
 }
 
@@ -186,7 +186,7 @@ function copy_files(src, dest, backup){
 
 var with_err="";
 
-var link_bin_files = ['rampart', 'tsql', 'rex', 'texislockd' ];
+var link_bin_files = ['rampart', 'tsql', 'rex', 'texislockd', 'addtable', 'kdbfchk' ];
 
 function do_make_links(prefix) {
     var bindir = prefix + '/bin';
@@ -375,6 +375,9 @@ If you would like to use this folder as rampart's install location, you can
 exit this script and, optionally, manually make a link as such:
 
   ln -s %s/bin/rampart /usr/local/bin/rampart
+
+If you are installing from and to the same directory, no files will be copied,
+however soft links to still be made in the /usr/local/bin directory.
 
 Otherwise for automatic installation choices, you may continue.
 

@@ -483,6 +483,8 @@ install(CODE "execute_process( \
     \"${PROJECT_BINARY_DIR}/texis/apps/tsql\" \
     \"${PROJECT_BINARY_DIR}/texis/apps/metamorph\" \
     \"${PROJECT_BINARY_DIR}/texis/apps/rex\" \
+    \"${PROJECT_BINARY_DIR}/texis/apps/addtable\" \
+    \"${PROJECT_BINARY_DIR}/texis/apps/kdbfchk\" \
     \"${PROJECT_BINARY_DIR}/texis/apps/texislockd\" \
     \"${CMAKE_INSTALL_PREFIX}/bin\"   \
     )"
