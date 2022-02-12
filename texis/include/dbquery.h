@@ -241,7 +241,7 @@ char	*ddfttypename ARGS(( int typen));
 CONST char *TXfldtypestr ARGS((FLD *fld));      /* KNG 20060227 */
 DDFT    *ddftype(int);
 size_t	ddftsize ARGS((int typen));
-DDFD    *ftn2ddfd_quick ARGS((int type, size_t n));
+TXbool  TXftnToDdfdQuick (FTN type, size_t n, DDFD *ddfd);
 
 #define ddsettype(dd,t)	(dd?((dd)->tbltype = (t), 1):0)
 #define isddvar(a)	((a) & DDVARBIT)
@@ -402,12 +402,10 @@ int	tup_match ARGS((DBTBL *, PRED *, FLDOP *));
 int	TXprocessquery ARGS((QNODE *query, FLDOP *fo));
 void	preparequery ARGS((QNODE *, FLDOP *, int));
 
-int     TXnode_table_exec ARGS((QNODE *query, FLDOP *fo, int direction,
-                                int offset, int verbose));
-int     TXnode_join_exec ARGS((QNODE *query, FLDOP *fo, int direction,
-                               int offset, int verbose));
-int     TXnode_rename_exec ARGS((QNODE *query, FLDOP *fo, int direction,
-                                 int offset, int verbose));
+int     TXnode_table_exec (QNODE *query, FLDOP *fo, int direction, int offset, int verbose);
+int     TXnode_join_exec (QNODE *query, FLDOP *fo, int direction, int offset, int verbose);
+int     TXnode_rename_exec (QNODE *query, FLDOP *fo, int direction, int offset, int verbose);
+int     TXnode_info_exec (QNODE *query, FLDOP *fo, int direction, int offset, int verbose);
 
 /******************************************************************/
 /*	Manipulate predicates	*/

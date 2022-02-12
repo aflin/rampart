@@ -317,7 +317,7 @@ readtoken ARGS((void))
 				f: REG_FUN_OP
 				g: REVOKE_OP
 				h: HINT_OP
-				i:
+				i: INFO_OP - internal / info table
 				j:
 				k: UNLOCK_TABLES_OP
 				l: ALL_OP
@@ -461,6 +461,9 @@ readtoken ARGS((void))
 						goto finally;
 					case 'h' :
 						ret = HINT_OP;
+						goto finally;
+					case 'i' :
+						ret = INFO_OP;
 						goto finally;
 					case 'k' :
 						ret = UNLOCK_TABLES_OP;

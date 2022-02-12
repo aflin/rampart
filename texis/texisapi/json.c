@@ -133,7 +133,7 @@ TXjsonValueAlloced(json_t *j, int wantlength)
    return res;
 }
 
-static json_t *
+json_t *
 TXjsonPath(json_t *j, char *path, char **unfoundpath)
 {
    char *key, *p, *e;

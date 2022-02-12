@@ -2529,6 +2529,37 @@ optimization after batch updates, or just before peak search load.
 %names only.
 %
 %\fi % HaveAlter
+
+\section{Lock Management}
+
+Locks are generally managed automatically in Texis, however you are able to
+manually set locks which can improve performance when doing bulk operations.
+{\bf Warning:} Care should be used when locking manually as it is possible to
+degrade performance, or even deadlock the system if locks are held too long, or
+acquired in different sequences.
+
+\subsection{Manual Locking}
+
+Tables can be manually locked using:
+
+\verb`     LOCK TABLES ` $tableName$ \verb`READ|WRITE [, ` $tableName$ \verb` READ|WRITE]`\\
+\verb`     ...`\\
+\verb`     UNLOCK TABLES`
+
+Issuing a new \verb`LOCK TABLES` before \verb`UNLOCK TABLES` will release the prior locks.
+All tables that will be used in the manually locked section \emph{should} be locked manually,
+and the locks should be released as soon as possible to avoid blocking other connections.
+
+\subsection{Querying Lock Status}
+
+The current lock status can be viewed with:
+
+\verb`     SHOW TABLE LOCK`
+
+which will return a table with a row for each table with a lock, whether there are any
+exclusive or write locks, and how many locks are granted and pending.  Locks are
+automatically released when the connection to the database is closed.
+
 \section{Reserved Words}
 
 The following words are reserved words in SQL.  Texis makes use of

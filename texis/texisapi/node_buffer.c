@@ -13,6 +13,9 @@ node_type(QNODE *q)
   int isdd = 0;
   if(!q) return 0;
   switch(q->op) {
+    /* These are the operators in the node that have no special significance
+     * and can be part of regular selects from a table
+     */
     case PROJECT_OP:
   	case SELECT_OP:
   	case RENAME_OP:
@@ -81,10 +84,11 @@ node_type(QNODE *q)
   #ifdef TX_USE_ORDERING_SPEC_NODE
   	case ORDERING_SPEC_OP:
   #endif /* TX_USE_ORDERING_SPEC_NODE */
-  	case ARRAY_OP:
+    case ARRAY_OP:
     case BUFFER_OP:
-  	case QNODE_OP_UNKNOWN:
+    case QNODE_OP_UNKNOWN:
       break;
+    /* These don't return rows, and modify the database as a whole */
     case ALTER_OP:
   	case DROP_OP:
     case PROP_OP:
@@ -96,8 +100,14 @@ node_type(QNODE *q)
     case REVOKE_OP:
     case INDEX_OP:
     case TRIGGER_OP:
+    case INFO_OP:
+    case LOCK_TABLES_OP:
+    case UNLOCK_TABLES_OP:
       isdd = NODE_DATA_DEFINITION;
       break;
+    /* And these modify tables while returning rows.
+     * Should not be buffered to allow user to abort processing
+     */
     case DEL_ALL_OP:
   	case DEL_SEL_OP:
     case INSERT_OP:

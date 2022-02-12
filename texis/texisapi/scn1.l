@@ -335,6 +335,8 @@ SET		{ return SET; }
 set		{ return SET; }
 SHELL		{ return SHELL; }
 shell		{ return SHELL; }
+SHOW    { return SHOW; }
+show    { return SHOW; }
 SMALLINT	{ return SMALLINT; }
 smallint	{ return SMALLINT; }
 SOME		{ return SOME; }

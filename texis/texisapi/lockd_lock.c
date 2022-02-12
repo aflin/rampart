@@ -432,6 +432,8 @@ lockd_mode_to_string(lockd_modes mode)
     case IR: m = "IR"; break;
     case IW: m = "IW"; break;
     case EX: m = "EX"; break;
+    case PR+IR: m="Read (PR+IR)"; break;
+    case PW+IW: m="Write (PW+IW)"; break;
   }
   return m;
 }

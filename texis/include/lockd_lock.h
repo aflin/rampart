@@ -23,8 +23,10 @@ typedef enum lockd_write_times {
 
 #define LOCKD_TABLE_WRITE_MODES (CW | PW | EX)
 #define LOCKD_INDEX_WRITE_MODES (IW | EX)
-#define LOCKD_TABLE_WRITE(a) ((a & LOCKD_TABLE_WRITE_MODES) != 0)
-#define LOCKD_INDEX_WRITE(a) ((a & LOCKD_INDEX_WRITE_MODES) != 0)
+#define LOCKD_WRITE_MODES (CW | PW | IW | EX)
+#define LOCKD_WRITE_LOCKED(a) (()(a) & LOCKD_WRITE_MODES) != 0)
+#define LOCKD_TABLE_WRITE(a) (((a) & LOCKD_TABLE_WRITE_MODES) != 0)
+#define LOCKD_INDEX_WRITE(a) (((a) & LOCKD_INDEX_WRITE_MODES) != 0)
 
 typedef enum lockd_lock_state {
   LOCK_NO_QUEUE,

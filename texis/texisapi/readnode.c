@@ -1341,9 +1341,8 @@ ireadnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, QTOKEN x, FLDOP
 			this->op = x;
 			readtoken(toke);	/* "table"/"index"/"user" */
 			this->tname = TXstrdup(pmbuf, Fn, ZZTEXT);
-			if (this->op == ALTER_OP &&
-			    strcmpi(this->tname, "index") == 0)
-			{			/* index table action ... */
+			if (this->op == ALTER_OP && strcmpi(this->tname, "index") == 0)
+			{			/* ALTER INDEX index table actions [having] */
 				this->left = openqnode(LIST_OP);
 				if (!this->left) goto err;
 				this->left->left = READNEXTNODE; /* index */
@@ -1355,7 +1354,15 @@ ireadnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, QTOKEN x, FLDOP
 			}
 			else			/* CREATE, or ALTER !INDEX */
 			{
-				/* indexName, table, indexType: */
+				/*
+					CREATE INDEX indexName, table, indexType [, options]
+					ALTER TABLE tableName alteration
+					CREATE USER userName password
+					CREATE TABLE fileref, 'filename'
+					CREATE LINK (not supported yet)
+
+					Note: other CREATE TABLE and CREATE TABLE AS have separate OP
+				*/
 				this->left = READNEXTNODE;
 				this->right = READNEXTNODE;	/* fields */
 			}
@@ -1386,10 +1393,17 @@ ireadnode(DDIC *ddic, TX_READ_TOKEN *toke, int depth, QNODE *pq, QTOKEN x, FLDOP
 			this->op = FIELD_OP;
 			break;
 		case LOCK_TABLES_OP:
+			this->op = LOCK_TABLES_OP;
+			this->left = READNEXTNODE; /* Table Names */
+			break;
 		case UNLOCK_TABLES_OP:
-			putmsg(MERR+UGE, Fn, "LOCK TABLES not yet supported");
-			this = closeqnode(this);
-			return (QNODE *)NULL;
+			this->op = UNLOCK_TABLES_OP;
+			break;
+		case INFO_OP:
+			this->op = INFO_OP;
+			readtoken(toke);
+			this->tname = TXstrdup(pmbuf, Fn, ZZTEXT);
+			break;
 		case 0 :
 			break;
 		default :

@@ -135,6 +135,7 @@ typedef enum QNODE_OP
 	BUFFER_OP,
 	LOCK_TABLES_OP,
 	UNLOCK_TABLES_OP,
+	INFO_OP,
 } QNODE_OP;
 
 /******************************************************************/
@@ -552,6 +553,7 @@ typedef enum TX_MESSAGES_tag
 	MESSAGES_TIME_FDBI,
 	MESSAGES_DUMP_QNODE,
 	MESSAGES_DUMP_QNODE_FETCH,
+	MESSAGES_SQL_PREPARE_CONVERT,
 	NUM_MESSAGES				/* must be last */
 }
 TX_MESSAGES;

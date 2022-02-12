@@ -31,7 +31,7 @@ TXRingBufferDbfFreeOld(BUFFERDBF *df)
 BUFFERDBF *
 TXRingBufferDbfClose(BUFFERDBF *df)
 {
- 	if(df!=BUFFERDBFPN) {
+  if(df!=BUFFERDBFPN) {
     /* Empty out ring buffer */
     while(TXRingBufferDbfGet(df, -1, NULL));
     TXRingBufferDbfFreeOld(df);

@@ -39,6 +39,79 @@ Returns:
 
  */
 
+/**
+ *
+ */
+
+static LOCKTABLES_ENTRY *
+LockTablesFromQnode(DDIC *ddic, QNODE *qnode)
+{
+  LOCKTABLES_ENTRY *ret = NULL;
+
+  if(qnode->left->op == LIST_OP) {
+    ret = LockTablesFromQnode(ddic, qnode->left);
+    if(!ret) {
+      return NULL;
+    }
+    ret->next = LockTablesFromQnode(ddic, qnode->right);
+  } else {
+    ret = TXcalloc(NULL, __FUNCTION__, 1, sizeof(LOCKTABLES_ENTRY));
+    ret->table = TXstrdup(NULL, __FUNCTION__, qnode->left->tname);
+    switch(*(char *)qnode->right->tname) {
+      case 'W':
+        ret->locktype=W_LCK;
+        dblock(ddic, 0, NULL, INDEX_WRITE, ret->table, &ret->mod_date);
+        dblock(ddic, 0, NULL, W_LCK, ret->table, &ret->mod_date);
+        break;
+      case 'R':
+        ret->locktype=R_LCK;
+        dblock(ddic, 0, NULL, INDEX_READ, ret->table, &ret->mod_date);
+        dblock(ddic, 0, NULL, R_LCK, ret->table, &ret->mod_date);
+        break;
+      default:
+        putmsg(MERR, __FUNCTION__, "Unknown lock type %s", qnode->right->tname);
+    }
+    if(TXverbosity > 1)
+      putmsg(MINFO, __FUNCTION__, "Locking Table %s for %s", qnode->left->tname, qnode->right->tname);
+  }
+  return ret;
+}
+
+int
+LockTablesInit(DDIC *ddic, QNODE *qnode)
+{
+  LOCKTABLES_ENTRY *locktable_entry = NULL, *next_entry = NULL;
+  if(!ddic) {
+    return -1;
+  }
+  /* Unlock */
+  locktable_entry = ddic->locktables_entry;
+  ddic->locktables_entry = NULL;
+  while(locktable_entry) {
+    switch(locktable_entry->locktype) {
+      case W_LCK:
+        dbunlock(ddic, 0, NULL, W_LCK, locktable_entry->table);
+        dbunlock(ddic, 0, NULL, INDEX_WRITE, locktable_entry->table);
+        if(TXverbosity > 1)
+          putmsg(MINFO, __FUNCTION__, "Unlocking Table %s for W", locktable_entry->table);
+        break;
+      case R_LCK:
+        dbunlock(ddic, 0, NULL, R_LCK, locktable_entry->table);
+        dbunlock(ddic, 0, NULL, INDEX_READ, locktable_entry->table);
+        if (TXverbosity > 1)
+          putmsg(MINFO, __FUNCTION__, "Unlocking Table %s for R", locktable_entry->table);
+        break;
+    }
+    next_entry = locktable_entry->next;
+    TXfree(locktable_entry);
+    locktable_entry = next_entry;
+  }
+  if(qnode) {
+    ddic->locktables_entry = LockTablesFromQnode(ddic, qnode);
+  }
+  return 0;
+}
+
 LOCKTABLES_RETURN
 LockTablesLock(DBTBL *db, int type)
 {
@@ -80,6 +153,12 @@ LockTablesLock(DBTBL *db, int type)
     }
     locktable_entry = locktable_entry->next;
   }
+  /*
+   * currently return SKIP here, which will allow locks to automatically be
+   * added for the query.
+   *
+   * mysql semantics would have it return ERR, and fail the SQL statement
+   */
   return LOCKTABLES_SKIP;
 }
 

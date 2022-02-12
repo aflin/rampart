@@ -151,7 +151,7 @@ int stxalrevoke(int f) {int o=txalrevoke; txalrevoke=f; return(o);}
 %token COBOL FORTRAN TX_PASCAL PLI ADA INVERTED UNSIGNED NOCASE
 %token VARCHAR INDEX TDB TX_BLOB DROP REVOKE TX_BYTE VARBYTE REFERENCING TX_TRIGGER
 %token AFTER INSTEAD OLD NEW EACH STATEMENT ROW WHEN SHELL TX_IF
-%token TX_LOCK TX_UNLOCK TABLES READ WRITE
+%token TX_LOCK TX_UNLOCK TABLES READ WRITE SHOW
 
 %type <strval>	selection table_exp scalar_exp_commalist from_clause
 %type <strval>	table_ref_commalist table_ref_hint table_ref table hintlist
@@ -197,6 +197,7 @@ int stxalrevoke(int f) {int o=txalrevoke; txalrevoke=f; return(o);}
 %type <strval>  opt_if_exists
 %type <strval>  json_subpath
 %type <strval>  lock_table_def lock_table_commalist lock_type
+%type <strval>  show_open_tables info_statement
 
 %%
 
@@ -1335,6 +1336,29 @@ parameter_def:
 	;
 */
 
+sql: info_statement
+	{
+
+	}
+	;
+
+info_statement: show_open_tables
+  {
+
+	}
+	;
+
+show_open_tables: SHOW TABLE TX_LOCK opt_where_clause
+	{
+		if($4 && $4[0]) {
+			genout("_S ");
+			genout("_i showopentables ");
+			genout($4);
+		} else {
+			genout("_i showopentables\n");
+		}
+	}
+
 sql:  lock_statment
 	{
 	}
@@ -1359,7 +1383,7 @@ lock_table_commalist:
 		{
 			$$ = $1;
 		}
-	| lock_table_commalist "," lock_table_def
+	| lock_table_commalist ',' lock_table_def
 		{
 			$$ = TXstrcat4(", ", $1, " ", $3);
 			free($1);
@@ -1370,7 +1394,7 @@ lock_table_commalist:
 lock_table_def:
 	table_ref lock_type
 	{
-		$$=TXstrcat3($1, " ", $2);
+		$$=TXstrcat4(", ", $1, " ", $2);
 		free($1);
 		free($2);
 	}
@@ -1378,11 +1402,11 @@ lock_table_def:
 lock_type:
 		WRITE
 		{
-			$$ = strdup("_W");
+			$$ = strdup("W");
 		}
 	| READ
 	{
-		$$ = strdup("_R");
+		$$ = strdup("R");
 	}
 	;
 

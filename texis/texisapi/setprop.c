@@ -1964,6 +1964,9 @@ int onoff;
 			   (ddic->messages[MESSAGES_DUMP_QNODE] ? 1 : 2) : 0);
 		else if(!strcmpi(x, "dumpqnodefetch"))
 			ddic->messages[MESSAGES_DUMP_QNODE_FETCH] = onoff;
+    else if(!strcmpi(x, "sqlconvert")) {
+      ddic->messages[MESSAGES_SQL_PREPARE_CONVERT] = onoff;
+    }
 		else
 			putmsg(MWARN, "set message",
 				"Unknown message %s", x);
@@ -2006,17 +2009,21 @@ int
 TXresetproperties(ddic)
 DDIC *ddic;
 {
-	int	ret = 0;
+	int	ret = 0, i;
 
   /* Reset Global CP */
-  
+
   TXreinit_globalcp();
 	/* Index expressions */
 	TXresetexpressions();
 
-        /* index tmp   KNG 980515 */
-        TXresetindextmp();
+  /* index tmp   KNG 980515 */
+  TXresetindextmp();
 
+  /* Turn off messages */
+  for(i = 0; i < NUM_MESSAGES; i++) {
+    ddic->messages[i] = 0;
+  }
 	/* Indexblock */
 #ifdef SMALL_MEM
 	TXsetblockmax(32000);

@@ -86,9 +86,13 @@ json_t *
 connection_to_json(lockd_connection *c)
 {
   json_t *r, *t;
+  long l;
 
   r = json_object();
 
+  l = (long)c;
+  t = json_integer(l);
+  json_object_set_new(r, "connection", t);  
   if(c->database) {
     t = json_string(c->database->resourcename);
   } else {

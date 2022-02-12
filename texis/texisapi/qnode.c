@@ -159,6 +159,8 @@ size_t		bufSz;	/* (in) "" size */
 #endif /* TX_USE_ORDERING_SPEC_NODE */
 	case ARRAY_OP:		return("arrayOp[");
 	case BUFFER_OP: return ("Buffer");
+	case INFO_OP: return ("SHOW");
+	case LOCK_TABLES_OP: return ("LOCK TABLES");
 	case QNODE_OP_UNKNOWN:	return("QNODE_OP_UNKNOWN");
 	}
 	/* This could be the `default:' for the above switch(), but

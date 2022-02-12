@@ -42,9 +42,6 @@ extern "C"
 #include "dirio.h"
 #include "locktables.h"
 
-int TXaddnewstatsfrompred(DBTBL *table, PRED *pred, FLDOP *fo); //--ajf
-TXbool TXftnToDdfdQuick(FTN type, size_t n, DDFD *fd); //--ajf
-
 #ifndef EPI_HAVE_RLIM_T
 typedef long rlim_t;
 #endif /* !EPI_HAVE_RLIM_T */
@@ -720,6 +717,7 @@ MMQL    *mmrip ARGS((MMAPI *mm, int isfdbi));           /* KNG 980630 */
 int     TXcopystats ARGS((NFLDSTAT *, NFLDSTAT *));
 int     TXresetnewstats ARGS((NFLDSTAT *table));
 int	TXopennewstats ARGS((DBTBL *, PROJ *, FLDOP *, NFLDSTAT **));
+int TXaddnewstatsfrompred(DBTBL *dbtbl, PRED *pred, FLDOP *fo);
 NFLDSTAT *TXdupnewstats ARGS((NFLDSTAT *));
 int	TXclosenewstats ARGS((NFLDSTAT **));
 int	TXaddstatrow ARGS((NFLDSTAT *, DBTBL *, FLDOP *));
@@ -3468,6 +3466,7 @@ DBTBL * TXnode_join_prep(IPREPTREEINFO *, QNODE *, QNODE *, int *);
 DBTBL * TXnode_rename_prep(IPREPTREEINFO *, QNODE *, QNODE *, int *);
 DBTBL * TXnode_table_prep(IPREPTREEINFO *, QNODE *, QNODE *, int *);
 DBTBL * TXnode_hint_prep(IPREPTREEINFO *, QNODE *, QNODE *, int *);
+DBTBL * TXnode_info_prep(IPREPTREEINFO *, QNODE *, QNODE *, int *);
 
 PROJ *TXddToProj(DBTBL *dbtbl);
 
@@ -3494,6 +3493,8 @@ int      txfunc_json_modify (FLD *f1, FLD *f2, FLD *f3);
 int      txfunc_json_merge_patch (FLD *f1, FLD *f2);
 int      txfunc_json_merge_preserve (FLD *f1, FLD *f2);
 int      TXmkComputedJson(FLD *f);
+
+json_t  *TXjsonPath(json_t *j, char *path, char **unfoundpath);
 
 /******************************************************************/
 /* UUID Texis function */

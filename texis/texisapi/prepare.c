@@ -222,6 +222,9 @@ SDWORD	cbSqlStr;
 	rc = sqlconvert((char *)sqlstr, lpstmt->dbc->datasource, lpstmt->dbc->ddic, cmd, MAXINSZ);
 	if (rc)
 		return SQL_ERROR;
+	if(lpstmt->dbc->ddic->messages[MESSAGES_SQL_PREPARE_CONVERT] && (lpstmt->dbc->ddic->ihstmt != hstmt)) {
+		putmsg(MINFO, fn, "sqlconvert(%s) ==> %s", sqlstr, cmd->data);
+	}
 	lpstmt->noresults = 0;
 #ifdef USE_STRBUF
 	if(lenstrbuf(cmd) == 0)

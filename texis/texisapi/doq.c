@@ -543,6 +543,9 @@ int offset;
 		case PRODUCT_OP :
 			return TXnode_join_exec(query, fo, direction, offset, verbose);
 
+		case INFO_OP:
+			return TXnode_info_exec(query, fo, direction, offset, verbose);
+
 /*
  *	We have a hinted table.
  */

@@ -5,8 +5,6 @@ include(CheckStructHasMember)
 include(CheckSymbolExists)
 include(CheckTypeSize)
 include(FindThreads)
-include(WriteCompilerDetectionHeader)
-
 #
 # How many args does getpwuid take?
 #
@@ -18,15 +16,6 @@ if(HAVE_GETPWUID_4)
 	SET(EPI_HAVE_GETPWUID_R_PASSWD 1)
 endif(HAVE_GETPWUID_4)
 
-#
-# Compiler compiler settings for c++
-#
-write_compiler_detection_header(
-FILE ${CMAKE_BINARY_DIR}/txcoreconfig_gen.h
-PREFIX TX
-COMPILERS GNU Clang MSVC Intel
-FEATURES cxx_alignof
-)
 #
 # Make sure we are using the same defines as the project
 #

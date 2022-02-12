@@ -14,5 +14,5 @@ AWK=`which awk`
 killall texislockd
 $LOCKSERVER &
 rm -rf $DB
-rm $TESTROOT/testlog
+rm -f $TESTROOT/testlog
 $TSQL -q -m -d $DB < /dev/null > /dev/null 2>&1

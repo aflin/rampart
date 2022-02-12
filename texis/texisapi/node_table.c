@@ -23,10 +23,7 @@
 /****************************************************************************/
 
 DBTBL *
-TXnode_table_prep(IPREPTREEINFO *prepinfo,
-		  QNODE *query,
-		  QNODE *parentquery,
-		  int *success)
+TXnode_table_prep(IPREPTREEINFO *prepinfo, QNODE *query, QNODE *parentquery, int *success)
 {
 	static CONST char Fn[] = "node_table_prep";
 	DDIC *ddic;
@@ -184,4 +181,3 @@ TXnode_table_exec(QNODE *query, FLDOP *fo, int direction, int offset, int verbos
 		return 0;
 	}
 }
-

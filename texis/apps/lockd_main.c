@@ -368,6 +368,7 @@ procstatus(json_t *j, lockd_connection *connection)
   {
     js = connection_to_json(c);
     if (c == connection) {
+      json_object_set_new(js, "me", json_true());
       /* This is my connection */
     }
     json_array_append_new(ra, js);

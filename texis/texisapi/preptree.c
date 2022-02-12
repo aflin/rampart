@@ -506,6 +506,8 @@ int *success;		/* Where to store a success code */
 		return TXnode_join_prep(prepinfo, query, parentquery, success);
 	case BUFFER_OP:
 		return TXnode_buffer_prep(prepinfo, query, parentquery, success);
+	case INFO_OP:
+		return TXnode_info_prep(prepinfo, query, parentquery, success);
 	case UNION_OP:
 		if(parentquery)
 			query->pfldlist = parentquery->fldlist;
@@ -1637,6 +1639,11 @@ orderproj:
 	alterDone:
 		strBuf = closestrbuf(strBuf);
 		return(DBTBLPN);
+	case LOCK_TABLES_OP:
+	case UNLOCK_TABLES_OP:
+		LockTablesInit(ddic, query->left);
+		*success = 1;
+		return NULL;
 	default:
 		putmsg(MERR + UGE, Fn,
 		       "Unimplemented feature QNODE_OP #%#x", (int)query->op);

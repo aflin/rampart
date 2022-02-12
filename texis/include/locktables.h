@@ -18,6 +18,7 @@ typedef struct LOCKTABLES_ENTRY {
   ft_counter mod_date;
 } LOCKTABLES_ENTRY;
 
+int LockTablesInit(DDIC *ddic, QNODE *qnode);
 LOCKTABLES_ENTRY *LockTablesOpen(void);
 LOCKTABLES_ENTRY *LockTablesClose(LOCKTABLES_ENTRY *locktables);
 

@@ -92,6 +92,7 @@ IF(PARSERS_FOUND)
     		groupby.c
         node_buffer.c
     		node_hint.c
+        node_info.c
     		node_join.c
     		node_rename.c
     		node_table.c
@@ -170,6 +171,7 @@ IF(PARSERS_FOUND)
     		indcache.c
     #WTF		jdbf.c
     		kdbf.c
+        kdbfchk.c
     		kdbfutil.c
     		kfbtree.c
     		nblobs.c
