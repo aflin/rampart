@@ -1,0 +1,50 @@
+Texis Version ...
+
+SQL 1 line 1> -- set message='sqlconvert';
+SQL 2 line 2> -- set message='dumpqnode';
+SQL 3 line 3> CREATE TABLE test (x INT);
+     x      
+------------+
+
+SQL 1 line 4> LOCK TABLES test WRITE, SYSTABLES READ;
+
+SQL 1 line 5> SHOW TABLE LOCK;
+    NAME        REFCNT     EXCLUSIVE     PENDING   
+------------+------------+------------+------------+
+SYSTABLES               2            0            0
+test                    2            1            0
+
+SQL 1 line 6> SELECT * FROM SYSTABLES;
+    NAME         TYPE         WHAT          FC        CREATOR       REMARK   
+------------+------------+------------+------------+------------+------------+
+SYSCOLUMNS   T            SYSCOLUMNS             0d _SYSTEM      Catalog of Columns
+SYSTABLES    T            SYSTABLES              06 _SYSTEM      Catalog of Tables
+SYSINDEX     T            SYSINDEX               08 _SYSTEM      Catalog of Indices
+SYSUSERS     T            SYSUSERS               04 _SYSTEM      Texis Users
+SYSPERMS     T            SYSPERMS               06 _SYSTEM      Texis Permissions
+SYSTRIG      T            SYSTRIG                09 _SYSTEM      Texis Triggers
+SYSMETAINDEX T            SYSMETAINDEX           03 _SYSTEM      Chkind Parameters
+SYSSTATISTICS T            SYSSTATS               05 _SYSTEM      Database Statistics
+test         T            test                   01 PUBLIC       
+
+SQL 1 line 7> SELECT * FROM SYSUSERS;
+   U_NAME       U_UID        U_GID       U_PASSWD  
+------------+------------+------------+------------+
+_SYSTEM                 0            0 
+PUBLIC               9999         9999 
+
+SQL 1 line 8> INSERT INTO test VALUES(1);
+     x      
+------------+
+           1
+
+SQL 1 line 9> SELECT * FROM test;
+     x      
+------------+
+           1
+
+SQL 1 line 10> UNLOCK TABLES;
+
+SQL 1 line 11> DROP TABLE test;
+
+SQL 1 line 12> 

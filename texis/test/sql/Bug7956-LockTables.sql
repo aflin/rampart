@@ -1,0 +1,11 @@
+-- set message='sqlconvert';
+-- set message='dumpqnode';
+CREATE TABLE test (x INT);
+LOCK TABLES test WRITE, SYSTABLES READ;
+SHOW TABLE LOCK;
+SELECT * FROM SYSTABLES;
+SELECT * FROM SYSUSERS;
+INSERT INTO test VALUES(1);
+SELECT * FROM test;
+UNLOCK TABLES;
+DROP TABLE test;
