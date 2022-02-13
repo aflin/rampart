@@ -59,6 +59,9 @@ extern "C" {
 #     define solaris
 #  endif
 #endif                                                        /* unix */
+#if defined(__linux__) || defined (__APPLE__)
+#  undef bsd
+#endif
 /**********************************************************************/
 #if defined(__MSDOS__) && !defined(MSDOS)
 #  define MSDOS
