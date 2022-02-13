@@ -14,8 +14,16 @@ ease of use of this library.
 
 License
 """""""
-Duktape and the Core Rampart program are MIT licensed.
 
+Duktape and the Core Rampart program are MIT licensed.  
+
+Also included in Rampart is 
+`linenoise.c <https://github.com/antirez/linenoise>`_ (under the
+`BSD 2 Clause License <https://github.com/antirez/linenoise/blob/master/LICENSE>`_\ ),
+`setproctitle.c <https://github.com/msantos/runcron/blob/master/setproctitle.c>`_\ (under
+the MIT license) and `whereami.c <https://github.com/gpakosz/whereami>`_ (under the
+MIT license or the WTFPLv2).  The developers of Rampart wish to extend their thanks
+for the excellent code.
 
 What does it do?
 """"""""""""""""

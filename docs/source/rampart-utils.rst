@@ -5,7 +5,21 @@ Utility functions are provided by the global ``rampart.utils`` :green:`Object`.
 These functions bring file io and other functionality to Duktape JavaScript.
 
 
+License
+"""""""
 
+The modified ``printf`` code used in the rampart utilities and in
+:ref:`the Rampart Server Module <rampart-server:The rampart-server HTTP module>`
+is provided by
+`Marco Paland <https://github.com/mpaland/printf>`_ under the
+`MIT License <https://github.com/mpaland/printf/blob/master/LICENSE>`_\ .
+
+The ``%!H`` HTML escape decoding is provided by 
+`Christoph Gärtner <https://bitbucket.org/cggaertner/cstuff/src/master/entities.c>`_
+under the  `Boost License <https://www.boost.org/users/license.html>`_\ .
+
+The utilities are included in Rampart JavaScript and as such are licensed under
+the same MIT license. 
 
 General Utilities
 """""""""""""""""
@@ -16,6 +30,7 @@ printf
 Print a formatted string to stdout.  Provides C-like
 `printf(3) <https://man7.org/linux/man-pages/man3/printf.3.html>`_
 functionality in JavaScript.
+
 
 Usage:
 
@@ -940,7 +955,7 @@ lacking permissions or if another error was encountered.
 
 Note that ``mode`` is normally given as an octal.  As such it can be, e.g.,
 ``0755`` (octal number) or ``"755"`` (:green:`String` representation of an octal
-number), but ``755``, as a decimal number may not work as intended.
+number), but ``755``, as a decimal number will likely not work as intended.
 
 Return Value:
    ``undefined``.

@@ -86,6 +86,7 @@
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="rampart-main.html">Rampart JavaScript</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Rampart Utility Functions</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#license">License</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#general-utilities">General Utilities</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#printf">printf</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#sprintf">sprintf</a></li>
@@ -227,6 +228,19 @@
 <h1>rampart.utils<a class="headerlink" href="#rampart-utils" title="Permalink to this headline">¶</a></h1>
 <p>Utility functions are provided by the global <code class="docutils literal notranslate"><span class="pre">rampart.utils</span></code> <span class="green">Object</span>.
 These functions bring file io and other functionality to Duktape JavaScript.</p>
+<div class="section" id="license">
+<h2>License<a class="headerlink" href="#license" title="Permalink to this headline">¶</a></h2>
+<p>The modified <code class="docutils literal notranslate"><span class="pre">printf</span></code> code used in the rampart utilities and in
+<a class="reference internal" href="rampart-server.html#the-rampart-server-http-module"><span class="std std-ref">the Rampart Server Module</span></a>
+is provided by
+<a class="reference external" href="https://github.com/mpaland/printf">Marco Paland</a> under the
+<a class="reference external" href="https://github.com/mpaland/printf/blob/master/LICENSE">MIT License</a>.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">%!H</span></code> HTML escape decoding is provided by
+<a class="reference external" href="https://bitbucket.org/cggaertner/cstuff/src/master/entities.c">Christoph Gärtner</a>
+under the  <a class="reference external" href="https://www.boost.org/users/license.html">Boost License</a>.</p>
+<p>The utilities are included in Rampart JavaScript and as such are licensed under
+the same MIT license.</p>
+</div>
 <div class="section" id="general-utilities">
 <h2>General Utilities<a class="headerlink" href="#general-utilities" title="Permalink to this headline">¶</a></h2>
 <div class="section" id="printf">
@@ -1051,7 +1065,7 @@ directories which do not exist will also be created.  Throws error if
 lacking permissions or if another error was encountered.</p>
 <p>Note that <code class="docutils literal notranslate"><span class="pre">mode</span></code> is normally given as an octal.  As such it can be, e.g.,
 <code class="docutils literal notranslate"><span class="pre">0755</span></code> (octal number) or <code class="docutils literal notranslate"><span class="pre">&quot;755&quot;</span></code> (<span class="green">String</span> representation of an octal
-number), but <code class="docutils literal notranslate"><span class="pre">755</span></code>, as a decimal number may not work as intended.</p>
+number), but <code class="docutils literal notranslate"><span class="pre">755</span></code>, as a decimal number will likely not work as intended.</p>
 <dl class="simple">
 <dt>Return Value:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">undefined</span></code>.</p>
 </dd>
