@@ -1509,6 +1509,11 @@ set(REQUIRE_LIB_DEPS        "no")
 # SUPPORT_PROTOCOLS
 set(VERSIONNUM              "${CURL_VERSION_NUM}")
 
+if(CMAKE_USE_OPENSSL)
+  add_dependencies(libcurl openssl)
+  add_dependencies(curl openssl)
+endif()
+
 # Finally generate a "curl-config" matching this config
 # Use:
 # * ENABLE_SHARED

@@ -21,7 +21,7 @@
 
 cmake_minimum_required(VERSION 3.1.2 FATAL_ERROR)
 
-set(EVENT__LIBRARY_TYPE "BOTH")
+set(EVENT__LIBRARY_TYPE "STATIC")
 
 if (POLICY CMP0054)
     cmake_policy(SET CMP0054 NEW)
@@ -135,16 +135,16 @@ option(EVENT__DISABLE_OPENSSL
     "Define if libevent should build without support for OpenSSL encryption" OFF)
 
 option(EVENT__DISABLE_BENCHMARK
-    "Defines if libevent should build without the benchmark executables" OFF)
+    "Defines if libevent should build without the benchmark executables" ON)
 
 option(EVENT__DISABLE_TESTS
-    "If tests should be compiled or not" OFF)
+    "If tests should be compiled or not" ON)
 
 option(EVENT__DISABLE_REGRESS
-    "Disable the regress tests" OFF)
+    "Disable the regress tests" ON)
 
 option(EVENT__DISABLE_SAMPLES
-    "Disable sample files" OFF)
+    "Disable sample files" ON)
 
 option(EVENT__DISABLE_CLOCK_GETTIME
     "Do not use clock_gettime even if it is available" OFF)
@@ -224,6 +224,7 @@ if ((${MSVC}) AND ("${EVENT_LIBRARY_TYPE}" STREQUAL "BOTH"))
       "(due to conflicts in library name"
       " between STATIC library and IMPORTED library for SHARED libraries)")
 endif()
+
 set(EVENT_LIBRARY_STATIC OFF)
 set(EVENT_LIBRARY_SHARED OFF)
 if ("${EVENT_LIBRARY_TYPE}" STREQUAL "BOTH")
@@ -895,17 +896,17 @@ endif()
 
 list(APPEND LIB_APPS "-ldl")
 
-if (NOT EVENT__DISABLE_TESTS)
-    # Zlib is only used for testing.
-    find_package(ZLIB)
-
-    if (ZLIB_LIBRARY AND ZLIB_INCLUDE_DIR)
-        include_directories(${ZLIB_INCLUDE_DIRS})
-
-        set(EVENT__HAVE_LIBZ 1)
-        list(APPEND LIB_APPS ${ZLIB_LIBRARIES})
-    endif()
-endif()
+#if (NOT EVENT__DISABLE_TESTS)
+#    # Zlib is only used for testing.
+#    find_package(ZLIB)
+#
+#    if (ZLIB_LIBRARY AND ZLIB_INCLUDE_DIR)
+#        include_directories(${ZLIB_INCLUDE_DIRS})
+#
+#        set(EVENT__HAVE_LIBZ 1)
+#        list(APPEND LIB_APPS ${ZLIB_LIBRARIES})
+#    endif()
+#endif()
 
 set(SRC_EXTRA
     event_tagging.c
@@ -971,6 +972,7 @@ configure_file(
 #
 # Create the libraries.
 #
+
 include(AddEventLibrary)
 add_event_library(event_core SOURCES ${SRC_CORE})
 add_event_library(event_extra
@@ -983,6 +985,10 @@ if (NOT EVENT__DISABLE_OPENSSL)
         OUTER_INCLUDES ${OPENSSL_INCLUDE_DIR}
         LIBRARIES ${OPENSSL_LIBRARIES}
         SOURCES ${SRC_OPENSSL})
+#     add_dependencies(event_openssl_static ssl crypto)  
+    target_link_libraries(event_openssl INTERFACE ssl crypto)
+    add_dependencies(event_openssl_static ssl crypto)
+#    add_dependencies(event_openssl_shared ssl crypto)
 endif()
 
 if (CMAKE_USE_PTHREADS_INIT)
@@ -1081,7 +1087,8 @@ macro(add_bench_prog prog)
                           ${LIB_APPS}
                           ${LIB_PLATFORM})
 endmacro()
-if (NOT EVENT__DISABLE_BENCHMARK)
+#if (NOT EVENT__DISABLE_BENCHMARK)
+if(0)
     foreach (BENCHMARK bench_http bench_httpclient)
         add_bench_prog(${BENCHMARK} test/${BENCHMARK}.c)
     endforeach()
@@ -1102,7 +1109,8 @@ macro(add_test_prog prog)
                           event_extra
                           ${ARGN})
 endmacro()
-if (NOT EVENT__DISABLE_TESTS)
+#if (NOT EVENT__DISABLE_TESTS)
+if (0)
     #
     # Generate Regress tests.
     #

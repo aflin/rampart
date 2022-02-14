@@ -68,7 +68,6 @@ add_executable(rampart
 	cmdline.c
 )
 
-add_dependencies(rampart timestamp)
 
 set_target_properties(rampart PROPERTIES
   ENABLE_EXPORTS 1
@@ -81,6 +80,7 @@ target_link_libraries(rampart LINK_PUBLIC
 	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
 	-Wl,-noall_load 
 	m dl pthread
+    event_core event_pthreads
 )
 
 else()
@@ -91,9 +91,12 @@ target_link_libraries(rampart LINK_PUBLIC
 	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
 	-Wl,--no-whole-archive
 	m dl pthread
+    event_core event_pthreads
 )
 
 endif()
+
+add_dependencies(rampart timestamp)
 
 include_directories(
 	${PROJECT_SOURCE_DIR}/src/include
@@ -140,9 +143,12 @@ target_include_directories(rampart-robots PRIVATE
      ${PROJECT_SOURCE_DIR}/extern/robotstxt/ 
      ${PROJECT_SOURCE_DIR}/src/duktape/core
      ${PROJECT_SOURCE_DIR}/src
-     ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-src/
+     ${PROJECT_SOURCE_DIR}/extern/robotstxt/extern/abseil-cpp-src/
 )
+
 set_target_properties(rampart-robots PROPERTIES LINKER_LANGUAGE CXX )
+add_dependencies(rampart-robots robots robots-static robots-main)
+
 endif()
 
 
@@ -157,6 +163,8 @@ target_include_directories(rampart-cmark PRIVATE
 	${PROJECT_SOURCE_DIR}/extern/cmark/src/
 	${PROJECT_BINARY_DIR}/extern/cmark/src/
 )
+add_dependencies(rampart-cmark cmark_static)
+
 
 ###HTML###
 add_library(rampart-html SHARED
@@ -169,6 +177,7 @@ target_include_directories(rampart-html PRIVATE
 	${PROJECT_SOURCE_DIR}/extern/tidy-html5/include/
 	${PROJECT_SOURCE_DIR}/extern/tidy-html5/src/
 )
+add_dependencies(rampart-html tidy)
 
 ###LMDB###
 
@@ -218,7 +227,7 @@ add_custom_command(
 add_custom_target(texislockd
 	DEPENDS ${CMAKE_BINARY_DIR}/src/texislockd
 )
-
+add_dependencies(texislockd texis)
 add_dependencies(rampart-sql texis texislockd)
 
 
@@ -260,6 +269,8 @@ target_include_directories(rampart-crypto PRIVATE
   ${PROJECT_BINARY_DIR}/extern/openssl/include/
 )
 
+add_dependencies(rampart-crypto openssl)
+
 ###SERVER###
 add_library(rampart-server SHARED
  duktape/modules/rampart-server.c
@@ -283,15 +294,32 @@ target_include_directories(rampart-server PRIVATE
 	${PROJECT_BINARY_DIR}/extern/libdeflate/
 )
 
+#add_custom_command(
+#	OUTPUT ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
+#	COMMAND make
+#	COMMAND mkdir -p ${PROJECT_BINARY_DIR}/extern/libdeflate
+#	COMMAND find './' -type f  -perm 0755 -regex '.*[^\.b][^sa][^ht]' -exec mv {} "${PROJECT_BINARY_DIR}/extern/libdeflate" "\;"
+#	COMMAND mv libdeflate.a ${PROJECT_BINARY_DIR}/extern/libdeflate/
+#	COMMAND cp libdeflate.h ${PROJECT_BINARY_DIR}/extern/libdeflate/
+#	COMMAND make clean
+#	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/extern/libdeflate/
+#)
+
+add_custom_command(
+    OUTPUT ${PROJECT_BINARY_DIR}/extern/libdeflate
+    COMMAND mkdir -p ${PROJECT_BINARY_DIR}/extern
+    COMMAND cp -a ${PROJECT_SOURCE_DIR}/extern/libdeflate ${PROJECT_BINARY_DIR}/extern
+)
+
+add_custom_target(cp_libdeflate
+	DEPENDS ${PROJECT_BINARY_DIR}/extern/libdeflate/
+)
+
+
 add_custom_command(
 	OUTPUT ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
 	COMMAND make
-	COMMAND mkdir -p ${PROJECT_BINARY_DIR}/extern/libdeflate
-	COMMAND find './' -type f  -perm 0755 -regex '.*[^\.b][^sa][^ht]' -exec mv {} "${PROJECT_BINARY_DIR}/extern/libdeflate" "\;"
-	COMMAND mv libdeflate.a ${PROJECT_BINARY_DIR}/extern/libdeflate/
-	COMMAND cp libdeflate.h ${PROJECT_BINARY_DIR}/extern/libdeflate/
-	COMMAND make clean
-	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/extern/libdeflate/
+    WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/extern/libdeflate/
 )
 
 add_custom_target(libdeflate
@@ -299,7 +327,7 @@ add_custom_target(libdeflate
 )
 
 add_dependencies(rampart-server libdeflate)
-
+add_dependencies(libdeflate cp_libdeflate)
 
 
 ###CURL###
@@ -317,6 +345,7 @@ target_include_directories(rampart-curl PRIVATE
 	${PROJECT_BINARY_DIR}/extern/curl/lib/
 )
 
+add_dependencies(rampart-curl libcurl)
 
 ###### EXAMPLE USER MODULE######
 #add_library(example_name SHARED

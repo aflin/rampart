@@ -395,8 +395,9 @@ set(TEXISAPI_H_FILES
 )
 add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/texisapi.h
   COMMAND cat ${TEXISAPI_H_FILES} > ${CMAKE_BINARY_DIR}/texisapi.h
-  DEPENDS ${TEXISAPI_H_FILES}
+  DEPENDS ${TEXISAPI_H_FILES} sizes_h jansson-2.12
 )
+
 target_sources(genFldFuncsSorted PRIVATE ${CMAKE_BINARY_DIR}/texisapi.h)
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/ftinternalsyms.h;${CMAKE_BINARY_DIR}/texisapi.h DESTINATION include/texis)

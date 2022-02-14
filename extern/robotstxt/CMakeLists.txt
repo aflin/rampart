@@ -49,29 +49,29 @@ SET(CPACK_SOURCE_IGNORE_FILES
 ############ build options ##############
 
 OPTION(ROBOTS_BUILD_STATIC "If ON, robots will build also the static library" ON)
-OPTION(ROBOTS_BUILD_TESTS "If ON, robots will build test targets" ON)
+OPTION(ROBOTS_BUILD_TESTS "If ON, robots will build test targets" OFF)
 OPTION(ROBOTS_INSTALL "If ON, enable the installation of the targets" OFF)
 
 ############ helper libs ############
 
-INCLUDE(CPack)
+#INCLUDE(CPack)
 INCLUDE(CheckCCompilerFlag)
 INCLUDE(ExternalProject)
 
 ############ dependencies ##############
 
-CONFIGURE_FILE(CMakeLists.txt.in libs/CMakeLists.txt)
-EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" . RESULT_VARIABLE result WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/libs)
+#CONFIGURE_FILE(CMakeLists.txt.in libs/CMakeLists.txt)
+#EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" . RESULT_VARIABLE result WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/libs)
 
-IF(result)
-    MESSAGE(FATAL_ERROR "Failed to download dependencies: ${result}")
-ENDIF()
+#IF(result)
+#    MESSAGE(FATAL_ERROR "Failed to download dependencies: ${result}")
+#ENDIF()
 
-EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} --build . RESULT_VARIABLE result WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/libs)
+#EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} --build . RESULT_VARIABLE result WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/libs)
 
-IF(result)
-    MESSAGE(FATAL_ERROR "Failed to download dependencies: ${result}")
-ENDIF()
+#IF(result)
+#    MESSAGE(FATAL_ERROR "Failed to download dependencies: ${result}")
+#ENDIF()
 
 # abseil-cpp
 IF(MSVC)
@@ -84,7 +84,7 @@ IF(MSVC)
     ADD_DEFINITIONS(/DNOMINMAX /DWIN32_LEAN_AND_MEAN=1 /D_CRT_SECURE_NO_WARNINGS)
 ENDIF(MSVC)
 
-ADD_SUBDIRECTORY(${CMAKE_CURRENT_BINARY_DIR}/libs/abseil-cpp-src
+ADD_SUBDIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/extern/abseil-cpp-src
                  ${CMAKE_CURRENT_BINARY_DIR}/libs/abseil-cpp-build
                  EXCLUDE_FROM_ALL)
 

@@ -8,9 +8,9 @@ if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
     message(FATAL_ERROR "Do not build in-source.\nPlease remove CMakeCache.txt and the CMakeFiles/ directory.\nThen: mkdir build ; cd build ; cmake .. ; make")
 endif()
 
-option(CMARK_TESTS "Build cmark tests and enable testing" ON)
+option(CMARK_TESTS "Build cmark tests and enable testing" OFF)
 option(CMARK_STATIC "Build static libcmark library" ON)
-option(CMARK_SHARED "Build shared libcmark library" ON)
+option(CMARK_SHARED "Build shared libcmark library" OFF)
 option(CMARK_LIB_FUZZER "Build libFuzzer fuzzing harness" OFF)
 
 if(NOT MSVC)

@@ -222,6 +222,10 @@ add_custom_command(
 	COMMAND sizes ${CMAKE_BINARY_DIR}/sizes.h
 )
 
+add_custom_target(sizes_h
+    DEPENDS ${CMAKE_BINARY_DIR}/sizes.h
+)
+
 IF(TEST_ATOMIC_FUNCS)
 add_executable(atomicTests atomicTests.c)
 add_dependencies(atomicTests sizes)

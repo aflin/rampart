@@ -124,7 +124,9 @@ macro(add_event_library LIB_NAME)
         set(ADD_EVENT_LIBRARY_INTERFACE "${LIB_NAME}_static")
     endif()
 
-    if (${EVENT_LIBRARY_SHARED})
+#    if (${EVENT_LIBRARY_SHARED})
+#no idea why this randomly keeps building --ajf
+    if(0)
         add_library("${LIB_NAME}_shared" SHARED ${LIB_SOURCES})
 
         if(LIB_INNER_LIBRARIES)
