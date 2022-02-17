@@ -386,15 +386,6 @@ else()
   endif()
 endif()
 
-## some examples into src temporarily 
-set(EXAMPLE_FILES
-	"wikipedia_search"
-	"metasearch"
-)
-foreach(EXAMPLE_FILE ${EXAMPLE_FILES})
-  file(COPY ${CMAKE_SOURCE_DIR}/examples/${EXAMPLE_FILE} DESTINATION ${CMAKE_BINARY_DIR}/src)
-endforeach()
-
 ## tests into build/src dir as well (temporary)
 file(GLOB TEST_FILES "${CMAKE_SOURCE_DIR}/test/*.js" "${CMAKE_SOURCE_DIR}/test/wiki_00")
 foreach(TEST_FILE ${TEST_FILES})
