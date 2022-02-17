@@ -211,7 +211,7 @@ add_library(rampart-sql SHARED
 )
 target_link_libraries(rampart-sql
 	${PROJECT_BINARY_DIR}/texis/texisapi/libtexisapi.a
-	${PROJECT_BINARY_DIR}/texis/mmapi/libmmapi3.a
+#	${PROJECT_BINARY_DIR}/texis/mmapi/libmmapi3.a
 	z
 	${PROJECT_BINARY_DIR}/texis/thirdparty/re2/libre2.a
 	pthread

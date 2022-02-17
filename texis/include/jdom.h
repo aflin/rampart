@@ -20,7 +20,7 @@
  * >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> NOTE <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
  */
 
-#define JDOM_VERSION    0x20201116      /* YYYYMMDD lib compat version # */
+#define JDOM_VERSION    0x20210910      /* YYYYMMDD lib compat version # */
 
 #ifdef _WIN32
 #  define JD_EXTERN_API(__type)  extern _declspec(dllexport) CDECL __type

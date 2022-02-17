@@ -3,12 +3,11 @@ cmake_minimum_required(VERSION 3.13)
 project(TexisCore VERSION 8.0.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_BUILD_TYPE Debug)
 
 #set(INSTALL_SELF_CONTAINED ON CACHE BOOL "Install to a self contained directory")
-#set(INSTALL_SELF_CONTAINED ON)
-#set(INSTALL_DIRECTORY "/usr/local/texis" CACHE PATH "Installation Directory")
-#set(CMAKE_INSTALL_PREFIX ${INSTALL_DIRECTORY})
+set(INSTALL_SELF_CONTAINED ON)
+set(INSTALL_DIRECTORY "/usr/local/texis" CACHE PATH "Installation Directory")
+set(CMAKE_INSTALL_PREFIX ${INSTALL_DIRECTORY})
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 set(WANT_SSL OFF CACHE BOOL "Include OpenSSL")
 set(NO_RAM_EQUIVS OFF CACHE BOOL "Disable Builtin Thesaurus")
@@ -41,24 +40,27 @@ include(thirdparty/openssl.cmake)
 include(thirdparty/jansson.cmake)
 
 if(LOCK_SERVER)
-#include(thirdparty/libevent.cmake)
+if(EPI_HAS_EVENT_LOCATION)
+message("-- Using libevent at ${EPI_BINARY_EVENT_DIR}")
 include_directories(
-	${CMAKE_SOURCE_DIR}/../extern/libevent/include
-	${CMAKE_BINARY_DIR}/../extern/libevent/include
+    ${EPI_SOURCE_EVENT_DIR}/include
+    ${EPI_BINARY_EVENT_DIR}/include
 )
+set(EVENT_LIBRARY event)
+else(EPI_HAS_EVENT_LOCATION)
+include(thirdparty/libevent.cmake)
+endif(EPI_HAS_EVENT_LOCATION)
 endif(LOCK_SERVER)
 
 include(GNUInstallDirs)
+
 include_directories(include)
 include_directories(${CMAKE_BINARY_DIR})
 if(HAVE_RE2)
 include_directories(thirdparty/re2)
 include_directories(thirdparty/cre2/src)
-
 add_subdirectory(thirdparty/re2)
 endif(HAVE_RE2)
-add_subdirectory(bootstrap)
-add_subdirectory(mmapi)
 add_subdirectory(texisapi)
 add_subdirectory(apps)
 add_subdirectory(docs)
@@ -70,4 +72,4 @@ if(BUILD_TESTING)
   add_subdirectory(test)
 endif(BUILD_TESTING)
 
-#install(DIRECTORY include/ DESTINATION include/texis)
+install(DIRECTORY include/ DESTINATION include/texis)

@@ -5,39 +5,14 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <string.h>
-#include <time.h>
 #include <errno.h>
-#include <ctype.h>
-#ifndef _WIN32
-#  include <syslog.h>
-#  include <sys/time.h>
-#  include <sys/resource.h>
+#ifdef EPI_HAVE_UNISTD_H
+#include <unistd.h>
 #endif
-#include <signal.h>
-#if defined(unix) || defined(__unix__)
-#  include <unistd.h>
-#else
-#  define getpid()	((pid_t)0)
-#endif
-#include "sizes.h"
-#include "os.h"
-#ifdef EPI_HAVE_STDARG
-#  include <stdarg.h>
-#else
-#  include <varargs.h>
-#endif
-#include "mmsg.h"
 #include "kdbf.h"
 #include "kdbfi.h"
 #include "fbtree.h"
 #include "kfbtree.h"
-#include "cgi.h"
-#ifdef USELICENSE
-#  include "license.h"
-#endif
-#include "version.h"
-#include "meter.h"
 
 
 /* ----------------------------- FDBF stuff -------------------------------- */

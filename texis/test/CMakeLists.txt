@@ -62,14 +62,14 @@ find_package(Threads REQUIRED)
 add_executable(rbtest
 rbtest.c)
 target_link_libraries(rbtest PUBLIC Threads::Threads)
-target_link_libraries(rbtest LINK_PUBLIC texisapi mmapi3 z)
+target_link_libraries(rbtest LINK_PUBLIC texisapi z)
 
 add_executable(apitest1
 apitest1.c)
 target_link_libraries(apitest1 PUBLIC Threads::Threads)
-target_link_libraries(apitest1 LINK_PUBLIC texisapi mmapi3 z)
+target_link_libraries(apitest1 LINK_PUBLIC texisapi z)
 
 add_executable(locktest1
 locktest1.c)
 target_link_libraries(locktest1 PUBLIC Threads::Threads)
-target_link_libraries(locktest1 LINK_PUBLIC texisapi mmapi3 z)
+target_link_libraries(locktest1 LINK_PUBLIC texisapi z)
