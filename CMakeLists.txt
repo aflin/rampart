@@ -13,14 +13,21 @@ message("######   CONFIGURING RAMPART    ######")
 add_subdirectory(src)
 
 include(cmake/ExternalProject.cmake)
+
+set(LIBEVENT_INCLUDE_DIRS
+    ${CMAKE_CURRENT_BINARY_DIR}/extern/libevent/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/extern/libevent/include
+)
+
+string(REPLACE ";" "|" LIBEVENT_INCLUDE_ALT "${LIBEVENT_INCLUDE_DIRS}")
+
 ExternalProject_Add( texis
 	PREFIX texis
 	SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/texis"
 	CMAKE_ARGS
 		-DGENERATE_PIC=1
-		-DEPI_HAS_EVENT_LOCATION=ON
-		-DEPI_SOURCE_EVENT_DIR=${CMAKE_CURRENT_SOURCE_DIR}/extern/libevent
-		-DEPI_BINARY_EVENT_DIR=${CMAKE_CURRENT_BINARY_DIR}/extern/libevent
+		-DLIBEVENT_INCLUDE_DIRS=${LIBEVENT_INCLUDE_ALT}
+		-DLIBEVENT_LIBRARY_DIRS=${CMAKE_CURRENT_BINARY_DIR}/extern/libevent/lib
 	BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/texis" 
 	INSTALL_COMMAND cmake -E echo "Skipping install step."
 	DEPENDS openssl event_static event_core_static event_pthreads_static

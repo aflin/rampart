@@ -61,16 +61,7 @@ if(LOCK_SERVER AND EVENT_LIBRARY)
 add_executable(texislockd
   lockd_main.c
 )
-
-if(EPI_HAS_EVENT_LOCATION)
-target_link_libraries(texislockd LINK_PUBLIC
-        ${EPI_BINARY_EVENT_DIR}/lib/libevent_core.a
-        ${EPI_BINARY_EVENT_DIR}/lib/libevent_pthreads.a 
-)
-else(EPI_HAS_EVENT_LOCATION)
-target_link_libraries(texislockd LINK_PUBLIC event)
-endif(EPI_HAS_EVENT_LOCATION)
-
+target_link_libraries(texislockd LINK_PUBLIC event_core)
 target_link_libraries(texislockd LINK_PUBLIC texisapi z)
 set(LOCKD_EXE  ${CMAKE_CURRENT_BINARY_DIR}/texislockd PARENT_SCOPE)
 

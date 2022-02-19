@@ -38,20 +38,9 @@ include(CheckIncludeFile)
 include(ExternalProject)
 include(thirdparty/openssl.cmake)
 include(thirdparty/jansson.cmake)
-
 if(LOCK_SERVER)
-if(EPI_HAS_EVENT_LOCATION)
-message("-- Using libevent at ${EPI_BINARY_EVENT_DIR}")
-include_directories(
-    ${EPI_SOURCE_EVENT_DIR}/include
-    ${EPI_BINARY_EVENT_DIR}/include
-)
-set(EVENT_LIBRARY event)
-else(EPI_HAS_EVENT_LOCATION)
 include(thirdparty/libevent.cmake)
-endif(EPI_HAS_EVENT_LOCATION)
 endif(LOCK_SERVER)
-
 include(GNUInstallDirs)
 
 include_directories(include)
