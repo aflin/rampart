@@ -497,6 +497,15 @@ install(CODE "execute_process ( \
 #    )"
 #)
 
+#Licenses
+install(CODE "execute_process( \
+   COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_SOURCE_DIR}/LICENSE\" \
+    \"${PROJECT_SOURCE_DIR}/LICENSE-rsal.txt\" \
+    \"${CMAKE_INSTALL_PREFIX}/\"   \
+    )"
+)
+
 #tsql etc
 install(CODE "execute_process( \
    COMMAND ${CMAKE_COMMAND} -E copy \

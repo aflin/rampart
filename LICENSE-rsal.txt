@@ -1,0 +1,268 @@
+PLAIN ENGLISH DESCRIPTION:
+
+The following plain English description of the License is for illustrative
+purposes only.  
+
+The text below "The Rampart Source Available License" is the
+controlling and binding agreement.
+
+The license described below applies solely to the use of the "rampart-sql.so"
+module and the accompanying Texis Library and utilities.  This includes
+loading of the module via "require('rampart-sql')", the "tsql", "addtable",
+"kdbfchk", "rex" and "metamorph" executables.
+
+The other portions of Rampart, including the main "rampart" executable and
+the other accompanying modules are licensed under various permissive open
+source licenses.
+
+There are three basic licenses you may choose from:
+
+1)  A Maker's License: Non commercial and student/instructor use. Free of charge.
+
+2)  A Mom and Pop License: Meant for small for-profit organizations or for
+    larger organizations to sample the Software. It is limited to a single
+    computer running the Software on no more than 4 Cores. Also 
+    free of charge.
+
+3)  A Full Commercial License.  Details of cost per CPU Core are available
+    on our website at https://rampart.dev/ .
+
+Note that we require that your usage under the two free licenses do not
+compete with our company or the services it provides.
+
+Note also that although the source of the Texis Library is available, any
+changes made to said source may be used internally by you or your
+organization only. Distribution of changes are not allowed.
+
+--------------------------------------------------------------------------------
+
+BEGIN LICENSE
+
+The Rampart Source Available License.
+
+This License applies to the Texis Library, utilities in binary compiled form
+(as linked in the "rampart-sql.so" module or available as separate
+executables) as well as the related source code.  Such code includes, but is
+not limited to, loading of the module via "require('rampart-sql')", the
+"tsql", "addtable", "kdbfchk", "rex" and "metamorph" executables.
+
+This Agreement sets forth the terms on which the Licensors make available
+the Software.  BY INSTALLING, DOWNLOADING, ACCESSING, USING OR DISTRIBUTING
+ANY OF THE SOFTWARE, YOU AGREE TO THE TERMS AND CONDITIONS OF THIS
+AGREEMENT.  IF YOU DO NOT AGREE TO SUCH TERMS AND CONDITIONS, YOU MUST NOT
+USE THE SOFTWARE.  If you are receiving the Software on behalf of a legal
+entity, you represent and warrant that you have the actual authority to
+agree to the terms and conditions of this agreement on behalf of such
+entity.
+
+1.  License Grant.  Licensors grants you (at your option):
+
+    a.  A Free Non-Commercial License:  This License is based, in part, on the
+        PolyForm Noncommercial License (at
+        https://polyformproject.org/licenses/noncommercial/1.0.0/).  
+        
+        i)    The Licensor grants you a copyright license for the Software to do
+              everything you might do with the Software that would otherwise
+              infringe the licensor’s copyright in it for any permitted
+              purpose.  However, you may only distribute the Software according
+              to Distribution License and make changes or new works based on
+              the Software according to Changes and New Works License.
+
+        ii)   Personal Uses:
+              Personal Use for research, experiment, and testing for the
+              benefit of public knowledge, personal study, private
+              entertainment, hobby projects, amateur pursuits, or religious
+              observance, without any anticipated commercial application, is
+              Use for a permitted purpose.
+
+        iii)  Noncommercial Organizations:
+              Use by any charitable organization, public research
+              organization, public safety or health organization, or
+              environmental protection organization is Use for a permitted
+              purpose regardless of the source of funding or obligations
+              resulting from the funding.  Excluded are Uses whose primarily
+              intended for or directed toward commercial advantage or
+              monetary compensation by the Noncommercial Organization, its
+              Affiliates or any third party.
+
+        iv)   Non-Compete: 
+              Uses that provide to others any Product that competes with the
+              Software or any Product the Licensor or any of its affiliates
+              provides using the Software are EXCLUDED as permitted Uses.
+
+        v)    Software as a Service:
+              Uses to provide services for third parties that are
+              substantially similar to that provided by the Texis Library
+              are EXCLUDED as permitted Uses.
+
+        vi)   Educational Uses:
+              Use by any educational institution or the instructors and
+              students therein for the purposes of instruction, research,
+              experiment, and testing for the benefit of public knowledge,
+              without any anticipated commercial application, is Use for a
+              permitted purpose. Not included in Uses for a permitted
+              purpose is use by an educational institution, its instructors
+              or students is Infrastructure Use.
+
+        vii)  CPU Core Limitations:  Use on any number of CPU Cores is a
+              permitted purpose.
+
+    b.  A Free Limited Commercial License for small business Use or evaluation
+        purposes:
+
+        i)    The licensor grants you a copyright license for the Software to do
+              everything you might do with the Software that would otherwise
+              infringe the licensor’s copyright in it for any permitted
+              purpose.  However, you may only distribute the Software according
+              to Distribution License and make changes or new works based on
+              the Software according to Changes and New Works License.
+
+        ii)   Commercial purposes:
+              Any purpose including Uses whose primarily intended for or
+              directed toward commercial advantage or monetary compensation
+              is a permitted purpose.
+
+        iii)  Non-Compete: 
+              Uses that provide to others any Product that competes with the
+              Software or any Product the Licensor or any of its affiliates
+              provides using the Software are EXCLUDED as permitted Uses.
+
+        iv)   CPU Core Limitation:
+              Limited Commercial Use is limited to one CPU per individual or
+              Company.  Each CPU may use the Software on a maximum of 4 CPU
+              Cores concurrently or simultaneously.
+
+    c.  A Commercial License:          
+
+        i)    The Licensor grants you a copyright license for the Software to do
+              everything you might do with the Software that would otherwise
+              infringe the licensor’s copyright in it for any permitted
+              purpose.  However, you may only distribute the Software according
+              to Distribution License and make changes or new works based on
+              the Software according to Changes and New Works License.
+
+        ii)   Commercial purposes:
+              Any purpose including Uses whose primarily intended for or
+              directed toward commercial advantage or monetary compensation
+              is a permitted purpose.
+
+        iv)   CPU Core Limitation:
+              Commercial Use is limited to the number of CPU Cores as
+              purchased and specified in your subscription or purchase
+              agreement.  Use of the specified number of Cores is the limit
+              of CPU Cores in concurrent, simultaneous Use by the
+              Software.
+
+2.  Notices:  You must ensure that anyone who receives a copy of any part of the
+    Software from you also receives a plain text copy of these terms.
+
+3.  Distribution License: 
+    The licensor grants you an additional copyright license to distribute
+    copies of the Software under this license.  Your license to distribute
+    covers distributing the Software without changes to the source or 
+    binary material.
+
+4.  Changes and New Works License:
+    The licensor grants you an additional copyright license to make changes
+    and new works based on the Software for internal Use only.  Any changes
+    made by you may NOT be distributed under the Distribution license above.
+
+5.  Term of Agreement.  The License will terminate automatically if you fail
+    to comply with any of the limitations or other requirements described
+    herein.  On the Termination Date, if not operating under a new license,
+    you shall cease all Use of the Software and destroy all copies, full or
+    partial of the Software.  Under the Commercial License, other
+    limitations to the terms of the agreement may be specified in the
+    accompanying purchase or subscription agreement.
+
+6.  Ownership Rights.  The Software and related documentation are protected
+    by United States copyright laws and international treaties.  Licensors,
+    third party component providers and open source component providers own
+    and retain all right, title and interest in and to the Software and
+    related documentation, including all copyrights, patents, trade secret
+    rights, trademarks and other intellectual property rights therein.
+
+7.  Exclusion of Warranties.  THE SOFTWARE IS PROVIDED TO YOU “AS IS”,
+    AND ANY USE BY YOU OF THE SOFTWARE WILL BE AT YOUR SOLE RISK. 
+    LICENSORS MAKES NO WARRANTIES RELATING TO THE SOFTWARE AND EXPRESSLY
+    DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING WITHOUT
+    LIMITATION THOSE OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+    PURPOSE.
+
+8.  Limitation of Liability.  IN NO EVENT SHALL LICENSORS BE LIABLE FOR ANY
+    INCIDENTAL, SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES WHATSOEVER,
+    INCLUDING, WITHOUT LIMITATION, DAMAGES FOR LOSS OF PROFITS, LOSS OF
+    DATA, BUSINESS INTERRUPTION OR ANY OTHER COMMERCIAL DAMAGES OR LOSSES,
+    ARISING OUT OF OR RELATED TO YOUR USE OR INABILITY TO USE THE 
+    SOFTWARE, HOWEVER CAUSED, REGARDLESS OF THE THEORY OF LIABILITY
+    (CONTRACT, TORT OR OTHERWISE) AND EVEN IF LICENSORS HAVE BEEN ADVISED OF
+    THE POSSIBILITY OF SUCH DAMAGES.
+
+9.  Governing Law.  This Agreement is governed by the law of the State of
+    Delaware, U.S.A., without reference to conflict of laws principles.  The
+    application of the United Nations Convention of Contracts for the
+    International Sale of Goods is expressly excluded.
+
+10. Assignment/Transfers.  You may not assign or transfer this Agreement, in
+    whole or in part, without Licensors’ prior written consent, except
+    under the terms of this License.  Any other attempted assignment or
+    transfer in violation of this Section will be null and void.
+
+11. Third Party Acknowledgements
+
+  a) Aspects of the Software utilize or include third party Software and
+     other copyrighted material.  Acknowledgements, licensing terms and
+     disclaimers for such material are available for the third party
+     Software in the respective source directories and/or documentation, and
+     your use of such material is governed by their respective terms.
+
+  b) The Software includes certain Software provided under various Open
+     Source licenses.  Open Source Software is distributed WITHOUT ANY
+     WARRANTY, without even the implied warranty of MERCHANTABILITY or
+     FITNESS FOR A PARTICULAR PURPOSE.
+
+12. Severability.  If any provision of this Agreement is held invalid,
+    illegal or unenforceable, the validity, legality and enforceability of
+    any of the remaining provisions of this Agreement shall not in any way
+    be affected or impaired.
+
+13. Entire Agreement.  With the exception of an accompanying purchase or
+    subscription agreement provided by Licensor, this Agreement is the
+    entire agreement between you and Licensors concerning the Software and
+    all related documentation and supersedes any other prior or
+    contemporaneous agreements or communications with respect to the
+    Software and related documentation, whether written or oral.
+
+DEFINITIONS: 
+
+*   The Licensor is the individual or entity offering these terms,
+    and the Software is the software, binaries and source code the licensor
+    makes available under these terms.
+
+*   A Product can be a good or service, or a combination of them.
+
+*   You refers to the individual or entity agreeing to these terms.
+
+*   Company is any legal entity, sole proprietorship, or other kind of
+    organization that you work for, plus all its affiliates.
+
+*   CPU Core is an individual processing unit within the Central Processing Unit
+    of a computer, server or other computing device.  Limits per CPU Core
+    apply to the maximum number of CPU Cores in use at any given time by the
+    Software.
+
+*   Affiliates means the other organizations that an organization has control
+    over, is under the control of, or is under common control with.
+
+*   Control means an ownership interst the assets of an entity, or the
+    power to direct its management and policies by vote, contract, or otherwise. 
+    Control can be direct or indirect.
+
+*   Infrastructure Use is any use of a Product by an organization or institution which
+    supports administrative or public facing distribution of information.
+ 
+*   Your licenses are all the licenses granted to you for the Software under these terms.
+
+*   Use means anything you do with the Software requiring one of your licenses.
+
+END LICENSE
