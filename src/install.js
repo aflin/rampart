@@ -5,17 +5,17 @@ rampart.globalize(rampart.utils);
 var singledir_install = {
     bin:          "/bin",
     include:      "/include",
-    examples:     "/examples",
+//    examples:     "/examples",
+//    "web_server": "/web_server",
     modules:      "/modules",
-    "web_server": "/web_server"
 }
 
 var local_install = {
     bin:          "/bin",                 // /usr/local/bin
     include:      "/include",             // /usr/local/include
-    examples:     "/rampart/examples",    // /usr/local/rampart/examples
-    modules:      "/lib/rampart_modules", // /usr/local/lib/rampart_modules
-    "web_server": "/rampart/web_server"   // /usr/local/rampart/web_server
+//    examples:     "/rampart/examples",    // /usr/local/rampart/examples
+//    "web_server": "/rampart/web_server",   // /usr/local/rampart/web_server
+    modules:      "/lib/rampart_modules" // /usr/local/lib/rampart_modules
 }
 var resp;
 function getresp(def, len) {
@@ -41,6 +41,7 @@ function get_install_choice() {
 3) /usr/local
 4) /usr (not recommened)
 5) custom
+6) links only from this dir
 h) help
 `);
     return getresp('h');
@@ -56,8 +57,9 @@ Rampart modules use many different libraries which all use various
 permissive open source licenses.
 
 The one exception is rampart-sql and the texis library used in rampart-sql,
-which uses a source available license and is available without charge for
-certain uses.  See license for details.
+which uses a source available license (see LICENSE-rsal.txt in the install
+directory) and is available without charge for non-profit, personal,
+education and certain other uses.  See license for details.
 
 The respective licenses are listed at the beginning of each major section in
 the documentation at 'https://rampart.dev/docs/'.
@@ -144,7 +146,7 @@ function copy_single(src, dest, backup) {
             exists=true;
         } else {
             if(!backup) {
-                //will get 'text file busy' error if replacing the rampart that we are using.
+                //will get 'text file busy' error if replacing the rampart that is currently in use.
                 rmFile(dest);
                 copyFile(src, dest, true);
             } else {
@@ -215,6 +217,8 @@ function do_make_links(prefix) {
 /* we will overwrite files everywhere except in
    'examples' and 'web_server'.  If files differ
    there, the new file will be filename +'.new'   */
+
+/* UPDATE: we are no longer copying the examples and web_server dirs. */
 
 function do_install(prefix, map, makelinks){
     var dirs = Object.keys(map);
@@ -304,20 +308,27 @@ function do_install_choice(choice) {
                 do_install(loc, singledir_install, false);
 
             break;
+
+        case '6':
+            var src = realPath('./');
+            console.log(`creating links from "${src}/bin/*" to /usr/local/bin`);
+            do_make_links(src);
+            break;
+            
     }
     return true;
 }
 
 function choose_install() {
-    var choice = get_install_choice();
+    var choice=' ';// = get_install_choice();
 
-    while( "12345".indexOf(choice) == -1){
+    while( "123456".indexOf(choice) == -1){
         clear();
         printf('%s', 
 `Install help:
 
 1) /usr/local/rampart
-    - All files are installed into this directory.
+    - All necessary files are installed into the above directory.
     - Soft links for binaries are made in '/usr/local/bin'.
 
 2) /opt/rampart
@@ -326,22 +337,25 @@ function choose_install() {
 3) /usr/local
     - Binaries are installed to '/usr/local/bin'.
     - Modules are installed to '/usr/local/lib/rampart-modules'.
-    - Examples and tests are installed in '/usr/local/rampart'.
 
 4) /usr
     - Same as 3, but with prefix '/usr' instead of '/usr/local'.
-      **NOTE** install into '/usr' is highly discouraged.  Don't do this
-      unless you know what you are doing and have a very good reason.
+      **NOTE** install into '/usr' is discouraged.  Don't do this unless you
+      know what you are doing.
 
 5) custom
     - Same as 1, but script will ask for the location of the custom directory.
 
+6) links only
+    - Keep files in this directory. Make links in '/usr/local/bin'.
+
 h) help
     - This Message.
 
-* NOTE that files in the 'examples' and 'web_server' directories will not
-  overwrite existing files in the installation directory.  If files differ,
-  they will be written to a new file with '.new' extension added.
+* NOTE that this install utility will overwrite an old installation.  If you
+  would like to keep your old installation, install the current in a
+  different directory, or alternatively press ctrl-c to exit, move the
+  current installation to a new location and re-run this script.
 
 --------------------
 `);
@@ -371,13 +385,14 @@ function choose_continue(){
 
 Installing this distribution is optional.  It is designed to function from
 within any folder, so long as the directory structure herein is maintained.
+
 If you would like to use this folder as rampart's install location, you can
-exit this script and, optionally, manually make a link as such:
+choose the "links only" option on the next page.
+
+Alternatively you can exit this script and, optionally, manually make a link
+as such:
 
   ln -s %s/bin/rampart /usr/local/bin/rampart
-
-If you are installing from and to the same directory, no files will be copied,
-however soft links to still be made in the /usr/local/bin directory.
 
 Otherwise for automatic installation choices, you may continue.
 
@@ -408,10 +423,10 @@ websites, the CA certificate bundle file:
 
     '${curl.default_ca_file}'
 
-must be present.  However it is missing on your system. Without this file
+must be present.  However it is missing on your system.  Without this file
 you will either have to download pages from https websites by specifying an
-alternate location, or by specifying that the request be performed
-insecurely (the 'cacert' and 'insecure' options documented at
+alternate location for the ca file, or by specifying that the request be
+performed insecurely (the 'cacert' and 'insecure' options documented at
 'https://rampart.dev/docs/rampart-curl.html#curl-long-options'
 respectively).
 
@@ -493,7 +508,11 @@ You will need to manually copy this file with, e.g.:
 
     fprintf( curl.default_ca_file, '%s', res.text);
     
-    console.log(`${curl.default_ca_file} was successfully created`);
+    console.log(`${curl.default_ca_file} was successfully created.
+    
+Press any key to continue.`);
+    getresp(' ');
+
 }
 
 
@@ -543,9 +562,24 @@ written to a file with the extension '.new':
 printf("\nInstallation complete");
 
 if(with_err != '')
-    printf(" with the following error(s):%s", with_err);
+    printf(" with the following error(s):%s\n", with_err);
+else
+    printf(`
 
-printf("\n");
+
+Also of interest in this directory (but not copied):
+
+  1)  The "run_tests.sh" script and the "./test" directory.  If you'd like
+      to run some tests, or just have a look to see what is possible.
+
+  2)  The "./web_server" directory contains a template configuration you 
+      might want to use for serving web pages.
+
+  3)  The "./examples" directory has a sample module written in C which
+      you can use as a template for making your own module written in C.
+
+Thank you for installing.  Enjoy!
+`);
 
 
 
