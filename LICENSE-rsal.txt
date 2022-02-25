@@ -140,7 +140,7 @@ terms and conditions of this agreement on behalf of such entity.
               Software or any Product the Licensor or any of its affiliates
               provides using the Software are EXCLUDED as Permitted Uses.
 
-        v)    CPU Core Limitation:
+        iv)   CPU Core Limitation:
               Limited Commercial Use is limited to one CPU per individual or
               Company.  Each CPU may use the Software on a maximum of 4 CPU
               Cores concurrently or simultaneously.
@@ -159,14 +159,14 @@ terms and conditions of this agreement on behalf of such entity.
               directed toward commercial advantage or monetary compensation
               is a Permitted Purpose.
 
-        iv)   CPU Core Limitation:
+        iii)  CPU Core Limitation:
               Commercial Use is limited to the number of CPU Cores as
               purchased and specified in your subscription or purchase
               agreement.  Use of the specified number of Cores is the limit
               of CPU Cores in concurrent, simultaneous Use by the
               Licensed Software.
 
-	V)    Purchase Agreement:
+	iv)    Purchase Agreement:
               This Commercial License is valid only with an accompanying
               subscription or purchase agreement.
 
