@@ -613,7 +613,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     size_t read;
     char *pfill="babel-polyfill.js";
     char *pfill_bc=".babel-polyfill.bytecode";
-    duk_size_t bsz;
+    duk_size_t bsz=0;
     void *buf;
     RPPATH rppath;
 
@@ -1972,7 +1972,10 @@ int main(int argc, char *argv[])
         }
 
         strcpy(p, rampart_argv[n]);
+
+        //a copy of the complete path/script.js
         RP_script=realpath(p, NULL);
+
         s=strrchr(p,'/');
         if (s)
         {

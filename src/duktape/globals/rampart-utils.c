@@ -58,7 +58,7 @@ int execvpe(const char *program, char **argv, char **envp)
       var buf=rampart.utils.StringToBuffer(val,"[dynamic|fixed]"); //always converted to type
 */
 #define BUFREADSZ 4096
-#define homesubdir "/.rampart/"
+#define HOMESUBDIR "/.rampart/"
 
 /* **************************************************
    like duk_get_int_default but if string, converts 
@@ -159,15 +159,16 @@ RPPATH rp_find_path(char *file, char *subdir)
     char *locs[nlocs];
     char *home=( getenv("HOME") ? getenv("HOME") : "/tmp" );
     char *rampart_path=getenv("RAMPART_PATH");
-    char homedir[strlen(home)+strlen(homesubdir)+1];
-    char *loc="./";
+    char homedir[PATH_MAX];
     char *sd= (subdir)?subdir:"";
     RPPATH ret={{0}};
     char path[PATH_MAX];
-    int i=0, skiphome=0;
+    int i=0, skiphome=0, plen, sd_file_len;
     struct stat sb;
 
     if(!file) return ret;
+
+    sd_file_len = strnlen(sd,PATH_MAX) + strnlen(file,PATH_MAX) + 1;
 
     /* look for it as given before searching paths */
     if (stat(file, &sb) != -1)
@@ -179,6 +180,9 @@ RPPATH rp_find_path(char *file, char *subdir)
     }
 
     /* look for it in scriptPath */
+    if( strlen(RP_script_path) + strnlen(file,PATH_MAX) + 2 > PATH_MAX)
+        return ret;
+
     strcpy(path,RP_script_path);
     strcat(path,"/");
     strcat(path,file);
@@ -191,8 +195,7 @@ RPPATH rp_find_path(char *file, char *subdir)
         return ret;
     }
 
-    //printf("looking for file %s%s\n",subdir,file);
-    //if(!home || access(home, R_OK)==-1) home="/tmp";
+    // check for access to ~/
     if ( access(home, R_OK)==-1 )
     {
         if (strcmp( home, "/tmp") != 0){
@@ -202,12 +205,17 @@ RPPATH rp_find_path(char *file, char *subdir)
         }        
         fprintf(stderr, "cannot access %s\nEither your home directory or \"/tmp\"\" should exist and be accessible.\n", home);
         skiphome=1;
-        //exit(1);
     }
     
     home_accessok:
-    strcpy(homedir,home);
-    strcat(homedir,homesubdir); /* ~/.rampart */
+    plen = strnlen(home,PATH_MAX) + strlen(HOMESUBDIR) +1;
+    if(plen > PATH_MAX)
+        skiphome=1;
+    else
+    {
+        strcpy(homedir,home);
+        strcat(homedir,HOMESUBDIR); /* ~/.rampart */
+    }
 
     locs[0]=rampart_dir; //this is set in cmdline.c based on path of executable
 
@@ -222,42 +230,61 @@ RPPATH rp_find_path(char *file, char *subdir)
         locs[1]=homedir;
         locs[2]=(rampart_path)?rampart_path:RP_INST_PATH;
     }
+
     /* start with cur dir "./" */
-    strcpy(path,loc);
+    plen = strnlen(file,PATH_MAX) + 3;
+    if(plen > PATH_MAX)
+        return ret;
+    strcpy(path,"./");
     strcat(path,file);
 
-//printf("first check\n");
+
     //look for it in ./, execpath, homedir, rampart_path
     while(1) {
-//printf("checking %s\n",path);
+        // first loop uses "./" above, next loop uses path set below
         if (stat(path, &sb) != -1)
         {
-//printf("break at i=%d\n",i);
             goto path_found;
         }
 
-//printf ("not found\n");
         if(i==nlocs)
             break;
 
+        plen = sd_file_len; //lenght of sd + file + 1
+        
+        //add one for missing trailing '/'
+        if(locs[i][strlen(locs[i])-1] != '/')
+            plen++;
+
+        plen += strlen(locs[i]);
+
+        //check if path is too long
+        if( strlen(locs[i]) + plen + 1 > PATH_MAX)
+            continue;
+
         strcpy(path,locs[i]);
 
-        /* in case RAMPART_PATH doesn't have trailing '/' */
+        /* in case locs[i] doesn't have trailing '/' */
         if(locs[i][strlen(locs[i])-1] != '/')
             strcat(path,"/");
+
         strcat(path,sd);
         strcat(path,file);
-//printf("new check(%d): %s\n",i,path);
+
         i++;
+        //back to top of while to check path
     }
 
     //look in exec path with no subdir
     //TODO: THIS ONE IS QUESTIONABLE. revisit and rethink.
-    strcpy(path,rampart_dir);
-    strcat(path,"/");
-    strcat(path,file);
-    if (stat(path, &sb) != -1)
-        goto path_found;
+    if( strnlen(rampart_dir, PATH_MAX) + strnlen(file,PATH_MAX) + 2 < PATH_MAX)
+    {
+        strcpy(path,rampart_dir);
+        strcat(path,"/");
+        strcat(path,file);
+        if (stat(path, &sb) != -1)
+            goto path_found;
+    }
 
     //not found
     ret.path[0]='\0';
@@ -269,7 +296,6 @@ RPPATH rp_find_path(char *file, char *subdir)
     ret.stat=sb;
     if(!realpath(path,ret.path))
         strcpy(ret.path,path);
-//printf("FOUND %s\n",ret.path);
 
     return ret;
 }
@@ -319,9 +345,9 @@ int rp_mkdir_parent(const char *path, mode_t mode)
 RPPATH rp_get_home_path(char *file, char *subdir)
 {
     char *home=getenv("HOME");
-    char homedir[strlen(home)+strlen(homesubdir)+1];
     char *sd= (subdir)?subdir:"";
-    RPPATH ret;
+    size_t plen;
+    RPPATH ret={0};
     mode_t mode=0755;
 
     if( !home || access(home, W_OK)==-1 )
@@ -330,17 +356,21 @@ RPPATH rp_get_home_path(char *file, char *subdir)
          mode=0777;
     }
 
-    strcpy(homedir,home);
-    strcat(homedir,homesubdir);
-    strcat(homedir,sd);
+    plen = strlen(home)+strlen(HOMESUBDIR)+strlen(sd)+strlen(file)+1;
 
-    if( rp_mkdir_parent(homedir,mode)==-1)
+    if(plen > PATH_MAX)
+        return ret;
+
+    strcpy(ret.path,home);
+    strcat(ret.path,HOMESUBDIR);
+    strcat(ret.path,sd);
+
+    if( rp_mkdir_parent(ret.path,mode)==-1)
     {
         ret.path[0]='\0';
         return ret;
     }
 
-    strcpy(ret.path,homedir);
     strcat(ret.path,file);
     if (stat(ret.path, &ret.stat) == -1)
     {
