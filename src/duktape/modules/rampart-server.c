@@ -4628,6 +4628,7 @@ static void proc_mimes(duk_context *ctx)
      char *p, *e;\
      char ibuf[INET6_ADDRSTRLEN]={0};\
      char *s=(char*)(sfn);\
+     memset(ipany,0,INET6_ADDRSTRLEN + 5);\
      p=ibuf;\
      while(*s) {\
          if(!isspace(*s)) {*p=*s;p++;}\
@@ -4641,7 +4642,7 @@ static void proc_mimes(duk_context *ctx)
          if(!p)\
              RP_THROW(ctx,"server.start() - invalid ipv6 address for option bind. Brackets required.");\
          strncpy(&ipany[5], s, e-s );\
-         *(ipany + 6 + ( e - s ))='\0';\
+         *(ipany + 5 + ( e - s ))='\0';\
          p++;\
          if(*p != ':')\
              RP_THROW(ctx,"server.start() - option bind value must be in format \"ip:port\"");\
