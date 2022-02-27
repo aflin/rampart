@@ -1153,7 +1153,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         {
             width=0;
             precision=UINT_MAX;
-            flags |= FLAGS_BANG|FLAGS_LEFT;
+            flags |= FLAGS_BANG|FLAGS_LEFT|FLAGS_PRECISION;
             /* fall through to 'P' */
         }
         case 'P':
