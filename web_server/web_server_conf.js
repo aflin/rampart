@@ -11,26 +11,47 @@ var server=require("rampart-server");
 */
 rampart.globalize(rampart.utils);
 
+// a message to print after server has started"
+var message = "Go to http://localhost:8088/ to see the demos in this distribution.";
+
 /*
-   a convenient global object to hold
-   locations that we might need to access in
-   modules
+   a convenient global object to hold configs and
+   locations that we might need to access from
+   within modules
 */ 
 
 var serverConf = {
-    bindPort:   8088,
-    htmlRoot:   process.scriptPath + "/html/",
-    appsRoot:   process.scriptPath + "/apps/",
-    wsappsRoot: process.scriptPath + "/wsapps/",
-    user:       "nobody"  //only if started as root, switch to this user
+    // for localhost only
+    ipAddr:       "127.0.0.1",
+    ipv6Addr:     "[::1]",
+
+    // bind to all IP Addresses
+    //ip:           "0.0.0.0",
+    //ipv6:         "[::]",
+
+    ipPort:       8088,
+    ipv6Port:     8088,
+    htmlRoot:     process.scriptPath + "/html/",
+    appsRoot:     process.scriptPath + "/apps/",
+    wsappsRoot:   process.scriptPath + "/wsapps/",
+    user:         "nobody"
 }
 
-/* the array holding the ip:port pairs we will bind to */
-var bind = [  `0.0.0.0:${serverConf.bindPort}`, `[::]:${serverConf.bindPort}` ];
+/* the array holding the ip:port combos we will bind to */
+var bind = [];
+
+if(serverConf.ipAddr && serverConf.ipPort)
+    bind.push(`${serverConf.ipAddr}:${serverConf.ipPort}`);
+
+if(serverConf.ipv6Addr && serverConf.ipv6Port)
+    bind.push(`${serverConf.ipv6Addr}:${serverConf.ipv6Port}`);
+    
+if(!bind.length)
+    throw("No ip addr/port specified");
 
 /* 
    here, we are either "root" (necessary if binding to port 80)
-   or we are an unprivileged user ("rampart")
+   or we are an unprivileged user (e.g - "nobody")
 */
 var iam = trim(exec('whoami').stdout);
 
@@ -38,45 +59,32 @@ var iam = trim(exec('whoami').stdout);
    Throw an error if we attempt to bind to port <1024 as something
    other than root.
 */
-if(serverConf.bindPort < 1024 && iam != "root")
-    throw("Error: script must be started as root to bind to port " + port);
-
-/* check for /logs dir */
-
-var ldir = stat(process.scriptPath + "/logs");
-
-// doesnt exist
-if (!ldir) {
-    printf("Log folder/directory does not exist, creating \"" + process.scriptPath + "/logs\"\n");
-    mkdir(process.scriptPath + "/logs");
-// isn't a directory
-} else if (!ldir.isDirectory) {
-    fprintf(stderr, process.scriptPath + "/logs must be a directory\n");
-    process.exit(1);
+if(iam != "root") {
+    if(serverConf.ipPort < 1024)
+        throw("Error: script must be started as root to bind to IP port " + serverConf.ipPort);
+    if(serverConf.ipv6Port < 1024)
+        throw("Error: script must be started as root to bind to IPv6 port " + serverConf.ipv6Port);
 }
 
-/*** CUSTOM 404 PAGE ***/
+/*** custom 404 page ***/
 function notfound(req){
     return {
         status:404,
         html: `<html><head><title>404 Not Found</title></head>
-                <body style="background: url(/images/page-background.png);">
+                <body>
                     <center>
                         <h1>Not Found</h1>
                         <p>
                             The requested URL${%H:req.path.path}
                             was not found on this server.
                         </p>
-                        <p><img style="width:65%" src="/images/inigo-not-fount.jpg"></p>
+                        <p><img style="width:65%" src="/images/inigo-not-found.jpg"></p>
                     </center>
                 </body></html>`
     }
 }
 
-/* 
-   DIRECTORY LISTINGS OF FILE SYSTEM FOLDERS:
-
-   This function is the same as the internal one and is 
+/* The dirlist function below is the same as the internal one and is
    provided so that you can make alterations to the default.
 
    The choice between no dir list vs internal vs this script is 
@@ -90,8 +98,8 @@ function notfound(req){
    needs, you can delete this function and change 
    {directoryFunc: true} below
 
-   In this script, the function is unused as directoryFunc is set
-   to false below.
+   In this script, the function is unused as directoryFunc is not set
+   below.
 */
 
 function dirlist(req) {
@@ -131,7 +139,7 @@ function dirlist(req) {
 
 
 /****** START SERVER *******/
-printf("Starting http server on port %d\n", serverConf.bindPort);
+printf("Starting https server\n");
 var serverpid=server.start(
 {
     /* bind: string|[array,of,strings]
@@ -142,18 +150,18 @@ var serverpid=server.start(
     */
     /* use the following to bind to all ipv4 and ipv6 addresses */
     //bind: [ "[::]:8088", "0.0.0.0:8088" ],
-    bind: bind,          // see top of script
+    bind: bind,          // see top of script.
 
     /* When binding to 80 or 443, must be started as root, 
-       The server will run as serverConf.user after port is bound.  */
-    user: serverConf.user,
+       Privileges will be dropped to user:rampart after port is bound.  */
+    user: serverConf.user, //ignored if not root
 
     /* max time to spend running javascript callbacks */
     scriptTimeout: 20.0,
 
     /* how long to wait before client sends a req or server can send a response. 
        N/A for websockets.                                                        */
-    connectTimeout:20.0,
+    connectTimeout:20.0, // how long to wait before client sends a req or server can send a response. N/A for websockets.
 
     /* return javascript errors and "500 internal error"
        instead of "404 not found" when a JS error is thrown  */
@@ -195,7 +203,7 @@ var serverpid=server.start(
        adjust/override the default mime mappings.  The defaults can be found at
        https://rampart.dev/docs/rampart-server.html#key-to-mime-mappings
     */
-    //mimeMap: { "mp3": "audio/mp3" },
+    mimeMap: { "mp3": "audio/mp3" },
 
     /*
       use default directory list function. If false/unset, return 404 when there is no index.html. 
@@ -227,9 +235,7 @@ var serverpid=server.start(
         /************** other mapping examples ************/
 
         /* 
-           INLINE FUNCTION:
-
-           This example assumes a "function myinlinefunc(){ ...}" is
+           This assumes a "function myinlinefunc(){ ...}" is
            declared above.
            Inline functions are set once and cannot be edited 
            while the server is running.
@@ -237,41 +243,37 @@ var serverpid=server.start(
         //"/inlinefunc.html":   myinlinefunc,
 
         /* 
-           FUNCTION FROM A MODULE (external file)
-
-           This example also uses the function from 
-           a module named "single_function.js". Changes to a 
-           {module: function} or files in {modulePath: path}
-           while the server is running do not require a 
-           server restart, and thus should be the preferred
-           method of url-to-function mapping.
-        */
-
-        /* 
-           Example from a module which returns a single function:
-                module.exports=function(){...}
-        */
-        //"/single.html":       {module: "modules/single_function.js"},
-                   /* or */
-        //"/single.html":       {module: "modules/single_function"},
-
-        /* 
-            MATCHING A GLOB TO A FUNCTION:
-
+            Matching a Glob to a Function
             This assumes a JS module is located at "modules/mysamplescript.js"
 
-            Notice the '*'.  These urls:
-                    http://localhost:8088/myscript/ and
-                    http://localhost:8088/myscript/show.html and
-                    http://localhost:8088/myscript.html 
-            all match this function.
+            Notice the '*'.  It will match:
+              http://localhost:8088/myscript/ and
+              http://localhost:8088/myscript/show.html and
+              http://localhost:8088/myscript.html 
+            all match this function
         */
         //"/myscript*":          {module: "modules/mysamplescript.js"},
+                        /* or */
+        //"/myscript*":          {module: "modules/mysamplescript"},
 
         /* 
-           MATCHING MULTIPLE URLS IN ONE MODULE:
+            This example also uses the function from 
+             a module named "single_function.js". Changes to a 
+             {module: function} or files in {modulePath: path}
+             while the server is running do not require a 
+             server restart, and thus should be the preferred
+             method of url-to-function mapping.
+        */
 
-           Code from a module which returns an Object with values set to functions:
+        /* 
+           A module which returns a single function
+           module.exports=function(){}              
+        */
+        //"/single.html":       {module: "modules/single_function.js"},
+
+        /* 
+           A module which returns an Object with values set to functions:
+           in modules/multi_function.js is
                 module.exports={
                     "/"                  : indexpage,
                     "/index.html"        : indexpage,
@@ -279,18 +281,13 @@ var serverpid=server.start(
                     "/page2.html"        : secondpage,
                     "/virtdir/page3.html": thirdpage
                 };
-
-           These would map to:
-                    http://localhost:8088/multi/
-                    http://localhost:8088/multi/
+                which maps to:
                     http://localhost:8088/multi/page1.html
                     http://localhost:8088/multi/page2.html
                     http://localhost:8088/multi/virtdir/page3.html
         */
         //"/multi/":            {module: "modules/multi_function.js" },
 
-
-        // SEE ALSO: the scripts in 'apps/test_modules/'.
     }
 });
 
@@ -300,6 +297,16 @@ var serverpid=server.start(
 */
 
 fprintf(process.scriptPath+"/server.pid", "%d", serverpid);
+chown({user:serverConf.user, path:process.scriptPath+"/server.pid"});
 
-if(iam == "root")
-    chown({user:serverConf.user, path:process.scriptPath+"/server.pid"});
+sleep(0.5);//gimme half a sec, so messages from forked server can print first if logging is off.
+
+if(!kill(serverpid, 0)) {
+    printf("Failed to start webserver\n");
+    process.exit(1);
+}
+
+printf(`Server has been started. ${message}
+Server pid is ${serverpid}.  To stop server use kill as such:
+   kill ${serverpid}
+`);
