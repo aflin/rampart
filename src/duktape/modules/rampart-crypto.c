@@ -1,5 +1,5 @@
-/* Copyright (C) 2021 Aaron Flin - All Rights Reserved
-   Copyright (C) 2021 Benjamin Flin - All Rights Reserved
+/* Copyright (C) 2022  Aaron Flin - All Rights Reserved
+   Copyright (C) 2022  Benjamin Flin - All Rights Reserved
  * You may use, distribute or alter this code under the
  * terms of the MIT license
  * see https://opensource.org/licenses/MIT
