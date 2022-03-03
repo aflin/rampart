@@ -301,6 +301,36 @@ duk_ret_t duk_rp_lmdb_drop(duk_context *ctx)
     }
     if(dbi != 1) // the "MAIN_DBI"
     {
+        /* occassionally getting MDB_PROBLEM return rc from mdb_txn_commit
+           when doing mdb_drop(txn, dbi, 1);
+           But if we do mdb_drop(txn, dbi, 0); first, then mdb_drop(txn, dbi, 1);
+           it seems to work.  No idea why.
+        */
+
+        rc = mdb_drop(txn, dbi, 0);
+        if(rc)
+        {
+            GETDBNAME
+            // ?? mdb_dbi_close(lenv->env,dbi);
+            mdb_txn_abort(txn);
+            write_unlock;
+            RP_THROW(ctx, "lmdb.drop - error dropping %s - %s", db, mdb_strerror(rc));
+        }
+        rc = mdb_txn_commit(txn);
+        if (rc)
+        {
+            GETDBNAME
+            write_unlock;
+            RP_THROW(ctx, "lmdb.drop - error dropping db %s: (%d) %s\n", db, rc, mdb_strerror(rc));
+        }
+
+        rc = mdb_txn_begin(lenv->env, NULL, 0, &txn);
+        if(rc)
+        {
+            write_unlock;
+            RP_THROW(ctx, "lmdb.drop - error beginning transaction - %s", mdb_strerror(rc));
+        }
+
         rc = mdb_drop(txn, dbi, 1);
         if(rc)
         {
