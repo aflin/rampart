@@ -31,9 +31,10 @@ var serverConf = {
 
     ipPort:       8088,
     ipv6Port:     8088,
-    htmlRoot:     process.scriptPath + "/html/",
-    appsRoot:     process.scriptPath + "/apps/",
-    wsappsRoot:   process.scriptPath + "/wsapps/",
+    htmlRoot:     process.scriptPath + "/html",
+    appsRoot:     process.scriptPath + "/apps",
+    wsappsRoot:   process.scriptPath + "/wsapps",
+    dataRoot:     process.scriptPath + "/data",
     user:         "nobody"
 }
 
@@ -99,7 +100,13 @@ function notfound(req){
    {directoryFunc: true} below
 
    In this script, the function is unused as directoryFunc is not set
-   below.
+   below but could be set to this script by setting the following key:value
+   pair in server.start({}) below:
+
+     directoryFunc: dirlist,
+   
+   See directoryFunc setting below.
+
 */
 
 function dirlist(req) {
@@ -235,45 +242,69 @@ var serverpid=server.start(
         /************** other mapping examples ************/
 
         /* 
-           This assumes a "function myinlinefunc(){ ...}" is
-           declared above.
-           Inline functions are set once and cannot be edited 
-           while the server is running.
+           ***  Specifying an Inline Function:  ***
+
+             Inline functions are set once and cannot be edited 
+             while the server is running.
         */
-        //"/inlinefunc.html":   myinlinefunc,
+        //"/inlinefunc.html":   function(req) {/*produce output here*/},
 
         /* 
-            Matching a Glob to a Function
-            This assumes a JS module is located at "modules/mysamplescript.js"
+           ***  Specifying a Global Function:  ***
 
-            Notice the '*'.  It will match:
-              http://localhost:8088/myscript/ and
-              http://localhost:8088/myscript/show.html and
-              http://localhost:8088/myscript.html 
-            all match this function
+             The line below assumes a "function myinlinefunc(){ ...}" is
+             declared somewhere in this script.
+
+             Global functions are set once and cannot be edited 
+             while the server is running.
+        */
+        //"/globalfunc.html":   myglobalfunc,
+
+        /* 
+            ***  Matching a Glob to a Function:  ***
+              The example below ("/myscript*") assumes a JS module is
+              located at "modules/mysamplescript.js"
+
+              Notice the '*'.  It will match:
+                http://localhost:8088/myscript/ and
+                http://localhost:8088/myscript/show.html and
+                http://localhost:8088/myscript.html 
+              all match this function
         */
         //"/myscript*":          {module: "modules/mysamplescript.js"},
                         /* or */
         //"/myscript*":          {module: "modules/mysamplescript"},
 
         /* 
-            This example also uses the function from 
-             a module named "single_function.js". Changes to a 
-             {module: function} or files in {modulePath: path}
-             while the server is running do not require a 
-             server restart, and thus should be the preferred
-             method of url-to-function mapping.
+            *** Specifying a Function or Functions from a Module:  ***
+
+              There are two ways to specify the location of modules: Using
+                the {module: file} syntax or the {modulePath: path} syntax.
+
+              The former specifies a JavaScript script in single file while
+              the latter specifies a folder/directory that may contain
+              several files.  Any Changes to a file specified in
+              {module: file} or files located in {modulePath: path}
+              while the server is running do not require a server restart,
+              and thus should be the preferred method of url-to-function
+              mapping.
         */
 
         /* 
-           A module which returns a single function
-           module.exports=function(){}              
+           *** Module File, single function example:  ***
+
+             A module which returns a single function
+             module.exports=function(){}              
         */
-        //"/single.html":       {module: "modules/single_function.js"},
+        //"/single.html":       {module: "apps/single_function.js"},
 
         /* 
-           A module which returns an Object with values set to functions:
-           in modules/multi_function.js is
+           *** Module File, Multiple functions example:  ***
+
+           Below is an example which sets an Object with keys set to URL
+           paths and values set to functions in a hypothetical file named 
+           "modules/multi_function.js":
+
                 module.exports={
                     "/"                  : indexpage,
                     "/index.html"        : indexpage,
@@ -281,25 +312,33 @@ var serverpid=server.start(
                     "/page2.html"        : secondpage,
                     "/virtdir/page3.html": thirdpage
                 };
-                which maps to:
+           
+           Where "indexpage", "firstpage", etc are functions in the 
+           "modules/multi_function.js" script.
+
+           This would map respectively to these URLs:
+                    http://localhost:8088/multi/
+                    http://localhost:8088/multi/index.html
                     http://localhost:8088/multi/page1.html
                     http://localhost:8088/multi/page2.html
                     http://localhost:8088/multi/virtdir/page3.html
+
+           And below is how it would be specified in this map object:
         */
-        //"/multi/":            {module: "modules/multi_function.js" },
+        //"/multi/":            {module: "apps/multi_function.js" },
 
     }
 });
 
 /*
-  if daemon:false - server starts at the end of the script when event loop begins
-  otherwise server forks and starts immediately, and var serverpid is the process id
+  If daemon:false - server will start at the end of the script when event loop begins.
+  Otherwise the server forks and starts immediately, and var serverpid is the process id
 */
 
 fprintf(process.scriptPath+"/server.pid", "%d", serverpid);
 chown({user:serverConf.user, path:process.scriptPath+"/server.pid"});
 
-sleep(0.5);//gimme half a sec, so messages from forked server can print first if logging is off.
+sleep(0.5); //wait half a sec, so messages from forked server can print first in the case that logging is turned off.
 
 if(!kill(serverpid, 0)) {
     printf("Failed to start webserver\n");
