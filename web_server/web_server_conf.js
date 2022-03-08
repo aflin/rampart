@@ -26,8 +26,8 @@ var serverConf = {
     ipv6Addr:     "[::1]",
 
     // bind to all IP Addresses
-    //ip:           "0.0.0.0",
-    //ipv6:         "[::]",
+    //ipAddr:     "0.0.0.0",
+    //ipv6Addr:   "[::]",
 
     ipPort:       8088,
     ipv6Port:     8088,
