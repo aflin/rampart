@@ -5408,6 +5408,18 @@ duk_ret_t duk_server_start(duk_context *ctx)
                                     //prettyprintstack(ctx);
                                 }
 
+                                /* must end with '/' */
+                                if (fname[strlen(fname)-1] !='/')
+                                {
+                                    duk_push_string(ctx, "/");
+                                    duk_concat(ctx, 2);
+                                    duk_put_prop_string(ctx, -2, "modulePath");
+                                    duk_get_prop_string(ctx,-1, "modulePath");
+                                    fname = duk_get_string(ctx, -1);
+                                    //printf("should be '%s' at %d\n",np,fpos);
+                                    //prettyprintstack(ctx);
+                                }
+
                                 fprintf(access_fh, "mapping %s path to mod folder %-20s ->    module path:%s\n", pathtypes[cbtype], s, fname);
                                 mod=MODULE_PATH;
                                 duk_pop(ctx);
