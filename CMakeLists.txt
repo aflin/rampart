@@ -4,6 +4,12 @@ project(Rampart VERSION 0.0.1 LANGUAGES C CXX)
 
 #set(CMAKE_BUILD_TYPE Debug)
 
+if (MACOS_UNIVERSAL)
+	message("Making MacOs Universal Binary Build")
+	SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch x86_64 -mmacosx-version-min=10.13 -arch arm64")
+	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -arch x86_64 -mmacosx-version-min=10.13 -arch arm64")
+endif (MACOS_UNIVERSAL)
+
 message("###### CONFIGURING DEPENDENCIES ######")
 
 include(extern/extern.cmake)
@@ -29,6 +35,8 @@ ExternalProject_Add( texis
 		-DGENERATE_PIC=1
 		-DLIBEVENT_INCLUDE_DIRS=${LIBEVENT_INCLUDE_ALT}
 		-DLIBEVENT_LIBRARY_DIRS=${CMAKE_CURRENT_BINARY_DIR}/extern/libevent/lib
+		-DCMAKE_C_FLAGS=${CMAKE_C_FLAGS}
+		-DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
 	BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/texis" 
 	INSTALL_COMMAND cmake -E echo "Skipping install step."
 	DEPENDS openssl event_static event_core_static event_pthreads_static

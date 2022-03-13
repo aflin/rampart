@@ -190,7 +190,7 @@ target_link_libraries(rampart-lmdb
 
 add_custom_command(
 	OUTPUT ${PROJECT_BINARY_DIR}/extern/lmdb/liblmdb.a
-	COMMAND make
+	COMMAND make CFLAGS=${CMAKE_C_FLAGS} LDFLAGS=${CMAKE_C_FLAGS}
 	COMMAND mkdir -p ${PROJECT_BINARY_DIR}/extern/lmdb
 	COMMAND find './' -type f  -perm 0755 -exec mv {} "${PROJECT_BINARY_DIR}/extern/lmdb" "\;"
 	COMMAND mv liblmdb.a ${PROJECT_BINARY_DIR}/extern/lmdb/
@@ -318,8 +318,8 @@ add_custom_target(cp_libdeflate
 
 add_custom_command(
 	OUTPUT ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
-	COMMAND make
-    WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/extern/libdeflate/
+	COMMAND make CFLAGS=${CMAKE_C_FLAGS} CPPFLAGS=${CMAKE_CXX_FLAGS} LDFLAGS=${CMAKE_C_FLAGS}
+	WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/extern/libdeflate/
 )
 
 add_custom_target(libdeflate
@@ -463,6 +463,7 @@ install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
     \"${PROJECT_SOURCE_DIR}/test/babel-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/crypto-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/cmark-html-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/combo-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/curl-server-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/math.js\" \

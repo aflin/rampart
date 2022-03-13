@@ -3,6 +3,8 @@
 # This file will be placed in the install directory and can be run from there.
 
 for i in `ls test/*-test.js`; do
+	echo
+	echo $i
 	bin/rampart $i
 	if [ "$?" != "0" ]; then
 		echo "Test ${i} failed"
