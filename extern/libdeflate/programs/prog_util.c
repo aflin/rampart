@@ -56,6 +56,9 @@
 /* The invocation name of the program (filename component only) */
 const tchar *prog_invocation_name;
 
+/* Whether to suppress warning messages or not */
+bool suppress_warnings;
+
 static void
 do_msg(const char *format, bool with_errno, va_list va)
 {
@@ -91,6 +94,20 @@ msg_errno(const char *format, ...)
 	va_start(va, format);
 	do_msg(format, true, va);
 	va_end(va);
+}
+
+
+/* Same as msg(), but do nothing if 'suppress_warnings' has been set. */
+void
+warn(const char *format, ...)
+{
+	if (!suppress_warnings) {
+		va_list va;
+
+		va_start(va, format);
+		do_msg(format, false, va);
+		va_end(va);
+	}
 }
 
 /* malloc() wrapper */
@@ -186,7 +203,7 @@ xopen_for_read(const tchar *path, bool symlink_ok, struct file_stream *strm)
 	}
 
 #if defined(HAVE_POSIX_FADVISE) && (O_SEQUENTIAL == 0)
-	posix_fadvise(strm->fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+	(void)posix_fadvise(strm->fd, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
 
 	return 0;
@@ -226,8 +243,8 @@ retry:
 		}
 		if (!overwrite) {
 			if (!isatty(STDERR_FILENO) || !isatty(STDIN_FILENO)) {
-				msg("%"TS" already exists; use -f to overwrite",
-				    strm->name);
+				warn("%"TS" already exists; use -f to overwrite",
+				     strm->name);
 				ret = -2; /* warning only */
 				goto err;
 			}
@@ -347,7 +364,7 @@ map_file_contents(struct file_stream *strm, u64 size)
 	}
 
 #ifdef HAVE_POSIX_MADVISE
-	posix_madvise(strm->mmap_mem, size, POSIX_MADV_SEQUENTIAL);
+	(void)posix_madvise(strm->mmap_mem, size, POSIX_MADV_SEQUENTIAL);
 #endif
 	strm->mmap_token = strm; /* anything that's not NULL */
 

@@ -122,15 +122,30 @@
 #    endif
 
      /*
-      * Determine whether CRC32 intrinsics are supported.
+      * Determine whether ARM CRC32 intrinsics are supported.
       *
-      * With gcc r274827 or later (gcc 10.1+, 9.3+, or 8.4+), or with clang,
-      * they work as expected.  (Well, not quite.  There's still a bug, but we
-      * have to work around it later when including arm_acle.h.)
+      * This support has been affected by several gcc bugs, which we must avoid
+      * by only allowing gcc versions that have the corresponding fixes.  First,
+      * gcc commit 943766d37ae4 ("[arm] Fix use of CRC32 intrinsics with Armv8-a
+      * and hard-float"), i.e. gcc 8.4+, 9.3+, 10.1+, or 11+, is needed.
+      * Second, gcc commit c1cdabe3aab8 ("arm: reorder assembler architecture
+      * directives [PR101723]"), i.e. gcc 9.5+, 10.4+, 11.3+, or 12+, is needed
+      * when binutils is 2.34 or later, due to
+      * https://gcc.gnu.org/bugzilla/show_bug.cgi?id=104439.  We use the second
+      * set of prerequisites, as they are stricter and we have no way to detect
+      * the binutils version in C source without requiring a configure script.
+      *
+      * Yet another gcc bug makes arm_acle.h sometimes not define the crc
+      * functions even when the corresponding builtins are available.  However,
+      * we work around this later when including arm_acle.h.
+      *
+      * Things are a bit easier with clang -- we can just check whether the
+      * crc builtins are available.  However, clang's arm_acle.h is broken in
+      * the same way as gcc's, which we work around later in the same way.
       */
-#    if GCC_PREREQ(10, 1) || \
-        (GCC_PREREQ(9, 3) && !GCC_PREREQ(10, 0)) || \
-        (GCC_PREREQ(8, 4) && !GCC_PREREQ(9, 0)) || \
+#    if GCC_PREREQ(11, 3) || \
+        (GCC_PREREQ(10, 4) && !GCC_PREREQ(11, 0)) || \
+        (GCC_PREREQ(9, 5) && !GCC_PREREQ(10, 0)) || \
         (defined(__clang__) && __has_builtin(__builtin_arm_crc32b))
 #      define COMPILER_SUPPORTS_CRC32_TARGET_INTRINSICS 1
 #    endif
@@ -147,7 +162,8 @@
  * needed.
  */
 #if (GCC_PREREQ(4, 0) && !GCC_PREREQ(5, 1)) || \
-    (defined(__clang__) && !CLANG_PREREQ(3, 9, 8020000))
+    (defined(__clang__) && !CLANG_PREREQ(3, 9, 8020000)) || \
+    defined(__INTEL_COMPILER)
 typedef unsigned long long  __v2du __attribute__((__vector_size__(16)));
 typedef unsigned int        __v4su __attribute__((__vector_size__(16)));
 typedef unsigned short      __v8hu __attribute__((__vector_size__(16)));
@@ -156,6 +172,12 @@ typedef unsigned long long  __v4du __attribute__((__vector_size__(32)));
 typedef unsigned int        __v8su __attribute__((__vector_size__(32)));
 typedef unsigned short     __v16hu __attribute__((__vector_size__(32)));
 typedef unsigned char      __v32qu __attribute__((__vector_size__(32)));
+#endif
+
+#ifdef __INTEL_COMPILER
+typedef int   __v16si __attribute__((__vector_size__(64)));
+typedef short __v32hi __attribute__((__vector_size__(64)));
+typedef char  __v64qi __attribute__((__vector_size__(64)));
 #endif
 
 /* Newer gcc supports __BYTE_ORDER__.  Older gcc doesn't. */
@@ -175,7 +197,16 @@ typedef unsigned char      __v32qu __attribute__((__vector_size__(32)));
 #  define bswap64	__builtin_bswap64
 #endif
 
-#if defined(__x86_64__) || defined(__i386__) || defined(__ARM_FEATURE_UNALIGNED) || defined(__powerpc64__)
+#if defined(__x86_64__) || defined(__i386__) || \
+    defined(__ARM_FEATURE_UNALIGNED) || defined(__powerpc64__) || \
+    /*
+     * For all compilation purposes, WebAssembly behaves like any other CPU
+     * instruction set. Even though WebAssembly engine might be running on top
+     * of different actual CPU architectures, the WebAssembly spec itself
+     * permits unaligned access and it will be fast on most of those platforms,
+     * and simulated at the engine level on others, so it's worth treating it
+     * as a CPU architecture with fast unaligned access.
+    */ defined(__wasm__)
 #  define UNALIGNED_ACCESS_IS_FAST 1
 #endif
 

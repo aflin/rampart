@@ -6,6 +6,9 @@
 # Define USE_SHARED_LIB to link the binaries to the shared library version of
 # libdeflate rather than to the static library version.
 #
+# Define DISABLE_SHARED to disable building and installing of shared library.
+# Defining this variable undefines USE_SHARED_LIB.
+#
 # Define DECOMPRESSION_ONLY to omit all compression code, building a
 # decompression-only library.  If doing this, you must also build a specific
 # library target such as 'libdeflate.a', as the programs will no longer compile.
@@ -37,6 +40,9 @@
 #
 ##############################################################################
 
+VERSION = $(shell sed -n 's/\#define LIBDEFLATE_VERSION_STRING.*"\(.*\)"/\1/p' \
+	    libdeflate.h)
+
 #### Common compiler flags.  You can add additional flags by defining CFLAGS
 #### in the environment or on the 'make' command line.
 ####
@@ -48,7 +54,7 @@ cc-option = $(shell if $(CC) $(1) -c -x c /dev/null -o /dev/null \
 	      1>&2 2>/dev/null; then echo $(1); fi)
 
 override CFLAGS :=							\
-	-O2 -fPIC -fomit-frame-pointer -std=c99 -I. -Wall -Wundef		\
+	-O2 -fomit-frame-pointer -std=c99 -I. -Wall -Wundef		\
 	$(call cc-option,-Wpedantic)					\
 	$(call cc-option,-Wdeclaration-after-statement)			\
 	$(call cc-option,-Wmissing-prototypes)				\
@@ -83,43 +89,60 @@ PROG_SUFFIX        :=
 PROG_CFLAGS        :=
 HARD_LINKS         := 1
 
-# Compiling for Windows with MinGW?
-ifneq ($(findstring -mingw,$(shell $(CC) -dumpmachine 2>/dev/null)),)
+TARGET_MACHINE     := $(shell $(CC) -dumpmachine 2>/dev/null)
+
+# Compiling for Windows with MinGW or LLVM?
+ifneq ($(findstring -mingw,$(TARGET_MACHINE))$(findstring -windows-gnu,$(TARGET_MACHINE)),)
     STATIC_LIB_SUFFIX  := static.lib
     SHARED_LIB         := libdeflate.dll
     SHARED_LIB_SYMLINK :=
     SHARED_LIB_CFLAGS  :=
     SHARED_LIB_LDFLAGS := -Wl,--out-implib,libdeflate.lib \
-                          -Wl,--output-def,libdeflate.def \
-                          -Wl,--add-stdcall-alias
+                          -Wl,--output-def,libdeflate.def
+    # Only if not LLVM
+    ifeq ($(findstring -windows-gnu,$(TARGET_MACHINE)),)
+        SHARED_LIB_LDFLAGS += -Wl,--add-stdcall-alias
+    endif
+
     PROG_SUFFIX        := .exe
     PROG_CFLAGS        := -static -municode
     HARD_LINKS         :=
     override CFLAGS    := $(CFLAGS) $(call cc-option,-Wno-pedantic-ms-format)
 
     # If AR was not already overridden, then derive it from $(CC).
-    # Note that CC may take different forms, e.g. "cc", "gcc",
-    # "x86_64-w64-mingw32-gcc", or "x86_64-w64-mingw32-gcc-6.3.1".
+    # Note that CC may take different forms, e.g. "cc", "gcc", "clang",
+    # "x86_64-w64-mingw32-gcc", or "x86_64-w64-mingw32-gcc-6.3.1", or
+    # "x86_64-w64-mingw32-clang".
     # On Windows it may also have a .exe extension.
     ifeq ($(AR),ar)
         AR := $(shell echo $(CC) | \
-                sed -E 's/g?cc(-?[0-9]+(\.[0-9]+)*)?(\.exe)?$$/ar\3/')
+                sed -E 's/(g?cc|clang)(-?[0-9]+(\.[0-9]+)*)?(\.exe)?$$/ar\4/')
     endif
 
-# macOS?
-else ifeq ($(shell uname),Darwin)
+# Compiling for macOS?
+else ifneq ($(findstring -darwin,$(TARGET_MACHINE)),)
    SHARED_LIB         := libdeflate.$(SOVERSION).dylib
    SHARED_LIB_SYMLINK := libdeflate.dylib
    SHARED_LIB_CFLAGS  := -fPIC
-   SHARED_LIB_LDFLAGS := -install_name $(SHARED_LIB)
-
-# Linux, FreeBSD, etc.
+   SHARED_LIB_LDFLAGS := -install_name $(LIBDIR)/$(SHARED_LIB)
+   AR := libtool -static -o
+# Compiling for Android?
+else ifneq ($(findstring -android,$(TARGET_MACHINE)),)
+   SHARED_LIB         := libdeflate.so
+   SHARED_LIB_SYMLINK :=
+   SHARED_LIB_CFLAGS  := -fPIC
+   SHARED_LIB_LDFLAGS := -Wl,-soname=$(SHARED_LIB)
+   AR := ar cr
+# Compiling for Linux, FreeBSD, etc.
 else
    SHARED_LIB         := libdeflate.so.$(SOVERSION)
    SHARED_LIB_SYMLINK := libdeflate.so
    SHARED_LIB_CFLAGS  := -fPIC
    SHARED_LIB_LDFLAGS := -Wl,-soname=$(SHARED_LIB)
+   AR := ar cr
 endif
+
+
 
 ##############################################################################
 
@@ -142,6 +165,7 @@ endif
 .build-config: FORCE
 	@flags=$$(							\
 		echo 'USE_SHARED_LIB=$(USE_SHARED_LIB)';		\
+		echo 'DISABLE_SHARED=$(DISABLE_SHARED)';		\
 		echo 'DECOMPRESSION_ONLY=$(DECOMPRESSION_ONLY)';	\
 		echo 'DISABLE_GZIP=$(DISABLE_GZIP)';			\
 		echo 'DISABLE_ZLIB=$(DISABLE_ZLIB)';			\
@@ -207,7 +231,7 @@ $(SHARED_LIB_OBJ): %.shlib.o: %.c $(LIB_HEADERS) $(COMMON_HEADERS) .build-config
 
 # Create static library
 $(STATIC_LIB):$(STATIC_LIB_OBJ)
-	$(QUIET_AR) $(AR) cr $@ $+
+	$(QUIET_AR) $(AR) $@ $+
 
 DEFAULT_TARGETS += $(STATIC_LIB)
 
@@ -216,7 +240,11 @@ $(SHARED_LIB):$(SHARED_LIB_OBJ)
 	$(QUIET_CCLD) $(CC) -o $@ $(LDFLAGS) $(LIB_CFLAGS) \
 		$(SHARED_LIB_LDFLAGS) -shared $+
 
+ifdef DISABLE_SHARED
+undefine SHARED_LIB_SYMLINK
+else
 DEFAULT_TARGETS += $(SHARED_LIB)
+endif
 
 ifdef SHARED_LIB_SYMLINK
 # Create the symlink libdeflate.so => libdeflate.so.$SOVERSION
@@ -300,12 +328,25 @@ DEFAULT_TARGETS += gunzip$(PROG_SUFFIX)
 
 all:$(DEFAULT_TARGETS)
 
+# We don't generate the pkg-config file until install time, as needed
+# definitions might not exist until then.
+PKGCONFBASE := libdeflate.pc.in
+
 # Install the files.  Note: not all versions of the 'install' program have the
 # '-D' and '-t' options, so don't use them; use portable commands only.
-install:all
-	install -d $(DESTDIR)$(LIBDIR) $(DESTDIR)$(INCDIR) $(DESTDIR)$(BINDIR)
+install:all $(PKGCONFBASE)
+	install -d $(DESTDIR)$(LIBDIR)/pkgconfig $(DESTDIR)$(INCDIR)	\
+		$(DESTDIR)$(BINDIR)
 	install -m644 $(STATIC_LIB) $(DESTDIR)$(LIBDIR)
-	install -m755 $(SHARED_LIB) $(DESTDIR)$(LIBDIR)
+	if [ -z "$(DISABLE_SHARED)" ]; then				\
+		install -m755 $(SHARED_LIB) $(DESTDIR)$(LIBDIR);	\
+	fi
+	sed -e "s|@PREFIX@|$(PREFIX)|"					\
+	    -e "s|@LIBDIR@|$(LIBDIR)|"					\
+	    -e "s|@INCDIR@|$(INCDIR)|"					\
+	    -e "s|@VERSION@|$(VERSION)|"				\
+	    $(PKGCONFBASE) > $(DESTDIR)$(LIBDIR)/pkgconfig/libdeflate.pc
+	chmod 644 $(DESTDIR)$(LIBDIR)/pkgconfig/libdeflate.pc
 	install -m644 libdeflate.h $(DESTDIR)$(INCDIR)
 	install -m755 gzip$(PROG_SUFFIX) \
 		$(DESTDIR)$(BINDIR)/libdeflate-gzip$(PROG_SUFFIX)
@@ -319,6 +360,7 @@ install:all
 uninstall:
 	rm -f $(DESTDIR)$(LIBDIR)/$(STATIC_LIB)				\
 	      $(DESTDIR)$(LIBDIR)/$(SHARED_LIB)				\
+	      $(DESTDIR)$(LIBDIR)/pkgconfig/libdeflate.pc		\
 	      $(DESTDIR)$(INCDIR)/libdeflate.h				\
 	      $(DESTDIR)$(BINDIR)/libdeflate-gzip$(PROG_SUFFIX)		\
 	      $(DESTDIR)$(BINDIR)/libdeflate-gunzip$(PROG_SUFFIX)
