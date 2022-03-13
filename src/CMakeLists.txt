@@ -117,8 +117,6 @@ SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 SET(CMAKE_INSTALL_RPATH "")
 #SET(CMAKE_INSTALL_RPATH "./;${CMAKE_INSTALL_PREFIX}/modules/")
 
-
-if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
 ###ROBOTS###
 add_library(rampart-robots SHARED
    duktape/modules/robot-wrapper.cc
@@ -148,8 +146,6 @@ target_include_directories(rampart-robots PRIVATE
 
 set_target_properties(rampart-robots PROPERTIES LINKER_LANGUAGE CXX )
 add_dependencies(rampart-robots robots robots-static robots-main)
-
-endif()
 
 
 ###CMARK###
@@ -369,21 +365,12 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
           PREFIX ""
   )
 else()
-  if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
-    set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb #example_name
-            PROPERTIES 
-            LINK_FLAGS "-Wl,-rpath,./"
-            SUFFIX       ".so"
-            PREFIX ""
-    )
-  else()
-    set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-lmdb #example_name
-            PROPERTIES 
-            LINK_FLAGS "-Wl,-rpath,./"
-            SUFFIX       ".so"
-            PREFIX ""
-    )
-  endif()
+  set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb #example_name
+          PROPERTIES 
+          LINK_FLAGS "-Wl,-rpath,./"
+          SUFFIX       ".so"
+          PREFIX ""
+  )
 endif()
 
 ## tests into build/src dir as well (temporary)
@@ -396,7 +383,6 @@ endforeach()
 
 install(TARGETS rampart DESTINATION "${CMAKE_INSTALL_PREFIX}/bin")
 
-if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
 install(TARGETS
 	rampart-server
 	rampart-crypto
@@ -409,20 +395,6 @@ install(TARGETS
 	rampart-lmdb
 	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
-else()
-install(TARGETS
-	rampart-server
-	rampart-crypto
-	rampart-curl
-	rampart-sql
-	rampart-redis
-	rampart-html
-	rampart-cmark
-	rampart-lmdb
-	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
-)
-endif()
-
 
 install(CODE "execute_process( \
     COMMAND ${CMAKE_COMMAND} -E copy \
@@ -468,6 +440,7 @@ install(CODE "execute_process( \
     \"${PROJECT_SOURCE_DIR}/test/curl-server-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/math.js\" \
     \"${PROJECT_SOURCE_DIR}/test/redis-test.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/robots-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/rputils-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/server-lmdb-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/sql-extras-test.js\" \
@@ -475,14 +448,6 @@ install(CODE "execute_process( \
     \"${CMAKE_INSTALL_PREFIX}/test\"   \
     )"
 )
-if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
-install(CODE "execute_process( \
-    COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_SOURCE_DIR}/test/robots-test.js\" \
-    \"${CMAKE_INSTALL_PREFIX}/test\"   \
-    )"
-)
-endif()
 
 install(CODE "execute_process ( \
     COMMAND bash -c \"chmod 777 ${CMAKE_INSTALL_PREFIX}/test\"
@@ -550,7 +515,4 @@ install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-lmdb.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-redis.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
-
-if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-robots.so\")")
-endif()

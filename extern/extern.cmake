@@ -16,16 +16,4 @@ add_subdirectory(${EXTERN_DIR}/tidy-html5)
 
 add_subdirectory(${EXTERN_DIR}/cmark)
 
-if (NOT CMAKE_COMPILER_IS_GNUCC OR CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 5.0)
-
 add_subdirectory(${EXTERN_DIR}/robotstxt)
-
-#include(cmake/ExternalProject.cmake)
-#ExternalProject_Add( robotstxt
-#	PREFIX robotstxt
-#	SOURCE_DIR "${EXTERN_DIR}/robotstxt"
-#	BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/extern/robotstxt" 
-#	INSTALL_COMMAND cmake -E echo "Skipping install step."
-#)
-
-endif()
