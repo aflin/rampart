@@ -257,6 +257,7 @@ testFeature("K/V  Commands  -- getrange/setrange/getset ", function() {
     return r1==1 && r2=="lmNo" && r3==8;
 });
 
+/* this seems to have disappeared in 7.0
 testFeature("K/V  Commands  -- stralgo/strlen", function() {
     rcl.mset("testkey", "hello there", "testkey2", "here");
     var r1=rcl.stralgo("LCS", "strings", "hello there", "here");
@@ -266,6 +267,7 @@ testFeature("K/V  Commands  -- stralgo/strlen", function() {
     var r5=rcl.strlen("testkey");
     return r1==r2 && r3==4 && r4.matches[0][0]==7 && r4.matches[0][1]==10 && r5==11;
 });
+*/
 
 testFeature("Hash Commands  -- hset/hget/hdel/hexists", function() {
     rcl.del("htest");
