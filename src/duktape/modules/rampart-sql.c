@@ -2690,8 +2690,8 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
             char sql[slen];
             CSV *csv = dcsv.csv;
             void *v=NULL;   /* value to be passed to db */
-            long plen, l; /* lenght of value */
-            int in=0, out=0, row=0, col=0;
+            long plen, datelong;
+            int in=0, out=0, row=0, col=0, intzero=0;
 
             snprintf(sql, slen, "insert into %s values (", dcsv.tbname);
             for (i=0;i<tbcols-1;i++)
@@ -2719,10 +2719,10 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
                         switch(item.type)
                         {
                             case integer:        
-                                in=SQL_C_INTEGER;
-                                out=SQL_INTEGER;
-                                v=(long*)&item.integer;
-                                plen=sizeof(long);
+                                in=SQL_C_SBIGINT;
+                                out=SQL_BIGINT;
+                                v=(int64_t*)&item.integer;
+                                plen=sizeof(int64_t);
                                 break;
                             case floatingPoint:  
                                 in=SQL_C_DOUBLE;
@@ -2741,25 +2741,23 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
                                 struct tm *t=&item.dateTime;
                                 in=SQL_C_LONG;
                                 out=SQL_DATE;
-                                l=(long) mktime(t);
-                                v = (long*)&l;
+                                datelong=(long) mktime(t);
+                                v = (long*)&datelong;
                                 plen=sizeof(long);
                                 break;
                             }
                             case nil:
-                                l=0;
                                 in=SQL_C_INTEGER;
                                 out=SQL_INTEGER;
-                                v=(long*)&l;
-                                plen=sizeof(long);
+                                v=(int*)&intzero;
+                                plen=sizeof(int);
                                 break;
                         }
                     }
                     else
                     {
-                        l=0;
-                        v=(long*)&l;
-                        plen=sizeof(long);
+                        v=&intzero;
+                        plen=sizeof(int);
                         in=SQL_C_INTEGER;
                         out=SQL_INTEGER;
                     }
@@ -2768,14 +2766,11 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
                         fn_cleanup;
                         throw_tx_error(ctx,h,"sql add parameters");
                     }
-
-
                 }
                 if (col<tbcols)
                 {
-                    l=0;
-                    v=(long*)&l;
-                    plen=sizeof(long);
+                    v=(long*)&intzero;
+                    plen=sizeof(int);
                     in=SQL_C_INTEGER;
                     out=SQL_INTEGER;
                     for(; col<tbcols; col++)
