@@ -128,8 +128,8 @@ void progresscb(int stage, int count, CSV *csv)
     duk_context *ctx=dcsv->ctx;
 
     duk_dup(ctx, dcsv->prog_idx);
-    duk_push_int(ctx, stage);
     duk_push_int(ctx, count - (int)dcsv->hasHeader);
+    duk_push_int(ctx, stage);
     duk_call(ctx, 2);
     duk_pop(ctx);
 }
