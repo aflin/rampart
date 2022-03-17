@@ -2519,6 +2519,8 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
     DB_HANDLE *h = NULL;
     TEXIS *tx=NULL;
     char **field_names=NULL;
+    uint8_t *field_type=NULL;
+    int field_type_size=0;
     duk_idx_t this_idx;
 
 #define closecsv do {\
@@ -2578,9 +2580,9 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
 
     {
         FLDLST *fl;
-        char sql[128];
+        char sql[256];
 
-        snprintf(sql, 128, "select NAME from SYSCOLUMNS where TBNAME='%s' order by ORDINAL_POSITION;", dcsv.tbname);
+        snprintf(sql, 256, "select NAME, TYPE from SYSCOLUMNS where TBNAME='%s' order by ORDINAL_POSITION;", dcsv.tbname);
 
         if (!h_prep(h, sql))
         {
@@ -2596,13 +2598,26 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
             throw_tx_error(ctx,h,"sql exec");
         }
 
-
         while((fl = h_fetch(h, -1)))
         {
             /* an array of column names */
             REMALLOC(field_names, (tbcols+2) * sizeof(char*) );
-            
+
+            /* a uint8_t array of column types */
+            if (tbcols + 1 > field_type_size)
+            {
+                field_type_size +=256;
+                REMALLOC(field_type, field_type_size * sizeof(uint8_t));
+            }
+
             field_names[tbcols] = strdup(fl->data[0]);
+
+            /* keep track of which fields are counter */
+            if(!strncmp(fl->data[1],"counter",7))
+                field_type[tbcols] = 1;
+            else
+                field_type[tbcols] = 0;
+
             tbcols++;
         }        
         field_names[tbcols] = NULL;
@@ -2614,6 +2629,7 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
     while(field_names[j]!=NULL) \
         free(field_names[j++]); \
     free(field_names); \
+    free(field_type); \
     h_close(h);\
     closecsv; \
 } while(0);
@@ -2766,20 +2782,24 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
                                 break;
                         }
                     }
-                    else if (col_order[col]==-2)
-                    {
-                        ctr = getcounter(ddic);
-                        v=ctr;
-                        plen=sizeof(ft_counter);
-                        in=SQL_C_COUNTER;
-                        out=SQL_COUNTER;
-                    }
                     else
-                    {
-                        v=&intzero;
-                        plen=sizeof(int);
-                        in=SQL_C_INTEGER;
-                        out=SQL_INTEGER;
+                    { 
+                        /* insert texis counter if field is a counter type */
+                        if (field_type[col]==1)
+                        {
+                            ctr = getcounter(ddic);
+                            v=ctr;
+                            plen=sizeof(ft_counter);
+                            in=SQL_C_COUNTER;
+                            out=SQL_COUNTER;
+                        }
+                        else
+                        {
+                            v=&intzero;
+                            plen=sizeof(int);
+                            in=SQL_C_INTEGER;
+                            out=SQL_INTEGER;
+                        }
                     }
                     if( !h_param(h, col+1, v, &plen, in, out))
                     {
