@@ -2692,6 +2692,17 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
             void *v=NULL;   /* value to be passed to db */
             long plen, datelong;
             int in=0, out=0, row=0, col=0, intzero=0;
+            DDIC *ddic=NULL;
+            ft_counter *ctr = NULL;
+            LPSTMT lpstmt;
+
+            lpstmt = tx->hstmt;
+            if(lpstmt && lpstmt->dbc && lpstmt->dbc->ddic)
+                ddic = lpstmt->dbc->ddic;
+            else
+            {
+                throw_tx_error(ctx,h,"sql open");;
+            }
 
             snprintf(sql, slen, "insert into %s values (", dcsv.tbname);
             for (i=0;i<tbcols-1;i++)
@@ -2712,6 +2723,7 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
             {
                 for(  col=0; /* col<csv->cols && */col<tbcols; col++)
                 {
+
                     if(col_order[col]>-1)
                     {
                     //printf("doing col_order[%d] = %d\n", col, col_order[col]);
@@ -2754,6 +2766,14 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
                                 break;
                         }
                     }
+                    else if (col_order[col]==-2)
+                    {
+                        ctr = getcounter(ddic);
+                        v=ctr;
+                        plen=sizeof(ft_counter);
+                        in=SQL_C_COUNTER;
+                        out=SQL_COUNTER;
+                    }
                     else
                     {
                         v=&intzero;
@@ -2763,9 +2783,13 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
                     }
                     if( !h_param(h, col+1, v, &plen, in, out))
                     {
+                        if(ctr) free(ctr);
+                        ctr=NULL;
                         fn_cleanup;
                         throw_tx_error(ctx,h,"sql add parameters");
                     }
+                    if(ctr) free(ctr);
+                    ctr=NULL;
                 }
                 if (col<tbcols)
                 {
