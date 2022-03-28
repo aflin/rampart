@@ -2035,11 +2035,27 @@ static duk_ret_t duk_rp_proxyobj_ownkeys(duk_context *ctx)
   duk_enum(ctx, -1, DUK_ENUM_ARRAY_INDICES_ONLY);
   while (duk_next(ctx, -1, 1))
   {
+    // every value in array of keys must be a string, but all-numeric strings are
+    // automatically converted to numbers when coming in from redis
+    if (!duk_is_string(ctx, -1))
+    {
+        // [ ..., array, enum, key, val ]
+        duk_to_string(ctx, -1);
+        // [ ..., array, enum, key, strval ]
+        duk_dup(ctx, -2);
+        duk_dup(ctx, -2);
+        // [ ..., array, enum, key, strval, key, strval ]
+        duk_put_prop(ctx, -6); 
+    }
+    // [ ..., array, enum, key, strval ]
     duk_push_null(ctx);
+    // [ ..., array, enum, key, strval, null ]
     duk_put_prop_string(ctx, 0, duk_get_string(ctx, -2) );
     duk_pop_2(ctx);
+    // [ ..., array, enum ]
   }
   duk_pop(ctx);
+  // [ ..., array ]
 
   return 1;
 }
