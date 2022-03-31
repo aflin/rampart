@@ -942,6 +942,12 @@ duk_ret_t duk_server_ws_end(duk_context *ctx)
 {
     evhtp_request_t *req;
     DHS *dhs;
+    int disconnect_timing = EVHTP_DISCONNECT_IMMEDIATE;
+
+    if(duk_get_boolean_default(ctx, 0, 0))
+    {
+        disconnect_timing = EVHTP_DISCONNECT_DEFER;
+    }
 
     duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
     dhs=duk_get_pointer(ctx, -1);
@@ -959,7 +965,7 @@ duk_ret_t duk_server_ws_end(duk_context *ctx)
     if(!req)
         return 0;
 
-    evhtp_ws_disconnect(req);
+    evhtp_ws_disconnect(req, disconnect_timing);
 
     duk_push_this(ctx);
     duk_push_pointer(ctx, (void*)NULL);
@@ -1170,7 +1176,7 @@ static int push_req_vars(DHS *dhs)
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("req"));
         duk_push_c_function(ctx, duk_server_ws_send,1);
         duk_put_prop_string(ctx, -2, "wsSend");
-        duk_push_c_function(ctx, duk_server_ws_end,0);
+        duk_push_c_function(ctx, duk_server_ws_end,1);
         duk_put_prop_string(ctx, -2, "wsEnd");
         duk_push_c_function(ctx, duk_server_ws_set_disconnect,1);
         duk_put_prop_string(ctx, -2, "wsOnDisconnect");

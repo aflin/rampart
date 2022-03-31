@@ -97,5 +97,8 @@ EVHTP_EXPORT void            * evhtp_ws_parser_get_userdata(evhtp_ws_parser * p)
 
 EVHTP_EXPORT struct evbuffer * evhtp_ws_add_header(struct evbuffer *buf, uint8_t opcode);
 
+#define EVHTP_DISCONNECT_IMMEDIATE 0
+#define EVHTP_DISCONNECT_DEFER 1
+
 #endif
 

@@ -7,7 +7,7 @@
  * with sooooo much gratitude for not having to do this from scratch
  *    -ajf
  *
- * Changes and additions, Copyright (c) 2021 Aaron Flin and released
+ * Changes and additions, Copyright (c) 2022 Aaron Flin and released
  * under the MIT License.
  *
  * ----------------------------------------------------------------------------
@@ -475,9 +475,11 @@ evhtp_ws_parser_get_userdata(evhtp_ws_parser * p) {
     return p->usrdata;
 }
 /* set a flag to disconnect after we are done parsing */
-void evhtp_ws_disconnect(evhtp_request_t  * req)
+void evhtp_ws_disconnect(evhtp_request_t  * req, int defer)
 {
     req->disconnect=1;
+    if(defer)
+        req->flags |= EVHTP_REQ_FLAG_WS_DIS_DEFER;
 }
 
 /* the actual disconnect code, done at the appropriate time */

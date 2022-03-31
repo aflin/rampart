@@ -2362,7 +2362,7 @@ static void ws_ping_cb(evutil_socket_t fd, short events, void* arg)
         event_del(p->pingev);
         event_free(p->pingev);
         p->pingev=NULL;
-        evhtp_ws_disconnect(req);
+        evhtp_ws_disconnect(req, EVHTP_DISCONNECT_IMMEDIATE);
     }
 }
 
@@ -2533,8 +2533,8 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
         nread = htparser_run(c->parser, &request_psets, (const char *)buf, avail);
     }
 
-    /* websockets: check for disconnect request */
-    if(c->request && c->request->disconnect)
+    /* websockets: check for disconnect request - immediate */
+    if(c->request && c->request->disconnect && !(c->request->flags & EVHTP_REQ_FLAG_WS_DIS_DEFER))
     {
         evhtp_ws_do_disconnect(c->request);
         return;
@@ -2608,6 +2608,7 @@ static void
 htp__connection_writecb_(struct bufferevent * bev, void * arg)
 {
     evhtp_connection_t * conn;
+    evhtp_request_t  * req=NULL;
     uint64_t             keepalive_max;
     const char         * errstr;
 
@@ -2623,26 +2624,35 @@ htp__connection_writecb_(struct bufferevent * bev, void * arg)
 
     errstr = NULL;
     conn   = (evhtp_connection_t *)arg;
+    req = conn->request;
 
     if (!(conn->flags & EVHTP_CONN_FLAG_OWNER)) {
         log_debug("EVHTP_CONN_FLAG_OWNER not set, removing contexts");
 
-        if (conn->request->ws_parser)
+        if (req->ws_parser)
         {
-            evhtp_ws_parser * p = conn->request->ws_parser;
+            evhtp_ws_parser * p = req->ws_parser;
             if(p->pingev)
             {
                 event_del(p->pingev);
                 event_free(p->pingev);
             }
-            free(conn->request->ws_parser);
+            free(req->ws_parser);
+            req->ws_parser=NULL;
         }
         evhtp_safe_free(conn, evhtp_connection_free);
         return;
     }
 
+    /* websockets: check for disconnect request -deferred */
+    if(req->websock && req->disconnect && req->flags & EVHTP_REQ_FLAG_WS_DIS_DEFER)
+    {
+        evhtp_ws_do_disconnect(req);
+        return;
+    }
+
     do {
-        if (evhtp_unlikely(conn->request == NULL)) {
+        if (evhtp_unlikely(req == NULL)) {
             errstr = "no request associated with connection";
             break;
         }
@@ -2715,7 +2725,7 @@ htp__connection_writecb_(struct bufferevent * bev, void * arg)
      */
     if (keepalive_max > 0) {
         if (++conn->num_requests >= keepalive_max) {
-            HTP_FLAG_OFF(conn->request, EVHTP_REQ_FLAG_KEEPALIVE);
+            HTP_FLAG_OFF(req, EVHTP_REQ_FLAG_KEEPALIVE);
         }
     }
 
@@ -2726,7 +2736,7 @@ htp__connection_writecb_(struct bufferevent * bev, void * arg)
         /* free up the current request, set it to NULL, making
          * way for the next request.
          */
-        evhtp_safe_free(conn->request, htp__request_free_);
+        evhtp_safe_free(req, htp__request_free_);
 
         /* since the request is keep-alive, assure that the connection
          * is aware of the same.

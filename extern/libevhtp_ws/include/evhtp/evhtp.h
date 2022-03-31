@@ -439,10 +439,11 @@ struct evhtp_request {
     evhtp_proto          proto;         /**< HTTP protocol used */
     htp_method           method;        /**< HTTP method used */
     evhtp_res            status;        /**< The HTTP response code or other error conditions */
-    #define EVHTP_REQ_FLAG_KEEPALIVE (1 << 1)
-    #define EVHTP_REQ_FLAG_FINISHED  (1 << 2)
-    #define EVHTP_REQ_FLAG_CHUNKED   (1 << 3)
-    #define EVHTP_REQ_FLAG_ERROR     (1 << 4)
+    #define EVHTP_REQ_FLAG_KEEPALIVE        (1 << 1)
+    #define EVHTP_REQ_FLAG_FINISHED         (1 << 2)
+    #define EVHTP_REQ_FLAG_CHUNKED          (1 << 3)
+    #define EVHTP_REQ_FLAG_ERROR            (1 << 4)
+    #define EVHTP_REQ_FLAG_WS_DIS_DEFER     (1 << 5)
     uint16_t flags;
 
     uint8_t cb_has_websock : 1,
@@ -1509,7 +1510,7 @@ EVHTP_EXPORT unsigned int evhtp_request_status(evhtp_request_t *);
 /**
  * @brief disconnect from websocket client
  */
-void evhtp_ws_disconnect(evhtp_request_t  * req);
+void evhtp_ws_disconnect(evhtp_request_t  * req, int defer);
 void evhtp_ws_do_disconnect(evhtp_request_t  * req);
 
 #ifdef __cplusplus
