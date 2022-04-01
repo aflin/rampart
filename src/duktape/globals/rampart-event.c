@@ -15,6 +15,15 @@
 
 pthread_mutex_t cborlock;
 
+volatile int rp_event_scope_to_module=0;
+
+duk_ret_t duk_scope_to_module(duk_context *ctx)
+{
+    rp_event_scope_to_module=1;
+    return 0;
+}
+
+/* unused
 duk_ret_t duk_rp_new_event(duk_context *ctx)
 {
     const char *evname = REQUIRE_STRING(ctx, 0, "event.new: parameter must be a string (event name)");
@@ -27,6 +36,55 @@ duk_ret_t duk_rp_new_event(duk_context *ctx)
     }
     return 0;
 }
+*/
+
+// As far as ugly hacks go, this is as bad as it gets.  No idea how else to extract the call stack
+// and get the name of our current module, except by hacking at duktape itself.
+static int push_current_module(duk_context *ctx)
+{
+    const char *errstr;
+    char *p=NULL;
+
+    duk_push_error_object(ctx, DUK_ERR_TYPE_ERROR, "");
+    duk_get_prop_string(ctx, -1, "stack");
+    errstr = duk_get_string(ctx, -1);
+
+    duk_remove(ctx,-2);
+    p=strstr(errstr, "rampart-event.c");
+    if(p)
+    {
+        //the first path with a name should be our last module
+        p=strstr(p, "(/" );
+        if(p)
+        {
+            char *e=strchr(p,':'); //end position is at ':' in "script.js:linenum"
+
+            if(e)
+            {
+                p++; //start at '/'
+
+                duk_push_global_stash(ctx);
+                if(duk_get_prop_string(ctx, -1, "module_id_map"))
+                {
+                    int ret = 0;
+                    duk_push_lstring(ctx, p, (e-p) );
+                    if(duk_get_prop(ctx, -2))
+                        ret=1; 
+                    //either our prop, or undefined at top of stack
+                    duk_remove(ctx,-2); //module_id_map
+                    duk_remove(ctx,-2); //global_stash
+                    duk_remove(ctx,-2); //errstr backing string
+                    return ret;
+                }
+                duk_pop_2(ctx); //global_stash and undefined               
+            }
+        }
+    }
+    duk_pop(ctx);
+    duk_push_undefined(ctx);
+    return 0;
+}
+
 
 duk_ret_t duk_rp_on_event(duk_context *ctx)
 {
@@ -41,7 +99,30 @@ duk_ret_t duk_rp_on_event(duk_context *ctx)
             if(evname)
                 onname=duk_get_string(ctx, i);
             else
+            {
+                if(rp_event_scope_to_module)
+                {
+                    const char *id=NULL;
+                    // are we in a module?
+                    if(push_current_module(ctx))
+                    {
+                        if(duk_get_prop_string(ctx, -1, "id"))
+                        {
+                                id=duk_get_string(ctx, -1);
+                        }
+                        duk_pop(ctx);
+                    }
+                    duk_pop(ctx);
+
+                    if(id)
+                    {
+                        evname=duk_get_string(ctx, i);
+                        duk_push_sprintf(ctx, "\xFE%s:%s", id, evname);
+                        duk_replace(ctx, i);  
+                    }
+                }
                 evname=duk_get_string(ctx, i);
+            }
         }
         else if (duk_is_function(ctx, i))
             func_idx=i;
@@ -250,7 +331,7 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
     free(earg);
 }
 
-static void evloop_insert(const char *evname, const char *fname, CBH *cbor, int action)
+static void evloop_insert(duk_context *ctx, const char *evname, const char *fname, CBH *cbor, int action)
 {
     struct timeval timeout;
     JSEVARGS *args = NULL;
@@ -275,14 +356,44 @@ static void evloop_insert(const char *evname, const char *fname, CBH *cbor, int 
         args=NULL;
         REMALLOC(args,sizeof(JSEVARGS));
         args->thread_no = tno;
-        args->key = strdup(evname);
+        args->key=NULL;
+
+        if(rp_event_scope_to_module)
+        {
+            const char *id=NULL;
+
+            // are we in a module?
+            if(push_current_module(ctx))
+            {
+                if(duk_get_prop_string(ctx, -1, "id"))
+                {
+                    id=duk_get_string(ctx, -1);
+                }
+                duk_pop(ctx);
+            }
+            duk_pop(ctx);
+
+            if(id)
+            {
+                REMALLOC(args->key, strlen(id) + strlen(evname)+3);
+                sprintf(args->key, "\xFE%s:%s", id, evname);
+            }
+            
+        }
+        if(!args->key)
+            args->key = strdup(evname);
+
         args->action=action;
+
         if(fname)
             args->fname=strdup(fname);
         else
             args->fname=NULL;
+
         args->e = event_new(base, -1, 0, rp_jsev_doevent, args);
+
         args->cbor = cbor;
+
         event_add(args->e, &timeout);
     }
 }
@@ -310,7 +421,7 @@ duk_ret_t duk_rp_trigger_event(duk_context *ctx)
         memcpy(cbor->data, buf, cbor->size);       
         cbor->refcount = totnthreads+1;
     }
-    evloop_insert(evname, NULL, cbor, JSEVENT_TRIGGER);
+    evloop_insert(ctx, evname, NULL, cbor, JSEVENT_TRIGGER);
     return 0;
 }
 
@@ -320,7 +431,7 @@ duk_ret_t duk_rp_off_event(duk_context *ctx)
     const char *evname = REQUIRE_STRING(ctx, 0, "event.off: first parameter must be a string (event name)");
     const char *fname = REQUIRE_STRING(ctx, 1, "event.off: second parameter must be a string (function name)");
 
-    evloop_insert(evname, fname, NULL, JSEVENT_DELFUNC);
+    evloop_insert(ctx, evname, fname, NULL, JSEVENT_DELFUNC);
     return 0;
 }
 
@@ -329,7 +440,7 @@ duk_ret_t duk_rp_remove_event(duk_context *ctx)
 {
     const char *evname = REQUIRE_STRING(ctx, 0, "event.remove: first parameter must be a string (event name)");
 
-    evloop_insert(evname, NULL, NULL, JSEVENT_DELETE);
+    evloop_insert(ctx, evname, NULL, NULL, JSEVENT_DELETE);
     return 0;
 }
 
@@ -353,8 +464,12 @@ void duk_event_init(duk_context *ctx)
         isinit=1;
     }
 
-    duk_push_c_function(ctx, duk_rp_new_event, 1);
-    duk_put_prop_string(ctx, -2, "new");
+    // currently unused
+    //duk_push_c_function(ctx, duk_rp_new_event, 1);
+    //duk_put_prop_string(ctx, -2, "new");
+
+    duk_push_c_function(ctx, duk_scope_to_module, 0);
+    duk_put_prop_string(ctx, -2, "scopeToModule");
 
     duk_push_c_function(ctx, duk_rp_on_event, 4);
     duk_put_prop_string(ctx, -2, "on");
