@@ -942,11 +942,11 @@ duk_ret_t duk_server_ws_end(duk_context *ctx)
 {
     evhtp_request_t *req;
     DHS *dhs;
-    int disconnect_timing = EVHTP_DISCONNECT_IMMEDIATE;
+    int disconnect_timing = EVHTP_DISCONNECT_DEFER;
 
     if(duk_get_boolean_default(ctx, 0, 0))
     {
-        disconnect_timing = EVHTP_DISCONNECT_DEFER;
+        disconnect_timing = EVHTP_DISCONNECT_IMMEDIATE;
     }
 
     duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
