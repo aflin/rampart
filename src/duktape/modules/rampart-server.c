@@ -860,16 +860,42 @@ evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
     if(duk_get_prop_string(ctx, -1, "wsdis"))
     {
         duk_push_number(ctx, ws_id);
+        // [ global_stash, {wsdis}, ws_id ]
         if (duk_get_prop(ctx, -2))
         {
-            duk_call(ctx, 0);
+            // [ global_stash, {wsdis}, cbfunc() ]
+            if ((duk_pcall(ctx, 0)))
+            {
+                if (duk_is_error(ctx, -1) )
+                {
+                    duk_get_prop_string(ctx, -1, "stack");
+                    // [ global_stash, {wsdis}, errobj, errstack ]
+                    printerr("error in wsOnDisconnect callback:\n %s\n", duk_safe_to_string(ctx, -1));
+                    duk_pop(ctx);
+                    // [ global_stash, {wsdis}, errobj ]
+                }
+                else if (duk_is_string(ctx, -1))
+                {
+                    printerr("error in wsOnDisconnect callback: '%s'\n", duk_safe_to_string(ctx, -1));
+                    // [ global_stash, {wsdis}, errobj ]
+                }
+                else
+                {
+                    printerr("unknown error in wsOnDisconnect callback");
+                }
+            }
+            // [ global_stash, {wsdis}, ret/err ]
+            duk_pop(ctx);//return value or err
+            // [ global_stash, {wsdis} ]
+            // remove the callback
+            duk_push_number(ctx, ws_id);
+            duk_del_prop(ctx, -2);
+            // [ global_stash, {wsdis} ]
         }
-        duk_pop(ctx);//ignore return value, or undefined(if no callback);
+        //else [ global_stash, undefined ]
 
-        // remove the callback
-        duk_push_number(ctx, ws_id);
-        duk_del_prop(ctx, -2);
     }
+    //else [ global_stash, undefined ]
     duk_pop_2(ctx); //global stash and wsdis/undefined
 
     /* null out req */
@@ -3404,7 +3430,7 @@ static void *http_dothread(void *arg)
         if (duk_is_error(ctx, -1) )
         {
             duk_get_prop_string(ctx, -1, "stack");
-            printerr("error in callback: '%s'\n", duk_safe_to_string(ctx, -1));
+            printerr("error in callback:\n%s\n", duk_safe_to_string(ctx, -1));
             if (!req->cb_has_websock)
                 send500(req, (char*)duk_safe_to_string(ctx, -1));
             //send500 calls http_callback, which now empties the stack
