@@ -891,12 +891,12 @@ evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
             duk_push_number(ctx, ws_id);
             duk_del_prop(ctx, -2);
             // [ global_stash, {wsdis} ]
+        } else {
+            // [ global_stash, {wsdis}, undefined ]
+            duk_pop(ctx);
         }
-        //else [ global_stash, undefined ]
-
     }
-    //else [ global_stash, undefined ]
-    duk_pop_2(ctx); //global stash and wsdis/undefined
+    duk_pop_2(ctx); //global stash and undefined/{wsdis}
 
     /* null out req */
     if(!duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("wsreq")))
@@ -4145,8 +4145,6 @@ static void http_callback(evhtp_request_t *req, void *arg)
     newdhs.freeme=0;
     dhs = &newdhs;
 
-    /* stack must start empty */
-//    while (duk_get_top(dhs->ctx) > 0) duk_pop(dhs->ctx);
 
     /* if a ws callback has been set */
     if(req->cb_has_websock)
@@ -4167,6 +4165,9 @@ static void http_callback(evhtp_request_t *req, void *arg)
             dhs->threadno = (uint16_t)thrno + (uint16_t)totnthreads;
         }
     }
+
+    /* stack must start empty */
+    while (duk_get_top(dhs->ctx) > 0) duk_pop(dhs->ctx);
 
     duk_get_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("thread_funcstash")); //this should be at index 0;
 //printf("dhs req path = %s, module=%d\n",dhs->reqpath, dhs->module);
@@ -4504,7 +4505,7 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
                 const char *user=REQUIRE_STRING(ctx, -1, "server.start: parameter \"user\" requires a string (username)");
 
                 if(! (pwd = getpwnam(user)) )
-                    RP_THROW(ctx, "server.start: error getting user '%s' in start()\n",user);
+                    RP_THROW(ctx, "server.start: error getting user '%s' in start()",user);
             }
         }
         duk_pop(ctx);
