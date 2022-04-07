@@ -1251,6 +1251,10 @@ duk_ret_t duk_rp_html_tohtml(duk_context *ctx)
 static int findfunc_tag (TidyNode node, const char **txt, const char **txt2, int ntxt){
     int i=0;
     ctmbstr name = tidyNodeGetName(node);
+
+    if(!name)
+        return 0;
+
     for (;i<ntxt;i++)
     {
         if(!strcasecmp(txt[i],name))
@@ -1349,7 +1353,7 @@ static void _find_(
     if(filter)
     {
         type = tidyNodeGetType(start);
-        if(type == TidyNode_Start)
+        if(type == TidyNode_Start || type == TidyNode_StartEnd )
         {
             if( (ffunc[findType])(start, txt, txt2, ntxt) )
             {
@@ -1374,7 +1378,7 @@ static void _find_(
     for ( child = tidyGetChild(start); child; child = tidyGetNext(child) )
     {
         type = tidyNodeGetType(child);
-        if(type == TidyNode_Start)
+        if(type == TidyNode_Start || type == TidyNode_StartEnd )
         {
             if( (ffunc[findType])(child, txt, txt2, ntxt) )
             {
@@ -1383,7 +1387,8 @@ static void _find_(
                 duk_push_pointer(ctx, (void*)child);
                 duk_put_prop_index(ctx, arr_idx, len);
             }
-            _find_(ctx, doc, child, arr_idx, txt, txt2, ntxt, findType, filter);
+            if(type == TidyNode_Start)
+                _find_(ctx, doc, child, arr_idx, txt, txt2, ntxt, findType, filter);
         }
     }
 }
