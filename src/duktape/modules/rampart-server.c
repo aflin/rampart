@@ -1917,6 +1917,7 @@ static void fileserver(evhtp_request_t *req, void *arg)
     /* redirect /mappeddir to /mappeddir/ */
     if ( !strcmp (s, map->key))
     {
+        free(s);
         strcpy(fn, path->full);
         strcat(fn, "/");
         sendredir(req, fn);
@@ -1927,6 +1928,7 @@ static void fileserver(evhtp_request_t *req, void *arg)
      */
     if( *(s + strlen(map->key)) != '/')
     {
+        free(s);
         send404(req);
         return;
     }
