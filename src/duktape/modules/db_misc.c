@@ -1,8 +1,8 @@
 /* Copyright (C) 2022  Thunderstone, LLC - All Rights Reserved
  * Copyright (C) 2022  Aaron Flin - All Rights Reserved
- * You may use, distribute this code under the
- * terms of the Rampart Open Source License.
- * see rsal.txt for details
+ * You may use this code under the
+ * terms of the Rampart Source Available License.
+ * see /LICENSE-rsal.txt for details
  */
 
 typedef struct  RPSFD_tag                       /* stringformat data */
