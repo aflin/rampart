@@ -2,6 +2,10 @@
 
 Cmake version 3.13 required.
 
+## Compiled Versions ##
+
+Compiled versions for several platforms can be found [here](https://rampart.dev/downloads/)
+
 ## Compiling on Macos ##
 
 You will need to install the following dependencies:
