@@ -1528,7 +1528,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                     /* skip over comments */
                     if( in+1<end && *(in+1) == '/')
                     {
-                        while(in<end && *in != '\n')
+                        while(*in && *in != '\n')
                         {
                             copy(*in);
                             adv;
@@ -1546,7 +1546,8 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                                 line++;
                             copy(*in);
                             adv;
-
+                            if(!*in)
+                                break;
                             if(*in == '*' && in+1<end && *(in+1)=='/')
                             {
                                 copy(*in);
