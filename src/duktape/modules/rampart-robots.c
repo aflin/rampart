@@ -12,7 +12,9 @@ static duk_ret_t allowed(duk_context *ctx)
 {
     
     char *uagent = (char *) REQUIRE_STRING(ctx, 0, "First parameter must be a string (user agent)");
-    char *robots_txt = (char *) REQUIRE_STRING(ctx, 1, "Second parameter must be a string (robots.txt)");
+    if(duk_is_buffer(ctx, 1))
+        (void) duk_buffer_to_string(ctx, 1);
+    char *robots_txt = (char *) REQUIRE_STRING(ctx, 1, "Second parameter must be a string or buffer (robots.txt)");
     char *iurl = (char *) REQUIRE_STRING(ctx, 2, "Third parameter must be a string (url)");
 
 
