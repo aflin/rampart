@@ -221,14 +221,15 @@ function components(url, pathOnly) {
             mtmp = tmp.match(/^\d+/);
 
             if(mtmp && mtmp.length) {
-                ret.portText = mtmp[0];
                 ret.port = parseInt(mtmp[0]);
+                if (ret.port != portmap[ret.scheme])
+                    ret.portText = mtmp[0];
             } else
                 return;
-            tmp = tmp.substring(ret.portText.length);
-            ret.origin = ret.scheme + ':' +ret.authority + ':' + ret.portText;
+            tmp = tmp.substring(mtmp[0].length);
+            ret.origin = ret.scheme + ':' +ret.authority + (ret.portText ? ':' + ret.portText  : '');
             //AUTHORITY with port
-            ret.authority = ret.authority + ':' + ret.portText;
+            ret.authority = ret.authority + (ret.portText? ':' + ret.portText  : '');
         } else {
             ret.port = portmap[ret.scheme];
             ret.origin = ret.scheme + ':' +ret.authority;
