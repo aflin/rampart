@@ -373,8 +373,12 @@ else()
   )
 endif()
 
-## tests into build/src dir as well (temporary)
-file(GLOB TEST_FILES "${CMAKE_SOURCE_DIR}/test/*.js" "${CMAKE_SOURCE_DIR}/test/wiki_00")
+## tests and js_mods into build/src dir as well (temporary)
+file(GLOB TEST_FILES 
+    "${CMAKE_SOURCE_DIR}/test/*.js" 
+    "${CMAKE_SOURCE_DIR}/test/wiki_00" 
+    "${CMAKE_SOURCE_DIR}/js_modules/*.js"
+)
 foreach(TEST_FILE ${TEST_FILES})
 file(COPY ${TEST_FILE} DESTINATION ${CMAKE_BINARY_DIR}/src)
 endforeach()
@@ -394,6 +398,13 @@ install(TARGETS
 	rampart-robots
 	rampart-lmdb
 	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
+)
+
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_SOURCE_DIR}/js_modules/rampart-url.js\" \
+    \"${CMAKE_INSTALL_PREFIX}/modules/\"   \
+    )"
 )
 
 install(CODE "execute_process( \
