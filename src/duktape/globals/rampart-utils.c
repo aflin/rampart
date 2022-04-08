@@ -180,19 +180,36 @@ RPPATH rp_find_path(char *file, char *subdir)
     }
 
     /* look for it in scriptPath */
-    if( strlen(RP_script_path) + strnlen(file,PATH_MAX) + 2 > PATH_MAX)
-        return ret;
-
-    strcpy(path,RP_script_path);
-    strcat(path,"/");
-    strcat(path,file);
-
-    if (stat(path, &sb) != -1)
+    if( strlen(RP_script_path) + strnlen(file,PATH_MAX) + 2 < PATH_MAX)
     {
-        ret.stat=sb;
-        if(!realpath(path,ret.path))
-            strcpy(ret.path,file);
-        return ret;
+        strcpy(path,RP_script_path);
+        strcat(path,"/");
+        strcat(path,file);
+
+        if (stat(path, &sb) != -1)
+        {
+            ret.stat=sb;
+            if(!realpath(path,ret.path))
+                strcpy(ret.path,file);
+            return ret;
+        }
+    }
+
+    /* look for it in scriptPath/subdir/ */
+    if( subdir && strlen(RP_script_path) + strnlen(file,PATH_MAX) + strnlen(sd,PATH_MAX)+ 2 < PATH_MAX)
+    {
+        strcpy(path,RP_script_path);
+        strcat(path,"/");
+        strcat(path,sd);
+        strcat(path,file);
+
+        if (stat(path, &sb) != -1)
+        {
+            ret.stat=sb;
+            if(!realpath(path,ret.path))
+                strcpy(ret.path,file);
+            return ret;
+        }
     }
 
     // check for access to ~/
