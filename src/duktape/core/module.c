@@ -194,7 +194,7 @@ static duk_ret_t load_so_module(duk_context *ctx)
     return 0;
 }
 
-static int resolve_id(duk_context *ctx, const char *request_id)
+static RPPATH resolve_id(duk_context *ctx, const char *request_id)
 {
     char *id = NULL;
     int module_loader_idx;
@@ -210,9 +210,9 @@ static int resolve_id(duk_context *ctx, const char *request_id)
 
         if( extlen && !strcmp(fext,module_loaders[module_loader_idx].ext) )
         {
-            rppath=rp_find_path((char *)duk_get_string(ctx,-1), "modules/");
+            rppath=rp_find_path((char*)request_id, "modules/");
             if(!strlen(rppath.path))
-                rppath=rp_find_path((char *)duk_get_string(ctx,-1), "lib/rampart_modules/");
+                rppath=rp_find_path((char*)request_id, "lib/rampart_modules/");
             id = (strlen(rppath.path))?rppath.path:NULL;
         }
         else
@@ -234,7 +234,7 @@ static int resolve_id(duk_context *ctx, const char *request_id)
 
     if (id == NULL)
     {
-        return 0;
+        return rppath;
     }
 
     duk_push_object(ctx);
@@ -242,7 +242,7 @@ static int resolve_id(duk_context *ctx, const char *request_id)
     duk_put_prop_string(ctx, -2, "id");
     duk_push_int(ctx, module_loader_idx);
     duk_put_prop_string(ctx, -2, "module_loader_idx");
-    return 1;
+    return rppath;
 }
 
 duk_ret_t duk_require(duk_context *ctx)
@@ -259,6 +259,7 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
     int module_loader_idx;
     const char *id, *p;
     const char *fn;
+    RPPATH rppath;
 
     if(!name)
     {
@@ -267,8 +268,10 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
     }
     else
         fn = name;
+    errno=0;
 
-    if(!resolve_id(ctx, fn))
+    rppath = resolve_id(ctx, fn);
+    if(!strlen(rppath.path))
     {
         if(!name)
             RP_THROW(ctx, "Could not resolve module id %s: %s\n", duk_get_string(ctx, 0), strerror(errno));
@@ -296,7 +299,32 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
 
     // if found the module in the module_id_map
     if (duk_get_prop_string(ctx, -1, id))
-        return 1;
+    {
+        time_t old_mtime;
+
+        if(!duk_get_prop_string(ctx, -1, "mtime")) {
+            // this should never happen
+            duk_pop(ctx); // mtime
+            duk_del_prop_string(ctx, -1, id);
+        }
+        else
+        {
+            old_mtime = (time_t) duk_get_number_default(ctx, -1, 0);
+            duk_pop(ctx); //mtime
+            if(!old_mtime)
+            {
+                //again, should never happen.
+                duk_del_prop_string(ctx, -1, id);
+            }
+            else
+            {
+                if (rppath.stat.st_mtime > old_mtime)
+                    duk_del_prop_string(ctx, -1, id); //its newer, reload
+                else
+                    return 1; // current version is up to date
+            }
+        }
+    }
 
     // module
     duk_idx_t module_idx = duk_push_object(ctx);
@@ -335,6 +363,9 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
 
     // get module source using loader
     // the loader modifies module.exports
+
+    // FIXME: call this function directly and pass id, require_idx, module_idx to it
+    //        also add rppath so we don't have to stat again.
     duk_push_c_function(ctx, module_loaders[module_loader_idx].loader, 3);
     // id
     duk_push_string(ctx, id);
