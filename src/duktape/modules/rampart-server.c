@@ -5510,8 +5510,16 @@ duk_ret_t duk_server_start(duk_context *ctx)
                             evhtp_set_cb(htp, s, http_callback, cb_dhs);
                         else
                         {
+                            size_t slen = strlen(s);
                             //printf("setting exact path %s %d\n",s, cb_dhs->module);
                             evhtp_set_exact_cb(htp, s, http_callback, cb_dhs);
+
+                            // if '*/index.html', then map '/' as well
+                            if(slen > 10 && !strcmp ( s + (slen - 11), "/index.html") )
+                            {
+                                s[slen - 10] = '\0';
+                                evhtp_set_exact_cb(htp, s, http_callback, cb_dhs);
+                            }
                         }
                         free(s);
                         duk_pop(ctx);
