@@ -650,7 +650,7 @@ static DB_HANDLE *h_open(const char *db, int forkno, duk_context *ctx)
             h->fork_idx = fork_open(h);
         }            
         else if (h->tx == NULL)
-            h->tx = texis_open((char *)(db), "PUBLIC", "");;
+            h->tx = texis_open((char *)(db), "PUBLIC", "");
     }
     return h;
 }
@@ -3472,7 +3472,10 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
 {
     LPSTMT lpstmt;
     DDIC *ddic=NULL;
-    TEXIS *tx = hcache->tx;
+//    TEXIS *tx = hcache->tx;
+//  open a fresh handle for sql set.  
+//  TXresetproperties() seems to mess with the putmsg buffer when the handle is reused
+    TEXIS *tx = texis_open((char *)(hcache->db), "PUBLIC", "");
     const char *val="";
     char pbuf[msgbufsz];
     int added_ret_obj=0;
@@ -3488,7 +3491,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
     else
     {
         sprintf(errbuf,"sql open");
-        return -2;
+        goto return_neg_two;
     }
 
     //cumulative settings are always set, so reset to default here and reapply
@@ -3496,17 +3499,17 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
     if(setprop(ddic, "querysettings", "defaults" )==-1)
     {
         sprintf(errbuf, "sql set");
-        return -2;
+        goto return_neg_two;
     }
     if(setprop(ddic, "strlsttovarcharmode", "json" )==-1)
     {
         sprintf(errbuf, "sql set");
-        return -2;
+        goto return_neg_two;
     }
     if(setprop(ddic, "varchartostrlstmode", "json" )==-1)
     {
         sprintf(errbuf, "sql set");
-        return -2;
+        goto return_neg_two;
     }
 
     /**** Reapply indextmplst and explst if it was modified */
@@ -3523,7 +3526,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
             if(setprop(ddic, "addindextmp", (char*)val )==-1)
             {
                 sprintf(errbuf, "sql set");
-                return -2;
+                goto return_neg_two;
             }
             duk_pop(ctx);
         }
@@ -3539,7 +3542,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
         if(setprop(ddic, "delexp", "0" )==-1)
         {
             sprintf(errbuf, "sql set");
-            return -2;
+            goto return_neg_two;
         }
         
         for (i=0;i<len;i++)
@@ -3549,7 +3552,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
             if(setprop(ddic, "addexp", (char*)val )==-1)
             {
                 sprintf(errbuf, "sql set");
-                return -2;
+                goto return_neg_two;
             }
             duk_pop(ctx);
         }
@@ -3569,7 +3572,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
         if(sz>63)
         {
             sprintf(errbuf, "sql.set - '%s' - unknown/invalid property", dprop);
-            return -1;
+            goto return_neg_one;
         }
 
         sql_normalize_prop(prop, dprop);
@@ -3700,7 +3703,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
                         nl[i]=strdup("");
                         free_list((char**)nl);
                         sprintf(errbuf, "sql.set: %s must be an array of strings", rlsts[setlisttype] );
-                        return -1;
+                        goto return_neg_one;
                     }
                     nl[i]=strdup(duk_get_string(ctx, -1));
                     duk_pop(ctx);
@@ -3711,7 +3714,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
             else
             {
                 sprintf(errbuf, "sql.set: %s must be an array of strings", rlsts[setlisttype] );
-                return -1;
+                goto return_neg_one;
             }
             switch(setlisttype)
             {
@@ -3777,7 +3780,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
                         if(!aval)
                         {
                             sprintf(errbuf, "sql.set: deleteExpressions - array must be an array of strings, expressions or numbers (expressions or expression index)\n");
-                            return -1;
+                            goto return_neg_one;
                         }
                     }                
                 }
@@ -3795,7 +3798,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
                     else
                     {
                         sprintf(errbuf, "sql.set: deleteIndexTemp - array must be an array of strings or numbers\n");
-                        return -1;
+                        goto return_neg_one;
                     }                
                 }
                 else if (ptype==0)
@@ -3805,7 +3808,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
                     if(!aval)
                     {
                         sprintf(errbuf, "sql.set: addExpressions - array must be an array of strings or expressions\n");
-                        return -1;
+                        goto return_neg_one;
                     }
                 }
                 else
@@ -3813,14 +3816,14 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
                     if(!duk_is_string(ctx, -1))
                     {
                         sprintf(errbuf, "sql.set: addIndexTemp - array must be an array of strings\n");
-                        return-1;
+                        goto return_neg_one;
                     }
                     aval=duk_get_string(ctx, -1);
                 }
                 if(setprop(ddic, (char*)prop, (char*)aval )==-1)
                 {
                     sprintf(errbuf, "sql set");
-                    return -2;
+                    goto return_neg_two;
                 }
                 duk_pop_2(ctx);
             }
@@ -3842,7 +3845,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
                 if(!(duk_is_string(ctx, -1)))
                 {
                     sprintf(errbuf, "invalid value '%s'", duk_safe_to_string(ctx, -1));
-                    return -1;
+                    goto return_neg_one;
                 }
                 val=duk_get_string(ctx, -1);
             }
@@ -3859,7 +3862,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
             if(setprop(ddic, (char*)prop, (char*)val )==-1)
             {
                 sprintf(errbuf, "sql set");
-                return -2;
+                goto return_neg_two;
             }
         }
 
@@ -3900,12 +3903,14 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
         if(*pbuf!='\0')
         {
             sprintf(errbuf, "sql.set(): %s", pbuf+4);
-            return -1;
+            goto return_neg_one;
         }
     }
     duk_pop(ctx);//enum
 
     duk_rp_log_tx_error(ctx,hcache,pbuf); /* log any non fatal errors to this.errMsg */
+
+    tx=texis_close(tx);
 
     if(added_ret_obj)
     {
@@ -3913,6 +3918,14 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
         return 1;
     }
     return 0;
+
+    return_neg_two:
+        tx=texis_close(tx);
+        return -2;
+
+    return_neg_one:
+        tx=texis_close(tx);
+        return -1;
 }
 
 /*
