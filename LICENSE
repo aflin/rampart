@@ -1,9 +1,9 @@
 Rampart uses many components and libraries from several sources.  We've strived to
 use only software licensed under a permissive licenses such as MIT, BSD or Apache.
 
-A major exception is the RSAL license for the Texis Library used by the
-rampart-sql module, which may be found in LICENSE-rsal.txt file in this
-distribution.
+A major exception is the RSAL license for the Texis Library and related files used 
+by the rampart-sql module. The text of this license may be found at 
+https://github.com/aflin/rampart/blob/main/LICENSE-rsal.txt
 
 In general, code written by us is licensed under the MIT License.
 
