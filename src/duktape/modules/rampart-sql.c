@@ -790,8 +790,13 @@ static FLDLST * fork_fetch(DB_HANDLE *h,  int stringsFrom)
     {
         char type = ret->type[i] & 0x3f;
         size_t size = ddftsize(type) * (size_t)ret->ndata[i];
-        ret->data[i]= (buf) + eos;
-        eos += size;
+        if(size==0)
+            ret->data[i]=NULL;
+        else
+        {
+            ret->data[i]= (buf) + eos;
+            eos += size;
+        }
     }
     return ret;    
 }
@@ -847,6 +852,12 @@ static int serialize_fl(SFI *finfo, FLDLST *fl)
     for (i = 0; i < fl->n; i++)
     {
         int ndata =  fl->ndata[i];
+
+        // TODO: I think this is always the case, but check with TS
+        // before removing the next two lines.
+        if(fl->data[i] == NULL)
+            ndata=0;
+
         if(!cwrite(finfo, &ndata, sizeof(int)))
             return -1;
     }
@@ -864,8 +875,11 @@ static int serialize_fl(SFI *finfo, FLDLST *fl)
     {
         char type = fl->type[i] & 0x3f;
         size_t size = ddftsize(type) * (size_t)fl->ndata[i];
-        if(!cwrite(finfo, fl->data[i], size))
-            return -1;
+        if(size !=0 && fl->data[i] != NULL)
+        {
+            if(!cwrite(finfo, fl->data[i], size))
+                return -1;
+        }
     }
 
     return (int) mmap_used;
@@ -2129,6 +2143,12 @@ int duk_rp_add_parameters(duk_context *ctx, DB_HANDLE *h, duk_idx_t arr_loc)
 void duk_rp_pushfield(duk_context *ctx, FLDLST *fl, int i)
 {
     char type = fl->type[i] & 0x3f;
+
+    if( !fl->data[i]  || !fl->ndata[i])
+    {
+        duk_push_null(ctx);
+        return;
+    }
 
     switch (type)
     {
