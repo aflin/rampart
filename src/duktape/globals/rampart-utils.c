@@ -1464,6 +1464,12 @@ duk_ret_t duk_rp_readline(duk_context *ctx)
         duk_put_prop_string(ctx, idx, key); \
     }
 
+#define DUK_PUT_NUMBER(ctx, key, value, idx)   \
+    {                                          \
+        duk_push_number(ctx, (double) value);  \
+        duk_put_prop_string(ctx, idx, key);    \
+    }
+
 #define push_is_test(propname, test) do{\
     duk_push_boolean(ctx, test(path_stat.st_mode));\
     duk_put_prop_string(ctx, -2, propname);\
@@ -1531,16 +1537,16 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
     // stat
     duk_push_object(ctx);
 
-    DUK_PUT(ctx, int, "dev", path_stat.st_dev, -2);
-    DUK_PUT(ctx, int, "ino", path_stat.st_ino, -2);
-    DUK_PUT(ctx, int, "mode", path_stat.st_mode, -2);
-    DUK_PUT(ctx, int, "nlink", path_stat.st_nlink, -2);
-    DUK_PUT(ctx, int, "uid", path_stat.st_uid, -2);
-    DUK_PUT(ctx, int, "gid", path_stat.st_gid, -2);
-    DUK_PUT(ctx, int, "rdev", path_stat.st_rdev, -2);
-    DUK_PUT(ctx, int, "size", path_stat.st_size, -2);
-    DUK_PUT(ctx, int, "blksize", path_stat.st_blksize, -2);
-    DUK_PUT(ctx, int, "blocks", path_stat.st_blocks, -2);
+    DUK_PUT_NUMBER(ctx,  "dev", path_stat.st_dev, -2);
+    DUK_PUT_NUMBER(ctx,  "ino", path_stat.st_ino, -2);
+    DUK_PUT_NUMBER(ctx,  "mode", path_stat.st_mode, -2);
+    DUK_PUT_NUMBER(ctx,  "nlink", path_stat.st_nlink, -2);
+    DUK_PUT_NUMBER(ctx,  "uid", path_stat.st_uid, -2);
+    DUK_PUT_NUMBER(ctx,  "gid", path_stat.st_gid, -2);
+    DUK_PUT_NUMBER(ctx,  "rdev", path_stat.st_rdev, -2);
+    DUK_PUT_NUMBER(ctx,  "size", path_stat.st_size, -2);
+    DUK_PUT_NUMBER(ctx,  "blksize", path_stat.st_blksize, -2);
+    DUK_PUT_NUMBER(ctx,  "blocks", path_stat.st_blocks, -2);
 
     long long atime, mtime, ctime;
     atime = path_stat.st_atime * 1000;
@@ -1944,7 +1950,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         close(child2par[0]);
         close(stdin_pipe[1]);
         close(stdin_pipe[0]);
-        DUK_PUT(ctx, int, "pid", pid2, -2);
+        DUK_PUT_NUMBER(ctx,  "pid", pid2, -2);
 
         // set stderr and stdout to null
         duk_push_null(ctx);
@@ -2019,8 +2025,8 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         duk_put_prop_string(ctx, -2, "stderr");
 
         DUK_PUT(ctx, boolean, "timedOut", arg.killed, -2);
-        DUK_PUT(ctx, int, "exitStatus", exit_status, -2);
-        DUK_PUT(ctx, int, "pid", pid, -2);
+        DUK_PUT_NUMBER(ctx,  "exitStatus", exit_status, -2);
+        DUK_PUT_NUMBER(ctx,  "pid", pid, -2);
         free(stdout_buf);
         free(stderr_buf);
         close(stdout_pipe[0]);
