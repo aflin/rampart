@@ -45,13 +45,13 @@ testFeature("polyfill loaded",
 */
 {
     function foo () { return 1; }
-    foo() === 1;
+    var ret = (foo() === 1);
     {
         function foo () { return 2; }
-        foo() === 2;
+        ret = ret && (foo() === 2);
     }
     testFeature("block scoped func",(
-    foo() === 1));
+    ret && foo() === 1));
 }
 
 var evens=[2,4,6,8];
