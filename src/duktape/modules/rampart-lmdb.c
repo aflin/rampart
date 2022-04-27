@@ -2039,7 +2039,7 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
     size_t mapsize=16;
     unsigned int openflags=0;
     int convtype=RP_LMDB_BUFFER;
-    int maxdbs=256;
+    int maxdbs=256, create=0;
     char rdbpath[PATH_MAX];
     LMDB_ENV *lenv = NULL;
     duk_idx_t obj_idx=-1, bool_idx=-1, str_idx = -1, i=0;
@@ -2101,6 +2101,7 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
 
     if (bool_idx>-1 && duk_get_boolean(ctx, 1) != 0)
     {
+        create = 1;
         mode_t mode=0755;
         int ret = rp_mkdir_parent(dbpath, mode);
         if(ret==-1)
@@ -2109,7 +2110,21 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
 
     dbpath = realpath(dbpath, rdbpath);
     if(!dbpath)
-        RP_THROW(ctx, "lmdb.init - error getting realpath: %s", strerror(errno));
+        RP_THROW(ctx, "lmdb.init - error opening database at '%s': %s", duk_get_string(ctx, str_idx), strerror(errno));
+
+    // if noCreate, check for db file, if dir exists.
+    if(!create) {
+        char fn[] = "data.mdb";
+        char dbfile[strlen(dbpath) + strlen(fn) + 2];
+        struct stat sb;
+
+        strcpy(dbfile, dbpath);
+        strcat(dbfile, "/");
+        strcat(dbfile, fn);
+
+        if (stat(dbfile, &sb) == -1)
+            RP_THROW(ctx, "lmdb.init - error opening database file at '%s': %s", dbfile, strerror(errno));
+    }
 
 #define check_set_flag(propname, flagname) do{\
     if(duk_get_prop_string(ctx, obj_idx, propname)){\
