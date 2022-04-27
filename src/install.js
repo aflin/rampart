@@ -2,6 +2,8 @@
 
 rampart.globalize(rampart.utils);
 
+var iam = trim(exec('whoami').stdout);
+
 var singledir_install = {
     bin:          "/bin",
     include:      "/include",
@@ -42,9 +44,8 @@ function get_install_choice() {
 4) /usr (not recommened)
 5) custom
 6) links only from this dir
-h) help
 `);
-    return getresp('h');
+    return getresp('');
 }
 
 function greetings(){
@@ -57,7 +58,7 @@ Rampart modules use many different libraries which all use various
 permissive open source licenses.
 
 The one exception is rampart-sql and the texis library used in rampart-sql,
-which uses a source available license (see LICENSE-rsal.txt in the install
+which uses a source available license (see the 'LICENSE' file in the install
 directory) and is available without charge for non-profit, personal,
 education and certain other uses.  See license for details.
 
@@ -80,8 +81,11 @@ function has_write_perm(dir, noPrintErr) {
         touch(dir + '/.testperm');
         rmFile(dir + '/.testperm');
     } catch (e) {
-        if(!noPrintErr)
+        if(!noPrintErr) {
             printf("You do not have write permissions in '%s'\n", dir);
+            printf("Press any key to continue\n");
+            getresp("");
+        }
         ret=false;
     }
     return ret;
@@ -95,7 +99,7 @@ function prevdir(dir) {
     return subdir;
 }
 
-function check_create_perm(dir){
+function check_create_perm(dir, noPrintErr){
     // does the directory exist?
     var ret=false;
     var subdir = dir;
@@ -106,7 +110,7 @@ function check_create_perm(dir){
     while (!stat(subdir))
         subdir = prevdir(subdir);
 
-    if(!has_write_perm(subdir))
+    if(!has_write_perm(subdir, noPrintErr))
         return false;
 
     return subdir;
@@ -299,6 +303,10 @@ function do_install_choice(choice) {
                     return false;
                 if (!check_make_dir(loc))
                     return false;
+            } else {
+                if(!check_create_perm(loc)) {
+                    return false;
+                }
             }
             printf("create links to binaries in '/usr/local/bin'? [Y/n]\n");
             resp=getresp("y");            
@@ -314,33 +322,56 @@ function do_install_choice(choice) {
             console.log(`creating links from "${src}/bin/*" to /usr/local/bin`);
             do_make_links(src);
             break;
-            
     }
     return true;
 }
 
 function choose_install() {
-    var choice=' ';// = get_install_choice();
+    var i=0, choice=' ';// = get_install_choice();
 
+    // we already checked /usr/local/bin at the beginning, below
+    var optWriteWarn = (iam=='root' || has_write_perm("/opt", true)) ? "":"*";
+    var usrWriteWarn = (iam=='root' || has_write_perm("/usr", true)) ? "":"*";
+
+    // /usr/local/rampart might exist and we don't have permission
+    var usrLocalRampartWriteWarn = "";
+    if ( iam!='root' && stat("/usr/local/rampart") && !has_write_perm("/usr/local/rampart",true) )
+        usrLocalRampartWriteWarn = "*";
+
+    //check /usr/local/lib/rampart
+    var usrLocalLibRampartWarn = "*";
+    if ( iam!='root') {
+        if (stat("/usr/local/lib/rampart-modules") && has_write_perm("/usr/local/lib/rampart-modules",true))
+            usrLocalLibRampartWarn = "";
+        else if (check_create_perm("/usr/local/lib/rampart-modules",true))
+            usrLocalLibRampartWarn = "";
+    } else
+        usrLocalLibRampartWarn = "";
+
+    var warnText = '';
+    if (optWriteWarn.length || usrWriteWarn.length)
+        warnText = `
+* You do not currently have write permissions to this directory or a necessary subdirectory.
+`;
     while( "123456".indexOf(choice) == -1){
         clear();
         printf('%s', 
 `Install help:
 
-1) /usr/local/rampart
+1) /usr/local/rampart${usrLocalRampartWriteWarn}
     - All necessary files are installed into the above directory.
     - Soft links for binaries are made in '/usr/local/bin'.
 
-2) /opt/rampart
+2) /opt/rampart${optWriteWarn}
     - same as 1 but into '/opt/rampart'.
 
-3) /usr/local
+3) /usr/local${usrLocalLibRampartWarn}
     - Binaries are installed to '/usr/local/bin'.
-    - Modules are installed to '/usr/local/lib/rampart-modules'.
+    - Modules are installed to '/usr/local/lib/rampart-modules'.${usrLocalLibRampartWarn}
 
-4) /usr
+4) /usr${usrWriteWarn}
     - Same as 3, but with prefix '/usr' instead of '/usr/local'.
-      **NOTE** install into '/usr' is discouraged.  Don't do this unless you
+      NOTE: install into '/usr' is discouraged.  Don't do this unless you
       know what you are doing.
 
 5) custom
@@ -349,14 +380,11 @@ function choose_install() {
 6) links only
     - Keep files in this directory. Make links in '/usr/local/bin'.
 
-h) help
-    - This Message.
-
-* NOTE that this install utility will overwrite an old installation.  If you
+  NOTE that this install utility will overwrite an old installation.  If you
   would like to keep your old installation, install the current in a
   different directory, or alternatively press ctrl-c to exit, move the
   current installation to a new location and re-run this script.
-
+${warnText}
 --------------------
 `);
         choice=get_install_choice();
@@ -517,6 +545,37 @@ Press any key to continue.`);
 
 
 /* ************ main ******************* */
+
+
+if (iam != 'root') {
+    if(!has_write_perm("/usr/local/bin",true))
+    {
+        printf (`
+_________________________________________________________
+|  You do not have write permissions for /usr/local/bin. |
+|  You should be root or use:                            |
+|                                                        |
+|       sudo ./install.js                                |
+|                                                        |
+|  to proceed.                                           |
+|________________________________________________________|
+
+ALTERNATIVELY:
+
+  If you want to use rampart right here where it is, that is fine too.
+  You will likely want to add the bin directory to your path like such:
+
+        PATH=${process.scriptPath}/bin:\$PATH
+
+  And to make it permanent, add the above line to the bottom of, e.g., ~/.bashrc
+
+  In addition, see LICENSE file in this directory and also pay a visit to
+        https://rampart.dev/docs/
+`);
+        process.exit(1);
+    }
+}
+
 
 // change to script directory
 chdir(process.scriptPath);
