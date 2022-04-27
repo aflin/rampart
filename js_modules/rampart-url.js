@@ -166,7 +166,7 @@ function components(url, pathOnly) {
             // scheme      = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
             if( ! /^[a-z][a-z0-9\+\-\.]+/.test(ret.scheme) )
                 return;
-            tmp = url.substring(pos+1).toLowerCase();
+            tmp = url.substring(pos+1);
         } else 
             return;
 
@@ -419,7 +419,7 @@ else
            "host": "rampart.dev",
            "authority": "//rampart.dev:8088",
            "path": "/this/",
-           "fullPath": "/this/that.html",
+           "fullPath": "/this/THAT.html",
            "queryString": {
               "raw": "dir=/my/dir",
               "components": {
@@ -427,11 +427,11 @@ else
               }
            },
            "hash": "",
-           "url": "https://rampart.dev:8088/this/that.html?dir=/my/dir",
-           "href": "https://rampart.dev:8088/this/that.html?dir=/my/dir",
+           "url": "https://rampart.dev:8088/this/THAT.html?dir=/my/dir",
+           "href": "https://rampart.dev:8088/this/THAT.html?dir=/my/dir",
            "portText": "8088",
            "port": 8088,
-           "file": "that.html"
+           "file": "THAT.html"
         },
         {
            "scheme": "https",
@@ -571,7 +571,7 @@ else
                  "fullPath", "hash", "url", "href", "portText", "port", "file"            ];
 
     test = [
-        "https://rampart.dev:8088/this/that.html?dir=/my/dir",
+        "https://rampart.dev:8088/this/THAT.html?dir=/my/dir",
         "https://rampart.dev:8088/this/that.html?/my/dir",
         "https://rampart.dev:8088/this/that.html?%2fmy/dir&x=%2fyour/dir/",
         "https://rampart.dev?dir=/my/dir#placemarker",
@@ -588,6 +588,8 @@ else
             var ret = true;
             for (var j = 0; j<testkeys.length;j++) {
                 var key = testkeys[j];
+                if( e[key] != r[key] )
+                    console.log(`expecting "${e[key]}", got "${r[key]}"`)
                 ret = ret &&  e[key] == r[key];
             }
             if(e.queryString.components) {
