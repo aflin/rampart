@@ -2089,17 +2089,13 @@ int main(int argc, char *argv[])
                 isstdin=1;
                 goto dofile;
             }
-            // store old terminal settings
-            //struct termios old_tio, new_tio;
-            //tcgetattr(STDIN_FILENO, &old_tio);
-            //new_tio = old_tio;
+            
+            // event loop doesn't work with interactive at the moment.
+            duk_get_global_string(ctx,"rampart");
+            duk_del_prop_string(ctx, -1, "event");
+            duk_pop(ctx);
 
-            // disable buffered output and echo
-            //new_tio.c_lflag &= (~ICANON & ~ECHO);
-            //tcsetattr(STDIN_FILENO, TCSANOW, &new_tio);
             int ret = repl(ctx);
-            // restore terminal settings
-            //tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
             return ret;
         }
         else
