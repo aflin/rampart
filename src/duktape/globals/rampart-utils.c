@@ -3177,7 +3177,7 @@ static inline void hash_one(duk_context *ctx, duk_idx_t idx, int type, void *map
 
 static duk_ret_t _hash(duk_context *ctx, void *map, size_t sz)
 {
-    int type=HASH_TYPE_CITY64;
+    int type=HASH_TYPE_CITY;
     duk_idx_t val_idx=-1, opts_idx=-1;
     int hexconv=1;
 
@@ -3202,15 +3202,15 @@ static duk_ret_t _hash(duk_context *ctx, void *map, size_t sz)
 
         if(type_name)
         {
-            if(!strcmp(type_name,"city128"))
-                type=HASH_TYPE_CITY;
+            if(!strcmp(type_name,"city"))
+                type=HASH_TYPE_CITY64;
             else if(!strcmp(type_name,"murmur"))
                 type=HASH_TYPE_MURMUR;
             else if(!strcmp(type_name,"both"))
                 type=HASH_TYPE_BOTH;
-            else if(strcmp(type_name,"city"))
+            else if(strcmp(type_name,"city128"))
                 RP_THROW(ctx, "hash() - unknown value for option 'type' ('%s')", type_name);
-            //else is city64
+            //else is city128
         }
 
         if(duk_get_prop_string(ctx, opts_idx, "returnBuffer") && duk_get_boolean_default(ctx, -1, 0))
