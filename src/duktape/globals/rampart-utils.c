@@ -4190,6 +4190,11 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gettype)
         if(!fgets(buf, readlen+1, f))
         {
           free(buf);
+          if(feof(f))
+          {
+              duk_push_null(ctx);
+              return 1;
+          }
           RP_THROW(ctx, "error fgets(): error reading");
         }
     }
