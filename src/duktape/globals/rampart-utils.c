@@ -1252,6 +1252,10 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
                 length = (long) REQUIRE_NUMBER(ctx, -1, "readFile() - option 'length' must be a Number");
             duk_pop(ctx);
         
+            if(duk_get_prop_string(ctx, obj_idx, "returnString"))
+                retstring=REQUIRE_BOOL(ctx,-1, "readFile() - option 'returnString' must be a Boolean");
+
+            // remove this eventually
             if(duk_get_prop_string(ctx, obj_idx, "retString"))
                 retstring=REQUIRE_BOOL(ctx,-1, "readFile() - option 'retString' must be a Boolean");
         }
