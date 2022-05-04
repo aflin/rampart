@@ -6,9 +6,8 @@
  */
 
 #include "rampart.h"
-#include "./include/version.h"
-#include "../build/include/timestamp.h"
 #include "duktape/register.h"
+#include "include/version.h"
 #include <stdio.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -2038,21 +2037,12 @@ int main(int argc, char *argv[])
     duk_put_prop_string(ctx, -2, "exitfuncs");
     duk_pop(ctx);
 
-    if (!duk_get_global_string(ctx, "rampart"))
-    {
-        duk_pop(ctx);
-        duk_push_object(ctx);
-    }
-    duk_push_sprintf(ctx, "%d.%d.%d%s+%s", RAMPART_VERSION_MAJOR, RAMPART_VERSION_MINOR, RAMPART_VERSION_PATCH, RAMPART_VERSION_PRERELEASE, RAMPART_VERSION_TIMESTAMP);
-    duk_put_prop_string(ctx, -2, "version");
-    duk_push_number(ctx, (double) RAMPART_VERSION_MAJOR*10000 +  RAMPART_VERSION_MINOR*100 + RAMPART_VERSION_PATCH);
-    duk_put_prop_string(ctx, -2, "versionNumber");
-
-
-    duk_put_global_string(ctx, "rampart");
 
     duk_init_context(ctx);
     main_ctx = ctx;
+
+    //version.c
+    duk_rp_push_rampart_version(ctx);
 
     signal(SIGINT, sigint_handler);
     signal(SIGTERM, sigint_handler);

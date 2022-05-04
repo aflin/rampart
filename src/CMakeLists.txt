@@ -38,10 +38,10 @@ add_compile_options(-Wall -g -O2 -std=c99)
 #https://stackoverflow.com/questions/24292898/compile-date-and-time-using-cmake
 make_directory(${CMAKE_BINARY_DIR}/include)
 FILE (WRITE ${CMAKE_BINARY_DIR}/include/timestamp.cmake "STRING(TIMESTAMP TIMEZ UTC)\n")
-FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(WRITE ${CMAKE_BINARY_DIR}/include/timestamp.h \"#ifndef TIMESTAMP_H\\n\")\n")
-FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/timestamp.h \"#define TIMESTAMP_H\\n\\n\")\n")
-FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/timestamp.h \"#define RAMPART_VERSION_TIMESTAMP \\\"\${TIMEZ}\\\"\\n\\n\")\n")
-FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/timestamp.h \"#endif // TIMESTAMP_H\\n\")\n")
+FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(WRITE ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#ifndef TIMESTAMP_H\\n\")\n")
+FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#define TIMESTAMP_H\\n\\n\")\n")
+FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#define RAMPART_VERSION_TIMESTAMP \\\"\${TIMEZ}\\\"\\n\\n\")\n")
+FILE (APPEND ${CMAKE_BINARY_DIR}/include/timestamp.cmake "FILE(APPEND ${CMAKE_BINARY_DIR}/include/rampart_timestamp.h \"#endif // TIMESTAMP_H\\n\")\n")
 ADD_CUSTOM_TARGET (
     timestamp
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_BINARY_DIR}/include/timestamp.cmake
@@ -65,6 +65,7 @@ add_executable(rampart
 	linenoise.c
 	whereami.c
 	setproctitle.c
+    version.c
 	cmdline.c
 )
 
@@ -106,6 +107,7 @@ include_directories(
 	${LIBEVENT_TARGET_DIR}/include
 	${PROJECT_SOURCE_DIR}/extern/libevent/include
 	${PROJECT_BINARY_DIR}/texis/contrib/jansson-2.12/include/
+	${PROJECT_BINARY_DIR}/include/
 	${PROJECT_SOURCE_DIR}/src/duktape/globals/hash_random/
 )
 
