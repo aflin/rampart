@@ -117,6 +117,40 @@ int isBlockTag(TidyTagId id)
     }
 }
 
+// These get an extra \n
+int isSectionTag(TidyTagId id)
+{
+    switch(id)
+    {
+        case TidyTag_ARTICLE:
+        case TidyTag_ASIDE:
+        case TidyTag_BLOCKQUOTE:
+        case TidyTag_FOOTER:
+        case TidyTag_H1:
+        case TidyTag_H2:
+        case TidyTag_H3:
+        case TidyTag_H4:
+        case TidyTag_H5:
+        case TidyTag_H6:
+        case TidyTag_HR:
+        case TidyTag_MAIN:
+        case TidyTag_NAV:
+        case TidyTag_P:
+        case TidyTag_UL:
+        case TidyTag_OL:
+        case TidyTag_DL:
+        case TidyTag_SECTION:
+        case TidyTag_TABLE:
+        case TidyTag_VIDEO:
+        case TidyTag_PRE:
+        case TidyTag_TEXTAREA:
+        case TidyTag_TITLE:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
 int isSingletonTag(TidyTagId id)
 {
     switch(id)
@@ -162,6 +196,8 @@ TidyTag_TIME TidyTag_TRACK
 #define optEnumLsts 1 << 3
 #define optTitleTxt 1 << 4
 #define optALinks   1 << 5
+#define optHRs      1 << 6
+#define optImgLinks 1 << 7
 
 #define testOpt(optOption) ( (optOption) & opts)
 
@@ -583,7 +619,7 @@ static void putdoctype( TidyDoc tdoc, TidyNode tnod, TidyBuffer *buf, ctmbstr na
     {
         Node *cont = node->content;
         int len = cont->end - cont->start;
-        
+
         tidyBufAppend(buf, "[<!", 3);
         tidyBufAppend(buf, &(doc->lexer->lexbuf[cont->start]), len);
         tidyBufAppend(buf, ">]", 3);
@@ -840,13 +876,16 @@ revisit indentation later
     return buf;
 }
 
-TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, int tag_start_addnl, int opts)
+TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, int listind, int tag_end_nl, int opts)
 {
     TidyNode child;
     TidyNodeType type;
+    TidyTagId lastid = 0;
 
     for ( child = tidyGetChild(start); child; child = tidyGetNext(child) )
     {
+        TidyTagId id = tidyNodeGetId( child );
+
         type = tidyNodeGetType( child );
         switch (type)
         {
@@ -861,53 +900,56 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                     tbuf.size- (tbuf.bp[tbuf.size-1]=='\n' ? 1 : 0)
                 );
                 tidyBufFree (&tbuf);
-                tag_start_addnl=0; /* flag that last round ended in text */
+                tag_end_nl=0;
                 break;
             }
+            case TidyNode_StartEnd:
             case TidyNode_Start:
             {
-                TidyTagId id = tidyNodeGetId( child );
+                int indent=0;
+
+#define tag_indent(x) do {\
+    int i=(x);\
+    while(i--)tidyBufAppend(buf, "\t", 1);\
+} while(0)
+
+#define isBlockNotCell(id) ( isBlockTag((id)) && id!=TidyTag_TD && id!=TidyTag_TH )
+
+                if (isBlockNotCell(id) && buf->size>0 && buf->bp[buf->size -1] != '\n')
+                    tidyBufAppend(buf, "\n", 1);
+                else if( (id == TidyTag_TD || id == TidyTag_TH) && (lastid == TidyTag_TD || lastid == TidyTag_TH) )
+                    tidyBufAppend(buf, "\t", 1);
+
+                if( isSectionTag(id) && buf->size>1 && buf->bp[buf->size -2] != '\n')
+                    tidyBufAppend(buf, "\n", 1);
+
+                tag_end_nl=0;
                 if ( id==TidyTag_SCRIPT || id==TidyTag_STYLE)
                 {
                     break;
                 }
                 else
                 {
-                    int addnl=0;
-
-                    if(isBlockTag(id))
-                    {
-                        addnl=1;
-                        /* only if last was text node */
-                        tag_start_addnl = !tag_start_addnl;
-                    }
-                    else
-                    {
-                        tag_start_addnl = 0;
-                    }
-
-                    if (tag_start_addnl && buf->size>0 && buf->bp[buf->size -1] != '\n')
-                        tidyBufAppend(buf, "\n", 1);
-
-                    /* mark next round as ending with a tag */
-                    tag_start_addnl=addnl;
-
                     if (id==TidyTag_OL)
                     {
                         /* listno is a flag and a counter */
                         listno=1;
+                        indent=1;
                     }
-                    else if (id==TidyTag_UL)
+                    else if (id==TidyTag_UL || id==TidyTag_DL)
                     {
                         listno=0;
+                        indent=1;
                     }
                     /* number ordered lists and put "* " in front of unordered lists */
                     else if (id==TidyTag_LI && testOpt(optEnumLsts) )
                     {
+                        tag_indent(listind);
                         if(listno)
                         {
                             char lbuf[16];
                             int len=snprintf(lbuf, 16, "%d. ", listno++);
+
                             tidyBufAppend(buf, lbuf, len);
                         }
                         else
@@ -916,22 +958,15 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                         }
                     }
                     /*  indent dd in dt */
+                    else if (id==TidyTag_DT && testOpt(optEnumLsts) )
+                    {
+                        tag_indent(listind-1);
+                        tidyBufAppend(buf, "\t", 1);
+                    }
                     else if (id==TidyTag_DD && testOpt(optEnumLsts) )
                     {
-                        tidyBufAppend(buf, "    ", 4);
-                    }
-                    /* get alt text from images */
-                    else if ( id==TidyTag_IMG && testOpt(optAltText) )
-                    {
-                        const char *alttext=getAttr(child, "alt");
-                        if(alttext)
-                        {
-                            int len = strlen(alttext)+3;
-                            char lbuf[len];
-
-                            sprintf(lbuf, " %s ", alttext);
-                            tidyBufAppend(buf, lbuf, len-1);
-                        }
+                        tag_indent(listind);
+                        tidyBufAppend(buf, "\t", 1);
                     }
                     /* get meta name=keywords|description */
                     else if (id==TidyTag_META)
@@ -939,50 +974,124 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
                         const char *name=getAttr(child, "name");
                         if (name)
                         {
-                            if(
-                                (testOpt(optMetaDesc) && !strcasecmp(name,"description"))
-                                ||
-                                (testOpt(optMetaKeyw) && !strcasecmp(name,"keywords"))
-                            )
+                            int metaType = 0;
+                            if ( testOpt(optMetaDesc) && !strcasecmp(name,"description") )
+                                metaType = 1;
+                            else if ( testOpt(optMetaKeyw) && !strcasecmp(name,"keywords") )
+                                metaType=2;
+                            if( metaType )
                             {
                                 const char *cont=getAttr(child, "content");
                                 if(cont)
                                 {
-                                    int len = strlen(cont)+3;
+                                    int len = strlen(cont)+16;
                                     char lbuf[len];
+                                    char *tname = (metaType==1) ? "description: " : "keywords: ";
 
-                                    sprintf(lbuf, "\n%s\n", cont);
-                                    tidyBufAppend(buf, lbuf, len-1);
+                                    sprintf(lbuf, "%s%s\n", tname, cont);
+                                    tidyBufAppend(buf, lbuf, strlen(lbuf));
                                 }
 
                             }
                         }
                     }
-
-                    /* print title text (viewable if mouse hovers) */
-                    if (testOpt(optTitleTxt))
+                    /* get alt text from images */
+                    else if ( id==TidyTag_IMG && (testOpt(optAltText) || testOpt(optImgLinks)) )
                     {
-                        const char *title = getAttr(child, "title");
+                        const char *alttext=getAttr(child, "alt");
+                        if(testOpt(optImgLinks) )
+                            tidyBufAppend(buf,"![",2);
 
-                        if(title)
+                        if(alttext &&  testOpt(optAltText))
                         {
-                            int len = strlen(title)+3;
+                            int len = strlen(alttext)+3;
                             char lbuf[len];
+                            char *space = testOpt(optImgLinks)? "" : " ";
 
-                            sprintf(lbuf, " %s ", title);
-                            tidyBufAppend(buf, lbuf, len-1);
+                            sprintf(lbuf, "%s%s%s", space,alttext,space);
+                            tidyBufAppend(buf, lbuf, len-1 - (testOpt(optImgLinks)? 2:0));
                         }
                     }
 
-                    /* seperate a tags from surrounding text */
-                    if(id == TidyTag_A && buf->size>0 && buf->bp[buf->size -1] != '\n' && buf->bp[buf->size -1] != ' ')
-                        tidyBufAppend(buf, " ", 1);
 
-                    buf=dumpText(doc, child, buf, listno, tag_start_addnl, opts);
-
-                    /* seperate a tags from surrounding text */
+                    /* seperate A tags from surrounding text, add brackets if optALinks */
                     if(id == TidyTag_A && buf->size>0 && buf->bp[buf->size -1] != '\n' && buf->bp[buf->size -1] != ' ')
-                        tidyBufAppend(buf, " ", 1);
+                        tidyBufAppend(buf, testOpt(optALinks)? " [":" ", testOpt(optALinks)? 2:1);
+                    else if (id == TidyTag_A && testOpt(optALinks))
+                        tidyBufAppend(buf,"[",1);
+
+                    // we need to put title text before child node text unless A or IMG. So check if
+                    // an A or IMG link.  If not, append it here.
+                    if( testOpt(optTitleTxt) )
+                    {
+                        if( !(
+                              (id == TidyTag_IMG && testOpt(optImgLinks) && getAttr(child, "src")) ||
+                              (id == TidyTag_A   && testOpt(optALinks)   && getAttr(child, "href"))
+                            )
+                        )
+                        {
+                            const char *title = getAttr(child, "title");
+
+                            if(title)
+                            {
+                                int len = strlen(title)+2;
+                                char lbuf[len];
+
+                                sprintf(lbuf, "%s\n", title);
+                                tidyBufAppend(buf, lbuf, len-1);
+                            }
+                        }
+                    }
+
+                    // recurse for child nodes
+                    buf=dumpText(doc, child, buf, listno, listind+indent, tag_end_nl, opts);
+
+                    /* seperate A tags from surrounding text, add brackets if optALinks */
+                    if(id == TidyTag_A && buf->size>0 && buf->bp[buf->size -1] != '\n' && buf->bp[buf->size -1] != ' ')
+                        tidyBufAppend(buf, testOpt(optALinks)? "]":" ", 1);
+                    else if (id == TidyTag_A && testOpt(optALinks))
+                        tidyBufAppend(buf,"]",1);
+
+                    /* do image links in markdown style */
+                    if(id == TidyTag_IMG && testOpt(optImgLinks) )
+                    {
+                        tidyBufAppend(buf,"]",1);
+                        const char *src = getAttr(child, "src");
+
+                        if(src)
+                        {
+                            if( testOpt(optTitleTxt) )
+                            {
+                                const char *title = getAttr(child, "title");
+                                int len = strlen(src)+3;
+
+                                if(title)
+                                {
+                                    len += strlen(title)+3;
+                                    char lbuf[len];
+
+                                    sprintf(lbuf, "(%s \"%s\")", src,title);
+                                    tidyBufAppend(buf, lbuf, len-1);
+                                }
+                                else
+                                {
+                                    char lbuf[len];
+
+                                    sprintf(lbuf, "(%s)", src);
+                                    tidyBufAppend(buf, lbuf, len-1);
+                                }
+                            }
+                            else
+                            {
+                                int len = strlen(src)+3;
+                                char lbuf[len];
+
+                                sprintf(lbuf, "(%s)", src);
+                                tidyBufAppend(buf, lbuf, len-1);
+                            }
+                        }
+                    }
+
 
                     /* print anchor links */
                     if(id==TidyTag_A && testOpt(optALinks) )
@@ -991,16 +1100,51 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
 
                         if(href)
                         {
-                            int len = strlen(href)+4;
-                            char lbuf[len];
+                            if( testOpt(optTitleTxt) )
+                            {
+                                const char *title = getAttr(child, "title");
+                                int len = strlen(href)+3;
 
-                            sprintf(lbuf, " (%s)", href);
-                            tidyBufAppend(buf, lbuf, len-1);
+                                if(title)
+                                {
+                                    len += strlen(title)+3;
+                                    char lbuf[len];
+
+                                    sprintf(lbuf, "(%s \"%s\")", href, title);
+                                    tidyBufAppend(buf, lbuf, len-1);
+                                }
+                                else
+                                {
+                                    char lbuf[len];
+
+                                    sprintf(lbuf, "(%s)", href);
+                                    tidyBufAppend(buf, lbuf, len-1);
+                                }
+                            }
+                            else
+                            {
+                                int len = strlen(href)+3;
+                                char lbuf[len];
+
+                                sprintf(lbuf, "(%s)", href);
+                                tidyBufAppend(buf, lbuf, len-1);
+                            }
                         }
                     }
 
-                    if (addnl && buf->size>0 && buf->bp[buf->size -1] != '\n')
+
+                    if(id == TidyTag_HR && testOpt(optHRs))
+                    {
+                        tidyBufAppend(buf, "---\n", 4);
+                    }
+
+                    if( isBlockNotCell(id) && !tag_end_nl && buf->size>0 && buf->bp[buf->size -1] != '\n')
                         tidyBufAppend(buf, "\n", 1);
+
+                    if( isSectionTag(id) && buf->size>1 && buf->bp[buf->size -2] != '\n')
+                        tidyBufAppend(buf, "\n", 1);
+
+                   tag_end_nl=1;
 
                     break;
                 }
@@ -1008,7 +1152,7 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
             default:
                 break;
         }
-
+        lastid=id;
     }
 
     return buf;
@@ -1132,8 +1276,7 @@ duk_ret_t duk_rp_html_totext(duk_context *ctx)
     TidyNode start;
     TidyDoc doc;
     TidyBuffer buf, *ret;
-    int i=0, opts=optAltText|optMetaDesc|optMetaKeyw|optEnumLsts;
-//    int makearray=-1;
+    int i=0, opts=0; //optAltText|optMetaDesc|optMetaKeyw|optEnumLsts;
     int makearray=1;
     duk_idx_t this_idx;
 
@@ -1143,12 +1286,15 @@ duk_ret_t duk_rp_html_totext(duk_context *ctx)
 
     if (duk_is_object(ctx, 0))
     {
+        setoptbool("imgAltText", optAltText);
         setoptbool("imageAltText", optAltText);
         setoptbool("metaDescription",optMetaDesc);
         setoptbool("metaKeywords",optMetaKeyw);
         setoptbool("titleText",optTitleTxt);
         setoptbool("aLinks",optALinks);
         setoptbool("enumerateLists",optEnumLsts);
+        setoptbool("showHRTags",optHRs);
+        setoptbool("imgLinks",optImgLinks);
 
         if(duk_get_prop_string(ctx, 0, "concatenate"))
         {
@@ -1204,7 +1350,7 @@ duk_ret_t duk_rp_html_totext(duk_context *ctx)
         if(tidyNodeGetType(start) == TidyNode_DocType)
             continue;
 
-        ret=dumpText(doc, start, ret, 0, 0, opts);
+        ret=dumpText(doc, start, ret, 0, 0, 0, opts);
 
         if(makearray)
         {
@@ -2709,6 +2855,30 @@ duk_ret_t duk_rp_html_pp(duk_context *ctx)
     }\
 } while (0)
 
+// turn thisOption into this-option
+static char * fixkey(const char *key)
+{
+    char *ret = NULL;
+    int i=0;
+
+    REMALLOC(ret, strlen(key) * 2);
+    while(*key)
+    {
+        if(i && isupper(*key))
+        {
+            ret[i++] = '-';
+            ret[i++] = tolower(*key);
+        }
+        else
+            ret[i++] = *key;
+
+        key++;
+    }
+
+    ret[i]='\0';
+    return ret;
+}
+
 duk_ret_t duk_rp_htmlparse(duk_context *ctx)
 {
 //    const char *html = REQUIRE_STRING(ctx, 0, "html.newDocument: first argument must be a string (html document)");
@@ -2757,7 +2927,9 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
         {
             const char *key=duk_get_string(ctx, -2);
             const char *val=duk_safe_to_string(ctx, -1);
-            int ret=tidyOptParseValue(tdoc, (ctmbstr)key, (ctmbstr)val);
+            char *dashedKey = fixkey(key);
+            int ret=tidyOptParseValue(tdoc, (ctmbstr)dashedKey, (ctmbstr)val);
+            free(dashedKey);
             if(!ret)
                 RP_THROW(ctx, "html.newDocument - error setting '%s' to '%s' - %s", key, val,tidy_errbuf->bp);
             duk_pop_2(ctx);
