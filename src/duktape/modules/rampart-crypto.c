@@ -34,7 +34,7 @@
     }
 /* make sure when we use RAND_ functions, we've seeded at least once */
 static int seeded=0;
-void checkseed(duk_context *ctx)
+static void checkseed(duk_context *ctx)
 {
     if(!seeded)
     {
@@ -721,7 +721,7 @@ static duk_ret_t duk_gaussrand(duk_context *ctx)
     double sigma = 1.0;
 
     if(!duk_is_undefined(ctx, 0))
-        REQUIRE_NUMBER(ctx, 0, "crypto.gaussrand requires a number (sigma) as it's argument");
+        sigma = REQUIRE_NUMBER(ctx, 0, "crypto.gaussrand requires a number (sigma) as it's argument");
 
     duk_push_number(ctx, gaussrand(ctx, sigma));
 
@@ -733,7 +733,7 @@ static duk_ret_t duk_normrand(duk_context *ctx)
     double scale = 1.0;
 
     if(!duk_is_undefined(ctx, 0))
-        REQUIRE_NUMBER(ctx, 0, "crypto.normrand requires a number (scale) as it's argument");
+        scale = REQUIRE_NUMBER(ctx, 0, "crypto.normrand requires a number (scale) as it's argument");
 
     duk_push_number(ctx, normrand(ctx, scale));
 

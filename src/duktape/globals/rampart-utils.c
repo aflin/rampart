@@ -3294,7 +3294,7 @@ duk_ret_t duk_rp_hash_file(duk_context *ctx)
 
 /* make sure when we use RAND_ functions, we've seeded at least once */
 static int seeded=0;
-void checkseed(duk_context *ctx)
+static void checkseed(duk_context *ctx)
 {
     if(!seeded)
     {
@@ -3330,9 +3330,14 @@ duk_ret_t duk_rp_srand(duk_context *ctx)
     return 0;
 }
 
+#define MAX_DOUBLE_INT (double)( ( (int64_t)1 << 53 ) -1 )
+#define MIN_DOUBLE_INT ( -1.0 * MAX_DOUBLE_INT )
+
+static double max_double_int = MAX_DOUBLE_INT, min_double_int=MIN_DOUBLE_INT;
+
 duk_ret_t duk_rp_rand(duk_context *ctx)
 {
-    uint64_t r;
+//    uint64_t r;
     double max=1.0, min=0.0;
 
     if(!duk_is_undefined(ctx,0))
@@ -3349,33 +3354,30 @@ duk_ret_t duk_rp_rand(duk_context *ctx)
         max = REQUIRE_NUMBER(ctx, 1, "rand() - second argument must be a number (max)");
 
     checkseed(ctx);
-    r=xorRand64();
-    duk_push_number(ctx, (((double)r/(double)UINT64_MAX) * (max - min) + min) );
-
+//    r=xorRand64();
+//    duk_push_number(ctx, (((double)r/(double)UINT64_MAX) * (max - min) + min) );
+    duk_push_number(ctx, ((double)randomRange(0,max_double_int)/ (double)max_double_int)  * (max - min) + min );
     return 1;
 }
 
-#define MAX_DOUBLE_INT (double)( ( (int64_t)1 << 53 ) -1 )
-#define MIN_DOUBLE_INT ( -1.0 * MAX_DOUBLE_INT )
-
-static double max_double_int = MAX_DOUBLE_INT, min_double_int=MIN_DOUBLE_INT;
 
 duk_ret_t duk_rp_irand(duk_context *ctx)
 {
     int64_t r;
-    double max=1.0, min=0.0, count=0.0;
+    double max=99.0, min=0.0, count=0.0;
+    duk_idx_t func_idx=-1;
 
-    if(!duk_is_undefined(ctx,0))
+    if(!duk_is_undefined(ctx,0) && !duk_is_function(ctx,0))
     {
         double t = REQUIRE_NUMBER(ctx, 0, "irand() - first argument must be a number");
 
-        if(duk_is_undefined(ctx,1))
+        if(duk_is_undefined(ctx,1) || duk_is_function(ctx,1))
             max=t;
         else
             min=t;
     }
 
-    if(!duk_is_undefined(ctx,1))
+    if(!duk_is_undefined(ctx,1) && !duk_is_function(ctx,1))
         max = REQUIRE_NUMBER(ctx, 1, "irand() - second argument must be a number (max)");
 
     if (max > max_double_int || max < min_double_int)
@@ -3391,9 +3393,16 @@ duk_ret_t duk_rp_irand(duk_context *ctx)
         min=t;
     }
 
+    if(duk_is_function(ctx, 2))
+        func_idx=2;
+    else if(duk_is_function(ctx, 1))
+        func_idx=1;
+    else if(duk_is_function(ctx, 0))
+        func_idx=0;
+
     checkseed(ctx);
 
-    if(!duk_is_function(ctx, 2))
+    if(func_idx == -1)
     {
         r=randomRange(min,max);
         duk_push_number(ctx, (double)r );
@@ -3403,7 +3412,7 @@ duk_ret_t duk_rp_irand(duk_context *ctx)
     // callback function
     while(1)
     {
-        duk_dup(ctx,2);
+        duk_dup(ctx, func_idx);
         r=randomRange(min,max);
         duk_push_number(ctx, (double)r );
         duk_push_number(ctx, count++);
@@ -3414,6 +3423,65 @@ duk_ret_t duk_rp_irand(duk_context *ctx)
     }
     
 }
+
+/* rand between -1.0 and 1.0 */
+#define rrand ( ((double)randomRange(0,max_double_int)/ (double)max_double_int) * 2.0 -1.0);
+
+static double gaussrand(duk_context *ctx, double sigma)
+{
+	double x, y, r2;
+   do
+   {
+		/* choose x,y in uniform square (-1,-1) to (+1,+1) */
+      x=rrand;
+      y=rrand;
+		/* see if it is in the unit circle */
+		r2 = x * x + y * y;
+   } while (r2 > 1.0 || r2 == 0);
+
+   /* Box-Muller transform */
+   return ((sigma * y * sqrtf (-2.0 * logf (r2) / r2)));
+}
+
+static double normrand(duk_context *ctx, double scale)
+{
+   double t;
+   t=gaussrand(ctx, 1.0)/5.0;
+   if(t>1.0)       t=1.0;  // truncate for scaling
+   else if(t<-1.0) t=-1.0;
+   t*=scale;
+   return(t);
+}
+
+static duk_ret_t duk_gaussrand(duk_context *ctx)
+{
+    double sigma = 1.0;
+
+    if(!duk_is_undefined(ctx, 0))
+        sigma = REQUIRE_NUMBER(ctx, 0, "crypto.gaussrand requires a number (sigma) as it's argument");
+
+    checkseed(ctx);
+
+    duk_push_number(ctx, gaussrand(ctx, sigma));
+
+    return 1;
+}
+
+static duk_ret_t duk_normrand(duk_context *ctx)
+{
+    double scale = 1.0;
+
+    if(!duk_is_undefined(ctx, 0))
+        scale = REQUIRE_NUMBER(ctx, 0, "crypto.normrand requires a number (scale) as it's argument");
+
+    checkseed(ctx);
+
+    duk_push_number(ctx, normrand(ctx, scale));
+
+    return 1;
+}
+
+
 
 #define HLL struct utils_hll_s
 
@@ -3794,6 +3862,10 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "rand");
     duk_push_c_function(ctx, duk_rp_irand, 3);
     duk_put_prop_string(ctx, -2, "irand");
+    duk_push_c_function(ctx, duk_gaussrand,  1);
+    duk_put_prop_string(ctx, -2, "gaussrand");
+    duk_push_c_function(ctx, duk_normrand,  1);
+    duk_put_prop_string(ctx, -2, "normrand");
     duk_push_c_function(ctx, duk_rp_hash, 2);
     duk_put_prop_string(ctx, -2, "hash");
     duk_push_c_function(ctx, duk_rp_hash_file, 2);
