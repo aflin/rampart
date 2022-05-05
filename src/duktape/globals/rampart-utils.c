@@ -3355,6 +3355,66 @@ duk_ret_t duk_rp_rand(duk_context *ctx)
     return 1;
 }
 
+#define MAX_DOUBLE_INT (double)( ( (int64_t)1 << 53 ) -1 )
+#define MIN_DOUBLE_INT ( -1.0 * MAX_DOUBLE_INT )
+
+static double max_double_int = MAX_DOUBLE_INT, min_double_int=MIN_DOUBLE_INT;
+
+duk_ret_t duk_rp_irand(duk_context *ctx)
+{
+    int64_t r;
+    double max=1.0, min=0.0, count=0.0;
+
+    if(!duk_is_undefined(ctx,0))
+    {
+        double t = REQUIRE_NUMBER(ctx, 0, "irand() - first argument must be a number");
+
+        if(duk_is_undefined(ctx,1))
+            max=t;
+        else
+            min=t;
+    }
+
+    if(!duk_is_undefined(ctx,1))
+        max = REQUIRE_NUMBER(ctx, 1, "irand() - second argument must be a number (max)");
+
+    if (max > max_double_int || max < min_double_int)
+        RP_THROW(ctx, "irand() - max must be a value between %g and %g\n", min_double_int, max_double_int);
+
+    if (min > max_double_int || min < min_double_int)
+        RP_THROW(ctx, "irand() - min must be a value between %g and %g\n", min_double_int, max_double_int);
+
+    if( min > max)
+    {
+        double t=max;
+        max=min;
+        min=t;
+    }
+
+    checkseed(ctx);
+
+    if(!duk_is_function(ctx, 2))
+    {
+        r=randomRange(min,max);
+        duk_push_number(ctx, (double)r );
+        return 1;
+    }
+
+    // callback function
+    while(1)
+    {
+        duk_dup(ctx,2);
+        r=randomRange(min,max);
+        duk_push_number(ctx, (double)r );
+        duk_push_number(ctx, count++);
+        duk_call(ctx,2);
+        if(! duk_get_boolean_default(ctx, -1, 1) )
+            return 0;
+        duk_pop(ctx);
+    }
+    
+}
+
 #define HLL struct utils_hll_s
 
 HLL {
@@ -3732,6 +3792,8 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "srand");
     duk_push_c_function(ctx, duk_rp_rand, 2);
     duk_put_prop_string(ctx, -2, "rand");
+    duk_push_c_function(ctx, duk_rp_irand, 3);
+    duk_put_prop_string(ctx, -2, "irand");
     duk_push_c_function(ctx, duk_rp_hash, 2);
     duk_put_prop_string(ctx, -2, "hash");
     duk_push_c_function(ctx, duk_rp_hash_file, 2);
