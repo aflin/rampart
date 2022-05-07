@@ -264,7 +264,9 @@ RPPATH rp_find_path(char *file, char *subdir)
             goto path_found;
         }
 
-        if(i==nlocs)
+        make_path:
+
+        if(i>=nlocs)
             break;
 
         plen = sd_file_len; //lenght of sd + file + 1
@@ -276,8 +278,10 @@ RPPATH rp_find_path(char *file, char *subdir)
         plen += strlen(locs[i]);
 
         //check if path is too long
-        if( strlen(locs[i]) + plen + 1 > PATH_MAX)
-            continue;
+        if( strlen(locs[i]) + plen + 1 > PATH_MAX) {
+            i++; //skip this one
+            goto make_path;
+        }
 
         strcpy(path,locs[i]);
 
@@ -292,11 +296,20 @@ RPPATH rp_find_path(char *file, char *subdir)
         //back to top of while to check path
     }
 
-    //look in exec path with no subdir
-    //TODO: THIS ONE IS QUESTIONABLE. revisit and rethink.
+    //look in rampart_dir path with no subdir
     if( strnlen(rampart_dir, PATH_MAX) + strnlen(file,PATH_MAX) + 2 < PATH_MAX)
     {
         strcpy(path,rampart_dir);
+        strcat(path,"/");
+        strcat(path,file);
+        if (stat(path, &sb) != -1)
+            goto path_found;
+    }
+
+    //look in rampart_bin path with no subdir
+    if( strnlen(rampart_bin, PATH_MAX) + strnlen(file,PATH_MAX) + 2 < PATH_MAX)
+    {
+        strcpy(path,rampart_bin);
         strcat(path,"/");
         strcat(path,file);
         if (stat(path, &sb) != -1)
@@ -697,7 +710,6 @@ void duk_process_init(duk_context *ctx)
     {   /* add process.argv */
         int i=0;
         char *s;
-        char *rampart_path=getenv("RAMPART_PATH");
 
         duk_push_array(ctx); /* process.argv */
 
@@ -740,18 +752,11 @@ void duk_process_init(duk_context *ctx)
             duk_put_prop_string(ctx,-2,"scriptName");
         }
 
-        if(rampart_path)
-        {
-            if(rampart_path[strlen(rampart_path)-1] != '/')
-                duk_push_string(ctx, rampart_path);
-            else
-                duk_push_lstring(ctx, rampart_path, (duk_size_t)(strlen(rampart_path)-1) );
-        }
-        else
-        {
-            duk_push_string(ctx, rampart_dir); //set from executable path - '/bin'
-        }
+        duk_push_string(ctx, rampart_dir); //set from executable path - '/bin$' if present
         duk_put_prop_string(ctx, -2, "installPath");
+
+        duk_push_string(ctx, rampart_bin); //set from executable path - including '/bin' if present
+        duk_put_prop_string(ctx, -2, "installPathBin");
     }
 
     duk_put_prop_string(ctx,-2,"process");

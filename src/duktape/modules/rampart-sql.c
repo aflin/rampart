@@ -4216,6 +4216,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
    Initialize Sql module 
    ************************************************** */
 char install_dir[PATH_MAX+21];
+duk_ret_t duk_rp_exec(duk_context *ctx);
 
 duk_ret_t duk_open_module(duk_context *ctx)
 {
@@ -4226,46 +4227,28 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     if (!db_is_init)
     {
-        char *rampart_path=getenv("RAMPART_PATH");
         char *TexisArgv[2];
-        int nargs=2;
 
         RP_MINIT(&tx_handle_lock);
         RP_MINIT(&tx_create_lock);
 
         REMALLOC(errmap, sizeof(char*));
         errmap[0]=NULL;
-        //if 0 was to fork, we'd do this.
+        //if thread 0 was to fork, we'd do this.
         //errmap[0] = mmap(NULL, msgbufsz, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);;
         //but currently it does not, so we do this:
         REMALLOC(errmap[0], msgbufsz);
         mmsgfh = fmemopen(errmap[0], msgbufsz, "w+");
 
         TexisArgv[0]=rampart_exec;
-        if(!rampart_path)
-        {
-            struct stat sb;
 
-            
-//            if (stat("/usr/local/rampart", &sb) == 0 && S_ISDIR(sb.st_mode))
-//                TexisArgv[1]="--install-dir=/usr/local/rampart";
-            if (stat(rampart_dir, &sb) == 0 && S_ISDIR(sb.st_mode))
-            {
-                strcpy (install_dir, "--install-dir-force=");
-                strcat (install_dir, rampart_dir);
-                TexisArgv[1]=install_dir;
-            }
-            else
-                nargs=1;
-        }
-        else
-        {
-            strcpy (install_dir, "--install-dir-force=");
-            strcat (install_dir, rampart_path);
-            TexisArgv[1]=install_dir;
-        }
+        // To help find texislockd -- which might be only in the same dir
+        // as 'rampart' executable.
+        strcpy (install_dir, "--install-dir-force=");
+        strcat (install_dir, rampart_bin);
+        TexisArgv[1]=install_dir;
 
-        if( TXinitapp(NULL, NULL, nargs, TexisArgv, NULL, NULL) )
+        if( TXinitapp(NULL, NULL, 2, TexisArgv, NULL, NULL) )
             RP_THROW(ctx, "Failed to initialize rampart-sql in TXinitapp");
 
         db_is_init = 1;

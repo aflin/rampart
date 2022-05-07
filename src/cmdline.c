@@ -1904,6 +1904,7 @@ int   rampart_argc;
 char argv0[PATH_MAX];
 char rampart_exec[PATH_MAX];
 char rampart_dir[PATH_MAX];
+char rampart_bin[PATH_MAX];
 
 int main(int argc, char *argv[])
 {
@@ -1930,7 +1931,7 @@ int main(int argc, char *argv[])
     ptr=strrchr(rampart_dir, '/');
     if(!ptr)
     {
-        fprintf(stderr,"could not find subpath of '%s'\n", rampart_dir);
+        fprintf(stderr,"could not get subpath of '%s'\n", rampart_dir);
         exit(1);
     }
     if( ptr-rampart_dir > 4 && 
@@ -1941,6 +1942,15 @@ int main(int argc, char *argv[])
       )
         ptr-=4;
     *ptr='\0';
+
+    strcpy(rampart_bin, rampart_exec);
+    ptr=strrchr(rampart_bin, '/');
+    if(!ptr)
+    {
+        fprintf(stderr,"could not get subpath of '%s'\n", rampart_dir);
+        exit(1);
+    }
+    *ptr='\0';    
 
     /* timeout cleanups */
     add_exit_func(free_tos, NULL);
