@@ -2640,16 +2640,26 @@ duk_ret_t duk_rp_sql_import(duk_context *ctx, int isfile)
 
             tbcols++;
         }        
+        /* table doesn't exist? */
+        if(!tbcols)
+        {
+            closecsv;
+            h_close(h);
+            RP_THROW(ctx, "Table '%s' does not exist.  Table must exist before importing CSV", dcsv.tbname);
+        }
+
         field_names[tbcols] = NULL;
 
     }
 
 #define fn_cleanup do { \
     int j=0; \
-    while(field_names[j]!=NULL) \
-        free(field_names[j++]); \
-    free(field_names); \
-    free(field_type); \
+    if(tbcols){ \
+      while(field_names[j]!=NULL) \
+          free(field_names[j++]); \
+    }\
+    if(field_names)free(field_names); \
+    if(field_type)free(field_type); \
     h_close(h);\
     closecsv; \
 } while(0);
