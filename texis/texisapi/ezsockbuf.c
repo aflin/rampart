@@ -79,10 +79,13 @@ TXEZsockbuf_getline(TXEZsockbuf *ezsb)
   }
   return r;
 }
-
+#include <unistd.h>
 TXEZsockbuf *
 TXEZsockbuf_close(TXEZsockbuf *ezsb)
 {
+  if(ezsb->socket>0)
+      close(ezsb->socket);
+
   if(ezsb->buffer) {
     ezsb->buffer = TXfree(ezsb->buffer);
     ezsb->bufsz = ezsb->freesz = ezsb->availsz = 0;
