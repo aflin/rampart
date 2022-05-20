@@ -434,8 +434,45 @@ static SFI *check_fork(DB_HANDLE *h, int create)
 
     if(finfo == NULL)
     {
-        fprintf(stderr, "previously opened pipe info no longer exists?  This should not be possible.\n");
-        exit(1);
+        if(!create)
+        {
+            fprintf(stderr, "Unexpected Error: previously opened pipe info no longer exists for forkno %d\n",h->forkno);
+            exit(1);
+        }
+        else
+        {
+            //printf("creating finfo for forkno %d\n", h->forkno);
+            REMALLOC(sqlforkinfo[h->forkno], sizeof(SFI));
+            finfo=sqlforkinfo[h->forkno];
+            finfo->reader=-1;
+            finfo->writer=-1;
+            finfo->childpid=0;
+            /* the field list for any fetch calls*/
+            finfo->fl=NULL;
+            /* the shared mmap */
+            finfo->mapinfo=NULL;
+            /* the aux buffer */
+            finfo->aux=NULL;
+            finfo->auxsz=0;
+            finfo->auxpos=NULL;
+            REMALLOC(finfo->mapinfo, sizeof(FMINFO));
+
+            finfo->mapinfo->mem = mmap(NULL, FORKMAPSIZE, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);;
+            if(finfo->mapinfo->mem == MAP_FAILED)
+            {
+                fprintf(stderr, "mmap failed: %s\n",strerror(errno));
+                exit(1);
+            }
+            finfo->mapinfo->pos = finfo->mapinfo->mem;
+
+            errmap[h->forkno] = mmap(NULL, msgbufsz, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);;
+            if(errmap[h->forkno] == MAP_FAILED)
+            {
+                fprintf(stderr, "errmsg mmap failed: %s\n",strerror(errno));
+                exit(1);
+            }
+        }
+
     }
 
     parent_pid=getpid();
@@ -1182,39 +1219,6 @@ static int fork_open(DB_HANDLE *h)
     if (h->forkno>=n_sfi)
         return ret;
 
-    if(sqlforkinfo[h->forkno] == NULL)
-    {
-        REMALLOC(sqlforkinfo[h->forkno], sizeof(SFI));
-        finfo=sqlforkinfo[h->forkno];
-        finfo->reader=-1;
-        finfo->writer=-1;
-        finfo->childpid=0;
-        /* the field list for any fetch calls*/
-        finfo->fl=NULL;
-        /* the shared mmap */
-        finfo->mapinfo=NULL;
-        /* the aux buffer */
-        finfo->aux=NULL;
-        finfo->auxsz=0;
-        finfo->auxpos=NULL;
-        REMALLOC(finfo->mapinfo, sizeof(FMINFO));
-
-        finfo->mapinfo->mem = mmap(NULL, FORKMAPSIZE, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);;
-        if(finfo->mapinfo->mem == MAP_FAILED)
-        {
-            fprintf(stderr, "mmap failed: %s\n",strerror(errno));
-            exit(1);
-        }
-        finfo->mapinfo->pos = finfo->mapinfo->mem;
-
-        errmap[h->forkno] = mmap(NULL, msgbufsz, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);;
-        if(errmap[h->forkno] == MAP_FAILED)
-        {
-            fprintf(stderr, "errmsg mmap failed: %s\n",strerror(errno));
-            exit(1);
-        }
-    }
-
     finfo = check_fork(h, Create);
     if(finfo->childpid)
     {
@@ -1714,6 +1718,10 @@ static int h_prep(DB_HANDLE *h, char *sql)
 
 static int h_close(DB_HANDLE *h)
 {
+    if(!h) {
+        return 1;
+    }
+
     if(h->forkno>0)
         return fork_close(h);
 
@@ -3409,10 +3417,15 @@ void reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
         duk_pop(ctx);// no longer need settings object on stack
 
         if(ret == -1)
+        {
+            h_close(h);
             RP_THROW(ctx, "%s", errbuf);
+        }
         else if (ret ==-2)
+        {
+            h_close(h);
             throw_tx_error(ctx, h, errbuf);
-
+        }
         //set this javascript sql handle as the last to have applied settings
         duk_push_int(ctx, handle_no);
         duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no"));
@@ -3498,14 +3511,17 @@ static void sql_normalize_prop(char *prop, const char *dprop)
 }
 
 
+TEXIS *setprop_tx=NULL;
+
+// returns -1 for bad option, -2 for setprop error, 0 for ok, 1 for ok with return value
 static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
 {
     LPSTMT lpstmt;
     DDIC *ddic=NULL;
 //    TEXIS *tx = hcache->tx;
-//  open a fresh handle for sql set.  
+//  Use a dedicated handle for setprop
 //  TXresetproperties() seems to mess with the putmsg buffer when the handle is reused
-    TEXIS *tx = texis_open((char *)(hcache->db), "PUBLIC", "");
+    TEXIS *tx;
     const char *val="";
     char pbuf[msgbufsz];
     int added_ret_obj=0;
@@ -3514,6 +3530,19 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
     clearmsgbuf();
 
     duk_rp_log_error(ctx, "");
+
+    if(!setprop_tx)
+    {
+        setprop_tx = texis_open((char *)(hcache->db), "PUBLIC", "");
+    }
+    tx=setprop_tx;
+
+    if(!tx)
+    {
+        msgtobuf(pbuf);
+        sprintf(errbuf,"Texis setprop open failed: (fork:%d, db:%s)\n%s", thisfork, (char *)(hcache->db), pbuf);
+        goto return_neg_two;
+    }
 
     lpstmt = tx->hstmt;
     if(lpstmt && lpstmt->dbc && lpstmt->dbc->ddic)
@@ -3940,7 +3969,7 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
 
     duk_rp_log_tx_error(ctx,hcache,pbuf); /* log any non fatal errors to this.errMsg */
 
-    tx=texis_close(tx);
+    //tx=texis_close(tx);
 
     if(added_ret_obj)
     {
@@ -3950,11 +3979,11 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
     return 0;
 
     return_neg_two:
-        tx=texis_close(tx);
+        //tx=texis_close(tx);
         return -2;
 
     return_neg_one:
-        tx=texis_close(tx);
+        //tx=texis_close(tx);
         return -1;
 }
 
@@ -4107,6 +4136,7 @@ duk_ret_t duk_texis_set(duk_context *ctx)
     {
         ret = sql_set(ctx, hcache, errbuf);
     }
+
     h_close(hcache);
 
     if(ret == -1)
@@ -4235,6 +4265,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
      * but needs to be done only once for all threads
      */
 
+    CTXLOCK;
     if (!db_is_init)
     {
         char *TexisArgv[2];
@@ -4259,10 +4290,13 @@ duk_ret_t duk_open_module(duk_context *ctx)
         TexisArgv[1]=install_dir;
 
         if( TXinitapp(NULL, NULL, 2, TexisArgv, NULL, NULL) )
+        {
+            CTXUNLOCK;
             RP_THROW(ctx, "Failed to initialize rampart-sql in TXinitapp");
-
+        }
         db_is_init = 1;
     }
+    CTXUNLOCK;
 
     duk_push_object(ctx); // the return object
 
