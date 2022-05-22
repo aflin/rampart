@@ -4660,6 +4660,7 @@ static void proc_mimes(duk_context *ctx)
 }
 
 #define getipport(sfn) do {\
+     if(!sfn) RP_THROW(ctx, "Invalid ip/port specification\n");\
      char *p, *e;\
      char ibuf[INET6_ADDRSTRLEN]={0};\
      char *s=(char*)(sfn);\
@@ -4696,6 +4697,7 @@ static void proc_mimes(duk_context *ctx)
              RP_THROW(ctx,"server.start() - option bind value must be in format \"ip:port\"");\
          port=(uint16_t)strtol(p, NULL, 10);\
      }\
+     if(!strlen(ipany)) RP_THROW(ctx, "Error parsing ip address from %s", sfn);\
 } while(0)
 
 #define DIRLISTFUNC \
