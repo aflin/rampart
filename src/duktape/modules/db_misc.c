@@ -1787,108 +1787,51 @@ rex_re2(duk_context *ctx, TXrexSyntax type)
     return 1;
 }
 
-/* from mmapi/freadex.c - altered for duktape */
-
-static int                                                   /* n bytes read */
-rpfreadex(ctx,fh,buf,len,ex)
-duk_context *ctx;
-FHTYPE fh;
-byte *buf;
-int  len;
-FFS  *ex;
-{
- register int nread,nactr;  /* val returned, number actually returned */
- byte *loc;
- static char Fn[]="freadex";
-
- errno = 0;
- nactr=fread((char *)buf,sizeof(byte),len,fh);           /* do a read */
- if(nactr<0)
-        RP_THROW(ctx,"Can't read file: %s", strerror(errno));
-
- nread=nactr;                                          /* end of buffer */
- if(nread && nread==len)               /* read ok && as big as possible */
-    {
-     loc=getrex(ex,buf,buf+nread,BSEARCHNEWBUF);
-     if(loc==BPNULL)                   /* no expression within buffer */
-        {
-         putmsg(MWARN,Fn,"no end delimiter located within buffer");
-         return(nread);
-        }
-     else
-     if(loc==buf)                      /* MAW 10-17-95 - handle w/all */
-        {
-         loc=buf+nread;
-        }
-     nread=(int)(loc-buf)+rexsize(ex);            /* just beyond expr */
-     errno = 0;
-     if (FSEEKO(fh, (off_t)(nread - nactr), SEEK_CUR) == -1)
-        {
-         putmsg(MWARN+FSE,Fn,"Can't seek to realign buffer: %s",
-                strerror(errno));
-         return(0);
-        }
-     return(nread);
-    }
- return(nactr);                   /* read was smaller || eof || error */
-}
-
-/* from mmapi/rex.c */
-static const byte def_eexp[2]={ '$' ,'\0' };
-
 static duk_ret_t 
 rex_re2_file(duk_context *ctx, TXrexSyntax type)
 {
-    byte *end;
-    size_t strsz=128*1024;
-    byte str[strsz];
-    const char *fname=NULL;
-    int nread;
-    FFS *endex;
-    FILE *ipfh;
-    int i=0;
+    byte *str=NULL, *end;
     duk_idx_t opt_idx=-1, func_idx=-1; //-1 == not found
-    
+    const char *filename=NULL;
+    const char *func_name = (type==TXrexSyntax_Rex) ? "Sql.rexFile": "Sql.re2File";
+    int fd;
+    struct stat filestat;
+
     get_func_opt;
-    /* get endex/delimiter option */
-    if( opt_idx>0)
+
+    filename = REQUIRE_STRING(ctx, 1, "%s: second argument must be a string", func_name); 
+
+    fd = open(filename, O_RDONLY);
+
+    if(fd < 0)
+        RP_THROW(ctx, "%s: Could not open file '%s'", func_name, filename);
+
+    if (fstat(fd, &filestat) == -1)
     {
-        if (duk_get_prop_string(ctx,opt_idx,"delimiter") )
-        {
-            const char *s=REQUIRE_STRING(ctx,-1,"re%cFile: string required for parameter \"delemiter\"", ((type==TXrexSyntax_Re2)?'2':'x')); 
-            endex=openrex((byte *)s, TXrexSyntax_Rex);
-        }
-        else
-        {
-            endex=openrex((byte *)def_eexp, TXrexSyntax_Rex);
-        }
-        duk_pop(ctx);
-    }
-    else
-    {    
-        endex=openrex((byte *)def_eexp, TXrexSyntax_Rex);   
+        close(fd);
+        RP_THROW(ctx, "%s - error accessing: %s (%s)", func_name, filename, strerror(errno));
     }
 
-    /* get string/buffer to be searched */
-    if(duk_is_string(ctx,1))
-        fname=duk_get_string(ctx,1);
-    else
-        RP_THROW(ctx,"re%cFile: item to be matched (arg 2), must be a string (filename)", ((type==TXrexSyntax_Re2)?'2':'x'));
+    str = (byte*) mmap(NULL, filestat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
 
-    errno=0;
-    ipfh=fopen((char *)fname,"r");
-    if(ipfh==(FILE *)NULL)
-        RP_THROW(ctx,"re%cFile: error opening file '%s': %s", ((type==TXrexSyntax_Re2)?'2':'x'), fname, strerror(errno));
-
-    while((nread=rpfreadex(ctx,ipfh,str,strsz,endex))>0)
+    if(str == MAP_FAILED)
     {
-         end=str+nread;
-         i=rex(ctx,str,end,opt_idx,func_idx,type,i);
+        close(fd);
+        RP_THROW(ctx, "%s: Could not open file '%s'", func_name, filename);
     }
-    closerex(endex);
-    fclose(ipfh);
+
+    end = str+filestat.st_size;
+    
+    rex(ctx,str,end,opt_idx,func_idx,type,0);
+
+    if( munmap(str, filestat.st_size) )
+        RP_THROW(ctx, "%s: Error unmapping '%s'", func_name, filename);    
+
+    close(fd);
+
     return 1;
 }
+
 /* duktape rex functions */
 
 duk_ret_t
