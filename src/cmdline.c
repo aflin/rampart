@@ -907,16 +907,25 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
         RP_THROW(ctx, "internal error in rp_el_doevent()");
     }
 
+    // the JS callback function
     duk_push_number(ctx, evargs->key);
     duk_get_prop(ctx, -2);
 
-    // check if this is a non setTimeout/setInterval call with an extra variable using the
+    // get array and extract parameters.
     // ugly hack from duk_rp_set_to below
     duk_push_number(ctx, evargs->key+0.2);
     if(duk_get_prop(ctx, -3))
-        nargs=1;
+    {
+        //this should always be an array.
+        duk_idx_t i = 0, arr_idx = duk_get_top_index(ctx);
+        nargs = (duk_idx_t) duk_get_length(ctx,-1);
+        for(; i<nargs; i++)
+            duk_get_prop_index(ctx, arr_idx, i);
+
+        duk_remove(ctx, arr_idx); //array
+    }
     else
-        duk_pop(ctx);
+        duk_pop(ctx); //undefined
 
     // do C timeout callback immediately before the JS callback
     // this is for a generic callback, not used for setTimeout/setInterval
@@ -1033,10 +1042,7 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout
     double to = duk_get_number_default(ctx,1, 0) / 1000.0;
     struct event_base *base=NULL;
     EVARGS *evargs=NULL;
-    duk_idx_t extra_var_idx = -1;
-
-    if(duk_get_top(ctx) > 2)
-        extra_var_idx = 2;
+    duk_idx_t i=2, top=duk_get_top(ctx);
 
     /* if we are threaded, base will not be global struct event_base *elbase */
     duk_push_global_stash(ctx);
@@ -1078,14 +1084,20 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout
     duk_dup(ctx,0); //the JS callback function
     duk_put_prop(ctx, -3);
 
-    // this is a bit of a hack, but fewer pushes than using an enclosing object for both the cb and the extra variable.
-    // Allow a third parameter when using this in other generic functions besides setTimeout and setInterval 
-    if(extra_var_idx > -1)
+    // parameters to function
+    if( top > 2 )
     {
+        duk_uarridx_t aidx=0;
         duk_push_number(ctx, evargs->key + 0.2);
-        duk_pull(ctx, extra_var_idx);
+        duk_push_array(ctx);
+        for (i=2; i<top; i++)
+        {
+            duk_dup(ctx,i);
+            duk_put_prop_index(ctx, -2, aidx++);
+        }
         duk_put_prop(ctx, -3);
     }
+
     duk_pop_2(ctx); //ev_callback_object and global stash
 
     /* create a new event for js callback and specify the c callback to handle it*/
@@ -1226,7 +1238,7 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
     /* tag function */
     if(type ==1)
         scopy('[');
-    scopy('"');
+    stringcopy("\"\"+\"");
     adv;
     while(in < end)
     {
@@ -1386,9 +1398,15 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                     /* end special sprintf formatting */
                     else if(type == 2)
                         stringcopy(",(");
+                    else if(type == 1)
+                        stringcopy("\",(");
                     else
-                        stringcopy("\"+(");
-
+                    {
+                        if(*(out-1) == '"')
+                            *(out-1) = '('; //skip empty quotes: "",( => (  
+                        else
+                            stringcopy("\"+(");
+                    }
                     /* FIXME: properly this should go back to tickify somehow */
                     while (in < end && *in != '}')
                     {
@@ -1451,17 +1469,22 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                 else
                 {
                     /* remove the '+ ""' */
-                    /* node leaves it in, so shall we
                     if( *(out-1) == '"')
                     {
+                        int nls=0;
                         //back up
                         out-=2;
                         while(isspace(*out))
+                        {
+                            if(*out == '\n') nls++;
                             out--;
-                        //cur char is '+' or ',' which will be overwritten
+                        }
+                        //cur char is '+' or ',' and will be overwritten
+                        while(nls--)
+                            scopy('\n');
                     }
                     else
-                    */ scopy('"');
+                        scopy('"');
                     if(type == 1)
                     {
                         int r;
@@ -2173,15 +2196,15 @@ int main(int argc, char *argv[])
             /* ********** set up event loop *************** */
 
             /* setTimeout and related functions */
-            duk_push_c_function(ctx,duk_rp_set_timeout,2);
+            duk_push_c_function(ctx,duk_rp_set_timeout, DUK_VARARGS);
             duk_put_global_string(ctx,"setTimeout");
             duk_push_c_function(ctx, duk_rp_clear_either, 1);
             duk_put_global_string(ctx,"clearTimeout");
-            duk_push_c_function(ctx,duk_rp_set_interval,2);
+            duk_push_c_function(ctx,duk_rp_set_interval, DUK_VARARGS);
             duk_put_global_string(ctx,"setInterval");
             duk_push_c_function(ctx, duk_rp_clear_either, 1);
             duk_put_global_string(ctx,"clearInterval");
-            duk_push_c_function(ctx,duk_rp_set_metronome,2);
+            duk_push_c_function(ctx,duk_rp_set_metronome, DUK_VARARGS);
             duk_put_global_string(ctx,"setMetronome");
             duk_push_c_function(ctx, duk_rp_clear_either, 1);
             duk_put_global_string(ctx,"clearMetronome");
@@ -2207,7 +2230,7 @@ int main(int argc, char *argv[])
             {
                 /* No babel, normal compile */
                 int err, lineno;
-                /* process basic template literals (backtics) */
+                /* process basic template literals (backticks) */
                 char *tickified = tickify(file_src, src_sz, &err, &lineno);
                 free(free_file_src);
                 file_src = free_file_src = tickified;
