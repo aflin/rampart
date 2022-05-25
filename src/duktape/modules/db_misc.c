@@ -1825,7 +1825,10 @@ rex_re2_file(duk_context *ctx, TXrexSyntax type)
     rex(ctx,str,end,opt_idx,func_idx,type,0);
 
     if( munmap(str, filestat.st_size) )
+    {
+        close(fd);
         RP_THROW(ctx, "%s: Error unmapping '%s'", func_name, filename);    
+    }
 
     close(fd);
 
