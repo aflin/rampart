@@ -29,14 +29,29 @@ var serverConf = {
     //ipAddr:     "0.0.0.0",
     //ipv6Addr:   "[::]",
 
-    ipPort:       8088,
-    ipv6Port:     8088,
-    htmlRoot:     process.scriptPath + "/html",
-    appsRoot:     process.scriptPath + "/apps",
-    wsappsRoot:   process.scriptPath + "/wsapps",
-    dataRoot:     process.scriptPath + "/data",
-    user:         "nobody"
+    ipPort:         8088,
+    ipv6Port:       8088,
+    htmlRoot:       process.scriptPath + "/html",
+    appsRoot:       process.scriptPath + "/apps",
+    wsappsRoot:     process.scriptPath + "/wsapps",
+    dataRoot:       process.scriptPath + "/data",
+    logRoot:        process.scriptPath+"/logs",
+    accessLog:      process.scriptPath+"/logs/access.log",
+    errorLog:       process.scriptPath+"/logs/error.log",
+    logging:        false,
+    rotateLogs:     false,
+    rotateInterval: 86400,
+    rotateStart:    "02:00",  //must be "HH:MM"
+    user:           "nobody"
 }
+
+/* For log rotate, the kill signal USR1 is used to reload log
+   It derived automatically below.  However in the unlikely
+   event that it doesn't work, set it here:
+*/
+//var usr1 = 10; // linux
+//var usr1 = 30; // macos
+var usr1;
 
 /* the array holding the ip:port combos we will bind to */
 var bind = [];
@@ -142,12 +157,124 @@ function dirlist(req) {
     return {html:html};
 }
 
+var serverpid;
 
+/* *******************************************
+            LOG ROTATION
+   ******************************************* */
+
+var gzip = trim ( exec('which','gzip').stdout );
+
+if(serverConf.logging && serverConf.rotateLogs) {
+
+    var tdelay, mdelay, startTime;
+
+    if (typeof serverConf.rotateInterval != 'number')
+    {
+        fprintf(stderr, "serverConf.rotateInterval == %J is invalid\n", serverConf.rotateInterval);
+        process.exit(1);
+    }
+
+    if( serverConf.rotateInterval < 300 ) {
+        fprintf(stderr, "serverConf.rotateInterval is set to less than 5 minutes, is that what your really want?\n");
+        process.exit(1);
+    }
+
+    mdelay = serverConf.rotateInterval * 1000;
+
+    try {
+        startTime = scanDate(serverConf.rotateStart + " "+ dateFmt('%z'), "%H:%M %z");
+
+        if( startTime < Date.now() )
+            startTime = new Date(startTime.getTime() + 86400000);
+    } catch(e) {
+        fprintf(stderr, "Error parsing log rotation start time (%s): %J\n", serverConf.rotateStart,e);
+        process.exit(1);
+    }
+
+    var now = new Date();
+    tdelay = startTime.getTime() - now.getTime();
+
+    if (!usr1) {
+        try {
+            usr1 = parseInt(shell("kill -l").stdout.match(/(\d+)\) SIGUSR1/)[1]);
+        } catch (e){}
+    }
+
+    if ( typeof usr1 != 'number' ) {
+        fprintf(stderr, "Error finding kill signal number for signal 'USR1'\n");
+        process.exit(1);
+    }
+
+    var prevAbackup, prevEbackup;
+
+    function rotateLogs() {
+        var doARotate=false, doErotate=false;
+        var ds = dateFmt('%Y-%m-%d-%H-%M-%S');
+        var abackup = sprintf('%s-%s', serverConf.accessLog, ds);
+        var ebackup = sprintf('%s-%s', serverConf.errorLog,  ds);
+
+        if( stat(serverConf.accessLog) ){
+            doARotate=true;
+            try {
+                rename( serverConf.accessLog, abackup);
+            } catch(e) {
+                fprintf(serverConf.errorLog, true, "Cannot rename accessLog: %J\n", e);
+                doARotate=false;
+            }
+        }
+
+        if( stat(serverConf.errorLog) ){
+            doERotate=true;
+            try {
+                rename( serverConf.errorLog, ebackup);
+            } catch(e) {
+                fprintf(serverConf.errorLog, true, "Cannot rename errorLog: %J\n", e);
+                doErotate=false;
+            }
+        }
+
+        if(doARotate||doErotate)
+            kill(serverpid, usr1);// close and reopen logs
+
+        // gzip old ones in background
+        if(gzip && (prevAbackup || prevEbackup) ) {
+            shell(`${gzip} -q ${prevAbackup?prevAbackup:""} ${prevEbackup?prevEbackup:""}`, {background:true} );
+        }
+
+        prevAbackup=abackup;
+        prevEbackup=ebackup;
+    }
+
+    // the first interval to get us to the specified rotateStart time.
+    setTimeout( function(){
+
+        // server forks before serverpid is set below.
+        if( !serverpid ) {
+            try {
+                var pid = readFile(process.scriptPath+"/server.pid");
+                serverpid = parseInt(readFile(process.scriptPath+"/server.pid",{returnString:true}));
+            } catch(e) {}
+
+            if(typeof serverpid != 'number' || Number.isNaN(serverpid) ) {
+                fprintf(serverConf.errorLog, true, "Cannot get server pid. Log rotation failed.\n");
+                return;
+            }
+        }
+
+        rotateLogs();
+
+        // subsequent intervals, spaced by rotateInterval
+        var iv=setMetronome(rotateLogs, mdelay);
+
+    }, tdelay);
+
+}
 
 
 /****** START SERVER *******/
 printf("Starting https server\n");
-var serverpid=server.start(
+serverpid=server.start(
 {
     /* bind: string|[array,of,strings]
        default: [ "[::1]:8088", "127.0.0.1:8088" ] 
@@ -175,13 +302,13 @@ var serverpid=server.start(
     developerMode: true,
 
     /* turn logging on, by default goes to stdout/stderr */
-    log: true,
+    log: serverConf.logging,
 
     /* access log location, instead of stdout. Must be set if daemon==true && log==true */
-    accessLog: process.scriptPath+"/logs/access.log",
+    accessLog: serverConf.accessLog,
 
     /* error log location, instead of stderr.  Must be set if daemon==true && log==true */
-    errorLog:  process.scriptPath+"/logs/error.log",
+    errorLog:  serverConf.errorLog,
     
     /* Fork and run in background. stdin and stderr are closed, 
        so any logging must go to a file.                          */
@@ -349,3 +476,6 @@ printf(`Server has been started. ${message}
 Server pid is ${serverpid}.  To stop server use kill as such:
    kill ${serverpid}
 `);
+
+// do not run setTimeout in parent process:
+process.exit(0);
