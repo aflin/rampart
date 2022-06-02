@@ -1557,10 +1557,11 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
     DUK_PUT_NUMBER(ctx,  "blksize", path_stat.st_blksize, -2);
     DUK_PUT_NUMBER(ctx,  "blocks", path_stat.st_blocks, -2);
 
-    long long atime, mtime, ctime;
-    atime = path_stat.st_atime * 1000;
-    mtime = path_stat.st_mtime * 1000;
-    ctime = path_stat.st_ctime * 1000;
+    int64_t atime, mtime, ctime;
+
+    atime = (int64_t)path_stat.st_atime * 1000;
+    mtime = (int64_t)path_stat.st_mtime * 1000;
+    ctime = (int64_t)path_stat.st_ctime * 1000;
 
     // atime
     (void)duk_get_global_string(ctx, "Date");
