@@ -2,6 +2,7 @@ v0.1.1
     - Sql.rexFile: removed buffer, using mmap instead.
     - Template Literal tranlation improvements.
     - setTimeout et al - accept parameters.
+    - Added log rotation to web_server_conf.js
     - fixed stat file dates on 32 bit systems.
 v0.1.0
     - initial release
