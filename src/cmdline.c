@@ -1402,7 +1402,7 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                         stringcopy("\",(");
                     else
                     {
-                        if(*(out-1) == '"')
+                        if(*(out-1) == '"' && *(out-2) != '\\')
                             *(out-1) = '('; //skip empty quotes: "",( => (  
                         else
                             stringcopy("\"+(");
