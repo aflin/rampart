@@ -680,6 +680,9 @@ static DB_HANDLE *h_open(const char *db, int forkno, duk_context *ctx)
     }
     if(h)
     {
+        // not sure we need to lock this early, but definitely need to lock on fork_open
+        // where the sqlforkinfo array is created and initialized.
+        HLOCK
         h->inuse=1;
         if(forkno > 0)
         {
@@ -688,6 +691,7 @@ static DB_HANDLE *h_open(const char *db, int forkno, duk_context *ctx)
         }            
         else if (h->tx == NULL)
             h->tx = texis_open((char *)(db), "PUBLIC", "");
+        HUNLOCK
     }
     return h;
 }
@@ -826,11 +830,18 @@ static FLDLST * fork_fetch(DB_HANDLE *h,  int stringsFrom)
     for (i=0;i<ret->n;i++)
     {
         char type = ret->type[i] & 0x3f;
-        size_t size = ddftsize(type) * (size_t)ret->ndata[i];
+        size_t type_size = ddftsize(type),
+               size = type_size * (size_t)ret->ndata[i];
         if(size==0)
             ret->data[i]=NULL;
         else
         {
+            size_t size_mod = eos % type_size;
+
+            //align to type
+            if (size_mod)
+                eos += (type_size - size_mod);
+
             ret->data[i]= (buf) + eos;
             eos += size;
         }
@@ -865,6 +876,22 @@ static int cwrite(SFI *finfo, void *data, size_t sz)
     mapinfo->pos += sz;
 
     return 1;
+}
+
+static int cwrite_aligned(SFI *finfo, void *data, size_t sz, size_t tsz)
+{
+    FMINFO *mapinfo = finfo->mapinfo;
+
+    //align to type
+    if(tsz>1)
+    {
+        size_t sz_mod = (size_t)mapinfo->pos % tsz;
+        if(sz_mod)
+            mapinfo->pos += (tsz - sz_mod);
+    }
+
+    return cwrite(finfo, data, sz);
+
 }
 
 static int serialize_fl(SFI *finfo, FLDLST *fl)
@@ -911,10 +938,12 @@ static int serialize_fl(SFI *finfo, FLDLST *fl)
     for (i = 0; i < fl->n; i++)
     {
         char type = fl->type[i] & 0x3f;
-        size_t size = ddftsize(type) * (size_t)fl->ndata[i];
+        size_t type_size = ddftsize(type),
+               size = type_size * (size_t)fl->ndata[i];
         if(size !=0 && fl->data[i] != NULL)
         {
-            if(!cwrite(finfo, fl->data[i], size))
+            // align ints, etc for arm
+            if(!cwrite_aligned(finfo, fl->data[i], size, type_size))
                 return -1;
         }
     }
