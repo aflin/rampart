@@ -292,6 +292,8 @@ target_include_directories(rampart-server PRIVATE
 	${PROJECT_BINARY_DIR}/extern/libdeflate/
 )
 
+
+
 #add_custom_command(
 #	OUTPUT ${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
 #	COMMAND make
@@ -327,6 +329,23 @@ add_custom_target(libdeflate
 add_dependencies(rampart-server libdeflate)
 add_dependencies(libdeflate cp_libdeflate)
 
+###NET###
+add_library(rampart-net SHARED
+ duktape/modules/rampart-net.c
+)
+target_link_libraries(rampart-net 
+	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a
+  	rampart-crypto
+) 
+
+set_property(TARGET rampart-net PROPERTY IMPORTED_LOCATION "./rampart-crypto.so") 
+
+target_include_directories(rampart-net PRIVATE
+	${PROJECT_BINARY_DIR}/extern/openssl/include/
+	${PROJECT_SOURCE_DIR}/extern/libevent/include/
+	${PROJECT_BINARY_DIR}/extern/libevent/include/
+)
+
 
 ###CURL###
 add_library(rampart-curl SHARED
@@ -360,14 +379,14 @@ add_dependencies(rampart-curl libcurl)
 ##############  ADD MODULE NAMES HERE  ##############
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-  set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb #example_name
+  set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb rampart-net #example_name
           PROPERTIES 
           LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath,./"
           SUFFIX       ".so"
           PREFIX ""
   )
 else()
-  set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb #example_name
+  set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb rampart-net #example_name
           PROPERTIES 
           LINK_FLAGS "-Wl,-rpath,./"
           SUFFIX       ".so"
@@ -397,6 +416,7 @@ install(TARGETS
 	rampart-redis
 	rampart-html
 	rampart-cmark
+    rampart-net
 	rampart-robots
 	rampart-lmdb
 	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
