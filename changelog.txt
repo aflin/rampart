@@ -4,5 +4,6 @@ v0.1.1
     - setTimeout et al - accept parameters.
     - Added log rotation to web_server_conf.js
     - fixed stat file dates on 32 bit systems.
+    - fixed segfault on clearTimeout when event expired
 v0.1.0
     - initial release
