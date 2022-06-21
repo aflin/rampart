@@ -83,6 +83,34 @@ static void add_object_values(duk_context *ctx)
     duk_pop(ctx);
 }
 
+duk_ret_t duk_rp_buffer_alloc(duk_context *ctx)
+{
+    int size = 0;
+    uint8_t *bytes;
+    duk_size_t bsz;
+
+    size = REQUIRE_INT(ctx, 0, "Buffer.alloc: size must be an integer");
+    if(size < 0)
+        RP_THROW(ctx, "Buffer.alloc: size must be a positive number");
+
+    duk_get_global_string(ctx, "Buffer");
+    duk_pull(ctx, 0);
+    duk_new(ctx, 1);
+
+    /* TODO: add node methods */
+
+    return 1;
+}
+
+static void add_buffer_func(duk_context *ctx)
+{
+    duk_get_global_string(ctx, "Buffer");
+    duk_push_c_function(ctx, duk_rp_buffer_alloc, 3);
+    duk_put_prop_string(ctx, -2, "alloc");
+    /* TODO: add all node methods */
+    duk_pop(ctx);
+}
+
 
 void duk_init_context(duk_context *ctx)
 {
@@ -118,4 +146,5 @@ void duk_init_context(duk_context *ctx)
     duk_event_init(ctx);                      /* register functions in rampart-event.c */
     fix_json_parse(ctx);
     add_object_values(ctx);
+    add_buffer_func(ctx);
 }
