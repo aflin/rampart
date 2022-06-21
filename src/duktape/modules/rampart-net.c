@@ -44,21 +44,6 @@
 
 #include "event.h"
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 static int push_ip_canon(duk_context *ctx, const char *addr, int domain)
 {
     unsigned char buf[sizeof(struct in6_addr)];
@@ -97,6 +82,9 @@ duk_ret_t duk_rp_net_socket_address(duk_context *ctx) {
 
     duk_push_this(ctx);
     tidx = duk_get_top_index(ctx);
+
+    duk_push_true(ctx);
+    duk_put_prop_string(ctx, -2, "pending");
 
     if(duk_get_prop_string(ctx, 0, "address"))
         ip=REQUIRE_STRING(ctx,-1, "%s: option 'address' must be a String", func_name);
@@ -224,32 +212,53 @@ duk_ret_t duk_rp_net_socket(duk_context *ctx)
 
 
 // put supplied function into this._event using supplied event name
-duk_ret_t duk_rp_net_on(duk_context *ctx)
+static void duk_rp_net_on(duk_context *ctx, const char *fname, const char *evname, duk_idx_t cb_idx, duk_idx_t this_idx)
 {
     duk_idx_t tidx;
-    const char *fname="net";
+    duk_size_t len=0;
 
-    duk_push_this(ctx);
-    tidx = duk_get_top_index(ctx);
+    cb_idx = duk_normalize_index(ctx, cb_idx);
 
-    if(duk_get_prop_string(ctx, tidx, DUK_HIDDEN_SYMBOL("netfunc")))
-        fname=duk_get_string(ctx,-1);
-    duk_pop(ctx);
+    if(this_idx == DUK_INVALID_INDEX)
+    {
+        duk_push_this(ctx);
+        tidx = duk_get_top_index(ctx);
+    }
+    else
+        tidx = duk_normalize_index(ctx, this_idx);
 
-    if(!duk_is_string(ctx, 0))
-        RP_THROW(ctx, "%s: first argument must be a String (event name)", fname);
-
-    if(!duk_is_function(ctx,1))
-        RP_THROW(ctx, "%s: second argument must be a Function (listener)", fname);
+    if(!duk_is_function(ctx,cb_idx))
+        RP_THROW(ctx, "%s: argument %d must be a Function (listener)", fname, (int)cb_idx+1);
 
     // _event must be present and an object that was set up in constructor func. No check here.
     duk_get_prop_string(ctx, tidx, "_events");
-    duk_dup(ctx, 0);
-    duk_dup(ctx, 1);
-    duk_put_prop(ctx, -3);
 
-    // return 'this'
-    duk_pull(ctx, tidx);
+    if(!duk_get_prop_string(ctx, -1, evname)) // the array of callbacks
+    {
+        duk_pop(ctx); //undefined
+        duk_push_array(ctx);
+        duk_dup(ctx, -1);
+        duk_put_prop_string(ctx, -3, evname);
+    }
+    else
+        len=duk_get_length(ctx, -1);
+
+    duk_dup(ctx, cb_idx);
+    duk_put_prop_index(ctx, -2, len);
+    duk_pop_2(ctx); // "_events", array
+
+    if(this_idx == DUK_INVALID_INDEX)
+        duk_remove(ctx, tidx);
+}
+
+
+static duk_ret_t duk_rp_socket_on(duk_context *ctx)
+{
+    const char *evname = REQUIRE_STRING(ctx, 0, "socket.on: first argument must be a String (event name)" );
+
+    duk_push_this(ctx);
+    duk_rp_net_on(ctx, "socket.on", evname, 1, -1);
+
     return 1;
 }
 
@@ -391,12 +400,13 @@ duk_ret_t duk_rp_net_resolve(duk_context *ctx)
     return 1;
 }
 
-//get put or delete a key from a named object in global stash.
-//return 1 if successful, leave retrieved, put or deleted value on stack;
-//return 0 if fail(get), doesn't exist(delete) and leave undefined on stack.
-// put always succeeds, putting value on top of stack to stash = { objname: {key: val} } .
-// if key is NULL, operates on object itself.  stash = { objname: val }
-// but val must be an object for put
+/* get put or delete a key from a named object in global stash.
+   return 1 if successful, leave retrieved, put or deleted value on stack;
+   return 0 if fail(get), doesn't exist(delete) and leave undefined on stack.
+   put always succeeds, putting value on top of stack to stash = { objname: {key: val} } .
+   if key is NULL, operates on object itself.  stash = { objname: val }
+   but val must be an object for put
+*/
 
 int rp_put_gs_object(duk_context *ctx, const char *objname, const char *key)
 {
@@ -414,7 +424,7 @@ int rp_put_gs_object(duk_context *ctx, const char *objname, const char *key)
 
         //temporary warning for debugging -- remove later:
         if(!duk_is_object(ctx, val_idx))
-            RP_THROW("YOU SCREWED UP, in put_gs_object");
+            RP_THROW(ctx, "YOU SCREWED UP, in put_gs_object");
 
         duk_dup(ctx, val_idx);
         duk_put_prop_string(ctx, stash_idx, objname);
@@ -431,7 +441,7 @@ int rp_put_gs_object(duk_context *ctx, const char *objname, const char *key)
 
         // make new object, store ref in global stash
         duk_push_object(ctx);
-        duk_dup(ctx);
+        duk_dup(ctx, -1);
         duk_put_prop_string(ctx, stash_idx, objname); 
     }
 
@@ -446,6 +456,14 @@ int rp_put_gs_object(duk_context *ctx, const char *objname, const char *key)
     return 1;
 }
 
+/*
+    Delete a value from an object named objname in the global stash using key .
+    If key is NULL, delete the entire object named objname.
+    A copy of value/undefined is left on top of stack, 
+      returns 1/value for success, 0/undefined for not present.
+    To delete the final reference, 'pop(ctx);'
+*/
+
 int rp_del_gs_object(duk_context *ctx, const char *objname, const char *key)
 {
     duk_idx_t stash_idx = -1, obj_idx=-1;
@@ -454,7 +472,7 @@ int rp_del_gs_object(duk_context *ctx, const char *objname, const char *key)
     duk_push_global_stash(ctx);
     stash_idx = duk_get_top_index(ctx);
 
-    // if no key, get the object itself
+    // if no key, delete the object/item 'objname' itself
     if(key == NULL)
     {
         if( duk_get_prop_string(ctx, stash_idx, objname) )
@@ -486,33 +504,29 @@ int rp_del_gs_object(duk_context *ctx, const char *objname, const char *key)
     return ret;
 }
 
+/*
+    Get a value from an object named objname in the global stash using key .
+    If key is NULL, get the entire object named objname.
+    Value/undefined is left on top of stack, returns 1/value for success, 0/undefined for not present
+*/
+
 int rp_get_gs_object(duk_context *ctx, const char *objname, const char *key)
 {
-    duk_idx_t stash_idx = -1, obj_idx=-1;
-    int ret=1;
-
     duk_idx_t stash_idx = -1, obj_idx=-1;
     int ret=1;
 
     duk_push_global_stash(ctx);
     stash_idx = duk_get_top_index(ctx);
 
-    // if no key, get the object itself
-    if(key == NULL)
-    {
-        if( ! duk_get_prop_string(ctx, stash_idx, objname) )
-            ret = 0; //top of stack == undefined
-
-        duk_remove(ctx, stash_idx);
-        return ret;
-    }
-
-    // with a key:
     if(!duk_get_prop_string(ctx, stash_idx, objname))
     {
         duk_remove(ctx, stash_idx);
         return 0; //undefined on top
     }
+
+    //if no key, leave item/object 'objname' on top of stack
+    if(key == NULL)
+        return ret;
 
     obj_idx = duk_get_top_index(ctx);
 
@@ -525,101 +539,7 @@ int rp_get_gs_object(duk_context *ctx, const char *objname, const char *key)
     return ret;
 }
 
-/*
 
-
-static int gs_object(duk_context *ctx, const char *objname, const char *key, int op)
-{
-    duk_idx_t val_idx=-1, stash_idx = -1, obj_idx=-1;
-    int ret=1;
-
-    if(op == STASH_PUT)
-        val_idx=duk_get_top_index(ctx);
-
-    duk_push_global_stash(ctx);
-    stash_idx = duk_get_top_index(ctx);
-
-    // if no key, get the object itself
-    if(key == NULL)
-    {
-        switch (op)
-        {
-            case STASH_PUT:
-                //put the object from stack top to global_stash.objname=top_obj
-
-                //temporary warning for debugging -- remove later:
-                if(!duk_is_object(ctx, val_idx))
-                    RP_THROW("YOU SCREWED UP, in gs_object");
-
-                duk_dup(ctx, val_idx);
-                duk_put_prop_string(ctx, stash_idx, objname);
-                break;
-            case STASH_GET:
-                if( !duk_get_prop_string(ctx, stash_idx, objname) )
-                    ret=0; //top of stack == undefined
-                break;
-            case STASH_DEL: //leave retrieved object on top of stack, but delete in stash
-                if( duk_get_prop_string(ctx, stash_idx, objname) )
-                    duk_del_prop_string(ctx, stash_idx, objname);
-                else
-                    ret=0; //top of stack == undefined
-                break;
-        }
-        duk_remove(ctx, stash_idx);
-
-        return ret;
-    }
-
-    if(!duk_get_prop_string(ctx, stash_idx, objname))
-    {
-        if(op==STASH_GET || op==STASH_DEL)
-        {
-            duk_remove(ctx, stash_idx);
-            return 0; //undefined on top
-        }
-
-        duk_pop(ctx); //remove undefined
-        // make new object, store ref in global stash
-        duk_push_object(ctx);
-        duk_dup(ctx);
-        duk_put_prop_string(ctx, stash_idx, objname); 
-    }
-
-    obj_idx = duk_get_top_index(ctx);
-
-
-    switch (op)
-    {
-        case STASH_PUT:
-            duk_dup(ctx, val_idx);
-            duk_put_prop_string(ctx, obj_idx, key);
-            break;
-
-        case STASH_GET:
-            if(!duk_get_prop_string(ctx, obj_idx, key))
-                ret=0;
-            break;
-
-        case STASH_DEL:
-            if( duk_get_prop_string(ctx, obj_idx, key) )
-            {
-                duk_del_prop_string(ctx, obj_idx, key);
-                duk_enum(ctx, obj_idx, 0);
-                if(duk_next
-            }
-            else
-                ret=0;
-            break;
-    }
-    duk_remove(ctx, obj_idx);
-    duk_remove(ctx, stash_idx);
-
-    return ret;
-}
- 
-*/
-
-/* a list of timeouts pending */
 #define NETARGS struct net_args
 
 NETARGS {
@@ -629,45 +549,519 @@ NETARGS {
     int repeat;
     struct timeval timeout;
     struct timespec start_time;
-    callback *cb;
+    net_callback *cb;
     void *cbarg;
     SLIST_ENTRY(net_args) entries;
 };
 
 
+#define RPSOCK struct rp_socket_callback_s
 
 
-duk_ret_t duk_rp_net_socket_connect(duk_context *ctx)
+RPSOCK {
+    duk_context        * ctx;
+    void               * thisptr;
+    struct event_base  * base;
+    struct bufferevent * bev;
+    size_t               read;
+    size_t               written;
+};
+
+/* 'this' must be on top of stack
+       unless there are args, then it must directly preceed args. 
+   'this' must have callbacks stored in an object called "_events"
+   'this' and args are removed from stack
+*/
+static int do_callback(duk_context *ctx, const char *ev_s, duk_idx_t nargs)
 {
-    int port=0, localport=0, family=0;
-    const char *host=NULL, *localAddr=NULL;
-    duk_idx_t tidx;
-    struct event_base *base=NULL;
+    //[ ..., this, [args, args] ]
 
-    if(!duk_is_object(ctx,0))
-        RP_THROW(ctx, "socket.connect: parameter must be an Object");
+    duk_get_prop_string(ctx, -1 - nargs, "_events");
 
-    if(!duk_get_prop_string(ctx, 0, "host"))
-        RP_THROW(ctx, "socket.connect: option 'host' must be set and be a String");
-    host = REQUIRE_STRING(ctx, -1, "socket.connect: option 'host' must be a String");
-    duk_pop(ctx);
+    //[ ..., this, [args, args], eventobj ]
 
-    if(duk_get_prop_string(ctx, 0, "port"))
+    if(duk_get_prop_string(ctx, -1, ev_s))
     {
-        double port_num = REQUIRE_NUMBER(ctx, -1, "socket.connect: option 'port' must be an Integer >= 0 and < 65536");
-        
-        if (port_num != floor(port_num) || port_num < 0 || port_num > 65535)
-            RP_THROW(ctx,  "%s: option 'port' must be an Integer >= 0 and < 65536");
-        
-        port = (int) port_num;
-    }
-    else
-        RP_THROW(ctx, "socket.connect: option 'port' must be set and be an Integer >= 0 and < 65536");
+        //[ ..., this, [args, args], eventobj, callback_array ]
 
-    duk_pop(ctx);
+        duk_size_t i=0, len = duk_get_length(ctx, -1);
+        duk_idx_t  j=0, arr_idx = -2 - nargs;
+        duk_remove(ctx, -2);
+        // [..., this, [args, args], callback_array ]
+        duk_insert(ctx, -2 - nargs );
+        // [..., callback_array, this, [args, args] ]
+
+        while (i < len)
+        {
+            duk_get_prop_index(ctx, arr_idx, i);
+            // [..., callback_array, this, [args, args], callback ]
+            
+            duk_dup(ctx, arr_idx); //relative so its the next item
+            // [..., callback_array, this, [args, args], callback, this ]
+            
+            j=0;
+            while(j < nargs)
+            {
+                duk_dup(ctx, arr_idx);
+                j++;
+            }
+            // [..., callback_array, this, [args, args], callback, this, [args, args] ]
+
+            if(duk_pcall_method(ctx, nargs) != 0)
+            {
+                if (duk_is_error(ctx, -1) )
+                {
+                    duk_get_prop_string(ctx, -1, "stack");
+                    fprintf(stderr, "Error in %s callback: %s\n", ev_s, duk_get_string(ctx, -1));
+                    duk_pop(ctx);
+                }
+                else if (duk_is_string(ctx, -1))
+                {
+                    fprintf(stderr, "Error in %s callback: %s\n", ev_s, duk_get_string(ctx, -1));
+                }
+                else
+                {
+                    fprintf(stderr, "Error in %s callback\n", ev_s);
+                }
+                // [..., callback_array, this, [args, args], err ]
+                duk_pop(ctx); 
+                // [..., callback_array, this, [args, args] ]
+            }
+            // [ ..., callback_array, this, [args, args], retval ]
+            duk_pop(ctx); //discard retval
+            i++;
+            // [ ..., callback_array, this, [args, args] ]
+        }
+        duk_pop_n(ctx, 2 + nargs);
+        return 0;
+    }
+    // [ ..., this,  [args, args], eventobj, undefined ]
+    duk_pop_n(ctx, 3 + nargs);
+
+    return 0;
+}
+
+static int sock_do_callback(RPSOCK *sinfo, const char *ev_s)
+{
+    duk_context *ctx = sinfo->ctx;
+
+    // push this
+    duk_push_heapptr(ctx, sinfo->thisptr);
+    return do_callback(ctx, ev_s, 0);
+}
+
+
+static void sock_readcb(struct bufferevent * bev, void * arg)
+{
+    RPSOCK *sinfo = (RPSOCK *) arg;
+    struct evbuffer *evbuf = bufferevent_get_input(bev);
+    size_t len = evbuffer_get_length(evbuf);
+    unsigned char *buf = evbuffer_pullup(evbuf, -1);
+    duk_context *ctx = sinfo->ctx;
+
+    sinfo->read += len;
+
+    // [ ..., this ]
+    duk_push_heapptr(ctx, sinfo->thisptr);
+    
+    duk_push_number(ctx, sinfo->read);
+    duk_put_prop_string(ctx, -2, "bytesRead");
+
+    duk_push_external_buffer(ctx);
+    duk_config_buffer(ctx, -1, buf, len);
+    // [ ..., this, bufferdata ] 
+    duk_dup(ctx, -1);
+    duk_insert(ctx, 0);// save for later to invalidate it.
+    // [ bufferdata, ..., this, bufferdata ]
+    do_callback(ctx, "data", 1);
+    // [ bufferdata, ...]
+    duk_config_buffer(ctx, 0, NULL, 0);// zero out buffer in case there are other refs in js.
+    duk_remove(ctx, 0); //remove it
+
+    evbuffer_drain(evbuf, len);//drain it.
+
+/*
+printf("readcb\n");
+    char buf[1024];
+    int n;
+    struct evbuffer *input = bufferevent_get_input(bev);
+    while ((n = evbuffer_remove(input, buf, sizeof(buf))) > 0) {
+        fwrite(buf, 1, n, stdout);
+    }
+*/
+}
+
+void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
+{
+    if (!sinfo)
+        return;
+
+    if(!ctx) 
+        ctx = sinfo->ctx;
+
+
+    // this
+    duk_push_heapptr(ctx, sinfo->thisptr);
+    duk_push_true(ctx);
+    duk_put_prop_string(ctx, -2, "destroyed");
+    duk_push_pointer(ctx, NULL);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("sinfo") );
+
+    bufferevent_free(sinfo->bev);
+    free(sinfo);
+
+    //'this' is still on top
+    do_callback(ctx, "close", 0);
+}
+
+
+static duk_ret_t socket_destroy(duk_context *ctx)
+{
+    RPSOCK *sinfo;
+    duk_idx_t tidx;
 
     duk_push_this(ctx);
     tidx = duk_get_top_index(ctx);
+
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sinfo")) )
+    {
+        duk_pop(ctx);
+        duk_push_true(ctx);
+        duk_put_prop_string(ctx, -2, "destroyed");
+        return 1; //this
+    }
+
+    sinfo = (RPSOCK *) duk_get_pointer(ctx, -1);
+    if(sinfo)
+        socket_cleanup(ctx,sinfo);
+
+    duk_pull(ctx, tidx);
+    return 1;
+}
+
+static duk_ret_t socket_set_timeout(duk_context *ctx)
+{
+    duk_idx_t tidx;
+
+    (void) REQUIRE_NUMBER(ctx, 0, "socket.setTimeout: first argument must be a number (timeout in ms)");
+
+    duk_push_this(ctx);
+    tidx = duk_get_top_index(ctx);
+    
+    if(duk_is_function(ctx, 1))
+    {
+        duk_push_this(ctx);
+        duk_rp_net_on(ctx, "socket.on", "timeout", 1, tidx);
+    }
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sinfo"));
+
+    duk_dup(ctx,0);
+    duk_put_prop_string(ctx, tidx, "timeout");
+
+    duk_pull(ctx, tidx);
+    return 1;
+}
+
+static void sock_writecb(struct bufferevent * bev, void * arg)
+{
+    RPSOCK *sinfo = (RPSOCK *) arg;
+    sock_do_callback(sinfo, "drain");
+}
+
+
+static duk_ret_t socket_write(duk_context *ctx)
+{
+    RPSOCK *sinfo;
+    duk_size_t sz;
+    const void *data;
+    int res;
+
+    duk_push_this(ctx);
+
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sinfo")) )
+    {
+        duk_push_false(ctx);
+        return 1;
+    }
+
+    sinfo = (RPSOCK *) duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    if(!sinfo)
+    {
+        duk_push_false(ctx);
+        return 1;
+    }
+
+    data = (void *)REQUIRE_STR_OR_BUF(ctx, 0, &sz, "socket.write: Argument must be a String or Buffer");
+
+    res = bufferevent_write(sinfo->bev, data, sz);
+
+
+    if(res == 0)
+    {
+        sinfo->written+=sz;
+        duk_push_number(ctx, sinfo->written);
+        duk_put_prop_string(ctx, -2, "bytesWritten");
+        duk_push_true(ctx);
+    }
+    else
+    {
+        if(errno)
+            duk_push_string(ctx, strerror(errno));
+        else
+            duk_push_string(ctx, "error writing");
+        do_callback(ctx, "error", 1);
+        errno=0;
+        socket_cleanup(ctx, sinfo);
+        duk_push_false(ctx);
+    }
+
+    return 1;
+}
+
+
+
+
+#define true 1
+#define false 0
+
+#define SOCKET_IS_READING(b) ((bufferevent_get_enabled(b) & \
+                                EV_READ) ? true : false)
+
+
+static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
+{
+    RPSOCK *sinfo = (RPSOCK *) arg;
+    duk_context *ctx = sinfo->ctx;
+/*
+    printf("%p %p eventcb %s%s%s%s\n", arg, (void *)bev,
+        events & BEV_EVENT_CONNECTED ? "connected" : "",
+        events & BEV_EVENT_ERROR     ? "error"     : "",
+        events & BEV_EVENT_TIMEOUT   ? "timeout"   : "",
+        events & BEV_EVENT_EOF       ? "eof"       : "");
+*/
+    if (events & BEV_EVENT_CONNECTED)
+    {
+
+        duk_push_heapptr(ctx, sinfo->thisptr);
+        duk_push_pointer(ctx, sinfo);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("sinfo") );
+
+        if(duk_get_prop_string(ctx, -1, "timeout") )
+        {
+            double to = duk_get_number_default(ctx, -1, 0);
+            if(to == 0.0)
+                bufferevent_set_timeouts(sinfo->bev, NULL, NULL);
+            else
+            {
+                struct timeval ctimeout;
+                to /= 1000; //ms to seconds
+                ctimeout.tv_sec = (time_t) to;
+                ctimeout.tv_usec = (suseconds_t)1000000.0 * (to - (double)ctimeout.tv_sec);
+                bufferevent_set_timeouts(sinfo->bev, &ctimeout, &ctimeout);
+            }
+        }
+        duk_pop_2(ctx);
+
+        bufferevent_enable(bev, EV_READ|EV_WRITE);
+        bufferevent_setcb(bev, sock_readcb, sock_writecb, sock_eventcb, sinfo);
+        sock_do_callback(sinfo, "connect");
+        sock_do_callback(sinfo, "ready");
+        return;
+    }
+
+    if (events == (BEV_EVENT_EOF | BEV_EVENT_READING)) {
+
+        if (errno == EAGAIN) {
+            /* libevent will sometimes recv again when it's not actually ready,
+             * this results in a 0 return value, and errno will be set to EAGAIN
+             * (try again). This does not mean there is a hard socket error, but
+             * simply needs to be read again.
+             *
+             * but libevent will disable the read side of the bufferevent
+             * anyway, so we must re-enable it.
+             */
+
+            if (SOCKET_IS_READING(bev) == false) {
+                bufferevent_enable(bev, EV_READ);
+            }
+
+            errno = 0;
+
+            return;
+        }
+
+    }
+
+    if (events & BEV_EVENT_EOF)
+    {
+        sock_do_callback(sinfo, "end");
+        socket_cleanup(ctx, sinfo);
+        return;
+    }
+
+    if( events & BEV_EVENT_ERROR)
+    {
+        duk_push_heapptr(ctx, sinfo->thisptr);
+        duk_push_string(ctx, strerror(errno));        
+        do_callback(ctx, "error", 1);
+        errno=0;
+        socket_cleanup(ctx, sinfo);
+        return;
+    }
+
+    if ( events & BEV_EVENT_TIMEOUT ) 
+    {
+        sock_do_callback(sinfo, "timeout");
+        socket_cleanup(ctx, sinfo);
+        return;
+    }        
+}
+
+int make_sock_conn(void *arg, int after)
+{
+    RPSOCK *sinfo = (RPSOCK *) arg;
+    struct addrinfo *res=NULL;
+    duk_context *ctx = sinfo->ctx;
+    int port=-1, err=0;
+    struct sockaddr   * sin;
+    size_t sin_sz;
+    duk_idx_t top = duk_get_top(ctx);
+
+    duk_push_heapptr(ctx, sinfo->thisptr);
+
+    // get port
+    if(duk_get_prop_string(ctx, -1, "_hostPort") )
+        port = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    // get ip address(es)
+    if(duk_get_prop_string(ctx, -1,"_hostAddrs"))
+    {
+        if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("resolvep")) )
+            res = (struct addrinfo *) duk_get_pointer(ctx, -1);
+        duk_pop(ctx);
+    }
+    duk_pop(ctx);
+    
+
+    sinfo->bev = bufferevent_socket_new(sinfo->base, -1, BEV_OPT_CLOSE_ON_FREE);
+
+    bufferevent_enable(sinfo->bev, EV_READ);
+
+    bufferevent_setcb( sinfo->bev, NULL, NULL, sock_eventcb, sinfo);
+
+    sin = res->ai_addr;
+
+    switch(sin->sa_family)
+    {
+        case AF_INET:
+        {
+            struct sockaddr_in *in4 = (struct sockaddr_in *) sin;
+            in4->sin_port=htons(port);
+            sin_sz = sizeof(struct sockaddr_in);
+            break;
+        }
+        case AF_INET6:
+        {
+            struct sockaddr_in6 *in6 = (struct sockaddr_in6 *) sin;
+            in6->sin6_port=htons(port);
+            sin_sz = sizeof(struct sockaddr_in6);
+            break;
+        }
+
+        default:
+            duk_set_top(ctx, top);
+            return 0;
+    }
+
+    err = bufferevent_socket_connect(sinfo->bev, sin, sin_sz);
+
+    if (err)
+    {
+        duk_push_string(ctx, strerror(errno));        
+        do_callback(ctx, "error", 1);
+        duk_set_top(ctx, top);
+        return 0;
+    }        
+
+    duk_push_false(ctx);
+    duk_put_prop_string(ctx, -2, "destroyed");
+
+    duk_push_false(ctx);
+    duk_put_prop_string(ctx, -2, "connecting");
+
+    duk_push_false(ctx);
+    duk_put_prop_string(ctx, -2, "pending");
+
+    //duk_pop(ctx); //this
+    duk_set_top(ctx, top);
+    return 0;
+}
+
+
+#define socket_getport(port, idx, func_name) do {\
+double port_num = REQUIRE_NUMBER(ctx, idx, "%s: option 'port' must be an Integer >= 0 and < 65536", func_name);\
+if (port_num != floor(port_num) || port_num < 0 || port_num > 65535)\
+    RP_THROW(ctx,  "%s: option 'port' must be an Integer >= 0 and < 65536", func_name);\
+port = (int) port_num;\
+} while(0)
+
+duk_ret_t duk_rp_net_socket_connect(duk_context *ctx)
+{
+    int port=0;
+    const char *host="127.0.0.1";
+    duk_idx_t tidx, conncb_idx=DUK_INVALID_INDEX;
+    struct event_base *base=NULL;
+    void *thisptr=NULL;
+    RPSOCK *args = NULL;
+
+    //socket.connect(port[, host][, connectListener])    
+    if( duk_is_number(ctx, 0)) {
+        socket_getport(port, 0, "socket.connect");
+        if(duk_is_string(ctx,1)) 
+        {
+            host = duk_get_string(ctx, 1);
+            if(duk_is_function(ctx,2))
+                conncb_idx=2;
+        }
+        else if (!duk_is_undefined(ctx, 1))
+            RP_THROW(ctx, "socket.connect: second argument must be a string (hostname) when first argument is a port number");
+    }
+    else
+    //socket.connect(options[, connectListener])
+    {
+        if(!duk_is_object(ctx,0))
+            RP_THROW(ctx, "socket.connect: parameter must be an Object");
+
+        if(!duk_get_prop_string(ctx, 0, "host"))
+            RP_THROW(ctx, "socket.connect: option 'host' must be set and be a String");
+        host = REQUIRE_STRING(ctx, -1, "socket.connect: option 'host' must be a String");
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, 0, "port"))
+        {
+            double port_num = REQUIRE_NUMBER(ctx, -1, "socket.connect: option 'port' must be an Integer >= 0 and < 65536");
+            
+            if (port_num != floor(port_num) || port_num < 0 || port_num > 65535)
+                RP_THROW(ctx,  "%s: option 'port' must be an Integer >= 0 and < 65536");
+            
+            port = (int) port_num;
+        }
+        else
+            RP_THROW(ctx, "socket.connect: option 'port' must be set and be an Integer >= 0 and < 65536");
+
+        duk_pop(ctx);
+
+        if(duk_is_function(ctx,1))
+            conncb_idx=1;
+    }
+
+    duk_push_this(ctx);
+    tidx = duk_get_top_index(ctx);
+    thisptr = duk_get_heapptr(ctx, -1);
 
     if(!push_resolve(ctx, host))
     {
@@ -679,14 +1073,35 @@ duk_ret_t duk_rp_net_socket_connect(duk_context *ctx)
 
     duk_put_prop_string(ctx, tidx, "_hostAddrs");
 
+    duk_push_int(ctx,port);
+    duk_put_prop_string(ctx, tidx, "_hostPort");
+
+    if(conncb_idx!=DUK_INVALID_INDEX)
+    {
+        duk_dup(ctx, conncb_idx);
+        duk_rp_net_on(ctx, "socket.connect", "connect", -1, tidx);
+    }
+
     /* if we are threaded, base will not be global struct event_base *elbase */
     duk_push_global_stash(ctx);
     if( duk_get_prop_string(ctx, -1, "elbase") )
         base=duk_get_pointer(ctx, -1);
     duk_pop_2(ctx);
 
+    REMALLOC(args, sizeof(RPSOCK));
+    args->ctx=ctx;
+    args->thisptr=thisptr;
+    args->base = base;
+    args->written=0;
+    args->read=0;
 
+    duk_rp_insert_timeout(ctx, 0, "socket.connect", make_sock_conn, args, 
+        DUK_INVALID_INDEX, DUK_INVALID_INDEX, 0);
 
+    duk_pull(ctx, tidx);
+
+    duk_push_true(ctx);
+    duk_put_prop_string(ctx, -2, "connecting");
     return 1;
 }
 
@@ -711,11 +1126,24 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_c_function(ctx, duk_rp_net_socket_connect, 3);
     duk_put_prop_string(ctx, -2, "connect");
 
+    // socket.write()
+    duk_push_c_function(ctx, socket_write,1);
+    duk_put_prop_string(ctx, -2, "write");
+
     // socket.on()        
-    duk_push_c_function(ctx, duk_rp_net_on, 2);
+    duk_push_c_function(ctx, duk_rp_socket_on, 2);
     duk_put_prop_string(ctx, -2, "on");
 
+    //socket.destroy()
+    duk_push_c_function(ctx, socket_destroy, 1);
+    duk_put_prop_string(ctx, -2, "destroy");
+
+    //socket.setTimeout
+    duk_push_c_function(ctx, socket_set_timeout, 2);
+    duk_put_prop_string(ctx, -2, "setTimeout");
+
     duk_put_prop_string(ctx, -2, "prototype");
+    // new net.Socket()
     duk_put_prop_string(ctx, -2, "Socket");
     
 
