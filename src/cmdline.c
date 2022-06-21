@@ -893,13 +893,16 @@ duk_double_t timespec_diff_ms(struct timespec *ts1, struct timespec *ts2)
     return ret;
 }
 
+
 static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
 {
     EVARGS *evargs = (EVARGS *) arg;
     duk_context *ctx= evargs->ctx;
     double key= evargs->key;
-    duk_idx_t nargs = 0;
-    int cbret=1;
+    duk_idx_t nargs = 0, func_idx;
+    int cbret=1, do_js_cb=0;
+
+    duk_set_top(ctx, 0);
 
     duk_push_global_stash(ctx);
     if( !duk_get_prop_string(ctx,-1, "ev_callback_object") )
@@ -907,52 +910,84 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
         RP_THROW(ctx, "internal error in rp_el_doevent()");
     }
 
-    // the JS callback function
-    duk_push_number(ctx, evargs->key);
-    duk_get_prop(ctx, -2);
-
-    // get array and extract parameters.
-    // ugly hack from duk_rp_set_to below
-    duk_push_number(ctx, evargs->key+0.2);
-    if(duk_get_prop(ctx, -3))
-    {
-        //this should always be an array.
-        duk_idx_t i = 0, arr_idx = duk_get_top_index(ctx);
-        nargs = (duk_idx_t) duk_get_length(ctx,-1);
-        for(; i<nargs; i++)
-            duk_get_prop_index(ctx, arr_idx, i);
-
-        duk_remove(ctx, arr_idx); //array
-    }
-    else
-        duk_pop(ctx); //undefined
 
     // do C timeout callback immediately before the JS callback
     // this is for a generic callback, not used for setTimeout/setInterval
     if(evargs->cb)
         cbret=(evargs->cb)(evargs->cbarg, 0);
 
-    if(!cbret)
-    {
-        duk_pop_2(ctx);
+    if(!cbret) //if return 0, skip js callback and second c callback
         goto to_doevent_end;
-    }
 
-    if(duk_pcall(ctx, nargs) != 0)
+    // the JS callback function
+    duk_push_number(ctx, evargs->key);
+    duk_get_prop(ctx, -2);
+
+    if(duk_is_function(ctx, -1))
     {
-        if (duk_is_error(ctx, -1) )
+        func_idx = duk_get_top_index(ctx);
+        do_js_cb=1;
+        // get array and extract parameters.
+        // ugly hack from duk_rp_set_to below
+        duk_push_number(ctx, evargs->key+0.2);
+        if(duk_get_prop(ctx, -3))
         {
-            duk_get_prop_string(ctx, -1, "stack");
-            fprintf(stderr, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
-            duk_pop(ctx);
-        }
-        else if (duk_is_string(ctx, -1))
-        {
-            fprintf(stderr, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
+            //this should always be an array.
+            duk_idx_t i = 0, arr_idx = duk_get_top_index(ctx);
+            nargs = (duk_idx_t) duk_get_length(ctx,-1);
+            for(; i<nargs; i++)
+                duk_get_prop_index(ctx, arr_idx, i);
+
+            duk_remove(ctx, arr_idx); //array
         }
         else
+            duk_pop(ctx); //undefined
+    }
+    // if we don't have a function, skip call
+    if(!do_js_cb)
+        goto to_post_callback;
+
+    if(cbret == 1) //normal, no 'this' not bound to callback
+    {
+        if(duk_pcall(ctx, nargs) != 0)
         {
-            fprintf(stderr, "Error in setTimeout/setInterval callback\n");
+            if (duk_is_error(ctx, -1) )
+            {
+                duk_get_prop_string(ctx, -1, "stack");
+                fprintf(stderr, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
+                duk_pop(ctx);
+            }
+            else if (duk_is_string(ctx, -1))
+            {
+                fprintf(stderr, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
+            }
+            else
+            {
+                fprintf(stderr, "Error in setTimeout/setInterval callback\n");
+            }
+        }
+    }
+    else
+    {
+        // if cbret == 2, this binding must be left on top of stack from c callback above
+        duk_insert(ctx, func_idx+1); //insert 'this' after function
+
+        if(duk_pcall_method(ctx, nargs) != 0)
+        {
+            if (duk_is_error(ctx, -1) )
+            {
+                duk_get_prop_string(ctx, -1, "stack");
+                fprintf(stderr, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
+                duk_pop(ctx);
+            }
+            else if (duk_is_string(ctx, -1))
+            {
+                fprintf(stderr, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
+            }
+            else
+            {
+                fprintf(stderr, "Error in setTimeout/setInterval callback\n");
+            }
         }
     }
     //discard return
@@ -963,9 +998,11 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
     duk_push_number(ctx, key);
     if(!duk_has_prop(ctx, -2) )
     {
-        duk_pop_2(ctx);
+        duk_set_top(ctx, 0);
         return;
     }
+
+    to_post_callback:
 
     // do post callback
     if(evargs->cb)
@@ -1027,7 +1064,8 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
         event_del(evargs->e);
         event_add(evargs->e, &newto);
     }
-    duk_pop_2(ctx);
+
+    duk_set_top(ctx, 0);
 }
 
 
@@ -1036,14 +1074,40 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
    The id will be used on separate duk stacks for each thread */
 volatile uint32_t ev_id=0;
 
-duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout_callback *cb, void *arg)
+/* this will insert a javascript callback into the event loop for settimeout et al
+    ctx              -   thread's duk_context
+    repeat           -   0:setTimeout, 1:setInterval, 2:setMetronome
+    func_name        -   a javascript function name for error messages (i.e. "setTimeout")
+    timeout_callback -   A c callback, int cb(void arg, int after)
+                           called twice, once with after=0, right before the javascript callback function is called,
+                           and once with after=1, right after javascript callback function is called. 
+                         Return value from func with after=0 should be 
+                                0 for skip js callback,
+                                1 for ok
+                                    OR 
+                                2 - cbfunc pushed 'this' onto stack for JS callback.
+                         Return value from func with after=1 is used to set a new 'repeat' value (0, 1 or 2).
+    arg              -   void pointer for above callback.
+    func_idx         -   where to find the js callback.  If negative, js callback will be skipped
+    arg_start_idx    -   where to start looking for arguments in duktape stack to be eventually passed to js callback
+                     -   DUK_INVALID_INDEX means don't look for arguments
+    to               -   timeout value in seconds 
+
+NOTE: func_idx must be != DUK_INVALID_INDEX.  If not, we skip the js function 
+
+*/
+duk_ret_t duk_rp_insert_timeout(duk_context *ctx, int repeat, const char *fname, timeout_callback *cb, void *arg, 
+        duk_idx_t func_idx, duk_idx_t arg_start_idx, double to)
 {
-    REQUIRE_FUNCTION(ctx,0,"%s(): Callback must be a function", fname);
-    double to = duk_get_number_default(ctx,1, 0) / 1000.0;
     struct event_base *base=NULL;
     EVARGS *evargs=NULL;
-    duk_idx_t i=2, top=duk_get_top(ctx);
+    duk_idx_t top=duk_get_top(ctx);
 
+    if(func_idx != DUK_INVALID_INDEX)
+    {
+        func_idx = duk_normalize_index(ctx, func_idx);
+        REQUIRE_FUNCTION(ctx, func_idx, "%s(): Callback must be a function", fname);
+    }
     /* if we are threaded, base will not be global struct event_base *elbase */
     duk_push_global_stash(ctx);
     if( duk_get_prop_string(ctx, -1, "elbase") )
@@ -1081,16 +1145,21 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout
         duk_put_prop_string(ctx, -3, "ev_callback_object"); // put one reference in stash, leave other reference on top
     }
     duk_push_number(ctx, evargs->key); //array-like access with number as key
-    duk_dup(ctx,0); //the JS callback function
+
+    if(func_idx != DUK_INVALID_INDEX)
+        duk_dup(ctx,func_idx); //the JS callback function
+    else
+        duk_push_null(ctx);
+
     duk_put_prop(ctx, -3);
 
     // parameters to function
-    if( top > 2 )
+    if( func_idx != DUK_INVALID_INDEX && arg_start_idx != DUK_INVALID_INDEX && top > arg_start_idx )
     {
-        duk_uarridx_t aidx=0;
+        duk_uarridx_t aidx=0, i;
         duk_push_number(ctx, evargs->key + 0.2);
         duk_push_array(ctx);
-        for (i=2; i<top; i++)
+        for (i=arg_start_idx; i<top; i++)
         {
             duk_dup(ctx,i);
             duk_put_prop_index(ctx, -2, aidx++);
@@ -1114,6 +1183,13 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout
     return 1;
 }
 
+inline duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout_callback *cb, void *arg)
+{
+    return duk_rp_insert_timeout(ctx, repeat, fname, cb, arg, 0, 2, 
+        duk_get_number_default(ctx,1, 0) / 1000.0
+    );
+}
+
 duk_ret_t duk_rp_set_timeout(duk_context *ctx)
 {
     return duk_rp_set_to(ctx, 0, "setTimeout", NULL, NULL);
@@ -1126,7 +1202,7 @@ duk_ret_t duk_rp_set_interval(duk_context *ctx)
 
 duk_ret_t duk_rp_set_metronome(duk_context *ctx)
 {
-    return duk_rp_set_to(ctx, 2, "setInterval", NULL, NULL);
+    return duk_rp_set_to(ctx, 2, "setMetronome", NULL, NULL);
 }
 
 duk_ret_t duk_rp_clear_either(duk_context *ctx)
