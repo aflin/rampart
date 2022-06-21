@@ -117,7 +117,7 @@ extern "C"
     if( duk_is_string( (ctx), i ) )\
         r=duk_to_buffer( (ctx), i, (sz) );\
     else if ( duk_is_buffer( (ctx), i ) )\
-        r=duk_get_buffer( (ctx), i, (sz) );\
+        r=duk_get_buffer_data( (ctx), i, (sz) );\
     else\
         RP_THROW( (ctx), __VA_ARGS__);\
     r;\
@@ -129,7 +129,7 @@ extern "C"
     if( duk_is_string( (ctx), i ) )\
         r=duk_get_lstring( (ctx), i, (sz) );\
     else if ( duk_is_buffer( (ctx), i ) )\
-        r=(const char *)duk_get_buffer( (ctx), i, (sz) );\
+        r=(const char *)duk_get_buffer_data( (ctx), i, (sz) );\
     else\
         RP_THROW( (ctx), __VA_ARGS__);\
     r;\
@@ -308,11 +308,18 @@ char *duk_rp_url_decode(char *str, int *len);
 void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase);
 int duk_rp_get_int_default(duk_context *ctx, duk_idx_t i, int def);
 char *to_utf8(const char *in_str);
+
 /* we might want to do something right before the timeout when using generically */
 typedef int (timeout_callback)(void *, int);
+
+/* setTimeout functions */
+duk_ret_t duk_rp_insert_timeout(duk_context *ctx, int repeat, const char *fname, timeout_callback *cb, void *arg, 
+        duk_idx_t func_idx, duk_idx_t arg_start_idx, double to);
 duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout_callback *cb, void *arg);
 void timespec_add_ms(struct timespec *ts, duk_double_t add);
 duk_double_t timespec_diff_ms(struct timespec *ts1, struct timespec *ts2);
+
+typedef int (net_callback)(void *);
 
 #define RPPATH struct rp_path_s
 RPPATH {
