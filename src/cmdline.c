@@ -1207,7 +1207,8 @@ duk_ret_t duk_rp_set_metronome(duk_context *ctx)
 
 duk_ret_t duk_rp_clear_either(duk_context *ctx)
 {
-    EVARGS *evargs=NULL;
+    EVARGS *evargs=NULL, *p;
+    int found=0;
 
     if(!duk_is_object(ctx,0))
         RP_THROW(ctx, "clearTimeout()/clearInteral() requires variable returned from setTimeout()/setInterval()");
@@ -1217,9 +1218,25 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
 
     evargs=(EVARGS *)duk_get_pointer(ctx, 1);
 
+    if(!evargs)
+        return 0;
+
+
     SLISTLOCK;
-    SLIST_REMOVE(&tohead, evargs, ev_args, entries);
+    SLIST_FOREACH(p, &tohead, entries)
+    {
+        if(p == evargs)
+        {
+            found=1;
+            break;
+        }
+    }
+    if(found)
+        SLIST_REMOVE(&tohead, evargs, ev_args, entries);
     SLISTUNLOCK;
+
+    if(!found)
+        return 0;
 
     event_del(evargs->e);
     event_free(evargs->e);

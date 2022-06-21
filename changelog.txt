@@ -5,5 +5,6 @@ v0.1.1
     - Added log rotation to web_server_conf.js
     - fixed stat file dates on 32 bit systems.
     - rampart-net node.js like net function
+    - fixed segfault on clearTimeout when event expired
 v0.1.0
     - initial release
