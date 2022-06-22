@@ -34,90 +34,90 @@ extern "C"
 } while(0)
 
 #define REQUIRE_STRING(ctx,idx,...) ({\
-    duk_idx_t i=(idx);\
-    if(!duk_is_string((ctx),i)) {\
+    duk_idx_t __rp_i=(idx);\
+    if(!duk_is_string((ctx),__rp_i)) {\
         RP_THROW((ctx), __VA_ARGS__ );\
     }\
-    const char *r=duk_get_string((ctx),i);\
+    const char *r=duk_get_string((ctx),__rp_i);\
     r;\
 })
 
 #define REQUIRE_LSTRING(ctx,idx,len,...) ({\
-    duk_idx_t i=(idx);\
-    if(!duk_is_string((ctx),i)) {\
+    duk_idx_t __rp_i=(idx);\
+    if(!duk_is_string((ctx),__rp_i)) {\
         RP_THROW((ctx), __VA_ARGS__ );\
     }\
-    const char *r=duk_get_lstring((ctx),i,(len));\
+    const char *r=duk_get_lstring((ctx),__rp_i,(len));\
     r;\
 })
 
 #define REQUIRE_INT(ctx,idx,...) ({\
-    duk_idx_t i=(idx);\
-    if(!duk_is_number((ctx),i)) {\
+    duk_idx_t __rp_i=(idx);\
+    if(!duk_is_number((ctx),__rp_i)) {\
         RP_THROW((ctx), __VA_ARGS__ );\
     }\
-    int r=duk_get_int((ctx),i);\
+    int r=duk_get_int((ctx),__rp_i);\
     r;\
 })
 
 #define REQUIRE_UINT(ctx,idx,...) ({\
-    duk_idx_t i=(idx);\
-    if(!duk_is_number((ctx),i)) {\
+    duk_idx_t __rp_i=(idx);\
+    if(!duk_is_number((ctx),__rp_i)) {\
         RP_THROW((ctx), __VA_ARGS__ );\
     }\
-    int r=duk_get_int((ctx),i);\
+    int r=duk_get_int((ctx),__rp_i);\
     if(r<0) RP_THROW((ctx), __VA_ARGS__ );\
     r;\
 })
 
 #define REQUIRE_BOOL(ctx,idx,...) ({\
-    duk_idx_t i=(idx);\
-    if(!duk_is_boolean((ctx),i)) {\
+    duk_idx_t __rp_i=(idx);\
+    if(!duk_is_boolean((ctx),__rp_i)) {\
         RP_THROW((ctx), __VA_ARGS__ );\
     }\
-    int r=duk_get_boolean((ctx),i);\
+    int r=duk_get_boolean((ctx),__rp_i);\
     r;\
 })
 
 #define REQUIRE_NUMBER(ctx,idx,...) ({\
-    duk_idx_t i=(idx);\
-    if(!duk_is_number((ctx),i)) {\
+    duk_idx_t __rp_i=(idx);\
+    if(!duk_is_number((ctx),__rp_i)) {\
         RP_THROW((ctx), __VA_ARGS__ );\
     }\
-    double r=duk_get_number((ctx),i);\
+    double r=duk_get_number((ctx),__rp_i);\
     r;\
 })
 
 #define REQUIRE_FUNCTION(ctx,idx,...) ({\
-    duk_idx_t i=(idx);\
-    if(!duk_is_function((ctx),i)) {\
+    duk_idx_t __rp_i=(idx);\
+    if(!duk_is_function((ctx),__rp_i)) {\
         RP_THROW((ctx), __VA_ARGS__ );\
     }\
 })
 
 #define REQUIRE_OBJECT(ctx,idx,...) ({\
-    duk_idx_t i=(idx);\
-    if(!duk_is_object((ctx),i)) {\
+    duk_idx_t __rp_i=(idx);\
+    if(!duk_is_object((ctx),__rp_i)) {\
         RP_THROW((ctx), __VA_ARGS__ );\
     }\
 })
 
 #define REQUIRE_BUFFER_DATA(ctx,idx,sz,...) ({\
-    duk_idx_t i=(idx);\
-    if(!duk_is_buffer_data((ctx),i)) {\
+    duk_idx_t __rp_i=(idx);\
+    if(!duk_is_buffer_data((ctx),__rp_i)) {\
         RP_THROW((ctx), __VA_ARGS__ );\
     }\
-    void *r=duk_get_buffer_data((ctx),i,(sz));\
+    void *r=duk_get_buffer_data((ctx),__rp_i,(sz));\
     r;\
 })
 
 #define REQUIRE_STR_TO_BUF(ctx, idx, sz, ...) ({\
     void *r=NULL;\
-    duk_idx_t i=(idx);\
-    if( duk_is_string( (ctx), i ) )\
-        r=duk_to_buffer( (ctx), i, (sz) );\
-    else if ( duk_is_buffer( (ctx), i ) )\
-        r=duk_get_buffer_data( (ctx), i, (sz) );\
+    duk_idx_t __rp_i=(idx);\
+    if( duk_is_string( (ctx), __rp_i ) )\
+        r=duk_to_buffer( (ctx), __rp_i, (sz) );\
+    else if ( duk_is_buffer( (ctx), __rp_i ) )\
+        r=duk_get_buffer_data( (ctx), __rp_i, (sz) );\
     else\
         RP_THROW( (ctx), __VA_ARGS__);\
     r;\
@@ -125,11 +125,11 @@ extern "C"
 
 #define REQUIRE_STR_OR_BUF(ctx, idx, sz, ...) ({\
     const char *r=NULL;\
-    duk_idx_t i=(idx);\
-    if( duk_is_string( (ctx), i ) )\
-        r=duk_get_lstring( (ctx), i, (sz) );\
-    else if ( duk_is_buffer( (ctx), i ) )\
-        r=(const char *)duk_get_buffer_data( (ctx), i, (sz) );\
+    duk_idx_t __rp_i=(idx);\
+    if( duk_is_string( (ctx), __rp_i ) )\
+        r=duk_get_lstring( (ctx), __rp_i, (sz) );\
+    else if ( duk_is_buffer( (ctx), __rp_i ) )\
+        r=(const char *)duk_get_buffer_data( (ctx), __rp_i, (sz) );\
     else\
         RP_THROW( (ctx), __VA_ARGS__);\
     r;\
