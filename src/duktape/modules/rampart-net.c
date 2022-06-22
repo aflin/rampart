@@ -12,38 +12,19 @@
 #include <ctype.h>
 #include <arpa/inet.h>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/tcp.h>
 #include <sys/stat.h>
 #include <sys/syscall.h> // for syscall(SYS_gettid)
 #include <unistd.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include "rampart.h"
-/*
-#include <time.h>
-#include <signal.h>
-#include <sys/wait.h>
-#include <sys/mman.h>
-#include <sys/param.h>
-#include <grp.h>
-#ifdef __APPLE__
-#include <uuid/uuid.h>
-#include <sys/sysctl.h>
-#endif
-#include <pwd.h>
-
-#include "evhtp/evhtp.h"
-#include "../ws/evhtp_ws.h"
-#include "rampart.h"
-#include "../core/module.h"
-#include "mime.h"
-#include "../register.h"
-#include "../globals/printf.h"
-#include "libdeflate.h"
-
-*/
-
 #include "event.h"
-
+#include "event2/bufferevent_ssl.h"
+#include "openssl/ssl.h"
+#include "openssl/err.h"
+/*
 static int push_ip_canon(duk_context *ctx, const char *addr, int domain)
 {
     unsigned char buf[sizeof(struct in6_addr)];
@@ -66,6 +47,9 @@ static int push_ip_canon(duk_context *ctx, const char *addr, int domain)
     return 1;
 }
 
+ 
+//  kinda unused and purposeless right now 
+//  In node it appears to be used for net.blockList
 
 duk_ret_t duk_rp_net_socket_address(duk_context *ctx) {
 
@@ -74,7 +58,7 @@ duk_ret_t duk_rp_net_socket_address(duk_context *ctx) {
     int port = 0, flow=0, domain = AF_INET;
     duk_idx_t tidx;
 
-    /* allow call to SocketAddress() with "new SocketAddress()" only */
+    // allow call to SocketAddress() with "new SocketAddress()" only
     if (!duk_is_constructor_call(ctx))
     {
         return DUK_RET_TYPE_ERROR;
@@ -82,9 +66,6 @@ duk_ret_t duk_rp_net_socket_address(duk_context *ctx) {
 
     duk_push_this(ctx);
     tidx = duk_get_top_index(ctx);
-
-    duk_push_true(ctx);
-    duk_put_prop_string(ctx, -2, "pending");
 
     if(duk_get_prop_string(ctx, 0, "address"))
         ip=REQUIRE_STRING(ctx,-1, "%s: option 'address' must be a String", func_name);
@@ -135,83 +116,14 @@ duk_ret_t duk_rp_net_socket_address(duk_context *ctx) {
 
     return 0; //constructor, ret value not needed.
 }
+*/
 
-
-duk_ret_t duk_rp_net_socket(duk_context *ctx)
-{
-    duk_bool_t readable=1, writable=1, allowHalf=0;
-    int fd=-1;
-    duk_idx_t tidx;
-
-    /* allow call to SocketAddress() with "new SocketAddress()" only */
-    if (!duk_is_constructor_call(ctx))
-    {
-        return DUK_RET_TYPE_ERROR;
-    }
-
-    duk_push_this(ctx);    
-    tidx = duk_get_top_index(ctx);
-
-    // the name of our function, for socket.on, etc.
-    duk_push_string(ctx, "socket");
-    duk_put_prop_string(ctx, tidx, DUK_HIDDEN_SYMBOL("netfunc"));
-
-    //object to hold event callbacks
-    duk_push_object(ctx);
-    duk_put_prop_string(ctx, tidx, "_events");
-
-    // get options:
-    if(duk_is_object(ctx, 0))
-    {
-        if(duk_get_prop_string(ctx, 0, "fd"))
-        {
-            fd=REQUIRE_INT(ctx, -1, "new Socket: option 'fd' must be an integer"); 
-        }
-        duk_pop(ctx);
-
-        if(fd > -1) {
-            readable=0;
-            writable=0;
-
-            if(duk_get_prop_string(ctx, 0, "readable"))
-            {
-                readable = REQUIRE_BOOL(ctx, -1, "new Socket: option 'readable' must be a Boolean");
-            }
-            duk_pop(ctx);
-
-            if(duk_get_prop_string(ctx, 0, "writable"))
-            {
-                writable = REQUIRE_BOOL(ctx, -1, "new Socket: option 'writable' must be a Boolean");
-            }
-            duk_pop(ctx);
-        }
-
-        if(duk_get_prop_string(ctx, 0, "allowHalfOpen"))
-        {
-            allowHalf = REQUIRE_BOOL(ctx, -1, "new Socket: option 'allowHalfOpen' must be a Boolean");
-        }
-        duk_pop(ctx);
-    }
-
-    // put options in 'this'
-    duk_push_boolean(ctx, readable);
-    duk_put_prop_string(ctx, tidx, "readable");
-
-    duk_push_boolean(ctx, writable);
-    duk_put_prop_string(ctx, tidx, "writable");
-
-    duk_push_boolean(ctx, allowHalf);
-    duk_put_prop_string(ctx, tidx, "allowHalfOpen");
-
-    duk_push_int(ctx, fd);
-    duk_put_prop_string(ctx, tidx, "fd");
-
-    return 0;
-}
 
 
 
 // put supplied function into this._event using supplied event name
+// this_idx may be DUK_INVALID_INDEX, in which case this will be retrieved by function
+// cb_idx must contain a function, or error is thrown
 static void duk_rp_net_on(duk_context *ctx, const char *fname, const char *evname, duk_idx_t cb_idx, duk_idx_t this_idx)
 {
     duk_idx_t tidx;
@@ -405,7 +317,7 @@ duk_ret_t duk_rp_net_resolve(duk_context *ctx)
    return 0 if fail(get), doesn't exist(delete) and leave undefined on stack.
    put always succeeds, putting value on top of stack to stash = { objname: {key: val} } .
    if key is NULL, operates on object itself.  stash = { objname: val }
-   but val must be an object for put
+   but if NULL, val must be an object for put
 */
 
 int rp_put_gs_object(duk_context *ctx, const char *objname, const char *key)
@@ -539,30 +451,48 @@ int rp_get_gs_object(duk_context *ctx, const char *objname, const char *key)
     return ret;
 }
 
+/* the problem:
+mostly for net.connect, but better illustrated with the following - 
 
-#define NETARGS struct net_args
+This works fine:
+var s = new net.Socket();
 
-NETARGS {
-    duk_context *ctx;
-    struct event *e;
-    double key;
-    int repeat;
-    struct timeval timeout;
-    struct timespec start_time;
-    net_callback *cb;
-    void *cbarg;
-    SLIST_ENTRY(net_args) entries;
-};
+s.connect({port:8088}, function(){
+    this.on('data', function(data) {
+        console.log(data.length);
+    });
+    this.write("GET / HTTP/1.0\r\n\r\n");
+});
 
+This wouldn't work but for the fix below using sinfo->thiskey
+
+(new net.Socket()).connect({port:8088}, function(){
+    this.on('data', function(data) {
+        console.log(data.length);
+    });
+    this.write("GET / HTTP/1.0\r\n\r\n");
+});
+
+by the time the connect callback run in the event loop, 'this' is gone if a reference
+isn't saved. So we save it in the stash before any other libevent events 
+calling javascript need it.
+
+The downside is that we cannot have a finalizer on the return value from new net.Socket().
+
+*/
+
+volatile uint32_t this_id=0;
 
 #define RPSOCK struct rp_socket_callback_s
-
 
 RPSOCK {
     duk_context        * ctx;
     void               * thisptr;
+    uint32_t             thiskey;
     struct event_base  * base;
     struct bufferevent * bev;
+    SSL_CTX            * ssl_ctx;
+    SSL                * ssl;
     size_t               read;
     size_t               written;
 };
@@ -624,11 +554,9 @@ static int do_callback(duk_context *ctx, const char *ev_s, duk_idx_t nargs)
                     fprintf(stderr, "Error in %s callback\n", ev_s);
                 }
                 // [..., callback_array, this, [args, args], err ]
-                duk_pop(ctx); 
-                // [..., callback_array, this, [args, args] ]
             }
-            // [ ..., callback_array, this, [args, args], retval ]
-            duk_pop(ctx); //discard retval
+            // [ ..., callback_array, this, [args, args], retval/err ]
+            duk_pop(ctx); //discard retval/err
             i++;
             // [ ..., callback_array, this, [args, args] ]
         }
@@ -679,20 +607,12 @@ static void sock_readcb(struct bufferevent * bev, void * arg)
     duk_remove(ctx, 0); //remove it
 
     evbuffer_drain(evbuf, len);//drain it.
-
-/*
-printf("readcb\n");
-    char buf[1024];
-    int n;
-    struct evbuffer *input = bufferevent_get_input(bev);
-    while ((n = evbuffer_remove(input, buf, sizeof(buf))) > 0) {
-        fwrite(buf, 1, n, stdout);
-    }
-*/
 }
 
 void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
 {
+    char keystr[16];
+
     if (!sinfo)
         return;
 
@@ -704,10 +624,29 @@ void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
     duk_push_heapptr(ctx, sinfo->thisptr);
     duk_push_true(ctx);
     duk_put_prop_string(ctx, -2, "destroyed");
+    duk_push_false(ctx);
+    duk_put_prop_string(ctx, -2, "connected");
     duk_push_pointer(ctx, NULL);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("sinfo") );
+    duk_del_prop_string(ctx, -1, "remoteAddress");
+    duk_del_prop_string(ctx, -1, "remotePort");
+    duk_del_prop_string(ctx, -1, "remoteFamily");
+    duk_del_prop_string(ctx, -1, "readyState");
 
-    bufferevent_free(sinfo->bev);
+    sprintf(keystr, "%d", (int) sinfo->thiskey);
+    if(!rp_del_gs_object(ctx, "connkeymap", keystr ))
+        fprintf(stderr,"failed to find keystr in connkeymap\n");
+
+    if(sinfo->bev)
+        bufferevent_free(sinfo->bev);
+
+    //freed by bufferevent
+    //if(sinfo->ssl)
+    //    SSL_free(sinfo->ssl);
+
+    if(sinfo->ssl_ctx)
+        SSL_CTX_free(sinfo->ssl_ctx);
+
     free(sinfo);
 
     //'this' is still on top
@@ -732,6 +671,8 @@ static duk_ret_t socket_destroy(duk_context *ctx)
     }
 
     sinfo = (RPSOCK *) duk_get_pointer(ctx, -1);
+
+
     if(sinfo)
         socket_cleanup(ctx,sinfo);
 
@@ -748,9 +689,10 @@ static duk_ret_t socket_set_timeout(duk_context *ctx)
     duk_push_this(ctx);
     tidx = duk_get_top_index(ctx);
     
+    /* function not required. may be set later with socket.on() */
     if(duk_is_function(ctx, 1))
     {
-        duk_push_this(ctx);
+        //duk_push_this(ctx);
         duk_rp_net_on(ctx, "socket.on", "timeout", 1, tidx);
     }
 
@@ -822,7 +764,103 @@ static duk_ret_t socket_write(duk_context *ctx)
 }
 
 
+static int set_nodelay(int fd, int nodelay)
+{
+    errno=0;
+    if(setsockopt(fd, SOL_TCP, TCP_NODELAY, &nodelay, sizeof(int) ))
+        return 0;// fail
+    return 1;
+}
 
+static duk_ret_t socket_set_nodelay(duk_context *ctx)
+{
+    int nd=1, fd;
+    RPSOCK *sinfo;
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sinfo") );
+    sinfo = (RPSOCK *) duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    if(!sinfo)
+        RP_THROW(ctx, "socket.setNoDelay: No connection info found.  Socket must be connected in order set keepalive");
+
+    fd = bufferevent_getfd(sinfo->bev);
+
+    nd = duk_get_boolean_default(ctx, 0, 1);
+    
+    if(!set_nodelay(fd, nd))
+        RP_THROW(ctx, "socket.setNoDelay: Error setting noDelay - %s", strerror(errno) );
+
+    return 1;    
+}
+
+static int set_keepalive(int fd, int keepalive, int idle, int intv, int cnt) {
+    do {
+        size_t sz = sizeof(int);
+
+        errno=0;
+        if(idle < 1) idle = 1;
+        if(intv < 1) intv = 1;
+        if(cnt  < 1) cnt  = 1;
+
+    	if(setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sz ))
+    	    break;
+
+        if(!keepalive)
+            return 1;
+
+        if(setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &cnt, sz ))
+            break;
+
+        if(setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sz ))
+            break;
+
+        if(setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &intv, sz ))
+            break;
+
+        return 1;//success
+    } while(0);
+
+	return 0;//fail, check errno
+}
+
+static duk_ret_t socket_set_keepalive(duk_context *ctx)
+{
+    int ka=0, ka_params[3]= {1, 1, 10}, fd=-1, i=1;
+    RPSOCK *sinfo;
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sinfo") );
+    sinfo = (RPSOCK *) duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    if(!sinfo)
+        RP_THROW(ctx, "socket.setKeepAlive: No connection info found.  Socket must be connected in order set keepalive");
+
+    fd = bufferevent_getfd(sinfo->bev);
+
+    ka = REQUIRE_BOOL(ctx, 0, "socket.setKeepAlive: first parameter must be a Boolean (enable keepalive)");
+    if(!ka)
+    {
+        if(!set_keepalive(fd, 0, 1, 1, 1))
+            RP_THROW(ctx, "socket.setKeepAlive: Error setting keepalive - %s", strerror(errno) );
+        return 1; //'this' on top
+    } 
+
+    while (i < 4)
+    {
+        if(!duk_is_undefined(ctx, i))
+            ka_params[i-1]=REQUIRE_NUMBER(ctx, i, "socket.setKeepAlive: argument %d must be a number\n", (int)i);
+        i++;
+    }    
+
+    if(!set_keepalive(fd, 1,  ka_params[0], ka_params[1], ka_params[2]))
+        RP_THROW(ctx, "socket.setKeepAlive: Error setting keepalive - %s", strerror(errno) );
+
+
+    return 1;    
+}
 
 #define true 1
 #define false 0
@@ -844,11 +882,55 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
 */
     if (events & BEV_EVENT_CONNECTED)
     {
+        int fd = bufferevent_getfd(bev);
+        struct sockaddr addr;
+        socklen_t sz = sizeof(struct sockaddr);
+        char addrstr[INET6_ADDRSTRLEN];
+        int localport;
 
         duk_push_heapptr(ctx, sinfo->thisptr);
         duk_push_pointer(ctx, sinfo);
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("sinfo") );
 
+        /* set flags */
+        duk_push_false(ctx);
+        duk_put_prop_string(ctx, -2, "connecting");
+
+        duk_push_true(ctx);
+        duk_put_prop_string(ctx, -2, "connected");
+
+        duk_push_string(ctx, "open");
+        duk_put_prop_string(ctx, -2, "readyState");
+
+        /* set local host/port */
+        if(getsockname(fd, &addr, &sz ))
+        {
+            //do error
+            duk_dup(ctx, -1);
+            duk_push_sprintf(ctx, "socket.connect: could not get local host/port");        
+            do_callback(ctx, "error", 1);
+        }
+
+        if( addr.sa_family == AF_INET ) {
+            struct sockaddr_in *sa = ( struct sockaddr_in *) &addr;
+
+            inet_ntop (addr.sa_family, (void * ) &( ((struct sockaddr_in *)&addr)->sin_addr), addrstr, INET6_ADDRSTRLEN);
+            localport = (int) ntohs(sa->sin_port);
+        }
+        else
+        {
+            struct sockaddr_in6 *sa = ( struct sockaddr_in6 *) &addr;
+
+            inet_ntop (addr.sa_family, (void*) &(((struct sockaddr_in6*)&addr)->sin6_addr), addrstr, INET6_ADDRSTRLEN);
+            localport = (int) ntohs(sa->sin6_port);
+        }
+            
+        duk_push_string(ctx, addrstr);
+        duk_put_prop_string(ctx, -2, "localAddress");
+        duk_push_int(ctx, localport);
+        duk_put_prop_string(ctx, -2, "localPort");
+
+        /* apply timeout and keepalive */
         if(duk_get_prop_string(ctx, -1, "timeout") )
         {
             double to = duk_get_number_default(ctx, -1, 0);
@@ -863,18 +945,53 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
                 bufferevent_set_timeouts(sinfo->bev, &ctimeout, &ctimeout);
             }
         }
-        duk_pop_2(ctx);
+        duk_pop(ctx);
+        
+        duk_get_prop_string(ctx, -1, "keepAlive");
+        if(duk_get_boolean_default(ctx, -1, 0))
+        {
+            int idle, intv, cnt;
 
+            duk_pop(ctx); // true
+            duk_get_prop_string(ctx, -1, "keepAliveInitialDelay");
+            idle = duk_get_int_default(ctx, -1, 1);
+            duk_pop(ctx);//number/undefined
+
+            duk_get_prop_string(ctx, -1, "keepAliveInterval");
+            intv = duk_get_int_default(ctx, -1, 1);
+            duk_pop(ctx);//number/undefined
+
+            duk_get_prop_string(ctx, -1, "keepAliveCount");
+            cnt = duk_get_int_default(ctx, -1, 10);
+            duk_pop(ctx);//number/undefined
+
+            if(!set_keepalive(fd, 1, idle, intv, cnt))
+            {
+                duk_push_heapptr(ctx, sinfo->thisptr);
+                duk_push_sprintf(ctx, "keepAlive internal error: %s", strerror(errno));        
+                do_callback(ctx, "error", 1);
+            }
+        }
+        else 
+            duk_pop(ctx); // false/undef     
+        
+        duk_pop(ctx); //this
+
+        /* finish bevent setup */
         bufferevent_enable(bev, EV_READ|EV_WRITE);
         bufferevent_setcb(bev, sock_readcb, sock_writecb, sock_eventcb, sinfo);
+
+        /* do js evnet callbacks */
         sock_do_callback(sinfo, "connect");
         sock_do_callback(sinfo, "ready");
+
         return;
     }
 
     if (events == (BEV_EVENT_EOF | BEV_EVENT_READING)) {
 
         if (errno == EAGAIN) {
+            // note from libevhtp_ws:
             /* libevent will sometimes recv again when it's not actually ready,
              * this results in a 0 return value, and errno will be set to EAGAIN
              * (try again). This does not mean there is a hard socket error, but
@@ -925,16 +1042,25 @@ int make_sock_conn(void *arg, int after)
     RPSOCK *sinfo = (RPSOCK *) arg;
     struct addrinfo *res=NULL;
     duk_context *ctx = sinfo->ctx;
-    int port=-1, err=0;
+    int port=-1, err=0, family=0, tls=0;
     struct sockaddr   * sin;
     size_t sin_sz;
     duk_idx_t top = duk_get_top(ctx);
+    unsigned long ssl_err=0;
 
     duk_push_heapptr(ctx, sinfo->thisptr);
 
     // get port
     if(duk_get_prop_string(ctx, -1, "_hostPort") )
         port = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, -1, "family") )
+        family = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, -1, "tls") )
+        tls = duk_get_boolean_default(ctx, -1, 0);
     duk_pop(ctx);
 
     // get ip address(es)
@@ -947,11 +1073,99 @@ int make_sock_conn(void *arg, int after)
     duk_pop(ctx);
     
 
-    sinfo->bev = bufferevent_socket_new(sinfo->base, -1, BEV_OPT_CLOSE_ON_FREE);
+    if(tls)
+    {
+        sinfo->bev = NULL;
+        do {
+            sinfo->ssl_ctx = SSL_CTX_new(TLS_client_method());
+            if(!sinfo->ssl_ctx)
+            {
+                ssl_err=ERR_get_error();
+                break;
+            }
+
+            sinfo->ssl = SSL_new(sinfo->ssl_ctx);
+            if(!sinfo->ssl)
+            {
+                ssl_err=ERR_get_error();
+                break;
+            }
+
+            sinfo->bev = bufferevent_openssl_socket_new(
+                sinfo->base, -1, sinfo->ssl, BUFFEREVENT_SSL_CONNECTING, BEV_OPT_CLOSE_ON_FREE
+            );
+
+        } while (0);
+    }
+    else
+        sinfo->bev = bufferevent_socket_new(sinfo->base, -1, BEV_OPT_CLOSE_ON_FREE);
+
+    if(!sinfo->bev)
+    {
+        if(ssl_err)
+        {
+            char errmsg[256];
+            ERR_error_string(ssl_err, errmsg);
+            duk_push_string(ctx, errmsg);
+        }
+        else if(errno)
+            duk_push_string(ctx, strerror(errno));
+        else
+            duk_push_string(ctx, "error opening socket");
+        //[ ..., this, errmsg ]
+        do_callback(ctx, "error", 1);
+        errno=0;
+        socket_cleanup(ctx, sinfo);
+        return 0;
+    }
+        
 
     bufferevent_enable(sinfo->bev, EV_READ);
 
     bufferevent_setcb( sinfo->bev, NULL, NULL, sock_eventcb, sinfo);
+
+    if(family)
+    {
+        int sfam = family==6 ? AF_INET6 : AF_INET;
+        while (res)
+        {
+            if(res->ai_family == sfam)
+                break;
+            res = res->ai_next;
+        }
+    }    
+
+    /* shouldn't happen */
+    if( !res )
+    {
+        duk_push_sprintf(ctx, "socket.connect: could not find an ipv%d address for host", family);        
+        do_callback(ctx, "error", 1);
+        duk_set_top(ctx, top);
+        return 0;
+    }        
+
+    {
+        void *saddr=NULL;
+        char addrstr[INET6_ADDRSTRLEN];
+        int ipf=4;
+        switch(res->ai_family)
+        {
+            case AF_INET:
+                saddr = &((struct sockaddr_in *) res->ai_addr)->sin_addr;
+                break;
+            case AF_INET6:
+                ipf=6;
+                saddr = &((struct sockaddr_in6 *) res->ai_addr)->sin6_addr;
+                break;
+        }
+        inet_ntop (res->ai_family, saddr, addrstr, INET6_ADDRSTRLEN);
+        duk_push_string(ctx, addrstr);
+        duk_put_prop_string(ctx, -2, "remoteAddress");
+        duk_push_int(ctx, port);
+        duk_put_prop_string(ctx, -2, "remotePort");
+        duk_push_sprintf(ctx, "IPv%d", ipf);
+        duk_put_prop_string(ctx, -2, "remoteFamily");
+    }
 
     sin = res->ai_addr;
 
@@ -991,9 +1205,6 @@ int make_sock_conn(void *arg, int after)
     duk_put_prop_string(ctx, -2, "destroyed");
 
     duk_push_false(ctx);
-    duk_put_prop_string(ctx, -2, "connecting");
-
-    duk_push_false(ctx);
     duk_put_prop_string(ctx, -2, "pending");
 
     //duk_pop(ctx); //this
@@ -1004,64 +1215,116 @@ int make_sock_conn(void *arg, int after)
 
 #define socket_getport(port, idx, func_name) do {\
 double port_num = REQUIRE_NUMBER(ctx, idx, "%s: option 'port' must be an Integer >= 0 and < 65536", func_name);\
-if (port_num != floor(port_num) || port_num < 0 || port_num > 65535)\
+if (port_num != floor(port_num) || port_num < 1 || port_num > 65535)\
     RP_THROW(ctx,  "%s: option 'port' must be an Integer >= 0 and < 65536", func_name);\
 port = (int) port_num;\
 } while(0)
 
 duk_ret_t duk_rp_net_socket_connect(duk_context *ctx)
 {
-    int port=0;
-    const char *host="127.0.0.1";
-    duk_idx_t tidx, conncb_idx=DUK_INVALID_INDEX;
+    int port=0, family=0;
+    const char *host="localhost";
+    duk_idx_t i=0, tidx, obj_idx=-1, conncb_idx=DUK_INVALID_INDEX;
     struct event_base *base=NULL;
     void *thisptr=NULL;
     RPSOCK *args = NULL;
+    char keystr[16];
 
-    //socket.connect(port[, host][, connectListener])    
-    if( duk_is_number(ctx, 0)) {
-        socket_getport(port, 0, "socket.connect");
-        if(duk_is_string(ctx,1)) 
-        {
-            host = duk_get_string(ctx, 1);
-            if(duk_is_function(ctx,2))
-                conncb_idx=2;
-        }
-        else if (!duk_is_undefined(ctx, 1))
-            RP_THROW(ctx, "socket.connect: second argument must be a string (hostname) when first argument is a port number");
-    }
-    else
-    //socket.connect(options[, connectListener])
+    while (i < 3)
     {
-        if(!duk_is_object(ctx,0))
-            RP_THROW(ctx, "socket.connect: parameter must be an Object");
-
-        if(!duk_get_prop_string(ctx, 0, "host"))
-            RP_THROW(ctx, "socket.connect: option 'host' must be set and be a String");
-        host = REQUIRE_STRING(ctx, -1, "socket.connect: option 'host' must be a String");
-        duk_pop(ctx);
-
-        if(duk_get_prop_string(ctx, 0, "port"))
-        {
-            double port_num = REQUIRE_NUMBER(ctx, -1, "socket.connect: option 'port' must be an Integer >= 0 and < 65536");
-            
-            if (port_num != floor(port_num) || port_num < 0 || port_num > 65535)
-                RP_THROW(ctx,  "%s: option 'port' must be an Integer >= 0 and < 65536");
-            
-            port = (int) port_num;
-        }
-        else
-            RP_THROW(ctx, "socket.connect: option 'port' must be set and be an Integer >= 0 and < 65536");
-
-        duk_pop(ctx);
-
-        if(duk_is_function(ctx,1))
-            conncb_idx=1;
+        if(duk_is_number(ctx,i))
+            socket_getport(port, i, "socket.connect");
+        else if (duk_is_string(ctx,i))
+            host = duk_get_string(ctx, i);
+        else if (duk_is_function(ctx, i))
+            conncb_idx=i;
+        else if (!duk_is_array(ctx, i) && duk_is_object(ctx, i) )
+            obj_idx=i;
+        else if (!duk_is_undefined(ctx, i))
+            RP_THROW(ctx, "socket.connect: argument %d is invalid", (int)i+1);
+        i++;
     }
 
     duk_push_this(ctx);
     tidx = duk_get_top_index(ctx);
     thisptr = duk_get_heapptr(ctx, -1);
+
+    if(obj_idx != -1)
+    {
+        if(duk_get_prop_string(ctx, obj_idx, "host"))
+            host = REQUIRE_STRING(ctx, -1, "socket.connect: option 'host' must be a String");
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, obj_idx, "port"))
+        {
+            socket_getport(port, -1, "socket.connect");
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, obj_idx, "keepAlive"))
+        {
+            if(!duk_is_boolean(ctx, -1))
+                RP_THROW(ctx, "socket.connect: option 'keepAlive' must be a Boolean");
+            duk_put_prop_string(ctx, tidx, "keepAlive");
+        }   
+        else
+            duk_pop(ctx);     
+
+        if(duk_get_prop_string(ctx, obj_idx, "tls"))
+        {
+            if(!duk_is_boolean(ctx, -1))
+                RP_THROW(ctx, "socket.connect: option 'tls' must be a Boolean");
+            duk_put_prop_string(ctx, tidx, "tls");
+        }   
+        else
+            duk_pop(ctx);     
+
+        if(duk_get_prop_string(ctx, obj_idx, "keepAliveInitialDelay"))
+        {
+            if(!duk_is_number(ctx, -1))
+                RP_THROW(ctx, "socket.connect: option 'keepAliveInitialDelay' must be a Number");
+            duk_put_prop_string(ctx, tidx, "keepAliveInitialDelay");
+        }   
+        else
+            duk_pop(ctx);     
+
+        if(duk_get_prop_string(ctx, obj_idx, "keepAliveInterval"))
+        {
+            if(!duk_is_number(ctx, -1))
+                RP_THROW(ctx, "socket.connect: option 'keepAliveInterval' must be a Number");
+            duk_put_prop_string(ctx, tidx, "keepAliveInterval");
+        }   
+        else
+            duk_pop(ctx);     
+
+        if(duk_get_prop_string(ctx, obj_idx, "keepAliveCount"))
+        {
+            if(!duk_is_number(ctx, -1))
+                RP_THROW(ctx, "socket.connect: option 'keepAliveCount' must be a Number");
+            duk_put_prop_string(ctx, tidx, "keepAliveCount");
+        }   
+        else
+            duk_pop(ctx);     
+
+        if(duk_get_prop_string(ctx, obj_idx, "family"))
+        {
+            if(!duk_is_number(ctx, -1))
+                RP_THROW(ctx, "socket.connect: option 'family' must be a Number (0, 4 or 6)");
+
+            family = duk_get_int_default(ctx, -1, 0);
+
+            if(family != 0 && family != 6 && family != 4)
+                RP_THROW(ctx, "socket.connect: option 'family' must be a Number (0, 4 or 6)");
+            
+            duk_put_prop_string(ctx, tidx, "family");
+        }   
+        else
+            duk_pop(ctx);     
+
+    }
+
+    if(!port)
+        RP_THROW(ctx, "socket.connect: port must be specified");
 
     if(!push_resolve(ctx, host))
     {
@@ -1070,6 +1333,11 @@ duk_ret_t duk_rp_net_socket_connect(duk_context *ctx)
         duk_pull(ctx, tidx);
         return 1;       
     }
+    if(family == 4 && !duk_has_prop_string(ctx, -1, "ipv4") )
+        RP_THROW(ctx, "socket.connect: ipv4 specified but host '%s' has no ipv4 address", host);
+
+    if(family == 6 && !duk_has_prop_string(ctx, -1, "ipv6") )
+        RP_THROW(ctx, "socket.connect: ipv6 specified but host '%s' has no ipv6 address", host);
 
     duk_put_prop_string(ctx, tidx, "_hostAddrs");
 
@@ -1094,64 +1362,231 @@ duk_ret_t duk_rp_net_socket_connect(duk_context *ctx)
     args->base = base;
     args->written=0;
     args->read=0;
+    args->bev=NULL;
+    args->thiskey = this_id++;
+    args->ssl_ctx=NULL;
+    args->ssl=NULL;
+
 
     duk_rp_insert_timeout(ctx, 0, "socket.connect", make_sock_conn, args, 
         DUK_INVALID_INDEX, DUK_INVALID_INDEX, 0);
 
     duk_pull(ctx, tidx);
+    // see discussion above about sinfo->thiskey
+    sprintf(keystr, "%d", (int) args->thiskey);
+    rp_put_gs_object(ctx, "connkeymap", keystr );
+
+    duk_push_string(ctx, "opening");
+    duk_put_prop_string(ctx, -2, "readyState");
 
     duk_push_true(ctx);
     duk_put_prop_string(ctx, -2, "connecting");
     return 1;
 }
 
+duk_ret_t duk_rp_net_socket(duk_context *ctx)
+{
+    //int fd=-1;
+    //duk_bool_t readable=1, writable=1, allowHalf=0;
+    duk_bool_t tls=0;
+    duk_idx_t tidx;
+
+    /* allow call to net.Socket() with "new net.Socket()" only */
+    if (!duk_is_constructor_call(ctx))
+    {
+        return DUK_RET_TYPE_ERROR;
+    }
+
+    duk_push_this(ctx);    
+    tidx = duk_get_top_index(ctx);
+
+    duk_push_true(ctx);
+    duk_put_prop_string(ctx, -2, "pending");
+
+    duk_push_false(ctx);
+    duk_put_prop_string(ctx, -2, "connected");
+
+    //object to hold event callbacks
+    duk_push_object(ctx);
+    duk_put_prop_string(ctx, tidx, "_events");
+
+    // get options:
+    if(duk_is_object(ctx, 0))
+    {
+        if(duk_get_prop_string(ctx, 0, "tls"))
+        {
+            tls = REQUIRE_BOOL(ctx, -1, "new Socket: option 'tls' must be a Boolean");
+        }
+        duk_pop(ctx);
+
+        /* not implemented
+        if(duk_get_prop_string(ctx, 0, "fd"))
+        {
+            fd=REQUIRE_INT(ctx, -1, "new Socket: option 'fd' must be an integer"); 
+        }
+        duk_pop(ctx);
+
+        if(fd > -1) {
+            readable=0;
+            writable=0;
+
+            if(duk_get_prop_string(ctx, 0, "readable"))
+            {
+                readable = REQUIRE_BOOL(ctx, -1, "new Socket: option 'readable' must be a Boolean");
+            }
+            duk_pop(ctx);
+
+            if(duk_get_prop_string(ctx, 0, "writable"))
+            {
+                writable = REQUIRE_BOOL(ctx, -1, "new Socket: option 'writable' must be a Boolean");
+            }
+            duk_pop(ctx);
+        }
+
+        if(duk_get_prop_string(ctx, 0, "allowHalfOpen"))
+        {
+            allowHalf = REQUIRE_BOOL(ctx, -1, "new Socket: option 'allowHalfOpen' must be a Boolean");
+        }
+        duk_pop(ctx);
+        */
+    } 
+    else if (!duk_is_undefined(ctx, 0) )
+        RP_THROW(ctx, "new net.Socket: first argument must be an Object (options)");
+
+    // put options in 'this'
+    duk_push_boolean(ctx, tls);
+    duk_put_prop_string(ctx, tidx, "tls");
+
+    /* not implemented
+    duk_push_boolean(ctx, readable);
+    duk_put_prop_string(ctx, tidx, "readable");
+
+    duk_push_boolean(ctx, writable);
+    duk_put_prop_string(ctx, tidx, "writable");
+
+    duk_push_boolean(ctx, allowHalf);
+    duk_put_prop_string(ctx, tidx, "allowHalfOpen");
+
+    duk_push_int(ctx, fd);
+    duk_put_prop_string(ctx, tidx, "fd");
+    */
+
+    return 0;
+}
+
+duk_ret_t net_create_connection(duk_context *ctx)
+{
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("netmod") );
+    duk_get_prop_string(ctx, -1, "Socket");
+    // [ arg1, arg2, arg3, net, socket ]
+    duk_remove(ctx , -2); //net
+    // [ arg1, arg2, arg3, socket ]
+    
+    //net.createConnection(options[, connectListener])
+    if(duk_is_object(ctx, 0))
+    {
+        duk_dup(ctx, 0);
+        // [ arg1, arg2, arg3_undef, socket, arg1_obj ]
+        duk_new(ctx, 1);
+        // [ arg1, arg2, arg3_undef, new_socket ]
+        duk_push_string(ctx, "connect");
+        // [ arg1, arg2, arg3_undef, new_socket, "connect" ]
+        duk_pull(ctx, 0);
+        duk_pull(ctx, 0);
+        // [ arg3_undef, new_socket, "connect", arg1, arg2 ]
+        duk_remove(ctx, 0);
+        // [ new_socket, "connect", arg1, arg2 ]
+        duk_call_prop(ctx, 0, 2);
+        // [ new_socket, retval ]
+        duk_pop(ctx);
+        // [ new_socket ]
+    }
+    else if (duk_is_number(ctx, 0))
+    // net.createConnection(port[, host][, connectListener]) 
+    {
+        // [ arg1_port, arg2, arg3, socket ]
+        duk_new(ctx, 0);
+        // [ arg1_port, arg2, arg3, new_socket ]
+        duk_insert(ctx, 0);
+        // [ new_socket, arg1_port, arg2, arg3 ]
+        duk_push_string(ctx, "connect");
+        duk_insert(ctx, 1);
+        // [ new_socket, "connect", arg1_port, arg2, arg3 ]
+        duk_call_prop(ctx, 0, 3);
+        // [ new_socket, retval ]
+        duk_pop(ctx);
+        // [ new_socket ]
+    }
+
+    return 1;
+}        
+
 
 duk_ret_t duk_open_module(duk_context *ctx)
 {
+    /* return object */
     duk_push_object(ctx);
 
-    //SocketAddress
+    /* save it in an accessible place for net_create_connection above */
+    duk_dup(ctx, -1);
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("netmod") );
+
+    /*
+    //SocketAddress -- currently unused
     duk_push_c_function(ctx, duk_rp_net_socket_address, 1);
     duk_push_object(ctx);
     duk_put_prop_string(ctx, -2, "prototype");
     duk_put_prop_string(ctx, -2, "SocketAddress");
-
+    */
 
     //net.Socket
     duk_push_c_function(ctx, duk_rp_net_socket, 1);
     duk_push_object(ctx);
     //socket methods:
-    
-    // socket.connect()
-    duk_push_c_function(ctx, duk_rp_net_socket_connect, 3);
-    duk_put_prop_string(ctx, -2, "connect");
 
-    // socket.write()
-    duk_push_c_function(ctx, socket_write,1);
-    duk_put_prop_string(ctx, -2, "write");
+        // socket.connect()
+        duk_push_c_function(ctx, duk_rp_net_socket_connect, 3);
+        duk_put_prop_string(ctx, -2, "connect");
 
-    // socket.on()        
-    duk_push_c_function(ctx, duk_rp_socket_on, 2);
-    duk_put_prop_string(ctx, -2, "on");
+        // socket.write()
+        duk_push_c_function(ctx, socket_write,1);
+        duk_put_prop_string(ctx, -2, "write");
 
-    //socket.destroy()
-    duk_push_c_function(ctx, socket_destroy, 1);
-    duk_put_prop_string(ctx, -2, "destroy");
+        // socket.on()        
+        duk_push_c_function(ctx, duk_rp_socket_on, 2);
+        duk_put_prop_string(ctx, -2, "on");
 
-    //socket.setTimeout
-    duk_push_c_function(ctx, socket_set_timeout, 2);
-    duk_put_prop_string(ctx, -2, "setTimeout");
+        //socket.destroy()
+        duk_push_c_function(ctx, socket_destroy, 1);
+        duk_put_prop_string(ctx, -2, "destroy");
 
-    duk_put_prop_string(ctx, -2, "prototype");
+        //socket.setTimeout
+        duk_push_c_function(ctx, socket_set_timeout, 2);
+        duk_put_prop_string(ctx, -2, "setTimeout");
+
+        //socket.setKeepAlive
+        duk_push_c_function(ctx, socket_set_keepalive, 4);
+        duk_put_prop_string(ctx, -2, "setKeepAlive");
+
+        //socket.setNodelay
+        duk_push_c_function(ctx, socket_set_nodelay, 1);
+        duk_put_prop_string(ctx, -2, "setNoDelay");
+
+        duk_put_prop_string(ctx, -2, "prototype");
+
     // new net.Socket()
     duk_put_prop_string(ctx, -2, "Socket");
-    
 
     // resolve
     duk_push_c_function(ctx, duk_rp_net_resolve, 1);
     duk_put_prop_string(ctx, -2, "resolve");
 
+    // net.createConnection & net.connect alias
+    duk_push_c_function(ctx, net_create_connection, 3);
+    duk_dup(ctx, -1);
+    duk_put_prop_string(ctx, -3, "connect");
+    duk_put_prop_string(ctx, -2, "createConnection");
+
+
     return 1;
 }
-
-
