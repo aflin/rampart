@@ -34,17 +34,18 @@ void fix_json_parse(duk_context *ctx)
     duk_pop(ctx);
 }
 
-static duk_ret_t duk_rp_object_values(duk_context *ctx)
+duk_ret_t duk_rp_values_from_object(duk_context *ctx, duk_idx_t idx)
 {
     duk_uarridx_t i=0;
 
-    if (duk_is_array(ctx,0))
+    idx = duk_normalize_index(ctx, idx);
+    if (duk_is_array(ctx,idx))
         return 1;
 
     duk_push_array(ctx);
-    if(duk_is_string(ctx, 0))
+    if(duk_is_string(ctx, idx))
     {
-        const char *s = duk_get_string(ctx, 0);
+        const char *s = duk_get_string(ctx, idx);
         while(*s)
         {
             duk_push_lstring(ctx, s, 1);
@@ -54,9 +55,9 @@ static duk_ret_t duk_rp_object_values(duk_context *ctx)
         }
         return 1;
     }
-    if(duk_is_object(ctx, 0))
+    if(duk_is_object(ctx, idx))
     {
-        duk_enum(ctx, 0, DUK_ENUM_OWN_PROPERTIES_ONLY|DUK_ENUM_NO_PROXY_BEHAVIOR);
+        duk_enum(ctx, idx, DUK_ENUM_OWN_PROPERTIES_ONLY|DUK_ENUM_NO_PROXY_BEHAVIOR);
         while (duk_next(ctx, -1 , 1 ))
         {
             duk_put_prop_index(ctx, -4, i);
@@ -66,13 +67,21 @@ static duk_ret_t duk_rp_object_values(duk_context *ctx)
         duk_pop(ctx);
         return 1;
     }
-    if(duk_is_number(ctx, 0)|| duk_is_buffer_data(ctx,0))
+    if(duk_is_number(ctx, idx)|| duk_is_buffer_data(ctx,idx))
         return 1;
-    if( duk_is_undefined(ctx, 0) || duk_is_null(ctx, 0) )
+    if( duk_is_undefined(ctx, idx) || duk_is_null(ctx, idx) )
         RP_THROW(ctx, "Object.values - Cannot convert undefined or null to object");
 
     RP_THROW(ctx, "Object.values - Cannot convert to object");
+
     return 0;
+}
+
+
+
+static duk_ret_t duk_rp_object_values(duk_context *ctx)
+{
+    return duk_rp_values_from_object(ctx, 0);
 }
 
 static void add_object_values(duk_context *ctx)
@@ -86,8 +95,6 @@ static void add_object_values(duk_context *ctx)
 duk_ret_t duk_rp_buffer_alloc(duk_context *ctx)
 {
     int size = 0;
-    uint8_t *bytes;
-    duk_size_t bsz;
 
     size = REQUIRE_INT(ctx, 0, "Buffer.alloc: size must be an integer");
     if(size < 0)

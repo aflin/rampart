@@ -300,6 +300,7 @@ extern void duk_misc_init(duk_context *ctx);
 char *duk_rp_object2querystring(duk_context *ctx, duk_idx_t qsidx, int atype);
 void  duk_rp_querystring2object(duk_context *ctx, char *q);
 
+/* random utility functions. TODO: add descriptions */
 duk_ret_t duk_rp_object2q(duk_context *ctx);
 char *strcatdup(char *s, char *adds);
 char *strjoin(char *s, char *adds, char c);
@@ -308,6 +309,7 @@ char *duk_rp_url_decode(char *str, int *len);
 void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase);
 int duk_rp_get_int_default(duk_context *ctx, duk_idx_t i, int def);
 char *to_utf8(const char *in_str);
+duk_ret_t duk_rp_values_from_object(duk_context *ctx, duk_idx_t idx);
 
 /* we might want to do something right before the timeout when using generically */
 typedef int (timeout_callback)(void *, int);
@@ -351,6 +353,7 @@ void add_exit_func_2(rp_vfunc func, void *arg, char *nl);
     add_exit_func_2( (f), (a), strdup(nl) );\
 } while(0)
 */
+
 void add_exit_func(rp_vfunc func, void *arg);
 
 void duk_rp_exit(duk_context *ctx, int ec);

@@ -2785,6 +2785,12 @@ enum_object:
                        and a new empty object for tctx (pushed to idx:-1)              */
                     duk_push_object(tctx);
                     objid = copy_obj(ctx, tctx, objid);
+                    // convert back to array if ctx object was an array
+                    if(duk_is_array(ctx, -1))
+                    {
+                        duk_rp_values_from_object(tctx, -1);
+                        duk_remove(tctx, -2);
+                    }
                     duk_put_prop_string(tctx, -2, duk_get_string(ctx, -2));
                 }
             }
