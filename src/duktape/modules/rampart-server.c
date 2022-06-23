@@ -2682,7 +2682,7 @@ enum_object:
         and copy to the tctx object on top of the stack     */
 
 
-    duk_enum(ctx, -1, DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS);
+    duk_enum(ctx, -1, DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS|DUK_ENUM_SORT_ARRAY_INDICES);
     while (duk_next(ctx, -1, 1))
     {
         s = duk_get_string(ctx, -2);
