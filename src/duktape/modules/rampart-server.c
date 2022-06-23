@@ -2592,7 +2592,7 @@ typedef duk_ret_t (*duk_func)(duk_context *);
 //#define cprintf(...)  printf(__VA_ARGS__);
 #define cprintf(...) /* nada */
 
-/* ctx object and tctx object should be at top of stack */
+/* ctx object and tctx object should be at top of respective stacks */
 static int copy_obj(duk_context *ctx, duk_context *tctx, int objid)
 {
     const char *s;
@@ -2737,20 +2737,56 @@ enum_object:
             objid = copy_obj(ctx, tctx, objid);
             duk_put_prop_string(tctx, -2, s);
         }
+        else if (duk_is_buffer_data(ctx, -1))
+        {
+            //no check for buffer type, just copy data into a plain buffer.
+            duk_size_t sz;
+            int variant=0;
+            void *frombuf = duk_get_buffer_data(ctx, -1, &sz);
+            void *tobuf;
 
+            duk_inspect_value(ctx, -1);
+            duk_get_prop_string(ctx, -1, "variant");
+            variant = duk_get_int_default(ctx, -1, 0);
+            duk_pop_2(ctx);
+            if (variant == 2) //highly unlikely
+                variant=0; //copy to fixed buffer
+            
+             tobuf = duk_push_buffer(tctx, sz, variant);
+             memcpy(tobuf, frombuf, sz);
+             
+             duk_put_prop_string(tctx, -2, s);
+        }
         else if (duk_is_object(ctx, -1) && !duk_is_function(ctx, -1) && !duk_is_c_function(ctx, -1))
         {
-            /* copy normal {} objects */
-            if (!duk_has_prop_string(tctx, -1, s) &&
-                strcmp(s, "console") != 0 &&
-                strcmp(s, "performance") != 0)
+            /* check for date */
+            if(duk_has_prop_string(ctx, -1, "getMilliseconds") && duk_has_prop_string(ctx, -1, "getUTCDay") )
             {
-                cprintf("copy %s{}\n", s);
-                /* recurse and begin again with this ctx object (at idx:-1)
-                   and a new empty object for tctx (pushed to idx:-1)              */
-                duk_push_object(tctx);
-                objid = copy_obj(ctx, tctx, objid);
-                duk_put_prop_string(tctx, -2, duk_get_string(ctx, -2));
+                duk_push_string(ctx, "getTime");
+                //not a lot of error checking here.
+                if(duk_pcall_prop(ctx, -2, 0)==DUK_EXEC_SUCCESS)
+                {
+                    duk_get_global_string(tctx, "Date");
+                    duk_push_number(tctx, duk_get_number_default(ctx, -1, 0));
+                    duk_new(tctx, 1);
+                    duk_put_prop_string(tctx, -2, s);
+                }
+                duk_pop(ctx);
+            } 
+            else
+            {
+                /* copy normal {} objects */
+                if (!duk_has_prop_string(tctx, -1, s) &&
+                    strcmp(s, "console") != 0 &&
+                    strcmp(s, "performance") != 0)
+                {
+                    cprintf("copy %s{}\n", s);
+                    /* recurse and begin again with this ctx object (at idx:-1)
+                       and a new empty object for tctx (pushed to idx:-1)              */
+                    duk_push_object(tctx);
+                    objid = copy_obj(ctx, tctx, objid);
+                    duk_put_prop_string(tctx, -2, duk_get_string(ctx, -2));
+                }
             }
         }
         else if (duk_is_pointer(ctx, -1) )
