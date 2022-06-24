@@ -335,6 +335,7 @@ add_library(rampart-net SHARED
 )
 target_link_libraries(rampart-net 
 	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a
+	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a
   	rampart-crypto
 ) 
 
