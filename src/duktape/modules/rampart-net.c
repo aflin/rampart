@@ -510,8 +510,10 @@ void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
 
 
     if(sinfo->bev)
+    {
         bufferevent_free(sinfo->bev);
-
+        sinfo->bev=NULL;
+    }
     //freed by bufferevent
     //if(sinfo->ssl)
     //    SSL_free(sinfo->ssl);
@@ -529,6 +531,7 @@ void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
             l++;
         }
         free(sinfo->listeners);
+        sinfo->listeners=NULL;
 
         // no open connections:
         if(sinfo->open_conn==0)
@@ -556,9 +559,9 @@ void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
     {
         RPSOCK *server = sinfo->parent;
         server->open_conn--;
-        if(!server->open_conn)
+        if(server->listeners==NULL && !server->open_conn)
         {
-//            printf("No more open connections\n");
+            //printf("No more open connections\n");
             
             // run connection close event
             free(sinfo);
