@@ -330,9 +330,52 @@ add_dependencies(rampart-server libdeflate)
 add_dependencies(libdeflate cp_libdeflate)
 
 ###NET###
+set(SEARCH_CA_BUNDLE_PATHS
+    /etc/ssl/certs
+    /etc/pki/tls/certs
+    /usr/share/ssl/certs
+    /usr/local/share/certs
+    /etc/ssl
+)
+
+set(SEARCH_CA_BUNDLE_FILES
+    ca-certificates.crt
+    ca-bundle.crt
+    ca-root-nss.crt
+    cert.pem
+)
+
+set(NET_CA_FILE "")
+set(NET_CA_PATH "")
+
+foreach(SEARCH_CA_BUNDLE_PATH ${SEARCH_CA_BUNDLE_PATHS})
+  if(EXISTS "${SEARCH_CA_BUNDLE_PATH}")
+    message(STATUS "Found CA bundle path: ${SEARCH_CA_BUNDLE_PATH}")
+    set(NET_CA_PATH "${SEARCH_CA_BUNDLE_PATH}")
+    foreach(SEARCH_CA_BUNDLE_FILE ${SEARCH_CA_BUNDLE_FILES})
+        if(EXISTS "${NET_CA_PATH}/${SEARCH_CA_BUNDLE_FILE}")
+            set(NET_CA_FILE "${SEARCH_CA_BUNDLE_FILE}")
+            message(STATUS "Found CA bundle file: ${NET_CA_PATH}/${SEARCH_CA_BUNDLE_FILE}")
+            break()
+        endif()
+    endforeach()
+    break()
+  endif()
+endforeach()
+
+if("${NET_CA_PATH}" EQUAL "")
+    message( FATAL_ERROR "Cannot find a suitable location for certificate authority file")
+endif()
+
 add_library(rampart-net SHARED
  duktape/modules/rampart-net.c
 )
+
+target_compile_options(rampart-net PRIVATE
+    "-DNET_CA_PATH=\"${NET_CA_PATH}\"" 
+    "-DNET_CA_FILE=\"${NET_CA_FILE}\""
+)
+
 target_link_libraries(rampart-net 
 	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a
@@ -547,5 +590,6 @@ install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-sql.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-lmdb.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-redis.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-net.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-robots.so\")")

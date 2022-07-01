@@ -158,22 +158,24 @@ But at least the server disconnecting acts as a finalizer.
 
 volatile uint32_t this_id=0;
 
-#define RPSOCK struct rp_socket_callback_s
+#define RPSOCK struct rp_socket_struct
 
 RPSOCK {
     duk_context           * ctx;            // a copy of the current duk context
     void                  * thisptr;        // heap pointer to 'this' of current net object
-    uint32_t                thiskey;        // a key for stashing an non-disappearing ref to 'this' in stash
     struct event_base     * base;           // current event base
     struct bufferevent    * bev;            // current bufferevent
     timeout_callback      * post_dns_cb;    // next callback (via settimeout) after dns resolution
     struct evconnlistener **listeners;      // for server only - a list of listeners
-    int                     fd;             // file descriptor for passing from server to socket
     void                  * aux;            // generic pointer
     SSL_CTX               * ssl_ctx;        //
     SSL                   * ssl;            //
+    RPSOCK                * parent;         // if a connection from server, the server RPSOCK struct
     size_t                  read;           // bytes read
     size_t                  written;        // bytes written
+    int                     fd;             // file descriptor for passing from server to socket
+    uint32_t                thiskey;        // a key for stashing a non-disappearing ref to 'this' in stash
+    uint32_t                open_conn;      // number of open connections for server
 };
 
 int rp_put_gs_object(duk_context *ctx, const char *objname, const char *key);
@@ -200,12 +202,14 @@ RPSOCK * new_sockinfo(duk_context *ctx)
     args->base = base;
     args->written=0;
     args->read=0;
+    args->open_conn=0;
     args->bev=NULL;
     args->thiskey = this_id++;
     args->ssl_ctx=NULL;
     args->ssl=NULL;
     args->aux=NULL;
     args->listeners=NULL;
+    args->parent=NULL;
     args->post_dns_cb=NULL;
     args->fd=-1;
 
@@ -504,9 +508,6 @@ void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
     duk_del_prop_string(ctx, -1, "remoteFamily");
     duk_del_prop_string(ctx, -1, "readyState");
 
-    sprintf(keystr, "%d", (int) sinfo->thiskey);
-    if(!rp_del_gs_object(ctx, "connkeymap", keystr ))
-        fprintf(stderr,"failed to find keystr in connkeymap\n");
 
     if(sinfo->bev)
         bufferevent_free(sinfo->bev);
@@ -517,6 +518,64 @@ void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
 
     if(sinfo->ssl_ctx)
         SSL_CTX_free(sinfo->ssl_ctx);
+
+    // server sinfo
+    if(sinfo->listeners)
+    {
+        struct evconnlistener **l = sinfo->listeners;
+        while (*l)
+        {
+            evconnlistener_free(*l);
+            l++;
+        }
+        free(sinfo->listeners);
+
+        // no open connections:
+        if(sinfo->open_conn==0)
+        {
+            sprintf(keystr, "%d", (int) sinfo->thiskey);
+            if(!rp_del_gs_object(ctx, "connkeymap", keystr ))
+                fprintf(stderr,"failed to find server keystr in connkeymap\n");
+            free(sinfo);
+            do_callback(ctx, "close", 0);
+            return;
+        }
+        else
+        // pending connections on server close
+        {
+            duk_pop(ctx);// this
+            return;
+        }
+    }
+
+    sprintf(keystr, "%d", (int) sinfo->thiskey);
+    if(!rp_del_gs_object(ctx, "connkeymap", keystr ))
+        fprintf(stderr,"failed to find keystr in connkeymap\n");
+
+    if(sinfo->parent) //connection from server
+    {
+        RPSOCK *server = sinfo->parent;
+        server->open_conn--;
+        if(!server->open_conn)
+        {
+//            printf("No more open connections\n");
+            
+            // run connection close event
+            free(sinfo);
+            do_callback(ctx, "close", 0);// uses connection 'this'
+
+            // run server close event
+            duk_push_heapptr(ctx, server->thisptr); //server 'this' for callback
+
+            sprintf(keystr, "%d", (int) server->thiskey);
+            if(!rp_del_gs_object(ctx, "connkeymap", keystr ))
+                fprintf(stderr,"failed to find server keystr in connkeymap\n");
+
+            free(server);
+            do_callback(ctx, "close", 0); //server.close() or server close event callback
+            return;
+        }
+    }
 
     free(sinfo);
 
@@ -1175,61 +1234,106 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
 {
     RPSOCK *sinfo = (RPSOCK *) arg;
     duk_context *ctx = sinfo->ctx;
-
+    /*
     printf("%p %p eventcb %s%s%s%s\n", arg, (void *)bev,
         events & BEV_EVENT_CONNECTED ? "connected" : "",
         events & BEV_EVENT_ERROR     ? "error"     : "",
         events & BEV_EVENT_TIMEOUT   ? "timeout"   : "",
         events & BEV_EVENT_EOF       ? "eof"       : "");
-
+    */
     if (events & BEV_EVENT_CONNECTED)
     {
         int fd = bufferevent_getfd(bev);
         struct sockaddr addr;
         socklen_t sz = sizeof(struct sockaddr);
         char addrstr[INET6_ADDRSTRLEN];
-        int localport;
+        int localport, insecure=0;
+
+
         duk_push_heapptr(ctx, sinfo->thisptr);
         duk_push_pointer(ctx, sinfo);
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("sinfo") );
 
+        if(duk_get_prop_string(ctx, -1, "insecure"))
+            insecure=duk_get_boolean(ctx, -1);
+        duk_pop(ctx);
+
+        /* count open connections for server */
+        if(sinfo->parent)
+            sinfo->parent->open_conn++;
+        else if (!insecure)
+        {
+            // as client we want to verify server by default
+            X509 *peer;
+
+            if ((peer = SSL_get_peer_certificate(sinfo->ssl)))
+            {
+                long lerr = SSL_get_verify_result(sinfo->ssl);
+                //char buf[256];
+
+                if(lerr != X509_V_OK) 
+                {
+                    duk_push_string(ctx, X509_verify_cert_error_string(lerr));
+                    do_callback(ctx, "error", 1);
+                    socket_cleanup(ctx, sinfo);
+                    return;        
+                }
+                //X509_NAME_oneline(X509_get_subject_name(peer), buf, 256);
+                //printf("peer = %s\n", buf);
+            }
+            else
+            {
+                duk_push_string(ctx, "failed to retrieve peer certificate");
+                do_callback(ctx, "error", 1);
+                socket_cleanup(ctx, sinfo);
+                return;        
+            }
+        }
         /* set flags */
         duk_push_false(ctx);
         duk_put_prop_string(ctx, -2, "connecting");
 
-        duk_push_true(ctx);
-        duk_put_prop_string(ctx, -2, "connected");
-
-        duk_push_string(ctx, "open");
-        duk_put_prop_string(ctx, -2, "readyState");
-
+        errno=0;
         /* set local host/port */
         if(getsockname(fd, &addr, &sz ))
         {
-            //do error
-            duk_dup(ctx, -1);
-            duk_push_sprintf(ctx, "socket.connect: could not get local host/port");        
+            //do error - this really shouldn't happen since libevent says we are connected
+            //duk_dup(ctx, -1);
+            duk_push_sprintf(ctx, "socket.connect: could not get local host/port - %s", strerror(errno));
             do_callback(ctx, "error", 1);
-        }
-
-        if( addr.sa_family == AF_INET ) {
-            struct sockaddr_in *sa = ( struct sockaddr_in *) &addr;
-
-            inet_ntop (addr.sa_family, (void * ) &( ((struct sockaddr_in *)&addr)->sin_addr), addrstr, INET6_ADDRSTRLEN);
-            localport = (int) ntohs(sa->sin_port);
+            socket_cleanup(ctx, sinfo);
+            return;        
         }
         else
         {
-            struct sockaddr_in6 *sa = ( struct sockaddr_in6 *) &addr;
 
-            inet_ntop (addr.sa_family, (void*) &(((struct sockaddr_in6*)&addr)->sin6_addr), addrstr, INET6_ADDRSTRLEN);
-            localport = (int) ntohs(sa->sin6_port);
+            duk_push_true(ctx);
+            duk_put_prop_string(ctx, -2, "connected");
+
+            duk_push_string(ctx, "open");
+            duk_put_prop_string(ctx, -2, "readyState");
+
+            if( addr.sa_family == AF_INET ) {
+                struct sockaddr_in *sa = ( struct sockaddr_in *) &addr;
+
+                inet_ntop (addr.sa_family, (void * ) &( ((struct sockaddr_in *)&addr)->sin_addr), addrstr, INET6_ADDRSTRLEN);
+                localport = (int) ntohs(sa->sin_port);
+            }
+            else
+            {
+                struct sockaddr_in6 *sa = ( struct sockaddr_in6 *) &addr;
+
+                inet_ntop (addr.sa_family, (void*) &(((struct sockaddr_in6*)&addr)->sin6_addr), addrstr, INET6_ADDRSTRLEN);
+                localport = (int) ntohs(sa->sin6_port);
+            }
+                
+            duk_push_string(ctx, addrstr);
+            duk_put_prop_string(ctx, -2, "localAddress");
+            duk_push_int(ctx, localport);
+            duk_put_prop_string(ctx, -2, "localPort");
         }
-            
-        duk_push_string(ctx, addrstr);
-        duk_put_prop_string(ctx, -2, "localAddress");
-        duk_push_int(ctx, localport);
-        duk_put_prop_string(ctx, -2, "localPort");
+
+        // sever initiated sockets won't have remoteAddress set
 
         /* apply timeout and keepalive */
         if(duk_get_prop_string(ctx, -1, "timeout") )
@@ -1338,6 +1442,33 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
     }        
 }
 
+void push_remote(duk_context *ctx, struct sockaddr *ai_addr, duk_idx_t this_idx)
+{
+    void *saddr=NULL;
+    char addrstr[INET6_ADDRSTRLEN];
+    int ipf=4, port=0;
+    switch(ai_addr->sa_family)
+    {
+        case AF_INET:
+            saddr = &((struct sockaddr_in *) ai_addr)->sin_addr;
+            port = ntohs(&((struct sockaddr_in *) ai_addr)->sin_port);
+            break;
+        case AF_INET6:
+            ipf=6;
+            port = ntohs(&((struct sockaddr_in6 *) ai_addr)->sin6_port);
+            saddr = &((struct sockaddr_in6 *) ai_addr)->sin6_addr;
+            break;
+    }
+    inet_ntop (ai_addr->sa_family, saddr, addrstr, INET6_ADDRSTRLEN);
+    duk_push_string(ctx, addrstr);
+    duk_put_prop_string(ctx, this_idx, "remoteAddress");
+    duk_push_int(ctx, port);
+    duk_put_prop_string(ctx, this_idx, "remotePort");
+    duk_push_sprintf(ctx, "IPv%d", ipf);
+    duk_put_prop_string(ctx, this_idx, "remoteFamily");
+}
+
+
 int make_sock_conn(void *arg, int after)
 {
     RPSOCK *sinfo = (RPSOCK *) arg;
@@ -1348,10 +1479,11 @@ int make_sock_conn(void *arg, int after)
     size_t sin_sz;
     duk_idx_t top = duk_get_top(ctx);
     unsigned long ssl_err=0;
+    char *ssl_err_str=NULL;
+    const char *hostname=NULL;
 
     duk_push_heapptr(ctx, sinfo->thisptr);
 
-    // get port
     if(duk_get_prop_string(ctx, -1, "_hostPort") )
         port = duk_get_int(ctx, -1);
     duk_pop(ctx);
@@ -1364,19 +1496,58 @@ int make_sock_conn(void *arg, int after)
         tls = duk_get_boolean_default(ctx, -1, 0);
     duk_pop(ctx);
 
+    // a provided hostname for ssl verification
+    if(duk_get_prop_string(ctx, -1,"hostname"))
+    {
+        hostname = duk_get_string(ctx, -1);
+    }
+    duk_pop(ctx);
+
     // get ip address(es)
     if(duk_get_prop_string(ctx, -1,"_hostAddrs"))
     {
         if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("resolvep")) )
             res = (struct addrinfo *) duk_get_pointer(ctx, -1);
         duk_pop(ctx);
+        if(!hostname)
+        {
+            if(duk_get_prop_string(ctx, -1, "host"))
+                hostname = duk_get_string(ctx, -1);
+            duk_pop(ctx);
+        }
     }
     duk_pop(ctx);
     
 
     if(tls)
     {
+        int insecure=0;
+        const char *ca_path      = NET_CA_PATH, 
+                   *ca_file      = NET_CA_PATH "/" NET_CA_FILE;
+        if(strlen(ca_path)==0)
+            ca_path = NULL;
+        if(strlen(ca_file)==0)
+            ca_file = NULL;
+
+        if(duk_get_prop_string(ctx, -1, "cacert"))
+        {
+            ca_file = duk_get_string(ctx, -1);            
+            ca_path = NULL;
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, -1, "capath"))
+        {
+            ca_path = duk_get_string(ctx, -1);            
+            ca_file = NULL;
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, -1, "insecure"))
+            insecure=duk_get_boolean(ctx, -1);
+        duk_pop(ctx);
         sinfo->bev = NULL;
+
         do {
             sinfo->ssl_ctx = SSL_CTX_new(TLS_client_method());
             if(!sinfo->ssl_ctx)
@@ -1385,10 +1556,32 @@ int make_sock_conn(void *arg, int after)
                 break;
             }
 
+            if(sinfo->fd < 0 && !insecure)
+            {
+                SSL_CTX_set_options(sinfo->ssl_ctx,SSL_OP_ALL);
+                //not needed
+//                SSL_CTX_set_verify(sinfo->ssl_ctx, SSL_VERIFY_NONE, NULL); // no immediate disconnect
+            }
+
+            if (!insecure && SSL_CTX_load_verify_locations(sinfo->ssl_ctx, ca_file, ca_path) < 1)
+            {
+                if(SSL_CTX_load_verify_locations(sinfo->ssl_ctx, NULL, ca_path) < 1)
+                {
+                    ssl_err_str="failed to load ca certificate path/file for ssl";
+                    break;
+                }
+            }
+
             sinfo->ssl = SSL_new(sinfo->ssl_ctx);
             if(!sinfo->ssl)
             {
                 ssl_err=ERR_get_error();
+                break;
+            }
+
+            if (!SSL_set1_host(sinfo->ssl, hostname))
+            {
+                ssl_err_str="failed to set hostname for ssl verification";
                 break;
             }
 
@@ -1400,10 +1593,11 @@ int make_sock_conn(void *arg, int after)
     }
     else
         sinfo->bev = bufferevent_socket_new(sinfo->base, sinfo->fd, BEV_OPT_CLOSE_ON_FREE);
-
     if(!sinfo->bev)
     {
-        if(ssl_err)
+        if(ssl_err_str)
+            duk_push_string(ctx, ssl_err_str);
+        else if(ssl_err)
         {
             char errmsg[256];
             ERR_error_string(ssl_err, errmsg);
@@ -1423,13 +1617,30 @@ int make_sock_conn(void *arg, int after)
 
     if(sinfo->fd < 0)
     {
+        // For connection as client
         bufferevent_enable(sinfo->bev, EV_READ);
+        // Set up rest of connection in sock_eventcb
         bufferevent_setcb( sinfo->bev, NULL, NULL, sock_eventcb, sinfo);
     }
     else
     {
-        bufferevent_enable(sinfo->bev, EV_READ|EV_WRITE);
-        bufferevent_setcb(sinfo->bev, sock_readcb, sock_writecb, sock_eventcb, sinfo);
+        // For server individual connection:
+        struct sockaddr remote;
+        socklen_t len = sizeof(struct sockaddr_in6);
+
+        errno=0;
+        if( !getpeername(sinfo->fd, &remote, &len) )
+            push_remote(ctx, &remote, -2);
+        else
+        {
+            duk_push_sprintf(ctx, "socket.connect: Error getting peer address - %s", strerror(errno));        
+            do_callback(ctx, "error", 1);
+            duk_set_top(ctx, top);
+            socket_cleanup(ctx, sinfo);
+            return 0;
+        }
+        // we are connected, but didn't do the callback because bufferevent wasn't set up yet.
+        sock_eventcb(sinfo->bev, BEV_EVENT_CONNECTED, (void *)sinfo);
         return 0;
     }
 
@@ -1454,31 +1665,9 @@ int make_sock_conn(void *arg, int after)
         return 0;
     }        
 
-    {
-        void *saddr=NULL;
-        char addrstr[INET6_ADDRSTRLEN];
-        int ipf=4;
-        switch(res->ai_family)
-        {
-            case AF_INET:
-                saddr = &((struct sockaddr_in *) res->ai_addr)->sin_addr;
-                break;
-            case AF_INET6:
-                ipf=6;
-                saddr = &((struct sockaddr_in6 *) res->ai_addr)->sin6_addr;
-                break;
-        }
-        inet_ntop (res->ai_family, saddr, addrstr, INET6_ADDRSTRLEN);
-        duk_push_string(ctx, addrstr);
-        duk_put_prop_string(ctx, -2, "remoteAddress");
-        duk_push_int(ctx, port);
-        duk_put_prop_string(ctx, -2, "remotePort");
-        duk_push_sprintf(ctx, "IPv%d", ipf);
-        duk_put_prop_string(ctx, -2, "remoteFamily");
-    }
-
     sin = res->ai_addr;
 
+    // add port to sin
     switch(sin->sa_family)
     {
         case AF_INET:
@@ -1501,11 +1690,13 @@ int make_sock_conn(void *arg, int after)
             return 0;
     }
 
+    push_remote(ctx, res->ai_addr, -2);
+
     err = bufferevent_socket_connect(sinfo->bev, sin, sin_sz);
 
     if (err)
     {
-        duk_push_string(ctx, strerror(errno));        
+        duk_push_sprintf(ctx, "socket.connect: could not connect - %s", strerror(errno));        
         do_callback(ctx, "error", 1);
         duk_set_top(ctx, top);
         socket_cleanup(ctx, sinfo);
@@ -1592,6 +1783,42 @@ duk_ret_t duk_rp_net_socket_connect(duk_context *ctx)
         else
             duk_pop(ctx);     
 
+        if(duk_get_prop_string(ctx, obj_idx, "insecure"))
+        {
+            if(!duk_is_boolean(ctx, -1))
+                RP_THROW(ctx, "socket.connect: option 'insecure' must be a Boolean");
+            duk_put_prop_string(ctx, tidx, "insecure");
+        }   
+        else
+            duk_pop(ctx);     
+
+        if(duk_get_prop_string(ctx, obj_idx, "cacert"))
+        {
+            if(!duk_is_string(ctx, -1))
+                RP_THROW(ctx, "socket.connect: option 'cacert' must be a String");
+            duk_put_prop_string(ctx, tidx, "cacert");
+        }   
+        else
+            duk_pop(ctx);     
+
+        if(duk_get_prop_string(ctx, obj_idx, "capath"))
+        {
+            if(!duk_is_string(ctx, -1))
+                RP_THROW(ctx, "socket.connect: option 'capath' must be a String");
+            duk_put_prop_string(ctx, tidx, "capath");
+        }   
+        else
+            duk_pop(ctx);     
+
+        if(duk_get_prop_string(ctx, obj_idx, "hostname"))
+        {
+            if(!duk_is_string(ctx, -1))
+                RP_THROW(ctx, "socket.connect: option 'hostname' must be a String");
+            duk_put_prop_string(ctx, tidx, "hostname");
+        }   
+        else
+            duk_pop(ctx);     
+
         if(duk_get_prop_string(ctx, obj_idx, "keepAliveInitialDelay"))
         {
             if(!duk_is_number(ctx, -1))
@@ -1656,9 +1883,6 @@ duk_ret_t duk_rp_net_socket_connect(duk_context *ctx)
     duk_put_prop_string(ctx, tidx, "_hostAddrs");
 */
 
-    duk_push_int(ctx,port);
-    duk_put_prop_string(ctx, tidx, "_hostPort");
-
     if(conncb_idx!=DUK_INVALID_INDEX)
     {
         duk_dup(ctx, conncb_idx);
@@ -1668,6 +1892,9 @@ duk_ret_t duk_rp_net_socket_connect(duk_context *ctx)
     args = new_sockinfo(ctx);
     if(fd < 0)
     {
+        duk_push_int(ctx,port);
+        duk_put_prop_string(ctx, tidx, "_hostPort");
+
         args->post_dns_cb = make_sock_conn;
         async_resolve(args, host);
     }
@@ -1676,6 +1903,18 @@ duk_ret_t duk_rp_net_socket_connect(duk_context *ctx)
         args->fd=fd;
         duk_rp_insert_timeout(ctx, 0, "socket.connect", make_sock_conn, args, 
             DUK_INVALID_INDEX, DUK_INVALID_INDEX, 0);
+
+        // attach server_sinfo to connection_sinfo->parent
+        if(duk_get_prop_string(ctx, tidx, "Server"))
+        {
+            if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sinfo")))
+            {
+                RPSOCK *parent = duk_get_pointer(ctx, -1);
+                args->parent=parent;
+            }
+            duk_pop(ctx);
+        }
+        duk_pop(ctx);
     }
 
     duk_push_string(ctx, "opening");
@@ -1827,6 +2066,29 @@ duk_ret_t net_create_connection(duk_context *ctx)
 }        
 
 /* *************************** net.Server() ******************************* */
+
+static duk_ret_t server_close(duk_context *ctx)
+{
+    RPSOCK *sinfo = NULL;
+
+    duk_push_this(ctx);
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sinfo")) )
+    {
+        sinfo = duk_get_pointer(ctx, -1);
+    }
+    else
+        RP_THROW(ctx, "server.close: internal error retrieving socket info");
+
+    duk_pop(ctx);
+
+    if(duk_is_function(ctx, 0))
+        duk_rp_net_on(ctx, "server.close", "close", 0/*func*/, 1/*this*/);
+    
+    socket_cleanup(ctx, sinfo);
+
+    return 1; //this
+}
+
 static void listener_callback(struct evconnlistener *listener, int fd,
     struct sockaddr *addr, int addrlen, void *arg) 
 {
@@ -1836,42 +2098,90 @@ static void listener_callback(struct evconnlistener *listener, int fd,
 
     duk_push_heapptr(ctx, sinfo->thisptr);
     duk_get_prop_string(ctx, -1, "Socket");
-    duk_new(ctx, 0);
+    duk_new(ctx, 0); //new Socket()
+    duk_dup(ctx, -2); //dup new Server()
+    duk_put_prop_string(ctx, -2, "Server"); //save server 'this' in socket as .Server
 
-    // run connect callback
+    // run server's 'connection' callback
     duk_pull(ctx, -2);// Server 'this'
-    duk_dup(ctx, -2);// socket
-    do_callback(ctx, "connect", 1);
+    duk_dup(ctx, -2);// pass connection socket as argument 
+    do_callback(ctx, "connection", 1); // run 'connection' callback(s);
 
-    // run the socket.connect() function
+    // run the socket.connect({fd:fd}) function to set up bufferevent for current connection
     duk_push_string(ctx, "connect");
     duk_push_object(ctx);
     duk_push_int(ctx, fd);
     duk_put_prop_string(ctx, -2, "fd");
     duk_call_prop(ctx, -3, 1);
     duk_pop(ctx);
-
-return;
-printf("setting up buffer event\n");
-
-    sinfo->bev = bufferevent_socket_new(
-                sinfo->base, fd, BEV_OPT_CLOSE_ON_FREE);
-
-    bufferevent_enable(sinfo->bev, EV_READ|EV_WRITE);
-    bufferevent_setcb(sinfo->bev, sock_readcb, sock_writecb, sock_eventcb, sinfo);
-
-
 }
 
 
 static void
 accept_error_cb(struct evconnlistener *listener, void *arg)
 {
-        struct event_base *base = evconnlistener_get_base(listener);
+        //RPSOCK *sinfo = (RPSOCK *) arg;
+        //struct event_base *base = evconnlistener_get_base(listener);
         int err = EVUTIL_SOCKET_ERROR();
         fprintf(stderr, "Got an error %d (%s) on the listener. "
                 "Shutting down.\n", err, evutil_socket_error_to_string(err));
 
+}
+
+int listen_addrs(duk_context *ctx, RPSOCK *sinfo, int nlisteners, int port, int backlog)
+{
+    struct addrinfo *res=NULL;
+
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("resolvep")) )
+    {
+        res = (struct addrinfo *) duk_get_pointer(ctx, -1);
+        duk_pop(ctx);
+        for (; res ; res=res->ai_next)
+        {
+            if( res->ai_family == AF_INET ) {
+                struct sockaddr_in *sa = ( struct sockaddr_in *) res->ai_addr;
+
+                sa->sin_port = htons(port);
+            }
+            else
+            {
+                struct sockaddr_in6 *sa = ( struct sockaddr_in6 *) res->ai_addr;
+
+                sa->sin6_port = htons(port);
+            }
+
+
+            REMALLOC(sinfo->listeners, sizeof(struct evconnlistener *) * (nlisteners+1));
+            sinfo->listeners[nlisteners]=NULL;
+
+            sinfo->listeners[nlisteners-1] = evconnlistener_new_bind(
+                sinfo->base, listener_callback, sinfo, LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE,
+                backlog, res->ai_addr, (int)res->ai_addrlen
+            );
+            if(!sinfo->listeners[nlisteners-1])
+            {
+                //return nlisteners; // this kinda mimics node - but it is idiotic. server.listen(80,'google.com') listens to nothing with node but remains in even in event loop
+                const char *h;
+                duk_get_prop_string(ctx, -1, "host");
+                h=duk_get_string(ctx, -1);
+                duk_pop(ctx);
+                duk_push_heapptr(ctx, sinfo->thisptr);                
+                duk_push_sprintf(ctx, "socket.Server: could not listen on host:port %s:%d - %s", h, port, strerror(errno));
+                do_callback(ctx, "error", 1);
+                socket_cleanup(ctx, sinfo);
+                return -1;
+            }
+            evconnlistener_set_error_cb(sinfo->listeners[nlisteners-1], accept_error_cb);
+
+            nlisteners++;
+        }
+        return nlisteners;
+    }
+    else
+    {
+        duk_pop(ctx);
+        return nlisteners;
+    }
 }
 
 
@@ -1885,7 +2195,7 @@ int make_server(void *arg, int after)
     size_t sin_sz;
     duk_idx_t top = duk_get_top(ctx);
     unsigned long ssl_err=0;
-    int nlisteners=1, backlog=511;
+    int nlisteners=1, backlog=511, len=0, i=0;;
 
     duk_push_heapptr(ctx, sinfo->thisptr);
 
@@ -1902,45 +2212,22 @@ int make_server(void *arg, int after)
         tls = duk_get_boolean_default(ctx, -1, 0);
     duk_pop(ctx);
 
-    // get ip address(es)
+    //get ip address(es)
     if(duk_get_prop_string(ctx, -1,"_hostAddrs"))
     {
-        if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("resolvep")) )
-            res = (struct addrinfo *) duk_get_pointer(ctx, -1);
-        duk_pop(ctx);
+        len = duk_get_length(ctx, -1); //array length
+        while (i<len)
+        {
+            duk_get_prop_index(ctx, -1, i);
+            nlisteners = listen_addrs(ctx, sinfo, nlisteners, port, backlog);
+            duk_pop(ctx);
+            if(nlisteners == -1) //error binding addr:port
+                return 0;
+            i++;
+        }
     }
     duk_pop(ctx);
-    
-printf("setting up listener\n");
-
-    for (; res ; res=res->ai_next)
-    {
-        if( res->ai_family == AF_INET ) {
-            struct sockaddr_in *sa = ( struct sockaddr_in *) res->ai_addr;
-
-            sa->sin_port = htons(port);
-        }
-        else
-        {
-            struct sockaddr_in6 *sa = ( struct sockaddr_in6 *) res->ai_addr;
-
-            sa->sin6_port = htons(port);
-        }
-
-
-        REMALLOC(sinfo->listeners, sizeof(struct evconnlistener *) * (nlisteners+1));
-        sinfo->listeners[nlisteners]=NULL;
-        sinfo->listeners[nlisteners-1] = evconnlistener_new_bind(
-            sinfo->base, listener_callback, sinfo, LEV_OPT_CLOSE_ON_FREE | LEV_OPT_REUSEABLE | LEV_OPT_REUSEABLE_PORT,
-            backlog, res->ai_addr, (int)res->ai_addrlen
-        );
-        if(!sinfo->listeners[nlisteners-1])
-            RP_THROW(ctx, "FAILED TO LISTEN");
-        evconnlistener_set_error_cb(sinfo->listeners[nlisteners-1], accept_error_cb);
-
-        nlisteners++;
-    }
-
+    do_callback(ctx, "listening", 0);    
 
 return 0;
 
@@ -2089,14 +2376,10 @@ return 0;
 
 duk_ret_t duk_rp_net_server_listen(duk_context *ctx)
 {
-    RPSOCK *sinfo=NULL;
-    int port=0, backlog=511, family=0;
+    int port=0, family=0;
     const char *host=NULL;
     duk_idx_t i=0, tidx, obj_idx=-1, hosts_idx=-1, conncb_idx=DUK_INVALID_INDEX;
-    struct event_base *base=NULL;
-    void *thisptr=NULL;
     RPSOCK *args = NULL;
-    char keystr[16];
 
     while (i < 3)
     {
@@ -2125,7 +2408,6 @@ duk_ret_t duk_rp_net_server_listen(duk_context *ctx)
 
     duk_push_this(ctx);
     tidx = duk_get_top_index(ctx);
-    thisptr = duk_get_heapptr(ctx, -1);
 
     if(obj_idx != -1)
     {
@@ -2223,19 +2505,70 @@ duk_ret_t duk_rp_net_server_listen(duk_context *ctx)
     if(!host && hosts_idx==-1)
         host="0.0.0.0";
 
-    if(!push_resolve(ctx, host))
+    duk_push_array(ctx);
+
+    if(host)
     {
-        duk_get_prop_string(ctx, -1, "errMsg");
-        duk_put_prop_string(ctx, tidx, "Error");
-        duk_pull(ctx, tidx);
-        return 1;       
+        if(!push_resolve(ctx, host))
+        {
+            duk_dup(ctx, tidx);
+            duk_get_prop_string(ctx, -2, "errMsg");
+            do_callback(ctx, "error", 1);
+            duk_pull(ctx, tidx);
+            return 1;       
+        }
+        if(family == 4 && !duk_has_prop_string(ctx, -1, "ipv4") )
+            RP_THROW(ctx, "socket.server: ipv4 specified but host '%s' has no ipv4 address", host);
+
+        if(family == 6 && !duk_has_prop_string(ctx, -1, "ipv6") )
+            RP_THROW(ctx, "socket.server: ipv6 specified but host '%s' has no ipv6 address", host);
+        duk_put_prop_index(ctx, -2, 0);
     }
+    else //array
+    {
+        int idx=0, len = (int)duk_get_length(ctx, hosts_idx);
 
-    if(family == 4 && !duk_has_prop_string(ctx, -1, "ipv4") )
-        RP_THROW(ctx, "socket.server: ipv4 specified but host '%s' has no ipv4 address", host);
+        while (idx < len)
+        {
+            duk_get_prop_index(ctx, hosts_idx, idx);
+            host = REQUIRE_STRING(ctx, -1, "socket.server: host parameter must be a String OR Array of Strings");
+            duk_pop(ctx);
 
-    if(family == 6 && !duk_has_prop_string(ctx, -1, "ipv6") )
-        RP_THROW(ctx, "socket.server: ipv6 specified but host '%s' has no ipv6 address", host);
+            // make localhost both v4 and v6
+            if(strcmp("localhost", host)==0)
+            {
+                if(family == 4)
+                    host="127.0.0.1";
+                else if (family == 6)
+                     host="::1";
+                else
+                {
+                    duk_push_string(ctx, "::1");
+                    duk_put_prop_index(ctx, hosts_idx, len);
+                    len++;
+                    host="127.0.0.1";
+                }
+            }
+             
+            if(!push_resolve(ctx, host))
+            {
+                duk_dup(ctx, tidx);
+                duk_get_prop_string(ctx, -2, "errMsg");
+                do_callback(ctx, "error", 1);
+                duk_pull(ctx, tidx);
+                return 1;       
+            }
+
+            if(family == 4 && !duk_has_prop_string(ctx, -1, "ipv4") )
+                RP_THROW(ctx, "socket.server: ipv4 specified but host '%s' has no ipv4 address", host);
+
+            if(family == 6 && !duk_has_prop_string(ctx, -1, "ipv6") )
+                RP_THROW(ctx, "socket.server: ipv6 specified but host '%s' has no ipv6 address", host);
+
+            duk_put_prop_index(ctx, -2, idx);
+            idx++;
+        }
+    }
 
     duk_put_prop_string(ctx, tidx, "_hostAddrs");
 
@@ -2244,8 +2577,7 @@ duk_ret_t duk_rp_net_server_listen(duk_context *ctx)
 
     if(conncb_idx!=DUK_INVALID_INDEX)
     {
-        duk_dup(ctx, conncb_idx);
-        duk_rp_net_on(ctx, "socket.server", "connect", -1, tidx);
+        duk_rp_net_on(ctx, "server.listen", "listening", conncb_idx, tidx);
     }
 
     args = new_sockinfo(ctx);
@@ -2254,6 +2586,8 @@ duk_ret_t duk_rp_net_server_listen(duk_context *ctx)
         DUK_INVALID_INDEX, DUK_INVALID_INDEX, 0);
 
     duk_pull(ctx, tidx);
+    duk_push_pointer(ctx, args);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("sinfo") );
 
     return 1;
     
@@ -2402,11 +2736,11 @@ duk_ret_t duk_open_module(duk_context *ctx)
         // server.on()        
         duk_push_c_function(ctx, duk_rp_net_x_on, 2);
         duk_put_prop_string(ctx, -2, "on");
-/*
-        //socket.destroy()
-        duk_push_c_function(ctx, socket_destroy, 1);
-        duk_put_prop_string(ctx, -2, "destroy");
 
+        //server.close()
+        duk_push_c_function(ctx, server_close, 1);
+        duk_put_prop_string(ctx, -2, "close");
+/*
         //socket.setTimeout
         duk_push_c_function(ctx, socket_set_timeout, 2);
         duk_put_prop_string(ctx, -2, "setTimeout");
@@ -2447,6 +2781,9 @@ duk_ret_t duk_open_module(duk_context *ctx)
     //resolve_async
     duk_push_c_function(ctx, duk_rp_net_resolve_async, 2);
     duk_put_prop_string(ctx, -2, "resolve_async");
+
+    duk_push_string(ctx, NET_CA_PATH "/" NET_CA_FILE);
+    duk_put_prop_string(ctx, -2, "default_ca_file");
 
     return 1;
 }
