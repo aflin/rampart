@@ -58,10 +58,9 @@ gid_t unprivg=0;
 
 
 volatile int gl_threadno = 0;
-int gl_singlethreaded = 0;
 int rampart_server_started=0;
 int developer_mode=0;
-__thread int local_thread_number=0;
+extern __thread int local_thread_number;
 extern duk_context **thread_ctx;
 
 int rp_using_ssl = 0;
@@ -155,6 +154,36 @@ static DHS *new_dhs(duk_context *ctx, int idx)
     dhs->bufsz = 0;
     dhs->bufpos = 0;
     dhs->freeme = 0;
+
+    return (dhs);
+}
+
+static DHS *clone_dhs(DHS *indhs)
+{
+    DHS *dhs = NULL;
+
+    REMALLOC(dhs, sizeof(DHS));
+    dhs->func_idx =       indhs->func_idx;
+    dhs->module=          indhs->module;
+    dhs->module_name=     indhs->module_name;
+    dhs->ctx =            indhs->ctx;
+    dhs->req =            indhs->req;
+    dhs->aux =            indhs->aux;
+    dhs->reqpath=         indhs->reqpath;
+    dhs->pathlen=         indhs->pathlen;
+    /* afaik there is no TIME_T_MAX */
+    dhs->timeout.tv_sec = indhs->timeout.tv_sec;
+    dhs->timeout.tv_usec= indhs->timeout.tv_usec;
+    dhs->auxbuf =         indhs->auxbuf;
+    
+    
+    dhs->bufsz =          indhs->bufsz;
+    dhs->bufpos =         indhs->bufpos;
+    dhs->freeme =         1;
+
+    indhs->auxbuf=NULL;
+    indhs->bufsz=0;
+    indhs->bufpos =0;
 
     return (dhs);
 }
@@ -777,6 +806,20 @@ static DHS *get_dhs(duk_context *ctx)
 {
     DHS *dhs=NULL;
     int thrno;
+
+    // this is getting messy.  But for now, if defer, return defer_dhs
+    duk_push_this(ctx);
+    if (!duk_is_undefined(ctx, -1))
+    {
+        if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("defer_dhs")) )
+        {
+            dhs = (DHS *) duk_get_pointer(ctx, -1);
+            duk_pop_2(ctx); //this, defer_dhs
+            return dhs;
+        }
+        duk_pop(ctx); //undef
+    }
+    duk_pop(ctx); //this
 
     duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("dhs"));
     dhs=duk_get_pointer(ctx, -1);
@@ -2065,12 +2108,8 @@ static void attachbuf(DHS *dhs, duk_idx_t idx)
     }
 }
 
-/* send the shared memory buffer.
-   if mmapSz is set, use it
-   if 0, calculate it
-
-   after, send auxbuf if exists
-   in whatever form
+/* 
+    send auxbuf if exists
 */
 static int sendmem(DHS *dhs)
 {
@@ -2191,6 +2230,7 @@ static evhtp_res obj_to_buffer(DHS *dhs)
             sendws(dhs);
             return 0;
     }
+
 
     if (duk_get_prop_string(ctx, -1, "headers"))
     {
@@ -3085,6 +3125,15 @@ CHUNKPTR {
     struct timespec start_time;
 };
 
+#define DEFERPTR struct defer_pointer_s
+
+DEFERPTR {
+    duk_context *ctx;
+//    void *this_heap_ptr; //the JS request (this from req.chunkSend)
+    DHS *dhs;
+    evhtp_request_t *req;
+};
+
 
 static duk_ret_t send_chunk_chunkend(duk_context *ctx, int end) {
     struct evbuffer * buffer = evbuffer_new();
@@ -3330,6 +3379,7 @@ static evhtp_res rp_chunk_callback(evhtp_connection_t * conn, void * arg)
     return EVHTP_RES_OK;
 }
 
+
 // libevhtp finisher callback for chunking
 static evhtp_res chunk_finalize(struct evhtp_connection *conn, void * arg)
 {
@@ -3389,6 +3439,110 @@ static duk_ret_t rp_post_req(duk_context *ctx)
     {
         evhtp_send_reply_chunk_end(req);
     }
+    return 0;
+}
+
+static duk_ret_t rp_post_defer(duk_context *ctx)
+{
+    DHS *dhs;
+    evhtp_res res = 200;
+
+    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("defer_dhs") );
+    dhs=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    if(!dhs)
+        return 0;
+
+    //we never replied and var req is out of scope
+    duk_push_object(ctx);
+    duk_push_null(ctx);
+    duk_put_prop_string(ctx, -2, "text");//send empty text
+
+    res = obj_to_buffer(dhs);
+    if (res)
+        sendresp(dhs->req, res, 0);
+
+    if(dhs->auxbuf)
+        free(dhs->auxbuf);
+    free(dhs);
+
+    dhs=NULL;
+
+    duk_push_pointer(ctx, dhs);
+    duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("defer_dhs") );
+
+    return 0;
+
+}
+
+/* 
+    invalidate req after disconnect 
+    This might happen before or after rp_post_defer,
+    but BOTH will happen.
+*/
+static evhtp_res defer_finalize(struct evhtp_connection *conn, void * arg)
+{
+    DEFERPTR *deferp = (DEFERPTR*)arg;
+    DHS *dhs=deferp->dhs;
+
+    evhtp_request_t *req=deferp->req;
+
+    if(dhs)
+    {
+        dhs->req=NULL;
+        dhs->aux=NULL;
+    }
+
+    if(req)
+    {
+        evhtp_connection_unset_hook(req->conn, evhtp_hook_on_connection_fini);
+        evhtp_connection_unset_hook(req->conn, evhtp_hook_on_request_fini);
+    }
+
+    free(deferp);
+
+    return EVHTP_RES_OK;
+}
+
+static duk_ret_t defer_reply(duk_context *ctx)
+{
+    DHS *dhs;
+    evhtp_res res = 200;
+    DEFERPTR *deferp;
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("defer_dhs") );
+    dhs=duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    if(!dhs)
+        RP_THROW(ctx, "request is no longer valid (was reply already sent?)");
+
+    deferp = (DEFERPTR*)dhs->aux;
+
+    if(deferp)
+    {
+        // mark dhs as destroyed for finalizer above
+        deferp->dhs=NULL;
+    }
+
+    duk_pull(ctx, 0);
+    res = obj_to_buffer(dhs);
+    duk_pop(ctx);
+
+    if (res)
+        sendresp(dhs->req, res, 0);
+
+    if(dhs->auxbuf)
+        free(dhs->auxbuf);
+    free(dhs);
+
+    dhs=NULL;
+
+    duk_push_pointer(ctx, dhs);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("defer_dhs") );
+
     return 0;
 }
 
@@ -3536,6 +3690,49 @@ static void *http_dothread(void *arg)
             duk_put_prop_string(ctx, -2, "text");
         }
     }
+
+    if(duk_get_prop_string(ctx, -1, "defer"))
+    {
+        if(duk_get_boolean_default(ctx, -1, 0))
+        {
+            DEFERPTR *deferp = NULL;
+            DHS *newdhs = NULL;
+            REMALLOC(deferp, sizeof(DEFERPTR));
+
+            deferp->ctx=ctx;
+            deferp->req=req;
+
+            newdhs = clone_dhs(dhs);
+            newdhs->aux=deferp;
+
+            deferp->dhs=newdhs;
+
+            duk_pop_2(ctx); //boolean 'defer':true & return val from js callback
+            
+            duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("reqobj"));
+            //deferp->this_heap_ptr = duk_get_heapptr(ctx, -1);
+            duk_push_c_function(ctx, defer_reply, 1);
+            duk_put_prop_string(ctx, -2, "reply");
+            
+            duk_push_pointer(ctx, newdhs);
+            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("defer_dhs") );
+            duk_push_c_function(ctx, rp_post_defer, 1);
+            duk_set_finalizer(ctx, -2);
+
+            duk_pop(ctx); //reqobj
+
+            /* when client disconnects */
+            evhtp_connection_set_hook(newdhs->req->conn, evhtp_hook_on_connection_fini, defer_finalize, deferp);
+            /* when we disconnect */
+            evhtp_connection_set_hook(newdhs->req->conn, evhtp_hook_on_request_fini, defer_finalize, deferp);
+
+            if (dhr->have_timeout)
+                RP_MUNLOCK(&(dhr->lock));
+            return NULL;
+        }
+        duk_del_prop_string(ctx, -2, "defer");
+    }
+    duk_pop(ctx);
 
     res = obj_to_buffer(dhs);
 
@@ -4168,12 +4365,10 @@ static void http_callback(evhtp_request_t *req, void *arg)
     DHS newdhs={0}, *dhs = arg;
     int thrno = 0;
     duk_context *new_ctx;
+    evthr_t *thread = get_request_thr(req);
 
-    if (!gl_singlethreaded)
-    {
-        evthr_t *thread = get_request_thr(req);
-        local_thread_number = thrno = *((int *)evthr_get_aux(thread));
-    }
+    local_thread_number = thrno = *((int *)evthr_get_aux(thread));
+
     new_ctx = thread_ctx[thrno];
     /* ****************************
       setup duk function callback
@@ -4298,6 +4493,7 @@ static void http_callback(evhtp_request_t *req, void *arg)
 //    duk_put_global_string(dhs->ctx, DUK_HIDDEN_SYMBOL("clreq"));
     // we should only have thread_funcstash on top, but remove everything
     while (duk_get_top(dhs->ctx) > 0) duk_pop(dhs->ctx);
+
     return;
 }
 
@@ -4821,7 +5017,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     int nthr=0, mapsort=1;
     evhtp_t *htp = NULL;
     evhtp_ssl_cfg_t *ssl_config = NULL;
-    int i=0, confThreads = -1, mthread = 1, daemon=0;
+    int i=0, confThreads = -1, daemon=0;
     struct stat f_stat;
     duk_uarridx_t fpos =0;
     pid_t dpid=0;
@@ -5000,7 +5196,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         if (duk_rp_GPS_icase(ctx, ob_idx, "threads"))
         {
             confThreads = duk_rp_get_int_default(ctx, -1, -1);
-            if(confThreads == -1)
+            if(confThreads < 1)
                 RP_THROW(ctx,"server.start: parameter \"threads\" invalid");
         }
         duk_pop(ctx);
@@ -5097,9 +5293,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
         /* multithreaded */
         if (duk_rp_GPS_icase(ctx, ob_idx, "usethreads"))
         {
-            mthread = REQUIRE_BOOL(ctx, -1, "server.start: parameter \"threads\" requires a boolean (true|false)");
+            if(!REQUIRE_BOOL(ctx, -1, "server.start: parameter \"threads\" requires a boolean (true|false)"))
+                confThreads=1;
         }
-        gl_singlethreaded = !mthread;
         duk_pop(ctx);
 
          /* connect timeout */
@@ -5135,34 +5331,21 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
     }
 
-    /*  got the essential config options, now do some setup before mapping urls */
-    if (mthread)
+    /* use specified number of threads */
+    if (confThreads > 0)
     {
-        /* use specified number of threads */
-        if (confThreads > 0)
-        {
-            nthr = confThreads;
-        }
-        else
-        /* not specified, so set to number of processor cores */
-        {
-            nthr = sysconf(_SC_NPROCESSORS_ONLN);
-        }
-
-        totnthreads = nthr;
-
-        fprintf(access_fh, "HTTP server - initializing with %d threads\n",
-               totnthreads);
+        nthr = confThreads;
     }
     else
+    /* not specified, so set to number of processor cores */
     {
-        if (confThreads > 1)
-        {
-            fprintf(access_fh, "threads>1 -- usethreads==false, so using only one thread\n");
-        }
-        totnthreads = 1;
-        fprintf(access_fh, "HTTP server - initializing single threaded\n");
+        nthr = sysconf(_SC_NPROCESSORS_ONLN);
     }
+
+    totnthreads = nthr;
+
+    fprintf(access_fh, "HTTP server - initializing with %d threads\n",
+           totnthreads);
 
     /* initialize two contexts for each thread
        the second one is used for websockets and will never
@@ -5818,7 +6001,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         if (duk_rp_GPS_icase(ctx, ob_idx, "sslMinVersion"))
         {
-            const char *sslver=REQUIRE_STRING(ctx, -1, "server.start: parameter \"sslMaxVer\" requires a string (ssl3|tls1|tls1.1|tls1.2)");
+            const char *sslver=REQUIRE_STRING(ctx, -1, "server.start: parameter \"sslMinVersion\" requires a string (ssl3|tls1|tls1.1|tls1.2)");
             if (!strcmp("tls1.2",sslver))
                 SSL_CTX_set_min_proto_version(htp->ssl_ctx, TLS1_2_VERSION);
             else if (!strcmp("tls1.1",sslver))
@@ -5830,7 +6013,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
             else if (!strcmp("ssl3",sslver))
                 SSL_CTX_set_min_proto_version(htp->ssl_ctx, SSL3_VERSION);
             else
-                RP_THROW(ctx, "server.start: parameter \"sslMaxVer\" must be ssl3, tls1, tls1.1 or tls1.2");
+                RP_THROW(ctx, "server.start: parameter \"sslMinVersion\" must be ssl3, tls1, tls1.1 or tls1.2");
         }
         else
             SSL_CTX_set_min_proto_version(htp->ssl_ctx, TLS1_2_VERSION);
@@ -5907,14 +6090,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
     evhtp_set_pre_accept_cb(htp, pre_accept_callback, NULL);
 
-    if (mthread)
-    {
-        evhtp_use_threads_wexit(htp, initThread, NULL, nthr, NULL);
-    }
-    else
-    {
-        fprintf(access_fh, "in single threaded mode\n");
-    }
+    evhtp_use_threads_wexit(htp, initThread, NULL, nthr, NULL);
 
     fflush(access_fh);
     fflush(error_fh);

@@ -49,6 +49,7 @@ int totnthreads=0;
 char *RP_script_path=NULL;
 char *RP_script=NULL;
 duk_context **thread_ctx = NULL;
+__thread int local_thread_number=0;
 duk_context *main_ctx;
 struct event_base *elbase;
 struct event_base **thread_base=NULL;

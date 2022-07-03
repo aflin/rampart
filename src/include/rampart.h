@@ -225,6 +225,7 @@ extern char rampart_dir[PATH_MAX];       // the base directory
 extern char rampart_bin[PATH_MAX];       // the base directory - with /bin if executable is in bin
 extern duk_context *main_ctx;            // the context if/when single threaded
 extern duk_context **thread_ctx;         // array of ctxs for server, 2 per thread (http and ws)
+extern __thread int local_thread_number; // thread number inside thread
 extern struct event_base *elbase;        // the main event base for the main event loop
 extern struct event_base **thread_base;  // each thread (or pair or ctxs) gets an event loop
 extern int totnthreads;                  // when threading in server - number of ctx contexts

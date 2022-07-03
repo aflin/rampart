@@ -218,7 +218,7 @@ _evthr_new(evthr_init_cb init_cb, evthr_exit_cb exit_cb, void * args)
     thread->rdr     = fds[0];
     thread->wdr     = fds[1];
 
-    thread->busy    = 0;
+    thread->openconn= 0;
 
     thread->init_cb = init_cb;
     thread->exit_cb = exit_cb;
@@ -335,11 +335,8 @@ get_backlog_(evthr_t * thread)
 {
     int backlog = 0;
 
-    ioctl(thread->rdr, FIONREAD, &backlog);
-    /* added thread->busy. If still in callback, don't return 0.
-         Instead, we should use another thread that isn't busy --ajf */
-    return (int)(backlog / sizeof(evthr_cmd_t) + thread->busy);
-}
+// we are now counting open connections -ajf
+    return thread->openconn;}
 
 evthr_res
 evthr_pool_defer(evthr_pool_t * pool, evthr_cb cb, void * arg)

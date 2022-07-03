@@ -1,10 +1,12 @@
 v0.1.1
     - Sql.rexFile: removed buffer, using mmap instead.
-    - Template Literal tranlation improvements.
+    - Template Literal translation improvements.
     - setTimeout et al - accept parameters.
     - Added log rotation to web_server_conf.js
     - fixed stat file dates on 32 bit systems.
-    - rampart-net node.js like net function
+    - NEW rampart-net.so --  node.js like net function with ssl
     - fixed segfault on clearTimeout when event expired
+    - improved libevhtp_ws thread load balancing
+    - added server req.reply and return val {defer:true}
 v0.1.0
     - initial release

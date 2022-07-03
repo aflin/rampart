@@ -2097,15 +2097,6 @@ htp__request_parse_fini_(htparser * p)
      *
      */
     if (c->request && c->request->cb) {
-        if (t)
-        {
-            /* flag that we are in the callback to facilitate
-                a wise choice of threads for next request --ajf */
-            t->busy=1;
-            (c->request->cb)(c->request, c->request->cbarg);
-            t->busy=0;
-        }
-        else
             (c->request->cb)(c->request, c->request->cbarg);
     }
 
@@ -3153,6 +3144,9 @@ htp__run_in_thread_(evthr_t * thr, void * arg, void * shared)
 
     connection->evbase = evthr_get_base(thr);
     connection->thread = thr;
+    if (htp->thr_pool != NULL)
+        thr->openconn++;
+
     if (htp__connection_accept_(connection->evbase, connection) < 0) {
         evhtp_safe_free(connection, evhtp_connection_free);
 
@@ -5494,6 +5488,11 @@ evhtp_connection_free(evhtp_connection_t * connection)
     if (evhtp_unlikely(connection == NULL)) {
         return;
     }
+
+#ifndef EVHTP_DISABLE_EVTHR
+    if(connection->thread)
+        connection->thread->openconn--;
+#endif
 
 #ifdef EVHTP_VALGRIND_FORK_SAFE
     if (pthread_mutex_lock(&contqlock) == EINVAL)

@@ -64,7 +64,7 @@ EVHTP_EXPORT evthr_pool_t * evthr_pool_wexit_new(int nthreads, evthr_init_cb, ev
 struct evthr {
     int             rdr;
     int             wdr;
-    int             busy;
+    int             openconn;
     char            err;
     ev_t          * event;
     evbase_t      * evbase;
