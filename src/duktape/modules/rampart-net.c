@@ -737,9 +737,20 @@ static duk_ret_t resolve_finalizer(duk_context *ctx)
     return 0;
 }
 
+static duk_ret_t evresolve_finalizer(duk_context *ctx)
+{
+    struct addrinfo *res;
+
+    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("resolvep"));
+    res = duk_get_pointer(ctx, -1);
+    evutil_freeaddrinfo(res);
+
+    return 0;
+}
+
 /* take an addrinfo and put info it into an object */
 
-static void push_addrinfo(duk_context *ctx, struct addrinfo *res, const char *hn, int set_finalizer)
+static void push_addrinfo(duk_context *ctx, struct addrinfo *res, const char *hn, int native_finalizer)
 {
     struct addrinfo *freeres;
     int i=0;
@@ -838,11 +849,12 @@ static void push_addrinfo(duk_context *ctx, struct addrinfo *res, const char *hn
     duk_remove(ctx, i4arr_idx);
 
     // obj_idx is now at -1
-    if(set_finalizer)
-    {
+    if(native_finalizer)
         duk_push_c_function(ctx, resolve_finalizer, 1);
-        duk_set_finalizer(ctx, -2); 
-    }
+    else
+        duk_push_c_function(ctx, evresolve_finalizer, 1);
+
+    duk_set_finalizer(ctx, -2); 
 }
 
 static int push_resolve(duk_context *ctx, const char *hn)
