@@ -27,6 +27,16 @@
 #include "openssl/err.h"
 #include "openssl/rand.h"
 
+//macos
+#if !defined(SOL_TCP) && defined(IPPROTO_TCP)
+#define SOL_TCP IPPROTO_TCP
+#endif
+#if !defined(TCP_KEEPIDLE) && defined(TCP_KEEPALIVE)
+#define TCP_KEEPIDLE TCP_KEEPALIVE
+#endif
+
+
+
 /*
 static int push_ip_canon(duk_context *ctx, const char *addr, int domain)
 {
@@ -722,7 +732,6 @@ static duk_ret_t resolve_finalizer(duk_context *ctx)
 
     duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("resolvep"));
     res = duk_get_pointer(ctx, -1);
-    //printf("freeing res\n");
     freeaddrinfo(res);
 
     return 0;
@@ -730,14 +739,13 @@ static duk_ret_t resolve_finalizer(duk_context *ctx)
 
 /* take an addrinfo and put info it into an object */
 
-static void push_addrinfo(duk_context *ctx, struct addrinfo *res, const char *hn)
+static void push_addrinfo(duk_context *ctx, struct addrinfo *res, const char *hn, int set_finalizer)
 {
     struct addrinfo *freeres;
     int i=0;
     char addrstr[INET6_ADDRSTRLEN];
     void *saddr=NULL;
     duk_idx_t obj_idx, i4arr_idx, i6arr_idx, iarr_idx;
-
     freeres = res;
 
     duk_push_object(ctx);
@@ -821,7 +829,7 @@ static void push_addrinfo(duk_context *ctx, struct addrinfo *res, const char *hn
         i++;
     }
   
-    //freeaddrinfo(freeres);
+
     duk_push_pointer(ctx, freeres);
     duk_put_prop_string(ctx, obj_idx, DUK_HIDDEN_SYMBOL("resolvep"));
 
@@ -830,9 +838,11 @@ static void push_addrinfo(duk_context *ctx, struct addrinfo *res, const char *hn
     duk_remove(ctx, i4arr_idx);
 
     // obj_idx is now at -1
-    duk_push_c_function(ctx, resolve_finalizer, 1);
-    duk_set_finalizer(ctx, -2); 
-
+    if(set_finalizer)
+    {
+        duk_push_c_function(ctx, resolve_finalizer, 1);
+        duk_set_finalizer(ctx, -2); 
+    }
 }
 
 static int push_resolve(duk_context *ctx, const char *hn)
@@ -855,8 +865,7 @@ static int push_resolve(duk_context *ctx, const char *hn)
         duk_put_prop_string(ctx, -2, "errMsg");
         return 0;
     }
-
-    push_addrinfo(ctx, res, hn);
+    push_addrinfo(ctx, res, hn, 1);
 
     return 1;    
 }
@@ -917,7 +926,7 @@ static void async_dns_callback(int errcode, struct evutil_addrinfo *addr, void *
         // and since this might not be in the event loop (see evdns_getaddrinfo)
         // we need to put it in so it will be run after lookup is set.
 
-        push_addrinfo(ctx, addr, dnsargs->host);
+        push_addrinfo(ctx, addr, dnsargs->host, 0);
         duk_put_prop_string(ctx, -2, "_hostAddrs");
 
         duk_pop(ctx); //this
@@ -1666,11 +1675,11 @@ static void push_remote(duk_context *ctx, struct sockaddr *ai_addr, duk_idx_t th
     {
         case AF_INET:
             saddr = &((struct sockaddr_in *) ai_addr)->sin_addr;
-            port = ntohs(&((struct sockaddr_in *) ai_addr)->sin_port);
+            port = ntohs(((struct sockaddr_in *) ai_addr)->sin_port);
             break;
         case AF_INET6:
             ipf=6;
-            port = ntohs(&((struct sockaddr_in6 *) ai_addr)->sin6_port);
+            port = ntohs(((struct sockaddr_in6 *) ai_addr)->sin6_port);
             saddr = &((struct sockaddr_in6 *) ai_addr)->sin6_addr;
             break;
     }

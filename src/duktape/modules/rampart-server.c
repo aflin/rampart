@@ -60,7 +60,7 @@ gid_t unprivg=0;
 volatile int gl_threadno = 0;
 int rampart_server_started=0;
 int developer_mode=0;
-extern __thread int local_thread_number;
+__thread int local_thread_number=0;
 extern duk_context **thread_ctx;
 
 int rp_using_ssl = 0;
