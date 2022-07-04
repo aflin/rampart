@@ -334,9 +334,10 @@ static duk_ret_t duk_rp_net_x_once(duk_context *ctx)
 static int do_callback(duk_context *ctx, const char *ev_s, duk_idx_t nargs)
 {
     duk_idx_t  j=0;
-
+    duk_idx_t exit_top = duk_get_top(ctx) -1 -nargs; //before 'this'
     //[ ..., this, [args, args] ]
 
+//    printf("%s top=%d, exittop=%d\n", ev_s, duk_get_top(ctx), exit_top);
     duk_get_prop_string(ctx, -1 - nargs, "_events");
 
     //[ ..., this, [args, args], eventobj ]
@@ -368,9 +369,6 @@ static int do_callback(duk_context *ctx, const char *ev_s, duk_idx_t nargs)
                 //[ ..., this, [args, args], eventobj, callback_object, enum, val(function) ]
             }
 
-//            duk_remove(ctx, -2);
-//            //[ ..., this, [args, args], eventobj, callback_object, enum, val(function) ]
-
             //dup this
             duk_dup(ctx, -5 - nargs);
             //[ ..., this, [args, args], eventobj, callback_object, enum, val(function), this ]
@@ -380,11 +378,6 @@ static int do_callback(duk_context *ctx, const char *ev_s, duk_idx_t nargs)
                 duk_dup(ctx, -5 - nargs);
             }
             //[ ..., this, [args, args], eventobj, callback_object, enum, val(function), this, [args, args] ]
-
-printf("PCALL %s: nargs = %d top=%d, thrno:%d\n", ev_s, (int)nargs, (int)duk_get_top(ctx), local_thread_number);
-//printstack(ctx);
-if(!duk_is_function(ctx, -2 -nargs))
-    RP_THROW(ctx, "IT AINT A FUNCTION\n");
 
             if(duk_pcall_method(ctx, nargs) != 0)
             {
@@ -404,50 +397,15 @@ if(!duk_is_function(ctx, -2 -nargs))
                     fprintf(stderr, "Error in %s callback\n", ev_s);
                 }
                 // [ ..., this, [args, args], eventobj, callback_object, enum]
-//printf("ERROR %s: nargs = %d top=%d, thrno:%d\n", ev_s, (int)nargs, (int)duk_get_top(ctx), local_thread_number);
-//printstack(ctx);
             }
             else // [ ..., this, [args, args], eventobj, callback_object, enum, retval ]
                 duk_pop(ctx); //discard retval
-            // [ ..., this, [args, args], eventobj, callback_object, enum ] - ready for next loop
-//printf("END WHILE %s: nargs = %d top=%d, thrno:%d\n", ev_s, (int)nargs, (int)duk_get_top(ctx), local_thread_number);
         }
-/*
-        duk_pop(ctx); //enum
-
-        duk_enum(ctx, -1, 0);
-        //[ ..., this, [args, args], eventobj, callback_object, enum ]
-        while(duk_next(ctx, -1, 1))
-        {
-            //[ ..., this, [args, args], eventobj, callback_object, enum, key, val(function) ]
-            // check if function is to be run only once
-            if(duk_has_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("once")) )
-            {
-                //first delete the "once" property
-                duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("once"));
-                duk_pull(ctx, -2); // put function key on top of stack
-                //[ ..., this, [args, args], eventobj, callback_object, enum, val(function), key ]
-                duk_del_prop(ctx, -4);
-                duk_pop(ctx);
-                //[ ..., this, [args, args], eventobj, callback_object, enum ]
-            }
-            else
-            {
-                //[ ..., this, [args, args], eventobj, callback_object, enum, key, val(function) ]
-                duk_pop_2(ctx);
-                //[ ..., this, [args, args], eventobj, callback_object, enum]
-            }
-
-        }
-*/
-        duk_pop_n(ctx, 4 + nargs); // this, eventobj, callback, enum + args
-//printf("end do_callback(%s, %d) thrno:%d\n", ev_s, nargs,local_thread_number);
-
-        return 0;
     }
     // else  [ ..., this, [args, args], eventobj, undefined ]
-    duk_pop_n(ctx, 3 + nargs); // this, eventobj, undefined, + args    
 
+    duk_set_top(ctx, exit_top);
+    // [ ... ]
     return 0;
 }
 /*
@@ -651,14 +609,14 @@ int rp_get_gs_object(duk_context *ctx, const char *objname, const char *key)
 static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
 {
     char keystr[16];
-
+    duk_idx_t top;
     if (!sinfo)
         return;
 
     if(!ctx) 
         ctx = sinfo->ctx;
 
-
+    top=duk_get_top(ctx);
     // this
     duk_push_heapptr(ctx, sinfo->thisptr);
     duk_push_true(ctx);
@@ -708,12 +666,13 @@ static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
                 fprintf(stderr,"failed to find server keystr in connkeymap\n");
             free(sinfo);
             do_callback(ctx, "close", 0);
+            duk_set_top(ctx,top);
             return;
         }
         else
         // pending connections on server close
         {
-            duk_pop(ctx);// this
+            duk_set_top(ctx,top);
             return;
         }
     }
@@ -743,6 +702,7 @@ static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
 
             free(server);
             do_callback(ctx, "close", 0); //server.close() or server close event callback
+            duk_set_top(ctx,top);
             return;
         }
     }
@@ -751,6 +711,7 @@ static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
 
     //'this' is still on top
     do_callback(ctx, "close", 0);
+    duk_set_top(ctx,top);
 }
 
 /* ****************** dns/resolve functions ******************* */
@@ -1844,7 +1805,7 @@ static int make_sock_conn(void *arg, int after)
                     break;
                 }
                 sinfo->bev = bufferevent_openssl_socket_new(
-                    sinfo->base, sinfo->fd, sinfo->ssl, BUFFEREVENT_SSL_CONNECTING, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS
+                    sinfo->base, sinfo->fd, sinfo->ssl, BUFFEREVENT_SSL_CONNECTING, BEV_OPT_CLOSE_ON_FREE
                 );
             }
             else
@@ -1857,14 +1818,14 @@ static int make_sock_conn(void *arg, int after)
                     break;
                 }
                 sinfo->bev = bufferevent_openssl_socket_new(
-                    sinfo->base, sinfo->fd, sinfo->ssl, BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS
+                    sinfo->base, sinfo->fd, sinfo->ssl, BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_CLOSE_ON_FREE
                 );
             }
 
         } while (0);
     }
     else //non tls
-        sinfo->bev = bufferevent_socket_new(sinfo->base, sinfo->fd, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+        sinfo->bev = bufferevent_socket_new(sinfo->base, sinfo->fd, BEV_OPT_CLOSE_ON_FREE);
 
     if(!sinfo->bev)
     {
@@ -2043,6 +2004,16 @@ static duk_ret_t duk_rp_net_socket_connect(duk_context *ctx)
             if(!duk_is_boolean(ctx, -1))
                 RP_THROW(ctx, "socket.connect: option 'keepAlive' must be a Boolean");
             duk_put_prop_string(ctx, tidx, "keepAlive");
+        }   
+        else
+            duk_pop(ctx);     
+
+        if(duk_get_prop_string(ctx, obj_idx, "timeout"))
+        {
+            double tout = duk_get_number_default(ctx, -1, 0.0);
+            if(tout<=0.0)
+                RP_THROW(ctx, "socket.connect: option 'timeout' must be a Number > 0");
+            duk_put_prop_string(ctx, tidx, "timeout");
         }   
         else
             duk_pop(ctx);     
