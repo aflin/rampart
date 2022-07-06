@@ -1079,22 +1079,20 @@ volatile uint32_t ev_id=0;
     ctx              -   thread's duk_context
     repeat           -   0:setTimeout, 1:setInterval, 2:setMetronome
     func_name        -   a javascript function name for error messages (i.e. "setTimeout")
-    timeout_callback -   A c callback, int cb(void arg, int after)
+    timeout_callback -   A c callback, int cb(void *arg, int after)
                            called twice, once with after=0, right before the javascript callback function is called,
                            and once with after=1, right after javascript callback function is called. 
                          Return value from func with after=0 should be 
-                                0 for skip js callback,
+                                0 for skip js callback and second c callback,
                                 1 for ok
                                     OR 
                                 2 - cbfunc pushed 'this' onto stack for JS callback.
                          Return value from func with after=1 is used to set a new 'repeat' value (0, 1 or 2).
     arg              -   void pointer for above callback.
-    func_idx         -   where to find the js callback.  If negative, js callback will be skipped
+    func_idx         -   where to find the js callback.  If DUK_INVALID_INDEX, js callback will be skipped
     arg_start_idx    -   where to start looking for arguments in duktape stack to be eventually passed to js callback
                      -   DUK_INVALID_INDEX means don't look for arguments
     to               -   timeout value in seconds 
-
-NOTE: func_idx must be != DUK_INVALID_INDEX.  If not, we skip the js function 
 
 */
 duk_ret_t duk_rp_insert_timeout(duk_context *ctx, int repeat, const char *fname, timeout_callback *cb, void *arg, 
