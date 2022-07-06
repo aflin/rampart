@@ -516,6 +516,7 @@ install(CODE "execute_process( \
     \"${PROJECT_SOURCE_DIR}/test/combo-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/curl-server-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/math.js\" \
+    \"${PROJECT_SOURCE_DIR}/test/net-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/redis-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/robots-test.js\" \
     \"${PROJECT_SOURCE_DIR}/test/rputils-test.js\" \
