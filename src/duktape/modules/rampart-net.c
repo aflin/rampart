@@ -1729,12 +1729,18 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
             if(sinfo->ssl)
             {
                 errnum = bufferevent_get_openssl_error(bev);
+
+                /*  Need to do research on what is fatal and what is not.  Getting a 'DH lib' error cuz we didn't provide dhparam */
+                if(errnum == 5)
+                    return;
+
                 if(errnum)
                 {
                     errstr=ERR_reason_error_string(errnum);
                     break;
                 }
             }
+
             if(errno)
             {
                 errstr=strerror(errno);
