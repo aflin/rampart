@@ -1903,7 +1903,7 @@ static int make_sock_conn(void *arg, int after)
                     break;
                 }
 
-                if (!SSL_set1_host(sinfo->ssl, hostname))
+                if (!SSL_set_tlsext_host_name(sinfo->ssl, hostname))
                 {
                     ssl_err_str="failed to set hostname for ssl verification";
                     break;
