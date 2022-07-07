@@ -1557,6 +1557,7 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
                 {
                     duk_push_string(ctx, X509_verify_cert_error_string(lerr));
                     do_callback(ctx, "error", 1);
+                    X509_free(peer);
                     socket_cleanup(ctx, sinfo);
                     duk_set_top(ctx,top);
                     return;
@@ -1568,10 +1569,12 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
             {
                 duk_push_string(ctx, "failed to retrieve peer certificate");
                 do_callback(ctx, "error", 1);
+                X509_free(peer);
                 socket_cleanup(ctx, sinfo);
                 duk_set_top(ctx,top);
                 return;
             }
+            X509_free(peer);
         }
         /* set flags */
         duk_push_false(ctx);
@@ -1730,10 +1733,19 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
             {
                 errnum = bufferevent_get_openssl_error(bev);
 
-                /*  Need to do research on what is fatal and what is not.  Getting a 'DH lib' error cuz we didn't provide dhparam */
-                if(errnum == 5)
+                /*  Need to do research on what is fatal and what is not.  Getting a 'DH lib' error cuz we didn't provide dhparam?
+                    But why does connection appear to succeed until end, then we get this error? 
+                    And why with connect to google.com:443, but not with yahoo or others?
+                    HEEEELLLLLP!!!!
+                */
+                if(errnum == 5) // errstr = "DH lib"
+                {
+                    //we actually get all the data and are disconnected by server
+                    sock_do_callback(sinfo, "end");
+                    socket_cleanup(ctx, sinfo);
+                    duk_set_top(ctx,top);
                     return;
-
+                }
                 if(errnum)
                 {
                     errstr=ERR_reason_error_string(errnum);
@@ -1901,7 +1913,6 @@ static int make_sock_conn(void *arg, int after)
                         }
                     }
                 }
-
                 sinfo->ssl = SSL_new(sinfo->ssl_ctx);
                 if(!sinfo->ssl)
                 {
