@@ -187,7 +187,8 @@ RPSOCK {
     size_t                  written;        // bytes written
     int                     fd;             // file descriptor for passing from server to socket
     uint32_t                thiskey;        // a key for stashing a non-disappearing ref to 'this' in stash
-    uint32_t                open_conn;      // number of open connections for server
+    uint32_t                open_conn;      // number of open connections for server, whether opened and incremented for client.
+    uint32_t                max_conn;       // maximum number of open connections for server, after which we start dropping connections
 };
 
 int rp_put_gs_object(duk_context *ctx, const char *objname, const char *key);
@@ -215,6 +216,7 @@ static RPSOCK * new_sockinfo(duk_context *ctx)
     args->written=0;
     args->read=0;
     args->open_conn=0;
+    args->max_conn=0;
     args->bev=NULL;
     args->thiskey = this_id++;
     args->ssl_ctx=NULL;
@@ -330,8 +332,6 @@ static duk_ret_t duk_rp_net_x_once(duk_context *ctx)
 
     duk_push_this(ctx);
     duk_rp_net_on(ctx, "socket.once", evname, 1, -1);
-
-
 
     return 1;
 }
@@ -644,7 +644,10 @@ int rp_get_gs_object(duk_context *ctx, const char *objname, const char *key)
     return ret;
 }
 
-static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
+#define WITH_CALLBACKS 1
+#define SKIP_CALLBACKS 0
+
+static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo, int docb)
 {
     char keystr[16];
     duk_idx_t top;
@@ -661,6 +664,8 @@ static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
     duk_put_prop_string(ctx, -2, "destroyed");
     duk_push_false(ctx);
     duk_put_prop_string(ctx, -2, "connected");
+    duk_push_true(ctx);
+    duk_put_prop_string(ctx, -2, "pending");
     duk_push_pointer(ctx, NULL);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("sinfo") );
 // keep these so we can see last connection in "close"
@@ -675,13 +680,7 @@ static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
         bufferevent_free(sinfo->bev);
         sinfo->bev=NULL;
     }
-    //freed by bufferevent
-    //if(sinfo->ssl)
-    //    SSL_free(sinfo->ssl);
-
-    if(sinfo->ssl_ctx)
-        SSL_CTX_free(sinfo->ssl_ctx);
-
+    
     // server sinfo
     if(sinfo->listeners)
     {
@@ -694,6 +693,11 @@ static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
         free(sinfo->listeners);
         sinfo->listeners=NULL;
 
+        // server has it's own server context
+        // clients reuse the global one
+        if(sinfo->ssl_ctx)
+            SSL_CTX_free(sinfo->ssl_ctx);
+
         duk_push_false(ctx);
         duk_put_prop_string(ctx, -2, "listening");
 
@@ -704,7 +708,8 @@ static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
             if(!rp_del_gs_object(ctx, "connkeymap", keystr ))
                 fprintf(stderr,"failed to find server keystr in connkeymap\n");
             free(sinfo);
-            do_callback(ctx, "close", 0);
+            if(docb)
+                do_callback(ctx, "close", 0);
             duk_set_top(ctx,top);
             return;
         }
@@ -723,7 +728,8 @@ static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
     if(sinfo->parent) //connection from server
     {
         RPSOCK *server = sinfo->parent;
-        server->open_conn--;
+        if(sinfo->open_conn)
+            server->open_conn--;
         // server was "closed" and no more listeners
         if(server->listeners==NULL && !server->open_conn)
         {
@@ -731,7 +737,8 @@ static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
 
             // run connection close event
             free(sinfo);
-            do_callback(ctx, "close", 0);// uses connection 'this'
+            if(docb)
+                do_callback(ctx, "close", 0);// uses connection 'this'
 
             // run server close event
             duk_push_heapptr(ctx, server->thisptr); //server 'this' for callback
@@ -741,7 +748,8 @@ static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
                 fprintf(stderr,"failed to find server keystr in connkeymap\n");
 
             free(server);
-            do_callback(ctx, "close", 0); //server.close() or server close event callback
+            if(docb)
+                do_callback(ctx, "close", 0); //server.close() or server close event callback
             duk_set_top(ctx,top);
             return;
         }
@@ -750,7 +758,8 @@ static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo)
     free(sinfo);
 
     //'this' is still on top
-    do_callback(ctx, "close", 0);
+    if(docb)
+        do_callback(ctx, "close", 0);
     duk_set_top(ctx,top);
 }
 
@@ -959,7 +968,7 @@ static void async_dns_callback(int errcode, struct evutil_addrinfo *addr, void *
         free(dnsargs);
         duk_push_string(ctx, evutil_gai_strerror(errcode) );
         do_callback(ctx, "error", 1);
-        socket_cleanup(ctx, sinfo);
+        socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
         return;
     }
     else
@@ -1010,7 +1019,7 @@ static void async_resolve(RPSOCK *sinfo, const char *hn)
 
         duk_push_string(ctx, "Could not initiate dns_base" );
         do_callback(ctx, "error", 1);
-        socket_cleanup(ctx, sinfo);
+        socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
         return;
     }
 
@@ -1034,7 +1043,7 @@ static int resolver_callback(void *arg, int unused)
     RPSOCK *sinfo = (RPSOCK *) arg;
     duk_context *ctx = sinfo->ctx;
 
-    socket_cleanup(ctx,sinfo);
+    socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
 
     return 0;
 }
@@ -1231,7 +1240,7 @@ static int destroy_callback(void *arg, int after)
     duk_pop_2(ctx);
 
     if(sinfo)
-        socket_cleanup(ctx,sinfo);
+        socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
 
     return 0;
 }
@@ -1318,8 +1327,6 @@ static duk_ret_t socket_set_timeout(duk_context *ctx)
         duk_rp_net_on(ctx, "socket.on", "timeout", 1, tidx);
     }
 
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sinfo"));
-
     duk_dup(ctx,0);
     duk_put_prop_string(ctx, tidx, "timeout");
 
@@ -1380,7 +1387,7 @@ static duk_ret_t socket_write(duk_context *ctx)
             duk_push_string(ctx, "error writing");
         do_callback(ctx, "error", 1);
         errno=0;
-        socket_cleanup(ctx, sinfo);
+        socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
         duk_push_false(ctx);
     }
 
@@ -1542,39 +1549,66 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
 
         /* count open connections for server */
         if(sinfo->parent)
-            sinfo->parent->open_conn++;
-        else if (sinfo->ssl && !insecure)
         {
-            // as client we want to verify server by default
-            X509 *peer;
-
-            if ((peer = SSL_get_peer_certificate(sinfo->ssl)))
+            RPSOCK *server = sinfo->parent;
+            server->open_conn++;
+            sinfo->open_conn=1; //mark as open, so we know to do sinfo->parent->open_conn-- above
+            // ideally we'd like to catch all of these in listener_callback
+            // before we do all the work to get here.
+            // but given the async nature of things, too many can make it past
+            // listener_callback before we increment below.
+            // so we need to check here as well.
+            if(server->max_conn!=0 && server->open_conn > server->max_conn)
             {
-                long lerr = SSL_get_verify_result(sinfo->ssl);
-                //char buf[256];
-
-                if(lerr != X509_V_OK)
-                {
-                    duk_push_string(ctx, X509_verify_cert_error_string(lerr));
-                    do_callback(ctx, "error", 1);
-                    X509_free(peer);
-                    socket_cleanup(ctx, sinfo);
-                    duk_set_top(ctx,top);
-                    return;
-                }
-                //X509_NAME_oneline(X509_get_subject_name(peer), buf, 256);
-                //printf("peer = %s\n", buf);
-            }
-            else
-            {
-                duk_push_string(ctx, "failed to retrieve peer certificate");
-                do_callback(ctx, "error", 1);
-                X509_free(peer);
-                socket_cleanup(ctx, sinfo);
+                //printf("in eventcb: %d > %d connections, closing\n", server->open_conn, server->max_conn);
+                socket_cleanup(ctx, sinfo, SKIP_CALLBACKS);
                 duk_set_top(ctx,top);
                 return;
             }
-            X509_free(peer);
+
+        }
+        else if (sinfo->ssl)
+        {
+            const char *ciphername=SSL_get_cipher_name(sinfo->ssl);
+
+            if(ciphername)
+            {
+                duk_push_string(ctx, ciphername);
+                duk_put_prop_string(ctx, -2, "sslCipher");
+            }
+            if(!insecure)
+            {
+                // as client we want to verify server by default
+                X509 *peer;
+
+                if ((peer = SSL_get_peer_certificate(sinfo->ssl)))
+                {
+                    long lerr = SSL_get_verify_result(sinfo->ssl);
+                    //char buf[256];
+
+                    if(lerr != X509_V_OK)
+                    {
+                        duk_push_string(ctx, X509_verify_cert_error_string(lerr));
+                        do_callback(ctx, "error", 1);
+                        X509_free(peer);
+                        socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
+                        duk_set_top(ctx,top);
+                        return;
+                    }
+                    //X509_NAME_oneline(X509_get_subject_name(peer), buf, 256);
+                    //printf("peer = %s\n", buf);
+                }
+                else
+                {
+                    duk_push_string(ctx, "failed to retrieve peer certificate");
+                    do_callback(ctx, "error", 1);
+                    X509_free(peer);
+                    socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
+                    duk_set_top(ctx,top);
+                    return;
+                }
+                X509_free(peer);
+            }
         }
         /* set flags */
         duk_push_false(ctx);
@@ -1588,7 +1622,7 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
             //duk_dup(ctx, -1);
             duk_push_sprintf(ctx, "socket.connect: could not get local host/port - %s", strerror(errno));
             do_callback(ctx, "error", 1);
-            socket_cleanup(ctx, sinfo);
+            socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
             duk_set_top(ctx,top);
             return;
         }
@@ -1710,8 +1744,9 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
 
     if (events & BEV_EVENT_EOF)
     {
-        sock_do_callback(sinfo, "end");
-        socket_cleanup(ctx, sinfo);
+        duk_push_heapptr(ctx, sinfo->thisptr);
+        socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
+        do_callback(ctx, "end", 0);
         duk_set_top(ctx,top);
         return;
     }
@@ -1731,18 +1766,28 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
             }
             if(sinfo->ssl)
             {
+                //char errbuf[256];
                 errnum = bufferevent_get_openssl_error(bev);
-
+                /*
+                while(errnum){
+                ERR_error_string_n(errnum, errbuf, 256);
+                printf("ERR: %s\n", errbuf); // ERR: error:00000005:lib(0):func(0):DH lib
+                errnum = bufferevent_get_openssl_error(bev);
+                }
+                */
                 /*  Need to do research on what is fatal and what is not.  Getting a 'DH lib' error cuz we didn't provide dhparam?
                     But why does connection appear to succeed until end, then we get this error? 
-                    And why with connect to google.com:443, but not with yahoo or others?
+                    And why with connection to google.com:443, but not with yahoo or others?
                     HEEEELLLLLP!!!!
                 */
                 if(errnum == 5) // errstr = "DH lib"
                 {
-                    //we actually get all the data and are disconnected by server
-                    sock_do_callback(sinfo, "end");
-                    socket_cleanup(ctx, sinfo);
+                    //printf("ladies and gentlemen, this is error number 5\n");
+
+                    //we actually get all the data and are disconnected by server as expected. So all is ok?
+                    duk_push_heapptr(ctx, sinfo->thisptr);
+                    socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
+                    do_callback(ctx, "end", 0);
                     duk_set_top(ctx,top);
                     return;
                 }
@@ -1763,7 +1808,7 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
         duk_push_string(ctx, errstr);//evutil_socket_error_to_string(EVUTIL_SOCKET_ERROR()));
         do_callback(ctx, "error", 1);
         errno=0;
-        socket_cleanup(ctx, sinfo);
+        socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
         duk_set_top(ctx,top);
         return;
     }
@@ -1771,7 +1816,7 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
     if ( events & BEV_EVENT_TIMEOUT )
     {
         sock_do_callback(sinfo, "timeout");
-        socket_cleanup(ctx, sinfo);
+        socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
         duk_set_top(ctx,top);
         return;
     }
@@ -1855,6 +1900,14 @@ static int make_sock_conn(void *arg, int after)
     }
     duk_pop(ctx);
 
+    if(sinfo->fd > -1 && sinfo->parent==NULL)
+    {
+        //server stopped listening, info gone. reject connection
+        duk_push_string(ctx, "connection after server shut down");
+        do_callback(ctx, "error", 1);
+        socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
+        return 0;
+    }
 
     if(tls)
     {
@@ -1891,11 +1944,20 @@ static int make_sock_conn(void *arg, int after)
             if(sinfo->fd < 0)
             {   //client connection
 
-                sinfo->ssl_ctx = SSL_CTX_new(TLS_client_method());
+                if(duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("ssl_ctx")))
+                    sinfo->ssl_ctx = duk_get_pointer(ctx, -1);
+                duk_pop(ctx);
+
                 if(!sinfo->ssl_ctx)
                 {
-                    ssl_err=ERR_get_error();
-                    break;
+                    sinfo->ssl_ctx = SSL_CTX_new(TLS_client_method());
+                    if(!sinfo->ssl_ctx)
+                    {
+                        ssl_err=ERR_get_error();
+                        break;
+                    }
+                    duk_push_pointer(ctx, sinfo->ssl_ctx);
+                    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("ssl_ctx"));
                 }
 
                 if(!insecure)
@@ -1965,38 +2027,54 @@ static int make_sock_conn(void *arg, int after)
         //[ ..., this, errmsg ]
         do_callback(ctx, "error", 1);
         errno=0;
-        socket_cleanup(ctx, sinfo);
+        socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
         return 0;
     }
 
 
-    if(sinfo->fd < 0)
-    {
-        // For connection as client
-        bufferevent_enable(sinfo->bev, EV_READ);
-        // Set up rest of connection in sock_eventcb
-        bufferevent_setcb( sinfo->bev, NULL, NULL, sock_eventcb, sinfo);
-    }
-    else
+    // we will only have a file descriptor at this point if the server is giving us a connection.
+    // with client functions, fd is -1;
+    if(sinfo->fd > -1)
     {
         // For server individual connection:
         struct sockaddr remote;
         socklen_t len = sizeof(struct sockaddr_in6);
 
+        //behavior differs with ssl. sock_eventcb with BEV_EVENT_CONNECTED is called after this.
+        if(sinfo->ssl)
+        {
+            bufferevent_enable(sinfo->bev, EV_READ);
+            // Set up rest of connection in sock_eventcb
+            bufferevent_setcb( sinfo->bev, NULL, NULL, sock_eventcb, sinfo);
+        }
+        else
+        {
+            //somehow without ssl, we are too late and connect event won't be triggered
+            //so we need to call it manually.
+            sock_eventcb(sinfo->bev, BEV_EVENT_CONNECTED, (void *)sinfo);
+        }
         errno=0;
         if( !getpeername(sinfo->fd, &remote, &len) )
             push_remote(ctx, &remote, -2);
+        /*
+            not sure we should kill the connection just because we couldn't get the peer ip
+            and not when/how that would happen anyway. Some research is needed.
         else
         {
             duk_push_sprintf(ctx, "socket.connect: Error getting peer address - %s", strerror(errno));
             do_callback(ctx, "error", 1);
             duk_set_top(ctx, top);
-            socket_cleanup(ctx, sinfo);
+            socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
             return 0;
         }
-        // we are connected, but didn't do the callback because bufferevent wasn't set up yet.
-        sock_eventcb(sinfo->bev, BEV_EVENT_CONNECTED, (void *)sinfo);
+        */
         return 0;
+    }
+    else
+    {
+        bufferevent_enable(sinfo->bev, EV_READ);
+        // Set up rest of connection in sock_eventcb
+        bufferevent_setcb( sinfo->bev, NULL, NULL, sock_eventcb, sinfo);
     }
 
     if(family)
@@ -2016,7 +2094,7 @@ static int make_sock_conn(void *arg, int after)
         duk_push_sprintf(ctx, "socket.connect: could not find an ipv%d address for host", family);
         do_callback(ctx, "error", 1);
         duk_set_top(ctx, top);
-        socket_cleanup(ctx, sinfo);
+        socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
         return 0;
     }
 
@@ -2054,7 +2132,7 @@ static int make_sock_conn(void *arg, int after)
         duk_push_sprintf(ctx, "socket.connect: could not connect - %s", strerror(errno));
         do_callback(ctx, "error", 1);
         duk_set_top(ctx, top);
-        socket_cleanup(ctx, sinfo);
+        socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
         return 0;
     }
 
@@ -2102,6 +2180,15 @@ static duk_ret_t duk_rp_net_socket_connect(duk_context *ctx)
     duk_push_this(ctx);
     tidx = duk_get_top_index(ctx);
 
+    if(duk_get_prop_string(ctx, -1, "readyState"))
+    {
+        duk_pop(ctx);
+        duk_push_string(ctx,"socket already connected or connecting");
+        do_callback(ctx, "error", 1);
+        duk_push_this(ctx);
+        return 1;
+    }
+
     if(obj_idx != -1)
     {
         if(duk_get_prop_string(ctx, obj_idx, "host"))
@@ -2135,6 +2222,15 @@ static duk_ret_t duk_rp_net_socket_connect(duk_context *ctx)
             if(tout<=0.0)
                 RP_THROW(ctx, "socket.connect: option 'timeout' must be a Number > 0");
             duk_put_prop_string(ctx, tidx, "timeout");
+        }
+        else
+            duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, obj_idx, "ssl"))
+        {
+            if(!duk_is_boolean(ctx, -1))
+                RP_THROW(ctx, "socket.connect: option 'ssl' must be a Boolean");
+            duk_put_prop_string(ctx, tidx, "tls");
         }
         else
             duk_pop(ctx);
@@ -2433,6 +2529,45 @@ static duk_ret_t net_create_connection(duk_context *ctx)
 
 /* *************************** net.Server() ******************************* */
 
+static duk_ret_t duk_rp_net_connection_count(duk_context *ctx)
+{
+    RPSOCK *sinfo = NULL;
+
+    duk_push_this(ctx);
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sinfo")) )
+    {
+        sinfo = duk_get_pointer(ctx, -1);
+        duk_push_number(ctx, (double)sinfo->open_conn);
+    }
+    else
+        duk_push_number(ctx, 0.0);
+
+    return 1;
+}
+
+static duk_ret_t duk_rp_net_max_connections(duk_context *ctx)
+{
+    RPSOCK *sinfo = NULL;
+    double maxconn = REQUIRE_NUMBER(ctx, 0, "server.maxConnections: First argument must be an integer");
+
+    if(maxconn < 1 || maxconn > UINT32_MAX)
+        maxconn=0;
+
+    duk_push_this(ctx);
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("sinfo")) )
+    {
+        sinfo = duk_get_pointer(ctx, -1);
+        if(sinfo) //should always be non-NULL
+            sinfo->max_conn=(uint32_t)maxconn;
+    }
+    duk_pop(ctx);
+
+    duk_push_number(ctx, maxconn);
+    duk_put_prop_string(ctx, -2, "maxConnections");
+        
+    return 0;
+}
+
 static duk_ret_t server_close(duk_context *ctx)
 {
     RPSOCK *sinfo = NULL;
@@ -2450,7 +2585,7 @@ static duk_ret_t server_close(duk_context *ctx)
     if(duk_is_function(ctx, 0))
         duk_rp_net_on(ctx, "server.close", "close", 0/*func*/, 1/*this*/);
 
-    socket_cleanup(ctx, sinfo);
+    socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
 
     return 1; //this
 }
@@ -2462,6 +2597,14 @@ static void listener_callback(struct evconnlistener *listener, int fd,
     RPSOCK *sinfo = (RPSOCK *) arg;
     duk_context * ctx = sinfo->ctx;
     duk_idx_t top = duk_get_top(ctx);
+
+    // sinfo->max_conn == 0 means unlimited/not set
+    if(sinfo->max_conn != 0 && sinfo->open_conn >= sinfo->max_conn)
+    {
+        //printf("%d > %d connections, closing\n", sinfo->open_conn, sinfo->max_conn);
+        close(fd);
+        return;        
+    }
 
     duk_push_heapptr(ctx, sinfo->thisptr);
     duk_get_prop_string(ctx, -1, "Socket");
@@ -2555,7 +2698,7 @@ static int listen_addrs(duk_context *ctx, RPSOCK *sinfo, int nlisteners, int por
                 duk_push_heapptr(ctx, sinfo->thisptr);
                 duk_push_sprintf(ctx, "socket.Server: could not listen on host:port %s:%d - %s", h, port, strerror(errno));
                 do_callback(ctx, "error", 1);
-                socket_cleanup(ctx, sinfo);
+                socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
                 return -1;
             }
             evconnlistener_set_error_cb(sinfo->listeners[nlisteners-1], accept_error_cb);
@@ -2596,6 +2739,10 @@ static int make_server(void *arg, int after)
 
     if(duk_get_prop_string(ctx, -1, "backlog") )
         backlog = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, -1, "maxConnections") )
+        sinfo->max_conn = (uint32_t)duk_get_number(ctx, -1);
     duk_pop(ctx);
 
     //get ip address(es)
@@ -2690,7 +2837,7 @@ static duk_ret_t duk_rp_net_server_listen(duk_context *ctx)
                 RP_THROW(ctx, "backlog must be an integer less that %d", MAX_BACKLOG);
         }
         duk_pop(ctx);
-
+        /*
         if(duk_get_prop_string(ctx, obj_idx, "keepAlive"))
         {
             if(!duk_is_boolean(ctx, -1))
@@ -2735,7 +2882,7 @@ static duk_ret_t duk_rp_net_server_listen(duk_context *ctx)
         }
         else
             duk_pop(ctx);
-
+        */
         if(duk_get_prop_string(ctx, obj_idx, "family"))
         {
             if(!duk_is_number(ctx, -1))
@@ -2750,6 +2897,18 @@ static duk_ret_t duk_rp_net_server_listen(duk_context *ctx)
         }
         else
             duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, obj_idx, "maxConnections"))
+        {
+            double maxconn = REQUIRE_NUMBER(ctx, -1, "net.server: option 'maxConnections' must be a Number");
+
+            if(maxconn < 1 || maxconn > UINT32_MAX)
+                maxconn=0;
+
+            duk_push_number(ctx, maxconn);
+            duk_put_prop_string(ctx, tidx, "maxConnections");
+        }
+        duk_pop(ctx);
 
         if(duk_get_prop_string(ctx, obj_idx, "host"))
         {
@@ -2788,6 +2947,9 @@ static duk_ret_t duk_rp_net_server_listen(duk_context *ctx)
     if(!port)
         RP_THROW(ctx, "net.server: port must be specified");
 
+    if(!host && hosts_idx==-1)
+        host="any";
+
     if(host && !strcmp(host,"any"))
     {
         duk_uarridx_t j=0;
@@ -2805,9 +2967,6 @@ static duk_ret_t duk_rp_net_server_listen(duk_context *ctx)
         hosts_idx=duk_get_top_index(ctx);
         host=NULL;
     }
-
-    if(!host && hosts_idx==-1)
-        host="0.0.0.0";
 
     duk_push_array(ctx); //_hostAddrs
 
@@ -2902,7 +3061,7 @@ static duk_ret_t duk_rp_net_server_listen(duk_context *ctx)
             duk_dup(ctx, tidx);
             duk_push_string(ctx, errmsg);
             do_callback(ctx, "error", 1);
-            socket_cleanup(ctx, args);
+            socket_cleanup(ctx, args, WITH_CALLBACKS);
             return 1;
         }
 
@@ -2925,6 +3084,9 @@ static duk_ret_t duk_rp_net_server_listen(duk_context *ctx)
                 RP_THROW(ctx, "error loading ssl key file %s", kfile);
         }
         duk_pop(ctx);
+
+        duk_push_true(ctx);
+        duk_put_prop_string(ctx, tidx, "tls");
 
     }
 
@@ -2978,7 +3140,6 @@ static duk_ret_t duk_rp_net_server(duk_context *ctx)
     //object to hold event callbacks
     duk_push_object(ctx);
     duk_put_prop_string(ctx, tidx, "_events");
-
     // get options:
     if(obj_idx>-1)
     {
@@ -2994,88 +3155,92 @@ static duk_ret_t duk_rp_net_server(duk_context *ctx)
         }
         duk_pop(ctx);
 
-        if(duk_get_prop_string(ctx, obj_idx, "sslKeyFile"))
+        if(tls)
         {
-            const char *kfile = REQUIRE_STRING(ctx, -1, "new Server: option 'sslKeyFile' must be a String");
-
-            if (stat(kfile, &f_stat) != 0)
-                RP_THROW(ctx, "server.start: Cannot load ssl key '%s' (%s)", kfile, strerror(errno));
-            else
+            if(duk_get_prop_string(ctx, obj_idx, "sslKeyFile"))
             {
-                FILE* file = fopen(kfile,"r");
-                EVP_PKEY* pkey = PEM_read_PrivateKey(file, NULL, NULL, NULL);
-                unsigned long err = ERR_get_error();
+                const char *kfile = REQUIRE_STRING(ctx, -1, "new Server: option 'sslKeyFile' must be a String");
 
-                if(pkey)
-                    EVP_PKEY_free(pkey);
-                if(err)
+                if (stat(kfile, &f_stat) != 0)
+                    RP_THROW(ctx, "server.start: Cannot load ssl key '%s' (%s)", kfile, strerror(errno));
+                else
                 {
-                    char tbuf[256];
-                    ERR_error_string(err,tbuf);
-                    RP_THROW(ctx, "Invalid ssl keyfile: %s", tbuf);
+                    FILE* file = fopen(kfile,"r");
+                    EVP_PKEY* pkey = PEM_read_PrivateKey(file, NULL, NULL, NULL);
+                    unsigned long err = ERR_get_error();
+
+                    if(pkey)
+                        EVP_PKEY_free(pkey);
+                    if(err)
+                    {
+                        char tbuf[256];
+                        ERR_error_string(err,tbuf);
+                        RP_THROW(ctx, "Invalid ssl keyfile: %s", tbuf);
+                    }
                 }
+
+                duk_put_prop_string(ctx, tidx, "sslKeyFile");
             }
-
-            duk_put_prop_string(ctx, tidx, "sslKeyFile");
-        }
-        else
-            duk_pop(ctx);
-
-        if(duk_get_prop_string(ctx, obj_idx, "sslCertFile"))
-        {
-            const char *pfile = REQUIRE_STRING(ctx, -1, "new Server: option 'sslCertFile' must be a String");
-
-            if (stat(pfile, &f_stat) != 0)
-                RP_THROW(ctx, "server.start: Cannot load ssl cert file '%s' (%s)", pfile, strerror(errno));
             else
+                duk_pop(ctx);
+
+            if(duk_get_prop_string(ctx, obj_idx, "sslCertFile"))
             {
-                FILE* file = fopen(pfile,"r");
-                X509* x509 = PEM_read_X509(file, NULL, NULL, NULL);
-                unsigned long err = ERR_get_error();
+                const char *pfile = REQUIRE_STRING(ctx, -1, "new Server: option 'sslCertFile' must be a String");
 
-                if(x509)
-                    X509_free(x509);
-                if(err)
+                if (stat(pfile, &f_stat) != 0)
+                    RP_THROW(ctx, "server.start: Cannot load ssl cert file '%s' (%s)", pfile, strerror(errno));
+                else
                 {
-                    char tbuf[256];
-                    ERR_error_string(err,tbuf);
-                    RP_THROW(ctx,"Invalid ssl cert file: %s",tbuf);
-                }
-            }
-            duk_put_prop_string(ctx, tidx, "sslCertFile");
-        }
-        else
-            duk_pop(ctx);
+                    FILE* file = fopen(pfile,"r");
+                    X509* x509 = PEM_read_X509(file, NULL, NULL, NULL);
+                    unsigned long err = ERR_get_error();
 
-        if(duk_get_prop_string(ctx, obj_idx, "sslMinVersion"))
-        {
-            const char *sslver=REQUIRE_STRING(ctx, -1, "server.start: parameter \"sslMinVersion\" requires a string (ssl3|tls1|tls1.1|tls1.2)");
-            if (!strcmp("tls1.2",sslver))
-                version =TLS1_2_VERSION;
-            else if (!strcmp("tls1.1",sslver))
-                version =TLS1_1_VERSION;
-            else if (!strcmp("tls1.0",sslver))
-                version =TLS1_VERSION;
-            else if (!strcmp("tls1",sslver))
-                version =TLS1_VERSION;
-            else if (!strcmp("ssl3",sslver))
-                version =SSL3_VERSION;
+                    if(x509)
+                        X509_free(x509);
+                    if(err)
+                    {
+                        char tbuf[256];
+                        ERR_error_string(err,tbuf);
+                        RP_THROW(ctx,"Invalid ssl cert file: %s",tbuf);
+                    }
+                }
+                duk_put_prop_string(ctx, tidx, "sslCertFile");
+            }
             else
-                RP_THROW(ctx, "server.start: parameter \"sslMinVersion\" must be ssl3, tls1, tls1.1 or tls1.2");
+                duk_pop(ctx);
+
+            if(duk_get_prop_string(ctx, obj_idx, "sslMinVersion"))
+            {
+                const char *sslver=REQUIRE_STRING(ctx, -1, "server.start: parameter \"sslMinVersion\" requires a string (ssl3|tls1|tls1.1|tls1.2)");
+                if (!strcmp("tls1.2",sslver))
+                    version =TLS1_2_VERSION;
+                else if (!strcmp("tls1.1",sslver))
+                    version =TLS1_1_VERSION;
+                else if (!strcmp("tls1.0",sslver))
+                    version =TLS1_VERSION;
+                else if (!strcmp("tls1",sslver))
+                    version =TLS1_VERSION;
+                else if (!strcmp("ssl3",sslver))
+                    version =SSL3_VERSION;
+                else
+                    RP_THROW(ctx, "server.start: parameter \"sslMinVersion\" must be ssl3, tls1, tls1.1 or tls1.2");
+            }
+            duk_pop(ctx);
         }
-        duk_pop(ctx);
     }
 
+    // put ssl version in 'this'
     duk_push_int(ctx, version);
     duk_put_prop_string(ctx, tidx, DUK_HIDDEN_SYMBOL("sslver"));
 
-    // put options in 'this'
+    // put tls setting in 'this'
     duk_push_boolean(ctx, tls);
     duk_put_prop_string(ctx, tidx, "tls");
 
     if(func_idx>-1) {
         duk_dup(ctx, tidx);
-        duk_rp_net_on(ctx, "server.on", "listening", func_idx, -1);
+        duk_rp_net_on(ctx, "server.on", "connection", func_idx, -1);
     }
 
 
@@ -3215,6 +3380,22 @@ static duk_ret_t duk_rp_net_udp_socket(duk_context *ctx)
 
 */
 
+
+static duk_ret_t net_finalizer(duk_context *ctx)
+{
+    SSL_CTX *ssl_ctx;
+
+    duk_push_global_object(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("ssl_ctx"));
+    ssl_ctx = duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+    if(ssl_ctx)
+        SSL_CTX_free(ssl_ctx);
+    duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("ssl_ctx"));
+    duk_pop(ctx);
+    return 0;
+}
+
 /* INIT MODULE */
 duk_ret_t duk_open_module(duk_context *ctx)
 {
@@ -3291,7 +3472,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
     // [ net, Socket ]
 
     //net.Server
-    duk_push_c_function(ctx, duk_rp_net_server, 1);
+    duk_push_c_function(ctx, duk_rp_net_server, 2);
     // [ net, Socket, Server ]
     duk_pull(ctx, -2); //Socket reference
     // [ net, Server, Socket ]
@@ -3304,9 +3485,13 @@ duk_ret_t duk_open_module(duk_context *ctx)
         duk_push_c_function(ctx, duk_rp_net_server_listen, 4);
         duk_put_prop_string(ctx, -2, "listen");
 
-        // server.write()
-        duk_push_c_function(ctx, socket_write,1);
-        duk_put_prop_string(ctx, -2, "write");
+        // server.connectionCount()
+        duk_push_c_function(ctx, duk_rp_net_connection_count, 0);
+        duk_put_prop_string(ctx, -2, "connectionCount");
+
+        // server.maxConnections()
+        duk_push_c_function(ctx, duk_rp_net_max_connections, 1);
+        duk_put_prop_string(ctx, -2, "maxConnections");
 
         // server.on()
         duk_push_c_function(ctx, duk_rp_net_x_on, 2);
@@ -3371,6 +3556,9 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     duk_push_string(ctx, NET_CA_PATH "/" NET_CA_FILE);
     duk_put_prop_string(ctx, -2, "default_ca_file");
+
+    duk_push_c_function(ctx, net_finalizer, 1);
+    duk_set_finalizer(ctx, -2);
 
     return 1;
 }
