@@ -168,6 +168,11 @@ But at least the server disconnecting acts as a finalizer.
 
 */
 
+/* mutex locking for thread dns resolvers
+   only needed on creation and destruction */
+
+pthread_mutex_t dnslock;
+
 volatile uint32_t this_id=0, evcb_id=0;
 
 #define RPSOCK struct rp_socket_struct
@@ -175,8 +180,9 @@ volatile uint32_t this_id=0, evcb_id=0;
 RPSOCK {
     duk_context           * ctx;            // a copy of the current duk context
     void                  * thisptr;        // heap pointer to 'this' of current net object
-    struct event_base     * base;           // current event base
+    struct event_base     * base;           // current event base for this thread
     struct bufferevent    * bev;            // current bufferevent
+    struct evdns_base     * dnsbase;        // event loop dns base for this thread/evbase
     timeout_callback      * post_dns_cb;    // next callback (via settimeout) after dns resolution
     struct evconnlistener **listeners;      // for server only - a list of listeners
     void                  * aux;            // generic pointer
@@ -193,11 +199,33 @@ RPSOCK {
 
 int rp_put_gs_object(duk_context *ctx, const char *objname, const char *key);
 
+static struct evdns_base **thread_dnsbase=NULL;
+static int nthread_dnsbase=-1;// by default, dont do this.
+
+static void free_dns(void)
+{
+    int i=0;
+
+    if(!thread_dnsbase)
+        return;
+    RP_MLOCK(&dnslock);
+    while(i<nthread_dnsbase)
+    {
+        evdns_base_free(thread_dnsbase[i], 0);
+        i++;
+    }
+    nthread_dnsbase=0;
+    free(thread_dnsbase);
+    thread_dnsbase=NULL;
+    RP_MUNLOCK(&dnslock);
+}
+
 static RPSOCK * new_sockinfo(duk_context *ctx)
 {
     RPSOCK *args = NULL;
     char keystr[16];
     struct event_base *base=NULL;
+    struct evdns_base *dnsbase=NULL;
     void *thisptr=NULL;
 
     duk_push_this(ctx);
@@ -205,14 +233,46 @@ static RPSOCK * new_sockinfo(duk_context *ctx)
 
     /* if we are threaded, base will not be global struct event_base *elbase */
     duk_push_global_stash(ctx);
+
     if( duk_get_prop_string(ctx, -1, "elbase") )
         base=duk_get_pointer(ctx, -1);
-    duk_pop_2(ctx);
+    else
+        RP_THROW(ctx, "rampart-net - no libevent base found");
+    duk_pop(ctx);
+
+    if( nthread_dnsbase > -1)
+    {
+        /* get dnsbase, create as necessary */
+        if( duk_get_prop_string(ctx, -1, "dns_elbase") )
+        {
+            dnsbase=duk_get_pointer(ctx, -1);
+            duk_pop(ctx);
+        }
+        else
+        {
+            duk_pop(ctx);//undefined
+            dnsbase = evdns_base_new(base,
+                EVDNS_BASE_DISABLE_WHEN_INACTIVE|EVDNS_BASE_INITIALIZE_NAMESERVERS );
+            if(!dnsbase)
+                RP_THROW(ctx, "rampart-net - error creating dnsbase");
+
+            RP_MLOCK(&dnslock);
+            REMALLOC(thread_dnsbase, (nthread_dnsbase + 1) * sizeof(struct evdns_base *) );
+            thread_dnsbase[nthread_dnsbase++]=dnsbase;        
+            RP_MUNLOCK(&dnslock);
+
+            duk_push_pointer(ctx, dnsbase);
+            duk_put_prop_string(ctx, -2, "dns_elbase");
+        }
+    }
+
+    duk_pop(ctx);// global stash
 
     REMALLOC(args, sizeof(RPSOCK));
     args->ctx=ctx;
     args->thisptr=thisptr;
     args->base = base;
+    args->dnsbase = dnsbase;
     args->written=0;
     args->read=0;
     args->open_conn=0;
@@ -238,7 +298,7 @@ static RPSOCK * new_sockinfo(duk_context *ctx)
 // cb_idx must contain a function, or error is thrown
 static void duk_rp_net_on(duk_context *ctx, const char *fname, const char *evname, duk_idx_t cb_idx, duk_idx_t this_idx)
 {
-    duk_idx_t tidx;
+    duk_idx_t tidx, top=duk_get_top(ctx);
     int id = (int) (evcb_id++);
 
     cb_idx = duk_normalize_index(ctx, cb_idx);
@@ -265,6 +325,25 @@ static void duk_rp_net_on(duk_context *ctx, const char *fname, const char *evnam
         duk_put_prop_string(ctx, -3, evname);
     }
 
+    // check for duplicate
+    if(duk_get_prop_string(ctx, cb_idx, DUK_HIDDEN_SYMBOL("evcb_id")) )
+    {
+        //printf("%s ID IS THERE\n", evname);
+        // don't change the id if this function is in another event
+        id = duk_get_int(ctx, -1);
+        if(duk_has_prop(ctx, -2)) //this pops the id
+        {
+            //printf("AND IS IN %s event\n", evname);
+            duk_set_top(ctx, top);
+            return;
+        } 
+    }
+    else
+    {
+        //printf("%s id not present\n", evname);
+        duk_pop(ctx);
+    }
+
     // key for _event.evname object
     duk_push_int(ctx, id);
 
@@ -278,10 +357,14 @@ static void duk_rp_net_on(duk_context *ctx, const char *fname, const char *evnam
     // store it under that id
     duk_put_prop(ctx, -3);
 
+    /*
     duk_pop_2(ctx); // "_events", _event.evname_object
 
     if(this_idx == DUK_INVALID_INDEX)
         duk_remove(ctx, tidx);
+    */
+    // end where we started
+    duk_set_top(ctx, top);
 }
 
 
@@ -680,7 +763,7 @@ static void socket_cleanup(duk_context *ctx, RPSOCK *sinfo, int docb)
         bufferevent_free(sinfo->bev);
         sinfo->bev=NULL;
     }
-    
+
     // server sinfo
     if(sinfo->listeners)
     {
@@ -841,11 +924,13 @@ static void push_addrinfo(duk_context *ctx, struct addrinfo *res, const char *hn
 
         if(!i)
         {
+            /* this isnt working with libevent dns, but works with native. no idea why.
             if(res->ai_canonname)
                 duk_push_string(ctx, (const char *) res->ai_canonname);
             else
                 duk_push_null(ctx);
             duk_put_prop_string(ctx, obj_idx, "canonName");
+            */
 
             duk_push_string(ctx, (const char *) addrstr);
             duk_put_prop_string(ctx, obj_idx, "ip");
@@ -932,19 +1017,32 @@ duk_ret_t duk_rp_net_resolve(duk_context *ctx)
 #define DNS_CB_ARGS struct dns_callback_arguments_s
 
 DNS_CB_ARGS {
-    struct evdns_base *dnsbase;
+    struct evutil_addrinfo *addr;
     char *host;
+    uint8_t freebase;
 };
 
 static int lookup_callback(void *arg, int after)
 {
     RPSOCK *sinfo = (RPSOCK *) arg;
+    DNS_CB_ARGS *dnsargs = (DNS_CB_ARGS *) sinfo->aux;
     duk_context *ctx = sinfo->ctx;
 
     if(after)
         return 0;
 
     duk_push_heapptr(ctx, sinfo->thisptr); //this
+
+    push_addrinfo(ctx, dnsargs->addr, dnsargs->host, 0);
+    duk_put_prop_string(ctx, -2, "_hostAddrs");
+
+    if(dnsargs->freebase)
+        evdns_base_free(sinfo->dnsbase, 0);
+
+    free(dnsargs->host);
+    sinfo->aux=NULL;
+    free(dnsargs);
+
     duk_get_prop_string(ctx, -1, "_hostAddrs");
     do_callback(ctx, "lookup", 1);
     if(sinfo->post_dns_cb)
@@ -958,12 +1056,13 @@ static void async_dns_callback(int errcode, struct evutil_addrinfo *addr, void *
     duk_context *ctx = sinfo->ctx;
     DNS_CB_ARGS *dnsargs = (DNS_CB_ARGS *) sinfo->aux;
 
-    duk_push_heapptr(ctx, sinfo->thisptr); //this
 
     if(errcode)
     {
+        duk_push_heapptr(ctx, sinfo->thisptr); //this
         free(dnsargs->host);
-        evdns_base_free(dnsargs->dnsbase,0 );
+        if(dnsargs->freebase)
+            evdns_base_free(sinfo->dnsbase, 0);
         sinfo->aux=NULL;
         free(dnsargs);
         duk_push_string(ctx, evutil_gai_strerror(errcode) );
@@ -977,25 +1076,15 @@ static void async_dns_callback(int errcode, struct evutil_addrinfo *addr, void *
         // and since this might not be in the event loop (see evdns_getaddrinfo)
         // we need to put it in so it will be run after lookup is set.
 
-        push_addrinfo(ctx, addr, dnsargs->host, 0);
-        duk_put_prop_string(ctx, -2, "_hostAddrs");
-
-        duk_pop(ctx); //this
+        dnsargs->addr = addr;
         duk_rp_insert_timeout(ctx, 0, "resolve", lookup_callback, arg,
             DUK_INVALID_INDEX, DUK_INVALID_INDEX, 0);
-
-        free(dnsargs->host);
-        evdns_base_free(dnsargs->dnsbase, 0);
-        sinfo->aux=NULL;
-        free(dnsargs);
 
     }
 }
 
 static void async_resolve(RPSOCK *sinfo, const char *hn)
 {
-    struct evdns_base *dnsbase;
-    duk_context *ctx = sinfo->ctx;
     struct evutil_addrinfo hints;
     DNS_CB_ARGS *dnsargs = NULL;
 //    struct evdns_getaddrinfo_request *req;
@@ -1011,28 +1100,25 @@ static void async_resolve(RPSOCK *sinfo, const char *hn)
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
 
-    dnsbase = evdns_base_new(sinfo->base,
-        EVDNS_BASE_DISABLE_WHEN_INACTIVE|EVDNS_BASE_INITIALIZE_NAMESERVERS );
-    if (!dnsbase)
-    {
-        duk_push_heapptr(ctx, sinfo->thisptr); //this
-
-        duk_push_string(ctx, "Could not initiate dns_base" );
-        do_callback(ctx, "error", 1);
-        socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
-        return;
-    }
-
     REMALLOC(dnsargs, sizeof(DNS_CB_ARGS));
     dnsargs->host = strdup(hn);
-    dnsargs->dnsbase = dnsbase;
+    dnsargs->addr = NULL;
     sinfo->aux = (void *)dnsargs;
 
+    // not using thread dnsbase
+    if(!sinfo->dnsbase)
+    {
+        sinfo->dnsbase = evdns_base_new(sinfo->base,
+            EVDNS_BASE_DISABLE_WHEN_INACTIVE|EVDNS_BASE_INITIALIZE_NAMESERVERS );
+        dnsargs->freebase=1;
+    }
+    else
+        dnsargs->freebase=0;
 //    req =
     // async_dns_callback may be run directly
     // or run in event loop.
     evdns_getaddrinfo(
-            dnsbase, hn, NULL,
+            sinfo->dnsbase, hn, NULL,
             &hints, async_dns_callback, sinfo);
 }
 
@@ -1137,7 +1223,7 @@ static duk_ret_t duk_rp_net_resolve_async(duk_context *ctx)
     duk_dup(ctx,0); // host
     duk_dup(ctx,1); // function
     duk_call_prop(ctx, -4, 2); // r.resolve(host, function(){})
-    return 0;
+    return 1;
 }
 
 /* *** new net.Resolver() *** */
@@ -2548,9 +2634,12 @@ static duk_ret_t duk_rp_net_connection_count(duk_context *ctx)
 static duk_ret_t duk_rp_net_max_connections(duk_context *ctx)
 {
     RPSOCK *sinfo = NULL;
-    double maxconn = REQUIRE_NUMBER(ctx, 0, "server.maxConnections: First argument must be an integer");
+    double maxconn = 0;
+    
+    if(!duk_is_undefined(ctx, 0))
+        maxconn = REQUIRE_NUMBER(ctx, 0, "server.maxConnections: First argument must be an integer");
 
-    if(maxconn < 1 || maxconn > UINT32_MAX)
+    if(maxconn < 0 || maxconn > UINT32_MAX)
         maxconn=0;
 
     duk_push_this(ctx);
@@ -3380,6 +3469,22 @@ static duk_ret_t duk_rp_net_udp_socket(duk_context *ctx)
 
 */
 
+static duk_ret_t duk_rp_net_auto_resolver(duk_context *ctx)
+{
+    int start = REQUIRE_BOOL(ctx, 0, "net.autoResolver: argument must be a Boolean");
+
+    if( start )
+    {
+        if(nthread_dnsbase==-1)
+            nthread_dnsbase=0;
+    }
+    else
+    {
+        free_dns();
+        nthread_dnsbase=-1;
+    }
+    return 0;
+}
 
 static duk_ret_t net_finalizer(duk_context *ctx)
 {
@@ -3393,12 +3498,17 @@ static duk_ret_t net_finalizer(duk_context *ctx)
         SSL_CTX_free(ssl_ctx);
     duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("ssl_ctx"));
     duk_pop(ctx);
+
+    free_dns();
     return 0;
 }
 
 /* INIT MODULE */
 duk_ret_t duk_open_module(duk_context *ctx)
 {
+
+    RP_MINIT(&dnslock);
+
     /* return object */
     duk_push_object(ctx);
 
@@ -3556,6 +3666,9 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     duk_push_string(ctx, NET_CA_PATH "/" NET_CA_FILE);
     duk_put_prop_string(ctx, -2, "default_ca_file");
+
+    duk_push_c_function(ctx, duk_rp_net_auto_resolver, 1);
+    duk_put_prop_string(ctx, -2, "autoResolver");
 
     duk_push_c_function(ctx, net_finalizer, 1);
     duk_set_finalizer(ctx, -2);
