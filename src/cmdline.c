@@ -22,6 +22,7 @@
 
 #include "event.h"
 #include "event2/thread.h"
+#include "event2/dns.h"
 #include "linenoise.h"
 #include "sys/queue.h"
 #include "whereami.h"
@@ -53,6 +54,9 @@ duk_context **thread_ctx = NULL;
 duk_context *main_ctx;
 struct event_base *elbase;
 struct event_base **thread_base=NULL;
+
+struct evdns_base **thread_dnsbase=NULL;
+int nthread_dnsbase=0;
 
 #define ST_NONE 0
 #define ST_DQ   1
@@ -367,6 +371,24 @@ void add_exit_func(rp_vfunc func, void *arg)
     exit_funcs[n-1]=NULL;
 }
 
+//lock is probably not necessary now
+static void free_dns(void)
+{
+    int i=0;
+
+    if(!thread_dnsbase)
+        return;
+    CTXLOCK;
+    while(i<nthread_dnsbase)
+    {
+        evdns_base_free(thread_dnsbase[i], 0);
+        i++;
+    }
+    nthread_dnsbase=0;
+    free(thread_dnsbase);
+    thread_dnsbase=NULL;
+    CTXUNLOCK;
+}
 
 
 void duk_rp_exit(duk_context *ctx, int ec)
@@ -374,10 +396,13 @@ void duk_rp_exit(duk_context *ctx, int ec)
     int i=0,len=0;
 
     static int ran_already=0;
-//printf("%d exiting once%s\n",(int)getpid(), ran_already?" again":""); 
+//printf("%d exiting once%s\n",(int)getpid(), ran_already?" again":"");
     if(ran_already)
         exit(ec);
     ran_already=1;
+
+    free_dns();
+
     duk_push_global_stash(ctx);
     duk_get_prop_string(ctx, -1, "exitfuncs");
     len=duk_get_length(ctx, -1);
@@ -392,7 +417,7 @@ void duk_rp_exit(duk_context *ctx, int ec)
     free(RP_script_path);
     free(RP_script);
 
-    /* need to stop the threads before doing this 
+    /* need to stop the threads before doing this
     if(totnthreads)
     {
         for (i=0; i<totnthreads*2; i++)
@@ -633,7 +658,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     rppath=rp_find_path(pfill_bc,"lib/rampart_modules/");
     if(!strlen(rppath.path))
         rppath=rp_find_path(pfill_bc,"modules/");
-    
+
     if(strlen(rppath.path))
     {
         pfill_bc=rppath.path;
@@ -844,7 +869,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
 
 struct slisthead tohead={0};
 
-/* Pretty sure there should be unfreed timeout structs only if 
+/* Pretty sure there should be unfreed timeout structs only if
    there is an explicit process.exit() before the timeout expires */
 
 static void free_tos (void *arg)
@@ -1040,7 +1065,7 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
         duk_double_t timediff_ms = 0.0;
         struct timeval newto;
 
-        delay = ( (duk_double_t)evargs->timeout.tv_sec * 1000.0) + 
+        delay = ( (duk_double_t)evargs->timeout.tv_sec * 1000.0) +
                 ( (duk_double_t)evargs->timeout.tv_usec/ 1000);
 
         clock_gettime(CLOCK_MONOTONIC, &now);
@@ -1081,21 +1106,21 @@ volatile uint32_t ev_id=0;
     func_name        -   a javascript function name for error messages (i.e. "setTimeout")
     timeout_callback -   A c callback, int cb(void *arg, int after)
                            called twice, once with after=0, right before the javascript callback function is called,
-                           and once with after=1, right after javascript callback function is called. 
-                         Return value from func with after=0 should be 
+                           and once with after=1, right after javascript callback function is called.
+                         Return value from func with after=0 should be
                                 0 for skip js callback and second c callback,
                                 1 for ok
-                                    OR 
+                                    OR
                                 2 - cbfunc pushed 'this' onto stack for JS callback.
                          Return value from func with after=1 is used to set a new 'repeat' value (0, 1 or 2).
     arg              -   void pointer for above callback.
     func_idx         -   where to find the js callback.  If DUK_INVALID_INDEX, js callback will be skipped
     arg_start_idx    -   where to start looking for arguments in duktape stack to be eventually passed to js callback
                      -   DUK_INVALID_INDEX means don't look for arguments
-    to               -   timeout value in seconds 
+    to               -   timeout value in seconds
 
 */
-duk_ret_t duk_rp_insert_timeout(duk_context *ctx, int repeat, const char *fname, timeout_callback *cb, void *arg, 
+duk_ret_t duk_rp_insert_timeout(duk_context *ctx, int repeat, const char *fname, timeout_callback *cb, void *arg,
         duk_idx_t func_idx, duk_idx_t arg_start_idx, double to)
 {
     struct event_base *base=NULL;
@@ -1123,8 +1148,8 @@ duk_ret_t duk_rp_insert_timeout(duk_context *ctx, int repeat, const char *fname,
     evargs->repeat=repeat;
     evargs->cb=cb;
     evargs->cbarg=arg;
-    clock_gettime(CLOCK_MONOTONIC, &evargs->start_time);        
-  
+    clock_gettime(CLOCK_MONOTONIC, &evargs->start_time);
+
     SLISTLOCK;
     SLIST_INSERT_HEAD(&tohead, evargs, entries);
     SLISTUNLOCK;
@@ -1184,7 +1209,7 @@ duk_ret_t duk_rp_insert_timeout(duk_context *ctx, int repeat, const char *fname,
 
 inline duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout_callback *cb, void *arg)
 {
-    return duk_rp_insert_timeout(ctx, repeat, fname, cb, arg, 0, 2, 
+    return duk_rp_insert_timeout(ctx, repeat, fname, cb, arg, 0, 2,
         duk_get_number_default(ctx,1, 0) / 1000.0
     );
 }
@@ -1495,7 +1520,7 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                     else
                     {
                         if(*(out-1) == '"' && *(out-2) != '\\')
-                            *(out-1) = '('; //skip empty quotes: "",( => (  
+                            *(out-1) = '('; //skip empty quotes: "",( => (
                         else
                             stringcopy("\"+(");
                     }
@@ -2049,10 +2074,10 @@ int main(int argc, char *argv[])
         fprintf(stderr,"could not get subpath of '%s'\n", rampart_dir);
         exit(1);
     }
-    if( ptr-rampart_dir > 4 && 
-        *(ptr-1)=='n' &&     
-        *(ptr-2)=='i' &&     
-        *(ptr-3)=='b' &&     
+    if( ptr-rampart_dir > 4 &&
+        *(ptr-1)=='n' &&
+        *(ptr-2)=='i' &&
+        *(ptr-3)=='b' &&
         *(ptr-4)=='/'
       )
         ptr-=4;
@@ -2065,7 +2090,7 @@ int main(int argc, char *argv[])
         fprintf(stderr,"could not get subpath of '%s'\n", rampart_dir);
         exit(1);
     }
-    *ptr='\0';    
+    *ptr='\0';
 
     /* timeout cleanups */
     add_exit_func(free_tos, NULL);
@@ -2196,6 +2221,8 @@ int main(int argc, char *argv[])
         const char *babel_source_filename;
         FILE *entry_file;
         size_t src_sz=0;
+        struct evdns_base *dnsbase=NULL;
+
 
         if (argc == 0)
         {
@@ -2204,7 +2231,7 @@ int main(int argc, char *argv[])
                 isstdin=1;
                 goto dofile;
             }
-            
+
             // event loop doesn't work with interactive at the moment.
             duk_get_global_string(ctx,"rampart");
             duk_del_prop_string(ctx, -1, "event");
@@ -2360,6 +2387,26 @@ int main(int argc, char *argv[])
             }
 
             free(free_file_src);
+
+            /*  add dns base for rampart-net
+             *  if added before event loop starts, it won't block exit
+             */
+            dnsbase = evdns_base_new(elbase,
+                EVDNS_BASE_DISABLE_WHEN_INACTIVE);
+            if(!dnsbase)
+                RP_THROW(ctx, "rampart-net - error creating dnsbase");
+
+            /* for unknown reasons, setting EVDNS_BASE_INITIALIZE_NAMESERVERS
+               above results in dnsbase not exiting when event loop is otherwise empty */
+            evdns_base_resolv_conf_parse(dnsbase, DNS_OPTIONS_ALL, "/etc/resolv.conf");
+
+            duk_push_global_stash(ctx);
+            duk_push_pointer(ctx, dnsbase);
+            duk_put_prop_string(ctx, -2, "dns_elbase");
+            duk_pop(ctx);
+            REMALLOC(thread_dnsbase, (nthread_dnsbase + 1) * sizeof(struct evdns_base *) );
+            thread_dnsbase[nthread_dnsbase++]=dnsbase;
+            /* end dns */
 
             /* run the script */
             if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)

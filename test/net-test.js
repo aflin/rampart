@@ -37,6 +37,9 @@ var timeoutcb=false;
 var connectend=false;
 var readycb=false;
 var to_id;
+var resolved=false;
+var resolved_async=false;
+var once = true;
 
 var server = new net.Server(function(){
     listeningcb=true;    
@@ -62,9 +65,11 @@ server.on("connection", function(ssocket){
             connectend=true;
         });
 
-        ssocket.on("data", function(d){
+        ssocket.once("data", function(d){
             if(sprintf("%s",d)=="ok")
                 data2ok=true;
+            else
+                once=false;
         });
 
 });
@@ -101,24 +106,38 @@ socket.setTimeout(100);
 // first connect
 socket.connect(8085,'127.0.0.1');
 
+var res = net.resolve("dns.google.")
+
+if (res.ipv4 == "8.8.8.8" || res.ipv4 == "8.8.4.4")
+    resolved=true;
+
+net.resolve_async("one.one.one.one.", function(h){
+    if (h.ipv4=="1.1.1.1" || h.ipv4=="1.0.0.1")
+        resolved_async=true;
+});
+
+
 function test_all(){
     testFeature("Listening callback", listeningcb);
     testFeature("Connect callback", connectcb);
     testFeature("Data callback", dataok);
     testFeature("Second data callback", data2ok);
+    testFeature("Data callback once", once);
     testFeature("Close callback", connectclose);
     testFeature("Read callback", readycb);
     testFeature("Timeout callback", timeoutcb);
     testFeature("End callback", connectend);
+    testFeature("Resolve Sync", resolved);
+    testFeature("Resolve Async", resolved_async);
     clearTimeout(to_id);
 }
 
-//do test after close is done
+//do test a bit after close is done
 function dotest() {
-    setTimeout(test_all, 0)
+    setTimeout(test_all, 500)
 }
 
 socket.on("close", dotest);
 
-
-to_id = setTimeout(test_all, 5000);
+// do test after 3 seconds even if "close" event above fails
+to_id = setTimeout(test_all, 3000);

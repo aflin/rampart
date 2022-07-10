@@ -36,7 +36,7 @@
 #include "../register.h"
 #include "../globals/printf.h"
 #include "libdeflate.h"
-
+#include "event2/dns.h"
 
 //#define RP_TO_DEBUG
 //#define RP_TIMEO_DEBUG
@@ -175,8 +175,8 @@ static DHS *clone_dhs(DHS *indhs)
     dhs->timeout.tv_sec = indhs->timeout.tv_sec;
     dhs->timeout.tv_usec= indhs->timeout.tv_usec;
     dhs->auxbuf =         indhs->auxbuf;
-    
-    
+
+
     dhs->bufsz =          indhs->bufsz;
     dhs->bufpos =         indhs->bufpos;
     dhs->freeme =         1;
@@ -2108,7 +2108,7 @@ static void attachbuf(DHS *dhs, duk_idx_t idx)
     }
 }
 
-/* 
+/*
     send auxbuf if exists
 */
 static int sendmem(DHS *dhs)
@@ -2136,7 +2136,7 @@ static int sendbuf(DHS *dhs)
     ret = sendmem(dhs);
 
     /* null or empty string */
-    if( duk_is_null(ctx, -1) || duk_is_undefined(ctx, -1) || 
+    if( duk_is_null(ctx, -1) || duk_is_undefined(ctx, -1) ||
         ( duk_is_string(ctx, -1) && !duk_get_length(ctx, -1) )
       )
     {
@@ -2797,10 +2797,10 @@ enum_object:
             duk_pop_2(ctx);
             if (variant == 2) //highly unlikely
                 variant=0; //copy to fixed buffer
-            
+
              tobuf = duk_push_buffer(tctx, sz, variant);
              memcpy(tobuf, frombuf, sz);
-             
+
              duk_put_prop_string(tctx, -2, s);
         }
         else if (duk_is_object(ctx, -1) && !duk_is_function(ctx, -1) && !duk_is_c_function(ctx, -1))
@@ -2818,7 +2818,7 @@ enum_object:
                     duk_put_prop_string(tctx, -2, s);
                 }
                 duk_pop(ctx);
-            } 
+            }
             else
             {
                 /* copy normal {} objects */
@@ -3165,7 +3165,7 @@ static duk_ret_t send_chunk_chunkend(duk_context *ctx, int end) {
         if(!end || ( !duk_is_undefined(ctx,0) && !duk_is_null(ctx, 0)) )
         {
             const char *d;
-            
+
             duk_pull(ctx, 0);
 
             if (duk_is_string(ctx, -1) && ((d = duk_get_string(ctx, -1)) || 1) && *d == '@')
@@ -3183,7 +3183,7 @@ static duk_ret_t send_chunk_chunkend(duk_context *ctx, int end) {
             }
             else
             {
-                
+
                 if(sendbuf(dhs))
                 {
                     evhtp_send_reply_chunk(req, dhs->req->buffer_out);
@@ -3245,12 +3245,12 @@ int setdhs(void *arg, int is_post)
     duk_context *ctx = NULL;
     char reqobj_tempname[24];
 
-    /* chunkp with dhs->ctx and dhs->req  may be invalid, if freed 
+    /* chunkp with dhs->ctx and dhs->req  may be invalid, if freed
        in chunk_finalize so we need to get our ctx from the source   */
     ctx = thread_ctx[local_thread_number];
 //printf("got ctx from tno = %d\n", local_thread_number);
     /* check that chunkp is valid.  If temp reference to
-       saved js req is gone, then it was freed in chunk_finalize   */ 
+       saved js req is gone, then it was freed in chunk_finalize   */
     duk_push_global_object(ctx);
     sprintf(reqobj_tempname,"\xFFreq_%p", chunkp);
     if(duk_has_prop_string(ctx, -1, reqobj_tempname))
@@ -3267,7 +3267,7 @@ int setdhs(void *arg, int is_post)
     {
         if(!dhs->freeme)
             return 1; // nothing was sent, do it again after another timeout.
-                      // the libevhtp write callback will not be fired since nothing was sent. 
+                      // the libevhtp write callback will not be fired since nothing was sent.
         invalidatedhs;
         return 0;//don't repeat.
     }
@@ -3318,7 +3318,7 @@ static evhtp_res rp_chunk_callback(evhtp_connection_t * conn, void * arg)
         if(duk_get_prop_string(chunkp->ctx, -1, DUK_HIDDEN_SYMBOL("evreq")) )
             dhs->req = req = duk_get_pointer(chunkp->ctx, -1);
         duk_pop(ctx);
-        
+
     }
     else
     {
@@ -3410,7 +3410,7 @@ static evhtp_res chunk_finalize(struct evhtp_connection *conn, void * arg)
     duk_push_pointer(ctx, NULL);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("evreq"));
     duk_pop(ctx);
-    
+
     invalidatedhs;
     free(dhs);
     // mark the request null in case of a delayed callback in rp_chunk_callback/setdhs
@@ -3476,8 +3476,8 @@ static duk_ret_t rp_post_defer(duk_context *ctx)
 
 }
 
-/* 
-    invalidate req after disconnect 
+/*
+    invalidate req after disconnect
     This might happen before or after rp_post_defer,
     but BOTH will happen.
 */
@@ -3708,12 +3708,12 @@ static void *http_dothread(void *arg)
             deferp->dhs=newdhs;
 
             duk_pop_2(ctx); //boolean 'defer':true & return val from js callback
-            
+
             duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("reqobj"));
             //deferp->this_heap_ptr = duk_get_heapptr(ctx, -1);
             duk_push_c_function(ctx, defer_reply, 1);
             duk_put_prop_string(ctx, -2, "reply");
-            
+
             duk_push_pointer(ctx, newdhs);
             duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("defer_dhs") );
             duk_push_c_function(ctx, rp_post_defer, 1);
@@ -4561,8 +4561,11 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
     int *thrno = NULL;
     duk_context *ctx;
     struct event_base *base = evthr_get_base(thr);
+    struct evdns_base *dnsbase=NULL;
 
     CTXLOCK;
+
+
 
     REMALLOC(thrno, sizeof(int));
 
@@ -4613,6 +4616,26 @@ void initThread(evhtp_t *htp, evthr_t *thr, void *arg)
 
 
     thread_base[*thrno]=base;
+
+    /* for rampart-net - evdns_base must be inserted before loop starts
+       or it holds exit -- though in rampart-server it is not so important
+       since server only exits with kill/ctrl-c.  However we still
+       need to make a dnsbase and store the pointer to be freed upon exit.
+    */
+    dnsbase = evdns_base_new(base,
+        EVDNS_BASE_DISABLE_WHEN_INACTIVE );
+    if(!dnsbase)
+        RP_THROW(ctx, "rampart-net - error creating dnsbase");
+
+    evdns_base_resolv_conf_parse(dnsbase, DNS_OPTIONS_ALL, "/etc/resolv.conf");
+
+    duk_push_global_stash(ctx);
+    duk_push_pointer(ctx, dnsbase);
+    duk_put_prop_string(ctx, -2, "dns_elbase");
+    duk_pop(ctx);
+    REMALLOC(thread_dnsbase, (nthread_dnsbase + 1) * sizeof(struct evdns_base *) );
+    thread_dnsbase[nthread_dnsbase++]=dnsbase;
+
     CTXUNLOCK;
 }
 

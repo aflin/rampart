@@ -217,18 +217,20 @@ extern "C"
     } while (0)
 
 
-extern char **rampart_argv;              // same as argv
-extern int   rampart_argc;               // same as argc
-extern char argv0[PATH_MAX];             // in rampart-server argv[0] is changed.  Original is saved here.
-extern char rampart_exec[PATH_MAX];      // the full path to the executable
-extern char rampart_dir[PATH_MAX];       // the base directory
-extern char rampart_bin[PATH_MAX];       // the base directory - with /bin if executable is in bin
-extern duk_context *main_ctx;            // the context if/when single threaded
-extern duk_context **thread_ctx;         // array of ctxs for server, 2 per thread (http and ws)
-extern __thread int local_thread_number; // thread number inside thread
-extern struct event_base *elbase;        // the main event base for the main event loop
-extern struct event_base **thread_base;  // each thread (or pair or ctxs) gets an event loop
-extern int totnthreads;                  // when threading in server - number of ctx contexts
+extern char **rampart_argv;                 // same as argv
+extern int   rampart_argc;                  // same as argc
+extern char argv0[PATH_MAX];                // in rampart-server argv[0] is changed.  Original is saved here.
+extern char rampart_exec[PATH_MAX];         // the full path to the executable
+extern char rampart_dir[PATH_MAX];          // the base directory
+extern char rampart_bin[PATH_MAX];          // the base directory - with /bin if executable is in bin
+extern duk_context *main_ctx;               // the context if/when single threaded
+extern duk_context **thread_ctx;            // array of ctxs for server, 2 per thread (http and ws)
+extern __thread int local_thread_number;    // thread number inside thread
+extern struct event_base *elbase;           // the main event base for the main event loop
+extern struct event_base **thread_base;     // each thread (or pair or ctxs) gets an event loop
+extern int totnthreads;                     // when threading in server - number of ctx contexts
+extern struct evdns_base **thread_dnsbase;  // list of dns resolvers in event loops
+extern int nthread_dnsbase;                 // number of above
 
 
 /* mutex locking in general */

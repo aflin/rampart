@@ -171,8 +171,6 @@ But at least the server disconnecting acts as a finalizer.
 /* mutex locking for thread dns resolvers
    only needed on creation and destruction */
 
-pthread_mutex_t dnslock;
-
 volatile uint32_t this_id=0, evcb_id=0;
 
 #define RPSOCK struct rp_socket_struct
@@ -199,27 +197,6 @@ RPSOCK {
 
 int rp_put_gs_object(duk_context *ctx, const char *objname, const char *key);
 
-static struct evdns_base **thread_dnsbase=NULL;
-static int nthread_dnsbase=-1;// by default, dont do this.
-
-static void free_dns(void)
-{
-    int i=0;
-
-    if(!thread_dnsbase)
-        return;
-    RP_MLOCK(&dnslock);
-    while(i<nthread_dnsbase)
-    {
-        evdns_base_free(thread_dnsbase[i], 0);
-        i++;
-    }
-    nthread_dnsbase=0;
-    free(thread_dnsbase);
-    thread_dnsbase=NULL;
-    RP_MUNLOCK(&dnslock);
-}
-
 static RPSOCK * new_sockinfo(duk_context *ctx)
 {
     RPSOCK *args = NULL;
@@ -240,33 +217,12 @@ static RPSOCK * new_sockinfo(duk_context *ctx)
         RP_THROW(ctx, "rampart-net - no libevent base found");
     duk_pop(ctx);
 
-    if( nthread_dnsbase > -1)
+    /* get dnsbase, should always be there*/
+    if( duk_get_prop_string(ctx, -1, "dns_elbase") )
     {
-        /* get dnsbase, create as necessary */
-        if( duk_get_prop_string(ctx, -1, "dns_elbase") )
-        {
-            dnsbase=duk_get_pointer(ctx, -1);
-            duk_pop(ctx);
-        }
-        else
-        {
-            duk_pop(ctx);//undefined
-            dnsbase = evdns_base_new(base,
-                EVDNS_BASE_DISABLE_WHEN_INACTIVE|EVDNS_BASE_INITIALIZE_NAMESERVERS );
-            if(!dnsbase)
-                RP_THROW(ctx, "rampart-net - error creating dnsbase");
-
-            RP_MLOCK(&dnslock);
-            REMALLOC(thread_dnsbase, (nthread_dnsbase + 1) * sizeof(struct evdns_base *) );
-            thread_dnsbase[nthread_dnsbase++]=dnsbase;        
-            RP_MUNLOCK(&dnslock);
-
-            duk_push_pointer(ctx, dnsbase);
-            duk_put_prop_string(ctx, -2, "dns_elbase");
-        }
+        dnsbase=duk_get_pointer(ctx, -1);
     }
-
-    duk_pop(ctx);// global stash
+    duk_pop_2(ctx); //dnsbase|undefined, global stash
 
     REMALLOC(args, sizeof(RPSOCK));
     args->ctx=ctx;
@@ -336,7 +292,7 @@ static void duk_rp_net_on(duk_context *ctx, const char *fname, const char *evnam
             //printf("AND IS IN %s event\n", evname);
             duk_set_top(ctx, top);
             return;
-        } 
+        }
     }
     else
     {
@@ -1862,7 +1818,7 @@ static void sock_eventcb(struct bufferevent * bev, short events, void * arg)
                 }
                 */
                 /*  Need to do research on what is fatal and what is not.  Getting a 'DH lib' error cuz we didn't provide dhparam?
-                    But why does connection appear to succeed until end, then we get this error? 
+                    But why does connection appear to succeed until end, then we get this error?
                     And why with connection to google.com:443, but not with yahoo or others?
                     HEEEELLLLLP!!!!
                 */
@@ -2635,7 +2591,7 @@ static duk_ret_t duk_rp_net_max_connections(duk_context *ctx)
 {
     RPSOCK *sinfo = NULL;
     double maxconn = 0;
-    
+
     if(!duk_is_undefined(ctx, 0))
         maxconn = REQUIRE_NUMBER(ctx, 0, "server.maxConnections: First argument must be an integer");
 
@@ -2653,7 +2609,7 @@ static duk_ret_t duk_rp_net_max_connections(duk_context *ctx)
 
     duk_push_number(ctx, maxconn);
     duk_put_prop_string(ctx, -2, "maxConnections");
-        
+
     return 0;
 }
 
@@ -2692,7 +2648,7 @@ static void listener_callback(struct evconnlistener *listener, int fd,
     {
         //printf("%d > %d connections, closing\n", sinfo->open_conn, sinfo->max_conn);
         close(fd);
-        return;        
+        return;
     }
 
     duk_push_heapptr(ctx, sinfo->thisptr);
@@ -3469,22 +3425,6 @@ static duk_ret_t duk_rp_net_udp_socket(duk_context *ctx)
 
 */
 
-static duk_ret_t duk_rp_net_auto_resolver(duk_context *ctx)
-{
-    int start = REQUIRE_BOOL(ctx, 0, "net.autoResolver: argument must be a Boolean");
-
-    if( start )
-    {
-        if(nthread_dnsbase==-1)
-            nthread_dnsbase=0;
-    }
-    else
-    {
-        free_dns();
-        nthread_dnsbase=-1;
-    }
-    return 0;
-}
 
 static duk_ret_t net_finalizer(duk_context *ctx)
 {
@@ -3499,15 +3439,12 @@ static duk_ret_t net_finalizer(duk_context *ctx)
     duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("ssl_ctx"));
     duk_pop(ctx);
 
-    free_dns();
     return 0;
 }
 
 /* INIT MODULE */
 duk_ret_t duk_open_module(duk_context *ctx)
 {
-
-    RP_MINIT(&dnslock);
 
     /* return object */
     duk_push_object(ctx);
@@ -3666,9 +3603,6 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     duk_push_string(ctx, NET_CA_PATH "/" NET_CA_FILE);
     duk_put_prop_string(ctx, -2, "default_ca_file");
-
-    duk_push_c_function(ctx, duk_rp_net_auto_resolver, 1);
-    duk_put_prop_string(ctx, -2, "autoResolver");
 
     duk_push_c_function(ctx, net_finalizer, 1);
     duk_set_finalizer(ctx, -2);

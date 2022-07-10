@@ -79,6 +79,7 @@ target_link_libraries(rampart LINK_PUBLIC
 	-Wl,-all_load 
 	${LIBEVENT_TARGET_DIR}/lib/libevent_core.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
+	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a
 	-Wl,-noall_load 
 	m dl pthread
     event_core event_pthreads
@@ -90,6 +91,7 @@ target_link_libraries(rampart LINK_PUBLIC
 	-Wl,--whole-archive
 	${LIBEVENT_TARGET_DIR}/lib/libevent_core.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
+	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a
 	-Wl,--no-whole-archive
 	m dl pthread
     event_core event_pthreads
@@ -378,7 +380,6 @@ target_compile_options(rampart-net PRIVATE
 
 target_link_libraries(rampart-net 
 	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a
-	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a
   	rampart-crypto
 ) 
 
