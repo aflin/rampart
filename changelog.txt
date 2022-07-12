@@ -8,5 +8,6 @@ v0.1.1
     - fixed segfault on clearTimeout when event expired
     - improved libevhtp_ws thread load balancing
     - added server req.reply and return val {defer:true}
+    - additional node.js style buffer options and abprintf()
 v0.1.0
     - initial release

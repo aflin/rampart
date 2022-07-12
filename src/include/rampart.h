@@ -116,7 +116,7 @@ extern "C"
     duk_idx_t __rp_i=(idx);\
     if( duk_is_string( (ctx), __rp_i ) )\
         r=duk_to_buffer( (ctx), __rp_i, (sz) );\
-    else if ( duk_is_buffer( (ctx), __rp_i ) )\
+    else if ( duk_is_buffer_data( (ctx), __rp_i ) )\
         r=duk_get_buffer_data( (ctx), __rp_i, (sz) );\
     else\
         RP_THROW( (ctx), __VA_ARGS__);\
@@ -128,7 +128,7 @@ extern "C"
     duk_idx_t __rp_i=(idx);\
     if( duk_is_string( (ctx), __rp_i ) )\
         r=duk_get_lstring( (ctx), __rp_i, (sz) );\
-    else if ( duk_is_buffer( (ctx), __rp_i ) )\
+    else if ( duk_is_buffer_data( (ctx), __rp_i ) )\
         r=(const char *)duk_get_buffer_data( (ctx), __rp_i, (sz) );\
     else\
         RP_THROW( (ctx), __VA_ARGS__);\

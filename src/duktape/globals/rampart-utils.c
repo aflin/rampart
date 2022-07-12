@@ -4635,6 +4635,39 @@ duk_ret_t duk_rp_bprintf(duk_context *ctx)
     return 1;
 }
 
+
+duk_ret_t duk_rp_abprintf(duk_context *ctx)
+{
+    duk_size_t start, total;
+    char *buffer = REQUIRE_BUFFER_DATA(ctx, 0, &start, "abprintf: first argument must be a Buffer");
+
+    if(duk_is_number(ctx, 1))
+    {
+        int istart = duk_get_int(ctx, 1);
+        if(istart < 0)
+            istart = (int)start + istart; // -1 is end
+        if(istart < 0)
+            start=0;
+        else
+            start = (duk_size_t)istart;
+
+        duk_remove(ctx,1);
+    }
+
+    total = rp_printf(_out_null, NULL, (size_t)-1, ctx, 1, NULL);
+
+    total += start;
+
+    duk_to_dynamic_buffer(ctx, 0, NULL);
+    buffer = duk_resize_buffer(ctx, 0, total);
+
+    (void)rp_printf(_out_buffer, buffer+start, (size_t)-1, ctx, 1, NULL);
+
+    duk_pull(ctx, 0);
+
+    return 1;
+}
+
 duk_ret_t duk_rp_getType(duk_context *ctx)
 {
     if (duk_is_string(ctx, 0))
@@ -5008,6 +5041,9 @@ void duk_printf_init(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_rp_bprintf, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "bprintf");
+
+    duk_push_c_function(ctx, duk_rp_abprintf, DUK_VARARGS);
+    duk_put_prop_string(ctx, -2, "abprintf");
 
     duk_push_c_function(ctx, duk_rp_fopen, 2);
     duk_put_prop_string(ctx, -2, "fopen");

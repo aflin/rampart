@@ -92,6 +92,28 @@ static void add_object_values(duk_context *ctx)
     duk_pop(ctx);
 }
 
+duk_ret_t duk_rp_buffer_from(duk_context *ctx)
+{
+
+    if(duk_is_buffer_data(ctx, 0) || duk_is_string(ctx, 0) )
+    {
+        duk_size_t from_sz;
+        void *from_buf = (void *) REQUIRE_STR_OR_BUF(ctx, 0, &from_sz, "");
+        void *to_buf = duk_get_buffer_data(ctx, -1, NULL);
+
+        duk_get_global_string(ctx, "Buffer");
+        duk_push_number(ctx, (double) from_sz);
+        duk_new(ctx, 1);
+
+        to_buf = duk_get_buffer_data(ctx, -1, NULL);
+        memcpy(to_buf, from_buf, from_sz);
+    }
+    else // TODO:do array case
+        RP_THROW(ctx, "Buffer.from: Argument must be a Buffer or String");
+
+    return 1;
+}
+
 duk_ret_t duk_rp_buffer_alloc(duk_context *ctx)
 {
     int size = 0;
@@ -101,10 +123,28 @@ duk_ret_t duk_rp_buffer_alloc(duk_context *ctx)
         RP_THROW(ctx, "Buffer.alloc: size must be a positive number");
 
     duk_get_global_string(ctx, "Buffer");
-    duk_pull(ctx, 0);
+    duk_dup(ctx, 0);
     duk_new(ctx, 1);
 
-    /* TODO: add node methods */
+    if(duk_is_buffer_data(ctx, 1) || duk_is_string(ctx, 1) )
+    {
+        duk_size_t from_sz;
+        int i=0;
+        const char *from_buf = REQUIRE_STR_OR_BUF(ctx, 1, &from_sz, "");
+        char *to_buf = (char *) duk_get_buffer_data(ctx, -1, NULL);
+
+        if (from_sz > 0)
+        {
+            while(i<size)
+            {
+                int idx = i%from_sz;
+                to_buf[i]=from_buf[idx];
+                i++;
+            }
+        }
+    }
+    else if(!duk_is_undefined(ctx, 1))
+        RP_THROW(ctx, "Buffer.alloc: Second argument must be a Buffer or String");
 
     return 1;
 }
@@ -114,6 +154,8 @@ static void add_buffer_func(duk_context *ctx)
     duk_get_global_string(ctx, "Buffer");
     duk_push_c_function(ctx, duk_rp_buffer_alloc, 3);
     duk_put_prop_string(ctx, -2, "alloc");
+    duk_push_c_function(ctx, duk_rp_buffer_from, 1);
+    duk_put_prop_string(ctx, -2, "from");
     /* TODO: add all node methods */
     duk_pop(ctx);
 }
