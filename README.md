@@ -20,6 +20,7 @@ Then, after cloning, you can do the following to build:
 mkdir rampart/build
 cd rampart/build
 cmake ../
+#or cmake -DMACOS_UNIVERSAL=ON ../ # for universal binary
 make
 make install
 ```
