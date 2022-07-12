@@ -1588,17 +1588,22 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                     /* remove the '+ ""' */
                     if( *(out-1) == '"')
                     {
-                        int nls=0;
-                        //back up
-                        out-=2;
-                        while(isspace(*out))
+                        if (bt_start < out - 3 && *(out-2) == '\\' && *(out-3) == '"')
+                            scopy('"');
+                        else
                         {
-                            if(*out == '\n') nls++;
-                            out--;
+                            int nls=0;
+                            //back up
+                            out-=2;
+                            while(isspace(*out))
+                            {
+                                if(*out == '\n') nls++;
+                                out--;
+                            }
+                            //cur char is '+' or ',' and will be overwritten
+                            while(nls--)
+                                scopy('\n');
                         }
-                        //cur char is '+' or ',' and will be overwritten
-                        while(nls--)
-                            scopy('\n');
                     }
                     else
                         scopy('"');
