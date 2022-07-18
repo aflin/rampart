@@ -1,12 +1,23 @@
 /* usage:
     var urlutils = require('rampart-url');
-   
-    // we got a relative link from http://example.com/dir/mypage.html and want the full url
+
+To run tests:
+
+    rampart rampart-url.js
+
+    or
+
+    node rampart-url.js
+
+    For node test, we need to make a copy, so you should have write permissions
+    in the directory containint "rampart-url.js".
+
+    // we've got a relative link from http://example.com/dir/mypage.html and want the full url
     var fullurl = urlutils.absUrl("http://example.com/dir/mypage.html", "../images/myjpeg.jpg");
     // fullurl: "http://example.com/images/myjpeg.jpg"
     // returns undefined if it cannot parse either argument.
 
-    // The second argument can be an array of strings (i.e. 
+    // The second argument can be an array of strings (i.e.
     //    urlutils.absUrl("http://example.com/dir/mypage.html", ["/myfile.hml", "../images/myjpeg.jpg"])
     //    and you will get an array of strings back.
 
@@ -15,7 +26,7 @@
 
     //say we want to normalize a url and get its components
     var urlinfo = urlutils.components("http://me:mypass@example.com:8088/dir/mypage.html?dir=%2fusr%2flocal%2f#my-spot-on-page")
-    /* urlinfo = 
+    /* urlinfo =
         {
            "scheme": "http",
            "username": "me",
@@ -50,7 +61,7 @@ function _qToO(qs) {
     var comp={};
     var j=0;
 
-    if(rampart && rampart.utils && rampart.utils.queryToObject) {
+    if(global.rampart && rampart.utils && rampart.utils.queryToObject) {
         comp = rampart.utils.queryToObject(qs);
         // rampart version doesn't handle "?this&that" without equal signs
         // and will skip those. We'll do that manually here:
@@ -68,7 +79,7 @@ function _qToO(qs) {
 
     // pure JS version.  Doesn't include array expanding as in
     // "?key2=1&key2=2&key2=3" -> {key2:["1","2","3"]}
-    // or JSON parsing as in 
+    // or JSON parsing as in
     // "?key2=%5b1%2c2%2c3%5d" -> {key2:[1,2,3]}
     for (var i=0;i<pairs.length;i++) {
         var pair = pairs[i];
@@ -76,7 +87,7 @@ function _qToO(qs) {
         if(pos > 0 ) {
             comp[decodeURIComponent(pair.substring(0,pos))] = decodeURIComponent(pair.substring(pos+1));
         } else {
-            comp[j++]=pair;
+            comp[j++]=decodeURIComponent(pair);
         }
     }
 
@@ -148,7 +159,7 @@ function components(url, pathOnly) {
         href:""
     };
     var tmp=url, mtmp, pos;
- 
+
     if(typeof url != 'string')
         return;
 
@@ -167,7 +178,7 @@ function components(url, pathOnly) {
             if( ! /^[a-z][a-z0-9\+\-\.]+/.test(ret.scheme) )
                 return;
             tmp = url.substring(pos+1);
-        } else 
+        } else
             return;
 
         if(ret.scheme=='javascript') {
@@ -187,7 +198,7 @@ function components(url, pathOnly) {
 
         if(schemeNSlashes)
             tmp = tmp.substring(schemeNSlashes);
-        
+
         //USER/PASS
         mtmp = tmp.match(/^[^\/\?@]+@/);
         if(mtmp && mtmp.length) {
@@ -234,7 +245,7 @@ function components(url, pathOnly) {
             ret.port = portmap[ret.scheme];
             ret.origin = ret.scheme + ':' +ret.authority;
         }
-    } 
+    }
     else //start at path
         tmp=url;
 
@@ -257,7 +268,7 @@ function components(url, pathOnly) {
         ret.path = '/';
         ret.file = '';
         ret.queryString = querystringToObject( tmp.substring(1) );
-    } 
+    }
 
     //QUERYSTRING
     pos = tmp.indexOf('?')
@@ -311,7 +322,7 @@ function rewriteUrl(srcComp, path, includeComponents) {
 
     urlComp = components(path, true); //true == process as a path without scheme:authority
 
-    var ret = srcComp.origin + urlComp.fullPath + 
+    var ret = srcComp.origin + urlComp.fullPath +
            (urlComp.queryString.raw ? '?' + urlComp.queryString.raw: '');
 
     if(includeComponents)
@@ -341,37 +352,96 @@ function rewriteUrls(src, urls, includeComponents) {
 
 }
 
-if(module && module.exports)
-    module.exports = {
-        absUrl: rewriteUrls,
-        components: components
-    };
-else
-{
-    rampart.globalize(rampart.utils);
-    function testFeature(name,test)
-    {
-        var error=false;
-        printf("testing %-40s - ", name);
-        fflush(stdout);
-        if (typeof test =='function'){
-            try {
-                test=test();
-            } catch(e) {
-                error=e;
-                test=false;
-            }
+var ismod = false;
+
+if(global.rampart) {
+    if(module && module.exports)
+        ismod=true;
+} else {
+    ismod = ( require.main !== module );
+}
+
+if(ismod) {
+    exports.absUrl=rewriteUrls;
+    exports.components=components;
+} else {
+
+
+    var selfmod, removemod, fs;
+
+    if(global.rampart)
+        selfmod = process.script;
+    else {
+        fs = require('fs');
+        // node won't load itself as a module
+        selfmod = process.mainModule.filename;
+        removemod= process.mainModule.filename.replace("rampart-url.js", "tmp-url.js");
+        try {
+            fs.copyFileSync(selfmod,removemod);
+        } catch(e) {
+            console.log("Error copying to temp file: ", e);
         }
-        if(test)
-            printf("passed\n")
-        else
-        {
-            printf(">>>>> FAILED <<<<<\n");
-            if(error) console.log(error);
-            process.exit(1);
-        }
-        if(error) console.log(error);
+        selfmod=removemod;
     }
+    var testFeature;
+    var url = require(selfmod);
+
+    if(global.rampart)
+    {
+        rampart.globalize(rampart.utils);
+        testFeature = function(name,test)
+        {
+            var error=false;
+            printf("testing %-40s - ", name);
+            fflush(stdout);
+            if (typeof test =='function'){
+                try {
+                    test=test();
+                } catch(e) {
+                    error=e;
+                    test=false;
+                }
+            }
+            if(test)
+                printf("passed\n")
+            else
+            {
+                printf(">>>>> FAILED <<<<<\n");
+                if(error) console.log(error);
+                process.exit(1);
+            }
+            if(error) console.log(error);
+        }
+    }
+    else
+    {
+        testFeature = function(name,test)
+        {
+            var error=false;
+            var preout=`testing ${name}`;
+            var spaces = Buffer.alloc( 50 - preout.length, ' ').toString();
+            process.stdout.write(preout+spaces+" - ");
+
+            if (typeof test =='function'){
+                try {
+                    test=test();
+                } catch(e) {
+                    error=e;
+                    test=false;
+                }
+            }
+            if(test)
+                console.log("passed")
+            else
+            {
+                console.log(">>>>> FAILED <<<<<");
+                if(error) console.log(error);
+                process.exit(1);
+            }
+            if(error) console.log(error);
+        }
+    }
+
 
     var tests = [
         //"desc", src, url, expected_result
@@ -388,10 +458,10 @@ else
         [ "Ftp and ..", "FTP://Rampart.dev:8088", "../dir/going/somewhere", "ftp://rampart.dev:8088/dir/going/somewhere"],
         [ "Javascript link", "HTTP://Rampart.dev:8088", "JavaScript:myfunc()", "javascript:myfunc()" ]
     ]
-    
+
     for (var i=0; i<tests.length; i++) {
         var test = tests[i];
-        var res = rewriteUrls(test[1],test[2]);
+        var res = url.absUrl(test[1],test[2]);
         if( res !== test[3] )
             console.log(`Got "${res}"`);
         testFeature(test[0], res == test[3]);
@@ -399,7 +469,7 @@ else
     var testarr  = ["/different/dir", "./page.html", '../new/dir/'];
     var expected = ["http://rampart.dev/different/dir","http://rampart.dev/a/dir/page.html","http://rampart.dev/a/new/dir/"];
     var base = "http://rampart.dev/a/dir/";
-    var res = rewriteUrls(base, testarr);
+    var res = url.absUrl(base, testarr);
 
     var ret = true;
     for (i=0;i< testarr.length; i++) {
@@ -584,7 +654,7 @@ else
         var u = test[i];
         var e = expected[i];
         testFeature("Components #"+(i+1), function() {
-            var r = components(u);
+            var r = url.components(u);
             var ret = true;
             for (var j = 0; j<testkeys.length;j++) {
                 var key = testkeys[j];
@@ -599,10 +669,20 @@ else
                 ret = ret && e.queryString.raw && r.queryString.raw;
                 for (var k=0;k<qkeys.length;k++) {
                     var qkey = qkeys[k];
+                    if (ecomp[qkey] != rcomp[qkey])
+                    console.log(`expecting "${ecomp[qkey]}", got "${rcomp[qkey]}"`);
                     ret = ret &&  ecomp[qkey] == rcomp[qkey];
                 }
             }
             return ret;
         });
+    }
+
+    if(removemod) {
+        try {
+            fs.unlinkSync(removemod);
+        } catch(e) {
+            console.log("Error removing temp file", e);
+        }
     }
 }
