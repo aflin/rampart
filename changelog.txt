@@ -1,3 +1,7 @@
+v0.1.2-pre
+    - rampart-net: resolve error message fixes
+    - rampart-net: added resolver.reverse ip to name functions 
+    - rampart-url: made module compatible with node
 v0.1.1
     - Sql.rexFile: removed buffer, using mmap instead.
     - Template Literal translation improvements.
