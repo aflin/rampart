@@ -392,20 +392,14 @@ static int do_callback(duk_context *ctx, const char *ev_s, duk_idx_t nargs)
         const char *errstr = "unspecified error";
 
         nerrorcb=0;
-        //replace string with error object
-        if(nargs != 1)
-        {
-            duk_set_top(ctx, exit_top);
-            RP_THROW(ctx, "Bad call in rampart-net.c:do_callback");
-        }
+
         errobj = duk_get_top_index(ctx);
-        if(duk_is_string(ctx, -1))
-        {
+
+        if(nargs > 0 && duk_is_string(ctx, -1))
             errstr = duk_get_string(ctx, -nargs);
 
-            duk_push_error_object(ctx, DUK_ERR_ERROR, "%s", errstr);
-            duk_replace(ctx, -2);
-        }
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "%s", errstr);
+        duk_replace(ctx, -2);
     }
 
 //    printf("%s top=%d, exittop=%d\n", ev_s, duk_get_top(ctx), exit_top);
@@ -477,73 +471,17 @@ static int do_callback(duk_context *ctx, const char *ev_s, duk_idx_t nargs)
     // else  [ ..., this, [args, args], eventobj, undefined ]
     if(nerrorcb == 0)
     {
+        // currently rampart cannot throw errors in event loop.
+        // without an ABORT.  Probably (maybe?) don't want to do so anyway.
         duk_pull(ctx, errobj);
-        (void)duk_throw(ctx);
+        duk_get_prop_string(ctx, -1, "stack");
+        fprintf(stderr, "Uncaught Async %s\n", duk_get_string(ctx, -1));
     }
     duk_set_top(ctx, exit_top);
     // [ ... ]
 
     return 0;
 }
-/*
-//////////////////////////////////////////////////////////////////////
-        //[ ..., this, [args, args], eventobj, callback_array ]
-
-        duk_size_t i=0, len = duk_get_length(ctx, -1);
-        duk_idx_t  j=0, arr_idx = -2 - nargs;
-        duk_remove(ctx, -2);
-        // [..., this, [args, args], callback_array ]
-        duk_insert(ctx, -2 - nargs );
-        // [..., callback_array, this, [args, args] ]
-
-        while (i < len)
-        {
-            duk_get_prop_index(ctx, arr_idx, i);
-            // [..., callback_array, this, [args, args], callback ]
-
-            duk_dup(ctx, arr_idx); //relative so its the next item
-            // [..., callback_array, this, [args, args], callback, this ]
-
-            j=0;
-            while(j < nargs)
-            {
-                duk_dup(ctx, arr_idx);
-                j++;
-            }
-            // [..., callback_array, this, [args, args], callback, this, [args, args] ]
-
-            if(duk_pcall_method(ctx, nargs) != 0)
-            {
-                if (duk_is_error(ctx, -1) )
-                {
-                    duk_get_prop_string(ctx, -1, "stack");
-                    fprintf(stderr, "Error in %s callback: %s\n", ev_s, duk_get_string(ctx, -1));
-                    duk_pop(ctx);
-                }
-                else if (duk_is_string(ctx, -1))
-                {
-                    fprintf(stderr, "Error in %s callback: %s\n", ev_s, duk_get_string(ctx, -1));
-                }
-                else
-                {
-                    fprintf(stderr, "Error in %s callback\n", ev_s);
-                }
-                // [..., callback_array, this, [args, args], err ]
-            }
-            // [ ..., callback_array, this, [args, args], retval/err ]
-            duk_pop(ctx); //discard retval/err
-            i++;
-            // [ ..., callback_array, this, [args, args] ]
-        }
-        duk_pop_n(ctx, 2 + nargs);
-        return 0;
-    }
-    // [ ..., this,  [args, args], eventobj, undefined ]
-    duk_pop_n(ctx, 3 + nargs);
-
-    return 0;
-}
-*/
 
 /* get put or delete a key from a named object in global stash.
    return 1 if successful, leave retrieved, put or deleted value on stack;
@@ -951,7 +889,8 @@ static int push_resolve(duk_context *ctx, const char *hn)
     ecode = getaddrinfo (hn, NULL, &hints, &res);
     if (ecode != 0)
     {
-        //printf("ecode = %d\n",ecode);
+        if(res)
+            freeaddrinfo(res);
         duk_push_object(ctx);
         duk_push_string(ctx, gai_strerror(ecode));
         duk_put_prop_string(ctx, -2, "errMsg");
@@ -969,6 +908,8 @@ duk_ret_t duk_rp_net_resolve(duk_context *ctx)
         REQUIRE_STRING(ctx, 0, "resolve: argument must be a String") );
     return 1;
 }
+
+/* ********* resolve_async ***************** */
 
 #define DNS_CB_ARGS struct dns_callback_arguments_s
 
@@ -1073,12 +1014,12 @@ static void async_resolve(RPSOCK *sinfo, const char *hn)
 //    req =
     // async_dns_callback may be run directly
     // or run in event loop.
+
     evdns_getaddrinfo(
             sinfo->dnsbase, hn, NULL,
             &hints, async_dns_callback, sinfo);
 }
 
-/* ********* resolve_async ***************** */
 
 static int resolver_callback(void *arg, int unused)
 {
@@ -1094,7 +1035,7 @@ static int resolver_callback(void *arg, int unused)
 static duk_ret_t duk_rp_net_resolver_resolve(duk_context *ctx)
 {
     RPSOCK *args = NULL;
-    const char *host = duk_get_string(ctx, 0);
+    const char *host = REQUIRE_STRING(ctx, 0, "net.resolve: first argument must be a string");
     duk_idx_t tidx;
 
     duk_push_this(ctx);
@@ -1102,57 +1043,22 @@ static duk_ret_t duk_rp_net_resolver_resolve(duk_context *ctx)
 
     args = new_sockinfo(ctx);
 
-    // for error callback
-
     args->post_dns_cb = resolver_callback; // for cleanup
 
     if(duk_is_function(ctx, 1))
     {
-        duk_dup(ctx, 1);
-        duk_put_prop_string(ctx, tidx, "_callback"); // for error func using net.resolve_async()
-
         duk_rp_net_on(ctx, "resolve_async", "lookup", 1, 2); // run callback as "lookup" event
     }
+
     async_resolve(args, host);
 
     return 1; // this on top
-}
-
-static duk_ret_t resolve_async_err(duk_context *ctx)
-{
-    duk_push_this(ctx);
-    duk_get_prop_string(ctx, -1, "_callback");
-    duk_push_object(ctx);
-    duk_pull(ctx, 0);
-    duk_put_prop_string(ctx, -2, "errMsg");
-    duk_call(ctx, 1);
-    return 0;
-}
-
-/* we need a prototype and a 'this' for async_resolve above */
-static duk_ret_t duk_rp_net_resolver_async(duk_context *ctx)
-{
-    duk_push_this(ctx);
-
-    //object to hold event callbacks
-    duk_push_object(ctx);
-    duk_put_prop_string(ctx, -2, "_events");
-
-    /* error event */
-    duk_push_c_function(ctx, resolve_async_err, 2);
-    duk_rp_net_on(ctx, "resolve_async", "error", -1, -2);
-    duk_pop(ctx);
-
-    return 1;
 }
 
 /* this is basically something like:
 
   net.resolve_async = function(host, callback) {
       var resolver = new net.Resolver();
-      resolver.on("error", function(err) {
-          callback({errMsg:err});
-      }
       resolver.resolve(host, callback);
   }
   where callback is function(hostinfo){}
@@ -1169,13 +1075,182 @@ static duk_ret_t duk_rp_net_resolve_async(duk_context *ctx)
     if(!duk_is_function(ctx, 1))
         RP_THROW(ctx, "resolve_async: second argument must be a function");
 
-    duk_push_c_function(ctx, duk_rp_net_resolver_async, 0);
-    duk_push_object(ctx); // prototype
-    duk_push_c_function(ctx, duk_rp_net_resolver_resolve, 2);
-    duk_put_prop_string(ctx, -2, "resolve");
-    duk_put_prop_string(ctx, -2, "prototype");
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, "Resolver");
+
     duk_new(ctx, 0); // var r = new resolver();
     duk_push_string(ctx, "resolve"); // r.resolve
+    duk_dup(ctx,0); // host
+    duk_dup(ctx,1); // function
+    duk_call_prop(ctx, -4, 2); // r.resolve(host, function(){})
+    return 1;
+}
+
+
+/* *********** reverse async ***************** */
+
+static int push_reverse(duk_context *ctx, const char *hn)
+{
+    struct addrinfo hints, *res;
+    int ecode;
+    char hbuf[NI_MAXHOST];
+    struct sockaddr *sa;
+
+    memset (&hints, 0, sizeof (hints));
+    hints.ai_family = PF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_NUMERICHOST;
+
+
+    ecode = getaddrinfo (hn, NULL, &hints, &res);
+    if (ecode != 0)
+    {
+        if(res)
+            freeaddrinfo(res);
+        duk_push_object(ctx);
+        duk_push_string(ctx, gai_strerror(ecode));
+        duk_put_prop_string(ctx, -2, "errMsg");
+        return 0;
+    }
+
+    sa = res->ai_addr;
+
+    if (getnameinfo(sa, sa->sa_len, hbuf, sizeof(hbuf), NULL, 0, NI_NAMEREQD)) 
+    {
+        freeaddrinfo(res);
+        duk_push_null(ctx);
+        return 0;
+    }
+
+    if (getaddrinfo(hbuf, "0", &hints, &res) == 0) {
+        /* malicious PTR record */
+        freeaddrinfo(res);
+        duk_push_null(ctx);
+        return 0;
+    }        
+
+    duk_push_string(ctx, hbuf);
+
+    return 1;
+}
+
+duk_ret_t duk_rp_net_reverse(duk_context *ctx)
+{
+    push_reverse(ctx,
+        REQUIRE_STRING(ctx, 0, "resolve: argument must be a String") );
+    return 1;
+}
+
+/* ***** reverse async ***** */
+
+
+static void async_dns_rev_callback(int errcode, char type, int count, int ttl, void *addresses, void *arg)
+{
+    RPSOCK *sinfo = (RPSOCK *) arg;
+    duk_context *ctx = sinfo->ctx;
+    int freebase = (int) sinfo->aux;
+
+    duk_push_heapptr(ctx, sinfo->thisptr); //this
+    if(errcode)
+    {
+        if(freebase)
+            evdns_base_free(sinfo->dnsbase, 0);
+        sinfo->aux=NULL;
+        duk_push_string(ctx, evdns_err_to_string(errcode) );
+        do_callback(ctx, "error", 1);
+        socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
+        return;
+    }
+
+    if(type != DNS_PTR)
+    {
+        duk_push_string(ctx, "Unexpected results for reverse lookup, not a dns ptr record");
+        do_callback(ctx, "error", 1);
+        socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
+        return;
+    }
+
+    duk_push_string(ctx, ((const char **) addresses)[0]);
+    do_callback(ctx, "lookup", 1);
+    socket_cleanup(ctx, sinfo, WITH_CALLBACKS);
+}
+
+static void async_reverse(RPSOCK *sinfo, struct addrinfo *res)
+{
+    // not using thread dnsbase
+    if(!sinfo->dnsbase)
+    {
+        sinfo->dnsbase = evdns_base_new(sinfo->base,
+            EVDNS_BASE_DISABLE_WHEN_INACTIVE|EVDNS_BASE_INITIALIZE_NAMESERVERS );
+        sinfo->aux=sinfo->aux;
+    }
+
+    if(res->ai_family == AF_INET)
+        evdns_base_resolve_reverse(sinfo->dnsbase, &((struct sockaddr_in *) res->ai_addr)->sin_addr, 0, async_dns_rev_callback, sinfo);
+    else
+        evdns_base_resolve_reverse_ipv6(sinfo->dnsbase, &((struct sockaddr_in6 *)res->ai_addr)->sin6_addr, 0, async_dns_rev_callback, sinfo);
+
+    freeaddrinfo(res);
+}
+
+
+static duk_ret_t duk_rp_net_resolver_reverse(duk_context *ctx)
+{
+    RPSOCK *args = NULL;
+    const char *host = REQUIRE_STRING(ctx, 0, "net.reverse: first argument must be a string");
+    duk_idx_t tidx;
+
+    struct addrinfo hints, *res;
+    int ecode;
+
+    memset (&hints, 0, sizeof (hints));
+    hints.ai_family = PF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_NUMERICHOST;
+
+    duk_push_this(ctx);
+    tidx = duk_get_top_index(ctx);
+
+    ecode = getaddrinfo (host, NULL, &hints, &res);
+    if (ecode != 0)
+    {
+        if(res)
+            freeaddrinfo(res);
+        // we aren't async at this point, check for callback first
+        duk_get_prop_string(ctx, -1, "_events");
+        if(!duk_has_prop_string(ctx, -1, "error"))
+            RP_THROW(ctx, "resolve.reverse: %s", gai_strerror(ecode));
+
+        duk_pop(ctx);            
+        duk_push_string(ctx, gai_strerror(ecode));
+        do_callback(ctx, "error", 1);
+        return 1;
+    }
+
+    args = new_sockinfo(ctx);
+
+    if(duk_is_function(ctx, 1))
+    {
+        duk_rp_net_on(ctx, "resolve_async", "lookup", 1, 2); // run callback as "lookup" event
+    }
+    async_reverse(args, res);
+
+    return 1; // this on top
+}
+
+static duk_ret_t duk_rp_net_reverse_async(duk_context *ctx)
+{
+    if(!duk_is_string(ctx, 0))
+        RP_THROW(ctx, "resolve_async: first argument must be a String (hostname)");
+
+    if(!duk_is_function(ctx, 1))
+        RP_THROW(ctx, "resolve_async: second argument must be a function");
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, "Resolver");
+
+    duk_new(ctx, 0); // var r = new Resolver();
+    duk_push_string(ctx, "reverse"); // r.reverse()
     duk_dup(ctx,0); // host
     duk_dup(ctx,1); // function
     duk_call_prop(ctx, -4, 2); // r.resolve(host, function(){})
@@ -1200,7 +1275,6 @@ static duk_ret_t duk_rp_net_resolver(duk_context *ctx)
     return 1;
 
 }
-
 
 /* ****************** net.Socket() functions ****************** */
 
@@ -3576,6 +3650,10 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_c_function(ctx, duk_rp_net_resolve, 1);
     duk_put_prop_string(ctx, -2, "resolve");
 
+    // resolve
+    duk_push_c_function(ctx, duk_rp_net_reverse, 1);
+    duk_put_prop_string(ctx, -2, "reverse");
+
     // net.Resolver()
     duk_push_c_function(ctx, duk_rp_net_resolver, 0);
     duk_push_object(ctx); // prototype
@@ -3583,6 +3661,10 @@ duk_ret_t duk_open_module(duk_context *ctx)
         //resolver.resolve
         duk_push_c_function(ctx, duk_rp_net_resolver_resolve, 2);
         duk_put_prop_string(ctx, -2, "resolve");
+
+        //resolver.reverse
+        duk_push_c_function(ctx, duk_rp_net_resolver_reverse, 2);
+        duk_put_prop_string(ctx, -2, "reverse");
 
         // resolver.on()
         duk_push_c_function(ctx, duk_rp_net_x_on, 2);
@@ -3600,6 +3682,10 @@ duk_ret_t duk_open_module(duk_context *ctx)
     //resolve_async
     duk_push_c_function(ctx, duk_rp_net_resolve_async, 2);
     duk_put_prop_string(ctx, -2, "resolve_async");
+
+    //reverse_async
+    duk_push_c_function(ctx, duk_rp_net_reverse_async, 2);
+    duk_put_prop_string(ctx, -2, "reverse_async");
 
     duk_push_string(ctx, NET_CA_PATH "/" NET_CA_FILE);
     duk_put_prop_string(ctx, -2, "default_ca_file");
