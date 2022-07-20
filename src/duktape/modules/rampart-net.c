@@ -1036,10 +1036,8 @@ static duk_ret_t duk_rp_net_resolver_resolve(duk_context *ctx)
 {
     RPSOCK *args = NULL;
     const char *host = REQUIRE_STRING(ctx, 0, "net.resolve: first argument must be a string");
-    duk_idx_t tidx;
 
     duk_push_this(ctx);
-    tidx = duk_get_top_index(ctx);
 
     args = new_sockinfo(ctx);
 
@@ -1115,7 +1113,7 @@ static int push_reverse(duk_context *ctx, const char *hn)
 
     sa = res->ai_addr;
 
-    if (getnameinfo(sa, sa->sa_len, hbuf, sizeof(hbuf), NULL, 0, NI_NAMEREQD)) 
+    if (getnameinfo(sa, res->ai_addrlen, hbuf, sizeof(hbuf), NULL, 0, NI_NAMEREQD)) 
     {
         freeaddrinfo(res);
         duk_push_null(ctx);
@@ -1148,12 +1146,11 @@ static void async_dns_rev_callback(int errcode, char type, int count, int ttl, v
 {
     RPSOCK *sinfo = (RPSOCK *) arg;
     duk_context *ctx = sinfo->ctx;
-    int freebase = (int) sinfo->aux;
 
     duk_push_heapptr(ctx, sinfo->thisptr); //this
     if(errcode)
     {
-        if(freebase)
+        if(sinfo->aux)
             evdns_base_free(sinfo->dnsbase, 0);
         sinfo->aux=NULL;
         duk_push_string(ctx, evdns_err_to_string(errcode) );
@@ -1198,7 +1195,6 @@ static duk_ret_t duk_rp_net_resolver_reverse(duk_context *ctx)
 {
     RPSOCK *args = NULL;
     const char *host = REQUIRE_STRING(ctx, 0, "net.reverse: first argument must be a string");
-    duk_idx_t tidx;
 
     struct addrinfo hints, *res;
     int ecode;
@@ -1209,7 +1205,6 @@ static duk_ret_t duk_rp_net_resolver_reverse(duk_context *ctx)
     hints.ai_flags = AI_NUMERICHOST;
 
     duk_push_this(ctx);
-    tidx = duk_get_top_index(ctx);
 
     ecode = getaddrinfo (host, NULL, &hints, &res);
     if (ecode != 0)
