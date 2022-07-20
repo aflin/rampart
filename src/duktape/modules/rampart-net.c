@@ -1127,6 +1127,7 @@ static int push_reverse(duk_context *ctx, const char *hn)
         return 0;
     }        
 
+    freeaddrinfo(res);
     duk_push_string(ctx, hbuf);
 
     return 1;
