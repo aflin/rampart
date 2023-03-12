@@ -209,6 +209,41 @@ static void simplefree(void *arg)
         free(arg);
 }
 
+static void duk_rp_json_safe_encode(duk_context *ctx, duk_idx_t idx)
+{
+
+    idx = duk_normalize_index(ctx, idx);
+    duk_get_global_string(ctx, "JSON");
+    duk_push_string(ctx, "stringify");
+    duk_dup(ctx, idx);
+
+    if(duk_pcall_prop(ctx, -3, 1))
+    {
+        if (duk_is_error(ctx, -1) )
+        {
+            duk_get_prop_string(ctx, -1, "stack");
+            duk_remove(ctx, -2);
+            duk_safe_to_string(ctx, -1);
+            duk_push_sprintf(ctx, "{\"error\" : %s}", duk_json_encode(ctx, -1));
+            duk_remove(ctx, -2);
+        }
+        else if (duk_is_string(ctx, -1))
+        {
+            duk_safe_to_string(ctx, -1);
+            duk_push_sprintf(ctx, "{\"error\" : %s}", duk_json_encode(ctx, -1));
+            duk_remove(ctx, -2);
+        }
+        else
+        {
+            duk_pop(ctx);
+            duk_push_sprintf(ctx, "{\"error\" : \"unknown json conversion error\"}");
+        }
+    }
+    duk_remove(ctx, -2); /* JSON */
+    duk_replace(ctx, idx);
+}
+
+
 static void setdate_header(evhtp_request_t *req, time_t secs)
 {
     if(!secs)
@@ -2154,7 +2189,8 @@ static int sendbuf(DHS *dhs)
             s = duk_get_lstring(ctx, -1, &sz);
         else if (duk_is_object(ctx, -1))
         {
-            duk_json_encode(ctx, -1);
+            //duk_json_encode(ctx, -1);
+            duk_rp_json_safe_encode(ctx, -1);
             s = duk_get_lstring(ctx, -1, &sz);
         }
         else
@@ -2638,6 +2674,31 @@ typedef duk_ret_t (*duk_func)(duk_context *);
 //#define cprintf(...)  printf(__VA_ARGS__);
 #define cprintf(...) /* nada */
 
+// wants [ ..., object_idx, ..., empty_array ]
+
+static void values_to_array(duk_context *ctx, duk_idx_t idx)
+{
+    duk_uarridx_t i=0;
+
+    idx = duk_normalize_index(ctx, idx);
+
+    duk_enum(ctx, idx, DUK_ENUM_OWN_PROPERTIES_ONLY|DUK_ENUM_NO_PROXY_BEHAVIOR);
+    // [ ..., object_idx, ..., empty_array, enum ]
+    while (duk_next(ctx, -1 , 1 ))
+    {
+        // [ ..., object_idx, ..., empty_array, enum, key, value ]
+        duk_put_prop_index(ctx, -4, i);
+        // [ ..., object_idx, ..., array[value], enum, key]
+        i++;
+        duk_pop(ctx);
+        // [ ..., object_idx, ..., array, enum ]
+    }
+    duk_pop(ctx);//enum
+    // [ object_idx, ..., array ]
+}
+
+
+
 /* ctx object and tctx object should be at top of respective stacks */
 static int copy_obj(duk_context *ctx, duk_context *tctx, int objid)
 {
@@ -2698,9 +2759,14 @@ static int copy_obj(duk_context *ctx, duk_context *tctx, int objid)
     duk_pop(ctx);
 
     /* if we get here, we haven't seen this object before so
-       we label this object with unique number */
-    duk_push_int(ctx, objid);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("objRefId"));
+       we label this object with unique number 
+       If it is an array, we need to deal with it on the tctx stack only */
+    if(!duk_is_array(ctx, -1))
+    {
+        duk_push_int(ctx, objid);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("objRefId"));
+    }
+
     /* in tctx, put it where we can find it later */
     //[ [par obj] ]
     duk_push_global_stash(tctx);                   //[ [par obj], [global stash] ]
@@ -2819,26 +2885,78 @@ enum_object:
                 }
                 duk_pop(ctx);
             }
-            else
+            // check if it is an array, and if we've seen it before.
+            // if not, get its pointer from the main stack, copy the array, store the array indexed by that pointer
+            // if so, retrieve it by the pointer from the main stack
+            // TODO: check if we want to use this ref tracking method for all objects. Might be cleaner.
+            else if (duk_is_array(ctx, -1))
             {
-                /* copy normal {} objects */
-                if (!duk_has_prop_string(tctx, -1, s) &&
-                    strcmp(s, "console") != 0 &&
-                    strcmp(s, "performance") != 0)
+                char ptr_str[32]; //plenty of room for hex of 64 bit ptr (17 chars with null)
+                void *p = duk_get_heapptr(ctx, -1);
+
+                snprintf(ptr_str,32,"%p", p); //the key to store/retrieve the array in thread_stack
+                cprintf("copy %s[%p] - top:%d\n", s,p, (int)duk_get_top(tctx));
+                // get the object holding the key->array in threadctx, create if necessary
+                if(!duk_get_global_string(tctx, DUK_HIDDEN_SYMBOL("arrRefPtr")))
                 {
-                    cprintf("copy %s{}\n", s);
+                    duk_pop(tctx); // pop undefined from failed retrieval of arrRefPtr
+                    duk_push_object(tctx); // new arrRefPtr object
+                    duk_push_global_object(tctx); // global object
+                    duk_dup(tctx, -2); //copy ref to new arrRefPtr object
+                    duk_put_prop_string(tctx, -2, DUK_HIDDEN_SYMBOL("arrRefPtr")); //store the copy ref
+                    duk_pop(tctx); //pop global object, left with ref to new arrRefPtr
+                } // else we got arrRefPtr on top of stack
+
+                // check if we've seen this array before
+                if(duk_get_prop_string(tctx, -1, ptr_str))
+                {
+                    //we found our array, but need to remove arrRefPtr
+                    cprintf("copy array, found ref\n");
+                    duk_remove(tctx, -2);
+                }
+                else
+                {
+                    // tctx -> [ ..., arrRefPtr, undefined ]
+                    cprintf("copy array, NO ref\n");
+                    duk_pop(tctx); //undefined
+
                     /* recurse and begin again with this ctx object (at idx:-1)
                        and a new empty object for tctx (pushed to idx:-1)              */
-                    duk_push_object(tctx);
+                    // tctx -> [ ..., arrRefPtr ]
+                    duk_push_array(tctx); // in order to avoid endless loop in copy_obj below, need to store this now
+                    duk_dup(tctx, -1);
+                    // tctx -> [ ..., arrRefPtr, array, dup_array ]
+                    duk_put_prop_string(tctx, -3, ptr_str); //[ ..., arrRefPtr, array ]
+
+                    duk_push_object(tctx); 
                     objid = copy_obj(ctx, tctx, objid);
-                    // convert back to array if ctx object was an array
-                    if(duk_is_array(ctx, -1))
-                    {
-                        duk_rp_values_from_object(tctx, -1);
-                        duk_remove(tctx, -2);
-                    }
-                    duk_put_prop_string(tctx, -2, duk_get_string(ctx, -2));
+                    // tctx -> [ ..., arrRefPtr, array, copied_object ]
+                    duk_pull(tctx, -2);
+                    // tctx -> [ ..., arrRefPtr, copied_object, array ]
+                    values_to_array(tctx, -2);
+
+                    duk_remove(tctx, -2);
+                    // tctx -> [ ... arrRefPtr, copied_array ] 
+
+                    duk_remove(tctx, -2);
+                    // tctx -> [ ..., copied_array ]
                 }
+
+                duk_put_prop_string(tctx, -2, duk_get_string(ctx, -2));
+            }
+            /* copy normal {} objects */
+            else if (!duk_has_prop_string(tctx, -1, s) &&
+                strcmp(s, "console") != 0 &&
+                strcmp(s, "performance") != 0)
+            {
+                cprintf("copy %s{}\n", s);
+                /* recurse and begin again with this ctx object (at idx:-1)
+                   and a new empty object for tctx (pushed to idx:-1)              */
+                duk_push_object(tctx);
+                objid = copy_obj(ctx, tctx, objid);
+                // convert back to array if ctx object was an array
+
+                duk_put_prop_string(tctx, -2, duk_get_string(ctx, -2));
             }
         }
         else if (duk_is_pointer(ctx, -1) )
@@ -2881,6 +2999,7 @@ static void copy_all(duk_context *ctx, duk_context *tctx)
     clean_obj(ctx, tctx);
     /* remove global object from both stacks */
     duk_pop(ctx);
+    duk_del_prop_string(tctx, -1, DUK_HIDDEN_SYMBOL("arrRefPtr") ); 
     duk_pop(tctx);
 }
 
