@@ -3810,48 +3810,51 @@ static void *http_dothread(void *arg)
         }
     }
 
-    if(duk_get_prop_string(ctx, -1, "defer"))
+    if(duk_is_object(ctx, -1))
     {
-        if(duk_get_boolean_default(ctx, -1, 0))
+        if(duk_get_prop_string(ctx, -1, "defer"))
         {
-            DEFERPTR *deferp = NULL;
-            DHS *newdhs = NULL;
-            REMALLOC(deferp, sizeof(DEFERPTR));
+            if(duk_get_boolean_default(ctx, -1, 0))
+            {
+                DEFERPTR *deferp = NULL;
+                DHS *newdhs = NULL;
+                REMALLOC(deferp, sizeof(DEFERPTR));
 
-            deferp->ctx=ctx;
-            deferp->req=req;
+                deferp->ctx=ctx;
+                deferp->req=req;
 
-            newdhs = clone_dhs(dhs);
-            newdhs->aux=deferp;
+                newdhs = clone_dhs(dhs);
+                newdhs->aux=deferp;
 
-            deferp->dhs=newdhs;
+                deferp->dhs=newdhs;
 
-            duk_pop_2(ctx); //boolean 'defer':true & return val from js callback
+                duk_pop_2(ctx); //boolean 'defer':true & return val from js callback
 
-            duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("reqobj"));
-            //deferp->this_heap_ptr = duk_get_heapptr(ctx, -1);
-            duk_push_c_function(ctx, defer_reply, 1);
-            duk_put_prop_string(ctx, -2, "reply");
+                duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("reqobj"));
+                //deferp->this_heap_ptr = duk_get_heapptr(ctx, -1);
+                duk_push_c_function(ctx, defer_reply, 1);
+                duk_put_prop_string(ctx, -2, "reply");
 
-            duk_push_pointer(ctx, newdhs);
-            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("defer_dhs") );
-            duk_push_c_function(ctx, rp_post_defer, 1);
-            duk_set_finalizer(ctx, -2);
+                duk_push_pointer(ctx, newdhs);
+                duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("defer_dhs") );
+                duk_push_c_function(ctx, rp_post_defer, 1);
+                duk_set_finalizer(ctx, -2);
 
-            duk_pop(ctx); //reqobj
+                duk_pop(ctx); //reqobj
 
-            /* when client disconnects */
-            evhtp_connection_set_hook(newdhs->req->conn, evhtp_hook_on_connection_fini, defer_finalize, deferp);
-            /* when we disconnect */
-            evhtp_connection_set_hook(newdhs->req->conn, evhtp_hook_on_request_fini, defer_finalize, deferp);
+                /* when client disconnects */
+                evhtp_connection_set_hook(newdhs->req->conn, evhtp_hook_on_connection_fini, defer_finalize, deferp);
+                /* when we disconnect */
+                evhtp_connection_set_hook(newdhs->req->conn, evhtp_hook_on_request_fini, defer_finalize, deferp);
 
-            if (dhr->have_timeout)
-                RP_MUNLOCK(&(dhr->lock));
-            return NULL;
+                if (dhr->have_timeout)
+                    RP_MUNLOCK(&(dhr->lock));
+                return NULL;
+            }
+            duk_del_prop_string(ctx, -2, "defer");
         }
-        duk_del_prop_string(ctx, -2, "defer");
+        duk_pop(ctx);
     }
-    duk_pop(ctx);
 
     res = obj_to_buffer(dhs);
 
