@@ -1406,23 +1406,25 @@ static int push_req_vars(DHS *dhs)
                 case '=':
                     k=c;
                     klen=cend-c;
-                    cend++;
-                    c=cend;
+                    //cend++;
+                    c=cend+1;
                     break;
                 case ';':
                 case '\0':
                     v=c;
                     vlen=cend-c;
-                    if(*cend)cend++;
-                    c=cend;
+                    if(*cend)
+                        c=cend+1;
                     while(isspace(*c)) c++;
-                    cend=c;
+                    //cend=c;
                     break;
             }
             if(v && k)
             {
-                duk_push_lstring(ctx,v,vlen);
+                char *vdec=duk_rp_url_decode((char*)v, &vlen);
+                duk_push_lstring(ctx,vdec,vlen);
                 duk_put_prop_lstring(ctx,-2,k,klen);
+                free(vdec);
                 v=k=NULL;
             }
 

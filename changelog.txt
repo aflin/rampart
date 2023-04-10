@@ -1,4 +1,6 @@
-v0.1.2-pre
+v0.1.3
+    - rampart-server: fixed cookie parsing
+v0.1.2
     - rampart-net: resolve error message fixes
     - rampart-net: added resolver.reverse ip to name functions 
     - rampart-url: made module compatible with node
