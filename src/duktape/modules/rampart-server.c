@@ -1393,7 +1393,7 @@ static int push_req_vars(DHS *dhs)
     if(duk_get_prop_string(ctx, -1, "Cookie"))
     {
         const char *c=duk_get_string(ctx,-1), *cend=c,*k=NULL,*v=NULL;
-        int klen=0,vlen=0;
+        int klen=0,vlen=0,inval=0;
 
         duk_pop(ctx);
 
@@ -1404,10 +1404,12 @@ static int push_req_vars(DHS *dhs)
             switch(*cend)
             {
                 case '=':
+                    if(inval)
+                        continue;
                     k=c;
                     klen=cend-c;
-                    //cend++;
                     c=cend+1;
+                    inval=1;
                     break;
                 case ';':
                 case '\0':
@@ -1416,7 +1418,7 @@ static int push_req_vars(DHS *dhs)
                     if(*cend)
                         c=cend+1;
                     while(isspace(*c)) c++;
-                    //cend=c;
+                    inval=0;
                     break;
             }
             if(v && k)
