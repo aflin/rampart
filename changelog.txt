@@ -1,4 +1,5 @@
 v0.1.3
+    - rampart-sql:    added missing handle close in sql.reset
     - rampart-server: fixed cookie parsing
 v0.1.2
     - rampart-net: resolve error message fixes

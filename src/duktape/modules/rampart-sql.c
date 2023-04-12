@@ -3488,6 +3488,7 @@ duk_ret_t duk_texis_reset(duk_context *ctx)
         throw_tx_error(ctx,hcache,"sql open");
     }
     reset_tx_default(ctx, hcache, -1);
+    h_close(hcache);
     return 0;
 }
 
