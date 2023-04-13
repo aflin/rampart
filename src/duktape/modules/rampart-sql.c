@@ -4208,7 +4208,7 @@ duk_ret_t duk_texis_set(duk_context *ctx)
 duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
 {
     int sql_handle_no = 0;
-    const char *db = duk_get_string(ctx, 0);
+    const char *db = REQUIRE_STRING(ctx, 0, "new Sql - first parameter must be a string (database path)");
     char pbuf[msgbufsz];
     DB_HANDLE *h;
 
@@ -4218,6 +4218,10 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
         return DUK_RET_TYPE_ERROR;
     }
     g_hcache_pid = getpid();
+
+    /* with require_string above, this shouldn't happen */
+    if(!db)
+        RP_THROW(ctx,"new Sql - db is null\n");
 
     /* check for db first */
     h = h_open( (char*)db, fromContext, ctx );
