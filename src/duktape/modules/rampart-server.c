@@ -4905,7 +4905,9 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
         }
         duk_pop(ctx);
 
-        if(duk_rp_GPS_icase(ctx, ob_idx, "accessLog") )
+        if(duk_rp_GPS_icase(ctx, ob_idx, "accessLog") &&
+            !duk_is_undefined(ctx, -1) && !duk_is_null(ctx, -1) && !(duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1))
+        )
         {
             access_fn=REQUIRE_STRING(ctx,-1,  "server.start: parameter \"accessLog\" requires a string (filename)");
             access_fh=fopen(access_fn,"a");
@@ -4924,7 +4926,9 @@ static inline void logging(duk_context *ctx, duk_idx_t ob_idx)
         }
         duk_pop(ctx);
 
-        if(duk_rp_GPS_icase(ctx, ob_idx, "errorLog") )
+        if(duk_rp_GPS_icase(ctx, ob_idx, "errorLog") &&
+            !duk_is_undefined(ctx, -1) && !duk_is_null(ctx, -1) && !(duk_is_boolean(ctx, -1) && !duk_get_boolean(ctx, -1))
+        )
         {
             error_fn=REQUIRE_STRING(ctx,-1, "server.start: parameter \"errorLog\" requires a string (filename)");
             error_fh=fopen(error_fn,"a");
@@ -5729,9 +5733,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         char mod=MODULE_NONE;
                         int cbtype=0;
                         evhtp_callback_t  *req_callback;
+                        size_t mlen=strlen(path) + 2;
 
-                        //path = (char *)duk_get_string(ctx, -2);
-                        REMALLOC(s, strlen(path) + 2);
+                        REMALLOC(s, mlen);
 
                         if(*path == 'w' && *(path+1) =='s' && *(path+2) ==':' &&  *(path+3) =='/')
                         {
