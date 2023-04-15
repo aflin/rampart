@@ -28,6 +28,8 @@
 pthread_mutex_t tx_handle_lock;
 pthread_mutex_t tx_create_lock;
 
+// Don't like the globals, but gotta fight fire with fire
+int defnoise=1, defsuffix=1, defsuffixeq=1, defprefix=1;
 
 #define RESMAX_DEFAULT 10 /* default number of sql rows returned for select statements if max is not set */
 //#define PUTMSG_STDERR                  /* print texis error messages to stderr */
@@ -58,7 +60,7 @@ QUERY_STRUCT
 
 duk_ret_t duk_rp_sql_close(duk_context *ctx);
 
-//extern int TXunneededRexEscapeWarning;
+extern int TXunneededRexEscapeWarning;
 int texis_resetparams(TEXIS *tx);
 int texis_cancel(TEXIS *tx);
 /*
@@ -1952,6 +1954,7 @@ QUERY_STRUCT duk_rp_get_query(duk_context *ctx)
                             q->max = REQUIRE_INT(ctx, -1, "sql: maxRows must be a Number");
                             gotsettings=1;
                         }
+                        duk_pop(ctx);
 
                         if (duk_get_prop_string(ctx, i, "returnRows"))
                         {
@@ -3198,7 +3201,9 @@ duk_ret_t duk_rp_sql_exec(duk_context *ctx)
         throw_tx_error(ctx,hcache,"sql open");
 
     reset_tx_default(ctx, hcache, this_idx);
-    duk_remove(ctx, this_idx); //no longer needed
+
+//  messes up the count for arg_idx, so just leave it
+//    duk_remove(ctx, this_idx); //no longer needed
 
     tx = hcache->tx;
     if (!tx && !hcache->forkno)
@@ -3406,7 +3411,6 @@ void reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
             RP_THROW(ctx, "internal error getting handle id");
         handle_no = duk_get_int(ctx, -1);
         duk_pop(ctx);
-
         // see rampart-server.c:initThread - last_handle is set to -2 upon thread ctx creation
         // to force a reset of all settings that may have been set in main_ctx, but not applied to this thread/fork
         if(duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no")))
@@ -3419,7 +3423,6 @@ void reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
     {
         char errbuf[1024];
         int ret;
-
         if (this_idx > -1) //we reapply old setting
         {
             if (!duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("sql_settings")) )
@@ -3543,21 +3546,240 @@ static void sql_normalize_prop(char *prop, const char *dprop)
 
 TEXIS *setprop_tx=NULL;
 
+static char *prop_defaults[][2] = {
+   {"defaultLike", "like"},
+   {"matchMode", "0"},
+   {"pRedoPtType", "0"},
+   {"textSearchMode", "unicodemulti, ignorecase, ignorewidth, ignorediacritics, expandligatures"},
+   {"stringCompareMode", "unicodemulti, respectcase"},
+   {"btreeCacheSize", "20"},
+   {"ramRows", "0"},
+   {"ramLimit", "0"},
+   {"bubble", "1"},
+   {"ignoreNewList", "0"},
+   {"indexWithin", "0xf"},
+   {"wildOneWord", "1"},
+   {"wildSufMatch", "1"},
+   {"alLinearDict", "0"},
+   {"indexMinSublen", "2"},
+   {"dropWordMode", "0"},
+   {"metamorphStrlstMode", "equivlist"},
+   /*{"groupbymem", "1"}, produces an error */
+   {"minWordLen", "255"},
+   {"suffixProc", "1"},
+   {"rebuild", "0"},
+   {"intersects", "-1"},
+   {"hyphenPhrase", "1"},
+   {"wordc", "[\\alpha\\']"},
+   {"langc", "[\\alpha\\'\\-]"},
+   {"withinMode", "word span"},
+   {"phrasewordproc", "last"},
+   {"defSuffRm", "1"},
+   {"eqPrefix", "builtin"},
+   {"exactPhrase", "0"},
+   /* {"withinProc", "1"}, produces error */
+   {"likepProximity", "500"},
+   {"likepLeadBias", "500"},
+   {"likepOrder", "500"},
+   {"likepDocFreq", "500"},
+   {"likepTblFreq", "500"},
+   {"likepRows", "100"},
+   {"likepMode", "1"},
+   {"likepAllMatch", "0"},
+   {"likepObeyIntersects", "0"},
+   {"likepInfThresh", "0"},
+   /* {"likepIndexThresh", "-1"}, ??? */
+   /*{"indexSpace", ""},
+   {"indexBlock", ""}, */
+   {"meter", "on"},
+/*   {"addExp", ""},
+   {"delExp", ""}, 
+   {"addIndexTmp", ""}
+   {"delIndexTmp", ""}, */
+   {"indexValues", "splitStrlst"},
+   {"btreeThreshold", "50"},
+   {"maxLinearRows", "1000"},
+   {"likerRows", "1000"},
+   {"indexAccess", "0"},
+   {"indexMmap", "1"},
+   {"indexReadBufSz", "64KB"},
+   {"indexWriteBufSz", "128KB"},
+   {"indexMmapBufSz", "0"},
+   {"indexSlurp", "1"},
+   {"indexAppend", "1"},
+   {"indexWriteSplit", "1"},
+   {"indexBtreeExclusive", "1"},
+   {"indexVersion", "2"},
+   {"mergeFlush", "1"},
+   {"tableReadBufSz", "16KB"},
+   /*{"tableSpace", ""},*/
+   {"dateFmt", ""},
+   /*{"timeZone", ""},
+   {"locale", ""}, */
+   /*{"indirectSpace", ""},*/
+   {"triggerMode", "0"},
+   {"paramChk", "1"},
+   /* {"message", "1"}, segfault */
+   {"varcharToStrlstMode", "json"},
+   {"strlstToVarcharMode", "json"},
+   {"multiValueToMultiRow", "0"},
+   {"inMode", "subset"},
+   {"hexifyBytes", "0"},
+   {"unalignedBufferWarning", "1"},
+   {"nullOutputString", "NULL"},
+   /* {"validateBtrees", ""}, no idea */
+   {"querySettings", "defaults"},
+   {"qMaxWords", "1000"},
+   {NULL, NULL}
+};
+int nnoiseList=181;
+char *noiseList[] = {
+    "a","about","after","again","ago","all","almost","also","always","am",
+    "an","and","another","any","anybody","anyhow","anyone","anything","anyway","are",
+    "as","at","away","back","be","became","because","been","before","being",
+    "between","but","by","came","can","cannot","come","could","did","do",
+    "does","doing","done","down","each","else","even","ever","every","everyone",
+    "everything","for","from","front","get","getting","go","goes","going","gone",
+    "got","gotten","had","has","have","having","he","her","here","him",
+    "his","how","i","if","in","into","is","isn't","it","just",
+    "last","least","left","less","let","like","make","many","may","maybe",
+    "me","mine","more","most","much","my","myself","never","no","none",
+    "not","now","of","off","on","one","onto","or","our","ourselves",
+    "out","over","per","put","putting","same","saw","see","seen","shall",
+    "she","should","so","some","somebody","someone","something","stand","such","sure",
+    "take","than","that","the","their","them","then","there","these","they",
+    "this","those","through","till","to","too","two","unless","until","up",
+    "upon","us","very","was","we","went","were","what","what's","whatever",
+    "when","where","whether","which","while","who","whoever","whom","whose","why",
+    "will","with","within","without","won't","would","wouldn't","yet","you","your", ""
+};
+int nsuffixList=91;
+
+char *suffixList[] = {
+    "'","anced","ancer","ances","atery","enced","encer","ences","ibler","ment",
+    "ness","tion","able","less","sion","ance","ious","ible","ence","ship",
+    "ical","ward","ally","atic","aged","ager","ages","ated","ater","ates",
+    "iced","icer","ices","ided","ider","ides","ised","ises","ived","ives",
+    "ized","izer","izes","ncy","ing","ion","ity","ous","ful","tic",
+    "ish","ial","ory","ism","age","ist","ate","ary","ual","ize",
+    "ide","ive","ier","ess","ant","ise","ily","ice","ery","ent",
+    "end","ics","est","ed","red","res","ly","er","al","at",
+    "ic","ty","ry","en","nt","re","th","es","ul","s", ""
+};
+
+int nsuffixEquivsList=4;
+char *suffixEquivsList[] = {
+    "'","s","ies", ""
+};
+
+int nprefixList=29;
+char *prefixList[] = {
+    "ante","anti","arch","auto","be","bi","counter","de","dis","em",
+    "en","ex","extra","fore","hyper","in","inter","mis","non","post",
+    "pre","pro","re","semi","sub","super","ultra","un", ""
+};
+
+char **copylist(char **list, int len){
+    int i=0;
+
+    char **nl=NULL; /* the list to be populated */
+
+    REMALLOC(nl, sizeof(char*) * len);
+
+    while (i<len)
+    {
+        nl[i]=strdup(list[i]);
+        i++;
+    }
+    
+    return nl;
+}
+
+static int sql_defaults(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
+{
+    LPSTMT lpstmt;
+    DDIC *ddic=NULL;
+
+    TEXIS *tx;
+    char pbuf[msgbufsz];
+    int i=0;
+    char **props;
+
+    clearmsgbuf();
+
+    duk_rp_log_error(ctx, "");
+
+    if(!setprop_tx)
+    {
+        setprop_tx = texis_open((char *)(hcache->db), "PUBLIC", "");
+    }
+    tx=setprop_tx;
+
+    if(!tx)
+    {
+        msgtobuf(pbuf);
+        sprintf(errbuf,"Texis setprop open failed: (fork:%d, db:%s)\n%s", thisfork, (char *)(hcache->db), pbuf);
+        return -1;
+    }
+
+    lpstmt = tx->hstmt;
+    if(lpstmt && lpstmt->dbc && lpstmt->dbc->ddic)
+            ddic = lpstmt->dbc->ddic;
+    else
+    {
+        sprintf(errbuf,"sql open");
+        return -1;
+    }
+
+    props = prop_defaults[i];
+    while (props[0]) 
+    {
+        if(setprop(ddic, props[0], props[1] )==-1) 
+        {
+            sprintf(errbuf, "sql reset");
+            return -2;
+        }
+        i++;
+        props = prop_defaults[i];
+    }    
+    
+    if(!defnoise)
+    {
+        globalcp->noise=(byte**)copylist(noiseList, nnoiseList);
+        defnoise=1;
+    }
+    if(!defsuffix)
+    {
+        globalcp->suffix=(byte**)copylist(suffixList, nsuffixList);
+        defsuffix=1;
+    }
+    if(!defsuffixeq)
+    {
+        globalcp->suffixeq=(byte**)copylist(suffixEquivsList, nsuffixEquivsList);
+        defsuffixeq=1;
+    }
+    if(!defprefix)
+    {
+        globalcp->prefix=(byte**)copylist(prefixList, nprefixList);
+        defprefix=1;
+    }
+
+    return 0;
+}
+
 // returns -1 for bad option, -2 for setprop error, 0 for ok, 1 for ok with return value
 static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
 {
     LPSTMT lpstmt;
     DDIC *ddic=NULL;
-//    TEXIS *tx = hcache->tx;
-//  Use a dedicated handle for setprop
-//  TXresetproperties() seems to mess with the putmsg buffer when the handle is reused
     TEXIS *tx;
     const char *val="";
     char pbuf[msgbufsz];
-    int added_ret_obj=0;
+    int added_ret_obj=0, ret=0;
     char *rlsts[]={"noiseList","suffixList","suffixEquivsList","prefixList"};
 
     clearmsgbuf();
+
 
     duk_rp_log_error(ctx, "");
 
@@ -3583,23 +3805,8 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
         goto return_neg_two;
     }
 
-    //cumulative settings are always set, so reset to default here and reapply
-    TXresetproperties(ddic); //this resets indextmplst and explst as well
-    if(setprop(ddic, "querysettings", "defaults" )==-1)
-    {
-        sprintf(errbuf, "sql set");
-        goto return_neg_two;
-    }
-    if(setprop(ddic, "strlsttovarcharmode", "json" )==-1)
-    {
-        sprintf(errbuf, "sql set");
-        goto return_neg_two;
-    }
-    if(setprop(ddic, "varchartostrlstmode", "json" )==-1)
-    {
-        sprintf(errbuf, "sql set");
-        goto return_neg_two;
-    }
+    if((ret=sql_defaults(ctx, hcache, errbuf)))
+        return ret;
 
     /**** Reapply indextmplst and explst if it was modified */
     duk_push_this(ctx);
@@ -3809,18 +4016,22 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
             {
                 case 0: free_list((char**)globalcp->noise);
                         globalcp->noise=(byte**)nl;
+                        defnoise=0;
                         break;
 
                 case 1: free_list((char**)globalcp->suffix);
                         globalcp->suffix=(byte**)nl;
+                        defsuffix=0;
                         break;
 
                 case 2: free_list((char**)globalcp->suffixeq);
                         globalcp->suffixeq=(byte**)nl;
+                        defsuffixeq=0;
                         break;
 
                 case 3: free_list((char**)globalcp->prefix);
                         globalcp->prefix=(byte**)nl;
+                        defprefix=0;
                         break;
             }
 
@@ -4281,7 +4492,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     //currently unused, probably can be removed:
     SET_THREAD_UNSAFE(ctx);
 
-    //TXunneededRexEscapeWarning = 0; //silence rex escape warnings
+    TXunneededRexEscapeWarning = 0; //silence rex escape warnings
 
     return 0;
 }
