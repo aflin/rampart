@@ -4456,6 +4456,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
         }
         else
         {
+            duk_rp_log_tx_error(ctx,h,pbuf);
             RP_THROW(ctx, "cannot open database at '%s'\n%s", db, pbuf);
         }
     }

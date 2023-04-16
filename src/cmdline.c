@@ -344,12 +344,15 @@ EXIT_FUNC {
 
 EXIT_FUNC **exit_funcs = NULL;
 
+pthread_mutex_t exlock;
+
+
 //void add_exit_func_2(rp_vfunc func, void *arg, char *nl)
 void add_exit_func(rp_vfunc func, void *arg)
 {
     int n=0;
     EXIT_FUNC *ef;
-
+RP_MLOCK(&exlock);
     if(exit_funcs)
     {
         /* count number of funcs */
@@ -369,6 +372,7 @@ void add_exit_func(rp_vfunc func, void *arg)
 //ef->nl=nl;
     exit_funcs[n-2]=ef;
     exit_funcs[n-1]=NULL;
+RP_MUNLOCK(&exlock);
 }
 
 //lock is probably not necessary now
@@ -2059,6 +2063,8 @@ int main(int argc, char *argv[])
     struct stat entry_file_stat;
 
     SLIST_INIT(&tohead);
+
+    RP_MINIT(&exlock);
 
     /* for later use */
     rampart_argv=argv;
