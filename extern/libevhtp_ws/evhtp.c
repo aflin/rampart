@@ -43,9 +43,13 @@
 #include "oniguruma.h"
 #include "ws/evhtp_ws.h"
 
-/* for making an id for websockets */
+/* for making an id for websockets -ajf */
 pthread_mutex_t wsctlock;
 uint32_t wsct=0;
+
+/* for max size read/write in libevent -ajf */
+size_t evhtp_max_single_read = 65536;
+size_t evhtp_max_single_write = 65536;
 
 #ifdef EVHTP_VALGRIND_FORK_SAFE
 /* for the connection list */
@@ -3030,6 +3034,10 @@ end:
         htp__connection_eventcb_, connection);
 
     bufferevent_enable(connection->bev, EV_READ);
+
+    /* huge speed difference if reply is less than this amount -ajf */
+    bufferevent_set_max_single_write(connection->bev, evhtp_max_single_write);
+    bufferevent_set_max_single_read(connection->bev, evhtp_max_single_read);
 
     return 0;
 }     /* htp__connection_accept_ */
@@ -6048,4 +6056,12 @@ unsigned int
 evhtp_request_status(evhtp_request_t * r)
 {
     return htparser_get_status(r->conn->parser);
+}
+
+void evhtp_set_max_single_read(size_t max) {
+    evhtp_max_single_read = max;
+}
+
+void evhtp_set_max_single_write(size_t max) {
+    evhtp_max_single_write = max;
 }

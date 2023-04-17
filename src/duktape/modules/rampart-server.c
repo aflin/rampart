@@ -5178,6 +5178,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
     ctimeout.tv_usec = 0;
     uint64_t max_body_size = 52428800;
     const char *cache_control="max-age=84600, public";
+    size_t maxread=65536, maxwrite=65536;
 
     main_dhs=dhs;
     server_pid = getpid();
@@ -5197,6 +5198,26 @@ duk_ret_t duk_server_start(duk_context *ctx)
             ob_idx = 1;
     else
         RP_THROW(ctx, "server.start - error - argument must be an object (options)");
+
+    /* get max read and write */
+
+    if (duk_rp_GPS_icase(ctx, ob_idx, "maxRead"))
+    {
+        double max=REQUIRE_NUMBER(ctx, -1, "server.start: parameter maxRead must be a positive integer");
+        if(max<0)
+            RP_THROW(ctx, "server.start: parameter maxRead must be a positive integer");
+        if(max) //zero is default
+            maxread=(size_t)max;
+    }
+
+    if (duk_rp_GPS_icase(ctx, ob_idx, "maxWrite"))
+    {
+        double max=REQUIRE_NUMBER(ctx, -1, "server.start: parameter maxWrite must be a positive integer");
+        if(max<0)
+            RP_THROW(ctx, "server.start: parameter maxWrite must be a positive integer");
+        if(max) //zero is default
+        maxwrite=(size_t)max;
+    }
 
     /* check if we are forking before doing any setup*/
     /* daemon */
@@ -6244,6 +6265,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
     evhtp_set_pre_accept_cb(htp, pre_accept_callback, NULL);
 
     evhtp_use_threads_wexit(htp, initThread, NULL, nthr, NULL);
+
+    evhtp_set_max_single_read(maxread);
+    evhtp_set_max_single_write(maxwrite);
 
     fflush(access_fh);
     fflush(error_fh);
