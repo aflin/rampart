@@ -409,8 +409,9 @@ void spt_init(int argc, char *argv[]);
 void setproctitle(const char *fmt, ...);
 #endif
 
-//clock_gettime for macos < sierra
 #ifdef __APPLE__
+
+//clock_gettime for macos < sierra
 #ifndef CLOCK_MONOTONIC
 #include <mach/mach.h>
 #include <mach/clock.h>
@@ -421,7 +422,43 @@ void setproctitle(const char *fmt, ...);
 typedef int clockid_t;
 int clock_gettime(clockid_t type, struct timespec *rettime);
 #endif //CLOCK_MONOTONIC
+
 #endif //__APPLE__
+
+//#define debug_pipe
+
+#ifdef debug_pipe
+
+#define rp_pipe(x) ({\
+    int r=pipe((x));\
+    printf("created pipe %d:%d at %s line %d\n",(x)[0], (x)[1], __FILE__,__LINE__);\
+    r;\
+})
+// don't close a pipe twice, it might be recreated elsewhere with same int
+#define rp_pipe_close(x,i) ({\
+    int p=(x)[(i)];\
+    if( p != -111111 ) {\
+        close(p);\
+        (x)[(i)] = -111111;\
+    }\
+    else printf("did NOT ");\
+    printf("close pipe %d at %s line %d\n", p, __FILE__,__LINE__);\
+})
+
+#else //debug_pipe
+
+// don't close a pipe twice, it might be recreated elsewhere with same int
+#define rp_pipe_close(x,i) ({\
+    int p=(x)[(i)];\
+    if( p != -111111 ) {\
+        close(p);\
+        (x)[(i)] = -111111;\
+    }\
+})
+
+#define rp_pipe(x) pipe((x))
+
+#endif //debug_pipe
 
 #if defined(__cplusplus)
 }

@@ -1849,7 +1849,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 
     if (!background)
     {
-        if (pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1|| pipe(stdin_pipe) == -1)
+        if (rp_pipe(stdout_pipe) == -1 || rp_pipe(stderr_pipe) == -1|| rp_pipe(stdin_pipe) == -1)
         {
             free(args);
             if(env)
@@ -1860,7 +1860,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     else
     //if background, only need one pipe to get the pid after the double fork
     {
-        if (pipe(child2par) == -1  ||  pipe(stdin_pipe) == -1)
+        if (rp_pipe(child2par) == -1  ||  rp_pipe(stdin_pipe) == -1)
         {
             free(args);
             if(env)
@@ -1918,7 +1918,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
                 exit((pid2<0?1:0));
             }
             //grandchild from here on
-            close(child2par[1]);
+            rp_pipe_close(child2par,1);
             fclose(stdin);
             fclose(stdout);
             fclose(stderr);
@@ -1935,7 +1935,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         }
         // stdin for child, or grandchild if double fork
         dup2(stdin_pipe[0], STDIN_FILENO);
-        close(stdin_pipe[1]);
+        rp_pipe_close(stdin_pipe,1);
 
         if(env)
             execvpe(path, args, env);
@@ -1952,14 +1952,14 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     {
         // return object
         duk_push_object(ctx);
-        close(child2par[1]);
+        rp_pipe_close(child2par,1);
         waitpid(pid,&exit_status,0);
         if(-1 == read(child2par[0], &pid2, sizeof(pid_t)) )
             RP_THROW(ctx, "exec(): failed to get pid from child");
 
-        close(child2par[0]);
-        close(stdin_pipe[1]);
-        close(stdin_pipe[0]);
+        rp_pipe_close(child2par,0);
+        rp_pipe_close(stdin_pipe,1);
+        rp_pipe_close(stdin_pipe,0);
         DUK_PUT_NUMBER(ctx,  "pid", pid2, -2);
 
         // set stderr and stdout to null
@@ -1992,19 +1992,23 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         }
 
         // close unused pipes
-        close(stdout_pipe[1]);
-        close(stderr_pipe[1]);
-        close(stdin_pipe[0]);
+        rp_pipe_close(stdout_pipe,1);
+        rp_pipe_close(stderr_pipe,1);
+        rp_pipe_close(stdin_pipe,0);
 
         if(stdin_txt)
         {
             if(-1 == write(stdin_pipe[1], stdin_txt, (size_t)stdin_sz))
             {
-                close(stdin_pipe[1]);
+                rp_pipe_close(stdin_pipe,1);
                 RP_THROW(ctx, "exec(): could not write to stdin of command: %s", strerror(errno));
             }
-            close(stdin_pipe[1]);
+            // this is the source of 2 days of misery.  Handle was also closed below, after exec and wait
+            // during which time other threads could reopen it to only have it mysteriously closed in this thread.
+            // Now rp_pipe_close checks if it was closed once already.
+            //rp_pipe_close(stdin_pipe,1);
         }
+        rp_pipe_close(stdin_pipe,1);
 
         // read output
         DUK_UTIL_EXEC_READ_FD(ctx, stdout_buf, stdout_pipe[0], stdout_nread);
@@ -2039,9 +2043,10 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         DUK_PUT_NUMBER(ctx,  "pid", pid, -2);
         free(stdout_buf);
         free(stderr_buf);
-        close(stdout_pipe[0]);
-        close(stderr_pipe[0]);
-        close(stdin_pipe[1]);
+        rp_pipe_close(stdout_pipe,0);
+        rp_pipe_close(stderr_pipe,0);
+        // above instead
+        //rp_pipe_close(stdin_pipe,1);
     }
     if(env)
         free(env);

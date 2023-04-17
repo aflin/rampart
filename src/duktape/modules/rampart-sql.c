@@ -386,7 +386,7 @@ static const char *get_exp(duk_context *ctx, duk_idx_t idx)
     int r=0;\
     r=write(finfo->writer, (b),(c));\
     if(r==-1) {\
-        fprintf(stderr, "fork write failed: '%s' at %d\n",strerror(errno),__LINE__);\
+        fprintf(stderr, "fork write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,finfo->writer);\
         if(thisfork) {fprintf(stderr, "child proc exiting\n");exit(0);}\
     };\
     r;\
@@ -489,13 +489,13 @@ static SFI *check_fork(DB_HANDLE *h, int create)
         //signal(SIGPIPE, SIG_IGN); //macos
         //signal(SIGCHLD, SIG_IGN);
         /* our creation run.  create pipes and setup for fork */
-        if (pipe(child2par) == -1)
+        if (rp_pipe(child2par) == -1)
         {
             fprintf(stderr, "child2par pipe failed\n");
             return NULL;
         }
 
-        if (pipe(par2child) == -1)
+        if (rp_pipe(par2child) == -1)
         {
             fprintf(stderr, "par2child pipe failed\n");
             return NULL;
@@ -549,8 +549,8 @@ static SFI *check_fork(DB_HANDLE *h, int create)
             //parent
             signal(SIGPIPE, SIG_IGN); //macos
             signal(SIGCHLD, SIG_IGN);
-            close(child2par[1]);
-            close(par2child[0]);
+            rp_pipe_close(child2par,1);
+            rp_pipe_close(par2child,0);
             finfo->reader = child2par[0];
             finfo->writer = par2child[1];
             fcntl(finfo->reader, F_SETFL, 0);
@@ -4198,13 +4198,14 @@ static int sql_set(duk_context *ctx, DB_HANDLE *hcache, char *errbuf)
 
         propnext:
         duk_pop_2(ctx);
-        /* capture and throw errors here */
+        /* capture and throw errors here *
         msgtobuf(pbuf);
         if(*pbuf!='\0')
         {
             sprintf(errbuf, "sql.set(): %s", pbuf+4);
             goto return_neg_one;
         }
+*/
     }
     duk_pop(ctx);//enum
 
