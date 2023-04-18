@@ -3419,8 +3419,10 @@ void reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
     }
 
     //if hard reset, or  we've set a setting before and it was made by a different sql handel
+    //printf("handle=%d, last=%d\n",handle_no, last_handle_no);
     if( this_idx < 0 || (last_handle_no != -1       &&  last_handle_no != handle_no) )
     {
+        //printf("HARD RESET\n");
         char errbuf[1024];
         int ret;
         if (this_idx > -1) //we reapply old setting
@@ -3458,6 +3460,9 @@ void reset_tx_default(duk_context *ctx, DB_HANDLE *h, duk_idx_t this_idx)
             h_close(h);
             throw_tx_error(ctx, h, errbuf);
         }
+    }
+    if(last_handle_no != handle_no)
+    {
         //set this javascript sql handle as the last to have applied settings
         duk_push_int(ctx, handle_no);
         duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("sql_last_handle_no"));
