@@ -3353,6 +3353,8 @@ duk_ret_t duk_rp_sql_one(duk_context *ctx)
     duk_push_object(ctx);
     duk_push_number(ctx, 1.0);
     duk_put_prop_string(ctx, -2, "maxRows");
+    duk_push_true(ctx);
+    duk_put_prop_string(ctx, -2, "returnRows");
     
     if( obj_idx != -1)
         duk_pull(ctx, obj_idx);
