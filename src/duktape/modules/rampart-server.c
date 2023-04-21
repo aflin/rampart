@@ -41,6 +41,8 @@
 //#define RP_TO_DEBUG
 //#define RP_TIMEO_DEBUG
 
+#define SOCKBACKLOG 2048
+
 RP_MTYPES *allmimes=rp_mimetypes;
 int n_allmimes =nRpMtypes;
 struct timeval ctimeout;
@@ -1650,25 +1652,14 @@ static void refcb(const void *data, size_t datalen, void *val)
     free(fp);
 }
 
-
-/*
-   Because of this: https://github.com/criticalstack/libevhtp/issues/160
-   when ssl, we can't use evbuffer_add_file() since evbuffer_pullup()
-   was added to libevhtp.
-
-   At some point (>5M??; need better benchmarking tools - wrk and ab both
-   have their problems) the advantanges of loading the file here will
-   be outweighted by the cost of not letting evbuffer_add_file() do its
-   memmap thing.
-
-   ** corresponding change made in evhtp.c **
-*/
 static int rp_evbuffer_add_file(struct evbuffer *outbuf, int fd, ev_off_t offset, ev_off_t length)
 {
+    // you'd think that evbuffer_add_file would be faster, but it ain't
+
     /* if not ssl, or if size of file is "big", use evbuffer_add_file */
-    if( !rp_using_ssl || length-offset > 5242880 )
-        return evbuffer_add_file(outbuf, fd, offset, length);
-    /* FIXME: it is going to be pullup'd anyway, why not just add it (not by reference) */
+    // if( !rp_using_ssl || length-offset > 5242880 )
+    //    return evbuffer_add_file(outbuf, fd, offset, length);
+
     {
         size_t off=0;
         ssize_t nbytes=0;
@@ -1691,7 +1682,10 @@ static int rp_evbuffer_add_file(struct evbuffer *outbuf, int fd, ev_off_t offset
         close(fd);
         if (nbytes==-1)
             return -1;
-        evbuffer_add_reference(outbuf, buf, (size_t)length, frefcb, NULL);
+        // no diference in speed for these two options. Dunno why.
+        //evbuffer_add_reference(outbuf, buf, (size_t)length, frefcb, NULL);
+        evbuffer_add(outbuf, buf, (size_t)length);
+        free(buf);
     }
     return 0;
 }
@@ -1916,6 +1910,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
                             rp_evbuffer_add_file(req->buffer_out, cfd, 0, len);
                             sendresp(req, rescode, 0);
+                            close(fd);
                             return;
                         }
                     }
@@ -6203,7 +6198,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         if ( duk_is_string(ctx, -1) )
         {
             getipport(duk_get_string(ctx,-1));
-            if (!(ip_addr = bind_sock_port(htp, ipany, port, 2048)))
+            if (!(ip_addr = bind_sock_port(htp, ipany, port, SOCKBACKLOG)))
             {
                 if (!strncmp("ipv6:",ipany,5))
                 {
@@ -6225,7 +6220,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                 if(duk_get_prop_index(ctx,-1,(duk_uarridx_t)i))
                 {
                     getipport(duk_get_string(ctx,-1));
-                    if (!(ip_addr = bind_sock_port(htp, ipany, port, 2048)))
+                    if (!(ip_addr = bind_sock_port(htp, ipany, port, SOCKBACKLOG)))
                     {
                         if (!strncmp("ipv6:",ipany,5))
                         {
@@ -6247,9 +6242,9 @@ duk_ret_t duk_server_start(duk_context *ctx)
     }
     else
     {
-        if (!(ip_addr = bind_sock_port(htp, ipv4, port, 2048)))
+        if (!(ip_addr = bind_sock_port(htp, ipv4, port, SOCKBACKLOG)))
             RP_THROW(ctx, "server.start: could not bind to %s port %d", ipv4, port);
-        if (!(ip_addr = bind_sock_port(htp, ipv6, port, 2048)))
+        if (!(ip_addr = bind_sock_port(htp, ipv6, port, SOCKBACKLOG)))
             RP_THROW(ctx, "server.start: could not bind to %s, %d", ipv6, port);
     }
     duk_pop(ctx);
