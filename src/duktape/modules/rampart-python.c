@@ -1638,6 +1638,10 @@ char *parent_py_call(PyObject * pModule, const char *fname)
         duk_push_c_function(ctx, _p_to_value, 0);
         duk_put_prop_string(ctx, -2, "toValue");
 
+        duk_push_c_function(ctx, _p_to_value, 0);
+        duk_put_prop_string(ctx, -2, "valueOf");
+
+
         errmsg=parent_py_call_read_error(finfo);
         if(!errmsg)
             return pipe_error;
@@ -1698,6 +1702,9 @@ char *parent_py_call(PyObject * pModule, const char *fname)
 
         duk_push_c_function(ctx, _get_pref_str, 0);
         duk_put_prop_string(ctx, -2, "toValue");
+
+        duk_push_c_function(ctx, _p_to_value, 0);
+        duk_put_prop_string(ctx, -2, "valueOf");
 
         errmsg=parent_py_call_read_error(finfo);
         if(!errmsg)
@@ -2519,6 +2526,9 @@ static duk_ret_t py_call(duk_context *ctx)
 
     duk_push_c_function(ctx, _p_to_value, 0);
     duk_put_prop_string(ctx, -2, "toValue");
+
+    duk_push_c_function(ctx, _p_to_value, 0);
+    duk_put_prop_string(ctx, -2, "valueOf");
 
     state=PYLOCK;
 
