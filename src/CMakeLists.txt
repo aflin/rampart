@@ -24,11 +24,11 @@ set(CURL_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/curl)
 set(LIBEVHTP_TARGET_DIR ${CMAKE_BINARY_DIR}/extern/libevhtp_ws)
 
 add_definitions(
-	-DRP_USING_DUKTAPE 
-	-D_XOPEN_SOURCE 
-	-D_GNU_SOURCE 
-	-D_LARGEFILE_SOURCE 
-	-D_LARGEFILE64_SOURCE 
+	-DRP_USING_DUKTAPE
+	-D_XOPEN_SOURCE
+	-D_GNU_SOURCE
+	-D_LARGEFILE_SOURCE
+	-D_LARGEFILE64_SOURCE
 	-D_FILE_OFFSET_BITS=64
 	-DRP_INST_PATH="${CMAKE_INSTALL_PREFIX}/"
 )
@@ -57,6 +57,7 @@ add_executable(rampart
 	duktape/globals/rampart-utils.c
 	duktape/globals/rampart-event.c
 	duktape/globals/rampart-import.c
+	duktape/globals/rampart-thread.c
 	duktape/globals/csv_parser.c
 	duktape/globals/hash_random/cityhash.c
 	duktape/globals/hash_random/fast_random.c
@@ -65,7 +66,7 @@ add_executable(rampart
 	linenoise.c
 	whereami.c
 	setproctitle.c
-    version.c
+	version.c
 	cmdline.c
 )
 
@@ -75,22 +76,22 @@ set_target_properties(rampart PROPERTIES
 )
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
-target_link_libraries(rampart LINK_PUBLIC 
-	-Wl,-all_load 
+target_link_libraries(rampart LINK_PUBLIC
+	-Wl,-all_load
 	${LIBEVENT_TARGET_DIR}/lib/libevent_core.a
-	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
+	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a
-	-Wl,-noall_load 
+	-Wl,-noall_load
 	m dl pthread
     event_core event_pthreads event_extra
 )
 
 else()
 
-target_link_libraries(rampart LINK_PUBLIC 
+target_link_libraries(rampart LINK_PUBLIC
 	-Wl,--whole-archive
 	${LIBEVENT_TARGET_DIR}/lib/libevent_core.a
-	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a 
+	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a
 	-Wl,--no-whole-archive
 	m dl pthread
@@ -103,9 +104,9 @@ add_dependencies(rampart timestamp)
 
 include_directories(
 	${PROJECT_SOURCE_DIR}/src/include
-	${PROJECT_BINARY_DIR}/texis/texisapi 
-	${PROJECT_BINARY_DIR}/texis 
-	${PROJECT_SOURCE_DIR}/texis/include 
+	${PROJECT_BINARY_DIR}/texis/texisapi
+	${PROJECT_BINARY_DIR}/texis
+	${PROJECT_SOURCE_DIR}/texis/include
 	${LIBEVENT_TARGET_DIR}/include
 	${PROJECT_SOURCE_DIR}/extern/libevent/include
 	${PROJECT_BINARY_DIR}/texis/contrib/jansson-2.12/include/
@@ -132,8 +133,8 @@ target_link_libraries(rampart-robots
     ${PROJECT_BINARY_DIR}/extern/robotstxt/librobots.a
     ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/strings/libabsl_strings.a
     ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_base.a
-    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_spinlock_wait.a 
-    pthread 
+    ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_spinlock_wait.a
+    pthread
     ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/strings/libabsl_strings_internal.a
     ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/numeric/libabsl_int128.a
     ${PROJECT_BINARY_DIR}/extern/robotstxt/libs/abseil-cpp-build/absl/base/libabsl_throw_delegate.a
@@ -142,7 +143,7 @@ target_link_libraries(rampart-robots
 )
 
 target_include_directories(rampart-robots PRIVATE
-     ${PROJECT_SOURCE_DIR}/extern/robotstxt/ 
+     ${PROJECT_SOURCE_DIR}/extern/robotstxt/
      ${PROJECT_SOURCE_DIR}/src/duktape/core
      ${PROJECT_SOURCE_DIR}/src
      ${PROJECT_SOURCE_DIR}/extern/robotstxt/extern/abseil-cpp-src/
@@ -186,7 +187,7 @@ add_library(rampart-lmdb SHARED
 )
 target_link_libraries(rampart-lmdb
 	${PROJECT_BINARY_DIR}/extern/lmdb/liblmdb.a
-) 
+)
 
 add_custom_command(
 	OUTPUT ${PROJECT_BINARY_DIR}/extern/lmdb/liblmdb.a
@@ -217,7 +218,7 @@ target_link_libraries(rampart-sql
 	pthread
 	m
 	${PROJECT_BINARY_DIR}/texis/jansson-2.12/src/jansson-2.12-build/lib/libjansson.a
-) 
+)
 
 add_custom_command(
 	OUTPUT ${CMAKE_BINARY_DIR}/src/texislockd
@@ -242,14 +243,14 @@ add_library(rampart-redis SHARED
 )
 
 ##CRYPTO##
-add_library(rampart-crypto SHARED 
-  duktape/modules/rampart-crypto.c  
+add_library(rampart-crypto SHARED
+  duktape/modules/rampart-crypto.c
 )
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
 target_link_libraries(rampart-crypto PRIVATE
 	-Wl,-all_load
-	${OPENSSL_TARGET_DIR}/ssl/libssl.a 
+	${OPENSSL_TARGET_DIR}/ssl/libssl.a
 	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
 	-Wl,-noall_load
 )
@@ -258,7 +259,7 @@ else()
 
 target_link_libraries(rampart-crypto PRIVATE
 	-Wl,--whole-archive
-	${OPENSSL_TARGET_DIR}/ssl/libssl.a 
+	${OPENSSL_TARGET_DIR}/ssl/libssl.a
 	${OPENSSL_TARGET_DIR}/crypto/libcrypto.a
 	-Wl,--no-whole-archive
 )
@@ -275,15 +276,15 @@ add_dependencies(rampart-crypto openssl)
 add_library(rampart-server SHARED
  duktape/modules/rampart-server.c
 )
-target_link_libraries(rampart-server 
+target_link_libraries(rampart-server
 	${LIBEVHTP_TARGET_DIR}/libevhtp_ws.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a
   	rampart-crypto
 	${ONIGURUMA_TARGET_DIR}/libonig.a
 	${PROJECT_BINARY_DIR}/extern/libdeflate/libdeflate.a
-) 
+)
 
-set_property(TARGET rampart-server PROPERTY IMPORTED_LOCATION "./rampart-crypto.so") 
+set_property(TARGET rampart-server PROPERTY IMPORTED_LOCATION "./rampart-crypto.so")
 
 target_include_directories(rampart-server PRIVATE
 	${PROJECT_BINARY_DIR}/extern/openssl/include/
@@ -374,16 +375,16 @@ add_library(rampart-net SHARED
 )
 
 target_compile_options(rampart-net PRIVATE
-    "-DNET_CA_PATH=\"${NET_CA_PATH}\"" 
+    "-DNET_CA_PATH=\"${NET_CA_PATH}\""
     "-DNET_CA_FILE=\"${NET_CA_FILE}\""
 )
 
-target_link_libraries(rampart-net 
+target_link_libraries(rampart-net
 	${LIBEVENT_TARGET_DIR}/lib/libevent_openssl.a
   	rampart-crypto
-) 
+)
 
-set_property(TARGET rampart-net PROPERTY IMPORTED_LOCATION "./rampart-crypto.so") 
+set_property(TARGET rampart-net PROPERTY IMPORTED_LOCATION "./rampart-crypto.so")
 
 target_include_directories(rampart-net PRIVATE
 	${PROJECT_BINARY_DIR}/extern/openssl/include/
@@ -409,6 +410,68 @@ target_include_directories(rampart-curl PRIVATE
 
 add_dependencies(rampart-curl libcurl)
 
+###PYTHON###
+
+set(PYTHON_MINOR "11")
+set(PYTHON_PATCH "2")
+set(PYTHON_DIR_NAME "Python-3.${PYTHON_MINOR}.${PYTHON_PATCH}")
+set(PYTHON_BIN_DIR "${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}")
+
+#execute_process(
+add_custom_command(
+    OUTPUT ${PYTHON_BIN_DIR}
+    COMMAND mkdir -p ${PROJECT_BINARY_DIR}/extern
+    COMMAND cp -a ${PROJECT_SOURCE_DIR}/extern/${PYTHON_DIR_NAME} ${PROJECT_BINARY_DIR}/extern
+)
+
+add_custom_target(cp_python
+	DEPENDS ${PYTHON_BIN_DIR}
+)
+
+set(PYFLAGS "-fPIC ${CMAKE_C_FLAGS}")
+
+#execute_process(
+add_custom_command(
+	OUTPUT ${PYTHON_BIN_DIR}/Makefile
+	COMMAND bash -c "RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl CFLAGS=\"${PYFLAGS}\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\""
+	WORKING_DIRECTORY ${PYTHON_BIN_DIR}
+)
+
+add_custom_command(
+	DEPENDS ${PYTHON_BIN_DIR}/Makefile
+	OUTPUT ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
+	COMMAND ${CMAKE_MAKE_PROGRAM} CFLAGS=${CMAKE_C_FLAGS}
+	COMMAND ${CMAKE_MAKE_PROGRAM} CFLAGS=${CMAKE_C_FLAGS} install
+	WORKING_DIRECTORY ${PYTHON_BIN_DIR}
+)
+
+add_custom_target(libpython
+	DEPENDS ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
+	COMMAND bash -c "rm -f ${PROJECT_BINARY_DIR}/src/python3-lib"
+	COMMAND bash -c "ln -s ${PYTHON_BIN_DIR}/build/lib/python3.${PYTHON_MINOR} ${PROJECT_BINARY_DIR}/src/python3-lib"
+)
+
+add_library(rampart-python SHARED
+	duktape/modules/rampart-python.c
+)
+
+target_link_libraries(rampart-python PRIVATE
+	${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
+	pthread
+	dl
+	util
+	m
+)
+
+target_include_directories(rampart-python PRIVATE
+	${PYTHON_BIN_DIR}/build/include/python3.${PYTHON_MINOR}
+)
+
+add_dependencies(rampart-python libpython)
+add_dependencies(libpython cp_python)
+add_dependencies(rampart-python openssl)
+
+
 ###### EXAMPLE USER MODULE######
 #add_library(example_name SHARED
 # example.c
@@ -421,18 +484,28 @@ add_dependencies(rampart-curl libcurl)
 #	/path/to/include2
 #)
 
+
+
 ##############  ADD MODULE NAMES HERE  ##############
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-  set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb rampart-net #example_name
-          PROPERTIES 
+  set_target_properties(
+        rampart-curl rampart-server rampart-sql
+        rampart-redis rampart-crypto rampart-html
+        rampart-cmark rampart-robots rampart-lmdb
+        rampart-net rampart-python #example_name
+          PROPERTIES
           LINK_FLAGS   "-undefined dynamic_lookup -Wl,-rpath,./"
           SUFFIX       ".so"
           PREFIX ""
   )
 else()
-  set_target_properties(rampart-curl rampart-server rampart-sql rampart-redis rampart-crypto rampart-html rampart-cmark rampart-robots rampart-lmdb rampart-net #example_name
-          PROPERTIES 
+  set_target_properties(
+        rampart-curl rampart-server rampart-sql
+        rampart-redis rampart-crypto rampart-html
+        rampart-cmark rampart-robots rampart-lmdb
+        rampart-net rampart-python #example_name
+          PROPERTIES
           LINK_FLAGS "-Wl,-rpath,./"
           SUFFIX       ".so"
           PREFIX ""
@@ -440,9 +513,9 @@ else()
 endif()
 
 ## tests and js_mods into build/src dir as well (temporary)
-file(GLOB TEST_FILES 
-    "${CMAKE_SOURCE_DIR}/test/*.js" 
-    "${CMAKE_SOURCE_DIR}/test/wiki_00" 
+file(GLOB TEST_FILES
+    "${CMAKE_SOURCE_DIR}/test/*.js"
+    "${CMAKE_SOURCE_DIR}/test/wiki_00"
     "${CMAKE_SOURCE_DIR}/js_modules/*.js"
 )
 foreach(TEST_FILE ${TEST_FILES})
@@ -461,9 +534,10 @@ install(TARGETS
 	rampart-redis
 	rampart-html
 	rampart-cmark
-    rampart-net
+	rampart-net
 	rampart-robots
 	rampart-lmdb
+	rampart-python
 	DESTINATION "${CMAKE_INSTALL_PREFIX}/modules/"
 )
 
@@ -496,6 +570,13 @@ install(CODE "execute_process( \
     )"
 )
 
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_SOURCE_DIR}/src/make_cmod_template.js\" \
+    \"${CMAKE_INSTALL_PREFIX}/bin/\"   \
+    )"
+)
+
 # include files
 install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/include")
 install(CODE "execute_process( \
@@ -509,24 +590,20 @@ install(CODE "execute_process( \
 
 # test files
 install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/test")
-install(CODE "execute_process( \
-    COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_SOURCE_DIR}/test/babel-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/crypto-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/cmark-html-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/combo-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/curl-server-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/math.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/net-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/redis-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/robots-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/rputils-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/server-lmdb-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/sql-extras-test.js\" \
-    \"${PROJECT_SOURCE_DIR}/test/wiki_00\" \
-    \"${CMAKE_INSTALL_PREFIX}/test\"   \
-    )"
+
+file(GLOB TEST_FILES
+    "${CMAKE_SOURCE_DIR}/test/*.js"
+    "${CMAKE_SOURCE_DIR}/test/wiki_00"
 )
+
+foreach(TEST_FILE ${TEST_FILES})
+  install(CODE "execute_process( \
+      COMMAND ${CMAKE_COMMAND} -E copy \
+      \"${TEST_FILE}\" \
+      \"${CMAKE_INSTALL_PREFIX}/test\"   \
+      )"
+  )
+endforeach()
 
 install(CODE "execute_process ( \
     COMMAND bash -c \"chmod 777 ${CMAKE_INSTALL_PREFIX}/test\"
@@ -572,6 +649,100 @@ install(CODE "execute_process( \
     )"
 )
 
+#python stuff
+
+#somehow python file isn't always installed in Python3.11/build/bin
+install(CODE "\
+    if(NOT EXISTS ${PYTHON_BIN_DIR}/build/bin/python3.${PYTHON_MINOR} )
+        if(EXISTS ${PYTHON_BIN_DIR}/python)
+            execute_process(COMMAND bash -c \"cp ${PYTHON_BIN_DIR}/python.exe ${PYTHON_BIN_DIR}/build/bin/python3.${PYTHON_MINOR}\")
+        elseif(EXISTS ${PYTHON_BIN_DIR}/python.exe)
+            execute_process(COMMAND bash -c \"cp ${PYTHON_BIN_DIR}/python ${PYTHON_BIN_DIR}/build/bin/python3.${PYTHON_MINOR}\")
+        else()
+            message(FATAL_ERROR, \"Could not find the python executable\")
+        endif()
+	endif()
+    "
+)
+
+
+install(CODE "execute_process( \
+    COMMAND bash -c \"chmod 755 ${PYTHON_BIN_DIR}/build/bin/python3.${PYTHON_MINOR} \"\
+    )"
+)
+install(CODE "execute_process( \
+    COMMAND bash -c \"chmod 755 ${PYTHON_BIN_DIR}/build/bin/pip3 \"\
+    )"
+)
+
+install(CODE "execute_process( \
+    COMMAND bash -c \"mkdir -p \
+	${CMAKE_INSTALL_PREFIX}/modules/python \"\
+    )"
+)
+
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy \
+    \"${PROJECT_SOURCE_DIR}/src/rebase-python.sh\" \
+    \"${CMAKE_INSTALL_PREFIX}/modules/python/\"   \
+    )"
+)
+
+install(CODE "execute_process( \
+    COMMAND bash -c \"cp -a \
+	${PYTHON_BIN_DIR}/build/bin \
+	${PYTHON_BIN_DIR}/build/lib \
+	${CMAKE_INSTALL_PREFIX}/modules/python/ \"\
+    )"
+)
+
+install(
+	CODE "execute_process( COMMAND bash \"${CMAKE_INSTALL_PREFIX}/modules/python/rebase-python.sh\")"
+)
+
+install(CODE "execute_process( \
+    COMMAND bash -c \"rm -rf \
+	${CMAKE_INSTALL_PREFIX}/modules/python3-lib \"\
+	${CMAKE_INSTALL_PREFIX}/bin/python3r \"\
+	${CMAKE_INSTALL_PREFIX}/bin/pip3r \"\
+    )"
+)
+
+install(CODE "execute_process( \
+    COMMAND bash -c \"ln -s \
+	python/lib/python3.${PYTHON_MINOR} \
+	${CMAKE_INSTALL_PREFIX}/modules/python3-lib \"\
+    )"
+)
+
+
+install(CODE "execute_process( \
+    COMMAND bash -c \"ln -s \
+	../modules/python/bin/python3 \
+	${CMAKE_INSTALL_PREFIX}/bin/python3r \"\
+    )"
+)
+
+
+
+install(CODE "execute_process( \
+    COMMAND bash -c \"ln -s \
+	../modules/python/bin/pip3 \
+	${CMAKE_INSTALL_PREFIX}/bin/pip3r \"\
+    )"
+)
+
+
+install(CODE "execute_process( \
+    COMMAND bash -c \"chmod 755 ${CMAKE_INSTALL_PREFIX}/modules/python/bin/python3.${PYTHON_MINOR} \"\
+    )"
+)
+install(CODE "execute_process( \
+    COMMAND bash -c \"chmod 755 ${CMAKE_INSTALL_PREFIX}/modules/python/bin/pip3 \"\
+    )"
+)
+
+
 # web_server
 install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/web_server")
 install(CODE "execute_process( \
@@ -586,12 +757,15 @@ install(CODE "execute_process ( \
  )"
 )
 
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-server.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-crypto.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-cmark.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-curl.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-sql.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-crypto.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-html.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-lmdb.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-redis.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-net.so\")")
-install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-python.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-redis.so\")")
 install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-robots.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-server.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/modules/rampart-sql.so\")")
+install(CODE "execute_process(COMMAND strip -S \"${CMAKE_INSTALL_PREFIX}/bin/rampart\")")

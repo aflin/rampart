@@ -8,7 +8,7 @@ testmodes();
 function testFeature(name,test)
 {
     var error=false;
-    rampart.utils.printf("testing %-40s - ", name);
+    rampart.utils.printf("testing crypto - %-51s - ", name);
     fflush(stdout);
     if (typeof test =='function'){
         try {
@@ -744,7 +744,7 @@ function testmodes()
   printf("working modes:\n");
 
   modes={
-  "base64": "Base 64",
+//  "base64": "Base 64",
   "bf-cbc": "Blowfish in CBC mode",
   "bf-cfb": "Blowfish in CFB mode",
   "bf-ecb": "Blowfish in ECB mode",
@@ -767,8 +767,8 @@ function testmodes()
   "des-ede3-cfb": "Three key triple DES EDE CFB mode",
   "des-ede3-ofb": "Three key triple DES EDE in OFB mode",
   "desx": "DESX algorithm.",
-  "gost89": "GOST 28147-89 in CFB mode (provided by ccgost engine)",
-  "gost89-cnt": "GOST 28147-89 in CNT mode (provided by ccgost engine)",
+//  "gost89": "GOST 28147-89 in CFB mode (provided by ccgost engine)",
+//  "gost89-cnt": "GOST 28147-89 in CNT mode (provided by ccgost engine)",
   "idea-cbc": "IDEA algorithm in CBC mode",
   "idea-cfb": "IDEA in CFB mode",
   "idea-ecb": "IDEA in ECB mode",
@@ -780,12 +780,12 @@ function testmodes()
   "rc2-64-cbc": "64 bit RC2 in CBC mode",
   "rc2-40-cbc": "40 bit RC2 in CBC mode",
   "rc4": "128 bit RC4",
-  "rc4-64": "64 bit RC4",
+//  "rc4-64": "64 bit RC4",
   "rc4-40": "40 bit RC4",
-  "rc5-cbc": "RC5 cipher in CBC mode",
-  "rc5-cfb": "RC5 cipher in CFB mode",
-  "rc5-ecb": "RC5 cipher in ECB mode",
-  "rc5-ofb": "RC5 cipher in OFB mode",
+//  "rc5-cbc": "RC5 cipher in CBC mode",
+//  "rc5-cfb": "RC5 cipher in CFB mode",
+//  "rc5-ecb": "RC5 cipher in ECB mode",
+//  "rc5-ofb": "RC5 cipher in OFB mode",
   "aes-256-cbc": "256 bit AES in CBC mode",
   "aes-256-cfb": "256 bit AES in 128 bit CFB mode",
   "aes-256-cfb1": "256 bit AES in 1 bit CFB mode",
@@ -813,7 +813,7 @@ function testmodes()
   var pass=";lkjhgfdsaqwer";
   for (i=0;i<mcodes.length;i++)
   {
-    printf("testing %-40s - ",modes[mcodes[i]]);
+    printf("testing crypto cypher modes - %-38s - ",modes[mcodes[i]]);
     try{
       encBuffer = crypto.encrypt({
         pass: pass,

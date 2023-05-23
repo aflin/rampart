@@ -19,7 +19,7 @@ function testFeature(name,test)
             test=false;
         }
     }
-    printf("testing %-40s - ", name);
+    printf("testing combo - %-52s - ", name);
     if(test)
         printf("passed\n")
     else

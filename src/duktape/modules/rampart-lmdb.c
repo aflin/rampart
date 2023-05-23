@@ -25,6 +25,7 @@ LMDB_ENV {
     int                         convtype;
     int                         maxdbs;
     MDB_env                     *env;
+    RPTHR_LOCK			*rp_lock;
     pthread_mutex_t             lock;
 };
 
@@ -39,15 +40,15 @@ LMDB_ENV {
 }while(0)
 
 pthread_mutex_t lmdblock;
+RPTHR_LOCK *rp_lmdblock;
 
+#define mdb_lock RP_MLOCK(rp_lmdblock)
 
-#define mdb_lock RP_MLOCK(&lmdblock)
+#define mdb_unlock RP_MUNLOCK(rp_lmdblock)
 
-#define mdb_unlock RP_MUNLOCK(&lmdblock)
+#define write_lock RP_MLOCK(lenv->rp_lock)
 
-#define write_lock RP_MLOCK(&(lenv->lock))
-
-#define write_unlock RP_MUNLOCK(&(lenv->lock))
+#define write_unlock RP_MUNLOCK(lenv->rp_lock)
 
 // conversion types
 #define RP_LMDB_BUFFER 0
@@ -68,7 +69,7 @@ static LMDB_ENV *redo_env(duk_context *ctx, LMDB_ENV *lenv) {
     if(mdb_env_create(&lenv->env))
     {
         lenv->env=NULL;
-        RP_THROW(ctx, "lmdb.init - failed to create environment");
+        RP_THROW(ctx, "lmdb.reinit - failed to create environment");
     }
 
     lenv->pid = getpid();
@@ -79,7 +80,7 @@ static LMDB_ENV *redo_env(duk_context *ctx, LMDB_ENV *lenv) {
     if((rc=mdb_env_open(lenv->env, lenv->dbpath, lenv->openflags|MDB_NOTLS, 0644)))
     {
         mdb_env_close(lenv->env);
-        RP_THROW(ctx, "lmdb.init - failed to open %s %s", lenv->dbpath, mdb_strerror(rc));
+        RP_THROW(ctx, "lmdb.reinit - failed to open %s %s", lenv->dbpath, mdb_strerror(rc));
     }
     lock_main_ctx;
     /* get the object with previously opened lmdb environments */
@@ -100,7 +101,7 @@ static LMDB_ENV *redo_env(duk_context *ctx, LMDB_ENV *lenv) {
     unlock_main_ctx;
 
     duk_push_pointer(ctx, (void *) lenv);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("lenv"));
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("lenv")); // into 'this'
 
     return lenv;
 }
@@ -124,14 +125,13 @@ static LMDB_ENV * get_env(duk_context *ctx)
 
     if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("lenv")))
     {
-        mdb_unlock;
+        //mdb_unlock;
         RP_THROW(ctx, "lmdb: database was previously closed");
     }
 
     mdb_lock;  //lock here!
 
     lenv = (LMDB_ENV *)duk_get_pointer(ctx, -1);
-
     duk_pop(ctx);
 
     if(!lenv)
@@ -147,7 +147,9 @@ static LMDB_ENV * get_env(duk_context *ctx)
     else
     {
         int rc;
+
         lenv = redo_env(ctx, lenv);
+        RP_PTINIT(&lenv->lock);
         /* must sync or some stuff done before a fork
            (like creating a db) may not be available
            to the child                               */
@@ -1114,15 +1116,20 @@ int rp_mkdir_parent(const char *path, mode_t mode);
 
 int duk_rp_lmdb_exitset = 0;
 
-MDB_env **all_env;
+//MDB_env **all_env;
+LMDB_ENV **all_env;
 
 static void free_all_env(void *arg)
 {
     int i=0;
-    MDB_env *env;
-    while( (env = all_env[i]) )
+    LMDB_ENV *lenv;
+    while( (lenv = all_env[i]) )
     {
-        mdb_env_close(env);
+        if(lenv->env)
+            mdb_env_close(lenv->env);
+        if(lenv->dbpath)
+            free(lenv->dbpath);
+        free(lenv);
         i++;
     }
     free(all_env);
@@ -1148,12 +1155,10 @@ duk_ret_t duk_rp_lmdb_cleanup(duk_context *ctx)
                     cannot free env when finalizers for transactions haven't run
                     and they won't be run until ctx is destroyed. So we need to
                     copy them out and free later.                                  */
-                REMALLOC(all_env, (n+1) * sizeof(MDB_env *));
-                all_env[n]=lenv->env;
+                REMALLOC(all_env, (n+1) * sizeof(LMDB_ENV *));
+                all_env[n]=lenv;
                 n++;
             }
-            free(lenv->dbpath);
-            free(lenv);
             duk_pop_2(ctx);
         }
         REMALLOC(all_env, (n+1) * sizeof(MDB_env *));
@@ -1385,8 +1390,10 @@ duk_ret_t duk_rp_lmdb_txn_commit_(duk_context *ctx)
     MDB_txn *txn = get_txn(ctx, -1);
 
     if(txn)
+    {
+        duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("txn"));
         clean_txn(ctx, txn, 1);
-
+    }
     return 0;
 }
 
@@ -2044,8 +2051,8 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
     LMDB_ENV *lenv = NULL;
     duk_idx_t obj_idx=-1, bool_idx=-1, str_idx = -1, i=0;
 
-    if(!main_ctx)
-        main_ctx=ctx;
+//    if(!main_ctx)
+//        main_ctx=ctx;//WTF -- Uh, no, no, no -- a thousand times no
 
     /* allow call to init() with "new Lmdb.init()" only */
     if (!duk_is_constructor_call(ctx))
@@ -2077,19 +2084,19 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
         if(duk_is_string(ctx, i))
         {
             if(str_idx > -1)
-                RP_THROW(ctx,"Lmdb.init - only one parameter can be a String");
+                RP_THROW(ctx,"Lmdb.init - only one argument can be a String");
             str_idx=i;
         }
         else if(duk_is_boolean(ctx, i))
         {
             if(bool_idx > -1)
-                RP_THROW(ctx,"Lmdb.init - only one parameter can be a Boolean");
+                RP_THROW(ctx,"Lmdb.init - only one argument can be a Boolean");
             bool_idx=i;
         }
         else if (duk_is_object(ctx, i) && !duk_is_array(ctx, i) && !duk_is_function(ctx, i))
         {
             if(obj_idx > -1)
-                RP_THROW(ctx,"Lmdb.init - only one parameter can be an Object");
+                RP_THROW(ctx,"Lmdb.init - only one argument can be an Object");
             obj_idx=i;
         }
     }
@@ -2097,7 +2104,7 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
     if(str_idx > -1)
         dbpath = duk_get_string(ctx, str_idx);
     else
-        RP_THROW(ctx, "new Lmdb.init() requires a string (database environment location) for one of its parameters" );
+        RP_THROW(ctx, "new Lmdb.init() requires a string (database environment location) for one of its arguments" );
 
     if (bool_idx>-1 && duk_get_boolean(ctx, 1) != 0)
     {
@@ -2174,7 +2181,7 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
     }
 
     // check if this db has been opened before
-    lock_main_ctx;
+    /*    lock_main_ctx;
     if(duk_get_global_string(main_ctx, DUK_HIDDEN_SYMBOL("lmdbenvs")))
     {
         duk_get_prop_string(main_ctx, -1, dbpath);
@@ -2183,6 +2190,15 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
     }
     duk_pop(main_ctx);
     unlock_main_ctx;
+    */
+    //  Check if this db has been opened before.
+    //  The hidden symbol should have been copied from main_ctx
+    if(duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("lmdbenvs")))
+    {
+        duk_get_prop_string(ctx, -1, dbpath);
+        lenv = duk_get_pointer(ctx, -1);//null if not found
+    }
+    duk_pop(ctx);
 
     duk_push_this(ctx);
     if(lenv)
@@ -2203,10 +2219,10 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
         lenv->convtype  = convtype;
         lenv->env       = NULL;
 
-        RP_MINIT(&lenv->lock);
+        lenv->rp_lock=RP_MINIT(&lenv->lock);
+        RPTHR_SET(lenv->rp_lock, RPTHR_LOCK_FLAG_JSFIN); //lock is unlocked in a finalizer
 
         lenv = redo_env(ctx, lenv);
-
         duk_push_pointer(ctx, (void *) lenv);
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("lenv"));
     }
@@ -2276,7 +2292,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     if(!isinit)
     {
-        RP_MINIT(&lmdblock);
+        rp_lmdblock=RP_MINIT(&lmdblock);
         isinit=1;
     }
 

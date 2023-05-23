@@ -9,6 +9,7 @@
 #include "core/module.h"
 #include "globals/printf.h"
 #include "rampart.h"
+#include "../include/version.h"
 
 /* allow JSON.parse to accept buffers */
 duk_ret_t duk_rp_json_parse(duk_context *ctx)
@@ -160,6 +161,69 @@ static void add_buffer_func(duk_context *ctx)
     duk_pop(ctx);
 }
 
+static duk_ret_t rp_eval_js(duk_context *ctx)
+{
+    char *source=NULL;
+    const char *bfn=NULL;
+
+    if(!duk_is_string(ctx,0))
+    {
+        duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("buildin_eval"));
+        duk_insert(ctx, 0);
+        duk_call(ctx, duk_get_top_index(ctx));
+        return 1;
+    }
+    
+    source=(char*)duk_get_string(ctx, 0);
+
+    struct timespec tsnow;
+    clock_gettime(CLOCK_REALTIME, &tsnow);
+
+    // get orig eval from DUK_HIDDEN_SYMBOL("buildin_eval")
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("buildin_eval"));
+
+    // main_babel_opt is non null if this script was previously babelized.
+    if ( !main_babel_opt || ! (bfn=duk_rp_babelize(ctx, "eval_code", source, tsnow.tv_sec, 1, main_babel_opt)) )
+    {
+        int err=0, lineno=0;
+        char *tickified = tickify(source, strlen(source), &err, &lineno);
+        if (err)
+        {
+            char *msg="";
+            switch (err) {
+                case ST_BT:
+                    msg="unterminated or illegal template literal"; break;
+                case ST_SQ:
+                    msg="unterminated string"; break;
+                case ST_DQ:
+                    msg="unterminated string"; break;
+                case ST_BS:
+                    msg="invalid escape"; break;
+            }
+            RP_THROW(ctx, "SyntaxError: %s (line %d of eval code)\n", msg, lineno);
+        }
+
+        duk_push_string(ctx, tickified);
+        free(tickified);
+    }
+
+    duk_call(ctx,1);
+    return 1;
+}
+
+static void fix_eval(duk_context *ctx)
+{
+    /* new eval code */
+    // save orig eval to DUK_HIDDEN_SYMBOL("buildin_eval") if not already there
+    if(!duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("buildin_eval")))
+    {
+        duk_get_global_string(ctx, "eval");
+        duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("buildin_eval"));
+    }
+    duk_pop(ctx);
+    duk_push_c_function(ctx, rp_eval_js, 1);
+    duk_put_global_string(ctx, "eval");
+}
 
 void duk_init_context(duk_context *ctx)
 {
@@ -193,7 +257,11 @@ void duk_init_context(duk_context *ctx)
     duk_import_init(ctx);                     /* register functions in rampart-import.c */
     duk_process_init(ctx);                    /* register process.* vars */
     duk_event_init(ctx);                      /* register functions in rampart-event.c */
+    duk_thread_init(ctx);                     /* register functions in rampart-thread.c */
+    duk_rp_push_rampart_version(ctx);         /* rampart version info */
     fix_json_parse(ctx);
+    fix_eval(ctx);
     add_object_values(ctx);
     add_buffer_func(ctx);
+
 }

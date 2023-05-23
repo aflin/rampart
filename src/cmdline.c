@@ -49,10 +49,10 @@ int RP_TX_isforked=0;  //set to one in fork so we know not to lock sql db;
 int totnthreads=0;
 char *RP_script_path=NULL;
 char *RP_script=NULL;
-duk_context **thread_ctx = NULL;
+//duk_context **thread_ctx = NULL;
 //__thread int local_thread_number=0;
 duk_context *main_ctx;
-struct event_base *elbase;
+
 struct event_base **thread_base=NULL;
 
 struct evdns_base **thread_dnsbase=NULL;
@@ -71,10 +71,11 @@ int nthread_dnsbase=0;
 
 /* mutex for locking main_ctx when in a thread with other duk stacks open */
 pthread_mutex_t ctxlock;
+RPTHR_LOCK *rp_ctxlock;
 
 /* mutex for locking around slist operations on the timeout structures*/
 pthread_mutex_t slistlock;
-
+RPTHR_LOCK *rp_slistlock;
 
 #define RP_REPL_GREETING             \
     "         |>>            |>>\n"     \
@@ -343,6 +344,7 @@ EXIT_FUNC {
 };
 
 EXIT_FUNC **exit_funcs = NULL;
+EXIT_FUNC **b4loop_funcs = NULL;
 
 pthread_mutex_t exlock;
 
@@ -352,7 +354,7 @@ void add_exit_func(rp_vfunc func, void *arg)
 {
     int n=0;
     EXIT_FUNC *ef;
-RP_MLOCK(&exlock);
+    RP_PTLOCK(&exlock);
     if(exit_funcs)
     {
         /* count number of funcs */
@@ -369,10 +371,37 @@ RP_MLOCK(&exlock);
     REMALLOC(exit_funcs, n * sizeof (EXIT_FUNC *));
     ef->func = func;
     ef->arg=arg;
-//ef->nl=nl;
+    //ef->nl=nl;
     exit_funcs[n-2]=ef;
     exit_funcs[n-1]=NULL;
-RP_MUNLOCK(&exlock);
+    RP_PTUNLOCK(&exlock);
+}
+
+void add_b4loop_func(rp_vfunc func, void *arg)
+{
+    int n=0;
+    EXIT_FUNC *ef;
+    RP_PTLOCK(&exlock);
+    if(b4loop_funcs)
+    {
+        /* count number of funcs */
+        while( (ef=b4loop_funcs[n++]) );
+
+        n++;
+    }
+    else
+        n=2;
+
+    ef=NULL;
+
+    REMALLOC(ef, sizeof(EXIT_FUNC));
+    REMALLOC(b4loop_funcs, n * sizeof (EXIT_FUNC *));
+    ef->func = func;
+    ef->arg=arg;
+    //ef->nl=nl;
+    b4loop_funcs[n-2]=ef;
+    b4loop_funcs[n-1]=NULL;
+    RP_PTUNLOCK(&exlock);
 }
 
 //lock is probably not necessary now
@@ -410,6 +439,7 @@ void duk_rp_exit(duk_context *ctx, int ec)
     duk_push_global_stash(ctx);
     duk_get_prop_string(ctx, -1, "exitfuncs");
     len=duk_get_length(ctx, -1);
+
     for(;i<len;i++)
     {
         duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
@@ -421,17 +451,6 @@ void duk_rp_exit(duk_context *ctx, int ec)
     free(RP_script_path);
     free(RP_script);
 
-    /* need to stop the threads before doing this
-    if(totnthreads)
-    {
-        for (i=0; i<totnthreads*2; i++)
-        {
-            duk_context *tctx = thread_ctx[i];
-            duk_destroy_heap(tctx);
-        }
-        free(thread_ctx);
-    }
-    */
     //for lmdb. TODO: make this a generic array of function pointers if/when others need it.
     if(exit_funcs)
     {
@@ -440,7 +459,6 @@ void duk_rp_exit(duk_context *ctx, int ec)
 
         while( (ef=exit_funcs[n++]) )
         {
-//printf("--%d-- running callback set at %s\n", (int)getpid(), ef->nl);
             (ef->func)(ef->arg);
             free(ef);
         }
@@ -449,6 +467,24 @@ void duk_rp_exit(duk_context *ctx, int ec)
 
     exit(ec);
 }
+
+void run_b4loop_funcs()
+{
+    if(b4loop_funcs)
+    {
+        EXIT_FUNC *ef;
+        int n=0;
+
+        while( (ef=b4loop_funcs[n++]) )
+        {
+            (ef->func)(ef->arg);
+            free(ef);
+        }
+        free(b4loop_funcs);
+    }
+
+}
+
 
 char * tickify(char *src, size_t sz, int *err, int *ln);
 
@@ -630,12 +666,12 @@ static char *checkbabel(char *src)
     return NULL;
 }
 
+char *main_babel_opt=NULL;
 
 /* babelized source is left on top of stack*/
-const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime, int exclude_strict)
+const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime, int exclude_strict, char *opt)
 {
     char *s, *babelcode=NULL;
-    char *opt;
     struct stat babstat;
     char babelsrc[strlen(fn)+10];
     FILE *f;
@@ -647,8 +683,14 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     RPPATH rppath;
 
     babelsrc[0]='\0';
-    opt=checkbabel(src);
-    if(!opt) return NULL;
+
+    if(!opt)
+    {
+        opt=checkbabel(src);
+        if(!opt) return NULL;
+    }
+
+    main_babel_opt=opt;
 
     /* check if polyfill is already loaded */
     duk_eval_string(ctx,"global._babelPolyfill");
@@ -754,6 +796,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
 
     /* call the polyfill */
     callpoly:
+
     if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
     {
         fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
@@ -764,7 +807,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     duk_pop(ctx);
 
     transpile:
-    if(strcmp("stdin",fn) != 0 )
+    if(strcmp("stdin",fn) != 0  && strcmp("eval_code",fn) != 0)
     {
         /* file.js => file.babel.js */
         /* skip the first char in case of "./file" */
@@ -821,7 +864,6 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
         }
     }
     /* file.babel.js does not exist */
-
     /* load babel.min.js as a module and convert file.js */
     duk_push_sprintf(ctx, "function(input){var b=require('babel');return b.transform(input, %s ).code;}", opt);
     duk_push_string(ctx,fn);
@@ -837,7 +879,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
         duk_rp_exit(ctx, 1);
     }
     babelcode=(char *)duk_get_lstring(ctx,-1,&bsz);
-    if(strcmp("stdin",fn) != 0 )
+    if(strcmp("stdin",fn) != 0  && strcmp("eval_code",fn) != 0)
     {
         f=fopen(babelsrc,"w");
         if(f==NULL)
@@ -860,6 +902,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
             fclose(f);
         }
     }
+
     if(exclude_strict)
     {
         duk_push_string(ctx, babelcode+13);
@@ -867,7 +910,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     }
 
     end:
-    free(opt);
+    //free(opt);
     return (const char*) (strlen(babelsrc)) ? strdup(babelsrc): strdup(fn);
 }
 
@@ -884,8 +927,11 @@ static void free_tos (void *arg)
     {
         e = SLIST_FIRST(&tohead);
         SLIST_REMOVE_HEAD(&tohead, entries);
-        event_del(e->e);
-        event_free(e->e);
+        if(RPTHR_TEST(get_current_thread(), RPTHR_FLAG_BASE))
+        {
+            event_del(e->e);
+            event_free(e->e);
+        }
         free(e);
     }
     SLISTUNLOCK;
@@ -931,6 +977,7 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
     double key= evargs->key;
     duk_idx_t nargs = 0, func_idx;
     int cbret=1, do_js_cb=0;
+    const char *fname = "setTimeout/setInterval";
 
     duk_set_top(ctx, 0);
 
@@ -949,9 +996,11 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
     if(!cbret) //if return 0, skip js callback and second c callback
         goto to_doevent_end;
 
+
     // the JS callback function
     duk_push_number(ctx, evargs->key);
     duk_get_prop(ctx, -2);
+
 
     if(duk_is_function(ctx, -1))
     {
@@ -981,19 +1030,25 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
     {
         if(duk_pcall(ctx, nargs) != 0)
         {
+            // the function name
+            duk_push_number(ctx, evargs->key +0.3);
+            duk_get_prop(ctx, 1);
+            fname=duk_get_string_default(ctx, -1, fname);
+            duk_pop(ctx);
+
             if (duk_is_error(ctx, -1) )
             {
                 duk_get_prop_string(ctx, -1, "stack");
-                fprintf(stderr, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
+                fprintf(stderr, "Error in %s callback: %s\n", fname, duk_get_string(ctx, -1));
                 duk_pop(ctx);
             }
             else if (duk_is_string(ctx, -1))
             {
-                fprintf(stderr, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
+                fprintf(stderr, "Error in %s callback: %s\n", fname, duk_get_string(ctx, -1));
             }
             else
             {
-                fprintf(stderr, "Error in setTimeout/setInterval callback\n");
+                fprintf(stderr, "Error in %s callback\n", fname);
             }
         }
     }
@@ -1004,19 +1059,24 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
 
         if(duk_pcall_method(ctx, nargs) != 0)
         {
+            // the function name
+            duk_push_number(ctx, evargs->key +0.3);
+            duk_get_prop(ctx, 1);
+            fname=duk_get_string_default(ctx, -1, fname);
+            duk_pop(ctx);
             if (duk_is_error(ctx, -1) )
             {
                 duk_get_prop_string(ctx, -1, "stack");
-                fprintf(stderr, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
+                fprintf(stderr, "Error in %s callback: %s\n", fname, duk_get_string(ctx, -1));
                 duk_pop(ctx);
             }
             else if (duk_is_string(ctx, -1))
             {
-                fprintf(stderr, "Error in setTimeout/setInterval callback: %s\n", duk_get_string(ctx, -1));
+                fprintf(stderr, "Error in %s callback: %s\n", fname, duk_get_string(ctx, -1));
             }
             else
             {
-                fprintf(stderr, "Error in setTimeout/setInterval callback\n");
+                fprintf(stderr, "Error in %s callback\n", fname);
             }
         }
     }
@@ -1051,6 +1111,8 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
         duk_push_number(ctx, key);
         duk_del_prop(ctx, -2);
         duk_push_number(ctx, key+0.2);
+        duk_del_prop(ctx, -2);
+        duk_push_number(ctx, key+0.3);
         duk_del_prop(ctx, -2);
         free(evargs);
     }
@@ -1127,23 +1189,25 @@ volatile uint32_t ev_id=0;
 duk_ret_t duk_rp_insert_timeout(duk_context *ctx, int repeat, const char *fname, timeout_callback *cb, void *arg,
         duk_idx_t func_idx, duk_idx_t arg_start_idx, double to)
 {
-    struct event_base *base=NULL;
     EVARGS *evargs=NULL;
     duk_idx_t top=duk_get_top(ctx);
+    RPTHR *thr=NULL;
 
     if(func_idx != DUK_INVALID_INDEX)
     {
         func_idx = duk_normalize_index(ctx, func_idx);
-        REQUIRE_FUNCTION(ctx, func_idx, "%s(): Callback must be a function", fname);
+        REQUIRE_FUNCTION(ctx, func_idx, "%s(): Callback must be a function", fname ? fname : "setTimeout/setInterval");
     }
-    /* if we are threaded, base will not be global struct event_base *elbase */
-    duk_push_global_stash(ctx);
-    if( duk_get_prop_string(ctx, -1, "elbase") )
-        base=duk_get_pointer(ctx, -1);
-    duk_pop_2(ctx);
 
-    if(!base)
-        RP_THROW(ctx, "event base not fount in global stash");
+    if(arg_start_idx != DUK_INVALID_INDEX)
+    {
+        arg_start_idx = duk_normalize_index(ctx, arg_start_idx);
+    }
+
+    thr=get_current_thread();
+
+    if(!thr->base)
+        RP_THROW(ctx, "event base not found.");
 
     /* set up struct to be passed to callback */
     REMALLOC(evargs,sizeof(EVARGS));
@@ -1195,10 +1259,15 @@ duk_ret_t duk_rp_insert_timeout(duk_context *ctx, int repeat, const char *fname,
         duk_put_prop(ctx, -3);
     }
 
+    //the function name
+    duk_push_number(ctx, evargs->key + 0.3);
+    duk_push_string(ctx, fname);
+    duk_put_prop(ctx, -3);
+
     duk_pop_2(ctx); //ev_callback_object and global stash
 
     /* create a new event for js callback and specify the c callback to handle it*/
-    evargs->e = event_new(base, -1, EV_PERSIST, rp_el_doevent, evargs);
+    evargs->e = event_new(thr->base, -1, EV_PERSIST, rp_el_doevent, evargs);
 
     /* add event; return object { hidden(eventargs): evargs_pointer, eventId: evargs->key} */
     event_add(evargs->e, &evargs->timeout);
@@ -2048,23 +2117,37 @@ static void evhandler(int sig, short events, void *base)
     signal(SIGTERM, sigint_handler);
 }
 
+RPTHR *mainthr=NULL;
 char **rampart_argv;
 int   rampart_argc;
 char argv0[PATH_MAX];
 char rampart_exec[PATH_MAX];
 char rampart_dir[PATH_MAX];
 char rampart_bin[PATH_MAX];
+int base_loop_exited=0;
+
+/* mutex for locking in rampart.thread */
+pthread_mutex_t thr_lock;
+RPTHR_LOCK *rp_thr_lock;
 
 int main(int argc, char *argv[])
 {
     struct rlimit rlp;
     int filelimit = 16384, lflimit = filelimit, isstdin=0, len, dirlen;
-    char *ptr;
+    char *ptr, *cmdline_src=NULL;
     struct stat entry_file_stat;
 
-    SLIST_INIT(&tohead);
+    /* do this first */
+    rp_thread_preinit();
+    evthread_use_pthreads();
 
-    RP_MINIT(&exlock);
+    SLIST_INIT(&tohead); //timeout list
+
+    // must be init before new thread created below
+    rp_thr_lock = RP_MINIT(&thr_lock);
+
+    RP_PTINIT(&exlock);
+
 
     /* for later use */
     rampart_argv=argv;
@@ -2107,18 +2190,8 @@ int main(int argc, char *argv[])
     add_exit_func(free_tos, NULL);
 
     /* initialze some locks */
-    if (pthread_mutex_init(&ctxlock, NULL) == EINVAL)
-    {
-        fprintf(stderr, "Error: could not initialize context lock\n");
-        exit(1);
-    }
-    if (pthread_mutex_init(&slistlock, NULL) == EINVAL)
-    {
-        fprintf(stderr, "Error: could not initialize slist lock\n");
-        exit(1);
-    }
-
-
+    rp_ctxlock=RP_MINIT(&ctxlock);
+    rp_slistlock = RP_MINIT(&slistlock);
 
     /* get script path */
     if(rampart_argc>1)
@@ -2185,12 +2258,15 @@ int main(int argc, char *argv[])
         } while (lflimit > filelimit + 1);
     }
 
-    duk_context *ctx = duk_create_heap(NULL, NULL, NULL, NULL, duk_rp_fatal);
-    if (!ctx)
+    mainthr=rp_new_thread(RPTHR_FLAG_THR_SAFE, NULL);
+    if (!mainthr)
     {
         fprintf(stderr,"could not create duktape context\n");
         return 1;
     }
+    duk_context *ctx = mainthr->ctx;
+    main_ctx = ctx; //global var
+    mainthr->self=pthread_self(); //not really necessary, but better set than uninitialized garbage
 
     /* for cleanup, an array of functions */
     duk_push_global_stash(ctx);
@@ -2198,13 +2274,7 @@ int main(int argc, char *argv[])
     duk_put_prop_string(ctx, -2, "exitfuncs");
     duk_pop(ctx);
 
-
-    duk_init_context(ctx);
-    main_ctx = ctx;
-
-    //version.c
-    duk_rp_push_rampart_version(ctx);
-
+    /* some control over our exit */
     signal(SIGINT, sigint_handler);
     signal(SIGTERM, sigint_handler);
 
@@ -2216,6 +2286,14 @@ int main(int argc, char *argv[])
     /* skip past process name */
     argc--;
     argv++;
+
+    /* first check if we have -c "script_src" */
+    if(argc>1 && strcmp(argv[0],"-c")==0)
+    {
+        cmdline_src=argv[1];
+        argc-=2;
+        argv+=2;
+    }
 
     /* check if filename is first, for #! script */
     if(argc>0 && (stat(argv[0], &entry_file_stat)))
@@ -2235,6 +2313,12 @@ int main(int argc, char *argv[])
         struct evdns_base *dnsbase=NULL;
 
 
+        if(cmdline_src)
+        {
+            file_src=strdup(cmdline_src);
+            fn="command_line_script";
+            goto have_src;
+        }
         if (argc == 0)
         {
             if(!isatty(fileno(stdin)))
@@ -2244,8 +2328,9 @@ int main(int argc, char *argv[])
             }
 
             // event loop doesn't work with interactive at the moment.
-            duk_get_global_string(ctx,"rampart");
+            duk_get_global_string(ctx, "rampart");
             duk_del_prop_string(ctx, -1, "event");
+            duk_del_prop_string(ctx, -1, "thread");
             duk_pop(ctx);
 
             int ret = repl(ctx);
@@ -2262,6 +2347,7 @@ int main(int argc, char *argv[])
                 size_t read=0;
 
                 fn="stdin";
+                /*
                 REMALLOC(file_src,1024);
                 while( (read=fread(file_src+src_sz, 1, 1024, stdin)) > 0 )
                 {
@@ -2270,6 +2356,8 @@ int main(int argc, char *argv[])
                         break;
                     REMALLOC(file_src,src_sz+1024);
                 }
+                */
+                read=getdelim(&file_src, &read, '\0', stdin);
             }
             else
             {
@@ -2304,8 +2392,9 @@ int main(int argc, char *argv[])
                 fn=argv[0];
                 fclose(entry_file);
             }
-            free_file_src=file_src;
+            have_src:
             file_src[src_sz-1]='\0';
+            free_file_src=file_src;
 
             /* skip over #!/path/to/rampart */
             if(*file_src=='#')
@@ -2345,18 +2434,12 @@ int main(int argc, char *argv[])
             duk_put_prop_string(ctx, -2, "ev_callback_object");
             duk_pop(ctx);//global stash
 
-            /* set up event base */
-            evthread_use_pthreads();
-            elbase = event_base_new();
-
-            /* stash our event base for this ctx */
-            duk_push_global_stash(ctx);
-            duk_push_pointer(ctx, (void*)elbase);
-            duk_put_prop_string(ctx, -2, "elbase");
-            duk_pop(ctx);
+            /* set up main event base */
+            mainthr->base = event_base_new();
+            RPTHR_SET(mainthr, RPTHR_FLAG_BASE);
 
             /* push babelized source to stack if available */
-            if (! (babel_source_filename=duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime, 0)) )
+            if (! (babel_source_filename=duk_rp_babelize(ctx, fn, file_src, entry_file_stat.st_mtime, 0, NULL)) )
             {
                 /* No babel, normal compile */
                 int err, lineno;
@@ -2402,10 +2485,10 @@ int main(int argc, char *argv[])
             /*  add dns base for rampart-net
              *  if added before event loop starts, it won't block exit
              */
-            dnsbase = evdns_base_new(elbase,
+            dnsbase = evdns_base_new(mainthr->base,
                 EVDNS_BASE_DISABLE_WHEN_INACTIVE);
             if(!dnsbase)
-                RP_THROW(ctx, "rampart-net - error creating dnsbase");
+                RP_THROW(ctx, "rampart - error creating dnsbase");
 
             /* for unknown reasons, setting EVDNS_BASE_INITIALIZE_NAMESERVERS
                above results in dnsbase not exiting when event loop is otherwise empty */
@@ -2431,7 +2514,7 @@ int main(int argc, char *argv[])
                 fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
                 duk_rp_exit(ctx, 1);
             }
-            if (!elbase)
+            if (!mainthr->base)
             {
                 fprintf(stderr,"Eventloop error: could not initialize event base\n");
                 duk_rp_exit(ctx, 1);
@@ -2440,14 +2523,32 @@ int main(int argc, char *argv[])
             /* sigint for libevent2: insert a one time event to register a sigint handler *
              * libeven2 otherwise erases our SIGINT and SIGTERM event handler set above   */
             struct event ev_sig;
-            event_assign(&ev_sig, elbase, -1,  0, evhandler, NULL);
+            event_assign(&ev_sig, mainthr->base, -1,  0, evhandler, NULL);
             struct timeval to={0};
             event_add(&ev_sig, &to);
 
+            /* run things that need to be run before the loop starts */
+            run_b4loop_funcs();
+
             /* start event loop */
-            event_base_loop(elbase, 0);
+            int sent_finalizers=0;
+            do {
+                sent_finalizers=0;
+                //printf("ENTER main loop\n");
+                event_base_loop(mainthr->base, 0);
+                // at this point, if children have no active events, they aint gonna get any
+                // as main thread is done with all it's events
+                sent_finalizers = rp_thread_close_children();
+                //printf("END OF LOOP %d children\n", mainthr->nchildren);
+                //printf("EXIT main loop with %d children and %s finalizers set\n", mainthr->nchildren, (sent_finalizers?"some":"no"));
+                usleep(50000);
+                // we restart the main loop in case children insert an event before they are done
+            } while (mainthr->nchildren || sent_finalizers);
+            //printf("END MAIN LOOP FOR GOOD\n");
         }
     }
+
     duk_rp_exit(ctx, 0);
+
     return 0;
 }

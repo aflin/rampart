@@ -392,7 +392,7 @@ seekNextDelimiter(CSV *csv,byte *s)
 /*
 *  shifts the characters of a string by one to the left
 */
-
+/* unused
 static void
 leftShiftChars(byte *s)
 {
@@ -402,7 +402,7 @@ leftShiftChars(byte *s)
       ++s;
    }
 }
-
+*/
 /*
 *  Count the rows and columns and allocate the items
 *  Return the True if ok, False if not.

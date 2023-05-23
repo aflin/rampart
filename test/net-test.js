@@ -6,7 +6,7 @@ var net = require("rampart-net");
 function testFeature(name,test)
 {
     var error=false;
-    printf("testing %-40s - ", name);
+    printf("testing net - %-54s - ", name);
     fflush(stdout);
     if (typeof test =='function'){
         try {

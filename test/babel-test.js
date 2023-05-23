@@ -1,4 +1,4 @@
-#!./rp
+#!/usr/bin/env rampart
 /* "use babel" must be on the first line after comments and  any optional #! above, with no spaces or tabs preceeding it */
 /* "use babel" == "use babel:{ presets: ['env'],retainLines:true }" */ 
 "use babel:{ presets: ['env'],retainLines:true }"
@@ -20,7 +20,7 @@ function testFeature(name,test)
             test=false;
         }
     }
-    printf("testing %-40s - ", name);
+    printf("testing babel - %-52s - ", name);
     if(test)
         printf("passed\n")
     else
@@ -93,6 +93,11 @@ testFeature("default parameters",
     f(1) === 50
 );
 
+var obj2,x1 = 1,y1 = 1;
+testFeature("transpile eval code", function () {
+  eval("obj2={ x1, y1 }");
+  return obj2.x1 && obj2.y1;
+});
 
 function f2 (x, y, ...a) {
     return (x + y) * a.length;

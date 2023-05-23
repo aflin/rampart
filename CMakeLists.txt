@@ -4,11 +4,25 @@ project(Rampart VERSION 0.1.3 LANGUAGES C CXX)
 
 #set(CMAKE_BUILD_TYPE Debug)
 
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+
+## to build a macos universal, run:
+#   cmake -DMACOS_UNIVERSAL=1 ../
+
 if (MACOS_UNIVERSAL)
 	message("Making MacOs Universal Binary Build")
 	SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch x86_64 -mmacosx-version-min=10.13 -arch arm64")
 	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -arch x86_64 -mmacosx-version-min=10.13 -arch arm64")
+else(MACOS_UNIVERSAL)
+	execute_process(COMMAND bash -c "sw_vers -productVersion | sed 's/\\.[[:digit:]]/.0/'" OUTPUT_VARIABLE MVER)
+	string(STRIP "${MVER}" MVER)
+	SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mmacosx-version-min=${MVER}")
+	SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mmacosx-version-min=${MVER}")
+	message("set macos min version to ${MVER}")
 endif (MACOS_UNIVERSAL)
+
+endif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
 message("###### CONFIGURING DEPENDENCIES ######")
 

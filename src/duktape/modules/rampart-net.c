@@ -201,34 +201,17 @@ static RPSOCK * new_sockinfo(duk_context *ctx)
 {
     RPSOCK *args = NULL;
     char keystr[16];
-    struct event_base *base=NULL;
-    struct evdns_base *dnsbase=NULL;
+    RPTHR *thr = get_current_thread();
     void *thisptr=NULL;
 
     duk_push_this(ctx);
     thisptr = duk_get_heapptr(ctx, -1);
 
-    /* if we are threaded, base will not be global struct event_base *elbase */
-    duk_push_global_stash(ctx);
-
-    if( duk_get_prop_string(ctx, -1, "elbase") )
-        base=duk_get_pointer(ctx, -1);
-    else
-        RP_THROW(ctx, "rampart-net - no libevent base found");
-    duk_pop(ctx);
-
-    /* get dnsbase, should always be there*/
-    if( duk_get_prop_string(ctx, -1, "dns_elbase") )
-    {
-        dnsbase=duk_get_pointer(ctx, -1);
-    }
-    duk_pop_2(ctx); //dnsbase|undefined, global stash
-
     REMALLOC(args, sizeof(RPSOCK));
     args->ctx=ctx;
     args->thisptr=thisptr;
-    args->base = base;
-    args->dnsbase = dnsbase;
+    args->base = thr->base;
+    args->dnsbase = thr->dnsbase;
     args->written=0;
     args->read=0;
     args->open_conn=0;

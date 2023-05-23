@@ -17,7 +17,7 @@ var dbi;  // the db handle
 function testFeature(name,test)
 {
     var error=false;
-    printf("testing %-40s - ", name);
+    printf("testing server/lmdb - %-46s - ", name);
     fflush(stdout);
     if (typeof test =='function'){
         try {

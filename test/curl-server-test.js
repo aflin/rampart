@@ -14,8 +14,9 @@ var curl=require("rampart-curl");
 */
 var Sql=require("rampart-sql");
 
-var sql= new Sql.init(process.scriptPath+"/testdb",true); /* true means create the database if it doesn't exist *
+var sql= new Sql.init(process.scriptPath+"/testdb",true); /* true means create the database if it doesn't exist */
 
+var pid=0;
 /* ******************************************************
     Setup of tables for server callback function tests 
 ********************************************************* */
@@ -39,13 +40,14 @@ function testFeature(name,test)
             test=false;
         }
     }
-    printf("testing %-40s - ", name);
+    printf("testing curl/serv - %-48s - ", name);
     if(test)
         printf("passed\n")
     else
     {
         printf(">>>>> FAILED <<<<<\n");
         if(error) console.log(error);
+        kill(pid,15);        
         process.exit(1);
     }
     if(error) console.log(error);
@@ -100,7 +102,18 @@ if(!stat("smods"))
         "module.exports=function(res){return {text:'test'} }\n");
 }
 
-var pid=server.start(
+var globalvar1={};
+globalvar1.x=99;
+globalvar1.myself = globalvar1;
+
+function globalfunc(req) {
+    if(globalvar1.x == 99 && globalvar1.myself.myself.x == 99)
+        return {text:'ok'};
+
+    return {text: 'fail'};
+}
+
+pid=server.start(
 {
     bind: "127.0.0.1:8087",
     developerMode: true,
@@ -111,7 +124,9 @@ var pid=server.start(
     connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
     useThreads: true, /* make server multi-threaded. */
     daemon: true,
-
+    log: true,
+    accessLog: './alog',
+    errorLog:  './elog',
     secure:true,
     sslKeyFile:  key,
     sslCertFile: cert,
@@ -139,6 +154,7 @@ var pid=server.start(
              "./mPurpose" becomes  "./mPurpose/"
         */
         "/":                "./",
+        '/global':          globalfunc,
         "/sample":          function(req){return "test";},
         "/modtest/":	    {modulePath:"./smods/"},
         "/timeout":         function(){
@@ -171,6 +187,14 @@ testFeature("curl https request localhost --insecure", function() {
     if (res.errMsg.length && res2.text == "test")
         return true;
     console.log(res.errMsg,res2.errMsg);
+    return false;
+});
+
+testFeature("server, global func and copy self ref object", function() {
+    var res=curl.fetch({insecure:true},"https://localhost:8087/global");
+    if (res.text == "ok")
+        return true;
+    console.log(res.text);
     return false;
 });
 

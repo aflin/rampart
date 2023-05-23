@@ -14,7 +14,7 @@ function testFeature(name,test)
             test=false;
         }
     }
-    printf("testing %-40s - ", name);
+    printf("testing utils - %-52s - ", name);
     if(test)
         printf("passed\n")
     else
@@ -27,13 +27,13 @@ function testFeature(name,test)
 }
 
 
-printf("testing %-40s - ", "printf");
+printf("testing utils - %-52s - ", "printf");
 printf("passed\n");
 
-fprintf(stdout,"testing %-40s - ", "fprintf(stdout,...)");
+fprintf(stdout,"testing utils - %-52s - ", "fprintf(stdout,...)");
 fprintf(stdout,"passed\n");
 
-fprintf(stderr,"testing %-40s - ", "fprintf(stderr,...)");
+fprintf(stderr,"testing utils - %-52s - ", "fprintf(stderr,...)");
 fprintf(stderr,"passed\n");
 
 

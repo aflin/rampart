@@ -65,7 +65,7 @@ static duk_ret_t load_js_module(duk_context *ctx)
     duk_push_string(ctx, "(function (module, exports) { ");
 
     /* check for babel and push src to stack */
-    if (! (bfn=duk_rp_babelize(ctx, (char *)id, buffer, sb.st_mtime, 0)) )
+    if (! (bfn=duk_rp_babelize(ctx, (char *)id, buffer, sb.st_mtime, 0, NULL)) )
     {
         /* No babel, normal compile */
         int err, lineno;
@@ -137,7 +137,7 @@ static duk_ret_t load_so_module(duk_context *ctx)
     const char *file = duk_require_string(ctx, -3);
     duk_idx_t module_idx = duk_normalize_index(ctx, -1);
     pthread_mutex_lock(&modlock);
-    void *lib = dlopen(file, RTLD_NOW);
+    void *lib = dlopen(file, RTLD_GLOBAL|RTLD_NOW); // --RTLD_GLOBAL is necessary for python to load .so modules properly
     if (lib == NULL)
     {
         /* rampart-crypto is required by other moduels

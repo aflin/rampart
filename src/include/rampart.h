@@ -19,9 +19,10 @@ extern "C"
 {
 #endif
 
-/* macros to help with require_* and throwing errors with
+/* *******************************************************
+   macros to help with require_* and throwing errors with
    a stack trace.
-*/
+   ******************************************************* */
 
 #define RP_THROW(ctx,...) do {\
     duk_push_error_object(ctx, DUK_ERR_ERROR, __VA_ARGS__);\
@@ -102,6 +103,20 @@ extern "C"
     }\
 })
 
+#define REQUIRE_PLAIN_OBJECT(ctx,idx,...) ({\
+    duk_idx_t __rp_i=(idx);\
+    if(!duk_is_object((ctx),__rp_i) && !duk_is_array((ctx),__rp_i) && !duk_is_function((ctx),__rp_i) ) {\
+        RP_THROW((ctx), __VA_ARGS__ );\
+    }\
+})
+
+#define REQUIRE_ARRAY(ctx,idx,...) ({\
+    duk_idx_t __rp_i=(idx);\
+    if(!duk_is_array((ctx),__rp_i)) {\
+        RP_THROW((ctx), __VA_ARGS__ );\
+    }\
+})
+
 #define REQUIRE_BUFFER_DATA(ctx,idx,sz,...) ({\
     duk_idx_t __rp_i=(idx);\
     if(!duk_is_buffer_data((ctx),__rp_i)) {\
@@ -135,7 +150,13 @@ extern "C"
     r;\
 })
 
-/* debugging macros */
+// macro to empty stack
+//#define RP_EMPTY_STACK_TO(rpctx, __rp_min) while (duk_get_top((rpctx)) > (__rp_min)) duk_pop((rpctx))
+//#define RP_EMPTY_STACK(rpctx) RP_EMPTY_STACK_TO((rpctx),0)
+#define RP_EMPTY_STACK(rpctx) duk_set_top((rpctx),0)
+
+
+/* ***************debugging macros ***************** */
 #define printstack(ctx)                           \
     do                                            \
     {                                             \
@@ -167,6 +188,22 @@ extern "C"
         duk_call_prop((ctx), -5, 3);                \
         printf("%s\n", duk_to_string((ctx), -1));   \
         duk_pop_2((ctx));                           \
+    } while (0)
+
+//when stack contains cyclic objects
+#define safeprintstack(ctx)                           \
+    do {                                              \
+        duk_idx_t i=0, top=duk_get_top(ctx);          \
+        char *s;                                      \
+        printf("ctx: top=%d, stack={\n", (int)top);    \
+        while (i<top) {                               \
+            if(i) printf(",\n");                      \
+            s=str_rp_to_json_safe(ctx, i, NULL);      \
+            printf("   %d: %s", (int)i, s);           \
+            free(s);                                  \
+            i++;                                      \
+        }                                             \
+        printf("\n}\n");                              \
     } while (0)
 
 #define printenum(ctx, idx)                                                                                          \
@@ -216,50 +253,206 @@ extern "C"
         }                                                                                \
     } while (0)
 
+/*********** globals for convenience *******/
+extern char **rampart_argv;                  // same as argv
+extern int   rampart_argc;                   // same as argc
+extern char argv0[PATH_MAX];                 // in rampart-server argv[0] is changed.  Original is saved here.
+extern char rampart_exec[PATH_MAX];          // the full path to the executable
+extern char rampart_dir[PATH_MAX];           // the base directory
+extern char rampart_bin[PATH_MAX];           // the base directory - with /bin if executable is in bin
+extern char modules_dir[PATH_MAX];           // where modules live
+extern duk_context *main_ctx;                // the context if/when single threaded
+extern struct event_base **thread_base;      // each thread (or pair or ctxs) gets an event loop
+extern int totnthreads;                      // when threading in server - number of ctx contexts
+extern struct evdns_base **thread_dnsbase;   // list of dns resolvers in event loops
+extern int nthread_dnsbase;                  // number of above
 
-extern char **rampart_argv;                 // same as argv
-extern int   rampart_argc;                  // same as argc
-extern char argv0[PATH_MAX];                // in rampart-server argv[0] is changed.  Original is saved here.
-extern char rampart_exec[PATH_MAX];         // the full path to the executable
-extern char rampart_dir[PATH_MAX];          // the base directory
-extern char rampart_bin[PATH_MAX];          // the base directory - with /bin if executable is in bin
-extern duk_context *main_ctx;               // the context if/when single threaded
-extern duk_context **thread_ctx;            // array of ctxs for server, 2 per thread (http and ws)
-extern __thread int local_thread_number;    // thread number inside thread
-extern struct event_base *elbase;           // the main event base for the main event loop
-extern struct event_base **thread_base;     // each thread (or pair or ctxs) gets an event loop
-extern int totnthreads;                     // when threading in server - number of ctx contexts
-extern struct evdns_base **thread_dnsbase;  // list of dns resolvers in event loops
-extern int nthread_dnsbase;                 // number of above
+/*************  Rampart threads ************/
 
+#ifdef __APPLE__
+
+typedef uint64_t rp_tid;
+#define rp_gettid() ({\
+    uint64_t  tid;\
+    if(pthread_threadid_np(NULL, &tid))\
+        tid=0;\
+    (rp_tid)tid;\
+})
+
+#else
+
+//linux
+typedef pid_t rp_tid;
+#define rp_gettid() (rp_tid) syscall(SYS_gettid)
+
+#endif
+
+typedef void (*rpthr_fin_cb)(void *fin_cb_arg);
+
+/******************** THREAD AND LOCK RELATED *********************/
+#define RPTHR struct rampart_thread_s
+
+RPTHR {
+    duk_context       *ctx;         // js context paired with this thread.  One of the two below.
+    duk_context       *wsctx;       // only for server threads and websocket requests
+    duk_context       *htctx;       // only for server threads and NON-websocket requests
+    struct event_base *base;        // libevent base for event loop
+    struct evdns_base *dnsbase;     // libevent base for event loop
+    void             **fin_cb_arg;  // user data array for finalizer callback
+    rpthr_fin_cb      *fin_cb;      // finalizer callbacks
+    int                ncb;         // how many of above
+    uint16_t           flags;       // some flags
+    uint16_t           index;       // index pos in **rpthread; remove if not used
+    pthread_t          self;        // unneeded now.
+    RPTHR             *parent;      // Parent, if not main.  Otherwise NULL
+    RPTHR            **children;    // child threads.  monitor and don't exit if still active
+    int                nchildren;   // number of child threads.
+};
+
+#define RPTHR_FLAG_IN_USE   0x01  // if struct is in use and ctxs are set up
+#define RPTHR_FLAG_THR_SAFE 0x02  // if we can execute texis or python without forking
+#define RPTHR_FLAG_SERVER   0x04  // if called from server (and we need wsctx initialized)
+#define RPTHR_FLAG_BASE     0x08  // event base has been created 
+#define RPTHR_FLAG_FINAL    0x10  // finalizer called
+#define RPTHR_FLAG_FORKED   0x20  // for python - flag that we've already forked
+#define RPTHR_FLAG_ACTIVE   0x40  // flag that this thread is running JS in a duk_pcall()
+
+// for locks
+#define RP_USE_LOCKLOCKS
+
+#define RPTHR_LOCK struct rampart_thread_lock_s
+RPTHR_LOCK {
+    pthread_mutex_t *lock;
+#ifdef RP_USE_LOCKLOCKS
+    pthread_mutex_t *locklock;
+#endif
+    RPTHR_LOCK      *next;
+    uint16_t         thread_idx;
+    uint16_t         flags;
+};
+
+#define RPTHR_LOCK_FLAG_LOCKED    0x01  // if the lock is currently held
+#define RPTHR_LOCK_FLAG_JSLOCK    0x02  // if this is a javascript based user lock
+#define RPTHR_LOCK_FLAG_TEMP      0x04  // if this is a temporary lock set before forking
+#define RPTHR_LOCK_FLAG_JSFIN     0x08  // if this is a lock that will be unlocked in a js finalizer
+                                        // as a result, when there is a fork by rampart-server, it 
+                                        // will never be, or need to be unlocked.
+#define RPTHR_LOCK_FLAG_FREELOCK  0x10  // pthread mutex was alloced. Needs to be freed
+#define RPTHR_LOCK_FLAG_REINIT    0x20  // a lock from another thread that could not be unlocked before forking
+
+
+int           rp_lock(RPTHR_LOCK *thrlock);	    //obtain the lock
+int           rp_unlock(RPTHR_LOCK *thrlock);       //release the lock
+RPTHR_LOCK   *rp_init_lock(pthread_mutex_t *lock);  //may be null and it will be alloced
+int           rp_remove_lock(RPTHR_LOCK *thrlock);  //remove lock from list and dealloc
+void          rp_claim_all_locks(); 		    //do before forking
+void          rp_unlock_all_locks(int isparent);    //do after forking in parent and child
+void          rp_thread_preinit();
+
+/* for locks and threads flags */
+#define RPTHR_SET(thread, flag)   ( (thread)->flags |=  (flag) )
+#define RPTHR_CLEAR(thread, flag) ( (thread)->flags &= ~ (flag) )
+#define RPTHR_TEST(thread, flag)  ( (thread)->flags & (flag) )
 
 /* mutex locking in general */
-#define RP_MLOCK(lock) do{\
-    if (pthread_mutex_lock((lock)) != 0)\
-        {fprintf(stderr,"could not obtain lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
+#define RP_PTLOCK(lock) do{\
+    int e;\
+    if ((e=pthread_mutex_lock((lock))) != 0)\
+        {fprintf(stderr,"could not obtain lock in %s at %d %d -%s\n",__FILE__,__LINE__,e,strerror(e));exit(1);}\
 } while(0)
 
-#define RP_MUNLOCK(lock) do{\
+#define RP_PTUNLOCK(lock) do{\
     if (pthread_mutex_unlock((lock)) != 0)\
         {fprintf(stderr,"could not release lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
 } while(0)
 
-#define RP_MINIT(lock) do{\
+#define RP_PTINIT(lock) do{\
     if (pthread_mutex_init((lock),NULL) != 0)\
         {fprintf(stderr,"could not create lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
 } while(0)
 
+/* mutex locking with tracking */
+#define RP_MLOCK(lock) do{\
+    /*printf("(%d:%d) locking %s %p at %s:%d\n", (int)getpid(), (int)get_thread_num(), #lock, lock, __FILE__, __LINE__);*/\
+    if (rp_lock((lock)) != 0)\
+        {fprintf(stderr,"could not obtain lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
+} while(0)
+
+#define RP_MTRYLOCK(lock) ({\
+    int ret=1;\
+    /*printf("(%d:%d) trying lock %s %p at %s:%d\n", (int)getpid(), (int)get_thread_num(), #lock, lock, __FILE__, __LINE__);*/\
+    ret = rp_trylock((lock));\
+    ret;\
+})
+
+#define RP_MUNLOCK(lock) do{\
+    /*printf("(%d:%d) unlocking %s %p at %s:%d\n", (int)getpid(), (int)get_thread_num(), #lock, lock, __FILE__, __LINE__);*/\
+    if (rp_unlock((lock)) != 0)\
+        {fprintf(stderr,"could not release lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
+} while(0)
+
+#define RP_MINIT(lock) ({\
+    RPTHR_LOCK *ret=NULL;\
+    /*printf("(%d:%d) creating %s %p at %s:%d\n", (int)getpid(), (int)get_thread_num(), #lock, lock, __FILE__, __LINE__);*/\
+    if ( (ret=rp_init_lock((lock))) == NULL )\
+        {fprintf(stderr,"could not create lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
+    ret;\
+})
+
 /* mutex for locking main_ctx when in a thread with other duk stacks open */
+
 extern pthread_mutex_t ctxlock;
-#define CTXLOCK RP_MLOCK(&ctxlock)
-#define CTXUNLOCK RP_MUNLOCK(&ctxlock)
+extern RPTHR_LOCK *rp_ctxlock;
+#define CTXLOCK RP_MLOCK(rp_ctxlock)
+#define CTXUNLOCK RP_MUNLOCK(rp_ctxlock)
+
+/************* END THREAD AND LOCK RELATED ************************/
+
+#define time_t_max ((((time_t) 1 << (sizeof(time_t) * CHAR_BIT - 2)) - 1) * 2 + 1 )
+
+extern RPTHR **rpthread;                     //every thread in a global array
+extern uint16_t nrpthreads;                  //number of threads malloced in **rpthread
+extern RPTHR *mainthr;                       //the thread of the main process
+
+// create new thread struct in **rpthread, add base and ctx
+// if ctx is NULL, a new context is created
+RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx);         // create new thread struct in **rpthread, add base and ctx
+struct evdns_base *rp_make_dns_base(
+  duk_context *ctx, struct event_base *base);// create dns base for new server
+
+/* copy vars between stacks functions */
+int  rpthr_copy_obj    (duk_context *ctx, duk_context *tctx, int objid);
+void rpthr_clean_obj   (duk_context *ctx, duk_context *tctx);
+void rpthr_copy_global (duk_context *ctx, duk_context *tctx);
+duk_ret_t duk_rp_bytefunc(duk_context *ctx);
+
+/* getting, setting thread local thread number */
+void set_thread_num(int thrno);
+int get_thread_num();
+RPTHR *get_current_thread();
+
+/* cleanup after fork */
+void rp_post_fork_clean_threads();
+
+/* closing children at end of main loop when finalizer is not called 
+   returns 1 if finalizers were actually set
+*/
+int rp_thread_close_children();
+
+// set a callback to be run when thread is closed
+// may be called more than once.  Executed fifo
+// data must be malloced
+void set_thread_fin_cb(RPTHR *thr, rpthr_fin_cb cb, void *data);
+extern pthread_mutex_t thr_lock;
+extern RPTHR_LOCK *rp_thr_lock;
 
 
 #define REMALLOC(s, t) 					 \
     (s) = realloc((s), (t));                             \
     if ((char *)(s) == (char *)NULL)                     \
     {                                                    \
-        fprintf(stderr, "error: realloc() ");            \
+        fprintf(stderr, "error: realloc() in %s at %d\n",\
+            __FILE__, __LINE__);                         \
         exit(1);                                         \
     }
 
@@ -313,6 +506,11 @@ void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase);
 int duk_rp_get_int_default(duk_context *ctx, duk_idx_t i, int def);
 char *to_utf8(const char *in_str);
 duk_ret_t duk_rp_values_from_object(duk_context *ctx, duk_idx_t idx);
+duk_ret_t duk_rp_read_file(duk_context *ctx);// rampart.utils.readFile()
+
+//returns a safe json-like string.  prints cyclic references as paths in object.
+//needs free
+char *str_rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r);
 
 /* we might want to do something right before the timeout when using generically */
 typedef int (timeout_callback)(void *, int);
@@ -335,8 +533,20 @@ RPPATH rp_find_path(char *file, char *subdir);
 int rp_mkdir_parent(const char *path, mode_t mode);
 RPPATH rp_get_home_path(char *file, char *subdir);
 
+
 /* babelize in cmdline.c */
-const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime, int exclude_strict);
+extern char *main_babel_opt;
+const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime, int exclude_strict, char *opt);
+
+/* tickify in cmdline.c */
+char * tickify(char *src, size_t sz, int *err, int *ln);
+
+/* end states for tickify */
+#define ST_NONE 0
+#define ST_DQ   1
+#define ST_SQ   2
+#define ST_BT   3
+#define ST_BS   4
 
 extern pthread_mutex_t loglock;
 extern pthread_mutex_t errlock;
@@ -344,7 +554,7 @@ extern FILE *access_fh;
 extern FILE *error_fh;
 extern int duk_rp_server_logging;
 
-/* functions to be run upon exit */
+/* functions to be run upon exit or before loop */
 typedef void (*rp_vfunc)(void* arg);
 
 /* debugging
@@ -358,6 +568,8 @@ void add_exit_func_2(rp_vfunc func, void *arg, char *nl);
 */
 
 void add_exit_func(rp_vfunc func, void *arg);
+void add_b4loop_func(rp_vfunc func, void *arg);
+void run_b4loop_funcs();
 
 void duk_rp_exit(duk_context *ctx, int ec);
 
@@ -366,7 +578,7 @@ extern void duk_rp_fatal(void *udata, const char *msg);
 #define DUK_USE_FATAL_HANDLER(udata,msg) do { \
     const char *fatal_msg = (msg); /* avoid double evaluation */ \
     (void) udata; \
-    fprintf(stderr, "*** FATAL ERROR: %s\n", fatal_msg ? fatal_msg : "no message"); \
+    fprintf(stderr, "*** FATAL ERROR (%d) (%s:%d) ***: %s\n", (int)getpid(),__FILE__, __LINE__,fatal_msg ? fatal_msg : "no message"); \
     fflush(stderr); \
     abort(); \
 } while (0)
@@ -387,8 +599,9 @@ EVARGS {
 };
 
 extern pthread_mutex_t slistlock;
-#define SLISTLOCK RP_MLOCK(&slistlock)
-#define SLISTUNLOCK RP_MUNLOCK(&slistlock)
+extern RPTHR_LOCK *rp_slistlock;
+#define SLISTLOCK RP_MLOCK(rp_slistlock)
+#define SLISTUNLOCK RP_MUNLOCK(rp_slistlock)
 
 SLIST_HEAD(slisthead, ev_args);
 

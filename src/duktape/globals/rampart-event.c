@@ -14,6 +14,7 @@
 #include "rampart.h"
 
 pthread_mutex_t cborlock;
+RPTHR_LOCK *rp_cborlock;
 
 volatile int rp_event_scope_to_module=0;
 
@@ -188,7 +189,7 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
 
     /* if using threads, there are two thread_ctxs per thread/event-loop */
     if(earg->thread_no > -1)
-        ctx=thread_ctx[earg->thread_no];
+        ctx=rpthread[earg->thread_no]->ctx;
 
 #define jsev_exec_func do{\
     duk_enum(ctx, -1, 0); /* [ {jsevents}, {myevent}, enum ]*/\
@@ -245,7 +246,12 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
 
     /* the first one */
     do {
-        duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("jsevents"));
+        if(!duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("jsevents")) )
+        {
+            //no events on this ctx
+            duk_pop(ctx);
+            break;
+        }
         if(earg->action == JSEVENT_TRIGGER || earg->action == JSEVENT_DELFUNC)
         {
             /* do we have an event named "key" ? */
@@ -281,8 +287,17 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
     /* the second one, if thread */
     if(earg->thread_no > -1)
     {
-        ctx = thread_ctx[totnthreads + earg->thread_no]; //switch stacks. Second stack is for websockets.
-        duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("jsevents"));
+
+        ctx = rpthread[earg->thread_no]->wsctx; //switch stacks. Second stack is for websockets.
+        if(!ctx)
+            goto end;
+
+        if(!duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("jsevents")) )
+        {
+            //no events on this ctx
+            duk_pop(ctx);
+            goto end;
+        }
 
         if(earg->action == JSEVENT_TRIGGER || earg->action == JSEVENT_DELFUNC)
         {
@@ -313,7 +328,7 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
 
     if(earg->cbor)
     {
-        RP_MLOCK(&cborlock);
+        RP_MLOCK(rp_cborlock);
 
         earg->cbor->refcount--;
         if(!earg->cbor->refcount)
@@ -322,7 +337,7 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
             free(earg->cbor);
         }
 
-        RP_MUNLOCK(&cborlock);
+        RP_MUNLOCK(rp_cborlock);
     }
     event_free(earg->e);
     free(earg->key);
@@ -340,22 +355,16 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
     timeout.tv_sec=0;
     timeout.tv_usec=0; 
 
-    for(;i<totnthreads+1;i++)
+    for(i=0; i<nrpthreads; i++)
     {
+        RPTHR *thr=rpthread[i];
         struct event_base *base;
-        int tno=i;
 
-        if(i==totnthreads)
-        {
-            tno=-1;
-            base=elbase;
-        }
-        else
-            base=thread_base[i];
+        base=thr->base;
 
         args=NULL;
         REMALLOC(args,sizeof(JSEVARGS));
-        args->thread_no = tno;
+        args->thread_no = i;
         args->key=NULL;
 
         if(rp_event_scope_to_module)
@@ -419,7 +428,8 @@ duk_ret_t duk_rp_trigger_event(duk_context *ctx)
         cbor->data=NULL;
         REMALLOC(cbor->data, cbor->size);
         memcpy(cbor->data, buf, cbor->size);       
-        cbor->refcount = totnthreads+1;
+        //cbor->refcount = totnthreads+1;
+        cbor->refcount = nrpthreads;
     }
     evloop_insert(ctx, evname, NULL, cbor, JSEVENT_TRIGGER);
     return 0;
@@ -460,7 +470,7 @@ void duk_event_init(duk_context *ctx)
 
     if(!isinit)
     {
-        RP_MINIT(&cborlock);
+        rp_cborlock=RP_MINIT(&cborlock);
         isinit=1;
     }
 

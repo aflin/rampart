@@ -1618,8 +1618,7 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
     if(rc_send_async(ctx, subrcp))
     {
       RDEVARGS *args=NULL;
-      int thrno=-1;//, flags = fcntl(subrcp->socket, F_GETFL, 0);
-      struct event_base *base;
+      RPTHR *thr = get_current_thread();
 
       /* Allow subscribing to more channels */
       duk_push_this(ctx);
@@ -1636,16 +1635,6 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
       if (!gotfunc)
         RP_THROW(ctx, "%s: subscribe and *_async functions require a callback", fname);
 
-      duk_get_global_string(ctx, "rampart");
-      if(duk_get_prop_string(ctx, -1, "thread_id"))
-        thrno = duk_get_int(ctx, -1);
-      duk_pop_2(ctx);
-
-      if(thrno == -1)
-        base = elbase;
-      else
-          base=thread_base[thrno];
-
       REMALLOC(args, sizeof(RDEVARGS));
       /* args struct is populated with items we will need in the event callback */
       args->ctx = ctx;
@@ -1655,7 +1644,7 @@ static duk_ret_t duk_rp_cc_docmd(duk_context *ctx)
       //fcntl(subrcp->socket, flags|O_NONBLOCK); //seems to work without this.
 
       // a new event to handle our callback
-      args->e = event_new(base, subrcp->socket, EV_READ|EV_PERSIST, rp_rdev_doevent, args);
+      args->e = event_new(thr->base, subrcp->socket, EV_READ|EV_PERSIST, rp_rdev_doevent, args);
       event_add(args->e, NULL);
 
       /* 'this' goes into a global hidden object named rd_event indexed by the subrcp pointer itself 

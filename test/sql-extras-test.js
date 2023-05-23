@@ -24,7 +24,7 @@ rampart.globalize(Sql);
 function testFeature(name,test)
 {
     var error=false;
-    printf("testing %-40s - ", name);
+    printf("testing sql extras - %-47s - ", name);
     fflush(stdout);
     if (typeof test =='function'){
         try {

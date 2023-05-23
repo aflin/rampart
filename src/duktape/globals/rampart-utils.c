@@ -21,13 +21,14 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <termios.h>
+#include <string.h>
 #include "rampart.h"
 extern char **environ;
 extern char *RP_script_path;
 extern char *RP_script;
-
-/* 
-    defined in main program here 
+char modules_dir[PATH_MAX];
+/*
+    defined in main program here
     used here and in server module
 */
 
@@ -61,8 +62,8 @@ int execvpe(const char *program, char **argv, char **envp)
 #define HOMESUBDIR "/.rampart/"
 
 /* **************************************************
-   like duk_get_int_default but if string, converts 
-   string to number with strtol 
+   like duk_get_int_default but if string, converts
+   string to number with strtol
    ************************************************** */
 int duk_rp_get_int_default(duk_context *ctx, duk_idx_t i, int def)
 {
@@ -83,8 +84,8 @@ int duk_rp_get_int_default(duk_context *ctx, duk_idx_t i, int def)
     CURRENTLY UNUSED and UNTESTED
 
 * **************************************************
-   like duk_require_int but if string, converts 
-   string to number with strtol 
+   like duk_require_int but if string, converts
+   string to number with strtol
    ************************************************** *
 int duk_rp_require_int(duk_context *ctx,duk_idx_t i) {
   if(duk_is_number(ctx,i))
@@ -93,7 +94,7 @@ int duk_rp_require_int(duk_context *ctx,duk_idx_t i) {
   {
     char *end,*s=(char *)duk_get_string(ctx,i);
     int ret=(int)strtol(s, &end, 10);
-          
+
     if (end!=s)
       return (ret);
   }
@@ -103,8 +104,8 @@ int duk_rp_require_int(duk_context *ctx,duk_idx_t i) {
 }
 
 * **************************************************
-   like duk_get_number_default but if string, converts 
-   string to number with strtod 
+   like duk_get_number_default but if string, converts
+   string to number with strtod
    ************************************************** *
 double duk_rp_get_number_default(duk_context *ctx,duk_idx_t i,double def) {
   if(duk_is_number(ctx,i))
@@ -113,7 +114,7 @@ double duk_rp_get_number_default(duk_context *ctx,duk_idx_t i,double def) {
   {
     char *end,*s=(char *)duk_get_string(ctx,i);
     int ret=(double)strtod(s, &end);
-          
+
     if (end==s) return (def);
       return (ret);
   }
@@ -121,8 +122,8 @@ double duk_rp_get_number_default(duk_context *ctx,duk_idx_t i,double def) {
 }
 
 * **************************************************
-   like duk_require_number but if string, converts 
-   string to number with strtod 
+   like duk_require_number but if string, converts
+   string to number with strtod
    ************************************************** *
 int duk_rp_require_number(duk_context *ctx,duk_idx_t i) {
   if(duk_is_number(ctx,i))
@@ -131,7 +132,7 @@ int duk_rp_require_number(duk_context *ctx,duk_idx_t i) {
   {
     char *end,*s=(char *)duk_get_string(ctx,i);
     int ret=(int)strtod(s, &end);
-          
+
     if (end!=s)
       return (ret);
   }
@@ -141,7 +142,7 @@ int duk_rp_require_number(duk_context *ctx,duk_idx_t i) {
 }
 */
 
-/*  Find file searching standard directories 
+/*  Find file searching standard directories
     check:
     1) as given. -- if absolute, this will be found first
     2) in scriptPath/file -- NO SUBDIR
@@ -176,7 +177,7 @@ RPPATH rp_find_path(char *file, char *subdir)
         ret.stat=sb;
         if(!realpath(file,ret.path))
             strcpy(ret.path,file);
-        return ret;        
+        return ret;
     }
 
     /* look for it in scriptPath */
@@ -219,11 +220,11 @@ RPPATH rp_find_path(char *file, char *subdir)
             home="/tmp";
             if ( access(home, R_OK)!=-1 )
                 goto home_accessok;
-        }        
+        }
         fprintf(stderr, "cannot access %s\nEither your home directory or \"/tmp\"\" should exist and be accessible.\n", home);
         skiphome=1;
     }
-    
+
     home_accessok:
     plen = strnlen(home,PATH_MAX) + strlen(HOMESUBDIR) +1;
     if(plen > PATH_MAX)
@@ -270,7 +271,7 @@ RPPATH rp_find_path(char *file, char *subdir)
             break;
 
         plen = sd_file_len; //lenght of sd + file + 1
-        
+
         //add one for missing trailing '/'
         if(locs[i][strlen(locs[i])-1] != '/')
             plen++;
@@ -319,7 +320,7 @@ RPPATH rp_find_path(char *file, char *subdir)
     //not found
     ret.path[0]='\0';
     return ret;
-    
+
     //found it above
     path_found:
 
@@ -369,7 +370,7 @@ int rp_mkdir_parent(const char *path, mode_t mode)
     return 0;
 }
 
-/* get path to a file to be written to the home in .rampart 
+/* get path to a file to be written to the home in .rampart
    if path/file exists, also return stat
 */
 RPPATH rp_get_home_path(char *file, char *subdir)
@@ -491,6 +492,213 @@ char *strjoin(char *s, char *adds, char c)
 
     return (s);
 }
+/* *************safe json ************ */
+
+static char * rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r, char *path);
+
+#define RP_SJ_MAX_PATH 4096
+
+static void store_ref(duk_context *ctx, duk_idx_t idx, char *path)
+{
+    void *p;
+    char pstr[32];
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("jsonrefmap"));
+
+    p=duk_get_heapptr(ctx, idx);
+
+    snprintf(pstr, 32, "%p", p);
+
+    duk_push_sprintf(ctx, "{\"_cyclic_ref\": \"%s\"}", path);
+    duk_put_prop_string(ctx, -2, pstr);
+    duk_pop(ctx);
+}
+
+static const char *get_ref(duk_context *ctx, duk_idx_t idx)
+{
+    void *p=duk_get_heapptr(ctx, idx);
+    char pstr[32];
+    const char *ret=NULL;
+
+    snprintf(pstr, 32, "%p", p);
+
+    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("jsonrefmap"));
+    if(duk_get_prop_string(ctx, -1, pstr))
+    {
+        ret=duk_get_string(ctx, -1);
+    }
+    duk_pop_2(ctx); //jsonrefmap and val/undefined
+
+    return ret;
+}
+
+static char *rp_json_array(duk_context *ctx, duk_idx_t idx, char *r, char *path)
+{
+    duk_uarridx_t i=0, l=duk_get_length(ctx, idx);
+    size_t plen = strlen(path), pleft= RP_SJ_MAX_PATH - (plen +1);
+    const char *refpath;
+
+    if( (refpath=get_ref(ctx, idx)) )
+    {
+        return strcatdup(r,(char*)refpath);
+    }
+
+    store_ref(ctx, idx, path);
+
+    r = strcatdup(r, "[");
+    while(i<l)
+    {
+        if(i)
+            r = strcatdup(r, ", ");
+
+        snprintf(&path[plen], pleft, "[%d]", (int)i );
+
+        duk_get_prop_index(ctx, idx, i);
+        r= rp_to_json_safe(ctx, -1, r, path);
+        duk_pop(ctx);
+        i++;
+    }
+
+    path[plen]='\0';
+
+    return strcatdup(r, "]");
+}
+
+static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path)
+{
+    size_t plen = strlen(path), pleft= RP_SJ_MAX_PATH - (plen +1);
+    char key[256];
+    const char *k, *refpath;
+    int i=0;
+    const char *name=NULL;
+
+    if( (refpath=get_ref(ctx, idx)) )
+    {
+        return strcatdup(r,(char*)refpath);
+    }
+
+    store_ref(ctx, idx, path);
+
+
+    if(duk_is_function(ctx,idx))
+    {
+        r= strcatdup(r, "{_");
+        if(duk_is_c_function(ctx,idx))
+            r= strcatdup(r, "c_");
+        else if(duk_is_bound_function(ctx,idx))
+            r= strcatdup(r, "bound_ecmascript_");
+        else if(duk_is_ecmascript_function(ctx,idx))
+            r= strcatdup(r, "ecmascript_");
+
+        r= strcatdup(r, "func: true");
+
+        if(duk_get_prop_string(ctx, idx, "name"))
+        {
+            name=duk_get_string(ctx, -1);
+            if(strlen(name))
+                r= strcatdup(r, " ,name: \"");
+        }
+        duk_pop(ctx);
+
+        if(!name || !strlen(name))
+        {
+            if(duk_get_prop_string(ctx, idx, "fname"))
+            {
+                name=duk_get_string(ctx, -1);
+                r= strcatdup(r, " ,fname: \"");
+            }
+            duk_pop(ctx);
+        }
+
+        if(name && strlen(name))
+        {
+            //r= strcatdup(r, ",_func_name:\"");
+            r= strcatdup(r, (char*)name);
+            r= strcatdup(r, "\"");
+        }
+
+        r= strcatdup(r, "}");
+    }
+    else
+    {
+        r = strcatdup(r, "{");
+        duk_enum(ctx, idx, 0);
+        while (duk_next(ctx, -1, 1))
+        {
+            k=duk_to_string(ctx, -2);
+            snprintf(key, 256, "\"%s\":", k );
+            if(i)
+                r = strcatdup(r, ", ");
+            r=strcatdup(r, key);
+            i++;
+
+            snprintf(&path[plen], pleft, ".%s", k );
+
+            r= rp_to_json_safe(ctx, -1, r, path);
+            duk_pop_2(ctx);
+        }
+        duk_pop(ctx); //enum
+        r= strcatdup(r, "}");
+    }
+    path[plen]='\0';
+
+    return r;
+}
+
+static char * rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r, char *path)
+{
+    idx = duk_normalize_index(ctx, idx);
+
+    if(duk_is_null(ctx,idx))
+        return strcatdup(r,"null");
+    else if(duk_is_undefined(ctx,idx))
+        return strcatdup(r,"undefined");
+    else if(!duk_is_object(ctx, idx))
+    {
+        char *ret;
+
+        duk_dup(ctx, idx);
+        ret = strcatdup(r, (char*)duk_json_encode(ctx, -1));
+        duk_pop(ctx);
+        return ret;
+    }
+
+    if(duk_is_array(ctx, idx))
+        return rp_json_array(ctx, idx, r, path);
+
+    return rp_json_object(ctx, idx, r, path);
+
+}
+
+char *str_rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r)
+{
+    char path[RP_SJ_MAX_PATH];
+    char *ret;
+    path[0]='$';
+    path[1]='\0';
+
+    duk_push_global_object(ctx);
+    duk_push_object(ctx);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("jsonrefmap"));
+    duk_pop(ctx);
+
+    ret = rp_to_json_safe(ctx, idx, r, path);
+
+    duk_push_global_object(ctx);
+    duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("jsonrefmap"));
+    duk_pop(ctx);
+
+    return ret;
+}
+
+duk_ret_t duk_rp_to_json_safe(duk_context *ctx)
+{
+    char *r = str_rp_to_json_safe(ctx, 0, NULL);
+    duk_push_string(ctx, r);
+    free(r);
+    return 1;
+}
+
 /* ***************buffer to string and string to buffer ******************* */
 
 duk_ret_t duk_rp_strToBuf(duk_context *ctx)
@@ -540,10 +748,10 @@ duk_ret_t duk_process_getppid(duk_context *ctx)
 duk_ret_t duk_process_setproctitle(duk_context *ctx)
 {
     const char *proctitle = REQUIRE_STRING(ctx, 0, "setProcTitle: argument must be a String");
-    
+
     if(strlen(proctitle) > 255)
         RP_THROW(ctx, "setProcTitle: String length must be less than 255 characters");
-    
+
     setproctitle("%s", proctitle);
     return 0;
 }
@@ -579,18 +787,18 @@ void duk_rp_toHex(duk_context *ctx, duk_idx_t idx, int ucase)
 
     end=buf+sz;
     REMALLOC(out,sz*2);
-    
+
     p=out;
     /* conver to lowercase hex */
     while(buf<end)
     {
         int nibval;
-        
+
         nibval=*buf/16 + 48;
         if(nibval>57) nibval+=ucase;
         *p=nibval;
         p++;
-        
+
         nibval=*buf%16 +48;
         if(nibval>57) nibval+=ucase;
         *p=nibval;
@@ -635,14 +843,14 @@ void duk_rp_hexToBuf(duk_context *ctx, duk_idx_t idx)
 
     len++; /* if have an extra nibble, round up */
     len/=2;
-    
+
     buf=(unsigned char*)duk_push_fixed_buffer(ctx,(duk_size_t)len);
-    
+
     while(*s)
     {
         unsigned char bval;
 
-        bval=16*hextonib((int)*s);        
+        bval=16*hextonib((int)*s);
         s++;
 
         if(*s)
@@ -678,14 +886,14 @@ void duk_process_init(duk_context *ctx)
         duk_pop(ctx);
         duk_push_object(ctx);
     }
-    
+
     duk_push_object(ctx); /* process.env */
 
     while ( (env=environ[i]) != NULL )
     {
         int len;
         char *val=strchr(env,'=');
-        
+
         if(val)
         {
             len=val-env;
@@ -710,6 +918,22 @@ void duk_process_init(duk_context *ctx)
     {   /* add process.argv */
         int i=0;
         char *s;
+        RPPATH rp;
+        char *module_name[]={
+            "rampart-server.so",
+            "rampart-sql.so",
+            "rampart-lmdb.so",
+            "rampart-redis.so",
+            "rampart-cmark.so",
+            "rampart-curl.so",
+            "rampart-python.so",
+            "rampart-robots.so",
+            "rampart-crypto.so",
+            "rampart-html.so",
+            "rampart-net.so",
+            NULL
+        };
+
 
         duk_push_array(ctx); /* process.argv */
 
@@ -757,6 +981,33 @@ void duk_process_init(duk_context *ctx)
 
         duk_push_string(ctx, rampart_bin); //set from executable path - including '/bin' if present
         duk_put_prop_string(ctx, -2, "installPathBin");
+
+        duk_push_string(ctx, rampart_exec);
+        duk_put_prop_string(ctx, -2, "installPathExec");
+
+        // find a module, any module
+        i=0;
+        while(module_name[i])
+        {
+            rp=rp_find_path(module_name[i], "lib/rampart_modules/");
+            if(!strlen(rp.path))
+                rp=rp_find_path(module_name[i], "modules/");
+
+            if(strlen(rp.path))
+                break;
+            i++;
+        }
+        if(strlen(rp.path))
+        {
+            s=strrchr(rp.path,'/');
+            s[0]='\0';
+            strcpy(modules_dir, rp.path);
+        }
+        else
+            modules_dir[0]='\0';
+
+        duk_push_string(ctx, modules_dir);
+        duk_put_prop_string(ctx, -2, "modulesPath");
     }
 
     duk_put_prop_string(ctx,-2,"process");
@@ -765,7 +1016,7 @@ void duk_process_init(duk_context *ctx)
 
 
 /* **************************************************************************
-   This url(en|de)code is public domain from https://www.geekhideout.com/urlcode.shtml 
+   This url(en|de)code is public domain from https://www.geekhideout.com/urlcode.shtml
    ************************************************************************** */
 
 /* Converts a hex character to its integer value */
@@ -841,7 +1092,7 @@ char *duk_rp_url_decode(char *str, int *len)
     return buf;
 }
 /* **************************************************************************
-   END url(en|de)code, public domain from https://www.geekhideout.com/urlcode.shtml 
+   END url(en|de)code, public domain from https://www.geekhideout.com/urlcode.shtml
    ************************************************************************** */
 
 /* **************** object to http query string ********************************* */
@@ -862,7 +1113,7 @@ const char *duk_curl_to_strOrJSON(duk_context *ctx, duk_idx_t idx)
 
 
 /* *****************************************************
-   serialize object to query string 
+   serialize object to query string
    return val needs to be freed
    ***************************************************** */
 char *duk_rp_object2querystring(duk_context *ctx, duk_idx_t qsidx, int atype)
@@ -965,7 +1216,7 @@ char *duk_rp_object2querystring(duk_context *ctx, duk_idx_t qsidx, int atype)
 void duk_rp_push_lstring_or_jsonob(duk_context *ctx, char *s, size_t l)
 {
 
-    if( 
+    if(
         ( *s=='{' && *(s+l-1)=='}')
         ||
         ( *s=='[' && *(s+l-1)==']')
@@ -1010,7 +1261,7 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
                 duk_pop(ctx);
                 duk_push_array(ctx);
             }
-            
+
             arrayi=duk_get_length(ctx,-1);
             duk_rp_push_lstring_or_jsonob(ctx,val,vall);
             duk_put_prop_index(ctx,-2,(duk_uarridx_t)arrayi);
@@ -1036,7 +1287,7 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
                 }
                 else
                     arrayi=duk_get_length(ctx,-1);
-                
+
                 duk_rp_push_lstring_or_jsonob(ctx,val,vall);
                 duk_put_prop_index(ctx,-2,(duk_uarridx_t)arrayi);
             }
@@ -1050,7 +1301,7 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
 void duk_rp_querystring2object(duk_context *ctx, char *q)
 {
     char *s=q,*e=q;
-    
+
     duk_push_object(ctx);
     while (e)
     {
@@ -1058,7 +1309,7 @@ void duk_rp_querystring2object(duk_context *ctx, char *q)
         if(!*e || *e=='&')
         {
             size_t l=e-s;
-            
+
             pushqelem(ctx,s,l);
             if(!*e)
                 break;
@@ -1070,7 +1321,7 @@ void duk_rp_querystring2object(duk_context *ctx, char *q)
 duk_ret_t duk_rp_query2o(duk_context *ctx)
 {
     char *s= (char *)duk_require_string(ctx,0);
-    duk_rp_querystring2object(ctx,s);    
+    duk_rp_querystring2object(ctx,s);
     return 1;
 }
 
@@ -1084,7 +1335,7 @@ duk_ret_t duk_rp_object2q(duk_context *ctx)
     const char *arraytype=NULL;
     duk_idx_t obj_idx=0, str_idx;
     int atype=ARRAYREPEAT;
-    
+
     if(duk_is_object(ctx, 0) && !duk_is_function(ctx, 0))
         obj_idx=0;
     else if (duk_is_object(ctx, 1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, 1))
@@ -1093,7 +1344,7 @@ duk_ret_t duk_rp_object2q(duk_context *ctx)
         RP_THROW(ctx, "objectToQuery - object required but not provided");
 
     str_idx =!obj_idx;
-    
+
     if(duk_is_string(ctx, str_idx))
         arraytype=duk_get_string(ctx, str_idx);
 
@@ -1120,7 +1371,7 @@ duk_ret_t duk_rp_globalize(duk_context *ctx)
     if( duk_is_array(ctx,1) )
     {
         duk_enum(ctx,1,DUK_ENUM_ARRAY_INDICES_ONLY);
-        while (duk_next(ctx, -1, 1)) 
+        while (duk_next(ctx, -1, 1))
         {
             const char *pname=duk_get_string(ctx,-1);
             duk_get_prop_string(ctx,0,pname);
@@ -1131,7 +1382,7 @@ duk_ret_t duk_rp_globalize(duk_context *ctx)
     else
     {
         duk_enum(ctx,0,0);
-        while (duk_next(ctx, -1, 1)) 
+        while (duk_next(ctx, -1, 1))
         {
             const char *pname=duk_get_string(ctx,-2);
             duk_put_global_string(ctx,pname);
@@ -1211,7 +1462,7 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
                     offset=(int64_t) duk_get_number(ctx, i);
                     gotoffset=1;
                 }
-            } 
+            }
             else if (duk_is_boolean(ctx, i))
                 retstring=duk_get_boolean(ctx, i);
             else if (duk_is_object(ctx, i))
@@ -1221,9 +1472,9 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
             i++;
         }
     }
-    
-    if ( obj_idx != -1) 
-    {   
+
+    if ( obj_idx != -1)
+    {
 /* use fread if you want to use filehandle.  This is redundant.
         if( duk_has_prop_string(ctx,obj_idx,DUK_HIDDEN_SYMBOL("filehandle")) )
         {
@@ -1248,7 +1499,7 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
                     filename = REQUIRE_STRING(ctx, -1, "readFile() - option 'file' must be a String or filehandle");
             }
             duk_pop(ctx);
-            
+
             if(duk_get_prop_string(ctx, obj_idx, "offset"))
                 offset=(int64_t) REQUIRE_NUMBER(ctx, -1, "readFile() - option 'offset' must be a Number");
             duk_pop(ctx);
@@ -1256,7 +1507,7 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
             if(duk_get_prop_string(ctx, obj_idx, "length"))
                 length = (long) REQUIRE_NUMBER(ctx, -1, "readFile() - option 'length' must be a Number");
             duk_pop(ctx);
-        
+
             if(duk_get_prop_string(ctx, obj_idx, "returnString"))
                 retstring=REQUIRE_BOOL(ctx,-1, "readFile() - option 'returnString' must be a Boolean");
 
@@ -1290,7 +1541,7 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
 
     if( length < 1 )
         RP_THROW(ctx, "readFile(\"%s\") - negative length puts end of read before offset or start of file", filename);
-    
+
     if(filename)
     {
         fp = fopen(filename, "r");
@@ -1306,7 +1557,7 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
             RP_THROW(ctx, "readFile(\"%s\") - error seeking file: %s", filename, strerror(errno));
         }
     }
-    
+
     buf = duk_push_fixed_buffer(ctx, length);
 
     off = 0;
@@ -1314,7 +1565,7 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
     if(!lock_p)
     {
         if (flock(fileno(fp), LOCK_SH) == -1)
-            RP_THROW(ctx, "error readFile(): could not get read lock");            
+            RP_THROW(ctx, "error readFile(): could not get read lock");
     }
 
     while ((nbytes = fread(buf + off, 1, length - off, fp)) != 0)
@@ -1335,7 +1586,7 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
         fclose(fp);
 
     if(retstring)
-        duk_buffer_to_string(ctx,-1);    
+        duk_buffer_to_string(ctx,-1);
 
     return 1;
 }
@@ -1501,7 +1752,7 @@ duk_ret_t duk_rp_readline(duk_context *ctx)
  *  @property {Date} atime - time of last access
  *  @property {Date} mtime - time of last modification
  *  @property {Date} ctime - time of last status
- * 
+ *
  *  @param {string} The path name
  *  @returns {StatObject} a javascript object of the following form:
  *  stat: {
@@ -1654,33 +1905,33 @@ void *duk_rp_exec_thread_waitpid(void *arg)
 
 /**
  * Executes a command where the arguments are the arguments to execv.
- * @typedef {Object} ExecOptions 
+ * @typedef {Object} ExecOptions
  * @property {string} path - The path to the program to execute.
  * @property {string[]} args - The arguments to provide to the program (including the program name).
  * @property {int} timeout - The optional timeout in milliseconds.
  * @property {int=} killSignal - The signal to use to kill a timed out process. Default is SIGKILL (9)
  * @property {int=} background - Whether to put the process in the background. stdout, stderr will be null in this case.
- * 
- * @typedef {Object} ExecReturnObject 
+ *
+ * @typedef {Object} ExecReturnObject
  * @property {string?} stdout - The stdout of the program as a string. Will be null if background is set in ExecOptions.
  * @property {string?} stderr - The stderr of the program as a string. Will be null if background is set in ExecOptions.
  * @property {int?} exitStatus - The exit status of the program. Will be null if background is set in ExecOptions.
  * @property {boolean} timedOut - whether the program timed out using after the specified timeout in ExecOptions.
  * @property {int} pid - the pid of the program.
- * 
+ *
  * @param {ExecOptions} options
  * @returns {ExecReturnObject}
  * Ex.
- * const { 
- *    stdout: string, 
- *    stderr: string, 
+ * const {
+ *    stdout: string,
+ *    stderr: string,
  *    exit_status: int,
  *    timed_out: bool,
  *    pid: int
- * } = utils.exec({ 
- *    path: "/bin/ls", 
+ * } = utils.exec({
+ *    path: "/bin/ls",
  *    stdin: "text",
- *    args: ["ls", "-1"], 
+ *    args: ["ls", "-1"],
  *    timeout: 1000
  *    kill_signal: 9, background: false });
  */
@@ -1757,7 +2008,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     }
     duk_pop(ctx);
 */
-    
+
     if(duk_get_prop_string(ctx, -1, "appendEnv") && duk_get_boolean_default(ctx,-1,0) )
         append=1;
     duk_pop(ctx);
@@ -1867,7 +2118,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
                 free(env);
             RP_THROW(ctx, "exec(): could not create pipe: %s", strerror(errno));
         }
-    
+
     }
 
     if ((pid = fork()) == -1)
@@ -2115,7 +2366,7 @@ duk_ret_t duk_rp_exec(duk_context *ctx)
                 duk_push_string(ctx,"{_func:true}");
                 duk_replace(ctx,i);
             }
-        }    
+        }
 
         duk_dup(ctx,i);
         duk_put_prop_index(ctx, arr_idx, arrayi++);
@@ -2126,7 +2377,7 @@ duk_ret_t duk_rp_exec(duk_context *ctx)
     {
         duk_pull(ctx, obj_idx);
         /* stack: [ ..., empty_obj, args_arr, options_object ] */
-        duk_replace(ctx, -3); 
+        duk_replace(ctx, -3);
         /* stack: [ ..., options_object, args_arr ] */
     }
     duk_put_prop_string(ctx, -2, "args");
@@ -2171,18 +2422,18 @@ duk_ret_t duk_rp_shell(duk_context *ctx)
  */
 duk_ret_t duk_rp_kill(duk_context *ctx)
 {
-    pid_t pid = duk_require_int(ctx, 0);
+    pid_t pid = REQUIRE_INT(ctx, 0, "rampart.utils.kill - first argument (pid) must be an integer");
     int ret, x=0, signal = SIGTERM,kerrno=0;
-    
+
     if(duk_is_number(ctx,1))
-        signal=duk_get_int(ctx, 1);
+        signal=REQUIRE_UINT(ctx, 1, "rampart.utils.kill - second argument (signal) must be a positive integer");
 
     errno=0;
     ret= kill(pid, signal);
     //printf("kill (%d, %d), ret=%d err='%s'\n",(int)pid, signal, ret, strerror(errno));
     kerrno=errno;
     if(signal)
-        while(waitpid(pid, NULL, WNOHANG) == 0) 
+        while(waitpid(pid, NULL, WNOHANG) == 0)
         {
             usleep(1000);
             x++;
@@ -2232,7 +2483,7 @@ duk_ret_t duk_rp_mkdir(duk_context *ctx)
 }
 
 /**
- * Removes an empty directory with the name given as a path. Allows recursively removing nested directories 
+ * Removes an empty directory with the name given as a path. Allows recursively removing nested directories
  * @param {string} path - The path to the directory to be deleted
  * @param {boolean=} recursive - whether to recursively delete. Set to false by default.
  * Ex.
@@ -2242,7 +2493,7 @@ duk_ret_t duk_rp_rmdir(duk_context *ctx)
 {
     const char *path;
     int recursive;
-    
+
     path = duk_require_string(ctx, 0);
     recursive = duk_get_boolean_default(ctx, 1, 0);
 
@@ -2286,10 +2537,10 @@ duk_ret_t duk_rp_readdir(duk_context *ctx)
     const char *path = duk_require_string(ctx, 0);
     DIR *dir = opendir(path);
     struct dirent *entry=NULL;
-    int i=0, 
+    int i=0,
         showhidden=duk_get_boolean_default(ctx,1,0);
-    
-    
+
+
     if (dir == NULL)
         RP_THROW(ctx, "readdir(): could not open directory %s: %s", path, strerror(errno));
 
@@ -2315,14 +2566,14 @@ duk_ret_t duk_rp_readdir(duk_context *ctx)
     if (remove(file))                                                                                  \
         RP_THROW(ctx, "could not remove '%s': %s", file, strerror(errno));
 
-/**                                                                                                
- * Copies the file from src to dest. Passing overwrite will overwrite any file already present.    
+/**
+ * Copies the file from src to dest. Passing overwrite will overwrite any file already present.
  * It will try to preserve the file mode.
  * @typedef {Object} CopyFileOptions
  * @property {string} src - the path to the file source.
  * @property {string} dest - the path to where the file will be moved.
- * @property {string=} overwrite - whether to overwrite any existing file at dest. Set to false by default.                                                        
- * @param {{ src: string, dest: string, overwrite: boolean }} options - the options to be given                  
+ * @property {string=} overwrite - whether to overwrite any existing file at dest. Set to false by default.
+ * @param {{ src: string, dest: string, overwrite: boolean }} options - the options to be given
  */
 duk_ret_t duk_rp_copyFile(duk_context *ctx, char *fname)
 {
@@ -2341,7 +2592,7 @@ duk_ret_t duk_rp_copyFile(duk_context *ctx, char *fname)
         }
 
         else if (duk_is_boolean(ctx,i))
-            overwrite=duk_get_boolean(ctx,i);   
+            overwrite=duk_get_boolean(ctx,i);
 
         else if (duk_is_object(ctx,i) && !duk_is_array(ctx,i) && !duk_is_function(ctx,i) )
             obj_idx=i;
@@ -2368,17 +2619,17 @@ duk_ret_t duk_rp_copyFile(duk_context *ctx, char *fname)
     if (!dest_filename)
         RP_THROW(ctx, "%s: destination file not specified",fname);
 
-    /* test if they are the same file 
+    /* test if they are the same file
     if(! testlink(ctx, src_filename, dest_filename))
         RP_THROW(ctx, "%s: error getting status '%s': %s", fname, src_filename, strerror(errno));
 
     (void) testlink(ctx, dest_filename, src_filename);
     */
-    
+
     {
         FILE *dest, *src = fopen(src_filename, "r");
         struct stat src_stat, dest_stat;
-        int err;        
+        int err;
 
         if (src == NULL)
         {
@@ -2389,7 +2640,7 @@ duk_ret_t duk_rp_copyFile(duk_context *ctx, char *fname)
         {
             fclose(src);
             RP_THROW(ctx, "%s: error getting status '%s': %s", fname, src_filename, strerror(errno));
-        } 
+        }
 
         err = stat(dest_filename, &dest_stat);
         if(!err)
@@ -2404,7 +2655,7 @@ duk_ret_t duk_rp_copyFile(duk_context *ctx, char *fname)
             fclose(src);
             RP_THROW(ctx, "%s: error copying '%s': %s", fname, dest_filename, "file already exists");
         }
-        
+
         if (err && errno != ENOENT)
         {
             fclose(src);
@@ -2484,11 +2735,11 @@ duk_ret_t duk_rp_delete(duk_context *ctx)
 }
 
 /**
- * Creates a hard or symbolic link 
+ * Creates a hard or symbolic link
  * @typedef {Object} LinkOptions
  * @property {string} path - the path to the source file to link
  * @property {string} target - the path target file that will be created
- * @property {boolean=} hard - whether the link is hard. Set to false by default. 
+ * @property {boolean=} hard - whether the link is hard. Set to false by default.
  * @param {{src: string, target: string, hard: boolean }} options
  * Ex.
  * symlink({ src: "some_file", target: "some_link"});
@@ -2702,7 +2953,7 @@ duk_ret_t duk_rp_rename(duk_context *ctx)
             if (remove(old) != 0)
                 RP_THROW(ctx, "rename(): error deleting old file: %s", strerror(errno));
 
-            return 0;            
+            return 0;
         }
         RP_THROW(ctx, "error renaming '%s' to '%s': %s", old, new, strerror(errno));
     }
@@ -2710,7 +2961,7 @@ duk_ret_t duk_rp_rename(duk_context *ctx)
     return 0;
 }
 
-/** 
+/**
  * Changes ownership of a file to a given user or group.
  * @typedef {Object} ChownOptions
  * @property {string} path - the path to the file to change
@@ -2840,20 +3091,20 @@ duk_ret_t duk_rp_nsleep(duk_context *ctx)
 {
     double secs = REQUIRE_NUMBER(ctx, -1,  "rampart.sleep requires a number (float)");
     struct timespec stime;
-    
+
     stime.tv_sec=(time_t)secs;
     stime.tv_nsec=(long)( 1000000000.0 * (secs - (double)stime.tv_sec) );
     nanosleep(&stime,NULL);
     return 0;
 }
-
+/*
+// TODO: Convert ulocks to rampart_locks
 #define ULOCK struct utils_mlock_s
 
 ULOCK {
     pthread_mutex_t lock;
     char *name;
 };
-
 static int nulocks=0;
 
 static ULOCK **ulocks=NULL;
@@ -2973,7 +3224,7 @@ duk_ret_t duk_rp_mlock_constructor(duk_context *ctx)
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("mlock_name"));
 
     newlock=get_lock(lockname, CREATE_LOCK);
-    
+
     if(!newlock)
         RP_THROW(ctx, "new rampart.utils.mlock - internal error creating lock");
     return 0;
@@ -3012,16 +3263,7 @@ duk_ret_t duk_rp_mlock_unlock (duk_context *ctx)
         RP_THROW(ctx, "munlock(): error - could not obtain lock");
     return 0;
 }
-
-/* todo put tickify in its own .c and .h file */
-#define ST_NONE 0
-#define ST_DQ   1
-#define ST_SQ   2
-#define ST_BT   3
-#define ST_BS   4
-
-char * tickify(char *src, size_t sz, int *err, int *ln);
-
+*/
 static duk_ret_t include_js(duk_context *ctx)
 {
     const char *script= REQUIRE_STRING(ctx, -1, "rampart.include: - parameter must be a String (path of script to include)" );
@@ -3055,7 +3297,7 @@ static duk_ret_t include_js(duk_context *ctx)
 
     buffer[rp.stat.st_size]='\0';
 
-    if (! (bfn=duk_rp_babelize(ctx, rp.path, buffer, rp.stat.st_mtime, 1)) )
+    if (! (bfn=duk_rp_babelize(ctx, rp.path, buffer, rp.stat.st_mtime, 1, NULL)) )
     {
         /* No babel, normal compile */
         int err, lineno;
@@ -3101,6 +3343,7 @@ static duk_ret_t include_js(duk_context *ctx)
     return 0;
 }
 
+
 #include "cityhash.h"
 #include "fast_random.h"
 #include "murmurhash.h"
@@ -3138,7 +3381,7 @@ static inline void hash_one(duk_context *ctx, duk_idx_t idx, int type, void *map
     if(map)
     {
         inbuf =(const char *)map;
-        insz = (duk_size_t)sz;    
+        insz = (duk_size_t)sz;
     }
     else
         inbuf = REQUIRE_STR_OR_BUF(ctx, idx, &insz, "rampart.utils.hash - input must be a string or buffer");
@@ -3159,7 +3402,7 @@ static inline void hash_one(duk_context *ctx, duk_idx_t idx, int type, void *map
             uint128 h = CityHash128(inbuf, (size_t)insz);
             Uint128High64(h) = ntoh64( Uint128High64(h) );
             Uint128Low64(h) = ntoh64( Uint128Low64(h) );
-            
+
             buf = duk_push_fixed_buffer(ctx, 16);
             memcpy(buf, &(Uint128High64(h)), 8);
             memcpy(buf+8, &(Uint128Low64(h)), 8);
@@ -3168,7 +3411,7 @@ static inline void hash_one(duk_context *ctx, duk_idx_t idx, int type, void *map
         case HASH_TYPE_MURMUR:
         {
             uint64_t h = ntoh64(MurmurHash64( (const void *) inbuf, (int) insz));
-            
+
             buf = duk_push_fixed_buffer(ctx, 8);
 
             memcpy(buf, &h, 8);
@@ -3178,7 +3421,7 @@ static inline void hash_one(duk_context *ctx, duk_idx_t idx, int type, void *map
         {
             uint128 h = CityHash128(inbuf, (size_t)insz);
             uint64_t h2 = ntoh64(MurmurHash64( (const void *) inbuf, (int) insz));
-            
+
             Uint128High64(h) = ntoh64( Uint128High64(h) );
             Uint128Low64(h) = ntoh64( Uint128Low64(h) );
             buf = duk_push_fixed_buffer(ctx, 24);
@@ -3242,7 +3485,7 @@ static duk_ret_t _hash(duk_context *ctx, void *map, size_t sz)
     else if(duk_is_array(ctx, val_idx))
     {
         duk_uarridx_t i=0, len=duk_get_length(ctx, val_idx);
-        
+
         duk_push_array(ctx);
         while(i<len)
         {
@@ -3258,7 +3501,7 @@ static duk_ret_t _hash(duk_context *ctx, void *map, size_t sz)
     }
     else
         hash_one(ctx, val_idx, type, NULL, 0);
-    
+
     if(hexconv)
     {
         duk_rp_toHex(ctx, -1, 0);
@@ -3284,7 +3527,7 @@ duk_ret_t duk_rp_hash_file(duk_context *ctx)
         opts_idx=0;
     else if (duk_is_object(ctx, 1) && !duk_is_array(ctx, 1) && !duk_is_function(ctx, 1))
         opts_idx=1;
-    
+
     val_idx = !opts_idx;
     fn = REQUIRE_STRING(ctx, val_idx, "hashFile() - argument (filename) must be a string");
     fd = open(fn, O_RDONLY);
@@ -3292,8 +3535,8 @@ duk_ret_t duk_rp_hash_file(duk_context *ctx)
         RP_THROW(ctx, "hashFile() - could not open file '%s' - %s", fn, strerror(errno));
 
     if (fstat(fd, &sb) == -1)
-        RP_THROW(ctx, "hashFile() - could not get stats of file '%s' - %s", fn, strerror(errno));    
-    
+        RP_THROW(ctx, "hashFile() - could not get stats of file '%s' - %s", fn, strerror(errno));
+
     map = mmap(NULL, sb.st_size,  PROT_READ, MAP_PRIVATE, fd, 0);
 
     duk_ret_t ret = _hash(ctx, map, sb.st_size);
@@ -3332,7 +3575,7 @@ duk_ret_t duk_rp_srand(duk_context *ctx)
     if(!duk_is_undefined(ctx,0))
     {
         uint64_t t = (uint64_t) fabs(REQUIRE_NUMBER(ctx, 0, "srand() - first argument must be a number (seed)"));
-        xorRand64Seed(t);        
+        xorRand64Seed(t);
         seeded=1;
         return 0;
     }
@@ -3432,7 +3675,7 @@ duk_ret_t duk_rp_irand(duk_context *ctx)
             return 0;
         duk_pop(ctx);
     }
-    
+
 }
 
 /* rand between -1.0 and 1.0 */
@@ -3501,6 +3744,7 @@ HLL {
     char *name;
     int refcount;
     pthread_mutex_t lock;
+    RPTHR_LOCK *rp_lock;
     duk_context *ctx;
     HLL *next;
 };
@@ -3508,13 +3752,14 @@ HLL {
 HLL *hll_list = NULL;
 
 pthread_mutex_t hll_lock;
+RPTHR_LOCK *rp_hll_lock=NULL;
 
-#define HLL_MAIN_LOCK RP_MLOCK(&hll_lock)
-#define HLL_MAIN_UNLOCK RP_MUNLOCK(&hll_lock)
+#define HLL_MAIN_LOCK RP_MLOCK(rp_hll_lock)
+#define HLL_MAIN_UNLOCK RP_MUNLOCK(rp_hll_lock)
 
 
-#define HLL_LOCK(h) RP_MLOCK(&((h)->lock))
-#define HLL_UNLOCK(h) RP_MUNLOCK(&((h)->lock))
+#define HLL_LOCK(h) RP_MLOCK((h)->rp_lock)
+#define HLL_UNLOCK(h) RP_MUNLOCK((h)->rp_lock)
 
 
 static inline HLL *newhll(duk_context *ctx, const char *name)
@@ -3526,12 +3771,7 @@ static inline HLL *newhll(duk_context *ctx, const char *name)
     hll->refcount=1;
     hll->ctx=ctx;
 
-    /* throw or die?? */
-    if (pthread_mutex_init(&hll->lock, NULL) == EINVAL)
-    {
-        RP_THROW(ctx, "rampart.utils - error initializing hll lock");
-    }
-
+    hll->rp_lock = RP_MINIT(&(hll->lock));
     hll->next=NULL;
     return hll;
 }
@@ -3592,7 +3832,7 @@ static HLL *gethll(duk_context *ctx, const char *name, int updateref)
                 }
             }
         }
-    }        
+    }
     HLL_MAIN_UNLOCK;
     return hll;
 }
@@ -3694,7 +3934,7 @@ duk_ret_t duk_rp_hll_add(duk_context *ctx)
     if(duk_is_array(ctx, 0))
     {
         duk_uarridx_t i=0, len=duk_get_length(ctx, 0);
-        
+
         while(i<len)
         {
             duk_get_prop_index(ctx, 0, i);
@@ -3784,10 +4024,10 @@ duk_ret_t duk_rp_hll_constructor(duk_context *ctx)
     if (!duk_is_constructor_call(ctx))
         RP_THROW(ctx, "rampart.utils.hll is a constructor (must be called with 'new rampart.utils.hll()')");
 
-    hllname=REQUIRE_STRING(ctx, 0, "hll() - first argument must be a string (name of the hll)");    
+    hllname=REQUIRE_STRING(ctx, 0, "hll() - first argument must be a string (name of the hll)");
 
     hll=gethll(ctx, hllname, 1);
-    
+
     duk_push_this(ctx);
     duk_push_pointer(ctx, (void*)hll);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("hllbuf"));
@@ -3804,7 +4044,7 @@ duk_ret_t duk_rp_hll_constructor(duk_context *ctx)
         if(sz !=16384)
             RP_THROW(ctx, "new hll(): error - buffer must be 16384 bytes in length");
         memcpy(hll->buf, buf, (size_t)sz);
-        duk_remove(ctx, 1); 
+        duk_remove(ctx, 1);
     }
 
     top=duk_get_top(ctx);
@@ -3831,7 +4071,8 @@ void duk_rampart_init(duk_context *ctx)
 
     /* populate utils object with functions */
 
-    //mlock
+    /*
+    //mlock is dead, see locks in rampart-thread.c
     duk_push_c_function(ctx, duk_rp_mlock_constructor, 1);
     duk_push_object(ctx);
     duk_push_c_function(ctx, duk_rp_mlock_lock, 0);
@@ -3843,9 +4084,10 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "prototype");
     duk_put_prop_string(ctx, -2, "mlock");
 
-    RP_MINIT(&ulock_lock);
+    RP_PTINIT(&ulock_lock);
 
     //end mlock
+    */
 
     // hll
     duk_push_c_function(ctx, duk_rp_hll_constructor, DUK_VARARGS);
@@ -3863,7 +4105,8 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "prototype");
     duk_put_prop_string(ctx, -2, "hll");
 
-    RP_MINIT(&hll_lock);
+    if(!rp_hll_lock)
+        rp_hll_lock=RP_MINIT(&hll_lock);
     // end hll
 
 
@@ -3960,7 +4203,7 @@ void duk_rampart_init(duk_context *ctx)
     /* globalize is rampart.globalize() */
     duk_push_c_function(ctx, duk_rp_globalize,2);
     duk_put_prop_string(ctx, -2, "globalize");
-    
+
     duk_push_c_function(ctx, include_js, 1);
     duk_put_prop_string(ctx, -2, "include");
 
@@ -3982,22 +4225,22 @@ char *to_utf8(const char *in_str)
 {
     unsigned char *out, *buf = NULL;
     size_t len = strlen(in_str) + 1;
-    unsigned const char 
+    unsigned const char
             *in = (unsigned const char*) in_str,
             *five_before_end = in+len-5;
 
     REMALLOC(buf,len);
     out=buf;
-    /* https://github.com/svaarala/duktape-wiki/pull/137/commits/3e653e3e45be930924cd4167788b1f65b414a2ac */    
+    /* https://github.com/svaarala/duktape-wiki/pull/137/commits/3e653e3e45be930924cd4167788b1f65b414a2ac */
     while (*in) {
         // next six bytes represent a codepoint encoded as UTF-16 surrogate pair
         if ( in < five_before_end
-            && (in[0] == 0xED) 
+            && (in[0] == 0xED)
             && (in[1] & 0xF0) == 0xA0
             && (in[2] & 0xC0) == 0x80
             && (in[3] == 0xED)
             && (in[4] & 0xF0) == 0xB0
-            && (in[5] & 0xC0) == 0x80) 
+            && (in[5] & 0xC0) == 0x80)
         {
           // push coding parts of 6 bytes of UTF-16 surrogate pair into a 4 byte UTF-8 codepoint
           // adding 1 to in[1] adds 0x10000 to code-point that was subtracted for UTF-16 encoding
@@ -4005,13 +4248,13 @@ char *to_utf8(const char *in_str)
           out[1] = 0x80 | ((in[1]+1) & 0x03) << 4 | (in[2] & 0x3C) >> 2;
           out[2] = 0x80 | (in[2] & 0x03) << 4 | (in[4] & 0x0F);
           out[3] = in[5];
-          in += 6; out += 4; 
+          in += 6; out += 4;
         } else {
           // copy anything else as is
           *out++ = *in++;
       }
     }
-    *out = '\0';    
+    *out = '\0';
     return (char *)buf;
 }
 
@@ -4036,7 +4279,7 @@ char *to_utf8(const char *in_str)
 #define PF_REQUIRE_STRING(ctx,idx) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_string((ctx),i)) {\
-        if(lock_p) RP_MUNLOCK(lock_p);\
+        if(lock_p) RP_PTUNLOCK(lock_p);\
         RP_THROW(ctx, "string required in format string argument %d",i);\
     }\
     const char *r=duk_get_string((ctx),i);\
@@ -4047,7 +4290,7 @@ char *to_utf8(const char *in_str)
 #define PF_REQUIRE_LSTRING(ctx,idx,len) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_string((ctx),i)) {\
-        if(lock_p) RP_MUNLOCK(lock_p);\
+        if(lock_p) RP_PTUNLOCK(lock_p);\
         RP_THROW(ctx, "string required in format string argument %d",i);\
     }\
     const char *s=duk_get_lstring((ctx),i,(len));\
@@ -4066,7 +4309,7 @@ char *to_utf8(const char *in_str)
         s=duk_get_lstring((ctx),i,(len));\
         r=TO_UTF8(s);\
     } else {\
-        if(lock_p) RP_MUNLOCK(lock_p);\
+        if(lock_p) RP_PTUNLOCK(lock_p);\
         RP_THROW(ctx, "string or buffer required in format string argument %d",i);\
     }\
     if(r != s) *(len) = strlen(r);\
@@ -4076,7 +4319,7 @@ char *to_utf8(const char *in_str)
 #define PF_REQUIRE_INT(ctx,idx) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_number((ctx),i)) {\
-        if(lock_p) RP_MUNLOCK(lock_p);\
+        if(lock_p) RP_PTUNLOCK(lock_p);\
         RP_THROW(ctx, "number required in format string argument %d",i);\
     }\
     int r=duk_get_int((ctx),i);\
@@ -4087,7 +4330,7 @@ char *to_utf8(const char *in_str)
 #define PF_REQUIRE_NUMBER(ctx,idx) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_number((ctx),i)) {\
-        if(lock_p) RP_MUNLOCK(lock_p);\
+        if(lock_p) RP_PTUNLOCK(lock_p);\
         RP_THROW(ctx, "number required in format string argument %d",i);\
     }\
     double r=duk_get_number((ctx),i);\
@@ -4097,7 +4340,7 @@ char *to_utf8(const char *in_str)
 #define PF_REQUIRE_BUFFER_DATA(ctx,idx,sz) ({\
     duk_idx_t i=(idx);\
     if(!duk_is_buffer_data((ctx),i)) {\
-        if(lock_p) RP_MUNLOCK(lock_p);\
+        if(lock_p) RP_PTUNLOCK(lock_p);\
         RP_THROW(ctx, "buffer required in format string argument %d",i);\
     }\
     void *r=duk_get_buffer_data((ctx),i,(sz));\
@@ -4233,7 +4476,7 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
     if(type!=RTYPE_STDIN)
     {
         if (flock(fileno(f), LOCK_SH) == -1)
-            RP_THROW(ctx, "error fread(): could not get read lock");            
+            RP_THROW(ctx, "error fread(): could not get read lock");
     }
 
     while (1)
@@ -4256,7 +4499,7 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
     duk_resize_buffer(ctx, -1, read);
 
     if(retstr)
-        duk_buffer_to_string(ctx, -1);    
+        duk_buffer_to_string(ctx, -1);
 
     if(type==RTYPE_FILENAME)
         fclose(f);
@@ -4313,7 +4556,7 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gettype)
     if(type!=RTYPE_STDIN)
     {
         if (flock(fileno(f), LOCK_SH) == -1)
-            RP_THROW(ctx, "error %s: could not get read lock", fn);            
+            RP_THROW(ctx, "error %s: could not get read lock", fn);
     }
 
 
@@ -4321,7 +4564,7 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gettype)
 
     if(gettype)
     {
-        do 
+        do
         {
             ch = getch(ctx);
 
@@ -4761,7 +5004,7 @@ static duk_ret_t f_func(duk_context *ctx)
     duk_push_int(ctx, (fn));\
     duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("f_no"));\
     duk_put_prop_string(ctx,-2,(fname));\
-} while(0) 
+} while(0)
 
 
 duk_ret_t duk_rp_fopen(duk_context *ctx)
@@ -4772,7 +5015,7 @@ duk_ret_t duk_rp_fopen(duk_context *ctx)
     int mlen=strlen(mode);
 
     if (
-        mlen > 2 || 
+        mlen > 2 ||
         (  mlen > 1 && mode[1] != '+') ||
         (*mode != 'r' && *mode != 'w' && *mode != 'a')
     )
@@ -4821,7 +5064,7 @@ static struct tm * to_local(struct tm *t)
 {
     time_t g;
     long off = t->tm_gmtoff;
-    
+
     t->tm_isdst=-1;
     g=timegm(t) - off;
 
@@ -4840,7 +5083,7 @@ static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt)
     dt_p->tm_mday=1;
 
     // erase milliseconds if present
-    if( (p=strrchr(datestr, '.')) 
+    if( (p=strrchr(datestr, '.'))
         && isdigit(*(p+1)) && isdigit(*(p+2)) && isdigit(*(p+3))
     )
     {
@@ -4864,7 +5107,7 @@ static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt)
 
         /* if year not specified in custom format */
         if (
-         dt_p->tm_year == 0 && !strstr(ifmt,"%c") && !strstr(ifmt,"%x") 
+         dt_p->tm_year == 0 && !strstr(ifmt,"%c") && !strstr(ifmt,"%x")
          && !strstr(ifmt,"%C") && !strstr(ifmt,"%Y") && !strstr(ifmt,"%y")
         )
         {
@@ -4874,13 +5117,13 @@ static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt)
                 time(&now);
                 tmpt=localtime_r(&now,tmpt);
                 dt_p->tm_year = tmpt->tm_year;
-                
+
                 /* if no year and no day and no month*/
-                if( !strstr(ifmt,"%d") && !strstr(ifmt,"%e") && !strstr(ifmt,"%D") 
+                if( !strstr(ifmt,"%d") && !strstr(ifmt,"%e") && !strstr(ifmt,"%D")
                  && !strstr(ifmt,"%U") && !strstr(ifmt,"%W") && !strstr(ifmt,"%w")
-                 && !strstr(ifmt,"%a") && !strstr(ifmt,"%A") && !strstr(ifmt,"%b") 
+                 && !strstr(ifmt,"%a") && !strstr(ifmt,"%A") && !strstr(ifmt,"%b")
                  && !strstr(ifmt,"%B") && !strstr(ifmt,"%h") && !strstr(ifmt,"%j")
-                 && !strstr(ifmt,"%m")  
+                 && !strstr(ifmt,"%m")
                 )
                 {
                     dt_p->tm_mday = tmpt->tm_mday;
@@ -4892,7 +5135,7 @@ static int scandate(struct tm *dt_p, const char *dstr, const char *ifmt)
 
         if(strstr(ifmt,"%z"))
             dt_p = to_local(dt_p);
-        
+
         free(datestr);
         return 0;
     }
@@ -4936,10 +5179,10 @@ duk_ret_t duk_rp_scandate(duk_context *ctx)
         fmt_idx=1;
     else if(!duk_is_undefined(ctx, 1))
         RP_THROW(ctx, "scanDate(): Optional second argument must be a Number (timezone offset in seconds)");
-        
+
     if(off_idx==-1 && fmt_idx==-1 && !duk_is_undefined(ctx, 2))
         RP_THROW(ctx, "scanDate(): Optional second argument must be a Number (timezone offset in seconds)");
-            
+
     if(duk_is_number(ctx, 2) && off_idx==-1)
         off_idx=2;
     else if(duk_is_string(ctx, 2) && fmt_idx==-1)
@@ -4973,7 +5216,7 @@ duk_ret_t duk_rp_scandate(duk_context *ctx)
     return 1;
 }
 
-/* scan a date, use a number of seconds or use a JS date, 
+/* scan a date, use a number of seconds or use a JS date,
    then return a formatted string using supplied format    */
 duk_ret_t duk_rp_datefmt(duk_context *ctx)
 {
@@ -5019,7 +5262,7 @@ duk_ret_t duk_rp_datefmt(duk_context *ctx)
 
     strftime(out, sizeof(out), fmt, dt_p);
     duk_push_string(ctx, out);
-    return 1; 
+    return 1;
 }
 
 
@@ -5035,6 +5278,10 @@ void duk_printf_init(duk_context *ctx)
         duk_pop(ctx);
         duk_push_object(ctx);
     }
+
+    duk_push_c_function(ctx, duk_rp_to_json_safe, 1);
+    duk_put_prop_string(ctx, -2, "toJsonSafe");
+
     duk_push_c_function(ctx, duk_rp_printf, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "printf");
 
@@ -5134,9 +5381,9 @@ void duk_printf_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2,"utils");
     duk_put_global_string(ctx,"rampart");
 
-    RP_MINIT(&pflock);
-    RP_MINIT(&pflock_err);
-    RP_MINIT(&loglock);
-    RP_MINIT(&errlock);
+    RP_PTINIT(&pflock);
+    RP_PTINIT(&pflock_err);
+    RP_PTINIT(&loglock);
+    RP_PTINIT(&errlock);
 
 }

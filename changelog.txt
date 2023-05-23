@@ -1,30 +1,41 @@
-v0.1.3
-    - main: lock for exit functions
-    - rampart-sql:    added missing handle close in sql.reset
-    - rampart-server: fixed cookie parsing
-    - rampart-sql:    fixed faulty passing of user argument to callback in exec
-    - rampart-sql:    revamp of reset of global texis parameters, as the
-                      internal texis method caused a significant slowdown.
-    - rampart-sql:    bug fix for missing grab of error buffer before printing.
-    - rampart.utils:  bug fix for closing pipe twice.
-    - rampart-server: added setting for libevent for max single read/write.
-    - rampart-sql:    bug fix for reset of texis settings when switching handles
+v0.2.0
+    - rampart-python:  initial version, with threading and forking support
+    - rampart.threads: initial version, other modules updated with new lock system,
+                       user locks and other mods to support user threads
+    - rampart:         eval now supports use of template literals and babel.
+		       multiple minor bug fixes.
+    - scripts:         added make_cmod_template.js which makes templates for
+                       user c modules and tests.
+    - rampart.utils    printf %J and rampart.utils.toJsonSafe print a safe
+                       version of JSON for self referencing object.
+v0.1.3 (unpublished)
+    - main:            lock for exit functions
+    - rampart-sql:     added missing handle close in sql.reset
+    - rampart-server:  fixed cookie parsing
+    - rampart-sql:     fixed faulty passing of user argument to callback in exec
+    - rampart-sql:     revamp of reset of global texis parameters, as the
+                       internal texis method caused a significant slowdown
+    - rampart-sql:     bug fix for missing grab of error buffer before printing
+    - rampart.utils:   bug fix for closing pipe twice
+    - rampart-server:  added setting for libevent for max single read/write
+    - rampart-sql:     bug fix for reset of texis settings when switching handles
 v0.1.2
-    - rampart-net: resolve error message fixes
-    - rampart-net: added resolver.reverse ip to name functions 
-    - rampart-url: made module compatible with node
-    - rampart-server: bug fix: check return val is object before looking for property 'defer'
-    - rampart-server: check for cyclic references before returning object JSON
+    - rampart-net:     resolve error message fixes
+    - rampart-net:     added resolver.reverse ip to name functions
+    - rampart-url:     made module compatible with node
+    - rampart-server:  bug fix: check return val is object before looking for property 'defer'
+    - rampart-server:  check for cyclic references before returning object JSON
 v0.1.1
-    - Sql.rexFile: removed buffer, using mmap instead.
-    - Template Literal translation improvements.
-    - setTimeout et al - accept parameters.
-    - Added log rotation to web_server_conf.js
-    - fixed stat file dates on 32 bit systems.
-    - NEW rampart-net.so --  node.js like net function with ssl
-    - fixed segfault on clearTimeout when event expired
-    - improved libevhtp_ws thread load balancing
-    - added server req.reply and return val {defer:true}
-    - additional node.js style buffer options and abprintf()
+    - Sql.rexFile:     removed buffer, using mmap instead
+    - main:            Template Literal translation improvements
+    - main:            setTimeout et al - accept parameters
+    - scripts:         Added log rotation to web_server_conf.js
+    - rampart.utils:   fixed stat file dates on 32 bit systems
+    - rampart-net:     initial version,  node.js like net function with ssl
+    - main:            fixed segfault on clearTimeout when event expired
+    - rampart.server:  improved libevhtp_ws thread load balancing
+    - rampart.server:  added server req.reply and return val {defer:true}
+    - main:            additional node.js style buffer options
+    - rampart.utils:   abprintf() - append existing buffer
 v0.1.0
     - initial release

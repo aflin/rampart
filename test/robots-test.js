@@ -12,24 +12,24 @@ var total=0;
 function expect_true(b)
 {
     total++;
-    rampart.utils.printf("%-20s %2d  --  ", name + " Test", x++);
+    rampart.utils.printf("testing robots - #%2d %-47s - ", x++, name + " Test");
     if(b==true){
       console.log("passed");
       npass++;
     } else {
-      console.log("FAILED");
+      console.log(">>>>> FAILED <<<<<");
       nfail++;
     }
 }
 function expect_false(b)
 {
     total++;
-    rampart.utils.printf("%-20s %2d  --  ", name + " Test", x++);
+    rampart.utils.printf("testing robots - #%2d %-47s - ", x++, name + " Test");
     if(b==false) {
       console.log("passed");
       npass++;
     } else {
-      console.log("FAILED");
+      console.log(">>>>> FAILED <<<<<");
       nfail++;
     }
 }

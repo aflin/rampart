@@ -190,6 +190,32 @@ function copy_files(src, dest, backup){
     }
 }
 
+function copy_dir_recursive(src, dest, backup) {
+    if(backup && stat(dest))
+        rename(dest, dest + rampart.utils.dateFmt("-%Y-%m-%d-%H-%M-%S"));
+
+    if(!stat(dest))
+        mkdir(dest);
+
+    var cp_files = readDir(src, true).filter(function(d){if(d=='.'||d=='..') return false; return true;});
+
+    for(var i=0; i<cp_files.length; i++) {
+        var cpsrc = src + '/' + cp_files[i];
+        var dest_file = dest + '/' + cp_files[i];
+        var cpstat = lstat(dest_file);
+        // if we installed before and left links, those need to be removed
+        // mostly for /usr/local/bin links if reinstalling in /usr/local
+        if(cpstat.isSymbolicLink)
+            rmFile(dest_file);
+        var res = exec('cp', '-a', cpsrc, dest);  //dest is a directory
+        if(res.stderr.length)
+        {
+            printf("Error copying files:\n    %s\n", res.stderr);
+            process.exit(1);
+        }
+    }
+}
+
 var with_err="";
 
 var link_bin_files = ['rampart', 'tsql', 'rex', 'texislockd', 'addtable', 'kdbfchk' ];
@@ -206,10 +232,10 @@ function do_make_links(prefix) {
         if(linkstat)
         {
             //link already exists
-            if(linkstat.isSymbolicLink) {
+            if(linkstat.isSymbolicLink || linkstat.isFile) {
                 rmFile(link);                
             } else {
-                printf("Cannot create link '%s', file exists and is not a link\n", link);
+                printf("Cannot create link '%s', file exists and is not a link or a file\n", link);
                 with_err += sprintf("\n    - Link creation failed for '%s'.",link);
                 continue;
             }
@@ -239,7 +265,7 @@ function do_install(prefix, map, makelinks){
 
         if(src == dest)
             continue;
-        copy_files(src, dest, backup);
+        copy_dir_recursive(src, dest, backup);
         if( dir == 'web_server' ) {
             try {
                 shell("chown -R nobody " + dest);
@@ -256,6 +282,71 @@ function do_install(prefix, map, makelinks){
         else
             do_make_links(prefix);
     }    
+
+    // rebase python paths
+    var rebase_script = realPath(prefix) + map.modules +'/python/rebase-python.sh';
+    var cmdres = exec('bash', '-c', rebase_script);
+    if(cmdres.stderr.length)
+    {
+        printf("error executing %s\n:   %s\n", rebase_script, cmdres.stderr);  
+        process.exit(1);
+    }
+
+    // make a more movable version of pip3r and python3r
+    var pip3r_fn = realPath(prefix) + map.bin + '/pip3r';
+    var python3r_fn = realPath(prefix) + map.bin + '/python3r';
+
+    rmFile(pip3r_fn);
+    rmFile(python3r_fn);
+
+    fprintf(pip3r_fn, '%s', `#!/bin/bash
+
+RAMPART=\$(which rampart)
+
+if [ "\$RAMPART" == "" ]; then
+        CURSRC=\$(readlink -f \${BASH_SOURCE[0]})
+        CURDIR=\$(dirname \${CURSRC})
+        RP="\${CURDIR}/rampart"
+        if [ -e \$RP ]; then
+                RAMPART="\$RP"
+        else
+                echo "could not find the rampart executable"
+                exit 1;
+        fi
+fi
+
+RP_DIR=\$(\$RAMPART -c "rampart.utils.printf('%s/python/bin/', process.modulesPath)");
+
+python3_exec="\${RP_DIR}/python3"
+
+pip3_exec="\${RP_DIR}/pip3"
+
+\$python3_exec \$pip3_exec "\$@"
+`   );
+
+    fprintf(python3r_fn, "%s", `#!/bin/bash
+RAMPART=\$(which rampart)
+
+if [ "\$RAMPART" == "" ]; then
+        CURSRC=\$(readlink -f \${BASH_SOURCE[0]})
+        CURDIR=\$(dirname \${CURSRC})
+        RP="\${CURDIR}/rampart"
+        if [ -e \$RP ]; then
+                RAMPART="\$RP"
+        else
+                echo "could not find the rampart executable"
+                exit 1;
+        fi
+fi
+
+python3_exec=\$(\$RAMPART -c "rampart.utils.printf('%s/python/bin/python3', process.modulesPath)");
+
+\$python3_exec "\$@"
+`   );
+
+    chmod(pip3r_fn, "755");
+    chmod(python3r_fn, "755");
+
     return true;
 }
 

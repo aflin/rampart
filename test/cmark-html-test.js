@@ -7,7 +7,7 @@ var html  = require("rampart-html");
 function testFeature(name,test)
 {
     var error=false;
-    printf("testing %-40s - ", name);
+    printf("testing cmark - %-52s - ", name);
     fflush(stdout);
     if (typeof test =='function'){
         try {

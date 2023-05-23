@@ -588,7 +588,7 @@ static size_t _ftoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
 
     if(flags & FLAGS_UPPERCASE)
         formatflag = toupper(formatflag);
-    
+
     if(flags & FLAGS_PRECISION)
     {
         sprintf(fmt, "%%%s%s%s%s%s%s*.*%c",
@@ -601,7 +601,7 @@ static size_t _ftoa(out_fct_type out, char *buffer, size_t idx, size_t maxlen, d
             formatflag
             );
         len=snprintf(buf, FLOAT_MAX_BUF, fmt, width, prec, value);
-    } 
+    }
     else
     {
         sprintf(fmt, "%%%s%s%s%s%s%s*%c",
@@ -899,7 +899,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         {
             unsigned int l = 1U;
             unsigned char c='\0';
-            
+
             if (duk_is_string(ctx, fidx))
             {
                 c=*(duk_get_string(ctx, fidx++));
@@ -914,7 +914,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             }
             else
                 RP_THROW(ctx, "string (single char) or number (0-255) required in format string argument %d", fidx);
-                            
+
             // pre padding
             if (!(flags & FLAGS_LEFT))
             {
@@ -941,7 +941,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         {
             unsigned int l = 1U;
             uint32_t c={0};
-            
+
             if (duk_is_number(ctx, fidx))
             {
                 uint64_t n=(uint64_t)duk_get_number(ctx, fidx);
@@ -952,7 +952,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             }
             else
                 RP_THROW(ctx, "number (0-4294967295) required in format string argument %d", fidx);
-                            
+
             // pre padding
             if (!(flags & FLAGS_LEFT))
             {
@@ -980,7 +980,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             format++;
             break;
         }
-        /* %B is now base64 
+        /* %B is now base64
         case 'B':
         {
             duk_size_t sz;
@@ -1011,7 +1011,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 if(duk_is_string(ctx, -1))
                     duk_to_fixed_buffer(ctx, -1, &sz);
                 s=duk_get_buffer_data(ctx, -1, &sz);
-                
+
                 while(sz--)
                 {
                     switch(*s){
@@ -1020,7 +1020,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                     }
                     s++;
                 }
-                
+
                 duk_base64_decode(ctx, -1);
                 p = duk_get_buffer_data(ctx, -1, &sz);
                 for (;i<sz;i++)
@@ -1167,7 +1167,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             if(duk_is_buffer(ctx, fidx))
                 p = duk_buffer_to_string(ctx, fidx);
             else
-                p = PF_REQUIRE_STRING(ctx, fidx);                
+                p = PF_REQUIRE_STRING(ctx, fidx);
 
             fidx++;
 
@@ -1192,7 +1192,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             {
                 const char *rp=p;
                 unsigned int wlen=0;
-                
+
                 if(!lpos)
                     printindent;
 
@@ -1230,7 +1230,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                         lastwasn=1;
                     }
                     else
-                    /* space coincides with end of line */ 
+                    /* space coincides with end of line */
                     {
                         out('\n', buffer, idx++, maxlen);
                         p++;
@@ -1279,20 +1279,44 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 }
                 else if ( !duk_is_function(ctx, fidx) )
                 {
-                    if(width)
+                    /* JSON.stringify(obj,null,width) */
+                    duk_get_global_string(ctx, "JSON");
+                    duk_push_string(ctx, "stringify");
+                    duk_dup(ctx, fidx);
+                    duk_push_null(ctx);
+                    duk_push_int(ctx, width);
+                    if(duk_pcall_prop(ctx, -5, 3))
                     {
-                        /* JSON.stringify(obj,null,width) */
-                        duk_get_global_string(ctx, "JSON");
-                        duk_push_string(ctx, "stringify");
-                        duk_dup(ctx, fidx);
-                        duk_push_null(ctx);
-                        duk_push_int(ctx, width);
-                        duk_call_prop(ctx, -5, 3);
+                        //cyclic error
+                        char *j=str_rp_to_json_safe(ctx, fidx, NULL);
+
+                        duk_pop_2(ctx); //JSON, err
+
+                        //use the safe encode
+                        duk_push_string(ctx, j);
+                        if(width)
+                        {
+                            duk_json_decode(ctx, -1);
+                            /* JSON.stringify(obj,null,width) */
+                            duk_get_global_string(ctx, "JSON");
+                            duk_push_string(ctx, "stringify");
+                            duk_pull(ctx, -3);
+                            duk_push_null(ctx);
+                            duk_push_int(ctx, width);
+                            duk_call_prop(ctx, -5, 3);
+                            duk_replace(ctx, fidx);
+                            duk_pop(ctx); /* JSON */
+                        }
+                        else
+                            duk_replace(ctx, fidx);
+
+                        free(j);
+                    }
+                    else
+                    {
                         duk_replace(ctx, fidx);
                         duk_pop(ctx); /* JSON */
                     }
-                    else
-                        (void)duk_json_encode(ctx, fidx);
                 }
                 else
                 {
@@ -1316,7 +1340,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 l = (l < precision ? l : precision);
             else
                 precision = l;
-            
+
             if (!(flags & FLAGS_LEFT))
             {
                 while (l++ < width)
@@ -1369,7 +1393,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 char *u_p, *free_p;
                 if(!p) p="null";
                 u_p = free_p = strdup(p);
-                
+
                 decode_html_entities_utf8(u_p, NULL);
                 while ((*u_p != 0) && (!(flags & FLAGS_PRECISION) || precision--))
                 {
@@ -1459,7 +1483,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 isbuf=1;
             }
             /* convert json as above in '%J' */
-            else if (duk_is_object(ctx, fidx) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1))
+            else if (duk_is_object(ctx, fidx) && !duk_is_function(ctx, -1))
             {
                 goto json;
             }
@@ -1467,6 +1491,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             /* everything else is coerced */
             {
                 p = duk_safe_to_string(ctx, fidx++);
+
                 l = _strnlen_s(p, precision ? precision : (size_t)-1);
             }
             // pre padding
