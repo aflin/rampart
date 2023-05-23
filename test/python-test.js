@@ -63,13 +63,14 @@ def evalstr(s):
 x=5.5
 `;
 
-testFeature("python - importString - functions and eval", function(){
+testFeature("python - importString - functions and eval - valueOf()", function(){
     var r=python.importString(iscript);
 
     r=python.importString("y=6.6");
 
     var x = r.evalstr("4.2 * x * y");
-    return x.toValue() == 152.46 && r.retself("yo").toValue() == "yo" ;
+
+    return x == 152.46 && r.retself("yo") == "yo" ;
 });
 
 function get_cursor(dbfile) {
