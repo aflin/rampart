@@ -15,7 +15,10 @@
 #include "../../register.h"
 #include "event2/dns.h"
 
-#define MAX_THREADS 4096
+//do we really need a hard limit?
+#ifndef RP_MAX_THREADS
+#define RP_MAX_THREADS 4096
+#endif
 
 RPTHR **rpthread=NULL;
 uint16_t nrpthreads=0;
@@ -29,22 +32,22 @@ RPTHR_LOCK *rp_cp_lock;
 duk_context *cpctx=NULL; //copy/paste ctx for thread_put and thread_get
 
 #ifdef RPTHRDEBUG
+
 #define dprintf(...) do{\
     printf("(%d) at %d (thread %d): ", (int)getpid(),__LINE__, get_thread_num());\
     printf(__VA_ARGS__);\
     fflush(stdout);\
 }while(0)
-
 #define xxdprintf(...) /*nada*/
+
 #else
 
+#define dprintf(...) /*nada*/
 #define xxdprintf(...) do{\
     printf("(%d) at %d (thread %d): ", (int)getpid(),__LINE__, get_thread_num());\
     printf(__VA_ARGS__);\
     fflush(stdout);\
 }while(0)
-
-#define dprintf(...) /*nada*/
 
 #endif
 
@@ -1229,23 +1232,28 @@ static RPTHR* get_first_unused()
 
 static duk_context *new_context(RPTHR *thr)
 {
-    duk_context *tctx = duk_create_heap(NULL, NULL, NULL, NULL, duk_rp_fatal);
+    duk_context *pctx=NULL, *tctx = duk_create_heap(NULL, NULL, NULL, NULL, duk_rp_fatal);
     int thrno = get_thread_num();
 
     duk_init_context(tctx);  //fresh copy of all the rampart extra goodies
 
-    if(thrno) //creating a thread inside another thread that is not the main thread.  proceed with caution.
-              // we definitely don't want to use main_ctx, cuz no amount of locking will help.
-    {
-        duk_context *pctx = rpthread[thrno]->ctx;
-        rpthr_copy_global(pctx, tctx);
-    }
+    //creating a thread inside another thread that is not the main thread.  proceed with caution.
+    // we definitely don't want to use main_ctx, cuz no amount of locking will help.
+    if(thrno)
+        pctx = rpthread[thrno]->ctx;
     // main_ctx is created first. If main_ctx is NULL, we are right now creating it.
     // so don't copy to self
-    else if(main_ctx)
+    else if (main_ctx)
+        pctx=main_ctx;
+
+    if(pctx)
     {
-        rpthr_copy_global(main_ctx, tctx);
+        rpthr_copy_global(pctx, tctx);
+        // we don't want copied rampart events
+        duk_push_object(tctx);
+        duk_put_global_string(tctx, DUK_HIDDEN_SYMBOL("jsevents"));
     }
+
     // add some info in each thread
     if (!duk_get_global_string(tctx, "rampart"))
     {
@@ -1261,29 +1269,6 @@ static duk_context *new_context(RPTHR *thr)
 }
 
 
-#ifdef RPTHRDEBUG
-int nlocks=0;
-#define THRLOCK do{\
-    nlocks++;\
-    dprintf("LOCKING %d\n", nlocks);\
-    RP_MLOCK(rp_thr_lock);\
-    dprintf("GOT LOCK\n");\
-}while(0);
-
-#define THRUNLOCK do{\
-    RP_MUNLOCK(rp_thr_lock);\
-    nlocks--;\
-    dprintf("UNLOCKED %d\n", nlocks);\
-    /*if(nlocks) dowake();*/\
-}while(0);
-#else
-
-#define THRLOCK RP_MLOCK(rp_thr_lock)
-
-#define THRUNLOCK RP_MUNLOCK(rp_thr_lock)
-
-#endif
-
 static void remove_from_parent(RPTHR *thr)
 {
     RPTHR *pthr=thr->parent;
@@ -1292,7 +1277,6 @@ static void remove_from_parent(RPTHR *thr)
     if(!pthr)
         return;
     // several children could be attempting to do this at once
-    THRLOCK;    
     dprintf("thread %d has %d children, removing %p\n", (int)pthr->index, pthr->nchildren, thr);
     for(i=0; i<pthr->nchildren; i++)
     {
@@ -1308,13 +1292,14 @@ static void remove_from_parent(RPTHR *thr)
 
     pthr->nchildren--;
     dprintf("now have %d children\n", pthr->nchildren);
-    THRUNLOCK;
 } 
 
 void rp_close_thread(RPTHR *thr)
 {
     int i=0;
-    dprintf("CLOSE THREAD\n");
+    
+    dprintf("CLOSE THREAD, thread=%d, base=%p\n", (int)thr->index, thr->base);
+    thr->flags=0; //reset all flags
 
     if(! RPTHR_TEST(rpthread[i], RPTHR_FLAG_IN_USE))
         return;
@@ -1335,7 +1320,7 @@ void rp_close_thread(RPTHR *thr)
 
     if(thr->dnsbase)
         evdns_base_free(thr->dnsbase, 0);
-    RPTHR_CLEAR(thr, RPTHR_FLAG_BASE);
+    //RPTHR_CLEAR(thr, RPTHR_FLAG_BASE);
     thr->dnsbase=NULL;
     event_base_free(thr->base);
     thr->base=NULL;
@@ -1364,7 +1349,7 @@ void rp_close_thread(RPTHR *thr)
     remove_from_parent(thr);
     //RPTHR_CLEAR(thr, RPTHR_FLAG_IN_USE);
     //RPTHR_CLEAR(thr, RPTHR_FLAG_FINAL );
-    thr->flags=0;
+    //thr->flags=0;
 }
 
 /* what to do after fork:  
@@ -1440,7 +1425,7 @@ RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx)
 
     if( !(ret=get_first_unused()) )
     {
-        if(nrpthreads == MAX_THREADS)
+        if(nrpthreads == RP_MAX_THREADS)
         {
             THRUNLOCK;
             return NULL;
@@ -1694,8 +1679,10 @@ RPTCLOSER {
 static void finalize_event(evutil_socket_t fd, short events, void* arg)
 {
     RPTCLOSER *closer=(RPTCLOSER*)arg;
-    int npending=0;
+    int npending=0, rpevents_pending=0;
     struct event_base *base=event_get_base(closer->e);
+    RPTHR *thr = closer->thr;
+    duk_context *ctx = thr->ctx;
 
     event_del(closer->e);
 
@@ -1706,8 +1693,30 @@ static void finalize_event(evutil_socket_t fd, short events, void* arg)
         return;
     }
     
+    /* check for pending rampart.event */
+    if(duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("jsevents")) )
+    {
+        duk_enum(ctx,-1,0);
+        while(duk_next(ctx, -1, 1))
+        {
+            //enum on value
+            duk_enum(ctx, -1, 0);
+            if(duk_next(ctx, -1, 0))
+            {
+                //printf("got pending %s in thread %d\n", duk_to_string(ctx, -1), get_thread_num());
+                rpevents_pending=1;
+                duk_pop_n(ctx, 4); //inner key, inner enum ,key, val
+                break;
+            }
 
-    npending= event_base_get_num_events(base, EVENT_BASE_COUNT_ADDED);// +
+            duk_pop_3(ctx);//inner enum, key,val
+        }
+        duk_pop(ctx);//enum
+    }
+    duk_pop(ctx);//jsevents or undefined
+
+    //printf("rp pending = %d\n", rpevents_pending);
+    npending= rpevents_pending + event_base_get_num_events(base, EVENT_BASE_COUNT_ADDED);// +
               //event_base_get_num_events(base, EVENT_BASE_COUNT_VIRTUAL) +
               //event_base_get_num_events(base, EVENT_BASE_COUNT_ACTIVE);
 
@@ -1725,8 +1734,9 @@ static void finalize_event(evutil_socket_t fd, short events, void* arg)
 
         free(closer);
         dprintf("CLOSING thr %d\n", (int)thr->index);
+        THRLOCK;
         rp_close_thread(thr);
-
+        THRUNLOCK;
         pthread_exit(NULL);
         return;
     }

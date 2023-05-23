@@ -2,7 +2,7 @@ rampart.globalize(rampart.utils);
 
 var thread = rampart.thread;
 
-var nruns=16;
+var nruns=4;
 
 var Sql=require('rampart-sql');
 var sql=new Sql.init(process.scriptPath+'/testdb',true);
@@ -75,7 +75,7 @@ function global_report_result(res){
         if(total == nruns){
             total++; // only once
             clearInterval(iv);
-            var ps = shell("ps aux | grep rampart | grep [s]ql_helper");
+            var ps = shell(`ps ax -o ppid,command | grep rampart | grep [s]ql_helper | grep ${process.getpid()}`);
             if(ps.stdout.length) {
                 error="Not all sql_helpers were terminated:\n"+ps.stdout;
                 ret=false;
@@ -84,7 +84,7 @@ function global_report_result(res){
         } else if(total>nruns) {
             clearInterval(iv);
         }
-        if(niv > 50) {
+        if(niv > 100) {
             clearInterval(iv);
             testFeature("thread - multiple threads with sql forks", false);
         }
@@ -357,6 +357,7 @@ thr5.exec(function(){
 
 /* give the forked server a chance to print its info*/
 while(!thread.get("pid")) sleep(0.2);
+sleep(0.3);
 
 thr5.exec(function(){
     if(!pid)

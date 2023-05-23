@@ -4,8 +4,9 @@ rampart.globalize(rampart.utils);
 chdir(process.scriptPath);
 
 var rcl;
-var rpid;
-function start_redis(){
+var rpids=[];
+
+function start_redis(port){
     var ret = shell("which redis-server");
 
     if (ret.exitStatus != 0) {
@@ -15,14 +16,16 @@ function start_redis(){
 
     var rdexec = trim(ret.stdout);
 
-    ret = exec(rdexec, {background: true}, "--port", "13287");
+    ret = exec(rdexec, {background: true}, "--port", port, "--dbfilename", `${port}-dump.rdb`);
 
     sleep(0.5);
-    rpid = ret.pid;
-    if (!kill(rpid, 0)) {
+
+    if (!kill(ret.pid, 0)) {
         fprintf(stderr, "Failed to start redis-server\n");
         process.exit(1);
     }
+
+    rpids.push(ret.pid);
 
     sleep(0.5);
 }
@@ -30,7 +33,7 @@ function start_redis(){
 try {
     rcl=new redis.init(13287);
 } catch (e) {
-    start_redis();
+    start_redis(13287);
     rcl=new redis.init(13287);
 }
 
@@ -50,21 +53,24 @@ if(vers < 60201) {
 
 
 function cleanup() {
-    if(!rpid)
-        return;
-    if(!kill(rpid, 0))
-      return;
-    kill(rpid, 15);
-    for (var i=0; i<50; i++) {
-        if(!kill(rpid, 0)) {
-            return;
-        }
-        sleep(0.1);
+    var killed=true;
+    rpids.forEach(function(rpid) {
+        if(!kill(rpid, 0))
+          return;
         kill(rpid, 15);
+        for (var i=0; i<50; i++) {
+            if(!kill(rpid, 0)) {
+                return;
+            }
+            sleep(0.1);
+            kill(rpid, 15);
+        }
+        killed=false;
+    });
+    if(!killed) {
+        fprintf(stderr, "Failed to kill redis-server\n");
+        process.exit(1);
     }
-
-    fprintf(stderr, "Failed to kill redis-server\n");
-    process.exit(1);
 }
 
 function testFeature(name,test)

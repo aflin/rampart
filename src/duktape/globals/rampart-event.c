@@ -152,7 +152,6 @@ duk_ret_t duk_rp_on_event(duk_context *ctx)
         duk_put_prop_string(ctx, -2, "param");
     }
     duk_put_prop_string(ctx, -2, onname);
-
     if(!have_object)
         duk_put_prop_string(ctx, -2, evname);// new object into jsevents
 
@@ -172,7 +171,6 @@ CBH {
 
 #define JSEVARGS struct jsev_args
 JSEVARGS {
-    int          thread_no;
     struct event *e;
     char         *key;
     char	 *fname;
@@ -184,12 +182,9 @@ JSEVARGS {
 void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
 {
     JSEVARGS *earg = (JSEVARGS *) arg;
-    duk_context *ctx = main_ctx;
+    RPTHR *thr = get_current_thread();
+    duk_context *ctx = thr->htctx;
     duk_idx_t arg_idx = -1;
-
-    /* if using threads, there are two thread_ctxs per thread/event-loop */
-    if(earg->thread_no > -1)
-        ctx=rpthread[earg->thread_no]->ctx;
 
 #define jsev_exec_func do{\
     duk_enum(ctx, -1, 0); /* [ {jsevents}, {myevent}, enum ]*/\
@@ -284,11 +279,11 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
         arg_idx = -1;
     }
 
-    /* the second one, if thread */
-    if(earg->thread_no > -1)
+    /* the second one, if we have websockets */
+    if(thr->wsctx)
     {
 
-        ctx = rpthread[earg->thread_no]->wsctx; //switch stacks. Second stack is for websockets.
+        ctx = thr->wsctx; //switch stacks. Second stack is for websockets.
         if(!ctx)
             goto end;
 
@@ -339,6 +334,7 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
 
         RP_MUNLOCK(rp_cborlock);
     }
+
     event_free(earg->e);
     free(earg->key);
     if(earg->fname)
@@ -355,16 +351,19 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
     timeout.tv_sec=0;
     timeout.tv_usec=0; 
 
+    THRLOCK;
     for(i=0; i<nrpthreads; i++)
     {
         RPTHR *thr=rpthread[i];
         struct event_base *base;
 
+        if( ! RPTHR_TEST(thr, RPTHR_FLAG_IN_USE) || !thr->base )
+            continue;
+
         base=thr->base;
 
         args=NULL;
         REMALLOC(args,sizeof(JSEVARGS));
-        args->thread_no = i;
         args->key=NULL;
 
         if(rp_event_scope_to_module)
@@ -400,11 +399,14 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
             args->fname=NULL;
 
         args->e = event_new(base, -1, 0, rp_jsev_doevent, args);
-
+        if(cbor)
+            cbor->refcount++;
         args->cbor = cbor;
 
+        //printf("event = %p, base=%p in thread %d, flag=%d, thr=%p\n", args->e, thr->base, get_thread_num(), thr->flags, thr);
         event_add(args->e, &timeout);
     }
+    THRUNLOCK;
 }
 
 
@@ -428,8 +430,7 @@ duk_ret_t duk_rp_trigger_event(duk_context *ctx)
         cbor->data=NULL;
         REMALLOC(cbor->data, cbor->size);
         memcpy(cbor->data, buf, cbor->size);       
-        //cbor->refcount = totnthreads+1;
-        cbor->refcount = nrpthreads;
+        cbor->refcount = 0;
     }
     evloop_insert(ctx, evname, NULL, cbor, JSEVENT_TRIGGER);
     return 0;

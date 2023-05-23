@@ -209,11 +209,14 @@ extern "C"
 #define printenum(ctx, idx)                                                                                          \
     do                                                                                                               \
     {                                                                                                                \
+        const char *s;                                                                                               \
         duk_enum((ctx), (idx), DUK_ENUM_NO_PROXY_BEHAVIOR | DUK_ENUM_INCLUDE_NONENUMERABLE |                         \
                                DUK_ENUM_INCLUDE_HIDDEN | DUK_ENUM_INCLUDE_SYMBOLS);                                  \
         while (duk_next((ctx), -1, 1))                                                                               \
         {                                                                                                            \
-            printf("%s -> %s\n", duk_get_string((ctx), -2), duk_safe_to_string((ctx), -1));                          \
+            s = duk_get_string((ctx), -2);                                                                           \
+            if(*s=='\xff') printf("DUK_HIDDEN_SYMBOL(%s) -> %s\n", s+1, duk_safe_to_string((ctx), -1));              \
+            else printf("%s -> %s\n", s, duk_safe_to_string((ctx), -1));                                             \
             duk_pop_2((ctx));                                                                                        \
         }                                                                                                            \
         duk_pop((ctx));                                                                                              \
@@ -445,6 +448,8 @@ int rp_thread_close_children();
 void set_thread_fin_cb(RPTHR *thr, rpthr_fin_cb cb, void *data);
 extern pthread_mutex_t thr_lock;
 extern RPTHR_LOCK *rp_thr_lock;
+#define THRLOCK RP_MLOCK(rp_thr_lock)
+#define THRUNLOCK RP_MUNLOCK(rp_thr_lock)
 
 
 #define REMALLOC(s, t) 					 \
