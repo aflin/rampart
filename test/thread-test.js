@@ -361,6 +361,8 @@ thr5.exec(function(){
     thread.put("server_forked", true);
 });
 
+//before going further, server should be forked.
+while(!thread.get("server_forked")) sleep(0.1);
 
 thr5.exec(function(){
     if(!pid)
@@ -390,8 +392,6 @@ thr5.exec(function(){
 );
 
 
-//before using locks, server should be forked.
-while(!thread.get("server_forked")) sleep(0.1);
 
 // must make locks first or they will not be copied to threads
 var lock1 = new rampart.lock();
