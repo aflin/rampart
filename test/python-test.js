@@ -40,7 +40,7 @@ function testFeature(name,test,error)
 testFeature("python - import pathlib and resolve './'", function(){
     var pathlib = python.import('pathlib');
     var p=pathlib.PosixPath('./');
-    return p.resolve().toValue() == process.scriptPath;
+    return p.resolve().toValue() == getcwd();
 });
 
 testFeature("python - import hashlib and sha256", function(){

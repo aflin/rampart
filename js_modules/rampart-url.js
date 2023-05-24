@@ -392,7 +392,7 @@ if(ismod) {
         testFeature = function(name,test)
         {
             var error=false;
-            printf("testing %-40s - ", name);
+            printf("testing url %-56s - ", name);
             fflush(stdout);
             if (typeof test =='function'){
                 try {
