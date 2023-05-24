@@ -1086,12 +1086,12 @@ void rpthr_copy_global(duk_context *ctx, duk_context *tctx)
 #define CPLOCK RP_MLOCK(rp_cp_lock)
 #define CPUNLOCK RP_MUNLOCK(rp_cp_lock)
 
-duk_ret_t rp_thread_put(duk_context *ctx)
+static void _thread_put(duk_context *ctx, duk_idx_t val_idx, char *key)
 {
-    const char *key = REQUIRE_STRING(ctx, 0, "thread_put: First argument must be a string (key)");
+    val_idx = duk_normalize_index(ctx, val_idx);
 
     duk_push_object(ctx);
-    duk_pull(ctx, 1);
+    duk_dup(ctx, val_idx);
     duk_put_prop_string(ctx, -2, "val");
 
     CPLOCK;
@@ -1120,23 +1120,30 @@ duk_ret_t rp_thread_put(duk_context *ctx)
     RP_EMPTY_STACK(cpctx);
     //cpctx: []
     CPUNLOCK;
+    duk_pop(ctx);
+}
 
+
+duk_ret_t rp_thread_put(duk_context *ctx)
+{
+    const char *key = REQUIRE_STRING(ctx, 0, "thread.put: First argument must be a string (key)");
+    duk_remove(ctx,0);
+    if(duk_is_undefined(ctx, 0))
+        RP_THROW(ctx, "thread.put: Second argument is a variable to store and must be defined");
+
+    _thread_put(ctx, 0, (char *)key);
     return 0;
 }
 
-duk_ret_t rp_thread_get(duk_context *ctx)
+static duk_ret_t _thread_get_del(duk_context *ctx, char *key, int del)
 {
-    const char *key = REQUIRE_STRING(ctx, 0, "thread_get: First argument must be a string (key)");
-
-    duk_push_object(ctx);
 
     CPLOCK;
 
     if(cpctx==NULL)
     {
         CPUNLOCK;
-        duk_push_undefined(ctx);
-        return 1;
+        return 0;
     }
 
     if(!duk_get_global_string(cpctx, "allvals"))
@@ -1156,58 +1163,44 @@ duk_ret_t rp_thread_get(duk_context *ctx)
     //cpctx: [ allvals_obj, holder_object_filled ]
 
     //copy object with key "val" to ctx object
+    duk_push_object(ctx);
     rpthr_copy_obj(cpctx, ctx, 0);
     rpthr_clean_obj(cpctx, ctx);
+
+    if(del)
+    {
+        duk_pop(cpctx);
+        //cpctx: [ allvals_obj(global) ]
+        duk_del_prop_string(cpctx, -1, key); //the delete
+        duk_pop(cpctx);
+        //cpctx: []
+    }
     RP_EMPTY_STACK(cpctx);
+
     //cpctx: []
 
     CPUNLOCK;
     
     duk_get_prop_string(ctx, -1, "val");
+    duk_remove(ctx, -2);
+
     return 1;
+}
+
+duk_ret_t rp_thread_get(duk_context *ctx)
+{
+    const char *key = REQUIRE_STRING(ctx, 0, "thread.get: First argument must be a string (key)");
+    duk_pop(ctx);
+    return _thread_get_del(ctx, (char *)key, 0);
 }
 
 duk_ret_t rp_thread_del(duk_context *ctx)
 {
-    const char *key = REQUIRE_STRING(ctx, 0, "thread_del: First argument must be a string (key)");
-
-    duk_push_object(ctx);
-
-    CPLOCK;
-
-    if(cpctx==NULL)
-    {
-        CPUNLOCK;
-        duk_push_undefined(ctx);
-        return 1;
-    }
-
-    if(!duk_get_global_string(cpctx, "allvals"))
-    {
-        duk_pop(cpctx);
-        CPUNLOCK;
-        duk_push_undefined(ctx);
-        return 1;
-    }
-
-    //cpctx: [ allvals_obj(global) ]
-    duk_get_prop_string(cpctx, -1, key);
-    //cpctx: [ allvals_obj, holder_object_filled ]
-
-    //copy object with key "val" to ctx object
-    rpthr_copy_obj(cpctx, ctx, 0);
-    rpthr_clean_obj(cpctx, ctx);
-
-    duk_pop(cpctx);
-    //cpctx: [ allvals_obj(global) ]
-    duk_del_prop_string(cpctx, -1, key); //the delete
-    duk_pop(cpctx);
-    //cpctx: []
-    CPUNLOCK;
-    
-    duk_get_prop_string(ctx, -1, "val");
-    return 1;
+    const char *key = REQUIRE_STRING(ctx, 0, "thread.del: First argument must be a string (key)");
+    duk_pop(ctx);
+    return _thread_get_del(ctx, (char *)key, 1);
 }
+
 
 /* ******************************************
   END FUNCTIONS FOR COPY/PASTE PUT AND GET
@@ -1494,15 +1487,15 @@ RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx)
 ********************************************* */
 
 
-static uint32_t cbidx=0;
+static int32_t cbidx=0;
+static int32_t varidx=0;
 #define RPTINFO struct rp_thread_info
 
 RPTINFO {
-    void              *cbor;            // cbor data for args and return vals
-    size_t             cbor_sz;         // size of above
     void              *bytecode;        // bytecode of function executed in child thread
     size_t             bytecode_sz;     // size of above
     int32_t            index;           // growing number to make key for parent callback function in hidden object 
+    int32_t            varindex;        // same but for copying arguments via cpctx 
     struct event      *e;               // event for both parent and child
     RPTHR             *thr;             // rampart thread of child
     RPTHR             *parent_thr;      // current rampart thread (or parent thread if in child)
@@ -1518,8 +1511,6 @@ static RPTINFO *clean_info(RPTINFO *info)
         return info;
     if(info->bytecode)
         free(info->bytecode);
-    if(info->cbor)
-        free(info->cbor);
     if(info->e)
     {
         event_del(info->e);
@@ -1546,23 +1537,12 @@ static void do_parent_callback(evutil_socket_t fd, short events, void* arg)
     duk_get_prop_string(ctx, -1, objkey);
     duk_del_prop_string(ctx, -2, objkey);  //remove it.  We only need it once.
     // the return value
-    if(info->cbor && info->cbor_sz)
+    if(info->varindex > -1)
     {
-        duk_push_external_buffer(ctx);
-        duk_config_buffer(ctx, -1, info->cbor, (duk_size_t) info->cbor_sz);
-        duk_cbor_decode(ctx, -1, 0);
+        char key[16];
 
-        if(duk_is_object(ctx, -1) && duk_has_prop_string(ctx, -1, "error"))
-        {
-            //I think cbor will make error txt a buffer if non-utf8 chars are present
-            duk_get_prop_string(ctx, -1, "error");
-            if(duk_is_buffer_data(ctx, -1))
-            {
-                duk_buffer_to_string(ctx, -1);
-                duk_put_prop_string(ctx, -2, "error");
-            }
-            else duk_pop(ctx);
-        }
+        snprintf(key, 16, "\xff%d", (int) info->varindex);
+        _thread_get_del(ctx, key, 1); //get and delete
     }
     else
         duk_push_undefined(ctx);
@@ -1589,19 +1569,18 @@ static void thread_doevent(evutil_socket_t fd, short events, void* arg)
     RPTHR   *thr      = info->thr;
     duk_context *ctx  = thr->ctx;
     void *buf=NULL;
-    duk_size_t len;
     struct event *tev=info->e;
 
     buf = duk_push_fixed_buffer(ctx, info->bytecode_sz);
     memcpy(buf, (const void *)info->bytecode, info->bytecode_sz);
     duk_load_function(ctx);
 
-    if(info->cbor && info->cbor_sz)
+    if(info->varindex > -1)
     {
-        duk_push_external_buffer(ctx);
-        duk_config_buffer(ctx, -1, info->cbor, (duk_size_t) info->cbor_sz);
-        duk_cbor_decode(ctx, -1, 0);
+        char key[16];
 
+        snprintf(key, 16, "\xff%d", (int) info->varindex);
+        _thread_get_del(ctx, key, 1); //get and delete
     }
     else
         duk_push_undefined(ctx);
@@ -1638,21 +1617,32 @@ static void thread_doevent(evutil_socket_t fd, short events, void* arg)
     if(info->index == -1)
         goto end;
 
-    //encode and store return in info->cbor, if defined
+    //encode and store return in cpctx if defined
     if(duk_is_undefined(ctx, -1))
     {
-        info->cbor_sz = 0;
-        free(info->cbor);
-        info->cbor=NULL;
+        info->varindex = -1;
     }
     else
     {
-        duk_cbor_encode(ctx, -1, 0);
-        buf = duk_get_buffer_data(ctx, -1 ,&len);
-        info->cbor_sz = (size_t)len;
-        REMALLOC(info->cbor, info->cbor_sz);
-        memcpy(info->cbor, buf, info->cbor_sz);       
+        int32_t ix;
+        char key[16];
+
+        THRLOCK;
+        if(varidx == INT32_MAX)
+        {
+            varidx=0;
+            ix=0;
+        }
+        else
+            ix = varidx++;
+        THRUNLOCK;
+
+        info->varindex=ix;        
+
+        snprintf(key, 16, "\xff%d", (int) info->varindex);
+        _thread_put(ctx, -1, key);
     }
+
     dprintf("inserting event for parent callback for thread %d\n",info->parent_thr->index);
     info->e=event_new(info->parent_thr->base, -1, 0, do_parent_callback, info);
     event_add(info->e, &immediate);
@@ -1825,12 +1815,11 @@ static duk_ret_t finalize_thr(duk_context *ctx)
     return 0;
 }
 
-
 // insert into event loop
 static duk_ret_t loop_insert(duk_context *ctx)
 {
     duk_size_t len=0;
-    duk_idx_t cbfunc_idx=-1, arg_idx=-1, to_idx=-1;
+    duk_idx_t cbfunc_idx=-1, arg_idx=-1, to_idx=-1, thrfunc_idx=-1, obj_idx=-1;
     RPTINFO *info=NULL;
     RPTHR *thr=NULL, *curthr=get_current_thread();
     int thrno=-1;
@@ -1843,29 +1832,83 @@ static duk_ret_t loop_insert(duk_context *ctx)
     timeout.tv_usec=0; 
 
 
-    REQUIRE_FUNCTION(ctx, 0, "thr.exec: first argument must be a function");
 
-    for(i=1; i<4; i++)
+    for(i=0; i<5; i++)
     {
         if(duk_is_function(ctx,i))
         {
-            if(cbfunc_idx == -1)
+            if(thrfunc_idx == -1)
+                thrfunc_idx=i;
+            else if(cbfunc_idx == -1)
                 cbfunc_idx=i;
             else
                 RP_THROW(ctx, "thr.exec: Too many functions as arguments.  Cannot pass a function as an argument to the thread function.");
         }
+        else if(
+            duk_is_object(ctx, i) && 
+            !duk_is_array(ctx, i) &&
+            (
+                duk_has_prop_string(ctx,i,"threadFunc")   ||
+                duk_has_prop_string(ctx,i,"threadDelay")  ||
+                duk_has_prop_string(ctx,i,"callbackFunc") ||
+                duk_has_prop_string(ctx,i,"threadArg")
+            )
+        )
+            obj_idx=i;
         else if(arg_idx!=-1 && duk_is_number(ctx, i))
             to_idx=i;
-        else if(!duk_is_undefined(ctx,i))
+        else if(!duk_is_undefined(ctx,i) && arg_idx ==-1)
             arg_idx=i;
-        else if(!duk_is_undefined(ctx, i))
+        else if(!duk_is_undefined(ctx,i))
             RP_THROW(ctx, "thr.exec: unknown/unsupported argument #%d", i+1);
+    }
+
+    if(obj_idx != -1)
+    {
+        if(duk_get_prop_string(ctx, obj_idx, "threadFunc"))
+            thrfunc_idx = duk_normalize_index(ctx, -1);
+        else
+            duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, obj_idx, "threadDelay"))
+            to_idx = duk_normalize_index(ctx, -1);
+        else
+            duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, obj_idx, "callbackFunc"))
+            cbfunc_idx = duk_normalize_index(ctx, -1);
+        else
+            duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, obj_idx, "threadArg"))
+            arg_idx = duk_normalize_index(ctx, -1);
+        else
+            duk_pop(ctx);
+    }
+
+    REQUIRE_FUNCTION(ctx, thrfunc_idx, "thr.exec: threadFunc must be provided in options object or as first parameter");
+    if(cbfunc_idx != -1)
+        REQUIRE_FUNCTION(ctx, cbfunc_idx, "thr.exec: callbackFunc must be a function");
+
+    // check for built in c functions (but not the wrapper function with bytecode from a JS func in it)
+    if(duk_is_c_function(ctx, thrfunc_idx) && !duk_has_prop_string(ctx, thrfunc_idx, DUK_HIDDEN_SYMBOL("bcfunc")))
+    {
+        RP_THROW(ctx,   "thr.exec - Directly passing of built-in c functions not supported.  Wrap it in a JavaScript function.\n"
+                        "    Example:\n"
+                        "       thr.exec(console.log, 'hello world'); //illegal, throws this error\n"
+                        "       thr.exec(function(arg){console.log(arg);}, 'hello world'); //works with wrapper\n"
+        );
     }
 
     //setup
     if(to_idx!=-1)
     {
-        double to=duk_get_number(ctx, to_idx)/1000.0;
+        double to=REQUIRE_NUMBER(ctx, to_idx, "threadDelay value must be a positive number");
+
+        if(to<0.0)
+            RP_THROW(ctx, "threadDelay value must be a positive number");
+
+        to/=1000.0;
 
         timeout.tv_sec = (time_t) to;
         timeout.tv_usec = (suseconds_t) ( (to-(double)timeout.tv_sec) * 1000000.0 );
@@ -1888,55 +1931,64 @@ static duk_ret_t loop_insert(duk_context *ctx)
         RP_THROW(ctx, "thr.exec: Cannot run a thread created outside the current one.");
     }
     REMALLOC(info, sizeof(RPTINFO));
-    info->cbor=NULL;
     info->bytecode=NULL;
-    info->cbor_sz=0;
     info->bytecode_sz=0;
     info->index=-1;
+    info->varindex=-1;
     info->parent_thr=curthr;
 
-    if(duk_is_c_function(ctx, 0) && !duk_has_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("bcfunc")))
+    //copy bytecode to struct
+    if( duk_get_prop_string(ctx, thrfunc_idx, DUK_HIDDEN_SYMBOL("bcfunc")) )
     {
-        RP_THROW(ctx,   "thr.exec - Directly passing of built-in c functions not supported.  Wrap it in a JavaScript function.\n"
-                        "    Example:\n"
-                        "       thr.exec(console.log, 'hello world'); //illegal, throws this error\n"
-                        "       thr.exec(function(arg){console.log(arg);}, 'hello world'); //works with wrapper\n"
-        );
+        // this was already copied (we are grandchild thread)
+        buf = duk_get_buffer_data(ctx, -1, &len);
+        duk_pop(ctx);
     } else {
-        //copy bytecode to struct
-        if( duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("bcfunc")) )
-        {
-            // this was already copied (we are grandchild thread)
-            buf = duk_get_buffer_data(ctx, -1, &len);
-            duk_pop(ctx);
-        } else {
-            duk_pop(ctx); //undef
-            duk_dup(ctx, 0);
-            duk_dump_function(ctx);
-            buf = duk_get_buffer_data(ctx, -1, &len);
-        }
-
-        info->bytecode_sz=(size_t)len;
-        REMALLOC(info->bytecode, info->bytecode_sz);
-        memcpy(info->bytecode, buf, info->bytecode_sz);
+        duk_pop(ctx); //undef
+        duk_dup(ctx, thrfunc_idx);
+        duk_dump_function(ctx);
+        buf = duk_get_buffer_data(ctx, -1, &len);
     }
-    //copy arg to struct
+
+    info->bytecode_sz=(size_t)len;
+    REMALLOC(info->bytecode, info->bytecode_sz);
+    memcpy(info->bytecode, buf, info->bytecode_sz);
+
+    //copy arg to cpctx
     if(arg_idx != -1)
     {
-        duk_cbor_encode(ctx, arg_idx, 0);
-        buf = duk_get_buffer_data(ctx, arg_idx ,&len);
-        info->cbor_sz = (size_t)len;
-        REMALLOC(info->cbor, info->cbor_sz);
-        memcpy(info->cbor, buf, info->cbor_sz);       
+        int32_t ix;
+        char key[16];
+
+        THRLOCK;
+        if(varidx == INT32_MAX)
+        {
+            varidx=0;
+            ix=0;
+        }
+        else
+            ix = varidx++;
+        THRUNLOCK;
+
+        info->varindex=ix;        
+
+        snprintf(key, 16, "\xff%d", (int) ix);
+        _thread_put(ctx, arg_idx, key); 
     }
 
     //insert function into function holding object, indexed by info->index
     if(cbfunc_idx!=-1)
     {
-        int ix;
+        int32_t ix;
 
         THRLOCK;
-        ix = cbidx++;
+        if(cbidx == INT32_MAX)
+        {
+            cbidx=0;
+            ix=0;
+        }
+        else
+            ix = cbidx++;
         THRUNLOCK;
 
         sprintf(objkey,"c%d", ix);
@@ -1946,9 +1998,10 @@ static duk_ret_t loop_insert(duk_context *ctx)
             duk_dup(ctx, -1);
             duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("rp_thread_callbacks"));
         }
+
         duk_pull(ctx, cbfunc_idx);
         duk_put_prop_string(ctx, -2, objkey);
-        info->index=(int32_t)ix;
+        info->index=ix;
     }
 
     // add our thr struct;
@@ -1957,8 +2010,8 @@ static duk_ret_t loop_insert(duk_context *ctx)
     //check as late as possible if our thread closed
     if(!RPTHR_TEST(thr, RPTHR_FLAG_IN_USE) || !thr->base || !RPTHR_TEST(thr, RPTHR_FLAG_BASE))
     {
-        if(info->cbor)
-            free(info->cbor);
+        if(info->bytecode)
+            free(info->bytecode);
         free(info);
         RP_THROW(ctx, "thr.exec: Thread has already been closed");
     }
@@ -2021,7 +2074,7 @@ static duk_ret_t new_js_thread(duk_context *ctx)
     duk_push_c_function(ctx, finalize_thr, 1);
     duk_set_finalizer(ctx, -2);
 
-    duk_push_c_function(ctx, loop_insert, 4);
+    duk_push_c_function(ctx, loop_insert, 5);
     duk_put_prop_string(ctx, -2, "exec");
 
     duk_push_c_function(ctx, close_thread,0);

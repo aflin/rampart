@@ -150,7 +150,8 @@ function global_thread_lmdb(arg){
         var j=0;
         var iv=setInterval(function(){
             j++;
-            if(j>20) {
+            //if(j>20) {
+            if(thread.get("DONE") && thread.get("LMDBDONE")) {
                 testFeature("thread - wait for exit while events pending", true);
                 clearInterval(iv);
             }
@@ -193,7 +194,7 @@ function global_report_lmdb_result(res){
     total2++;
 
     if(res.error){
-        testFeature("thread - multiple threads in thread with lmdb transactions -1", false, res.error);
+        testFeature("thread - multiple threads in thread with lmdb transactions", false, res.error);
     }
 
     mthr[res.i].close();    
@@ -204,7 +205,7 @@ function global_report_lmdb_result(res){
     if(res.error) {
         goterr=1;
         error=res.error;
-        testFeature("thread - multiple threads in thread with lmdb transactions -2", false);
+        testFeature("thread - multiple threads in thread with lmdb transactions", false);
     }
 
     if(!res.i) {
@@ -215,6 +216,7 @@ function global_report_lmdb_result(res){
                 total2++; // only once
                 clearInterval(iv);
                 testFeature("thread - multiple threads in thread with lmdb transactions", true );
+                thread.put("LMDBDONE", true);
                 return;
             } else if(total2>nruns) { //we've got it already
                 clearInterval(iv);
@@ -224,7 +226,7 @@ function global_report_lmdb_result(res){
                 clearInterval(iv);
                 //error=`we only got ${total2} runs`;
                 console.log(`we only got ${total2} runs`);
-                testFeature("thread - multiple threads in thread with lmdb transactions -3", false);
+                testFeature("thread - multiple threads in thread with lmdb transactions", false);
             }
 
         }, 50);
@@ -261,7 +263,6 @@ thr4.exec(
         );
     },
     function(res) {
-        //printf('%J\n',res);
         testFeature("thread - test 'Cannot run a thread created outside ...'",
             res.error.indexOf('run a thread created') != -1
         );
@@ -351,13 +352,15 @@ thr5.exec(function(){
             "/threadtest.txt": server_thread_test
         }
     });
-    thread.put("pid", pid);
-
+    /* make sure we are up before sending pid.
+    var x=0;
+    while(x<10 && !rampart.utils.kill(pid,0)) {
+        x++;
+        sleep(0.1);
+    }*/
+    thread.put("server_forked", true);
 });
 
-/* give the forked server a chance to print its info*/
-while(!thread.get("pid")) sleep(0.2);
-sleep(0.3);
 
 thr5.exec(function(){
     if(!pid)
@@ -381,10 +384,14 @@ thr5.exec(function(){
     if(pid) {
         kill(pid);
         pid=false;
-        thread.put("pid", pid);
     }
-});
+},
+{threadDelay: 500}
+);
 
+
+//before using locks, server should be forked.
+while(!thread.get("server_forked")) sleep(0.1);
 
 // must make locks first or they will not be copied to threads
 var lock1 = new rampart.lock();
@@ -416,6 +423,7 @@ lthr1.exec(function(){
     val3=thread.get("val"); // many
 
     testFeature("thread - user locking in threads", (!val1 && val2==1 && val3>50) )
+    thread.put("DONE", true);
     //console.log(val1, val2, val3);
 });
 
