@@ -4977,12 +4977,16 @@ duk_ret_t duk_server_start(duk_context *ctx)
             rp_unlock_all_locks(1); //release claimed locks right befor fork
 
             close(child2par[1]);
-            waitpid(dpid,&pstatus,0);
+
             if(-1 == read(child2par[0], &dpid2, sizeof(pid_t)) )
             {
                 fprintf(error_fh, "server.start: failed to get pid from child\n");
             }
             close(child2par[0]);
+
+            //sometimes macos hangs with normal wait even though process dies. No idea why.
+            while(waitpid(dpid,&pstatus,WNOHANG) == 0 ) usleep(1000);
+
             duk_push_int(ctx,(int)dpid2);
             return 1;
         }
