@@ -1264,6 +1264,26 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
         }
         break;
         /* handle JSON */
+
+#define pushjsonsafe do{\
+    char *j=str_rp_to_json_safe(ctx, fidx, NULL);\
+    duk_push_string(ctx, j);\
+    if(width){\
+        duk_json_decode(ctx, -1);\
+        /* JSON.stringify(obj,null,width) */\
+        duk_get_global_string(ctx, "JSON");\
+        duk_push_string(ctx, "stringify");\
+        duk_pull(ctx, -3);\
+        duk_push_null(ctx);\
+        duk_push_int(ctx, width);\
+        duk_call_prop(ctx, -5, 3);\
+        duk_replace(ctx, fidx);\
+        duk_pop(ctx); /* JSON */\
+    }else duk_replace(ctx, fidx);\
+    free(j);\
+}while(0)
+
+
         case 'J':
             json:
             if (!duk_is_string(ctx, fidx))
@@ -1279,43 +1299,27 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 }
                 else if ( !duk_is_function(ctx, fidx) )
                 {
-                    /* JSON.stringify(obj,null,width) */
-                    duk_get_global_string(ctx, "JSON");
-                    duk_push_string(ctx, "stringify");
-                    duk_dup(ctx, fidx);
-                    duk_push_null(ctx);
-                    duk_push_int(ctx, width);
-                    if(duk_pcall_prop(ctx, -5, 3))
+                    if(flags & FLAGS_BANG)
+                        pushjsonsafe;
+                    else
                     {
-                        //cyclic error
-                        char *j=str_rp_to_json_safe(ctx, fidx, NULL);
-
-                        duk_pop_2(ctx); //JSON, err
-
-                        //use the safe encode
-                        duk_push_string(ctx, j);
-                        if(width)
+                        /* JSON.stringify(obj,null,width) */
+                        duk_get_global_string(ctx, "JSON");
+                        duk_push_string(ctx, "stringify");
+                        duk_dup(ctx, fidx);
+                        duk_push_null(ctx);
+                        duk_push_int(ctx, width);
+                        if(duk_pcall_prop(ctx, -5, 3))
                         {
-                            duk_json_decode(ctx, -1);
-                            /* JSON.stringify(obj,null,width) */
-                            duk_get_global_string(ctx, "JSON");
-                            duk_push_string(ctx, "stringify");
-                            duk_pull(ctx, -3);
-                            duk_push_null(ctx);
-                            duk_push_int(ctx, width);
-                            duk_call_prop(ctx, -5, 3);
+                            //cyclic error
+                            duk_pop_2(ctx); //JSON, err
+                            pushjsonsafe;
+                        }
+                        else
+                        {
                             duk_replace(ctx, fidx);
                             duk_pop(ctx); /* JSON */
                         }
-                        else
-                            duk_replace(ctx, fidx);
-
-                        free(j);
-                    }
-                    else
-                    {
-                        duk_replace(ctx, fidx);
-                        duk_pop(ctx); /* JSON */
                     }
                 }
                 else
