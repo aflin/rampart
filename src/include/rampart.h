@@ -269,6 +269,9 @@ extern struct event_base **thread_base;      // each thread (or pair or ctxs) ge
 extern int totnthreads;                      // when threading in server - number of ctx contexts
 extern struct evdns_base **thread_dnsbase;   // list of dns resolvers in event loops
 extern int nthread_dnsbase;                  // number of above
+extern char **environ;
+extern char *RP_script_path;
+extern char *RP_script;
 
 /*************  Rampart threads ************/
 
