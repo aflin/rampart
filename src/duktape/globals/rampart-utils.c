@@ -23,9 +23,6 @@
 #include <termios.h>
 #include <string.h>
 #include "rampart.h"
-extern char **environ;
-extern char *RP_script_path;
-extern char *RP_script;
 char modules_dir[PATH_MAX];
 /*
     defined in main program here
@@ -582,7 +579,7 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
 
     if(duk_is_function(ctx,idx))
     {
-        r= strcatdup(r, "{_");
+        r= strcatdup(r, "{\"_");
         if(duk_is_c_function(ctx,idx))
             r= strcatdup(r, "c_");
         else if(duk_is_bound_function(ctx,idx))
@@ -590,7 +587,7 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
         else if(duk_is_ecmascript_function(ctx,idx))
             r= strcatdup(r, "ecmascript_");
 
-        r= strcatdup(r, "func: true");
+        r= strcatdup(r, "func\": true");
 
         if(duk_get_prop_string(ctx, idx, "name"))
         {
