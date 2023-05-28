@@ -2393,7 +2393,8 @@ int main(int argc, char *argv[])
                 fclose(entry_file);
             }
             have_src:
-            file_src[src_sz-1]='\0';
+            if(!cmdline_src)
+                file_src[src_sz-1]='\0';
             free_file_src=file_src;
 
             /* skip over #!/path/to/rampart */
