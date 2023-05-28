@@ -564,7 +564,8 @@ static char *rp_json_array(duk_context *ctx, duk_idx_t idx, char *r, char *path)
 static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path)
 {
     size_t plen = strlen(path), pleft= RP_SJ_MAX_PATH - (plen +1);
-    char key[256];
+    size_t keylen=512;
+    char key[keylen];
     const char *k, *refpath;
     int i=0;
     const char *name=NULL;
@@ -575,7 +576,6 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
     }
 
     store_ref(ctx, idx, path);
-
 
     if(duk_is_function(ctx,idx))
     {
@@ -613,17 +613,32 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
             r= strcatdup(r, (char*)name);
             r= strcatdup(r, "\"");
         }
+        duk_enum(ctx, idx, DUK_ENUM_NO_PROXY_BEHAVIOR|DUK_ENUM_INCLUDE_HIDDEN|DUK_ENUM_INCLUDE_SYMBOLS);
+
+        while(duk_next(ctx, -1, 1))
+        {
+            k=duk_get_string(ctx, -2);
+            if(*k=='\xff')
+                snprintf(key, keylen, ", \"DUK_HIDDEN_SYMBOL(%s)\": \"", k+1 );
+            else
+                snprintf(key, keylen, ", \"%s\": \"", k );
+            r= strcatdup(r, key);
+            r= strcatdup(r, (char*)duk_safe_to_string(ctx, -1));
+            r= strcatdup(r, "\"");
+            duk_pop_2(ctx);
+        }
+        duk_pop(ctx);
 
         r= strcatdup(r, "}");
     }
     else
     {
         r = strcatdup(r, "{");
-        duk_enum(ctx, idx, 0);
+        duk_enum(ctx, idx, DUK_ENUM_NO_PROXY_BEHAVIOR);
         while (duk_next(ctx, -1, 1))
         {
             k=duk_to_string(ctx, -2);
-            snprintf(key, 256, "\"%s\":", k );
+            snprintf(key, keylen, "\"%s\":", k );
             if(i)
                 r = strcatdup(r, ", ");
             r=strcatdup(r, key);
