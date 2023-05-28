@@ -36,43 +36,6 @@ function testFeature(name,test,error)
 //var pip=python.import('pip');
 //var res=pip.main({pyType:'list', value:['install', 'Pillow']});
 //console.log(res.toString());
-
-testFeature("python - import pathlib and resolve './'", function(){
-    var pathlib = python.import('pathlib');
-    var p=pathlib.PosixPath('./');
-    return p.resolve().toValue() == getcwd();
-});
-
-testFeature("python - import hashlib and sha256", function(){
-
-    var hash = python.import('hashlib');
-
-    var m = hash.sha256();
-    m.update(stringToBuffer("hello"));
-    var res = m.hexdigest();
-    return res.toValue() == crypto.sha256('hello');
-});
-
-var iscript = `
-def retself(s):
-    return s
-
-def evalstr(s):
-    return eval(s)
-
-x=5.5
-`;
-
-testFeature("python - importString - functions and eval - valueOf()", function(){
-    var r=python.importString(iscript);
-
-    r=python.importString("y=6.6");
-
-    var x = r.evalstr("4.2 * x * y");
-
-    return x == 152.46 && r.retself("yo") == "yo" ;
-});
-
 function get_cursor(dbfile) {
     var pysql = python.import('sqlite3');
     var connection = pysql.connect(dbfile);
@@ -116,33 +79,163 @@ function sqlite_insert() {
 
 
 
-testFeature( "python - import sqlite3, create table", function(){
-    return make_sqlite_db();
-});
+var thr=new rampart.thread();
 
-testFeature("python - insert and read from sqlite3 table", function(){
-    return sqlite_insert();
-});
+function tests(inthr){
 
+    testFeature(`python - ${inthr}import pathlib and resolve './'`, function(){
+        var pathlib = python.import('pathlib');
+        var p=pathlib.PosixPath('./');
+
+        return p.resolve().toValue() == getcwd();
+    });
+
+    testFeature(`python - ${inthr}import hashlib and sha256`, function(){
+
+        var hash = python.import('hashlib');
+
+        var m = hash.sha256();
+        m.update(stringToBuffer("hello"));
+        var res = m.hexdigest();
+        return res.toValue() == crypto.sha256('hello');
+    });
+
+    var iscript = 
+`def retself(s):
+    return s
+
+def evalstr(s):
+    return eval(s)
+
+x=5.5
+`   ;
+
+    testFeature(`python - ${inthr}importString - funcs and eval - valueOf()`, function(){
+        var r=python.importString(iscript);
+
+        r=python.importString("y=6.6");
+
+        var x = r.evalstr("4.2 * x * y");
+
+        return x == 152.46 && r.retself("yo") == "yo" ;
+    });
+
+    testFeature(`python - ${inthr}importFile - funcs and eval - valueOf()`, function(){
+        fprintf("./tmp.py", "%s", iscript);
+
+        var r=python.importFile("./tmp.py");
+
+        r=python.importString("y=6.6");
+
+        var x = r.evalstr("4.2 * x * y");
+
+        return x == 152.46 && r.retself("yo") == "yo" ;
+    });
+
+    testFeature( `python - ${inthr}import sqlite3, create table`, function(){
+        return make_sqlite_db();
+    });
+
+    testFeature(`python - ${inthr}insert and read from sqlite3 table`, function(){
+        return sqlite_insert();
+    });
+
+    var scr=`
+x=20
+
+def pyEval(code):
+    return eval(code)
+
+def echo(val):
+    print(val)
+    return(val)
+
+echo.y="test"
+
+def retecho():
+    return echo
+
+def addone(x):
+    x['z'] = x['z'] + 1.0
+    return x
+
+def retdict(z):
+    d = {'z':z}
+    return d
+    `;
+
+    var ps = python.importString(scr);
+    var echo = ps.retecho();
+
+    testFeature(`python - ${inthr}toString() of module function`, function(){
+        return (ps.echo.toString().indexOf("function echo") != -1);
+    });
+
+    testFeature(`python - ${inthr}proxy lookup in dictionary`, function(){
+        var rd = ps.retdict({a:"b"});
+        return ("b" == rd.z.a.toValue());    
+    });
+
+    testFeature(`python - ${inthr}dictionary get() method from JS`, function(){
+        var rd = ps.retdict(1);
+        return(1 == rd.get('z').toValue());
+    });
+
+    /* we don't need echo.y.toValue() here because JS does that automatically with comparisons (valueOf is same as toValue)*/
+    testFeature(`python - ${inthr}get attribute of a returned function`, function(){
+        return echo.y=="test"
+    });
+
+    /* because we cannot set a proxy on a function like we can on an object. */
+    testFeature(`python - ${inthr}fail to get attribute of a function`, function(){
+        return !ps.echo.y;
+    });
+
+    testFeature(`python - ${inthr}call method on string`, function(){
+        return echo.y.capitalize()=="Test"
+    });
+
+
+    testFeature(`python - ${inthr}get undefined for non-existant attributes`, function(){
+        return echo.notfound === undefined;
+    });
+
+    testFeature(`python - ${inthr}get undefined for non-existant items`, function(){
+        var rd = ps.retdict(1);
+        return rd.x === undefined;
+    });
+
+
+}
+
+
+tests("");
+
+thr.exec(function(){
+    tests("in thread ");
+    rampart.thread.put("testdone",true);
+});
 
 function copy_to_texis(tbname)
 {
     var cursor = get_cursor(dbfile);
     sql.exec(`create table ${tbname} (i int, i2 int);`);    
     cursor.execute("select * from test");
-    res = cursor.fetchall().toValue();
+    res = cursor.fetchall()
+    res = res.toValue();
     if(res.length != 50)
-        testFeature("python - copy from sqlite to texis tables in two threads", false);
+        testFeature("python - copy from sqlite to texis tables in two threads", false, `got ${res.length} results`);
     for (i=0;i<res.length;i++) {
         sql.exec(`insert into ${tbname} values(?,?);`,res[i]);
     }
 }
 
+while(!rampart.thread.get("testdone")) sleep(0.1);
 
-var thr = new rampart.thread();
+var thr1 = new rampart.thread();
 var thr2 = new rampart.thread();
 
-thr.exec( function(){
+thr1.exec( function(){
     copy_to_texis("test1");
     rampart.thread.put("done", true);
 });

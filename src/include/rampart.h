@@ -195,7 +195,7 @@ extern "C"
     do {                                              \
         duk_idx_t i=0, top=duk_get_top(ctx);          \
         char *s;                                      \
-        printf("ctx: top=%d, stack={\n", (int)top);    \
+        printf("ctx: top=%d, stack={\n", (int)top);   \
         while (i<top) {                               \
             if(i) printf(",\n");                      \
             s=str_rp_to_json_safe(ctx, i, NULL);      \
@@ -461,7 +461,7 @@ extern RPTHR_LOCK *rp_thr_lock;
     {                                                    \
         fprintf(stderr, "error: realloc() in %s at %d\n",\
             __FILE__, __LINE__);                         \
-        exit(1);                                         \
+        abort();                                         \
     }
 
 #define CALLOC(s, t) 					 \
@@ -469,7 +469,7 @@ extern RPTHR_LOCK *rp_thr_lock;
     if ((char *)(s) == (char *)NULL)                     \
     {                                                    \
         fprintf(stderr, "error: calloc() ");             \
-        exit(1);                                         \
+        abort();                                         \
     }
 
 #ifdef PUTMSG_STDERR
