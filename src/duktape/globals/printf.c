@@ -1263,6 +1263,7 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
             format++;
         }
         break;
+
         /* handle JSON */
 
 #define pushjsonsafe do{\
@@ -1283,7 +1284,6 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
     free(j);\
 }while(0)
 
-
         case 'J':
             json:
             if (!duk_is_string(ctx, fidx))
@@ -1297,10 +1297,15 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                     duk_push_string(ctx,"undefined");
                     duk_replace(ctx,fidx);
                 }
-                else if ( !duk_is_function(ctx, fidx) )
+                else /*if ( !duk_is_function(ctx, fidx) )*/
                 {
                     if(flags & FLAGS_BANG)
                         pushjsonsafe;
+                    else if(duk_is_function(ctx, fidx))
+                    {
+                        duk_push_string(ctx,"{_func:true}");
+                        duk_replace(ctx,fidx);
+                    }
                     else
                     {
                         /* JSON.stringify(obj,null,width) */
@@ -1321,11 +1326,6 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                             duk_pop(ctx); /* JSON */
                         }
                     }
-                }
-                else
-                {
-                    duk_push_string(ctx,"{_func:true}");
-                    duk_replace(ctx,fidx);
                 }
             }
             //no ++
