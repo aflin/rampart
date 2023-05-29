@@ -31,8 +31,6 @@
 static int python_is_init=0;
 static int is_child=0;
 
-const char *evalscr = "def pyEval(s):\n    return eval(s)\n";
-
 #define dprintf2(...) do{\
     fprintf(stderr, "(%d) at %d (thread %d): ", (int)getpid(),__LINE__, get_thread_num());\
     fprintf(stderr, __VA_ARGS__);\
