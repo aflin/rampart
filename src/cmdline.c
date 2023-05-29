@@ -2133,7 +2133,7 @@ RPTHR_LOCK *rp_thr_lock;
 int main(int argc, char *argv[])
 {
     struct rlimit rlp;
-    int filelimit = 16384, lflimit = filelimit, isstdin=0, len, dirlen;
+    int isstdin=0, len, dirlen;
     char *ptr, *cmdline_src=NULL;
     struct stat entry_file_stat;
 
@@ -2237,26 +2237,10 @@ int main(int argc, char *argv[])
         RP_script_path=strdup("");
 
 
-    /* set rlimit to filelimit, or highest allowed value below that */
+    /* set max files open limit to hard limit */
     getrlimit(RLIMIT_NOFILE, &rlp);
-    rlp.rlim_cur = filelimit;
-    while (setrlimit(RLIMIT_NOFILE, &rlp) != 0)
-    {
-        lflimit = filelimit;
-        filelimit /= 2;
-        rlp.rlim_cur = filelimit;
-    }
-    if (lflimit != filelimit)
-    {
-        do
-        {
-            rlp.rlim_cur = (filelimit + lflimit) / 2;
-            if (setrlimit(RLIMIT_NOFILE, &rlp) == 0)
-                filelimit = rlp.rlim_cur;
-            else
-                lflimit = rlp.rlim_cur;
-        } while (lflimit > filelimit + 1);
-    }
+    rlp.rlim_cur = rlp.rlim_max;
+    setrlimit(RLIMIT_NOFILE, &rlp);
 
     mainthr=rp_new_thread(RPTHR_FLAG_THR_SAFE, NULL);
     if (!mainthr)
