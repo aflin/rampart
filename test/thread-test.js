@@ -11,7 +11,6 @@ var Lmdb=require('rampart-lmdb');
 var lmdb;
 var curl   = require('rampart-curl');
 var server = require('rampart-server');
-var pid;
 
 function testFeature(name,test,error)
 {
@@ -31,7 +30,7 @@ function testFeature(name,test,error)
     {
         printf(">>>>> FAILED <<<<<\n");
         if(error) printf('%J\n',error);
-        pid = thread.get("pid");
+        var pid = thread.get("server_pid",1000);
         if(pid) kill(pid);
         process.exit(1);
     }
@@ -315,9 +314,9 @@ function server_thread_test(req) {
     return {defer:true}    
 }
 
-thr5.exec(function(){
+thr4.exec(function(){
 
-    global.pid=server.start(
+    var pid=server.start(
     {
         bind: "127.0.0.1:8084",
         developerMode: true,
@@ -352,19 +351,13 @@ thr5.exec(function(){
             "/threadtest.txt": server_thread_test
         }
     });
-    /* make sure we are up before sending pid.
-    var x=0;
-    while(x<10 && !rampart.utils.kill(pid,0)) {
-        x++;
-        sleep(0.1);
-    }*/
-    thread.put("server_forked", true);
+    thread.put("server_pid", pid);
 });
 
-//before going further, server should be forked.
-while(!thread.get("server_forked")) sleep(0.1);
 
 thr5.exec(function(){
+    //before going further, server should be forked.
+    var pid = thread.get("server_pid",1000);
     if(!pid)
         testFeature("thread - server forked from thread is running",false, "pid was not set");
     else
@@ -372,6 +365,7 @@ thr5.exec(function(){
 });
 
 thr5.exec(function(){
+    var pid = thread.get("server_pid",1000);
     testFeature("thread - server with thread and defer", function(){
         var res=curl.fetch("http://localhost:8084/threadtest.txt?myvar=123abc");
         if (res.text == '123abc')

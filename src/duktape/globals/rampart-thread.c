@@ -9,6 +9,7 @@
 #include <errno.h>
 #include  <stdio.h>
 #include  <time.h>
+#include <poll.h>
 #include "rampart.h"
 #include "event.h"
 #include "event2/thread.h"
@@ -26,8 +27,12 @@ uint16_t nrpthreads=0;
 // the glue that holds it all together
 __thread int thread_local_thread_num=0;
 
-pthread_mutex_t cp_lock; //lock for copy/paste ctx
+pthread_mutex_t cp_lock; //lock for copy/paste clipboard ctx
 RPTHR_LOCK *rp_cp_lock;
+
+//clipboard cond, to wait for var change
+pthread_mutex_t cblock;
+
 
 duk_context *cpctx=NULL; //copy/paste ctx for thread_put and thread_get
 
@@ -1076,15 +1081,39 @@ void rpthr_copy_global(duk_context *ctx, duk_context *tctx)
   END FUNCTIONS FOR COPYING BETWEEN DUK HEAPS
 ********************************************* */
 
-/* ******************************************
-  START FUNCTIONS FOR COPY/PASTE PUT AND GET
-********************************************* */
+/* *******************************************
+START FUNCTIONS FOR COPY/PASTE PUT AND GET
+ ********************************************* */
 
 //#define CPLOCK do{ RP_MLOCK(rp_cp_lock); printf("LOCKing on line %d, lock=%p\n", __LINE__, rp_cp_lock);}while(0)
 //#define CPUNLOCK do{ RP_MUNLOCK(rp_cp_lock); printf("UNlocking on line %d, lock=%p\n", __LINE__, rp_cp_lock);}while(0)
 
 #define CPLOCK RP_MLOCK(rp_cp_lock)
 #define CPUNLOCK RP_MUNLOCK(rp_cp_lock)
+
+#define pipe_err do{\
+    fprintf(stderr,"pipe error in rampart.thread %s:%d\n", __FILE__, __LINE__);\
+}while(0)
+
+#define thrwrite(b,c) ({\
+    int r=0;\
+    r=write(thr->writer, (b),(c));\
+    if(r==-1) {\
+        fprintf(stderr, "thread write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,thr->writer);\
+        exit(0);\
+    };\
+    r;\
+})
+
+#define thrread(b,c) ({\
+    int r=0;\
+    r= read(thr->reader,(b),(c));\
+    if(r==-1) {\
+        fprintf(stderr, "thread read failed: '%s' at %d\n",strerror(errno),__LINE__);\
+        exit(0);\
+    };\
+    r;\
+})
 
 static void _thread_put(duk_context *ctx, duk_idx_t val_idx, char *key)
 {
@@ -1126,25 +1155,39 @@ static void _thread_put(duk_context *ctx, duk_idx_t val_idx, char *key)
 
 duk_ret_t rp_thread_put(duk_context *ctx)
 {
-    const char *key = REQUIRE_STRING(ctx, 0, "thread.put: First argument must be a string (key)");
+    duk_size_t len;
+    const char *key = REQUIRE_LSTRING(ctx, 0, &len, "thread.put: First argument must be a string (key)");
+    int i=0;
+
     duk_remove(ctx,0);
+
     if(duk_is_undefined(ctx, 0))
         RP_THROW(ctx, "thread.put: Second argument is a variable to store and must be defined");
 
     _thread_put(ctx, 0, (char *)key);
+
+    len++; //include \0
+
+    RP_PTLOCK(&cblock);
+    for (i=0;i<nrpthreads;i++)
+    {
+        RPTHR *thr=rpthread[i];
+        if( RPTHR_TEST(thr, RPTHR_FLAG_WAITING) )
+        {
+            thrwrite(&len, sizeof(duk_size_t));
+            thrwrite(key, len);
+        }
+    }
+    RP_PTUNLOCK(&cblock);
     return 0;
 }
 
 static duk_ret_t _thread_get_del(duk_context *ctx, char *key, int del)
 {
+    if(cpctx==NULL)
+        return 0;
 
     CPLOCK;
-
-    if(cpctx==NULL)
-    {
-        CPUNLOCK;
-        return 0;
-    }
 
     if(!duk_get_global_string(cpctx, "allvals"))
     {
@@ -1187,20 +1230,140 @@ static duk_ret_t _thread_get_del(duk_context *ctx, char *key, int del)
     return 1;
 }
 
+#define closepipes do{\
+    RP_PTLOCK(&cblock);\
+    RPTHR_CLEAR(thr, RPTHR_FLAG_WAITING);\
+    close(thr->reader);\
+    close(thr->writer);\
+    thr->reader=-1;\
+    thr->writer=-1;\
+    RP_PTUNLOCK(&cblock);\
+}while(0)
+
+static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *funcname, int del)
+{
+    char *waitkey=NULL;
+    duk_size_t len, lastlen=64;
+    RPTHR *thr = get_current_thread();
+    int fd[2];
+    int to=-1; // indefinite/forever
+    uint64_t timemarker, tmcur;
+    struct pollfd ufds[1];
+    struct timespec ts;
+    int pret;
+
+    if(!duk_is_undefined(ctx, 0))
+        to=REQUIRE_UINT(ctx, 0, "thread.%s: second argument, if provided, must be a positive number (milliseconds)", funcname);
+
+    if (rp_pipe(fd) == -1)
+    {
+        fprintf(stderr, "thread pipe creation failed\n");
+        return 0;
+    }
+    thr->reader=fd[0];
+    thr->writer=fd[1];
+
+    RPTHR_SET(thr, RPTHR_FLAG_WAITING);
+
+    if(!to) /* return immediately if to==0 */
+        return _thread_get_del(ctx, (char *)key, del);
+
+    ufds[0].fd = thr->reader;
+    ufds[0].events = POLLIN;
+
+    REMALLOC(waitkey, lastlen);
+    timespec_get(&ts, TIME_UTC);
+    timemarker = ts.tv_sec *1000 + ts.tv_nsec/1000000;
+    while(1)
+    {
+
+        if((pret = poll(ufds, 1, to)) == -1)
+            pipe_err;
+
+        // timeout
+        if(pret==0)
+        {
+            free(waitkey);
+            closepipes;
+            return 0;
+        }
+
+        RP_PTLOCK(&cblock);
+
+        thrread(&len, sizeof(duk_size_t));
+
+        if(lastlen<len)
+            REMALLOC(waitkey, len);
+
+        thrread(waitkey, len);
+
+        RP_PTUNLOCK(&cblock);
+
+        if(strcmp(key, waitkey)==0)
+        {
+            closepipes;
+            free(waitkey);
+            return _thread_get_del(ctx, (char *)key, del);
+        }
+        timespec_get(&ts, TIME_UTC);
+        tmcur = ts.tv_sec *1000 + ts.tv_nsec/1000000; 
+        to -= (int)( tmcur - timemarker );
+        timemarker = tmcur;
+    }
+}
+
 duk_ret_t rp_thread_get(duk_context *ctx)
 {
     const char *key = REQUIRE_STRING(ctx, 0, "thread.get: First argument must be a string (key)");
-    duk_pop(ctx);
-    return _thread_get_del(ctx, (char *)key, 0);
+    duk_ret_t ret;
+
+    duk_remove(ctx,0);
+
+    ret = _thread_get_del(ctx, (char *)key, 0);
+    if(!ret && !duk_is_undefined(ctx,0))
+        ret = _thread_waitfor(ctx, key, "get", 0);
+
+    return ret;
 }
 
 duk_ret_t rp_thread_del(duk_context *ctx)
 {
     const char *key = REQUIRE_STRING(ctx, 0, "thread.del: First argument must be a string (key)");
-    duk_pop(ctx);
-    return _thread_get_del(ctx, (char *)key, 1);
+
+    duk_ret_t ret;
+
+    duk_remove(ctx,0);
+
+    ret = _thread_get_del(ctx, (char *)key, 1);
+    if(!ret && !duk_is_undefined(ctx,0))
+        ret = _thread_waitfor(ctx, key, "get", 1);
+
+    return ret;
 }
 
+
+static duk_ret_t rp_thread_waitfor(duk_context *ctx)
+{
+    duk_size_t len;
+    const char *key = REQUIRE_LSTRING(ctx, 0, &len, "thread.waitfor: First argument must be a string (key)");
+
+    duk_remove(ctx,0);
+
+    return _thread_waitfor(ctx, key, "waitfor", 0);
+}
+
+static duk_ret_t rp_thread_getwait(duk_context *ctx)
+{
+    duk_ret_t ret;
+    duk_size_t len;
+    const char *key = REQUIRE_LSTRING(ctx, 0, &len, "thread.getwait: First argument must be a string (key)");
+
+    ret = _thread_get_del(ctx, (char *)key, 0);
+    if(ret)
+        return ret;
+
+    return _thread_waitfor(ctx, key, "getwait", 0);
+}
 
 /* ******************************************
   END FUNCTIONS FOR COPY/PASTE PUT AND GET
@@ -1450,6 +1613,9 @@ RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx)
     ret->parent=NULL;
     ret->children=NULL;
     ret->nchildren=0;
+    ret->reader=-1;
+    ret->writer=-1;
+
     if(ret->index !=0 ) //if not main thread
     {
         //set our parent thread
@@ -2122,6 +2288,8 @@ void duk_thread_init(duk_context *ctx)
         duk_push_object(ctx);
     }
 
+    RP_PTINIT(&cblock);
+
     duk_push_c_function(ctx, new_js_thread, 0);
 
     duk_push_c_function(ctx, get_thread_id, 0);
@@ -2130,10 +2298,16 @@ void duk_thread_init(duk_context *ctx)
     duk_push_c_function(ctx, rp_thread_put, 2);
     duk_put_prop_string(ctx, -2, "put");
 
-    duk_push_c_function(ctx, rp_thread_get, 1);
+    duk_push_c_function(ctx, rp_thread_get, 2);
     duk_put_prop_string(ctx, -2, "get");
 
-    duk_push_c_function(ctx, rp_thread_del, 1);
+    duk_push_c_function(ctx, rp_thread_waitfor, 2);
+    duk_put_prop_string(ctx, -2, "waitfor");
+
+    duk_push_c_function(ctx, rp_thread_getwait, 2);
+    duk_put_prop_string(ctx, -2, "getwait");
+
+    duk_push_c_function(ctx, rp_thread_del, 2);
     duk_put_prop_string(ctx, -2, "del");
 
     duk_put_prop_string(ctx, -2, "thread");
