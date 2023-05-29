@@ -313,6 +313,8 @@ RPTHR {
     RPTHR             *parent;      // Parent, if not main.  Otherwise NULL
     RPTHR            **children;    // child threads.  monitor and don't exit if still active
     int                nchildren;   // number of child threads.
+    int                reader;      // reader for thread.waitfor()
+    int                writer;      // writer for thread.waitfor()
 };
 
 #define RPTHR_FLAG_IN_USE   0x01  // if struct is in use and ctxs are set up
@@ -322,6 +324,7 @@ RPTHR {
 #define RPTHR_FLAG_FINAL    0x10  // finalizer called
 #define RPTHR_FLAG_FORKED   0x20  // for python - flag that we've already forked
 #define RPTHR_FLAG_ACTIVE   0x40  // flag that this thread is running JS in a duk_pcall()
+#define RPTHR_FLAG_WAITING  0x80  // flag that we are waiting in thread.waitfor()
 
 // for locks
 #define RP_USE_LOCKLOCKS
@@ -376,6 +379,12 @@ void          rp_thread_preinit();
     if (pthread_mutex_init((lock),NULL) != 0)\
         {fprintf(stderr,"could not create lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
 } while(0)
+
+#define RP_PTINIT_COND(cond) do{\
+    if (pthread_cond_init((cond),NULL) != 0)\
+        {fprintf(stderr,"could not create pthread_cond in %s at %d\n",__FILE__,__LINE__);exit(1);}\
+} while(0)
+
 
 /* mutex locking with tracking */
 #define RP_MLOCK(lock) do{\
@@ -455,22 +464,25 @@ extern RPTHR_LOCK *rp_thr_lock;
 #define THRUNLOCK RP_MUNLOCK(rp_thr_lock)
 
 
-#define REMALLOC(s, t) 					 \
-    (s) = realloc((s), (t));                             \
-    if ((char *)(s) == (char *)NULL)                     \
-    {                                                    \
-        fprintf(stderr, "error: realloc() in %s at %d\n",\
-            __FILE__, __LINE__);                         \
-        abort();                                         \
-    }
+#define REMALLOC(s, t) do{                                        \
+    (s) = realloc((s), (t));                                      \
+    if ((char *)(s) == (char *)NULL)                              \
+    {                                                             \
+        fprintf(stderr, "error: realloc(var, %d) in %s at %d\n",  \
+            (int)(t), __FILE__, __LINE__);                        \
+        abort();                                                  \
+    }                                                             \
+} while(0)
 
-#define CALLOC(s, t) 					 \
-    (s) = calloc(1, (t));                                \
-    if ((char *)(s) == (char *)NULL)                     \
-    {                                                    \
-        fprintf(stderr, "error: calloc() ");             \
-        abort();                                         \
-    }
+#define CALLOC(s, t) do{                                          \
+    (s) = calloc(1, (t));                                         \
+    if ((char *)(s) == (char *)NULL)                              \
+    {                                                             \
+        fprintf(stderr, "error: calloc(var, %d) in %s at %d\n",   \
+            (int)(t), __FILE__, __LINE__);                        \
+        abort();                                                  \
+    }                                                             \
+} while(0)
 
 #ifdef PUTMSG_STDERR
     pthread_mutex_t printlock;

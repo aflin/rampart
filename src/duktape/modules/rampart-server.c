@@ -3782,9 +3782,9 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
 
     debugf("now= %d.%06d, timeout=%d.%6d\n",(int)now.tv_sec, (int)now.tv_usec, (int)ts.tv_sec, (int)(ts.tv_nsec/1000));
 
+    //TODO: this is unnecessary.  Create one for each thread and init once
     RP_PTINIT(&(dhr->lock));
-
-    pthread_cond_init(&(dhr->cond), NULL);
+    RP_PTINIT_COND(&(dhr->cond));
 
     /* is this necessary? https://computing.llnl.gov/tutorials/pthreads/#Joining */
     pthread_attr_init(&attr);
@@ -3800,6 +3800,7 @@ http_thread_callback(evhtp_request_t *req, void *arg, int thrno)
     /* unlock dhr->lock and wait for pthread_cond_signal in http_dothread */
     ret = pthread_cond_timedwait(&(dhr->cond), &(dhr->lock), &ts);
     /* reacquire lock after timeout or condition signalled */
+    RP_PTUNLOCK(&(dhr->lock));
     debugf("0x%x, cond wait satisfied, ret=%d (==%d(ETIMEOUT)), LOCKED\n", (int)x, (int)ret, (int)ETIMEDOUT);
     fflush(stdout);
 
@@ -5773,7 +5774,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
                         if (mode != S_IFDIR)
                             RP_THROW(ctx, "server.start: parameter \"map\" -- Fileserver path '%s' requires a directory",fspath);
 
-                        REMALLOC(fs, strlen(fspath) + 2)
+                        REMALLOC(fs, strlen(fspath) + 2);
 
                         if (*(fspath + strlen(fspath) - 1) != '/')
                         {
