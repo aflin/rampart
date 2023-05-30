@@ -182,6 +182,47 @@ int debugl=rpydebug;
     _s;\
 })
 
+
+
+/* ********* Marshal-like pickle functions **********/
+
+static PyObject * PyPickle=NULL;
+static PyObject * pDumps=NULL;
+static PyObject * pLoads=NULL;
+
+static void init_pickle()
+{
+    if(!pDumps)
+        pDumps = PyUnicode_FromString("dumps");
+    if(!pLoads)
+        pLoads = PyUnicode_FromString("loads");
+
+    if(!PyPickle)
+        PyPickle = PyImport_ImportModule("pickle");
+}
+
+static PyObject *PyPickle_ReadObjectFromString(const char *data, Py_ssize_t len)
+{
+    PyObject *pstr = PyBytes_FromStringAndSize(data, len);
+    PyObject *ret=NULL;
+
+    ret = PyObject_CallMethodOneArg(PyPickle, pLoads, pstr);
+    RP_Py_XDECREF(pstr);
+
+    return ret;
+}
+
+static PyObject *PyPickle_WriteObjectToString(PyObject *value, int version)
+{
+    //version currently ignored
+    return PyObject_CallMethodOneArg(PyPickle, pDumps, value);
+}
+
+
+/* ********* END Marshal-like pickle functions **********/
+
+
+
 pthread_mutex_t rpy_lock;
 RPTHR_LOCK *rp_rpy_lock;
 #define RPYLOCK RP_MLOCK(rp_rpy_lock)
@@ -266,6 +307,9 @@ static void init_python(const char *program_name, char *ppath)
     PyTuple_SetItem(paths, (Py_ssize_t) 3, PyUnicode_FromString( tpath  ));
 
     PySys_SetObject("path", paths);
+
+    init_pickle();
+
     PYUNLOCK(state);
 
     if(!is_child)
@@ -831,8 +875,6 @@ static void push_list_to_array(duk_context *ctx, PyObject *pobj)
     }
 }
 
-
-
 static void push_ptype_to_string(duk_context *ctx, PyObject * pyvar)
 {
 
@@ -851,7 +893,6 @@ static void push_ptype_to_string(duk_context *ctx, PyObject * pyvar)
         RP_Py_XDECREF(pystr);
     }
 }
-
 
 static void push_ptype(duk_context *ctx, PyObject * pyvar)
 {
@@ -1122,7 +1163,7 @@ static duk_ret_t _get_pref_val(duk_context *ctx)
         start_pytojs(ctx);
         state = PYLOCK;
 
-        pValue=PyMarshal_ReadObjectFromString((const char*)marshal, marshal_sz);
+        pValue=PyPickle_ReadObjectFromString((const char*)marshal, marshal_sz);
         push_ptype(ctx, pValue);
         dprintf_pyvar(4, x, pValue, "got marshal val from child, %s\n", x);
         PYUNLOCK(state);
@@ -1204,7 +1245,13 @@ static void put_func_attributes(duk_context *ctx, PyObject *pValue, PyObject *pR
         duk_push_c_function(ctx, _get_pref_str, 0);
         duk_push_string(ctx, pstring);
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("prefstr"));
+        duk_put_prop_string(ctx, -2, "toValue");
+
+        duk_push_c_function(ctx, _get_pref_str, 0);
+        duk_push_string(ctx, pstring);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("prefstr"));
         duk_put_prop_string(ctx, -2, "valueOf");
+
         RP_Py_XDECREF(pStr);
     }
     PYUNLOCK(state);
@@ -1345,7 +1392,7 @@ static void put_attributes_from_string(duk_context *ctx, PyObject *pModule, char
     }
 }
 
-static PyObject *parent_import(const char *script, int typeno, char **fnames)
+static PyObject *parent_import(const char *script, int typeno, char **fnames, char **fstring)
 {
     PFI *finfo = check_fork();
     size_t script_sz = strlen(script)+1; //include the null
@@ -1377,6 +1424,7 @@ static PyObject *parent_import(const char *script, int typeno, char **fnames)
     if(status == 'o')
     {
         char *funcnames=NULL;
+        char *funcstring=NULL;
         size_t flen=0;
 
         if(forkread(&flen, sizeof(size_t)) == -1)
@@ -1389,6 +1437,17 @@ static PyObject *parent_import(const char *script, int typeno, char **fnames)
             return NULL;
         }        
         *fnames = funcnames;
+
+        if(forkread(&flen, sizeof(size_t)) == -1)
+            return NULL;
+
+        REMALLOC(funcstring, flen);
+        if(forkread(funcstring, flen) == -1)
+        {
+            free(funcstring);
+            return NULL;
+        }
+        *fstring = funcstring;
         return pModule;
     }
     else if(status == 'e')
@@ -1576,14 +1635,25 @@ static int child_import(PFI *finfo, int type)
     {
         char *funcnames = stringify_funcnames(pModule);
         size_t flen = strlen(funcnames)+1;
+        PyObject *pResStr = PyObject_Str(pModule);
+        const char *funcstring = PyUnicode_AsUTF8(pResStr);
 
         if(forkwrite("o", sizeof(char)) == -1)
             return 0;
+
         if(forkwrite(&flen, sizeof(size_t)) == -1)
             return 0;
         if(forkwrite(funcnames, flen) == -1)
             return 0;
         free(funcnames);
+
+        flen = strlen(funcstring) + 1;
+        if(forkwrite(&flen, sizeof(size_t)) == -1)
+            return 0;
+        if(forkwrite(funcstring, flen) == -1)
+            return 0;
+
+        RP_Py_XDECREF(pResStr);
     }
     else
     {
@@ -1604,7 +1674,7 @@ static int child_import(PFI *finfo, int type)
 
 #define pyobj_to_bytes(pbytes,obj,sz) ({\
     char *_res;\
-    PyObject *pbytes=PyMarshal_WriteObjectToString((obj),Py_MARSHAL_VERSION);\
+    PyObject *pbytes=PyPickle_WriteObjectToString((obj),Py_MARSHAL_VERSION);\
     PyBytes_AsStringAndSize( pbytes, &_res, &(sz) );\
     (sz)++;\
     RP_Py_XDECREF(pbytes);\
@@ -1619,7 +1689,7 @@ int child_get_val(PFI* finfo)
         return 0;
 
     dprintf(4,"translating pRef=%p to marshal bytes\n", pRef);
-    pBytes=PyMarshal_WriteObjectToString(pRef,Py_MARSHAL_VERSION);
+    pBytes=PyPickle_WriteObjectToString(pRef,Py_MARSHAL_VERSION);
 
     if(!pBytes)
     {
@@ -1639,6 +1709,8 @@ int child_get_val(PFI* finfo)
 
         if(forkwrite(str, str_sz) == -1)
             return 0;
+
+        RP_Py_XDECREF(pResStr);
     }
     else
     {
@@ -1950,7 +2022,7 @@ static char *parent_py_call(PyObject * pModule, const char *fname)
 
         dprintf(4,"pArgs = %p, %s\n", pArgs, PyUnicode_AsUTF8(PyObject_Str(pArgs)) );
 
-        pBytes=PyMarshal_WriteObjectToString(pArgs,Py_MARSHAL_VERSION);
+        pBytes=PyPickle_WriteObjectToString(pArgs,Py_MARSHAL_VERSION);
         if(!pBytes)
         {
             char buf[MAX_EXCEPTION_LENGTH];
@@ -2206,7 +2278,7 @@ static int child_py_call(PFI *finfo)
 
         //dprintf(4,"reader=%d, writer=%d\n", finfo->reader, finfo->writer);
         dprintfhex(4,marshal, marshal_sz, "marshal=0x");
-        pArgs=PyMarshal_ReadObjectFromString((const char*)marshal, marshal_sz);
+        pArgs=PyPickle_ReadObjectFromString((const char*)marshal, marshal_sz);
         free(marshal);
 
         if(!pArgs || !PyTuple_Check(pArgs) )
@@ -3123,7 +3195,7 @@ static duk_ret_t _import (duk_context * ctx, int type)
 
     if(!is_child && must_fork)
     {
-        char *obj_fnames=NULL;
+        char *obj_fnames=NULL, *funcstring=NULL;
         char *pscript = (char*)script;
 
         if(type)
@@ -3135,7 +3207,7 @@ static duk_ret_t _import (duk_context * ctx, int type)
             pscript = strcatdup( pscript, (char*)script);
         }
 
-        pModule = parent_import(pscript, type, &obj_fnames);
+        pModule = parent_import(pscript, type, &obj_fnames, &funcstring);
 
         if(type)
             free(pscript);
@@ -3147,8 +3219,12 @@ static duk_ret_t _import (duk_context * ctx, int type)
 
         duk_push_object(ctx);
 
+        // Put items if dictionary. Put attributes. Put functions.
         put_attributes_from_string(ctx, pModule, obj_fnames);
         free(obj_fnames);
+        // put toString, valueOf, etc
+        put_func_attributes(ctx, NULL, pModule, funcstring);
+        free(funcstring);
 
         // hidden pmod as property of object
         duk_push_pointer(ctx, (void*)pModule);
@@ -3181,13 +3257,15 @@ static duk_ret_t _import (duk_context * ctx, int type)
 
         duk_push_object(ctx);
 
+        // Put items if dictionary. Put attributes. Put functions.
         put_attributes(ctx, pModule);
-
+        // put toString, valueOf, etc
+        put_func_attributes(ctx, pModule, NULL , NULL);
         PYUNLOCK(state);
 
         // hidden pmod as property of object
-        duk_push_pointer(ctx, (void*)pModule);
-        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("pvalue"));
+//        duk_push_pointer(ctx, (void*)pModule);
+//        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("pvalue"));
 
     }
 

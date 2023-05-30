@@ -421,7 +421,6 @@ extern RPTHR_LOCK *rp_ctxlock;
 #define CTXLOCK RP_MLOCK(rp_ctxlock)
 #define CTXUNLOCK RP_MUNLOCK(rp_ctxlock)
 
-/************* END THREAD AND LOCK RELATED ************************/
 
 #define time_t_max ((((time_t) 1 << (sizeof(time_t) * CHAR_BIT - 2)) - 1) * 2 + 1 )
 
@@ -462,6 +461,8 @@ extern pthread_mutex_t thr_lock;
 extern RPTHR_LOCK *rp_thr_lock;
 #define THRLOCK RP_MLOCK(rp_thr_lock)
 #define THRUNLOCK RP_MUNLOCK(rp_thr_lock)
+
+/************* END THREAD AND LOCK RELATED ************************/
 
 
 #define REMALLOC(s, t) do{                                        \
