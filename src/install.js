@@ -34,7 +34,11 @@ function clear(){
     //printf("\x1b[2J");
 }
 
-function get_install_choice() {
+function get_install_choice(home) {
+    var homechoice="";
+    if(home)
+        homechoice = `7) ${home}/rampart\n`;
+
     printf(
 `Install rampart to:
 
@@ -44,8 +48,8 @@ function get_install_choice() {
 4) /usr (not recommened)
 5) custom
 6) links only from this dir
-`);
-    return getresp('');
+${homechoice}`);
+    return getresp('X');
 }
 
 function greetings(){
@@ -218,15 +222,19 @@ function copy_dir_recursive(src, dest, backup) {
 
 var with_err="";
 
-var link_bin_files = ['rampart', 'tsql', 'rex', 'texislockd', 'addtable', 'kdbfchk' ];
+var link_bin_files = ['rampart', 'tsql', 'rex', 'texislockd', 'addtable', 'kdbfchk', "pip3r", "python3r" ];
 
-function do_make_links(prefix) {
-    var bindir = prefix + '/bin';
+function do_make_links(prefix,target_bindir) {
+    var bindir = prefix + '/bin/';
     var i=0;
 
+    if(!target_bindir)
+        target_bindir="/usr/local/bin/";
+
+
     for(;i<link_bin_files.length;i++){
-        var lfile = bindir + '/' + link_bin_files[i]; 
-        var link  = "/usr/local/bin/" + link_bin_files[i];
+        var lfile = bindir + link_bin_files[i]; 
+        var link  = target_bindir + link_bin_files[i];
 
         var linkstat = lstat(link);
         if(linkstat)
@@ -277,10 +285,35 @@ function do_install(prefix, map, makelinks){
 
     if(makelinks)
     {
-        if(!has_write_perm("/usr/local/bin"))
-            printf("No links to binaries will be made\n");
-        else
-            do_make_links(prefix);
+        var bindir = "/usr/local/bin/";
+        if(getType(makelinks) == "String")
+            bindir = makelinks;
+
+        do{
+            if(!stat(bindir))
+            {
+                if(!check_create_perm(bindir))
+                    return false;
+                printf("'%s' does not exist. Create it? (y/n):\n", bindir);
+                resp = getresp('');
+                if (resp != 'y')
+                {
+                    printf("No links to binaries will be made\n");
+                    break;
+                }
+                else if (!check_make_dir(bindir))
+                {
+                    printf("No links to binaries will be made\n");
+                    break;
+                }
+            }
+
+            if(!has_write_perm(bindir))
+                printf("No links to binaries will be made\n");
+            else
+                do_make_links(prefix,bindir);
+
+        } while (false);
     }    
 
     // rebase python paths
@@ -410,16 +443,81 @@ function do_install_choice(choice) {
 
         case '6':
             var src = realPath('./');
-            console.log(`creating links from "${src}/bin/*" to /usr/local/bin`);
-            do_make_links(src);
+            var dest = "/usr/local/bin";
+            var homebin;
+            if(process.env.HOME)
+            {
+                homebin = process.env.HOME + '/bin/';
+                resp="X"
+                while (resp != '1' && resp != '2')
+                {
+                    printf(`create links to binaries in:
+    1) '/usr/local/bin'
+    2) '${homebin}'
+[1/2]
+`                   );
+                    resp=getresp("X");
+                }
+                if(resp == 2)
+                    dest = homebin;
+                if(!stat(dest))
+                {
+                    if(!check_create_perm(dest))
+                        return false;
+                    printf("'%s' does not exist. Create it? (y/n):\n", dest);
+                    resp = getresp('');
+                    if (resp != 'y')
+                    {
+                        printf("No links to binaries will be made\n");
+                        break;
+                    }
+                    else if (!check_make_dir(dest))
+                    {
+                        printf("No links to binaries will be made\n");
+                        break;
+                    }
+                }
+                else if(!check_create_perm(dest))
+                    return false;
+            }
+            console.log(`creating links from "${src}/bin/*" to ${dest}`);
+            do_make_links(src,dest);
             break;
+        case '7':
+            var loc = process.env.HOME + "/rampart/"
+            if(!stat(loc))
+            {
+                if(!check_create_perm(loc))
+                    return false;
+                printf("'%s' does not exist. Create it? (y/n):\n", loc);
+                resp = getresp('');
+                if (resp != 'y')
+                    return false;
+                if (!check_make_dir(loc))
+                    return false;
+            } else {
+                if(!check_create_perm(loc)) {
+                    return false;
+                }
+            }
+            printf(`create links to binaries in '${process.env.HOME}/bin'? [Y/n]\n`);
+            resp=getresp("y");            
+            if (resp == 'y')
+                do_install(loc, singledir_install, process.env.HOME+'/bin/');
+            else
+                do_install(loc, singledir_install, false);
+
+            break;
+
     }
     return true;
 }
 
 function choose_install() {
-    var i=0, choice=' ';// = get_install_choice();
+    var i=0, choice='X';// = get_install_choice();
 
+    var home = process.env.HOME;
+    var homeopt = "", homebinopt="";
     // we already checked /usr/local/bin at the beginning, below
     var optWriteWarn = (iam=='root' || has_write_perm("/opt", true)) ? "":"*";
     var usrWriteWarn = (iam=='root' || has_write_perm("/usr", true)) ? "":"*";
@@ -444,7 +542,17 @@ function choose_install() {
         warnText = `
 * You do not currently have write permissions to this directory or a necessary subdirectory.
 `;
-    while( "123456".indexOf(choice) == -1){
+    var choices = "123456";
+    if(home) {
+        homebinopt = ` or in ${home}/bin`;
+        homeopt = `
+7) ${home}
+    - same as 1 but to ${home}/rampart
+      and links are optionally placed in ${home}/bin
+`
+        choices = "1234567";
+    }
+    while( choices.indexOf(choice) == -1){
         clear();
         printf('%s', 
 `Install help:
@@ -469,8 +577,8 @@ function choose_install() {
     - Same as 1, but script will ask for the location of the custom directory.
 
 6) links only
-    - Keep files in this directory. Make links in '/usr/local/bin'.
-
+    - Keep files in this directory. Make links in '/usr/local/bin${homebinopt}'.
+${homeopt}
   NOTE that this install utility will overwrite an old installation.  If you
   would like to keep your old installation, install the current in a
   different directory, or alternatively press ctrl-c to exit, move the
@@ -478,7 +586,7 @@ function choose_install() {
 ${warnText}
 --------------------
 `);
-        choice=get_install_choice();
+        choice=get_install_choice(home);
     }
     return choice;
 }
@@ -638,6 +746,7 @@ Press any key to continue.`);
 /* ************ main ******************* */
 
 
+/* prevents install to /home/user/rampart
 if (iam != 'root') {
     if(!has_write_perm("/usr/local/bin",true))
     {
@@ -667,7 +776,7 @@ ALTERNATIVELY:
     }
 }
 
-
+*/
 // change to script directory
 chdir(process.scriptPath);
 
@@ -727,6 +836,10 @@ Also of interest in this directory (but not copied):
 
   3)  The "./examples" directory has a sample module written in C which
       you can use as a template for making your own module written in C.
+
+      Also have a look at the make_cmod_template.js script. It can create
+      a template rampart module project with Makefile, *.c and *-test.js 
+      files.
 
 Thank you for installing.  Enjoy!
 `);
