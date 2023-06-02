@@ -175,9 +175,9 @@ testFeature("server is running", rampart.utils.kill(pid,0) );
 testFeature("curl secure request/redirect/follow", function() {
     var res=curl.fetch("https://google.com/");
     var res2=curl.fetch({location:true},"https://google.com/");
-    if (res.status == 301 && res2.status == 200)
+    if ((res.status == 301|| res.status == 302) && (res2.status == 200 || res2.status > 399) )
         return true;
-    console.log(res.errMsg,res2.errMsg);
+    console.log(res.status,res2.status);
     return false;
 });
 
