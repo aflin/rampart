@@ -402,8 +402,9 @@ void          rp_thread_preinit();
 
 #define RP_MUNLOCK(lock) do{\
     /*printf("(%d:%d) unlocking %s %p at %s:%d\n", (int)getpid(), (int)get_thread_num(), #lock, lock, __FILE__, __LINE__);*/\
-    if (rp_unlock((lock)) != 0)\
-        {fprintf(stderr,"could not release lock in %s at %d\n",__FILE__,__LINE__);exit(1);}\
+    int r;\
+    if ((r=rp_unlock((lock))) != 0)\
+        {fprintf(stderr,"could not release lock in %s at %d - ret=%d\n",__FILE__,__LINE__,r);exit(1);}\
 } while(0)
 
 #define RP_MINIT(lock) ({\

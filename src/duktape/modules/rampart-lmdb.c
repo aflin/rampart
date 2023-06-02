@@ -48,7 +48,8 @@ RPTHR_LOCK *rp_lmdblock;
 
 #define write_lock RP_MLOCK(lenv->rp_lock)
 
-#define write_unlock RP_MUNLOCK(lenv->rp_lock)
+// we are not consistent about write lock/unlock pairing.  Might want to fix.
+#define write_unlock if(RPTHR_TEST(lenv->rp_lock, RPTHR_LOCK_FLAG_LOCKED) ) RP_MUNLOCK(lenv->rp_lock)
 
 // conversion types
 #define RP_LMDB_BUFFER 0
