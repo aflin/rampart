@@ -3584,7 +3584,7 @@ static void *http_dothread(void *arg)
     if (res)
         sendresp(req, res, 0);
 
-    duk_pop(ctx);//return from JS callback
+    duk_set_top(ctx, 0); // reset stack
 
     debugf("0x%x, UNLOCKING in thread_cb\n", (int)x);
 //    fflush(stdout);
