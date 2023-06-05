@@ -428,12 +428,28 @@ add_custom_target(cp_python
 	DEPENDS ${PYTHON_BIN_DIR}
 )
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+
+execute_process(COMMAND brew --prefix gdbm OUTPUT_VARIABLE GDBM_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process(COMMAND brew --prefix xz OUTPUT_VARIABLE XZ_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process(COMMAND brew --prefix tcl-tk OUTPUT_VARIABLE PYTK_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+set(PYFLAGS "-fPIC ${CMAKE_C_FLAGS} -I${GDBM_PREF}/include -I${XZ_PREF}/include")
+set(PYLDFLAGS "-L${GDBM_PREF}/lib -L${XZ_PREF}/lib")
+set(PYPKG "${PYTK_PREF}/lib/pkgconfig")
+
+else()
+
 set(PYFLAGS "-fPIC ${CMAKE_C_FLAGS}")
+set(PYLDFLAGS "")
+set(PYPKG "")
+
+endif()
 
 #execute_process(
 add_custom_command(
 	OUTPUT ${PYTHON_BIN_DIR}/Makefile
-	COMMAND bash -c "RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl CFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\""
+	COMMAND bash -c "RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\""
 	WORKING_DIRECTORY ${PYTHON_BIN_DIR}
 )
 
