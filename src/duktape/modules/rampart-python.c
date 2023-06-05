@@ -1371,7 +1371,6 @@ static void put_attributes_from_string(duk_context *ctx, PyObject *pModule, char
         else if(!spf || (spe && spe<spf))
         {
             // format is ("%s\xfe%s\xfe", name, pytoval(pointer) )
-
             //terminate s (the name)
             *spe='\0';
             //advance to refstr
@@ -1534,16 +1533,18 @@ static char *stringify_funcnames(PyObject* pModule)
             {
                 dprintf(4,"storing %s - is %s - iscallable:%d\n", PyUnicode_AsUTF8(value), (pFunc? Py_TYPE(pFunc)->tp_name:"pFunc=NULL"), pFunc ? PyCallable_Check(pFunc):0);
                 str = strcatdup(str, (char *)fname);
-                snprintf(scratch,1024,"\xfe%s\xfe", pvs);
+                snprintf(scratch,1024,"\xfe%s", pvs);
                 str = strcatdup(str, scratch);
+                str = strcatdup(str, "\xfe");
             }
             else if (parent_is_callable)
             {
                 str = strcatdup(str, (char *)fname);
                 sprintf(scratch,"\xff%p",pFunc); 
                 str = strcatdup(str, scratch);
-                snprintf(scratch,1024,"\xff%s\xff", pvs);
+                snprintf(scratch,1024,"\xff%s", pvs);
                 str = strcatdup(str, scratch);
+                str = strcatdup(str, "\xff");
             }
             RP_Py_XDECREF(pStr);
         }
