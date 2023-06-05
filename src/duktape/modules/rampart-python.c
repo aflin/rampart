@@ -1362,7 +1362,8 @@ static void put_attributes_from_string(duk_context *ctx, PyObject *pModule, char
             refstr++;
             //terminate refstr
             end=strchr(refstr, '\xff');
-            *end='\0';
+            if(end)
+                *end='\0';
             // make the value
 
             make_pyval(NULL, _get_pref_str, _get_pref_val, NULL, pRef, refstr);
@@ -1377,7 +1378,8 @@ static void put_attributes_from_string(duk_context *ctx, PyObject *pModule, char
             refstr = spe+1;
             //terminate refstr
             end=strchr(refstr, '\xfe');
-            *end='\0';
+            if(end)
+                *end='\0';
 
             // make the method call
             push_python_function_as_method(ctx, s, pModule, refstr);
