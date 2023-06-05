@@ -433,7 +433,7 @@ set(PYFLAGS "-fPIC ${CMAKE_C_FLAGS}")
 #execute_process(
 add_custom_command(
 	OUTPUT ${PYTHON_BIN_DIR}/Makefile
-	COMMAND bash -c "RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl CFLAGS=\"${PYFLAGS}\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\""
+	COMMAND bash -c "RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl CFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\""
 	WORKING_DIRECTORY ${PYTHON_BIN_DIR}
 )
 
