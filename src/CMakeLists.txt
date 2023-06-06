@@ -428,27 +428,35 @@ add_custom_target(cp_python
 	DEPENDS ${PYTHON_BIN_DIR}
 )
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-
-execute_process(COMMAND brew --prefix gdbm OUTPUT_VARIABLE GDBM_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)
-execute_process(COMMAND brew --prefix xz OUTPUT_VARIABLE XZ_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)
-execute_process(COMMAND brew --prefix tcl-tk OUTPUT_VARIABLE PYTK_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)
-
-set(PYFLAGS "-fPIC ${CMAKE_C_FLAGS} -I${GDBM_PREF}/include -I${XZ_PREF}/include")
-set(PYLDFLAGS "-L${GDBM_PREF}/lib -L${XZ_PREF}/lib")
-set(PYPKG "${PYTK_PREF}/lib/pkgconfig")
-
-else()
 
 set(PYFLAGS "-fPIC ${CMAKE_C_FLAGS}")
 set(PYLDFLAGS "")
 set(PYPKG "")
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+
+	execute_process(COMMAND brew --prefix gdbm OUTPUT_VARIABLE GDBM_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)
+	execute_process(COMMAND brew --prefix xz OUTPUT_VARIABLE XZ_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)
+	execute_process(COMMAND brew --prefix tcl-tk OUTPUT_VARIABLE PYTK_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)
+	execute_process(COMMAND brew --prefix readline OUTPUT_VARIABLE RL_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+	foreach(PREF IN ITEMS ${GDBM_PREF} ${XZ_PREF} ${PYTK_PREF} ${RL_PREF})
+		if(NOT "${PREF}" STREQUAL "")
+			set(PYFLAGS "${PYFLAGS} -I${PREF}/include")
+			set(PYLDFLAGS "${PYLDFLAGS} -L${PREF}/lib")
+		endif()
+	endforeach()
+
+	set(PYPKG "${PYTK_PREF}/lib/pkgconfig")
+
 endif()
 
-#execute_process(
+message("Configuration for python build:")
+message("    RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\"")
+
 add_custom_command(
 	OUTPUT ${PYTHON_BIN_DIR}/Makefile
+	DEPENDS ${OPENSSL_TARGET_DIR}/ssl/libssl.a
 	COMMAND bash -c "RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\""
 	WORKING_DIRECTORY ${PYTHON_BIN_DIR}
 )
@@ -474,7 +482,7 @@ add_library(rampart-python SHARED
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 	execute_process(COMMAND sw_vers -productVersion OUTPUT_VARIABLE MACOS_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-	#TODO: find the real cutoff version.
+	#TODO: find the real cutoff version for requiring -lintl.
 	if (MACOS_VERSION VERSION_LESS "10.12")
 		target_link_libraries(rampart-python PRIVATE
 			${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
@@ -731,8 +739,8 @@ install(
 
 install(CODE "execute_process( \
     COMMAND bash -c \"rm -rf \
-	${CMAKE_INSTALL_PREFIX}/modules/python3-lib \"\
-	${CMAKE_INSTALL_PREFIX}/bin/python3r \"\
+	${CMAKE_INSTALL_PREFIX}/modules/python3-lib \
+	${CMAKE_INSTALL_PREFIX}/bin/python3r \
 	${CMAKE_INSTALL_PREFIX}/bin/pip3r \"\
     )"
 )
