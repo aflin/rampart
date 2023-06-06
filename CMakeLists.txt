@@ -4,9 +4,6 @@ project(Rampart VERSION 0.1.3 LANGUAGES C CXX)
 
 #set(CMAKE_BUILD_TYPE Debug)
 
-# timespec_get
-set(CMAKE_C_STANDARD 11)
-
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
 ## to build a macos universal, run:
