@@ -1272,7 +1272,8 @@ static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *
     ufds[0].events = POLLIN;
 
     REMALLOC(waitkey, lastlen);
-    timespec_get(&ts, TIME_UTC);
+    clock_gettime(CLOCK_REALTIME, &ts);
+//    timespec_get(&ts, TIME_UTC);
     timemarker = ts.tv_sec *1000 + ts.tv_nsec/1000000;
     while(1)
     {
@@ -1305,7 +1306,8 @@ static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *
             free(waitkey);
             return _thread_get_del(ctx, (char *)key, del);
         }
-        timespec_get(&ts, TIME_UTC);
+        clock_gettime(CLOCK_REALTIME, &ts);
+        //timespec_get(&ts, TIME_UTC);
         tmcur = ts.tv_sec *1000 + ts.tv_nsec/1000000; 
         to -= (int)( tmcur - timemarker );
         timemarker = tmcur;
