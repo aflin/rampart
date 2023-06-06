@@ -8,6 +8,13 @@ cd - 2&>1 1>/dev/null
 
 CURPY="$CURDIR/bin/python3"
 
+rp=`which realpath`
+if [ "$rp" == "" ]; then
+	realpath(){
+		$CURPY -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$1"
+	}
+fi
+
 REX=$(which rex);
 if [ "$REX" == "" ]; then
 	if [ -e ${CURDIR}/../../bin/rex ]; then
