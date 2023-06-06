@@ -471,14 +471,27 @@ add_library(rampart-python SHARED
 	duktape/modules/rampart-python.c
 )
 
-target_link_libraries(rampart-python PRIVATE
-	${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
-	pthread
-	dl
-	util
-	m
-)
+if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+	execute_process(COMMAND sw_vers -productVersion OUTPUT_VARIABLE MACOS_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)
 
+	#TODO: find the real cutoff version.
+	if (MACOS_VERSION VERSION_LESS "10.12")
+		target_link_libraries(rampart-python PRIVATE
+			${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
+			pthread dl util m intl
+		)
+	else()
+		target_link_libraries(rampart-python PRIVATE
+			${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
+			pthread dl util m
+		)
+	endif()
+else()
+        target_link_libraries(rampart-python PRIVATE
+                ${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
+                pthread dl util m
+        )
+endif()
 target_include_directories(rampart-python PRIVATE
 	${PYTHON_BIN_DIR}/build/include/python3.${PYTHON_MINOR}
 )
