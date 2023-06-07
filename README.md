@@ -14,6 +14,12 @@ You will need to install the following dependencies:
 brew install libidn2 gawk python3
 ```
 
+For a more complete build of the rampart-python module:
+
+```
+brew install tcl-tk gdbm xz readline sqlite
+```
+
 Then, after cloning, you can do the following to build:
 
 ```
@@ -33,6 +39,17 @@ or
 ```
 yum install libidn2-devel openldap-devel flex bison python3 zlib-devel
 ```
+
+For a more complete build of the rampart-python module:
+
+```
+apt install libsqlite3-dev uuid-dev tcl-dev tk-dev libgdbm-dev libbz2-dev liblzma-dev
+```
+or
+```
+yum install sqlite-devel tcl-devel tk-devel libuuid-devel readline-dev
+```
+
 Then, after cloning, you can do the following to build:
 
 ```
