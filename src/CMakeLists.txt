@@ -456,7 +456,7 @@ message("    RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PAT
 
 add_custom_command(
 	OUTPUT ${PYTHON_BIN_DIR}/Makefile
-	DEPENDS ${OPENSSL_TARGET_DIR}/ssl/libssl.a
+	DEPENDS rampart-crypto
 	COMMAND bash -c "RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\""
 	WORKING_DIRECTORY ${PYTHON_BIN_DIR}
 )
