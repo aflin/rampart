@@ -482,11 +482,23 @@ add_library(rampart-python SHARED
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 	execute_process(COMMAND sw_vers -productVersion OUTPUT_VARIABLE MACOS_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-	#TODO: find the real cutoff version for requiring -lintl.
+	#TODO: find the real cutoff version for requiring libintl.  And maybe why earlier versions of python
+	#      need it in the first place
 	if (MACOS_VERSION VERSION_LESS "10.12")
+		# the idea here is to make a yosemite x86 compiled binary work with apple arm
+		# homebrew does not build universal libraries, so we need to include the x86 version of libintl here.
+		# libiconv is provided by apple and is universal on apple arm.
+		execute_process(COMMAND brew --prefix gettext OUTPUT_VARIABLE GTXT_PREF OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+		if("${GTXT_PREF}" STREQUAL "")
+			message( FATAL_ERROR "gettext library not found. Try 'brew install gettext'")
+		endif()
+
 		target_link_libraries(rampart-python PRIVATE
+			${GTXT_PREF}/lib/libintl.a
 			${PYTHON_BIN_DIR}/libpython3.${PYTHON_MINOR}.a
-			pthread dl util m intl
+			pthread dl util m iconv
+			"-framework CoreFoundation"
 		)
 	else()
 		target_link_libraries(rampart-python PRIVATE
