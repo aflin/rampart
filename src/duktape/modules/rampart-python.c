@@ -294,11 +294,21 @@ static char *get_exception(char *buf)
 static void init_python(const char *program_name, char *ppath)
 {
 
-    Py_Initialize();
-    PyGILState_STATE state=PYLOCK;
-    PyObject *paths = PyTuple_New((Py_ssize_t) 4);
-    char tpath[PATH_MAX+1];
+    PyGILState_STATE state;
+    PyObject *paths = NULL;
+    int maxp = 3*PATH_MAX+4;
+    char tpath[maxp];
 
+    //when building for yosemite and running on catalina, this is necessary (perhaps elsewhere too?)
+    snprintf(tpath, maxp, "%s:%s/site-packages:%s/lib-dynload", ppath,ppath,ppath);
+    setenv("PYTHONPATH", tpath, 0);
+    setenv("PYTHONHOME", ppath, 0);
+
+    Py_Initialize();
+
+    state=PYLOCK;
+
+    paths = PyTuple_New((Py_ssize_t) 4);
     PyTuple_SetItem(paths, (Py_ssize_t) 0, PyUnicode_FromString( "./"  ));
     PyTuple_SetItem(paths, (Py_ssize_t) 1, PyUnicode_FromString( ppath  ));
     snprintf(tpath, PATH_MAX, "%s/site-packages", ppath);
