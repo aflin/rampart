@@ -326,10 +326,11 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
         RP_MLOCK(rp_cborlock);
 
         earg->cbor->refcount--;
-        if(!earg->cbor->refcount)
+        if(earg->cbor->refcount < 1)
         {
             free(earg->cbor->data);
             free(earg->cbor);
+            earg->cbor=NULL;
         }
 
         RP_MUNLOCK(rp_cborlock);
