@@ -13,10 +13,164 @@
 #include "event2/thread.h"
 #include "rampart.h"
 
-pthread_mutex_t cborlock;
-RPTHR_LOCK *rp_cborlock;
+pthread_mutex_t ev_var_lock;
+RPTHR_LOCK *rp_ev_var_lock;
 
 volatile int rp_event_scope_to_module=0;
+
+
+/* ***********************************************************************
+    a list of events, with a bitmap of the threads in which they are used
+   *********************************************************************** */
+#define RP_EVENT struct rp_event_s
+RP_EVENT {
+    char          *name;
+    unsigned char *map;
+    size_t         map_sz;
+    RP_EVENT      *next;
+};
+
+static RP_EVENT *rp_events=NULL, *rp_last_event=NULL;
+
+/* s will likely be const char * and it will be copied here */
+#define rp_new_event(s) ({\
+    RP_EVENT *e=NULL;\
+    REMALLOC(e, sizeof(RP_EVENT));\
+    e->next=NULL;\
+    e->map=NULL;\
+    e->map_sz=0;\
+    e->name=strdup(s);\
+    e;\
+})
+
+#define rp_add_event(s) ({\
+    RP_EVENT *e=rp_new_event((s));\
+    if(rp_last_event){\
+        rp_last_event->next=e;\
+        rp_last_event=e;\
+    } else rp_events=rp_last_event=e;\
+    e;\
+})
+
+#define rp_del_event_string(s) do {\
+    RP_EVENT *e=rp_events, *l=NULL;\
+    while(e){\
+        if(!strcmp(e->evname,(s))){\
+            if(e==rp_events) {\
+                rp_events=e->next;\
+                if(!rp_events) rp_last_event=NULL;\
+            } else {\
+                l->next=e->next;\
+                if(!l->next) rp_last_event=l;\
+            }\
+            free(e->map);\
+            free(e->name);\
+            free(e);\
+            break; \
+        }\
+        l=e;\
+        e=e->next;\
+    }\
+} while(0)
+
+#define rp_del_event(event) do {\
+    RP_EVENT *e=rp_events, *l=NULL;\
+    while(e){\
+        if(e==event){\
+            if(e==rp_events) {\
+                rp_events=e->next;\
+                if(!rp_events) rp_last_event=NULL;\
+            } else {\
+                l->next=e->next;\
+                if(!l->next) rp_last_event=l;\
+            }\
+            free(e->map);\
+            free(e->name);\
+            free(e);\
+            break; \
+        }\
+        l=e;\
+        e=e->next;\
+    }\
+} while(0)
+
+#define rp_get_event(s) ({\
+    RP_EVENT *e=rp_events, *ret=NULL;\
+    while(e){\
+        if(!strcmp(e->name,(s))){\
+            ret=e;\
+            break;\
+        }\
+        e=e->next;\
+    }\
+    ret;\
+})
+
+#define rp_event_grow_bitmap(e,b) do{\
+    size_t i=e->map_sz;\
+    if( i<(b) ) {\
+        REMALLOC(e->map, (b));\
+        for(;i<b;i++)\
+            (e->map)[i]=0;\
+        e->map_sz=(b);\
+    }\
+} while (0)
+
+#define rp_event_add_thread(e,n) do {\
+    size_t curbyte=(n)/8, curbit=(n)%8;\
+    if(e){\
+        rp_event_grow_bitmap(e, curbyte+1);\
+        (e->map)[curbyte] |= (1<<curbit);\
+    }\
+} while (0)
+
+#define rp_event_del_thread(e,n) do {\
+    size_t curbyte=(n)/8, curbit=(n)%8;\
+    if(e){\
+        rp_event_grow_bitmap(e, curbyte+1);\
+        (e->map)[curbyte] &= ~(1<<curbit);\
+    }\
+} while (0)
+
+#define rp_event_test_thread(e,n) ({\
+    int ret=0;\
+    size_t curbyte=(n)/8, curbit=(n)%8;\
+    if(e){\
+        rp_event_grow_bitmap(e, curbyte+1);\
+        ret = (e->map)[curbyte] & (1<<curbit);\
+        /*printf("in test, byte=%lu, bit=%lu, val=%d\n", curbyte, curbit, (int)(e->map)[curbyte]);*/\
+    }\
+    ret;\
+})
+
+//get existing or make new rp_event struct
+//and set bitmap to current thread
+#define rp_event_register(s) do{\
+    RP_EVENT *e=rp_get_event(s);\
+    if(!e) e=rp_add_event(s);\
+    rp_event_add_thread(e,(size_t)get_thread_num());\
+} while(0)
+
+#define rp_event_unregister(s) do{\
+    RP_EVENT *ev=rp_get_event(s);\
+    if(ev){\
+        unsigned char keepev=0;\
+        int i=0;\
+        rp_event_del_thread(ev,(size_t)get_thread_num());\
+        /* test if any bit is set */\
+        for(; i < ev->map_sz; i++)\
+            keepev|=(ev->map)[i];\
+        if(!keepev) /* none are set */\
+            rp_del_event(ev);\
+    }\
+} while(0)
+
+#define rp_event_test(s,n) ({\
+    int ret=0;\
+    RP_EVENT *e=rp_get_event(s);\
+    if(e) ret=rp_event_test_thread(e,(size_t)n);\
+    ret;\
+})
 
 duk_ret_t duk_scope_to_module(duk_context *ctx)
 {
@@ -153,17 +307,13 @@ duk_ret_t duk_rp_on_event(duk_context *ctx)
     }
     duk_put_prop_string(ctx, -2, onname);
     if(!have_object)
-        duk_put_prop_string(ctx, -2, evname);// new object into jsevents
+        duk_put_prop_string(ctx, -2, evname);// new event object into jsevents
 
+    // mark this thread as having this event
+    rp_event_register(evname);
+    //printf("regestered %s in thread %d\n", evname, get_thread_num());
     return 0;
 }
-
-#define CBH struct cbor_holder_s
-CBH {
-    int    refcount;
-    void   *data;
-    size_t size;
-};
 
 #define JSEVENT_TRIGGER 0 // trigger event
 #define JSEVENT_DELETE  1 // delete the event
@@ -172,11 +322,11 @@ CBH {
 #define JSEVARGS struct jsev_args
 JSEVARGS {
     struct event *e;
-    char         *key;
-    char	 *fname;
-    int          action;
-    int		 count;
-    CBH         *cbor;
+    char    *key;
+    char    *fname;
+    int      action;
+    int      varno;
+    int     *refcount;
 };
 
 void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
@@ -185,6 +335,8 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
     RPTHR *thr = get_current_thread();
     duk_context *ctx = thr->htctx;
     duk_idx_t arg_idx = -1;
+    size_t varname_sz = strlen(earg->key) + 8;
+    char varname[varname_sz];
 
 #define jsev_exec_func do{\
     duk_enum(ctx, -1, 0); /* [ {jsevents}, {myevent}, enum ]*/\
@@ -198,16 +350,6 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
             continue;\
         }\
         duk_get_prop_string(ctx, -2, "param"); /* [ {jsevents}, {myevent}, enum, func_name, {object}, func, param ]*/\
-        if(arg_idx == -1 && earg->cbor != NULL)\
-        {\
-            duk_push_external_buffer(ctx);\
-            duk_config_buffer(ctx, -1, earg->cbor->data, (duk_size_t) earg->cbor->size);\
-            duk_cbor_decode(ctx, -1, 0);\
-            duk_get_prop_string(ctx, -1, "arg");\
-            duk_insert(ctx, 0);\
-            duk_pop(ctx);\
-            arg_idx = 0;\
-        }\
         if( arg_idx ==-1)\
             duk_push_undefined(ctx);\
         else\
@@ -236,105 +378,94 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
         }\
         duk_pop_3(ctx); /* [ {jsevents}, {myevent}, enum]*/\
     }\
-    duk_pop(ctx);/*enum*/\
+    duk_pop(ctx);/* pop enum */\
 }while(0)
 
-    /* the first one */
+    /* get the trigger argument key, set idx=0, check refcount */
+    if( earg->varno > -1)
+    {
+
+        sprintf(varname, "\xff%s%d", earg->key, earg->varno);
+
+        arg_idx=0;
+        if(earg->refcount)
+        {
+            RP_MLOCK(rp_ev_var_lock);
+
+            (*earg->refcount)--;
+            //printf("thr=%d, ref=%p refcount = %d\n",get_thread_num(),refcount, *refcount);
+            RP_MUNLOCK(rp_ev_var_lock);
+        }
+    }
+
+    /* the first round, for normal thread/stack combos */
+    /* the second round, if we have websockets */
     do {
+        if(!ctx)
+            break;
+
         if(!duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("jsevents")) )
         {
-            //no events on this ctx
+            //no events of any kind on this ctx
             duk_pop(ctx);
-            break;
+            goto bottom;
         }
         if(earg->action == JSEVENT_TRIGGER || earg->action == JSEVENT_DELFUNC)
         {
             /* do we have an event named "key" ? */
             if(!duk_get_prop_string(ctx, -1, earg->key))
             {
-                duk_pop_2(ctx);
-                break; //continue to second one
+                duk_pop_2(ctx);//jsevents and undefined
+                goto bottom; //continue to second one or break
             }
             /* yes */
             if(earg->action == JSEVENT_TRIGGER) // run all functions for this event
-                jsev_exec_func;
+            {
+                //if(ctx == thr->wsctx) printf("websocket ");
+                //printf("event for thr %d\n", get_thread_num());
+                if( earg->varno > -1)
+                {
+                    get_from_clipboard(ctx, varname);
+                    duk_insert(ctx, 0);
+                    jsev_exec_func;
+                    duk_remove(ctx, 0);
+                }
+                else
+                {
+                    jsev_exec_func;
+                }
+            }
             else
             {
                 duk_del_prop_string(ctx, -1, earg->fname); //delete the named function in this event
+                //check if there are any functions left
+                duk_enum(ctx,-1,0);
+                if(!duk_next(ctx, -1, 0))
+                {
+                    /* delete this event since there are no functions left*/
+                    //[... jsevents, myevent, enum ]
+                    duk_del_prop_string(ctx, -3, earg->key);
+                    rp_event_unregister(earg->key);
+                }
             }
-            duk_pop_2(ctx); // []
         }
         else
         {
             /* delete this event and all its functions */
             duk_del_prop_string(ctx, -1, earg->key);
-            duk_pop(ctx);
-        }
-    } while(0);    
-
-    /* clean up the first one */
-    if(arg_idx != -1)
-    {
-        duk_remove(ctx, arg_idx);
-        arg_idx = -1;
-    }
-
-    /* the second one, if we have websockets */
-    if(thr->wsctx)
-    {
-
-        ctx = thr->wsctx; //switch stacks. Second stack is for websockets.
-        if(!ctx)
-            goto end;
-
-        if(!duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("jsevents")) )
-        {
-            //no events on this ctx
-            duk_pop(ctx);
-            goto end;
+            rp_event_unregister(earg->key);
         }
 
-        if(earg->action == JSEVENT_TRIGGER || earg->action == JSEVENT_DELFUNC)
-        {
-            if(!duk_get_prop_string(ctx, -1, earg->key))
-            {
-                duk_pop_2(ctx);
-                goto end;
-            }
-            if(earg->action == JSEVENT_TRIGGER)
-                jsev_exec_func;
-            else
-            {
-                duk_del_prop_string(ctx, -1, earg->fname);
-            }
-            duk_pop_2(ctx); // []
-        }
-        else
-        {
-            duk_del_prop_string(ctx, -1, earg->key);
-            duk_pop(ctx);
-        }
-    }
+        bottom:
 
-    end:
-    /* clean up the second one */
-    if(arg_idx != -1)
-        duk_remove(ctx, arg_idx);
+        duk_set_top(ctx, 0);
 
-    if(earg->cbor)
-    {
-        RP_MLOCK(rp_cborlock);
+        if(ctx == thr->htctx) //finished first round
+            ctx = thr->wsctx; //switch stacks. Second round is for websockets if wsctx != NULL.
+        else if(ctx == thr->wsctx)
+            break;
 
-        earg->cbor->refcount--;
-        if(earg->cbor->refcount < 1)
-        {
-            free(earg->cbor->data);
-            free(earg->cbor);
-            earg->cbor=NULL;
-        }
-
-        RP_MUNLOCK(rp_cborlock);
-    }
+    } while(1);
 
     event_free(earg->e);
     free(earg->key);
@@ -343,18 +474,80 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
     free(earg);
 }
 
-static void evloop_insert(duk_context *ctx, const char *evname, const char *fname, CBH *cbor, int action)
+static struct timeval fiftyms={0,50000};
+
+void rp_jsev_freevar(evutil_socket_t fd, short events, void* arg)
+{
+    JSEVARGS *earg = (JSEVARGS *) arg;
+    RPTHR *thr = get_current_thread();
+    duk_context *ctx = thr->ctx;
+    int *refcount = earg->refcount;
+
+    RP_MLOCK(rp_ev_var_lock);
+
+    //printf("checking ev %s, ", earg->key);
+    //printf("refs=%d\n", *refcount);
+
+    earg->action++; // repurposed as a counter
+
+    if(earg->action > 100) // this shouldn't happen, but if it does, give up
+    {
+        fprintf(stderr,"WARN: event %s in thread %d has %d unrun events after 5 seconds.  Giving up on freeing\n",
+            earg->key, get_thread_num(), *refcount);
+        event_del(earg->e);
+        event_free(earg->e);
+        free(earg->key);
+        free(earg);
+    }
+    else if(*refcount < 1)
+    {
+        size_t varname_sz = strlen(earg->key) + 8;
+        char varname[varname_sz];
+
+        sprintf(varname, "\xff%s%d", earg->key, earg->varno);
+        del_from_clipboard(ctx, varname);
+        duk_pop(ctx);
+        //printf("FREE %p\n", refcount);
+        free(refcount);
+        event_del(earg->e);
+        event_free(earg->e);
+        free(earg->key);
+        free(earg);
+    }
+    else
+    {
+        event_add(earg->e, &fiftyms);
+    }
+
+    RP_MUNLOCK(rp_ev_var_lock);
+}
+
+
+static void evloop_insert(duk_context *ctx, const char *evname, const char *fname, int varno, int action)
 {
     struct timeval timeout;
     JSEVARGS *args = NULL;
-    int i=0;
+    int i=0, *refcount=NULL;
+    char *lastkey=NULL;
 
     timeout.tv_sec=0;
     timeout.tv_usec=0; 
 
+    if(action == JSEVENT_TRIGGER)
+    {
+        REMALLOC(refcount, sizeof(int));
+        *refcount=0;
+        //printf("ALLC %p\n", refcount);
+    }
+
     THRLOCK;
     for(i=0; i<nrpthreads; i++)
     {
+        if(!rp_event_test(evname, i))
+            continue;
+
+        //printf("USING %s in thread %d\n", evname, i);
+
         RPTHR *thr=rpthread[i];
         struct event_base *base;
 
@@ -386,6 +579,13 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
             {
                 REMALLOC(args->key, strlen(id) + strlen(evname)+3);
                 sprintf(args->key, "\xFE%s:%s", id, evname);
+                if(!lastkey)
+                    lastkey=strdup(args->key);
+                else
+                {
+                    REMALLOC(lastkey, strlen(id) + strlen(evname)+3);
+                    strcpy(lastkey, args->key);
+                }
             }
             
         }
@@ -400,40 +600,59 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
             args->fname=NULL;
 
         args->e = event_new(base, -1, 0, rp_jsev_doevent, args);
-        if(cbor)
-            cbor->refcount++;
-        args->cbor = cbor;
+        args->varno=varno;
+        args->refcount = refcount;
+        if(refcount)
+            (*refcount)++;
 
         //printf("event = %p, base=%p in thread %d, flag=%d, thr=%p\n", args->e, thr->base, get_thread_num(), thr->flags, thr);
+        event_add(args->e, &timeout);
+    }
+
+    if(refcount && *refcount == 0)
+        free(refcount);
+    else if (refcount)
+    {
+        // refcount can be decremented to 0 and freed in other threads running rp_jsev_doevent
+        // faster than we can insert the next one.  So rather than free refcount and delete the
+        // triggervar in rp_jsev_doevent, we will insert an event to do it after all insertions
+        // are done
+        args=NULL;
+        REMALLOC(args,sizeof(JSEVARGS));
+        if(lastkey)
+            args->key=lastkey;
+        else
+            args->key=strdup(evname);
+        args->refcount = refcount;
+        args->e = event_new((get_current_thread())->base, -1, 0, rp_jsev_freevar, args);
+        args->varno=varno;
+        args->action=0; //Action not used in rp_jsev_freevar -- repurpose this as a counter
         event_add(args->e, &timeout);
     }
     THRUNLOCK;
 }
 
+static uint16_t cb_var_no=0;
 
 duk_ret_t duk_rp_trigger_event(duk_context *ctx)
 {
     const char *evname = REQUIRE_STRING(ctx, 0, "event.trigger: parameter must be a string (event name)");
-    CBH *cbor = NULL;
+    int varno=-1;
 
     if(!duk_is_undefined(ctx,1))
     {
-        duk_size_t sz;
-        void *buf;
+        size_t varname_sz = strlen(evname) + 8;
+        char varname[varname_sz];
 
-        REMALLOC(cbor, sizeof(CBH));
-        duk_push_object(ctx);
-        duk_pull(ctx, -2);
-        duk_put_prop_string(ctx, -2, "arg");
-        duk_cbor_encode(ctx, -1, 0);
-        buf = duk_get_buffer_data(ctx, -1 ,&sz);
-        cbor->size = (size_t)sz;
-        cbor->data=NULL;
-        REMALLOC(cbor->data, cbor->size);
-        memcpy(cbor->data, buf, cbor->size);       
-        cbor->refcount = 0;
+        RP_MLOCK(rp_ev_var_lock);
+        varno = (int)(cb_var_no++);
+        RP_MUNLOCK(rp_ev_var_lock);
+
+        sprintf(varname, "\xff%s%d", evname, varno);
+        put_to_clipboard(ctx, 1, varname);
+
     }
-    evloop_insert(ctx, evname, NULL, cbor, JSEVENT_TRIGGER);
+    evloop_insert(ctx, evname, NULL, varno, JSEVENT_TRIGGER);
     return 0;
 }
 
@@ -443,7 +662,7 @@ duk_ret_t duk_rp_off_event(duk_context *ctx)
     const char *evname = REQUIRE_STRING(ctx, 0, "event.off: first parameter must be a string (event name)");
     const char *fname = REQUIRE_STRING(ctx, 1, "event.off: second parameter must be a string (function name)");
 
-    evloop_insert(ctx, evname, fname, NULL, JSEVENT_DELFUNC);
+    evloop_insert(ctx, evname, fname, -1, JSEVENT_DELFUNC);
     return 0;
 }
 
@@ -452,7 +671,7 @@ duk_ret_t duk_rp_remove_event(duk_context *ctx)
 {
     const char *evname = REQUIRE_STRING(ctx, 0, "event.remove: first parameter must be a string (event name)");
 
-    evloop_insert(ctx, evname, NULL, NULL, JSEVENT_DELETE);
+    evloop_insert(ctx, evname, NULL, -1, JSEVENT_DELETE);
     return 0;
 }
 
@@ -472,7 +691,7 @@ void duk_event_init(duk_context *ctx)
 
     if(!isinit)
     {
-        rp_cborlock=RP_MINIT(&cborlock);
+        rp_ev_var_lock=RP_MINIT(&ev_var_lock);
         isinit=1;
     }
 
