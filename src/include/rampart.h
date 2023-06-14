@@ -507,6 +507,13 @@ do                                                               \
 // used for no timeout in server
 #define RP_TIME_T_FOREVER 2147483647
 
+/* copy from/to the clipboard stack */
+duk_ret_t get_from_clipboard(duk_context *ctx, char *key);
+duk_ret_t del_from_clipboard(duk_context *ctx, char *key);
+void put_to_clipboard(duk_context *ctx, duk_idx_t val_idx, char *key);
+
+/* generic copy from ctx at idx to tctx (top of stack) */
+void rpthr_copy(duk_context *ctx, duk_context *tctx, duk_idx_t idx);
 
 /* func from rampart-utils.c */
 extern void duk_misc_init(duk_context *ctx);
@@ -533,6 +540,8 @@ duk_ret_t duk_rp_read_file(duk_context *ctx);// rampart.utils.readFile()
 //returns a safe json-like string.  prints cyclic references as paths in object.
 //needs free
 char *str_rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r);
+
+/* ******* setTimeout and similar ****** */
 
 /* we might want to do something right before the timeout when using generically */
 typedef int (timeout_callback)(void *, int);
@@ -576,24 +585,15 @@ extern FILE *access_fh;
 extern FILE *error_fh;
 extern int duk_rp_server_logging;
 
-/* functions to be run upon exit or before loop */
+/* ****** functions to be run upon exit or before loop ****** */
 typedef void (*rp_vfunc)(void* arg);
-
-/* debugging
-void add_exit_func_2(rp_vfunc func, void *arg, char *nl);
-
-#define add_exit_func(f, a) do{\
-    char nl[128];\
-    sprintf(nl,"%s at %d", __FILE__, __LINE__);\
-    add_exit_func_2( (f), (a), strdup(nl) );\
-} while(0)
-*/
-
 void add_exit_func(rp_vfunc func, void *arg);
+void duk_rp_exit(duk_context *ctx, int ec);
+
+/* functions to be run before a new thread starts its loop */
 void add_b4loop_func(rp_vfunc func, void *arg);
 void run_b4loop_funcs();
 
-void duk_rp_exit(duk_context *ctx, int ec);
 
 extern void duk_rp_fatal(void *udata, const char *msg);
 
