@@ -419,7 +419,7 @@ set(PYTHON_BIN_DIR "${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}")
 
 #execute_process(
 add_custom_command(
-    OUTPUT ${PYTHON_BIN_DIR}
+    OUTPUT ${PROJECT_SOURCE_DIR}/extern/${PYTHON_BIN_DIR}
     COMMAND mkdir -p ${PROJECT_BINARY_DIR}/extern
     COMMAND cp -a ${PROJECT_SOURCE_DIR}/extern/${PYTHON_DIR_NAME} ${PROJECT_BINARY_DIR}/extern
 )
@@ -457,8 +457,9 @@ message("    RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PAT
 add_custom_command(
 	OUTPUT ${PYTHON_BIN_DIR}/Makefile
 	DEPENDS rampart-crypto
-	COMMAND bash -c "RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\""
+	COMMAND bash -c "if [ ! -e ${PYTHON_BIN_DIR}/Makefile ]; then RAMPART_SSL_DIR=${PROJECT_BINARY_DIR}/extern/openssl PKG_CONFIG_PATH=\"${PYPKG}\" LDFLAGS=\"${PYLDFLAGS}\" CFLAGS=\"${PYFLAGS}\" TCLTK_LIBS=\"-ltk -ltcl\" ./configure --enable-optimizations --prefix=\"${PROJECT_BINARY_DIR}/extern/${PYTHON_DIR_NAME}/build\";fi"
 	WORKING_DIRECTORY ${PYTHON_BIN_DIR}
+    VERBATIM
 )
 
 add_custom_command(
