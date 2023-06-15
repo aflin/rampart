@@ -1256,12 +1256,16 @@ static duk_ret_t _thread_get_del(duk_context *ctx, char *key, int del)
 
 duk_ret_t get_from_clipboard(duk_context *ctx, char *key)
 {
-    return _thread_get_del(ctx, key, 0);
+    if(!_thread_get_del(ctx, key, 0))
+        duk_push_undefined(ctx); //we need to push onto the stack when called internally
+    return 1;
 }
 
 duk_ret_t del_from_clipboard(duk_context *ctx, char *key)
 {
-    return _thread_get_del(ctx, key, 1);
+    if(!_thread_get_del(ctx, key, 1))
+        duk_push_undefined(ctx); //we need to push onto the stack when called internally
+    return 1;
 }
 
 
@@ -1895,6 +1899,7 @@ static void finalize_event(evutil_socket_t fd, short events, void* arg)
             duk_enum(ctx, -1, 0);
             if(duk_next(ctx, -1, 0))
             {
+                //safeprintstack(ctx);
                 //printf("got pending %s in thread %d\n", duk_to_string(ctx, -1), get_thread_num());
                 rpevents_pending=1;
                 duk_pop_n(ctx, 4); //inner key, inner enum ,key, val

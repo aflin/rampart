@@ -22,6 +22,9 @@ volatile int rp_event_scope_to_module=0;
 /* ***********************************************************************
     a list of events, with a bitmap of the threads in which they are used
    *********************************************************************** */
+pthread_mutex_t ev_list_lock;
+
+
 #define RP_EVENT struct rp_event_s
 RP_EVENT {
     char          *name;
@@ -110,8 +113,8 @@ static RP_EVENT *rp_events=NULL, *rp_last_event=NULL;
     size_t i=e->map_sz;\
     if( i<(b) ) {\
         REMALLOC(e->map, (b));\
-        for(;i<b;i++)\
-            (e->map)[i]=0;\
+        memset(&((e->map)[i]), 0, b-i);\
+        /*for(;i<b;i++) (e->map)[i]=0;*/\
         e->map_sz=(b);\
     }\
 } while (0)
@@ -119,27 +122,31 @@ static RP_EVENT *rp_events=NULL, *rp_last_event=NULL;
 #define rp_event_add_thread(e,n) do {\
     size_t curbyte=(n)/8, curbit=(n)%8;\
     if(e){\
+        RP_PTLOCK(&ev_list_lock);\
         rp_event_grow_bitmap(e, curbyte+1);\
         (e->map)[curbyte] |= (1<<curbit);\
+        RP_PTUNLOCK(&ev_list_lock);\
     }\
 } while (0)
 
 #define rp_event_del_thread(e,n) do {\
     size_t curbyte=(n)/8, curbit=(n)%8;\
-    if(e){\
-        rp_event_grow_bitmap(e, curbyte+1);\
+    if(e && curbyte < e->map_sz){\
+        RP_PTLOCK(&ev_list_lock);\
         (e->map)[curbyte] &= ~(1<<curbit);\
+        RP_PTUNLOCK(&ev_list_lock);\
     }\
 } while (0)
 
 #define rp_event_test_thread(e,n) ({\
     int ret=0;\
     size_t curbyte=(n)/8, curbit=(n)%8;\
-    if(e){\
-        rp_event_grow_bitmap(e, curbyte+1);\
-        ret = (e->map)[curbyte] & (1<<curbit);\
-        /*printf("in test, byte=%lu, bit=%lu, val=%d\n", curbyte, curbit, (int)(e->map)[curbyte]);*/\
+    if(e && curbyte < e->map_sz) {\
+            RP_PTLOCK(&ev_list_lock);\
+            ret = (e->map)[curbyte] & (1<<curbit);\
+            RP_PTUNLOCK(&ev_list_lock);\
     }\
+    /*if(e && !action) printf("in test, byte=%lu, bit=%lu, val=%d\n", curbyte, curbit, (int)(e->map)[curbyte]);*/\
     ret;\
 })
 
@@ -311,7 +318,7 @@ duk_ret_t duk_rp_on_event(duk_context *ctx)
 
     // mark this thread as having this event
     rp_event_register(evname);
-    //printf("regestered %s in thread %d\n", evname, get_thread_num());
+    //printf("regestered %s in thread %d\n", onname, get_thread_num());
     return 0;
 }
 
@@ -388,10 +395,12 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
         sprintf(varname, "\xff%s%d", earg->key, earg->varno);
 
         arg_idx=0;
+        // copy var BEFORE BEFORE BEFORE decrementing refcount
+        get_from_clipboard(ctx, varname);
+        duk_insert(ctx, 0);
         if(earg->refcount)
         {
             RP_MLOCK(rp_ev_var_lock);
-
             (*earg->refcount)--;
             //printf("thr=%d, ref=%p refcount = %d\n",get_thread_num(),refcount, *refcount);
             RP_MUNLOCK(rp_ev_var_lock);
@@ -415,28 +424,16 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
             /* do we have an event named "key" ? */
             if(!duk_get_prop_string(ctx, -1, earg->key))
             {
-                duk_pop_2(ctx);//jsevents and undefined
                 goto bottom; //continue to second one or break
             }
             /* yes */
             if(earg->action == JSEVENT_TRIGGER) // run all functions for this event
             {
-                //if(ctx == thr->wsctx) printf("websocket ");
-                //printf("event for thr %d\n", get_thread_num());
-                if( earg->varno > -1)
-                {
-                    get_from_clipboard(ctx, varname);
-                    duk_insert(ctx, 0);
                     jsev_exec_func;
-                    duk_remove(ctx, 0);
-                }
-                else
-                {
-                    jsev_exec_func;
-                }
             }
             else
             {
+                //printf("Deleting %s\n", earg->fname);
                 duk_del_prop_string(ctx, -1, earg->fname); //delete the named function in this event
                 //check if there are any functions left
                 duk_enum(ctx,-1,0);
@@ -445,6 +442,7 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
                     /* delete this event since there are no functions left*/
                     //[... jsevents, myevent, enum ]
                     duk_del_prop_string(ctx, -3, earg->key);
+                    // mark this thread as no longer having this event
                     rp_event_unregister(earg->key);
                 }
             }
@@ -543,10 +541,15 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
     THRLOCK;
     for(i=0; i<nrpthreads; i++)
     {
+
+        //if(action==2) printf("Testing delete %s for thread %d\n", fname, i);
+
         if(!rp_event_test(evname, i))
             continue;
 
-        //printf("USING %s in thread %d\n", evname, i);
+        //if(action==0) printf("USING %s for thread %d\n", evname, i);
+
+        //if(action==2) printf("Sending delete %s for thread %d\n", fname, i);
 
         RPTHR *thr=rpthread[i];
         struct event_base *base;
@@ -603,9 +606,13 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
         args->varno=varno;
         args->refcount = refcount;
         if(refcount)
+        {
+            RP_MLOCK(rp_ev_var_lock);
             (*refcount)++;
-
+            RP_MUNLOCK(rp_ev_var_lock);
+        }
         //printf("event = %p, base=%p in thread %d, flag=%d, thr=%p\n", args->e, thr->base, get_thread_num(), thr->flags, thr);
+        //if(!action) printf ("Adding event to thread %d, ctx %p\n", i, thr->ctx);
         event_add(args->e, &timeout);
     }
 
@@ -692,6 +699,7 @@ void duk_event_init(duk_context *ctx)
     if(!isinit)
     {
         rp_ev_var_lock=RP_MINIT(&ev_var_lock);
+        RP_PTINIT(&ev_list_lock);
         isinit=1;
     }
 

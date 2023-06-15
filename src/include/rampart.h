@@ -195,7 +195,7 @@ extern "C"
     do {                                              \
         duk_idx_t i=0, top=duk_get_top(ctx);          \
         char *s;                                      \
-        printf("ctx: top=%d, stack={\n", (int)top);   \
+        printf("ctx: top=%d, stack(%p)={\n", (int)top, ctx);   \
         while (i<top) {                               \
             if(i) printf(",\n");                      \
             s=str_rp_to_json_safe(ctx, i, NULL);      \
@@ -225,9 +225,9 @@ extern "C"
 #define printat(ctx, idx)                                                 \
     do                                                                    \
     {                                                                     \
-        duk_dup((ctx), idx);                                              \
-        printf("at %d: %s\n", (int)(idx), duk_safe_to_string((ctx), -1)); \
-        duk_pop((ctx));                                                   \
+        char *s=str_rp_to_json_safe(ctx, idx, NULL);                      \
+        printf("at %d: %s\n", (int)(idx), s);                             \
+        free(s);                                                          \
     } while (0)
 
 #define printfuncs(ctx)                                                                  \
