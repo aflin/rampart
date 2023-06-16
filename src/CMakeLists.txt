@@ -425,7 +425,7 @@ add_custom_command(
 )
 
 add_custom_target(cp_python
-	DEPENDS ${PYTHON_BIN_DIR}
+	DEPENDS ${PROJECT_SOURCE_DIR}/extern/${PYTHON_BIN_DIR}
 )
 
 

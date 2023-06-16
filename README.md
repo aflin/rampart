@@ -43,7 +43,7 @@ yum install libidn2-devel openldap-devel flex bison python3 zlib-devel
 For a more complete build of the rampart-python module:
 
 ```
-apt install libsqlite3-dev uuid-dev tcl-dev tk-dev libgdbm-dev libbz2-dev liblzma-dev
+apt install libsqlite3-dev uuid-dev tcl-dev tk-dev libgdbm-dev libbz2-dev liblzma-dev libffi-dev libgdbm-compat-dev libncurses-dev libreadline-dev
 ```
 or
 ```
