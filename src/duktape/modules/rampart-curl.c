@@ -2392,7 +2392,8 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
 
                     if (res != CURLE_OK)
                     {
-                        duk_curl_ret_blank(ctx, (preq->sopts).url);
+                        //duk_curl_ret_blank(ctx, (preq->sopts).url); //still return data if we get "Transferred a partial file"
+                        duk_curl_push_res(ctx, preq);
                         duk_push_sprintf(ctx, "curl failed for '%s': %s", (preq->sopts).url, curl_easy_strerror(res));
                         duk_put_prop_string(ctx, -2, "errMsg");
                     }
@@ -2449,7 +2450,8 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
         }
         if (res != CURLE_OK)
         {
-            duk_curl_ret_blank(ctx, url);
+//            duk_curl_ret_blank(ctx, url); //still return data if we get "Transferred a partial file"
+            i = (duk_curl_push_res(ctx, req) > 399) ? 0 : 1;
             duk_push_sprintf(ctx, "curl failed: %s", curl_easy_strerror(res));
             duk_put_prop_string(ctx, -2, "errMsg");
             /* cleanup */
