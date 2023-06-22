@@ -5390,6 +5390,50 @@ void duk_printf_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "getchar");
     duk_put_prop_string(ctx, -2, "stdin");
 
+    /* shortcuts for standard rampart module names, as in: *
+     *   rampart.globalize(rampart.utils);                 *
+     *   var sql=require(mod.sql);                         */
+
+    duk_push_object(ctx);
+
+    duk_push_string(ctx, "rampart-sql");
+    duk_put_prop_string(ctx, -2, "sql");
+
+    duk_push_string(ctx, "rampart-server");
+    duk_put_prop_string(ctx, -2, "server");
+
+    duk_push_string(ctx, "rampart-net");
+    duk_put_prop_string(ctx, -2, "net");
+
+    duk_push_string(ctx, "rampart-html");
+    duk_put_prop_string(ctx, -2, "html");
+
+    duk_push_string(ctx, "rampart-crypto");
+    duk_put_prop_string(ctx, -2, "crypto");
+
+    duk_push_string(ctx, "rampart-curl");
+    duk_put_prop_string(ctx, -2, "curl");
+
+    duk_push_string(ctx, "rampart-lmdb");
+    duk_put_prop_string(ctx, -2, "lmdb");
+
+    duk_push_string(ctx, "rampart-redis");
+    duk_put_prop_string(ctx, -2, "redis");
+
+    duk_push_string(ctx, "rampart-robots");
+    duk_put_prop_string(ctx, -2, "robots");
+
+    duk_push_string(ctx, "rampart-cmark");
+    duk_put_prop_string(ctx, -2, "cmark");
+
+    duk_push_string(ctx, "rampart-url");
+    duk_put_prop_string(ctx, -2, "url");
+
+    duk_push_string(ctx, "rampart-python");
+    duk_put_prop_string(ctx, -2, "python");
+
+    duk_put_prop_string(ctx, -2, "mod");
+
     duk_put_prop_string(ctx, -2,"utils");
     duk_put_global_string(ctx,"rampart");
 
