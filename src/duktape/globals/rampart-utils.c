@@ -4070,8 +4070,32 @@ duk_ret_t duk_rp_hll_constructor(duk_context *ctx)
 static duk_ret_t _proxyget(duk_context *ctx, int load)
 {
     const char *key = duk_get_string(ctx,1);  //the property we are trying to retrieve
+    char *keyc = NULL;
+    int freeme=0;
 
-    if( duk_get_prop_string(ctx, 0, key) ) //see if it already exists
+    if( load )
+    {
+        // test for illegal chars for variable name, replace with '_'
+        if(strchr(key,'-') != NULL || strchr(key,'.') != NULL )
+        {
+            char *s;
+
+            keyc=strdup(key);
+            s=keyc;
+
+            while(*s)
+            {
+                if(*s == '.' || *s=='-')
+                    *s='_';
+                s++;
+            }
+            freeme=1;
+        }
+        else
+            keyc=(char*)key;
+    }
+
+    if( !load && duk_get_prop_string(ctx, 0, key) ) //see if it already exists
     {
         return 1;
     }
@@ -4086,7 +4110,8 @@ static duk_ret_t _proxyget(duk_context *ctx, int load)
         if(load)
         {
             duk_dup(ctx, -1);
-            duk_put_global_string(ctx, key);
+            duk_put_global_string(ctx, (const char*)keyc);
+            if(freeme) free(keyc);
         }
         return 1;
     }
@@ -4103,7 +4128,8 @@ static duk_ret_t _proxyget(duk_context *ctx, int load)
     if(load)
     {
         duk_dup(ctx, -1);
-        duk_put_global_string(ctx, key);
+        duk_put_global_string(ctx, (const char*)keyc);
+        if(freeme) free(keyc);
     }
 
     return 1;
