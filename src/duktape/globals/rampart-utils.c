@@ -4067,6 +4067,58 @@ duk_ret_t duk_rp_hll_constructor(duk_context *ctx)
     return 0;
 }
 
+static duk_ret_t _proxyget(duk_context *ctx, int load)
+{
+    const char *key = duk_get_string(ctx,1);  //the property we are trying to retrieve
+
+    if( duk_get_prop_string(ctx, 0, key) ) //see if it already exists
+    {
+        return 1;
+    }
+    duk_pop(ctx);
+
+    duk_get_global_string(ctx, "require");
+    duk_push_sprintf(ctx, "rampart-%s",key);
+    if(duk_pcall(ctx, 1) == DUK_EXEC_SUCCESS)
+    {
+        duk_dup(ctx, -1);
+        duk_put_prop_string(ctx, 0, key);
+        if(load)
+        {
+            duk_dup(ctx, -1);
+            duk_put_global_string(ctx, key);
+        }
+        return 1;
+    }
+    duk_pop(ctx);
+
+    duk_get_global_string(ctx, "require");
+    duk_push_string(ctx, key);
+    if(duk_pcall(ctx, 1) != DUK_EXEC_SUCCESS)
+    {
+        RP_THROW(ctx, "could not find a module named 'rampart-%s' or '%s'", key, key);
+    }
+    duk_dup(ctx, -1);
+    duk_put_prop_string(ctx, 0, key);
+    if(load)
+    {
+        duk_dup(ctx, -1);
+        duk_put_global_string(ctx, key);
+    }
+
+    return 1;
+}
+
+static duk_ret_t proxyget(duk_context *ctx)
+{
+    return _proxyget(ctx, 0);
+}
+
+static duk_ret_t proxyload(duk_context *ctx)
+{
+    return _proxyget(ctx, 1);
+}
+
 void duk_rampart_init(duk_context *ctx)
 {
     if (!duk_get_global_string(ctx, "rampart"))
@@ -4083,23 +4135,27 @@ void duk_rampart_init(duk_context *ctx)
 
     /* populate utils object with functions */
 
-    /*
-    //mlock is dead, see locks in rampart-thread.c
-    duk_push_c_function(ctx, duk_rp_mlock_constructor, 1);
+
+    // use -- shortcut for require via proxy
     duk_push_object(ctx);
-    duk_push_c_function(ctx, duk_rp_mlock_lock, 0);
-    duk_put_prop_string(ctx, -2, "lock");
-    duk_push_c_function(ctx, duk_rp_mlock_unlock, 0);
-    duk_put_prop_string(ctx, -2, "unlock");
-    duk_push_c_function(ctx, duk_rp_mlock_destroy, 0);
-    duk_put_prop_string(ctx, -2, "destroy");
-    duk_put_prop_string(ctx, -2, "prototype");
-    duk_put_prop_string(ctx, -2, "mlock");
+    duk_push_object(ctx);
+    duk_push_c_function(ctx, proxyget, 2);
+    duk_put_prop_string(ctx, -2, "get");
+    duk_push_proxy(ctx, 0);
+    duk_put_prop_string(ctx, -2, "use");
 
-    RP_PTINIT(&ulock_lock);
-
-    //end mlock
+    // load - same as "use" but puts in global namespace also
+    /* example:
+        rampart.globalize(rampart.utils);
+        load.curl;
+        var res=curl.fetch("http...");
     */
+    duk_push_object(ctx);
+    duk_push_object(ctx);
+    duk_push_c_function(ctx, proxyload, 2);
+    duk_put_prop_string(ctx, -2, "get");
+    duk_push_proxy(ctx, 0);
+    duk_put_prop_string(ctx, -2, "load");
 
     // hll
     duk_push_c_function(ctx, duk_rp_hll_constructor, DUK_VARARGS);
@@ -5389,50 +5445,6 @@ void duk_printf_init(duk_context *ctx)
     duk_push_c_function(ctx, duk_rp_getchar, 1);
     duk_put_prop_string(ctx, -2, "getchar");
     duk_put_prop_string(ctx, -2, "stdin");
-
-    /* shortcuts for standard rampart module names, as in: *
-     *   rampart.globalize(rampart.utils);                 *
-     *   var sql=require(mod.sql);                         */
-
-    duk_push_object(ctx);
-
-    duk_push_string(ctx, "rampart-sql");
-    duk_put_prop_string(ctx, -2, "sql");
-
-    duk_push_string(ctx, "rampart-server");
-    duk_put_prop_string(ctx, -2, "server");
-
-    duk_push_string(ctx, "rampart-net");
-    duk_put_prop_string(ctx, -2, "net");
-
-    duk_push_string(ctx, "rampart-html");
-    duk_put_prop_string(ctx, -2, "html");
-
-    duk_push_string(ctx, "rampart-crypto");
-    duk_put_prop_string(ctx, -2, "crypto");
-
-    duk_push_string(ctx, "rampart-curl");
-    duk_put_prop_string(ctx, -2, "curl");
-
-    duk_push_string(ctx, "rampart-lmdb");
-    duk_put_prop_string(ctx, -2, "lmdb");
-
-    duk_push_string(ctx, "rampart-redis");
-    duk_put_prop_string(ctx, -2, "redis");
-
-    duk_push_string(ctx, "rampart-robots");
-    duk_put_prop_string(ctx, -2, "robots");
-
-    duk_push_string(ctx, "rampart-cmark");
-    duk_put_prop_string(ctx, -2, "cmark");
-
-    duk_push_string(ctx, "rampart-url");
-    duk_put_prop_string(ctx, -2, "url");
-
-    duk_push_string(ctx, "rampart-python");
-    duk_put_prop_string(ctx, -2, "python");
-
-    duk_put_prop_string(ctx, -2, "mod");
 
     duk_put_prop_string(ctx, -2,"utils");
     duk_put_global_string(ctx,"rampart");
