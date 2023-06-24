@@ -2925,16 +2925,6 @@ static void make_proxy(duk_context *ctx)
     duk_pull(ctx, -2);    
     duk_new(ctx, 1);
 }
-/*
-TOMORROW TODO:
-    DONE----------change py_call so it uses pref
-    DONE----------consolidate the finalizers into one function instead of two
-    DONE----------write function for pyget proxy object for forking.
-    make "modules" from import look exactly like return vals from py_call with toString et al.
-    DONE----------make "values" returned from py_call use pref as necessary.
-    After all that, it might be possible to consolidate more code.
-*/
-
 
 static void make_pyfunc(duk_context *ctx, PyObject *pFunc)
 {
@@ -2947,8 +2937,6 @@ static void make_pyfunc(duk_context *ctx, PyObject *pFunc)
     put_attributes(ctx, pFunc);
     PYUNLOCK(state);
 }
-
-
 
 static duk_ret_t _py_call(duk_context *ctx, int is_method)
 {
