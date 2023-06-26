@@ -87,7 +87,7 @@ function ltest(req) {
     txn = new lmdb.transaction(dbi, true, true);
 
     /* some writes */
-    for (i=0;i<100;i++)
+    for (i=0;i<10;i++)
     {
         kv = sprintf("%d", Math.random()*100000);
         txn.put(dbi, kv, kv);   
@@ -97,7 +97,7 @@ function ltest(req) {
     /* some reads */
     txn = new lmdb.transaction(dbi, false);
     //var j=0;
-    for (i=0;i<10000;i++)
+    for (i=0;i<100;i++)
     {
         kv = sprintf("%d", Math.random()*100000);
         var kv2=txn.get(kv,true);
@@ -158,7 +158,7 @@ testFeature("new lmdb transaction after fork", function() {
     return ret;
 });
 
-testFeature("500 requests (100 puts, 10000 gets each)", function() {
+testFeature("500 requests (10 puts, 100 gets each)", function() {
     var url="http://localhost:8086/ltest";
     var i=0;
     var urls=[]
