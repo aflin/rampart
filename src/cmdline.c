@@ -78,7 +78,16 @@ RPTHR_LOCK *rp_ctxlock;
 pthread_mutex_t slistlock;
 RPTHR_LOCK *rp_slistlock;
 
-#define RP_REPL_GREETING             \
+#define RPCOL_RED   "\x1B[31m"
+#define RPCOL_GRN   "\x1B[32m"
+#define RPCOL_YEL   "\x1B[33m"
+#define RPCOL_BLU   "\x1B[34m"
+#define RPCOL_MAG   "\x1B[35m"
+#define RPCOL_CYN   "\x1B[36m"
+#define RPCOL_WHT   "\x1B[37m"
+#define RPCOL_RESET "\x1B[0m"
+
+#define RP_REPL_GREETING   RPCOL_MAG    \
     "         |>>            |>>\n"     \
     "       __|__          __|__\n"     \
     "      \\  |  /         \\   /\n"   \
@@ -86,7 +95,7 @@ RPTHR_LOCK *rp_slistlock;
     "     __| o |__________| o |__\n"   \
     "    [__|_|__|(rp)|  | |______]\n"  \
     "____[|||||||||||||__|||||||||]____\n" \
-    "RAMPART__powered_by_Duktape_" DUK_GIT_DESCRIBE
+    "RAMPART__powered_by_Duktape_" DUK_GIT_DESCRIBE RPCOL_RESET
 
 #define RP_REPL_PREFIX "rampart> "
 #define RP_REPL_PREFIX_CONT "... "
@@ -245,10 +254,14 @@ char *words[]={
     "rampart.utils.stdout",
     "rampart.utils.stderr",
     "rampart.utils.stdin",
+    "rampart.utils.load",
+    "rampart.utils.use",
     "rampart.globalize",
     "rampart.import",
     "rampart.import.csvFile",
     "rampart.import.csv",
+    "rampart.thread()",
+    "rampart.thread",
     "require",
     "return",
     "switch",
@@ -486,6 +499,12 @@ void run_b4loop_funcs()
 
 }
 
+static void evhandler_repl(int sig, short events, void *unused)
+{
+    signal(SIGINT, SIG_IGN);
+    signal(SIGTERM, SIG_IGN);
+}
+
 
 char * tickify(char *src, size_t sz, int *err, int *ln);
 
@@ -524,10 +543,21 @@ static void *repl_thr(void *arg)
         else
             prefix=RP_REPL_PREFIX;
 
+        errno=0;
         line = linenoise(prefix);
 
         if(!line)
         {
+            if(errno == EAGAIN)
+            {
+                printf("%spress ctrl-d to exit%s\n",RPCOL_BLU, RPCOL_RESET);
+                if(lastline)
+                {
+                    free(lastline);
+                    lastline=NULL;
+                }
+                continue;
+            }
             duk_rp_exit(ctx, 0);
         }
 
@@ -573,11 +603,11 @@ static void *repl_thr(void *arg)
                 lastline=line;
             }
             else
-                printf("ERR: %s\n", errmsg);
+                printf("%sERR: %s%s\n", RPCOL_RED, errmsg, RPCOL_RESET);
         }
         else
         {
-            printf("%s\n", duk_safe_to_stacktrace(ctx, -1));
+            printf("%s%s%s\n", RPCOL_BLU, duk_safe_to_stacktrace(ctx, -1), RPCOL_RESET);
         }
         duk_pop(ctx); //the results
 
@@ -599,6 +629,8 @@ static int repl(duk_context *ctx)
 {
     pthread_t thr;
     pthread_attr_t attr;
+    struct event ev_sig;
+    struct timeval to={0};
 
     RP_PTINIT(&repl_lock);
 
@@ -606,6 +638,9 @@ static int repl(duk_context *ctx)
 
     if( pthread_create( &thr, &attr, repl_thr, (void*)ctx) )
         RP_THROW(ctx, "Could not create thread\n");
+
+    event_assign(&ev_sig, mainthr->base, -1,  0, evhandler_repl, NULL);
+    event_add(&ev_sig, &to);
 
     /* start event loop, but don't block repl thread */
     while(1)
@@ -2171,12 +2206,41 @@ int base_loop_exited=0;
 pthread_mutex_t thr_lock;
 RPTHR_LOCK *rp_thr_lock;
 
+void check_version_help(int argc, char *argv[])
+{
+    if(argc==2)
+    {
+
+        if(!strcmp("-v", argv[1]) || !strcmp("--version", argv[1]))
+        {
+            printf("v%d.%d.%d\n", RAMPART_VERSION_MAJOR, RAMPART_VERSION_MINOR, RAMPART_VERSION_PATCH);
+            exit(0);
+        }
+
+        if(!strcmp("-h", argv[1]) || !strcmp("--help", argv[1]))
+        {
+            printf("Usage:\n\
+    %s file_name [args]  -- run a script from file 'file_name'\n\
+    %s [-g]              -- interactive mode (-g globalizes rampart.utils)\n\
+    %s [-c] \"script\"     -- evaluate script from argument string\n\
+    %s [-v|--version]    -- print version\n\
+    %s [-h|--help]       -- this help message\n\
+\n\
+    Documentation can be found at https://rampart.dev/docs/\n",
+                argv[0], argv[0], argv[0], argv[0], argv[0]);
+            exit(0);
+        }
+    }
+}
+
 int main(int argc, char *argv[])
 {
     struct rlimit rlp;
     int isstdin=0, len, dirlen;
     char *ptr, *cmdline_src=NULL;
     struct stat entry_file_stat;
+
+    check_version_help(argc, argv);
 
     /* do this first */
     rp_thread_preinit();
@@ -2188,6 +2252,7 @@ int main(int argc, char *argv[])
     rp_thr_lock = RP_MINIT(&thr_lock);
 
     RP_PTINIT(&exlock);
+
 
 
     /* for later use */
@@ -2338,12 +2403,34 @@ int main(int argc, char *argv[])
         struct evdns_base *dnsbase=NULL;
 
 
+        /* setTimeout and related functions */
+        duk_push_c_function(ctx,duk_rp_set_timeout, DUK_VARARGS);
+        duk_put_global_string(ctx,"setTimeout");
+        duk_push_c_function(ctx, duk_rp_clear_either, 1);
+        duk_put_global_string(ctx,"clearTimeout");
+        duk_push_c_function(ctx,duk_rp_set_interval, DUK_VARARGS);
+        duk_put_global_string(ctx,"setInterval");
+        duk_push_c_function(ctx, duk_rp_clear_either, 1);
+        duk_put_global_string(ctx,"clearInterval");
+        duk_push_c_function(ctx,duk_rp_set_metronome, DUK_VARARGS);
+        duk_put_global_string(ctx,"setMetronome");
+        duk_push_c_function(ctx, duk_rp_clear_either, 1);
+        duk_put_global_string(ctx,"clearMetronome");
+
+        /* set up object to hold timeout callback function */
+        duk_push_global_stash(ctx);
+        duk_push_object(ctx);//new object
+        duk_put_prop_string(ctx, -2, "ev_callback_object");
+        duk_pop(ctx);//global stash
+
         if(cmdline_src)
         {
             file_src=strdup(cmdline_src);
             fn="command_line_script";
             goto have_src;
         }
+
+        /* REPL */
         if (argc == 0 || (argc == 1 && !strcmp(argv[0],"-g")) )
         {
             if(!isatty(fileno(stdin)))
@@ -2363,25 +2450,6 @@ int main(int argc, char *argv[])
 
             /* ********** set up event loop for repl *************** */
 
-            /* setTimeout and related functions */
-            duk_push_c_function(ctx,duk_rp_set_timeout, DUK_VARARGS);
-            duk_put_global_string(ctx,"setTimeout");
-            duk_push_c_function(ctx, duk_rp_clear_either, 1);
-            duk_put_global_string(ctx,"clearTimeout");
-            duk_push_c_function(ctx,duk_rp_set_interval, DUK_VARARGS);
-            duk_put_global_string(ctx,"setInterval");
-            duk_push_c_function(ctx, duk_rp_clear_either, 1);
-            duk_put_global_string(ctx,"clearInterval");
-            duk_push_c_function(ctx,duk_rp_set_metronome, DUK_VARARGS);
-            duk_put_global_string(ctx,"setMetronome");
-            duk_push_c_function(ctx, duk_rp_clear_either, 1);
-            duk_put_global_string(ctx,"clearMetronome");
-
-            /* set up object to hold timeout callback function */
-            duk_push_global_stash(ctx);
-            duk_push_object(ctx);//new object
-            duk_put_prop_string(ctx, -2, "ev_callback_object");
-            duk_pop(ctx);//global stash
 
             /* set up main event base */
             mainthr->base = event_base_new();
@@ -2488,26 +2556,6 @@ int main(int argc, char *argv[])
             }
 
             /* ********** set up event loop *************** */
-
-            /* setTimeout and related functions */
-            duk_push_c_function(ctx,duk_rp_set_timeout, DUK_VARARGS);
-            duk_put_global_string(ctx,"setTimeout");
-            duk_push_c_function(ctx, duk_rp_clear_either, 1);
-            duk_put_global_string(ctx,"clearTimeout");
-            duk_push_c_function(ctx,duk_rp_set_interval, DUK_VARARGS);
-            duk_put_global_string(ctx,"setInterval");
-            duk_push_c_function(ctx, duk_rp_clear_either, 1);
-            duk_put_global_string(ctx,"clearInterval");
-            duk_push_c_function(ctx,duk_rp_set_metronome, DUK_VARARGS);
-            duk_put_global_string(ctx,"setMetronome");
-            duk_push_c_function(ctx, duk_rp_clear_either, 1);
-            duk_put_global_string(ctx,"clearMetronome");
-
-            /* set up object to hold timeout callback function */
-            duk_push_global_stash(ctx);
-            duk_push_object(ctx);//new object
-            duk_put_prop_string(ctx, -2, "ev_callback_object");
-            duk_pop(ctx);//global stash
 
             /* set up main event base */
             mainthr->base = event_base_new();
