@@ -52,6 +52,7 @@ char *RP_script=NULL;
 //duk_context **thread_ctx = NULL;
 //__thread int local_thread_number=0;
 duk_context *main_ctx;
+RPTHR *mainthr=NULL;
 
 struct event_base **thread_base=NULL;
 
@@ -488,16 +489,20 @@ void run_b4loop_funcs()
 
 char * tickify(char *src, size_t sz, int *err, int *ln);
 
-static int repl(duk_context *ctx)
+pthread_mutex_t repl_lock;
+#define REPL_LOCK    do {RP_PTLOCK(&repl_lock); /*printf("Locked\n"); */ } while(0)
+#define REPL_UNLOCK  do {RP_PTUNLOCK(&repl_lock); /* printf("Unlocked\n"); */} while (0)
+
+static void *repl_thr(void *arg)
 {
     printf("%s\n", RP_REPL_GREETING);
-    int multiline=0;
-    char *line=NULL;
+    char *line=NULL, *lastline=NULL;
     char *prefix=RP_REPL_PREFIX;
     char histfn[PATH_MAX];
     char *hfn=NULL;
     char *home = getenv("HOME");
     int err;
+    duk_context *ctx = (duk_context *) arg;
 
     linenoiseSetMultiLine(1);
     linenoiseSetCompletionCallback(completion);
@@ -512,45 +517,52 @@ static int repl(duk_context *ctx)
     while (1)
     {
         int ln;
-        char *oldline;
-        if(multiline)
+        char *oldline=NULL;
+
+        if(lastline)
             prefix=RP_REPL_PREFIX_CONT;
         else
             prefix=RP_REPL_PREFIX;
 
         line = linenoise(prefix);
-        if(line)
+
+        if(!line)
         {
-            oldline = line;
-            linenoiseHistoryAdd(oldline);
+            duk_rp_exit(ctx, 0);
+        }
+
+        oldline = line;
+        linenoiseHistoryAdd(oldline);
+        line = tickify(line, strlen(line), &err, &ln);
+        if (!line)
+            line=oldline;
+        else
+            free(oldline);
+
+        if(lastline){
+
+            lastline = strjoin(lastline, line, '\n');
+            free(line);
+            line=lastline;
+
+            oldline=line;
             line = tickify(line, strlen(line), &err, &ln);
             if (!line)
                 line=oldline;
             else
                 free(oldline);
         }
-        if(!line)
+
+        if(*line=='\0')
         {
-            duk_rp_exit(ctx, 0);
+            free(line);
+            continue;
         }
+
+        REPL_LOCK;
+
         duk_push_string(ctx, line);
-
-        if(multiline){
-            duk_push_string(ctx,"\n");
-            duk_pull(ctx, -2);
-            duk_concat(ctx,3);  //combine with last line if last loop set multiline=1
-            char *newline = (char *)duk_get_string(ctx, -1);
-            char *tickline = tickify(newline, strlen(newline), &err, &ln);
-            if(tickline)
-            {
-                duk_pop(ctx);
-                duk_push_string(ctx, tickline);
-                free(tickline);
-            }
-        }
-
-        duk_dup(ctx, -1);// duplicate in case multiline condition discovered below
-        multiline=0;
+        lastline=NULL;
 
         // evaluate input
        if (duk_peval(ctx) != 0)
@@ -558,7 +570,7 @@ static int repl(duk_context *ctx)
             const char *errmsg=duk_safe_to_string(ctx, -1);
             if(strstr(errmsg, "end of input") || (err && err < 4) ) //command likely spans multiple lines
             {
-                multiline=1;
+                lastline=line;
             }
             else
                 printf("ERR: %s\n", errmsg);
@@ -569,16 +581,46 @@ static int repl(duk_context *ctx)
         }
         duk_pop(ctx); //the results
 
-        //if not multiline, get rid of extra copy of last line
-        if(!multiline) duk_pop(ctx);
-        //linenoiseHistoryAdd(line);
+        //resume loop by locking main thread
+        REPL_UNLOCK;
+
         if(hfn)
             linenoiseHistorySave(hfn);
-        free(line);
+
+        if(!lastline)
+            free(line);
+
     }
-    return 0;
+    return NULL;
 }
 
+
+static int repl(duk_context *ctx)
+{
+    pthread_t thr;
+    pthread_attr_t attr;
+
+    RP_PTINIT(&repl_lock);
+
+    pthread_attr_init(&attr);
+
+    if( pthread_create( &thr, &attr, repl_thr, (void*)ctx) )
+        RP_THROW(ctx, "Could not create thread\n");
+
+    /* start event loop, but don't block repl thread */
+    while(1)
+    {
+        REPL_LOCK;
+        event_base_loop(mainthr->base, EVLOOP_NONBLOCK);
+        REPL_UNLOCK;
+        usleep(50000);
+    }
+
+    // won't get here
+    pthread_join(thr, NULL);
+
+    return 0;
+}
 
 static char *checkbabel(char *src)
 {
@@ -2117,7 +2159,6 @@ static void evhandler(int sig, short events, void *base)
     signal(SIGTERM, sigint_handler);
 }
 
-RPTHR *mainthr=NULL;
 char **rampart_argv;
 int   rampart_argc;
 char argv0[PATH_MAX];
@@ -2303,7 +2344,7 @@ int main(int argc, char *argv[])
             fn="command_line_script";
             goto have_src;
         }
-        if (argc == 0)
+        if (argc == 0 || (argc == 1 && !strcmp(argv[0],"-g")) )
         {
             if(!isatty(fileno(stdin)))
             {
@@ -2311,11 +2352,60 @@ int main(int argc, char *argv[])
                 goto dofile;
             }
 
-            // event loop doesn't work with interactive at the moment.
-            duk_get_global_string(ctx, "rampart");
-            duk_del_prop_string(ctx, -1, "event");
-            duk_del_prop_string(ctx, -1, "thread");
+            if(argc == 1 && !strcmp(argv[0],"-g") )
+            {
+                duk_get_global_string(ctx, "rampart");
+                duk_get_prop_string(ctx, -1, "globalize");
+                duk_get_prop_string(ctx, -2, "utils");
+                duk_call(ctx, 1);
+                duk_pop_2(ctx); //return and rampart
+            }
+
+            /* ********** set up event loop for repl *************** */
+
+            /* setTimeout and related functions */
+            duk_push_c_function(ctx,duk_rp_set_timeout, DUK_VARARGS);
+            duk_put_global_string(ctx,"setTimeout");
+            duk_push_c_function(ctx, duk_rp_clear_either, 1);
+            duk_put_global_string(ctx,"clearTimeout");
+            duk_push_c_function(ctx,duk_rp_set_interval, DUK_VARARGS);
+            duk_put_global_string(ctx,"setInterval");
+            duk_push_c_function(ctx, duk_rp_clear_either, 1);
+            duk_put_global_string(ctx,"clearInterval");
+            duk_push_c_function(ctx,duk_rp_set_metronome, DUK_VARARGS);
+            duk_put_global_string(ctx,"setMetronome");
+            duk_push_c_function(ctx, duk_rp_clear_either, 1);
+            duk_put_global_string(ctx,"clearMetronome");
+
+            /* set up object to hold timeout callback function */
+            duk_push_global_stash(ctx);
+            duk_push_object(ctx);//new object
+            duk_put_prop_string(ctx, -2, "ev_callback_object");
+            duk_pop(ctx);//global stash
+
+            /* set up main event base */
+            mainthr->base = event_base_new();
+            RPTHR_SET(mainthr, RPTHR_FLAG_BASE);
+
+            dnsbase = evdns_base_new(mainthr->base,
+                EVDNS_BASE_DISABLE_WHEN_INACTIVE);
+            if(!dnsbase)
+                RP_THROW(ctx, "rampart - error creating dnsbase");
+
+            /* for unknown reasons, setting EVDNS_BASE_INITIALIZE_NAMESERVERS
+               above results in dnsbase not exiting when event loop is otherwise empty */
+            evdns_base_resolv_conf_parse(dnsbase, DNS_OPTIONS_ALL, "/etc/resolv.conf");
+
+            duk_push_global_stash(ctx);
+            duk_push_pointer(ctx, dnsbase);
+            duk_put_prop_string(ctx, -2, "dns_elbase");
             duk_pop(ctx);
+            REMALLOC(thread_dnsbase, (nthread_dnsbase + 1) * sizeof(struct evdns_base *) );
+            thread_dnsbase[nthread_dnsbase++]=dnsbase;
+            /* end dns */
+
+            /* run things that need to be run before the loop starts */
+            run_b4loop_funcs();
 
             int ret = repl(ctx);
             return ret;
