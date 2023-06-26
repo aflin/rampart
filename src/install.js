@@ -443,7 +443,7 @@ function do_install_choice(choice) {
 
         case '6':
             var src = realPath('./');
-            var dest = "/usr/local/bin";
+            var dest = "/usr/local/bin/";
             var homebin;
             if(process.env.HOME)
             {

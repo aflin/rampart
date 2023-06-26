@@ -15,7 +15,7 @@ if [ "$rp" == "" ]; then
 	}
 fi
 
-REX=$(which rex);
+REX=$(which rex 2>/dev/null);
 if [ "$REX" == "" ]; then
 	if [ -e ${CURDIR}/../../bin/rex ]; then
 		REX=$(realpath ${CURDIR}/../../bin/rex);
