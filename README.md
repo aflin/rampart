@@ -47,7 +47,7 @@ apt install libsqlite3-dev uuid-dev tcl-dev tk-dev libgdbm-dev libbz2-dev liblzm
 ```
 or
 ```
-yum install sqlite-devel tcl-devel tk-devel libuuid-devel readline-dev
+yum install sqlite-devel tcl-devel tk-devel libuuid-devel readline-dev ncurses-devel bzip2-devel gdbm-devel xz-devel
 ```
 
 Then, after cloning, you can do the following to build:
