@@ -4782,7 +4782,7 @@ static void proc_mimes(duk_context *ctx)
 "            html+= '<tr><td><a href=\"../\">Parent Directory</a></td><td></td><td>-</td></tr>';\n"\
 "        rampart.utils.readdir(req.fsPath).sort().forEach(function(d){\n"\
 "            var st=rampart.utils.stat(req.fsPath+'/'+d);\n"\
-"            if (st.isDirectory())\n"\
+"            if (st.isDirectory)\n"\
 "                d+='/';\n"\
 "            html=rampart.utils.sprintf('%s<tr><td><a href=\"%s\">%s</a></td><td>%s</td><td>%s</td></tr>',\n"\
 "                html, d, d, st.mtime.toLocaleString() ,hsize(st.size));\n"\
@@ -5048,7 +5048,11 @@ duk_ret_t duk_server_start(duk_context *ctx)
         {
             confThreads = duk_rp_get_int_default(ctx, -1, -1);
             if(confThreads < 1)
-                RP_THROW(ctx,"server.start: parameter \"threads\" invalid");
+            {
+                // if we explicitly put a negative number - that is the same as unset.
+                if(!duk_is_number(ctx, -1))
+                    RP_THROW(ctx,"server.start: parameter \"threads\" invalid");
+            }
         }
         duk_pop(ctx);
 
