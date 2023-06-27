@@ -391,20 +391,8 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
     /* get the trigger argument key, set idx=0, check refcount */
     if( earg->varno > -1)
     {
-
         sprintf(varname, "\xff%s%d", earg->key, earg->varno);
-
         arg_idx=0;
-        // copy var BEFORE BEFORE BEFORE decrementing refcount
-        get_from_clipboard(ctx, varname);
-        duk_insert(ctx, 0);
-        if(earg->refcount)
-        {
-            RP_MLOCK(rp_ev_var_lock);
-            (*earg->refcount)--;
-            //printf("thr=%d, ref=%p refcount = %d\n",get_thread_num(),refcount, *refcount);
-            RP_MUNLOCK(rp_ev_var_lock);
-        }
     }
 
     /* the first round, for normal thread/stack combos */
@@ -413,6 +401,13 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
         if(!ctx)
             break;
 
+        // VERY IMPORTANT TO copy var BEFORE BEFORE BEFORE decrementing refcount
+        // copy trigger var to this stack
+        if(arg_idx == 0)
+        {
+            get_from_clipboard(ctx, varname);
+            duk_insert(ctx, 0);
+        }
         if(!duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("jsevents")) )
         {
             //no events of any kind on this ctx
@@ -464,6 +459,17 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
             break;
 
     } while(1);
+
+    if( earg->varno > -1)
+    {
+        if(earg->refcount)
+        {
+            RP_MLOCK(rp_ev_var_lock);
+            (*earg->refcount)--;
+            //printf("thr=%d, ref=%p refcount = %d\n",get_thread_num(),refcount, *refcount);
+            RP_MUNLOCK(rp_ev_var_lock);
+        }
+    }
 
     event_free(earg->e);
     free(earg->key);
@@ -657,7 +663,6 @@ duk_ret_t duk_rp_trigger_event(duk_context *ctx)
 
         sprintf(varname, "\xff%s%d", evname, varno);
         put_to_clipboard(ctx, 1, varname);
-
     }
     evloop_insert(ctx, evname, NULL, varno, JSEVENT_TRIGGER);
     return 0;
