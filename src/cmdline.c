@@ -100,6 +100,420 @@ RPTHR_LOCK *rp_slistlock;
 #define RP_REPL_PREFIX "rampart> "
 #define RP_REPL_PREFIX_CONT "... "
 
+char *serverscript = 
+"var server=require(\"rampart-server\");\n"
+"rampart.globalize(rampart.utils);\n"
+"var message = \"Go to http://localhost:8088/ to see the demos in this distribution.\";\n"
+
+"var arg, full=-1, printdefaults=0;\n"
+
+"wd = getcwd();\n"
+
+"var opts = {\n"
+"\"--ipAddr\":       \"The ipv4 address to bind\",\n"
+"\"--ipv6Addr\":     \"The ipv6 address to bind\",\n"
+"\"--bind-all\":     \"set ipAddr and ipv6Addr to '0.0.0.0' and '[::]' respectively\",\n"
+"\"--ipPort\":       \"set ipv4 port\",\n"
+"\"--ipv6Port\":     \"set ipv6 port\",\n"
+"\"--port\":         \"set both ipv4 and ipv6 port\",\n"
+"\"--htmlRoot\":     \"root directory from which to serve files\",\n"
+"\"--appsRoot\":     \"root directory from which to serve apps\",\n"
+"\"--wsappsRoot\":   \"root directory from which to serve wsapps\",\n"
+"\"--dataRoot\":     \"setting for user scripts\",\n"
+"\"--logRoot\":      \"log directory\",\n"
+"\"--accessLog\":    \"log file name\",\n"
+"\"--errorLog\":     \"error log file name\",\n"
+"\"--logging\":      \"boolean - whether to log requests and errors\",\n"
+"\"--rotateLogs\":   \"boolean - whether to rotate the logs\",\n"
+"\"--rotateInterval\": \"interval between log rotations in seconds\",\n"
+"\"--rotateStart\":    \"time to start log rotations\",\n"
+"\"--user\":           \"if started as root, switch to this user\",\n"
+"\"--threads\":        \"number - limit the number of threads used by the server\",\n"
+"\"--sslKeyFile\":     \"if https, the ssl/tls key file location\",\n"
+"\"--sslCertFile\":    \"if https, the ssl/tls cert file location\",\n"
+"\"--secure\":         \"boolean - whether to use https.  If true\",\n"
+"\"--letsencrypt\":    \"if using letsencrypt, the domain name for automatic setup of https\\n                     (looks for '/etc/letsencrypt/live/domain)\",\n"
+"\"--rootScripts\":    \"whether to treat *.js files in htmlRoot as apps\",\n"
+"\"--dirList\":        \"whether to provide a directory listing if no index.html is found\",\n"
+"\"--daemon\":         \"whether to detach from terminal\",\n"
+"\"-d\":               \"alias for '--detach true'\",\n"
+"\"--detach\":         \"alias for '--detach true'\",\n"
+"}\n"
+
+"for (var i=1; i<process.argv.length; i++)\n"
+"{\n"
+"    arg =  process.argv[i]\n"
+
+"    if(arg == \"--server\" || arg == \"--quickserver\") {\n"
+"        if(full!=-1)\n"
+"        {\n"
+"            fprintf(stderr, \"Error: arg '%s' -- type of server already set\\n\", arg);\n"
+"        }\n"
+"        full=0;\n"
+"        if(arg == \"--server\")\n"
+"            full=1;\n"
+
+"        process.argv[i]='--skip';\n"
+"    }\n"
+
+"    var st = stat(arg);\n"
+"    if(st && st.isDirectory) {\n"
+"        wd=realPath(arg);\n"
+"        process.argv[i]='--skip';\n"
+"    }\n"
+
+"    if (arg == \"--fullhelp\") {\n"
+"        for(var key in opts) printf(\"%-20s %s\\n\",key,opts[key]);\n"
+"        process.exit(0);\n"
+"    }\n"
+
+"    if (arg == \"--help\" || arg == '-h')\n"
+"    {\n"
+"        printf(\"rampart built-in server help:\\n\"+\n"
+"\"\\nUsage: rampart --[quick]server [options] root_dir\\n\" +\n"
+"\"    --server        - run as a full server\\n\" +\n"
+"\"    --quickserver   - run as a test server\\n\" +\n"
+"\"    [--help|-h]     - this help message\\n\" +\n"
+"\"    --fullhelp      - print details on all options\\n\" +\n"
+"\"    --showdefaults  - print the list of default settings for --server or --quickserver\\n\" +\n"
+"\"    --bind-all      - bind to all ip addresses (default is localhost only)\\n\" +\n"
+"\"    [-d|--detach]   - same as '--daemon true'\\n\" +\n"
+"\"    --OPTION [val]  - where OPTION is one of options listed from '--fullhelp'\\n\" +\n"
+"\"    OPTION=val      - alternative format for '--OPTION val1\\n\");\n"
+"        process.exit(0);\n"
+"    }\n"
+
+"    if(arg == '--showdefaults')\n"
+"        printdefaults=1;\n"
+"}\n"
+
+
+"process.scriptPath = wd;\n"
+
+"if(full==1) {\n"
+"    var serverConf = {\n"
+"        ipAddr:       \"127.0.0.1\",\n"
+"        ipv6Addr:     \"[::1]\",\n"
+"        ipPort:         8088,\n"
+"        ipv6Port:       8088,\n"
+"        port:           -1,\n"
+"        htmlRoot:       wd + \"/html\",\n"
+"        appsRoot:       wd + \"/apps\",\n"
+"        wsappsRoot:     wd + \"/wsapps\",\n"
+"        dataRoot:       wd + \"/data\",\n"
+"        logRoot:        wd+\"/logs\",\n"
+"        accessLog:      wd+\"/logs/access.log\",\n"
+"        errorLog:       wd+\"/logs/error.log\",\n"
+"        logging:        false,\n"
+"        rotateLogs:     false,\n"
+"        rotateInterval: 86400,\n"
+"        rotateStart:    \"02:00\",\n"
+"        user:           \"nobody\",\n"
+"        threads:        -1,\n"
+"        sslKeyFile:     \"\",\n"
+"        sslCertFile:    \"\",\n"
+"        secure:         false,\n"
+"        letsencrypt:    false,\n"
+"        rootScripts:    false,\n"
+"        dirList:        false,\n"
+"        daemon:         true\n"
+"    }\n"
+
+"} else {\n"
+"    var serverConf = {\n"
+"        ipAddr:       \"127.0.0.1\",\n"
+"        ipv6Addr:     \"[::1]\",\n"
+"        ipPort:         8088,\n"
+"        ipv6Port:       8088,\n"
+"        port:           -1,\n"
+"        htmlRoot:       wd + \"/\",\n"
+"        appsRoot:       false,\n"
+"        wsappsRoot:     false,\n"
+"        dataRoot:       false,\n"
+"        logRoot:        wd+\"/logs\",\n"
+"        accessLog:      wd+\"/logs/access.log\",\n"
+"        errorLog:       wd+\"/logs/error.log\",\n"
+"        logging:        false,\n"
+"        rotateLogs:     false,\n"
+"        rotateInterval: 86400,\n"
+"        rotateStart:    \"02:00\",\n"
+"        user:           \"nobody\",\n"
+"        threads:        1,\n"
+"        sslKeyFile:     \"\",\n"
+"        sslCertFile:    \"\",\n"
+"        secure:         false,\n"
+"        letsencrypt:    false,\n"
+"        rootScripts:    true,\n"
+"        dirList:        true,\n"
+"        daemon:         false\n"
+"    }\n"
+"}\n"
+
+"if(printdefaults) {\n"
+"    printf(\"Defaults for %s:\\n%3J\\n\", full==1 ? \"--server\" : \"--quickserver\", serverConf);\n"
+"    process.exit(0);\n"
+"}\n"
+
+
+"var val;\n"
+"for (i=2; i<process.argv.length; i++)\n"
+"{\n"
+"    arg=process.argv[i];\n"
+/* 100 */
+"    if(arg==\"--skip\")\n"
+"        continue;\n"
+
+"    if(arg==\"--bind-all\")\n"
+"    {\n"
+"        serverConf.ipAddr=\"0.0.0.0\";\n"
+"        serverConf.ipv6Addr=\"[::]\";\n"
+"    }\n"
+
+"    if(arg==\"--bind-all\")\n"
+"    {\n"
+"        serverConf.ipAddr=\"0.0.0.0\";\n"
+"        serverConf.ipv6Addr=\"[::]\";\n"
+"        continue;\n"
+"    } \n"
+
+"    if(arg==\"--detach\" || arg==\"-d\") {\n"
+"        arg=\"daemon\";\n"
+"        val=true;\n"
+"    } else if(arg.charAt(0)=='-' && arg.charAt(1)=='-') {\n"
+"        arg = arg.substring(2);\n"
+"        if(arg==\"logging\" || arg==\"rotateLogs\" || arg==\"secure\")\n"
+"        {\n"
+"            val=true;\n"
+"        } else if(i+1 >= process.argv.length)\n"
+"        {\n"
+"            fprintf(stderr, \"option '--%s' must be followed by a value\\n\", arg);\n"
+"            process.exit(1);\n"
+"        } else {\n"
+"            i++;\n"
+"            val=process.argv[i];\n"
+"        }\n"
+"    } else {\n"
+"        var argval = arg.split('=');\n"
+"        if(argval.length>1)\n"
+"        {\n"
+"            arg=argval[0];\n"
+"            if(argval.length>2) {\n"
+"                argval.shift();\n"
+"                val=argval.join('=');\n"
+"            } else\n"
+"                val=argval[1];\n"
+"        }\n"
+"    }\n"
+
+"    if(val==\"true\")\n"
+"        val=true;\n"
+"    else if (val==\"false\")\n"
+"        val=false;\n"
+"    else {\n"
+"        var nval=parseInt(val);\n"
+"        if(!isNaN(nval) && sprintf('%s',nval)==val)\n"
+"            val=nval;\n"
+"    }\n"
+"    if(serverConf[arg]===undefined)\n"
+"    {\n"
+"        printf(\"'%s' is an invalid option, a non-existant root directory or a duplicate root directory.\\n\", arg);\n"
+"        process.exit(1);\n"
+"    }\n"
+"    serverConf[arg]=val;\n"
+"}\n"
+
+"if (serverConf.port > 0 ){\n"
+"    serverConf.ipPort=serverConf.ipv6Port=serverConf.port;\n"
+"}\n"
+
+"if (serverConf.letsencrypt)\n"
+"{\n"
+"    serverConf.sslKeyFile=\"/etc/letsencrypt/live/\"+serverConf.letsencrypt+\"/privkey.pem\";\n"
+"    serverConf.sslCertFile=\"/etc/letsencrypt/live/\"+serverConf.letsencrypt+\"/fullchain.pem\";\n"
+"}\n"
+
+"var usr1;\n"
+
+"var bind = [];\n"
+
+"if(serverConf.ipAddr && serverConf.ipPort)\n"
+"    bind.push(serverConf.ipAddr + \":\" + serverConf.ipPort);\n"
+
+"if(serverConf.ipv6Addr && serverConf.ipv6Port)\n"
+"    bind.push(serverConf.ipv6Addr + \":\" + serverConf.ipv6Port);\n"
+"    \n"
+"if(!bind.length)\n"
+"    throw(\"No ip addr/port specified\");\n"
+
+"var iam = trim(exec('whoami').stdout);\n"
+
+"if(iam != \"root\") {\n"
+"    if(serverConf.ipPort < 1024)\n"
+"        throw(\"Error: script must be started as root to bind to IP port \" + serverConf.ipPort);\n"
+"    if(serverConf.ipv6Port < 1024)\n"
+"        throw(\"Error: script must be started as root to bind to IPv6 port \" + serverConf.ipv6Port);\n"
+"}\n"
+
+"var serverpid;\n"
+
+"var gzip = trim ( exec('which','gzip').stdout );\n"
+
+"if(serverConf.logging && serverConf.rotateLogs) {\n"
+
+"    var tdelay, mdelay, startTime;\n"
+
+"    if (typeof serverConf.rotateInterval != 'number')\n"
+"    {\n"
+"        fprintf(stderr, \"serverConf.rotateInterval == %J is invalid\\n\", serverConf.rotateInterval);\n"
+"        process.exit(1);\n"
+"    }\n"
+
+"    if( serverConf.rotateInterval < 300 ) {\n"
+"        fprintf(stderr, \"serverConf.rotateInterval is set to less than 5 minutes, is that what your really want?\\n\");\n"
+"        process.exit(1);\n"
+"    }\n"
+
+"    mdelay = serverConf.rotateInterval * 1000;\n"
+
+"    try {\n"
+"        startTime = scanDate(serverConf.rotateStart + \" \"+ dateFmt('%z'), \"%H:%M %z\");\n"
+
+"        if( startTime < Date.now() )\n"
+"            startTime = new Date(startTime.getTime() + 86400000);\n"
+"    } catch(e) {\n"
+"        fprintf(stderr, \"Error parsing log rotation start time (%s): %J\\n\", serverConf.rotateStart,e);\n"
+"        process.exit(1);\n"
+"    }\n"
+
+"    var now = new Date();\n"
+"    tdelay = startTime.getTime() - now.getTime();\n"
+
+"    if (!usr1) {\n"
+"        try {\n"
+"            usr1 = shell(\"kill -l\").stdout;\n"
+"            usr1 = usr1.match( /(\\d+)\\) SIGUSR1/ );\n"
+"            if(usr1.length>1) usr1 = parseInt(usr1[1]);\n"
+"            else throw(\"Could not get signal number for SIGUSR1\");\n"
+"        } catch (e){}\n"
+"    }\n"
+
+"    if ( typeof usr1 != 'number' ) {\n"
+"        fprintf(stderr, \"Error finding kill signal number for signal 'USR1'\\n\");\n"
+"        process.exit(1);\n"
+"    }\n"
+
+"    var prevAbackup, prevEbackup;\n"
+
+"    function rotateLogs() {\n"
+"        var doARotate=false, doErotate=false;\n"
+"        var ds = dateFmt('%Y-%m-%d-%H-%M-%S');\n"
+"        var abackup = sprintf('%s-%s', serverConf.accessLog, ds);\n"
+"        var ebackup = sprintf('%s-%s', serverConf.errorLog,  ds);\n"
+
+"        if( stat(serverConf.accessLog) ){\n"
+"            doARotate=true;\n"
+"            try {\n"
+"                rename( serverConf.accessLog, abackup);\n"
+"            } catch(e) {\n"
+"                fprintf(serverConf.errorLog, true, \"Cannot rename accessLog: %J\\n\", e);\n"
+"                doARotate=false;\n"
+"            }\n"
+"        }\n"
+
+"        if( stat(serverConf.errorLog) ){\n"
+"            doERotate=true;\n"
+"            try {\n"
+"                rename( serverConf.errorLog, ebackup);\n"
+"            } catch(e) {\n"
+"                fprintf(serverConf.errorLog, true, \"Cannot rename errorLog: %J\\n\", e);\n"
+"                doErotate=false;\n"
+"            }\n"
+"        }\n"
+
+"        if(doARotate||doErotate)\n"
+"            kill(serverpid, usr1);// close and reopen logs\n"
+"        if(gzip && (prevAbackup || prevEbackup) ) {\n"
+"            shell(gzip + \" -q \" + (prevAbackup ? prevAbackup:\"\")+ \" \" + (prevEbackup?prevEbackup:\"\"), {background:true} );\n"
+"        }\n"
+
+"        prevAbackup=abackup;\n"
+"        prevEbackup=ebackup;\n"
+"    }\n"
+"    setTimeout( function(){\n"
+"        if( !serverpid ) {\n"
+"            try {\n"
+"                var pid = readFile(wd+\"/server.pid\");\n"
+"                serverpid = parseInt(readFile(wd+\"/server.pid\",{returnString:true}));\n"
+"            } catch(e) {}\n"
+
+"            if(typeof serverpid != 'number' || Number.isNaN(serverpid) ) {\n"
+"                fprintf(serverConf.errorLog, true, \"Cannot get server pid. Log rotation failed.\\n\");\n"
+"                return;\n"
+"            }\n"
+"        }\n"
+"        rotateLogs();\n"
+"        var iv=setMetronome(rotateLogs, mdelay);\n"
+"    }, tdelay);\n"
+"}\n"
+
+"var map ={\n"
+"    \"/\":                serverConf.htmlRoot,\n"
+"}\n"
+"if(serverConf.appsRoot)\n"
+"    map[\"/apps/\"] = {modulePath: serverConf.appsRoot};\n"
+
+"if(serverConf.wsappsRoot)\n"
+"    map[\"ws://wsapps/\"] = {modulePath: serverConf.wsappsRoot};\n"
+
+"if(serverConf.rootScripts) {\n"
+"    var scripts = readDir(serverConf.htmlRoot).filter(function(f){return /\\.js$/.test(f);});\n"
+"    scripts.forEach (function(sn) {\n"
+"        var p = '/' + sn.replace(/\\.js$/,\"\") + '/';\n"
+"        map[p]={module: serverConf.htmlRoot+'/'+sn};\n"
+"    });\n"
+"}\n"
+
+
+"serverpid=server.start(\n"
+"{\n"
+"    bind:           bind,\n"
+"    user:           serverConf.user,\n"
+"    scriptTimeout:  20.0,\n"
+"    connectTimeout: 20.0,\n"
+"    developerMode:  true,\n"
+"    log:            serverConf.logging,\n"
+"    accessLog:      serverConf.accessLog,\n"
+"    errorLog:       serverConf.errorLog,\n"
+"    daemon:         serverConf.daemon,\n"
+"    threads:        serverConf.threads,\n"
+"    secure:         serverConf.secure,\n"
+"    sslKeyFile:     serverConf.sslKeyFile,\n"
+"    sslCertFile:    serverConf.sslCertFile,\n"
+"    mimeMap:        { \"mp3\": \"audio/mp3\" },\n"
+"    directoryFunc:  serverConf.dirList,\n"
+"    map:            map\n"
+"});\n"
+
+"fprintf(wd+\"/server.pid\", \"%d\", serverpid);\n"
+"if(iam == \"root\")\n"
+"    chown({user:serverConf.user, path:wd+\"/server.pid\"});\n"
+
+"sleep(0.5);\n"
+
+"if(!kill(serverpid, 0)) {\n"
+"    printf(\"Failed to start webserver\\n\");\n"
+"    process.exit(1);\n"
+"}\n"
+
+"if(serverConf.daemon) {\n"
+"    printf(\"Server has been started. \" + message + \"\\n\" +\n"
+"\"    Server pid is \" + serverpid + \".  To stop server use kill as such:\\n\" +\n"
+"\"       kill ${serverpid} \\n\");\n"
+"    process.exit(0);\n"
+"}\n";
+
+
+
 char *words[]={
     "Array",
     "Array.isArray",
@@ -2220,14 +2634,17 @@ void check_version_help(int argc, char *argv[])
         if(!strcmp("-h", argv[1]) || !strcmp("--help", argv[1]))
         {
             printf("Usage:\n\
-    %s file_name [args]  -- run a script from file 'file_name'\n\
-    %s [-g]              -- interactive mode (-g globalizes rampart.utils)\n\
-    %s [-c] \"script\"     -- evaluate script from argument string\n\
-    %s [-v|--version]    -- print version\n\
-    %s [-h|--help]       -- this help message\n\
+    %s file_name [args]       -- run a script from file 'file_name'\n\
+    %s [-g]                   -- interactive mode (-g globalizes rampart.utils)\n\
+    %s [-c] \"script\"          -- evaluate script from argument string\n\
+    %s [-v|--version]         -- print version\n\
+    %s --server               -- run rampart-server with default configuration\n\
+    %s --quickserver          -- run rampart-server with alternate configuration\n\
+    %s --[quick]server --help -- show help for built-in server\n\
+    %s [-h|--help]            -- this help message\n\
 \n\
     Documentation can be found at https://rampart.dev/docs/\n",
-                argv[0], argv[0], argv[0], argv[0], argv[0]);
+                argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
             exit(0);
         }
     }
@@ -2384,6 +2801,12 @@ int main(int argc, char *argv[])
         argc-=2;
         argv+=2;
     }
+    /* second check if we are using the server shortcut */
+    else if(argc>0 && (strcmp(argv[0],"--server")==0 || strcmp(argv[0],"--quickserver")==0) )
+    {
+        cmdline_src=serverscript;
+        printf("%s\n",serverscript);
+    }
 
     /* check if filename is first, for #! script */
     if(argc>0 && (stat(argv[0], &entry_file_stat)))
@@ -2537,6 +2960,8 @@ int main(int argc, char *argv[])
             have_src:
             if(!cmdline_src)
                 file_src[src_sz-1]='\0';
+            else
+                src_sz=strlen(cmdline_src);
             free_file_src=file_src;
 
             /* skip over #!/path/to/rampart */
