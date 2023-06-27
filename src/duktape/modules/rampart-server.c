@@ -1824,7 +1824,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
         char *eptr;
         char reprange[128];
 
-        beg = (ev_off_t)strtol(range + 6, &eptr, 10);
+        beg = (ev_off_t)strtoll(range + 6, &eptr, 10);
         if (eptr != range + 6)
         {
             ev_off_t endval;
@@ -1832,20 +1832,20 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
             eptr++; // skip '-'
             if (*eptr != '\0')
             {
-                endval = (ev_off_t)strtol(eptr, NULL, 10);
+                endval = (ev_off_t)strtoll(eptr, NULL, 10);
                 if (endval && endval > beg)
                     len = endval - beg;
             }
             rescode = 206;
             /* Content-Range: bytes 12812288-70692914/70692915 */
-            snprintf(reprange, 128, "bytes %d-%d/%d",
-                     (int)beg,
-                     (int)((len == -1) ? (filesize - 1) : endval),
-                     (int)filesize);
+            snprintf(reprange, 128, "bytes %" PRIu64 "-%" PRIu64 "/%" PRIu64,
+                     (uint64_t)beg,
+                     (uint64_t)((len == -1) ? (filesize - 1) : endval),
+                     (uint64_t)filesize );
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Range", reprange, 0, 1));
             len = filesize - beg;
             //don't compress, just return
-            snprintf(slen, 64, "%d", (int)len);
+            snprintf(slen, 64, "%" PRIu64, (uint64_t)len);
             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
             rp_evbuffer_add_file(req->buffer_out, fd, beg, len);
             sendresp(req, rescode, 0);
@@ -1916,7 +1916,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
                         if(len)
                         {
                             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Encoding", "gzip", 0, 0));
-                            snprintf(slen, 64, "%d", (int)len);
+                            snprintf(slen, 64, "%" PRIu64, (uint64_t)len);
                             evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
                             rp_evbuffer_add_file(req->buffer_out, cfd, 0, len);
                             sendresp(req, rescode, 0);
@@ -1962,7 +1962,7 @@ static void rp_sendfile(evhtp_request_t *req, char *fn, int haveCT, struct stat 
     else
         rp_evbuffer_add_file(req->buffer_out, fd, beg, len);
 
-    snprintf(slen, 64, "%d", (int)len);
+    snprintf(slen, 64, "%" PRIu64, (uint64_t)len);
     evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Length", slen, 0, 1));
 
     sendresp(req, rescode, 0);
