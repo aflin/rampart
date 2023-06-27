@@ -132,8 +132,8 @@ char *serverscript =
 "\"--sslKeyFile\":     \"if https, the ssl/tls key file location\",\n"
 "\"--sslCertFile\":    \"if https, the ssl/tls cert file location\",\n"
 "\"--secure\":         \"boolean - whether to use https.  If true\",\n"
-"\"--letsencrypt\":    \"if using letsencrypt, the domain name for automatic setup of https\\n                     (looks for '/etc/letsencrypt/live/domain)\",\n"
-"\"--rootScripts\":    \"whether to treat *.js files in htmlRoot as apps\",\n"
+"\"--letsencrypt\":    \"if using letsencrypt, the domain name for automatic setup of https\\n                     (looks for '/etc/letsencrypt/live/domain.com/' directory)\",\n"
+"\"--rootScripts\":    \"whether to treat *.js files in htmlRoot as apps (not secure)\",\n"
 "\"--dirList\":        \"whether to provide a directory listing if no index.html is found\",\n"
 "\"--daemon\":         \"whether to detach from terminal\",\n"
 "\"-d\":               \"alias for '--detach true'\",\n"
@@ -179,7 +179,8 @@ char *serverscript =
 "\"    --bind-all      - bind to all ip addresses (default is localhost only)\\n\" +\n"
 "\"    [-d|--detach]   - same as '--daemon true'\\n\" +\n"
 "\"    --OPTION [val]  - where OPTION is one of options listed from '--fullhelp'\\n\" +\n"
-"\"    OPTION=val      - alternative format for '--OPTION val1\\n\");\n"
+"\"    OPTION=val      - alternative format for '--OPTION val1'\\n\"  +\n"
+"\"\\nIf root_dir is not specified, the current directory will be used\\n\");\n"
 "        process.exit(0);\n"
 "    }\n"
 
@@ -330,6 +331,7 @@ char *serverscript =
 "{\n"
 "    serverConf.sslKeyFile=\"/etc/letsencrypt/live/\"+serverConf.letsencrypt+\"/privkey.pem\";\n"
 "    serverConf.sslCertFile=\"/etc/letsencrypt/live/\"+serverConf.letsencrypt+\"/fullchain.pem\";\n"
+"    serverConf.secure=true;\n"
 "}\n"
 
 "var usr1;\n"
@@ -2634,9 +2636,9 @@ void check_version_help(int argc, char *argv[])
         if(!strcmp("-h", argv[1]) || !strcmp("--help", argv[1]))
         {
             printf("Usage:\n\
-    %s file_name [args]       -- run a script from file 'file_name'\n\
+    %s file_name [args]       -- load a script from 'file_name' and run\n\
     %s [-g]                   -- interactive mode (-g globalizes rampart.utils)\n\
-    %s [-c] \"script\"          -- evaluate script from argument string\n\
+    %s -c \"script\"            -- load script from argument string\n\
     %s [-v|--version]         -- print version\n\
     %s --server               -- run rampart-server with default configuration\n\
     %s --quickserver          -- run rampart-server with alternate configuration\n\
