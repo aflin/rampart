@@ -2805,7 +2805,6 @@ int main(int argc, char *argv[])
     else if(argc>0 && (strcmp(argv[0],"--server")==0 || strcmp(argv[0],"--quickserver")==0) )
     {
         cmdline_src=serverscript;
-        printf("%s\n",serverscript);
     }
 
     /* check if filename is first, for #! script */
