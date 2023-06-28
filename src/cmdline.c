@@ -136,8 +136,8 @@ char *serverscript =
 "\"--rootScripts\":    \"whether to treat *.js files in htmlRoot as apps (not secure)\",\n"
 "\"--dirList\":        \"whether to provide a directory listing if no index.html is found\",\n"
 "\"--daemon\":         \"whether to detach from terminal\",\n"
-"\"-d\":               \"alias for '--detach true'\",\n"
-"\"--detach\":         \"alias for '--detach true'\",\n"
+"\"-d\":               \"alias for '--daemon true'\",\n"
+"\"--detach\":         \"alias for '--daemon true'\",\n"
 "}\n"
 
 "for (var i=1; i<process.argv.length; i++)\n"
@@ -162,7 +162,7 @@ char *serverscript =
 "        process.argv[i]='--skip';\n"
 "    }\n"
 
-"    if (arg == \"--fullhelp\") {\n"
+"    if (arg == \"--lsopts\") {\n"
 "        for(var key in opts) printf(\"%-20s %s\\n\",key,opts[key]);\n"
 "        process.exit(0);\n"
 "    }\n"
@@ -174,12 +174,12 @@ char *serverscript =
 "\"    --server        - run as a full server\\n\" +\n"
 "\"    --quickserver   - run as a test server\\n\" +\n"
 "\"    [--help|-h]     - this help message\\n\" +\n"
-"\"    --fullhelp      - print details on all options\\n\" +\n"
+"\"    --lsopts        - print details on all options\\n\" +\n"
 "\"    --showdefaults  - print the list of default settings for --server or --quickserver\\n\" +\n"
 "\"    --bind-all      - bind to all ip addresses (default is localhost only)\\n\" +\n"
 "\"    [-d|--detach]   - same as '--daemon true'\\n\" +\n"
-"\"    --OPTION [val]  - where OPTION is one of options listed from '--fullhelp'\\n\" +\n"
-"\"    OPTION=val      - alternative format for '--OPTION val1'\\n\"  +\n"
+"\"    --OPTION [val]  - where OPTION is one of options listed from '--lsopts'\\n\" +\n"
+"\"    OPTION=val      - alternative format for '--OPTION val'\\n\"  +\n"
 "\"\\nIf root_dir is not specified, the current directory will be used\\n\");\n"
 "        process.exit(0);\n"
 "    }\n"
@@ -244,7 +244,7 @@ char *serverscript =
 "        sslCertFile:    \"\",\n"
 "        secure:         false,\n"
 "        letsencrypt:    false,\n"
-"        rootScripts:    true,\n"
+"        rootScripts:    false,\n"
 "        dirList:        true,\n"
 "        daemon:         false\n"
 "    }\n"
@@ -964,7 +964,7 @@ static void *repl_thr(void *arg)
 
         if(!line)
         {
-            if(errno == EAGAIN)
+            if(errno == EAGAIN) /* ctrl-c */
             {
                 printf("%spress ctrl-d to exit%s\n",RPCOL_BLU, RPCOL_RESET);
                 if(lastline)
