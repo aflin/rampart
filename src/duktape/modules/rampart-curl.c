@@ -2049,6 +2049,7 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CSOS *sopts)
     CURL_OPTS opts;
     CURL_OPTS *ores, *opts_p = &opts;
     int funcerr = 0;
+    char op[64];
 
     if( duk_get_prop_string(ctx, idx, "returnText") )
     {
@@ -2058,64 +2059,71 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CSOS *sopts)
     }
     duk_pop(ctx);
 
-    if( duk_get_prop_string(ctx, idx, "arrayType") )
+    duk_enum(ctx, (duk_idx_t)idx, DUK_ENUM_SORT_ARRAY_INDICES);
+    while (duk_next(ctx, -1 /* index */, 1 /* get_value also */))
     {
-        const char *arraytype = REQUIRE_STRING(ctx, -1, "curl - option 'arrayType' requires a String");
+        duk_size_t len;
+        const char *sop = duk_require_lstring(ctx, -2, &len);
+        char *d=op, *s=(char*)sop;
 
-        if (arraytype)
+        if(len > 31)
+            RP_THROW(ctx, "curl - option '%s': unknown option", s);
+
+        /* convert from camelCase and '_' to '.' */
+        while(*s)
         {
+            if(isupper(*s))
+                *(d++)='-';
+            else if(*s == '_')
+            {
+                *(d++)='.';
+                s++;
+                continue;
+            }
+            *(d++)=tolower(*(s++));
+        }
+        *d='\0';
+
+        if(!strcmp(op,"url")) 
+        {
+            duk_pop_2(ctx);
+            continue;
+        }
+
+        if(!strcmp(op,"array-type"))
+        {
+            const char *arraytype = REQUIRE_STRING(ctx, -1, "curl - option '%s' requires a String", sop);
+
             if (!strcmp("bracket", arraytype))
                 sopts->arraytype = ARRAYBRACKETREPEAT;
             else if (!strcmp("comma", arraytype))
                 sopts->arraytype = ARRAYCOMMA;
             else if (!strcmp("json", arraytype))
                 sopts->arraytype = ARRAYJSON;
-        }
-        duk_del_prop_string(ctx, idx, "arrayType");
-    }
-    duk_pop(ctx);
-
-    duk_enum(ctx, (duk_idx_t)idx, DUK_ENUM_SORT_ARRAY_INDICES);
-    while (duk_next(ctx, -1 /* index */, 1 /* get_value also */))
-    {
-        const char *op = duk_to_string(ctx, -2);
-        if(!strcmp(op,"url")) 
-        {
-            duk_pop_2(ctx);
-            continue;
-        }
-        if(!strcmp(op,"arrayType"))
-        {
-            const char *arraytype = REQUIRE_STRING(ctx, -1, "curl - option 'arrayType' requires a String");
-
-            if (arraytype)
-            {
-                if (!strcmp("bracket", arraytype))
-                    sopts->arraytype = ARRAYBRACKETREPEAT;
-                else if (!strcmp("comma", arraytype))
-                    sopts->arraytype = ARRAYCOMMA;
-                else if (!strcmp("json", arraytype))
-                    sopts->arraytype = ARRAYJSON;
-            }
+            else if (!strcmp("repeat", arraytype))
+                sopts->arraytype = ARRAYREPEAT;
+            else 
+                RP_THROW(ctx, "curl - option '%s' requires a value of 'repeat', 'bracket', 'comma' or 'json'. Value '%s' is unknown.", sop, arraytype);
 
             duk_pop_2(ctx);
             continue;
         }
+
+        /* find the option in the list of available options */
         opts.optionName = (char *)op;
         ores = bsearch(opts_p, curl_options, nCurlOpts, sizeof(CURL_OPTS), compare_copts);
 
         /* if we find a function for the javascript option, call the appropriate function
-       with the appropriate option from curl_options.  The value (if used) will be on
-       top of the ctx stack and accessed from within the function
-    */
+           with the appropriate option from curl_options.  The value (if used) will be on
+           top of the ctx stack and accessed from within the function.                    */
         if (ores != (CURL_OPTS *)NULL)
         {
             funcerr = (ores->func)(ctx, curl, ores->subopt, sopts, ores->option);
             if (funcerr)
-                RP_THROW(ctx, "curl option '%s': %s", op, operrors[funcerr]);
+                RP_THROW(ctx, "curl option '%s': %s", sop, operrors[funcerr]);
         }
         else
-            RP_THROW(ctx, "curl option '%s': unknown option", op);
+            RP_THROW(ctx, "curl option '%s': unknown option", sop);
 
         duk_pop_2(ctx);
     }
