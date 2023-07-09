@@ -1450,7 +1450,7 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
     duk_idx_t obj_idx=-1;
     int retstring=0;
     int close=1;
-    void *buf;
+    void *buf=NULL;
     struct stat filestat;
     size_t off;
     size_t nbytes;
@@ -1570,7 +1570,10 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
         }
     }
 
-    buf = duk_push_fixed_buffer(ctx, length);
+    if(retstring)
+        REMALLOC(buf, length+1);
+    else
+        buf = duk_push_fixed_buffer(ctx, length);
 
     off = 0;
 
@@ -1598,8 +1601,34 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
         fclose(fp);
 
     if(retstring)
-        duk_buffer_to_string(ctx,-1);
+    {
+        unsigned char *s = (unsigned char *)buf, *e=(unsigned char *)buf+off-1;
 
+        //find first valid utf-8 char
+        while(*s>127 && *s < 192)
+            s++;
+        
+        //find last complete utf-8 char
+        if(*e>127)
+        {
+            while(*e > 127 && *e < 192)
+                e--;
+                //printf("*e=%d, offset=%d\n", (int)*e, (int)( (uint64_t)(buf+off) - (uint64_t)e));  
+            if( ! (
+                (*e > 239 && (e + 4 == buf+off )) ||
+                (*e > 223 && *e < 240 && (e + 3 == buf+off )) ||
+                (*e > 191 && *e < 224 && (e + 2 == buf+off )) )
+            )
+                *e='\0';
+            else
+                *((char*)buf+off)='\0';
+        }
+        else
+            *((char*)buf+off)='\0';
+
+        duk_push_string(ctx, (const char*)s);
+        free(buf);
+    }
     return 1;
 }
 
@@ -4070,18 +4099,21 @@ duk_ret_t duk_rp_hll_constructor(duk_context *ctx)
 static duk_ret_t _proxyget(duk_context *ctx, int load)
 {
     const char *key = duk_get_string(ctx,1);  //the property we are trying to retrieve
-    char *keyc = NULL;
+    char *global_key = NULL, *s;
     int freeme=0;
+
+    if(duk_get_prop_string(ctx, 0, key) ) //see if it already exists
+        goto success_exists;
+
+    duk_pop(ctx);
 
     if( load )
     {
         // test for illegal chars for variable name, replace with '_'
         if(strchr(key,'-') != NULL || strchr(key,'.') != NULL )
         {
-            char *s;
-
-            keyc=strdup(key);
-            s=keyc;
+            global_key=strdup(key);
+            s=global_key;
 
             while(*s)
             {
@@ -4092,45 +4124,59 @@ static duk_ret_t _proxyget(duk_context *ctx, int load)
             freeme=1;
         }
         else
-            keyc=(char*)key;
+            global_key=(char*)key;
     }
-
-    if( !load && duk_get_prop_string(ctx, 0, key) ) //see if it already exists
-    {
-        return 1;
-    }
-    duk_pop(ctx);
 
     duk_get_global_string(ctx, "require");
     duk_push_sprintf(ctx, "rampart-%s",key);
     if(duk_pcall(ctx, 1) == DUK_EXEC_SUCCESS)
-    {
-        duk_dup(ctx, -1);
-        duk_put_prop_string(ctx, 0, key);
-        if(load)
-        {
-            duk_dup(ctx, -1);
-            duk_put_global_string(ctx, (const char*)keyc);
-            if(freeme) free(keyc);
-        }
-        return 1;
-    }
+        goto success;
+
     duk_pop(ctx);
 
+    // try without 'rampart-'
     duk_get_global_string(ctx, "require");
     duk_push_string(ctx, key);
-    if(duk_pcall(ctx, 1) != DUK_EXEC_SUCCESS)
+
+    if(duk_pcall(ctx, 1) == DUK_EXEC_SUCCESS)
+        goto success;
+
+    duk_pop(ctx);
+
+    if(load)
     {
-        RP_THROW(ctx, "could not find a module named 'rampart-%s' or '%s'", key, key);
+        // try lowercase, but only for rampart-*
+        char *key_lower=strdup(key);
+
+        s=key_lower;
+        while(*s) *(s++)=tolower(*s);
+        duk_get_global_string(ctx, "require");
+        duk_push_sprintf(ctx, "rampart-%s",key_lower);
+        free(key_lower);
+        if (duk_pcall(ctx, 1) == DUK_EXEC_SUCCESS)
+            goto success;
     }
+
+    // not success:
+    if(freeme) free(global_key);
+    RP_THROW(ctx, "could not find a module named 'rampart-%s' or '%s'", key, key);
+    // return
+
+    success:
+
+    // copy to actual object
     duk_dup(ctx, -1);
     duk_put_prop_string(ctx, 0, key);
+
+    success_exists:
+    // if load.key, make global.key=require('[rampart-]key')
     if(load)
     {
         duk_dup(ctx, -1);
-        duk_put_global_string(ctx, (const char*)keyc);
-        if(freeme) free(keyc);
+        duk_put_global_string(ctx, (const char*)global_key);
     }
+
+    if(freeme) free(global_key);
 
     return 1;
 }
@@ -4163,20 +4209,16 @@ void duk_rampart_init(duk_context *ctx)
 
 
     // use -- shortcut for require via proxy
-    duk_push_object(ctx);
-    duk_push_object(ctx);
+    duk_push_object(ctx); // target object
+    duk_dup(ctx, -1); // dupe for load below to share backing object
+    duk_push_object(ctx); //proxy obj handler
     duk_push_c_function(ctx, proxyget, 2);
     duk_put_prop_string(ctx, -2, "get");
     duk_push_proxy(ctx, 0);
-    duk_put_prop_string(ctx, -2, "use");
+    duk_put_prop_string(ctx, -3, "use"); // dupe object is -2, utils is -3
 
-    // load - same as "use" but puts in global namespace also
-    /* example:
-        rampart.globalize(rampart.utils);
-        load.curl;
-        var res=curl.fetch("http...");
-    */
-    duk_push_object(ctx);
+    // load - same as use but also saves in global namespace
+    //duk_push_object(ctx); -- uses duped object from above
     duk_push_object(ctx);
     duk_push_c_function(ctx, proxyload, 2);
     duk_put_prop_string(ctx, -2, "get");
