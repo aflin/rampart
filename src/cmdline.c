@@ -59,17 +59,6 @@ struct event_base **thread_base=NULL;
 struct evdns_base **thread_dnsbase=NULL;
 int nthread_dnsbase=0;
 
-#define ST_NONE 0
-#define ST_DQ   1
-#define ST_SQ   2
-#define ST_BT   3
-#define ST_BS   4
-
-#define ST_PM   20
-#define ST_PN   21
-
-
-
 /* mutex for locking main_ctx when in a thread with other duk stacks open */
 pthread_mutex_t ctxlock;
 RPTHR_LOCK *rp_ctxlock;
@@ -77,6 +66,27 @@ RPTHR_LOCK *rp_ctxlock;
 /* mutex for locking around slist operations on the timeout structures*/
 pthread_mutex_t slistlock;
 RPTHR_LOCK *rp_slistlock;
+
+char *tickify_err(int err)
+{
+    char *msg="";
+    switch (err) {
+        case ST_BT:
+            msg="unterminated or illegal template literal"; break;
+        case ST_SQ:
+        case ST_DB:
+        case ST_DQ:
+            msg="unterminated string"; break;
+        case ST_BS:
+            msg="invalid escape"; break;
+        case ST_PM:
+            msg="Rest parameter must be last formal parameter";break;
+        case ST_PN:
+            msg="Illegal parameter name";break;
+    }
+    return msg;
+}
+
 
 #define RPCOL_RED   "\x1B[31m"
 #define RPCOL_GRN   "\x1B[32m"
@@ -87,7 +97,7 @@ RPTHR_LOCK *rp_slistlock;
 #define RPCOL_WHT   "\x1B[37m"
 #define RPCOL_RESET "\x1B[0m"
 
-#define RP_REPL_GREETING   RPCOL_MAG    \
+#define RP_REPL_GREETING   "%s"         \
     "         |>>            |>>\n"     \
     "       __|__          __|__\n"     \
     "      \\  |  /         \\   /\n"   \
@@ -95,7 +105,7 @@ RPTHR_LOCK *rp_slistlock;
     "     __| o |__________| o |__\n"   \
     "    [__|_|__|(rp)|  | |______]\n"  \
     "____[|||||||||||||__|||||||||]____\n" \
-    "RAMPART__powered_by_Duktape_" DUK_GIT_DESCRIBE RPCOL_RESET
+    "RAMPART__powered_by_Duktape_" DUK_GIT_DESCRIBE "%s\n"
 
 #define RP_REPL_PREFIX "rampart> "
 #define RP_REPL_PREFIX_CONT "... "
@@ -132,7 +142,7 @@ char *serverscript =
 "\"--sslKeyFile\":     \"if https, the ssl/tls key file location\",\n"
 "\"--sslCertFile\":    \"if https, the ssl/tls cert file location\",\n"
 "\"--secure\":         \"boolean - whether to use https.  If true\",\n"
-"\"--letsencrypt\":    \"if using letsencrypt, the domain name for automatic setup of https\\n                     (looks for '/etc/letsencrypt/live/domain.com/' directory)\",\n"
+"\"--letsencrypt\":    \"if using letsencrypt, the domain name for automatic setup of https\\n                     (looks for '/etc/letsencrypt/live/domain.tld/' directory)\",\n"
 "\"--rootScripts\":    \"whether to treat *.js files in htmlRoot as apps (not secure)\",\n"
 "\"--dirList\":        \"whether to provide a directory listing if no index.html is found\",\n"
 "\"--daemon\":         \"whether to detach from terminal\",\n"
@@ -173,11 +183,11 @@ char *serverscript =
 "\"\\nUsage: rampart --[quick]server [options] root_dir\\n\" +\n"
 "\"    --server        - run as a full server\\n\" +\n"
 "\"    --quickserver   - run as a test server\\n\" +\n"
-"\"    [--help|-h]     - this help message\\n\" +\n"
+"\"    --help, -h      - this help message\\n\" +\n"
 "\"    --lsopts        - print details on all options\\n\" +\n"
 "\"    --showdefaults  - print the list of default settings for --server or --quickserver\\n\" +\n"
 "\"    --bind-all      - bind to all ip addresses (default is localhost only)\\n\" +\n"
-"\"    [-d|--detach]   - same as '--daemon true'\\n\" +\n"
+"\"    -d, --detach    - same as '--daemon true'\\n\" +\n"
 "\"    --OPTION [val]  - where OPTION is one of options listed from '--lsopts'\\n\" +\n"
 "\"    OPTION=val      - alternative format for '--OPTION val'\\n\"  +\n"
 "\"\\nIf root_dir is not specified, the current directory will be used\\n\");\n"
@@ -915,22 +925,32 @@ void run_b4loop_funcs()
 
 }
 
-static void evhandler_repl(int sig, short events, void *unused)
+static void evhandler_repl(int sig, short events, void *flag)
 {
-    signal(SIGINT, SIG_IGN);
-    signal(SIGTERM, SIG_IGN);
+    if(flag == NULL)
+    {
+        signal(SIGINT, SIG_IGN);
+        signal(SIGTERM, SIG_IGN);
+    }
+    else
+    {
+        signal(SIGINT, SIG_DFL);
+        signal(SIGTERM, SIG_DFL);
+    }
+    
 }
 
 
 char * tickify(char *src, size_t sz, int *err, int *ln);
-
+int rp_color=0;
+int rp_quiet=0;
 pthread_mutex_t repl_lock;
 #define REPL_LOCK    do {RP_PTLOCK(&repl_lock); /*printf("Locked\n"); */ } while(0)
 #define REPL_UNLOCK  do {RP_PTUNLOCK(&repl_lock); /* printf("Unlocked\n"); */} while (0)
 
 static void *repl_thr(void *arg)
 {
-    printf("%s\n", RP_REPL_GREETING);
+    char *red="", *reset="", *blue="";
     char *line=NULL, *lastline=NULL;
     char *prefix=RP_REPL_PREFIX;
     char histfn[PATH_MAX];
@@ -938,6 +958,18 @@ static void *repl_thr(void *arg)
     char *home = getenv("HOME");
     int err;
     duk_context *ctx = (duk_context *) arg;
+
+    if(rp_color)
+    {
+        red=RPCOL_RED;
+        blue=RPCOL_BLU;
+        reset=RPCOL_RESET;
+    }
+
+    if (!rp_quiet)
+    {
+        printf(RP_REPL_GREETING, blue, reset);
+    }
 
     linenoiseSetMultiLine(1);
     linenoiseSetCompletionCallback(completion);
@@ -966,7 +998,7 @@ static void *repl_thr(void *arg)
         {
             if(errno == EAGAIN) /* ctrl-c */
             {
-                printf("%spress ctrl-d to exit%s\n",RPCOL_BLU, RPCOL_RESET);
+                printf("%spress ctrl-c again to exit%s\n", blue, reset);
                 if(lastline)
                 {
                     free(lastline);
@@ -987,6 +1019,12 @@ static void *repl_thr(void *arg)
 
         if(lastline){
 
+            if(*line=='\0')
+            {
+                lastline=strcatdup(lastline, "\n");
+                free(line);
+                continue;
+            }
             lastline = strjoin(lastline, line, '\n');
             free(line);
             line=lastline;
@@ -1006,7 +1044,7 @@ static void *repl_thr(void *arg)
         }
 
         REPL_LOCK;
-
+        evhandler_repl(0, 0, (void *)1);
         duk_push_string(ctx, line);
         lastline=NULL;
 
@@ -1014,20 +1052,23 @@ static void *repl_thr(void *arg)
        if (duk_peval(ctx) != 0)
         {
             const char *errmsg=duk_safe_to_string(ctx, -1);
-            if(strstr(errmsg, "end of input") || (err && err < 4) ) //command likely spans multiple lines
+            if(strstr(errmsg, "end of input") || (err && err < 5) ) //command likely spans multiple lines
             {
                 lastline=line;
             }
+            else if(err)
+                printf("%sERR: %s%s\n", red, tickify_err(err), reset);
             else
-                printf("%sERR: %s%s\n", RPCOL_RED, errmsg, RPCOL_RESET);
+                printf("%sERR: %s%s\n", reset, errmsg, reset);
         }
         else
         {
-            printf("%s%s%s\n", RPCOL_BLU, duk_safe_to_stacktrace(ctx, -1), RPCOL_RESET);
+            printf("%s%s%s\n", blue, duk_safe_to_stacktrace(ctx, -1), reset);
         }
         duk_pop(ctx); //the results
 
         //resume loop by locking main thread
+        evhandler_repl(0, 0, NULL);
         REPL_UNLOCK;
 
         if(hfn)
@@ -2230,6 +2271,47 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
     outbeg=out;
     while(*in)
     {
+        if(getstate() == ST_DB)
+        {
+            qline=line;
+            copy('"');
+            while(*in) // everything is fair game until next ``
+            {
+                switch(*in)
+                {
+                    case '`':
+                        if(*(in+1) == '`')
+                        {
+                            in+=2;
+                            popstate();
+                            copy('"');
+                            goto end_db;
+                        }
+                        copy (*in);
+                        break;
+
+                    case '"':
+                    case '\\':
+                        copy ('\\');
+                        copy (*in);
+                        break;
+
+                    case '\n':
+                        line++;
+                        copy ('\\');
+                        copy ('n');
+                        break;
+
+                    default:
+                        copy(*in);
+                        break;
+                }
+                adv;
+            }
+            end_db:
+            if(!*in)
+                break;
+        }
         switch (*in)
         {
             case '/' :
@@ -2381,6 +2463,13 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                     char *s=in;
 
                     qline=line;
+                    if(*(s+1)=='`') //double backick = no escapes
+                    {
+                        pushstate(ST_DB);
+                        in+=2;
+                        break;
+                    }
+
                     s--;
                     while(s>=src && isspace(*s))s--;
                     while(s>=src && isalpha(*s))s--;
@@ -2622,44 +2711,42 @@ int base_loop_exited=0;
 pthread_mutex_t thr_lock;
 RPTHR_LOCK *rp_thr_lock;
 
-void check_version_help(int argc, char *argv[])
+static void print_version()
 {
-    if(argc==2)
-    {
+    printf("v%d.%d.%d\n", RAMPART_VERSION_MAJOR, RAMPART_VERSION_MINOR, RAMPART_VERSION_PATCH);
+    exit(0);
+}
 
-        if(!strcmp("-v", argv[1]) || !strcmp("--version", argv[1]))
-        {
-            printf("v%d.%d.%d\n", RAMPART_VERSION_MAJOR, RAMPART_VERSION_MINOR, RAMPART_VERSION_PATCH);
-            exit(0);
-        }
 
-        if(!strcmp("-h", argv[1]) || !strcmp("--help", argv[1]))
-        {
-            printf("Usage:\n\
-    %s file_name [args]       -- load a script from 'file_name' and run\n\
-    %s [-g]                   -- interactive mode (-g globalizes rampart.utils)\n\
-    %s -c \"script\"            -- load script from argument string\n\
-    %s [-v|--version]         -- print version\n\
-    %s --server               -- run rampart-server with default configuration\n\
-    %s --quickserver          -- run rampart-server with alternate configuration\n\
-    %s --[quick]server --help -- show help for built-in server\n\
-    %s [-h|--help]            -- this help message\n\
-\n\
+static void print_help(char *argv0)
+{
+    printf("Usage:\n\
+    %s [options] file_name [--] [args]\n\n\
+    Options:\n\
+        -g, --globalize                    - globalize rampart.utils\n\
+        -c, --command_string \"script\"      - load script from argument string\n\
+        -v, --version                      - print version\n\
+        -C, --color                        - use colors in interactive mode (repl)\n\
+        -q, --quiet                        - omit rampart logo in interactive mode (repl)\n\
+        --server                           - run rampart-server with default configuration\n\
+        --quickserver                      - run rampart-server with alternate configuration\n\
+        --[quick]server --help             - show help for built-in server\n\
+        --                                 - do not process any arguments following (but pass to script)\n\
+        -h, --help                         - this help message\n\n\
+    \"file_name\" or \"script\" may be '-' for stdin\n\n\
     Documentation can be found at https://rampart.dev/docs/\n",
-                argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
-            exit(0);
-        }
-    }
+                argv0);
+    exit(0);
 }
 
 int main(int argc, char *argv[])
 {
     struct rlimit rlp;
-    int isstdin=0, len, dirlen;
+    int isstdin=0, len, dirlen, argi, 
+        scriptarg=-1, command_string=0, server=0, globalize=0;
     char *ptr, *cmdline_src=NULL;
     struct stat entry_file_stat;
-
-    check_version_help(argc, argv);
+    duk_context *ctx;
 
     /* do this first */
     rp_thread_preinit();
@@ -2672,8 +2759,6 @@ int main(int argc, char *argv[])
 
     RP_PTINIT(&exlock);
 
-
-
     /* for later use */
     rampart_argv=argv;
     rampart_argc=argc;
@@ -2682,6 +2767,7 @@ int main(int argc, char *argv[])
 
     strcpy(argv0, argv[0]);
 
+    // find our executable and fill in some global vars from it
     len = wai_getExecutablePath(NULL, 0, NULL);
     wai_getExecutablePath(rampart_exec, len, &dirlen);
     rampart_exec[len]='\0';
@@ -2718,19 +2804,148 @@ int main(int argc, char *argv[])
     rp_ctxlock=RP_MINIT(&ctxlock);
     rp_slistlock = RP_MINIT(&slistlock);
 
-    /* get script path */
-    if(rampart_argc>1)
+    /* set max files open limit to hard limit */
+    getrlimit(RLIMIT_NOFILE, &rlp);
+    rlp.rlim_cur = rlp.rlim_max;
+    setrlimit(RLIMIT_NOFILE, &rlp);
+
+
+    /* some control over our exit */
+    signal(SIGINT, sigint_handler);
+    signal(SIGTERM, sigint_handler);
+
+    /* init setproctitle() as required */
+#ifdef RP_SPT_NEEDS_INIT
+    spt_init(argc, argv);
+#endif
+
+    /* skip past process name ("rampart") */
+    argc--;
+    argv++;
+
+    
+    /* get options */
+    for (argi=0; argi<argc; argi++)
+    {
+        char *opt = argv[argi];
+        /* stop processing options if we get a "--" */
+        if(!strcmp("--",opt))
+            break;
+        else if( *opt != '-')
+        {
+            /* the source is the first non option*/
+            if(scriptarg<0)
+                scriptarg=argi;
+        }
+        else if (*(opt+1) == '-')
+        {
+            /* long options */
+            if(!strcmp(opt,"--command-string"))
+            {
+                command_string=1;
+                argi++;
+                if(argi==argc)
+                {
+                    fprintf(stderr, "Option '--command-string' requires an argument\n");
+                    exit(1);
+                }
+                scriptarg=argi;
+            }
+            else if(!strcmp(opt,"--help"))
+            {
+                if (!server)
+                    print_help(argv0);
+            }
+            else if(!strcmp(opt,"--version"))
+                print_version();
+            else if(!strcmp(opt,"--server"))
+                server=1;
+            else if(!strcmp(opt,"--quickserver"))
+                server=2;
+            else if(!strcmp(opt,"--globalize-utils"))
+                globalize=1;
+            else if(!strcmp(opt,"--color"))
+                rp_color=1;
+            else if(!strcmp(opt,"--quiet"))
+                rp_quiet=1;
+            else if(!strcmp(opt,"--script"))
+            {
+                argi++;
+                if(argi==argc)
+                {
+                    fprintf(stderr, "Option '--script' requires an argument\n");
+                    exit(1);
+                }
+                scriptarg=argi;
+            }
+        }
+        else if (*(opt+1) == '\0')
+            /* option is just '-' */
+            isstdin=1;
+        else
+        {
+            /* short options */
+            char *o=opt+1;
+            while(*o)
+            {
+                switch(*o)
+                {
+                    case 'c':
+                        command_string=1;
+                        argi++;
+                        if(argi==argc)
+                        {
+                            fprintf(stderr, "Option '-c' requires an argument\n");
+                            exit(1);
+                        }
+                        scriptarg=argi;
+                        break;
+                    case 'g':
+                        globalize=1;
+                        break;
+                    case 'v':
+                        print_version();
+                        break;
+                    case 'h':
+                        if(!server)
+                            print_help(argv0);
+                        break;
+                    case 'C':
+                        rp_color=1;
+                        break;
+                    case 'q':
+                        rp_quiet=1;
+                        break;
+                }
+                o++;
+            }
+        }
+        
+    }
+    /* first check if we have -c "script_src" */
+    if(command_string && scriptarg)
+    {
+        if(strcmp("-",argv[scriptarg]))
+            cmdline_src=argv[scriptarg];
+        else
+            isstdin=1;
+    }
+    /* second check if we are using the server shortcut */
+    else if(server)
+    {
+        cmdline_src=serverscript;
+    }
+    else if (scriptarg>-1)
     {
         char p[PATH_MAX], *s;
-        int n=1;
 
         //script is either first arg or last
-        if((stat(argv[1], &entry_file_stat)))
+        if( stat(argv[scriptarg], &entry_file_stat) != 0 )
         {
-            n=argc-1;
+            fprintf(stderr, "error opening '%s': %s\n", argv[scriptarg], strerror(errno));
         }
 
-        strcpy(p, rampart_argv[n]);
+        strcpy(p, argv[scriptarg]);
 
         //a copy of the complete path/script.js
         RP_script=realpath(p, NULL);
@@ -2758,67 +2973,10 @@ int main(int argc, char *argv[])
 
         RP_script_path=strdup(s);
     }
-    else
+
+    if(!RP_script_path)
         RP_script_path=strdup("");
 
-
-    /* set max files open limit to hard limit */
-    getrlimit(RLIMIT_NOFILE, &rlp);
-    rlp.rlim_cur = rlp.rlim_max;
-    setrlimit(RLIMIT_NOFILE, &rlp);
-
-    mainthr=rp_new_thread(RPTHR_FLAG_THR_SAFE, NULL);
-    if (!mainthr)
-    {
-        fprintf(stderr,"could not create duktape context\n");
-        return 1;
-    }
-    duk_context *ctx = mainthr->ctx;
-    main_ctx = ctx; //global var
-    mainthr->self=pthread_self(); //not really necessary, but better set than uninitialized garbage
-
-    /* for cleanup, an array of functions */
-    duk_push_global_stash(ctx);
-    duk_push_array(ctx);
-    duk_put_prop_string(ctx, -2, "exitfuncs");
-    duk_pop(ctx);
-
-    /* some control over our exit */
-    signal(SIGINT, sigint_handler);
-    signal(SIGTERM, sigint_handler);
-
-    /* init setproctitle() as required */
-#ifdef RP_SPT_NEEDS_INIT
-    spt_init(argc, argv);
-#endif
-
-    /* skip past process name */
-    argc--;
-    argv++;
-
-    /* first check if we have -c "script_src" */
-    if(argc>1 && strcmp(argv[0],"-c")==0)
-    {
-        cmdline_src=argv[1];
-        argc-=2;
-        argv+=2;
-    }
-    /* second check if we are using the server shortcut */
-    else if(argc>0 && (strcmp(argv[0],"--server")==0 || strcmp(argv[0],"--quickserver")==0) )
-    {
-        cmdline_src=serverscript;
-    }
-
-    /* check if filename is first, for #! script */
-    if(argc>0 && (stat(argv[0], &entry_file_stat)))
-    {
-        /* skip to filename, if any, which should be last */
-        while( argc > 1)
-        {
-            argc--;
-            argv++;
-        }
-    }
     {
         char *file_src=NULL, *free_file_src=NULL, *fn=NULL, *s;
         const char *babel_source_filename;
@@ -2826,6 +2984,23 @@ int main(int argc, char *argv[])
         size_t src_sz=0;
         struct evdns_base *dnsbase=NULL;
 
+        // initialize duktape stack for the main thread
+        mainthr=rp_new_thread(RPTHR_FLAG_THR_SAFE, NULL);
+
+        if (!mainthr)
+        {
+            fprintf(stderr,"could not create duktape context\n");
+            return 1;
+        }
+        ctx = mainthr->ctx;
+        main_ctx = ctx; //global var used elsewhere
+        mainthr->self=pthread_self(); //not currently used
+
+        /* for cleanup, an array of functions */
+        duk_push_global_stash(ctx);
+        duk_push_array(ctx);
+        duk_put_prop_string(ctx, -2, "exitfuncs");
+        duk_pop(ctx);
 
         /* setTimeout and related functions */
         duk_push_c_function(ctx,duk_rp_set_timeout, DUK_VARARGS);
@@ -2847,33 +3022,40 @@ int main(int argc, char *argv[])
         duk_put_prop_string(ctx, -2, "ev_callback_object");
         duk_pop(ctx);//global stash
 
+        if(globalize )
+        {
+            duk_get_global_string(ctx, "rampart");
+            duk_get_prop_string(ctx, -1, "globalize");
+            duk_get_prop_string(ctx, -2, "utils");
+            duk_call(ctx, 1);
+            duk_pop_2(ctx); //return and rampart
+        }
+
         if(cmdline_src)
         {
             file_src=strdup(cmdline_src);
-            fn="command_line_script";
+            if(server)
+                fn="built_in_server";
+            else
+                fn="command_line_script";
             goto have_src;
         }
 
-        /* REPL */
-        if (argc == 0 || (argc == 1 && !strcmp(argv[0],"-g")) )
+        /* scriptarg equiv was '-' */
+        if(isstdin)
+            goto dofile;
+
+        if (scriptarg==-1)
         {
+            /* check if we have incoming from stdin */
             if(!isatty(fileno(stdin)))
             {
                 isstdin=1;
                 goto dofile;
             }
 
-            if(argc == 1 && !strcmp(argv[0],"-g") )
-            {
-                duk_get_global_string(ctx, "rampart");
-                duk_get_prop_string(ctx, -1, "globalize");
-                duk_get_prop_string(ctx, -2, "utils");
-                duk_call(ctx, 1);
-                duk_pop_2(ctx); //return and rampart
-            }
 
             /* ********** set up event loop for repl *************** */
-
 
             /* set up main event base */
             mainthr->base = event_base_new();
@@ -2906,8 +3088,6 @@ int main(int argc, char *argv[])
         {
             dofile:
 
-            if (!strcmp("-",argv[0]))
-                isstdin=1;
             if(isstdin)
             {
                 size_t read=0;
@@ -2998,22 +3178,7 @@ int main(int argc, char *argv[])
                 file_src = free_file_src = tickified;
                 if (err)
                 {
-                    char *msg="";
-                    switch (err) {
-                        case ST_BT:
-                            msg="unterminated or illegal template literal"; break;
-                        case ST_SQ:
-                            msg="unterminated string"; break;
-                        case ST_DQ:
-                            msg="unterminated string"; break;
-                        case ST_BS:
-                            msg="invalid escape"; break;
-                        case ST_PM:
-                            msg="Rest parameter must be last formal parameter";break;
-                        case ST_PN:
-                            msg="Illegal parameter name";break;
-                    }
-                    fprintf(stderr, "SyntaxError: %s (line %d)\n", msg, lineno);
+                    fprintf(stderr, "SyntaxError: %s (line %d)\n", tickify_err(err), lineno);
                     /* file_src is NULL*/
                     return(1);
                 }

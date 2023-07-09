@@ -189,18 +189,7 @@ static duk_ret_t rp_eval_js(duk_context *ctx)
         char *tickified = tickify(source, strlen(source), &err, &lineno);
         if (err)
         {
-            char *msg="";
-            switch (err) {
-                case ST_BT:
-                    msg="unterminated or illegal template literal"; break;
-                case ST_SQ:
-                    msg="unterminated string"; break;
-                case ST_DQ:
-                    msg="unterminated string"; break;
-                case ST_BS:
-                    msg="invalid escape"; break;
-            }
-            RP_THROW(ctx, "SyntaxError: %s (line %d of eval code)\n", msg, lineno);
+            RP_THROW(ctx, "SyntaxError: %s (line %d of eval code)\n", tickify_err(err), lineno);
         }
 
         duk_push_string(ctx, tickified);

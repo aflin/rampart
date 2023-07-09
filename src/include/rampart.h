@@ -569,15 +569,19 @@ RPPATH rp_get_home_path(char *file, char *subdir);
 extern char *main_babel_opt;
 const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mtime, int exclude_strict, char *opt);
 
-/* tickify in cmdline.c */
-char * tickify(char *src, size_t sz, int *err, int *ln);
-
 /* end states for tickify */
 #define ST_NONE 0
 #define ST_DQ   1
 #define ST_SQ   2
 #define ST_BT   3
-#define ST_BS   4
+#define ST_DB   4
+#define ST_BS   5
+
+#define ST_PM   20
+#define ST_PN   21
+
+char *tickify(char *src, size_t sz, int *err, int *ln);
+char *tickify_err(int err);
 
 extern pthread_mutex_t loglock;
 extern pthread_mutex_t errlock;
