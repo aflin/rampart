@@ -1059,7 +1059,7 @@ static void *repl_thr(void *arg)
             else if(err)
                 printf("%sERR: %s%s\n", red, tickify_err(err), reset);
             else
-                printf("%sERR: %s%s\n", reset, errmsg, reset);
+                printf("%sERR: %s%s\n", red, errmsg, reset);
         }
         else
         {
