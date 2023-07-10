@@ -4149,7 +4149,8 @@ static duk_ret_t _proxyget(duk_context *ctx, int load)
         char *key_lower=strdup(key);
 
         s=key_lower;
-        while(*s) *(s++)=tolower(*s);
+        //while(*s) *(s++)=tolower(*s); --compiler warning
+        for(; *s; *s=tolower(*s),s++);
         duk_get_global_string(ctx, "require");
         duk_push_sprintf(ctx, "rampart-%s",key_lower);
         free(key_lower);
