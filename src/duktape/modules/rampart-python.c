@@ -308,13 +308,13 @@ static void init_python(const char *program_name, char *ppath)
 
     state=PYLOCK;
 
-    paths = PyTuple_New((Py_ssize_t) 4);
-    PyTuple_SetItem(paths, (Py_ssize_t) 0, PyUnicode_FromString( "./"  ));
-    PyTuple_SetItem(paths, (Py_ssize_t) 1, PyUnicode_FromString( ppath  ));
+    paths = PyList_New((Py_ssize_t) 4);
+    PyList_SetItem(paths, (Py_ssize_t) 0, PyUnicode_FromString( "./"  ));
+    PyList_SetItem(paths, (Py_ssize_t) 1, PyUnicode_FromString( ppath  ));
     snprintf(tpath, PATH_MAX, "%s/site-packages", ppath);
-    PyTuple_SetItem(paths, (Py_ssize_t) 2, PyUnicode_FromString( tpath  ));
+    PyList_SetItem(paths, (Py_ssize_t) 2, PyUnicode_FromString( tpath  ));
     snprintf(tpath, PATH_MAX, "%s/lib-dynload", ppath);
-    PyTuple_SetItem(paths, (Py_ssize_t) 3, PyUnicode_FromString( tpath  ));
+    PyList_SetItem(paths, (Py_ssize_t) 3, PyUnicode_FromString( tpath  ));
 
     PySys_SetObject("path", paths);
 
