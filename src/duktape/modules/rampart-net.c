@@ -466,6 +466,25 @@ static int do_callback(duk_context *ctx, const char *ev_s, duk_idx_t nargs)
     return 0;
 }
 
+duk_ret_t duk_rp_net_x_trigger(duk_context *ctx)
+{
+    const char *argzero = REQUIRE_STRING(ctx, 0, "first argument must be a string (name of event to trigger)");
+    char *ev = strdup(argzero);
+    duk_idx_t nargs = 0;
+
+    duk_push_this(ctx);
+    duk_replace(ctx, 0); //remove event name string, replace with 'this'
+
+    if(duk_is_undefined(ctx,1)) // no arg
+        duk_pop(ctx); //get rid of undefined
+    else
+        nargs=1;
+
+    do_callback(ctx, ev, nargs);
+
+    return 0;
+}
+
 /* get put or delete a key from a named object in global stash.
    return 1 if successful, leave retrieved, put or deleted value on stack;
    return 0 if fail(get), doesn't exist(delete) and leave undefined on stack.
@@ -3520,7 +3539,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
         duk_put_prop_string(ctx, -2, "connect");
 
         // socket.write()
-        duk_push_c_function(ctx, socket_write,1);
+        duk_push_c_function(ctx, socket_write, 1);
         duk_put_prop_string(ctx, -2, "write");
 
         // socket.on()
@@ -3532,6 +3551,10 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
         duk_push_c_function(ctx, duk_rp_net_x_off, 2);
         duk_put_prop_string(ctx, -2, "off");
+
+        // socket.trigger()
+        duk_push_c_function(ctx, duk_rp_net_x_trigger, 2);
+        duk_put_prop_string(ctx, -2, "trigger");
 
         //socket.destroy()
         duk_push_c_function(ctx, socket_destroy, 1);
