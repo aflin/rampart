@@ -2146,8 +2146,6 @@ static void attachbuf(DHS *dhs, duk_idx_t idx)
         s = duk_steal_buffer(ctx, idx, &sz);
         freeme->ctx = ctx;
         freeme->threadno = (int)dhs->threadno;
-        if( dhs->req->cb_has_websock)
-            freeme->threadno += totnthreads;
         evbuffer_add_reference(dhs->req->buffer_out, s, (size_t)sz, refcb, freeme);
     }
 }
@@ -4203,8 +4201,6 @@ static void http_callback(evhtp_request_t *req, void *arg)
             /* no timeout */
             evhtp_connection_set_timeouts(evhtp_request_get_connection(req), NULL, NULL);
             /* get context that is specifically for websockets (with no timeouts allowed) */
-            //dhs->ctx = thread_ctx[thrno+totnthreads];
-            //dhs->threadno = (uint16_t)thrno + (uint16_t)totnthreads;
             dhs->ctx = thr->wsctx;
             thr->ctx = thr->wsctx;  //switch back after this event is done.
         }
