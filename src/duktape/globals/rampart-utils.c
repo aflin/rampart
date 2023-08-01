@@ -23,6 +23,7 @@
 #include <termios.h>
 #include <string.h>
 #include "rampart.h"
+#include "../linenoise.h"
 char modules_dir[PATH_MAX];
 /*
     defined in main program here
@@ -4644,6 +4645,86 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
     return (1);
 }
 
+static duk_ret_t repl_next(duk_context *ctx) {
+    char *line = NULL;
+    const char *prompt="";
+
+    duk_push_this(ctx);
+    if(duk_get_prop_string(ctx, -1, "_prompt"))
+    {
+        prompt=duk_to_string(ctx, -1);
+    }
+    duk_pop(ctx);
+
+    line = linenoise(prompt);
+    if(!line)
+    {
+        duk_push_null(ctx);
+        return 1;
+    }
+
+    linenoiseHistoryAdd(line);
+    duk_push_string(ctx, line);
+    free(line);
+    return 1;
+}
+
+static duk_ret_t rp_repl(duk_context *ctx) {
+    // todo: completion, probably should be a js func;
+    // char **compl = NULL;
+    const char *history_file=NULL, *prompt="";
+    int history=1024, hret;
+
+    if(duk_is_object(ctx, 0))
+    {
+        if(duk_get_prop_string(ctx, 0, "history"))
+        {
+            history=REQUIRE_UINT(ctx, -1, "repl: option 'history' must be a positive Number");
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, 0, "historyFile"))
+        {
+            history_file=REQUIRE_STRING(ctx, -1, "repl: option 'historyFile' must be a String");
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, 0, "prompt"))
+        {
+            prompt=REQUIRE_STRING(ctx, -1, "repl: option 'prompt' must be a String");
+        }
+        duk_pop(ctx);
+    }
+    else if (duk_is_string(ctx,0))
+    {
+        prompt = duk_get_string(ctx, 0);
+    }
+    else if (!duk_is_undefined(ctx, 0))
+        RP_THROW(ctx, "repl: argument must be an Object of options, or a string (prompt)");
+
+    //linenoiseSetMultiLine(1);
+    linenoiseHistorySetMaxLen(history);
+
+    duk_push_object(ctx);
+    duk_push_c_function(ctx, repl_next, 0);
+    duk_put_prop_string(ctx, -2, "next");
+    duk_push_string(ctx, prompt);
+    duk_put_prop_string(ctx, -2, "_prompt");
+
+    if(history_file)
+    {
+        hret=linenoiseHistoryLoad(history_file);
+        if(hret)
+            RP_THROW(ctx, "repl: history error - %s", strerror(errno));
+
+        duk_push_string(ctx, history_file);
+        duk_put_prop_string(ctx, -2, "_history_file");
+    }
+
+    return 1;
+}
+
+
 static char getch(duk_context *ctx) {
         char buf = 0;
         struct termios old = {0};
@@ -5023,14 +5104,14 @@ duk_ret_t duk_rp_bprintf(duk_context *ctx)
 
 duk_ret_t duk_rp_abprintf(duk_context *ctx)
 {
-    duk_size_t start, total;
-    char *buffer = REQUIRE_BUFFER_DATA(ctx, 0, &start, "abprintf: first argument must be a Buffer");
+    duk_size_t start, total, sz;
+    char *newbuf, *buffer = REQUIRE_BUFFER_DATA(ctx, 0, &sz, "abprintf: first argument must be a Buffer");
 
     if(duk_is_number(ctx, 1))
     {
         int istart = duk_get_int(ctx, 1);
         if(istart < 0)
-            istart = (int)start + istart; // -1 is end
+            istart = (int)sz + istart; // -1 is end
         if(istart < 0)
             start=0;
         else
@@ -5038,17 +5119,19 @@ duk_ret_t duk_rp_abprintf(duk_context *ctx)
 
         duk_remove(ctx,1);
     }
+    else
+        start=sz;
 
     total = rp_printf(_out_null, NULL, (size_t)-1, ctx, 1, NULL);
 
     total += start;
 
-    duk_to_dynamic_buffer(ctx, 0, NULL);
-    buffer = duk_resize_buffer(ctx, 0, total);
+    newbuf=duk_push_fixed_buffer(ctx, total);
+    memcpy(newbuf, buffer, (size_t)start);
 
-    (void)rp_printf(_out_buffer, buffer+start, (size_t)-1, ctx, 1, NULL);
+    (void)rp_printf(_out_buffer, newbuf+start, (size_t)-1, ctx, 1, NULL);
 
-    duk_pull(ctx, 0);
+    //duk_pull(ctx, 0);
 
     return 1;
 }
@@ -5460,6 +5543,9 @@ void duk_printf_init(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_rp_getchar, 2);
     duk_put_prop_string(ctx, -2, "getchar");
+
+    duk_push_c_function(ctx, rp_repl, 1);
+    duk_put_prop_string(ctx, -2, "repl");
 
     duk_push_c_function(ctx, duk_rp_fwrite, 4);
     duk_put_prop_string(ctx, -2, "fwrite");
