@@ -4645,6 +4645,11 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
     return (1);
 }
 
+static duk_ret_t repl_refresh(duk_context *ctx) {
+    linenoise_refresh();
+    return 0;
+}
+
 static duk_ret_t repl_next(duk_context *ctx) {
     char *line = NULL;
     const char *prompt="";
@@ -4708,6 +4713,8 @@ static duk_ret_t rp_repl(duk_context *ctx) {
     duk_push_object(ctx);
     duk_push_c_function(ctx, repl_next, 0);
     duk_put_prop_string(ctx, -2, "next");
+    duk_push_c_function(ctx, repl_refresh, 0);
+    duk_put_prop_string(ctx, -2, "refresh");
     duk_push_string(ctx, prompt);
     duk_put_prop_string(ctx, -2, "_prompt");
 
@@ -5545,6 +5552,8 @@ void duk_printf_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "getchar");
 
     duk_push_c_function(ctx, rp_repl, 1);
+    duk_push_c_function(ctx, repl_refresh, 0);
+    duk_put_prop_string(ctx, -2, "refresh");
     duk_put_prop_string(ctx, -2, "repl");
 
     duk_push_c_function(ctx, duk_rp_fwrite, 4);

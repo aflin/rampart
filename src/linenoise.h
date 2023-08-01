@@ -67,6 +67,7 @@ void linenoiseSetMultiLine(int ml);
 void linenoisePrintKeyCodes(void);
 void linenoiseMaskModeEnable(void);
 void linenoiseMaskModeDisable(void);
+void linenoise_refresh(void); // -- ajf
 
 #ifdef __cplusplus
 }

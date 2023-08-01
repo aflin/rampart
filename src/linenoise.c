@@ -783,6 +783,14 @@ void linenoiseEditDeletePrevWord(struct linenoiseState *l) {
     refreshLine(l);
 }
 
+//added so we can manually restore state -- ajf
+struct linenoiseState *linenoise_lnstate;
+
+void linenoise_refresh() {
+    if(linenoise_lnstate)
+        refreshLine(linenoise_lnstate);
+}
+
 /* This function is the core of the line editing capability of linenoise.
  * It expects 'fd' to be already in "raw mode" so that every key pressed
  * will be returned ASAP to read().
@@ -812,6 +820,8 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
     /* Buffer starts empty. */
     l.buf[0] = '\0';
     l.buflen--; /* Make sure there is always space for the nulterm */
+
+    linenoise_lnstate=&l; //-- ajf
 
     /* The latest history entry is always our current buffer, that
      * initially is just an empty string. */
@@ -1020,6 +1030,7 @@ static int linenoiseRaw(char *buf, size_t buflen, const char *prompt) {
 
     if (enableRawMode(STDIN_FILENO) == -1) return -1;
     count = linenoiseEdit(STDIN_FILENO, STDOUT_FILENO, buf, buflen, prompt);
+    linenoise_lnstate=NULL; //-ajf
     disableRawMode(STDIN_FILENO);
     printf("\n");
     return count;
