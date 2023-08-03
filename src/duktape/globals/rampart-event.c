@@ -537,7 +537,9 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
     timeout.tv_sec=0;
     timeout.tv_usec=0; 
 
-    if(action == JSEVENT_TRIGGER)
+    /* if triggering and we are passing a variable, keep a refcount so
+       we know when we are done using it                              */
+    if(action == JSEVENT_TRIGGER && varno > -1)
     {
         REMALLOC(refcount, sizeof(int));
         *refcount=0;
