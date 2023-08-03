@@ -9,6 +9,7 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/file.h>
+#include <sys/select.h>
 #include <unistd.h>
 #include <errno.h>
 #include <dirent.h>
@@ -1608,13 +1609,13 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
         //find first valid utf-8 char
         while(*s>127 && *s < 192)
             s++;
-        
+
         //find last complete utf-8 char
         if(*e>127)
         {
             while(*e > 127 && *e < 192)
                 e--;
-                //printf("*e=%d, offset=%d\n", (int)*e, (int)( (uint64_t)(buf+off) - (uint64_t)e));  
+                //printf("*e=%d, offset=%d\n", (int)*e, (int)( (uint64_t)(buf+off) - (uint64_t)e));
             if( ! (
                 (*e > 239 && (e + 4 == buf+off )) ||
                 (*e > 223 && *e < 240 && (e + 3 == buf+off )) ||
@@ -1649,8 +1650,129 @@ duk_ret_t duk_rp_readln_finalizer(duk_context *ctx)
     return 0;
 }
 
+static duk_ret_t readline_next_fifo(duk_context *ctx)
+{
+    FILE *fp;
+    char *buf=NULL;
+#define READFIFO_BUFSIZE 256
+    size_t bufsize=READFIFO_BUFSIZE;
+    int to=-1, toret, fd;
+    struct timeval timeout, *timeoutp=NULL;
+    uint64_t timemarker, tmcur, elapsed;
+    struct timespec ts;
+    fd_set read_fds;
 
-//TODO: add read lock if not stdin
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("fd"));
+    fd = duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("filepointer"));
+    fp = duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    duk_get_prop_string(ctx, -1, "_timeout");
+    to = duk_get_int_default(ctx,  -1, -1);
+    duk_pop(ctx);
+
+    REMALLOC(buf, bufsize);
+
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK);
+
+    FD_ZERO(&read_fds);
+    FD_SET(fd, &read_fds);
+
+    if(to>-1)
+    {
+        timeout.tv_sec = (time_t)to/1000;
+        timeout.tv_usec = 1000 * ((long)(to) - (long)timeout.tv_sec*1000);
+        timeoutp=&timeout;
+    }
+
+    clock_gettime(CLOCK_REALTIME, &ts);
+
+    toret=select(fd + 1, &read_fds, NULL, NULL, timeoutp);
+
+    timemarker = ts.tv_sec *1000 + ts.tv_nsec/1000000;
+
+    if (toret == -1)
+    {
+        free(buf);
+        RP_THROW(ctx, "Error in fifo timeout");
+    }
+    else if (toret == 0)
+    {
+        duk_push_null(ctx);
+        free(buf);
+    }
+    else
+    {
+        int i=0,c,remto;
+
+        if (!fp)
+        {
+            fp = fdopen(fd, "r");
+            if (fp == NULL)
+            {
+                free(buf);
+                RP_THROW(ctx, "readline: error opening file: %s", strerror(errno));
+            }
+            duk_push_pointer(ctx, fp);
+            duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
+        }
+
+        while(1)
+        {
+            c=getc(fp);
+
+            if(c!=EOF)
+            {
+                buf[i]=c;
+
+                i++;
+                if(c=='\n')
+                    break;
+            }
+
+            clock_gettime(CLOCK_REALTIME, &ts);
+            tmcur = ts.tv_sec *1000 + ts.tv_nsec/1000000;
+            elapsed = tmcur - timemarker;
+
+            if(elapsed > to)
+                break;
+
+            remto = to-elapsed;
+
+            timeout.tv_sec = (time_t)remto/1000;
+            timeout.tv_usec = 1000 * ((long)(remto) - (long)timeout.tv_sec*1000);
+
+            toret=select(fd+1, &read_fds, NULL, NULL, timeoutp);
+
+            if (toret == -1)
+            {
+                free(buf);
+                RP_THROW(ctx, "Error in fifo timeout");
+            }
+            else if (toret == 0)
+                break;
+
+            if(i >= bufsize)
+            {
+                bufsize+=READFIFO_BUFSIZE;
+                REMALLOC(buf, bufsize);
+            }
+
+        }
+
+        duk_push_lstring(ctx, buf, (duk_size_t)i);
+        free(buf);
+    }
+    return 1;
+}
+
+
+//TODO: add read lock if not stdin ??
 static duk_ret_t readline_next(duk_context *ctx)
 {
     FILE *fp;
@@ -1703,7 +1825,12 @@ static duk_ret_t readline_next(duk_context *ctx)
 
 #define RTYPE_STDIN 0
 #define RTYPE_HANDLE 1
-#define RTYPE_FILENAME 2
+#define RTYPE_FILE 2
+
+/* if type is not 0, check for fifo and if so, set type to fd
+   if fifo also sets f to NULL
+   All failures throw js exceptions
+*/
 
 #define getreadfile(ctx,idx,fname,filename,type) ({\
     FILE *f=NULL;\
@@ -1724,10 +1851,26 @@ static duk_ret_t readline_next(duk_context *ctx)
         duk_pop(ctx);\
     } else {\
         filename = REQUIRE_STRING(ctx, idx, "%s - first argument must be a string or rampart.utils.stdin", fname);\
-        f = fopen(filename, "r");\
-        if (f == NULL)\
-            RP_THROW(ctx, "%s: error opening '%s': %s", fname, filename, strerror(errno));\
-        type=RTYPE_FILENAME;\
+        if(type){/* look for fifo */\
+            struct stat sb;\
+            if(stat(filename,&sb))\
+                RP_THROW(ctx, "%s: error opening '%s': %s", fname, filename, strerror(errno));\
+            if((sb.st_mode & S_IFMT) == S_IFIFO){\
+                type=open(filename, O_RDONLY | O_NONBLOCK);\
+                if(type==-1)\
+                    RP_THROW(ctx, "%s: error opening '%s': %s", fname, filename, strerror(errno));\
+            } else {\
+                f = fopen(filename, "r");\
+                if (f == NULL)\
+                    RP_THROW(ctx, "%s: error opening '%s': %s", fname, filename, strerror(errno));\
+            }\
+        } else {\
+            f = fopen(filename, "r");\
+            if (f == NULL){\
+                RP_THROW(ctx, "%s: error opening '%s': %s", fname, filename, strerror(errno));\
+                type=RTYPE_FILE;\
+            }\
+        }\
     }\
     f;\
 })
@@ -1736,7 +1879,7 @@ duk_ret_t duk_rp_readline(duk_context *ctx)
 {
     const char *filename="";
     FILE *f;
-    int type;
+    int type=1;
 
     f=getreadfile(ctx, 0, "readLine", filename, type);
 
@@ -1748,10 +1891,26 @@ duk_ret_t duk_rp_readline(duk_context *ctx)
     duk_push_pointer(ctx,f);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filepointer"));
 
-    duk_push_c_function(ctx,readline_next,0);
+    if(f==NULL) //its a fifo
+    {
+        int to=-1;
+        if(!duk_is_undefined(ctx, 1))
+            to=REQUIRE_UINT(ctx, 1, "readline: second argument must be a positive integer (timeout for fifo read)");
+
+        duk_push_int(ctx, to);
+        duk_put_prop_string(ctx, -2, "_timeout");
+
+        duk_push_int(ctx, type);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("fd"));
+
+        duk_push_c_function(ctx,readline_next_fifo,0);
+    }
+    else
+        duk_push_c_function(ctx,readline_next,0);
+
     duk_put_prop_string(ctx, -2, "next");
 
-    if(type==RTYPE_FILENAME)
+    if(type >= RTYPE_FILE)
     {
         duk_push_c_function(ctx,duk_rp_readln_finalizer,1);
         duk_set_finalizer(ctx, -2);
@@ -3895,7 +4054,7 @@ duk_ret_t duk_rp_hll_addfile(duk_context *ctx)
     char delim='\n';
     FILE *f;
     const char *filename="";
-    int type;
+    int type=0;
     char *line = NULL;
     size_t len = 0;
     int nread;
@@ -3942,7 +4101,7 @@ duk_ret_t duk_rp_hll_addfile(duk_context *ctx)
 
     free(line);
 
-    if(type==RTYPE_FILENAME)
+    if(type >= RTYPE_FILE)
         fclose(f);
 
     duk_push_this(ctx);
@@ -4276,7 +4435,7 @@ void duk_rampart_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "queryToObject");
     duk_push_c_function(ctx, duk_rp_read_file, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "readFile");
-    duk_push_c_function(ctx, duk_rp_readline, 1);
+    duk_push_c_function(ctx, duk_rp_readline, 2);
     duk_put_prop_string(ctx, -2, "readLine");
 //    duk_push_c_function(ctx, duk_rp_readln, 1);
 //    duk_put_prop_string(ctx, -2, "readln");
@@ -4581,9 +4740,9 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
     int isz=-1;
     const char *filename="";
     duk_idx_t idx=1;
-    int type, retstr=0;;
+    int type=0, retstr=0;;
 
-    f=getreadfile(ctx, 0, "fread", filename, type);//type is set
+    f=getreadfile(ctx, 0, "fread", filename, type);//type is reset
 
     /* check for boolean in idx 1,2 or 3 */
     if(duk_is_boolean(ctx, idx) || duk_is_boolean(ctx, ++idx) || duk_is_boolean(ctx, ++idx))
@@ -4639,7 +4798,7 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
     if(retstr)
         duk_buffer_to_string(ctx, -1);
 
-    if(type==RTYPE_FILENAME)
+    if(type >= RTYPE_FILE)
         fclose(f);
 
     return (1);
@@ -4766,7 +4925,8 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gettype)
 
     if(!gettype)
     {
-        f=getreadfile(ctx, 0, fn, filename, type);//type is set
+        type=0;
+        f=getreadfile(ctx, 0, fn, filename, type);//type is reset
         duk_remove(ctx,0);
     }
 
@@ -4825,7 +4985,7 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gettype)
         }
     }
 
-    if(type==RTYPE_FILENAME)
+    if(type >= RTYPE_FILE)
         fclose(f);
 
     duk_push_string(ctx, buf);
