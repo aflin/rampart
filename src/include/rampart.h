@@ -553,6 +553,9 @@ duk_ret_t duk_rp_set_to(duk_context *ctx, int repeat, const char *fname, timeout
 void timespec_add_ms(struct timespec *ts, duk_double_t add);
 duk_double_t timespec_diff_ms(struct timespec *ts1, struct timespec *ts2);
 
+/* event functions */
+duk_ret_t duk_rp_trigger_event(duk_context *ctx);
+
 typedef int (net_callback)(void *);
 
 #define RPPATH struct rp_path_s

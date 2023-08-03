@@ -182,6 +182,25 @@ int debugl=rpydebug;
     _s;\
 })
 
+#define forkwrite(b,c) ({\
+    int r=0;\
+    r=write(finfo->writer, (b),(c));\
+    if(r==-1) {\
+        fprintf(stderr, "fork write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,finfo->writer);\
+        if(is_child) {fprintf(stderr, "child proc exiting\n");exit(0);}\
+    };\
+    r;\
+})
+
+#define forkread(b,c) ({\
+    int r=0;\
+    r= read(finfo->reader,(b),(c));\
+    if(r==-1) {\
+        fprintf(stderr, "fork read failed: '%s' at %d\n",strerror(errno),__LINE__);\
+        if(is_child) {fprintf(stderr, "child proc exiting\n");exit(0);}\
+    };\
+    r;\
+})
 
 
 /* ********* Marshal-like pickle functions **********/
@@ -252,13 +271,31 @@ static char *get_exception(char *buf)
             {
                 PyTracebackObject* traceRoot = (PyTracebackObject*)ptraceback;
                 PyTracebackObject* pTrace = traceRoot;
-                int i=1;
+                int i=0, total=0;
                 
+                // reverse the order to match duktape error ordering.
                 while (pTrace != NULL)
                 {
+                    total++;
+                    pTrace = pTrace->tb_next;
+                }
+
+                PyTracebackObject *rtrace[total];
+
+                pTrace = traceRoot;
+                while (pTrace != NULL)
+                {
+                    i++;
+                    rtrace[total-i] = pTrace;
+                    pTrace = pTrace->tb_next;
+                }
+
+                for (i=0; i<total;i++)
+                {
+                    pTrace = rtrace[i];
+
                     PyFrameObject* frame = pTrace->tb_frame;
                     PyCodeObject* code = PyFrame_GetCode(frame);
-
                     int lineNr = PyFrame_GetLineNumber(frame);
                     const char *sCodeName = PyUnicode_AsUTF8(code->co_name);
                     const char *sFileName = PyUnicode_AsUTF8(code->co_filename);
@@ -266,13 +303,12 @@ static char *get_exception(char *buf)
                     len = snprintf(s, left, "\n    at python:%s (%s:%d)", sCodeName, sFileName, lineNr);
                     left-=len;
                     s+=len;
-                    i++;
                     if(len<0)
                         break;
-                    pTrace = pTrace->tb_next;
                 }       
             }
         }
+
         else
             sprintf(buf, err_msg);
     }
@@ -289,7 +325,354 @@ static char *get_exception(char *buf)
 
 
 /* init python */
+static void push_ptype(duk_context *ctx, PyObject * pyvar);
+static void start_pytojs(duk_context *ctx);
 
+static PyObject * type_to_pytype(duk_context *ctx, duk_idx_t idx);
+static void start_jstopy(duk_context *ctx);
+
+#define PFI struct python_fork_info_s
+PFI
+{
+    int reader;         // pipe to read from, in parent or child
+    int writer;         // pipe to write to, in parent or child
+    pid_t childpid;     // process id of the child if in parent (return from fork())
+    duk_context *ctx;   // the ctx to use in the fork (same as current thread)
+};
+
+PFI **pyforkinfo = NULL;
+static int n_pfi=0;
+PFI finfo_d;
+
+static PFI *check_fork();
+
+//
+
+static int send_val(PFI* finfo, PyObject *pRef, char *err)
+{
+    PyObject *pBytes=NULL;
+    PyGILState_STATE state;
+    if(err)
+    {
+        size_t err_sz = strlen(err)+1;
+        if(forkwrite("e", sizeof(char)) == -1)
+            return 0;
+
+        if(forkwrite(&err_sz, sizeof(size_t)) == -1)
+            return 0;
+
+        if(forkwrite(err, err_sz) == -1)
+            return 0;
+        return 1;
+    }
+
+    if(pRef == NULL)
+    {
+        if(forkwrite("n", sizeof(char)) == -1)
+            return 0;
+        return 1;
+    }
+
+
+    state=PYLOCK;
+    pBytes=PyPickle_WriteObjectToString(pRef,Py_MARSHAL_VERSION);
+
+    if(!pBytes)
+    {
+
+        PyErr_Clear(); //clear error from failed pickle
+
+        // this object cannot be pickled.  We need to store it in this proc
+        PyObject *pResStr = PyObject_Str(pRef);
+        const char *str = PyUnicode_AsUTF8(pResStr);
+        size_t str_sz = strlen(str) + 1;
+
+        RP_Py_XDECREF(pResStr);
+
+        PYUNLOCK(state);
+
+        if(forkwrite("s", sizeof(char)) == -1)
+            return 0;
+
+        if(forkwrite(&str_sz, sizeof(size_t)) == -1)
+            return 0;
+
+        if(forkwrite(str, str_sz) == -1)
+            return 0;
+    }
+    else
+    {
+        Py_ssize_t pickle_sz;
+        char *pickle;
+
+        dprintf(4,"extracting bytes from pBytes=%p\n", pBytes);
+        PyBytes_AsStringAndSize( pBytes, &pickle, &pickle_sz );
+        pickle_sz++;
+
+        PYUNLOCK(state);
+
+        if(forkwrite("m", sizeof(char)) == -1)
+            return 0;
+
+        if(forkwrite(&pickle_sz, sizeof(Py_ssize_t)) == -1)
+            return 0;
+
+        dprintf(4,"bytes sz=%d\n", (int)pickle_sz);
+        if(forkwrite(pickle, pickle_sz) == -1)
+            return 0;
+    }
+    return 1;
+}
+
+static PyObject *rp_trigger(PyObject *self, PyObject *args)
+{
+    RPTHR *thr = get_current_thread();
+    duk_context *ctx = thr->ctx;
+    const char *ev;
+    PyObject *evarg=NULL;
+    PFI *finfo=&finfo_d;
+
+    if (!PyArg_ParseTuple(args, "s|O", &ev, &evarg))
+        return NULL;
+
+    /* if we are child process */
+    if(is_child)
+    {
+        size_t str_sz = strlen(ev)+1;
+        if(forkwrite("t", sizeof(char)) == -1)
+        {
+            fprintf(stderr,"rampart.triggerEvent: pipe error in child\n");
+            exit(1);
+        }
+        if(forkwrite(&str_sz, sizeof(size_t)) == -1)
+        {
+            fprintf(stderr,"rampart.triggerEvent: pipe error in child\n");
+            exit(1);
+        }
+
+        if(forkwrite(ev, str_sz) == -1)
+        {
+            fprintf(stderr,"rampart.triggerEvent: pipe error in child\n");
+            exit(1);
+        }
+
+        if(!send_val(finfo, evarg, NULL))
+        {
+            fprintf(stderr,"rampart.triggerEvent: pipe error in child\n");
+            exit(1);
+        }
+
+        return Py_None;
+    }
+
+    /* no fork */
+
+    duk_push_c_function(ctx, duk_rp_trigger_event, 2); //rampart.event.trigger
+    duk_push_string(ctx, ev); // event name
+    if(evarg)
+    {
+        start_pytojs(ctx);
+        push_ptype(ctx, evarg);   // translate python var to js var 
+    }
+    else
+        duk_push_undefined(ctx);
+    duk_call(ctx, 2);         // call rampart.event.trigger(ev,evarg)
+
+    return Py_None;
+}
+
+PyObject *receive_pval(PFI *finfo, char **err)
+{
+    PyObject *pValue=NULL;
+    char type='X';
+    char *str=NULL;
+    size_t str_sz=0;
+
+    /* get var type */
+    if(forkread(&type, sizeof(char)) == -1)
+        return NULL;
+
+    dprintf(4, "got val from child, type %c\n",type);
+
+    *err=NULL;
+    if(type=='e')
+    {
+        if(forkread(&str_sz, sizeof(size_t)) == -1)
+            return NULL;
+        REMALLOC(str, (size_t)str_sz);
+
+        if(forkread(str, str_sz) == -1)
+        {
+            free(str);
+            return NULL;
+        }
+
+        *err = str;
+
+        return NULL;
+    }
+    else if(type=='m')
+    {
+        char *pickle=NULL;
+        Py_ssize_t pickle_sz=0;
+
+        if(forkread(&pickle_sz, sizeof(Py_ssize_t)) == -1)
+            return NULL;
+
+        REMALLOC(pickle, (size_t)pickle_sz);
+
+        if(forkread(pickle, pickle_sz) == -1)
+        {
+            free(pickle);
+            return NULL;
+        }
+
+        pValue=PyPickle_ReadObjectFromString((const char*)pickle, pickle_sz);
+
+        free(pickle);
+    }
+    else if (type=='s')
+    {
+        if(forkread(&str_sz, sizeof(size_t)) == -1)
+            return NULL;
+
+        REMALLOC(str, (size_t)str_sz);
+
+        if(forkread(str, str_sz) == -1)
+        {
+            free(str);
+            return NULL;
+        }
+
+        dprintf(4, "got string val from child, %s\n", str);
+
+        pValue = PyUnicode_FromString(str);
+        free(str);
+    }
+    else if (type !='n') // if anything but n or the above
+    {
+        fprintf(stderr,"rampart.call: pipe error in child\n");
+        exit(1);
+    }
+
+    return pValue;
+}
+
+static PyObject *rp_call(PyObject *self, PyObject *args)
+{
+    RPTHR *thr = get_current_thread();
+    duk_context *ctx = thr->ctx;
+    const char *funcname;
+    PyObject *pSlice=NULL, *pRet=Py_None;
+    PFI *finfo=&finfo_d;
+    Py_ssize_t tsize=0;
+    int i=0;
+
+    pSlice=PyTuple_GetSlice(args, 0, 1);
+
+    if (!PyArg_ParseTuple(pSlice, "s", &funcname))
+        return NULL;
+
+    tsize = PyTuple_Size(args);
+
+    /* if we are child process */
+    if(is_child)
+    {
+        char *err=NULL;
+        if(forkwrite("c", sizeof(char)) == -1)
+        {
+            fprintf(stderr,"rampart.call: pipe error in child\n");
+            exit(1);
+        }
+
+        if(!send_val(finfo, args, NULL))
+        {
+            fprintf(stderr,"rampart.call: pipe error in child\n");
+            exit(1);
+        }
+
+        pRet = receive_pval(finfo, &err);
+
+        if(err)
+        {
+            PyErr_SetString(PyExc_RuntimeError, err);
+            free(err);
+            return NULL;
+        }
+
+        // if err and pret are NULL, this is a pipe error
+        if(!pRet)
+        {
+            fprintf(stderr,"rampart.call: pipe error in child\n");
+        }
+
+        return pRet;
+    }
+
+    /* no fork */
+
+    if(!duk_get_global_string(ctx, funcname))
+    {
+        duk_pop(ctx);
+        PyErr_SetString(PyExc_RuntimeError, "No such function in rampart's global scope");
+        return NULL;
+    }
+    if(!duk_is_function(ctx, -1))
+    {
+        duk_pop(ctx);
+        PyErr_SetString(PyExc_RuntimeError, "No such function in rampart's global scope");
+        return NULL;
+    }
+
+    if(tsize>1)
+    {
+        duk_idx_t aidx = duk_get_top(ctx);
+        int l=0;
+
+        start_pytojs(ctx);
+        push_ptype(ctx, args);   // translate python tuple to js array 
+        l=(int)duk_get_length(ctx, -1);
+        for (i=1;i<l;i++)
+        {
+            duk_get_prop_index(ctx, aidx, (duk_uarridx_t)i);
+        }
+        duk_remove(ctx,aidx);
+    }
+    else
+        duk_push_undefined(ctx);
+
+    duk_call(ctx, i-1);         // call rfunc(ev, ...)
+
+    if(!duk_is_undefined(ctx, -1) && !duk_is_null(ctx, -1))
+    {
+        start_jstopy(ctx);
+        pRet=type_to_pytype(ctx, -1);
+    }
+
+    duk_pop(ctx);
+    return pRet;
+}
+
+// pretty much verbatim from https://docs.python.org/3/extending/extending.html#the-module-s-method-table-and-initialization-function
+static PyMethodDef rampartMethods[] = {
+    {"triggerEvent",  rp_trigger, METH_VARARGS, "Trigger a rampart event"},
+    {"call",  rp_call, METH_VARARGS, "Call a global rampart function"},
+    {NULL, NULL, 0, NULL}        /* Sentinel */
+};
+
+static struct PyModuleDef rampartmodule = {
+    PyModuleDef_HEAD_INIT,
+    "rampart",   /* name of module */
+    NULL, /* module documentation, may be NULL */
+    -1,       /* size of per-interpreter state of the module,
+                 or -1 if the module keeps state in global variables. */
+    rampartMethods
+};
+PyMODINIT_FUNC PyInit_rampart(void)
+{
+    return PyModule_Create(&rampartmodule);
+}
+//
 
 static void init_python(const char *program_name, char *ppath)
 {
@@ -304,6 +687,12 @@ static void init_python(const char *program_name, char *ppath)
     setenv("PYTHONPATH", tpath, 0);
     setenv("PYTHONHOME", ppath, 0);
 
+//
+    if (PyImport_AppendInittab("rampart", PyInit_rampart) == -1) {
+        fprintf(stderr, "Error: could not extend in-built modules table\n");
+        exit(1);
+    }
+//
     Py_Initialize();
 
     state=PYLOCK;
@@ -348,8 +737,6 @@ static duk_ret_t rp_duk_python_init(duk_context *ctx)
 }
 
 /* ****************** JSVAR -> PYTHON VAR ******************* */
-
-static PyObject * type_to_pytype(duk_context *ctx, duk_idx_t idx);
 
 static PyObject * bool_to_pybool(duk_context *ctx, duk_idx_t idx)
 {
@@ -766,7 +1153,8 @@ static PyObject * type_to_pytype(duk_context *ctx, duk_idx_t idx)
         case DUK_TYPE_BUFFER:
             return buf_to_pybytes(ctx, idx);
         case DUK_TYPE_OBJECT:
-            if (duk_is_function(ctx, -1) || duk_is_c_function(ctx, -1) )
+        //why?    if (duk_is_function(ctx, -1) || duk_is_c_function(ctx, -1) )
+        if (duk_is_function(ctx, -1))
                 Py_RETURN_NONE;
             return obj_to_pytype(ctx, idx);
         case DUK_TYPE_UNDEFINED:
@@ -788,7 +1176,6 @@ static void start_jstopy(duk_context *ctx)
 
 /* ****************** PYTHON VAR -> JSVAR ******************* */
 
-static void push_ptype(duk_context *ctx, PyObject * pyvar);
 
 static int tojs_check_ref(duk_context *ctx, PyObject *pobj)
 {
@@ -823,6 +1210,25 @@ static void tojs_store_ref(duk_context *ctx, duk_idx_t idx, PyObject *pobj)
     duk_pop(ctx);
 }
 
+static void push_ptype_to_string(duk_context *ctx, PyObject * pyvar)
+{
+
+    if( PyUnicode_Check(pyvar) )
+        duk_push_string(ctx, PyUnicode_AsUTF8(pyvar));
+
+    else
+    {
+        PyObject *pystr = PyObject_Str(pyvar);
+        if(!pystr)
+        {
+            char buf[MAX_EXCEPTION_LENGTH];
+            RP_THROW(ctx, "error converting python return value as a string: %s",get_exception(buf));
+        }
+        duk_push_string(ctx, PyUnicode_AsUTF8(pystr));
+        RP_Py_XDECREF(pystr);
+    }
+}
+
 static void push_dict_to_object(duk_context *ctx, PyObject *pobj)
 {
     Py_ssize_t pos=0;
@@ -837,7 +1243,8 @@ static void push_dict_to_object(duk_context *ctx, PyObject *pobj)
 
     while( PyDict_Next(pobj, &pos, &key, &value) )
     {
-        duk_push_string(ctx, PyUnicode_AsUTF8(key));
+        //keys in dicts can be anything, so extract it as a string
+        push_ptype_to_string(ctx, key);
         push_ptype(ctx, value);
         duk_put_prop(ctx, -3);        
     }
@@ -882,25 +1289,6 @@ static void push_list_to_array(duk_context *ctx, PyObject *pobj)
         push_ptype(ctx, value);
         duk_put_prop_index(ctx, -2, (duk_uarridx_t)i);        
         i++;
-    }
-}
-
-static void push_ptype_to_string(duk_context *ctx, PyObject * pyvar)
-{
-
-    if( PyUnicode_Check(pyvar) )
-        duk_push_string(ctx, PyUnicode_AsUTF8(pyvar));
-
-    else
-    {
-        PyObject *pystr = PyObject_Str(pyvar);
-        if(!pystr)
-        {
-            char buf[MAX_EXCEPTION_LENGTH];
-            RP_THROW(ctx, "error converting python return value as a string: %s",get_exception(buf));
-        }
-        duk_push_string(ctx, PyUnicode_AsUTF8(pystr));
-        RP_Py_XDECREF(pystr);
     }
 }
 
@@ -1024,39 +1412,7 @@ static void start_pytojs(duk_context *ctx)
 /* ************** PYTHON FORKING **************************** */
 
 
-#define PFI struct python_fork_info_s
-PFI
-{
-    int reader;         // pipe to read from, in parent or child
-    int writer;         // pipe to write to, in parent or child
-    pid_t childpid;     // process id of the child if in parent (return from fork())
-    duk_context *ctx;   // the ctx to use in the fork (same as current thread)
-};
 
-PFI **pyforkinfo = NULL;
-static int n_pfi=0;
-
-static PFI *check_fork();
-
-#define forkwrite(b,c) ({\
-    int r=0;\
-    r=write(finfo->writer, (b),(c));\
-    if(r==-1) {\
-        fprintf(stderr, "fork write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,finfo->writer);\
-        if(is_child) {fprintf(stderr, "child proc exiting\n");exit(0);}\
-    };\
-    r;\
-})
-
-#define forkread(b,c) ({\
-    int r=0;\
-    r= read(finfo->reader,(b),(c));\
-    if(r==-1) {\
-        fprintf(stderr, "fork read failed: '%s' at %d\n",strerror(errno),__LINE__);\
-        if(is_child) {fprintf(stderr, "child proc exiting\n");exit(0);}\
-    };\
-    r;\
-})
 
 // whether this thread is/should be using a forked child to interact with python
 #define must_fork (!RPTHR_TEST(get_current_thread(), RPTHR_FLAG_THR_SAFE))
@@ -1152,33 +1508,33 @@ static duk_ret_t _get_pref_val(duk_context *ctx)
     if(forkread(&type, sizeof(char)) == -1)
         RP_THROW(ctx, "internal error getting value");
 
-    dprintf(4, "got val from child, type%c\n",type);
+    dprintf(4, "got val from child, type %c\n",type);
     if(type=='m')
     {
-        char *marshal=NULL;
-        Py_ssize_t marshal_sz=0;
+        char *pickle=NULL;
+        Py_ssize_t pickle_sz=0;
         PyGILState_STATE state;
 
-        if(forkread(&marshal_sz, sizeof(Py_ssize_t)) == -1)
+        if(forkread(&pickle_sz, sizeof(Py_ssize_t)) == -1)
             RP_THROW(ctx, "internal error getting value");
 
-        REMALLOC(marshal, (size_t)marshal_sz);
+        REMALLOC(pickle, (size_t)pickle_sz);
 
-        if(forkread(marshal, marshal_sz) == -1)
+        if(forkread(pickle, pickle_sz) == -1)
         {
-            free(marshal);
+            free(pickle);
             RP_THROW(ctx, "internal error getting value");
         }
 
         start_pytojs(ctx);
         state = PYLOCK;
 
-        pValue=PyPickle_ReadObjectFromString((const char*)marshal, marshal_sz);
+        pValue=PyPickle_ReadObjectFromString((const char*)pickle, pickle_sz);
         push_ptype(ctx, pValue);
-        dprintf_pyvar(4, x, pValue, "got marshal val from child, %s\n", x);
+        dprintf_pyvar(4, x, pValue, "got pickle val from child, %s\n", x);
         PYUNLOCK(state);
 
-        free(marshal);
+        free(pickle);
     }
     else if (type=='s')
     {
@@ -1701,15 +2057,15 @@ int child_get_val(PFI* finfo)
     if(forkread(&pRef, sizeof(PyObject *)) == -1)
         return 0;
 
-    dprintf(4,"translating pRef=%p to marshal bytes\n", pRef);
+    dprintf(4,"translating pRef=%p to pickle bytes\n", pRef);
     pBytes=PyPickle_WriteObjectToString(pRef,Py_MARSHAL_VERSION);
 
     if(!pBytes)
     {
 
-        PyErr_Clear(); //clear error from failed marshal
+        PyErr_Clear(); //clear error from failed pickle
 
-        // this object cannot be marshalled.  We need to store it in this proc
+        // this object cannot be pickled.  We need to store it in this proc
         PyObject *pResStr = PyObject_Str(pRef);
         const char *str = PyUnicode_AsUTF8(pResStr);
         size_t str_sz = strlen(str) + 1;
@@ -1727,21 +2083,21 @@ int child_get_val(PFI* finfo)
     }
     else
     {
-        Py_ssize_t marshal_sz;
-        char *marshal;
+        Py_ssize_t pickle_sz;
+        char *pickle;
 
         dprintf(4,"extracting bytes from pBytes=%p\n", pBytes);
-        PyBytes_AsStringAndSize( pBytes, &marshal, &marshal_sz );
-        marshal_sz++;
+        PyBytes_AsStringAndSize( pBytes, &pickle, &pickle_sz );
+        pickle_sz++;
 
         if(forkwrite("m", sizeof(char)) == -1)
             return 0;
 
-        if(forkwrite(&marshal_sz, sizeof(Py_ssize_t)) == -1)
+        if(forkwrite(&pickle_sz, sizeof(Py_ssize_t)) == -1)
             return 0;
 
-        dprintf(4,"bytes sz=%d\n", (int)marshal_sz);
-        if(forkwrite(marshal, marshal_sz) == -1)
+        dprintf(4,"bytes sz=%d\n", (int)pickle_sz);
+        if(forkwrite(pickle, pickle_sz) == -1)
             return 0;
     }
     return 1;
@@ -1766,6 +2122,206 @@ static char *parent_py_call_read_error(PFI *finfo)
     return errmsg;
 }
 
+static int receive_val_and_push(duk_context *ctx, PFI *finfo)
+{
+    PyObject *pValue=NULL;
+    char type='X';
+    char *str=NULL;
+    size_t str_sz=0;
+
+    /* get var type */
+    if(forkread(&type, sizeof(char)) == -1)
+        return 0;
+
+    dprintf(4, "got val from child, type %c\n",type);
+
+    if(type=='n')
+        duk_push_undefined(ctx);
+    else if(type=='m')
+    {
+        char *pickle=NULL;
+        Py_ssize_t pickle_sz=0;
+        PyGILState_STATE state;
+
+        if(forkread(&pickle_sz, sizeof(Py_ssize_t)) == -1)
+            return 0;
+
+        REMALLOC(pickle, (size_t)pickle_sz);
+
+        if(forkread(pickle, pickle_sz) == -1)
+        {
+            free(pickle);
+            return 0;
+        }
+
+        start_pytojs(ctx);
+        state = PYLOCK;
+
+        pValue=PyPickle_ReadObjectFromString((const char*)pickle, pickle_sz);
+        push_ptype(ctx, pValue);
+        dprintf_pyvar(4, x, pValue, "got pickle val from child, %s\n", x);
+        PYUNLOCK(state);
+
+        free(pickle);
+    }
+    else if (type=='s')
+    {
+        if(forkread(&str_sz, sizeof(size_t)) == -1)
+            return 0;
+
+        REMALLOC(str, (size_t)str_sz);
+
+        if(forkread(str, str_sz) == -1)
+        {
+            free(str);
+            return 0;
+        }
+
+        dprintf(4, "got string val from child, %s\n", str);
+
+        duk_push_string(ctx, (const char *)str);
+        free(str);
+    }
+    else
+        return 0;
+
+    return 1;
+}
+
+// parent version of rampart.triggerEvent in python
+static void do_trigger(duk_context *ctx, PFI *finfo)
+{
+    char *ev=NULL;
+    size_t str_sz=0;
+
+
+    duk_push_c_function(ctx, duk_rp_trigger_event, 2); //rampart.event.trigger
+
+    /* get event name */
+    if(forkread(&str_sz, sizeof(size_t)) == -1)
+        RP_THROW(ctx, "internal error getting value");
+
+    REMALLOC(ev, (size_t)str_sz);
+
+    if(forkread(ev, str_sz) == -1)
+    {
+        free(ev);
+        RP_THROW(ctx, "internal error getting value");
+    }
+
+    duk_push_string(ctx, ev); // event name
+    free(ev);
+
+    if(!receive_val_and_push(ctx,finfo))
+        RP_THROW(ctx, "python: rampart.call - internal error getting value");
+
+    duk_call(ctx, 2);         // call rampart.event.trigger(ev,evarg)
+}
+
+// parent version of rampart.call in python
+static int do_call(duk_context *ctx, PFI *finfo)
+{
+    const char *fname;
+    int i=1, asize=0;
+    duk_idx_t top=duk_get_top(ctx), aidx;
+    PyObject *pArgs=NULL;
+    char *err = NULL;
+
+    if(!receive_val_and_push(ctx,finfo))
+        RP_THROW(ctx, "python: rampart.call - internal error getting value");
+
+    aidx=duk_get_top_index(ctx);
+
+    asize = (int)duk_get_length(ctx, -1);
+    if(!asize)
+        RP_THROW(ctx, "python: rampart.call - internal error getting value");
+
+    duk_get_prop_index(ctx, -1, 0);
+    if(!duk_is_string(ctx, -1))
+        RP_THROW(ctx, "python: rampart.call - internal error getting value");
+
+    fname = duk_get_string(ctx, -1);
+    duk_pop(ctx);
+
+/*
+    if(!duk_get_global_string(ctx, fname))
+    {
+        duk_set_top(ctx, top);
+        err="rampart.call(): No such function in rampart's global scope";
+    }
+    if(!duk_is_function(ctx, -1))
+    {
+        duk_set_top(ctx, top);
+        err="rampart.call(): No such function in rampart's global scope";
+    }
+*/
+    duk_push_string(ctx, fname);
+    if(duk_peval(ctx))
+        err="rampart.call(\"%s\", ...): No such function in rampart's global scope";
+    else
+    if(!duk_is_function(ctx, -1))
+        err="rampart.call(\"%s\", ...): No such function in rampart's global scope";
+
+    if(err)
+    {
+        char tbuf[1024];
+        snprintf(tbuf, 1024, err, fname);
+        if(!send_val(finfo, NULL, tbuf))
+        {
+            fprintf(stderr,"pipe error\n");
+            exit(1);
+        }
+        duk_set_top(ctx, top);
+
+        return 1;
+    }
+
+    if(asize>1)
+    {
+        for (i=1;i<asize;i++)
+        {
+            duk_get_prop_index(ctx, aidx, (duk_uarridx_t)i);
+        }
+        duk_remove(ctx,aidx);
+    }
+    else
+        duk_push_undefined(ctx);
+
+    duk_call(ctx, asize-1);
+
+    if (!duk_is_undefined(ctx, -1))
+    {
+        PyGILState_STATE state;
+
+        state=PYLOCK;
+
+        start_jstopy(ctx);
+        pArgs=type_to_pytype(ctx, -1);
+
+        PYUNLOCK(state);
+
+        if(!send_val(finfo, pArgs, NULL))
+        {
+            fprintf(stderr,"pipe error\n");
+            exit(1);
+        }
+        
+        state=PYLOCK;
+        RP_Py_XDECREF(pArgs);
+        PYUNLOCK(state);
+        return 1;
+    }
+
+    if(!send_val(finfo, pArgs, NULL))
+    {
+        fprintf(stderr,"pipe error\n");
+        exit(1);
+    }
+
+    duk_set_top(ctx, top);
+
+    return 1;
+}
 
 static char *parent_read_val(PFI *finfo)
 {
@@ -1774,10 +2330,28 @@ static char *parent_read_val(PFI *finfo)
     duk_context *ctx = finfo->ctx;
     char *pipe_error="pipe error";
 
+    goagain:
     if(forkread(&retval, sizeof(char)) == -1)
         return strdup(pipe_error);
 
-    if(retval == 'e')
+    // we are waiting for function to end, however
+    // if we get a 't' or a 'c', we got a request for rampart.triggerEvent or 
+    // rampart.call somewhere in the function.  Process request and loop back
+    // to wait for python function to return
+    if(retval == 't')
+    {
+        do_trigger(ctx, finfo);
+        goto goagain;
+    }
+    else if(retval == 'c')
+    {
+        if(!do_call(ctx, finfo))
+            RP_THROW(ctx, "python: rampart.call - internal error getting value");
+        goto goagain;
+    }
+
+    // python function returned something:
+    else if(retval == 'e') // returned an error
     {
         errmsg=parent_py_call_read_error(finfo);
 
@@ -1789,7 +2363,7 @@ static char *parent_read_val(PFI *finfo)
         free(errmsg);
         (void) duk_throw(ctx);
     }
-    else if(retval == 'r') // get reference to var, var stays in child
+    else if(retval == 'r') // returned a ref, get reference to var, var stays in child
     {
         PyObject *pRef=NULL;
         size_t sz=0;
@@ -1891,8 +2465,8 @@ static char *parent_py_call(PyObject * pModule, const char *fname)
     PyObject *pArgs=NULL, *pValue=NULL, *pBytes=NULL;
     duk_context *ctx;
     duk_idx_t i=1, top;
-    char *marshal=NULL;
-    Py_ssize_t marshal_sz=0;
+    char *pickle=NULL;
+    Py_ssize_t pickle_sz=0;
     size_t fname_sz = 0;
     char *pipe_error="pipe error";
     PyGILState_STATE state;
@@ -1950,7 +2524,7 @@ static char *parent_py_call(PyObject * pModule, const char *fname)
                     )
                     {
                         //"pref" is a pointer obtained from and valid in this thread's child proc
-                        //store it as a long in a dictionary so it is marshalable
+                        //store it as a long in a dictionary so it is pickleable
                         void *refptr = NULL;
 
                         duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pref"));
@@ -2042,8 +2616,8 @@ static char *parent_py_call(PyObject * pModule, const char *fname)
             fprintf(stderr, "exception: %s\n", get_exception(buf));
             abort();
         }
-        PyBytes_AsStringAndSize( pBytes, &marshal, &marshal_sz );
-        marshal_sz++;
+        PyBytes_AsStringAndSize( pBytes, &pickle, &pickle_sz );
+        pickle_sz++;
 
         RP_Py_XDECREF(pArgs);
         if(pPtrs)
@@ -2071,15 +2645,15 @@ static char *parent_py_call(PyObject * pModule, const char *fname)
             return strdup(pipe_error);
     }
 
-    if(forkwrite(&marshal_sz, sizeof(duk_size_t)) == -1)
+    if(forkwrite(&pickle_sz, sizeof(duk_size_t)) == -1)
         return strdup(pipe_error);
 
-    if(marshal_sz)
+    if(pickle_sz)
     {
-        dprintf(4,"in parent_py_call - sending: marshal=%p, marshal_sz=%d\n",marshal, (int)marshal_sz);
+        dprintf(4,"in parent_py_call - sending: pickle=%p, pickle_sz=%d\n",pickle, (int)pickle_sz);
         //dprintf(4,"reader=%d, writer=%d\n", finfo->reader, finfo->writer);
-        dprintfhex(4,marshal, marshal_sz, "marshal=0x");
-        if(forkwrite(marshal, marshal_sz) == -1)
+        dprintfhex(4,pickle, pickle_sz, "pickle=0x");
+        if(forkwrite(pickle, pickle_sz) == -1)
         {
             state = PYLOCK;
             RP_Py_XDECREF(pBytes);
@@ -2172,7 +2746,7 @@ static int child_py_call_write_error(PFI *finfo, char *errmsg)
         needsfree=1;
 
     dprintf(4,"writing error msg: '%s'\n", errmsg);
-    sz++;
+    sz=strlen(errmsg)+1;
 
     if(forkwrite(&sz, sizeof(duk_size_t)) == -1)
         return 0;
@@ -2198,7 +2772,7 @@ static int child_write_var(PFI *finfo, PyObject *pRes, char *errmsg)
     else
     {
         int callable=0;
-        //for some reason, we need to do this before attempting to marshal
+        //for some reason, we need to do this before attempting to pickle
         //after that PyObject_Dir returns NULL with error
         char *funcnames = NULL;
         size_t flen = 0;
@@ -2259,8 +2833,8 @@ static int child_py_call(PFI *finfo)
 {
     PyObject *pModule=NULL, *pRes=NULL, *pArgs=NULL, *kwdict=NULL;
     char *fname=NULL;
-    char *marshal=NULL;
-    Py_ssize_t marshal_sz=0;
+    char *pickle=NULL;
+    Py_ssize_t pickle_sz=0;
     size_t fname_sz = 0;
     char  *errmsg = NULL;
     int ret=0;
@@ -2279,25 +2853,25 @@ static int child_py_call(PFI *finfo)
             return 0;
     }
 
-    if(forkread(&marshal_sz, sizeof(Py_ssize_t)) == -1)
+    if(forkread(&pickle_sz, sizeof(Py_ssize_t)) == -1)
         return 0;
 
-    dprintf(4,"in child_py_call - received, marshal_sz=%d\n", (int)marshal_sz);
-    if(marshal_sz > 0)
+    dprintf(4,"in child_py_call - received, pickle_sz=%d\n", (int)pickle_sz);
+    if(pickle_sz > 0)
     {
-        REMALLOC(marshal, (size_t) marshal_sz);
-        if(forkread(marshal, (size_t)marshal_sz) == -1)
+        REMALLOC(pickle, (size_t) pickle_sz);
+        if(forkread(pickle, (size_t)pickle_sz) == -1)
             return 0;
 
         //dprintf(4,"reader=%d, writer=%d\n", finfo->reader, finfo->writer);
-        dprintfhex(4,marshal, marshal_sz, "marshal=0x");
-        pArgs=PyPickle_ReadObjectFromString((const char*)marshal, marshal_sz);
-        free(marshal);
+        dprintfhex(4,pickle, pickle_sz, "pickle=0x");
+        pArgs=PyPickle_ReadObjectFromString((const char*)pickle, pickle_sz);
+        free(pickle);
 
         if(!pArgs || !PyTuple_Check(pArgs) )
         {
             size_t sz=0;
-            const char *errmsg = "failed to decode marshal";
+            const char *errmsg = "failed to decode pickled value";
             dprintf(4,"writing error %s", errmsg);
             //if( pArgs && !PyTuple_Check(pArgs) ) dprintf(4,"its not null, but its not a tuple");
             sz = strlen(errmsg) + 1;
@@ -3171,7 +3745,8 @@ static duk_ret_t _import (duk_context * ctx, int type)
     const char *str = REQUIRE_STRING(ctx, 0, "python.import%s: First argument must be a string", fnamesuff);
     PyObject *pModule;
     PyGILState_STATE state;
-    const char *script=str, *modname=str, *scriptname=RP_script;
+    const char *script=str, *modname=str;
+    char *scriptname=RP_script;
 
     if(!python_is_init)
         rp_duk_python_init(ctx);
@@ -3180,15 +3755,22 @@ static duk_ret_t _import (duk_context * ctx, int type)
     // type 1 modname is optionally given as arg1, script is script
     if(type==1)
     {
+        char *s;
         if(duk_is_string(ctx,1))
             modname=duk_get_string(ctx,1);
         else
             modname="module_from_string";
+
+        s=strrchr(RP_script, '/');
+        if(!s)
+            s=RP_script;
+
+        scriptname = strcatdup(strdup(RP_script)," (imported from JavaScript String)");
     }
     else if(type==2)// script is file at arg0, modname is arg0
     {
         //read the file.  only filename is on the stack.
-        scriptname=duk_get_string(ctx, 0);
+        scriptname=(char*)duk_get_string(ctx, 0);
         duk_push_true(ctx);
         duk_rp_read_file(ctx);
         script=duk_get_string(ctx, -1);
@@ -3237,7 +3819,7 @@ static duk_ret_t _import (duk_context * ctx, int type)
         if(type)
         {
             // compile and execute string.
-            PyObject *pCode = Py_CompileString(script, RP_script, Py_file_input);
+            PyObject *pCode = Py_CompileString(script, scriptname, Py_file_input);
 
             if(!pCode)
             {
@@ -3279,6 +3861,10 @@ static duk_ret_t _import (duk_context * ctx, int type)
     duk_push_c_function(ctx, pvalue_finalizer, 1);
     duk_set_finalizer(ctx, -2);
     make_proxy(ctx);
+
+    if(type==1)
+        free(scriptname);
+
     return 1;
 }
 
@@ -3301,7 +3887,6 @@ static duk_ret_t RP_PimportFile (duk_context * ctx)
 
 static duk_ret_t helper(duk_context *ctx)
 {
-    PFI finfo_d;
     PFI *finfo=&finfo_d;
 
 

@@ -252,3 +252,35 @@ thr2.exec( function(){
     testFeature("python - copy from sqlite to texis tables in two threads", t1sum==t2sum);
 });
 
+
+thr.exec(function(){
+    rampart.event.on("myev", "myfunc", function(uv,tv) {
+        testFeature("python - import rampart, rampart.trigger, rampart.call",
+            (tv[0]==123 && tv[1]==456) );
+        rampart.event.remove("myev");
+    },"uservar");
+});
+
+
+function testfunc(a,b) {
+    return [a,b];
+}
+
+thr2.exec(function(){
+
+    var pyscript=`
+import rampart
+
+def docall(a,b,c):
+    return rampart.call(a,b,c)
+
+def trigger():
+    x=docall("testfunc",123,456)
+    rampart.triggerEvent("myev",x)
+
+`   ;
+
+    var mymod = python.importString(pyscript);
+    mymod.trigger();
+});
+
