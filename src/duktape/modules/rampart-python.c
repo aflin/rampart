@@ -3709,6 +3709,10 @@ static duk_ret_t _proxyget(duk_context *ctx)
     dprintf(4,"looking for %s in proxy get\n", key);
     if( duk_get_prop_string(ctx, 0, key) ) //see if it already exists
     {
+        if(!is_child && must_fork)
+            parent_fix_pval(ctx, -1);
+        else
+            get_pval(-1,1);
         dprintf(4,"returning existing for %s in proxy get\n", key);
         return 1;
     }
