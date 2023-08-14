@@ -74,7 +74,7 @@ char *tickify_err(int err)
         case ST_BT:
             msg="unterminated or illegal template literal"; break;
         case ST_SQ:
-        case ST_DB:
+        case ST_TB:
         case ST_DQ:
             msg="unterminated string"; break;
         case ST_BS:
@@ -1889,11 +1889,67 @@ duk_ret_t duk_rp_clear_either(duk_context *ctx)
     }\
 }while(0)
 
+
+static int proc_triple(char **inp, char **ob, char **o, size_t *osize, int *lineno)
+{
+    char *in = *inp;
+    char *out=*o;
+    char *outbeg = *ob;
+    int ret=1, mute=0, type=0;
+
+    scopy('"');
+
+    while(1) // everything is fair game until next ```
+    {
+        switch(*in)
+        {
+            case '`':
+                if(*(in+1) == '`' && *(in+2) == '`')
+                {
+                    in+=3;
+                    scopy('"');
+                    goto end_db;
+                }
+                scopy(*in);
+                break;
+
+            case '"':
+            case '\\':
+                scopy('\\');
+                scopy(*in);
+                break;
+
+            case '\n':
+                lineno++;
+                scopy ('\\');
+                scopy ('n');
+                break;
+
+            case '\0':
+                ret=0;
+                goto end_db;
+
+            default:
+                scopy(*in);
+                break;
+        }
+        adv;
+    }
+    end_db:
+
+    *inp = in;
+    *ob=outbeg;
+    *o=out;
+
+    return ret;
+}
+
 /*
     type==0 - template literal
     type==1 - tag function first pass
     type==2 - tag function second pass
 */
+
 
 static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t *osize, int *lineno, int type)
 {
@@ -2082,14 +2138,27 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                     {
                         if(*in == '`' && *(in-1)!='\\' )
                         {
-                            int r=proc_backtick(in, end, &outbeg, &out, osize, lineno, 0);
-                            if(!r)
+                            if(*(in+1)=='`' && *(in+2)=='`') //triple backick = no escapes
                             {
-                                *ob=outbeg;
-                                *o=out;
-                                return 0;
+                                in+=3;
+                                if(!proc_triple(&in, &outbeg, &out, osize, lineno))
+                                {
+                                    *ob=outbeg;
+                                    *o=out;
+                                    return 0;
+                                }
                             }
-                            in+=r;
+                            else
+                            {
+                                int r=proc_backtick(in, end, &outbeg, &out, osize, lineno, 0);
+                                if(!r)
+                                {
+                                    *ob=outbeg;
+                                    *o=out;
+                                    return 0;
+                                }
+                                in+=r;
+                            }
                         }
                         else
                         {
@@ -2135,6 +2204,16 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                     out--;
                     scopy('`');
                     lastwasbs=0;
+                }
+                else if(*(in+1)=='`' && *(in+2)=='`') //triple backick = no escapes
+                {
+                    in+=3;
+                    if(!proc_triple(&in, &outbeg, &out, osize, lineno))
+                    {
+                        *ob=outbeg;
+                        *o=out;
+                        return 0;
+                    }
                 }
                 else
                 {
@@ -2217,7 +2296,8 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
     outbeg=out;
     while(*in)
     {
-        if(getstate() == ST_DB)
+/*
+        if(getstate() == ST_TB)
         {
             qline=line;
             copy('"');
@@ -2226,9 +2306,9 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                 switch(*in)
                 {
                     case '`':
-                        if(*(in+1) == '`')
+                        if(*(in+1) == '`' && *(in+2) == '`')
                         {
-                            in+=2;
+                            in+=3;
                             popstate();
                             copy('"');
                             goto end_db;
@@ -2258,6 +2338,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
             if(!*in)
                 break;
         }
+*/
         switch (*in)
         {
             case '/' :
@@ -2409,10 +2490,18 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                     char *s=in;
 
                     qline=line;
-                    if(*(s+1)=='`') //double backick = no escapes
+                    if(*(s+1)=='`' && *(s+2)=='`') //triple backick = no escapes
                     {
-                        pushstate(ST_DB);
-                        in+=2;
+                        in+=3;
+                        if(!proc_triple(&in, &outbeg, &out, &osz, &line))
+                        {
+                            *err=ST_TB;
+                            *ln=qline;
+                            free(outbeg);
+                            return NULL;
+                        }
+                        //pushstate(ST_TB);
+                        //in+=3;
                         break;
                     }
 
