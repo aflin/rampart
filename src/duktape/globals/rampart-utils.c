@@ -594,7 +594,7 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
         if(duk_get_prop_string(ctx, idx, "name"))
         {
             name=duk_get_string(ctx, -1);
-            if(strlen(name))
+            if(name && strlen(name))
                 r= strcatdup(r, " ,name: \"");
         }
         duk_pop(ctx);
@@ -604,7 +604,8 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
             if(duk_get_prop_string(ctx, idx, "fname"))
             {
                 name=duk_get_string(ctx, -1);
-                r= strcatdup(r, " ,fname: \"");
+                if(name && strlen(name))
+                    r= strcatdup(r, " ,fname: \"");
             }
             duk_pop(ctx);
         }
