@@ -45,7 +45,9 @@ static int is_child=0;
 
 #define pytostr(pv) ({\
     PyObject *ps=PyObject_Str((pv));\
-    char *ret=strdup(PyUnicode_AsUTF8(ps));\
+    char *ret="unknown or null";\
+    if(ps) ret=(char*)PyUnicode_AsUTF8(ps);\
+    ret=strdup(ret);\
     Py_XDECREF(ps);\
     ret;\
 })
@@ -125,7 +127,7 @@ int debugl=rpydebug;
     if(r){\
         int cnt=(int)Py_REFCNT((r));\
         char *s=pytostr((r));\
-        dprintf(5,"xdecref, refcnt was %d for %s\n",cnt, s);\
+        dprintf(5,"xdecref of %p, refcnt was %d for %s\n",(r),cnt, s);\
         free(s);\
         /* deallocated objects often return a random negative number*/\
         if(cnt<0) dprintf(1,"DANGER WILL ROBINSON!!! possible xdecref on deallocated python object\n");\
@@ -1693,8 +1695,8 @@ static void put_func_attributes(duk_context *ctx, PyObject *pValue, PyObject *pR
         duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("prefstr"));
         duk_put_prop_string(ctx, -2, "valueOf");
 
-        RP_Py_XDECREF(pStr);
     }
+    RP_Py_XDECREF(pStr);
     PYUNLOCK(state);
 }
 
@@ -1755,7 +1757,7 @@ static void push_python_function_as_method(duk_context *ctx, const char *attr_fn
     state=PYLOCK;\
     if(pRef){\
         if(strlen(funcnames))\
-            put_attributes_from_string(ctx, pRef, funcnames);\
+            put_attributes_from_string(ctx, pRef, funcnames, 0);\
     } else {\
         dprintf_pyvar(4, x, pValue, "in makepyval, put_attributes for %s\n",x);\
         put_attributes(ctx, pValue);\
@@ -1768,7 +1770,7 @@ static void push_python_function_as_method(duk_context *ctx, const char *attr_fn
 
 
 /* here *pModule is invalid in this process.  Use strings sent from child */
-static void put_attributes_from_string(duk_context *ctx, PyObject *pModule, char *s)
+static void put_attributes_from_string(duk_context *ctx, PyObject *pModule, char *s, int is_func)
 {
     char *end=NULL;
     char *spe, *spf, *refstr;
@@ -1807,7 +1809,11 @@ static void put_attributes_from_string(duk_context *ctx, PyObject *pModule, char
             // make the value
 
             make_pyval(NULL, _get_pref_str, _get_pref_val, NULL, pRef, refstr);
-            duk_put_prop_string(ctx, -2, s);
+
+            if(!is_func || strcmp(s,"name") != 0) 
+                duk_put_prop_string(ctx, -2, s);
+            else
+                duk_put_prop_string(ctx, -2, "\xffname");
         }
         else if(!spf || (spe && spe<spf))
         {
@@ -1823,7 +1829,12 @@ static void put_attributes_from_string(duk_context *ctx, PyObject *pModule, char
 
             // make the method (or attribute-function) call into a JS func
             push_python_function_as_method(ctx, s, pModule, refstr);
-            duk_put_prop_string(ctx, -2, s);
+            // cannot set property "name" on a function in duktape JS
+
+            if(!is_func || strcmp(s,"name") != 0) 
+                duk_put_prop_string(ctx, -2, s);
+            else
+                duk_put_prop_string(ctx, -2, "\xffname");
         }
 
         s=end+1; //advance to next entry
@@ -2193,6 +2204,8 @@ static char *stringify_funcnames(PyObject* pModule)
                 snprintf(scratch,1024,"\xfe%s", pvs);
                 str = strcatdup(str, scratch);
                 str = strcatdup(str, "\xfe");
+                dprintf(4,"DECREF, pFunc=%p\n", pFunc);
+                RP_Py_XDECREF(pFunc);
             }
             else if (parent_is_callable)
             {
@@ -2202,11 +2215,11 @@ static char *stringify_funcnames(PyObject* pModule)
                 snprintf(scratch,1024,"\xff%s", pvs);
                 str = strcatdup(str, scratch);
                 str = strcatdup(str, "\xff");
+                //pFunc will be run through make_pyval and decreffed by finalizer, so DON'T do it here.
             }
             RP_Py_XDECREF(pStr);
         }
         i++;
-        RP_Py_XDECREF(pFunc);
     }
     PyErr_Clear();
     return str;
@@ -2270,17 +2283,21 @@ static int child_import(PFI *finfo, int type)
         if(!pCode)
         {
             exc = get_exception(buf);
-            dprintf(4,"_child_import: !pCode: %s, script:%s\n%s\n",exc, scriptname, script);
+            dprintf(4,"child_import: !pCode: %s, script:%s\n%s\n",exc, scriptname, script);
         }
         else
         {
-            dprintf(4,"in _child_import -PyImport_ExecCodeModule(%s, %p)\n",modname, pCode);
+            dprintf(4,"in child_import -PyImport_ExecCodeModule(%s, %p)\n",modname, pCode);
             pModule = PyImport_ExecCodeModule(modname, pCode );
-            dprintf(4,"in _child_import - pModule = %p\n", pModule);
+            dprintf(4,"in child_import - pModule = %p\n", pModule);
         }
     }
     else
+    {
+        dprintf(4,"in child_import -importModule '%s'\n",script);
         pModule = PyImport_ImportModule(script);
+        dprintf(4,"in child_import - pModule = %p\n", pModule);
+    }
 
     if(!pModule && !exc)
         exc = get_exception(buf);
@@ -2536,7 +2553,7 @@ static char *parent_read_val(PFI *finfo, duk_idx_t existing_func_idx)
 
             if(funcnames && strlen(funcnames))
             {
-                put_attributes_from_string(ctx, pRef, funcnames);
+                put_attributes_from_string(ctx, pRef, funcnames, is_func);
             }
 
             put_func_attributes(ctx, NULL, pRef, NULL, refstr);
@@ -2811,6 +2828,7 @@ static PyObject *py_call_in_child(char *fname, PyObject *pModule, PyObject *pArg
     dprintf(4,"CALLING with args=%p, nargs=%d\n", pArgs, (int) (pArgs ? PyTuple_Size(pArgs) : 0) );
 
     dcheckvar(4,pArgs);
+    dcheckvar(4,pFunc);
     dprintf_pyvar(4, x, pFunc, "tpcall func=%s\n", x );
     dprintf_pyvar(4,x,pArgs, "tpcall args=%s\n", x );
     dprintf_pyvar(4,x,kwdict,"tpcall kwdict=%s\n", x );
@@ -2826,7 +2844,8 @@ static PyObject *py_call_in_child(char *fname, PyObject *pModule, PyObject *pArg
 
 end:
     dprintf(4,"end: pValue=%p\n",pValue);
-    RP_Py_XDECREF(pFunc);
+    if(fname)
+        RP_Py_XDECREF(pFunc);
     RP_Py_XDECREF(pArgs);
     RP_Py_XDECREF(kwdict);
     if(err)
@@ -2894,7 +2913,7 @@ static int child_write_var(PFI *finfo, PyObject *pRes, char *errmsg)
             funcnames = stringify_funcnames(pRes);
             flen = strlen(funcnames)+1;
             pStr=PyObject_Str(pRes);
-            if(pRes)
+            if(pStr)
                 resstr=PyUnicode_AsUTF8(pStr);
             else
                 resstr = "(unknown pytype)";
@@ -3572,6 +3591,7 @@ static void put_attributes(duk_context *ctx, PyObject *pValue)
                 // cannot set property "name" on a function in duktape JS
                 if(!strcmp(fname,"name")) fname="\xffname";
                 duk_put_prop_string(ctx, -2, fname);
+                //pProp will be xdecreffed by finalizer.
             }
         }
 
@@ -3641,7 +3661,7 @@ static void get_pyval_and_push(duk_context *ctx, duk_idx_t idx, const char *key,
         {
             pValue = PyList_GetItem(parentValue, (Py_ssize_t)index);
             if(!pValue)
-            PyErr_Clear();
+                PyErr_Clear();
         }
         else
         {
@@ -3682,7 +3702,9 @@ static void get_pyval_and_push(duk_context *ctx, duk_idx_t idx, const char *key,
 
     make_pyval(pValue, _p_to_string, _p_to_value, NULL, NULL, NULL);
 
-    // in order for finalizer to be run on this, it needs to be properly in the object
+    // in order for finalizer to be run on this, it needs to be properly in the object (not by proxy).
+    // so just store a ref to the val indexed by its pointer.  When object is destroyed
+    // it will take the make_pyval val with it.
     duk_push_sprintf(ctx, "\xff%p", pValue);
     duk_dup(ctx, -2);
     duk_put_prop(ctx, 0);
@@ -4065,7 +4087,7 @@ static duk_ret_t _import (duk_context * ctx, int type)
         duk_push_object(ctx);
 
         // Put items if dictionary. Put attributes. Put functions.
-        put_attributes_from_string(ctx, pModule, obj_fnames);
+        put_attributes_from_string(ctx, pModule, obj_fnames, 0);
         free(obj_fnames);
         // put toString, valueOf, etc
         put_func_attributes(ctx, NULL, pModule, NULL, funcstring);
