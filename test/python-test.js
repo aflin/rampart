@@ -86,7 +86,6 @@ function tests(inthr){
     testFeature(`python - ${inthr}import pathlib and resolve './'`, function(){
         var pathlib = python.import('pathlib');
         var p=pathlib.PosixPath('./');
-
         return p.resolve().toValue() == getcwd();
     });
 
@@ -187,8 +186,8 @@ def retdict(z):
     });
 
     /* because we cannot set a proxy on a function like we can on an object. */
-    testFeature(`python - ${inthr}fail to get attribute of a function`, function(){
-        return !ps.echo.y;
+    testFeature(`python - ${inthr}get attribute of a function`, function(){
+        return ps.echo.y == 'test';
     });
 
     testFeature(`python - ${inthr}call method on string`, function(){
@@ -196,11 +195,11 @@ def retdict(z):
     });
 
 
-    testFeature(`python - ${inthr}get undefined for non-existant attributes`, function(){
+    testFeature(`python - ${inthr}get undefined for non-existent attributes`, function(){
         return echo.notfound === undefined;
     });
 
-    testFeature(`python - ${inthr}get undefined for non-existant items`, function(){
+    testFeature(`python - ${inthr}get undefined for non-existent items`, function(){
         var rd = ps.retdict(1);
         return rd.x === undefined;
     });
