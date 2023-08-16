@@ -1769,6 +1769,13 @@ static void push_python_function_as_method(duk_context *ctx, const char *attr_fn
 } while(0)
 
 
+#define put_prop_string_on_function(ctx, idx, propname) do{\
+    duk_idx_t _idx=duk_normalize_index(ctx, idx);\
+    duk_push_string(ctx, propname);\
+    duk_pull(ctx, -2);\
+    duk_def_prop(ctx, _idx, DUK_DEFPROP_HAVE_VALUE);\
+}while(0)
+
 /* here *pModule is invalid in this process.  Use strings sent from child */
 static void put_attributes_from_string(duk_context *ctx, PyObject *pModule, char *s, int is_func)
 {
@@ -1810,10 +1817,13 @@ static void put_attributes_from_string(duk_context *ctx, PyObject *pModule, char
 
             make_pyval(NULL, _get_pref_str, _get_pref_val, NULL, pRef, refstr);
 
-            if(!is_func || strcmp(s,"name") != 0) 
-                duk_put_prop_string(ctx, -2, s);
+            // name, length cannot be set as is.  fileName, caller, callee, arguments, prototype can be set as is on c func.
+            // https://duktape.org/guide#functionobjects
+            if(is_func && ( strcmp(s,"name")==0 || strcmp(s,"length")==0 ))
+                put_prop_string_on_function(ctx, -2, s);
             else
-                duk_put_prop_string(ctx, -2, "\xffname");
+                duk_put_prop_string(ctx, -2, s);
+
         }
         else if(!spf || (spe && spe<spf))
         {
@@ -1829,12 +1839,13 @@ static void put_attributes_from_string(duk_context *ctx, PyObject *pModule, char
 
             // make the method (or attribute-function) call into a JS func
             push_python_function_as_method(ctx, s, pModule, refstr);
-            // cannot set property "name" on a function in duktape JS
 
-            if(!is_func || strcmp(s,"name") != 0) 
-                duk_put_prop_string(ctx, -2, s);
+            // name, length cannot be set as is.  fileName, caller, callee, arguments, prototype can be set as is on c func.
+            // https://duktape.org/guide#functionobjects
+            if(is_func)
+                put_prop_string_on_function(ctx, -2, s);
             else
-                duk_put_prop_string(ctx, -2, "\xffname");
+                duk_put_prop_string(ctx, -2, s);
         }
 
         s=end+1; //advance to next entry
@@ -3579,18 +3590,21 @@ static void put_attributes(duk_context *ctx, PyObject *pValue)
                     str="(unknown pytype)";
 
                 push_python_function_as_method(ctx, fname, pValue, str);
+                if(parent_is_callable)
+                    // cannot directly set property "name" or "length" on a function in duktape JS
+                    put_prop_string_on_function(ctx, -2, fname);
+                else
+                    duk_put_prop_string(ctx, -2, fname);
 
-                duk_put_prop_string(ctx, -2, fname);
                 RP_Py_XDECREF(Str);
                 RP_Py_XDECREF(pProp);
             }
-            else if(parent_is_callable) // if parent is a function and not an object, we cannot use a proxy object for look up.
+            else if(parent_is_callable) // if parent is a function and not an object, we cannot use a proxy object for look up. So populate it now.
             {
                 dprintf(4,"make_pyval, name=%s\n", fname);
                 make_pyval(pProp, _p_to_string, _p_to_value, NULL, NULL, NULL);
-                // cannot set property "name" on a function in duktape JS
-                if(!strcmp(fname,"name")) fname="\xffname";
-                duk_put_prop_string(ctx, -2, fname);
+                // cannot directly set property "name" or "length" on a function in duktape JS
+                put_prop_string_on_function(ctx, -2, fname);
                 //pProp will be xdecreffed by finalizer.
             }
         }
