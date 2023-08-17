@@ -837,9 +837,9 @@ Also of interest in this directory (but not copied):
   3)  The "./examples" directory has a sample module written in C which
       you can use as a template for making your own module written in C.
 
-      Also have a look at the make_cmod_template.js script. It can create
-      a template rampart module project with Makefile, *.c and *-test.js 
-      files.
+  4)  The "./unsupported_extras" directory includes a websocket client and 
+      a utility to create template rampart module projects with Makefile, 
+      *.c and *-test.js files (c_module_template_maker/make_cmod_template.js).
 
 Thank you for installing.  Enjoy!
 `);

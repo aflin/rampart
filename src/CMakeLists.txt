@@ -620,12 +620,8 @@ install(CODE "execute_process( \
     )"
 )
 
-install(CODE "execute_process( \
-    COMMAND ${CMAKE_COMMAND} -E copy \
-    \"${PROJECT_SOURCE_DIR}/src/make_cmod_template.js\" \
-    \"${CMAKE_INSTALL_PREFIX}/bin/\"   \
-    )"
-)
+# unsupported dir
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/unsupported_extras/ DESTINATION "${CMAKE_INSTALL_PREFIX}/unsupported_extras")
 
 # include files
 install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/include")
