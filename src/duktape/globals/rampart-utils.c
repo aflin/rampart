@@ -23,6 +23,8 @@
 #include <unistd.h>
 #include <termios.h>
 #include <string.h>
+#include "event.h"
+#include "event2/thread.h"
 #include "rampart.h"
 #include "../linenoise.h"
 char modules_dir[PATH_MAX];
@@ -40,6 +42,11 @@ FILE *error_fh;
 int duk_rp_server_logging=0;
 
 #ifdef __APPLE__
+
+//forkpty
+#include <util.h>
+
+// execvpe polyfill
 int execvpe(const char *program, char **argv, char **envp)
 {
     char **saved = environ;
@@ -49,6 +56,13 @@ int execvpe(const char *program, char **argv, char **envp)
     environ = saved;
     return rc;
 }
+
+#else // linux
+
+//forkpty
+#include <pty.h>
+//also requires -lutil
+
 #endif
 
 
@@ -2105,6 +2119,83 @@ void *duk_rp_exec_thread_waitpid(void *arg)
         }                                                                                                   \
     }
 
+char **free_made_env(char **env)
+{
+    int i=0;
+    if(env)
+    {
+        do {
+            if(env[i] == NULL)
+                break;
+            free(env[i++]);
+        } while (1);
+        free(env);
+        env=NULL;
+    }
+    return env;
+}
+
+char **make_env(duk_context *ctx, int append)
+{
+    char **env=NULL;
+    int i=0, len=0;
+    char *eentry=NULL;
+
+    if(!duk_is_object(ctx, -1) || duk_is_function(ctx, -1) || duk_is_array(ctx, -1))
+    {
+        RP_THROW(ctx, "exec(): option 'env' must be an object");
+        return NULL; // unnecessary
+    }
+
+    // append an empty object with current env, then add env arguments
+    if(append)
+    {
+        duk_get_global_string(ctx, "Object");  // [env_arg, "Object" ]
+        duk_push_string(ctx, "assign");        // [env_arg, "Object", "assign" ]
+        duk_push_object(ctx);                  // [env_arg, "Object", "assign", dest_obj ]
+        duk_get_global_string(ctx, "process"); // [env_arg, "Object", "assign", dest_obj, "process" ]
+        duk_get_prop_string(ctx, -1, "env");   // [env_arg, "Object", "assign", dest_obj,  "process", curenv ]
+        duk_remove(ctx, -2);                   // [env_arg, "Object", "assign", dest_obj, curenv ]
+        duk_pull(ctx, -5);                     // ["Object", "assign" dest_obj, curenv, env_arg ]
+        duk_call_prop(ctx, -5, 3);             // ["Object", retobj ]
+        duk_remove(ctx, -2);                   // [ retobj ]
+    }
+    //count number of items in object:
+    duk_enum(ctx, -1, 0); // [..., envobj, enum ]
+    while (duk_next(ctx, -1, 0))
+    {
+        duk_pop(ctx);
+        len++;
+    }
+    duk_pop(ctx);
+
+    REMALLOC(env, sizeof(char*) * (len + 1));
+
+
+    duk_enum(ctx, -1, 0); // [..., envobj, array, enum ]
+    while (duk_next(ctx, -1, 1))
+    {
+        // [..., envobj, array, enum, key, val ]
+        if(duk_is_object(ctx, -1))
+            duk_json_encode(ctx, -1);
+
+        if( -1 ==  asprintf(&eentry, "%s=%s", duk_get_string(ctx, -2), duk_safe_to_string(ctx, -1)) )
+        {
+            fprintf(stderr, "error: asprintf in %s at %d\n", __FILE__, __LINE__);
+            abort();
+        }
+
+        env[i++]=eentry;
+        eentry=NULL;
+
+        duk_pop_2(ctx);// [..., envobj, enum ]
+    }
+    duk_pop(ctx); //enum
+    env[i]=NULL;
+
+    return env;
+}
+
 /**
  * Executes a command where the arguments are the arguments to execv.
  * @typedef {Object} ExecOptions
@@ -2139,7 +2230,7 @@ void *duk_rp_exec_thread_waitpid(void *arg)
  */
 duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 {
-    int kill_signal=SIGTERM, background=0, i=0, len=0, append=0;
+    int kill_signal=SIGTERM, background=0, i=0, append=0;
     unsigned int timeout=0;
     const char *path, *stdin_txt=NULL;
     duk_size_t stdin_sz;
@@ -2217,7 +2308,10 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 
     if(duk_get_prop_string(ctx, -1, "env"))
     {
-        int start=len;
+        env=make_env(ctx, append);
+    }
+    duk_pop(ctx);
+/*        int start=len;
         if(!duk_is_object(ctx, -1) || duk_is_function(ctx, -1) || duk_is_array(ctx, -1))
         {
             if(env)
@@ -2276,6 +2370,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         env[len]=NULL;
     }
     duk_pop(ctx);
+*/
 
 
     // get arguments into null terminated buffer
@@ -2283,8 +2378,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 
     if(!duk_is_array(ctx, -1))
     {
-        if(env)
-            free(env);
+        free_made_env(env);
         RP_THROW(ctx, "exec(): args value must be an Array");
     }
     nargs = duk_get_length(ctx, -1);
@@ -2305,8 +2399,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         if (rp_pipe(stdout_pipe) == -1 || rp_pipe(stderr_pipe) == -1|| rp_pipe(stdin_pipe) == -1)
         {
             free(args);
-            if(env)
-                free(env);
+            free_made_env(env);
             RP_THROW(ctx, "exec(): could not create pipe: %s", strerror(errno));
         }
     }
@@ -2316,8 +2409,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         if (rp_pipe(child2par) == -1  ||  rp_pipe(stdin_pipe) == -1)
         {
             free(args);
-            if(env)
-                free(env);
+            free_made_env(env);
             RP_THROW(ctx, "exec(): could not create pipe: %s", strerror(errno));
         }
 
@@ -2326,8 +2418,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     if ((pid = fork()) == -1)
     {
         free(args);
-        if(env)
-            free(env);
+        free_made_env(env);
         RP_THROW(ctx, "exec(): could not fork: %s", strerror(errno));
     }
     else if (pid == 0)
@@ -2349,8 +2440,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
             {
                 //error or first child
                 free(args);
-                if(env)
-                    free(env);
+                free_made_env(env);
                 if(-1 == write(child2par[1], &pid2, sizeof(pid_t)) )
                 {
                     fprintf(error_fh, "exec(): failed to send pid to parent\n");
@@ -2396,8 +2486,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
             execvp(path, args);
         fprintf(stderr, "exec(): could not execute %s: %s\n", args[0], strerror(errno));
         free(args);
-        if(env)
-            free(env);
+        free_made_env(env);
         exit(EXIT_FAILURE);
     }
 
@@ -2501,8 +2590,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         // above instead
         //rp_pipe_close(stdin_pipe,1);
     }
-    if(env)
-        free(env);
+    free_made_env(env);
     free(args);
     return 1;
 }
@@ -4741,9 +4829,13 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
     int isz=-1;
     const char *filename="";
     duk_idx_t idx=1;
-    int type=0, retstr=0;;
+    int type=0, retstr=0, nonblock=0;
 
     f=getreadfile(ctx, 0, "fread", filename, type);//type is reset
+
+    //assume true if set
+    if(duk_has_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("nonblock")) )
+        nonblock=1;
 
     /* check for boolean in idx 1,2 or 3 */
     if(duk_is_boolean(ctx, idx) || duk_is_boolean(ctx, ++idx) || duk_is_boolean(ctx, ++idx))
@@ -4779,9 +4871,13 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
 
     while (1)
     {
+        errno=0;
         r=fread(buf+read,1,sz,f);
         if(ferror(f))
-            RP_THROW(ctx, "error fread(): error reading file");
+        {
+            if( errno != EAGAIN || !nonblock)
+                RP_THROW(ctx, "error fread(): error reading file. %s", strerror(errno));
+        }
         read+=r;
         if (r != sz || r > max ) break;
         buf = duk_resize_buffer(ctx, -1, read+sz);
@@ -5437,6 +5533,599 @@ duk_ret_t duk_rp_fopen(duk_context *ctx)
     return 0;
 }
 
+#define PTYARGS struct pty_args
+
+PTYARGS {
+    duk_context *ctx;
+    struct event *e;
+    void *thisptr;
+};
+
+void duk_rp_forkpty_doclose(void *thisptr) {
+    RPTHR *curthr = get_current_thread();
+    PTYARGS *pargs=NULL;
+    duk_context *ctx = curthr->ctx;
+    pid_t pid=0;
+
+    duk_push_heapptr(ctx, thisptr); //this
+
+    duk_del_prop_string(ctx, -1, "write");
+    duk_del_prop_string(ctx, -1, "read");
+    duk_del_prop_string(ctx, -1, "close");
+    duk_del_prop_string(ctx, -1, "on");
+
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pargs")))
+    {
+        pargs = duk_get_pointer(ctx, -1);
+        if(pargs) {
+            event_del(pargs->e);
+            free(pargs);
+        }
+    }
+    duk_pop(ctx);
+
+    //remove 'this' from global stash, where it was kept in order to avoid garbage collection.
+    duk_push_global_stash(ctx);
+    if(duk_get_prop_string(ctx, -1, "forkpty_thisptrs"))
+    {
+        duk_push_sprintf(ctx, "%p", thisptr);
+        duk_del_prop(ctx, -2);
+    }
+    duk_pop_2(ctx); // global_stash, forkpty_thisptrs
+
+    duk_get_prop_string(ctx, -1, "pid");
+    pid = (pid_t)duk_get_int(ctx, -1);
+
+    /* waitpid(): on success, returns the process ID of the child whose state has changed; if WNOHANG was specified and one or more child(ren) speci‐
+       fied by pid exist, but have not yet changed state, then 0 is returned.  On error, -1 is returned.
+    */
+
+    if( pid && !waitpid(pid, NULL, WNOHANG) )
+    { //its still alive
+        int x=0;
+        kill(pid, SIGHUP);
+        kill(pid, SIGTERM);
+        while(waitpid(pid, NULL, WNOHANG) == 0 ) {
+            usleep(1000);
+            x++;
+            if(x==250)
+                kill(pid, SIGKILL);
+            if(x==350)
+            {
+                fprintf(stderr, "forkpty: error killing child process (pid:%d)\n", (int)pid);
+                break;
+            }
+        }
+    }
+    // run .on("close") callback
+    if( duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("onclose")) )
+    {
+        //exec with 'this'
+        duk_dup(ctx, -2);
+        duk_call_method(ctx, 0);
+    }
+
+    return;
+}
+
+duk_ret_t duk_rp_forkpty_close(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    duk_rp_forkpty_doclose(duk_get_heapptr(ctx, -1));
+    return 0;
+}
+
+
+duk_ret_t duk_rp_forkpty_write(duk_context *ctx)
+{
+    int fd;
+    void *buf;
+    size_t wrote, sz;
+    duk_size_t bsz;
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("fildes"));
+    fd=duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    buf = (void *) REQUIRE_STR_OR_BUF(ctx, 0, &bsz, "forkpty_write(): error - data must be a String or Buffer" );
+
+    sz=(size_t)duk_get_number_default(ctx,1,-1);
+
+    if(sz > 0)
+    {
+        if((size_t)bsz < sz)
+            sz=(size_t)bsz;
+    }
+    else sz=(size_t)bsz;
+
+    wrote=write(fd, buf,sz);
+
+    if(wrote != sz)
+    {
+        void *thisptr = duk_get_heapptr(ctx, -1);
+        duk_rp_forkpty_doclose(thisptr);
+        RP_THROW(ctx, "fwrite(): error writing file (wrote %d of %d bytes)", wrote, sz);
+    }
+
+    duk_push_number(ctx,(double)wrote);
+    return(1);
+}
+
+duk_ret_t duk_rp_forkpty_read(duk_context *ctx)
+{
+    void *buf;
+    size_t r, bytesread=0, sz=4096, max=SIZE_MAX;
+    int isz=-1, fd;
+    duk_idx_t idx=0;
+    int retstr=0;
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("fildes"));
+    fd=duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    /* check for boolean in idx 0,1 or 2 */
+    if(duk_is_boolean(ctx, idx) || duk_is_boolean(ctx, ++idx) || duk_is_boolean(ctx, ++idx))
+    {
+        retstr=duk_get_boolean(ctx, idx);
+        duk_remove(ctx, idx);
+    }
+
+    if (!duk_is_undefined(ctx,0))
+    {
+        int imax = REQUIRE_INT(ctx, 1, "forkpty_read(): argument max_bytes must be a Number (positive integer)");
+        if(imax>0)
+            max=(size_t)imax;
+    }
+
+    if (!duk_is_undefined(ctx,1))
+    {
+        int isz=REQUIRE_INT(ctx, 2, "forkpty_read(): argument chunk_size must be a Number (positive integer)");
+        if(isz > 0)
+            sz=(size_t)isz;
+    }
+
+    if(isz > 0)
+        sz=(size_t)isz;
+
+    buf=duk_push_dynamic_buffer(ctx, (duk_size_t)sz);
+
+    while (1)
+    {
+        errno=0;
+        r=read(fd, buf+bytesread,sz);
+
+        if( errno == EAGAIN || errno == EWOULDBLOCK)
+            break;
+        else if(errno)
+        {
+            //this should just disconnect -- trigger .on('eof' or on.('disconnect'
+            duk_push_this(ctx);
+            duk_rp_forkpty_doclose(duk_get_heapptr(ctx, -1));
+            return 0; //return undefined
+        }
+
+        if(!r) break;
+
+        bytesread+=r;
+        if (r != sz || r > max ) break;
+        buf = duk_resize_buffer(ctx, -1, bytesread+sz);
+    }
+
+    duk_resize_buffer(ctx, -1, bytesread);
+
+    if(retstr)
+        duk_buffer_to_string(ctx, -1);
+
+    return (1);
+}
+
+void rp_forkpty_doevent(evutil_socket_t fd, short events, void* arg)
+{
+    RPTHR *curthr = get_current_thread();
+    PTYARGS *pargs = (PTYARGS*)arg;
+    //use same context that we used to set up the event in .on('data',...)
+    duk_context *ctx = pargs->ctx, *save_ctx=curthr->ctx;
+    duk_idx_t otop=duk_get_top(ctx);
+    int cont=1;
+
+    //switch event in curthr just in case we use it anywhere else in rampart.
+    curthr->ctx=ctx;
+
+    duk_push_heapptr(ctx, pargs->thisptr); //this
+    //printf("end  : pargs=%p, ctx=%p, this=%p\n", pargs, ctx, pargs->thisptr);
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("dataev")))
+        RP_THROW(ctx, "forkpty callback setup: Internal error getting event data");
+
+    duk_enum(ctx, -1, 0);
+    while(duk_next(ctx, -1, 1))
+    {
+        // [ .., enum, key, val]
+        duk_remove(ctx, -2);// the key
+        // [ .., enum, val_arr]
+        duk_get_prop_index(ctx, -1, 0); //the function
+        // [ .., enum, val_arr, callback_func]
+
+        duk_push_this(ctx); // for the call method
+        // [ .., enum, val_arr, callback_func, this]
+        duk_get_prop_index(ctx, -3, 1); //user param
+        // [ .., enum, val_arr, callback_func, this, arg]
+
+        duk_call_method(ctx, 1);
+        // [ .., enum, val_arr, ret_val ]
+        cont=duk_get_boolean_default(ctx, -1, 1); // 0 only if === false
+
+        duk_pop_2(ctx);
+         // [ .., enum ]
+        if(!cont)
+            break; //break if returns false
+
+    }
+
+    duk_set_top(ctx, otop);
+
+    // reset the thr ctx, in case it is different.
+    curthr->ctx=save_ctx;
+}
+
+duk_ret_t duk_rp_forkpty_on(duk_context *ctx)
+{
+    const char *evname = REQUIRE_STRING(ctx, 0, "forkpty.on: first parameter must be a String (event name)");
+    const char *funcname = "default";
+    void *p;
+    PTYARGS *pargs=NULL;
+    int fd;
+
+    if( duk_is_function(ctx,1) )
+    {
+        duk_insert(ctx, 1);//4th param unused, placeholder for "default"
+    }
+    else
+        funcname=REQUIRE_STRING(ctx, 1, "forkpty.on: second parameter must be a String (function name)");
+
+    REQUIRE_FUNCTION(ctx, 2, "forkpty.on: first parameter must be a Function (event)");
+
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("fildes"));
+    fd=duk_get_int(ctx, -1);
+    duk_pop(ctx);
+
+    if (strcmp(evname,"close")==0)
+    {
+        duk_pull(ctx, -2);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("onclose") );
+    }
+    else if (strcmp(evname,"data")==0)
+    {
+        RPTHR *curthr = get_current_thread();
+        if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("dataev")))
+        {
+            //[..., this, undefined ]
+            duk_pop(ctx);
+            // [..., this]
+            duk_push_object(ctx);
+            duk_dup(ctx, -1);
+            // [..., this, object, object_dup ]
+            duk_put_prop_string(ctx, -3, DUK_HIDDEN_SYMBOL("dataev"));
+            // [..., this, dataev_object]
+        }
+        // [..., this, dataev_object]
+        duk_push_array(ctx);
+        // [..., this, dataev_object, function/param_array]
+        duk_dup(ctx, 2);
+        // [..., this, dataev_object, function/param_array, function]
+        duk_put_prop_index(ctx, -2, 0);
+        // [..., this, dataev_object, [function] ]
+        duk_dup(ctx, 3);
+        // [..., this, dataev_object, [function], user_param/undef ]
+        duk_put_prop_index(ctx, -2, 1);
+        // [..., this, dataev_object, [function, user_param/undef] ]
+        duk_put_prop_string(ctx, -2, funcname);
+        // [..., this, dataev_object ]
+        duk_pop(ctx);
+        // [..., this]
+
+        //store 'this' where it won't disappear
+        duk_push_global_stash(ctx);
+        // [..., this, glb_stash ]
+        if(!duk_get_prop_string(ctx, -1, "forkpty_thisptrs"))
+        {
+            duk_pop(ctx);
+            duk_push_object(ctx);
+            // [..., this, glb_stash, obj ]
+            duk_dup(ctx, -1);
+            // [..., this, glb_stash, obj, dup_obj ]
+            duk_put_prop_string(ctx, -3, "forkpty_thisptrs");
+            // [..., this, glb_stash, obj ]
+
+        }
+        duk_remove(ctx, -2);
+        // [..., this, stashed_thisptr_obj]
+
+        //store pointer for 'this' in stashed_obj indexed by pointer printed as a string
+        p=duk_get_heapptr(ctx,-2);
+        duk_push_sprintf(ctx, "%p", p);
+        // [..., this, stashed_thisptr_obj, pointer_as_string ]
+        duk_push_this(ctx);
+        // [..., this, stashed_thisptr_obj, pointer_as_string, this ]
+        duk_put_prop(ctx, -3);
+        duk_pop(ctx);
+        // [..., this]
+
+        //setup the event:
+        REMALLOC(pargs, sizeof(PTYARGS) );
+
+        // ctx could change at any time.  Save the one we are using here in ptyargs
+        // DO NOT USE curthr->ctx
+        pargs->ctx = ctx;
+        // save 'this' pointer
+        pargs->thisptr=p;
+        //make new event
+        pargs->e=event_new(curthr->base, fd, EV_READ|EV_PERSIST, rp_forkpty_doevent, pargs);
+
+        event_add(pargs->e,NULL);
+        //printf("start: pargs=%p, ctx=%p, this=%p\n", pargs, ctx, pargs->thisptr);
+
+        // save pargs in this for freeing later
+        duk_push_pointer(ctx, pargs);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("pargs"));
+
+    }
+    else
+        RP_THROW(ctx, "forkpty.on: event '%s' is unknown", evname);
+
+
+    return 1;
+}
+
+duk_ret_t duk_rp_forkpty_resize(duk_context *ctx)
+{
+    int fd;
+    struct winsize ws;
+
+    ws.ws_col=(unsigned short) REQUIRE_UINT(ctx, 0, "forkpty.resize: First parameter must be a positive integer (width)");
+    ws.ws_row=(unsigned short) REQUIRE_UINT(ctx, 1, "forkpty.resize: Second parameter must be a positive integer (height)");
+
+    duk_push_this(ctx);
+    if(!duk_get_prop_string(ctx,-1,DUK_HIDDEN_SYMBOL("fildes")) )
+    {
+        RP_THROW(ctx, "forkpty.resize: internal error retrieving file descriptor");
+    }
+    fd=duk_get_int(ctx, -1);
+    ioctl(fd, TIOCSWINSZ, &ws);
+    return 0;
+}
+
+duk_ret_t duk_rp_forkpty(duk_context *ctx)
+{
+    int fd, append=0;
+    pid_t pid;
+    duk_size_t nargs = duk_get_top(ctx), start=1;
+    char **args=NULL, **env=NULL;
+    const char *path=REQUIRE_STRING(ctx,0, "forkpty: filename (String) required as first parameter");
+
+    if(duk_is_object(ctx, 1) && duk_has_prop_string(ctx, 1, "env")) {
+        //options here currently only include env and appendEnv
+        if(duk_get_prop_string(ctx, 1, "appendEnv"))
+        {
+            append=REQUIRE_BOOL(ctx, -1, "forkpty: option 'appendEnv' must be a Boolean");
+        }
+        duk_pop(ctx);
+
+        duk_get_prop_string(ctx, 1, "env");
+        env=make_env(ctx, append);
+        start=2; //skip the options at idx 1
+    }
+
+    REMALLOC(args, sizeof(char*) * 2);
+    args[0]=(char*)path;
+    args[1]=NULL;
+
+    if(nargs > 0)
+    {
+        int i=1;
+        REMALLOC(args, sizeof(char*) * (nargs+2) );
+
+        while(start<nargs)
+        {
+            if ( duk_is_object(ctx, (duk_idx_t)start) )
+                duk_json_encode(ctx, (duk_idx_t) start);
+            args[i++] = (char*) duk_safe_to_string(ctx, (duk_idx_t) start);
+            start++;
+        }
+        args[i]=NULL;
+    }
+
+    pid = forkpty (&fd, 0, 0, 0);
+    if (pid == 0) {
+        if(env)
+            execvpe(path, args, env);
+        else
+            execvp(path, args);
+        _exit (1);
+    } else if (pid == -1) {
+        free_made_env(env);
+        if(args) free(args);
+        RP_THROW(ctx, "forkpty: Failed to fork new process");
+        return 0;
+    } else {
+
+        int flags = fcntl(fd, F_GETFL, 0);
+        struct termios attrs, orig;
+
+        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+
+        tcgetattr(fd,&orig); // ==-1, fail
+        attrs=orig;
+        /* input modes: no break, no CR to NL, no parity check, no strip char,
+             * no start/stop output control. */
+        //attrs.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+            /* output modes - disable post processing */
+        //    attrs.c_oflag &= ~(OPOST);
+            /* control modes - set 8 bit chars */
+            attrs.c_cflag |= (CS8);
+            /* local modes - choing off, canonical off, no extended functions,
+             * no signal chars (^Z,^C) */
+        //    attrs.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+            /* control chars - set return condition: min number of bytes and timer.
+             * We want read to return every single byte, without timeout. */
+        //    attrs.c_cc[VMIN] = 1; attrs.c_cc[VTIME] = 0; /* 1 byte, no timer */
+//        attrs.c_lflag &= ~ECHO;
+
+
+        tcsetattr(fd, TCSAFLUSH, &attrs);
+
+        duk_push_object(ctx);
+        duk_push_int(ctx,fd);
+        duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("fildes") );
+
+        // pid read only
+        duk_push_string(ctx,"pid");
+        duk_push_int(ctx, (int)pid);
+        duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_CLEAR_WRITABLE | DUK_DEFPROP_SET_ENUMERABLE);
+
+        //duk_push_c_function(ctx, duk_rp_fclose, 2);
+        //duk_set_finalizer(ctx, -2);
+
+        duk_push_c_function(ctx, duk_rp_forkpty_resize,2);
+        duk_put_prop_string(ctx,-2,"resize");
+
+        duk_push_c_function(ctx, duk_rp_forkpty_write,2);
+        duk_put_prop_string(ctx,-2,"write");
+
+        duk_push_c_function(ctx, duk_rp_forkpty_read,3);
+        duk_put_prop_string(ctx,-2,"read");
+
+        duk_push_c_function(ctx, duk_rp_forkpty_on,4);
+        duk_put_prop_string(ctx,-2,"on");
+
+        free_made_env(env);
+        if(args) free(args);
+
+        return 1;
+/*
+        err:
+        RP_THROW(ctx, "error opening file '%s': %s", path, strerror(errno));
+        free_made_env(env);
+        if(args) free(args);
+        return 0;
+*/
+    }
+}
+
+duk_ret_t duk_rp_forkpty_bak(duk_context *ctx)
+{
+    FILE *f;
+    int fd, append=0;
+    pid_t pid;
+    duk_size_t nargs = duk_get_top(ctx) - 1, start=1;
+    char **args=NULL, **env=NULL;
+    const char *path=REQUIRE_STRING(ctx,0, "forkpty: filename (String) required as first parameter");
+
+    if(duk_is_object(ctx, 1) && duk_has_prop_string(ctx, 1, "env")) {
+        //options here currently only include env and appendEnv
+        if(duk_get_prop_string(ctx, 1, "appendEnv"))
+        {
+            append=REQUIRE_BOOL(ctx, -1, "forkpty: option 'appendEnv' must be a Boolean");
+        }
+        duk_pop(ctx);
+
+        duk_get_prop_string(ctx, 1, "env");
+        env=make_env(ctx, append);
+    }
+
+    if(nargs > 0)
+    {
+        int i=0;
+        REMALLOC(args, sizeof(char*) * (nargs+1) );
+
+        while(start<nargs)
+        {
+            if ( duk_is_object(ctx, (duk_idx_t)start) )
+                duk_json_encode(ctx, (duk_idx_t) start);
+            args[i++] = (char*) duk_safe_to_string(ctx, (duk_idx_t) start);
+            start++;
+        }
+        args[i]=NULL;
+    }
+
+    pid = forkpty (&fd, 0, 0, 0);
+    if (pid == 0) {
+        if(env)
+            execvpe(path, args, env);
+        else
+            execvp(path, args);
+        _exit (1);
+    } else if (pid == -1) {
+        free_made_env(env);
+        if(args) free(args);
+        RP_THROW(ctx, "forkpty: Failed to fork new process");
+        return 0;
+    } else {
+int flags = fcntl(fd, F_GETFL, 0);
+fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+struct termios raw, orig;
+
+tcgetattr(fd,&orig); // ==-1, fail
+raw=orig;
+/* input modes: no break, no CR to NL, no parity check, no strip char,
+     * no start/stop output control. */
+//raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+    /* output modes - disable post processing */
+//    raw.c_oflag &= ~(OPOST);
+    /* control modes - set 8 bit chars */
+    raw.c_cflag |= (CS8);
+    /* local modes - choing off, canonical off, no extended functions,
+     * no signal chars (^Z,^C) */
+//    raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
+    /* control chars - set return condition: min number of bytes and timer.
+     * We want read to return every single byte, without timeout. */
+//    raw.c_cc[VMIN] = 1; raw.c_cc[VTIME] = 0; /* 1 byte, no timer */
+raw.c_lflag &= ~ECHO;
+
+
+tcsetattr(fd, TCSAFLUSH, &raw);
+        f = fdopen (fd, "r+");
+        if(f==NULL) goto err;
+
+        duk_push_object(ctx);
+        duk_push_pointer(ctx,(void *)f);
+        duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("filehandle") );
+        duk_push_int(ctx, (int)pid);
+        duk_put_prop_string(ctx, -2, "pid");
+        duk_push_true(ctx);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("nonblock"));
+
+        duk_push_c_function(ctx, duk_rp_fclose, 2);
+        duk_set_finalizer(ctx, -2);
+
+        pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
+        pushffunc("fseek",      func_fseek,     2           );
+        pushffunc("rewind",     func_rewind,    0           );
+        pushffunc("ftell",      func_ftell,     0           );
+        pushffunc("fflush",     func_fflush,    0           );
+        pushffunc("fwrite",     func_fwrite,    3           );
+        pushffunc("fread",      func_fread,     3           );
+        pushffunc("readLine",   func_readline,  0           );
+        pushffunc("fgets",      func_fgets,     1           );
+        pushffunc("fclose",     func_fclose,    0           );
+        free_made_env(env);
+        if(args) free(args);
+
+        return 1;
+
+        err:
+        RP_THROW(ctx, "error opening file '%s': %s", path, strerror(errno));
+        free_made_env(env);
+        if(args) free(args);
+        return 0;
+    }
+}
+
 #define N_DATE_FORMATS 6
 #define N_DATE_FORMATS_W_OFFSET 2
 static char *dfmts[N_DATE_FORMATS] = {
@@ -5687,6 +6376,9 @@ void duk_printf_init(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_rp_fopen, 2);
     duk_put_prop_string(ctx, -2, "fopen");
+
+    duk_push_c_function(ctx, duk_rp_forkpty, DUK_VARARGS);
+    duk_put_prop_string(ctx, -2, "forkpty");
 
     duk_push_c_function(ctx, duk_rp_fclose, 1);
     duk_put_prop_string(ctx, -2, "fclose");

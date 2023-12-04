@@ -94,7 +94,7 @@ target_link_libraries(rampart LINK_PUBLIC
 	${LIBEVENT_TARGET_DIR}/lib/libevent_pthreads.a
 	${LIBEVENT_TARGET_DIR}/lib/libevent_extra.a
 	-Wl,--no-whole-archive
-	m dl pthread
+	m dl pthread util
     event_core event_pthreads event_extra
 )
 
