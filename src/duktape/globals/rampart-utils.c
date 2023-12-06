@@ -45,7 +45,7 @@ int duk_rp_server_logging=0;
 
 //forkpty
 #include <util.h>
-
+#include <sys/ioctl.h>
 // execvpe polyfill
 int execvpe(const char *program, char **argv, char **envp)
 {
