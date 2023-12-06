@@ -5541,11 +5541,17 @@ PTYARGS {
     void *thisptr;
 };
 
-void duk_rp_forkpty_doclose(void *thisptr) {
+void duk_rp_forkpty_doclose(duk_context *ctx, void *thisptr) {
     RPTHR *curthr = get_current_thread();
     PTYARGS *pargs=NULL;
-    duk_context *ctx = curthr->ctx;
+    duk_context *savectx = curthr->ctx;
     pid_t pid=0;
+
+    curthr->ctx=ctx;  // for any calls in the future that might be made in a js callback that require this.
+
+    //printf("htctx = %p\nwsctx=%p\n  ctx=%p\n", curthr->htctx, curthr->wsctx, curthr->ctx);
+
+    duk_idx_t otop=duk_get_top(ctx);
 
     duk_push_heapptr(ctx, thisptr); //this
 
@@ -5553,11 +5559,13 @@ void duk_rp_forkpty_doclose(void *thisptr) {
     duk_del_prop_string(ctx, -1, "read");
     duk_del_prop_string(ctx, -1, "close");
     duk_del_prop_string(ctx, -1, "on");
+    duk_del_prop_string(ctx, -1, "resize");
 
     if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pargs")))
     {
         pargs = duk_get_pointer(ctx, -1);
-        if(pargs) {
+        if(pargs)
+        {
             event_del(pargs->e);
             free(pargs);
         }
@@ -5573,23 +5581,37 @@ void duk_rp_forkpty_doclose(void *thisptr) {
     }
     duk_pop_2(ctx); // global_stash, forkpty_thisptrs
 
-    duk_get_prop_string(ctx, -1, "pid");
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("fildes"));
+    int fd=duk_get_int(ctx, -1);
+    //printf("fd = %d\n", fd);
+    close(fd);
+    duk_pop(ctx);
+
+    if(!duk_get_prop_string(ctx, -1, "pid")){
+        fprintf(stderr, "error getting pid of pty child\n");
+        duk_set_top(ctx, otop);
+        curthr->ctx = savectx;
+        return;
+    }
     pid = (pid_t)duk_get_int(ctx, -1);
+    //printf("Got pid %d\n", (int)pid);
+    duk_pop(ctx);
 
-    /* waitpid(): on success, returns the process ID of the child whose state has changed; if WNOHANG was specified and one or more child(ren) speci‐
-       fied by pid exist, but have not yet changed state, then 0 is returned.  On error, -1 is returned.
-    */
-
-    if( pid && !waitpid(pid, NULL, WNOHANG) )
+    if( pid && waitpid(pid, NULL, WNOHANG)==0 )
     { //its still alive
         int x=0;
+        //printf("pid %d is alive, killing with hup,term\n", (int)pid);
         kill(pid, SIGHUP);
         kill(pid, SIGTERM);
         while(waitpid(pid, NULL, WNOHANG) == 0 ) {
+            //printf("pid %d is alive\n", (int)pid);
             usleep(1000);
             x++;
             if(x==250)
+            {
                 kill(pid, SIGKILL);
+                //printf("sigkill %d\n", (int)pid);
+            }
             if(x==350)
             {
                 fprintf(stderr, "forkpty: error killing child process (pid:%d)\n", (int)pid);
@@ -5597,6 +5619,9 @@ void duk_rp_forkpty_doclose(void *thisptr) {
             }
         }
     }
+//    else
+//        printf("waitpid err: %s\n", strerror(errno));
+
     // run .on("close") callback
     if( duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("onclose")) )
     {
@@ -5605,13 +5630,21 @@ void duk_rp_forkpty_doclose(void *thisptr) {
         duk_call_method(ctx, 0);
     }
 
+    duk_set_top(ctx, otop);
+    curthr->ctx = savectx;
+
     return;
 }
 
 duk_ret_t duk_rp_forkpty_close(duk_context *ctx)
 {
+    void *thisptr;
+
     duk_push_this(ctx);
-    duk_rp_forkpty_doclose(duk_get_heapptr(ctx, -1));
+    thisptr=duk_get_heapptr(ctx, -1);
+    duk_pop(ctx);
+
+    duk_rp_forkpty_doclose(ctx, thisptr);
     return 0;
 }
 
@@ -5644,8 +5677,10 @@ duk_ret_t duk_rp_forkpty_write(duk_context *ctx)
     if(wrote != sz)
     {
         void *thisptr = duk_get_heapptr(ctx, -1);
-        duk_rp_forkpty_doclose(thisptr);
-        RP_THROW(ctx, "fwrite(): error writing file (wrote %d of %d bytes)", wrote, sz);
+        duk_set_top(ctx,0);
+        duk_rp_forkpty_doclose(ctx, thisptr);
+//        RP_THROW(ctx, "fwrite(): error writing file (wrote %d of %d bytes)", wrote, sz);
+        return 0;
     }
 
     duk_push_number(ctx,(double)wrote);
@@ -5702,7 +5737,9 @@ duk_ret_t duk_rp_forkpty_read(duk_context *ctx)
         {
             //this should just disconnect -- trigger .on('eof' or on.('disconnect'
             duk_push_this(ctx);
-            duk_rp_forkpty_doclose(duk_get_heapptr(ctx, -1));
+            void *thisptr = duk_get_heapptr(ctx, -1);
+            duk_set_top(ctx,0);
+            duk_rp_forkpty_doclose(ctx, thisptr);
             return 0; //return undefined
         }
 
@@ -5985,10 +6022,13 @@ duk_ret_t duk_rp_forkpty(duk_context *ctx)
         // pid read only
         duk_push_string(ctx,"pid");
         duk_push_int(ctx, (int)pid);
-        duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_CLEAR_WRITABLE | DUK_DEFPROP_SET_ENUMERABLE);
+        duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_CLEAR_WRITABLE | DUK_DEFPROP_SET_ENUMERABLE| DUK_DEFPROP_SET_CONFIGURABLE);
 
         //duk_push_c_function(ctx, duk_rp_fclose, 2);
         //duk_set_finalizer(ctx, -2);
+
+        //duk_push_int(ctx, (int)pid);
+        //duk_put_prop_string(ctx,-2, "pid" );
 
         duk_push_c_function(ctx, duk_rp_forkpty_resize,2);
         duk_put_prop_string(ctx,-2,"resize");
@@ -6001,6 +6041,9 @@ duk_ret_t duk_rp_forkpty(duk_context *ctx)
 
         duk_push_c_function(ctx, duk_rp_forkpty_on,4);
         duk_put_prop_string(ctx,-2,"on");
+
+        duk_push_c_function(ctx, duk_rp_forkpty_close,0);
+        duk_put_prop_string(ctx,-2,"close");
 
         free_made_env(env);
         if(args) free(args);
