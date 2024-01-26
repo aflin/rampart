@@ -656,11 +656,11 @@ RPfunc_stringformat(duk_context *ctx)
   FLD            *args[argn];
   HTPFARG        cvtData[argn];
   void            *dupData[argn];
-  char pbuf[msgbufsz];
 
   if (duk_get_top(ctx)==0)
     RP_THROW(ctx,"stringFormat(): arguments required");
 
+  clearmsgbuf();
   memset(&info, 0, sizeof(RPSFD));
   memset(&dupData,0,argn*sizeof(void *));
 
@@ -699,11 +699,8 @@ RPfunc_stringformat(duk_context *ctx)
                    "Too many arguments in the function: stringFormat()");
 
   /* catch errors from RPstringformatArgCb */
-  TXLOCK
-  msgtobuf(pbuf);
-  TXUNLOCK
-  if(*pbuf!='\0')
-      RP_THROW(ctx, "%s", pbuf+4);
+  if(*(finfo->errmap)!='\0')
+      RP_THROW(ctx, "%s", finfo->errmap + 4);
 
   /* Copy the output to the field: - - - - - - - - - - - - - - - - - - - - */
   if (!htbuf_write(outBuf, "", 0)) goto noMem;  /* ensure non-NULL outData */

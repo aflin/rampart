@@ -5,6 +5,10 @@
 /* For fcntl */
 #include <fcntl.h>
 
+/* for setrlimit */
+#include <sys/time.h>
+#include <sys/resource.h>
+
 #include <event2/event.h>
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
@@ -558,8 +562,10 @@ do_accept(evutil_socket_t listener, short event, void *arg)
 
     if (fd < 0) {
         perror("accept");
+#ifdef WIN32
     } else if (fd > FD_SETSIZE) {
         close(fd);
+#endif
     } else {
         lockd_connection *ctx = NULL;
         evutil_make_socket_nonblocking(fd);
@@ -603,7 +609,7 @@ run(void)
         return -1;
     }
 
-    if (listen(listener, 16)<0) {
+    if (listen(listener, 1024)<0) {
         perror("listen");
         return -1;
     }
@@ -623,6 +629,15 @@ main(int c, char **v)
 {
   int dologging = 0;
   (void)v;
+
+  // increase ulimit -n to max
+  struct rlimit rlp;
+
+  /* set max files open limit to hard limit */
+  getrlimit(RLIMIT_NOFILE, &rlp);
+  rlp.rlim_cur = rlp.rlim_max;
+  setrlimit(RLIMIT_NOFILE, &rlp);
+
   if(c == 1) {
     daemon(0, 0);
   }
