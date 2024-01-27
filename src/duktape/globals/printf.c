@@ -32,6 +32,8 @@
 // FROM: https://github.com/mpaland/printf - with gratitude!
 // MODIFIED BY Aaron Flin for use in duktape
 // and with 'B', 'J', 's', 'S', 'U' and 'P' new/altered % format codes
+//
+// Modifications Copyright (C) 2024  Aaron Flin
 
 #include <stdbool.h>
 #include <stdint.h>

@@ -1,3 +1,9 @@
+/* Copyright (C) 2024 Aaron Flin - All Rights Reserved
+ * You may use, distribute or alter this code under the
+ * terms of the MIT license
+ * see https://opensource.org/licenses/MIT
+ */
+
 #include "rampart.h"
 #include "include/version.h"
 #include "rampart_timestamp.h"
