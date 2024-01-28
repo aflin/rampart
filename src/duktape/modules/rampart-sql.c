@@ -4020,8 +4020,8 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             }
             duk_pop(ctx);
         }
+        SETUNLOCK
     }
-    SETUNLOCK
     duk_pop_2(ctx);// list and this
 
     // apply all settings in object
