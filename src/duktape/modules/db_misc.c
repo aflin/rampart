@@ -868,7 +868,7 @@ static int duk_rp_GPS_icase(duk_context *ctx, duk_idx_t idx, const char * prop)
     return 0;
 }
 
-duk_ret_t dosearchfile(duk_context *ctx, const char *search, const char *file, APICP *cp, int showsubhit)
+duk_ret_t dosearchfile(duk_context *ctx, const char *search, const char *file, APICP *cp, int showsubhit, duk_idx_t mem_idx)
 {
     MMAPI *mm=MMAPIPN;
     int nhits=0;
@@ -876,15 +876,28 @@ duk_ret_t dosearchfile(duk_context *ctx, const char *search, const char *file, A
     int    nread;
     long bufbase;
     FILE *fh;
-
+    char *fname;
+    
+    if(mem_idx > -1)
+    {
+        fname="searchText";
+        duk_size_t sz;
+        char *mem = (char*) REQUIRE_STR_OR_BUF(ctx, mem_idx, &sz, "searchText - content to be searched must be a String or Buffer");
+        fh=fmemopen(mem, sz, "r");
+    }
+    else
+    {
+        fname="searchFile";
+        if((fh=fopen(file,"r"))==(FILE *)NULL)
+            RP_THROW(ctx, "Unable to open input file: %s",file);
+    }
     if ((mm = openmmapi(search, TXbool_False, cp)) == MMAPIPN)/* open API and do NULL chk */
     {
-         closeapicp(cp);                  /* cleanup the control parameters */
-         RP_THROW(ctx, "searchfile: Unable to open API");
+        fclose(fh);
+        closeapicp(cp);                  /* cleanup the control parameters */
+        RP_THROW(ctx, "%s: Unable to open API", fname);
     }
 
-     if((fh=fopen(file,"r"))==(FILE *)NULL)
-         RP_THROW(ctx, "Unable to open input file: %s",file);
 
 
                 /* allocate memory for the read buffer */
@@ -978,6 +991,7 @@ duk_ret_t dosearchfile(duk_context *ctx, const char *search, const char *file, A
              nhits++;
         }
     }
+    fclose(fh);
     free(buf);                               /* deallocate the data buffer */
     return 1;
 }
@@ -1227,9 +1241,9 @@ static void searchfile_setcp(duk_context *ctx, APICP *cp, duk_idx_t obj_idx)
     duk_pop(ctx);
 } 
 
-duk_ret_t searchfile(duk_context *ctx)
+static duk_ret_t search(duk_context *ctx, int ismem)
 {
-    duk_idx_t top=duk_get_top(ctx), i=0, obj_idx=-1;
+    duk_idx_t top=duk_get_top(ctx), i=0, obj_idx=-1, mem_idx=-1;
     const char *search=NULL, *file=NULL;
     APICP *cp=APICPPN;
     int dosubhit=0;
@@ -1239,7 +1253,12 @@ duk_ret_t searchfile(duk_context *ctx)
         if (duk_is_string(ctx, i))
         {
             if(search != NULL)
-                file = duk_get_string(ctx, i);
+            {
+                if(ismem)
+                    mem_idx=i;
+                else
+                    file = duk_get_string(ctx, i);
+            }
             else
                 search = duk_get_string(ctx, i);
         }
@@ -1247,10 +1266,17 @@ duk_ret_t searchfile(duk_context *ctx)
         {
             obj_idx=i;
         }
+        else if (duk_is_buffer(ctx, i) && ismem)
+        {
+            mem_idx=i;
+        }
     }
-    if(!search || !file)
-        RP_THROW(ctx, "searchfile: requires search terms (string) and a filename (string)");
     
+    if(ismem && (mem_idx ==-1 || !search) )
+        RP_THROW(ctx, "searchfile: requires search terms (String) and content to be searched (String|Buffer)");
+    else if(!ismem && (!search || !file))
+        RP_THROW(ctx, "searchfile: requires search terms (String) and a filename (String)");
+
     if((cp=openapicp())==APICPPN)
          RP_THROW (ctx, "searchfile: Could not create control parameters structure");
 
@@ -1264,9 +1290,18 @@ duk_ret_t searchfile(duk_context *ctx)
             dosubhit=1;
         duk_pop(ctx); 
     }
-    return dosearchfile(ctx, search, file, cp, dosubhit);
+    return dosearchfile(ctx, search, file, cp, dosubhit, mem_idx);
 }
 
+duk_ret_t searchfile(duk_context *ctx)
+{
+    return search(ctx, 0);
+}
+
+duk_ret_t searchtext(duk_context *ctx)
+{
+    return search(ctx, 1);
+}
 
 char **VXsandr ARGS((char **, char **, char **));
 

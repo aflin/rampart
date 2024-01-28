@@ -27,6 +27,7 @@
 #include "event.h"
 
 pthread_mutex_t tx_handle_lock;
+pthread_mutex_t tx_set_lock;
 
 static int defnoise=1, defsuffix=1, defsuffixeq=1, defprefix=1;
 
@@ -114,12 +115,14 @@ __thread SFI *finfo = NULL;
 
 extern int RP_TX_isforked;
 
-// no handle locking in forks
-//#define HLOCK if(!RP_TX_isforked) RP_PTLOCK(&tx_handle_lock);
-//#define HLOCK if(!RP_TX_isforked) {printf("lock from %d\n", thisfork);pthread_mutex_lock(&lock);}
-//#define HUNLOCK if(!RP_TX_isforked) RP_PTUNLOCK(&tx_handle_lock);
+// lock handle list while operating from multiple threads
 #define HLOCK RP_PTLOCK(&tx_handle_lock);
 #define HUNLOCK RP_PTUNLOCK(&tx_handle_lock);
+
+// lock around texis' setprop() and fork()
+// NO forking while in the middle of freeing and setting texis globals
+#define SETLOCK if(!RP_TX_isforked) RP_PTLOCK(&tx_set_lock);
+#define SETUNLOCK if(!RP_TX_isforked) RP_PTUNLOCK(&tx_set_lock);
 
 
 #define DB_HANDLE struct db_handle_s_list
@@ -623,7 +626,6 @@ static void do_child_loop(SFI *finfo);
 static SFI *check_fork(DB_HANDLE *h, int create)
 {
     int pidstatus;
-
     if(finfo == NULL)
     {
         if(!create)
@@ -705,7 +707,9 @@ static SFI *check_fork(DB_HANDLE *h, int create)
 
 
         /***** fork ******/
+        SETLOCK
         finfo->childpid = fork();
+        SETUNLOCK
         if (finfo->childpid < 0)
         {
             fprintf(stderr, "fork failed");
@@ -832,6 +836,14 @@ static DB_HANDLE *h_open(const char *db)
         else
         {
             h->tx=texis_open((char *)(db), "PUBLIC", "");
+            // if not using forked child, make sure we have a place to log errors in this proc
+            if(!finfo)
+            {
+                REMALLOC(finfo, sizeof(SFI));
+                finfo->errmap=NULL;
+                REMALLOC(finfo->errmap, msgbufsz);
+                mmsgfh = fmemopen(finfo->errmap, msgbufsz, "w+");
+            }
         }
 
         // error opening tx handle
@@ -1925,7 +1937,6 @@ static int h_close(DB_HANDLE *h)
     else
         h->tx = TEXIS_CLOSE(h->tx);
     
-    remove_handle(h);
     h=free_handle(h);
 
     return ret;
@@ -3893,17 +3904,19 @@ static int sql_defaults(duk_context *ctx, TEXIS *tx, char *errbuf)
     }
 
     props = prop_defaults[i];
+    SETLOCK
     while (props[0])
     {
         if(setprop(ddic, props[0], props[1] )==-1)
         {
             sprintf(errbuf, "sql reset");
+            SETUNLOCK
             return -2;
         }
         i++;
         props = prop_defaults[i];
     }
-
+    SETUNLOCK
     if(!defnoise)
     {
         globalcp->noise=(byte**)copylist(noiseList, nnoiseList);
@@ -3965,6 +3978,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         int i=0, len = duk_get_length(ctx, -1);
         const char *val;
 
+        SETLOCK
         for (i=0;i<len;i++)
         {
             duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
@@ -3972,10 +3986,12 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             if(setprop(ddic, "addindextmp", (char*)val )==-1)
             {
                 sprintf(errbuf, "sql set");
+                SETUNLOCK
                 goto return_neg_two;
             }
             duk_pop(ctx);
         }
+        SETUNLOCK
     }
     duk_pop(ctx);//list or undef
 
@@ -3985,12 +4001,13 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
         const char *val;
 
         /* delete first entry for an empty list */
+        SETLOCK
         if(setprop(ddic, "delexp", "0" )==-1)
         {
+            SETUNLOCK
             sprintf(errbuf, "sql set");
             goto return_neg_two;
         }
-
         for (i=0;i<len;i++)
         {
             duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
@@ -3998,11 +4015,13 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
             if(setprop(ddic, "addexp", (char*)val )==-1)
             {
                 sprintf(errbuf, "sql set");
+                SETUNLOCK
                 goto return_neg_two;
             }
             duk_pop(ctx);
         }
     }
+    SETUNLOCK
     duk_pop_2(ctx);// list and this
 
     // apply all settings in object
@@ -4162,6 +4181,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                 snprintf(errbuf, msgbufsz, "sql.set: %s must be an array of strings", rlsts[setlisttype] );
                 goto return_neg_one;
             }
+            SETLOCK
             switch(setlisttype)
             {
                 case 0: free_list((char**)globalcp->noise);
@@ -4184,7 +4204,7 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                         defprefix=0;
                         break;
             }
-
+            SETUNLOCK
             goto propnext;
         }
 
@@ -4270,11 +4290,14 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                     }
                     aval=duk_get_string(ctx, -1);
                 }
+                SETLOCK
                 if(setprop(ddic, (char*)prop, (char*)aval )==-1)
                 {
                     sprintf(errbuf, "sql set");
+                    SETUNLOCK
                     goto return_neg_two;
                 }
+                SETUNLOCK
                 duk_pop_2(ctx);
             }
             duk_pop(ctx);
@@ -4309,11 +4332,14 @@ static int sql_set(duk_context *ctx, TEXIS *tx, char *errbuf)
                 val="defaults";
             }
            */
+            SETLOCK
             if(setprop(ddic, (char*)prop, (char*)val )==-1)
             {
                 sprintf(errbuf, "sql set");
+                SETUNLOCK
                 goto return_neg_two;
             }
+            SETUNLOCK
         }
 
         /* save the altered list for reapplication after reset */
@@ -4649,6 +4675,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
         char *TexisArgv[2];
 
         RP_PTINIT(&tx_handle_lock);
+        RP_PTINIT(&tx_set_lock);
 
         RPTHR *thr = get_current_thread();
 
@@ -4801,6 +4828,9 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
     duk_push_c_function(ctx, searchfile, 3);
     duk_put_prop_string(ctx, -2, "searchFile");
+
+    duk_push_c_function(ctx, searchtext, 3);
+    duk_put_prop_string(ctx, -2, "searchText");
 
     add_exit_func(free_all_handles, NULL);
 
