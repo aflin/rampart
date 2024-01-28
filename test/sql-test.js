@@ -138,13 +138,13 @@ Now we are engaged in a great civil war, testing whether that nation, or any nat
 But, in a larger sense, we can not dedicate -- we can not consecrate -- we can not hallow -- this ground. The brave men, living and dead, who struggled here, have consecrated it, far above our poor power to add or detract. The world will little note, nor long remember what we say here, but it can never forget what they did here. It is for us the living, rather, to be dedicated here to the unfinished work which they who fought here have thus far so nobly advanced. It is rather for us to be here dedicated to the great task remaining before us -- that from these honored dead we take increased devotion to that cause for which they gave the last full measure of devotion -- that we here highly resolve that these dead shall not have died in vain -- that this nation, under God, shall have a new birth of freedom -- and that government of the people, by the people, for the people, shall not perish from the earth.
 `;
 
-fprintf("gettysburg.txt", '%s', getty);
+fprintf(process.scriptPath+"/gettysburg.txt", '%s', getty);
 
 
 testFeature ("searchFile", function() {
     var res = Sql.searchFile(
        "live",
-       "gettysburg.txt",
+       process.scriptPath+"/gettysburg.txt",
        { minwordlen:3 }
     );
     return res.length==3 && res[0].offset;
@@ -160,14 +160,14 @@ testFeature ("searchText", function() {
 });
 
 
-var sql1 = new Sql.init("./wdb", true);
+var sql1 = new Sql.init(process.scriptPath+"/wdb", true);
 
 testFeature ("sql.importCsvFile", function() {
     var wiki = fopen("./wiki.csv", "w+");
 
     fprintf(wiki, "Title, Text\n");
 
-    Sql.rexFile(```>><doc=!title*title\="\P=[^"]+[^>]+>=!</doc+```, "wiki_00", //)
+    Sql.rexFile('>><doc=!title*title\\="\\P=[^"]+[^>]+>=!</doc+', process.scriptPath+ "/wiki_00",
         function (match, sub, index) {
             var title = sub.submatches[3];
             var text = sub.submatches[6];
@@ -190,7 +190,7 @@ testFeature ("sql.importCsvFile", function() {
 });
 
 function nestedcopy() {
-    var sql2 = new Sql.init("./wdb2", true);
+    var sql2 = new Sql.init(process.scriptPath+"/wdb2", true);
 
     if(sql2.one("select * from SYSTABLES where NAME='wtext'"))
         sql2.one("drop table wtext");
