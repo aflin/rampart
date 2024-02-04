@@ -895,12 +895,13 @@ duk_ret_t dosearchfile(duk_context *ctx, const char *search, const char *file, A
     {
         fclose(fh);
         closeapicp(cp);                  /* cleanup the control parameters */
-        RP_THROW(ctx, "%s: Unable to open API", fname);
+        RP_THROW(ctx, "%s: Unable to open API (bad query or other fault):\n%s", fname, finfo->errmap);
     }
 
 
 
                 /* allocate memory for the read buffer */
+
 /*
 #define pushhit(name,val) do{\
     duk_push_string(ctx, (const char*)(val) );\
@@ -949,6 +950,8 @@ duk_ret_t dosearchfile(duk_context *ctx, const char *search, const char *file, A
                 switch(index)
                 {
                     case 0:
+                        if(isspace(where[length-1]))
+                            length--;
                         duk_push_lstring(ctx, where, (duk_size_t)length);
                         duk_put_prop_string(ctx, -2, "match");
                         break;
@@ -961,6 +964,8 @@ duk_ret_t dosearchfile(duk_context *ctx, const char *search, const char *file, A
                             duk_push_object(ctx);
                             duk_push_string(ctx,what);
                             duk_put_prop_string(ctx, -2, "term");
+                            if(isspace(where[length-1]))
+                                length--;
                             duk_push_lstring(ctx, where, (duk_size_t)length);
                             duk_put_prop_string(ctx, -2, "match");
                             duk_put_prop_index(ctx, -2, j++);

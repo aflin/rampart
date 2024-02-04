@@ -1150,7 +1150,7 @@ static int child_fetch()
     /* idx */
     if (forkread(&tx, sizeof(TEXIS *) )  == -1)
     {
-        forkwrite(&ret, sizeof(size_t));
+        forkwrite(&ret, sizeof(int));
         return 0;
     }
     if(!tx)
@@ -1249,7 +1249,7 @@ static int child_param()
 
     if (forkread(&tx, sizeof(TEXIS *))  == -1)
     {
-        forkwrite(&ret, sizeof(size_t));
+        forkwrite(&ret, sizeof(int));
         return 0;
     }
     if(!tx)
