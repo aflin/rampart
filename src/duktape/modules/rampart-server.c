@@ -2717,6 +2717,29 @@ DHR
 #endif
 };
 
+duk_ret_t glob_finalizer(duk_context *ctx)
+{
+    if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("globs") ) )
+    {
+        char **globs = (char **)duk_get_pointer(ctx, -1);
+        duk_pop(ctx);
+        duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("globs") );
+        if(globs)
+        {
+            int i=0;
+            char *g;
+            while( (g=globs[i]) )
+            {
+                free(g);
+                i++;
+            }
+            free(globs);
+        }
+    }
+    return 0;
+}
+
+
 /*  CALLBACK LOGIC:
 
       http_callback
@@ -2740,7 +2763,7 @@ static int getfunction(DHS *dhs){
         if(!duk_is_function(ctx, -1)) {
             if(duk_is_object(ctx, -1)){
                 //printf("path = %s, pathlen = %d, subpath = '%s'\n", dhs->reqpath, dhs->pathlen, dhs->reqpath + dhs->pathlen);
-                char *s;
+                char *s, **globs=NULL;
                 /* if pathlen == 0, then the length is variable.  All we
                    can do is go backwards to the last '/'.  This means
                    for glob and regex, only '/file.html' can be matched.
@@ -2750,6 +2773,41 @@ static int getfunction(DHS *dhs){
                     s = dhs->reqpath + dhs->pathlen -1;
                 else
                     s = strrchr(dhs->reqpath, '/');
+
+                /* check for and/or set up any pseudo-globs (only match 'path*' where '*' is last char) */
+                if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("globs") ) )
+                {
+                    globs = (char **)duk_get_pointer(ctx, -1);
+                    duk_pop(ctx);
+                }
+                else
+                {
+                    const char *key;
+                    duk_size_t keyl;
+                    int nglobs=0;
+
+                    duk_pop(ctx); //undefined from duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("globs") )
+                    duk_enum(ctx, -1, 0);
+                    while (duk_next(ctx,-1,1))
+                    {
+                        key=duk_get_lstring(ctx, -2, &keyl);
+                        if( key[keyl-1] == '*' ) {
+                            REMALLOC(globs, (2 + nglobs) * sizeof(char *) );
+                            globs[nglobs]=strdup(key);
+                            globs[nglobs+1]=NULL; //terminate list
+                            nglobs++;
+                        }
+                        duk_pop_2(ctx);
+                    }
+                    duk_pop(ctx);//enum
+                    duk_push_pointer(ctx, globs);
+                    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("globs") );
+                    // finalizer is not running on reload of module.  Perhaps there's another ref?
+                    // it is being run inside getmod() below instead.
+                    duk_push_c_function(ctx, glob_finalizer, 1);
+                    duk_set_finalizer(ctx, -2);
+                }
+
                 //printf("checking for key '%s'\n", s);
                 if (!s)
                 /* this will never happen */
@@ -2765,13 +2823,34 @@ static int getfunction(DHS *dhs){
                 {
                     duk_get_prop_string(ctx, -1, s);
                     duk_remove(ctx, -2);
-                    //printf("got key '%s'\n", s);
+                    //printf("1 got key '%s'\n", s);
                 }
                 else if(duk_has_prop_string(ctx, -1, s+1))
                 {
                     duk_get_prop_string(ctx, -1, s+1);
                     duk_remove(ctx, -2);
-                    //printf("got key '%s'\n", s+1);
+                    //printf("2 got key '%s'\n", s+1);
+                }
+                else if(globs)
+                {
+                    int i=0, matched=0;;
+                    char *key;
+                    while( (key=globs[i]) )
+                    {
+                        size_t keyl = strlen(key)-1;
+                        if( ! strncmp( s+1, key, keyl) || ! strncmp( s, key, keyl) )
+                        {
+                            duk_get_prop_string(ctx, -1, key);
+                            matched=1;
+                            break;
+                        }
+                        i++;
+                    }
+                    if(!matched)
+                    {
+                        duk_pop(ctx);
+                        ret=0;
+                    }
                 }
                 else
                 {
@@ -3888,8 +3967,9 @@ static int getmod(DHS *dhs)
     duk_idx_t idx=dhs->func_idx;
     duk_context *ctx=dhs->ctx;
     const char *modname = dhs->module_name;
-    duk_get_prop_index(ctx, 0, (duk_uarridx_t) idx); // {module:...}
     int ret=0;
+
+    duk_get_prop_index(ctx, 0, (duk_uarridx_t) idx); // {module:...}
     /* is it already in the object? */
     if (duk_get_prop_string(ctx, -1, modname) )
     {
@@ -3914,8 +3994,12 @@ static int getmod(DHS *dhs)
                 duk_pop_2(ctx); //the module from duk_get_prop_string(ctx, -1, modname) and duk_get_prop_index(ctx, 0, (duk_uarridx_t) idx);
                 return 1; // it is there and up to date
             }
-            //printf("  No\n");
             /* else replace it below */
+
+            // finalizer is not running.  Do we have another reference somewhere?
+            if(duk_has_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("globs")))
+                (void)glob_finalizer(ctx);
+
         }
         /* else file is gone?  Send error */
         else
@@ -3925,6 +4009,7 @@ static int getmod(DHS *dhs)
         }
     }
     duk_pop(ctx); //the module from duk_get_prop_string(ctx, -1, modname) or undefined
+
     ret = duk_rp_resolve(ctx, modname);
     if (!ret)
     {
@@ -3954,7 +4039,7 @@ static int getmod(DHS *dhs)
         return -1;
     }
 
-    // on stack is module.exports
+    // on stack is module (with module.exports therein)
     duk_get_prop_string(ctx,-1,"exports");
     /* take mtime & id from "module" and put it in module.exports,
         then remove modules */
