@@ -394,11 +394,8 @@ done:
 /**********************************************************************/
 
 /**********************************************************************/
-#ifdef macintosh
-#define fsopen TXfsopen
-#endif
 FLDSTK *
-fsopen()
+TXfsopen()
 {
 	FLDSTK *fs;
 
@@ -424,7 +421,7 @@ fsopen()
 		fs = fsclose(fs);
 	}
 	return (fs);
-}				/* end fsopen() */
+}				/* end TXfsopen() */
 
 /**********************************************************************/
 
@@ -1378,7 +1375,7 @@ foopen()
 		fo->ops = (fop_type *) NULL;
 		fo->row = (int *) NULL;
 		fo->nfldfuncs = 0;
-		if ((fo->fs = fsopen()) == FLDSTKPN) goto err;
+		if ((fo->fs = TXfsopen()) == FLDSTKPN) goto err;
 		fo->ntypes = FOP_NTYPES;
 #     if FO_NTTBL!=1
 		tblsz = fo->tblsz = fo->ntypes * fo->ntypes;

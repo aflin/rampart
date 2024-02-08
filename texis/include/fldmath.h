@@ -155,9 +155,7 @@ extern int     fld2word     ARGS((FLD *f));
 extern int     fld2dword    ARGS((FLD *f));
 #endif
 
-#ifndef macintosh      /* Macintosh has an fsopen already JMT 96-03-29 */
-extern FLDSTK *fsopen       ARGS((void));
-#endif
+extern FLDSTK *TXfsopen       ARGS((void));
 extern FLDSTK *fsclose      ARGS((FLDSTK *));
 extern CONST char *TXfldopname ARGS((int op));
 extern CONST char *TXfldFuncName ARGS((fop_type func));
