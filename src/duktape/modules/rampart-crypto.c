@@ -373,6 +373,8 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
                 {
                     duk_rp_hexToBuf(ctx, -1);
                     duk_remove(ctx, -2);
+                    duk_dup(ctx, -1); //one gets popped, We need to have at least one on the stack
+                    duk_insert(ctx,1);
                 }
 
                 if (!duk_is_buffer_data(ctx, -1) || duk_get_length(ctx, -1) != klen)
@@ -388,6 +390,8 @@ static duk_ret_t duk_rp_crypt(duk_context *ctx, int decrypt)
                 {
                     duk_rp_hexToBuf(ctx, -1);
                     duk_remove(ctx, -2);
+                    duk_dup(ctx, -1); //one gets popped, We need to have at least one on the stack
+                    duk_insert(ctx,1);
                 }
 
                 if (!duk_is_buffer_data(ctx, -1) || duk_get_length(ctx, -1) != ivlen)
