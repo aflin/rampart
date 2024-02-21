@@ -2012,6 +2012,24 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
 
     // stat
     duk_push_object(ctx);
+    if ( access(path, R_OK) != -1)
+        duk_push_true(ctx);
+    else
+        duk_push_false(ctx);
+    duk_put_prop_string(ctx, -2, "readable");
+
+    if ( access(path, W_OK) != -1)
+        duk_push_true(ctx);
+    else
+        duk_push_false(ctx);
+    duk_put_prop_string(ctx, -2, "writable");
+
+    if ( access(path, X_OK) != -1)
+        duk_push_true(ctx);
+    else
+        duk_push_false(ctx);
+    duk_put_prop_string(ctx, -2, "executable");
+        
 
     DUK_PUT_NUMBER(ctx,  "dev", path_stat.st_dev, -2);
     DUK_PUT_NUMBER(ctx,  "ino", path_stat.st_ino, -2);
