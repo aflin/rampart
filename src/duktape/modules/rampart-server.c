@@ -4704,6 +4704,8 @@ static void proc_mimes(duk_context *ctx)
 {
     // are we adding or just replacing?
     int must_add=0;
+    // if we are using any string from the object at idx -1, we need to stash it so it doesn't get freed
+    int stashit=0;
 
     if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1))
     {
@@ -4727,10 +4729,12 @@ static void proc_mimes(duk_context *ctx)
 
             mres = bsearch(m_p, allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
             if (mres)
+            {
                 mres->mime=val;
+                stashit = 1;
+            }
             else
                 must_add++;
-
             duk_pop_2(ctx);
         }
 
@@ -4739,7 +4743,7 @@ static void proc_mimes(duk_context *ctx)
     }
     else
     {
-        duk_pop(ctx); /* get rid of 'headers' non object */
+        duk_pop(ctx);
         RP_THROW(ctx, "server.start: mime - value must be an object (extension to mime-type mappings)");
     }
 
@@ -4777,6 +4781,7 @@ static void proc_mimes(duk_context *ctx)
             mres = bsearch(m_p, rp_mimetypes, nRpMtypes, sizeof(RP_MTYPES), compare_mtypes);
             if (!mres)
             {
+                stashit=1;
                 allmimes[i].ext = key;
                 allmimes[i].mime= val;
                 i++;
@@ -4790,6 +4795,13 @@ static void proc_mimes(duk_context *ctx)
         qsort(allmimes, n_allmimes, sizeof(RP_MTYPES), compare_mtypes);
 
 
+    }
+    
+    if(stashit) {
+        duk_push_global_stash(ctx);
+        duk_dup(ctx, -2);
+        duk_put_prop_string(ctx, -2, "Modified_mime_mappings");
+        duk_pop(ctx); //stash
     }
     /*
     int i=0;
@@ -6109,6 +6121,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
 
 static const duk_function_list_entry utils_funcs[] = {
     {"start", duk_server_start, 1 /*nargs*/},
+    {"getMime", duk_server_getmime, 1},
     {NULL, NULL, 0}};
 
 static const duk_number_list_entry utils_consts[] = {
