@@ -306,10 +306,10 @@ OSNAME := \$(shell uname)
 CFLAGS=-Wall -g -O2 -std=c99 -I/usr/local/rampart/include 
 
 ifeq (\$(OSNAME), Linux)
-	CFLAGS += -fPIC -shared -Wl,-soname,stringfuncs.so
+	CFLAGS += -fPIC -shared -Wl,-soname,${modname}.so
 endif
 ifeq (\$(OSNAME), Darwin)
-	CFLAGS += -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -install_name stringfuncs.so
+	CFLAGS += -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -install_name ${modname}.so
 endif
 
 all: ${modname}.so
