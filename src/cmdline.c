@@ -27,6 +27,8 @@
 #include "sys/queue.h"
 #include "whereami.h"
 
+int globalize=0;
+
 //clock_gettime for macos < sierra
 #ifdef NEEDS_CLOCK_GETTIME
 int clock_gettime(clockid_t type, struct timespec *rettime)
@@ -649,13 +651,243 @@ char *words[]={
     "while"
 };
 
+char *gwords[]={
+    "abstract",
+    "arguments",
+    "Array",
+    "Array.isArray",
+    "boolean",
+    "bprintf",
+    "break",
+    "bufferToString",
+    "byte",
+    "case",
+    "catch",
+    "catch (e) {",
+    "CBOR",
+    "CBOR.decode",
+    "CBOR.encode",
+    "chmod",
+    "console",
+    "console.log",
+    "continue",
+    "copyFile",
+    "Date",
+    "Date.now",
+    "Date.parse",
+    "Date.UTC",
+    "dehexify",
+    "delete",
+    "do",
+    "Duktape",
+    "Duktape.act",
+    "Duktape.compact",
+    "Duktape.dec",
+    "Duktape.enc",
+    "Duktape.env",
+    "Duktape.errThrow",
+    "Duktape.fin",
+    "Duktape.gc",
+    "Duktape.info",
+    "Duktape.Pointer",
+    "Duktape.Thread",
+    "Duktape.verion",
+    "else",
+    "eval",
+    "exec",
+    "false",
+    "fclose",
+    "fflush",
+    "fopen",
+    "for",
+    "fprintf",
+    "fread",
+    "fseek",
+    "ftell",
+    "function",
+    "fwrite",
+    "getpid",
+    "getppid",
+    "getType",
+    "hasOwnProperty",
+    "hexify",
+    "if",
+    "in",
+    "instanceof",
+    "isNaN",
+    "isPrototypeOf",
+    "kill",
+    "length",
+    "link",
+    "load",
+    "lstat",
+    "Math",
+    "Math.abs",
+    "Math.acos",
+    "Math.acosh",
+    "Math.asin",
+    "Math.asinh",
+    "Math.atan",
+    "Math.atan2",
+    "Math.atanh",
+    "Math.cbrt",
+    "Math.ceil",
+    "Math.clz32",
+    "Math.cos",
+    "Math.cosh",
+    "Math.E",
+    "Math.exp",
+    "Math.floor",
+    "Math.fround",
+    "Math.hypot",
+    "Math.imul",
+    "Math.LN2",
+    "Math.log",
+    "Math.log10",
+    "Math.LOG10E",
+    "Math.log1p",
+    "Math.log2",
+    "Math.LOG2E",
+    "Math.max",
+    "Math.min",
+    "Math.PI",
+    "Math.pow",
+    "Math.random",
+    "Math.round",
+    "Math.sign",
+    "Math.sin",
+    "Math.sinh",
+    "Math.sqrt",
+    "Math.SQRT1_2",
+    "Math.SQRT2",
+    "Math.tan",
+    "Math.tanh",
+    "Math.trunc",
+    "mkdir",
+    "NaN",
+    "new",
+    "null",
+    "Number",
+    "Object",
+    "Object.create",
+    "Object.getOwnPropertyNames",
+    "Object.keys",
+    "objectToQuery",
+    "performance",
+    "performance.now",
+    "printf",
+    "process",
+    "process.argv",
+    "process.env",
+    "process.exit",
+    "process.scriptPath",
+    "prototype",
+    "queryToObject",
+    "rampart",
+    "rampart.utils",
+    "rampart.utils.printf",
+    "rampart.utils.sprintf",
+    "rampart.utils.bprintf",
+    "rampart.utils.fopen",
+    "rampart.utils.fclose",
+    "rampart.utils.fprintf",
+    "rampart.utils.fseek",
+    "rampart.utils.rewind",
+    "rampart.utils.ftell",
+    "rampart.utils.fflush",
+    "rampart.utils.fread",
+    "rampart.utils.fwrite",
+    "rampart.utils.hexify",
+    "rampart.utils.dehexify",
+    "rampart.utils.stringToBuffer",
+    "rampart.utils.bufferToString",
+    "rampart.utils.objectToQuery",
+    "rampart.utils.queryToObject",
+    "rampart.utils.readFile",
+    "rampart.utils.stat",
+    "rampart.utils.lstat",
+    "rampart.utils.exec",
+    "rampart.utils.shell",
+    "rampart.utils.kill",
+    "rampart.utils.mkdir",
+    "rampart.utils.rmdir",
+    "rampart.utils.readdir",
+    "rampart.utils.copyFile",
+    "rampart.utils.rmFile",
+    "rampart.utils.link",
+    "rampart.utils.symlink",
+    "rampart.utils.chmod",
+    "rampart.utils.touch",
+    "rampart.utils.rename",
+    "rampart.utils.sleep",
+    "rampart.utils.getpid",
+    "rampart.utils.getppid",
+    "rampart.utils.getType",
+    "rampart.utils.stdout",
+    "rampart.utils.stderr",
+    "rampart.utils.stdin",
+    "rampart.utils.load",
+    "rampart.utils.use",
+    "rampart.globalize",
+    "rampart.import",
+    "rampart.import.csv",
+    "rampart.import.csvFile",
+    "rampart.thread",
+    "rampart.thread()",
+    "rampart.utils",
+    "readdir",
+    "readFile",
+    "rename",
+    "require",
+    "return",
+    "rewind",
+    "rmdir",
+    "rmFile",
+    "shell",
+    "sleep",
+    "sprintf",
+    "stat",
+    "stderr",
+    "stdin",
+    "stdout",
+    "String",
+    "stringToBuffer",
+    "switch",
+    "symlink",
+    "TextDecoder",
+    "TextDecoder.decode",
+    "TextEncoder",
+    "TextEncoder.encode",
+    "this",
+    "throw",
+    "touch",
+    "true",
+    "try {",
+    "try",
+    "typeof",
+    "undefined",
+    "use",
+    "valueOf",
+    "var",
+    "while"
+};
+
 int nwords = sizeof(words)/sizeof(char*);
+int ngwords = sizeof(gwords)/sizeof(char*);
 
 void completion(const char *inbuf, linenoiseCompletions *lc) {
     int i=0, indots=0, outdots=0;
     char *buf=NULL;
     char *s, c;
     char *endchar = " (;{=<>/*-+|&!^?:[";
+    char **suggwords=words;
+    int nsuggwords=nwords;
+
+    if(globalize)
+    {
+        suggwords=gwords;
+        nsuggwords=ngwords;
+    }    
 
     /* get last occurence of one of ' ', '(', etc */
     /* and yes I know if this was meant to be efficient,
@@ -686,9 +918,9 @@ void completion(const char *inbuf, linenoiseCompletions *lc) {
         }
     }
 
-    for (i=0;i<nwords;i++)
+    for (i=0;i<nsuggwords;i++)
     {
-        char *sugg=words[i];
+        char *sugg=suggwords[i];
         outdots=0;
         if(!strncmp(sugg, buf, strlen(buf))){
             s=sugg;
@@ -1009,6 +1241,13 @@ static void *repl_thr(void *arg)
         }
         else
         {
+            if(duk_is_object(ctx, -1) && !duk_is_function(ctx, -1)) {
+                duk_push_string(ctx, "rampart.utils.sprintf");
+                duk_eval(ctx);
+                duk_push_string(ctx, "%3J");
+                duk_pull(ctx, -3);
+                duk_call(ctx, 2);
+            }
             printf("%s%s%s\n", blue, duk_safe_to_stacktrace(ctx, -1), reset);
         }
         duk_pop(ctx); //the results
@@ -2779,7 +3018,7 @@ int main(int argc, char *argv[])
 {
     struct rlimit rlp;
     int isstdin=0, len, dirlen, argi, 
-        scriptarg=-1, command_string=0, server=0, globalize=0;
+        scriptarg=-1, command_string=0, server=0;
     char *ptr, *cmdline_src=NULL;
     struct stat entry_file_stat;
     duk_context *ctx;
