@@ -13,7 +13,7 @@
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/syscall.h> // for syscall(SYS_gettid)
+#include <sys/syscall.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
@@ -51,6 +51,10 @@ extern int RP_TX_isforked;
 extern char *RP_script_path;
 uid_t unprivu=0;
 gid_t unprivg=0;
+#ifdef __linux__
+int   allow_user_switch=0;
+#endif
+
 //#define RP_TIMEO_DEBUG
 #ifdef RP_TIMEO_DEBUG
 #define debugf(...) printf(__VA_ARGS__);
@@ -2000,6 +2004,28 @@ static void fileserver(evhtp_request_t *req, void *arg)
     char *s, fn[strlen(map->val) + strlen(path->full) + 4 - strlen(map->key)];
     mode_t mode;
     int i = 0, len = (int) strlen(path->full);
+
+#ifdef __linux__
+    if(allow_user_switch && unprivu)
+    {
+        syscall(SYS_setresgid,0,0,-1);
+        syscall(SYS_setresuid,0,0,-1);
+
+        if (syscall(SYS_setresgid, unprivg, unprivg, -1) == -1)
+        {
+            send404(req);
+            fprintf(stderr, "fileserver: error setting group, setgid() failed\n");
+            return;
+        }
+
+        if (syscall(SYS_setresuid, unprivu, unprivu, -1) == -1)
+        {
+            send404(req);
+            fprintf(stderr, "fileserver: error setting user, setuid() failed\n");
+            return;
+        }
+    }
+#endif
 
 //    don't do that!  It will be stomped on.
 //    dhs->req = req;
@@ -4248,8 +4274,25 @@ static void http_callback(evhtp_request_t *req, void *arg)
 
     thr = server_thread[thrno];
 
-
     new_ctx = thr->ctx;
+
+#ifdef __linux__
+    if(allow_user_switch && unprivu)
+    {
+        syscall(SYS_setresgid,0,0,-1);
+        syscall(SYS_setresuid,0,0,-1);
+        if (syscall(SYS_setresgid, unprivg, unprivg, -1) == -1)
+        {
+            RP_THROW(new_ctx, "http_callback: error setting group, setgid() failed");
+        }
+
+        if (syscall(SYS_setresuid, unprivu, unprivu, -1) == -1)
+        {
+            RP_THROW(new_ctx, "http_callback: error setting user, setuid() failed");
+        }
+    }
+#endif
+
     /* ****************************
       setup duk function callback
        **************************** */
@@ -4455,6 +4498,34 @@ void initThread(evhtp_t *htp, evthr_t *evthr, void *arg)
     /* drop privileges here, after binding port */
     if(unprivu && !gl_threadno)
     {
+// As a very risky thing to do and as this only works on linux
+// this is and always will be an undocumented "feature".  
+// Use at your own risk.
+#ifdef __linux__
+        // if not explicitely allowed, set suid to unpriv user
+        // this prevents any changes back to root or any other user
+        {
+            gid_t sgid=-1;
+            uid_t suid=-1;
+
+            if(!allow_user_switch)
+            {
+                sgid = unprivg;
+                suid = unprivu; 
+            }
+
+            if (setresgid(unprivg, unprivg, sgid) == -1)
+            {
+                SETUPUNLOCK;
+                RP_THROW(main_ctx, "error setting group, setgid() failed");
+            }
+            if (setresuid(unprivu, unprivu, suid) == -1)
+            {
+                SETUPUNLOCK;
+                RP_THROW(main_ctx, "error setting user, setuid() failed");
+            }
+        }
+#else
         if (setgid(unprivg) == -1)
         {
             SETUPUNLOCK;
@@ -4465,6 +4536,7 @@ void initThread(evhtp_t *htp, evthr_t *evthr, void *arg)
             SETUPUNLOCK;
             RP_THROW(main_ctx, "error setting user, setuid() failed");
         }
+#endif
     }
 
     *thrno = gl_threadno++;
@@ -5113,8 +5185,23 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
 
         /* unprivileged user if we are root */
-        if (geteuid() == 0)
+#ifdef __linux__
+        allow_user_switch=0;
+#endif
+        unprivu=0;
+        unprivg=0;
+        if (geteuid() == 0 || getuid() == 0)
         {
+// As a very risky thing to do and as this only works on linux,
+// this is and always will be an undocumented "feature".  
+// Use at your own risk.
+#ifdef __linux__
+            if(duk_rp_GPS_icase(ctx, ob_idx, "allowUserSwitching"))
+            {
+                allow_user_switch=(int)REQUIRE_BOOL(ctx, -1, "server.start: parameter \"allowUserSwitching\" must be a Boolean");
+            }
+            duk_pop(ctx);
+#endif
             if(duk_rp_GPS_icase(ctx, ob_idx, "user"))
             {
                 const char *user=REQUIRE_STRING(ctx, -1, "server.start: parameter \"user\" requires a string (username)");
