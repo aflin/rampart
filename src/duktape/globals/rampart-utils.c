@@ -1277,12 +1277,9 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
         char *val=duk_rp_url_decode(eq+1,&vall);
         duk_size_t arrayi;
 
-        //keyl=strlen(key);
-        //vall=strlen(val);
         if( keyl > 2 && *(key+keyl-1)==']' && *(key+keyl-2)=='[')
         {   /* its an array with brackets */
             keyl-=2;
-            duk_size_t arrayi;
 
             /* put in array from the beginning */
             if(!duk_get_prop_lstring(ctx,-1,key,keyl))
@@ -1296,35 +1293,101 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
             duk_put_prop_index(ctx,-2,(duk_uarridx_t)arrayi);
             duk_put_prop_lstring(ctx,-2,key,keyl);
             //printf("array: '%.*s'='%.*s'\n", keyl,key,vall,val);
+            goto done;
+        }
+        //objects, i.e. "?myvar[mykey]=myval"
+        if( keyl > 3 && *(key+keyl-1)==']' )
+        {
+            char *p=key+keyl-3;
+            while (p > key)
+            {
+                if( *p == '[')
+                    break;
+                p--;
+            }
+            if( *p == '[')
+            {
+                *p='\0';
+                p++;
+                *(key+keyl-1)='\0';
+                //"myvar\0mykey\0=myval - where key="myvar", p="mykey", val="myval"
+                if(!duk_get_prop_string(ctx,-1,key))
+                {
+                    duk_pop(ctx);
+                    duk_push_object(ctx);
+                }
+                //if it was already loaded as an array, conver to object
+                if(duk_is_array(ctx, -1)) {
+                    duk_size_t len = duk_get_length(ctx, -1);
+
+                    duk_push_object(ctx);
+                    for(arrayi=0; arrayi<len; arrayi++) {
+                        duk_get_prop_index(ctx, -2, arrayi);
+                        duk_put_prop_index(ctx, -2, arrayi);
+                    }
+                    duk_remove(ctx, -2);
+                } 
+                //if not an array or object, put it in object as "0"
+                else if (!duk_is_object(ctx, -1))
+                {
+                    duk_push_object(ctx);
+                    duk_pull(ctx, -2);
+                    duk_put_prop_string(ctx, -2, "0");
+                }
+
+                duk_rp_push_lstring_or_jsonob(ctx,val,vall);
+                duk_put_prop_string(ctx, -2, p); // {mykey:"myval"}
+                duk_put_prop_string(ctx, -2,key);// { myvar: {mykey:"myval"} }
+                goto done;
+            }
+            // no goto done;
+        } 
+
+        /* check if exists already, if so, make array or use array */
+        if(!duk_get_prop_lstring(ctx,-1, key, keyl))
+        {
+            duk_pop(ctx);
+            duk_rp_push_lstring_or_jsonob(ctx,val,vall);
         }
         else
         {
-            /* check if exists already, if so, make array or use array */
-            if(!duk_get_prop_lstring(ctx,-1,s,keyl))
+            if(duk_is_object(ctx, -1))
             {
-                duk_pop(ctx);
-                duk_rp_push_lstring_or_jsonob(ctx,val,vall);
+                arrayi=0;
+                while (duk_has_prop_index(ctx, -1, arrayi)) {
+                    arrayi++;
+                    if(arrayi > 4095) 
+                    {
+                        arrayi=0;
+                        break;
+                    }
+                }
+            }
+            else if(!duk_is_array(ctx,-1))
+            {   /* make array and push prev value to index 0 */
+                duk_push_array(ctx);
+                duk_pull(ctx,-2);
+                duk_put_prop_index(ctx,-2,0);
+                arrayi=1;
             }
             else
-            {
-                if(!duk_is_array(ctx,-1))
-                {   /* make array and push prev value to index 0 */
-                    duk_push_array(ctx);
-                    duk_pull(ctx,-2);
-                    duk_put_prop_index(ctx,-2,0);
-                    arrayi=1;
-                }
-                else
-                    arrayi=duk_get_length(ctx,-1);
+                arrayi=duk_get_length(ctx,-1);
 
-                duk_rp_push_lstring_or_jsonob(ctx,val,vall);
-                duk_put_prop_index(ctx,-2,(duk_uarridx_t)arrayi);
-            }
-            duk_put_prop_lstring(ctx,-2,key,keyl);
+            duk_rp_push_lstring_or_jsonob(ctx,val,vall);
+            duk_put_prop_index(ctx,-2,(duk_uarridx_t)arrayi);
         }
+        duk_put_prop_lstring(ctx,-2,key,keyl);
+
+        done:
         free(key);
         free(val);
+        return;
     }
+
+    // no equals '=' in 
+    duk_push_true(ctx);
+    duk_put_prop_lstring(ctx, -2, s, l);
+
 }
 
 void duk_rp_querystring2object(duk_context *ctx, char *q)
@@ -1991,6 +2054,9 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
 {
     const char *path = duk_get_string(ctx, 0);
     struct stat path_stat;
+    struct passwd *pw = getpwuid(path_stat.st_uid);
+    struct group  *gr = getgrgid(path_stat.st_gid);
+
     int err,
         //safestat = duk_get_boolean_default(ctx,1,0);
         safestat=1;
@@ -2030,6 +2096,23 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
         duk_push_false(ctx);
     duk_put_prop_string(ctx, -2, "executable");
         
+    pw = getpwuid(path_stat.st_uid);
+    gr = getgrgid(path_stat.st_gid);
+
+    if(pw)
+        duk_push_string(ctx, pw->pw_name);
+    else
+        duk_push_sprintf(ctx, "%d", (int) path_stat.st_uid);
+
+    duk_put_prop_string(ctx, -2, "owner");
+
+    if(gr)
+        duk_push_string(ctx, gr->gr_name);
+    else
+        duk_push_sprintf(ctx, "%d", (int) path_stat.st_gid);
+
+    duk_put_prop_string(ctx, -2, "group");
+    
 
     DUK_PUT_NUMBER(ctx,  "dev", path_stat.st_dev, -2);
     DUK_PUT_NUMBER(ctx,  "ino", path_stat.st_ino, -2);
