@@ -1631,7 +1631,7 @@ duk_ret_t duk_rp_read_file(duk_context *ctx)
     else if( filestat.st_size < offset + length)
         length = filestat.st_size - offset;
 
-    if( length < 1 )
+    if( length < 0 )
         RP_THROW(ctx, "readFile(\"%s\") - negative length puts end of read before offset or start of file", filename);
 
     if(filename)
@@ -3248,6 +3248,7 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
 {
     int nocreate=0, setaccess=1, setmodify=1;
     const char *path=NULL, *reference=NULL;
+    time_t mtime=0, atime=0;
 
     if( duk_is_object(ctx,0))
     {
@@ -3264,11 +3265,48 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
         duk_pop(ctx);
 
         duk_get_prop_string(ctx, 0, "setaccess");
-        setaccess = duk_get_boolean_default(ctx, -1, 1);
+        if( duk_is_boolean(ctx, -1))
+        {
+            setaccess = duk_get_boolean_default(ctx, -1, 1);
+            duk_pop(ctx);
+        }
+        else if (duk_is_number(ctx, -1)) {
+            setaccess = 2;
+            atime = (time_t)duk_get_int(ctx, -1);
+        } else if (
+            duk_is_object(ctx, -1)  &&  
+            duk_has_prop_string(ctx, -1, "getMilliseconds") && 
+            duk_has_prop_string(ctx, -1, "getUTCDay") )
+        {
+            duk_push_string(ctx, "getTime");
+            duk_call_prop(ctx, -2, 0);
+            setaccess = 2;
+            atime = (time_t)duk_get_number(ctx, -1)/1000.0;
+            duk_pop(ctx);
+        }
         duk_pop(ctx);
 
         duk_get_prop_string(ctx, 0, "setmodify");
-        setmodify = duk_get_boolean_default(ctx, -1, 1);
+        if( duk_is_boolean(ctx, -1))
+        {
+            setmodify = duk_get_boolean_default(ctx, -1, 1);
+            duk_pop(ctx);
+        }
+        else if (duk_is_number(ctx, -1)) {
+            setmodify = 2;
+            mtime = (time_t)duk_get_int(ctx, -1);
+        } else if (
+            duk_is_object(ctx, -1)  &&  
+            duk_has_prop_string(ctx, -1, "getMilliseconds") && 
+            duk_has_prop_string(ctx, -1, "getUTCDay") )
+        {
+            duk_push_string(ctx, "getTime");
+            duk_call_prop(ctx, -2, 0);
+            setmodify = 2;
+            mtime = (time_t)duk_get_number(ctx, -1)/1000.0;
+            duk_pop(ctx);
+        }
+
         duk_pop(ctx);
     }
     else if (duk_is_string(ctx, 0) )
@@ -3276,7 +3314,6 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
 
     {
         struct stat filestat;
-        time_t new_mtime, new_atime;
         struct stat refrence_stat;
         struct utimbuf new_times;
 
@@ -3296,6 +3333,11 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
                 {
                     RP_THROW(ctx, "touch(): failed to get file information");
                 }
+                if(setaccess == 2 || setmodify==2) {
+                    new_times.actime =  (setmodify == 2) ? mtime : filestat.st_atime;
+                    new_times.modtime = (setaccess == 2) ? atime : filestat.st_mtime;
+                    utime(path, &new_times);
+                }
             }
         }
 
@@ -3306,17 +3348,22 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
             if (stat(reference, &refrence_stat) != 0) //reference file doesn't exist
                 RP_THROW(ctx, "touch(): reference file does not exist");
 
-            new_mtime = setmodify ? refrence_stat.st_mtime : filestat.st_mtime; // if setmodify, update m_time
-            new_atime = setaccess ? refrence_stat.st_atime : filestat.st_atime; // if setacccess, update a_time
+            new_times.modtime = setmodify ? refrence_stat.st_mtime : filestat.st_mtime; // if setmodify, update m_time
+            new_times.actime = setaccess ? refrence_stat.st_atime : filestat.st_atime; // if setacccess, update a_time
         }
         else
         {
-            new_mtime = setmodify ? time(NULL) : filestat.st_mtime; //set to current time if set modify
-            new_atime = setaccess ? time(NULL) : filestat.st_atime;
+            if(setmodify==2)
+                new_times.modtime = mtime;
+            else
+                new_times.modtime = setmodify ? time(NULL) : filestat.st_mtime; //set to current time if set modify
+            
+            
+            if(setaccess==2)
+                new_times.actime = atime;
+            else
+                new_times.actime = setaccess ? time(NULL) : filestat.st_atime;
         }
-
-        new_times.actime = new_atime;
-        new_times.modtime = new_mtime;
 
         utime(path, &new_times);
     }
