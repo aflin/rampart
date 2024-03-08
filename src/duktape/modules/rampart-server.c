@@ -658,28 +658,160 @@ static void copy_post_vars(duk_context *ctx)
     if(duk_is_array(ctx, -1))
     {
         duk_uarridx_t len, i=0;
-        const char *name=NULL;
+        char *name=NULL;
+        char *freename=NULL;
+        const char *filename=NULL;
+        size_t namelen=0;
 
         len=duk_get_length(ctx, -1);
 
+        // [ ..., params_obj, req_obj, content_arr ]
         for (;i<len;i++)
         {
             duk_get_prop_index(ctx, -1, i);
+            // [ ..., params_obj, req_obj, content_arr, content_member_obj ]
             if(duk_get_prop_string(ctx, -1, "filename"))
             {
-                name=duk_get_string(ctx, -1);
-                duk_pop(ctx);
+                filename=(char*)duk_get_string(ctx, -1);
+            }
+            duk_pop(ctx);
+
+            duk_get_prop_string(ctx, -1, "name");
+            name=(char*)duk_get_string(ctx, -1);
+            duk_pop(ctx);
+
+            namelen=strlen(name);
+            if( *(name + namelen -1) == ']')
+            {
+                int doobj=0;
+                // look for Content-Disposition: form-data; name="upload[]" style naming
+                if (*(name + namelen -2) == '[')
+                {
+                    name=strdup(name);
+                    freename=name;
+                    *(name + namelen -2) = '\0';
+                    doobj=1;
+                }
+                else
+                {
+                    //look for Content-Disposition: form-data; name="upload[somename]" style naming.
+                    //TODO: test this.
+                    char *p;
+                    
+                    freename=strdup(name);
+                    p = freename + namelen - 3; //require at least one char between []
+                    while(p!=freename+1 && *p!='[')
+                        p--;
+                    if(*p == '[')
+                    {
+                        *p='\0';  //term name
+                        name=freename;
+                        filename=p+1;
+                        *(name + namelen -1) = '\0'; //term filename
+                        doobj=1;
+                        // we should now have "upload\0somename\0
+                    }
+                }
+
+                if(doobj)
+                {
+                    duk_uarridx_t idx=0;
+
+                    if(!filename)
+                    {
+                        if(duk_get_prop_string(ctx, -4, name))
+                        {
+                            if(!duk_is_object(ctx, -1))
+                            {
+                                duk_push_array(ctx);
+                                duk_pull(ctx, -2);
+                                duk_put_prop_index(ctx, -2, 0);
+                                idx=1;
+                            }
+                            else if (!duk_is_array(ctx, -1))
+                            {
+                                //its an object.  find the first unused numerical key in object
+                                while(duk_has_prop_index(ctx, -1, idx))
+                                {
+                                    idx++;
+                                    if(idx>4095)
+                                    {
+                                        idx=0;
+                                        break;
+                                    }
+                                }
+                            }
+                            else //its an array
+                                idx=duk_get_length(ctx, -1);
+                        }
+                        else
+                        {
+                            // new empty array, since it doesn't already exist in req.params
+                            duk_pop(ctx);
+                            duk_push_array(ctx);
+                        }
+                        duk_get_prop_string(ctx, -2, "content");
+                        if(duk_is_buffer_data(ctx, -1))
+                            duk_buffer_to_string(ctx, -1);
+                        duk_put_prop_index(ctx, -2, idx);
+                    }
+                    else
+                    {
+                        //filename != NULL
+                        if(duk_get_prop_string(ctx, -4, name))
+                        {
+                            if(!duk_is_object(ctx, -1))
+                            {
+                                duk_push_object(ctx);
+                                duk_pull(ctx, -2);
+                                duk_put_prop_index(ctx, -2, 0);
+                            }
+                            else if (duk_is_array(ctx, -1))
+                            {
+                                duk_uarridx_t l = duk_get_length(ctx, -1);
+                                duk_push_object(ctx);
+                                //copy array members to new object
+                                for (idx=0;idx<l;idx++)
+                                {
+                                    duk_get_prop_index(ctx, -2, idx);
+                                    duk_put_prop_index(ctx, -2, idx);
+                                }
+                                duk_remove(ctx, -2); //remove array
+                            }
+                            //else its an object
+                        }
+                        else
+                        {
+                            // new empty object, since it doesn't already exist in req.params
+                            duk_pop(ctx);
+                            duk_push_object(ctx);
+                        }
+                    }
+                    duk_get_prop_string(ctx, -2, "content");
+                    //keep file uploads as buffer
+                    duk_put_prop_string(ctx, -2, filename);
+                    filename=NULL;
+                } 
+                else
+                {
+                    duk_get_prop_string(ctx, -1, "content");
+                    if(duk_is_buffer_data(ctx, -1))
+                        duk_buffer_to_string(ctx, -1);
+                }
             }
             else
             {
-                duk_pop(ctx); /* undefined from filename */
-                duk_get_prop_string(ctx, -1, "name");
-                name=duk_get_string(ctx, -1);
-                duk_pop(ctx);
+                duk_get_prop_string(ctx, -1, "content");
+                if(duk_is_buffer_data(ctx, -1))
+                    duk_buffer_to_string(ctx, -1);
             }
-            duk_get_prop_string(ctx, -1, "content");
             duk_put_prop_string(ctx, -5, name);
-            duk_pop(ctx);
+            duk_pop(ctx); // content_member_obj
+            if(freename)
+            {
+                free(freename);
+                freename=NULL;
+            }
         }
     }
     else if (duk_is_object(ctx, -1))
