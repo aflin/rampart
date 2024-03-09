@@ -2333,7 +2333,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
 {
     int kill_signal=SIGTERM, background=0, i=0, append=0;
     unsigned int timeout=0;
-    const char *path, *stdin_txt=NULL;
+    const char *path, *stdin_txt=NULL, *cd=NULL;
     duk_size_t stdin_sz;
     char **args=NULL, **env=NULL;
     duk_size_t nargs;
@@ -2345,6 +2345,28 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
     int child2par[2];
 
     // get options
+    if(duk_get_prop_string(ctx, -1, "changeDirectory")) {
+        cd=REQUIRE_STRING(ctx, -1, "exec(): changeDirectory must be a String");
+    }
+    duk_pop(ctx);
+    if(!cd)
+    {
+        if(duk_get_prop_string(ctx, -1, "cd")) {
+            cd=REQUIRE_STRING(ctx, -1, "exec(): changeDirectory must be a String");
+        }
+        duk_pop(ctx);
+    }
+
+    if(cd)
+    {
+        struct stat sb;
+        if(stat(cd, &sb))
+            RP_THROW(ctx, "exec(): changeDirectory value does not exist");
+        
+        if( ! S_ISDIR(sb.st_mode) )
+            RP_THROW(ctx, "exec(): changeDirectory value is not a Directory");
+    }
+
     if(duk_get_prop_string(ctx, -1, "timeout"))
     {
         if (!duk_is_number(ctx, -1))
@@ -2581,11 +2603,22 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         dup2(stdin_pipe[0], STDIN_FILENO);
         rp_pipe_close(stdin_pipe,1);
 
+        if(cd)
+        {
+            if(chdir(cd))
+            {
+                fprintf(stderr, "exec(): could not change directory to %s: %s\n", cd, strerror(errno));
+                goto fail;
+            }
+        }
+
         if(env)
             execvpe(path, args, env);
         else
             execvp(path, args);
+
         fprintf(stderr, "exec(): could not execute %s: %s\n", args[0], strerror(errno));
+        fail:
         free(args);
         free_made_env(env);
         exit(EXIT_FAILURE);
