@@ -2434,67 +2434,6 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         env=make_env(ctx, append);
     }
     duk_pop(ctx);
-/*        int start=len;
-        if(!duk_is_object(ctx, -1) || duk_is_function(ctx, -1) || duk_is_array(ctx, -1))
-        {
-            if(env)
-                free(env);
-            RP_THROW(ctx, "exec(): option 'env' must be an object");
-        }
-
-        if(append)
-        {
-            duk_get_global_string(ctx, "Object");  // [env_arg, "Object" ]
-            duk_push_string(ctx, "assign");        // [env_arg, "Object", "assign" ]
-            duk_push_object(ctx);                  // [env_arg, "Object", "assign", dest_obj ]
-            duk_get_global_string(ctx, "process"); // [env_arg, "Object", "assign", dest_obj, "process" ]
-            duk_get_prop_string(ctx, -1, "env");   // [env_arg, "Object", "assign", dest_obj,  "process", curenv ]
-            duk_remove(ctx, -2);                   // [env_arg, "Object", "assign", dest_obj, curenv ]
-            duk_pull(ctx, -5);                     // ["Object", "assign" dest_obj, curenv, env_arg ]
-            duk_call_prop(ctx, -5, 3);             // ["Object", retobj ]
-            duk_remove(ctx, -2);                   // [ retobj ]
-        }
-
-        {
-            duk_uarridx_t arr_idx=0;
-            duk_push_array(ctx); //[..., envobj, array ]
-            duk_enum(ctx, -2, 0); // [..., envobj, array, enum ]
-            while (duk_next(ctx, -1, 1))
-            {
-                // [..., envobj, array, enum, key, val ]
-                if(duk_is_object(ctx, -1))
-                    duk_json_encode(ctx, -1);
-                duk_push_sprintf(ctx, "%s=%s", duk_get_string(ctx, -2), duk_safe_to_string(ctx, -1));
-                // [..., envobj, array, enum, key, val, "key=val" ]
-                duk_put_prop_index(ctx, -5, arr_idx);
-                // [..., envobj, array, enum, key, val ]
-                arr_idx++;
-                duk_pop_2(ctx);// [..., envobj, array, enum ]
-            }
-            duk_pop(ctx);// [..., envobj, array ]
-            duk_replace(ctx, -2); //[..., array ]
-            duk_dup(ctx, -1); //[opts_obj, array, array ]
-            duk_insert(ctx, 0);// put copy out of the way so strings won't be freed
-        }
-
-        len += duk_get_length(ctx, -1);
-        REMALLOC(env, (len + 1) * sizeof(char *));
-        for (i = start; i < len; i++)
-        {
-            duk_get_prop_index(ctx, -1, i-start);
-            if(!duk_is_string(ctx, -1))
-            {
-                free(env);
-                RP_THROW(ctx, "exec(): option 'env' - environment array must contain only strings");
-            }
-            env[i] = (char *)duk_get_string(ctx, -1);
-            duk_pop(ctx);
-        }
-        env[len]=NULL;
-    }
-    duk_pop(ctx);
-*/
-
 
     // get arguments into null terminated buffer
     duk_get_prop_string(ctx, -1, "args");
@@ -2766,6 +2705,25 @@ duk_ret_t duk_rp_exec(duk_context *ctx)
     duk_dup(ctx, 0);
     duk_put_prop_index(ctx, arr_idx, arrayi++);
 
+#define stringify_arg(idx_rel) do{\
+    duk_idx_t idx = duk_normalize_index(ctx, idx_rel);\
+    if (!duk_is_string(ctx,idx))\
+    {\
+        if (duk_is_undefined(ctx, idx) )\
+        {\
+            duk_push_string(ctx, "undefined");\
+            duk_replace(ctx,idx);\
+        }\
+        else if ( !duk_is_function(ctx, idx) )\
+            (void)duk_json_encode(ctx, idx);\
+        else\
+        {\
+            duk_push_string(ctx,"{_func:true}");\
+            duk_replace(ctx,idx);\
+        }\
+    }\
+} while(0)
+
     // rest of arguments, and mark where object is, if exists
     for (i=1; i<top; i++)
     {
@@ -2776,21 +2734,7 @@ duk_ret_t duk_rp_exec(duk_context *ctx)
             continue;
         }
 
-        if (!duk_is_string(ctx,i))
-        {
-            if (duk_is_undefined(ctx, i) )
-            {
-                duk_push_string(ctx, "undefined");
-                duk_replace(ctx,i);
-            }
-            else if ( !duk_is_function(ctx, i) )
-                (void)duk_json_encode(ctx, i);
-            else
-            {
-                duk_push_string(ctx,"{_func:true}");
-                duk_replace(ctx,i);
-            }
-        }
+        stringify_arg(i);
 
         duk_dup(ctx,i);
         duk_put_prop_index(ctx, arr_idx, arrayi++);
@@ -2799,6 +2743,48 @@ duk_ret_t duk_rp_exec(duk_context *ctx)
     /* stack: [ ..., empty_obj, args_arr ] */
     if(obj_idx!=-1)
     {
+        int extraArgs=0;
+
+
+        // check if we have an array of more arguments to append to current list
+        if(duk_get_prop_string(ctx, obj_idx, "args"))
+        {
+            if(duk_is_array(ctx, -1))
+                extraArgs=1;
+            else
+                RP_THROW(ctx, "exec(): option \"args\" must be an array");
+        }
+        else
+        {
+            duk_pop(ctx);
+            /*
+            if(duk_get_prop_string(ctx, obj_idx, "arguments"))
+            {
+                if(duk_is_array(ctx, -1))
+                    extraArgs=1;
+                else
+                    duk_pop(ctx);
+            }
+            else
+                duk_pop(ctx);
+            */
+        }
+
+        if(extraArgs)
+        {
+            // put extra args at idx = -1 in primary array for arguments
+            duk_uarridx_t j=0, len=duk_get_length(ctx, -1);
+            for(;j<len;j++)
+            {
+                duk_get_prop_index(ctx, -1, j);
+                stringify_arg(-1);
+                duk_put_prop_index(ctx, arr_idx, arrayi++);
+            }
+            duk_pop(ctx); // "args" array
+        }
+
+
+        //pull obj_idx to top
         duk_pull(ctx, obj_idx);
         /* stack: [ ..., empty_obj, args_arr, options_object ] */
         duk_replace(ctx, -3);
