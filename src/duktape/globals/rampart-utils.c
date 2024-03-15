@@ -2076,26 +2076,72 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
         RP_THROW(ctx, "stat(): error getting status '%s': %s", path, strerror(errno));
     }
 
-    // stat
-    duk_push_object(ctx);
-    if ( access(path, R_OK) != -1)
-        duk_push_true(ctx);
-    else
-        duk_push_false(ctx);
-    duk_put_prop_string(ctx, -2, "readable");
-
-    if ( access(path, W_OK) != -1)
-        duk_push_true(ctx);
-    else
-        duk_push_false(ctx);
-    duk_put_prop_string(ctx, -2, "writable");
-
-    if ( access(path, X_OK) != -1)
-        duk_push_true(ctx);
-    else
-        duk_push_false(ctx);
-    duk_put_prop_string(ctx, -2, "executable");
+    // lstat
+    if(islstat)
+    {
+        char buf[PATH_MAX];
+        int dirfd;
         
+        if(getcwd(buf, PATH_MAX))
+        {
+             dirfd= open(buf, O_NOATIME|O_PATH);
+             if(dirfd != -1)
+             {
+
+                duk_push_object(ctx);
+                if ( faccessat(dirfd, path, R_OK, AT_SYMLINK_NOFOLLOW) != -1)
+                    duk_push_true(ctx);
+                else
+                    duk_push_false(ctx);
+                duk_put_prop_string(ctx, -2, "readable");
+
+                if ( faccessat(dirfd, path, W_OK, AT_SYMLINK_NOFOLLOW) != -1)
+                    duk_push_true(ctx);
+                else
+                    duk_push_false(ctx);
+                duk_put_prop_string(ctx, -2, "writable");
+
+                close(dirfd);
+
+            }
+        }
+
+        if ( access(path, X_OK) != -1)
+            duk_push_true(ctx);
+        else
+            duk_push_false(ctx);
+        duk_put_prop_string(ctx, -2, "executable");
+
+        if(S_ISLNK(path_stat.st_mode)) {
+            ssize_t len = readlink(path, buf, PATH_MAX);
+            if(len > 0) {
+                duk_push_lstring(ctx, buf, (duk_size_t)len);
+                duk_put_prop_string(ctx, -2, "link");
+            }
+        }
+
+    }
+    else //stat
+    {
+        duk_push_object(ctx);
+        if ( access(path, R_OK) != -1)
+            duk_push_true(ctx);
+        else
+            duk_push_false(ctx);
+        duk_put_prop_string(ctx, -2, "readable");
+
+        if ( access(path, W_OK) != -1)
+            duk_push_true(ctx);
+        else
+            duk_push_false(ctx);
+        duk_put_prop_string(ctx, -2, "writable");
+
+        if ( access(path, X_OK) != -1)
+            duk_push_true(ctx);
+        else
+            duk_push_false(ctx);
+        duk_put_prop_string(ctx, -2, "executable");
+    }    
     pw = getpwuid(path_stat.st_uid);
     gr = getgrgid(path_stat.st_gid);
 
