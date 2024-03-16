@@ -1,12 +1,28 @@
 v0.2.1
+    - rampart:         Many small bug fixes
+                       Interactive: -g typeahead suggestion. Last var on
+                       stack objects now output as json rather than console.log
+    - rampart.server:  Post var form data is now assumed to be text unless
+                       it includes a filename parameter (sprintf will work in any
+                       case, even if binary).
+                       Post vars processes arrays and objects same as queryToObject()
     - rampart-sql:     Rewrite of texis handle cache.  Fix error messages
                        and other bugs.
                        Updated texislockd to handle more connections.
                        Added Sql.searchText().
                        Fixed bug when forking while setting texis globals
                        via setprop().
+                       Fixed fsopen in texis library (newer linux bailed).
     - rampart-utils:   added forkpty() - allows browser terminal emulation
                        when used with websockets and xterm.js.
+                       stat() - added "readable", "writable", "executable"
+                                "owner", "group" properties to return object.
+                       lstat() - "readable", "writable" refer to the link.
+                       queryToObject() - added processing of object like params 
+                       (e.g. ?myvar[mykey]=myval&myvar[mykey]=myval2).
+                       touch() now takes dates and numbers(seconds).
+                       exec() now takes options {args: [array,of,args], cd: "/working/dir"}
+    - rampart-crytpo:  bug fix - crypt - bad pop for hex key or iv
 v0.2.0
     - rampart-python:  initial version, with threading and forking support
     - rampart.threads: initial version, other modules updated with new lock system,
