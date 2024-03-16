@@ -2084,7 +2084,11 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
         
         if(getcwd(buf, PATH_MAX))
         {
+#ifdef __APPLE__
+             dirfd= open(buf, 0);
+#else
              dirfd= open(buf, O_NOATIME|O_PATH);
+#endif
              if(dirfd != -1)
              {
 
