@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html style="height:100%">
+    <head>
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
+      <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+      <script src=" https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js "></script>
+      <style>
+          body,#terminal {height:calc( 100% - 25px ); width:calc( 100% - 15px );}
+      </style>
+    </head>
+    <body>
+      <div id="terminal"></div>
+    </head>
+    </body>
+    <script>
+        var pane = document.getElementById('terminal');
+        var screen;
+        var viewport;
+        var scrollArea;
+        const socket = new WebSocket("ws://localhost:8088/wsapps/console.js");
+
+        // send commands as binary to distinguish from data
+        function sendcomm(cmd, opt) {
+            var o = {};
+            if(!opt) opt=true;
+            o[cmd]=opt;
+            //var buff = Buffer.from(JSON.stringify({cmd:opt}, "utf-8"));
+            const buff = new TextEncoder().encode( JSON.stringify(o) );
+            setTimeout(function () {
+                socket.send(buff.buffer);
+                //console.log("sent", o);
+            }, 50);
+            //socket.send( JSON.stringify({cmd:opt}) );
+        }
+
+        var term = new window.Terminal({
+            //theme: theme,
+            fontFamily: "monospace, monospace",
+            cursorBlink: true,
+            lineHeight: 0.5
+        });
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+
+        //term.resize(120,50);
+
+        term.open(pane);
+        
+        // workaround for scrollbar resize bugs https://github.com/xtermjs/xterm.js/issues/3584
+        screen = document.getElementsByClassName("xterm-screen")[0]
+        viewport = document.getElementsByClassName("xterm-viewport")[0]
+        scrollArea = document.getElementsByClassName("xterm-scroll-area")[0]
+
+        function onSize() {
+            // workaround for scrollbar resize bugs
+            screen.style.height = pane.clientHeight + 'px';
+            viewport.style.height = pane.clientHeight + 'px';
+            scrollArea.style.height = screen.style.height;
+
+            screen.style.width = pane.clientWidth + 'px';
+            viewport.style.width = pane.clientWidth + 'px';
+            scrollArea.style.width = screen.style.width;
+
+            fitAddon.fit();
+            viewport.style.height = (screen.clientHeight + 10) + 'px';
+            viewport.style.width = (screen.clientWidth + 10) + 'px';
+
+            sendcomm("resize", {cols: term.cols, rows:term.rows});
+        }
+        window.addEventListener('resize', onSize, false);
+        setTimeout(onSize,100);
+        onSize(); //IDK why, but this fixes the initial window size, despite above
+        socket.onmessage = (event) => {
+            term.write(event.data);
+        }
+
+        term.onData(e => {
+            socket.send(e);
+        });
+    </script>
+</html>

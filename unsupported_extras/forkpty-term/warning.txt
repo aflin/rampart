@@ -1,0 +1,7 @@
+Do not use this except as a guide on how to use rampart.utils.forkpty.
+There is no security provided.
+
+Put the html/console.html and wsapps/console.html into the 
+web_server/ directory.  From there run ./start-server.sh
+and go to http://localhost:8088/console.html
+
