@@ -2469,7 +2469,7 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
     if (evhtp_unlikely(bev == NULL)) {
         return;
     }
-
+restart:
     avail = HTP_LEN_INPUT(bev);
 
     if (evhtp_unlikely(avail == 0)) {
@@ -2528,13 +2528,13 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
         nread = htparser_run(c->parser, &request_psets, (const char *)buf, avail);
     }
 
+    //printf("nread = %zu avail = %zu\n", nread, avail);
     /* websockets: check for disconnect request - immediate */
     if(c->request && c->request->disconnect && !(c->request->flags & EVHTP_REQ_FLAG_WS_DIS_DEFER))
     {
         evhtp_ws_do_disconnect(c->request);
         return;
     }
-
     log_debug("nread = %zu", nread);
 
     if (!(c->flags & EVHTP_CONN_FLAG_OWNER)) {
@@ -2580,6 +2580,10 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
 
     //int l = evbuffer_get_length(bufferevent_get_input(bev));
     //printf("%d left over\n", l);
+
+    // if we have left over websocket data, process it now.
+    if( evbuffer_get_length(bufferevent_get_input(bev))>0 && req->websock)
+        goto restart;
 
     if (c->request && c->cr_status == EVHTP_RES_PAUSE) {
         log_debug("Pausing connection");
