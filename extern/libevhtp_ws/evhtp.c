@@ -2464,7 +2464,7 @@ htp__connection_readcb_(struct bufferevent * bev, void * arg)
     evhtp_request_t *req = c->request;
     void               * buf;
     size_t               nread;
-    size_t               avail;
+    size_t               avail, postavail;
 
     if (evhtp_unlikely(bev == NULL)) {
         return;
@@ -2582,7 +2582,11 @@ restart:
     //printf("%d left over\n", l);
 
     // if we have left over websocket data, process it now.
-    if( evbuffer_get_length(bufferevent_get_input(bev))>0 && req->websock)
+    postavail = evbuffer_get_length(bufferevent_get_input(bev));
+    if(avail - nread != postavail)
+        log_warn("avail - nread != postavail, a=%d, n=%d, p=%d\n", (int)avail, (int)nread, (int)postavail);
+
+    if( req && req->websock && postavail > 0)
         goto restart;
 
     if (c->request && c->cr_status == EVHTP_RES_PAUSE) {
