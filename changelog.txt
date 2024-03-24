@@ -1,8 +1,15 @@
+v0.2.2
+    - rampart-server   Fixed websocket bug - processing leftover data in
+                       buffer.
+    - rampart-curl     Restructure fetch and submit functions.  Added
+                       fetchAsync and submitAsync. Added noCopyBuffer
+                       option.
+    - rampart-utils:   Fixed stat and lstat user and group bug.
 v0.2.1
     - rampart:         Many small bug fixes
                        Interactive: -g typeahead suggestion. Last var on
                        stack objects now output as json rather than console.log
-    - rampart.server:  Post var form data is now assumed to be text unless
+    - rampart-server:  Post var form data is now assumed to be text unless
                        it includes a filename parameter (sprintf will work in any
                        case, even if binary).
                        Post vars processes arrays and objects same as queryToObject()
