@@ -228,21 +228,24 @@ var thr = new rampart.thread();
 thr.exec(function() {
     var a="https://localhost:8087/sample";
     var aa=[a,a,a,a,a,a,a,a,a,a];
+    var ao = {url:a, insecure:true};
+    var aao = [ao,ao,ao,ao,ao,ao,ao,ao,ao,ao];
     var n=0,n2=0;
     curl.fetchAsync({insecure:true},aa,function(res){
         if(res.text=='test') n++;
-        if(n==10)
-            rampart.thread.put("res",n);
-    });
-    curl.fetchAsync({insecure:true},aa,function(res){
+    }).finally(function(){
+        rampart.thread.put("res",n);
+    })
+
+    curl.submitAsync(aao,function(res){
         if(res.text=='test') n2++;
-        if(n2==10)
-            rampart.thread.put("res2",n2);
+    }).finally(function(){
+        rampart.thread.put("res2",n2);
     });
 });
 
 setTimeout( function(){
-    testFeature("Async fetches in thread", function (){
+    testFeature("fetchAsync & submitAsync in thread w/ finally", function (){
         var res=rampart.thread.get("res", 2000);
         var res2=rampart.thread.get("res2", 500);
         return res==10 && res2==10;
