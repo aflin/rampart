@@ -223,4 +223,30 @@ testFeature("server script timeout", function (){
     return res.status == 500;
 });
 
-kill(pid,15);
+var thr = new rampart.thread();
+
+thr.exec(function() {
+    var a="https://localhost:8087/sample";
+    var aa=[a,a,a,a,a,a,a,a,a,a];
+    var n=0,n2=0;
+    curl.fetchAsync({insecure:true},aa,function(res){
+        if(res.text=='test') n++;
+        if(n==10)
+            rampart.thread.put("res",n);
+    });
+    curl.fetchAsync({insecure:true},aa,function(res){
+        if(res.text=='test') n2++;
+        if(n2==10)
+            rampart.thread.put("res2",n2);
+    });
+});
+
+setTimeout( function(){
+    testFeature("Async fetches in thread", function (){
+        var res=rampart.thread.get("res", 2000);
+        var res2=rampart.thread.get("res2", 500);
+        return res==10 && res2==10;
+    });
+
+    kill(pid,15);
+}, 2);

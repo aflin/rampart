@@ -1,4 +1,4 @@
-/* Copyright (C) 2024  Aaron Flin - All Rights Reserved
+/*
  * You may use, distribute or alter this code under the
  * terms of the MIT license
  * see https://opensource.org/licenses/MIT
@@ -14,6 +14,8 @@
 #include <inttypes.h>
 #include <curl/curl.h>
 #include <time.h>
+#include "event.h"
+#include "event2/thread.h"
 #include "curl_config.h"
 #include "rampart.h"
 
@@ -34,16 +36,9 @@ READTXT
     size_t read;
 };
 
-#define BRETTXT struct curl_bresStr
-BRETTXT
-{
-    duk_context *ctx;
-    duk_uarridx_t index;
-    size_t size;
-};
 
 #define CSOS struct curl_setopts_struct
-#define MAXSLISTS 16
+#define MAXSLISTS 10
 CSOS
 {
     long httpauth;                        /* flags we need to save for successive calls*/
@@ -51,15 +46,56 @@ CSOS
     long postredir;                       /* ditto */
     long ssloptions;                      /* ditto */
     long proxyssloptions;                 /* ditto */
-    char *url;                            /* url we will possibly append and will always need to free later */
     char *postdata;                       /* postdata we will will need to free later, if used */
     curl_mime *mime;                      /* from postform. Needs to be freed after curl_easy_perform() */
     struct curl_slist *slists[MAXSLISTS]; /* keep track of slists to free later. currently there are only 9 options with slist */
-    int nslists;                          /* number of lists actually used */
-    int headerlist;                       /* the index of the slists[] above that contains headers.  Headers set at the end so we can continually add during options */
-    int ret_text;			  /* whether to return results as .text (string) as well as .body (buffer)*/
-    int arraytype;		          /* when doing object2query, type of array to use */
+
+//    int headerlist;                       /* the index of the slists[] above that contains headers.  Headers set at the end so we can continually add during options */
+//    int ret_text;			              /* whether to return results as .text (string) as well as .body (buffer)*/
+//    int arraytype;		                  /* when doing object2query, type of array to use */
+
+    int *refcount;                        /* when cloning, keep count for later frees */
     READTXT readdata;
+    uint8_t nslists;                      /* number of lists actually used */
+    uint8_t flags;                        /* 
+                                             bit 0-1   - array type 0-3
+                                             bit 2     - return text
+                                             bit 3     - no_copy_buffer
+                                             bit 4-8   - headerlist - > 9 means unset/-1
+                                          */
+};
+
+#define SET_NOCOPY(opts) (opts)->flags |= 4
+#define GET_NOCOPY(opts) ( (opts)->flags & 4 )
+#define SET_RET_TEXT(opts) (opts)->flags |= 2
+#define GET_RET_TEXT(opts) ( (opts)->flags & 2 )
+#define CLEAR_RET_TEXT(opts) (opts)->flags &= 253
+#define SET_HEADERLIST(opts, val) do {\
+    if(val < 0) (opts)->flags |= 240;\
+    else (opts)->flags = ((opts)->flags & 15 ) | (val)<<4;\
+}while (0)
+    
+#define GET_HEADERLIST(opts) ({\
+    int ret = (int) ( (opts)->flags>>4 );\
+    if(ret > 9) ret=-1;\
+    ret;\
+})
+#define SET_ARRAYTYPE(opts, val) (opts)->flags |= (val & 3)
+#define GET_ARRAYTYPE(opts) (opts)->flags & 3
+
+#define TIMERINFO struct _timer_info
+TIMERINFO
+{
+    CURLM *cm;
+    struct event ev;
+};
+
+#define SOCKINFO struct multi_sock_info
+SOCKINFO
+{
+    curl_socket_t sockfd;
+    struct event ev;
+    TIMERINFO *tinfo;
 };
 
 #define CURLREQ struct curl_req
@@ -67,11 +103,13 @@ CSOS
 CURLREQ
 {
     CURL *curl;
-    BRETTXT body;
+    CURLM *multi;
+    RETTXT body;
     RETTXT header;
-    CSOS sopts;
+    CSOS *sopts;
+    char *url;                            /* url we will possibly append and will always need to free later */
+    void *thisptr;
     char *errbuf;
-    char isclone;
 };
 
 /* push a blank return object on top of stack with
@@ -154,14 +192,14 @@ void addheader(CSOS *sopts, const char *h)
 {
     struct curl_slist *l=NULL;
 
-    if (sopts->headerlist > -1)
-        l = sopts->slists[sopts->headerlist];
+    if (GET_HEADERLIST(sopts) > -1)
+        l = sopts->slists[GET_HEADERLIST(sopts)];
 
     l = curl_slist_append(l, h);
-    if (sopts->headerlist == -1)
+    if (GET_HEADERLIST(sopts) == -1)
     {
         sopts->slists[sopts->nslists] = l;
-        sopts->headerlist = sopts->nslists;
+        SET_HEADERLIST(sopts, sopts->nslists);
         sopts->nslists++;
     }
 }
@@ -286,7 +324,9 @@ long prototonum(long *val, const char *str)
 }
 */
 
-typedef int (*copt_ptr)(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option);
+#define CSOS_ARGS duk_context *ctx, CURL *handle, int subopt, CURLREQ *req, CSOS *sopts, CURLoption option
+
+typedef int (*copt_ptr)(CSOS_ARGS);
 
 static size_t mail_read_callback(char *ptr, size_t size, size_t nmemb, void *userdata)
 {
@@ -297,7 +337,7 @@ static size_t mail_read_callback(char *ptr, size_t size, size_t nmemb, void *use
 
     if(rlen < toread)
 	    toread = rlen;
-//printf("send '%.*s\n", (int)toread, &(rdata->text[rdata->read]) );
+
     memcpy(ptr, &(rdata->text[rdata->read]), toread);
 
     rdata->read += toread;
@@ -384,7 +424,7 @@ static int mailmime(duk_context *ctx, CURL *curl, CSOS *sopts)
         addheader(sopts, line);
     }
 
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, sopts->slists[sopts->headerlist]);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, sopts->slists[GET_HEADERLIST(sopts)]);
 
     if(duk_get_prop_string(ctx, -1, "html"))
     {
@@ -556,7 +596,7 @@ static int mailmime(duk_context *ctx, CURL *curl, CSOS *sopts)
 }
 
 
-int copt_mailmsg(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_mailmsg(CSOS_ARGS)
 {
     const char *msg;
     duk_size_t len;
@@ -694,20 +734,20 @@ int copt_mailmsg(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLop
 }
 
 
-int copt_get(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_get(CSOS_ARGS)
 {
-    char *c = strchr(sopts->url, '?');
+    char *c = strchr(req->url, '?');
     char joiner = c ? '&': '?';
 
     /* it's a string, add it to url => http://example.com/x.html?string */
     if (duk_is_string(ctx, -1))
-        sopts->url = strjoin(sopts->url, (char *)duk_to_string(ctx, -1), joiner);
+        req->url = strjoin(req->url, (char *)duk_to_string(ctx, -1), joiner);
 
     /* it's an object, convert to querystring */
     else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1) )
     {
-        char *s = duk_rp_object2querystring(ctx, -1, sopts->arraytype);
-        sopts->url = strjoin(sopts->url, (char *)s, joiner);
+        char *s = duk_rp_object2querystring(ctx, -1, GET_ARRAYTYPE(sopts));
+        req->url = strjoin(req->url, (char *)s, joiner);
         free(s);
     }
     else
@@ -757,7 +797,7 @@ int post_from_file(duk_context *ctx, CURL *handle, CSOS *sopts, const char *fn)
     return (0);
 }
 
-int copt_post(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_post(CSOS_ARGS)
 {
     const char *postdata;
     duk_size_t len;
@@ -785,7 +825,7 @@ int copt_post(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoptio
     else if (duk_is_object(ctx, -1) && !duk_is_array(ctx, -1) && !duk_is_function(ctx, -1))
     {
         /* save this to be freed after transaction is finished */
-        postdata = sopts->postdata = duk_rp_object2querystring(ctx, -1, sopts->arraytype);
+        postdata = sopts->postdata = duk_rp_object2querystring(ctx, -1, GET_ARRAYTYPE(sopts));
         duk_pop(ctx);
         len = (duk_size_t) strlen(postdata);
     }
@@ -799,7 +839,7 @@ int copt_post(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoptio
 
 
 /* skip, duplicates post above
-int copt_postbin(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_postbin(CSOS_ARGS)
 {
     void *postdata = NULL;
     duk_size_t sz = 0;
@@ -867,7 +907,7 @@ char *operrors[] =
     "array must contain objects with {data:...}"
 };
 
-int copt_postform(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_postform(CSOS_ARGS)
 {
     curl_mimepart *part;
 
@@ -945,7 +985,6 @@ int copt_postform(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLo
                 i++;
             }
         }
-        //printf("[%s, %s]\n", duk_to_string(ctx, -2), duk_to_string(ctx, -1));
         duk_pop_2(ctx);
     }
     duk_pop(ctx);
@@ -958,7 +997,7 @@ int copt_postform(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLo
         return (2);                  \
     (b) = (long)duk_get_boolean(ctx, (idx))
 
-int copt_bool(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_bool(CSOS_ARGS)
 {
     long b;
     getbool(b, -1);
@@ -967,7 +1006,7 @@ int copt_bool(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoptio
 }
 
 /* set boolean, with some random extras or caveats */
-int copt_boolplus(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_boolplus(CSOS_ARGS)
 {
     long b;
     getbool(b, -1);
@@ -991,7 +1030,7 @@ int copt_boolplus(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLo
     return (0);
 }
 
-int copt_fromsub(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_fromsub(CSOS_ARGS)
 {
     long b;
     getbool(b, -1);
@@ -1001,7 +1040,7 @@ int copt_fromsub(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLop
     return (0);
 }
 
-int copt_compressed(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_compressed(CSOS_ARGS)
 {
     long b;
     getbool(b, -1);
@@ -1014,14 +1053,14 @@ int copt_compressed(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CUR
     return (0);
 }
 
-int copt_long(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_long(CSOS_ARGS)
 {
     long b = (long)duk_get_int_default(ctx, -1, (duk_int_t)0);
     curl_easy_setopt(handle, option, b);
     return (0);
 }
 
-int copt_timecond(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_timecond(CSOS_ARGS)
 {
     double b;
     if(!duk_is_object(ctx, -1) || !duk_has_prop_string(ctx, -1, "getMilliseconds"))
@@ -1039,7 +1078,7 @@ int copt_timecond(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLo
 }
 
 /* TODO: fix or delete
-int copt_proto(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_proto(CSOS_ARGS)
 {
     long b;
     long res = prototonum(&b, duk_to_string(ctx, -1));
@@ -1047,21 +1086,21 @@ int copt_proto(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLopti
 }
 */
 
-int copt_64(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_64(CSOS_ARGS)
 {
     curl_off_t b = (curl_off_t)duk_get_number_default(ctx, -1, (duk_double_t)0);
     curl_easy_setopt(handle, option, b);
     return (0);
 }
 
-int copt_1000(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_1000(CSOS_ARGS)
 {
     long b = (long)(1000.0 * duk_get_number_default(ctx, -1, (duk_int_t)0));
     curl_easy_setopt(handle, option, b);
     return (0);
 }
 
-int copt_ftpmethod(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_ftpmethod(CSOS_ARGS)
 {
     const char *s = duk_to_string(ctx, -1);
     if (!strcmp("multicwd", s))
@@ -1078,7 +1117,7 @@ int copt_ftpmethod(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURL
     return (0);
 }
 
-int copt_proxytype(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_proxytype(CSOS_ARGS)
 {
     const char *s = duk_to_string(ctx, -1);
     long flags[] = {
@@ -1096,7 +1135,7 @@ int copt_proxytype(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURL
     return (0);
 }
 
-int copt_string(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_string(CSOS_ARGS)
 {
     const char *s = duk_to_string(ctx, -1);
     curl_easy_setopt(handle, option, s);
@@ -1104,7 +1143,7 @@ int copt_string(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLopt
 }
 
 /* a string, or multiples strings in an array */
-int copt_strings(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_strings(CSOS_ARGS)
 {
     if (duk_is_array(ctx, -1))
     {
@@ -1112,25 +1151,24 @@ int copt_strings(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLop
         while (duk_has_prop_index(ctx, -1, i))
         {
             duk_get_prop_index(ctx, -1, i);
-            copt_string(ctx, handle, 0, sopts, option);
+            copt_string(ctx, handle, 0, req, sopts, option);
             duk_pop(ctx);
             i++;
         }
     }
     else
-        return (copt_string(ctx, handle, 0, sopts, option));
+        return (copt_string(ctx, handle, 0, req, sopts, option));
 
     return (0);
 }
 /* turn JS array into curl slist, or if not an array, an slist with one member */
-int copt_array_slist(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_array_slist(CSOS_ARGS)
 {
     struct curl_slist *list = NULL;
 
-    if (subopt == 1 && sopts->headerlist > -1)
+    if (subopt == 1 && GET_HEADERLIST(sopts) > -1)
     {
-        list = sopts->slists[sopts->headerlist];
-       // printf("using existing list at %d\n", sopts->headerlist);
+        list = sopts->slists[GET_HEADERLIST(sopts)];
     }
     if (duk_is_array(ctx, -1))
     {
@@ -1148,9 +1186,8 @@ int copt_array_slist(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CU
 
     if (subopt == 1) /* header list.  Keep it around in case we have more headers elsewhere */
     {
-        //printf("subopt==1\n");
-        if (sopts->headerlist == -1)
-            sopts->headerlist = sopts->nslists;
+        if (GET_HEADERLIST(sopts) == -1)
+            SET_HEADERLIST(sopts, sopts->nslists);
         else
             return (0); /* we already have headerlist set and slists[sopts->headerlist] was appended */
     }
@@ -1163,7 +1200,7 @@ int copt_array_slist(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CU
     return (0);
 }
 
-int copt_ssl_ccc(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_ssl_ccc(CSOS_ARGS)
 {
     if (!subopt)
     {
@@ -1184,7 +1221,7 @@ int copt_ssl_ccc(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLop
     return (0);
 }
 
-int copt_netrc(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_netrc(CSOS_ARGS)
 {
     long b;
     getbool(b, -1);
@@ -1203,7 +1240,7 @@ int copt_netrc(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLopti
     return (0);
 }
 
-int copt_auth(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_auth(CSOS_ARGS)
 {
     long b;
     getbool(b, -1);
@@ -1220,7 +1257,7 @@ int copt_auth(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoptio
     return (0);
 }
 
-int copt_socks5auth(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_socks5auth(CSOS_ARGS)
 {
     long b;
     getbool(b, -1);
@@ -1236,7 +1273,7 @@ int copt_socks5auth(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CUR
     return (0);
 }
 
-int copt_sslopt(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_sslopt(CSOS_ARGS)
 {
     long b;
     getbool(b, -1);
@@ -1254,7 +1291,7 @@ int copt_sslopt(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLopt
     return (0);
 }
 
-int copt_postr(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_postr(CSOS_ARGS)
 {
     long b;
     getbool(b, -1);
@@ -1270,7 +1307,7 @@ int copt_postr(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLopti
     return (0);
 }
 
-int copt_sslver(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_sslver(CSOS_ARGS)
 {
     long b;
     getbool(b, -1);
@@ -1295,25 +1332,25 @@ int copt_sslver(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLopt
     return (0);
 }
 
-int copt_tlsmax(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_tlsmax(CSOS_ARGS)
 {
     const char *s = duk_to_string(ctx, -1);
 
     if (!strcmp(s, "1.0"))
-        return (copt_sslver(ctx, handle, 9, sopts, option));
+        return (copt_sslver(ctx, handle, 9, req, sopts, option));
     else if (!strcmp(s, "1.1"))
-        return (copt_sslver(ctx, handle, 10, sopts, option));
+        return (copt_sslver(ctx, handle, 10, req, sopts, option));
     else if (!strcmp(s, "1.2"))
-        return (copt_sslver(ctx, handle, 11, sopts, option));
+        return (copt_sslver(ctx, handle, 11, req, sopts, option));
     else if (!strcmp(s, "1.3"))
-        return (copt_sslver(ctx, handle, 12, sopts, option));
+        return (copt_sslver(ctx, handle, 12, req, sopts, option));
     else if (!strcmp(s, "1"))
-        return (copt_sslver(ctx, handle, 9, sopts, option));
+        return (copt_sslver(ctx, handle, 9, req, sopts, option));
 
     return (1); /* unknown parameter for option */
 }
 
-int copt_continue(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_continue(CSOS_ARGS)
 {
     const char *s;
 
@@ -1324,7 +1361,7 @@ int copt_continue(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLo
     return (0);
 }
 
-int copt_httpv(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_httpv(CSOS_ARGS)
 {
     /* assume true unless explicitly false.  If false, let curl choose version */
     long b;
@@ -1368,7 +1405,7 @@ int copt_httpv(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLopti
     return (0);
 }
 
-int copt_resolv(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_resolv(CSOS_ARGS)
 {
     /* assume true unless explicitly false.  If false, then use 'whatever' */
     long b;
@@ -1382,7 +1419,7 @@ int copt_resolv(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLopt
     return (0);
 }
 
-int copt_insecure(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_insecure(CSOS_ARGS)
 {
     long b;
     getbool(b, -1);
@@ -1410,7 +1447,7 @@ int copt_insecure(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLo
     return (0);
 }
 /* TODO: check for number */
-int copt_limit(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_limit(CSOS_ARGS)
 {
     curl_off_t l = (curl_off_t)duk_get_number_default(ctx, -1, (duk_double_t)0);
     curl_easy_setopt(handle, CURLOPT_MAX_RECV_SPEED_LARGE, l);
@@ -1419,7 +1456,7 @@ int copt_limit(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLopti
 }
 
 /*
-int copt_oauth(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option) {
+int copt_oauth(CSOS_ARGS) {
   copt_string(ctx,handle,subopt,sopts,option);
 
   sopts->httpauth |= CURLAUTH_BEARER;
@@ -1428,7 +1465,7 @@ int copt_oauth(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLopti
 */
 
 /* TODO: accept string ddd-ddd */
-int copt_lport(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_lport(CSOS_ARGS)
 {
     if (duk_is_array(ctx, -1))
     {
@@ -1457,7 +1494,7 @@ int copt_lport(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLopti
     return (0);
 }
 
-int copt_cert(duk_context *ctx, CURL *handle, int subopt, CSOS *sopts, CURLoption option)
+int copt_cert(CSOS_ARGS)
 {
     char *s, *p;
 
@@ -1859,7 +1896,20 @@ void duk_curl_parse_headers(duk_context *ctx, char *header)
     }
 }
 
-int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
+//the problem with this is that body will disappear when ret object does 
+static duk_ret_t extbuf_finalizer(duk_context *ctx) {
+    char *buf;
+
+    if( duk_get_prop_string (ctx , 0, DUK_HIDDEN_SYMBOL("finalizer_body")) )
+    {
+        buf = duk_get_buffer(ctx, -1, NULL);
+        free(buf);
+        duk_config_buffer(ctx, -1, NULL, 0);
+    }
+    return 0;
+}
+
+static int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
 {
     HTTP_CODE code;
     HTTP_CODE *cres, *code_p = &code;
@@ -1870,9 +1920,6 @@ int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     double total;
 
     duk_push_object(ctx);
-
-    //duk_push_boolean(ctx,1);
-    //duk_put_prop_string(ctx,-2,"ok");
 
     /* status text and status code */
     curl_easy_getinfo(req->curl, CURLINFO_RESPONSE_CODE, &d);
@@ -1888,9 +1935,27 @@ int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     duk_push_int(ctx, (int)d);
     duk_put_prop_string(ctx, -2, "status");
 
+
     /* the doc */
-    duk_get_prop_index(ctx, 0, (req->body).index);
-    if((req->sopts).ret_text)
+
+    if(GET_NOCOPY(req->sopts))
+    {
+        duk_push_external_buffer(ctx);
+        duk_config_buffer(ctx, -1, req->body.text, req->body.size);
+        duk_push_c_function(ctx, extbuf_finalizer, 1);
+        duk_set_finalizer(ctx, -3);
+        duk_dup(ctx, -1);  //a hidden copy for finalizer in case, e.g., delete res.body
+        duk_put_prop_string(ctx, -3, DUK_HIDDEN_SYMBOL("finalizer_body") );
+    } else {
+        duk_push_fixed_buffer(ctx, req->body.size);
+        char *buf = duk_get_buffer(ctx, -1, NULL);
+        memcpy(buf, req->body.text, req->body.size);
+        free(req->body.text);
+        req->body.text=NULL;
+    }
+
+
+    if(GET_RET_TEXT(req->sopts))
     {
         duk_dup(ctx, -1);
         duk_buffer_to_string(ctx, -1);
@@ -1905,7 +1970,7 @@ int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     duk_put_prop_string(ctx, -2, "effectiveUrl");
 
     /* the request url, in case of redirects */
-    duk_push_string(ctx, (req->sopts).url);
+    duk_push_string(ctx, req->url);
     duk_put_prop_string(ctx, -2, "url");
 
     /* local IP address */
@@ -1994,34 +2059,9 @@ int duk_curl_push_res(duk_context *ctx, CURLREQ *req)
     return (d);
 }
 
-static size_t
-WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
-{
-    size_t realsize = size * nmemb;
-    duk_size_t out_sz;
-    BRETTXT *mem = (BRETTXT *)userp;
-    duk_context *ctx = mem->ctx;
-    byte *buf = NULL;
-/*
-if(realsize)
-   printf("body (%d chars) = '%.*s'\n", (int)realsize, (int)realsize, (char *)contents);
-else
-   printf("END BODY\n");
-printf("index=%d, body=%p\n", (int)mem->index, mem);
-*/
-    duk_get_prop_index(ctx, 0, mem->index);
-    duk_resize_buffer(ctx, -1, (duk_size_t) mem->size + realsize);
-    buf=duk_get_buffer(ctx, -1, &out_sz);
-    duk_pop(ctx);
-
-    memcpy(&(buf[mem->size]), contents, realsize);
-    mem->size += realsize;
-
-    return realsize;
-}
 
 static size_t
-WriteHeaderCallback(void *contents, size_t size, size_t nmemb, void *userp)
+WriteCallback(void *contents, size_t size, size_t nmemb, void *userp)
 {
     size_t realsize = size * nmemb;
     RETTXT *mem = (RETTXT *)userp;
@@ -2029,12 +2069,7 @@ WriteHeaderCallback(void *contents, size_t size, size_t nmemb, void *userp)
     /* overwrite old headers if we get more due to redirect */
     if (!strncmp(contents, "HTTP/", 5))
         mem->size = 0;
-/*
-if(realsize)
-   printf("header (%d chars) = '%.*s'\n", (int)realsize, (int)realsize, (char *)contents);
-else
-   printf("END HEADER\n");
-*/
+
     REMALLOC(mem->text, (mem->size + realsize + 1));
 
     memcpy(&(mem->text[mem->size]), contents, realsize);
@@ -2044,8 +2079,9 @@ else
     return realsize;
 }
 
-void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CSOS *sopts)
+void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CURLREQ *req)
 {
+    CSOS *sopts = req->sopts;
     CURL_OPTS opts;
     CURL_OPTS *ores, *opts_p = &opts;
     int funcerr = 0;
@@ -2054,10 +2090,23 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CSOS *sopts)
     if( duk_get_prop_string(ctx, idx, "returnText") )
     {
         if(!REQUIRE_BOOL(ctx, -1, "curl - option returnText requires a Boolean"))
-            sopts->ret_text=0;
+            CLEAR_RET_TEXT(sopts);
         duk_del_prop_string(ctx, idx, "returnText");
     }
     duk_pop(ctx);
+
+    if( duk_get_prop_string(ctx, idx, "noCopyBuffer") )
+    {
+        if(REQUIRE_BOOL(ctx, -1, "curl - option noCopyBuffer requires a Boolean"))
+        {
+            CLEAR_RET_TEXT(sopts);
+            SET_NOCOPY(sopts);
+        }
+        duk_del_prop_string(ctx, idx, "noCopyBuffer");
+    }
+    duk_pop(ctx);
+
+
 
     duk_enum(ctx, (duk_idx_t)idx, DUK_ENUM_SORT_ARRAY_INDICES);
     while (duk_next(ctx, -1 /* index */, 1 /* get_value also */))
@@ -2095,13 +2144,13 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CSOS *sopts)
             const char *arraytype = REQUIRE_STRING(ctx, -1, "curl - option '%s' requires a String", sop);
 
             if (!strcmp("bracket", arraytype))
-                sopts->arraytype = ARRAYBRACKETREPEAT;
+                SET_ARRAYTYPE(sopts,ARRAYBRACKETREPEAT);
             else if (!strcmp("comma", arraytype))
-                sopts->arraytype = ARRAYCOMMA;
+                SET_ARRAYTYPE(sopts,ARRAYCOMMA);
             else if (!strcmp("json", arraytype))
-                sopts->arraytype = ARRAYJSON;
+                SET_ARRAYTYPE(sopts,ARRAYJSON);
             else if (!strcmp("repeat", arraytype))
-                sopts->arraytype = ARRAYREPEAT;
+                SET_ARRAYTYPE(sopts,ARRAYREPEAT);
             else 
                 RP_THROW(ctx, "curl - option '%s' requires a value of 'repeat', 'bracket', 'comma' or 'json'. Value '%s' is unknown.", sop, arraytype);
 
@@ -2118,7 +2167,7 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CSOS *sopts)
            top of the ctx stack and accessed from within the function.                    */
         if (ores != (CURL_OPTS *)NULL)
         {
-            funcerr = (ores->func)(ctx, curl, ores->subopt, sopts, ores->option);
+            funcerr = (ores->func)(ctx, curl, ores->subopt, req, sopts, ores->option);
             if (funcerr)
                 RP_THROW(ctx, "curl option '%s': %s", sop, operrors[funcerr]);
         }
@@ -2132,54 +2181,134 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CSOS *sopts)
 
 static void clean_req(CURLREQ *req)
 {
-    int i;
-    CSOS *sopts = &(req->sopts);
+    CSOS *sopts = req->sopts;
+    int i, *refcount = sopts->refcount;
     /* where new_curlreq clones, don't free memory refs from shared pointers
      they will still be in use from the original req */
-    if (!req->isclone)
+
+    *refcount = *refcount -1;
+
+    if ( *(sopts->refcount) < 1 )
     {
         for (i = 0; i < sopts->nslists; i++)
             curl_slist_free_all(sopts->slists[i]);
         free(sopts->postdata);
         if (sopts->mime != (curl_mime *)NULL)
             curl_mime_free(sopts->mime);
+        free(sopts->refcount);
+        free(sopts);
     }
+    // delete the callback, if any, from the stash
+    if(req->thisptr)
+    {
+        duk_context *ctx = get_current_thread()->ctx;
+        duk_push_global_stash(ctx);
+        duk_push_sprintf(ctx, "curlthis_%p", req->thisptr);        
+        duk_del_prop(ctx, -2);
+        duk_pop(ctx);
+    }
+
     curl_easy_cleanup(req->curl);
-    free(sopts->url);
-//    free((req->body).text);
+    free(req->url);
     free((req->header).text);
     free(req->errbuf);
     free(req);
 }
 
-CURLREQ *new_curlreq(duk_context *ctx, char *url)
+CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, int options_idx, CURLM *cm, duk_idx_t func_idx, int add_addurl);
+
+duk_ret_t addurl(duk_context *ctx)
 {
-    CURLREQ *ret = (CURLREQ *)NULL;
+    CURLREQ *req=NULL, *preq=NULL;
+
+    const char *url = REQUIRE_STRING(ctx, 0, "Addurl - argument must be a String");
+    char *u = strdup(url);
+
+    duk_pop(ctx);
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("req"));
+ 
+    req = (CURLREQ *)duk_get_pointer(ctx, -1);
+ 
+    duk_pop(ctx);
+
+    /* clone the original request with a new url */
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, "callback");
+    duk_remove(ctx, -2);
+    preq = new_request(u, req, ctx, 0, req->multi, duk_normalize_index(ctx, -1), 1); 
+    duk_pop(ctx);
+
+    if (!preq)
+        RP_THROW(ctx, "Failed to get new curl handle while getting %s", u);
+
+    curl_easy_setopt(preq->curl, CURLOPT_PRIVATE, preq);
+    curl_multi_add_handle(req->multi, preq->curl);
+
+    duk_push_boolean(ctx, 1);
+    return 1;
+}
+
+CURLREQ *new_curlreq(duk_context *ctx, char *url, CSOS *sopts, CURLM *cm, duk_idx_t func_idx, int add_addurl)
+{
+    CURLREQ *ret = NULL;
 
     REMALLOC(ret, sizeof(CURLREQ));
+
     ret->curl = (CURL *)NULL;
     ret->errbuf = (char *)NULL;
-    ret->isclone = 0;
-    (ret->sopts).httpauth = 0L;
-    (ret->sopts).proxyauth = 0L;
-    (ret->sopts).postredir = 0L;
-    (ret->sopts).nslists = 0;
-    (ret->sopts).headerlist = -1;
-    (ret->sopts).ssloptions = 0L;
-    (ret->sopts).proxyssloptions = 0L;
-    (ret->sopts).postdata = (char *)NULL;
-    (ret->sopts).url = url;
-    (ret->sopts).mime = (curl_mime *)NULL;
-    (ret->sopts).ret_text = 1;
-    (ret->sopts).arraytype=ARRAYREPEAT;
-    (ret->sopts).readdata.size=0;
-    (ret->sopts).readdata.text=NULL;
+    ret->url = url;
+    ret->multi = cm;
+    ret->thisptr=NULL;
+
+    if(cm)
+    {
+        duk_push_global_stash(ctx);
+        duk_push_object(ctx);// 'this' for callback
+        duk_push_pointer(ctx, (void *)ret);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("req"));
+        duk_dup(ctx, func_idx);
+        duk_put_prop_string(ctx, -2, "callback");
+        if(add_addurl)
+        {
+            duk_push_c_function(ctx, addurl, 1);
+            duk_put_prop_string(ctx, -2, "addurl");
+        }
+        ret->thisptr = duk_get_heapptr(ctx, -1);
+        //stash it to prevent gc
+        duk_push_sprintf(ctx, "curlthis_%p", ret->thisptr);
+        duk_pull(ctx, -2);
+        duk_put_prop(ctx, -3);
+        duk_pop(ctx);//stash
+    }
+
+    if(!sopts)
+    {
+        REMALLOC(sopts, sizeof(CSOS));
+        //sopts->flags=0;
+        //SET_HEADERLIST(sopts, -1);
+        sopts->flags=240; //same as two lines above
+        sopts->httpauth = 0L;
+        sopts->proxyauth = 0L;
+        sopts->postredir = 0L;
+        sopts->nslists = 0;
+        //sopts->headerlist = -1;
+        sopts->ssloptions = 0L;
+        sopts->proxyssloptions = 0L;
+        sopts->postdata = (char *)NULL;
+        sopts->mime = (curl_mime *)NULL;
+        SET_RET_TEXT(sopts);
+        SET_ARRAYTYPE(sopts,ARRAYREPEAT);
+        sopts->readdata.size=0;
+        sopts->readdata.text=NULL;
+        sopts->refcount=NULL;
+        REMALLOC(sopts->refcount, sizeof(int));
+    }
+
+    ret->sopts=sopts;
 
     (ret->body).size = 0;
-    (ret->body).ctx=ctx;
-    (ret->body).index =  duk_get_length(ctx, 0);
-    duk_push_dynamic_buffer(ctx, 0);
-    duk_put_prop_index(ctx, 0, (ret->body).index );
+    (ret->body).text=NULL;
 
     (ret->header).size = 0;
     (ret->header).text = (char *)NULL;
@@ -2189,23 +2318,29 @@ CURLREQ *new_curlreq(duk_context *ctx, char *url)
     return (ret);
 }
 
-CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, int options_idx)
+CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, int options_idx, CURLM *cm, duk_idx_t func_idx, int add_addurl)
 {
-    CURLREQ *req = new_curlreq(ctx, url);
+    CURLREQ *req;
+    CSOS *sopts;
 
     if (cloner != (CURLREQ *)NULL)
     {
+        req = new_curlreq(ctx, url, cloner->sopts, cm, func_idx, add_addurl);
+        sopts = req->sopts;
         req->curl = curl_easy_duphandle(cloner->curl);
         curl_easy_setopt(req->curl, CURLOPT_ERRORBUFFER, req->errbuf);
         curl_easy_setopt(req->curl, CURLOPT_WRITEDATA, (void *)&(req->body));
         curl_easy_setopt(req->curl, CURLOPT_HEADERDATA, (void *)&(req->header));
-        curl_easy_setopt(req->curl, CURLOPT_URL, (req->sopts).url);
+        curl_easy_setopt(req->curl, CURLOPT_URL, req->url);
 
-        req->sopts = cloner->sopts;
-        req->isclone = 1;
-        /* we just overwrote url, set it again */
-        (req->sopts).url = url;
+        *sopts->refcount = *sopts->refcount +1;
         return (req);
+    }
+    else
+    {
+        req = new_curlreq(ctx, url, NULL, cm, func_idx, add_addurl);
+        sopts= req->sopts;
+        *sopts->refcount = 1;
     }
 
     req->curl = curl_easy_init();
@@ -2213,12 +2348,12 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, int options_i
     if (req->curl)
     {
         /* send all body data to this function  */
-        curl_easy_setopt(req->curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-        /* we pass our BRETTXT struct to the callback function */
+        curl_easy_setopt(req->curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+        /* we pass our RETTXT struct to the callback function */
         curl_easy_setopt(req->curl, CURLOPT_WRITEDATA, (void *)&(req->body));
 
         /* send all header data to this function  */
-        curl_easy_setopt(req->curl, CURLOPT_HEADERFUNCTION, WriteHeaderCallback);
+        curl_easy_setopt(req->curl, CURLOPT_HEADERFUNCTION, WriteCallback);
         /* we pass our RETTXT struct to the callback function */
         curl_easy_setopt(req->curl, CURLOPT_HEADERDATA, (void *)&(req->header));
 
@@ -2231,46 +2366,220 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, int options_i
         curl_easy_setopt(req->curl, CURLOPT_TCP_KEEPALIVE, 1L);
 
         if (options_idx > -1)
-            duk_curl_setopts(ctx, req->curl, options_idx, &(req->sopts));
+            duk_curl_setopts(ctx, req->curl, options_idx, req);
 
         /* set the url, which may have been altered in duk_curl_setopts to include a query string */
-        curl_easy_setopt(req->curl, CURLOPT_URL, (req->sopts).url);
+        curl_easy_setopt(req->curl, CURLOPT_URL, req->url);
 
-        if ((req->sopts).headerlist != -1)
-            curl_easy_setopt(req->curl, CURLOPT_HTTPHEADER, (req->sopts).slists[(req->sopts).headerlist]);
+        if (GET_HEADERLIST(sopts) != -1)
+            curl_easy_setopt(req->curl, CURLOPT_HTTPHEADER, sopts->slists[GET_HEADERLIST(sopts)]);
+    }
+    else
+    {
+        free(req);
+        return NULL;
     }
 
     return (req);
 }
 
-duk_ret_t addurl(duk_context *ctx)
+//#define RP_MULTI_DEBUG
+#ifdef RP_MULTI_DEBUG
+#define debugf(...) printf(__VA_ARGS__);
+#else
+#define debugf(...) /* Do nothing */
+#endif
+
+
+
+static int start_timeout(CURLM *cm, long timeout_ms, void *userp)
 {
-    CURLREQ *req, *preq;
-    CURLM *cm;
-    char *u = strdup(duk_to_string(ctx, 0));
+    struct timeval timeout;
+    TIMERINFO *tinfo = (TIMERINFO *)userp;
+    debugf("start_timeout: %d\n",(int)timeout_ms);
+    timeout.tv_sec = timeout_ms/1000;
+    timeout.tv_usec = (timeout_ms%1000)*1000;
 
-    duk_pop(ctx);
-    duk_push_this(ctx);
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("req"));
-    req = (CURLREQ *)duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("cm"));
-    cm = (CURLM *)duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
-    /* clone the original request with a new url */
-    preq = new_request(u, req, ctx, 0 /*0 not used when cloning*/);
-
-    if (!preq)
-        RP_THROW(ctx, "Failed to get new curl handle while getting %s", u);
-
-    curl_easy_setopt(preq->curl, CURLOPT_PRIVATE, preq);
-    curl_multi_add_handle(cm, preq->curl);
-
-    duk_push_boolean(ctx, 1);
-    return 1;
+    evtimer_del(&(tinfo->ev));
+    if(timeout_ms != -1)
+        evtimer_add(&(tinfo->ev), &timeout);
+/*    if(timeout_ms == -1)
+        evtimer_del(&(tinfo->ev));
+    else
+        evtimer_add(&(tinfo->ev), &timeout);
+*/
+    return 0;
 }
 
-duk_ret_t duk_curl_fetch(duk_context *ctx)
+static int check_multi_info(CURLM *cm)
+{
+    CURLREQ *preq;
+    CURLMsg *msg;
+    CURLcode res;
+    int msgs_left=0;
+    RPTHR *thr=get_current_thread();
+    duk_context *ctx = thr->ctx;
+    int gotinfo=0;
+
+    debugf("MULTINFO: start\n");
+    while((msg = curl_multi_info_read(cm, &msgs_left))) {
+        gotinfo=1;
+        if (msg->msg == CURLMSG_DONE)
+        {
+            debugf("MULTINFO msg= DONE\n");
+
+            curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &preq);
+            
+            res = msg->data.result;
+
+            duk_push_heapptr(ctx, preq->thisptr);
+            duk_get_prop_string(ctx, -1, "callback");
+            duk_pull(ctx, -2); // [ ..., callback, this ]
+
+            if (res != CURLE_OK)
+            {
+                duk_curl_push_res(ctx, preq);
+                duk_push_sprintf(ctx, "curl failed for '%s': %s", preq->url, curl_easy_strerror(res));
+                duk_put_prop_string(ctx, -2, "errMsg");
+            }
+            else
+            {
+                /* assemble our response */
+                duk_curl_push_res(ctx, preq);
+                /* add error strings, if any */
+                duk_push_string(ctx, preq->errbuf);
+                duk_put_prop_string(ctx, -2, "errMsg");
+
+            } /* if CURLE_OK */
+
+            // [ ..., callback, this, results ]
+            /* call the callback */
+            if ( duk_pcall_method(ctx, 1) != 0) {
+                if (duk_is_error(ctx, -1) )
+                {
+                    duk_get_prop_string(ctx, -1, "stack");
+                    fprintf(stderr, "Error in curl async callback: %s\n", duk_get_string(ctx, -1));
+                    duk_pop(ctx);
+                }
+                else if (duk_is_string(ctx, -1))
+                {
+                    fprintf(stderr, "Error in curl async callback: %s\n", duk_get_string(ctx, -1));
+                }
+                else
+                {
+                    fprintf(stderr, "Error in curl async callback\n");
+                }
+            }
+            duk_pop(ctx); //result
+
+            /* clean up */
+            curl_multi_remove_handle(cm, msg->easy_handle);
+            clean_req(preq);
+        } /* if DONE */
+    } /* while */
+    debugf("MULTINFO end\n");
+    return gotinfo;
+}
+
+static void timer_cb(int fd, short kind, void *userp)
+{
+    TIMERINFO *tinfo = (TIMERINFO *)userp;
+    CURLMcode ret;
+    int still_running;
+    (void)fd;
+    (void)kind;
+
+    debugf("TIMER: start\n");
+     
+    ret = curl_multi_socket_action(tinfo->cm, CURL_SOCKET_TIMEOUT, 0, &still_running);
+    if(ret)
+        fprintf(stderr, "error: %s\n", curl_multi_strerror(ret));
+
+    check_multi_info(tinfo->cm);
+
+    debugf("TIMER: end with %d still running\n", still_running);
+}
+
+static void mevent_cb(int fd, short kind, void *socketp)
+{
+    int running_handles;
+    SOCKINFO *sinfo = (SOCKINFO *)socketp;
+    TIMERINFO *tinfo = sinfo->tinfo;
+    CURLMcode ret;
+    int action =
+        ((kind & EV_READ) ? CURL_CSELECT_IN : 0) |
+        ((kind & EV_WRITE) ? CURL_CSELECT_OUT : 0); 
+    debugf("CALLBACK action: sinfo=%p read=%d write=%d\n", sinfo, !!EV_READ, !!EV_WRITE );
+    ret = curl_multi_socket_action(tinfo->cm, fd, action, &running_handles);
+    if(ret)
+        fprintf(stderr, "error: %s\n", curl_multi_strerror(ret));
+
+    check_multi_info(tinfo->cm);
+
+    if(running_handles <= 0) {
+        if(evtimer_pending(&(tinfo->ev), NULL)) {
+            evtimer_del(&(tinfo->ev));
+        }
+        curl_multi_cleanup(tinfo->cm);
+        free(tinfo);
+    }
+
+#ifdef RP_MULTI_DEBUG
+    printf("CALLBACK: end with %d running handles\n", running_handles);
+    if(event_initialized( &(sinfo->ev) ))
+        printf("CALLBACK: event still alive\n");
+    else
+        printf("CALLBACK: sinfo=%p event dead\n",sinfo);
+#endif
+}
+
+static int handle_socket(CURL *easy, curl_socket_t sock, int action, void *userp, void *socketp)
+{
+    SOCKINFO *sinfo = (SOCKINFO *)socketp;
+    TIMERINFO *tinfo = (TIMERINFO *)userp;
+    CURLM *cm = tinfo->cm;
+    int kind=0;
+    RPTHR *thr = get_current_thread();
+    debugf("HANDLE sock=%d sinfo=%p, socket remove=%d, in=%d, out=%d\n", (int)sock, sinfo, (action & CURL_POLL_REMOVE), (action & CURL_POLL_IN ), (action & CURL_POLL_OUT));
+    if(action == CURL_POLL_REMOVE)
+    {
+        if(sinfo) {
+            event_del( &(sinfo->ev) );
+            debugf("HANDLE freeing sinfo=%p\n",sinfo);
+            free(sinfo);
+        }
+    }
+    else
+    {
+        if(!sinfo)
+        {
+            REMALLOC( sinfo, sizeof(SOCKINFO) );
+            sinfo->tinfo=tinfo;
+            debugf("HANDLE created sinfo=%p\n", sinfo);
+        }
+        else
+        {
+            event_del( &(sinfo->ev) );
+            debugf("HANDLE USING ALREADY MADE EVENT???\n");
+        }
+
+        curl_multi_assign(cm, sock, sinfo);
+
+        kind =  ((action & CURL_POLL_IN ) ? EV_READ  : 0) |
+                ((action & CURL_POLL_OUT) ? EV_WRITE : 0) | 
+                EV_PERSIST;
+
+        event_assign(&(sinfo->ev), thr->base, sock, kind, mevent_cb, sinfo);
+
+        debugf("HANDLE adding persist ev sinfo=%p\n", sinfo);
+        event_add(&(sinfo->ev), NULL);
+    } 
+    debugf("HANDLE end\n");
+    return 0;
+}
+
+
+static duk_ret_t duk_curl_fetch_sync_async(duk_context *ctx, int async)
 {
     int i, options_idx = -1, func_idx = -1, array_idx = -1, url_idx=-1;
     char *url = (char *)NULL;
@@ -2284,8 +2593,7 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
 
     duk_curl_check_global(ctx);
 
-    /* an array to hold buffers for return text */
-    duk_push_array(ctx);
+    duk_push_global_stash(ctx);
     duk_insert(ctx, 0);
 
     for (i = 1; i < 5; i++)
@@ -2295,7 +2603,7 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
         {
             case DUK_TYPE_STRING:
             {
-                url = strdup(duk_get_string(ctx, i));
+                url = (char*) duk_get_string(ctx, i);
                 url_idx = i;
                 break;
             }
@@ -2318,13 +2626,16 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
         } /* switch */
     }     /* for */
 
+    if(async && func_idx==-1)
+        RP_THROW(ctx, "fetch_async: callback function is required");
+
     /* parallel requests */
 
     /* if we have a single url in a string, and a callback, perform as if multi 
        by sticking string into an array */
-    if( url_idx > -1 && func_idx >1)
+    /* *** also do same if async *** */
+    if( url_idx > -1 && ( func_idx >1 || async) )
     {
-        free(url); /* no longer needed */
         url=NULL;
         duk_push_array(ctx);
         duk_dup(ctx, url_idx);
@@ -2338,12 +2649,28 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
     /* array of urls, do parallel search */
     {
         CURLM *cm = curl_multi_init();
-        CURLMsg *msg;
-        int still_alive = 1, msgs_left = -1;
+        int still_alive = 1;
 
         if (func_idx == -1)
         {
             RP_THROW(ctx, "curl - error: Called with array (implying parallel fetch) but no callback function supplied");
+        }
+
+        if(async)
+        {
+            TIMERINFO *tinfo = NULL;
+            RPTHR *thr = get_current_thread();
+            
+            REMALLOC(tinfo, sizeof(TIMERINFO));
+
+            tinfo->cm=cm;
+            evtimer_assign(&(tinfo->ev), thr->base, timer_cb, tinfo);
+
+            curl_multi_setopt(cm, CURLMOPT_SOCKETFUNCTION, handle_socket);
+            curl_multi_setopt(cm, CURLMOPT_SOCKETDATA, tinfo);
+            curl_multi_setopt(cm, CURLMOPT_TIMERFUNCTION, start_timeout);
+            curl_multi_setopt(cm, CURLMOPT_TIMERDATA, tinfo);
+
         }
 
         i = 0;
@@ -2351,30 +2678,22 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
         {
             char *u;
             CURLREQ *preq;
+
             duk_get_prop_index(ctx, array_idx, i);
             u = strdup(duk_to_string(ctx, -1));
             duk_pop(ctx);
+
             if (!i)
             {
-                preq = req = new_request(u, NULL, ctx, options_idx);
-
-                /* set up for being able to add another url in the callback */
-                duk_push_this(ctx);
-                duk_push_pointer(ctx, (void *)cm);
-                duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("cm"));
-                duk_push_pointer(ctx, (void *)req);
-                duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("req"));
-                duk_push_c_function(ctx, addurl, 1);
-                duk_put_prop_string(ctx, -2, "addurl");
-                duk_pop(ctx);
-                /* end setup */
+                preq = req = new_request(u, NULL, ctx, options_idx, cm, func_idx, 1);
             }
             else
                 /* clone the original request with a new url */
-                preq = new_request(u, req, ctx, options_idx);
+                preq = new_request(u, req, ctx, options_idx, cm, func_idx, 1);
 
             if (!preq)
                 RP_THROW(ctx, "Failed to get new curl handle while getting %s", u);
+
 
             curl_easy_setopt(preq->curl, CURLOPT_PRIVATE, preq);
             curl_multi_add_handle(cm, preq->curl);
@@ -2382,47 +2701,13 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
             i++;
         } /* while */
 
+        if(async)
+            return 0;
+
         do
         {
-            CURLREQ *preq;
             curl_multi_perform(cm, &still_alive);
-            int gotdata=0;
-
-            while ((msg = curl_multi_info_read(cm, &msgs_left)))
-            {
-                gotdata=1;
-                if (msg->msg == CURLMSG_DONE)
-                {
-                    curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &preq);
-                    res = msg->data.result;
-                    duk_dup(ctx, func_idx);
-                    duk_push_this(ctx);
-
-                    if (res != CURLE_OK)
-                    {
-                        //duk_curl_ret_blank(ctx, (preq->sopts).url); //still return data if we get "Transferred a partial file"
-                        duk_curl_push_res(ctx, preq);
-                        duk_push_sprintf(ctx, "curl failed for '%s': %s", (preq->sopts).url, curl_easy_strerror(res));
-                        duk_put_prop_string(ctx, -2, "errMsg");
-                    }
-                    else
-                    {
-                        /* assemble our response */
-                        duk_curl_push_res(ctx, preq);
-                        /* add error strings, if any */
-                        duk_push_string(ctx, preq->errbuf);
-                        duk_put_prop_string(ctx, -2, "errMsg");
-
-                    } /* if CURLE_OK */
-
-                    /* call the callback */
-                    duk_call_method(ctx, 1);
-
-                    /* clean up */
-                    if (preq != req) /* need to free original req last as it has all the sopts needed by others */
-                        clean_req(preq);
-                }              /* CURLMSG_DONE */
-            }                  /* while */
+            int gotdata = check_multi_info(cm);
 
             /* if no data was retrieved, wait .05 secs */
             if(!gotdata) usleep(50000);
@@ -2434,18 +2719,17 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
 
         } while (still_alive); /* do */
 
-        clean_req(req); /* free the original */
         curl_multi_cleanup(cm);
-        //duk_push_boolean(ctx, 1);
         return 0;
     }
     /* end parallel requests */
+
     else if (url == (char *)NULL)
         RP_THROW(ctx, "curl fetch - no url provided");
 
     /* single request */
 
-    req = new_request(url, NULL, ctx, options_idx);
+    req = new_request(strdup(url), NULL, ctx, options_idx, NULL, 0, 0);
     if (req)
     {
         /* Perform the request, res will get the return code */
@@ -2458,7 +2742,6 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
         }
         if (res != CURLE_OK)
         {
-//            duk_curl_ret_blank(ctx, url); //still return data if we get "Transferred a partial file"
             i = (duk_curl_push_res(ctx, req) > 399) ? 0 : 1;
             duk_push_sprintf(ctx, "curl failed: %s", curl_easy_strerror(res));
             duk_put_prop_string(ctx, -2, "errMsg");
@@ -2496,9 +2779,20 @@ duk_ret_t duk_curl_fetch(duk_context *ctx)
     return 1;
 }
 
-duk_ret_t duk_curl_submit(duk_context *ctx)
+
+static duk_ret_t duk_curl_fetch(duk_context *ctx)
 {
-    int i, nreq=0; 
+    return duk_curl_fetch_sync_async(ctx, 0);
+}
+
+static duk_ret_t duk_curl_fetch_async(duk_context *ctx)
+{
+    return duk_curl_fetch_sync_async(ctx, 1);
+}
+
+static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
+{
+    int i=0, nreq=0; 
     duk_idx_t func_idx = -1, opts_idx=-1;
     char *url = (char *)NULL;
     CURLREQ *req=NULL;
@@ -2511,8 +2805,7 @@ duk_ret_t duk_curl_submit(duk_context *ctx)
 
     duk_curl_check_global(ctx);
 
-    /* an array to hold buffers for return text */
-    duk_push_array(ctx);
+    duk_push_global_stash(ctx);
     duk_insert(ctx, 0);
 
     if(duk_is_function(ctx, 1))
@@ -2538,19 +2831,44 @@ duk_ret_t duk_curl_submit(duk_context *ctx)
         }
     }
     else if (duk_is_object(ctx, opts_idx) && !duk_is_function(ctx, opts_idx))
+    {
+        if(async)
+        {
+            // do as parallel req but with one
+            duk_push_array(ctx);
+            duk_pull(ctx, opts_idx);
+            duk_put_prop_index(ctx, -2, 0);
+        }
         nreq=1;
+    }
     else
         RP_THROW(ctx, "curl - submit requires an object of options and a function");
 
     /* parallel requests */
-    if (nreq > 1)
+    if (nreq > 1 || async)
     /* array of urls, do parallel search */
     {
         CURLM *cm = curl_multi_init();
-        CURLMsg *msg;
-        int still_alive = 1, msgs_left = -1;
+        int still_alive = 1;
 
-        i = 0;
+        if(async)
+        {
+            TIMERINFO *tinfo = NULL;
+            RPTHR *thr = get_current_thread();
+            
+            REMALLOC(tinfo, sizeof(TIMERINFO));
+
+            tinfo->cm=cm;
+            evtimer_assign(&(tinfo->ev), thr->base, timer_cb, tinfo);
+
+            curl_multi_setopt(cm, CURLMOPT_SOCKETFUNCTION, handle_socket);
+            curl_multi_setopt(cm, CURLMOPT_SOCKETDATA, tinfo);
+            curl_multi_setopt(cm, CURLMOPT_TIMERFUNCTION, start_timeout);
+            curl_multi_setopt(cm, CURLMOPT_TIMERDATA, tinfo);
+
+        }
+
+        i=0;
         while (duk_has_prop_index(ctx, opts_idx, (duk_uarridx_t)i))
         {
             char *u=NULL;
@@ -2570,7 +2888,7 @@ duk_ret_t duk_curl_submit(duk_context *ctx)
             else
                 RP_THROW(ctx, "curl - submit requires an object with the key/property 'url' set");
             duk_pop(ctx);
-            preq = new_request(u, NULL, ctx, opts_obj_idx);
+            preq = new_request(u, NULL, ctx, opts_obj_idx, cm, func_idx, 0);
 
             if (!preq)
                 RP_THROW(ctx, "Failed to get new curl handle while getting %s", u);
@@ -2583,44 +2901,16 @@ duk_ret_t duk_curl_submit(duk_context *ctx)
 
         } /* while */
 
+        if(async)
+            return 0;
+
         do
         {
-            CURLREQ *preq;
             curl_multi_perform(cm, &still_alive);
+            int gotdata=check_multi_info(cm);
 
-            while ((msg = curl_multi_info_read(cm, &msgs_left)))
-            {
-                if (msg->msg == CURLMSG_DONE)
-                {
-                    curl_easy_getinfo(msg->easy_handle, CURLINFO_PRIVATE, &preq);
-                    res = msg->data.result;
-                    duk_dup(ctx, func_idx);
-                    duk_push_this(ctx);
-
-                    if (res != CURLE_OK)
-                    {
-                        duk_curl_ret_blank(ctx, (preq->sopts).url);
-                        duk_push_sprintf(ctx, "curl failed for '%s': %s", (preq->sopts).url, curl_easy_strerror(res));
-                        duk_put_prop_string(ctx, -2, "errMsg");
-                    }
-                    else
-                    {
-                        /* assemble our response */
-                        duk_curl_push_res(ctx, preq);
-                        /* add error strings, if any */
-                        duk_push_string(ctx, preq->errbuf);
-                        duk_put_prop_string(ctx, -2, "errMsg");
-
-                    } /* if CURLE_OK */
-
-                    /* call the callback */
-                    duk_call_method(ctx, 1);
-
-                    /* clean up */
-                    //if (preq != req) /* need to free original req last */
-                        clean_req(preq);
-                }              /* CURLMSG_DONE */
-            }                  /* while */
+            /* if no data was retrieved, wait .05 secs */
+            if(!gotdata) usleep(50000);
         } while (still_alive); /* do */
 
         //clean_req(req); /* free the original */
@@ -2640,7 +2930,7 @@ duk_ret_t duk_curl_submit(duk_context *ctx)
         RP_THROW(ctx, "curl - submit requires an object with the key/property 'url' set");
     duk_pop(ctx);
 
-    req = new_request(url, NULL, ctx, opts_idx);
+    req = new_request(url, NULL, ctx, opts_idx, NULL, 0, 0);
 
     if (req)
     {
@@ -2654,7 +2944,7 @@ duk_ret_t duk_curl_submit(duk_context *ctx)
         //}
         if (res != CURLE_OK)
         {
-            duk_curl_ret_blank(ctx, url);
+            i = (duk_curl_push_res(ctx, req) > 399) ? 0 : 1;
             duk_push_sprintf(ctx, "curl failed: %s", curl_easy_strerror(res));
             duk_put_prop_string(ctx, -2, "errMsg");
 
@@ -2687,6 +2977,15 @@ duk_ret_t duk_curl_submit(duk_context *ctx)
     //return 1;
     return 0;
 }
+static duk_ret_t duk_curl_submit_async(duk_context *ctx)
+{
+    return duk_curl_submit_sync_async(ctx, 1);
+}
+
+static duk_ret_t duk_curl_submit(duk_context *ctx)
+{
+    return duk_curl_submit_sync_async(ctx, 0);
+}
 
 /* **************************************************
    Initialize Curl into global object.
@@ -2698,7 +2997,9 @@ duk_ret_t duk_curl_submit(duk_context *ctx)
 
 static const duk_function_list_entry curl_funcs[] = {
     {"fetch", duk_curl_fetch, 4 /*nargs*/},
+    {"fetchAsync", duk_curl_fetch_async, 4 /*nargs*/},
     {"submit", duk_curl_submit, 2 /*nargs*/},
+    {"submitAsync", duk_curl_submit_async, 2 /*nargs*/},
     {"objectToQuery", duk_rp_object2q, 2},
     {"encode", duk_curl_encode, 1},
     {"decode", duk_curl_decode, 1},
