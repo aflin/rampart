@@ -42,7 +42,8 @@ var serverConf = {
     rotateLogs:     false,
     rotateInterval: 86400,
     rotateStart:    "02:00",  //must be "HH:MM"
-    user:           "nobody"
+    user:           "nobody",
+    detach:         true
 }
 
 /* For log rotate, the kill signal USR1 is used to reload log
@@ -312,7 +313,7 @@ serverpid=server.start(
     
     /* Fork and run in background. stdin and stderr are closed, 
        so any logging must go to a file.                          */
-    daemon: true,
+    daemon: serverConf.detach,
 
     /* if false, override threads below and set threads:1 */
     //useThreads: false,
@@ -463,7 +464,8 @@ serverpid=server.start(
 */
 
 fprintf(process.scriptPath+"/server.pid", "%d", serverpid);
-chown({user:serverConf.user, path:process.scriptPath+"/server.pid"});
+if(iam == 'root')
+  chown({user:serverConf.user, path:process.scriptPath+"/server.pid"});
 
 sleep(0.5); //wait half a sec, so messages from forked server can print first in the case that logging is turned off.
 
@@ -477,5 +479,7 @@ Server pid is ${serverpid}.  To stop server use kill as such:
    kill ${serverpid}
 `);
 
-// do not run setTimeout in parent process:
-process.exit(0);
+if(serverConf.daemon) {
+  // do not run setTimeout in parent process:
+  process.exit(0);
+}
