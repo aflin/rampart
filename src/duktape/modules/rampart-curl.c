@@ -212,117 +212,6 @@ void addheader(CSOS *sopts, const char *h)
         (ptr) = NULL;      \
     } while (0)
 
-/* from curl/src/tool_paramhlp.c *
-long prototonum(long *val, const char *str)
-{
-    char *buffer;
-    const char *sep = ",";
-    char *token;
-
-    static struct sprotos
-    {
-        const char *name;
-        long bit;
-    } const protos[] = {
-        {"all", CURLPROTO_ALL},
-        {"http", CURLPROTO_HTTP},
-        {"https", CURLPROTO_HTTPS},
-        {"ftp", CURLPROTO_FTP},
-        {"ftps", CURLPROTO_FTPS},
-        {"scp", CURLPROTO_SCP},
-        {"sftp", CURLPROTO_SFTP},
-        {"telnet", CURLPROTO_TELNET},
-        {"ldap", CURLPROTO_LDAP},
-        {"ldaps", CURLPROTO_LDAPS},
-        {"dict", CURLPROTO_DICT},
-        {"file", CURLPROTO_FILE},
-        {"tftp", CURLPROTO_TFTP},
-        {"imap", CURLPROTO_IMAP},
-        {"imaps", CURLPROTO_IMAPS},
-        {"pop3", CURLPROTO_POP3},
-        {"pop3s", CURLPROTO_POP3S},
-        {"smtp", CURLPROTO_SMTP},
-        {"smtps", CURLPROTO_SMTPS},
-        {"rtsp", CURLPROTO_RTSP},
-        {"gopher", CURLPROTO_GOPHER},
-        {"smb", CURLPROTO_SMB},
-        {"smbs", CURLPROTO_SMBS},
-        {NULL, 0}};
-
-    if (!str)
-        return 1;
-
-    buffer = strdup(str); // because strtok corrupts it 
-    if (!buffer)
-        return 1;
-
-    // Allow strtok() here since this isn't used threaded
-    // !checksrc! disable BANNEDFUNC 2
-    for (token = strtok(buffer, sep);
-         token;
-         token = strtok(NULL, sep))
-    {
-        enum e_action
-        {
-            allow,
-            deny,
-            set
-        } action = allow;
-
-        struct sprotos const *pp;
-
-        // Process token modifiers
-        while (!ISALNUM(*token))
-        { // may be NULL if token is all modifiers
-            switch (*token++)
-            {
-            case '=':
-                action = set;
-                break;
-            case '-':
-                action = deny;
-                break;
-            case '+':
-                action = allow;
-                break;
-            default: // Includes case of terminating NULL
-                Curl_safefree(buffer);
-                return 1;
-            }
-        }
-
-        for (pp = protos; pp->name; pp++)
-        {
-            if (curl_strequal(token, pp->name))
-            {
-                switch (action)
-                {
-                case deny:
-                    *val &= ~(pp->bit);
-                    break;
-                case allow:
-                    *val |= pp->bit;
-                    break;
-                case set:
-                    *val = pp->bit;
-                    break;
-                }
-                break;
-            }
-        }
-
-        if (!(pp->name))
-        { // unknown protocol
-            // If they have specified only this protocol, we say treat it as
-            //if no protocols are allowed 
-            if (action == set)
-                *val = 0;
-        }
-    }
-    Curl_safefree(buffer);
-    return 0;
-}
-*/
 
 #define CSOS_ARGS duk_context *ctx, CURL *handle, int subopt, CURLREQ *req, CSOS *sopts, CURLoption option
 
@@ -677,14 +566,7 @@ int copt_mailmsg(CSOS_ARGS)
             k=&key[0];
 
             k[0]=toupper((unsigned char)k[0]);
-            /*
-            k++;
-            while(*k)
-            {
-                k[0]=tolower((unsigned char)k[0]);
-                k++;
-            }
-            */
+
             duk_push_sprintf(ctx, "%s: %s", key, val);
             duk_put_prop_index(ctx, -3, i++);
             free(key);
@@ -837,67 +719,6 @@ int copt_post(CSOS_ARGS)
     return (0);
 }
 
-
-/* skip, duplicates post above
-int copt_postbin(CSOS_ARGS)
-{
-    void *postdata = NULL;
-    duk_size_t sz = 0;
-
-    if (duk_is_string(ctx, -1))
-    {
-        postdata = (void *)duk_to_string(ctx, -1);
-        // {postbin: "@filename"}
-        if (*((char *)postdata) == '@')
-        {
-            return (post_from_file(ctx, handle, sopts, postdata + 1));
-        }
-        else if (*((char *)postdata) == '\\' && *((char *)postdata + 1) == '@')
-            postdata++;
-
-        sz = strlen((char *)postdata);
-    }
-    else if (duk_is_buffer_data(ctx, -1))
-    {
-        postdata = duk_get_buffer_data(ctx, -1, &sz);
-    }
-    else
-        return (1);
-
-    * when copt_* functions return, a pop_2 removes top two off the stack.  We want
-     this one to stay somewhere on the stack (no gc), and we also want our
-     duk_next loop to be in the right spot, so we'll move the data to 0 and add a blank string
-     to be removed instead.  Agreed, it's not pretty.  But if postdata is large, this prevents
-     an unnecessary and potentially large copy of the post data.
-
-    This is crap.  Not sure what I was thinking.  But just in case I'm missing something
-    Keeping it here for now.
-
-    duk_insert(ctx, 0);
-    duk_push_string(ctx, "");
-    *
-    curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)sz);
-    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, postdata);
-    return (0);
-}
-*/
-
-
-/* post multipart mime form data.
-   Objects only   -   {"var1":"data1", "var2":"data2"}
-   and for files  -   { "var1":"data1",
-                        "FileFieldName": [
-                          {"filename":"myfile1.txt" ,"type": "text/plain", "data":"..."},
-                          {"filename":"myfile2.jpg" ,"type": "image/jpeg", "data":buffervar},
-                          {"filename":"myfile3.jpg" ,"type": "image/jpeg", "data":"@filename"}
-                        ]
-                      }
-
-    all files sent should have the same variable name.
-    https://tools.ietf.org/html/rfc7578#section-4.3
-    Therefore only one array of objects (as in "FileFieldName" above) should be present.
-*/
-
 char *operrors[] =
 {
     "",
@@ -1046,10 +867,8 @@ int copt_compressed(CSOS_ARGS)
     getbool(b, -1);
     if (b)
         curl_easy_setopt(handle, option, "br,gzip,deflate");
-    /* default is null
-  else
-    curl_easy_setopt(handle,option,"");
-  */
+    /* default is null */
+
     return (0);
 }
 
@@ -2087,17 +1906,6 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CURLREQ *req)
     int funcerr = 0;
     char op[64];
 
-    if( duk_get_prop_string(ctx, idx, "returnText") )
-    {
-        if(!REQUIRE_BOOL(ctx, -1, "curl - option returnText requires a Boolean"))
-            CLEAR_RET_TEXT(sopts);
-        //duk_del_prop_string(ctx, idx, "returnText");
-    }
-    duk_pop(ctx);
-
-
-
-
     duk_enum(ctx, (duk_idx_t)idx, DUK_ENUM_SORT_ARRAY_INDICES);
     while (duk_next(ctx, -1 /* index */, 1 /* get_value also */))
     {
@@ -2416,11 +2224,7 @@ static int start_timeout(CURLM *cm, long timeout_ms, void *userp)
     evtimer_del(&(tinfo->ev));
     if(timeout_ms != -1)
         evtimer_add(&(tinfo->ev), &timeout);
-/*    if(timeout_ms == -1)
-        evtimer_del(&(tinfo->ev));
-    else
-        evtimer_add(&(tinfo->ev), &timeout);
-*/
+
     return 0;
 }
 
@@ -3069,9 +2873,7 @@ static duk_ret_t duk_curl_submit_sync_async(duk_context *ctx, int async)
         RP_THROW(ctx, "Failed to get new curl handle while getting %s", url);
 
     duk_call_method(ctx, 1);
-    //duk_push_boolean(ctx, i); /* return bool */
 
-    //return 1;
     return 0;
 }
 static duk_ret_t duk_curl_submit_async(duk_context *ctx)
@@ -3087,10 +2889,6 @@ static duk_ret_t duk_curl_submit(duk_context *ctx)
 /* **************************************************
    Initialize Curl into global object.
    ************************************************** */
-//void duk_curl_init(duk_context *ctx) {
-//  duk_push_c_function(ctx, duk_curl_fetch, 4 /*nargs*/);  /* [ Sql proto fn_query ] */
-//  duk_put_global_string(ctx, "curl");  /* -> stack: [ ] */
-//}
 
 static const duk_function_list_entry curl_funcs[] = {
     {"fetch", duk_curl_fetch, 4 /*nargs*/},
