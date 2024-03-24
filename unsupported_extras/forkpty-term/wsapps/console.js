@@ -32,12 +32,12 @@ module.exports = function (req)
 
         req.con.resize(req.cols,req.rows);
 
-        req.wsSend("Warning: there is no security in this sample script.  You should write some.\r\n");
+        req.wsSend(stringToBuffer("Warning: there is no security in this sample script.  You should write some.\r\n"));
 
         // what to do when we have data waiting.
         req.con.on("data", function(){
-            //read data and send it (must be a string, hence the 'true').
-            req.wsSend(req.con.read(true));
+            //read data and send it (req.con.read returns a buffer, so its send as binary).
+            req.wsSend(req.con.read());
         });
 
         return;
@@ -68,7 +68,7 @@ module.exports = function (req)
     if(req.body.length)
     {
         if(!req.con.write) {
-            req.wsSend("bash has exited\r\n");
+            req.wsSend(stringToBuffer("bash has exited\r\n"));
             return;
         }
         if(!req.wsIsBin)

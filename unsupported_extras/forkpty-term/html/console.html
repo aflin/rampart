@@ -5,7 +5,8 @@
       <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
       <script src=" https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js "></script>
       <style>
-          body,#terminal {height:calc( 100% - 25px ); width:calc( 100% - 15px );}
+          body,#terminal {height:calc( 100% - 15px ); width:calc( 100% - 15px );}
+          .xterm-viewport { overflow-x: hidden; }
       </style>
     </head>
     <body>
@@ -17,7 +18,11 @@
         var screen;
         var viewport;
         var scrollArea;
-        const socket = new WebSocket("ws://localhost:8088/wsapps/console.js");
+        var ws = 'ws://';
+        if(/^https/.test(window.location.origin))
+            ws = 'wss://'
+        
+        const socket = new WebSocket(ws + window.location.host + "/wsapps/console.js");
 
         // send commands as binary to distinguish from data
         function sendcomm(cmd, opt) {
@@ -37,7 +42,7 @@
             //theme: theme,
             fontFamily: "monospace, monospace",
             cursorBlink: true,
-            lineHeight: 0.5
+            lineHeight: 1
         });
         const fitAddon = new FitAddon.FitAddon();
         term.loadAddon(fitAddon);
@@ -69,13 +74,25 @@
         }
         window.addEventListener('resize', onSize, false);
         setTimeout(onSize,100);
-        onSize(); //IDK why, but this fixes the initial window size, despite above
+
         socket.onmessage = (event) => {
-            term.write(event.data);
+            /*Server sends binary ws, which shows up as a blob.
+              It has to do that because some term data is not utf8, and 
+              websocket text (!binary) must be utf8 or browser craps out.
+              Term doesn't take a blob, only text.
+              Converting blob to text requires a callback.    */
+            event.data.text().then( (d) => {
+                term.write(d);
+            });
+            //term.write(event.data);
         }
 
-        term.onData(e => {
-            socket.send(e);
-        });
+        socket.onopen = function() {
+            term.onData(e => {
+                // a check to make sure socket is still open
+                // and error handling can go here
+                socket.send(e);
+            });
+        }
     </script>
 </html>
