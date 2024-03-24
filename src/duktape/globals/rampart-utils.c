@@ -2054,8 +2054,8 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
 {
     const char *path = duk_get_string(ctx, 0);
     struct stat path_stat;
-    struct passwd *pw = getpwuid(path_stat.st_uid);
-    struct group  *gr = getgrgid(path_stat.st_gid);
+    struct passwd *pw;
+    struct group  *gr;
 
     int err,
         //safestat = duk_get_boolean_default(ctx,1,0);
@@ -2065,6 +2065,9 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
         err=lstat(path, &path_stat);
     else
         err=stat(path, &path_stat);
+
+    pw = getpwuid(path_stat.st_uid);
+    gr = getgrgid(path_stat.st_gid);
 
     if (err)
     {
