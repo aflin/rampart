@@ -699,8 +699,8 @@ RPfunc_stringformat(duk_context *ctx)
                    "Too many arguments in the function: stringFormat()");
 
   /* catch errors from RPstringformatArgCb */
-  if(*(finfo->errmap)!='\0')
-      RP_THROW(ctx, "%s", finfo->errmap + 4);
+  if(*(errmap0)!='\0')
+      RP_THROW(ctx, "%s", errmap0 + 4);
 
   /* Copy the output to the field: - - - - - - - - - - - - - - - - - - - - */
   if (!htbuf_write(outBuf, "", 0)) goto noMem;  /* ensure non-NULL outData */
@@ -895,7 +895,7 @@ duk_ret_t dosearchfile(duk_context *ctx, const char *search, const char *file, A
     {
         fclose(fh);
         closeapicp(cp);                  /* cleanup the control parameters */
-        RP_THROW(ctx, "%s: Unable to open API (bad query or other fault):\n%s", fname, finfo->errmap);
+        RP_THROW(ctx, "%s: Unable to open API (bad query or other fault):\n%s", fname, errmap0);
     }
 
 

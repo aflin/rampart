@@ -112,6 +112,8 @@ SFI
 // info for thread/fork pairing as a thread local
 __thread SFI *finfo = NULL;
 
+// some string functions don't fork.  We need an error map for them
+char *errmap0;
 
 extern int RP_TX_isforked;
 
@@ -840,9 +842,7 @@ static DB_HANDLE *h_open(const char *db)
             if(!finfo)
             {
                 REMALLOC(finfo, sizeof(SFI));
-                finfo->errmap=NULL;
-                REMALLOC(finfo->errmap, msgbufsz);
-                mmsgfh = fmemopen(finfo->errmap, msgbufsz, "w+");
+                finfo->errmap=errmap0;
             }
         }
 
@@ -4668,7 +4668,6 @@ duk_ret_t duk_open_module(duk_context *ctx)
      * this will be run once per new duk_context/thread in server.c
      * but needs to be done only once for all threads
      */
-
     CTXLOCK;
     if (!db_is_init)
     {
@@ -4676,18 +4675,6 @@ duk_ret_t duk_open_module(duk_context *ctx)
 
         RP_PTINIT(&tx_handle_lock);
         RP_PTINIT(&tx_set_lock);
-
-        RPTHR *thr = get_current_thread();
-
-        /* for non-forking in main thread.  Still need errmap, but
-           doesn't need to be memmap */
-        if(RPTHR_TEST(thr, RPTHR_FLAG_THR_SAFE))
-        {
-            REMALLOC(finfo, sizeof(SFI));
-            finfo->errmap=NULL;
-            REMALLOC(finfo->errmap, msgbufsz);
-            mmsgfh = fmemopen(finfo->errmap, msgbufsz, "w+");
-        }
 
         TexisArgv[0]=rampart_exec;
 
@@ -4702,6 +4689,10 @@ duk_ret_t duk_open_module(duk_context *ctx)
             CTXUNLOCK;
             RP_THROW(ctx, "Failed to initialize rampart-sql in TXinitapp");
         }
+        errmap0=NULL;
+        REMALLOC(errmap0, msgbufsz);
+        mmsgfh = fmemopen(errmap0, msgbufsz, "w+");
+
         db_is_init = 1;
     }
     CTXUNLOCK;
