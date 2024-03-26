@@ -201,53 +201,83 @@ evhtp_ws_parser_run(evhtp_request_t *req, evhtp_ws_hooks * hooks,
                 } /* switch */
                 break;
             case ws_s_ext_payload_len_16:
-                if (MIN_READ((const char *)(data + len) - &data[i], 2) < 2) {
-                    return i;
+                {
+                    uint16_t d16;
+                    uint8_t * d8= (uint8_t *)&d16;
+                    if (MIN_READ((const char *)(data + len) - &data[i], 2) < 2) {
+                        return i;
+                    }
+                    d8[0]=data[i];
+                    d8[1]=data[i+1];
+
+                    // I think this is causing alignment problems on arm
+                    //p->frame.payload_len = ntohs(*(uint16_t *)&data[i]);
+
+                    p->frame.payload_len = ntohs(d16);
+                    p->content_len       = p->frame.payload_len;
+                    //printf("16 - content_len = %d\n",  (int)p->content_len);
+                    p->orig_content_len  = p->content_len;
+
+                    i += 2;
+
+                    if (p->frame.hdr.mask == 1) {
+                        p->state = ws_s_masking_key;
+                        break;
+                    }
+
+                    p->state = ws_s_payload;
                 }
-
-                p->frame.payload_len = ntohs(*(uint16_t *)&data[i]);
-                p->content_len       = p->frame.payload_len;
-                //printf("16 - content_len = %d\n",  (int)p->content_len);
-                p->orig_content_len  = p->content_len;
-
-                i += 2;
-
-                if (p->frame.hdr.mask == 1) {
-                    p->state = ws_s_masking_key;
-                    break;
-                }
-
-                p->state = ws_s_payload;
-
                 break;
             case ws_s_ext_payload_len_64:
-                if (MIN_READ((const char *)(data + len) - &data[i], 8) < 8) {
-                    return i;
+                {
+                    uint64_t d64;
+                    uint8_t * d8= (uint8_t *)&d64;
+
+                    if (MIN_READ((const char *)(data + len) - &data[i], 8) < 8) {
+                        return i;
+                    }
+
+                    d8[0] = data[i];
+                    d8[1] = data[i+1];
+                    d8[2] = data[i+2];
+                    d8[3] = data[i+3];
+                    d8[4] = data[i+4];
+                    d8[5] = data[i+5];
+                    d8[6] = data[i+6];
+                    d8[7] = data[i+7];
+
+                    //p->frame.payload_len = ntoh64(*(uint64_t *)&data[i]);
+                    p->frame.payload_len = ntoh64(d64);
+                    p->content_len       = p->frame.payload_len;
+                    p->orig_content_len  = p->content_len;
+                    //printf("64 - content_len = %d\n",  (int)p->content_len);
+
+                    i += 8;
+
+                    if (p->frame.hdr.mask == 1) {
+                        p->state = ws_s_masking_key;;
+                        break;
+                    }
+
+                    p->state = ws_s_payload;
                 }
-
-
-                p->frame.payload_len = ntoh64(*(uint64_t *)&data[i]);
-                p->content_len       = p->frame.payload_len;
-                p->orig_content_len  = p->content_len;
-                //printf("64 - content_len = %d\n",  (int)p->content_len);
-
-                i += 8;
-
-                if (p->frame.hdr.mask == 1) {
-                    p->state = ws_s_masking_key;;
-                    break;
-                }
-
-                p->state = ws_s_payload;
                 break;
             case ws_s_masking_key:
             {
+                uint32_t d32;
+                uint8_t * d8= (uint8_t *)&d32;
+
                 int min= MIN_READ((const char *)(data + len) - &data[i], 4);
                 if (min < 4) 
                 {
                     return i;
                 }
-                p->frame.masking_key = *(uint32_t *)&data[i];
+                d8[0] = data[i];
+                d8[1] = data[i+1];
+                d8[2] = data[i+2];
+                d8[3] = data[i+3];
+                //p->frame.masking_key = *(uint32_t *)&data[i];
+                p->frame.masking_key = d32;
                 i += 4;
                 p->state = ws_s_payload;
                 if(min==4) // i==len, so go directly to finish.
