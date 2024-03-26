@@ -2516,6 +2516,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
             free(args);
             free_made_env(env);
             RP_THROW(ctx, "exec(): could not create pipe: %s", strerror(errno));
+            return 0;
         }
     }
     else
@@ -2526,6 +2527,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
             free(args);
             free_made_env(env);
             RP_THROW(ctx, "exec(): could not create pipe: %s", strerror(errno));
+            return 0;
         }
 
     }
@@ -2535,6 +2537,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         free(args);
         free_made_env(env);
         RP_THROW(ctx, "exec(): could not fork: %s", strerror(errno));
+        return 0;
     }
     else if (pid == 0)
     {
