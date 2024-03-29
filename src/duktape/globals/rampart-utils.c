@@ -2056,6 +2056,7 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
     struct stat path_stat;
     struct passwd *pw;
     struct group  *gr;
+    char permissions[11];
 
     int err,
         //safestat = duk_get_boolean_default(ctx,1,0);
@@ -2210,6 +2211,24 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
     push_is_test("isSocket",S_ISSOCK);
     if(islstat)
         push_is_test("isSymbolicLink", S_ISLNK);
+
+    if(islstat)
+        permissions[0] = (S_ISDIR(path_stat.st_mode)) ? 'd' : (S_ISLNK(path_stat.st_mode) ? 'l' : '-');
+    else
+        permissions[0] = (S_ISDIR(path_stat.st_mode)) ? 'd' : '-';
+    permissions[1] = (path_stat.st_mode & S_IRUSR) ? 'r' : '-';
+    permissions[2] = (path_stat.st_mode & S_IWUSR) ? 'w' : '-';
+    permissions[3] = (path_stat.st_mode & S_ISUID) ? 's' : ((path_stat.st_mode & S_IXUSR) ? 'x' : '-');
+    permissions[4] = (path_stat.st_mode & S_IRGRP) ? 'r' : '-';
+    permissions[5] = (path_stat.st_mode & S_IWGRP) ? 'w' : '-';
+    permissions[6] = (path_stat.st_mode & S_ISGID) ? 's' : ((path_stat.st_mode & S_IXGRP) ? 'x' : '-');
+    permissions[7] = (path_stat.st_mode & S_IROTH) ? 'r' : '-';
+    permissions[8] = (path_stat.st_mode & S_IWOTH) ? 'w' : '-';
+    permissions[9] = (path_stat.st_mode & S_ISVTX) ? 't' : ((path_stat.st_mode & S_IXOTH) ? 'x' : '-');
+    permissions[10] = '\0';
+
+    duk_push_string(ctx, permissions);
+    duk_put_prop_string(ctx, -2, "permissions");
 
     return 1;
 }
