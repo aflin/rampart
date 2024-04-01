@@ -26,13 +26,13 @@ where:
                     - May be specified more than once.
                     - Format: cfunc_name:jsfunc_name[:nargs[:input_types]]
 
-    function_args format:
+    function_args format (each argument seperated by a ':'):
 
         cfunc_name:  The name of the c function.
 
         jsfunc_name: The name of the javascript function to export.
 
-        nargs: The number of arguments the javascript can take (-1 for variadic)
+        nargs: The number of arguments the javascript function can take (-1 for variadic)
 
         input_types: Require a variable type for javascript options:
             A character for each argument. [n|i|u|s|b|B|o|a|f].
@@ -41,6 +41,10 @@ where:
                 boolean|buffer|object|array|function             ]
 
 A ready to compile, testable module will be produced if both "nargs" and "input_types" are provided.
+
+Example to create a module that exports two functions which each take a String and Number:
+
+rampart make_cmod_template example.c -f my_func:myFunc:2:sn -f my_func2:myFunc2:2:sn
 
 `)  ;
     process.exit(1);
