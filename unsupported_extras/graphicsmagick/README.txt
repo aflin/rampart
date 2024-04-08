@@ -8,7 +8,6 @@ Compiling:
 > cp rampart-gm.so /usr/local/rampart/modules/ 
 # or wherever your modules live, like ~/.rampart/modules
 
-
 Basic usage:
 
 var gm = require("rampart-gm");
@@ -17,13 +16,16 @@ var gm = require("rampart-gm");
 // get an image object by opening image
 var images = gm.open("/path/to/my/image.jpg");
 var image2 = gm.open("/path/to/my/image2.jpg");
+// or multiple images in a single image object
+var images = gm.open(["/path/to/my/image.jpg", "/path/to/my/image2.jpg"]);
 
 // ---- ADD ----
 // image.add([ imageObject | String(path) | buffer(i.e. img.toBuffer() ])
 // add some image
 images.add("/path/to/my/image2.jpg");   //or
 images.add(image2);                     //or
-images.add(image2.toBuffer('JPG'));
+images.add(image2.toBuffer('JPG'));     //or
+images.add([image2, "/path/to/my/image3.jpg"]);
 
 // ---- MOGRIFY ---
 //mogrify (see GraphicsMagick for all options)
@@ -37,10 +39,10 @@ images.mogrify({"blur", "20x30);
 //example 2:
 images.mogrify("-blur 20x30 -auto-orient +contrast");      //or
 images.mogrify({
-    blur: "20x30, 
+    blur: "20x30",
     "auto-orient": true,
     "+contrast": true
-]);
+});
 // note setting single options to false skips the option and does nothing
 
 // ---- SAVE ----
@@ -50,8 +52,8 @@ images.save("/path/to/my/new_image.jpg");
 // save file to a js buffer in the specified format
 var buf = images.toBuffer(["jpg" | "PNG" | "GIF" | ... ]);
 
-// So this now accomplishes the same as save
-fprintf("/path/to/my/new_image.jpg", "%s", buf);
+// So this now accomplishes the same as save above
+rampart.utils.fprintf("/path/to/my/new_image.jpg", "%s", buf);
 
 // Or using rampart-server, return it to client:
 return {jpg: buf}
@@ -65,11 +67,17 @@ image.save("/path/to/my/new_image.jpg");
 
 // ---- LIST ----
 //get a list of images in the image object
-printf("%3J\n", images.list());
+ rampart.utils.printf("%3J\n", images.list());
 
 // ---- GETCOUNT ----
 //get a count of images in the image object
-printf("we have %d images\n", images.getCount());
+ rampart.utils.printf("we have %d images\n", images.getCount());
+
+// ---- IDENTIFY ----
+// get simple description String of current img like "gm identify img.jpg" 
+ rampart.utils.printf( "%s\n", images.select(0).identify() );
+// get parsed verbose identify as an Object
+ rampart.utils.printf( "%3J\n", images.select(0).identify(true) )
 
 // ---- CLOSE ----
 // optionally close and free resources

@@ -20,13 +20,16 @@
     // get an image object by opening image
     var images = gm.open("/path/to/my/image.jpg");
     var image2 = gm.open("/path/to/my/image2.jpg");
+    // or multiple images in a single image object
+    var images = gm.open(["/path/to/my/image.jpg", "/path/to/my/image2.jpg"]);
 
     // ---- ADD ----
     // image.add([ imageObject | String(path) | buffer(i.e. img.toBuffer() ])
     // add some image
     images.add("/path/to/my/image2.jpg");   //or
     images.add(image2);                     //or
-    images.add(image2.toBuffer('JPG'));
+    images.add(image2.toBuffer('JPG'));     //or
+    images.add([image2, "/path/to/my/image3.jpg"]);
 
     // ---- MOGRIFY ---
     //mogrify (see GraphicsMagick for all options)
@@ -40,10 +43,10 @@
     //example 2:
     images.mogrify("-blur 20x30 -auto-orient +contrast");      //or
     images.mogrify({
-        blur: "20x30, 
+        blur: "20x30",
         "auto-orient": true,
         "+contrast": true
-    ]);
+    });
     // note setting single options to false skips the option and does nothing
 
     // ---- SAVE ----
@@ -53,8 +56,8 @@
     // save file to a js buffer in the specified format
     var buf = images.toBuffer(["jpg" | "PNG" | "GIF" | ... ]);
 
-    // So this now accomplishes the same as save
-    fprintf("/path/to/my/new_image.jpg", "%s", buf);
+    // So this now accomplishes the same as save above
+    rampart.utils.fprintf("/path/to/my/new_image.jpg", "%s", buf);
 
     // Or using rampart-server, return it to client:
     return {jpg: buf}
@@ -68,12 +71,18 @@
 
     // ---- LIST ----
     //get a list of images in the image object
-    printf("%3J\n", images.list());
+     rampart.utils.printf("%3J\n", images.list());
 
     // ---- GETCOUNT ----
     //get a count of images in the image object
-    printf("we have %d images\n", images.getCount());
+     rampart.utils.printf("we have %d images\n", images.getCount());
     
+    // ---- IDENTIFY ----
+    // get simple description String of current img like "gm identify img.jpg" 
+     rampart.utils.printf( "%s\n", images.select(0).identify() );
+    // get parsed verbose identify as an Object
+     rampart.utils.printf( "%3J\n", images.select(0).identify(true) )
+
     // ---- CLOSE ----
     // optionally close and free resources
     images.close();
@@ -98,6 +107,7 @@
 
 #define _GNU_SOURCE
 //#define _POSIX_C_SOURCE 200809L
+#include <ctype.h>
 #include "/usr/local/rampart/include/rampart.h"
 #include <wand/magick_wand.h>
 
@@ -131,7 +141,6 @@ static int push_mog_exception(duk_context *ctx, const ExceptionInfo *exception)
     // skip this one
     if (/*exception->severity==430 || check this */ strstr(exception->reason,"Unable to open file") )
     { 
-        //printf("NO FILE %d %s %s\n",exception->severity,exception->reason,exception->description);
         return 0;
     }
 
@@ -147,7 +156,7 @@ static int push_mog_exception(duk_context *ctx, const ExceptionInfo *exception)
             duk_push_string(ctx, exception->reason);
     }
     duk_push_error_object(ctx, DUK_ERR_ERROR, duk_get_string(ctx, -1));
-    //(void) duk_throw(ctx);
+
     return 1;
 }
 /* from magic_wand.c - if they change it, this will explode */
@@ -178,16 +187,13 @@ typedef struct _rpMagickWand
 
 static unsigned int getcount(MagickWand *wand)
 {
-    unsigned int n=0;//, save;
+    unsigned int n=0;
     rpMW *rwand = (rpMW *) wand;
     Image *image;
 
-    // getting current index in a new wand with no current images does something that prevents
-    // adding images: "Error: Wand contains no image indices `(null) (MagickWand-1)"
-    if(!rwand->images) {
-        //printf("getcount no images, ret 0\n");
+    if(!rwand->images)
         return 0;
-    }
+
     for (image=rwand->images; image; image=image->next)
         n++;
 
@@ -377,13 +383,6 @@ static duk_ret_t mogrify(duk_context *ctx)
         duk_pop(ctx);
     }
 
-    /*
-    int i=0;
-    for (;i<argc;i++){
-        printf("%d: '%s'\n",i,argv[i]);
-    }
-    */
-
     if(argc)
     {
         rpMW *rwand=(rpMW *)wand;
@@ -399,13 +398,6 @@ static duk_ret_t mogrify(duk_context *ctx)
         //but we would get a different error if we have too
         //few args.
         argv[argc]="fake.jpg";
-
-        /*{
-            int i=0;
-            for (;i<argc+1;i++){
-                printf("%d: '%s'\n",i,argv[i]);
-            }
-        }*/
 
         //this checks arguments for errors (but skip the "unable to open file" error)
         ret = MogrifyImageCommand(rwand->image_info, argc+1, argv, &text, &(rwand->exception));
@@ -455,7 +447,7 @@ static duk_ret_t mogrify(duk_context *ctx)
         {
             for (image=rwand->images; image; image=image->next)
             {
-                if(push_mog_exception(ctx, &(rwand->exception)))
+                if(push_mog_exception(ctx, &(image->exception)))
                 {
                     free_arguments(argv, argc, argstr, freeargs);
                     MagickSetImageIndex(wand,save);
@@ -483,6 +475,7 @@ static duk_ret_t save(duk_context *ctx)
 {
     MagickWand *wand, *cwand;
     const char *fn = REQUIRE_STRING(ctx, 0, "gm.save requires a string as it's sole argument");
+    char *ext=NULL;
     MagickPassFail status = MagickPass;
 
     duk_push_this(ctx);
@@ -492,18 +485,15 @@ static duk_ret_t save(duk_context *ctx)
     wand = duk_get_pointer(ctx, -1);
     duk_pop(ctx);
 
+
     if(!wand)
         RP_THROW(ctx, "gm - error using a closed image handle");
-    /*
-    int n=1;
-    MagickSetImageIndex(wand,0);
-    while(MagickNextImage(wand)) n++;
-    printf("num images = %d\n", n);
-    */
 
-    MagickSetImageIndex(wand,0);
+    //MagickSetImageIndex(wand,0);
+    ext = strrchr(fn,'.');
     
-    if(MagickNextImage(wand))
+    /*if(MagickNextImage(wand))*/
+    if(ext && !strcasecmp(".gif", ext) && getcount(wand)>1)
     {
         cwand = MagickCoalesceImages(wand);
         if(!cwand)
@@ -543,9 +533,10 @@ static duk_ret_t tobuffer(duk_context *ctx)
     if(!ret)
         throw_exception(ctx, wand, 0);
 
-    MagickSetImageIndex(wand,0);
+    //MagickSetImageIndex(wand,0);
 
-    if(MagickNextImage(wand))
+    //if(MagickNextImage(wand))
+    if(!strcasecmp("gif", fmt) && getcount(wand)>1)
     {
         cwand = MagickCoalesceImages(wand);
         if(!cwand)
@@ -754,6 +745,181 @@ static duk_ret_t gmselect(duk_context *ctx)
     return 1; //this
 }
 
+#define DESC_INDENT_CHARS 2
+
+static void push_parsed_desc(duk_context *ctx, char *buf, size_t blen)
+{
+    char *p2, *p3, *p=buf, *end=buf+blen, *key, *val;
+    size_t indent=0, lastindent=0, nextindent=0;
+    duk_idx_t top;
+    duk_push_object(ctx);
+
+    top = duk_get_top(ctx);
+    while(p<end)
+    {
+        if(*p=='\0')
+        {
+            duk_set_top(ctx, top);
+            return;
+        }
+        indent=0;
+        while(*p==' ')
+        {
+            p++;
+            indent++;
+        }
+        //the key
+        key=p;
+        //the end of the key
+        while(*p && *p!='\n' && *p!=':') p++;
+
+        if(!*p)
+            RP_THROW(ctx, "gm.identify() parse error");
+
+        if(*p=='\n')  //this should never happen
+            continue;
+
+        //  we are at ':'
+
+        //sub category close
+        while(lastindent > indent)
+        { 
+            duk_pop(ctx);
+            lastindent -= DESC_INDENT_CHARS;
+        }
+
+        //terminate key
+        *p='\0';
+
+        //fix up key
+        if(islower(*(key+1))) // leave JPEG alone
+            *key=tolower(*key);
+        p3=p2=key;
+        do
+        {
+            if(*p2==' ' || *p2=='-')
+            {
+                p2++;
+                *p3=toupper(*p2);
+                continue;
+            }
+            *p3=*p2;
+            p3++;
+            p2++;
+        } while(*(p2-1));
+
+        p++;
+        while(*p==' ')p++;
+
+        if(*p=='\n' )
+        //no associated value on this line, next indent will be greater than cur
+        //we are skipping the check for nextindent > indent; so far not necessary
+        {
+            //sub category, store object under key now.
+            //leave ref to object on stack
+            duk_push_object(ctx);
+            duk_dup(ctx, -1);
+            duk_put_prop_string(ctx, -3, key);
+            p++;
+            lastindent=indent;
+            continue;
+        }
+        
+        val=p;
+        while(*p && *p!='\n') p++;
+        if(!*p)
+            RP_THROW(ctx, "gm.identify() parse error");
+        *p='\0';
+        //check if its a subcat and has a value (like case EXIF does)
+        //if so, next indent will be greater than cur;
+        nextindent=0;
+        p2=p+1;
+        while(*p2==' '){
+            p2++;
+            nextindent++;
+        }
+        if(nextindent > indent)
+        {
+            duk_push_object(ctx);
+            duk_dup(ctx, -1);
+            duk_put_prop_string(ctx, -3, key);
+            double d = strtod(val, &p2);
+            if(*p2=='\0')
+                duk_push_number(ctx, d);
+            else
+                duk_push_string(ctx, val);
+            duk_put_prop_string(ctx, -2, "Value");
+        }
+        else
+        {
+            double d = strtod(val, &p2);
+            if(*p2=='\0')
+                duk_push_number(ctx, d);
+            else
+                duk_push_string(ctx, val);
+            duk_put_prop_string(ctx, -2, key);
+        }
+        p++;
+        lastindent=indent;
+    }
+    duk_set_top(ctx, top);
+
+}
+
+static duk_ret_t identify(duk_context *ctx)
+{
+    rpMW *rwand; 
+    FILE *desc=NULL;
+    char *buf=NULL;
+    size_t blen=0, i=0;
+    int verbose=0;
+
+    if(!duk_is_undefined(ctx,0))
+        verbose=REQUIRE_BOOL(ctx, 0, "gm.identify - argument must be a boolean (verbose)" );
+
+    duk_push_this(ctx);
+
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("wand")))
+        RP_THROW(ctx, "Internal error getting gm wand");
+    rwand = duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    if(!rwand)
+        RP_THROW(ctx, "gm - error using a closed image handle");
+
+    desc = open_memstream(&buf, &blen);
+    for (;i<DESC_INDENT_CHARS;i++)
+        fputc(' ', desc);// put image name on same indent level as next
+    DescribeImage( rwand->image, desc, verbose?100:0 );
+    fputc(0,desc);
+    fclose(desc);
+    blen++;
+    if(!verbose)
+    {
+        char *s=buf, *p=&buf[blen-2];
+        blen-=3;
+        while(isspace(*p))
+        {
+            p--;
+            blen--;
+        }
+        while(*s== ' ')
+        {
+            s++;
+            blen--;
+        }
+        duk_push_lstring(ctx, s, blen);
+        free(buf);
+        return 1;
+    }
+    duk_push_string(ctx, buf);
+    push_parsed_desc(ctx, buf, blen);
+    free(buf);
+    duk_pull(ctx, -2);
+    duk_put_prop_string(ctx, -2, "raw");
+    return 1;
+}
+
 static duk_ret_t gmgetcount(duk_context *ctx)
 {
     MagickWand *wand;
@@ -771,11 +937,34 @@ static duk_ret_t gmgetcount(duk_context *ctx)
 
     return 1;
 }
+
+static void add_open_single(duk_context *ctx, MagickWand *wand, 
+    duk_idx_t idx, duk_idx_t files_idx)
+{
+    MagickPassFail status = MagickPass;
+
+    if(duk_is_buffer_data(ctx, idx))
+    {
+        status = addbuffer(ctx, wand, idx, files_idx);
+    }
+    else if (duk_is_object(ctx, idx) && !duk_is_array(ctx, idx) && !duk_is_function(ctx, idx))
+    {
+        status = addhandle(ctx, wand, idx, files_idx);
+    }
+    else
+    {
+        const char *fn = REQUIRE_STRING(ctx, idx, "gm.open/gm.add requires a string, image object or buffer");
+        status = addfilename(ctx, wand, fn, files_idx);  
+    }
+
+    if(status != MagickPass)
+        throw_exception(ctx, wand, 1);
+
+}
     
 static duk_ret_t open(duk_context *ctx)
 {
     MagickWand *wand;
-    MagickPassFail status = MagickPass;
     int isadd=0;
     duk_idx_t files_idx, this_idx;
 
@@ -803,25 +992,19 @@ static duk_ret_t open(duk_context *ctx)
         wand=NewMagickWand();
     }
         
-
-    duk_idx_t idx=0;
-
-    if(duk_is_buffer_data(ctx, idx))
+    if(duk_is_array(ctx, 0))
     {
-        status = addbuffer(ctx, wand, idx, files_idx);
-    }
-    else if (duk_is_object(ctx, idx) && !duk_is_array(ctx, idx) && !duk_is_function(ctx, idx))
-    {
-        status = addhandle(ctx, wand, idx, files_idx);
+        duk_uarridx_t i, len = duk_get_length(ctx, 0);
+
+        for (i=0; i<len; i++)
+        {
+            duk_get_prop_index(ctx, 0, i);
+            add_open_single(ctx, wand, -1, files_idx);
+            duk_pop(ctx);
+        }
     }
     else
-    {
-        const char *fn = REQUIRE_STRING(ctx, idx, "gm.open/gm.add requires a string, image object or buffer");
-        status = addfilename(ctx, wand, fn, files_idx);  
-    }
-
-    if(status != MagickPass)
-        throw_exception(ctx, wand, 1);
+        add_open_single(ctx, wand, 0, files_idx); 
 
     duk_pull(ctx, this_idx);
     if(!isadd)
@@ -849,6 +1032,9 @@ static duk_ret_t open(duk_context *ctx)
 
         duk_push_c_function(ctx, tobuffer, 1);
         duk_put_prop_string(ctx, -2, "toBuffer");
+
+        duk_push_c_function(ctx, identify, 1);
+        duk_put_prop_string(ctx, -2, "identify");
 
         duk_push_c_function(ctx, gmfinal, 1);
         duk_set_finalizer(ctx, -2); 
