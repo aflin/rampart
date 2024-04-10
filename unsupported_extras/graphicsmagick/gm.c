@@ -78,9 +78,9 @@
      rampart.utils.printf("we have %d images\n", images.getCount());
     
     // ---- IDENTIFY ----
-    // get simple description String of current img like "gm identify img.jpg" 
+    // get simple description Object of current img like "gm identify img.jpg" 
      rampart.utils.printf( "%s\n", images.select(0).identify() );
-    // get parsed verbose identify as an Object
+    // get more detail
      rampart.utils.printf( "%3J\n", images.select(0).identify(true) )
 
     // ---- CLOSE ----
@@ -745,6 +745,7 @@ static duk_ret_t gmselect(duk_context *ctx)
     return 1; //this
 }
 
+/*
 #define DESC_INDENT_CHARS 2
 
 static void push_parsed_desc(duk_context *ctx, char *buf, size_t blen)
@@ -865,13 +866,862 @@ static void push_parsed_desc(duk_context *ctx, char *buf, size_t blen)
     duk_set_top(ctx, top);
 
 }
+*/
+// REPURPOSED magick/describe.c to directly make a js object
+#define True 1
+#define False 0
+#define Min(x,y)  (((x) < (y)) ? (x) : (y))
+
+extern MagickExport const char *OrientationTypeToString(const OrientationType orientation_type) MAGICK_FUNC_CONST;
+MagickExport const char *CompositeOperatorToString(const CompositeOperator composite_op);
+MagickExport const char* CompressionTypeToString(const CompressionType compression_type);
+
+static void rp_describe_image(duk_context *ctx, Image *image, const MagickBool verbose)
+{
+    char color[MaxTextExtent];
+    const ImageAttribute *attribute;
+    const unsigned char *profile;
+    double elapsed_time, user_time;
+    size_t profile_length;
+    unsigned long columns, rows;
+    magick_int64_t pixels_per_second;
+    Image *p;
+    unsigned long y;
+    register size_t i;
+    register unsigned long x;
+    unsigned long count;
+
+    duk_idx_t idx=duk_get_top(ctx);
+
+    elapsed_time=GetElapsedTime(&image->timer);
+    user_time=GetUserTime(&image->timer);
+    GetTimerInfo(&image->timer);
+
+    duk_push_object(ctx);
+
+    /*
+      Display summary info about the image.
+    */
+    if (*image->magick_filename != '\0')
+      if (LocaleCompare(image->magick_filename,image->filename) != 0)
+      {
+          duk_push_string(ctx, image->magick_filename);
+          duk_put_prop_string(ctx, idx, "magickFilename");
+      }
+
+    duk_push_string(ctx, image->filename);
+    duk_put_prop_string(ctx, idx, "filename");
+
+    if (image->scene != 0)
+    {
+        duk_push_int(ctx, (int)image->scene);
+        duk_put_prop_string(ctx, idx, "scene");
+    }
+
+    p=image;
+    while (p->previous != (Image *) NULL)
+      p=p->previous;
+    for (count=1; p->next != (Image *) NULL; count++)
+      p=p->next;
+    if (count > 1)
+    {
+        duk_push_int(ctx, count);
+        duk_put_prop_string(ctx, -2, "sceneCount");
+    }
+
+    duk_push_string(ctx, image->magick);
+    duk_put_prop_string(ctx, idx, "magick");
+
+    columns=image->columns;
+    rows=image->rows;
+    if ((image->magick_columns != 0) || (image->magick_rows != 0))
+        if ((image->magick_columns != image->columns) ||
+            (image->magick_rows != image->rows))
+        {
+            columns=image->magick_columns;
+            rows=image->magick_rows;
+            duk_push_int(ctx, (int) image->magick_columns);
+            duk_put_prop_string(ctx, idx, "columns");
+            duk_push_int(ctx, (int) image->magick_rows);
+            duk_put_prop_string(ctx, idx, "rows");
+        }
+    duk_push_int(ctx, (int) image->columns);
+    duk_put_prop_string(ctx, idx, "width");
+    duk_push_int(ctx, (int) image->rows);
+    duk_put_prop_string(ctx, idx, "height");
+
+    if (image->storage_class == DirectClass)
+    {
+        duk_push_true(ctx);
+        duk_put_prop_string(ctx, idx, "directClass");
+        if (image->total_colors != 0)
+        {
+            duk_push_int(ctx, image->total_colors);
+            duk_put_prop_string(ctx, idx, "totalColors");
+        }
+    }
+    else
+    {
+        if (image->total_colors <= image->colors)
+        {
+            duk_push_true(ctx);
+            duk_put_prop_string(ctx, idx, "pseudoClass");
+        }
+        else
+        {
+            duk_push_true(ctx);
+            duk_put_prop_string(ctx, idx, "pseudoClass");
+            duk_push_int(ctx, (int) image->total_colors);
+            duk_put_prop_string(ctx, idx, "totalColors");
+            duk_push_int(ctx, (int) image->error.mean_error_per_pixel);
+            duk_put_prop_string(ctx, idx, "meanErrorPerPixel");
+            duk_push_int(ctx, (int) image->error.normalized_mean_error);
+            duk_put_prop_string(ctx, idx, "normalizedMeanError");
+            duk_push_int(ctx, (int) image->error.normalized_maximum_error);
+            duk_put_prop_string(ctx, idx, "normalizedMaximumError");
+        }
+    }
+
+    duk_push_int(ctx, (int) image->depth);
+    duk_put_prop_string(ctx, idx, "depth");
+
+    if (GetBlobSize(image) != 0)
+    {
+        duk_push_int(ctx, (int) GetBlobSize(image));
+        duk_put_prop_string(ctx, idx, "size");
+    }
+
+    duk_push_number(ctx, (double) user_time);
+    duk_put_prop_string(ctx, idx, "userTime");
+    duk_push_number(ctx, (double) elapsed_time);
+    duk_put_prop_string(ctx, idx, "elapsedTime");
+
+    /*
+      Only display pixel read rate if the time accumulated is at
+      least six times the timer's resolution (typically 0.01 on
+      Unix).
+    */
+    if (!(image->ping) && (elapsed_time >= GetTimerResolution()*6))
+    {
+        pixels_per_second=(magick_int64_t) ((double) rows*columns/
+                                            elapsed_time);
+        duk_push_number(ctx, (double)pixels_per_second);
+        duk_put_prop_string(ctx, idx, "pixelsPerSecond");
+    }
+
+    if (!verbose)
+       return;
+
+    switch (GetImageType(image,&image->exception))
+    {
+        case BilevelType: duk_push_string(ctx, "bilevel"); break;
+        case GrayscaleType: duk_push_string(ctx, "grayscale"); break;
+        case GrayscaleMatteType:
+            duk_push_string(ctx, "grayscale with transparency"); break;
+        case PaletteType: duk_push_string(ctx, "palette"); break;
+        case PaletteMatteType:
+            duk_push_string(ctx, "palette with transparency"); break;
+        case TrueColorType: duk_push_string(ctx, "true color"); break;
+        case TrueColorMatteType:
+            duk_push_string(ctx, "true color with transparency"); break;
+        case ColorSeparationType: duk_push_string(ctx, "color separated"); break;
+        case ColorSeparationMatteType:
+            duk_push_string(ctx, "color separated with transparency"); break;
+        default: duk_push_string(ctx, "undefined"); break;
+    }
+    duk_put_prop_string(ctx, idx, "type");
+
+    duk_push_object(ctx);
+    if (image->colorspace == CMYKColorspace)
+    {
+        duk_push_int(ctx, (int)GetImageChannelDepth(image, CyanChannel, &image->exception));
+        duk_put_prop_string(ctx, -2, "cyan");
+
+        duk_push_int(ctx, (int)GetImageChannelDepth(image, MagentaChannel, &image->exception));
+        duk_put_prop_string(ctx, -2, "magenta");
+
+        duk_push_int(ctx, (int)GetImageChannelDepth(image, YellowChannel, &image->exception));
+        duk_put_prop_string(ctx, -2, "yellow");
+
+        duk_push_int(ctx, (int)GetImageChannelDepth(image, BlackChannel, &image->exception));
+        duk_put_prop_string(ctx, -2, "black");
+    }
+    else if ((IsGrayColorspace(image->colorspace)) ||
+             (image->is_grayscale))
+    {
+        duk_push_int(ctx, (int)GetImageChannelDepth(image, RedChannel, &image->exception));
+        duk_put_prop_string(ctx, -2, "gray");
+    }
+    else
+    {
+        duk_push_int(ctx, (int)GetImageChannelDepth(image, RedChannel, &image->exception));
+        duk_put_prop_string(ctx, -2, "red");
+
+        duk_push_int(ctx, (int)GetImageChannelDepth(image, GreenChannel, &image->exception));
+        duk_put_prop_string(ctx, -2, "green");
+
+        duk_push_int(ctx, (int)GetImageChannelDepth(image, BlueChannel, &image->exception));
+        duk_put_prop_string(ctx, -2, "blue");
+    }
+    duk_put_prop_string(ctx, idx, "channelDepths");
+
+    if (image->matte)
+    {
+        duk_push_int(ctx, (int) GetImageChannelDepth(image, OpacityChannel, &image->exception));
+        duk_put_prop_string(ctx, idx, "opacityBits"); 
+    }
+
+    duk_push_object(ctx); //Channel Statistics
+    {
+        ImageStatistics statistics;
+
+        (void) GetImageStatistics(image,&statistics,&image->exception);
+
+        duk_push_number(ctx, MaxRGB);
+        duk_put_prop_string(ctx, -2, "channelMax");
+
+      if (image->colorspace == CMYKColorspace)
+        {
+            duk_push_object(ctx);//cyan
+
+            duk_push_number(ctx, (double)statistics.red.minimum);
+            duk_put_prop_string(ctx, -2, "minimum");
+
+            duk_push_number(ctx, (double)statistics.red.maximum);
+            duk_put_prop_string(ctx, -2, "maximum");
+
+            duk_push_number(ctx, (double)statistics.red.mean);
+            duk_put_prop_string(ctx, -2, "mean");
+
+            duk_push_number(ctx, (double)statistics.red.standard_deviation);
+            duk_put_prop_string(ctx, -2, "standardDeviation");
+            duk_put_prop_string(ctx, -2, "cyan");
+
+            duk_push_object(ctx);//magenta
+
+            duk_push_number(ctx, (double)statistics.green.minimum);
+            duk_put_prop_string(ctx, -2, "minimum");
+
+            duk_push_number(ctx, (double)statistics.green.maximum);
+            duk_put_prop_string(ctx, -2, "maximum");
+
+            duk_push_number(ctx, (double)statistics.green.mean);
+            duk_put_prop_string(ctx, -2, "mean");
+
+            duk_push_number(ctx, (double)statistics.green.standard_deviation);
+            duk_put_prop_string(ctx, -2, "standardDeviation");
+            duk_put_prop_string(ctx, -2, "magenta");
+
+            duk_push_object(ctx);//yellow
+            duk_push_number(ctx, (double)statistics.blue.minimum);
+            duk_put_prop_string(ctx, -2, "minimum");
+
+            duk_push_number(ctx, (double)statistics.blue.maximum);
+            duk_put_prop_string(ctx, -2, "maximum");
+
+            duk_push_number(ctx, (double)statistics.blue.mean);
+            duk_put_prop_string(ctx, -2, "mean");
+
+            duk_push_number(ctx, (double)statistics.blue.standard_deviation);
+            duk_put_prop_string(ctx, -2, "standardDeviation");
+            duk_put_prop_string(ctx, -2, "yellow");
+
+            duk_push_object(ctx);//black
+
+            duk_push_number(ctx, (double)statistics.opacity.minimum);
+            duk_put_prop_string(ctx, -2, "minimum");
+
+            duk_push_number(ctx, (double)statistics.opacity.maximum);
+            duk_put_prop_string(ctx, -2, "maximum");
+
+            duk_push_number(ctx, (double)statistics.opacity.mean);
+            duk_put_prop_string(ctx, -2, "mean");
+
+            duk_push_number(ctx, (double)statistics.opacity.standard_deviation);
+            duk_put_prop_string(ctx, -2, "standardDeviation");
+            duk_put_prop_string(ctx, -2, "black");
+
+        }
+        else if ((IsGrayColorspace(image->colorspace)) ||
+             (image->is_grayscale == MagickTrue))
+        {
+            duk_push_object(ctx);//gray
+
+            duk_push_number(ctx, (double)statistics.red.minimum);
+            duk_put_prop_string(ctx, -2, "minimum");
+
+            duk_push_number(ctx, (double)statistics.red.maximum);
+            duk_put_prop_string(ctx, -2, "maximum");
+
+            duk_push_number(ctx, (double)statistics.red.mean);
+            duk_put_prop_string(ctx, -2, "mean");
+
+            duk_push_number(ctx, (double)statistics.red.standard_deviation);
+            duk_put_prop_string(ctx, -2, "standardDeviation");
+            duk_put_prop_string(ctx, -2, "gray");
+
+            if (image->matte)
+            {
+                duk_push_object(ctx);//opacity
+
+                duk_push_number(ctx, (double)statistics.opacity.minimum);
+                duk_put_prop_string(ctx, -2, "minimum");
+
+                duk_push_number(ctx, (double)statistics.opacity.maximum);
+                duk_put_prop_string(ctx, -2, "maximum");
+
+                duk_push_number(ctx, (double)statistics.opacity.mean);
+                duk_put_prop_string(ctx, -2, "mean");
+
+                duk_push_number(ctx, (double)statistics.opacity.standard_deviation);
+                duk_put_prop_string(ctx, -2, "standardDeviation");
+                duk_put_prop_string(ctx, -2, "opacity");
+            }
+        }
+        else
+        {
+
+            duk_push_object(ctx);//red
+
+            duk_push_number(ctx, (double)statistics.red.minimum);
+            duk_put_prop_string(ctx, -2, "minimum");
+
+            duk_push_number(ctx, (double)statistics.red.maximum);
+            duk_put_prop_string(ctx, -2, "maximum");
+
+            duk_push_number(ctx, (double)statistics.red.mean);
+            duk_put_prop_string(ctx, -2, "mean");
+
+            duk_push_number(ctx, (double)statistics.red.standard_deviation);
+            duk_put_prop_string(ctx, -2, "standardDeviation");
+            duk_put_prop_string(ctx, -2, "red");
+
+            duk_push_object(ctx);//green
+
+            duk_push_number(ctx, (double)statistics.green.minimum);
+            duk_put_prop_string(ctx, -2, "minimum");
+
+            duk_push_number(ctx, (double)statistics.green.maximum);
+            duk_put_prop_string(ctx, -2, "maximum");
+
+            duk_push_number(ctx, (double)statistics.green.mean);
+            duk_put_prop_string(ctx, -2, "mean");
+
+            duk_push_number(ctx, (double)statistics.green.standard_deviation);
+            duk_put_prop_string(ctx, -2, "standardDeviation");
+            duk_put_prop_string(ctx, -2, "green");
+
+            duk_push_object(ctx);//blue
+
+            duk_push_number(ctx, (double)statistics.blue.minimum);
+            duk_put_prop_string(ctx, -2, "minimum");
+
+            duk_push_number(ctx, (double)statistics.blue.maximum);
+            duk_put_prop_string(ctx, -2, "maximum");
+
+            duk_push_number(ctx, (double)statistics.blue.mean);
+            duk_put_prop_string(ctx, -2, "mean");
+
+            duk_push_number(ctx, (double)statistics.blue.standard_deviation);
+            duk_put_prop_string(ctx, -2, "standardDeviation");
+            duk_put_prop_string(ctx, -2, "blue");
+
+            if (image->matte)
+            {
+                duk_push_object(ctx);//opacity
+
+                duk_push_number(ctx, (double)statistics.opacity.minimum);
+                duk_put_prop_string(ctx, -2, "minimum");
+
+                duk_push_number(ctx, (double)statistics.opacity.maximum);
+                duk_put_prop_string(ctx, -2, "maximum");
+
+                duk_push_number(ctx, (double)statistics.opacity.mean);
+                duk_put_prop_string(ctx, -2, "mean");
+
+                duk_push_number(ctx, (double)statistics.opacity.standard_deviation);
+                duk_put_prop_string(ctx, -2, "standardDeviation");
+                duk_put_prop_string(ctx, -2, "opacity");
+            }
+        }
+        duk_put_prop_string(ctx, -2, "channelStatistics");
+    }
+    x=0;
+    p=(Image *) NULL;
+    if ((image->matte && (strcmp(image->magick,"GIF") != 0)) || image->taint)
+    {
+        char
+          tuple[MaxTextExtent];
+
+        MagickBool
+          found_transparency;
+
+        register const PixelPacket *p;
+
+        p=(PixelPacket *) NULL;
+        found_transparency = MagickFalse;
+        for (y=0; y < image->rows; y++)
+        {
+            p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
+            if (p == (const PixelPacket *) NULL)
+                break;
+            for (x=0; x < image->columns; x++)
+            {
+                if (p->opacity == TransparentOpacity)
+                {
+                    found_transparency=MagickTrue;
+                    break;
+                }
+                p++;
+            }
+            if (x < image->columns)
+                break;
+        }
+        if (found_transparency)
+        {
+            GetColorTuple(p,image->depth,image->matte,False,tuple);
+            duk_push_sprintf(ctx, "%.1024s ", tuple);
+            GetColorTuple(p,image->depth,image->matte,True,tuple);
+            duk_push_sprintf(ctx, "%.1024s", tuple);
+            duk_concat(ctx, 2);
+            duk_put_prop_string(ctx, -2, "opacity");
+        }
+    }
+
+    if (image->storage_class != DirectClass)
+    {
+        char name[MaxTextExtent];
+
+        register PixelPacket
+          *p;
+
+        /*
+          Display image colormap.
+        */
+        p=image->colormap;
+        duk_push_array(ctx);
+        duk_push_array(ctx);
+        for (i=0; i < image->colors; i++)
+        {
+            char
+              tuple[MaxTextExtent];
+
+            GetColorTuple(p,image->depth,image->matte,False,tuple);
+            tuple[0]='[';
+            tuple[strlen(tuple)-1]=']';
+            duk_push_string(ctx, tuple);
+            duk_json_decode(ctx, -1);
+            duk_put_prop_index(ctx, -2, i);
+            
+            
+            QueryColorname(image,p,SVGCompliance,name,&image->exception);
+            duk_push_string(ctx, name);
+            duk_put_prop_index(ctx, -3, i);
+            p++;
+        }
+        duk_put_prop_string(ctx, -3, "colormap");
+        duk_put_prop_string(ctx, -2, "hashColormap");
+    }
+
+    if (image->error.mean_error_per_pixel != 0.0)
+    {
+        duk_push_number(ctx, (double) image->error.mean_error_per_pixel);
+        duk_put_prop_string(ctx, -2, "meanErrorPerPixel");
+    }
+
+    if (image->error.normalized_mean_error != 0.0)
+    {
+        duk_push_number(ctx, (double) image->error.normalized_mean_error);
+        duk_put_prop_string(ctx, -2, "normalizedMeanError");
+    }
+
+    if (image->error.normalized_maximum_error != 0.0)
+    {
+        duk_push_number(ctx, (double) image->error.normalized_maximum_error);
+        duk_put_prop_string(ctx, -2, "normalizedMaximumError");
+    }
+
+    if (image->rendering_intent == SaturationIntent)
+        duk_push_string(ctx, "saturation");
+    else
+        if (image->rendering_intent == PerceptualIntent)
+            duk_push_string(ctx, "perceptual");
+        else
+            if (image->rendering_intent == AbsoluteIntent)
+                duk_push_string(ctx, "absolute");
+        else
+            if (image->rendering_intent == RelativeIntent)
+                duk_push_string(ctx,"relative");
+
+    if(duk_is_string(ctx, -1))
+        duk_put_prop_string(ctx, -2, "renderingIntent");
+
+    if (image->gamma != 0.0)
+    {
+        duk_push_number(ctx, image->gamma);
+        duk_put_prop_string(ctx, -2, "gamma");
+    }
+    if ((image->chromaticity.red_primary.x != 0.0) ||
+        (image->chromaticity.green_primary.x != 0.0) ||
+        (image->chromaticity.blue_primary.x != 0.0) ||
+        (image->chromaticity.white_point.x != 0.0))
+    {
+
+        duk_push_object(ctx);//chromacity
+
+        duk_push_object(ctx);//redPrimary
+        duk_push_number(ctx, image->chromaticity.red_primary.x);
+        duk_put_prop_string(ctx, -2, "x");
+        duk_push_number(ctx, image->chromaticity.red_primary.y);
+        duk_put_prop_string(ctx, -2, "y");
+        duk_put_prop_string(ctx, -2, "redPrimary");
+
+        duk_push_object(ctx);//greenPrimary
+        duk_push_number(ctx, image->chromaticity.green_primary.x);
+        duk_put_prop_string(ctx, -2, "x");
+        duk_push_number(ctx, image->chromaticity.green_primary.y);
+        duk_put_prop_string(ctx, -2, "y");
+        duk_put_prop_string(ctx, -2, "greenPrimary");
+
+        duk_push_object(ctx);//bluePrimary
+        duk_push_number(ctx, image->chromaticity.blue_primary.x);
+        duk_put_prop_string(ctx, -2, "x");
+        duk_push_number(ctx, image->chromaticity.blue_primary.y);
+        duk_put_prop_string(ctx, -2, "y");
+        duk_put_prop_string(ctx, -2, "bluePrimary");
+
+        duk_push_object(ctx);//whitePoint
+        duk_push_number(ctx, image->chromaticity.white_point.x);
+        duk_put_prop_string(ctx, -2, "x");
+        duk_push_number(ctx, image->chromaticity.white_point.y);
+        duk_put_prop_string(ctx, -2, "y");
+        duk_put_prop_string(ctx, -2, "white_point");
+
+        duk_put_prop_string(ctx, -2, "chromacity");
+    }
+
+    if ((image->tile_info.width*image->tile_info.height) != 0)
+    {
+        duk_push_object(ctx);//tileGeometry
+
+        duk_push_int(ctx, (int)image->tile_info.width);
+        duk_put_prop_string(ctx, -2, "width");
+
+        duk_push_int(ctx, (int)image->tile_info.height);
+        duk_put_prop_string(ctx, -2, "height");
+
+        duk_push_int(ctx, (int)image->tile_info.x);
+        duk_put_prop_string(ctx, -2, "x");
+
+        duk_push_int(ctx, (int)image->tile_info.y);
+        duk_put_prop_string(ctx, -2, "y");
+
+        duk_put_prop_string(ctx, -2, "tileGeometry");
+    }
+
+    if ((image->x_resolution != 0.0) && (image->y_resolution != 0.0))
+    {
+
+        duk_push_object(ctx); //resolution
+
+        duk_push_number(ctx, image->x_resolution);
+        duk_put_prop_string(ctx, -2, "x");
+        duk_push_number(ctx, image->y_resolution);
+        duk_put_prop_string(ctx, -2, "y");
+
+        if (image->units == PixelsPerInchResolution)
+        {
+            duk_push_string(ctx, "inch");
+            duk_put_prop_string(ctx, -2, "per");
+        }
+        else if (image->units == PixelsPerCentimeterResolution)
+        {
+            duk_push_string(ctx, "centimeter");
+            duk_put_prop_string(ctx, -2, "per");
+        }
+        duk_put_prop_string(ctx, -2, "resolution");
+    }
+
+    duk_push_boolean(ctx, image->interlace == UndefinedInterlace? 0: 1);
+    duk_put_prop_string(ctx, -2, "interlace");
+
+    duk_push_string(ctx, OrientationTypeToString(image->orientation));
+    duk_put_prop_string(ctx, -2, "orientation");
+
+    (void) QueryColorname(image,&image->background_color,SVGCompliance,color,
+                          &image->exception);
+    duk_push_string(ctx, color);
+    duk_put_prop_string(ctx, -2, "backgroundColor");
+
+    (void) QueryColorname(image,&image->border_color,SVGCompliance,color,
+                          &image->exception);
+    duk_push_string(ctx, color);
+    duk_put_prop_string(ctx, -2, "borderColor");
+
+    (void) QueryColorname(image,&image->matte_color,SVGCompliance,color,
+                          &image->exception);
+    duk_push_string(ctx, color);
+    duk_put_prop_string(ctx, -2, "matteColor");
+
+    if ((image->page.width != 0) && (image->page.height != 0))
+    {
+        duk_push_object(ctx);// pageGeometry
+        
+        duk_push_int(ctx, (int)image->page.width);
+        duk_put_prop_string(ctx, -2, "width");
+
+        duk_push_int(ctx, (int)image->page.height);
+        duk_put_prop_string(ctx, -2, "height");
+
+        duk_push_int(ctx, (int)image->page.x);
+        duk_put_prop_string(ctx, -2, "x");
+
+        duk_push_int(ctx, (int)image->page.y);
+        duk_put_prop_string(ctx, -2, "y");
+
+        duk_put_prop_string(ctx, -2, "pageGeometry");
+    }
+
+    duk_push_string(ctx, CompositeOperatorToString(image->compose));
+    duk_put_prop_string(ctx, -2, "compose");
+
+
+    switch (image->dispose)
+    {
+        case UndefinedDispose: duk_push_string(ctx,"Undefined"); break;
+        case NoneDispose: duk_push_string(ctx,"None"); break;
+        case BackgroundDispose: duk_push_string(ctx,"Background"); break;
+        case PreviousDispose: duk_push_string(ctx,"Previous"); break;
+    }
+    if(duk_is_string(ctx, -1))
+      duk_put_prop_string(ctx, -2, "dispose");
+
+
+    if (image->delay != 0)
+    {
+        duk_push_int(ctx, image->delay);
+        duk_put_prop_string(ctx, -2, "delay");
+    }
+
+    if (image->iterations != 1)
+    {
+        duk_push_int(ctx, image->iterations);
+        duk_put_prop_string(ctx, -2, "iterations");
+    }
+
+    duk_push_string(ctx, CompressionTypeToString(image->compression));
+    duk_put_prop_string(ctx, -2, "compression");
+
+    /*
+      Get formatted image attributes. This must happen before we access
+      any pseudo attributes like EXIF since doing so causes real attributes
+      to be created and we would get duplicates in the output.
+    */
+    attribute=GetImageAttribute(image,(char *) NULL);
+    {
+        for ( ; attribute != (const ImageAttribute *) NULL;
+            attribute=attribute->next)
+          {
+              if (LocaleNCompare("EXIF",attribute->key,4) != 0)
+              {
+                  duk_push_string(ctx, attribute->value);
+                  duk_put_prop_string(ctx, -2, attribute->key);
+              }
+          }
+    }
+
+    if((profile=GetImageProfile(image,"ICM",&profile_length)) != 0)
+    {
+        duk_push_number(ctx, (double) profile_length);
+        duk_put_prop_string(ctx, -2, "profileColor");
+    }
+
+    if((profile=GetImageProfile(image,"IPTC",&profile_length)) != 0)
+    {
+        char *tag;
+        size_t length;
+
+        /*
+          Describe IPTC data.
+        */
+
+        duk_push_object(ctx); // profileIptc
+        
+        duk_push_number(ctx, (double) profile_length);
+        duk_put_prop_string(ctx, -2, "bytes");
+
+        for (i=0; i+5U < profile_length; )
+        {
+            if (profile[i] != 0x1c)
+              {
+                i++;
+                continue;
+              }
+            i++;  /* skip file separator */
+            i++;  /* skip record number */
+            switch (profile[i])
+            {
+                case 5: tag=(char *) "imageName"; break;
+                case 7: tag=(char *) "editStatus"; break;
+                case 10: tag=(char *) "priority"; break;
+                case 15: tag=(char *) "category"; break;
+                case 20: tag=(char *) "supplementalCategory"; break;
+                case 22: tag=(char *) "fixtureIdentifier"; break;
+                case 25: tag=(char *) "keyword"; break;
+                case 30: tag=(char *) "releaseDate"; break;
+                case 35: tag=(char *) "releaseTime"; break;
+                case 40: tag=(char *) "specialInstructions"; break;
+                case 45: tag=(char *) "referenceService"; break;
+                case 47: tag=(char *) "referenceDate"; break;
+                case 50: tag=(char *) "referenceNumber"; break;
+                case 55: tag=(char *) "createdDate"; break;
+                case 60: tag=(char *) "createdTime"; break;
+                case 65: tag=(char *) "originatingProgram"; break;
+                case 70: tag=(char *) "programVersion"; break;
+                case 75: tag=(char *) "objectCyc"; break;
+                case 80: tag=(char *) "byline"; break;
+                case 85: tag=(char *) "bylineTitle"; break;
+                case 90: tag=(char *) "city"; break;
+                case 95: tag=(char *) "provinceState"; break;
+                case 100: tag=(char *) "countryCode"; break;
+                case 101: tag=(char *) "country"; break;
+                case 103: tag=(char *) "originalTransmissionReference"; break;
+                case 105: tag=(char *) "headline"; break;
+                case 110: tag=(char *) "credit"; break;
+                case 115: tag=(char *) "source"; break;
+                case 116: tag=(char *) "copyrightString"; break;
+                case 120: tag=(char *) "caption"; break;
+                case 121: tag=(char *) "localCaption"; break;
+                case 122: tag=(char *) "caption Writer"; break;
+                case 200: tag=(char *) "customField_1"; break;
+                case 201: tag=(char *) "customField_2"; break;
+                case 202: tag=(char *) "customField_3"; break;
+                case 203: tag=(char *) "customField_4"; break;
+                case 204: tag=(char *) "customField_5"; break;
+                case 205: tag=(char *) "customField_6"; break;
+                case 206: tag=(char *) "customField_7"; break;
+                case 207: tag=(char *) "customField_8"; break;
+                case 208: tag=(char *) "customField_9"; break;
+                case 209: tag=(char *) "customField_10"; break;
+                case 210: tag=(char *) "customField_11"; break;
+                case 211: tag=(char *) "customField_12"; break;
+                case 212: tag=(char *) "customField_13"; break;
+                case 213: tag=(char *) "customField_14"; break;
+                case 214: tag=(char *) "customField_15"; break;
+                case 215: tag=(char *) "customField_16"; break;
+                case 216: tag=(char *) "customField_17"; break;
+                case 217: tag=(char *) "customField_18"; break;
+                case 218: tag=(char *) "customField_19"; break;
+                case 219: tag=(char *) "customField_20"; break;
+                default: tag=(char *) "unknown"; break;
+            }
+            i++;
+            length=(size_t) profile[i++] << 8;
+            length|=(size_t) profile[i++];
+            length=Min(length,profile_length-i);
+            duk_push_lstring(ctx, (const char *)profile+i,length);
+            duk_put_prop_string(ctx, -2, tag);
+            i+=length;
+        }
+        duk_put_prop_string(ctx, -2, "profileIptc");
+    }
+    //exif
+    {
+      const char *profile_name;
+      size_t profile_length;
+      const unsigned char *profile_info;
+      ImageProfileIterator profile_iterator;
+
+      duk_push_object(ctx); // exif
+
+      profile_iterator=AllocateImageProfileIterator(image);
+      while(NextImageProfile(profile_iterator,&profile_name,&profile_info,
+                             &profile_length) != MagickFail)
+      {
+          if ((LocaleCompare(profile_name,"ICC") == 0) ||
+              (LocaleCompare(profile_name,"ICM") == 0) ||
+              (LocaleCompare(profile_name,"IPTC") == 0) ||
+              (LocaleCompare(profile_name,"8BIM") == 0))
+            continue;
+
+          if (profile_length == 0)
+            continue;
+
+          if (LocaleCompare(profile_name,"EXIF") == 0)
+          {
+              duk_push_number(ctx, (double)profile_length);
+              duk_put_prop_string(ctx, -2, "bytes");
+
+              attribute=GetImageAttribute(image,"EXIF:*");
+              if (attribute != (const ImageAttribute *) NULL)
+              {
+                  double d;
+                  char *values=strdup(attribute->value), 
+                       *p=values, *v=NULL, *k=p, *p2;
+
+                  while(1)
+                  {
+                      if(*p=='=')
+                      {
+                          *p='\0';
+                          p++;
+                          v=p;
+                          continue;
+                      }
+                      if(*p == '\0')
+                      {
+                          if(v)
+                          {
+                              if(strncmp("GPS", k, 3))
+                                  *k = tolower(*k);
+                              d = strtod(v, &p2);
+                              if(*p2=='\0')
+                                  duk_push_number(ctx, d);
+                              else
+                                  duk_push_string(ctx, v);
+                              duk_put_prop_string(ctx, -2, k);
+                          }
+                          break;
+                      }
+                      if(*p == '\n')
+                      {
+                          *p='\0';
+                          if(v)
+                          {
+                              if(strncmp("GPS", k, 3))
+                                  *k = tolower(*k);
+                              d = strtod(v, &p2);
+                              if(*p2=='\0')
+                                  duk_push_number(ctx, d);
+                              else
+                                  duk_push_string(ctx, v);
+                              duk_put_prop_string(ctx, -2, k);
+                          }
+                          v=NULL;
+                          p++;
+                          k=p;
+                          continue;
+                      }
+                      p++;
+                  }
+                  free(values);
+              }
+          }
+      }
+      DeallocateImageProfileIterator(profile_iterator);
+      duk_put_prop_string(ctx, -2, "exif");
+    }
+
+
+
+}
 
 static duk_ret_t identify(duk_context *ctx)
 {
     rpMW *rwand; 
-    FILE *desc=NULL;
-    char *buf=NULL;
-    size_t blen=0, i=0;
+    //FILE *desc=NULL;
+    //char *buf=NULL;
+    //size_t blen=0, i=0;
     int verbose=0;
 
     if(!duk_is_undefined(ctx,0))
@@ -887,6 +1737,10 @@ static duk_ret_t identify(duk_context *ctx)
     if(!rwand)
         RP_THROW(ctx, "gm - error using a closed image handle");
 
+    rp_describe_image(ctx, rwand->images, verbose?1:0 );
+    return 1;
+
+    /*
     desc = open_memstream(&buf, &blen);
     for (;i<DESC_INDENT_CHARS;i++)
         fputc(' ', desc);// put image name on same indent level as next
@@ -918,6 +1772,7 @@ static duk_ret_t identify(duk_context *ctx)
     duk_pull(ctx, -2);
     duk_put_prop_string(ctx, -2, "raw");
     return 1;
+    */
 }
 
 static duk_ret_t gmgetcount(duk_context *ctx)

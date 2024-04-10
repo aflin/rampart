@@ -1,4 +1,6 @@
 v0.2.2
+    - rampart-gm       Initial unsupported graphicsmagick module.
+                       Unsupported because of many required external libs.
     - rampart-server   Fixed websocket bug - processing leftover data in
                        buffer.
     - rampart-curl     Restructure fetch and submit functions.  Added
@@ -25,8 +27,8 @@ v0.2.1
                        stat() - added "readable", "writable", "executable"
                                 "owner", "group" properties to return object.
                        lstat() - "readable", "writable" refer to the link.
-                       queryToObject() - added processing of object like params 
-                       (e.g. ?myvar[mykey]=myval&myvar[mykey]=myval2).
+                       queryToObject() - added processing of Object-like params 
+                       (e.g. ?myvar[mykey]=myval&myvar[mykey2]=myval2).
                        touch() now takes dates and numbers(seconds).
                        exec() now takes options {args: [array,of,args], cd: "/working/dir"}
     - rampart-crytpo:  bug fix - crypt - bad pop for hex key or iv

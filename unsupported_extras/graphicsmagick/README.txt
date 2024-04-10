@@ -74,9 +74,9 @@ image.save("/path/to/my/new_image.jpg");
  rampart.utils.printf("we have %d images\n", images.getCount());
 
 // ---- IDENTIFY ----
-// get simple description String of current img like "gm identify img.jpg" 
+// get simple description Object of current img like "gm identify img.jpg" 
  rampart.utils.printf( "%s\n", images.select(0).identify() );
-// get parsed verbose identify as an Object
+// get more detail
  rampart.utils.printf( "%3J\n", images.select(0).identify(true) )
 
 // ---- CLOSE ----
