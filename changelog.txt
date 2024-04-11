@@ -7,6 +7,7 @@ v0.2.2
                        fetchAsync and submitAsync. Added noCopyBuffer
                        option.
     - rampart-utils:   Fixed stat and lstat user and group bug.
+                       Added fopenBuffer().
 v0.2.1
     - rampart:         Many small bug fixes
                        Interactive: -g typeahead suggestion. Last var on

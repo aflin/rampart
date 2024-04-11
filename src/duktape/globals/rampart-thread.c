@@ -1809,6 +1809,7 @@ static void thread_doevent(evutil_socket_t fd, short events, void* arg)
         if(info->index == -1)
         {
             fprintf(stderr, "Error in thread without callback: %s\n", duk_get_string(ctx, -1));
+            RPTHR_CLEAR(thr, RPTHR_FLAG_ACTIVE);
             goto end;
         }
         duk_put_prop_string(ctx, -2, "error");
