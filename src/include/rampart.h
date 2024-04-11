@@ -536,6 +536,7 @@ int duk_rp_get_int_default(duk_context *ctx, duk_idx_t i, int def);
 char *to_utf8(const char *in_str);
 duk_ret_t duk_rp_values_from_object(duk_context *ctx, duk_idx_t idx);
 duk_ret_t duk_rp_read_file(duk_context *ctx);// rampart.utils.readFile()
+FILE *duk_rp_push_fopen_buffer(duk_context *ctx, size_t chunk);
 
 //returns a safe json-like string.  prints cyclic references as paths in object.
 //needs free

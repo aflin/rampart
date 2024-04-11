@@ -1500,6 +1500,9 @@ duk_ret_t duk_rp_globalize(duk_context *ctx)
         duk_pop(ctx);\
     } else {\
         duk_pop(ctx);\
+        if(duk_get_prop_string(ctx,idx,DUK_HIDDEN_SYMBOL("lock")))\
+            lock=duk_get_pointer(ctx, -1);\
+        duk_pop(ctx);\
         if( !duk_get_prop_string(ctx,idx,DUK_HIDDEN_SYMBOL("filehandle")) )\
             RP_THROW(ctx,"error %s(): argument is not a file handle",func);\
         f=duk_get_pointer(ctx,-1);\
@@ -1871,9 +1874,18 @@ static duk_ret_t readline_next(duk_context *ctx)
         char *line = NULL;
         size_t len = 0;
         int nread;
+        pthread_mutex_t *lock_p=NULL;
+
+        if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("lock")))
+            lock_p=duk_get_pointer(ctx, -1);
+        duk_pop(ctx);
 
         errno = 0;
+
+        if(lock_p) RP_PTLOCK(lock_p);
         nread = getline(&line, &len, fp);
+        if(lock_p) RP_PTUNLOCK(lock_p);
+
         if (errno)
         {
             free(line);
@@ -1953,13 +1965,21 @@ static duk_ret_t readline_next(duk_context *ctx)
     f;\
 })
 
+#define getreadfile_lock(ctx,idx,fname,filename,type, lock_p) ({\
+    if(duk_get_prop_string(ctx,  idx, DUK_HIDDEN_SYMBOL("lock")))\
+        lock_p=duk_get_pointer(ctx, -1);\
+    duk_pop(ctx);\
+    getreadfile(ctx,idx,fname,filename,type);\
+})
+
 duk_ret_t duk_rp_readline(duk_context *ctx)
 {
     const char *filename="";
     FILE *f;
     int type=1;
+    pthread_mutex_t *lock_p=NULL;
 
-    f=getreadfile(ctx, 0, "readLine", filename, type);
+    f=getreadfile_lock(ctx, 0, "readLine", filename, type, lock_p);
 
     duk_push_object(ctx);
 
@@ -1984,8 +2004,12 @@ duk_ret_t duk_rp_readline(duk_context *ctx)
         duk_push_c_function(ctx,readline_next_fifo,0);
     }
     else
-        duk_push_c_function(ctx,readline_next,0);
+    {
+        duk_push_pointer(ctx, lock_p);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("lock"));
 
+        duk_push_c_function(ctx,readline_next,0);
+    }
     duk_put_prop_string(ctx, -2, "next");
 
     if(type >= RTYPE_FILE)
@@ -5020,7 +5044,7 @@ duk_ret_t duk_rp_printf(duk_context *ctx)
 
 duk_ret_t duk_rp_fseek(duk_context *ctx)
 {
-    FILE *f = getfh_nonull(ctx,0,"fseek()");
+    FILE *f = getfh_nonull(ctx,0,"fseek");
     long offset=(long)REQUIRE_NUMBER(ctx, 1, "fseek(): second argument must be a number (seek position)");
     int whence=SEEK_SET;
 
@@ -5037,22 +5061,23 @@ duk_ret_t duk_rp_fseek(duk_context *ctx)
         else
             RP_THROW(ctx,"error fseek(): invalid argument '%s'",wstr);
     }
-    if(fseek(f, offset, whence))
-        RP_THROW(ctx, "error fseek():'%s'", strerror(errno));
+int x=0;
+    if((x=fseek(f, offset, whence)))
+        RP_THROW(ctx, "error fseek():'%s' %d", strerror(errno), x);
 
     return 0;
 }
 
 duk_ret_t duk_rp_rewind(duk_context *ctx)
 {
-    FILE *f = getfh_nonull(ctx,0,"rewind()");
+    FILE *f = getfh_nonull(ctx,0,"rewind");
     rewind(f);
     return 0;
 }
 
 duk_ret_t duk_rp_ftell(duk_context *ctx)
 {
-    FILE *f = getfh_nonull(ctx,0,"ftell()");
+    FILE *f = getfh_nonull(ctx,0,"ftell");
     long pos;
 
     pos=ftell(f);
@@ -5072,8 +5097,9 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
     const char *filename="";
     duk_idx_t idx=1;
     int type=0, retstr=0, nonblock=0;
+    pthread_mutex_t *lock_p=NULL;
 
-    f=getreadfile(ctx, 0, "fread", filename, type);//type is reset
+    f=getreadfile_lock(ctx, 0, "fread", filename, type, lock_p);//type is reset
 
     //assume true if set
     if(duk_has_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("nonblock")) )
@@ -5105,7 +5131,11 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
 
     buf=duk_push_dynamic_buffer(ctx, (duk_size_t)sz);
 
-    if(type!=RTYPE_STDIN)
+    if(lock_p)
+    {
+        if(lock_p) RP_PTLOCK(lock_p);
+    }
+    else if(type!=RTYPE_STDIN)
     {
         if (flock(fileno(f), LOCK_SH) == -1)
             RP_THROW(ctx, "error fread(): could not get read lock");
@@ -5125,7 +5155,11 @@ duk_ret_t duk_rp_fread(duk_context *ctx)
         buf = duk_resize_buffer(ctx, -1, read+sz);
     }
 
-    if(type!=RTYPE_STDIN)
+    if(lock_p)
+    {
+        if(lock_p) RP_PTUNLOCK(lock_p);
+    }
+    else if(type!=RTYPE_STDIN)
     {
         if (flock(fileno(f), LOCK_UN) == -1)
             RP_THROW(ctx, "error fread(): could not release read lock");
@@ -5261,11 +5295,12 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gettype)
     const char *filename="";
     int ch, type=RTYPE_STDIN;
     char *fn = (gettype)?"getchar":"fgets";
+    pthread_mutex_t *lock_p=NULL;
 
     if(!gettype)
     {
         type=0;
-        f=getreadfile(ctx, 0, fn, filename, type);//type is reset
+        f=getreadfile_lock(ctx, 0, fn, filename, type, lock_p);//type is reset
         duk_remove(ctx,0);
     }
 
@@ -5277,7 +5312,11 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gettype)
     }
 
 
-    if(type!=RTYPE_STDIN)
+    if(lock_p)
+    {
+        if(lock_p) RP_PTLOCK(lock_p);
+    }
+    else if(type!=RTYPE_STDIN)
     {
         if (flock(fileno(f), LOCK_SH) == -1)
             RP_THROW(ctx, "error %s: could not get read lock", fn);
@@ -5315,7 +5354,11 @@ static duk_ret_t duk_rp_fgets_getchar(duk_context *ctx, int gettype)
         }
     }
 
-    if(type!=RTYPE_STDIN)
+    if(lock_p)
+    {
+        if(lock_p) RP_PTUNLOCK(lock_p);
+    }
+    else if(type!=RTYPE_STDIN)
     {
         if (flock(fileno(f), LOCK_UN) == -1)
         {
@@ -5355,7 +5398,7 @@ duk_ret_t duk_rp_fwrite(duk_context *ctx)
 
     if(duk_is_object(ctx,0))
     {
-        f = getfh_nonull_lock(ctx,0,"fprintf()",lock_p);
+        f = getfh_nonull_lock(ctx,0,"fwrite",lock_p);
         closefh=0;
     }
     else
@@ -5501,7 +5544,7 @@ duk_ret_t duk_rp_fflush(duk_context *ctx)
             return 0;
         }
         duk_pop(ctx);
-        f = getfh_nonull(ctx,0,"fflush()");
+        f = getfh_nonull(ctx,0,"fflush");
         fflush(f);
     }
     return 0;
@@ -5519,7 +5562,7 @@ duk_ret_t duk_rp_fprintf(duk_context *ctx)
 
     if(duk_is_object(ctx,0))
     {
-        f = getfh_nonull_lock(ctx,0,"fprintf()",lock_p);
+        f = getfh_nonull_lock(ctx,0,"fprintf",lock_p);
         closefh=0;
     }
     else
@@ -5774,6 +5817,376 @@ duk_ret_t duk_rp_fopen(duk_context *ctx)
     RP_THROW(ctx, "error opening file '%s': %s", fn, strerror(errno));
     return 0;
 }
+
+
+typedef struct {
+    char *data;
+    size_t size;
+    size_t pos; // Current position in the buffer
+    size_t chunk;
+    size_t used;
+    duk_context *ctx;
+    void *bufptr;
+    void *thisptr;
+    pthread_mutex_t *lock;
+} buffer_t;
+
+#ifdef __APPLE__
+
+#define off64_t long long
+typedef struct {
+    ssize_t (*read)(void *cookie, char *buf, size_t size);
+    ssize_t (*write)(void *cookie, const char *buf, size_t size);
+    int (*seek)(void *cookie, long long *offset, int whence);
+    int (*close)(void *cookie);
+} cookie_io_functions_t;
+
+typedef struct {
+    void *cookie;
+    cookie_io_functions_t io_funcs;
+} cookie_jar;
+
+
+// Adapter functions to bridge funopen and fopencookie-style callbacks
+static int read_adapter(void *cookie, char *buf, int size) {
+    buffer_t *buffer = (buffer_t *) ((cookie_jar*)cookie)->cookie;
+    cookie_io_functions_t *ops = &((cookie_jar*)cookie)->io_funcs;
+
+    return (int)ops->read(buffer, buf, (size_t)size);
+}
+
+static int write_adapter(void *cookie, const char *buf, int size) {
+    buffer_t *buffer = (buffer_t *) ((cookie_jar*)cookie)->cookie;
+    cookie_io_functions_t *ops = &((cookie_jar*)cookie)->io_funcs;
+
+    return (int)ops->write(buffer, buf, (size_t)size);
+}
+
+static fpos_t seek_adapter(void *cookie, long long offset, int whence) {
+    buffer_t *buffer = (buffer_t *) ((cookie_jar*)cookie)->cookie;
+    cookie_io_functions_t *ops = &((cookie_jar*)cookie)->io_funcs;
+
+    if (ops->seek(buffer, &offset, whence) == 0)
+    {
+        return (fpos_t)offset;
+    }
+    return -1;
+}
+
+static int close_adapter(void *cookie) {
+    buffer_t *buffer = (buffer_t *) ((cookie_jar*)cookie)->cookie;
+    cookie_io_functions_t *ops = &((cookie_jar*)cookie)->io_funcs;
+
+    int ret = ops->close(buffer);
+    free(cookie);
+    return ret;
+}
+
+// The polyfill fopencookie function
+FILE *fopencookie(void *cookie, const char *mode, cookie_io_functions_t io_funcs) {
+    cookie_jar *jar=NULL;
+
+    REMALLOC(jar, sizeof(cookie_jar));
+    jar->cookie=cookie;
+    jar->io_funcs = io_funcs;
+
+    return funopen(jar,
+        io_funcs.read ? read_adapter : NULL,
+        io_funcs.write ? write_adapter : NULL,
+        io_funcs.seek ? seek_adapter : NULL,
+        io_funcs.close ? close_adapter : NULL);
+}
+
+#endif
+
+static ssize_t buffer_write(void *cookie, const char *buf, size_t size) {
+    buffer_t *buffer = (buffer_t *)cookie;
+    size_t needed_size;
+
+    if(buffer->lock) RP_PTLOCK(buffer->lock);
+
+    needed_size = ( ((buffer->pos + size) / buffer->chunk) + 1) * buffer->chunk;
+
+    // Ensure the buffer is large enough to hold the new data
+    if (needed_size > buffer->size) {
+        duk_context *ctx = buffer->ctx;
+        
+        if((get_current_thread())->ctx != ctx)
+            RP_THROW(ctx, "fopenBuffer - cannot (yet) resize a buffer created in another thread");
+        
+        duk_push_heapptr(ctx, buffer->bufptr);
+        buffer->data = duk_resize_buffer(ctx, -1, needed_size);
+        //printf("resized to %d\n", (int)needed_size);
+        duk_pop(ctx);
+        buffer->size = needed_size;
+    }
+
+    // Write the data at the current position
+    memcpy(buffer->data + buffer->pos, buf, size);
+    buffer->pos += size;
+
+    // so we can resize to highest pos ever written (in case of seek)
+    if( (buffer->pos + 1) > buffer->used)
+        buffer->used = buffer->pos + 1;
+
+    if(buffer->lock) RP_PTUNLOCK(buffer->lock);
+
+    return size;
+}
+
+static ssize_t buffer_read(void *cookie, char *buf, size_t size) {
+    buffer_t *buffer = (buffer_t *)cookie;
+    size_t readable;
+    
+    if(buffer->lock) RP_PTLOCK(buffer->lock);
+
+    readable = buffer->size - buffer->pos;
+
+    // Limit the read size to what's available
+    size_t to_read = size < readable ? size : readable;
+    memcpy(buf, buffer->data + buffer->pos, to_read);
+    buffer->pos += to_read;
+
+    if(buffer->lock) RP_PTUNLOCK(buffer->lock);
+
+    return to_read;
+}
+
+static int buffer_seek(void *cookie, off64_t *offset, int whence)
+{
+    buffer_t *buffer = (buffer_t *)cookie;
+    off64_t new_pos;
+
+    switch (whence)
+    {
+        case SEEK_SET:
+            new_pos = *offset;
+            break;
+        case SEEK_CUR:
+            new_pos = buffer->pos + *offset;
+            break;
+        case SEEK_END:
+            new_pos = buffer->size + *offset;
+            break;
+        default:
+            return -1; // Invalid whence
+    }
+
+    if (new_pos < 0 )
+    {
+        return -1; // Out of bounds
+    }
+    
+    if (new_pos >= (off64_t)buffer->size)
+    {
+        duk_context *ctx = buffer->ctx;
+
+        if((get_current_thread())->ctx != ctx)
+            RP_THROW(ctx, "fopenBuffer - cannot (yet) resize a buffer created in another thread");
+
+        duk_push_heapptr(ctx, buffer->bufptr);
+        buffer->data = duk_resize_buffer(ctx, -1, new_pos+1);
+        //printf("resized to %d\n", (int)new_pos+1);
+        duk_pop(ctx);
+        buffer->size = new_pos+1;
+    }
+
+
+    if(buffer->lock) RP_PTLOCK(buffer->lock);
+    buffer->pos = new_pos;
+    if(buffer->lock) RP_PTUNLOCK(buffer->lock);
+
+
+    *offset = new_pos;
+    return 0;
+}
+
+static int buffer_fclose(void *cookie)
+{
+    buffer_t *buffer = (buffer_t *)cookie;
+    duk_context *ctx = buffer->ctx;
+    pthread_mutex_t *buflock;
+
+
+    if((get_current_thread())->ctx != ctx)
+        RP_THROW(ctx, "fopenBuffer - cannot (yet) close a buffer created in another thread");
+
+    if(buffer->lock) RP_PTLOCK(buffer->lock);
+
+    if(buffer->thisptr) // pointer is NULL if using duk_rp_push_fopen_buffer
+    {
+        duk_push_heapptr(ctx, buffer->thisptr);
+        duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("lock") );
+        buflock=duk_get_pointer(ctx, -1);
+        duk_pop(ctx);
+        free(buflock);
+
+        duk_push_pointer(ctx, NULL);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filehandle") );
+
+        duk_push_pointer(ctx, NULL);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("cookie") );
+
+        duk_pop(ctx);//this/thisptr
+    }
+
+    duk_push_heapptr(ctx, buffer->bufptr);
+    //printf("resized to %d\n", (int)buffer->used);
+    (void)duk_resize_buffer(ctx, -1, buffer->used);
+
+    //FIXME: potential race condition
+    if(buffer->lock)
+    {
+         RP_PTUNLOCK(buffer->lock);
+        free(buffer->lock);
+    }
+
+    free(buffer);
+
+    duk_pop(ctx); //js buffer
+    return 0;
+}
+
+static duk_ret_t get_buffer(duk_context *ctx) 
+{
+    duk_push_this(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("buffer"));
+
+    return 1;
+}
+
+static FILE *open_memstream_buffer(buffer_t *buffer) 
+{
+
+    cookie_io_functions_t io_funcs = {
+        .read = buffer_read,
+        .write = buffer_write,
+        .seek = buffer_seek,
+        .close = buffer_fclose
+    };
+
+    return fopencookie(buffer, "w+", io_funcs);
+}
+
+// finalizer for return object from JS fopenBuffer
+static duk_ret_t fopen_buffer_finalizer(duk_context *ctx)
+{
+    printf("finalizing\n");
+    buffer_t *buffer;
+    pthread_mutex_t *buflock;
+
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("cookie") );
+    buffer = (buffer_t *)duk_get_pointer(ctx,-1);
+    duk_pop(ctx);
+
+    if(buffer)
+    {
+        duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("lock") );
+        buflock=duk_get_pointer(ctx, -1);
+        duk_pop(ctx);
+        free(buflock);
+
+        duk_push_pointer(ctx, NULL);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filehandle") );
+
+        duk_push_pointer(ctx, NULL);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("cookie") );
+
+
+        duk_push_heapptr(ctx, buffer->bufptr);
+        //printf("resized to %d\n", (int)buffer->used);
+        (void)duk_resize_buffer(ctx, -1, buffer->used);
+
+        free(buffer);
+    }
+
+    duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("buffer") );
+    return 0;
+}
+
+// function to push a buffer and associate a filehandle
+FILE *duk_rp_push_fopen_buffer(duk_context *ctx, size_t chunk)
+{
+    pthread_mutex_t *buflock=NULL;
+    buffer_t *buffer=NULL;
+
+    REMALLOC(buffer, sizeof(buffer_t));
+
+    REMALLOC(buflock, sizeof(pthread_mutex_t));
+    RP_PTINIT(buflock);
+
+    buffer->data = duk_push_dynamic_buffer(ctx, chunk);
+    buffer->bufptr=duk_get_heapptr(ctx, -1);
+    buffer->thisptr=NULL;
+    buffer->size = chunk;
+    buffer->chunk = chunk;
+    buffer->pos  = 0;
+    buffer->used = 0;
+    buffer->ctx  = ctx;
+    buffer->lock = buflock;
+    return open_memstream_buffer(buffer);
+}
+
+duk_ret_t duk_rp_fopen_buffer(duk_context *ctx)
+{
+
+    size_t chunk = 4096;
+    pthread_mutex_t *buflock=NULL;
+    buffer_t *buffer=NULL;
+    FILE *fbuf;
+
+    if(!duk_is_undefined(ctx,0))
+        chunk = (size_t)REQUIRE_UINT(ctx, 0, "fopenBuffer: argument must be a positive int (chunk size)");
+
+    REMALLOC(buffer, sizeof(buffer_t));
+    REMALLOC(buflock, sizeof(pthread_mutex_t));
+    RP_PTINIT(buflock);
+
+    duk_push_object(ctx);
+
+    duk_push_pointer(ctx, buflock);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("lock"));
+
+    duk_push_pointer(ctx, buffer);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("cookie"));
+
+    buffer->data = duk_push_dynamic_buffer(ctx, chunk);
+    buffer->bufptr=duk_get_heapptr(ctx, -1);
+    buffer->thisptr=duk_get_heapptr(ctx, -2);
+    buffer->size = chunk;
+    buffer->chunk = chunk;
+    buffer->pos  = 0;
+    buffer->used = 0;
+    buffer->ctx  = ctx;
+    buffer->lock=NULL; // js functions like buf.read or buf.write use DUK_HIDDEN_SYMBOL("lock")
+    fbuf = open_memstream_buffer(buffer);
+
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("buffer"));
+
+    duk_push_pointer(ctx, fbuf);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("filehandle"));
+
+    pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
+    pushffunc("fseek",      func_fseek,     2           );
+    pushffunc("rewind",     func_rewind,    0           );
+    pushffunc("ftell",      func_ftell,     0           );
+    pushffunc("fflush",     func_fflush,    0           );
+    pushffunc("fwrite",     func_fwrite,    3           );
+    pushffunc("fread",      func_fread,     3           );
+    pushffunc("readLine",   func_readline,  0           );
+    pushffunc("fgets",      func_fgets,     1           );
+    pushffunc("fclose",     func_fclose,    0           );
+    duk_push_c_function(ctx, get_buffer, 0);
+    duk_put_prop_string(ctx, -2, "getBuffer");
+    duk_push_c_function(ctx, fopen_buffer_finalizer, 1);
+    duk_set_finalizer(ctx, -2);
+
+
+    return 1;
+}
+
 
 #define PTYARGS struct pty_args
 
@@ -6661,6 +7074,9 @@ void duk_printf_init(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_rp_fopen, 2);
     duk_put_prop_string(ctx, -2, "fopen");
+
+    duk_push_c_function(ctx, duk_rp_fopen_buffer, 2);
+    duk_put_prop_string(ctx, -2, "fopenBuffer");
 
     duk_push_c_function(ctx, duk_rp_forkpty, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "forkpty");
