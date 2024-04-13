@@ -8,6 +8,12 @@ v0.2.2
                        option.
     - rampart-utils:   Fixed stat and lstat user and group bug.
                        Added fopenBuffer().
+                       Rework of rp_find_path - now variadic.
+    - rampart:         Rework of module loading.  Respects relative paths
+                       of modules loading modules.
+                       Added "use babelGlobally" to automatically babelize
+                       modules and includes.
+
 v0.2.1
     - rampart:         Many small bug fixes
                        Interactive: -g typeahead suggestion. Last var on
