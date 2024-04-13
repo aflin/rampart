@@ -1299,6 +1299,8 @@ static int repl(duk_context *ctx)
     return 0;
 }
 
+int duk_rp_globalbabel=0;
+
 static char *checkbabel(char *src)
 {
     char *s=src, *bline, *ret=NULL;
@@ -1341,6 +1343,11 @@ static char *checkbabel(char *src)
         {
             char *e;
             s+=5;
+            if(!strncmp("Globally",s,8))
+            {
+                s+=8;
+                duk_rp_globalbabel=1;
+            }
             while(isspace(*s)) s++;
             if(*s==':')
             {
@@ -1403,7 +1410,16 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
 
     babelsrc[0]='\0';
 
-    if(!opt)
+    if(duk_rp_globalbabel)
+    {
+        char *isbabel = strstr(fn, "/babel.js");
+        /* don't tickify actual babel.js source */
+
+        if ( isbabel && isbabel == fn + strlen(fn) - 9 )
+            return NULL;
+        opt=main_babel_opt;
+    }
+    else if(!opt)
     {
         opt=checkbabel(src);
         if(!opt) return NULL;
@@ -1420,9 +1436,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     }
     duk_pop(ctx);
 
-    rppath=rp_find_path(pfill_bc,"lib/rampart_modules/");
-    if(!strlen(rppath.path))
-        rppath=rp_find_path(pfill_bc,"modules/");
+    rppath=rp_find_path(pfill_bc, "modules/", "lib/rampart_modules/");
 
     if(strlen(rppath.path))
     {
@@ -1451,9 +1465,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     }
 
     /* not found, so load and save it */
-    rppath=rp_find_path(pfill,"lib/rampart_modules/");
-    if (!strlen(rppath.path))
-        rppath=rp_find_path(pfill,"modules/");
+    rppath=rp_find_path(pfill, "modules/", "lib/rampart_modules/");
 
     if (!strlen(rppath.path))
     {
@@ -1584,7 +1596,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     }
     /* file.babel.js does not exist */
     /* load babel.min.js as a module and convert file.js */
-    duk_push_sprintf(ctx, "function(input){var b=require('babel');return b.transform(input, %s ).code;}", opt);
+    duk_push_sprintf(ctx, "function(input){var b=require('@babel');return b.transform(input, %s ).code;}", opt);
     duk_push_string(ctx,fn);
     if (duk_pcompile(ctx, DUK_COMPILE_FUNCTION) == DUK_EXEC_ERROR)
     {
@@ -1592,6 +1604,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
         duk_rp_exit(ctx, 1);
     }
     duk_push_string(ctx,src);
+
     if (duk_pcall(ctx, 1) == DUK_EXEC_ERROR)
     {
         fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));

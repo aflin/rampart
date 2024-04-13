@@ -185,69 +185,6 @@ duk_ret_t duk_scope_to_module(duk_context *ctx)
     return 0;
 }
 
-/* unused
-duk_ret_t duk_rp_new_event(duk_context *ctx)
-{
-    const char *evname = REQUIRE_STRING(ctx, 0, "event.new: parameter must be a string (event name)");
-
-    duk_get_global_string(ctx, DUK_HIDDEN_SYMBOL("jsevents"));
-    if(!duk_get_prop_string(ctx, -1, evname))
-    {
-        duk_push_object(ctx);
-        duk_put_prop_string(ctx, -2, evname);
-    }
-    return 0;
-}
-*/
-
-// As far as ugly hacks go, this is as bad as it gets.  No idea how else to extract the call stack
-// and get the name of our current module, except by hacking at duktape itself.
-static int push_current_module(duk_context *ctx)
-{
-    const char *errstr;
-    char *p=NULL;
-
-    duk_push_error_object(ctx, DUK_ERR_TYPE_ERROR, "");
-    duk_get_prop_string(ctx, -1, "stack");
-    errstr = duk_get_string(ctx, -1);
-
-    duk_remove(ctx,-2);
-    p=strstr(errstr, "rampart-event.c");
-    if(p)
-    {
-        //the first path with a name should be our last module
-        p=strstr(p, "(/" );
-        if(p)
-        {
-            char *e=strchr(p,':'); //end position is at ':' in "script.js:linenum"
-
-            if(e)
-            {
-                p++; //start at '/'
-
-                duk_push_global_stash(ctx);
-                if(duk_get_prop_string(ctx, -1, "module_id_map"))
-                {
-                    int ret = 0;
-                    duk_push_lstring(ctx, p, (e-p) );
-                    if(duk_get_prop(ctx, -2))
-                        ret=1; 
-                    //either our prop, or undefined at top of stack
-                    duk_remove(ctx,-2); //module_id_map
-                    duk_remove(ctx,-2); //global_stash
-                    duk_remove(ctx,-2); //errstr backing string
-                    return ret;
-                }
-                duk_pop_2(ctx); //global_stash and undefined               
-            }
-        }
-    }
-    duk_pop(ctx);
-    duk_push_undefined(ctx);
-    return 0;
-}
-
-
 duk_ret_t duk_rp_on_event(duk_context *ctx)
 {
     const char *evname=NULL, *onname=NULL;
@@ -266,7 +203,7 @@ duk_ret_t duk_rp_on_event(duk_context *ctx)
                 {
                     const char *id=NULL;
                     // are we in a module?
-                    if(push_current_module(ctx))
+                    if(duk_rp_push_current_module(ctx))
                     {
                         if(duk_get_prop_string(ctx, -1, "id"))
                         {
@@ -576,7 +513,7 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
             const char *id=NULL;
 
             // are we in a module?
-            if(push_current_module(ctx))
+            if(duk_rp_push_current_module(ctx))
             {
                 if(duk_get_prop_string(ctx, -1, "id"))
                 {
