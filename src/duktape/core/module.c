@@ -15,91 +15,69 @@
 #include "module.h"
 #include "rampart.h"
 
-duk_ret_t duk_rp_push_current_module(duk_context *ctx)
-{
-    duk_idx_t top = duk_get_top(ctx);
-    const char *id=NULL;
-
-    duk_get_global_string(ctx, "Error");
-    duk_push_string(ctx, "test");
-    duk_new(ctx, 1);
-    duk_get_prop_string(ctx, -1, "fileName");
-    id=duk_get_string(ctx, -1);
-    duk_pop_2(ctx); //new error, filename
-
-    duk_push_global_stash(ctx);
-    if(duk_get_prop_string(ctx, -1, "module_id_map"))
-    {
-        if(duk_get_prop_string(ctx, -1, id))
-        {
-            duk_remove(ctx, -2);//module_id_map
-            duk_remove(ctx, -2);//global stash
-            //id's module object is on top
-            return 1;
-        }
-    }
-    
-    duk_set_top(ctx, top);
-    duk_push_undefined(ctx);
-    return 0;
-}
-
 static pthread_mutex_t modlock = PTHREAD_MUTEX_INITIALIZER;
-
-typedef void (*module_load_function) (duk_context *ctx, const char *id, duk_idx_t module_idx);
 
 struct module_loader
 {
     char *ext;
-    module_load_function loader;
+    duk_c_function loader;
 };
+static duk_ret_t load_so_module(duk_context *ctx);
+static duk_ret_t load_js_module(duk_context *ctx);
 
-static void load_js_module(duk_context *ctx, const char *file, duk_idx_t module_idx)
+struct module_loader module_loaders[] = {
+    {".js", load_js_module},
+    {".so", load_so_module},
+    // if not known file extension assume javascript
+    {"", load_js_module}};
+
+static duk_ret_t load_js_module(duk_context *ctx)
 {
+    const char *id = duk_require_string(ctx, -3), *bfn=NULL;
+    duk_idx_t module_idx = duk_normalize_index(ctx, -1);
     struct stat sb;
-    const char *bfn=NULL;
-    if (stat(file, &sb))
-        RP_THROW(ctx, "Could not open %s: %s\n", file, strerror(errno));
+    if (stat(id, &sb))
+        RP_THROW(ctx, "Could not open %s: %s\n", id, strerror(errno));
 
     duk_push_number(ctx, sb.st_mtime);
     duk_put_prop_string(ctx, module_idx, "mtime");
     duk_push_number(ctx, sb.st_atime);
     duk_put_prop_string(ctx, module_idx, "atime");
 
-    FILE *f = fopen(file, "r");
+    FILE *f = fopen(id, "r");
     if (!f)
-        RP_THROW(ctx, "Could not open %s: %s\n", file, strerror(errno));
+        RP_THROW(ctx, "Could not open %s: %s\n", id, strerror(errno));
 
     char *buffer = malloc(sb.st_size + 1);
     size_t len = fread(buffer, 1, sb.st_size, f);
     if (sb.st_size != len)
-        RP_THROW(ctx, "Error loading file %s: %s\n", file, strerror(errno));
+        RP_THROW(ctx, "Error loading file %s: %s\n", id, strerror(errno));
 
     buffer[sb.st_size]='\0';
     duk_push_string(ctx, "(function (module, exports) { ");
 
     /* check for babel and push src to stack */
-    if (! (bfn=duk_rp_babelize(ctx, (char *)file, buffer, sb.st_mtime, 0, NULL)) )
+    if (! (bfn=duk_rp_babelize(ctx, (char *)id, buffer, sb.st_mtime, 0, NULL)) )
     {
         /* No babel, normal compile */
         int err, lineno;
-        char *isbabel = strstr(file, "/babel.js");
+        char *isbabel = strstr(id, "/babel.js");
         /* don't tickify actual babel.js source */
-
-        if ( !(isbabel && isbabel == file + strlen(file) - 9) )
+        if ( !(isbabel && isbabel == id + strlen(id) - 9) )
         {
             char *tickified = tickify(buffer, sb.st_size, &err, &lineno);
             free(buffer);
             buffer = tickified;
             if (err)
             {
-                RP_THROW(ctx, "SyntaxError: %s (line %d)\n    at %s:%d", tickify_err(err), lineno, file, lineno);
+                RP_THROW(ctx, "SyntaxError: %s (line %d)\n    at %s:%d", tickify_err(err), lineno, id, lineno);
             }
         }
 
         duk_push_string(ctx, buffer);
     }
     // else is babel, babelized source is on top of stack.
+
     fclose(f);
     free(buffer);
 
@@ -108,11 +86,11 @@ static void load_js_module(duk_context *ctx, const char *file, duk_idx_t module_
 
     if(bfn)
     {
-    //duk_push_string(ctx, bfn);
+        duk_push_string(ctx, bfn);
         free((char*)bfn);
     } 
-    //else - we need the orig filename in error objects for duk_rp_push_current_module above
-        duk_push_string(ctx, file);
+    else
+        duk_push_string(ctx, id);
 
     /* 
        DO NOT CALL duk_compile(ctx, DUK_COMPILE_FUNCTION)
@@ -132,14 +110,15 @@ static void load_js_module(duk_context *ctx, const char *file, duk_idx_t module_
     //        fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
 
     duk_pop(ctx);
-    return;
+    return 0;
 }
 
-static void load_so_module(duk_context *ctx, const char *file, duk_idx_t module_idx)
+static duk_ret_t load_so_module(duk_context *ctx)
 {
+    const char *file = duk_require_string(ctx, -3);
+    duk_idx_t module_idx = duk_normalize_index(ctx, -1);
     pthread_mutex_lock(&modlock);
     void *lib = dlopen(file, RTLD_GLOBAL|RTLD_NOW); // --RTLD_GLOBAL is necessary for python to load .so modules properly
-
     if (lib == NULL)
     {
         /* rampart-crypto is required by other moduels
@@ -151,7 +130,9 @@ static void load_so_module(duk_context *ctx, const char *file, duk_idx_t module_
         {
             RPPATH rp;
 
-            rp=rp_find_path("rampart-crypto.so", "modules/", "lib/rampart_modules/");
+            rp=rp_find_path("rampart-crypto.so", "lib/rampart_modules/");
+            if(!strlen(rp.path))
+                rp=rp_find_path("rampart-crypto.so", "modules/");
 
             if(!strlen(rp.path))
             {
@@ -187,20 +168,12 @@ static void load_so_module(duk_context *ctx, const char *file, duk_idx_t module_
         duk_push_c_function(ctx, init, 0);
         if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
         {
-            RP_THROW(ctx, "Error loading module '%s'", file);
-            return;
+            return duk_throw(ctx);
         }
         duk_put_prop_string(ctx, module_idx, "exports");
     }
-    return;
+    return 0;
 }
-
-struct module_loader module_loaders[] = {
-    {".js", &load_js_module},
-    {".so", &load_so_module},
-    // if not known file extension assume javascript
-    {"",    &load_js_module}
-};
 
 static RPPATH resolve_id(duk_context *ctx, const char *request_id)
 {
@@ -208,15 +181,6 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
     int module_loader_idx;
     RPPATH rppath;
     size_t extlen=0;
-    const char *modpath=NULL;
-
-    if(duk_rp_push_current_module(ctx))
-    {
-        duk_get_prop_string(ctx, -1, "path");
-        modpath=duk_get_string(ctx, -1);
-        duk_pop(ctx);
-    }
-    duk_pop(ctx);
 
     for (module_loader_idx = 0; module_loader_idx < sizeof(module_loaders) / sizeof(struct module_loader); module_loader_idx++)
     {
@@ -225,19 +189,21 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
         extlen=strlen(module_loaders[module_loader_idx].ext);
         fext=request_id + ( strlen(request_id) - extlen  );
 
-        // we have a ".so" or a '.js'
         if( extlen && !strcmp(fext,module_loaders[module_loader_idx].ext) )
         {
-            rppath=rp_find_path((char*)request_id, "modules/", "lib/rampart_modules/", modpath);
+            rppath=rp_find_path((char*)request_id, "modules/");
+            if(!strlen(rppath.path))
+                rppath=rp_find_path((char*)request_id, "lib/rampart_modules/");
             id = (strlen(rppath.path))?rppath.path:NULL;
         }
         else
         {
-            // try adding '.so' or '.js'
             duk_push_string(ctx, request_id);
             duk_push_string(ctx, module_loaders[module_loader_idx].ext);
             duk_concat(ctx, 2);
-            rppath=rp_find_path((char *)duk_get_string(ctx,-1), "modules/", "lib/rampart_modules/", modpath);
+            rppath=rp_find_path((char *)duk_get_string(ctx,-1), "modules/");
+            if(!strlen(rppath.path))
+                rppath=rp_find_path((char *)duk_get_string(ctx,-1), "lib/rampart_modules/");
             id = (strlen(rppath.path))?rppath.path:NULL;
             duk_pop(ctx);
         }
@@ -252,9 +218,11 @@ static RPPATH resolve_id(duk_context *ctx, const char *request_id)
         return rppath;
     }
 
+    duk_push_object(ctx);
     duk_push_string(ctx, id);
+    duk_put_prop_string(ctx, -2, "id");
     duk_push_int(ctx, module_loader_idx);
-
+    duk_put_prop_string(ctx, -2, "module_loader_idx");
     return rppath;
 }
 
@@ -265,19 +233,14 @@ duk_ret_t duk_require(duk_context *ctx)
     return 1;
 }
 
+
 static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
 {
-    int force_reload=1, is_babel=0;
+    int force_reload=1;
     int module_loader_idx;
-    duk_idx_t global_stash_idx, module_idx, module_id_map_idx;
     const char *id, *p;
     const char *fn;
     RPPATH rppath;
-
-    duk_push_global_stash(ctx);
-    global_stash_idx = duk_get_top_index(ctx);
-    duk_get_prop_string(ctx, global_stash_idx, "module_id_map");
-    module_id_map_idx = duk_get_top_index(ctx);
 
     if(!name)
     {
@@ -288,17 +251,7 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
         fn = name;
     errno=0;
 
-    //no need to keep checking babel src over and over
-    if(strcmp(fn,"@babel")==0)
-    {
-        if(duk_get_prop_string(ctx, module_id_map_idx, "@babel"))
-            return 1;
-
-        fn++;
-        is_babel=1;
-    }
-
-    rppath = resolve_id(ctx, fn);//pushes id and module_loader_idx onto stack
+    rppath = resolve_id(ctx, fn);
     if(!strlen(rppath.path))
     {
         if(!name)
@@ -307,15 +260,26 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
             return 0;
     }
 
+    duk_get_prop_string(ctx, -1, "module_loader_idx");
     module_loader_idx = duk_get_int(ctx, -1);
-    id = duk_get_string(ctx, -2);
+
+    duk_get_prop_string(ctx, -2, "id");
+    id = duk_get_string(ctx, -1);
+
+    // get require() for later use
+    duk_push_global_object(ctx);
+    duk_get_prop_string(ctx, -1, "require");
+    duk_idx_t require_idx = duk_get_top_index(ctx);
+
+    duk_push_global_stash(ctx);
+    duk_get_prop_string(ctx, -1, "module_id_map");
+    duk_idx_t module_id_map_idx = duk_get_top_index(ctx);
 
     if(force_reload)
-    {
         duk_del_prop_string(ctx, -1, id);
-    }
+
     // if found the module in the module_id_map
-    if (duk_get_prop_string(ctx, module_id_map_idx, id))
+    if (duk_get_prop_string(ctx, -1, id))
     {
         time_t old_mtime;
 
@@ -342,16 +306,17 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
             }
         }
     }
+
     // module
-    module_idx = duk_push_object(ctx);
+    duk_idx_t module_idx = duk_push_object(ctx);
 
     // set prototype to be the global module
     duk_get_global_string(ctx, "module");
-    duk_set_prototype(ctx, module_idx);
+    duk_set_prototype(ctx, -2);
 
     // module.id
     duk_push_string(ctx, id);
-    duk_put_prop_string(ctx, module_idx, "id");
+    duk_put_prop_string(ctx, -2, "id");
 
     // module.path
     p = strrchr(id,'/');
@@ -360,28 +325,52 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
     else
         duk_push_string(ctx, "");        
 
-    duk_put_prop_string(ctx, module_idx, "path");
+    duk_put_prop_string(ctx, -2, "path");
 
     // module.exports
     duk_push_object(ctx);
-    duk_put_prop_string(ctx, module_idx, "exports");
+    duk_put_prop_string(ctx, -2, "exports");
 
     // store 'module' in 'module_id_map'
     duk_dup(ctx, module_idx);
     duk_put_prop_string(ctx, module_id_map_idx, id);
 
-    // if @babel store under @babel also
-    if(is_babel)
+    // push current module
+    duk_push_global_stash(ctx);
+    duk_get_prop_string(ctx, -1, "module_stack");
+    duk_push_string(ctx, "push");
+    duk_dup(ctx, module_idx);
+    duk_call_prop(ctx, -3, 1);
+
+    // get module source using loader
+    // the loader modifies module.exports
+
+    // FIXME: call this function directly and pass id, require_idx, module_idx to it
+    //        also add rppath so we don't have to stat again.
+    duk_push_c_function(ctx, module_loaders[module_loader_idx].loader, 3);
+    // id
+    duk_push_string(ctx, id);
+    // require
+    duk_dup(ctx, require_idx);
+    // module
+    duk_dup(ctx, module_idx);
+
+    if (duk_pcall(ctx, 3) != DUK_EXEC_SUCCESS)
     {
-        duk_dup(ctx, module_idx);
-        duk_put_prop_string(ctx, module_id_map_idx, "@babel");
+        if(!name)
+            return duk_throw(ctx);
+        else
+            return -1;
     }
 
-    // call appropriate module loader
-    (module_loaders[module_loader_idx].loader)(ctx, id, module_idx);
+    // pop current module
+    duk_push_global_stash(ctx);
+    duk_get_prop_string(ctx, -1, "module_stack");
+    duk_push_string(ctx, "pop");
+    duk_call_prop(ctx, -2, 0);
 
     // return module
-    duk_pull(ctx, module_idx);
+    duk_dup(ctx, module_idx);
     return 1;
 }
 
@@ -431,6 +420,10 @@ void duk_module_init(duk_context *ctx)
     duk_push_global_stash(ctx);
     duk_push_object(ctx);
     duk_put_prop_string(ctx, -2, "module_id_map");
+
+    // put module_stack in global stash
+    duk_push_array(ctx);
+    duk_put_prop_string(ctx, -2, "module_stack");
 
     duk_pop_2(ctx);
 }
