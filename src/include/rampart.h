@@ -537,6 +537,7 @@ char *to_utf8(const char *in_str);
 duk_ret_t duk_rp_values_from_object(duk_context *ctx, duk_idx_t idx);
 duk_ret_t duk_rp_read_file(duk_context *ctx);// rampart.utils.readFile()
 FILE *duk_rp_push_fopen_buffer(duk_context *ctx, size_t chunk);
+duk_ret_t duk_rp_push_current_module(duk_context *ctx);
 
 //returns a safe json-like string.  prints cyclic references as paths in object.
 //needs free
@@ -564,7 +565,9 @@ RPPATH {
     struct stat stat;
     char path[PATH_MAX];
 };
-RPPATH rp_find_path(char *file, char *subdir);
+RPPATH rp_find_path_vari(char *file, ...);
+#define rp_find_path(file, ...) rp_find_path_vari(file, __VA_ARGS__, NULL)
+
 int rp_mkdir_parent(const char *path, mode_t mode);
 RPPATH rp_get_home_path(char *file, char *subdir);
 
