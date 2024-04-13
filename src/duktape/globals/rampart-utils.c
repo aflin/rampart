@@ -93,254 +93,171 @@ int duk_rp_get_int_default(duk_context *ctx, duk_idx_t i, int def)
     }
     return (def);
 }
-/*
-    CURRENTLY UNUSED and UNTESTED
-
-* **************************************************
-   like duk_require_int but if string, converts
-   string to number with strtol
-   ************************************************** *
-int duk_rp_require_int(duk_context *ctx,duk_idx_t i) {
-  if(duk_is_number(ctx,i))
-    return duk_get_int(ctx,i);
-  if(duk_is_string(ctx,i))
-  {
-    char *end,*s=(char *)duk_get_string(ctx,i);
-    int ret=(int)strtol(s, &end, 10);
-
-    if (end!=s)
-      return (ret);
-  }
-
-  //throw standard error
-  return duk_require_int(ctx,i);
-}
-
-* **************************************************
-   like duk_get_number_default but if string, converts
-   string to number with strtod
-   ************************************************** *
-double duk_rp_get_number_default(duk_context *ctx,duk_idx_t i,double def) {
-  if(duk_is_number(ctx,i))
-    return duk_get_number_default(ctx,i,def);
-  if(duk_is_string(ctx,i))
-  {
-    char *end,*s=(char *)duk_get_string(ctx,i);
-    int ret=(double)strtod(s, &end);
-
-    if (end==s) return (def);
-      return (ret);
-  }
-  return (def);
-}
-
-* **************************************************
-   like duk_require_number but if string, converts
-   string to number with strtod
-   ************************************************** *
-int duk_rp_require_number(duk_context *ctx,duk_idx_t i) {
-  if(duk_is_number(ctx,i))
-    return duk_get_number_default(ctx,i,def);
-  if(duk_is_string(ctx,i))
-  {
-    char *end,*s=(char *)duk_get_string(ctx,i);
-    int ret=(int)strtod(s, &end);
-
-    if (end!=s)
-      return (ret);
-  }
-
-  //throw standard error
-  return duk_require_number(ctx,i);
-}
-*/
 
 /*  Find file searching standard directories
     check:
-    1) as given. -- if absolute, this will be found first
-    2) in scriptPath/file -- NO SUBDIR
-    3) in ./file --NO SUBDIR
-    4) in execpath/subdir/file
-    5) in ~/.rampart/subdir/file or if doesn't exist in /tmp/subdir/file (latter is for writing babel code)
+    1) if absolute (file starts with '/'), try that first
+    2) if in a module, in that module's path (first arg starts with '/')
+    3) in scriptPath/file -- NO SUBDIR
+    4) in scriptPath/subdir/file
+    5) in $HOME/subdir/file or /tmp/subdir/file
     6) in $RAMPART_PATH/subdir/file
-    7) in execpath/file -- questionable strategy, but allow running in github build dir from outside that dir.
+    7) in rampart_dir/file -- questionable strategy, but allow running in github build dir from outside that dir.
 */
 
-RPPATH rp_find_path(char *file, char *subdir)
+#define nstandard_locs 4
+
+typedef struct {
+    char * loc;
+    int    subpath;
+} standard_locs_t;
+
+#define NO_SUB 0
+#define SUB_ONLY 1
+#define PLUS_SUB 2
+
+char *home_dir=NULL, homewsub[PATH_MAX], *rampart_path=NULL;
+
+standard_locs_t standard_locs[nstandard_locs]={{0}};
+
+static void make_standard_locs()
 {
-    int nlocs=3;
-    /* look in these locations and in ./ */
-    char *locs[nlocs];
-    char *home=( getenv("HOME") ? getenv("HOME") : "/tmp" );
-    char *rampart_path=getenv("RAMPART_PATH");
-    char homedir[PATH_MAX];
-    char *sd= (subdir)?subdir:"";
+    static int have_standard_locks=0;
+
+    if(have_standard_locks)
+        return;
+
+
+    standard_locs[0].loc=RP_script_path;
+    standard_locs[0].subpath=PLUS_SUB;
+
+    if(home_dir)
+    {
+        strcpy(homewsub, home_dir);
+        strcat(homewsub, HOMESUBDIR);
+        standard_locs[1].loc=homewsub;
+    }
+    else
+        standard_locs[1].loc=NULL;
+    standard_locs[1].subpath=SUB_ONLY; 
+
+    standard_locs[2].loc=rampart_path; // /usr/local/rampart or /usr/local
+    standard_locs[2].subpath=SUB_ONLY;
+
+    standard_locs[3].loc=rampart_dir; //dir of executable
+    standard_locs[3].subpath=NO_SUB;
+
+    have_standard_locks=1;
+}
+
+RPPATH rp_find_path_vari(char *file, ...)
+{
+    int i=0;
+    va_list args;
     RPPATH ret={{0}};
-    char path[PATH_MAX];
-    int i=0, skiphome=0, plen, sd_file_len;
+    char *arg=NULL, path[PATH_MAX];
     struct stat sb;
+
+    //printf("looking for %s in paths\n", file);
 
     if(!file) return ret;
 
-    sd_file_len = strnlen(sd,PATH_MAX) + strnlen(file,PATH_MAX) + 1;
-
-    /* look for it as given before searching paths */
-    if (stat(file, &sb) != -1)
+    if(file[0]=='.' && file[1] == '/')
+        file+=2;
+    if(*file == '/')
     {
-        ret.stat=sb;
-        if(!realpath(file,ret.path))
-            strcpy(ret.path,file);
+        if (stat(file, &sb) != -1)
+        {
+            ret.stat=sb;
+            if(!realpath(file,ret.path))
+                strcpy(ret.path,file);
+        }
+        //go no further even if not found.
         return ret;
     }
 
-    /* look for it in scriptPath */
-    if( strlen(RP_script_path) + strnlen(file,PATH_MAX) + 2 < PATH_MAX)
-    {
-        strcpy(path,RP_script_path);
-        strcat(path,"/");
-        strcat(path,file);
+    make_standard_locs();
 
-        if (stat(path, &sb) != -1)
+    // check /abs/path/file first
+    va_start(args, file);
+    while((arg=va_arg(args, char *)))
+    {
+        if(arg && *arg == '/')
         {
-            ret.stat=sb;
-            if(!realpath(path,ret.path))
-                strcpy(ret.path,file);
-            return ret;
-        }
-    }
-
-    /* look for it in scriptPath/subdir/ */
-    if( subdir && strlen(RP_script_path) + strnlen(file,PATH_MAX) + strnlen(sd,PATH_MAX)+ 2 < PATH_MAX)
-    {
-        strcpy(path,RP_script_path);
-        strcat(path,"/");
-        strcat(path,sd);
-        strcat(path,file);
-
-        if (stat(path, &sb) != -1)
-        {
-            ret.stat=sb;
-            if(!realpath(path,ret.path))
-                strcpy(ret.path,file);
-            return ret;
-        }
-    }
-
-    // check for access to ~/
-    if ( access(home, R_OK)==-1 )
-    {
-        if (strcmp( home, "/tmp") != 0){
-            home="/tmp";
-            if ( access(home, R_OK)!=-1 )
-                goto home_accessok;
-        }
-        fprintf(stderr, "cannot access %s\nEither your home directory or \"/tmp\"\" should exist and be accessible.\n", home);
-        skiphome=1;
-    }
-
-    home_accessok:
-    plen = strnlen(home,PATH_MAX) + strlen(HOMESUBDIR) +1;
-    if(plen > PATH_MAX)
-        skiphome=1;
-    else
-    {
-        strcpy(homedir,home);
-        strcat(homedir,HOMESUBDIR); /* ~/.rampart */
-    }
-
-    locs[0]=rampart_dir; //this is set in cmdline.c based on path of executable
-
-    /* this should only happen if /tmp is not writable */
-    if(skiphome)
-    {
-        locs[1]=(rampart_path)?rampart_path:RP_INST_PATH;
-        nlocs=2;
-    }
-    else
-    {
-        locs[1]=homedir;
-        locs[2]=(rampart_path)?rampart_path:RP_INST_PATH;
-    }
-
-    /* start with cur dir "./" */
-    plen = strnlen(file,PATH_MAX) + 3;
-    if(plen > PATH_MAX)
-        return ret;
-    strcpy(path,"./");
-    strcat(path,file);
-
-
-    //look for it in ./, execpath, homedir, rampart_path
-    while(1) {
-        // first loop uses "./" above, next loop uses path set below
-        if (stat(path, &sb) != -1)
-        {
-            goto path_found;
-        }
-
-        make_path:
-
-        if(i>=nlocs)
-            break;
-
-        plen = sd_file_len; //lenght of sd + file + 1
-
-        //add one for missing trailing '/'
-        if(locs[i][strlen(locs[i])-1] != '/')
-            plen++;
-
-        plen += strlen(locs[i]);
-
-        //check if path is too long
-        if( strlen(locs[i]) + plen + 1 > PATH_MAX) {
-            i++; //skip this one
-            goto make_path;
-        }
-
-        strcpy(path,locs[i]);
-
-        /* in case locs[i] doesn't have trailing '/' */
-        if(locs[i][strlen(locs[i])-1] != '/')
+            strcpy(path,arg);
             strcat(path,"/");
+            strcat(path,file);
+            //printf("looking for %s\n", path);
+            if (stat(path, &sb) != -1)
+            {
+                ret.stat=sb;
+                if(!realpath(path,ret.path))
+                    strcpy(ret.path,file);
+                return ret;
+            }
 
-        strcat(path,sd);
-        strcat(path,file);
-
-        i++;
-        //back to top of while to check path
+        }
     }
+    va_end(args);
 
-    //look in rampart_dir path with no subdir
-    if( strnlen(rampart_dir, PATH_MAX) + strnlen(file,PATH_MAX) + 2 < PATH_MAX)
+    for(i=0;i<nstandard_locs; i++)
     {
-        strcpy(path,rampart_dir);
-        strcat(path,"/");
-        strcat(path,file);
-        if (stat(path, &sb) != -1)
-            goto path_found;
-    }
+        if(standard_locs[i].loc==NULL)
+            continue;
 
-    //look in rampart_bin path with no subdir
-    if( strnlen(rampart_bin, PATH_MAX) + strnlen(file,PATH_MAX) + 2 < PATH_MAX)
-    {
-        strcpy(path,rampart_bin);
-        strcat(path,"/");
-        strcat(path,file);
-        if (stat(path, &sb) != -1)
-            goto path_found;
+        // check /standard_loc/file
+        if(standard_locs[i].subpath==NO_SUB || standard_locs[i].subpath==PLUS_SUB)
+        {
+            strcpy(path, standard_locs[i].loc);
+            strcat(path,"/");
+            strcat(path,file);
+
+            //printf("looking for %s\n", path);
+
+            if (stat(path, &sb) != -1)
+            {
+                ret.stat=sb;
+                if(!realpath(path,ret.path))
+                    strcpy(ret.path,file);
+                return ret;
+            }
+        }
+
+        if(standard_locs[i].subpath==NO_SUB) 
+            continue;
+
+        //PLUS_SUB && SUB_ONLY
+        va_start(args, file);
+        // check /standard_loc/subpath1/file, /standard_loc/subpath2/file, ..
+
+        while((arg=va_arg(args, char *)))
+        {
+            if(*arg != '/') //relative paths
+            {
+                // check length here
+
+                strcpy(path, standard_locs[i].loc);
+                strcat(path,"/");
+                strcat(path, arg);
+                if(arg[strlen(arg)-1] != '/')
+                    strcat(path,"/");
+                strcat(path,file);
+
+                //printf("looking for %s\n", path);
+
+                if (stat(path, &sb) != -1)
+                {
+                    ret.stat=sb;
+                    if(!realpath(path,ret.path))
+                        strcpy(ret.path,file);
+                    return ret;
+                }
+            }
+        }
     }
 
     //not found
     ret.path[0]='\0';
-    return ret;
-
-    //found it above
-    path_found:
-
-    ret.stat=sb;
-    if(!realpath(path,ret.path))
-        strcpy(ret.path,path);
-
     return ret;
 }
 
@@ -908,6 +825,19 @@ void duk_process_init(duk_context *ctx)
     int i=0;
     char *env;
 
+    home_dir=getenv("HOME");
+
+    if ( !home_dir || access(home_dir, R_OK)==-1 )
+    {
+        home_dir="/tmp";
+        if(access(home_dir, R_OK)==-1)
+            home_dir=NULL;
+    }
+
+    rampart_path=getenv("RAMPART_PATH");
+    if(rampart_path && access(rampart_path, R_OK)==-1)
+        rampart_path=NULL;
+
     duk_push_global_object(ctx);
     /* get global symbol "process" */
     if(!duk_get_prop_string(ctx,-1,"process"))
@@ -1018,9 +948,7 @@ void duk_process_init(duk_context *ctx)
         i=0;
         while(module_name[i])
         {
-            rp=rp_find_path(module_name[i], "lib/rampart_modules/");
-            if(!strlen(rp.path))
-                rp=rp_find_path(module_name[i], "modules/");
+            rp=rp_find_path(module_name[i], "modules/", "lib/rampart_modules/");
 
             if(strlen(rp.path))
                 break;
@@ -3636,173 +3564,7 @@ duk_ret_t duk_rp_nsleep(duk_context *ctx)
     nanosleep(&stime,NULL);
     return 0;
 }
-/*
-// TODO: Convert ulocks to rampart_locks
-#define ULOCK struct utils_mlock_s
 
-ULOCK {
-    pthread_mutex_t lock;
-    char *name;
-};
-static int nulocks=0;
-
-static ULOCK **ulocks=NULL;
-
-pthread_mutex_t ulock_lock;
-
-#define LOCK_ULOCK do {\
-    if (pthread_mutex_lock(&ulock_lock) != 0)\
-        {fprintf(stderr,"could not obtain lock for mlock\n");exit(1);}\
-} while(0)
-
-#define UNLOCK_ULOCK  do{\
-    if (pthread_mutex_unlock(&ulock_lock) != 0)\
-        {fprintf(stderr,"could not release lock for mlock\n");exit(1);}\
-} while(0)
-
-
-#define CREATE_LOCK 0
-#define NO_CREATE_LOCK 1
-#define DEL_LOCK 2
-
-//mode=0 - create lock if not found
-//mode=1 - return existing or NULL
-//mode=2 - mark unused if exists
-pthread_mutex_t * get_lock(const char *name, int mode)
-{
-    int i=0, first_unused=-1;
-    ULOCK *l=NULL;
-
-    LOCK_ULOCK;
-    //find existing
-    while(i<nulocks)
-    {
-        l=ulocks[i];
-        if(l->name!=NULL && !strcmp(l->name,name))
-        {
-            if(mode != DEL_LOCK) // if CREATE_LOCK or NO_CREATE_LOCK, return found lock
-            {
-                UNLOCK_ULOCK;
-                return(&(l->lock));
-            }
-            else //if DEL_LOCK, free name, mark as unused
-            {
-                free(l->name);
-                l->name=NULL;
-                UNLOCK_ULOCK;
-                return NULL;
-            }
-        }
-        if(first_unused<0 && l->name==NULL)
-            first_unused=i;
-        i++;
-    }
-    //doesn't exist, if NO_CREATE_LOCK or DEL_LOCK, return NULL
-    if(mode!=CREATE_LOCK)
-    {
-        UNLOCK_ULOCK;
-        return NULL;
-    }
-
-    // if CREATE_LOCK:
-
-    // there's an empty slot, use it.
-    if(first_unused>-1)
-    {
-        l=ulocks[first_unused];
-        l->name=strdup(name);
-        UNLOCK_ULOCK;
-        return(&(l->lock));
-    }
-
-    //mode=0 and doesn't exist, create the struct, init the lock
-    nulocks++;
-    REMALLOC(ulocks, nulocks * sizeof(ULOCK *) );
-    l=NULL;
-    REMALLOC(l,sizeof(ULOCK));
-    ulocks[nulocks-1]=l;
-
-    if (pthread_mutex_init(&(l->lock), NULL) == EINVAL)
-    {
-        UNLOCK_ULOCK;
-        return NULL; //with CREATE_LOCK NULL=error
-    }
-    l->name=strdup(name);
-    UNLOCK_ULOCK;
-    return(&(l->lock));
-}
-
-duk_ret_t duk_rp_mlock_fin(duk_context *ctx)
-{
-    const char *name;
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("mlock_name"));
-    name=duk_get_string(ctx, -1);
-    get_lock(name, DEL_LOCK);
-    return 0;
-}
-
-duk_ret_t duk_rp_mlock_destroy (duk_context *ctx)
-{
-    duk_push_this(ctx);
-
-    return duk_rp_mlock_fin(ctx);
-}
-
-duk_ret_t duk_rp_mlock_constructor(duk_context *ctx)
-{
-    pthread_mutex_t *newlock;
-    const char *lockname;
-
-    if (!duk_is_constructor_call(ctx))
-        RP_THROW(ctx, "rampart.utils.mlock is a constructor (must be called with 'new rampart.utils.mlock()')");
-
-    lockname=REQUIRE_STRING(ctx, 0, "rampart.utils.mlock - String required as first/only parameter (lock_name)");
-
-    duk_push_this(ctx);
-    duk_push_string(ctx, lockname);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("mlock_name"));
-
-    newlock=get_lock(lockname, CREATE_LOCK);
-
-    if(!newlock)
-        RP_THROW(ctx, "new rampart.utils.mlock - internal error creating lock");
-    return 0;
-}
-
-duk_ret_t duk_rp_mlock_lock (duk_context *ctx)
-{
-    pthread_mutex_t *lock;
-    const char *name;
-
-    duk_push_this(ctx);
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("mlock_name"));
-    name=duk_get_string(ctx, -1);
-    lock = get_lock(name, NO_CREATE_LOCK);
-
-    if(!lock)
-        RP_THROW(ctx, "mlock(): error - lock already destroyed");
-    if (pthread_mutex_lock(lock) != 0)
-        RP_THROW(ctx, "mlock(): error - could not obtain lock");
-    return 0;
-}
-
-duk_ret_t duk_rp_mlock_unlock (duk_context *ctx)
-{
-    pthread_mutex_t *lock;
-    const char *name;
-
-    duk_push_this(ctx);
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("mlock_name"));
-    name=duk_get_string(ctx, -1);
-    lock = get_lock(name, NO_CREATE_LOCK);
-
-    if(!lock)
-        RP_THROW(ctx, "munlock(): error - lock already destroyed");
-    if (pthread_mutex_unlock(lock) != 0)
-        RP_THROW(ctx, "munlock(): error - could not obtain lock");
-    return 0;
-}
-*/
 static duk_ret_t include_js(duk_context *ctx)
 {
     const char *script= REQUIRE_STRING(ctx, -1, "rampart.include: - parameter must be a String (path of script to include)" );
