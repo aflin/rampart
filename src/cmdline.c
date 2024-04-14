@@ -2798,6 +2798,8 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                 }
                 break;
             default:
+// this gets utf-8 2-4 lenght chars as well.  If not valid in a var or function name, that's fine.
+// duktape will catch it anyway.  It is mostly about excluding invalid single byte utf-8
 #define islegitchar(x) ( ((unsigned char)(x)) > 0x79 || (x) == '$' || (x) == '_' || isalnum((x)) )
                 if (getstate() == ST_NONE)
                 {
@@ -2901,13 +2903,18 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                         else if (*in ==')')
                             infuncp=0;
                     }
-
                     if (!startexp && *in == '(')
                     {
                         char *s = in -1;
                         while (s>src && isspace(*s))s--;
                         while (s>src && islegitchar(*s) )s--;
-                        s++;
+                        /* if not at the very beginning of file
+                           or if at beginning and char is not legit.
+                           example, if this is your entire file (excluding >>, <<):
+                           >>(function ʱ(strings, ...keys) {console.log(strings);console.log(keys);})`arg1 = ${process.argv[0]} and arg2 = ${process.argv[1]}`<<
+                        */
+                        if(s!=src || !islegitchar(*s))
+                            s++;
                         /* anonymous function */
                         if (!strncmp(s,"function",8))
                         {
@@ -2919,8 +2926,9 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
                             if( isspace(*s) )
                             {
                                 while (s>src && isspace(*s))s--;
-                                while ( s>src && islegitchar(*s) )s--;
-                                s++;
+                                while (s>src && islegitchar(*s) )s--;
+                                if(s!=src || !islegitchar(*s)) //if not at the very beginning of file
+                                    s++;
                                 if (!strncmp(s,"function",8))
                                 {
                                     infuncp=1;
