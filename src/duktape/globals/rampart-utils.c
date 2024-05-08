@@ -122,9 +122,9 @@ standard_locs_t standard_locs[nstandard_locs]={{0}};
 
 static void make_standard_locs()
 {
-    static int have_standard_locks=0;
+    static int have_standard_locs=0;
 
-    if(have_standard_locks)
+    if(have_standard_locs)
         return;
 
 
@@ -141,13 +141,13 @@ static void make_standard_locs()
         standard_locs[1].loc=NULL;
     standard_locs[1].subpath=SUB_ONLY; 
 
-    standard_locs[2].loc=rampart_path; // /usr/local/rampart or /usr/local
-    standard_locs[2].subpath=SUB_ONLY;
+    standard_locs[2].loc=rampart_path; // env RAMPART_PATH
+    standard_locs[2].subpath=NO_SUB;
 
     standard_locs[3].loc=rampart_dir; //dir of executable
-    standard_locs[3].subpath=NO_SUB;
+    standard_locs[3].subpath=SUB_ONLY;
 
-    have_standard_locks=1;
+    have_standard_locs=1;
 }
 
 RPPATH rp_find_path_vari(char *file, ...)
