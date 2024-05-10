@@ -87,7 +87,7 @@ function _qToO(qs) {
         if(pos > 0 ) {
             comp[decodeURIComponent(pair.substring(0,pos))] = decodeURIComponent(pair.substring(pos+1));
         } else {
-            comp[j++]=decodeURIComponent(pair);
+            comp[decodeURIComponent(pair)]=true;
         }
     }
 
@@ -535,15 +535,15 @@ if(ismod) {
            "path": "/this/",
            "fullPath": "/this/that.html",
            "queryString": {
-              "raw": "/my/dir&x=%2fyour/dir/",
+              "raw": "%2fmy/dir&x=%2fyour/dir/",
               "components": {
                  "/my/dir" : true,
                  "x": "/your/dir/"
               }
            },
            "hash": "",
-           "url": "https://rampart.dev:8088/this/that.html?/my/dir&x=%2fyour/dir/",
-           "href": "https://rampart.dev:8088/this/that.html?/my/dir&x=%2fyour/dir/",
+           "url": "https://rampart.dev:8088/this/that.html?%2fmy/dir&x=%2fyour/dir/",
+           "href": "https://rampart.dev:8088/this/that.html?%2fmy/dir&x=%2fyour/dir/",
            "portText": "8088",
            "port": 8088,
            "file": "that.html"
@@ -643,7 +643,7 @@ if(ismod) {
     test = [
         "https://rampart.dev:8088/this/THAT.html?dir=/my/dir",
         "https://rampart.dev:8088/this/that.html?/my/dir",
-        "https://rampart.dev:8088/this/that.html?/my/dir&x=%2fyour/dir/",
+        "https://rampart.dev:8088/this/that.html?%2fmy/dir&x=%2fyour/dir/",
         "https://rampart.dev?dir=/my/dir#placemarker",
         "ftp://username:password@rampart.dev/path/to/my/stuff.tar.gz",
         "file:///usr/local/src/../myfile.txt",
@@ -661,7 +661,7 @@ if(ismod) {
                 if( e[key] != r[key] )
                 {
                     console.log(`Expecting "${e[key]}", got "${r[key]}"`)
-                    printf("%3J\n", r);
+                    //printf("%3J\n", r);
                 }
                 ret = ret &&  e[key] == r[key];
             }

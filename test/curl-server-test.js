@@ -16,6 +16,8 @@ var Sql=require("rampart-sql");
 
 var sql= new Sql.init(process.scriptPath+"/testdb",true); /* true means create the database if it doesn't exist */
 
+var iam = trim(exec('whoami').stdout);
+
 var pid=0;
 /* ******************************************************
     Setup of tables for server callback function tests 
@@ -100,6 +102,12 @@ if(!stat("smods"))
     mkdir(process.scriptPath + "/smods");
     fprintf(process.scriptPath + "/smods/testmod.js", '%s',
         "module.exports=function(res){return {text:'test'} }\n");
+
+    if(iam == 'root')
+    {
+        chown({user:"nobody", path: process.scriptPath + "/smods"});
+        chown({user:"nobody", path: process.scriptPath + "/smods/testmod.js"});
+    }
 }
 
 var globalvar1={};

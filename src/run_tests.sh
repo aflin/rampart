@@ -3,8 +3,14 @@
 # This file will be placed in the install directory and can be run from there.
 
 if [ `whoami` == 'root' ]; then
-    echo "Some tests will fail if run as root. Switch to a non-root user to run tests."
-    exit 1;
+    echo "Some tests may fail if run as root."
+    read -p "Continue? " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]] ; then
+        echo
+    else
+    	exit
+    fi
 fi
 
 for i in `ls test/*-test.js`; do
