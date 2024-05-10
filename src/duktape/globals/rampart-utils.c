@@ -310,7 +310,7 @@ RPPATH rp_get_home_path(char *file, char *subdir)
     char *home=getenv("HOME");
     char *sd= (subdir)?subdir:"";
     size_t plen;
-    RPPATH ret={0};
+    RPPATH ret={{0}};
     mode_t mode=0755;
 
     if( !home || access(home, W_OK)==-1 )
@@ -1197,15 +1197,20 @@ void duk_rp_push_lstring_or_jsonob(duk_context *ctx, char *s, size_t l)
 
 static void pushqelem(duk_context *ctx, char *s, size_t l)
 {
-    char *eq=(char *)memmem(s,l,"=",1);
+    char *key, *eq=(char *)memmem(s,l,"=",1);
+    int keyl;
 
     if (eq)
     {
-        int keyl=eq-s;
-        int vall=l-(keyl+1);
-        char *key=duk_rp_url_decode(s,&keyl);
-        char *val=duk_rp_url_decode(eq+1,&vall);
+        int vall;
+        char *val;
         duk_size_t arrayi;
+
+        keyl=eq-s;
+        key = duk_rp_url_decode(s,&keyl);
+        vall=l-(keyl+1);
+        val=duk_rp_url_decode(eq+1,&vall);
+
 
         if( keyl > 2 && *(key+keyl-1)==']' && *(key+keyl-2)=='[')
         {   /* its an array with brackets */
@@ -1315,8 +1320,13 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
     }
 
     // no equals '=' in 
+    keyl = l;
+    key = duk_rp_url_decode(s,&keyl);
+
     duk_push_true(ctx);
-    duk_put_prop_lstring(ctx, -2, s, l);
+    duk_put_prop_lstring(ctx, -2, key, keyl);
+
+    free(key);
 
 }
 
