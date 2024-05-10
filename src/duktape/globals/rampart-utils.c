@@ -102,7 +102,7 @@ int duk_rp_get_int_default(duk_context *ctx, duk_idx_t i, int def)
     4) in scriptPath/subdir/file
     5) in $HOME/subdir/file or /tmp/subdir/file
     6) in $RAMPART_PATH/subdir/file
-    7) in rampart_dir/file -- questionable strategy, but allow running in github build dir from outside that dir.
+    7) in rampart_dir/modules/file -- install dir and subdir 
 */
 
 #define nstandard_locs 4
@@ -144,12 +144,14 @@ static void make_standard_locs()
     standard_locs[2].loc=rampart_path; // env RAMPART_PATH
     standard_locs[2].subpath=NO_SUB;
 
-    standard_locs[3].loc=rampart_dir; //dir of executable
+    standard_locs[3].loc=rampart_dir; //install dir of executable, minus the "/bin"
     standard_locs[3].subpath=SUB_ONLY;
 
     have_standard_locs=1;
 }
 
+//#define rp_find_path(file, ...) rp_find_path_vari(file, __VA_ARGS__, NULL) - in rampart.h
+//when using rp_find_path, the list is terminated with a null
 RPPATH rp_find_path_vari(char *file, ...)
 {
     int i=0;
@@ -178,7 +180,8 @@ RPPATH rp_find_path_vari(char *file, ...)
 
     make_standard_locs();
 
-    // check /abs/path/file first
+    // normaly all args are relative subdirs
+    // if we have an absolute one (like a module.path), check there first
     va_start(args, file);
     while((arg=va_arg(args, char *)))
     {
@@ -195,7 +198,6 @@ RPPATH rp_find_path_vari(char *file, ...)
                     strcpy(ret.path,file);
                 return ret;
             }
-
         }
     }
     va_end(args);

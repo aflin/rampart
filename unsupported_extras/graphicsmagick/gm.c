@@ -37,8 +37,8 @@
     images.mogrify("-blur 20x30");      //or
     images.mogrify("-blur", "20x30");   //or
     images.mogrify("blur", "20x30");    //or
-    images.mogrify({"-blur", "20x30);   //or
-    images.mogrify({"blur", "20x30);
+    images.mogrify({"-blur": "20x30"});   //or
+    images.mogrify({"blur": "20x30"});
 
     //example 2:
     images.mogrify("-blur 20x30 -auto-orient +contrast");      //or

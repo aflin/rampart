@@ -515,7 +515,7 @@ if(ismod) {
            "queryString": {
               "raw": "/my/dir",
               "components": {
-                 "0": "/my/dir"
+                 "/my/dir": true
               }
            },
            "hash": "",
@@ -535,15 +535,15 @@ if(ismod) {
            "path": "/this/",
            "fullPath": "/this/that.html",
            "queryString": {
-              "raw": "%2fmy/dir&x=%2fyour/dir/",
+              "raw": "/my/dir&x=%2fyour/dir/",
               "components": {
-                 "0": "/my/dir",
+                 "/my/dir" : true,
                  "x": "/your/dir/"
               }
            },
            "hash": "",
-           "url": "https://rampart.dev:8088/this/that.html?%2fmy/dir&x=%2fyour/dir/",
-           "href": "https://rampart.dev:8088/this/that.html?%2fmy/dir&x=%2fyour/dir/",
+           "url": "https://rampart.dev:8088/this/that.html?/my/dir&x=%2fyour/dir/",
+           "href": "https://rampart.dev:8088/this/that.html?/my/dir&x=%2fyour/dir/",
            "portText": "8088",
            "port": 8088,
            "file": "that.html"
@@ -643,7 +643,7 @@ if(ismod) {
     test = [
         "https://rampart.dev:8088/this/THAT.html?dir=/my/dir",
         "https://rampart.dev:8088/this/that.html?/my/dir",
-        "https://rampart.dev:8088/this/that.html?%2fmy/dir&x=%2fyour/dir/",
+        "https://rampart.dev:8088/this/that.html?/my/dir&x=%2fyour/dir/",
         "https://rampart.dev?dir=/my/dir#placemarker",
         "ftp://username:password@rampart.dev/path/to/my/stuff.tar.gz",
         "file:///usr/local/src/../myfile.txt",
@@ -659,7 +659,10 @@ if(ismod) {
             for (var j = 0; j<testkeys.length;j++) {
                 var key = testkeys[j];
                 if( e[key] != r[key] )
-                    console.log(`expecting "${e[key]}", got "${r[key]}"`)
+                {
+                    console.log(`Expecting "${e[key]}", got "${r[key]}"`)
+                    printf("%3J\n", r);
+                }
                 ret = ret &&  e[key] == r[key];
             }
             if(e.queryString.components) {
@@ -670,7 +673,10 @@ if(ismod) {
                 for (var k=0;k<qkeys.length;k++) {
                     var qkey = qkeys[k];
                     if (ecomp[qkey] != rcomp[qkey])
-                    console.log(`expecting "${ecomp[qkey]}", got "${rcomp[qkey]}"`);
+                    {
+                        console.log(`expecting "${ecomp[qkey]}", got "${rcomp[qkey]}"`);
+                        printf("%3J\n", r);
+                    }
                     ret = ret &&  ecomp[qkey] == rcomp[qkey];
                 }
             }
