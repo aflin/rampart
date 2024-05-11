@@ -798,6 +798,15 @@ install(CODE "execute_process( \
     )"
 )
 
+# licenses
+install(DIRECTORY DESTINATION "${CMAKE_INSTALL_PREFIX}/licenses")
+install(CODE "execute_process( \
+    COMMAND ${CMAKE_COMMAND} -E copy_directory \
+    \"${PROJECT_SOURCE_DIR}/licenses\" \
+    \"${CMAKE_INSTALL_PREFIX}/licenses\"   \
+    )"
+)
+
 install(CODE "execute_process ( \
     COMMAND bash -c \"chown -R nobody ${CMAKE_INSTALL_PREFIX}/web_server\"
  )"
