@@ -4180,17 +4180,18 @@ static int getmod(DHS *dhs)
         {
             duk_get_prop_string(ctx, -1, "stack");
             printerr("error loading module: '%s' - '%s'\n", modname, duk_safe_to_string(ctx, -1));
-            duk_pop(ctx);
-            send500(dhs->req, (char*)duk_safe_to_string(ctx, -1));
+            duk_push_sprintf(ctx, "In module %s:\n%s\n", modname, duk_safe_to_string(ctx, -1));
+            send500(dhs->req, (char*)duk_get_string(ctx, -1));
         }
         else if ( duk_is_string(ctx, -1))
         {
             printerr("error loading module: '%s' - '%s'\n", modname, duk_safe_to_string(ctx, -1));
-            send500(dhs->req, (char*)duk_safe_to_string(ctx, -1));
+            duk_push_sprintf(ctx, "In module %s:\n%s\n", modname, duk_safe_to_string(ctx, -1));
+            send500(dhs->req, (char*)duk_get_string(ctx, -1));
         }
         else
         {
-            printerr("error loading module '%s': Unknown error", modname);
+            printerr("error loading module '%s' - Unknown error", modname);
             send500(dhs->req, "Unknown error");
         }
         //duk_pop_2(ctx);

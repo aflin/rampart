@@ -115,18 +115,26 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
         duk_push_string(ctx, file);
 
     /* 
-       DO NOT CALL duk_compile(ctx, DUK_COMPILE_FUNCTION)
-       It will miss errors like unbalanced {} where
-       there is a missing {
+        execute (function(module,exports) {...})(module,exports);
+        1) compile and call "function(){...}", which leaves function on stack
+        2) call compiled function with args (module,exports)
     */
-    duk_compile(ctx, DUK_COMPILE_EVAL);
-    duk_call(ctx,0);
-    //TODO: revisit and rethink pcall
-    //    if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
-    //        fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+    if(is_server)
+    {
+        if( duk_pcompile(ctx, DUK_COMPILE_EVAL) != 0)
+            return 0;
+        if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
+            return 0;
+    }
+    else
+    {
+        duk_compile(ctx, DUK_COMPILE_EVAL);
+        duk_call(ctx,0);
+    }
 
     duk_dup(ctx, module_idx);
     duk_get_prop_string(ctx, -1, "exports");
+
     if(is_server)
     {
         if (duk_pcall(ctx, 2) == DUK_EXEC_ERROR)
