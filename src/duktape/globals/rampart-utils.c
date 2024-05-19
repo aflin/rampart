@@ -145,7 +145,9 @@ static void make_standard_locs()
     standard_locs[2].subpath=NO_SUB;
 
     standard_locs[3].loc=rampart_dir; //install dir of executable, minus the "/bin"
-    standard_locs[3].subpath=SUB_ONLY;
+    standard_locs[3].subpath=PLUS_SUB; // plus_sub here allows running from souce build
+                                       // i.e. /usr/local/src/rampart/build/src/rampart
+                                       // from another directory/folder
 
     have_standard_locs=1;
 }
@@ -163,11 +165,13 @@ RPPATH rp_find_path_vari(char *file, ...)
     //printf("looking for %s in paths\n", file);
 
     if(!file) return ret;
+    //int n=1;
 
     if(file[0]=='.' && file[1] == '/')
         file+=2;
     if(*file == '/')
     {
+        //printf("0: checking %s\n", file);
         if (stat(file, &sb) != -1)
         {
             ret.stat=sb;
@@ -190,7 +194,7 @@ RPPATH rp_find_path_vari(char *file, ...)
             strcpy(path,arg);
             strcat(path,"/");
             strcat(path,file);
-            //printf("looking for %s\n", path);
+            //printf("%d: checking %s\n", n++, path);
             if (stat(path, &sb) != -1)
             {
                 ret.stat=sb;
@@ -214,7 +218,7 @@ RPPATH rp_find_path_vari(char *file, ...)
             strcat(path,"/");
             strcat(path,file);
 
-            //printf("looking for %s\n", path);
+            //printf("%d: checking %s\n", n++, path);
 
             if (stat(path, &sb) != -1)
             {
@@ -245,7 +249,7 @@ RPPATH rp_find_path_vari(char *file, ...)
                     strcat(path,"/");
                 strcat(path,file);
 
-                //printf("looking for %s\n", path);
+                //printf("%d: checking %s\n", n++, path);
 
                 if (stat(path, &sb) != -1)
                 {

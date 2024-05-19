@@ -46,7 +46,7 @@ duk_ret_t duk_rp_push_current_module(duk_context *ctx)
 
 static pthread_mutex_t modlock = PTHREAD_MUTEX_INITIALIZER;
 
-typedef void (*module_load_function) (duk_context *ctx, const char *id, duk_idx_t module_idx);
+typedef int (*module_load_function) (duk_context *ctx, const char *id, duk_idx_t module_idx, int is_server);
 
 struct module_loader
 {
@@ -54,7 +54,7 @@ struct module_loader
     module_load_function loader;
 };
 
-static void load_js_module(duk_context *ctx, const char *file, duk_idx_t module_idx)
+static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_idx, int is_server)
 {
     struct stat sb;
     const char *bfn=NULL;
@@ -127,15 +127,19 @@ static void load_js_module(duk_context *ctx, const char *file, duk_idx_t module_
 
     duk_dup(ctx, module_idx);
     duk_get_prop_string(ctx, -1, "exports");
-    duk_call(ctx, 2);
-    //    if (duk_pcall(ctx, 2) == DUK_EXEC_ERROR)
-    //        fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+    if(is_server)
+    {
+        if (duk_pcall(ctx, 2) == DUK_EXEC_ERROR)
+            return 0;
+    }
+    else
+        duk_call(ctx, 2);
 
     duk_pop(ctx);
-    return;
+    return 1;
 }
 
-static void load_so_module(duk_context *ctx, const char *file, duk_idx_t module_idx)
+static int load_so_module(duk_context *ctx, const char *file, duk_idx_t module_idx, int is_server)
 {
     pthread_mutex_lock(&modlock);
     void *lib = dlopen(file, RTLD_GLOBAL|RTLD_NOW); // --RTLD_GLOBAL is necessary for python to load .so modules properly
@@ -188,11 +192,11 @@ static void load_so_module(duk_context *ctx, const char *file, duk_idx_t module_
         if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
         {
             RP_THROW(ctx, "Error loading module '%s'", file);
-            return;
+            return 0;
         }
         duk_put_prop_string(ctx, module_idx, "exports");
     }
-    return;
+    return 1;
 }
 
 struct module_loader module_loaders[] = {
@@ -265,6 +269,8 @@ duk_ret_t duk_require(duk_context *ctx)
     return 1;
 }
 
+// If name is not null, we are calling from rampart-server.
+// In that case, always force reload, and use pcall
 static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
 {
     int force_reload=1, is_babel=0;
@@ -378,7 +384,8 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
     }
 
     // call appropriate module loader
-    (module_loaders[module_loader_idx].loader)(ctx, id, module_idx);
+    if(! (module_loaders[module_loader_idx].loader)(ctx, id, module_idx, (name)?1:0 ) )
+        return -1;
 
     // return module
     duk_pull(ctx, module_idx);
@@ -392,23 +399,21 @@ duk_ret_t duk_resolve(duk_context *ctx)
 
 int duk_rp_resolve(duk_context *ctx, const char *name)
 {
-    duk_idx_t idx=duk_get_top_index(ctx) + 1;
+    duk_idx_t idx=duk_get_top(ctx);// i.e. duk_get_top_index(ctx) + 1;
     int ret = (int)_duk_resolve(ctx, name);
 
     /* always return start stack size + 1
        for consistency in stack size
     */
-    if (ret == 0)
-    {
-        duk_push_undefined(ctx);
-    }
 
     duk_insert(ctx, idx);
  
-    while (duk_get_top_index(ctx) > idx)
+/*    while (duk_get_top_index(ctx) > idx)
     {
         duk_pop(ctx);
     }
+*/
+    duk_set_top(ctx, idx+1);
     return ret;   
 }
 
