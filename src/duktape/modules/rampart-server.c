@@ -4178,9 +4178,17 @@ static int getmod(DHS *dhs)
     {
         if (duk_is_error(ctx, -1) )
         {
+            const char *s;
             duk_get_prop_string(ctx, -1, "stack");
-            printerr("error loading module: '%s' - '%s'\n", modname, duk_safe_to_string(ctx, -1));
-            duk_push_sprintf(ctx, "In module %s:\n%s\n", modname, duk_safe_to_string(ctx, -1));
+            s=duk_safe_to_string(ctx, -1);
+            // 404 for trying to load a directory
+            if(strstr(s, "Is a directory"))
+            {
+                send404(dhs->req);
+                return -1;
+            }
+            printerr("error loading module: '%s' - '%s'\n", modname, s);
+            duk_push_sprintf(ctx, "In module %s:\n%s\n", modname, s);
             send500(dhs->req, (char*)duk_get_string(ctx, -1));
         }
         else if ( duk_is_string(ctx, -1))
@@ -4254,7 +4262,7 @@ static int getmod_path(DHS *dhs)
     duk_get_prop_index(ctx, 0, (duk_uarridx_t)idx);
     duk_get_prop_string(dhs->ctx,-1,"modulePath");
     modpath=duk_get_string(dhs->ctx,-1);
-
+//printf("modpath=%s, path=%s\n", modpath, path->full);
     mplen=strlen(modpath);
     duk_pop(ctx);
     if(stat(modpath, &pathstat)== -1)

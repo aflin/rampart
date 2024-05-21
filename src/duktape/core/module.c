@@ -54,12 +54,20 @@ struct module_loader
     module_load_function loader;
 };
 
+// push error, throw if not server
+#define MOD_THROW(ctx,...) do {\
+    duk_push_error_object(ctx, DUK_ERR_ERROR, __VA_ARGS__);\
+    if(is_server) return 0;\
+    (void) duk_throw(ctx);\
+} while(0)
+
+
 static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_idx, int is_server)
 {
     struct stat sb;
     const char *bfn=NULL;
     if (stat(file, &sb))
-        RP_THROW(ctx, "Could not open %s: %s\n", file, strerror(errno));
+        MOD_THROW(ctx, "Could not open %s: %s\n", file, strerror(errno));
 
     duk_push_number(ctx, sb.st_mtime);
     duk_put_prop_string(ctx, module_idx, "mtime");
@@ -68,12 +76,12 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
 
     FILE *f = fopen(file, "r");
     if (!f)
-        RP_THROW(ctx, "Could not open %s: %s\n", file, strerror(errno));
+        MOD_THROW(ctx, "Could not open %s: %s\n", file, strerror(errno));
 
     char *buffer = malloc(sb.st_size + 1);
     size_t len = fread(buffer, 1, sb.st_size, f);
     if (sb.st_size != len)
-        RP_THROW(ctx, "Error loading file %s: %s\n", file, strerror(errno));
+        MOD_THROW(ctx, "Error loading file %s: %s\n", file, strerror(errno));
 
     buffer[sb.st_size]='\0';
     duk_push_string(ctx, "(function (module, exports) { ");
@@ -93,7 +101,7 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
             buffer = tickified;
             if (err)
             {
-                RP_THROW(ctx, "SyntaxError: %s (line %d)\n    at %s:%d", tickify_err(err), lineno, file, lineno);
+                MOD_THROW(ctx, "SyntaxError: %s (line %d)\n    at %s:%d", tickify_err(err), lineno, file, lineno);
             }
         }
 
