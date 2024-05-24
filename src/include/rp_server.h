@@ -30,7 +30,7 @@ Start with this skeleton c:
     static duk_ret_t my_cfunc(duk_context *ctx)
     {
         // initialize the server context struct
-        INIT_RPSERV(serv);
+        INIT_RPSERV(serv, ctx);
 
         //example: get a malloced string - the json of the req object
         char *reply = rp_server_get_req_json(serv);
@@ -92,14 +92,18 @@ duk_push_array(_duk_ctx);\
 duk_put_prop_string(_duk_ctx, 0, DUK_HIDDEN_SYMBOL("rp_serv_stash"));
 
 
+// data and metadata from a single entry in a multipart/form-data
+// post parsed from "body"
 typedef struct {
-    void         *value;
-    size_t        length;
-    const char   *file_name;
-    const char   *name;
-    const char   *content_type;
-    const char   *content_disposition;
+    void         *value;                 // the extracted data
+    size_t        length;                // length of the data
+    const char   *file_name;             // if a file upload, otherwise NULL
+    const char   *name;                  // name from <input name=...>
+    const char   *content_type;          // content-type of part, or NULL
+    const char   *content_disposition;   // content-disposition of part, or NULL
 } multipart_postvar;
+
+/* **************** FUNCTIONS ******************* */
 
 //GET FUNCTIONS (see: https://rampart.dev/docs/rampart-server.html#the-request-object )
 /*
@@ -116,7 +120,7 @@ NOTE: except for multipart form data, all values returned will be strings.  If v
           x = "{\"0\":\"val2\", \"key1\":\"val1\"}
 */
 
-// get a parameter by name
+// get a parameter by name (parameters includes query, post, headers and cookies)
 const char * rp_server_get_param(rpserv *serv, char *name);
 
 // get a header by name
@@ -128,10 +132,10 @@ const char * rp_server_get_query(rpserv *serv, char *name);
 // get a path component ( name is [file|path|base|scheme|host|url] )
 const char * rp_server_get_path(rpserv *serv, char *name);
 
-// get a parsed cookie
+// get a parsed cookie value by name
 const char * rp_server_get_cookie(rpserv *serv, char *name);
 
-// get posted body content as a void buffer.
+// get unparsed, posted body content as a void buffer.
 void * rp_server_get_body(rpserv *serv, size_t *sz);
 
 // get a malloced string of the current request object (just like in
@@ -147,15 +151,15 @@ char * rp_server_get_req_json(rpserv *serv);
 
     while(keys) //keys will not be null (unless program errantly moves/dels req at idx=0 on duktape stack)
     {
-        key=paramkeys[i];
-        if(!key)
+        key=keys[i];
+        if(!key)  //key and val are null terminated lists
             break;
         val=vals[i];
-        i++;
+
         //do something here with key & val
+
+        i++;
     }
-
-
 */
 const char ** rp_server_get_params(rpserv *serv, const char ***values);
 
@@ -166,10 +170,16 @@ const char ** rp_server_get_paths(rpserv *serv, const char ***values);
 const char ** rp_server_get_cookies(rpserv *serv, const char ***values);
 
 // get the number of "parts" in a multipart/form-data post
+// if there is no such post, returns 0
 int rp_server_get_multipart_length(rpserv *serv);
 
-// retrieve the multipart variable and metadata at position "index"
+// retrieve the multipart variable and metadata at position "index".
+// see multipart_postvar struct above for members.
+// If index is invalid, returns a zeroed struct (length==0, others==NULL);
 multipart_postvar rp_server_get_multipart_postitem(rpserv *serv, int index);
+
+
+// NOTE: other posted form variables are availabe as strings in "params"
 
 
 //PUT FUNCTIONS:
@@ -177,7 +187,7 @@ multipart_postvar rp_server_get_multipart_postitem(rpserv *serv, int index);
 // add the contents of *data to buffer to be returned to client
 void rp_server_put(rpserv *serv, void *buf, size_t bufsz);
 
-// add the contents of the null terminated *data to buffer to be returned to client
+// add the contents of the null terminated *s to buffer to be returned to client
 void rp_server_put_string(rpserv *serv, char *s);
 
 // same as rp_server_put, but takes a malloced string and frees it.
@@ -190,13 +200,13 @@ void rp_server_put_string_and_free(rpserv *serv, char *s);
 
 
 // END FUNCTIONS:
-//   1) One and only one of these should be called at or near the end of the main function
+//   1) One and only one of these should be called at or near the end of the exported function
 //   2) Each function returns (duk_ret_t)1;
 
-// return HTTP Code "code", using a mime type that matches *ext, e.g. "html", "txt", "json", etc.
-// (for ext->mime_type map, see https://rampart.dev/docs/rampart-server.html#key-to-mime-mappings)
-// If all the content to be sent to client has already been added via two above functions,
-// set buf to NULL and bufsz to 0.
+// set HTTP Code "code" and mime type that matches "ext" (e.g. "html", "txt", "json", etc. --
+// for ext->mime_type map, see https://rampart.dev/docs/rampart-server.html#key-to-mime-mappings )
+// If all the content to be sent to client has already been added via the rp_server_put_*  functions
+// above, set buf to NULL and bufsz to 0.
 // Otherwise to append more content, set buf and bufsz as appropriate.
 duk_ret_t rp_server_put_reply(rpserv *serv, int code, char *ext, void *buf, size_t bufsz);
 
