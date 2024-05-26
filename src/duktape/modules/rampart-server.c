@@ -6748,6 +6748,20 @@ void * rp_get_dhs(duk_context *ctx)
     return (void*)get_dhs(ctx);
 }
 
+duk_ret_t rp_server_export_map(duk_context *ctx,  rp_server_map *map)
+{
+    duk_push_object(ctx);
+
+    while(map && map->relpath && map->func)
+    {
+        duk_push_c_function(ctx, map->func, 1);
+        duk_put_prop_string(ctx, -2, map->relpath);
+        map++;
+    }
+    return 1;
+}
+
+
 /* end functions for c modules via server */
 
 static const duk_function_list_entry utils_funcs[] = {

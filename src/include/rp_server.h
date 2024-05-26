@@ -4,24 +4,11 @@
  * see https://opensource.org/licenses/MIT
  */
 
-#if !defined(RP_SERV_INCLUDED)
-#define RP_SERV_INCLUDED
-
-#include "rampart.h"
-
-
-typedef struct {
-    duk_context *ctx;
-    void *dhs;
-} rpserv;
-
-void *rp_get_dhs(duk_context *ctx);
-
 /* 
 This header allows modules for the rampart-server to be written in c without
 the need for a deep dive into the duktape api.
 
-To write a rampart module that runs directly from the server:
+To write a rampart module in c that runs directly from the server:
 
 Start with this skeleton c:
 
@@ -57,6 +44,45 @@ Start with this skeleton c:
 
         return 1;
     }
+    // Using the standard rampart server layout
+    // the my_cfunc module will be available via the url:
+    //     http(s)://example.com/apps/mymod.ext
+    //     where 'ext' is any extension (e.g. 'html', 'txt', 'json').
+    //     or http(s)://example.com/apps/mymod/
+
+ALTERNATIVELY, for multiple urls from a single module:
+
+    // to map several functions to multiple urls do the following:
+
+    #include "rp_server.h"
+
+    duk_ret_t myfunc_1(duk_context *ctx)
+    {
+        INIT_RPSERV(serv, ctx);
+        // your code here ...
+    }
+
+    duk_ret_t myfunc_2(duk_context *ctx)
+    {
+        INIT_RPSERV(serv, ctx);
+        // your code here ...
+    }
+
+    // a map of urls relative to http(s)://example.com/apps/mymod/
+    rp_server_map exports[] = {
+        {"/myurl_1.html",    my_func1},
+        {"/myurl_2.json",    my_func2}
+    };
+
+    duk_ret_t duk_open_module(duk_context *ctx)
+    {
+        return rp_server_export_map(ctx, exports);
+    }
+
+    // function are thus served by the following urls:
+    //   http(s)://example.com/apps/mymod/myurl_1.html and
+    //   http(s)://example.com/apps/mymod/myurl_2.json
+
 
 Compile it as such
     Linux:
@@ -80,6 +106,23 @@ See below for description of functions.
 
 */
 
+#if !defined(RP_SERV_INCLUDED)
+#define RP_SERV_INCLUDED
+
+#include "rampart.h"
+
+typedef struct {
+    char *relpath;
+    duk_c_function func;
+} rp_server_map;
+
+
+typedef struct {
+    duk_context *ctx;
+    void *dhs;
+} rpserv;
+
+void *rp_get_dhs(duk_context *ctx);
 
 // initialize the server context struct
 // put a stash array in req
@@ -104,6 +147,11 @@ typedef struct {
 } multipart_postvar;
 
 /* **************** FUNCTIONS ******************* */
+
+// EXPORT FUNCTION:
+// used from within the mandatory duk_open_module to map multiple functions
+// to URLs. See example above.
+duk_ret_t rp_server_export_map(duk_context *ctx,  rp_server_map *map);
 
 //GET FUNCTIONS (see: https://rampart.dev/docs/rampart-server.html#the-request-object )
 /*
@@ -149,10 +197,10 @@ char * rp_server_get_req_json(rpserv *serv);
     const char **vals, *val, *key;
     const char **keys = rp_server_get_params(serv, &vals);
 
-    while(keys) //keys will not be null (unless program errantly moves/dels req at idx=0 on duktape stack)
+    while(keys) //keys will not be null (unless program errantly moves/dels req object at idx=0 on duktape stack)
     {
         key=keys[i];
-        if(!key)  //key and val are null terminated lists
+        if(!key)  //keys and vals are null terminated lists
             break;
         val=vals[i];
 
