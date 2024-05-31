@@ -24,6 +24,10 @@
 
 static void uniq_array_nodes(duk_context *ctx, duk_idx_t arr_idx);
 
+//keep track of how many docs haven't been finalized
+__thread int rp_html_newdocs=0;
+
+
 duk_ret_t duk_rp_html_finalizer(duk_context *ctx)
 {
     TidyBuffer *errbuf;
@@ -31,6 +35,21 @@ duk_ret_t duk_rp_html_finalizer(duk_context *ctx)
     int i=0, len;
     Node* node;
     TidyDocImpl* doc;
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("validity"));
+    duk_get_prop_string(ctx, -1, "valid");
+    if(!duk_get_boolean(ctx, -1))
+    {
+        duk_pop_2(ctx);
+        return 0;
+    }
+    duk_pop(ctx);
+
+    duk_push_false(ctx);
+    duk_put_prop_string(ctx, -2, "valid");
+    duk_pop(ctx);
+
+    
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("errbuf"));
     errbuf=duk_get_pointer(ctx, -1);
@@ -58,7 +77,23 @@ duk_ret_t duk_rp_html_finalizer(duk_context *ctx)
     }
 
     tidyRelease( tdoc );
+    rp_html_newdocs--;
+
     return 0;
+}
+
+duk_ret_t duk_rp_html_destroy(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    duk_rp_html_finalizer(ctx);
+
+    duk_del_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("tdoc"));
+    duk_del_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("dnodes"));
+    duk_del_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("nodes"));
+    duk_del_prop_string(ctx, 0, "length");
+    duk_del_prop_string(ctx, 0, "errMsg");
+    duk_pull(ctx, 0);
+    return 1;
 }
 
 
@@ -1169,6 +1204,35 @@ TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, i
     duk_pop(ctx);\
 } while (0)
 
+static void *get_tdoc(duk_context *ctx, duk_idx_t this_idx)
+{
+    void *ret=NULL;
+    duk_idx_t top=duk_get_top(ctx);
+
+    this_idx=duk_normalize_index(ctx, this_idx);
+
+    if(!duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("validity")))
+        goto throw;
+    if(!duk_get_prop_string(ctx, -1, "valid"))
+        goto throw;
+    
+    if(!duk_get_boolean(ctx, -1))
+        goto throw;
+
+    duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("tdoc"));
+    ret=duk_get_pointer(ctx, -1);
+
+    if(!ret)
+        goto throw;
+
+    duk_set_top(ctx, top);
+    return ret;
+
+    throw:
+
+    RP_THROW(ctx, "html: error - the root html document was destroyed");
+    return ret; // cuz compiler
+}
 
 static duk_ret_t _tohtml(duk_context *ctx)
 {
@@ -1205,9 +1269,7 @@ static duk_ret_t _tohtml(duk_context *ctx)
     duk_push_this(ctx);
     this_idx=duk_get_top_index(ctx);
 
-    duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("tdoc"));
-    doc=duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
+    doc=get_tdoc(ctx, this_idx);
     /*
     if(makearray==-1)
     {
@@ -1310,9 +1372,7 @@ duk_ret_t duk_rp_html_totext(duk_context *ctx)
     duk_push_this(ctx);
     this_idx=duk_get_top_index(ctx);
 
-    duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("tdoc"));
-    doc=duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
+    doc=get_tdoc(ctx, this_idx);
 
     /*
     if(makearray==-1)
@@ -1548,9 +1608,7 @@ static void _findtxts(duk_context *ctx, duk_idx_t arr_idx, const char **txts, in
 
     duk_push_this(ctx);
 
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("tdoc"));
-    doc=duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
+    doc=get_tdoc(ctx, -1);
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("nodes"));
     duk_enum(ctx, -1, DUK_ENUM_ARRAY_INDICES_ONLY);
@@ -1721,6 +1779,9 @@ static void pushfuncs(duk_context *ctx)
     duk_push_c_function(ctx, duk_rp_html_add, 1);
     duk_put_prop_string(ctx, -2, "add");
 
+    duk_push_c_function(ctx, duk_rp_html_destroy, 0);
+    duk_put_prop_string(ctx, -2, "destroy");
+
     duk_push_c_function(ctx, duk_rp_html_getdocument, 0);
     duk_put_prop_string(ctx, -2, "getDocument");
 
@@ -1772,6 +1833,9 @@ static void new_ret_object(duk_context *ctx, duk_idx_t arr_idx)
 
     duk_get_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("tdoc"));
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("tdoc"));
+
+    duk_get_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("validity"));
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("validity"));
 
 //    duk_get_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("errbuf"));
 //    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("errbuf"));
@@ -1884,9 +1948,7 @@ duk_ret_t duk_rp_html_addclass(duk_context *ctx)
 
     duk_push_this(ctx);
 
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("tdoc"));
-    tdoc=duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
+    tdoc=get_tdoc(ctx, -1);
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("nodes"));
     len=duk_get_length(ctx, -1);
@@ -1929,9 +1991,7 @@ duk_ret_t duk_rp_html_delclass(duk_context *ctx)
 
     duk_push_this(ctx);
 
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("tdoc"));
-    tdoc=duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
+    tdoc=get_tdoc(ctx, -1);
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("nodes"));
     len=duk_get_length(ctx, -1);
@@ -2084,9 +2144,7 @@ static duk_ret_t _pend(duk_context *ctx, int type)
         RP_THROW(ctx, "html.append - first argument must be an html object");
 
     /* get the doc pointer from the source nodes */
-    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("tdoc"));
-    srcdoc=duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
+    srcdoc=get_tdoc(ctx, -1);
 
     duk_remove(ctx, 0);
 
@@ -2094,9 +2152,7 @@ static duk_ret_t _pend(duk_context *ctx, int type)
 
     duk_push_this(ctx);
 
-    duk_get_prop_string(ctx, 1, DUK_HIDDEN_SYMBOL("tdoc"));
-    tdoc=duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
+    tdoc=get_tdoc(ctx, -1);
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("nodes"));
     len=duk_get_length(ctx, -1);
@@ -2340,9 +2396,7 @@ static duk_ret_t _detach_delete(duk_context *ctx, int delete)
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("dnodes"));
     dlen=duk_get_length(ctx, -1);
 
-    duk_get_prop_string(ctx, -3, DUK_HIDDEN_SYMBOL("tdoc"));
-    tdoc=duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
+    tdoc=get_tdoc(ctx, -3);
 
     duk_get_prop_string(ctx, -3, DUK_HIDDEN_SYMBOL("nodes"));
     len=duk_get_length(ctx, -1);
@@ -2396,9 +2450,7 @@ duk_ret_t duk_rp_html_delattr(duk_context *ctx)
 
     duk_push_this(ctx);
 
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("tdoc"));
-    tdoc=duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
+    tdoc=get_tdoc(ctx, -1);
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("nodes"));
     len=duk_get_length(ctx, -1);
@@ -2440,9 +2492,7 @@ duk_ret_t duk_rp_html_attr(duk_context *ctx)
 
     duk_push_this(ctx);
 
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("tdoc"));
-    tdoc=duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
+    tdoc=get_tdoc(ctx, -1);
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("nodes"));
     len=duk_get_length(ctx, -1);
@@ -2476,9 +2526,7 @@ duk_ret_t duk_rp_html_getelem(duk_context *ctx)
 
     duk_push_array(ctx);
 
-    duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("tdoc"));
-    tdoc=duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
+    tdoc=get_tdoc(ctx, this_idx);
 
     /* loop over nodes, create tag, append to array */
     duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("nodes"));
@@ -2835,8 +2883,7 @@ duk_ret_t duk_rp_html_pp(duk_context *ctx)
 
     duk_push_this(ctx);
 
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("tdoc"));
-    tdoc=duk_get_pointer(ctx, -1);
+    tdoc=get_tdoc(ctx, -1);
     tidySaveBuffer(tdoc, &output);
 
     duk_push_string(ctx, (char *)output.bp);
@@ -2878,7 +2925,6 @@ static char * fixkey(const char *key)
     ret[i]='\0';
     return ret;
 }
-
 duk_ret_t duk_rp_htmlparse(duk_context *ctx)
 {
 //    const char *html = REQUIRE_STRING(ctx, 0, "html.newDocument: first argument must be a string (html document)");
@@ -2889,6 +2935,16 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
     TidyBuffer *tidy_errbuf = NULL;
     TidyNode root;
     duk_size_t size=0;
+
+    // garbage collection and finalization isn't happening
+    // until end of large for loops with html.newDocument() in it
+    // but garbage collection is very slow.  Better to use hdoc.destroy()
+    rp_html_newdocs++;
+    if(rp_html_newdocs > 499)
+    {
+        duk_gc(ctx, 0);
+        rp_html_newdocs=0;
+    }
 
     if(duk_is_object(ctx, 0))
     {
@@ -2968,6 +3024,14 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "prettyPrint");
 
     root=tidyGetRoot(tdoc);
+
+    // a marker copied into every new html object created from this one
+    // i.e. when using var b=h.findTag("body");
+    // so we know when the doc has been destroyed.
+    duk_push_object(ctx);
+    duk_push_true(ctx);
+    duk_put_prop_string(ctx, -2, "valid");
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("validity"));
 
     duk_push_array(ctx);
     duk_push_pointer(ctx, (void *)root);
