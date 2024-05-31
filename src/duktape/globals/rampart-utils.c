@@ -23,6 +23,16 @@
 #include <unistd.h>
 #include <termios.h>
 #include <string.h>
+#include <sys/resource.h>
+
+//getTotalMem setMaxMem
+#ifdef __APPLE__
+#include <mach/mach.h>
+#include <sys/sysctl.h>
+#elif __linux__
+#include <sys/sysinfo.h>
+#endif
+
 #include "event.h"
 #include "event2/thread.h"
 #include "rampart.h"
@@ -678,6 +688,74 @@ duk_ret_t duk_rp_bufToStr(duk_context *ctx)
 }
 
 
+static double _get_total_mem()
+{
+    double total_memory = 0;
+
+#ifdef __APPLE__
+    // Get total memory
+    int mib[2] = {CTL_HW, HW_MEMSIZE};
+    int64_t memsize;
+    size_t len = sizeof(memsize);
+    if (sysctl(mib, 2, &memsize, &len, NULL, 0) == 0) {
+        total_memory = (double)memsize;
+    }
+#elif __linux__
+    // Get total memory
+    struct sysinfo info;
+    if (sysinfo(&info) == 0) {
+        total_memory = (double)info.totalram * info.mem_unit;
+    }
+#endif
+    return total_memory;    
+}
+
+duk_ret_t duk_process_get_total_mem(duk_context *ctx)
+{
+    duk_push_number(ctx, _get_total_mem()/1048576);
+    return 1;
+}
+
+duk_ret_t duk_process_set_max_mem(duk_context *ctx)
+{
+    double mb=0;
+    const char *perc;
+    struct rlimit limit;
+
+    if(duk_is_string(ctx, 0))
+    {
+        char *end;
+        double pc;
+
+        perc = duk_get_string(ctx, 0);
+        if(perc[strlen(perc)-1] != '%')
+        RP_THROW(ctx, "process.setMaxMem - string argument must be a percentage greater than 0 and less than \"100%\"");
+        pc = strtod(perc, &end);
+        if(pc==0.0)
+            RP_THROW(ctx, "process.setMaxMem - string argument must be a percentage greater than 0 and less than \"100%\"");
+        if(pc > 100.0)
+            RP_THROW(ctx, "process.setMaxMem - string argument must be a percentage greater than 0 and less than \"100%\"");
+        
+        mb = pc * _get_total_mem()/104857600;
+    }
+    else if (duk_is_number(ctx,0))
+        mb = duk_get_number(ctx, 0);
+    else
+        RP_THROW(ctx, "process.setMaxMem - argument must be a number(MB) or a string ending in '%'(percentage of total system memory)");
+
+    // Set the limit for virtual memory
+    limit.rlim_cur = (rlim_t)(mb * 1048576.0);
+    limit.rlim_max = (rlim_t)(mb * 1048576.0);
+
+    if (setrlimit(RLIMIT_AS, &limit) != 0) {
+        RP_THROW(ctx, "process.setMaxMem - Failed to set Max");        
+    }
+
+    duk_push_number(ctx, mb);
+    return 1;
+}
+
+
 duk_ret_t duk_process_exit(duk_context *ctx)
 {
     int exitval=duk_get_int_default(ctx,0,0);
@@ -870,6 +948,11 @@ void duk_process_init(duk_context *ctx)
         i++;
     }
     duk_put_prop_string(ctx,-2,"env");
+
+    duk_push_c_function(ctx, duk_process_get_total_mem, 0);
+    duk_put_prop_string(ctx,-2,"getTotalMem");
+    duk_push_c_function(ctx, duk_process_set_max_mem,1);
+    duk_put_prop_string(ctx,-2,"setMaxMem");
 
     duk_push_c_function(ctx,duk_process_exit,1);
     duk_put_prop_string(ctx,-2,"exit");
@@ -2992,7 +3075,10 @@ duk_ret_t duk_rp_readdir(duk_context *ctx)
         }
     }
     if (errno)
+    {
+        closedir(dir);
         RP_THROW(ctx, "readdir(): error reading directory %s: %s", path, strerror(errno));
+    }
 
     closedir(dir);
     return 1;
