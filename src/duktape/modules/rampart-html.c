@@ -2138,20 +2138,25 @@ static duk_ret_t _pend(duk_context *ctx, int type)
         _htmlparsefrag(ctx, str);
         fromstring=1;
         duk_remove(ctx, 0);
+        duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("tdoc"));
+        srcdoc=duk_get_pointer(ctx, -1);
+        duk_pop(ctx);
+        duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("nodes"));
     }
-    /* the nodes to insert */
-    if( !duk_is_object(ctx,0) || !duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("nodes")))
-        RP_THROW(ctx, "html.append - first argument must be an html object");
-
-    /* get the doc pointer from the source nodes */
-    srcdoc=get_tdoc(ctx, -1);
+    else
+    {
+        /* the nodes to insert */
+        if( !duk_is_object(ctx,0) || !duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("nodes")))
+            RP_THROW(ctx, "html.append - first argument must be an html object or html text");
+    
+        srcdoc=get_tdoc(ctx, 0);
+    }
 
     duk_remove(ctx, 0);
 
     ilen=duk_get_length(ctx, 0);
 
     duk_push_this(ctx);
-
     tdoc=get_tdoc(ctx, -1);
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("nodes"));
@@ -2189,6 +2194,7 @@ static duk_ret_t _pend(duk_context *ctx, int type)
 
     /* appending list of nodes
        done here. no pfunc.    */
+
     if(type==pendadd)
     {
 
