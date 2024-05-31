@@ -229,3 +229,16 @@ testFeature ("Full Text Search", function(){
     return res.rowCount==2;
 });
 
+testFeature ("Create with addtables", function(){
+    shell("rm -rf " +  process.scriptPath + "/testdb2");
+    mkdir(process.scriptPath+"/testdb2")
+    copyFile(process.scriptPath+"/testdb/quicktest.tbl", process.scriptPath+"/testdb2/quicktest.tbl", true);
+
+    var sql2=new Sql.init({
+        path:      process.scriptPath+"/testdb2",
+        addtables: true
+    });
+    var res=sql2.exec("select * from quicktest");
+
+    return res.rowCount;
+});
