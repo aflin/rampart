@@ -169,28 +169,29 @@ NOTE: except for multipart form data, all values returned will be strings.  If v
 */
 
 // get a parameter by name (parameters includes query, post, headers and cookies)
-const char * rp_server_get_param(rpserv *serv, char *name);
+const char * rp_server_get_param(rpserv *serv, const char *name);
 
 // get a header by name
-const char * rp_server_get_header(rpserv *serv, char *name);
+const char * rp_server_get_header(rpserv *serv, const char *name);
 
 // get a query string parameter by name
-const char * rp_server_get_query(rpserv *serv, char *name);
+const char * rp_server_get_query(rpserv *serv, const char *name);
 
 // get a path component ( name is [file|path|base|scheme|host|url] )
-const char * rp_server_get_path(rpserv *serv, char *name);
+const char * rp_server_get_path(rpserv *serv, const char *name);
 
 // get a parsed cookie value by name
-const char * rp_server_get_cookie(rpserv *serv, char *name);
+const char * rp_server_get_cookie(rpserv *serv, const char *name);
 
 // get unparsed, posted body content as a void buffer.
 void * rp_server_get_body(rpserv *serv, size_t *sz);
 
-// get a malloced string of the current request object (just like in
+// get a string of the current request object (just like in
 // https://rampart.dev/docs/rampart-server.html#the-request-object ) 
-char * rp_server_get_req_json(rpserv *serv);
+// If indent is >0, pretty print the JSON with specified level of indentation.
+const char * rp_server_get_req_json(rpserv *serv, int indent);
 
-// get an array of strings, the names (keys) of all [parameters|headers|paths|cookies].  
+// rp_server_get_*s: get an array of strings, the names (keys) of all [parameters|headers|paths|cookies].  
 // If "values" is not null, also set values to the corresponding parameter values.
 /* example:
     int i=0;
@@ -210,11 +211,8 @@ char * rp_server_get_req_json(rpserv *serv);
     }
 */
 const char ** rp_server_get_params(rpserv *serv, const char ***values);
-
 const char ** rp_server_get_headers(rpserv *serv, const char ***values);
-
 const char ** rp_server_get_paths(rpserv *serv, const char ***values);
-
 const char ** rp_server_get_cookies(rpserv *serv, const char ***values);
 
 // get the number of "parts" in a multipart/form-data post
@@ -236,7 +234,7 @@ multipart_postvar rp_server_get_multipart_postitem(rpserv *serv, int index);
 void rp_server_put(rpserv *serv, void *buf, size_t bufsz);
 
 // add the contents of the null terminated *s to buffer to be returned to client
-void rp_server_put_string(rpserv *serv, char *s);
+void rp_server_put_string(rpserv *serv, const char *s);
 
 // same as rp_server_put, but takes a malloced string and frees it.
 // Using this function with malloced data saves a copy and a free.
@@ -245,6 +243,10 @@ void rp_server_put_and_free(rpserv *serv, void *buf, size_t bufsz);
 // same as rp_server_put_and_free, but takes a null terminated string.
 void rp_server_put_string_and_free(rpserv *serv, char *s);
 
+// same as rp_server_put but takes format string and 0+ arguments
+// returns number of bytes added, or -1 on failure.
+// See: https://libevent.org/doc/buffer_8h.html#abb5d7931c7be6b2bde597cbb9b6dc72d 
+int rp_server_printf(rpserv *serv, const char *format, ...);
 
 
 // END FUNCTIONS:
@@ -259,7 +261,7 @@ void rp_server_put_string_and_free(rpserv *serv, char *s);
 duk_ret_t rp_server_put_reply(rpserv *serv, int code, char *ext, void *buf, size_t bufsz);
 
 // Same as above, but *s is either a null terminated string or NULL.
-duk_ret_t rp_server_put_reply_string(rpserv *serv, int code, char *ext, char *s);
+duk_ret_t rp_server_put_reply_string(rpserv *serv, int code, char *ext, const char *s);
 
 // Same as rp_server_put_reply, but takes a malloced string and frees it.
 // Using this function with malloced data saves a copy and a free.

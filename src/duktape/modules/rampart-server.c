@@ -6354,7 +6354,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
 }
 
 /* functions for c modules via server */
-static const char * _get_(rpserv *serv, duk_idx_t req_idx, char *name, char *key)
+static const char * _get_(rpserv *serv, duk_idx_t req_idx, const char *name, char *key)
 {
     duk_context *ctx = serv->ctx;
     const char *ret=NULL;
@@ -6393,28 +6393,28 @@ static const char * _get_(rpserv *serv, duk_idx_t req_idx, char *name, char *key
     return ret;
 }
 
-const char * rp_server_get_param(rpserv *serv, char *name)
+const char * rp_server_get_param(rpserv *serv, const char *name)
 {
     return _get_(serv, 0, name, "params");
 }
 
-const char * rp_server_get_header(rpserv *serv, char *name)
+const char * rp_server_get_header(rpserv *serv, const char *name)
 {
     return _get_(serv, 0, name, "headers");
 }
 
 
-const char * rp_server_get_query(rpserv *serv, char *name)
+const char * rp_server_get_query(rpserv *serv, const char *name)
 {
     return _get_(serv, 0, name, "query");
 }
 
-const char * rp_server_get_path(rpserv *serv, char *name)
+const char * rp_server_get_path(rpserv *serv, const char *name)
 {
     return _get_(serv, 0, name, "path");
 }
 
-const char * rp_server_get_cookie(rpserv *serv, char *name)
+const char * rp_server_get_cookie(rpserv *serv, const char *name)
 {
     return _get_(serv, 0, name, "cookies");
 }
@@ -6621,17 +6621,32 @@ const char ** rp_server_get_cookies(rpserv *serv, const char ***values)
     return _get_keys(serv, "cookies", values);
 }
 
-char * rp_server_get_req_json(rpserv *serv)
+const char * rp_server_get_req_json(rpserv *serv, int indent)
 {
     duk_context *ctx = serv->ctx;
-    char *ret = NULL;
+    const char *ret = NULL;
+    duk_idx_t stash_idx;
+    duk_size_t len;
+
+    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("rp_serv_stash")); 
+    stash_idx=duk_get_top_index(ctx);
 
     duk_eval_string(ctx, "rampart.utils.sprintf");
-    duk_push_string(ctx, "%3J\n");
+    if(indent > 0)
+        duk_push_sprintf(ctx, "%%%dJ", indent);
+    else
+        duk_push_string(ctx, "%J");
     duk_dup(ctx, 0);
     duk_call(ctx, 2);
-    ret = strdup(duk_get_string(ctx, -1));
-    duk_pop(ctx);
+    ret = duk_get_string(ctx, -1);
+
+    len=duk_get_length(ctx, stash_idx);
+
+    //we have to stash the json somewhere so it isn't gc'ed
+    // push into rp_serv_stash array
+    duk_put_prop_index(ctx, stash_idx, (duk_uarridx_t)len);
+
+    duk_remove(ctx, stash_idx);
     return ret;
 }
 
@@ -6643,7 +6658,20 @@ void rp_server_put(rpserv *serv, void *buf, size_t bufsz)
         evbuffer_add(dhs->req->buffer_out, buf, bufsz);
 }
 
-void rp_server_put_string(rpserv *serv, char *s)
+int rp_server_printf(rpserv *serv, const char *format, ...)
+{
+    va_list args;
+    int result;
+    DHS *dhs= (DHS*)serv->dhs;
+
+    va_start(args, format);
+    result = evbuffer_add_vprintf(dhs->req->buffer_out, format, args);
+    va_end(args);
+
+    return result;
+}
+
+void rp_server_put_string(rpserv *serv, const char *s)
 {
     if(!s)
         return;
@@ -6698,7 +6726,7 @@ duk_ret_t rp_server_put_reply(rpserv *serv, int code, char *ext, void *buf, size
     return 1;
 }
 
-duk_ret_t rp_server_put_reply_string(rpserv *serv, int code, char *ext, char *s)
+duk_ret_t rp_server_put_reply_string(rpserv *serv, int code, char *ext, const char *s)
 {
     duk_context *ctx = serv->ctx;
 
