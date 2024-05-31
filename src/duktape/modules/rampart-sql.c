@@ -4768,7 +4768,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
                                 strcpy(p,db);
                                 strcat(p,"/");
                                 strcat(p,e);
-                                printf("adding %s to %s\n", p, db);
+                                //printf("adding %s to %s\n", p, db);
                                 switch ( TXaddtable((char*)db, p, NULL, NULL, NULL, NULL, 0) )
                                 {
                                     case -2:	err="permission denied";break;
