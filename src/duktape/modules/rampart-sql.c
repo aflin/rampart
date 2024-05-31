@@ -4568,6 +4568,8 @@ duk_ret_t duk_texis_set(duk_context *ctx)
     clean_settings(ctx);
     return (duk_ret_t) ret;
 }
+int largc;
+char **largv;
 
 /* **************************************************
    Sql("/database/path") constructor:
@@ -4579,42 +4581,231 @@ duk_ret_t duk_texis_set(duk_context *ctx)
 duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
 {
     int sql_handle_no = 0;
-    const char *db = REQUIRE_STRING(ctx, 0, "new Sql - first parameter must be a string (database path)");
+    const char *db = NULL;
     DB_HANDLE *h;
+    int force=0, addtables=0, create=0;
 
     /* allow call to Sql() with "new Sql()" only */
     if (!duk_is_constructor_call(ctx))
     {
-        return DUK_RET_TYPE_ERROR;
+        RP_THROW(ctx, "Sql.init():  Must be called with 'new Sql.init()");
     }
 
-    /* with require_string above, this shouldn't happen */
-    if(!db)
-        RP_THROW(ctx,"new Sql - db is null\n");
+    if(duk_is_string(ctx, 0))
+    {
+        db = duk_get_string(ctx, 0);
+    }
+
+    if(duk_is_boolean(ctx, 1))
+        create = (int) duk_get_boolean(ctx, 1);
+    else if (!duk_is_undefined(ctx, 1))
+        RP_THROW(ctx, "new Sql.init(path,create) - create must be a boolean");
+
+    if(duk_is_object(ctx, 0))
+    {
+        if(duk_get_prop_string(ctx, 0, "path"))
+        {
+            db = REQUIRE_STRING(ctx, -1, "new Sql.init(params) - params.path must be a string"); 
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, 0, "force"))
+        {
+            force = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params.force must be a boolean"); 
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, 0, "addtables"))
+        {
+            addtables = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params.addtables must be a boolean"); 
+        }
+        duk_pop(ctx);
+
+        if(duk_get_prop_string(ctx, 0, "create"))
+        {
+            create = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params. must be a boolean"); 
+        }
+        duk_pop(ctx);
+
+        if(addtables||force)
+            create=1;
+    }
+
+
+    if(!db || !strlen(db))
+        RP_THROW(ctx,"new Sql.init() - empty or missing database name");
 
     clearmsgbuf();
 
     /* check for db first */
     h = h_open( (char*)db);
-    if (!h)
+    /* if h, then just open that.  Ignore all other options */
+    if (!h)// otherwise check options
     {
         /*
          if sql=new Sql("/db/path",true), we will
          create the db if it does not exist
         */
-        if (duk_is_boolean(ctx, 1) && duk_get_boolean(ctx, 1) != 0)
+        if (create)
         {
+            DIR *dir = NULL;
+
             clearmsgbuf();
-            if (!h_create(db))
+
+            if (rmdir(db) != 0)
+            {
+#ifdef EEXIST
+                if(errno==EEXIST || errno==ENOTEMPTY)
+#else
+                if(errno==ENOTEMPTY)
+#endif
+                {
+                    dir = opendir(db); //let's have a look inside this dir below
+                }
+                else if (errno!=ENOENT) //some other error than EEXIST, ENOTEMPTY or ENOENT
+                    RP_THROW(ctx, "sql.init(): cannot create database at '%s' - %s", db, strerror(errno));
+                //else the dir doesn't exist, which is just fine.
+            }
+
+            // if dir exists, and we are using force or addtables, check if texis system files are present
+            if(dir && (force||addtables))
+            {
+                char *default_db_files[]={
+                    "SYSCOLUMNS.tbl",  "SYSINDEX.tbl",  "SYSMETAINDEX.tbl",  "SYSPERMS.tbl",
+                    "SYSSTATS.tbl",  "SYSTABLES.tbl",  "SYSTRIG.tbl",  "SYSUSERS.tbl", NULL
+                };
+                char **s;
+                struct dirent *entry=NULL;
+                
+                errno = 0;
+
+                while ((entry = readdir(dir)) != NULL)
+                {
+                    s=default_db_files;
+                    while(*s)
+                    {
+                        if(entry->d_name[0] != '.' && strcmp(*s, entry->d_name)==0)
+                        {
+                            closedir(dir);
+                            RP_THROW(ctx, "sql.init(): cannot create '%s', directory exists and has at least one SYS* file (%s)", db, *s);
+                            break;
+                        }
+                        s++;
+                    }
+                }
+
+                closedir(dir);
+
+                if(errno) //we read the dir
+                {
+                    int er=errno;
+                    errno=0;
+                    RP_THROW(ctx, "sql.init(): cannot create '%s' - %s", db, strerror(er));
+                }
+                
+                if(strlen(db)+20 > PATH_MAX)
+                {
+                    RP_THROW(ctx, "sql.init(): cannot create '%s', path too long", db);
+                }
+                else
+                {
+                    char tmppath[PATH_MAX];
+                    char topath[PATH_MAX];
+
+                    strcpy(tmppath, db);
+                    strcat(tmppath, "/.t");
+                    
+                    if(!h_create(tmppath))
+                    {
+                        duk_rp_log_error(ctx);
+                        RP_THROW(ctx, "sql.init(): cannot create database at '%s':\n%s", db, finfo->errmap);
+                    }
+
+                    s=default_db_files;
+                    while(*s)
+                    {
+                        strcpy(tmppath, db);
+                        strcat(tmppath, "/.t/");
+                        strcat(tmppath, *s);
+                        strcpy(topath, db);
+                        strcat(topath, "/");
+                        strcat(topath, *s);
+                        if (rename(tmppath, topath))
+                        {
+                            RP_THROW(ctx, "sql.init(): cannot create database at '%s': error moving files - %s", db, strerror(errno));
+                        }
+                        s++;
+                    }
+                    strcpy(tmppath, db);
+                    strcat(tmppath, "/.t");
+                    
+                    if(addtables)
+                    {
+
+                        dir = opendir(db);
+
+                        while ((entry = readdir(dir)) != NULL)
+                        {
+                            char *e = entry->d_name, **s;
+                            int len=strlen(e), issys=0;
+                        
+                            s=default_db_files;
+
+                            while(*s)
+                            {
+                                if(entry->d_name[0] != '.' && strcmp(*s, e)==0)
+                                {
+                                    issys=1;
+                                    break;
+                                }
+                                s++;
+                            }
+
+                            if(!issys && e[len-4]=='.' && e[len-3]=='t' && e[len-2]=='b' && e[len-1]=='l')
+                            {
+                                char p[PATH_MAX], *err=NULL;
+                                
+                                strcpy(p,db);
+                                strcat(p,"/");
+                                strcat(p,e);
+                                printf("adding %s to %s\n", p, db);
+                                switch ( TXaddtable((char*)db, p, NULL, NULL, NULL, NULL, 0) )
+                                {
+                                    case -2:	err="permission denied";break;
+                                    case -1:	err="unknown error";break;
+                                    case 0:		err=NULL;break;
+                                    default:	err="unknown error";break;
+                                }
+                                if(err)
+                                {
+                                    RP_THROW(ctx, "sql.init(): error importing table %s - %s", e, err);
+                                }
+                            }
+                        }
+                        
+                    }
+
+                    if (rmdir(tmppath) != 0)
+                    {
+                        RP_THROW(ctx, "sql.init(): cannot create database at '%s': error removing directory - %s", db, strerror(errno));
+                    }
+                }
+
+            }
+            else if(dir) // there's a dir and we don't have force or addtables.
+            {
+                RP_THROW(ctx, "sql.init(): cannot create '%s', directory exists and is not empty", db);
+            }
+            else if (!h_create(db)) //if !dir, try regular create
             {
                 duk_rp_log_error(ctx);
-                RP_THROW(ctx, "cannot open or create database at '%s' - root path not found, lacking permission or other error\n%s", db, finfo->errmap);
+                RP_THROW(ctx, "sql.init(): cannot open or create database at '%s':\n%s", db, finfo->errmap);
             }
         }
         else
         {
             duk_rp_log_error(ctx);
-            RP_THROW(ctx, "cannot open database at '%s'\n%s", db, finfo->errmap);
+            RP_THROW(ctx, "sql.init(): cannot open database at '%s'\n%s", db, finfo->errmap);
         }
         h = h_open( (char*)db);
     }
@@ -4684,7 +4875,7 @@ duk_ret_t duk_open_module(duk_context *ctx)
         strcat (install_dir, rampart_bin);
         TexisArgv[1]=install_dir;
 
-        if( TXinitapp(NULL, NULL, 2, TexisArgv, NULL, NULL) )
+        if( TXinitapp(NULL, NULL, 2, TexisArgv, &largc, &largv) )
         {
             CTXUNLOCK;
             RP_THROW(ctx, "Failed to initialize rampart-sql in TXinitapp");
