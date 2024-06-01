@@ -1161,11 +1161,14 @@ static void *repl_thr(void *arg)
 
     while (1)
     {
-        int ln;
+        int ln, cont=0;
         char *oldline=NULL;
 
         if(lastline)
+        {
             prefix=RP_REPL_PREFIX_CONT;
+            cont=1;
+        }
         else
             prefix=RP_REPL_PREFIX;
 
@@ -1174,7 +1177,9 @@ static void *repl_thr(void *arg)
 
         if(!line)
         {
-            if(errno == EAGAIN) /* ctrl-c */
+            if(errno == EAGAIN || /* ctrl-c */
+                (errno == ENODATA && cont) /* ctrl-c on a ... continue line */
+              )
             {
                 printf("%spress ctrl-c again to exit%s\n", blue, reset);
                 if(lastline)
