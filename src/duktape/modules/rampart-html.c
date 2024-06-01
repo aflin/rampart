@@ -1572,7 +1572,7 @@ static int findfunc_attr (TidyNode node, const char **txt, const char **txt2, in
                     return 1;
 
                 //match a glob too
-                if(val[len-1] == '*')
+                if(len>1 && val[len-1] == '*' && val[len-2] != '\\')
                 {
                     if(!strncmp_no_bs(s,val,len-(1+bss)))
                         return 1;
@@ -1596,13 +1596,76 @@ static int findfunc_attr (TidyNode node, const char **txt, const char **txt2, in
     return 0;
 }
 
+#define intmin(a,b) ((a)<(b))?a:b
+
 static int findfunc_class (TidyNode node, const char **txt, const char **txt2, int ntxt){
-    const char *classes=getAttr(node,"class");
-    int i=0;
+    const char *e, *p, *val, *classes=getAttr(node,"class");
+    int i=0, len, vallen=0, bss=0;
 
     if(!classes)
         return 0;
 
+    p=classes;
+    while(*p==' ')p++;
+
+    for (;i<ntxt;i++)
+    {
+        val = txt[i];
+        vallen=strlen(val);
+
+        // count backslashes
+        bss=0;
+        {
+            int j=0,lastslash=0;
+            for(;j<vallen;j++)
+            {
+                if(val[j]=='\\')
+                {
+                    if(!lastslash) bss++;
+                    lastslash=!lastslash;
+                }
+                else
+                    lastslash=0;
+            }
+        }
+
+        vallen -= bss;
+        //match a glob too
+        if(vallen>1 && val[vallen-1] == '*' && val[vallen-2]!='\\')
+            vallen--; 
+        else if (*val == '*')
+        {
+            vallen--;
+            vallen*=-1;
+            val++;
+        }
+        else
+            vallen=0;
+
+        
+        while(1)
+        {
+            e=p;
+            while(*e!=' ' && *e!='\0') e++;
+            len=(int)(e-p);
+            
+            if(vallen<0)
+            {
+                vallen *=-1;
+                p = p + (len - vallen);
+            }
+            else if(!vallen)
+                vallen=len;
+
+            //printf("strncmp_no_bs('%s', '%s', %d)\n",p, val, vallen);
+            if(!strncmp_no_bs(p, val, vallen))
+                return 1;
+
+            if(*e=='\0') break;
+        }
+    }
+
+#if 0
     for (;i<ntxt;i++)
     {
         const char *class = strstr(classes, txt[i]);
@@ -1620,7 +1683,7 @@ static int findfunc_class (TidyNode node, const char **txt, const char **txt2, i
             class = strstr(end, txt[i]);
         }
     }
-
+#endif
     return 0;
 }
 
