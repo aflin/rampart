@@ -1470,6 +1470,31 @@ static int findfunc_tag (TidyNode node, const char **txt, const char **txt2, int
     return 0;
 }
 
+//s2 can contain a '\' and it will be ignored/skipped over unless it matches
+static int strncmp_no_bs(const char *s1, const char *s2, size_t n) {
+    size_t i = 0, j=0;
+    while (i < n && s1[i] != '\0' && s2[j] != '\0')
+    {
+        if(s2[j] == '\\')
+            j++;
+
+        if (s1[i] != s2[j])
+        {
+                return (unsigned char)s1[i] - (unsigned char)s2[j];
+        }
+        i++;
+        j++;
+    }
+
+    if (i < n) {
+        if (s1[i] != s2[j]) {
+            return (unsigned char)s1[i] - (unsigned char)s2[j];
+        }
+    }
+
+    return 0;
+}
+
 static int findfunc_attr (TidyNode node, const char **txt, const char **txt2, int ntxt){
     int i=0;
 
@@ -1494,8 +1519,74 @@ static int findfunc_attr (TidyNode node, const char **txt, const char **txt2, in
         {
             if( txt2[i] )
             {
-                if(!strcmp(s,txt2[i]))
+                int len,bss=0;
+                const char *val = txt2[i];
+
+                while(*val == ' ') val++;
+                len = strlen(val);
+                while(val[len-1]==' ' && len>0) len--;
+
+                if(*val == '"')
+                {
+                    const char *p;
+
+                    val++;
+                    p=val;
+                    len=0;
+                    while(*p && (*p!='"'||*(p-1) =='\\') )
+                    {
+                        p++;
+                        len++;
+                    }
+                }
+                else if (*val == '\'')
+                {
+                    const char *p;
+
+                    val++;
+                    p=val;
+                    len=0;
+                    while(*p && (*p!='\''||*(p-1) =='\\') )
+                    {
+                        len++;
+                        p++;
+                    }
+                }
+
+                // count backslashes
+                {
+                    int j=0,lastslash=0;
+                    for(;j<len;j++)
+                    {
+                        if(val[j]=='\\')
+                        {
+                            if(!lastslash) bss++;
+                            lastslash=!lastslash;
+                        }
+                        else
+                            lastslash=0;
+                    }
+                }
+
+                if(!strncmp_no_bs(s,val,len-bss))
                     return 1;
+
+                //match a glob too
+                if(val[len-1] == '*')
+                {
+                    if(!strncmp_no_bs(s,val,len-(1+bss)))
+                        return 1;
+                }
+                if(*val== '*')
+                {
+                    const char *sstart;
+
+                    val++;
+                    len--;
+                    sstart = &s[strlen(s) - (len-bss)];
+                    if(!strncmp_no_bs(sstart,val,len-(1+bss)))
+                        return 1;
+                }
             }
             else
                 return 1;
