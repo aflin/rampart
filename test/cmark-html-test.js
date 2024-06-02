@@ -29,8 +29,6 @@ function testFeature(name,test)
 }
 
 
-
-
 testFeature("Cmark - Basic Functionality - H1", function() {
   var out = cmark.toHtml(`
 This is an H1
@@ -73,45 +71,65 @@ testFeature("Html - Add class and attribute", function() {
   return el.length == 1 && el2.length == 1;
 });
 
-testFeature("Html - Append element, convert to text", function() {
-  var text;
+testFeature("Html - Append element, convert to text and html", function() {
+  var text, html;
 
   doc.findTag('body').append('<h3>heading3</h3>');
 
   text=doc.findTag('h3').toText();
+  html=doc.findTag('h3').toHtml();
 
-  return text[0]=='heading3';
+  return text[0]=='heading3' && html[0]=='<h3>heading3</h3>';
 });
 
-testFeature("Html - Delete element", function() {
-  var el;
+testFeature("Html - Delete element/replace/remove[Attr|Class]", function() {
+  var el, el2, el3;
   
   doc.findTag('h3').delete();
   
   el = doc.findTag('h3');
-  
-  return el.length==0;
+
+  el2 = doc.findAttr('id=para_2');
+  el2.removeAttr(" id ");
+
+  el2.addClass('c1');
+  el2.addClass('c2');
+  el2.addClass('c3');
+  el2.removeClass(' c2 ');
+
+  doc.findTag('h2').replace("<h4>h4 text here</h4>");
+
+
+  return el.length==0 && !el2.hasAttr('id')[0] && !el2.hasClass('c2')[0]
+  && doc.findTag('h2').length==0 && doc.findTag('h4').length==1;
 });
 
 testFeature("Html - Find - Class/Attr/Tag", function() {
   var c,a,t;
   
   t=doc.findTag('h1');
-  c=doc.findClass(" myclass	");
-  a=doc.findAttr("	id =	para_1	");
+  c=doc.findClass(" *yclass	");
+  a=doc.findAttr("	id =	*ara_1	");
 
   return t.length==1 && c.length==2 && a.length==1;
 });
 
-testFeature("Html - Pend - append/prepend/before/after", function() {
-  var el, el2, el3, doc2, txt;
+testFeature("Html - Pend - append/prepend/before/after/detach-append", function() {
+  var el, el2, el3, el4, doc2, txt;
 
   doc.findTag('body').append('<div id=tdiv>');
-  el=doc.findAttr('id=tdiv');
+  doc.findTag('body').append('<div id=tdiv2>');
+
+  el=doc.findAttr('id = tdiv ');
+  //console.log(el.toHtml());
   el.append('<div id=d3>');
   el.prepend('<div id=d1>');
   el2=el.findAttr("id=d3");
   el2.before('<div id=d2>');
+
+  el2.append('<div id=d5>');
+  el4 = el2.findAttr('id=d5').detach();
+  doc.findAttr('id=tdiv2').append(el4);
 
   doc2=html.newDocument('<div id=d4>');
   el3=doc2.findTag('div');
@@ -122,8 +140,8 @@ testFeature("Html - Pend - append/prepend/before/after", function() {
   txt = el.toHtml()[0];
 
   //"<div id=\"tdiv\"><div id=\"d1\"></div><div id=\"d2\"></div><div id=\"d3\"></div><div id=\"d4\"></div></div>"
-  
-  return /tdiv.*d1.*d2.*d3.*d4/.test(txt);
+  //console.log(doc.prettyPrint());
+  return /tdiv.*d1.*d2.*d3.*d4/.test(txt) && doc.findAttr('id = tdiv2 ').children().length==1;
 
 });
 
@@ -176,13 +194,13 @@ testFeature("Html - Traversal - prev/next/children/parent", function(){
   
   //printf("%s, %s, %s, %s\n", prev,next,nchildren,parent);  
 
-  return prev[0]=='h2' && next[0]=='div' && nchildren==4 && parent=='tdiv';
+  return prev[0]=='h4' && next[0]=='div' && nchildren==4 && parent=='tdiv';
 });
 
 var list;
 
-testFeature("Html - Filter List", function(){
-  var els, t1, t2, t3, t4, t5, t6;
+testFeature("Html - Filter/has[Class|Attr|Tag]", function(){
+  var els, t1, t2, t3, t4, t5, t6, h1, h2, h3;
 
   doc.findAttr('id=tdiv').append("<span class='a classy Class1_class'>text</span><span class='a Class2_class classy'>text</span>");
 
@@ -195,21 +213,27 @@ testFeature("Html - Filter List", function(){
   els = list.filterAttr(["id='noexiste'"," id = 'd*' "])
   t2 = (els.length==4);
 
-  els = list.filterClass(['Class2_class','*class']);
+  els = list.filterClass(['Class2_\\class','*class']);
+  h3 = els.hasClass(' classy ');
+  h3 = h3[0] && h3[1];
   t3 = (els.length==2);
 
   els = list.slice(2,4);
+  h1 = els.hasTag('div');
+  h1 = h1[0] && h1[1];
   t4 = (els.length==2);
   
   els = list.eq(1);
+  h2 = els.hasAttr(" id = d2 ")[0];
   t5 = (els.length==1);
   
   els = list.add("<a href>");
   t6 = (els.length == 7) 
 
-  return t1 && t2 && t3 && t4 && t5 && t6;
+  return t1 && t2 && t3 && t4 && t5 && t6 && h1 && h2 && h3;
 
 });
+
 
 
 testFeature("Html - destroy invalidates dependent Html Objs", function(){

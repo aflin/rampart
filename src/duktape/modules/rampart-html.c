@@ -1569,8 +1569,13 @@ static int findfunc_attr (TidyNode node, const char **txt, const char **txt2, in
                     }
                 }
 
-                if(!strncmp_no_bs(s,val,len-bss))
-                    return 1;
+                // non-glob match
+                {
+                    int vl=len-bss;
+                    int sl=strlen(s);
+                    if( !strncmp_no_bs(s,val,(sl>vl?sl:vl)) )
+                        return 1;
+                }
 
                 //match a glob too
                 if(len>1 && val[len-1] == '*' && val[len-2] != '\\')
@@ -2137,12 +2142,23 @@ duk_ret_t duk_rp_html_addclass(duk_context *ctx)
 duk_ret_t duk_rp_html_delclass(duk_context *ctx)
 {
     const char *classattr, *cpos,
-        *cname = REQUIRE_STRING(ctx, 0, "html.removeClass - first argument must be a string (attr name)");
+        *cn = REQUIRE_STRING(ctx, 0, "html.removeClass - first argument must be a string (attr name)");
     int i=0, len;
     TidyNode node;
     TidyDoc tdoc;
+    int cname_len;
+    char *cname=NULL;
+
+    while(isspace(*cn))cn++;
+    cname_len=strlen(cn);
+    while(isspace(cn[cname_len - 1]) && cname_len>0) cname_len--;
 
     duk_push_this(ctx);
+
+    if(!cname_len)
+        return 1;
+
+    cname=strndup(cn, cname_len);
 
     tdoc=get_tdoc(ctx, -1);
 
@@ -2186,6 +2202,7 @@ duk_ret_t duk_rp_html_delclass(duk_context *ctx)
         }
 
     }
+    free(cname);
     duk_pull(ctx, 1);
     return 1;
 }
@@ -2600,14 +2617,22 @@ duk_ret_t duk_rp_html_delete(duk_context *ctx)
 
 duk_ret_t duk_rp_html_delattr(duk_context *ctx)
 {
-    const char *aname = REQUIRE_STRING(ctx, 0, "html.delAttr - first argument must be a string (attr name)");
+    const char *aname = REQUIRE_STRING(ctx, 0, "html.removeAttr - first argument must be a string (attr name)");
     int i=0, len;
     TidyNode node;
     TidyDoc tdoc;
     TidyAttr attr;
     ctmbstr key;
+    int aname_len;
+
+    while(isspace(*aname))aname++;
+    aname_len=strlen(aname);
+    while(isspace(aname[aname_len - 1]) && aname_len>0) aname_len--;
 
     duk_push_this(ctx);
+
+    if(!aname_len)
+        return 1;
 
     tdoc=get_tdoc(ctx, -1);
 
@@ -2623,7 +2648,7 @@ duk_ret_t duk_rp_html_delattr(duk_context *ctx)
         for ( attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr) )
         {
             key=tidyAttrName(attr);
-            if (!strcasecmp(key, aname))
+            if (!strncasecmp(key, aname, aname_len))
             {
                 tidyAttrDiscard( tdoc, node, attr);
                 break;
