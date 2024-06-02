@@ -1501,19 +1501,20 @@ static int findfunc_attr (TidyNode node, const char **txt, const char **txt2, in
     for (;i<ntxt;i++)
     {
         size_t len;
-        const char *s;
+        const char *s, *attr=txt[i];
 
-        s = strchr(txt[i], '=');
+        while(isspace(*attr)) attr++;
+        s = strchr(attr, '=');
 
         /* backup to non-whitespace before '=' */
-        while ( s>txt[i] && isspace(*(s-1)) ) s--;
+        while ( s>attr && isspace(*(s-1)) ) s--;
 
         if(s)
-            len=(size_t) ( s - txt[i]);
+            len=(size_t) ( s - attr);
         else
-            len=strlen(txt[i]);
+            len=strlen(attr);
 
-        s = getnAttr(node, txt[i], len);
+        s = getnAttr(node, attr, len);
 
         if(s)
         {
@@ -1522,9 +1523,9 @@ static int findfunc_attr (TidyNode node, const char **txt, const char **txt2, in
                 int len,bss=0;
                 const char *val = txt2[i];
 
-                while(*val == ' ') val++;
+                while(isspace(*val)) val++;
                 len = strlen(val);
-                while(val[len-1]==' ' && len>0) len--;
+                while(isspace(val[len-1]) && len>0) len--;
 
                 if(*val == '"')
                 {
@@ -1596,22 +1597,27 @@ static int findfunc_attr (TidyNode node, const char **txt, const char **txt2, in
     return 0;
 }
 
-#define intmin(a,b) ((a)<(b))?a:b
-
 static int findfunc_class (TidyNode node, const char **txt, const char **txt2, int ntxt){
     const char *e, *p, *val, *classes=getAttr(node,"class");
     int i=0, len, vallen=0, bss=0;
+    int matchdir=0; //direction of glob match, or 0 for no glob
 
     if(!classes)
         return 0;
 
-    p=classes;
-    while(*p==' ')p++;
 
     for (;i<ntxt;i++)
     {
+        p=classes;
+
+        while(isspace(*p))p++;
+
         val = txt[i];
+        while(isspace(*val))val++;
         vallen=strlen(val);
+        while(isspace(val[vallen-1]) && vallen>0)vallen--;
+
+        matchdir=0;
 
         // count backslashes
         bss=0;
@@ -1629,61 +1635,54 @@ static int findfunc_class (TidyNode node, const char **txt, const char **txt2, i
             }
         }
 
-        vallen -= bss;
+        vallen -= bss;  //backslashes are skipped in strncmp_no_bs, len is minus num of backslashes
         //match a glob too
         if(vallen>1 && val[vallen-1] == '*' && val[vallen-2]!='\\')
+        {
+            matchdir=1;
             vallen--; 
+        }
         else if (*val == '*')
         {
             vallen--;
-            vallen*=-1;
             val++;
+            matchdir=-1;
         }
-        else
-            vallen=0;
 
-        
+        e=p;
         while(1)
         {
-            e=p;
-            while(*e!=' ' && *e!='\0') e++;
+            while(!isspace(*e) && *e!='\0') e++;
             len=(int)(e-p);
             
-            if(vallen<0)
+            if(matchdir<0)
             {
-                vallen *=-1;
-                p = p + (len - vallen);
+                int diff= (len - vallen);
+
+                if(diff>0)
+                {
+                    p+=diff;
+                    len = vallen;
+                }
             }
-            else if(!vallen)
-                vallen=len;
+            else if(matchdir>0)
+                len=vallen;
+            else if(len < vallen) //if non-glob, use larger of len and vallen
+                len=vallen;
 
-            //printf("strncmp_no_bs('%s', '%s', %d)\n",p, val, vallen);
-            if(!strncmp_no_bs(p, val, vallen))
-                return 1;
-
-            if(*e=='\0') break;
-        }
-    }
-
-#if 0
-    for (;i<ntxt;i++)
-    {
-        const char *class = strstr(classes, txt[i]);
-
-        while (class)
-        {
-            const char *end = class+strlen(txt[i]);
-            /* check begin of string */
-            if(class == classes || *(class-1) == ' ')
+            if(len>0)
             {
-                //* check end of string */
-                if(*end=='\0' || *end==' ')
+                //printf("strncmp_no_bs('%s', '%s', %d)\n",p, val, len);
+                if(!strncmp_no_bs(p, val, len))
                     return 1;
             }
-            class = strstr(end, txt[i]);
+            while(isspace(*e)) e++;
+
+            if(*e=='\0') break;
+            p=e;
         }
     }
-#endif
+
     return 0;
 }
 

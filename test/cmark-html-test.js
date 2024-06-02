@@ -97,8 +97,8 @@ testFeature("Html - Find - Class/Attr/Tag", function() {
   var c,a,t;
   
   t=doc.findTag('h1');
-  c=doc.findClass("myclass");
-  a=doc.findAttr("id=para_1");
+  c=doc.findClass(" myclass	");
+  a=doc.findAttr("	id =	para_1	");
 
   return t.length==1 && c.length==2 && a.length==1;
 });
@@ -128,7 +128,7 @@ testFeature("Html - Pend - append/prepend/before/after", function() {
 });
 
 testFeature("Html - Get - element/elementname/attr/allAttr", function(){
-  var el = doc.findAttr('id=tdiv').children();
+  var el = doc.findAttr(' id =	tdiv ').children();
   var e = el.getElement();
   var en = el.getElementName();
   var ea = el.getAttr('id');
@@ -184,7 +184,7 @@ var list;
 testFeature("Html - Filter List", function(){
   var els, t1, t2, t3, t4, t5, t6;
 
-  doc.findAttr('id=tdiv').append("<span class='Class1_class'>text</span><span class='Class2_class'>text</span>");
+  doc.findAttr('id=tdiv').append("<span class='a classy Class1_class'>text</span><span class='a Class2_class classy'>text</span>");
 
   //console.log(doc.prettyPrint());
 
@@ -192,10 +192,10 @@ testFeature("Html - Filter List", function(){
   els = list.filterTag("span");
   t1 = (els.length == 2);
 
-  els = list.filterAttr("id ='d*'")
+  els = list.filterAttr(["id='noexiste'"," id = 'd*' "])
   t2 = (els.length==4);
 
-  els = list.filterClass('*class');
+  els = list.filterClass(['Class2_class','*class']);
   t3 = (els.length==2);
 
   els = list.slice(2,4);
