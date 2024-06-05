@@ -2738,7 +2738,15 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         DUK_UTIL_EXEC_READ_FD(ctx, stdout_buf, stdout_pipe[0], stdout_nread);
         DUK_UTIL_EXEC_READ_FD(ctx, stderr_buf, stderr_pipe[0], stderr_nread);
 
-        waitpid(pid, &exit_status, 0);
+        // on rare occasions, this might hang without WNOHANG
+        // no idea why
+        while(!waitpid(pid, &exit_status, WNOHANG))
+        {
+            if(!kill(pid,0))
+                break;
+            usleep(1000);
+        }
+
         // cancel timeout thread in case it is still running
         if (timeout > 0)
         {
