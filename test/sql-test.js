@@ -5,6 +5,15 @@ load.crypto;
 
 var sql=new Sql.init(process.scriptPath+"/testdb",true);//create if doesn't exist
 
+/* check for quicktest, make if necessary */
+var res=sql.exec("select * from SYSTABLES where NAME='quicktest'");
+if(res.rows.length==0) {
+    res=sql.exec("create table quicktest ( I int, Text varchar(16) );");
+    sql.exec("insert into quicktest values(2,'just a test');");
+    sql.exec("create index quicktest_I_x on quicktest(I);");
+}
+
+
 var sha256=crypto.sha256;
 var md5=crypto.md5;
 
@@ -26,6 +35,9 @@ function testFeature(name,test)
     {
         printf(">>>>> FAILED <<<<<\n");
         if(error) console.log(error);
+        shell("rm -rf " +  process.scriptPath + "/testdb");
+        shell("rm -rf " +  process.scriptPath + "/testdb2");
+        shell("rm -rf " +  process.scriptPath + "/testdb3");
         process.exit(1);
     }
     if(error) console.log(error);
@@ -229,16 +241,37 @@ testFeature ("Full Text Search", function(){
     return res.rowCount==2;
 });
 
-testFeature ("Create with addtables", function(){
+testFeature ("Create with addTables", function(){
     shell("rm -rf " +  process.scriptPath + "/testdb2");
     mkdir(process.scriptPath+"/testdb2")
     copyFile(process.scriptPath+"/testdb/quicktest.tbl", process.scriptPath+"/testdb2/quicktest.tbl", true);
 
     var sql2=new Sql.init({
         path:      process.scriptPath+"/testdb2",
-        addtables: true
+        addTables: true
     });
     var res=sql2.exec("select * from quicktest");
 
     return res.rowCount;
 });
+
+testFeature ("Create with addTables in existing db", function(){
+    shell("rm -rf " +  process.scriptPath + "/testdb3");
+    var sql3 = new Sql.init(process.scriptPath+"/testdb3", true);
+    sql3.close();
+
+    copyFile(process.scriptPath+"/testdb/quicktest.tbl", process.scriptPath+"/testdb3/quicktest.tbl", true);
+
+    var sql3=new Sql.init({
+        path:      process.scriptPath+"/testdb3",
+        addTables: true
+    });
+
+    var res=sql3.exec("select * from quicktest");
+
+    return res.rowCount;
+});
+
+shell("rm -rf " +  process.scriptPath + "/testdb");
+shell("rm -rf " +  process.scriptPath + "/testdb2");
+shell("rm -rf " +  process.scriptPath + "/testdb3");
