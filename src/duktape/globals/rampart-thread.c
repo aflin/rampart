@@ -1194,11 +1194,12 @@ duk_ret_t rp_thread_put(duk_context *ctx)
     if(duk_is_undefined(ctx, 0))
         RP_THROW(ctx, "thread.put: Second argument is a variable to store and must be defined");
 
+    RP_PTLOCK(&cblock);
+
     put_to_clipboard(ctx, 0, (char *)key);
 
     len++; //include \0
 
-    RP_PTLOCK(&cblock);
     for (i=0;i<nrpthreads;i++)
     {
         RPTHR *thr=rpthread[i];
@@ -1254,16 +1255,21 @@ static duk_ret_t _thread_get_del(duk_context *ctx, char *key, int del)
     return 1;
 }
 
+#define LATE_LOCK   0
+#define EARLY_LOCK  1
+#define GET_NODEL   0
+#define GET_DEL     1
+
 duk_ret_t get_from_clipboard(duk_context *ctx, char *key)
 {
-    if(!_thread_get_del(ctx, key, 0))
+    if(!_thread_get_del(ctx, key, GET_NODEL))
         duk_push_undefined(ctx); //we need to push onto the stack when called internally
     return 1;
 }
 
 duk_ret_t del_from_clipboard(duk_context *ctx, char *key)
 {
-    if(!_thread_get_del(ctx, key, 1))
+    if(!_thread_get_del(ctx, key, GET_DEL))
         duk_push_undefined(ctx); //we need to push onto the stack when called internally
     return 1;
 }
@@ -1279,31 +1285,41 @@ duk_ret_t del_from_clipboard(duk_context *ctx, char *key)
     RP_PTUNLOCK(&cblock);\
 }while(0)
 
-static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *funcname, int del)
+#define openpipes(_thr, _locked) ({\
+    int _fd[2];\
+    int _ret=0;\
+    if(!_locked)RP_PTLOCK(&cblock);\
+    if (rp_pipe(_fd) == -1){\
+        fprintf(stderr, "thread pipe creation failed\n");\
+        _ret=0;\
+    } else {\
+        _thr->reader=_fd[0];\
+        _thr->writer=_fd[1];\
+        RPTHR_SET(thr, RPTHR_FLAG_WAITING);\
+        _ret=1;\
+    }\
+    RP_PTUNLOCK(&cblock);\
+    _ret;\
+})
+
+static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *funcname, int del, int locked)
 {
     char *waitkey=NULL;
     duk_size_t len, lastlen=64;
     RPTHR *thr = get_current_thread();
-    int fd[2];
+    //int fd[2];
     int to=-1; // indefinite/forever
     uint64_t timemarker, tmcur;
     struct pollfd ufds[1];
     struct timespec ts;
     int pret;
 
-    if(!duk_is_undefined(ctx, 0))
-        to=REQUIRE_UINT(ctx, 0, "thread.%s: second argument, if provided, must be a positive number (milliseconds)", funcname);
+    if(!duk_is_undefined(ctx, 1))
+        to=REQUIRE_UINT(ctx, 1, "thread.%s: second argument, if provided, must be a positive number (milliseconds)", funcname);
 
-    if (rp_pipe(fd) == -1)
-    {
-        fprintf(stderr, "thread pipe creation failed\n");
+    if(!openpipes(thr, locked))
         return 0;
-    }
-    thr->reader=fd[0];
-    thr->writer=fd[1];
-
-    RPTHR_SET(thr, RPTHR_FLAG_WAITING);
-
+    
     if(!to) /* return immediately if to==0 */
         return _thread_get_del(ctx, (char *)key, del);
 
@@ -1357,11 +1373,15 @@ duk_ret_t rp_thread_get(duk_context *ctx)
     const char *key = REQUIRE_STRING(ctx, 0, "thread.get: First argument must be a string (key)");
     duk_ret_t ret;
 
-    duk_remove(ctx,0);
+    // lock early so we don't get a message in pipe before we set it up
+    if(!duk_is_undefined(ctx,1))
+        RP_PTLOCK(&cblock);
 
-    ret = _thread_get_del(ctx, (char *)key, 0);
-    if(!ret && !duk_is_undefined(ctx,0))
-        ret = _thread_waitfor(ctx, key, "get", 0);
+    ret = _thread_get_del(ctx, (char*)key, GET_NODEL);
+    if(!ret && !duk_is_undefined(ctx,1))
+        ret = _thread_waitfor(ctx, key, "get", GET_NODEL, EARLY_LOCK);
+    else if (!duk_is_undefined(ctx,1)) // if ret && defined
+        RP_PTUNLOCK(&cblock);
 
     return ret;
 }
@@ -1372,11 +1392,14 @@ duk_ret_t rp_thread_del(duk_context *ctx)
 
     duk_ret_t ret;
 
-    duk_remove(ctx,0);
+    if(!duk_is_undefined(ctx,1))
+        RP_PTLOCK(&cblock);
 
-    ret = _thread_get_del(ctx, (char *)key, 1);
+    ret = _thread_get_del(ctx, (char *)key, GET_DEL);
     if(!ret && !duk_is_undefined(ctx,0))
-        ret = _thread_waitfor(ctx, key, "get", 1);
+        ret = _thread_waitfor(ctx, key, "get", GET_DEL, EARLY_LOCK);
+    else if (!duk_is_undefined(ctx,1)) // if ret && defined
+        RP_PTUNLOCK(&cblock);
 
     return ret;
 }
@@ -1387,9 +1410,7 @@ static duk_ret_t rp_thread_waitfor(duk_context *ctx)
     duk_size_t len;
     const char *key = REQUIRE_LSTRING(ctx, 0, &len, "thread.waitfor: First argument must be a string (key)");
 
-    duk_remove(ctx,0);
-
-    return _thread_waitfor(ctx, key, "waitfor", 0);
+    return _thread_waitfor(ctx, key, "waitfor", GET_NODEL, LATE_LOCK);
 }
 
 static duk_ret_t rp_thread_getwait(duk_context *ctx)
@@ -1398,11 +1419,11 @@ static duk_ret_t rp_thread_getwait(duk_context *ctx)
     duk_size_t len;
     const char *key = REQUIRE_LSTRING(ctx, 0, &len, "thread.getwait: First argument must be a string (key)");
 
-    ret = _thread_get_del(ctx, (char *)key, 0);
+    ret = _thread_get_del(ctx, (char *)key, GET_NODEL);
     if(ret)
         return ret;
 
-    return _thread_waitfor(ctx, key, "getwait", 0);
+    return _thread_waitfor(ctx, key, "getwait", GET_NODEL, LATE_LOCK);
 }
 
 /* ******************************************
@@ -1748,7 +1769,7 @@ static void do_parent_callback(evutil_socket_t fd, short events, void* arg)
         char key[16];
 
         snprintf(key, 16, "\xff%d", (int) info->varindex);
-        _thread_get_del(ctx, key, 1); //get and delete
+        _thread_get_del(ctx, key, GET_DEL); //get and delete
     }
     else
         duk_push_undefined(ctx);
@@ -1786,10 +1807,12 @@ static void thread_doevent(evutil_socket_t fd, short events, void* arg)
         char key[16];
 
         snprintf(key, 16, "\xff%d", (int) info->varindex);
-        _thread_get_del(ctx, key, 1); //get and delete
+        _thread_get_del(ctx, key, GET_DEL); //get and delete
     }
     else
         duk_push_undefined(ctx);
+
+    //printf("exec in %s\n", duk_to_string(ctx, -1));
 
     dprintf("running thread javascript callback, base =%p\n", thr->base);
 
@@ -2095,6 +2118,9 @@ static duk_ret_t loop_insert(duk_context *ctx)
             duk_pop(ctx);
     }
 
+    //duk_dup(ctx, arg_idx);
+    //duk_idx_t tmpidx = duk_normalize_index(ctx, -1);
+
     REQUIRE_FUNCTION(ctx, thrfunc_idx, "thr.exec: threadFunc must be provided in options object or as first parameter");
     if(cbfunc_idx != -1)
         REQUIRE_FUNCTION(ctx, cbfunc_idx, "thr.exec: callbackFunc must be a function");
@@ -2162,7 +2188,6 @@ static duk_ret_t loop_insert(duk_context *ctx)
     info->bytecode_sz=(size_t)len;
     REMALLOC(info->bytecode, info->bytecode_sz);
     memcpy(info->bytecode, buf, info->bytecode_sz);
-
     //copy arg to cpctx
     if(arg_idx != -1)
     {
@@ -2226,6 +2251,7 @@ static duk_ret_t loop_insert(duk_context *ctx)
     }
     //insert into thread's event loop
     info->e = event_new(thr->base, -1, 0, thread_doevent, info);
+    //printf("adding from %s\n", duk_to_string(ctx, tmpidx));
     dprintf("adding info event(%p) to base(%p)\n",info->e, thr->base);
     event_add(info->e, &timeout);
 
@@ -2240,7 +2266,7 @@ static void *do_thread_setup(void *arg)
     set_thread_num(thr->index);
 
     //start event loop
-    dprintf("START event loop base(%p) for %d %d\n", thr->base, thr->index, thread_local_thread_num);
+    //printf("START event loop base(%p) for %d %d\n", thr->base, thr->index, thread_local_thread_num);
     event_base_loop(thr->base, EVLOOP_NO_EXIT_ON_EMPTY);
 
     return NULL;

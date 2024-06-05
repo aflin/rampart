@@ -55,8 +55,8 @@ function do_thread_test() {
 
     usr_var = "Basic Use in thread";
 
-    var thr1 = new thread();
-    thr1.exec(
+    var thr = new thread();
+    thr.exec(
         function(uv) {
             rampart.event.on("myev", "myfunc3", myCallback, uv);
         },
@@ -72,7 +72,7 @@ var lock = new rampart.lock();
 
 function multi_test(msg, tmsg) {
     var count;
-    //console.log(`thread ${thread.getId()} - removing ${msg}, triggered ${tmsg}`);
+    //console.log(`THREAD ${thread.getId()} - removing ${msg}, triggered ${tmsg}`);
     rampart.event.off("myev2", msg);
 
     lock.lock();
@@ -85,23 +85,38 @@ function multi_test(msg, tmsg) {
     lock.unlock();
 }
 
+var thr1 = new thread();
 var thr2 = new thread();
 var thr3 = new thread();
-var thr4 = new thread();
+
+thr1.exec(function(){
+    rampart.event.on("myev2", "myfunc", multi_test, "myfunc");
+    thread.put("thr1Done", true);
+},"thr1");
 
 thr2.exec(function(){
-    rampart.event.on("myev2", "myfunc", multi_test, "myfunc");
-});
+    rampart.event.on("myev2", "myfunc2", multi_test, "myfunc2");
+    thread.put("thr2Done", true);
+},"thr2");
+
 
 thr3.exec(function(){
-    rampart.event.on("myev2", "myfunc2", multi_test, "myfunc2");
-});
-
-
-thr4.exec(function(){
     testFeature("Multiple threads - start ...", true);
-    rampart.event.trigger("myev2", "from thread 4");
-});
+    var t1 = thread.get("thr1Done",500);
+    var t2 = thread.get("thr2Done",500);
+    //console.log(t1,t2);
+    if(!t1 || !t2)
+        process.exit(1);
+    rampart.event.trigger("myev2", `from thread ${thread.getId()}`);
+}, "thr3");
 
-
-
+sleep(0.1);
+var cnt=thread.get("count",50);
+var x=0
+while(cnt!=2)
+{
+    cnt=thread.get("count",50);
+    x++;
+    if(x>10)
+        testFeature("Multiple threads - failed", false); 
+}

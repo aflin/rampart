@@ -403,7 +403,7 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
         {
             RP_MLOCK(rp_ev_var_lock);
             (*earg->refcount)--;
-            //printf("thr=%d, ref=%p refcount = %d\n",get_thread_num(),refcount, *refcount);
+            //printf("thr=%d, ref=%p refcount = %d\n",get_thread_num(), earg->refcount, *earg->refcount);
             RP_MUNLOCK(rp_ev_var_lock);
         }
     }
