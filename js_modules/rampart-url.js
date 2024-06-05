@@ -85,7 +85,20 @@ function _qToO(qs) {
         var pair = pairs[i];
         var pos = pair.indexOf('=');
         if(pos > 0 ) {
-            comp[decodeURIComponent(pair.substring(0,pos))] = decodeURIComponent(pair.substring(pos+1));
+            var val=pair.substring(pos+1).replace('+','%20');
+            var key = decodeURIComponent(pair.substring(0,pos));
+ 
+            val=decodeURIComponent(val);
+
+            if(comp[key]){
+                if( typeof comp[key] == 'object' ) {
+                    comp[key].push(val);
+                } else {
+                    comp[key] = [ comp[key], val];
+                }
+            }
+            else
+                comp[key] = val;
         } else {
             comp[decodeURIComponent(pair)]=true;
         }
