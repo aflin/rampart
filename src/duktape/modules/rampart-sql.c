@@ -4571,6 +4571,44 @@ duk_ret_t duk_texis_set(duk_context *ctx)
 int largc;
 char **largv;
 
+static void addtbl(duk_context *ctx, char *func, const char *db, char *tbl)
+{
+    char *err=NULL;
+
+    if(access(tbl,W_OK) != 0)
+    {
+        err=strerror(errno);
+        errno=0;
+    }
+    else switch ( TXaddtable((char*)db, tbl, NULL, NULL, NULL, NULL, 0) )
+    {
+        case -2:	err="permission denied";break;
+        case -1:	err="unknown error";break;
+        case 0:		err=NULL;break;
+        default:	err="unknown error";break;
+    }
+    if(err)
+    {
+        RP_THROW(ctx, "%s: error importing table %s - %s", func, tbl, err);
+    }
+}
+
+duk_ret_t duk_rp_sql_addtable(duk_context *ctx)
+{
+    const char *db, *tbl = REQUIRE_STRING(ctx, 0, "argument must be a string (/path/to/importTable.tbl)");
+    
+    duk_push_this(ctx);
+
+    if (!duk_get_prop_string(ctx, -1, "db"))
+    {
+        RP_THROW(ctx, "no database has been opened");
+    }
+    db=duk_get_string(ctx, -1);
+    addtbl(ctx, "addTable()", db, (char*)tbl);
+    return 0;
+}
+
+
 /* **************************************************
    Sql("/database/path") constructor:
 
@@ -4584,6 +4622,10 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     const char *db = NULL;
     DB_HANDLE *h;
     int force=0, addtables=0, create=0;
+    char *default_db_files[]={
+        "SYSCOLUMNS.tbl",  "SYSINDEX.tbl",  "SYSMETAINDEX.tbl",  "SYSPERMS.tbl",
+        "SYSSTATS.tbl",  "SYSTABLES.tbl",  "SYSTRIG.tbl",  "SYSUSERS.tbl", NULL
+    };
 
     /* allow call to Sql() with "new Sql()" only */
     if (!duk_is_constructor_call(ctx))
@@ -4639,7 +4681,8 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
 
     /* check for db first */
     h = h_open( (char*)db);
-    /* if h, then just open that.  Ignore all other options */
+    /* if h, then just open that.  Ignore all other options except addtables */
+
     if (!h)// otherwise check options
     {
         /*
@@ -4670,10 +4713,6 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
             // if dir exists, and we are using force or addtables, check if texis system files are present
             if(dir && (force||addtables))
             {
-                char *default_db_files[]={
-                    "SYSCOLUMNS.tbl",  "SYSINDEX.tbl",  "SYSMETAINDEX.tbl",  "SYSPERMS.tbl",
-                    "SYSSTATS.tbl",  "SYSTABLES.tbl",  "SYSTRIG.tbl",  "SYSUSERS.tbl", NULL
-                };
                 char **s;
                 struct dirent *entry=NULL;
                 
@@ -4763,23 +4802,13 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
 
                             if(!issys && e[len-4]=='.' && e[len-3]=='t' && e[len-2]=='b' && e[len-1]=='l')
                             {
-                                char p[PATH_MAX], *err=NULL;
+                                char p[PATH_MAX];
                                 
                                 strcpy(p,db);
                                 strcat(p,"/");
                                 strcat(p,e);
                                 //printf("adding %s to %s\n", p, db);
-                                switch ( TXaddtable((char*)db, p, NULL, NULL, NULL, NULL, 0) )
-                                {
-                                    case -2:	err="permission denied";break;
-                                    case -1:	err="unknown error";break;
-                                    case 0:		err=NULL;break;
-                                    default:	err="unknown error";break;
-                                }
-                                if(err)
-                                {
-                                    RP_THROW(ctx, "sql.init(): error importing table %s - %s", e, err);
-                                }
+                                addtbl(ctx, "sql.init()", db, p);
                             }
                         }
                         
@@ -4808,7 +4837,10 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
             RP_THROW(ctx, "sql.init(): cannot open database at '%s'\n%s", db, finfo->errmap);
         }
         h = h_open( (char*)db);
+        addtables=0;
     }
+
+
     duk_rp_log_error(ctx); /* log any non fatal errors to this.errMsg */
     h_end_transaction(h);
 
@@ -4843,6 +4875,84 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
     SET_THREAD_UNSAFE(ctx);
 
     TXunneededRexEscapeWarning = 0; //silence rex escape warnings
+
+    // addtables for existing db
+    if(addtables)
+    {
+        int l, i=0;
+        const char **existing=NULL;
+        struct dirent *entry=NULL;
+        DIR *dir = NULL;
+
+        duk_push_string(ctx,"exec");
+        duk_push_string(ctx, "select stringformat('%s%s', convert(WHAT, 'varchar' ), '.tbl') tbls from SYSTABLES where \
+            WHAT!='SYSCOLUMNS' and  WHAT!='SYSINDEX' and  WHAT!='SYSMETAINDEX' and  WHAT!='SYSPERMS' and \
+            WHAT!='SYSSTATS' and  WHAT!='SYSTABLES' and  WHAT!='SYSTRIG' and  WHAT!='SYSUSERS';");
+        duk_push_object(ctx);
+        duk_push_string(ctx, "array");
+        duk_put_prop_string(ctx, -2, "returnType");
+        duk_call_prop(ctx, -4, 2);
+        duk_get_prop_string(ctx, -1, "rows");
+        duk_remove(ctx, -2);
+
+        l=(int)duk_get_length(ctx, -1);
+
+        if(l)
+        {
+            REMALLOC(existing, l*sizeof(char *));
+
+            for(i=0;i<l;i++)
+            {
+                duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+                existing[i]=duk_to_string(ctx, -1);
+                duk_pop(ctx);
+            }
+
+        }
+
+        dir = opendir(db);
+
+        while ((entry = readdir(dir)) != NULL)
+        {
+            char **s, *e = entry->d_name;
+            size_t len = strlen(e);
+
+            if(e[len-4]=='.' && e[len-3]=='t' && e[len-2]=='b' && e[len-1]=='l')
+            {
+                char p[PATH_MAX];
+
+                s=default_db_files;
+
+                while(*s)
+                {
+                    if(entry->d_name[0] != '.' && strcmp(*s, e)==0)
+                        goto next;
+
+                    s++;
+                }
+
+                for(i=0;i<l;i++)
+                {
+                    if(strcmp(e,existing[i])==0)
+                        goto next;
+                }
+
+                strcpy(p,db);
+                strcat(p,"/");
+                strcat(p,e);
+
+                addtbl(ctx, "sql.init()", db, p);
+
+                next:
+            }
+
+        }
+        if(existing)
+            free(existing);
+        closedir(dir);
+        //safeprintstack(ctx);
+        duk_pop(ctx); //array of WHATs from SYSTABLES
+    }
 
     return 0;
 }
@@ -4926,6 +5036,9 @@ duk_ret_t duk_open_module(duk_context *ctx)
     /* set Sql.init.prototype.importCsv */
     duk_push_c_function(ctx, duk_rp_sql_import_csv_str, 4 /*nargs*/);
     duk_put_prop_string(ctx, -2, "importCsv");
+
+    duk_push_c_function(ctx, duk_rp_sql_addtable, 1);
+    duk_put_prop_string(ctx, -2, "addTable");
 
     /* Set Sql.init.prototype = protoObj */
     duk_put_prop_string(ctx, -2, "prototype"); /* -> stack: [ {}, Sql-->[prototype-->{exe=fn_exe,...}] ] */
