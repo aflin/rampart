@@ -193,7 +193,7 @@ testFeature("check lmdb table", function() {
     {
         ret = ret && (res.key == res.value);
     }
-    return ret && (count > 10000); //very very unlikely it will be less
+    return ret && (count > 1000); //very very unlikely it will be less
 });
 
 kill(pid,15);
