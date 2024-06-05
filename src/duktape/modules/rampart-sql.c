@@ -4663,6 +4663,12 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
         }
         duk_pop(ctx);
 
+        if(duk_get_prop_string(ctx, 0, "addTables"))
+        {
+            addtables = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params.addTables must be a boolean"); 
+        }
+        duk_pop(ctx);
+
         if(duk_get_prop_string(ctx, 0, "create"))
         {
             create = (int)REQUIRE_BOOL(ctx, -1, "new Sql.init(params) - params. must be a boolean"); 
@@ -4792,7 +4798,7 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
 
                             while(*s)
                             {
-                                if(entry->d_name[0] != '.' && strcmp(*s, e)==0)
+                                if(strcmp(*s, e)==0)
                                 {
                                     issys=1;
                                     break;
@@ -4920,30 +4926,41 @@ duk_ret_t duk_rp_sql_constructor(duk_context *ctx)
             if(e[len-4]=='.' && e[len-3]=='t' && e[len-2]=='b' && e[len-1]=='l')
             {
                 char p[PATH_MAX];
+                int skip=0;
 
                 s=default_db_files;
 
                 while(*s)
                 {
-                    if(entry->d_name[0] != '.' && strcmp(*s, e)==0)
-                        goto next;
+                    if(strcmp(*s, e)==0)
+                    {
+                        skip=1;
+                        break;
+                    }
 
                     s++;
                 }
 
-                for(i=0;i<l;i++)
+                if(!skip)
                 {
-                    if(strcmp(e,existing[i])==0)
-                        goto next;
+                    for(i=0;i<l;i++)
+                    {
+                        if(strcmp(e,existing[i])==0)
+                        {
+                            skip=1;
+                            break;
+                        }
+                    }
                 }
 
-                strcpy(p,db);
-                strcat(p,"/");
-                strcat(p,e);
+                if(!skip)
+                {
+                    strcpy(p,db);
+                    strcat(p,"/");
+                    strcat(p,e);
 
-                addtbl(ctx, "sql.init()", db, p);
-
-                next:
+                    addtbl(ctx, "sql.init()", db, p);
+                }
             }
 
         }
