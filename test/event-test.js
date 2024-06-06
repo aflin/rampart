@@ -35,13 +35,13 @@ function myCallback (uservar,triggervar){
 
     if(triggervar>4)
     {
+//printf("remove myev in %d\n", thread.getId());
         rampart.event.remove("myev");
         testFeature(uservar, usr_var == uservar);
         if(!thread.getId())
             do_thread_test();
         return;
     }
-
     //printf("recall %d in %d\n", triggervar+1, thread.getId());
     rampart.event.trigger("myev", triggervar+1);
 }
@@ -58,12 +58,14 @@ function do_thread_test() {
     var thr = new thread();
     thr.exec(
         function(uv) {
+            //console.log("set event")
             rampart.event.on("myev", "myfunc3", myCallback, uv);
         },
         usr_var,
         //trigger in callback to make sure event is registered in thread
         function(){
             rampart.event.trigger("myev", 1);
+            //console.log("event triggered");
         }
     );
 }
@@ -80,9 +82,9 @@ function multi_test(msg, tmsg) {
     if(!count) count=1;
     else count++;
     thread.put("count",count);
+    lock.unlock();
     if(count == 2)
       testFeature("Multiple threads - success", true);      
-    lock.unlock();
 }
 
 var thr1 = new thread();
@@ -115,8 +117,9 @@ var cnt=thread.get("count",50);
 var x=0
 while(cnt!=2)
 {
-    cnt=thread.get("count",50);
+    cnt=thread.get("count");
     x++;
     if(x>10)
         testFeature("Multiple threads - failed", false); 
+    sleep(0.05);
 }
