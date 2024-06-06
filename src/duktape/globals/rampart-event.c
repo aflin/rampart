@@ -88,6 +88,7 @@ static RP_EVENT *rp_events=NULL, *rp_last_event=NULL;
                 if(!l->next) rp_last_event=l;\
             }\
             free(e->map);\
+            /*printf("freeing %s\n",e->name);*/\
             free(e->name);\
             free(e);\
             break; \
@@ -109,6 +110,15 @@ static RP_EVENT *rp_events=NULL, *rp_last_event=NULL;
     ret;\
 })
 
+#define debug_print_list() do {\
+    RP_EVENT *e=rp_events, *ret=NULL;\
+    while(e){\
+        printf("%s\n",e->name);\
+        e=e->next;\
+    }\
+    ret;\
+}while(0)
+
 #define rp_event_grow_bitmap(e,b) do{\
     size_t i=e->map_sz;\
     if( i<(b) ) {\
@@ -122,19 +132,15 @@ static RP_EVENT *rp_events=NULL, *rp_last_event=NULL;
 #define rp_event_add_thread(e,n) do {\
     size_t curbyte=(n)/8, curbit=(n)%8;\
     if(e){\
-        RP_PTLOCK(&ev_list_lock);\
         rp_event_grow_bitmap(e, curbyte+1);\
         (e->map)[curbyte] |= (1<<curbit);\
-        RP_PTUNLOCK(&ev_list_lock);\
     }\
 } while (0)
 
 #define rp_event_del_thread(e,n) do {\
     size_t curbyte=(n)/8, curbit=(n)%8;\
     if(e && curbyte < e->map_sz){\
-        RP_PTLOCK(&ev_list_lock);\
         (e->map)[curbyte] &= ~(1<<curbit);\
-        RP_PTUNLOCK(&ev_list_lock);\
     }\
 } while (0)
 
@@ -142,9 +148,7 @@ static RP_EVENT *rp_events=NULL, *rp_last_event=NULL;
     int ret=0;\
     size_t curbyte=(n)/8, curbit=(n)%8;\
     if(e && curbyte < e->map_sz) {\
-            RP_PTLOCK(&ev_list_lock);\
             ret = (e->map)[curbyte] & (1<<curbit);\
-            RP_PTUNLOCK(&ev_list_lock);\
     }\
     /*if(e && !action) printf("in test, byte=%lu, bit=%lu, val=%d\n", curbyte, curbit, (int)(e->map)[curbyte]);*/\
     ret;\
@@ -153,13 +157,17 @@ static RP_EVENT *rp_events=NULL, *rp_last_event=NULL;
 //get existing or make new rp_event struct
 //and set bitmap to current thread
 #define rp_event_register(s) do{\
+    RP_PTLOCK(&ev_list_lock);\
     RP_EVENT *e=rp_get_event(s);\
     if(!e) e=rp_add_event(s);\
     rp_event_add_thread(e,(size_t)get_thread_num());\
+    RP_PTUNLOCK(&ev_list_lock);\
 } while(0)
 
 #define rp_event_unregister(s) do{\
+    RP_PTLOCK(&ev_list_lock);\
     RP_EVENT *ev=rp_get_event(s);\
+    /*printf("unregister %s\n",s);*/\
     if(ev){\
         unsigned char keepev=0;\
         int i=0;\
@@ -170,12 +178,16 @@ static RP_EVENT *rp_events=NULL, *rp_last_event=NULL;
         if(!keepev) /* none are set */\
             rp_del_event(ev);\
     }\
+    RP_PTUNLOCK(&ev_list_lock);\
 } while(0)
 
 #define rp_event_test(s,n) ({\
+    RP_PTLOCK(&ev_list_lock);\
     int ret=0;\
     RP_EVENT *e=rp_get_event(s);\
     if(e) ret=rp_event_test_thread(e,(size_t)n);\
+    /*else {printf("event %s not found\n",s); debug_print_list();}*/\
+    RP_PTUNLOCK(&ev_list_lock);\
     ret;\
 })
 
@@ -254,6 +266,7 @@ duk_ret_t duk_rp_on_event(duk_context *ctx)
         duk_put_prop_string(ctx, -2, evname);// new event object into jsevents
 
     // mark this thread as having this event
+    //if(get_thread_num()==4) printf("registering event in 4\n");
     rp_event_register(evname);
     //printf("regestered %s in thread %d\n", onname, get_thread_num());
     return 0;
@@ -416,6 +429,7 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
 }
 
 static struct timeval fiftyms={0,50000};
+#define ev_add(a,b) do{ /*printf("event:%d - adding %p\n",__LINE__, (a));*/ event_add(a,b);}while(0)
 
 void rp_jsev_freevar(evutil_socket_t fd, short events, void* arg)
 {
@@ -457,7 +471,7 @@ void rp_jsev_freevar(evutil_socket_t fd, short events, void* arg)
     }
     else
     {
-        event_add(earg->e, &fiftyms);
+        ev_add(earg->e, &fiftyms);
     }
 
     RP_MUNLOCK(rp_ev_var_lock);
@@ -490,8 +504,10 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
         //if(action==2) printf("Testing delete %s for thread %d\n", fname, i);
 
         if(!rp_event_test(evname, i))
+        {
+            //if(i==4) printf("skipping thr %d\n",i);
             continue;
-
+        }
         //if(action==0) printf("USING %s for thread %d\n", evname, i);
 
         //if(action==2) printf("Sending delete %s for thread %d\n", fname, i);
@@ -558,7 +574,8 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
         }
         //printf("event = %p, base=%p in thread %d, flag=%d, thr=%p\n", args->e, thr->base, get_thread_num(), thr->flags, thr);
         //if(!action) printf ("Adding event to thread %d, ctx %p\n", i, thr->ctx);
-        event_add(args->e, &timeout);
+        ev_add(args->e, &timeout);
+        //if(i==4)printf("added event '%s' to loop thr=%d\n", evname, i);
     }
 
     if(refcount && *refcount == 0)
@@ -579,7 +596,7 @@ static void evloop_insert(duk_context *ctx, const char *evname, const char *fnam
         args->e = event_new((get_current_thread())->base, -1, 0, rp_jsev_freevar, args);
         args->varno=varno;
         args->action=0; //Action not used in rp_jsev_freevar -- repurpose this as a counter
-        event_add(args->e, &timeout);
+        ev_add(args->e, &timeout);
     }
     THRUNLOCK;
 }

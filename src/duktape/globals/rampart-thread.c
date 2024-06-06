@@ -1537,7 +1537,7 @@ void rp_close_thread(RPTHR *thr)
 
     if(thr->dnsbase)
         evdns_base_free(thr->dnsbase, 0);
-    //RPTHR_CLEAR(thr, RPTHR_FLAG_BASE);
+
     thr->dnsbase=NULL;
     event_base_free(thr->base);
     thr->base=NULL;
@@ -1564,9 +1564,6 @@ void rp_close_thread(RPTHR *thr)
     }
     dprintf("CLOSE THREAD -- remove from parent\n");
     remove_from_parent(thr);
-    //RPTHR_CLEAR(thr, RPTHR_FLAG_IN_USE);
-    //RPTHR_CLEAR(thr, RPTHR_FLAG_FINAL );
-    //thr->flags=0;
 }
 
 /* what to do after fork:
@@ -1712,7 +1709,15 @@ RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx)
 /* ******************************************
   START JS FUNCTIONS FOR CREATE/EXEC THREADS
 ********************************************* */
+pthread_mutex_t testset_lock;
 
+#define TEST_SET(thr, flag) ({\
+    RP_PTLOCK(&testset_lock);\
+    int ret = RPTHR_TEST(thr, flag);\
+    RPTHR_SET(thr, flag);\
+    RP_PTUNLOCK(&testset_lock);\
+    ret;\
+})
 
 static int32_t cbidx=0;
 static int32_t varidx=0;
@@ -1788,6 +1793,8 @@ static void do_parent_callback(evutil_socket_t fd, short events, void* arg)
     duk_call(ctx, 1);
     RP_EMPTY_STACK(ctx);
 }
+
+#define ev_add(a,b) do{ dprintf("thread.c:%d #%d- adding %p\n",__LINE__, get_thread_num(),(a)); event_add(a,b);}while(0)
 
 // execute in thread, from event loop
 static void thread_doevent(evutil_socket_t fd, short events, void* arg)
@@ -1875,7 +1882,7 @@ static void thread_doevent(evutil_socket_t fd, short events, void* arg)
 
     dprintf("inserting event for parent callback for thread %d\n",info->parent_thr->index);
     info->e=event_new(info->parent_thr->base, -1, 0, do_parent_callback, info);
-    event_add(info->e, &immediate);
+    ev_add(info->e, &immediate);
 
 
     end:
@@ -1927,6 +1934,7 @@ static void finalize_event(evutil_socket_t fd, short events, void* arg)
                 //printf("got pending %s in thread %d\n", duk_to_string(ctx, -1), get_thread_num());
                 rpevents_pending=1;
                 duk_pop_n(ctx, 4); //inner key, inner enum ,key, val
+                //printf("pending ev\n");
                 break;
             }
 
@@ -1936,9 +1944,7 @@ static void finalize_event(evutil_socket_t fd, short events, void* arg)
     }
     duk_pop(ctx);//jsevents or undefined
 
-    npending= rpevents_pending + event_base_get_num_events(base, EVENT_BASE_COUNT_ADDED);// +
-              //event_base_get_num_events(base, EVENT_BASE_COUNT_VIRTUAL) +
-              //event_base_get_num_events(base, EVENT_BASE_COUNT_ACTIVE);
+    npending= rpevents_pending + event_base_get_num_events(base, EVENT_BASE_COUNT_ADDED);
 
     //printf("rampart.events pending = %d, total pending: %d in thread %d\n", rpevents_pending, npending, get_thread_num());
 
@@ -1964,7 +1970,8 @@ static void finalize_event(evutil_socket_t fd, short events, void* arg)
     }
 
     goagain:
-        event_add(closer->e, &fiftyms);
+        //printf("npending=%d\n", npending);
+        ev_add(closer->e, &fiftyms);
 }
 
 // insert finalizers if none have been inserted already.
@@ -1979,21 +1986,22 @@ int rp_thread_close_children()
         if(
             RPTHR_TEST(thr, RPTHR_FLAG_IN_USE) &&
             RPTHR_TEST(thr, RPTHR_FLAG_BASE  ) &&
-         !  RPTHR_TEST(thr, RPTHR_FLAG_FINAL ) &&
          !  RPTHR_TEST(thr, RPTHR_FLAG_SERVER)    ) //server threads never exit
         {
-            RPTHR_SET(thr, RPTHR_FLAG_FINAL);
-            closer=NULL;
-            REMALLOC(closer, sizeof(RPTCLOSER));
-
-            closer->thr=thr;
-            closer->e=event_new(thr->base, -1, 0, finalize_event, closer);
-            dprintf("MANUALLY ADDING event finalizer for thread %d, base %p\n",thr->index, thr->base);
-            event_add(closer->e, &immediate);
-            ret=1;
+            if(!TEST_SET(thr, RPTHR_FLAG_FINAL)) //test and set at same time with lock, avoid race
+            {
+                closer=NULL;
+                REMALLOC(closer, sizeof(RPTCLOSER));
+                RPTHR_SET(thr, RPTHR_FLAG_FINAL); //once in 1000 or more, this is not set the first time (macos) - cannot find any reason why.
+                closer->thr=thr;
+                closer->e=event_new(thr->base, -1, 0, finalize_event, closer);
+                dprintf("MANUALLY ADDING event finalizer for thread %d, base %p, flags=%x\n",thr->index, thr->base, thr->flags);
+                ev_add(closer->e, &immediate);
+                ret=1;
+            }
         }
-        else if(RPTHR_TEST(thr, RPTHR_FLAG_IN_USE))
-            dprintf ("%d NOT in use, RPTHR_FLAG_BASE=%d\n", i, !!RPTHR_TEST(thr, RPTHR_FLAG_BASE));
+        //else if(RPTHR_TEST(thr, RPTHR_FLAG_IN_USE))
+        //    dprintf ("%d NOT in use, RPTHR_FLAG_BASE=%d\n", i, !!RPTHR_TEST(thr, RPTHR_FLAG_BASE));
     }
     return ret;
 }
@@ -2032,9 +2040,9 @@ static duk_ret_t finalize_thr(duk_context *ctx)
 
     duk_del_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("thr"));
 
-    if(!RPTHR_TEST(thr, RPTHR_FLAG_FINAL ) && thr->base )
+    if(thr->base && !TEST_SET(thr, RPTHR_FLAG_FINAL ))
     {
-        RPTHR_SET(thr, RPTHR_FLAG_FINAL);
+        //RPTHR_SET(thr, RPTHR_FLAG_FINAL);
         REMALLOC(closer, sizeof(RPTCLOSER));
 
         closer->thr=thr;
@@ -2042,7 +2050,7 @@ static duk_ret_t finalize_thr(duk_context *ctx)
         duk_set_finalizer(ctx, 0);
         closer->e=event_new(closer->thr->base, -1, 0, finalize_event, closer);
         dprintf("adding closer to base %p\n", closer->thr->base);
-        event_add(closer->e, &immediate);
+        ev_add(closer->e, &immediate);
     }
     return 0;
 }
@@ -2253,7 +2261,7 @@ static duk_ret_t loop_insert(duk_context *ctx)
     info->e = event_new(thr->base, -1, 0, thread_doevent, info);
     //printf("adding from %s\n", duk_to_string(ctx, tmpidx));
     dprintf("adding info event(%p) to base(%p)\n",info->e, thr->base);
-    event_add(info->e, &timeout);
+    ev_add(info->e, &timeout);
 
     return 0;
 }
@@ -2358,6 +2366,7 @@ void duk_thread_init(duk_context *ctx)
     }
 
     RP_PTINIT(&cblock);
+    RP_PTINIT(&testset_lock);
 
     duk_push_c_function(ctx, new_js_thread, 0);
 

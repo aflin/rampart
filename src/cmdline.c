@@ -3568,10 +3568,10 @@ int main(int argc, char *argv[])
                 sent_finalizers = rp_thread_close_children();
                 //printf("END OF LOOP %d children\n", mainthr->nchildren);
                 //printf("EXIT main loop with %d children and %s finalizers set\n", mainthr->nchildren, (sent_finalizers?"some":"no"));
-                usleep(50000);
+                usleep(50000);//nchildren can change during this sleep - just fyi
                 // we restart the main loop in case children insert an event before they are done
             } while (mainthr->nchildren || sent_finalizers);
-            //printf("END MAIN LOOP FOR GOOD\n");
+            //printf("FINAL EXIT main loop with %d children and %s finalizers set\n", mainthr->nchildren, (sent_finalizers?"some":"no"));
         }
     }
 
