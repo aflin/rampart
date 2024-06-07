@@ -663,6 +663,47 @@ static void putdoctype( TidyDoc tdoc, TidyNode tnod, TidyBuffer *buf, ctmbstr na
     tidyBufPutByte(buf, '>');
 }
 
+static void pushdoctype( duk_context *ctx, TidyDoc tdoc, TidyNode tnod, ctmbstr name)
+{
+    Node *node = tidyNodeToImpl( tnod );
+    TidyDocImpl* doc = tidyDocToImpl( tdoc );
+    AttVal* fpi = TY_(GetAttrByName)(node, "PUBLIC");
+    AttVal* sys = TY_(GetAttrByName)(node, "SYSTEM");
+    duk_uarridx_t i=0;
+
+    duk_push_object(ctx);
+    duk_push_string(ctx, "!DOCTYPE");
+    duk_put_prop_string(ctx, -2, "type");
+
+    duk_push_array(ctx);//attributes go in array here.
+    duk_push_string(ctx, (const char*)name);
+    duk_put_prop_index(ctx, -2, i++);
+
+    if (fpi && fpi->value && !sys)
+    {
+        duk_push_string(ctx, "PUBLIC");
+        duk_put_prop_index(ctx, -2, i++);
+    }
+    else if (sys && sys->value)
+    {
+        duk_push_string(ctx, "SYSTEM");
+        duk_put_prop_index(ctx, -2, i++);
+    }
+    duk_put_prop_string(ctx, -2, "attributes");
+
+    if (node->content)
+    {
+        Node *cont = node->content;
+        duk_size_t len = (duk_size_t)(cont->end - cont->start);
+
+        duk_push_array(ctx);
+        duk_push_lstring(ctx, (const char *)&(doc->lexer->lexbuf[cont->start]), len);
+        duk_put_prop_index(ctx, -2, 0);
+        duk_put_prop_string(ctx, -2, "contents"); 
+    }
+
+}
+
 TidyBuffer *dumpTag(TidyNode node, TidyBuffer *buf)
 {
     TidyAttr attr;
@@ -714,6 +755,102 @@ TidyBuffer *dumpTag(TidyNode node, TidyBuffer *buf)
     }
 
     return buf;
+}
+
+void dumpHtmlObj(duk_context *ctx, TidyDoc doc, TidyNode node)
+{
+    TidyNode child=NULL;
+
+    TidyNodeType type = tidyNodeGetType(node);
+    //TidyTagId id= tidyNodeGetId(node);
+    ctmbstr name = tidyNodeGetName(node);
+
+    switch(type)
+    {
+        case TidyNode_Start:
+        case TidyNode_StartEnd:
+        {
+            TidyAttr attr;
+
+            duk_push_object(ctx);// return obj
+
+            child = tidyGetChild(node);
+
+            // { type: "div" }
+            duk_push_string(ctx, (const char*)name);
+            duk_put_prop_string(ctx, -2, "type");
+            // { type: "div", attributes: [obj] }
+            attr=tidyAttrFirst(node);
+            if(attr)
+            {
+                duk_push_object(ctx);
+                for (attr=tidyAttrFirst(node); attr; attr=tidyAttrNext(attr))
+                {
+                    const char *k = (const char *) tidyAttrName(attr);
+                    const char *v = (const char *) tidyAttrValue(attr);
+
+
+                    if(v)
+                        duk_push_string(ctx, v);
+                    else
+                        duk_push_string(ctx,k);
+
+                    duk_put_prop_string(ctx, -2, k);
+                }
+                duk_put_prop_string(ctx, -2, "attributes");
+            }
+            // { type: "div", attributes: [obj], contents:[ary] }
+            if(child)
+            {
+                duk_uarridx_t l=0;
+
+                duk_push_array(ctx);
+
+                for ( ; child; child = tidyGetNext(child) )
+                {
+                    dumpHtmlObj(ctx, doc, child);
+                    duk_put_prop_index(ctx, -2, l++);
+                }
+
+                duk_put_prop_string(ctx, -2, "contents");
+            }
+            break;
+        }
+        case TidyNode_DocType:
+            duk_push_object(ctx);
+            duk_push_string(ctx, "document");
+            duk_put_prop_string(ctx, -2, "type");
+            duk_push_array(ctx);
+            pushdoctype(ctx, doc, node, name);
+            duk_put_prop_index(ctx, -2, 0);
+
+            node=tidyGetNext(node);
+            if(node)
+            {
+                dumpHtmlObj(ctx, doc, node);
+                duk_put_prop_index(ctx, -2, 1);
+            }
+            duk_put_prop_string(ctx, -2, "contents");
+            break;
+
+        case TidyNode_Comment:
+        case TidyNode_Text:
+        {
+            TidyBuffer tbuf;
+            tidyBufInit(&tbuf);
+            tidyNodeGetText(doc, node, &tbuf);
+            duk_push_lstring(ctx, (const char*)tbuf.bp, (duk_size_t)(tbuf.size - (tbuf.bp[tbuf.size-1]=='\n' ? 1 : 0)));
+            tidyBufFree (&tbuf);
+            break;
+        }
+        case TidyNode_Root:
+            child = tidyGetChild(node);
+            if(child)
+                dumpHtmlObj(ctx, doc, child);
+            break;
+        default:
+            break;
+    }
 }
 
 TidyBuffer *dumpHtml(TidyDoc doc, TidyNode start, TidyBuffer *buf, int indent, int indented, int printself);
@@ -1232,6 +1369,37 @@ static void *get_tdoc(duk_context *ctx, duk_idx_t this_idx)
 
     RP_THROW(ctx, "html: error - the root html document was destroyed");
     return ret; // cuz compiler
+}
+
+static duk_ret_t tohtmlobj(duk_context *ctx)
+{
+    TidyNode start;
+    TidyDoc doc;
+    int i=0;
+    duk_idx_t this_idx;
+
+    duk_push_this(ctx);
+    this_idx=duk_get_top_index(ctx);
+
+    doc=get_tdoc(ctx, this_idx);
+
+    duk_push_array(ctx);
+
+    /* loop over nodes, extract text, append to buffer/array */
+    duk_get_prop_string(ctx, this_idx, DUK_HIDDEN_SYMBOL("nodes"));
+    duk_enum(ctx, -1, DUK_ENUM_ARRAY_INDICES_ONLY);
+    while(duk_next(ctx, -1, 1))
+    {
+        start=duk_get_pointer(ctx, -1);
+        duk_pop_2(ctx);
+
+        dumpHtmlObj(ctx, doc, start);
+        duk_put_prop_index(ctx, -4, i);
+        i++;
+    }
+    duk_pop_2(ctx);
+
+    return 1;
 }
 
 static duk_ret_t _tohtml(duk_context *ctx)
@@ -1843,6 +2011,9 @@ static void pushfuncs(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_rp_html_tohtml, 1);
     duk_put_prop_string(ctx, -2, "toHtml");
+
+    duk_push_c_function(ctx,  tohtmlobj, 0);
+    duk_put_prop_string(ctx, -2, "toObj");
 
     duk_push_c_function(ctx, duk_rp_html_getelem, 0);
     duk_put_prop_string(ctx, -2, "getElement");
