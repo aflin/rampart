@@ -307,14 +307,15 @@ RPTHR {
     void             **fin_cb_arg;  // user data array for finalizer callback
     rpthr_fin_cb      *fin_cb;      // finalizer callbacks
     int                ncb;         // how many of above
-    uint16_t           flags;       // some flags
-    uint16_t           index;       // index pos in **rpthread; remove if not used
     pthread_t          self;        // unneeded now.
     RPTHR             *parent;      // Parent, if not main.  Otherwise NULL
     RPTHR            **children;    // child threads.  monitor and don't exit if still active
     int                nchildren;   // number of child threads.
     int                reader;      // reader for thread.waitfor()
     int                writer;      // writer for thread.waitfor()
+    uint16_t           index;       // index pos in **rpthread; remove if not used
+    uint8_t            flags;       // some flags
+    uint8_t            finalizing;
 };
 
 #define RPTHR_FLAG_IN_USE   0x01  // if struct is in use and ctxs are set up

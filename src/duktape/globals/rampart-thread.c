@@ -1517,7 +1517,7 @@ void rp_close_thread(RPTHR *thr)
 
     dprintf("CLOSE THREAD, thread=%d, base=%p\n", (int)thr->index, thr->base);
     thr->flags=0; //reset all flags
-
+    thr->finalizing=0;
     if(! RPTHR_TEST(rpthread[i], RPTHR_FLAG_IN_USE))
         return;
 
@@ -1673,7 +1673,7 @@ RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx)
     ret->nchildren=0;
     ret->reader=-1;
     ret->writer=-1;
-
+    ret->finalizing=0;
     if(ret->index !=0 ) //if not main thread
     {
         //set our parent thread
@@ -1711,10 +1711,18 @@ RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx)
 ********************************************* */
 pthread_mutex_t testset_lock;
 
-#define TEST_SET(thr, flag) ({\
+#define TEST_SET_old(thr, flag) ({\
     RP_PTLOCK(&testset_lock);\
     int ret = RPTHR_TEST(thr, flag);\
     RPTHR_SET(thr, flag);\
+    RP_PTUNLOCK(&testset_lock);\
+    ret;\
+})
+
+#define TEST_SET(thr, flag) ({\
+    RP_PTLOCK(&testset_lock);\
+    int ret = thr->finalizing;\
+    thr->finalizing=-1;\
     RP_PTUNLOCK(&testset_lock);\
     ret;\
 })
@@ -1992,7 +2000,9 @@ int rp_thread_close_children()
             {
                 closer=NULL;
                 REMALLOC(closer, sizeof(RPTCLOSER));
-                RPTHR_SET(thr, RPTHR_FLAG_FINAL); //once in 1000 or more, this is not set the first time (macos) - cannot find any reason why.
+                //if(!RPTHR_TEST(thr,RPTHR_FLAG_FINAL)) { printf("epic fail %x\n", thr->flags);exit(1); }
+                //while(!RPTHR_TEST(thr,RPTHR_FLAG_FINAL))
+                //    RPTHR_SET(thr, RPTHR_FLAG_FINAL); //once in 1000 or more, this is not set the first time (macos m1) - cannot find any reason why.
                 closer->thr=thr;
                 closer->e=event_new(thr->base, -1, 0, finalize_event, closer);
                 dprintf("MANUALLY ADDING event finalizer for thread %d, base %p, flags=%x\n",thr->index, thr->base, thr->flags);
