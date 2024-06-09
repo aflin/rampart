@@ -1516,10 +1516,10 @@ void rp_close_thread(RPTHR *thr)
     int i=0;
 
     dprintf("CLOSE THREAD, thread=%d, base=%p\n", (int)thr->index, thr->base);
-    thr->flags=0; //reset all flags
-    thr->finalizing=0;
-    if(! RPTHR_TEST(rpthread[i], RPTHR_FLAG_IN_USE))
+    if(! RPTHR_TEST(thr, RPTHR_FLAG_IN_USE))
         return;
+
+    thr->flags=0; //reset all flags
 
     if(thr->htctx)
     {
@@ -1549,7 +1549,7 @@ void rp_close_thread(RPTHR *thr)
     if(thr->fin_cb && thr->ncb)
     {
 
-        for (;i<thr->ncb;i++)
+        for (i=0;i<thr->ncb;i++)
         {
             //run callback with user arg
             (thr->fin_cb[i])(thr->fin_cb_arg[i]);
@@ -1651,6 +1651,7 @@ RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx)
         rpthread[thread_no]=ret;
         ret->index=(uint16_t)thread_no;
     }
+
     ret->flags=flags;
 
     RPTHR_SET(ret, RPTHR_FLAG_IN_USE);
@@ -1673,7 +1674,6 @@ RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx)
     ret->nchildren=0;
     ret->reader=-1;
     ret->writer=-1;
-    ret->finalizing=0;
     if(ret->index !=0 ) //if not main thread
     {
         //set our parent thread
@@ -1711,18 +1711,10 @@ RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx)
 ********************************************* */
 pthread_mutex_t testset_lock;
 
-#define TEST_SET_old(thr, flag) ({\
+#define TEST_SET(thr, flag) ({\
     RP_PTLOCK(&testset_lock);\
     int ret = RPTHR_TEST(thr, flag);\
     RPTHR_SET(thr, flag);\
-    RP_PTUNLOCK(&testset_lock);\
-    ret;\
-})
-
-#define TEST_SET(thr, flag) ({\
-    RP_PTLOCK(&testset_lock);\
-    int ret = thr->finalizing;\
-    thr->finalizing=-1;\
     RP_PTUNLOCK(&testset_lock);\
     ret;\
 })
@@ -1902,29 +1894,23 @@ static void thread_doevent(evutil_socket_t fd, short events, void* arg)
 
     RP_EMPTY_STACK(ctx);
 }
-#define RPTCLOSER struct rp_thread_closer
-
-RPTCLOSER {
-    struct event      *e;               // event used for closing
-    RPTHR             *thr;             // rampart thread of child
-    duk_context       *ctx;
-};
 
 // an event run inside a thread to shut down the thread
 static void finalize_event(evutil_socket_t fd, short events, void* arg)
 {
-    RPTCLOSER *closer=(RPTCLOSER*)arg;
+    struct event **e = (struct event **)arg;
     int npending=0, rpevents_pending=0;
-    struct event_base *base=event_get_base(closer->e);
-    RPTHR *thr = closer->thr;
+    struct event_base *base=event_get_base(*e);
+    RPTHR *thr = get_current_thread();
     duk_context *ctx = thr->ctx;
 
-    event_del(closer->e);
+    //event_del(*e);
 
-    if( !RPTHR_TEST(closer->thr, RPTHR_FLAG_IN_USE) )
+    if( !RPTHR_TEST(thr, RPTHR_FLAG_IN_USE) )
     {
         dprintf("ALREADY finalized in finalize_event\n");
-        free(closer);
+        event_free(*e);
+        free(arg);
         return;
     }
 
@@ -1938,11 +1924,8 @@ static void finalize_event(evutil_socket_t fd, short events, void* arg)
             duk_enum(ctx, -1, 0);
             if(duk_next(ctx, -1, 0))
             {
-                //safeprintstack(ctx);
-                //printf("got pending %s in thread %d\n", duk_to_string(ctx, -1), get_thread_num());
                 rpevents_pending=1;
                 duk_pop_n(ctx, 4); //inner key, inner enum ,key, val
-                //printf("pending ev\n");
                 break;
             }
 
@@ -1954,21 +1937,16 @@ static void finalize_event(evutil_socket_t fd, short events, void* arg)
 
     npending= rpevents_pending + event_base_get_num_events(base, EVENT_BASE_COUNT_ADDED);
 
-    //printf("rampart.events pending = %d, total pending: %d in thread %d\n", rpevents_pending, npending, get_thread_num());
-
     // if we have pending events, or parent thread is active in JS and might add events, keep going
-    if(!npending && !RPTHR_TEST(closer->thr->parent, RPTHR_FLAG_ACTIVE))
+    if(!npending && !RPTHR_TEST(thr->parent, RPTHR_FLAG_ACTIVE))
     {
-        RPTHR *thr = closer->thr;
-        //int cadd, cvirt, cact;
         // check if any child threads left in use
         if(thr->nchildren != 0) {
             dprintf("still have %d children\n", thr->nchildren);
             goto goagain;
         }
-        event_free(closer->e);
-
-        free(closer);
+        event_free(*e);
+        free(arg);
         dprintf("CLOSING thr %d\n", (int)thr->index);
         THRLOCK;
         rp_close_thread(thr);
@@ -1978,15 +1956,15 @@ static void finalize_event(evutil_socket_t fd, short events, void* arg)
     }
 
     goagain:
-        //printf("npending=%d\n", npending);
-        ev_add(closer->e, &fiftyms);
+        ev_add(*e, &fiftyms);
+
 }
 
 // insert finalizers if none have been inserted already.
 int rp_thread_close_children()
 {
     int i=1, ret=0;
-    RPTCLOSER *closer=NULL;
+    struct event **e=NULL;
     RPTHR *thr;
     for (i=1;i<nrpthreads;i++)
     {
@@ -1998,20 +1976,15 @@ int rp_thread_close_children()
         {
             if(!TEST_SET(thr, RPTHR_FLAG_FINAL)) //test and set at same time with lock, avoid race
             {
-                closer=NULL;
-                REMALLOC(closer, sizeof(RPTCLOSER));
-                //if(!RPTHR_TEST(thr,RPTHR_FLAG_FINAL)) { printf("epic fail %x\n", thr->flags);exit(1); }
-                //while(!RPTHR_TEST(thr,RPTHR_FLAG_FINAL))
-                //    RPTHR_SET(thr, RPTHR_FLAG_FINAL); //once in 1000 or more, this is not set the first time (macos m1) - cannot find any reason why.
-                closer->thr=thr;
-                closer->e=event_new(thr->base, -1, 0, finalize_event, closer);
-                dprintf("MANUALLY ADDING event finalizer for thread %d, base %p, flags=%x\n",thr->index, thr->base, thr->flags);
-                ev_add(closer->e, &immediate);
+                e=NULL;
+                REMALLOC(e, sizeof(struct event *));
+                *e=event_new(thr->base, -1, 0, finalize_event, e);
+                dprintf("MANUALLY ADDING event finalizer for thread %d, thr=%p, ev=%p, flags=%x\n",thr->index, thr, *e, thr->flags);
+                ev_add(*e, &immediate);
                 ret=1;
+                //if(!RPTHR_TEST(thr,RPTHR_FLAG_FINAL)) { printf("epic fail thr=%p,  %x\n", thr, thr->flags);exit(1); }
             }
         }
-        //else if(RPTHR_TEST(thr, RPTHR_FLAG_IN_USE))
-        //    dprintf ("%d NOT in use, RPTHR_FLAG_BASE=%d\n", i, !!RPTHR_TEST(thr, RPTHR_FLAG_BASE));
     }
     return ret;
 }
@@ -2022,7 +1995,7 @@ int rp_thread_close_children()
 // BUT -- don't insert in loop if already inserted in rp_thread_close_children() above
 static duk_ret_t finalize_thr(duk_context *ctx)
 {
-    RPTCLOSER *closer=NULL;
+    struct event **e=NULL;
     RPTHR *thr=NULL;
     int thrno = 0;
 
@@ -2052,15 +2025,12 @@ static duk_ret_t finalize_thr(duk_context *ctx)
 
     if(thr->base && !TEST_SET(thr, RPTHR_FLAG_FINAL ))
     {
-        //RPTHR_SET(thr, RPTHR_FLAG_FINAL);
-        REMALLOC(closer, sizeof(RPTCLOSER));
-
-        closer->thr=thr;
         duk_push_undefined(ctx);
         duk_set_finalizer(ctx, 0);
-        closer->e=event_new(closer->thr->base, -1, 0, finalize_event, closer);
-        dprintf("adding closer to base %p\n", closer->thr->base);
-        ev_add(closer->e, &immediate);
+        REMALLOC(e, sizeof(struct event *));
+        *e=event_new(thr->base, -1, 0, finalize_event, e);
+        dprintf("adding closer to base %p\n", thr->base);
+        ev_add(*e, &immediate);
     }
     return 0;
 }
@@ -2135,9 +2105,6 @@ static duk_ret_t loop_insert(duk_context *ctx)
         else
             duk_pop(ctx);
     }
-
-    //duk_dup(ctx, arg_idx);
-    //duk_idx_t tmpidx = duk_normalize_index(ctx, -1);
 
     REQUIRE_FUNCTION(ctx, thrfunc_idx, "thr.exec: threadFunc must be provided in options object or as first parameter");
     if(cbfunc_idx != -1)
@@ -2284,7 +2251,6 @@ static void *do_thread_setup(void *arg)
     set_thread_num(thr->index);
 
     //start event loop
-    //printf("START event loop base(%p) for %d %d\n", thr->base, thr->index, thread_local_thread_num);
     event_base_loop(thr->base, EVLOOP_NO_EXIT_ON_EMPTY);
 
     return NULL;
@@ -2435,7 +2401,3 @@ void set_thread_fin_cb(RPTHR *thr, rpthr_fin_cb cb, void *data)
 
     thr->ncb++;
 }
-
-
-
-

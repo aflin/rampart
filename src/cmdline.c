@@ -3559,18 +3559,22 @@ int main(int argc, char *argv[])
 
             /* start event loop */
             int sent_finalizers=0;
+            int nchildren=0;
             do {
+                event_base_loop(mainthr->base, 0);
+                THRLOCK;
                 sent_finalizers=0;
                 //printf("ENTER main loop\n");
-                event_base_loop(mainthr->base, 0);
                 // at this point, if children have no active events, they aint gonna get any
                 // as main thread is done with all it's events
                 sent_finalizers = rp_thread_close_children();
                 //printf("END OF LOOP %d children\n", mainthr->nchildren);
                 //printf("EXIT main loop with %d children and %s finalizers set\n", mainthr->nchildren, (sent_finalizers?"some":"no"));
-                usleep(50000);//nchildren can change during this sleep - just fyi
                 // we restart the main loop in case children insert an event before they are done
-            } while (mainthr->nchildren || sent_finalizers);
+                nchildren=mainthr->nchildren;
+                THRUNLOCK;
+                usleep(50000);//nchildren can change during this sleep - just fyi
+            } while (nchildren || sent_finalizers);
             //printf("FINAL EXIT main loop with %d children and %s finalizers set\n", mainthr->nchildren, (sent_finalizers?"some":"no"));
         }
     }

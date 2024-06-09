@@ -306,16 +306,15 @@ RPTHR {
     struct evdns_base *dnsbase;     // libevent base for event loop
     void             **fin_cb_arg;  // user data array for finalizer callback
     rpthr_fin_cb      *fin_cb;      // finalizer callbacks
-    int                ncb;         // how many of above
     pthread_t          self;        // unneeded now.
     RPTHR             *parent;      // Parent, if not main.  Otherwise NULL
     RPTHR            **children;    // child threads.  monitor and don't exit if still active
-    int                nchildren;   // number of child threads.
+    _Atomic uint16_t   flags;       // some flags
+    uint16_t           index;       // index pos in **rpthread; remove if not used
+    uint16_t           ncb;         // how many of above fin_cb
+    uint16_t           nchildren;   // number of child threads.
     int                reader;      // reader for thread.waitfor()
     int                writer;      // writer for thread.waitfor()
-    uint16_t           index;       // index pos in **rpthread; remove if not used
-    uint8_t            flags;       // some flags
-    uint8_t            finalizing;
 };
 
 #define RPTHR_FLAG_IN_USE   0x01  // if struct is in use and ctxs are set up
@@ -361,8 +360,8 @@ void          rp_thread_preinit();
 
 /* for locks and threads flags */
 #define RPTHR_SET(thread, flag)   ( (thread)->flags |=  (flag) )
-#define RPTHR_CLEAR(thread, flag) ( (thread)->flags &= ~ (flag) )
-#define RPTHR_TEST(thread, flag)  ( (thread)->flags & (flag) )
+#define RPTHR_CLEAR(thread, flag) ( (thread)->flags &= ~(flag) )
+#define RPTHR_TEST(thread, flag)  ( (thread)->flags &   (flag) )
 
 /* mutex locking in general */
 #define RP_PTLOCK(lock) do{\
@@ -461,7 +460,7 @@ int rp_thread_close_children();
 void set_thread_fin_cb(RPTHR *thr, rpthr_fin_cb cb, void *data);
 extern pthread_mutex_t thr_lock;
 extern RPTHR_LOCK *rp_thr_lock;
-#define THRLOCK RP_MLOCK(rp_thr_lock)
+#define THRLOCK do{RP_MLOCK(rp_thr_lock);/* printf("lock at %s:%d\n",__FILE__,__LINE__);*/}while(0)
 #define THRUNLOCK RP_MUNLOCK(rp_thr_lock)
 
 /************* END THREAD AND LOCK RELATED ************************/
