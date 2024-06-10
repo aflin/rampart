@@ -115,8 +115,6 @@ static const char *scheme_strmap[] = {
 };
 */
 
-
-
 /* a duk http request struct
     keeps info about request, callback,
     timeout and thread number for thread specific info
@@ -3677,7 +3675,6 @@ static void *http_dothread(void *arg)
         clean_reqobj(ctx, has_content, req->cb_has_websock);
         return NULL;
     }
-
     if (dhr->have_timeout)
     {
         debugf("0x%x, LOCKING in thread_cb\n", (int)x);
@@ -3855,80 +3852,12 @@ extern struct slisthead tohead;
 static duk_context *redo_ctx(int thrno)
 {
     duk_context *thr_ctx = duk_create_heap(NULL, NULL, NULL, NULL, duk_rp_fatal);
-    duk_idx_t fno = 0;
-    void *bc_ptr, *buf;
-    duk_size_t bc_len;
     RPTHR *thr=NULL;
 
     duk_init_context(thr_ctx);
     duk_push_array(thr_ctx);
     /* copy all the functions previously stored at bottom of stack */
     CTXLOCK;
-
-    //    our array of functions have been stashed
-    duk_push_global_stash(main_ctx);
-    duk_get_prop_string(main_ctx, -1, "funcstash");
-    duk_insert(main_ctx, 0);
-    duk_pop(main_ctx);
-
-    rpthr_copy_global(main_ctx, thr_ctx);
-
-    duk_get_prop_index(main_ctx,0,fno);
-    while(!duk_is_undefined(main_ctx,-1))
-    {
-        /* check if this is a module function */
-        if(!duk_is_function(main_ctx,-1) )
-        {
-            duk_push_object(thr_ctx);
-            rpthr_copy_obj(main_ctx,thr_ctx,0);
-            rpthr_clean_obj(main_ctx,thr_ctx);
-            duk_put_prop_index(thr_ctx,0,fno); //put object in same position as was in main_ctx
-
-            duk_pop(main_ctx); // object from array[fno]
-            duk_get_prop_index(main_ctx,0, ++fno); // for next loop in while()
-            continue;
-        }
-
-        if (
-            duk_get_prop_string(main_ctx, -1, DUK_HIDDEN_SYMBOL("is_global"))
-                &&
-            duk_get_boolean_default(main_ctx, -1, 0)
-           )
-        {
-            const char *name;
-
-            if (duk_get_prop_string(main_ctx, -1, "name"))
-            {
-                name = duk_get_string(main_ctx, -1);
-                duk_pop_2(main_ctx); //name string and true
-
-                duk_get_global_string(thr_ctx, name); //put already copied function on stack
-                duk_push_string(thr_ctx, name);       //add fname property to function
-                duk_put_prop_string(thr_ctx, -2, "fname");
-                duk_put_prop_index(thr_ctx,0,fno); //put function in same position as was in main_ctx
-
-                //next round
-                duk_pop(main_ctx); // object from array[fno]
-                duk_get_prop_index(main_ctx,0, ++fno); // for next loop in while()
-                continue;
-            }
-            duk_pop(main_ctx);// undefined from get_prop_string "name"
-        }
-        duk_pop(main_ctx); //undefined or boolean from get_prop_string is_global
-
-        /* copy the function */
-        duk_dump_function(main_ctx);
-        bc_ptr = duk_get_buffer_data(main_ctx, -1, &bc_len);
-        buf = duk_push_fixed_buffer(thr_ctx, bc_len);
-        memcpy(buf, (const void *)bc_ptr, bc_len);
-        duk_load_function(thr_ctx);
-        duk_put_prop_index(thr_ctx,0,fno);
-
-        //next round
-        duk_pop(main_ctx); //bytecode
-        duk_get_prop_index(main_ctx,0, ++fno);// for next loop in while()
-
-    }
 
     /* renumber this thread in global "rampart" variable */
     if (!duk_get_global_string(thr_ctx, "rampart"))
@@ -3939,8 +3868,7 @@ static duk_context *redo_ctx(int thrno)
     duk_push_int(thr_ctx, thrno);
     duk_put_prop_string(thr_ctx, -2, "thread_id");
     duk_put_global_string(thr_ctx, "rampart");
-
-    duk_remove(main_ctx,0);
+    rpthr_copy_global(main_ctx, thr_ctx);
 
     /* remove pending events from old context */
     {
@@ -3963,12 +3891,15 @@ static duk_context *redo_ctx(int thrno)
 
     thr=server_thread[thrno];
 
-    duk_dup(thr_ctx,0);
+    duk_get_global_string(thr_ctx, DUK_HIDDEN_SYMBOL("funcstash"));
+    duk_dup(thr_ctx, -1);
+    duk_insert(thr_ctx, 0);
     duk_put_global_string(thr_ctx, DUK_HIDDEN_SYMBOL("thread_funcstash"));
 
     duk_destroy_heap(thr->ctx);
     thr->ctx = thr_ctx;
     thr->htctx = thr_ctx;
+
     return thr_ctx;
 }
 
@@ -6329,9 +6260,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
         }
         stderr=error_fh;
         stdout=access_fh;
-        duk_push_global_stash(ctx);
         duk_pull(ctx,0);
-        duk_put_prop_string(ctx, -2, "funcstash");
+        duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("funcstash"));
         // if forking as a daemon, run loop here in child and don't continue with rest of script
         // script will continue in parent process
         add_exit_func(evexit, htp);
@@ -6345,9 +6275,8 @@ duk_ret_t duk_server_start(duk_context *ctx)
     else
         rampart_server_started=1;
 
-    duk_push_global_stash(ctx);
     duk_pull(ctx,0);
-    duk_put_prop_string(ctx, -2, "funcstash");
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("funcstash"));
     duk_push_int(ctx, (int) getpid() );
 
     return 1;

@@ -337,7 +337,7 @@ RPTHR_LOCK {
 #endif
     RPTHR_LOCK      *next;
     uint16_t         thread_idx;
-    uint16_t         flags;
+    _Atomic uint16_t flags;
 };
 
 #define RPTHR_LOCK_FLAG_LOCKED    0x01  // if the lock is currently held

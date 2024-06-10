@@ -27,7 +27,7 @@ uint16_t nrpthreads=0;
 // the glue that holds it all together
 __thread int thread_local_thread_num=0;
 
-pthread_mutex_t cp_lock; //lock for copy/paste clipboard ctx
+pthread_mutex_t *cp_lock=NULL; //lock for copy/paste clipboard ctx
 RPTHR_LOCK *rp_cp_lock;
 
 //clipboard cond, to wait for var change
@@ -1109,6 +1109,7 @@ void rpthr_copy_global(duk_context *ctx, duk_context *tctx)
     duk_pop(ctx);
     duk_del_prop_string(tctx, -1, DUK_HIDDEN_SYMBOL("arrRefPtr") );
     duk_pop(tctx);
+//    rpthr_copy_stash(ctx, tctx); // copy stash too
 }
 
 /* ******************************************
@@ -1178,6 +1179,7 @@ void put_to_clipboard(duk_context *ctx, duk_idx_t val_idx, char *key)
 
     RP_EMPTY_STACK(cpctx);
     //cpctx: []
+
     CPUNLOCK;
     duk_pop(ctx);
 }
@@ -1578,7 +1580,6 @@ RPTHR **saved_threads=NULL;
 
 void rp_post_fork_clean_threads()
 {
-    //int i=0, curthr_idx=get_thread_num();
     duk_context *ctx=NULL;
 
     // we cannot safely destroy the duk_contexts as that will trigger finalizers
@@ -1602,13 +1603,19 @@ void rp_post_fork_clean_threads()
     // And now that we have them and we have forked:
     rp_unlock_all_locks(0);
 
+    //redo CPLOCK
+    rp_remove_lock(rp_cp_lock);
+    cp_lock=NULL;
+    REMALLOC(cp_lock, sizeof(pthread_mutex_t));
+    rp_cp_lock=RP_MINIT(cp_lock);
+
     // make a new thread structure for this thread, and replace mainthr
     mainthr=rp_new_thread(RPTHR_FLAG_THR_SAFE, ctx);
     mainthr->base = event_base_new();
     mainthr->dnsbase=rp_make_dns_base(mainthr->ctx, mainthr->base);
     RPTHR_SET(mainthr, RPTHR_FLAG_BASE);
     thread_local_thread_num = 0;
-
+    main_ctx=mainthr->ctx;
     return;
 }
 
@@ -2051,8 +2058,6 @@ static duk_ret_t loop_insert(duk_context *ctx)
     timeout.tv_sec=0;
     timeout.tv_usec=0;
 
-
-
     for(i=0; i<5; i++)
     {
         if(duk_is_function(ctx,i))
@@ -2326,7 +2331,9 @@ duk_ret_t get_thread_id(duk_context *ctx)
 void rp_thread_preinit()
 {
     RP_PTINIT(&thr_list_lock);
-    rp_cp_lock=RP_MINIT(&cp_lock);
+    REMALLOC(cp_lock, sizeof(pthread_mutex_t));
+    rp_cp_lock=RP_MINIT(cp_lock);
+    RPTHR_SET(rp_cp_lock, RPTHR_LOCK_FLAG_FREELOCK);
 }
 
 

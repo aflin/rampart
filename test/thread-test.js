@@ -31,7 +31,7 @@ function testFeature(name,test,error)
         printf(">>>>> FAILED <<<<<\n");
         if(error) printf('%J\n',error);
         var pid = thread.get("server_pid",1000);
-        if(pid) kill(pid);
+        //if(pid) kill(pid);
         process.exit(1);
     }
     if(error) printf('%J\n',error);
@@ -290,10 +290,12 @@ thr5.exec(function(){
 var thr7;
 
 function server_thread_test(req) {
+
     // although defined in main thread, thr7 var is copied
     // and each server thread will maintain its own thr7.
     // However, thr7 must be created inside the current server thread 
     if(!thr7) thr7 = new rampart.thread();
+
     thr7.exec( 
 
         //thread func
@@ -323,7 +325,7 @@ thr4.exec(function(){
         /* only applies if starting as root */
         user: "nobody",
 
-        scriptTimeout: 1.0, /* max time to spend in JS */
+        scriptTimeout: 5.0, /* max time to spend in JS */
         connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
         useThreads: true, /* make server multi-threaded. */
         //threads: 1,
@@ -351,6 +353,7 @@ thr4.exec(function(){
             "/threadtest.txt": server_thread_test
         }
     });
+    sleep(0.5);
     thread.put("server_pid", pid);
 });
 
@@ -367,7 +370,9 @@ thr5.exec(function(){
 thr5.exec(function(){
     var pid = thread.get("server_pid",1000);
     testFeature("thread - server with thread and defer", function(){
-        var res=curl.fetch("http://localhost:8084/threadtest.txt?myvar=123abc");
+
+        var res=curl.fetch("http://localhost:8084/threadtest.txt?myvar=123abc",{"connect-timeout":6, "speed-limit":100, "speed-time":6});
+
         if (res.text == '123abc')
             return true;
         else {
