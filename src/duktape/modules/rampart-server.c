@@ -6276,7 +6276,7 @@ duk_ret_t duk_server_start(duk_context *ctx)
         rampart_server_started=1;
 
     duk_pull(ctx,0);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("funcstash"));
+    duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("funcstash"));
     duk_push_int(ctx, (int) getpid() );
 
     return 1;
