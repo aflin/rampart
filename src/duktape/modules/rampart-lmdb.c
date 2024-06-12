@@ -356,8 +356,8 @@ duk_ret_t duk_rp_lmdb_drop(duk_context *ctx)
 
         if(rc)
         {
-            write_unlock;
             mdb_txn_abort(txn);
+            write_unlock;
             RP_THROW(ctx, "lmdb.drop - error opening database cursor - %s", mdb_strerror(rc));
         }
 
@@ -794,7 +794,8 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
 
     if(rc)
     {
-        write_unlock;
+        if(del)
+            write_unlock;
         RP_THROW(ctx, "%s - error beginning transaction - %s", fname, mdb_strerror(rc));
     }
 
@@ -806,6 +807,8 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
         if(rc == MDB_NOTFOUND)
         {
             mdb_txn_abort(txn);
+            if(del)
+                write_unlock;
             RP_THROW(ctx, "%s - error opening database - database does not exist", fname);
         }
     }
@@ -813,7 +816,8 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
     {
         GETDBNAME
         mdb_txn_abort(txn);
-        write_unlock;
+        if(del)
+            write_unlock;
         RP_THROW(ctx, "%s - error opening %s - %s", db, fname, mdb_strerror(rc));
     }
 
@@ -822,7 +826,8 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
     {
         GETDBNAME
         mdb_txn_abort(txn);
-        write_unlock;
+        if(del)
+            write_unlock;
         RP_THROW(ctx, "%s - error opening cursor%s - %s", db, fname, mdb_strerror(rc));
     }
 
@@ -840,7 +845,8 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
         {
             mdb_cursor_close(cursor);
             mdb_txn_abort(txn);
-            write_unlock;
+            if(del)
+                write_unlock;
             duk_push_object(ctx);
             return 1;
         }
@@ -880,7 +886,8 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
             }
             mdb_cursor_close(cursor);
             mdb_txn_commit(txn);
-            write_unlock;
+            if(del)
+                write_unlock;
             return 0;
         }
 
@@ -918,7 +925,8 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
 
         mdb_cursor_close(cursor);
         mdb_txn_commit(txn);
-        write_unlock;
+        if(del)
+            write_unlock;
         return 1;
     }
 
@@ -929,7 +937,8 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
     {
         mdb_cursor_close(cursor);
         mdb_txn_abort(txn);
-        write_unlock;
+        if(del)
+            write_unlock;
         /* return empty object if we asked for more than a single */
         if(items || endstr)
         {
@@ -1088,7 +1097,8 @@ static duk_ret_t get_del(duk_context *ctx, int del, int retvals)
 
     mdb_cursor_close(cursor);
     mdb_txn_commit(txn);
-    write_unlock;
+    if(del)
+        write_unlock;
     return (duk_ret_t)retvals;
 }
 
@@ -1996,16 +2006,15 @@ duk_ret_t duk_rp_lmdb_new_txn(duk_context *ctx)
             wdb, lenv->dbpath);
     if(rw)
     {
-        write_lock;
+        //write_lock;
         rc = mdb_txn_begin(lenv->env, NULL, 0, &txn);
+        //write_unlock;
     }
     else
         rc = mdb_txn_begin(lenv->env, NULL, MDB_RDONLY, &txn);
 
     if(rc)
     {
-        if(rw)
-            write_unlock;
         RP_THROW(ctx, "lmdb.transaction - error beginning transaction - %s", mdb_strerror(rc));
     }
 

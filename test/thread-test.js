@@ -31,7 +31,7 @@ function testFeature(name,test,error)
         printf(">>>>> FAILED <<<<<\n");
         if(error) printf('%J\n',error);
         var pid = thread.get("server_pid",1000);
-        //if(pid) kill(pid);
+        if(pid) kill(pid);
         process.exit(1);
     }
     if(error) printf('%J\n',error);
@@ -145,17 +145,6 @@ function global_thread_lmdb(arg){
 
     var txn = new lmdb.transaction(dbi, true, true);
     
-    if(!arg.i){
-        var j=0;
-        var iv=setInterval(function(){
-            j++;
-            //if(j>20) {
-            if(thread.get("DONE") && thread.get("LMDBDONE")) {
-                testFeature("thread - wait for exit while events pending", true);
-                clearInterval(iv);
-            }
-        },50);
-    }
     
     // some writes
     for (i=0;i<10000;i++)
@@ -290,12 +279,10 @@ thr5.exec(function(){
 var thr7;
 
 function server_thread_test(req) {
-
     // although defined in main thread, thr7 var is copied
     // and each server thread will maintain its own thr7.
     // However, thr7 must be created inside the current server thread 
     if(!thr7) thr7 = new rampart.thread();
-
     thr7.exec( 
 
         //thread func
@@ -318,6 +305,7 @@ function server_thread_test(req) {
 
 thr4.exec(function(){
 
+    try {
     var pid=server.start(
     {
         bind: "127.0.0.1:8084",
@@ -325,7 +313,7 @@ thr4.exec(function(){
         /* only applies if starting as root */
         user: "nobody",
 
-        scriptTimeout: 5.0, /* max time to spend in JS */
+        scriptTimeout: 1.0, /* max time to spend in JS */
         connectTimeout:20.0, /* how long to wait before client sends a req or server can send a response */
         useThreads: true, /* make server multi-threaded. */
         //threads: 1,
@@ -353,7 +341,10 @@ thr4.exec(function(){
             "/threadtest.txt": server_thread_test
         }
     });
-    sleep(0.5);
+    } catch(e) {
+        console.log(e);
+        testFeature("thread - server forked from thread is running", false);
+    }
     thread.put("server_pid", pid);
 });
 
@@ -368,26 +359,24 @@ thr5.exec(function(){
 });
 
 thr5.exec(function(){
-    var pid = thread.get("server_pid",1000);
-    testFeature("thread - server with thread and defer", function(){
+        var pid = thread.get("server_pid",1000);
+        testFeature("thread - server with thread and defer", function(){
+            var res=curl.fetch("http://localhost:8084/threadtest.txt?myvar=123abc");
+            if (res.text == '123abc')
+                return true;
+            else {
+                console.log(res.errMsg);
+                return false;
+            }
+            //return res.text == '123abc';
+        })
 
-        var res=curl.fetch("http://localhost:8084/threadtest.txt?myvar=123abc",{"connect-timeout":6, "speed-limit":100, "speed-time":6});
-
-        if (res.text == '123abc')
-            return true;
-        else {
-            console.log(res.errMsg);
-            return false;
-        }    
-        //return res.text == '123abc';
-    })
-
-    if(pid) {
-        kill(pid);
-        pid=false;
-    }
-},
-{threadDelay: 500}
+        if(pid) {
+            kill(pid);
+            pid=false;
+        }
+    },
+    {threadDelay: 500}
 );
 
 
@@ -395,57 +384,73 @@ thr5.exec(function(){
 // must make locks first or they will not be copied to threads
 var lock1 = new rampart.lock();
 var lock2 = new rampart.lock();
-var lock3 = new rampart.lock();
 
 var lthr1 = new thread();
 var lthr2 = new thread();
 
+thread.put("val1",0);
+thread.put("val2",0);
+
+
 lthr1.exec(function(){
-    var val1, val2, val3;
+    var val, i=0;
 
-    //wait for thread 2 to get lock3
-    while(lock3.getLockingThread()==-1)
-        sleep(0.1);
+    for(i=0;i<50;i++) {
+        lock1.lock();
+        val=thread.get("val1");
+        val++;
+        thread.put("val1", val);
+        lock1.unlock();
+    }
 
-    lock1.lock();
-    lock2.lock();
+    for(i=0;i<50;i++) {
+        lock2.lock();
+        val=thread.get("val2");
+        val++;
+        thread.put("val2", val);
+        lock2.unlock();
+    }
 
-    val1=thread.get("val"); // undefined
-
-    lock1.unlock();
-    lock3.lock()
-    val2=thread.get("val"); // 1
-    lock3.unlock();
-    sleep(0.02); //give lock2.trylock some fails
-    lock2.unlock();
-    sleep(0.1);
-    val3=thread.get("val"); // many
-
-    testFeature("thread - user locking in threads", (!val1 && val2==1 && val3>50) )
-    thread.put("DONE", true);
-    //console.log(val1, val2, val3);
+    thread.put("valsDone", true);
 });
 
 lthr2.exec(function(){
-    var x=0;
+    var val, i=0;
 
-    lock3.lock();
+    for(i=0;i<25;i++) {
+        lock1.lock();
+        val=thread.get("val1");
+        val++;
+        thread.put("val1", val);
+        lock1.unlock();
+    }
 
-    //wait for thread 1 to get locks
-    while(lock2.getLockingThread()==-1)
-        sleep(0.1);
+    for(i=0;i<50;i++) {
+        lock2.lock();
+        val=thread.get("val2");
+        val++;
+        thread.put("val2", val);
+        lock2.unlock();
+    }
 
+    for(i=0;i<25;i++) {
+        lock1.lock();
+        val=thread.get("val1");
+        val++;
+        thread.put("val1", val);
+        lock1.unlock();
+    }
 
-    lock1.lock();
-    thread.put('val',1);
-    lock1.unlock();
-    lock3.unlock();
-
-    while(!lock2.trylock())
-        x++;
-
-    thread.put('val',x);
-
-    lock2.unlock();
+    var success = thread.get("valsDone",10000);
+    var res1 = thread.get("val1");
+    var res2 = thread.get("val2");
+    testFeature("thread - user locking in threads", (success && res1==100 && res2==100));
+    thread.put("DONE", true);
 });
 
+var iv=setInterval(function(){
+    if(thread.get("DONE") && thread.get("LMDBDONE")) {
+        testFeature("thread - wait for exit while events pending", true);
+        clearInterval(iv);
+    }
+},100);

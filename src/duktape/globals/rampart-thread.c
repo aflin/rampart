@@ -1120,11 +1120,18 @@ void rpthr_copy_global(duk_context *ctx, duk_context *tctx)
 START FUNCTIONS FOR COPY/PASTE PUT AND GET
  ********************************************* */
 
-//#define CPLOCK do{ RP_MLOCK(rp_cp_lock); printf("LOCKing on line %d, lock=%p\n", __LINE__, rp_cp_lock);}while(0)
-//#define CPUNLOCK do{ RP_MUNLOCK(rp_cp_lock); printf("UNlocking on line %d, lock=%p\n", __LINE__, rp_cp_lock);}while(0)
-
+// copy locking
 #define CPLOCK RP_MLOCK(rp_cp_lock)
 #define CPUNLOCK RP_MUNLOCK(rp_cp_lock)
+//#define CPLOCK do { printf("%d - %d - CP Locking, last=%d\n",thread_local_thread_num,__LINE__,cplastlock); RP_MLOCK(rp_cp_lock); printf("%d - %d - CP Locked\n",thread_local_thread_num,__LINE__); cplastlock=thread_local_thread_num;} while(0)
+//#define CPUNLOCK do { printf("%d - %d - CP Unlocking\n",thread_local_thread_num,__LINE__); RP_MUNLOCK(rp_cp_lock); cplastlock=-thread_local_thread_num;printf("%d - %d - CP Unlocked\n",thread_local_thread_num,__LINE__);} while(0)
+
+//clipboard locking
+//_Atomic volatile int lastlock = 0, cplastlock=0;
+//#define CBLOCKLOCK do { printf("%d - %d - Locking, %s last=%d\n",thread_local_thread_num,__LINE__, lastlock>-1 ?"LOCKED":"",lastlock); fflush(stdout);RP_PTLOCK(&cblock); printf("%d - %d - Locked\n",thread_local_thread_num,__LINE__); fflush(stdout);lastlock=thread_local_thread_num;} while(0)
+//#define CBLOCKUNLOCK do { printf("%d - %d - Unlocking\n",thread_local_thread_num,__LINE__);fflush(stdout); RP_PTUNLOCK(&cblock); lastlock=-thread_local_thread_num;printf("%d - %d - Unlocked\n",thread_local_thread_num,__LINE__);fflush(stdout);} while(0)
+#define CBLOCKLOCK RP_PTLOCK(&cblock)
+#define CBLOCKUNLOCK RP_PTUNLOCK(&cblock)
 
 #define pipe_err do{\
     fprintf(stderr,"pipe error in rampart.thread %s:%d\n", __FILE__, __LINE__);\
@@ -1196,9 +1203,9 @@ duk_ret_t rp_thread_put(duk_context *ctx)
     if(duk_is_undefined(ctx, 0))
         RP_THROW(ctx, "thread.put: Second argument is a variable to store and must be defined");
 
-    RP_PTLOCK(&cblock);
-
     put_to_clipboard(ctx, 0, (char *)key);
+
+    CBLOCKLOCK;
 
     len++; //include \0
 
@@ -1211,7 +1218,7 @@ duk_ret_t rp_thread_put(duk_context *ctx)
             thrwrite(key, len);
         }
     }
-    RP_PTUNLOCK(&cblock);
+    CBLOCKUNLOCK;
     return 0;
 }
 
@@ -1278,19 +1285,19 @@ duk_ret_t del_from_clipboard(duk_context *ctx, char *key)
 
 
 #define closepipes do{\
-    RP_PTLOCK(&cblock);\
+    CBLOCKLOCK;\
     RPTHR_CLEAR(thr, RPTHR_FLAG_WAITING);\
     close(thr->reader);\
     close(thr->writer);\
     thr->reader=-1;\
     thr->writer=-1;\
-    RP_PTUNLOCK(&cblock);\
+    CBLOCKUNLOCK;\
 }while(0)
 
 #define openpipes(_thr, _locked) ({\
     int _fd[2];\
     int _ret=0;\
-    if(!_locked)RP_PTLOCK(&cblock);\
+    if(!_locked)CBLOCKLOCK;\
     if (rp_pipe(_fd) == -1){\
         fprintf(stderr, "thread pipe creation failed\n");\
         _ret=0;\
@@ -1300,7 +1307,7 @@ duk_ret_t del_from_clipboard(duk_context *ctx, char *key)
         RPTHR_SET(thr, RPTHR_FLAG_WAITING);\
         _ret=1;\
     }\
-    RP_PTUNLOCK(&cblock);\
+    CBLOCKUNLOCK;\
     _ret;\
 })
 
@@ -1345,7 +1352,7 @@ static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *
             return 0;
         }
 
-        RP_PTLOCK(&cblock);
+        CBLOCKLOCK;
 
         thrread(&len, sizeof(duk_size_t));
 
@@ -1354,7 +1361,7 @@ static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *
 
         thrread(waitkey, len);
 
-        RP_PTUNLOCK(&cblock);
+        CBLOCKUNLOCK;
 
         if(strcmp(key, waitkey)==0)
         {
@@ -1377,13 +1384,13 @@ duk_ret_t rp_thread_get(duk_context *ctx)
 
     // lock early so we don't get a message in pipe before we set it up
     if(!duk_is_undefined(ctx,1))
-        RP_PTLOCK(&cblock);
+        CBLOCKLOCK;
 
     ret = _thread_get_del(ctx, (char*)key, GET_NODEL);
     if(!ret && !duk_is_undefined(ctx,1))
         ret = _thread_waitfor(ctx, key, "get", GET_NODEL, EARLY_LOCK);
     else if (!duk_is_undefined(ctx,1)) // if ret && defined
-        RP_PTUNLOCK(&cblock);
+        CBLOCKUNLOCK;
 
     return ret;
 }
@@ -1395,13 +1402,13 @@ duk_ret_t rp_thread_del(duk_context *ctx)
     duk_ret_t ret;
 
     if(!duk_is_undefined(ctx,1))
-        RP_PTLOCK(&cblock);
+        CBLOCKLOCK;;
 
     ret = _thread_get_del(ctx, (char *)key, GET_DEL);
     if(!ret && !duk_is_undefined(ctx,0))
         ret = _thread_waitfor(ctx, key, "get", GET_DEL, EARLY_LOCK);
     else if (!duk_is_undefined(ctx,1)) // if ret && defined
-        RP_PTUNLOCK(&cblock);
+        CBLOCKUNLOCK;;
 
     return ret;
 }
@@ -1608,6 +1615,7 @@ void rp_post_fork_clean_threads()
     cp_lock=NULL;
     REMALLOC(cp_lock, sizeof(pthread_mutex_t));
     rp_cp_lock=RP_MINIT(cp_lock);
+    RPTHR_SET(rp_cp_lock, RPTHR_LOCK_FLAG_FREELOCK);
 
     // make a new thread structure for this thread, and replace mainthr
     mainthr=rp_new_thread(RPTHR_FLAG_THR_SAFE, ctx);
