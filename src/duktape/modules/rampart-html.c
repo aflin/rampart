@@ -54,7 +54,7 @@ duk_ret_t duk_rp_html_finalizer(duk_context *ctx)
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("errbuf"));
     errbuf=duk_get_pointer(ctx, -1);
     duk_pop(ctx);
-    if (errbuf->bp)
+    if (errbuf && errbuf->bp)
         tidyBufFree( errbuf );
     free(errbuf);
 
@@ -1534,7 +1534,7 @@ static void *get_tdoc(duk_context *ctx, duk_idx_t this_idx)
 
     throw:
 
-    RP_THROW(ctx, "html: error - the root html document was destroyed");
+    RP_THROW(ctx, "html: error - the root html object was destroyed");
     return ret; // cuz compiler
 }
 
@@ -2336,8 +2336,8 @@ static void new_ret_object(duk_context *ctx, duk_idx_t arr_idx)
     duk_get_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("validity"));
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("validity"));
 
-//    duk_get_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("errbuf"));
-//    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("errbuf"));
+    duk_get_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("errbuf"));
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("errbuf"));
 
     duk_push_number(ctx, (double) duk_get_length(ctx, arr_idx));
     duk_put_prop_string(ctx, -2, "length");
@@ -3555,7 +3555,7 @@ duk_ret_t _html_node_pp(duk_context *ctx, TidyDoc tdoc, Node *node)
 
         if(duk_is_number(ctx, 1))
         {
-            (void)REQUIRE_UINT(ctx, 0, "html.prettyPrint - second argument must be a positive int (wrap)");
+            (void)REQUIRE_UINT(ctx, 1, "html.prettyPrint - second argument must be a positive int (wrap)");
             ret = tidyOptParseValue(tdoc, "wrap", duk_to_string(ctx, 1));
             if(!ret)
                 RP_THROW(ctx, "html.prettyPrint - error setting 'indent-spaces' to '%s' - %s", duk_to_string(ctx, 0),tidy_errbuf->bp);
@@ -3638,7 +3638,7 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
 //    const char *html = REQUIRE_STRING(ctx, 0, "html.newDocument: first argument must be a string (html document)");
     const char *html="";
     int Terr=0;
-    duk_idx_t err_idx, obj_idx=-1, str_idx=0;
+    duk_idx_t err_idx, obj_idx=-1, html_idx=0;
     TidyDoc tdoc;
     TidyBuffer *tidy_errbuf = NULL;
     TidyNode root;
@@ -3654,23 +3654,23 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
         rp_html_newdocs=0;
     }
 
-    if(duk_is_object(ctx, 0))
-    {
-        obj_idx = 0;
-        str_idx = 1;
-    }
-    else if(duk_is_object(ctx, 1))
-    {
+    if(duk_is_object(ctx, 1))
         obj_idx = 1;
-        str_idx = 0;
-    }
 
-    if(duk_is_buffer_data(ctx, str_idx))
-        html = (const char *) duk_get_buffer_data(ctx, str_idx, &size);
-    else if (duk_is_string(ctx, str_idx) )
-        html = duk_get_string(ctx, str_idx);
-    else if (!duk_is_undefined(ctx, str_idx))
-        RP_THROW(ctx, "html.newDocument: first argument must be a string or buffer(html document)");
+
+    if(duk_is_buffer_data(ctx, html_idx))
+        html = (const char *) duk_get_buffer_data(ctx, html_idx, &size);
+    else if (duk_is_string(ctx, html_idx) )
+        html = duk_get_string(ctx, html_idx);
+    else if (duk_is_object(ctx, html_idx))
+    {
+        _obj_to_html(ctx, html_idx);
+        html = duk_get_string(ctx, -1);
+        printf("stridx=%d\n", (int)html_idx);
+        safeprintstack(ctx);
+    }
+    else if (!duk_is_undefined(ctx, html_idx))
+        RP_THROW(ctx, "html.newDocument: first argument must be a string, buffer or object produced by html.toObj() (i.e., the text/html)");
 
     tidy_errbuf = calloc( 1, sizeof(TidyBuffer));
 
