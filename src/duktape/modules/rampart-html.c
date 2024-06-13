@@ -49,7 +49,7 @@ duk_ret_t duk_rp_html_finalizer(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "valid");
     duk_pop(ctx);
 
-    
+
 
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("errbuf"));
     errbuf=duk_get_pointer(ctx, -1);
@@ -699,7 +699,7 @@ static void pushdoctype( duk_context *ctx, TidyDoc tdoc, TidyNode tnod, ctmbstr 
         duk_push_array(ctx);
         duk_push_lstring(ctx, (const char *)&(doc->lexer->lexbuf[cont->start]), len);
         duk_put_prop_index(ctx, -2, 0);
-        duk_put_prop_string(ctx, -2, "contents"); 
+        duk_put_prop_string(ctx, -2, "contents");
     }
 
 }
@@ -890,17 +890,24 @@ TidyBuffer *dumpNode(TidyNode node, TidyDoc doc, TidyBuffer *buf, int indent, in
             {
                 const char *k = (const char *) tidyAttrName(attr);
                 const char *v = (const char *) tidyAttrValue(attr);
-                size_t vlen=0;
-
-                if(v) vlen=strlen(v);
+                //size_t vlen=0;
 
                 tidyBufAppend(buf, " ", 1);
                 tidyBufAppend(buf, (void*)k, strlen(k));
-                if (vlen)
+
+                if(v)
                 {
-                    tidyBufAppend(buf, "=\"", 2);
-                    tidyBufAppend(buf, (void*)v, vlen);
-                    tidyBufAppend(buf, "\"", 1);
+                     //vlen=strlen(v);
+                     tidyBufAppend(buf, "=\"", 2);
+                     while(*v)
+                     {
+                         if(*v=='"')
+                             tidyBufAppend(buf, "&quot;",6);
+                         else
+                             tidyBufAppend(buf, (void*)v, 1);
+                         v++;
+                     }
+                     tidyBufAppend(buf, "\"", 1);
                 }
             }
             if(child || !isSingletonTag(id))
@@ -1046,6 +1053,166 @@ revisit indentation later
         //prevtype = tidyNodeGetType(child);
     }
     return buf;
+}
+
+static char *singletons[] = {
+        "br",
+        "input",
+        "link",
+        "meta",
+        "!doctype",
+        "col",
+        "area",
+        "base",
+        "param",
+        "track",
+        "wbr",
+        "keygen",
+        NULL
+};
+
+static int is_type_singleton(const char *tag)
+{
+    char **s=singletons;
+    while(*s!=NULL)
+    {
+        if(!strcasecmp(*s,tag))
+            return 1;
+        s++;
+    }
+    return 0;
+}
+
+TidyBuffer * obj_to_html_inner(duk_context *ctx, duk_idx_t obj_idx, TidyBuffer *buf) {
+
+    duk_uarridx_t i=0, len;
+    int issingleton=0, isdoc;
+    const char *type=NULL, *key, *val;
+    duk_size_t slen, tlen;
+
+    if( !duk_is_object(ctx, obj_idx) || duk_is_array(ctx, obj_idx) || duk_is_function(ctx, obj_idx) )
+        return buf;
+
+    obj_idx = duk_normalize_index(ctx, obj_idx);
+    if(duk_get_prop_string(ctx, obj_idx, "type"))
+    {
+        type=duk_get_lstring(ctx, -1, &tlen);
+
+        isdoc = !strcasecmp("document",type);
+        if(!isdoc)
+        {
+            issingleton = is_type_singleton(type);
+
+            tidyBufAppend(buf, "<", 1);
+            tidyBufAppend(buf, (void*)type, (uint)tlen);
+
+            if(duk_get_prop_string(ctx, obj_idx, "attributes"))
+            {
+                if (duk_is_array(ctx, -1)) {
+                    len = duk_get_length(ctx, -1);
+                    for(i=0;i<len;i++){
+                        duk_get_prop_index(ctx, -1, i);
+                        if(duk_is_string(ctx, -1))
+                        {
+                            tidyBufAppend(buf, " ", 1);
+                            key = duk_get_lstring(ctx, -1, &slen);
+                            tidyBufAppend(buf, (void*)key, (uint)slen);
+                        }
+                        duk_pop(ctx);
+                    }
+                }
+                else if (duk_is_object(ctx, -1) && !duk_is_function(ctx, -1))
+                {
+                    duk_enum(ctx, -1, 0);
+                    while(duk_next(ctx,-1,1))
+                    {
+                        key=duk_get_lstring(ctx, -2, &slen);
+                        val=duk_to_string(ctx, -1);
+                        tidyBufAppend(buf, " ", 1);
+                        tidyBufAppend(buf, (void*)key, (uint)slen);
+
+                        tidyBufAppend(buf, "=\"", 2);
+                        while(*val)
+                        {
+                            if(*val=='"')
+                                tidyBufAppend(buf, "&quot;",6);
+                            else
+                                tidyBufAppend(buf, (void*)val, 1);
+                            val++;
+                        }
+                        tidyBufAppend(buf, "\"", 1);
+
+                        duk_pop_2(ctx);
+                    }
+                    duk_pop(ctx);//enum
+                }
+            }
+            tidyBufAppend(buf,">",1);
+            duk_pop(ctx);
+        }
+    }
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, obj_idx, "contents"))
+    {
+        if(duk_is_array(ctx, -1))
+        {
+            len=duk_get_length(ctx, -1);
+            for(i=0;i<len;i++)
+            {
+                duk_get_prop_index(ctx, -1, i);
+                if(duk_is_string(ctx, -1))
+                {
+                    val=duk_get_lstring(ctx, -1, &slen);
+                    tidyBufAppend(buf, (void*)val, (uint)slen);
+                }
+                else
+                    buf = obj_to_html_inner(ctx, -1, buf);
+                duk_pop(ctx);
+            }
+        }
+    }
+    duk_pop(ctx);
+    if(type && !isdoc && !issingleton)
+    {
+        tidyBufAppend(buf, "</", 2);
+        tidyBufAppend(buf, (void*)type, (uint)tlen);
+        tidyBufAppend(buf, ">", 1);
+    }
+    return buf;
+}
+
+static inline duk_ret_t _obj_to_html(duk_context *ctx, duk_idx_t obj_idx)
+{
+    duk_uarridx_t i=0, len;
+    TidyBuffer buf, *ret;
+
+    ret=&buf;
+    tidyBufInit(ret);
+
+    if(duk_is_array(ctx, obj_idx))
+    {
+        len = duk_get_length(ctx, obj_idx);
+        for(i=0;i<len;i++)
+        {
+            duk_get_prop_index(ctx, obj_idx, i);
+            ret=obj_to_html_inner(ctx, -1, ret);
+        }
+    } else if ( duk_is_object(ctx, obj_idx) && !duk_is_function(ctx, obj_idx) ){
+        ret=obj_to_html_inner(ctx, obj_idx, ret);
+    }
+    else
+        RP_THROW(ctx, "html.objToHtml - argument must be an Object or an Array of Objects");
+
+    duk_push_string(ctx, (const char *)ret->bp);
+    tidyBufFree(ret);
+
+    return 1;
+}
+
+static duk_ret_t obj_to_html(duk_context *ctx)
+{
+    return _obj_to_html(ctx, 0);
 }
 
 TidyBuffer *dumpText(TidyDoc doc, TidyNode start, TidyBuffer *buf, int listno, int listind, int tag_end_nl, int opts)
@@ -1352,7 +1519,7 @@ static void *get_tdoc(duk_context *ctx, duk_idx_t this_idx)
         goto throw;
     if(!duk_get_prop_string(ctx, -1, "valid"))
         goto throw;
-    
+
     if(!duk_get_boolean(ctx, -1))
         goto throw;
 
@@ -1813,7 +1980,7 @@ static int findfunc_class (TidyNode node, const char **txt, const char **txt2, i
         if(vallen>1 && val[vallen-1] == '*' && val[vallen-2]!='\\')
         {
             matchdir=1;
-            vallen--; 
+            vallen--;
         }
         else if (*val == '*')
         {
@@ -1827,7 +1994,7 @@ static int findfunc_class (TidyNode node, const char **txt, const char **txt2, i
         {
             while(!isspace(*e) && *e!='\0') e++;
             len=(int)(e-p);
-            
+
             if(matchdir<0)
             {
                 int diff= (len - vallen);
@@ -2003,7 +2170,7 @@ duk_ret_t duk_rp_html_before(duk_context *ctx);
 duk_ret_t duk_rp_html_replace(duk_context *ctx);
 duk_ret_t duk_rp_html_add(duk_context *ctx);
 duk_ret_t duk_rp_html_getdocument(duk_context *ctx);
-
+duk_ret_t duk_rp_html_node_pp(duk_context *ctx);
 static void pushfuncs(duk_context *ctx)
 {
     duk_push_c_function(ctx, duk_rp_html_totext, 1);
@@ -2113,6 +2280,9 @@ static void pushfuncs(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_rp_html_getdocument, 0);
     duk_put_prop_string(ctx, -2, "getDocument");
+
+    duk_push_c_function(ctx, duk_rp_html_node_pp, 2);
+    duk_put_prop_string(ctx, -2, "prettyPrint");
 
 }
 
@@ -2489,7 +2659,7 @@ static duk_ret_t _pend(duk_context *ctx, int type)
         /* the nodes to insert */
         if( !duk_is_object(ctx,0) || !duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("nodes")))
             RP_THROW(ctx, "html.append - first argument must be an html object or html text");
-    
+
         srcdoc=get_tdoc(ctx, 0);
     }
 
@@ -3231,32 +3401,6 @@ duk_ret_t duk_rp_html_hasclass(duk_context *ctx)
     return duk_rp_html_find_(ctx, findClass, 2);
 }
 
-duk_ret_t duk_rp_html_pp(duk_context *ctx)
-{
-    TidyBuffer output = {0};
-    TidyDoc tdoc;
-
-    duk_push_this(ctx);
-
-    tdoc=get_tdoc(ctx, -1);
-    tidySaveBuffer(tdoc, &output);
-
-    duk_push_string(ctx, (char *)output.bp);
-
-    if (output.bp)
-        tidyBufFree( &output );
-
-    return 1;
-}
-
-#define htmlSetErr(e) do{\
-    if(e<0) RP_THROW(ctx, "html.newDocument() - %s", strerror(-e));\
-    if(tidy_errbuf->size && e>0) {\
-        duk_push_string(ctx, (char *)tidy_errbuf->bp);\
-        duk_replace(ctx, err_idx);\
-    }\
-} while (0)
-
 // turn thisOption into this-option
 static char * fixkey(const char *key)
 {
@@ -3280,6 +3424,215 @@ static char * fixkey(const char *key)
     ret[i]='\0';
     return ret;
 }
+
+
+
+int tidyDocSaveStreamFrom( TidyDocImpl* doc, StreamOut* out, Node *node )
+{
+    Bool showMarkup  = cfgBool( doc, TidyShowMarkup );
+    Bool forceOutput = cfgBool( doc, TidyForceOutput );
+    Bool outputBOM   = ( cfgAutoBool(doc, TidyOutputBOM) == TidyYesState );
+    Bool smartBOM    = ( cfgAutoBool(doc, TidyOutputBOM) == TidyAutoState );
+    Bool xmlOut      = cfgBool( doc, TidyXmlOut );
+    Bool xhtmlOut    = cfgBool( doc, TidyXhtmlOut );
+
+    Bool dropComments = cfgBool(doc, TidyHideComments);
+    Bool makeClean    = cfgBool(doc, TidyMakeClean);
+    Bool asciiChars   = cfgBool(doc, TidyAsciiChars);
+    Bool makeBare     = cfgBool(doc, TidyMakeBare);
+    Bool ppWithTabs   = cfgBool(doc, TidyPPrintTabs);
+    TidyAttrSortStrategy sortAttrStrat = cfg(doc, TidySortAttributes);
+    TidyConfigChangeCallback callback = doc->pConfigChangeCallback;
+    doc->pConfigChangeCallback = NULL;
+
+    if (ppWithTabs)
+        TY_(PPrintTabs)();
+    else
+        TY_(PPrintSpaces)();
+
+    if (dropComments)
+        TY_(DropComments)(doc, node);
+
+    if (makeClean)
+    {
+        /* noop */
+        TY_(DropFontElements)(doc, node, NULL);
+    }
+
+    if ((makeClean && asciiChars) || makeBare)
+        TY_(DowngradeTypography)(doc, node);
+
+    if (makeBare)
+        /* Note: no longer replaces &nbsp; in */
+        /* attribute values / non-text tokens */
+        TY_(NormalizeSpaces)(doc->lexer, node);
+    else
+        TY_(ReplacePreformattedSpaces)(doc, node);
+
+    TY_(SortAttributes)(doc, node, sortAttrStrat);
+
+    if ( showMarkup && (doc->errors == 0 || forceOutput) )
+    {
+        /* Output a Byte Order Mark if required */
+        if ( outputBOM || (doc->inputHadBOM && smartBOM) )
+            TY_(outBOM)( out );
+
+        /* No longer necessary. No DOCTYPE == HTML 3.2,
+        ** which gives you only the basic character entities,
+        ** which are safe in any browser.
+        ** if ( !TY_(FindDocType)(doc) )
+        **    TY_(SetOptionBool)( doc, TidyNumEntities, yes );
+        */
+
+        doc->docOut = out;
+        if ( xmlOut && !xhtmlOut )
+            TY_(PPrintXMLTree)( doc, NORMAL, 0, node );
+        else
+            TY_(PPrintTree)( doc, NORMAL, 0, node );
+
+        TY_(PFlushLine)( doc, 0 );
+        doc->docOut = NULL;
+    }
+
+    TY_(ResetConfigToSnapshot)( doc );
+    doc->pConfigChangeCallback = callback;
+
+    if ( doc->errors > 0 )
+        return 2;
+    if ( doc->warnings > 0 || doc->accessErrors > 0 )
+        return 1;
+    return 0;
+}
+
+int tidySaveBufferFrom ( TidyDoc tdoc, TidyBuffer* outbuf, Node *node )
+{
+    TidyDocImpl* doc = tidyDocToImpl( tdoc );
+
+    int status = -1;
+    if ( outbuf )
+    {
+        uint outenc = cfg( doc, TidyOutCharEncoding );
+        uint nl = cfg( doc, TidyNewline );
+        StreamOut* out = TY_(BufferOutput)( doc, outbuf, outenc, nl );
+
+        status = tidyDocSaveStreamFrom( doc, out, node );
+        TidyDocFree( doc, out );
+    }
+    return status;
+}
+
+duk_ret_t _html_node_pp(duk_context *ctx, TidyDoc tdoc, Node *node)
+{
+    TidyBuffer output = {0};
+    TidyBuffer *tidy_errbuf;
+
+    duk_push_this(ctx);
+
+    tdoc=get_tdoc(ctx, -1);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("nodes"));
+
+    /* get the first node */
+    if(!duk_get_prop_index(ctx , -1, 0))
+        RP_THROW(ctx, "html.prettyPrint - html Object contains no nodes");
+    node = (Node*)duk_get_pointer(ctx, -1);
+    duk_pop_2(ctx);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("errbuf"));
+    tidy_errbuf=duk_get_pointer(ctx, -1);
+
+    if(duk_is_number(ctx,0))
+    {
+        (void)REQUIRE_UINT(ctx, 0, "html.prettyPrint - first argument must be an object of options or a positive int (indent)");
+        int ret=tidyOptParseValue(tdoc, "indent", "1");
+        if(!ret)
+            RP_THROW(ctx, "html.prettyPrint - error setting 'indent' to '1' - %s",tidy_errbuf->bp);
+
+        ret = tidyOptParseValue(tdoc, "indent-spaces", duk_to_string(ctx, 0));
+
+        if(!ret)
+            RP_THROW(ctx, "html.prettyPrint - error setting 'indent-spaces' to '%s' - %s", duk_to_string(ctx, 0),tidy_errbuf->bp);
+
+        if(duk_is_number(ctx, 1))
+        {
+            (void)REQUIRE_UINT(ctx, 0, "html.prettyPrint - second argument must be a positive int (wrap)");
+            ret = tidyOptParseValue(tdoc, "wrap", duk_to_string(ctx, 1));
+            if(!ret)
+                RP_THROW(ctx, "html.prettyPrint - error setting 'indent-spaces' to '%s' - %s", duk_to_string(ctx, 0),tidy_errbuf->bp);
+        }
+
+    }
+    else if(duk_is_object(ctx, 0) && !duk_is_function(ctx, 0) && !duk_is_array(ctx, 0) )
+    {
+        duk_enum(ctx, 0, 0);
+        while(duk_next(ctx, -1, 1))
+        {
+            const char *key=duk_get_string(ctx, -2);
+            const char *val=duk_safe_to_string(ctx, -1);
+            char *dashedKey = fixkey(key);
+            int ret=tidyOptParseValue(tdoc, (ctmbstr)dashedKey, (ctmbstr)val);
+            free(dashedKey);
+            if(!ret)
+                RP_THROW(ctx, "html.prettyPrint - error setting '%s' to '%s' - %s", key, val,tidy_errbuf->bp);
+            duk_pop_2(ctx);
+        }
+        duk_pop(ctx);
+    }
+    else if (!duk_is_undefined(ctx, 0))
+        RP_THROW(ctx, "html.prettyprint - first argument, if present, must be an object of options or a positive int (indent)");
+
+    if(node)
+        tidySaveBufferFrom(tdoc, &output, node);
+    else
+        tidySaveBuffer(tdoc, &output);
+
+    duk_push_string(ctx, (char *)output.bp);
+
+    if (output.bp)
+        tidyBufFree( &output );
+
+    return 1;
+}
+
+duk_ret_t duk_rp_html_node_pp(duk_context *ctx)
+{
+    TidyDoc tdoc;
+    Node *node=NULL;
+
+    duk_push_this(ctx);
+
+    tdoc=get_tdoc(ctx, -1);
+
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("nodes"));
+
+    /* get the first node */
+    if(!duk_get_prop_index(ctx , -1, 0))
+        RP_THROW(ctx, "prettyPrint - html Object contains no nodes");
+    node = (Node*)duk_get_pointer(ctx, -1);
+    duk_pop_2(ctx);
+
+    return _html_node_pp(ctx, tdoc, node);
+}
+
+duk_ret_t duk_rp_html_pp(duk_context *ctx)
+{
+    TidyDoc tdoc;
+
+    duk_push_this(ctx);
+
+    tdoc=get_tdoc(ctx, -1);
+
+    return _html_node_pp(ctx, tdoc, NULL);
+}
+
+#define htmlSetErr(e) do{\
+    if(e<0) RP_THROW(ctx, "html.newDocument() - %s", strerror(-e));\
+    if(tidy_errbuf->size && e>0) {\
+        duk_push_string(ctx, (char *)tidy_errbuf->bp);\
+        duk_replace(ctx, err_idx);\
+    }\
+} while (0)
+
 duk_ret_t duk_rp_htmlparse(duk_context *ctx)
 {
 //    const char *html = REQUIRE_STRING(ctx, 0, "html.newDocument: first argument must be a string (html document)");
@@ -3375,7 +3728,7 @@ duk_ret_t duk_rp_htmlparse(duk_context *ctx)
     duk_push_pointer(ctx, (void *)tidy_errbuf);
     duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("errbuf"));
 
-    duk_push_c_function(ctx, duk_rp_html_pp, 0);
+    duk_push_c_function(ctx, duk_rp_html_pp, 2);
     duk_put_prop_string(ctx, -2, "prettyPrint");
 
     root=tidyGetRoot(tdoc);
@@ -3420,8 +3773,10 @@ duk_ret_t duk_open_module(duk_context *ctx)
   duk_push_object(ctx); // the return object
 
   duk_push_c_function(ctx, duk_rp_htmlparse, 2);
-
   duk_put_prop_string(ctx, -2, "newDocument");
+
+  duk_push_c_function(ctx, obj_to_html, 1);
+  duk_put_prop_string(ctx, -2, "objToHtml");
 
   return 1;
 }
