@@ -93,6 +93,77 @@ static void add_object_values(duk_context *ctx)
     duk_pop(ctx);
 }
 
+static int duk_rp_compare(duk_context *ctx, duk_idx_t idx1, duk_idx_t idx2)
+{
+    if(duk_get_type(ctx,idx1) != duk_get_type(ctx,idx2))
+        return 0;
+
+    switch(duk_get_type(ctx,idx1))
+    {
+        case DUK_TYPE_NUMBER:
+        {
+            if(duk_get_number(ctx,idx1) == duk_get_number(ctx,idx2))
+                return 1;
+            break;
+        }
+        case DUK_TYPE_BOOLEAN:
+        {
+            if(duk_get_boolean(ctx,idx1) == duk_get_boolean(ctx,idx2))
+                return 1;
+            break;
+        }
+        case DUK_TYPE_UNDEFINED:
+        {
+            return 1;
+        }
+        case DUK_TYPE_NULL:
+        {
+            return 1;
+        }
+        default:
+        {
+            void *v1=duk_get_heapptr(ctx,idx1), *v2=duk_get_heapptr(ctx,idx2);
+            return (v1==v2);
+        }
+    }
+    return 0;
+}
+
+static duk_ret_t duk_rp_array_includes(duk_context *ctx)
+{
+    int i=0, len;
+
+    duk_push_this(ctx);
+    len=duk_get_length(ctx, -1);
+
+    if(duk_is_number(ctx, 1))
+        i=duk_get_int(ctx, 1);
+    if(i<0)i=0;
+
+    for(;i<len;i++)
+    {
+        duk_get_prop_index(ctx, -1, (duk_uarridx_t)i);
+        if (duk_rp_compare(ctx, 0, -1))
+        {
+            duk_push_true(ctx);
+            return 1;
+        }
+        duk_pop(ctx);
+    }
+
+    duk_push_false(ctx);
+    return 1;
+}
+
+static void add_array_includes(duk_context *ctx)
+{
+    duk_get_global_string(ctx, "Array");
+    duk_get_prop_string(ctx, -1, "prototype");
+    duk_push_c_function(ctx, duk_rp_array_includes, 2);
+    duk_put_prop_string(ctx, -2, "includes");
+    duk_pop_2(ctx);
+}
+
 duk_ret_t duk_rp_buffer_from(duk_context *ctx)
 {
 
@@ -251,6 +322,7 @@ void duk_init_context(duk_context *ctx)
     fix_json_parse(ctx);
     fix_eval(ctx);
     add_object_values(ctx);
+    add_array_includes(ctx);
     add_buffer_func(ctx);
 
 }
