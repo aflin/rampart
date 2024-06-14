@@ -134,6 +134,16 @@ _serv->dhs=rp_get_dhs(_duk_ctx);\
 duk_push_array(_duk_ctx);\
 duk_put_prop_string(_duk_ctx, 0, DUK_HIDDEN_SYMBOL("rp_serv_stash"));
 
+#define RP_EXPORT_FUNCTION(_exp_func) \
+duk_ret_t duk_open_module(duk_context *ctx){\
+    duk_push_c_function(ctx, (_exp_func), 1);\
+    return 1;\
+}
+
+#define RP_EXPORT_MAP(_exp_map) duk_ret_t duk_open_module(duk_context *ctx){\
+    return rp_server_export_map(ctx, (_exp_map));\
+}
+
 
 // data and metadata from a single entry in a multipart/form-data
 // post parsed from "body"
@@ -183,6 +193,9 @@ const char * rp_server_get_path(rpserv *serv, const char *name);
 // get a parsed cookie value by name
 const char * rp_server_get_cookie(rpserv *serv, const char *name);
 
+// get post variables by name
+const char * rp_server_get_post(rpserv *serv, const char *name);
+
 // get unparsed, posted body content as a void buffer.
 void * rp_server_get_body(rpserv *serv, size_t *sz);
 
@@ -196,9 +209,9 @@ const char * rp_server_get_req_json(rpserv *serv, int indent);
 /* example:
     int i=0;
     const char **vals, *val, *key;
-    const char **keys = rp_server_get_params(serv, &vals);
+    const char **keys = rp_server_get_queries(serv, &vals);
 
-    while(keys) //keys will not be null (unless program errantly moves/dels req object at idx=0 on duktape stack)
+    while(keys) //keys and vals will be null if there are no query string params
     {
         key=keys[i];
         if(!key)  //keys and vals are null terminated lists
@@ -209,11 +222,17 @@ const char * rp_server_get_req_json(rpserv *serv, int indent);
 
         i++;
     }
+    if(keys)
+        free(keys);
+    if(vals)
+        free(vals);
 */
 const char ** rp_server_get_params(rpserv *serv, const char ***values);
 const char ** rp_server_get_headers(rpserv *serv, const char ***values);
 const char ** rp_server_get_paths(rpserv *serv, const char ***values);
 const char ** rp_server_get_cookies(rpserv *serv, const char ***values);
+const char ** rp_server_get_queries(rpserv *serv, const char ***values);
+const char ** rp_server_get_posts(rpserv *serv, const char ***values);
 
 // get the number of "parts" in a multipart/form-data post
 // if there is no such post, returns 0
@@ -247,6 +266,10 @@ void rp_server_put_string_and_free(rpserv *serv, char *s);
 // returns number of bytes added, or -1 on failure.
 // See: https://libevent.org/doc/buffer_8h.html#abb5d7931c7be6b2bde597cbb9b6dc72d 
 int rp_server_printf(rpserv *serv, const char *format, ...);
+
+//HEADER FUNCTION
+// add a header to the reply.  key and val are copied.
+void rp_server_add_header(rpserv *serv, char *key, char *val);
 
 
 // END FUNCTIONS:

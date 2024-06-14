@@ -6287,15 +6287,38 @@ static const char * _get_(rpserv *serv, duk_idx_t req_idx, const char *name, cha
 {
     duk_context *ctx = serv->ctx;
     const char *ret=NULL;
-    duk_idx_t stash_idx;
+    duk_idx_t stash_idx, top=duk_get_top(ctx);
 
-    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("rp_serv_stash")); 
+    duk_get_prop_string(ctx, req_idx, DUK_HIDDEN_SYMBOL("rp_serv_stash")); 
     stash_idx=duk_get_top_index(ctx);
 
     if(!duk_get_prop_string(ctx, req_idx, key))
     {
-        duk_pop_2(ctx);
+        duk_set_top(ctx,top);
         return ret;
+    }
+
+    /*
+        postData: {
+          "Content-Type": some_ct_string,
+          "content":  (if array then multipart_form, else form or json)
+        }
+    */
+
+    if(strcmp(key,"postData")==0 && duk_is_object(ctx, -1) && !duk_is_array(ctx, -1))
+    {
+        if(!duk_get_prop_string(ctx, -1, "content"))
+        {
+            duk_set_top(ctx, top);
+            return ret;
+        }
+    }
+
+    if(!duk_get_prop_string(ctx, -1, name))
+    {
+        duk_set_top(ctx, top);
+        return ret;
+        
     }
 
     if(duk_is_string(ctx, -1))
@@ -6317,7 +6340,7 @@ static const char * _get_(rpserv *serv, duk_idx_t req_idx, const char *name, cha
     if(duk_get_prop_string(ctx, -1, name))
         ret=duk_get_string(ctx, -1);
 
-    duk_pop_3(ctx); //stash array, params/cookies/headers && string/undefined
+    duk_set_top(ctx,top);
 
     return ret;
 }
@@ -6346,6 +6369,11 @@ const char * rp_server_get_path(rpserv *serv, const char *name)
 const char * rp_server_get_cookie(rpserv *serv, const char *name)
 {
     return _get_(serv, 0, name, "cookies");
+}
+
+const char * rp_server_get_post(rpserv *serv, const char *name)
+{
+    return _get_(serv, 0, name, "postData");
 }
 
 void * rp_server_get_body(rpserv *serv, size_t *sz)
@@ -6459,7 +6487,7 @@ static const char ** _get_keys(rpserv *serv, char *key, const char ***values)
     duk_context *ctx = serv->ctx;
     const char **ret = NULL, **vals=NULL;
     size_t i=0;
-    duk_idx_t stash_idx, top=duk_get_top(ctx);
+    duk_idx_t stash_idx=-1, top=duk_get_top(ctx);
 
     // if returning values, get stash in case we need to convert
     // objects to json
@@ -6471,18 +6499,30 @@ static const char ** _get_keys(rpserv *serv, char *key, const char ***values)
 
     if(!duk_get_prop_string(ctx, 0, key))
     {
-        goto end;
+        goto end_no_data;
     }
 
+    if(strcmp(key,"postData")==0 && duk_is_object(ctx, -1) && !duk_is_array(ctx, -1))
+    {
+        if(!duk_get_prop_string(ctx, -1, "content"))
+        {
+            goto end_no_data;
+        }
+    }
 
     // first get a count
     duk_enum(ctx, -1, 0);
-    while(duk_next(ctx, -1, 1))        
+    while(duk_next(ctx, -1, 0))
     {
         i++;
-        duk_pop_2(ctx);
+        duk_pop(ctx);
     }
     duk_pop(ctx); //enum
+
+    if(!i)
+    {
+        goto end_no_data;
+    }
 
     REMALLOC(ret, sizeof(char*) * (i + 1) );
 
@@ -6522,12 +6562,16 @@ static const char ** _get_keys(rpserv *serv, char *key, const char ***values)
     {
         vals[i]=NULL;
         *values=vals;
-        duk_remove(ctx, stash_idx);
     }
 
-    end:
     duk_set_top(ctx,top);
     return ret;
+
+    end_no_data:
+    duk_set_top(ctx,top);
+    if(values)
+        *values=NULL;
+    return NULL;
 }
 
 const char ** rp_server_get_params(rpserv *serv, const char ***values)
@@ -6548,6 +6592,16 @@ const char ** rp_server_get_paths(rpserv *serv, const char ***values)
 const char ** rp_server_get_cookies(rpserv *serv, const char ***values)
 {
     return _get_keys(serv, "cookies", values);
+}
+
+const char ** rp_server_get_queries(rpserv *serv, const char ***values)
+{
+    return _get_keys(serv, "query", values);
+}
+
+const char ** rp_server_get_posts(rpserv *serv, const char ***values)
+{
+    return _get_keys(serv, "postData", values);
 }
 
 const char * rp_server_get_req_json(rpserv *serv, int indent)
@@ -6607,6 +6661,12 @@ void rp_server_put_string(rpserv *serv, const char *s)
 
     rp_server_put(serv, (void*)s, strlen(s) );
 
+}
+
+void rp_server_add_header(rpserv *serv, char *key, char *val)
+{
+    DHS *dhs= (DHS*)serv->dhs;
+    evhtp_headers_add_header(dhs->req->headers_out, evhtp_header_new(key, val, 1, 1));
 }
 
 void rp_server_put_and_free(rpserv *serv, void *buf, size_t bufsz)
