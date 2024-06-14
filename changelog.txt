@@ -1,3 +1,21 @@
+v0.2.3
+    - rampart-thread   Multiple bug fixes for locks and thread race
+                       conditions
+    - rampart-sql      Added addTables and init({addtables:true});
+    - rampart-html     Added objToHtml and toObj; prettyPrint available
+                       to all html objects and takes parameters.
+                       Added .destroy() method.  Call duk_gc after x number
+                       of documents created (duktape is slow to call
+                       finalizer).
+                       Added glob space and quote processing to, e.g. 
+                           findAttr('title="my \\"awesome\\" title about*");
+    - rampart          Added Array.prototype.includes().
+                       Fixed exec() waitpid rare fail.
+                       Fixed repl continue line ... ctrl-c no longer exits.
+    - rampart-server   Added simplified api for creating server modules in c.
+                       Fixed module compiling error causing crash, now reporting 
+                       as 500 Server Error.
+
 v0.2.2
     - rampart-gm       Initial unsupported graphicsmagick module.
                        Unsupported because of many required external libs.
