@@ -25,8 +25,8 @@ LMDB_ENV {
     int                         convtype;
     int                         maxdbs;
     MDB_env                     *env;
-    RPTHR_LOCK			*rp_lock;
-    pthread_mutex_t             lock;
+//    RPTHR_LOCK			*rp_lock;
+//    pthread_mutex_t             lock;
 };
 
 #define lock_main_ctx do{\
@@ -46,11 +46,11 @@ RPTHR_LOCK *rp_lmdblock;
 
 #define mdb_unlock RP_MUNLOCK(rp_lmdblock)
 
-#define write_lock RP_MLOCK(lenv->rp_lock)
-
+//#define write_lock RP_MLOCK(lenv->rp_lock)
+#define write_lock /*nada*/
 // we are not consistent about write lock/unlock pairing.  Might want to fix.
-#define write_unlock if(RPTHR_TEST(lenv->rp_lock, RPTHR_LOCK_FLAG_LOCKED) ) RP_MUNLOCK(lenv->rp_lock)
-
+//#define write_unlock if(RPTHR_TEST(lenv->rp_lock, RPTHR_LOCK_FLAG_LOCKED) ) RP_MUNLOCK(lenv->rp_lock)
+#define write_unlock /*nada*/
 // conversion types
 #define RP_LMDB_BUFFER 0
 #define RP_LMDB_STRING 1
@@ -150,7 +150,7 @@ static LMDB_ENV * get_env(duk_context *ctx)
         int rc;
 
         lenv = redo_env(ctx, lenv);
-        RP_PTINIT(&lenv->lock);
+        //RP_PTINIT(&lenv->lock);
         /* must sync or some stuff done before a fork
            (like creating a db) may not be available
            to the child                               */
@@ -2229,8 +2229,8 @@ duk_ret_t duk_rp_lmdb_constructor(duk_context *ctx)
         lenv->convtype  = convtype;
         lenv->env       = NULL;
 
-        lenv->rp_lock=RP_MINIT(&lenv->lock);
-        RPTHR_SET(lenv->rp_lock, RPTHR_LOCK_FLAG_JSFIN); //lock is unlocked in a finalizer
+        //lenv->rp_lock=RP_MINIT(&lenv->lock);
+        //RPTHR_SET(lenv->rp_lock, RPTHR_LOCK_FLAG_JSFIN); //lock is unlocked in a finalizer
 
         lenv = redo_env(ctx, lenv);
         duk_push_pointer(ctx, (void *) lenv);
