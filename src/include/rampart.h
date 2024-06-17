@@ -444,7 +444,10 @@ duk_ret_t duk_rp_bytefunc(duk_context *ctx);
 /* getting, setting thread local thread number */
 void set_thread_num(int thrno);
 int get_thread_num();
+// return current thread via above
 RPTHR *get_current_thread();
+// get number of threads that are active
+int get_thread_count();
 
 /* cleanup after fork */
 void rp_post_fork_clean_threads();
