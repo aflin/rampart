@@ -104,6 +104,8 @@ static int duk_rp_compare(duk_context *ctx, duk_idx_t idx1, duk_idx_t idx2)
         {
             if(duk_get_number(ctx,idx1) == duk_get_number(ctx,idx2))
                 return 1;
+            else if (duk_is_nan(ctx,idx1) && duk_is_nan(ctx,idx2))
+                return 1;
             break;
         }
         case DUK_TYPE_BOOLEAN:
