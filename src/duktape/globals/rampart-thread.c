@@ -372,7 +372,7 @@ void rp_unlock_all_locks(int isparent)
 
 /*
     Claim as many locks as we can in this thread.
-    Certain locks cannot be claimed (e.g. lmdb write transaction locks), because
+    Certain locks cannot be claimed, because
     they are released in finalizers which are in threads on duk stacks that all go away
     post fork.
 */
@@ -1139,21 +1139,25 @@ START FUNCTIONS FOR COPY/PASTE PUT AND GET
 
 #define thrwrite(b,c) ({\
     int r=0;\
-    r=write(thr->writer, (b),(c));\
-    if(r==-1) {\
-        fprintf(stderr, "thread write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,thr->writer);\
-        exit(0);\
-    };\
+    if(thr->writer>-1) {\
+        r=write(thr->writer, (b),(c));\
+        if(r==-1) {\
+            fprintf(stderr, "thread write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,thr->writer);\
+            exit(0);\
+        }\
+    }\
     r;\
 })
 
 #define thrread(b,c) ({\
     int r=0;\
-    r= read(thr->reader,(b),(c));\
-    if(r==-1) {\
-        fprintf(stderr, "thread read failed: '%s' at %d\n",strerror(errno),__LINE__);\
-        exit(0);\
-    };\
+    if(thr->reader>-1) {\
+        r= read(thr->reader,(b),(c));\
+        if(r==-1) {\
+            fprintf(stderr, "thread read failed: '%s' at %d\n",strerror(errno),__LINE__);\
+            exit(0);\
+        }\
+    }\
     r;\
 })
 
@@ -1456,6 +1460,21 @@ static RPTHR* get_first_unused()
     return NULL;
 }
 
+// get number of threads that are active
+int get_thread_count()
+{
+    int i=0, ret=0;
+
+    for (i=0;i<nrpthreads;i++)
+    {
+        if( RPTHR_TEST(rpthread[i], RPTHR_FLAG_IN_USE) )
+            ret++;
+    }
+
+    return ret;
+    
+}
+
 static duk_context *new_context(RPTHR *thr)
 {
     duk_context *pctx=NULL, *tctx = duk_create_heap(NULL, NULL, NULL, NULL, duk_rp_fatal);
@@ -1617,12 +1636,14 @@ void rp_post_fork_clean_threads()
     rp_cp_lock=RP_MINIT(cp_lock);
     RPTHR_SET(rp_cp_lock, RPTHR_LOCK_FLAG_FREELOCK);
 
+
     // make a new thread structure for this thread, and replace mainthr
     mainthr=rp_new_thread(RPTHR_FLAG_THR_SAFE, ctx);
     mainthr->base = event_base_new();
     mainthr->dnsbase=rp_make_dns_base(mainthr->ctx, mainthr->base);
     RPTHR_SET(mainthr, RPTHR_FLAG_BASE);
     thread_local_thread_num = 0;
+    mainthr->index=0;
     main_ctx=mainthr->ctx;
     return;
 }
@@ -2279,6 +2300,18 @@ static duk_ret_t close_thread(duk_context *ctx)
     return 0;
 }
 
+// get thread number of the thread created with new rampart.thread()
+// -i.e. number of a thread from outside the thread.
+duk_ret_t get_thread_id(duk_context *ctx)
+{
+    duk_push_this(ctx);
+
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("thr")))
+        return 0;
+
+    return 1;
+}
+
 static duk_ret_t new_js_thread(duk_context *ctx)
 {
     RPTHR *thr;
@@ -2309,6 +2342,9 @@ static duk_ret_t new_js_thread(duk_context *ctx)
     duk_push_c_function(ctx, loop_insert, 5);
     duk_put_prop_string(ctx, -2, "exec");
 
+    duk_push_c_function(ctx, get_thread_id, 0);
+    duk_put_prop_string(ctx, -2, "getId");
+
     duk_push_c_function(ctx, close_thread,0);
     duk_put_prop_string(ctx, -2, "close");
 
@@ -2329,11 +2365,13 @@ static duk_ret_t new_js_thread(duk_context *ctx)
 ********************************************* */
 
 
-duk_ret_t get_thread_id(duk_context *ctx)
+// get thread number of current thread
+duk_ret_t get_current_id(duk_context *ctx)
 {
     duk_push_int(ctx, get_thread_num());
     return 1;
 }
+
 
 //called in cmdline.c
 void rp_thread_preinit()
@@ -2361,8 +2399,8 @@ void duk_thread_init(duk_context *ctx)
 
     duk_push_c_function(ctx, new_js_thread, 0);
 
-    duk_push_c_function(ctx, get_thread_id, 0);
-    duk_put_prop_string(ctx, -2, "getId");
+    duk_push_c_function(ctx, get_current_id, 0);
+    duk_put_prop_string(ctx, -2, "getCurrentId");
 
     duk_push_c_function(ctx, rp_thread_put, 2);
     duk_put_prop_string(ctx, -2, "put");
