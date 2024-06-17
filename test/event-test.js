@@ -35,14 +35,12 @@ function myCallback (uservar,triggervar){
 
     if(triggervar>4)
     {
-//printf("remove myev in %d\n", thread.getId());
         rampart.event.remove("myev");
         testFeature(uservar, usr_var == uservar);
-        if(!thread.getId())
+        if(!thread.getCurrentId())
             do_thread_test();
         return;
     }
-    //printf("recall %d in %d\n", triggervar+1, thread.getId());
     rampart.event.trigger("myev", triggervar+1);
 }
 
@@ -74,7 +72,6 @@ var lock = new rampart.lock();
 
 function multi_test(msg, tmsg) {
     var count;
-    //console.log(`THREAD ${thread.getId()} - removing ${msg}, triggered ${tmsg}`);
     rampart.event.off("myev2", msg);
 
     lock.lock();
@@ -109,7 +106,7 @@ thr3.exec(function(){
     //console.log(t1,t2);
     if(!t1 || !t2)
         process.exit(1);
-    rampart.event.trigger("myev2", `from thread ${thread.getId()}`);
+    rampart.event.trigger("myev2", `from thread ${thread.getCurrentId()}`);
 }, "thr3");
 
 sleep(0.1);
