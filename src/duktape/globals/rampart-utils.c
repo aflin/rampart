@@ -6545,115 +6545,499 @@ duk_ret_t duk_rp_forkpty(duk_context *ctx)
     }
 }
 
-duk_ret_t duk_rp_forkpty_bak(duk_context *ctx)
+typedef struct {
+    int            partochild[2];
+    int            childtopar[2];
+    struct event  *e;
+    pid_t          parent;
+    pid_t          child;
+} pipeinfo;
+
+static duk_ret_t rp_fork(duk_context *ctx)
 {
-    FILE *f;
-    int fd, append=0;
     pid_t pid;
-    duk_size_t nargs = duk_get_top(ctx) - 1, start=1;
-    char **args=NULL, **env=NULL;
-    const char *path=REQUIRE_STRING(ctx,0, "forkpty: filename (String) required as first parameter");
+    duk_idx_t i, top=duk_get_top(ctx);
+    pipeinfo *p;
 
-    if(duk_is_object(ctx, 1) && duk_has_prop_string(ctx, 1, "env")) {
-        //options here currently only include env and appendEnv
-        if(duk_get_prop_string(ctx, 1, "appendEnv"))
-        {
-            append=REQUIRE_BOOL(ctx, -1, "forkpty: option 'appendEnv' must be a Boolean");
-        }
-        duk_pop(ctx);
+    if(get_thread_count()>1) //shopping for sheets?
+        RP_THROW(ctx, "Cannot fork with active threads");
 
-        duk_get_prop_string(ctx, 1, "env");
-        env=make_env(ctx, append);
-    }
-
-    if(nargs > 0)
+    for(i=0;i<top;i++)
     {
-        int i=0;
-        REMALLOC(args, sizeof(char*) * (nargs+1) );
+        if(!duk_get_prop_string(ctx, i, DUK_HIDDEN_SYMBOL("pipeinfo")))
+            RP_THROW(ctx, "fork() - argument(s) must be currently open pipe/pipes created with rampart.utils.pipe()");
+        p=duk_get_pointer(ctx,-1);
+        if(!p)
+            RP_THROW(ctx, "fork() - argument(s) must be currently open pipe/pipes created with rampart.utils.pipe()");
+        duk_pop(ctx);
+        if(p->child != -1)
+            RP_THROW(ctx, "fork() cannot use pipe provided in argument %d.  Already in use with child (pid:%d)", (int)i+1, (int)p->child);
+    }
+    pid=fork();
 
-        while(start<nargs)
+    if(pid<0)
+        RP_THROW(ctx, "error forking: %s", strerror(errno));
+
+    if(pid == 0)
+    {
+        //child
+        event_reinit(get_current_thread()->base);
+        for(i=0;i<top;i++)
         {
-            if ( duk_is_object(ctx, (duk_idx_t)start) )
-                duk_json_encode(ctx, (duk_idx_t) start);
-            args[i++] = (char*) duk_safe_to_string(ctx, (duk_idx_t) start);
-            start++;
+            duk_get_prop_string(ctx, i, DUK_HIDDEN_SYMBOL("pipeinfo"));
+            p=duk_get_pointer(ctx,-1);
+            duk_pop(ctx);
+            close(p->partochild[1]);
+            close(p->childtopar[0]);
+            fcntl(p->partochild[0], F_SETFL, 0);
+            p->child=getpid();
         }
-        args[i]=NULL;
+    }
+    else
+    {
+        //parent
+        for(i=0;i<top;i++)
+        {
+            duk_get_prop_string(ctx, i, DUK_HIDDEN_SYMBOL("pipeinfo"));
+            p=duk_get_pointer(ctx,-1);
+            duk_pop(ctx);
+            close(p->partochild[0]);
+            close(p->childtopar[1]);
+            fcntl(p->childtopar[0], F_SETFL, 0);
+            p->child=pid;
+        }
     }
 
-    pid = forkpty (&fd, 0, 0, 0);
-    if (pid == 0) {
-        if(env)
-            execvpe(path, args, env);
-        else
-            execvp(path, args);
-        _exit (1);
-    } else if (pid == -1) {
-        free_made_env(env);
-        if(args) free(args);
-        RP_THROW(ctx, "forkpty: Failed to fork new process");
-        return 0;
-    } else {
-int flags = fcntl(fd, F_GETFL, 0);
-fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    duk_push_int(ctx, (int)pid);
 
-struct termios raw, orig;
-
-tcgetattr(fd,&orig); // ==-1, fail
-raw=orig;
-/* input modes: no break, no CR to NL, no parity check, no strip char,
-     * no start/stop output control. */
-//raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-    /* output modes - disable post processing */
-//    raw.c_oflag &= ~(OPOST);
-    /* control modes - set 8 bit chars */
-    raw.c_cflag |= (CS8);
-    /* local modes - choing off, canonical off, no extended functions,
-     * no signal chars (^Z,^C) */
-//    raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-    /* control chars - set return condition: min number of bytes and timer.
-     * We want read to return every single byte, without timeout. */
-//    raw.c_cc[VMIN] = 1; raw.c_cc[VTIME] = 0; /* 1 byte, no timer */
-raw.c_lflag &= ~ECHO;
-
-
-tcsetattr(fd, TCSAFLUSH, &raw);
-        f = fdopen (fd, "r+");
-        if(f==NULL) goto err;
-
-        duk_push_object(ctx);
-        duk_push_pointer(ctx,(void *)f);
-        duk_put_prop_string(ctx,-2,DUK_HIDDEN_SYMBOL("filehandle") );
-        duk_push_int(ctx, (int)pid);
-        duk_put_prop_string(ctx, -2, "pid");
-        duk_push_true(ctx);
-        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("nonblock"));
-
-        duk_push_c_function(ctx, duk_rp_fclose, 2);
-        duk_set_finalizer(ctx, -2);
-
-        pushffunc("fprintf",    func_fprintf,   DUK_VARARGS );
-        pushffunc("fseek",      func_fseek,     2           );
-        pushffunc("rewind",     func_rewind,    0           );
-        pushffunc("ftell",      func_ftell,     0           );
-        pushffunc("fflush",     func_fflush,    0           );
-        pushffunc("fwrite",     func_fwrite,    3           );
-        pushffunc("fread",      func_fread,     3           );
-        pushffunc("readLine",   func_readline,  0           );
-        pushffunc("fgets",      func_fgets,     1           );
-        pushffunc("fclose",     func_fclose,    0           );
-        free_made_env(env);
-        if(args) free(args);
-
-        return 1;
-
-        err:
-        RP_THROW(ctx, "error opening file '%s': %s", path, strerror(errno));
-        free_made_env(env);
-        if(args) free(args);
-        return 0;
-    }
+    return 1;
 }
+
+static duk_ret_t rp_pipe_write(duk_context *ctx)
+{
+    pipeinfo *p;
+    int writer;
+    pid_t pid=getpid();
+    void *buf;
+    duk_size_t len;
+    size_t blen;
+
+    //wrap val in object for cbor
+    duk_push_object(ctx);
+    duk_insert(ctx, 0);
+    duk_put_prop_string(ctx, -2, "value");
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pipeinfo"));
+    p=duk_get_pointer(ctx, -1);
+    if(!p)
+        RP_THROW(ctx, "pipe.write() - error: pipe was closed");
+
+    if(p->parent == pid)
+        writer=p->partochild[1];
+    else if(p->child == pid)
+        writer=p->childtopar[1];
+    else
+        RP_THROW(ctx, 
+            "pipe.write - cannot write from pipe created for a different parent or child (parentpid:%d, childpid:%d, curpid%d)",
+            p->parent, p->child, pid);
+
+    duk_cbor_encode(ctx, 0, 0);
+    buf = duk_require_buffer_data(ctx, 0, &len);
+    blen=(size_t)len;
+
+    if(write(writer, &blen, sizeof(size_t)) ==-1)
+        RP_THROW(ctx, "failed to write to pipe");
+    if(write(writer, buf, blen) ==-1)
+        RP_THROW(ctx, "failed to write to pipe");
+
+    duk_push_int(ctx, (int)len);
+    return 1;
+}
+
+
+
+static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
+{
+    pid_t pid=getpid();
+    size_t len;
+    void *buf;
+    char pipeid[32];
+    duk_context *ctx = get_current_thread()->ctx;
+    pipeinfo *p=(pipeinfo*)arg;
+    duk_idx_t top=duk_get_top(ctx);
+    const char *errmsg="";
+    ssize_t read_ret;
+    int readerr=0;
+    duk_idx_t pipe_stash_idx;
+
+    read_ret= read(fd, &len, sizeof(size_t));
+
+    snprintf(pipeid, 32, "%p", p);
+
+
+    duk_push_global_stash(ctx);    
+    // these should never happen.  But if it does, there is no
+    // callback to call, so print to stderr instead.
+    if(!duk_get_prop_string(ctx, -1, "pipecbs"))
+    {
+        errmsg="internal pipe info not found";
+        goto err;
+    }
+    pipe_stash_idx=duk_get_top_index(ctx);
+
+    if(!duk_get_prop_string(ctx, pipe_stash_idx, pipeid))
+    {
+        errmsg="pipe callback not found";    
+        goto err;
+    }
+
+    if(read_ret != sizeof(size_t))
+    {
+        duk_push_object(ctx);
+        if(read_ret==-1)
+            duk_push_sprintf(ctx, "pipe.read - Error reading: %s", strerror(errno));
+        else if (read_ret==0)
+        {
+            if (p->parent == pid)
+                duk_push_string(ctx, "pipe.read - pipe was closed by child");
+            else if (p->child == pid)
+                duk_push_string(ctx, "pipe.read - pipe was closed by parent");
+        }
+        else
+            duk_push_string(ctx, "pipe.read - full data not read, closing pipe");
+        duk_put_prop_string(ctx, -2, "error");
+        readerr=1;
+        goto docall;
+    }
+
+    buf=duk_push_buffer(ctx, (duk_size_t)len, 0);
+    read_ret = read(fd, buf, len);
+
+    if(read_ret != len)
+    {
+        duk_push_object(ctx);
+        if(read_ret==-1)
+            duk_push_sprintf(ctx, "pipe.read - Error reading: %s", strerror(errno));
+        else if (read_ret==0)
+        {
+            if (p->parent == pid)
+                duk_push_string(ctx, "pipe.read - pipe was closed by child");
+            else if (p->child == pid)
+                duk_push_string(ctx, "pipe.read - pipe was closed by parent");
+        }
+        else
+            duk_push_string(ctx, "pipe.read - full data not read, closing pipe");
+        duk_put_prop_string(ctx, -2, "error");
+        readerr=1;
+        goto docall;
+    }
+
+    duk_cbor_decode(ctx, -1, 0);
+    duk_get_prop_string(ctx, -1, "value");
+    duk_replace(ctx, -2);
+
+    docall:
+    if(duk_pcall(ctx, 1))
+    {
+        if (duk_is_error(ctx, -1) )
+        {
+            duk_get_prop_string(ctx, -1, "stack");
+            duk_remove(ctx, -2);
+            duk_safe_to_string(ctx, -1);
+            errmsg = duk_push_sprintf(ctx, "%s", duk_json_encode(ctx, -1));
+        }
+        else if (duk_is_string(ctx, -1))
+        {
+            duk_safe_to_string(ctx, -1);
+            errmsg = duk_push_sprintf(ctx, "%s", duk_json_encode(ctx, -1));
+        }
+        else
+        {
+            duk_pop(ctx);
+            errmsg = duk_push_string(ctx, "unknown error in callback");
+        }
+        goto err;
+    }
+
+    if(!readerr) // no error
+    {
+        duk_set_top(ctx, top);
+        return;
+    }
+    else  //err requiring close of pipe
+    {
+        closeend:
+
+        event_del(p->e);
+        event_free(p->e);
+        p->e=NULL;
+
+        duk_del_prop_string(ctx, pipe_stash_idx, pipeid);
+
+        if(p->parent == pid)
+        {
+            close(p->childtopar[0]);
+            p->childtopar[0]=-1;
+            close(p->partochild[1]);
+            p->partochild[1]=-1;
+        }
+        else
+        {
+            close(p->partochild[0]);
+            p->partochild[0]=-1;
+            close(p->childtopar[1]);
+            p->childtopar[1]=-1;
+        }
+        duk_set_top(ctx, top);
+        return;
+    }
+
+    // err and no callback found, or (more likely) callback is the error.
+    err:
+    fprintf(stderr, "pipe.onRead - error in event: %s\n", errmsg);
+    if(readerr)
+        goto closeend;
+    duk_set_top(ctx, top);
+}
+
+static duk_ret_t rp_pipe_onread(duk_context *ctx)
+{
+    char pipeid[32];
+    pipeinfo *p;
+    int reader;
+    pid_t pid=getpid();
+    REQUIRE_FUNCTION(ctx,0,"pipe.onRead - argument must be a function");
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pipeinfo"));
+    p=duk_get_pointer(ctx, -1);
+    if(!p)
+        RP_THROW(ctx, "pipe.onRead() - error: pipe was closed");
+    
+
+    if(p->parent == pid)
+        reader=p->childtopar[0];
+    else if(p->child == pid)
+        reader=p->partochild[0];
+    else
+    {
+        RP_THROW(ctx, 
+            "pipe.onRead - cannot use pipe created for a different parent or child (parentpid:%d, childpid:%d, curpid%d)",
+            p->parent, p->child, pid);
+    }
+    snprintf(pipeid,32, "%p", p);    
+
+    duk_push_global_stash(ctx);
+
+    if(!duk_get_prop_string(ctx, -1, "pipecbs"))
+    {
+        duk_pop(ctx);
+        duk_push_object(ctx);
+        duk_dup(ctx, -1);
+        duk_put_prop_string(ctx, -3, "pipecbs");
+    }
+    duk_pull(ctx, 0);
+    duk_put_prop_string(ctx, -2, pipeid);
+    p->e=event_new(get_current_thread()->base, reader, EV_READ | EV_PERSIST, pipe_read_ev, p);
+    event_add(p->e, NULL);
+
+    return 0;
+}
+
+static duk_ret_t rp_pipe_read(duk_context *ctx)
+{
+    pipeinfo *p;
+    int reader;
+    pid_t pid=getpid();
+    size_t len;
+    void *buf;
+    ssize_t read_ret;
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pipeinfo"));
+    p=duk_get_pointer(ctx, -1);
+    if(!p)
+    {
+        duk_push_object(ctx);
+        duk_push_string(ctx, "pipe.read() - pipe was closed");
+        duk_put_prop_string(ctx, -2, "error");
+        return 1;
+    }
+    if(p->parent == pid)
+        reader=p->childtopar[0];
+    else if(p->child == pid)
+        reader=p->partochild[0];
+    else
+    {
+        duk_push_object(ctx);
+        duk_push_sprintf(ctx, 
+            "pipe.read - cannot use pipe created for a different parent or child (parentpid:%d, childpid:%d, curpid%d)",
+            p->parent, p->child, pid);
+        duk_put_prop_string(ctx, -2, "error");
+        return 1;
+    }
+
+    if(reader==-1)
+    {
+        duk_push_object(ctx);
+        if(p->parent == pid)
+            duk_push_string(ctx, "pipe.read - pipe was closed by child");
+        else
+            duk_push_string(ctx, "pipe.read - pipe was closed by parent");
+        duk_put_prop_string(ctx, -2, "error");
+        return 1;
+    }
+
+    // eval & pcall is the only way to catch cbor decode errors
+    duk_push_string(ctx, "CBOR.decode");
+    duk_eval(ctx);
+
+    read_ret = read(reader, &len, sizeof(size_t));
+    if(read_ret != sizeof(size_t))
+        goto closepipeerr;
+
+    // this shouldn't happen if ret_read == sizeof(size_t)
+    if(!len)
+        goto closepipeerr;
+
+    buf=duk_push_buffer(ctx, (duk_size_t)len, 0);
+
+    read_ret = read(reader, buf, len);
+
+    if(read_ret != len)
+        goto closepipeerr;
+
+    if(duk_pcall(ctx, 1))
+    {
+        const char *errmsg;
+        if (duk_is_error(ctx, -1) )
+        {
+            duk_get_prop_string(ctx, -1, "stack");
+            duk_safe_to_string(ctx, -1);
+            errmsg = duk_push_sprintf(ctx, "%s", duk_json_encode(ctx, -1));
+        }
+        else if (duk_is_string(ctx, -1))
+            errmsg = duk_get_string(ctx, -1);
+        else
+            errmsg = duk_push_string(ctx, "unknown error");
+        duk_push_object(ctx);
+        duk_push_sprintf(ctx, "pipe.read - error decoding cbor: %s", errmsg);
+        duk_put_prop_string(ctx, -2, "error");
+        return 1;
+    }
+
+    //duk_get_prop_string(ctx, -1, "value");
+    return 1;
+
+    closepipeerr:
+    duk_push_object(ctx);
+    if(read_ret==-1)
+        duk_push_sprintf(ctx, "pipe.read - Error reading: %s", strerror(errno));
+    else if(read_ret==0)
+    {
+        if(p->parent == pid)
+            duk_push_string(ctx, "pipe.read - pipe was closed by child");
+        else
+            duk_push_string(ctx, "pipe.read - pipe was closed by parent");
+    }
+    else
+        duk_push_string(ctx, "pipe.read - full data not read, closing pipe");
+
+    duk_put_prop_string(ctx, -2, "error");
+
+    if(p->parent == pid)
+    {
+        close(p->childtopar[0]);
+        p->childtopar[0]=-1;
+        close(p->partochild[1]);
+        p->partochild[1]=-1;
+    }
+    else
+    {
+        close(p->partochild[0]);
+        p->partochild[0]=-1;
+        close(p->childtopar[1]);
+        p->childtopar[1]=-1;
+    }
+    return 1;
+
+}
+
+static duk_ret_t rp_pipe_doclose(duk_context *ctx)
+{
+    pipeinfo *p;
+    pid_t pid=getpid();
+
+    duk_push_this(ctx);
+    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pipeinfo"));
+    p=duk_get_pointer(ctx, -1);
+
+    if(p->parent == pid)
+    {
+        close(p->childtopar[0]);
+        close(p->partochild[1]);
+    }
+    else if(p->child == pid)
+    {
+        close(p->partochild[0]);
+        close(p->childtopar[1]);
+    }
+    else
+    {
+        RP_THROW(ctx, 
+            "pipe.read - cannot close pipe created for a different parent or child (parentpid:%d, childpid:%d, curpid%d)",
+            p->parent, p->child, pid);
+    }
+
+    if(p->e)
+    {
+        event_del(p->e);
+        event_free(p->e);
+    }
+    free(p);
+    duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pipeinfo"));
+
+    return 0;    
+}
+
+static duk_ret_t rp_newpipe(duk_context *ctx)
+{
+    pipeinfo *p=NULL;
+
+    REMALLOC(p, sizeof(pipeinfo));
+
+    p->e=NULL;
+    p->parent=getpid();
+    p->child=-1;
+
+    if (pipe(p->partochild) == -1 || pipe(p->childtopar) == -1)
+    {
+        free(p);
+        RP_THROW(ctx, "error creating pipe: %s", strerror(errno));    
+    }
+
+    duk_push_object(ctx);
+    duk_push_pointer(ctx, (void*)p);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("pipeinfo"));
+
+    duk_push_c_function(ctx, rp_pipe_write, 1);
+    duk_put_prop_string(ctx, -2, "write");
+    
+    duk_push_c_function(ctx, rp_pipe_onread, 1);
+    duk_put_prop_string(ctx, -2, "onRead");
+
+    duk_push_c_function(ctx, rp_pipe_read, 0);
+    duk_put_prop_string(ctx, -2, "read");
+
+    duk_push_c_function(ctx, rp_pipe_doclose, 0);
+    duk_put_prop_string(ctx, -2, "close");
+
+    duk_push_c_function(ctx, rp_pipe_doclose, 0);
+    duk_set_finalizer(ctx, -2);
+    return 1;
+}
+
 
 #define N_DATE_FORMATS 6
 #define N_DATE_FORMATS_W_OFFSET 2
@@ -6911,6 +7295,12 @@ void duk_printf_init(duk_context *ctx)
 
     duk_push_c_function(ctx, duk_rp_forkpty, DUK_VARARGS);
     duk_put_prop_string(ctx, -2, "forkpty");
+
+    duk_push_c_function(ctx, rp_fork, DUK_VARARGS);
+    duk_put_prop_string(ctx, -2, "fork");
+
+    duk_push_c_function(ctx, rp_newpipe, 0);
+    duk_put_prop_string(ctx, -2, "newPipe");
 
     duk_push_c_function(ctx, duk_rp_fclose, 1);
     duk_put_prop_string(ctx, -2, "fclose");
