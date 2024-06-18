@@ -1869,7 +1869,7 @@ static void thread_doevent(evutil_socket_t fd, short events, void* arg)
         else if (duk_is_string(ctx, -2))
             duk_pull(ctx, -2);
         else
-            duk_push_string(ctx,"Unspecified in thread callback");
+            duk_push_string(ctx,"unknown error");
 
         //if we don't have a parent thread callback
         if(info->index == -1)
@@ -1879,7 +1879,6 @@ static void thread_doevent(evutil_socket_t fd, short events, void* arg)
             goto end;
         }
         duk_put_prop_string(ctx, -2, "error");
-
     }
     RPTHR_CLEAR(thr, RPTHR_FLAG_ACTIVE);
 
@@ -2008,7 +2007,8 @@ int rp_thread_close_children()
         if(
             RPTHR_TEST(thr, RPTHR_FLAG_IN_USE) &&
             RPTHR_TEST(thr, RPTHR_FLAG_BASE  ) &&
-         !  RPTHR_TEST(thr, RPTHR_FLAG_SERVER)    ) //server threads never exit
+         !  RPTHR_TEST(thr, RPTHR_FLAG_SERVER) &&   //server threads never exit
+         !  RPTHR_TEST(thr, RPTHR_FLAG_KEEP_OPEN) ) //user specified to not autoclose.
         {
             if(!TEST_SET(thr, RPTHR_FLAG_FINAL)) //test and set at same time with lock, avoid race
             {
@@ -2252,7 +2252,7 @@ static duk_ret_t loop_insert(duk_context *ctx)
             duk_put_global_string(ctx, DUK_HIDDEN_SYMBOL("rp_thread_callbacks"));
         }
 
-        duk_pull(ctx, cbfunc_idx);
+        duk_dup(ctx, cbfunc_idx);
         duk_put_prop_string(ctx, -2, objkey);
         info->index=ix;
     }
@@ -2266,7 +2266,24 @@ static duk_ret_t loop_insert(duk_context *ctx)
         if(info->bytecode)
             free(info->bytecode);
         free(info);
-        RP_THROW(ctx, "thr.exec: Thread has already been closed");
+
+        if( event_base_get_num_events(get_current_thread()->base,
+            EVENT_BASE_COUNT_ACTIVE|EVENT_BASE_COUNT_ADDED|EVENT_BASE_COUNT_VIRTUAL))
+            RP_THROW(ctx, "thr.exec: Thread has already been closed");
+        else if (cbfunc_idx!=-1)
+        {
+            duk_dup(ctx, cbfunc_idx);
+            duk_push_object(ctx);
+            duk_push_string(ctx, "thr.exec: Thread has already been closed");
+            duk_put_prop_string(ctx, -2, "error");
+            duk_call(ctx, 1);
+            return 0;
+        }
+        else
+        { 
+            fprintf(stderr, "thr.exec: Error with no callback: Thread has already been closed\n");
+            return 0;
+        }
     }
     //insert into thread's event loop
     info->e = event_new(thr->base, -1, 0, thread_doevent, info);
@@ -2316,6 +2333,10 @@ static duk_ret_t new_js_thread(duk_context *ctx)
 {
     RPTHR *thr;
     pthread_attr_t attr;
+    int keepopen=0;
+
+    if(!duk_is_undefined(ctx,0))
+        keepopen=REQUIRE_BOOL(ctx, 0, "new rampart.thread - arugment must be a boolean (keepOpen)");
 
     if (!duk_is_constructor_call(ctx))
     {
@@ -2331,6 +2352,9 @@ static duk_ret_t new_js_thread(duk_context *ctx)
     thr->dnsbase=rp_make_dns_base(thr->ctx, thr->base);
     RPTHR_SET(thr, RPTHR_FLAG_BASE);
     dprintf("BASE NEW\n");
+
+    if(keepopen)
+        RPTHR_SET(thr, RPTHR_FLAG_KEEP_OPEN);
 
     duk_push_this(ctx); //return object
     duk_push_int(ctx, (int)thr->index);
@@ -2397,7 +2421,7 @@ void duk_thread_init(duk_context *ctx)
     RP_PTINIT(&cblock);
     RP_PTINIT(&testset_lock);
 
-    duk_push_c_function(ctx, new_js_thread, 0);
+    duk_push_c_function(ctx, new_js_thread, 1);
 
     duk_push_c_function(ctx, get_current_id, 0);
     duk_put_prop_string(ctx, -2, "getCurrentId");

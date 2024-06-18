@@ -317,14 +317,15 @@ RPTHR {
     int                writer;      // writer for thread.waitfor()
 };
 
-#define RPTHR_FLAG_IN_USE   0x01  // if struct is in use and ctxs are set up
-#define RPTHR_FLAG_THR_SAFE 0x02  // if we can execute texis or python without forking
-#define RPTHR_FLAG_SERVER   0x04  // if called from server (and we need wsctx initialized)
-#define RPTHR_FLAG_BASE     0x08  // event base has been created 
-#define RPTHR_FLAG_FINAL    0x10  // finalizer called
-#define RPTHR_FLAG_FORKED   0x20  // for python - flag that we've already forked
-#define RPTHR_FLAG_ACTIVE   0x40  // flag that this thread is running JS in a duk_pcall()
-#define RPTHR_FLAG_WAITING  0x80  // flag that we are waiting in thread.waitfor()
+#define RPTHR_FLAG_IN_USE     0x01  // if struct is in use and ctxs are set up
+#define RPTHR_FLAG_THR_SAFE   0x02  // if we can execute texis or python without forking
+#define RPTHR_FLAG_SERVER     0x04  // if called from server (and we need wsctx initialized)
+#define RPTHR_FLAG_BASE       0x08  // event base has been created 
+#define RPTHR_FLAG_FINAL      0x10  // finalizer called
+#define RPTHR_FLAG_FORKED     0x20  // for python - flag that we've already forked
+#define RPTHR_FLAG_ACTIVE     0x40  // flag that this thread is running JS in a duk_pcall()
+#define RPTHR_FLAG_WAITING    0x80  // flag that we are waiting in thread.waitfor()
+#define RPTHR_FLAG_KEEP_OPEN  0x100 //  do not autoclose when thread event base is empty
 
 // for locks
 #define RP_USE_LOCKLOCKS
