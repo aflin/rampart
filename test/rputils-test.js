@@ -16,7 +16,10 @@ function testFeature(name,test)
     }
     printf("testing utils - %-52s - ", name);
     if(test)
-        printf("passed\n")
+        if(typeof test =='string')
+            printf("%s\n", test);
+        else
+            printf("passed\n")
     else
     {
         printf(">>>>> FAILED <<<<<\n");
@@ -219,6 +222,48 @@ testFeature("reference touch",function(){
     return stat1.atime.getSeconds() == stat2.atime.getSeconds() && stat1.mtime.getSeconds() == stat2.mtime.getSeconds();
 });
 
+testFeature("fork and pipe", function(){
+    var pipe = newPipe();
+    var pipe2 = newPipe();
+    var pid = fork(pipe,pipe2);
+
+    if(pid==-1) {
+        console.log("fork failed");
+        return false;
+    }
+
+    if(pid==0){
+        //child
+        var sz1=pipe.write("my message");
+        var sz2=pipe2.write("my ev message");
+        process.exit();
+    } else {
+        pipe2.onRead(function(val,err){
+            if(val=="my ev message")
+            {
+                testFeature("fork and pipe event", true);
+                pipe2.close();
+            }
+            else {
+                if(err)
+                    console.log("pipe2 error:",err);
+                testFeature("fork and pipe event", false);
+            }
+        });
+
+        var ret=false;
+
+        pipe.read(function(val,err){
+            if(val == "my message")
+                ret = true;
+            if(err)
+                console.log(err);
+        });
+        return ret;
+    }
+    
+});
+
 var wai=trim(shell("whoami").stdout);
 if (wai=="root")
 {
@@ -236,7 +281,7 @@ if (wai=="root")
     });
 
 } else
-    printf("skipping chown test, must be done as root\n");
+    testFeature("chown", "skipping");
 
 
 //lastline

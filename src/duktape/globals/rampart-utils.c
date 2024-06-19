@@ -6546,11 +6546,12 @@ duk_ret_t duk_rp_forkpty(duk_context *ctx)
 }
 
 typedef struct {
-    int            partochild[2];
-    int            childtopar[2];
-    struct event  *e;
-    pid_t          parent;
-    pid_t          child;
+    int              partochild[2];
+    int              childtopar[2];
+    struct event    *e;
+    pid_t            parent;
+    pid_t            child;
+    pthread_mutex_t *lock;
 } pipeinfo;
 
 static duk_ret_t rp_fork(duk_context *ctx)
@@ -6588,7 +6589,9 @@ static duk_ret_t rp_fork(duk_context *ctx)
             p=duk_get_pointer(ctx,-1);
             duk_pop(ctx);
             close(p->partochild[1]);
+            p->partochild[1]=-1;
             close(p->childtopar[0]);
+            p->childtopar[0]=-1;
             fcntl(p->partochild[0], F_SETFL, 0);
             p->child=getpid();
         }
@@ -6602,7 +6605,9 @@ static duk_ret_t rp_fork(duk_context *ctx)
             p=duk_get_pointer(ctx,-1);
             duk_pop(ctx);
             close(p->partochild[0]);
+            p->partochild[0]=-1;
             close(p->childtopar[1]);
+            p->childtopar[1]=-1;
             fcntl(p->childtopar[0], F_SETFL, 0);
             p->child=pid;
         }
@@ -6611,6 +6616,67 @@ static duk_ret_t rp_fork(duk_context *ctx)
     duk_push_int(ctx, (int)pid);
 
     return 1;
+}
+
+#define PLOCK RP_PTLOCK(p->lock);
+#define PUNLOCK RP_PTUNLOCK(p->lock);
+
+static duk_ret_t rp_pipe_doclose(duk_context *ctx, int is_finalizer)
+{
+    pipeinfo *p;
+    pid_t pid=getpid();
+
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pipeinfo")))
+        return 0;
+
+    p=duk_get_pointer(ctx, -1);
+
+    if(!p)
+        return 0;
+    if(p->parent == pid)
+    {
+        if(p->childtopar[0] > 0)
+            close(p->childtopar[0]);
+        if(p->partochild[1] > 0)
+            close(p->partochild[1]);
+    }
+    else if(p->child == pid)
+    {
+        if(p->partochild[0] > 0)
+            close(p->partochild[0]);
+        if(p->childtopar[1] > 0)
+            close(p->childtopar[1]);
+    }
+    else if(!is_finalizer)
+    {
+        RP_THROW(ctx, 
+            "pipe.read - cannot close pipe created for a different parent or child (parentpid:%d, childpid:%d, curpid%d)",
+            p->parent, p->child, pid);
+    }
+
+    if(p->e)
+    {
+        event_del(p->e);
+        event_free(p->e);
+    }
+
+    free(p);
+
+    duk_push_pointer(ctx, NULL);
+    duk_put_prop_string(ctx, -3, DUK_HIDDEN_SYMBOL("pipeinfo"));
+
+    return 0;    
+}
+
+static duk_ret_t rp_pipe_closer(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    return rp_pipe_doclose(ctx, 0);
+}
+
+static duk_ret_t rp_pipe_finalizer(duk_context *ctx)
+{
+    return rp_pipe_doclose(ctx, 1);
 }
 
 static duk_ret_t rp_pipe_write(duk_context *ctx)
@@ -6628,6 +6694,7 @@ static duk_ret_t rp_pipe_write(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "value");
 
     duk_push_this(ctx);
+
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pipeinfo"));
     p=duk_get_pointer(ctx, -1);
     if(!p)
@@ -6638,20 +6705,30 @@ static duk_ret_t rp_pipe_write(duk_context *ctx)
     else if(p->child == pid)
         writer=p->childtopar[1];
     else
+    {
         RP_THROW(ctx, 
             "pipe.write - cannot write from pipe created for a different parent or child (parentpid:%d, childpid:%d, curpid%d)",
             p->parent, p->child, pid);
+        return 0; //for gcc warnings
+    }
 
     duk_cbor_encode(ctx, 0, 0);
     buf = duk_require_buffer_data(ctx, 0, &len);
     blen=(size_t)len;
 
+    PLOCK
     if(write(writer, &blen, sizeof(size_t)) ==-1)
+    {
+        PUNLOCK
         RP_THROW(ctx, "failed to write to pipe");
+    }
     if(write(writer, buf, blen) ==-1)
+    {
+        PUNLOCK
         RP_THROW(ctx, "failed to write to pipe");
-
-    duk_push_int(ctx, (int)len);
+    }
+    PUNLOCK;
+    duk_push_int(ctx, (int)len + sizeof(size_t));
     return 1;
 }
 
@@ -6660,7 +6737,7 @@ static duk_ret_t rp_pipe_write(duk_context *ctx)
 static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
 {
     pid_t pid=getpid();
-    size_t len;
+    size_t len=0;
     void *buf;
     char pipeid[32];
     duk_context *ctx = get_current_thread()->ctx;
@@ -6671,6 +6748,7 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
     int readerr=0;
     duk_idx_t pipe_stash_idx;
 
+    PLOCK
     read_ret= read(fd, &len, sizeof(size_t));
 
     snprintf(pipeid, 32, "%p", p);
@@ -6694,7 +6772,8 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
 
     if(read_ret != sizeof(size_t))
     {
-        duk_push_object(ctx);
+        //duk_push_object(ctx);
+        duk_push_undefined(ctx);//first arg
         if(read_ret==-1)
             duk_push_sprintf(ctx, "pipe.read - Error reading: %s", strerror(errno));
         else if (read_ret==0)
@@ -6706,17 +6785,19 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
         }
         else
             duk_push_string(ctx, "pipe.read - full data not read, closing pipe");
-        duk_put_prop_string(ctx, -2, "error");
+        //duk_put_prop_string(ctx, -2, "error");
         readerr=1;
+        PUNLOCK
         goto docall;
     }
 
     buf=duk_push_buffer(ctx, (duk_size_t)len, 0);
     read_ret = read(fd, buf, len);
-
+    PUNLOCK
     if(read_ret != len)
     {
-        duk_push_object(ctx);
+        //duk_push_object(ctx);
+        duk_push_undefined(ctx);//first arg
         if(read_ret==-1)
             duk_push_sprintf(ctx, "pipe.read - Error reading: %s", strerror(errno));
         else if (read_ret==0)
@@ -6728,7 +6809,7 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
         }
         else
             duk_push_string(ctx, "pipe.read - full data not read, closing pipe");
-        duk_put_prop_string(ctx, -2, "error");
+        //duk_put_prop_string(ctx, -2, "error");
         readerr=1;
         goto docall;
     }
@@ -6736,9 +6817,10 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
     duk_cbor_decode(ctx, -1, 0);
     duk_get_prop_string(ctx, -1, "value");
     duk_replace(ctx, -2);
+    duk_push_undefined(ctx);
 
     docall:
-    if(duk_pcall(ctx, 1))
+    if(duk_pcall(ctx, 2))
     {
         if (duk_is_error(ctx, -1) )
         {
@@ -6757,7 +6839,7 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
             duk_pop(ctx);
             errmsg = duk_push_string(ctx, "unknown error in callback");
         }
-        goto err;
+        goto err_no_unlock;
     }
 
     if(!readerr) // no error
@@ -6777,17 +6859,29 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
 
         if(p->parent == pid)
         {
-            close(p->childtopar[0]);
-            p->childtopar[0]=-1;
-            close(p->partochild[1]);
-            p->partochild[1]=-1;
+            if(p->childtopar[0]>0)
+            {
+                close(p->childtopar[0]);
+                p->childtopar[0]=-1;
+            }
+            if(p->partochild[1]>0)
+            {
+                close(p->partochild[1]);
+                p->partochild[1]=-1;
+            }
         }
         else
         {
-            close(p->partochild[0]);
-            p->partochild[0]=-1;
-            close(p->childtopar[1]);
-            p->childtopar[1]=-1;
+            if(p->partochild[0]>0)
+            {
+                close(p->partochild[0]);
+                p->partochild[0]=-1;
+            }
+            if(p->childtopar[1]>0)
+            {
+                close(p->childtopar[1]);
+                p->childtopar[1]=-1;
+            }
         }
         duk_set_top(ctx, top);
         return;
@@ -6795,6 +6889,9 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
 
     // err and no callback found, or (more likely) callback is the error.
     err:
+    PUNLOCK
+
+    err_no_unlock:
     fprintf(stderr, "pipe.onRead - error in event: %s\n", errmsg);
     if(readerr)
         goto closeend;
@@ -6825,6 +6922,7 @@ static duk_ret_t rp_pipe_onread(duk_context *ctx)
         RP_THROW(ctx, 
             "pipe.onRead - cannot use pipe created for a different parent or child (parentpid:%d, childpid:%d, curpid%d)",
             p->parent, p->child, pid);
+        return 0; //for gcc warnings
     }
     snprintf(pipeid,32, "%p", p);    
 
@@ -6853,16 +6951,23 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
     size_t len;
     void *buf;
     ssize_t read_ret;
+    int have_func=0;
+    duk_idx_t errmsg_idx=-1;
+
+    if(!duk_is_undefined(ctx, 0))
+    {
+        REQUIRE_FUNCTION(ctx, 0, "pipe.read - argument must be a function or undefined (ommitted)");
+        have_func=1;
+    }
 
     duk_push_this(ctx);
     duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pipeinfo"));
     p=duk_get_pointer(ctx, -1);
     if(!p)
     {
-        duk_push_object(ctx);
         duk_push_string(ctx, "pipe.read() - pipe was closed");
-        duk_put_prop_string(ctx, -2, "error");
-        return 1;
+        errmsg_idx=duk_get_top_index(ctx);
+        goto returnerr;
     }
     if(p->parent == pid)
         reader=p->childtopar[0];
@@ -6870,29 +6975,28 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
         reader=p->partochild[0];
     else
     {
-        duk_push_object(ctx);
         duk_push_sprintf(ctx, 
             "pipe.read - cannot use pipe created for a different parent or child (parentpid:%d, childpid:%d, curpid%d)",
             p->parent, p->child, pid);
-        duk_put_prop_string(ctx, -2, "error");
-        return 1;
+        errmsg_idx=duk_get_top_index(ctx);
+        goto returnerr;
     }
 
     if(reader==-1)
     {
-        duk_push_object(ctx);
-        if(p->parent == pid)
-            duk_push_string(ctx, "pipe.read - pipe was closed by child");
-        else
-            duk_push_string(ctx, "pipe.read - pipe was closed by parent");
-        duk_put_prop_string(ctx, -2, "error");
-        return 1;
+        duk_push_string(ctx, "pipe.read - pipe was closed by child");
+        errmsg_idx=duk_get_top_index(ctx);
+        goto returnerr;
     }
+
+    if(have_func) //set up for user callback function call
+        duk_dup(ctx, 0);
 
     // eval & pcall is the only way to catch cbor decode errors
     duk_push_string(ctx, "CBOR.decode");
     duk_eval(ctx);
 
+    PLOCK
     read_ret = read(reader, &len, sizeof(size_t));
     if(read_ret != sizeof(size_t))
         goto closepipeerr;
@@ -6901,6 +7005,7 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
     if(!len)
         goto closepipeerr;
 
+
     buf=duk_push_buffer(ctx, (duk_size_t)len, 0);
 
     read_ret = read(reader, buf, len);
@@ -6908,6 +7013,7 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
     if(read_ret != len)
         goto closepipeerr;
 
+    PUNLOCK
     if(duk_pcall(ctx, 1))
     {
         const char *errmsg;
@@ -6921,17 +7027,25 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
             errmsg = duk_get_string(ctx, -1);
         else
             errmsg = duk_push_string(ctx, "unknown error");
-        duk_push_object(ctx);
         duk_push_sprintf(ctx, "pipe.read - error decoding cbor: %s", errmsg);
-        duk_put_prop_string(ctx, -2, "error");
-        return 1;
+        errmsg_idx=duk_get_top_index(ctx);
+        goto returnerr;
     }
 
-    //duk_get_prop_string(ctx, -1, "value");
+    if(have_func)
+    {
+        duk_get_prop_string(ctx, -1, "value");
+        duk_remove(ctx, -2);
+        duk_push_undefined(ctx);
+        duk_call(ctx, 2);
+        return 0;
+    }
+
+    // no callback, just return {value: myPipedVal}
     return 1;
 
     closepipeerr:
-    duk_push_object(ctx);
+    PUNLOCK
     if(read_ret==-1)
         duk_push_sprintf(ctx, "pipe.read - Error reading: %s", strerror(errno));
     else if(read_ret==0)
@@ -6944,7 +7058,7 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
     else
         duk_push_string(ctx, "pipe.read - full data not read, closing pipe");
 
-    duk_put_prop_string(ctx, -2, "error");
+    errmsg_idx=duk_get_top_index(ctx);
 
     if(p->parent == pid)
     {
@@ -6960,46 +7074,24 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
         close(p->childtopar[1]);
         p->childtopar[1]=-1;
     }
-    return 1;
+
+    returnerr:
+    if(!have_func)
+    {
+        duk_push_object(ctx);
+        duk_pull(ctx, errmsg_idx);
+        duk_put_prop_string(ctx, -2, "error");
+        return 1;
+    }
+    duk_dup(ctx, 0);
+    duk_push_undefined(ctx);
+    duk_pull(ctx, errmsg_idx);
+    duk_call(ctx, 2);
+    return 0;
 
 }
 
-static duk_ret_t rp_pipe_doclose(duk_context *ctx)
-{
-    pipeinfo *p;
-    pid_t pid=getpid();
 
-    duk_push_this(ctx);
-    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pipeinfo"));
-    p=duk_get_pointer(ctx, -1);
-
-    if(p->parent == pid)
-    {
-        close(p->childtopar[0]);
-        close(p->partochild[1]);
-    }
-    else if(p->child == pid)
-    {
-        close(p->partochild[0]);
-        close(p->childtopar[1]);
-    }
-    else
-    {
-        RP_THROW(ctx, 
-            "pipe.read - cannot close pipe created for a different parent or child (parentpid:%d, childpid:%d, curpid%d)",
-            p->parent, p->child, pid);
-    }
-
-    if(p->e)
-    {
-        event_del(p->e);
-        event_free(p->e);
-    }
-    free(p);
-    duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pipeinfo"));
-
-    return 0;    
-}
 
 static duk_ret_t rp_newpipe(duk_context *ctx)
 {
@@ -7010,7 +7102,11 @@ static duk_ret_t rp_newpipe(duk_context *ctx)
     p->e=NULL;
     p->parent=getpid();
     p->child=-1;
+    p->lock=NULL;
 
+    REMALLOC(p->lock, sizeof(pthread_mutex_t));
+    RP_PTINIT(p->lock);
+    
     if (pipe(p->partochild) == -1 || pipe(p->childtopar) == -1)
     {
         free(p);
@@ -7024,16 +7120,16 @@ static duk_ret_t rp_newpipe(duk_context *ctx)
     duk_push_c_function(ctx, rp_pipe_write, 1);
     duk_put_prop_string(ctx, -2, "write");
     
-    duk_push_c_function(ctx, rp_pipe_onread, 1);
+    duk_push_c_function(ctx, rp_pipe_onread, 2);
     duk_put_prop_string(ctx, -2, "onRead");
 
-    duk_push_c_function(ctx, rp_pipe_read, 0);
+    duk_push_c_function(ctx, rp_pipe_read, 1);
     duk_put_prop_string(ctx, -2, "read");
 
-    duk_push_c_function(ctx, rp_pipe_doclose, 0);
+    duk_push_c_function(ctx, rp_pipe_closer, 0);
     duk_put_prop_string(ctx, -2, "close");
 
-    duk_push_c_function(ctx, rp_pipe_doclose, 0);
+    duk_push_c_function(ctx, rp_pipe_finalizer, 1);
     duk_set_finalizer(ctx, -2);
     return 1;
 }
