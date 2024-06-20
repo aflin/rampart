@@ -654,7 +654,7 @@ static SFI *check_fork(DB_HANDLE *h, int create)
             finfo->auxpos=NULL;
             REMALLOC(finfo->mapinfo, sizeof(FMINFO));
 
-            finfo->mapinfo->mem = mmap(NULL, FORKMAPSIZE, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);;
+            finfo->mapinfo->mem = mmap(NULL, FORKMAPSIZE, PROT_READ|PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);
             if(finfo->mapinfo->mem == MAP_FAILED)
             {
                 fprintf(stderr, "mmap failed: %s\n",strerror(errno));
