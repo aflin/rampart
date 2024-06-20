@@ -24,6 +24,9 @@
 #include <termios.h>
 #include <string.h>
 #include <sys/resource.h>
+#include <sys/mman.h>
+#include <sys/ipc.h>
+#include <sys/sem.h>
 
 //getTotalMem setMaxMem
 #ifdef __APPLE__
@@ -6618,8 +6621,8 @@ static duk_ret_t rp_fork(duk_context *ctx)
     return 1;
 }
 
-#define PLOCK RP_PTLOCK(p->lock);
-#define PUNLOCK RP_PTUNLOCK(p->lock);
+#define PLOCK_LOCK RP_PTLOCK(p->lock);
+#define PLOCK_UNLOCK RP_PTUNLOCK(p->lock);
 
 static duk_ret_t rp_pipe_doclose(duk_context *ctx, int is_finalizer)
 {
@@ -6716,18 +6719,18 @@ static duk_ret_t rp_pipe_write(duk_context *ctx)
     buf = duk_require_buffer_data(ctx, 0, &len);
     blen=(size_t)len;
 
-    PLOCK
+    PLOCK_LOCK
     if(write(writer, &blen, sizeof(size_t)) ==-1)
     {
-        PUNLOCK
+        PLOCK_UNLOCK
         RP_THROW(ctx, "failed to write to pipe");
     }
     if(write(writer, buf, blen) ==-1)
     {
-        PUNLOCK
+        PLOCK_UNLOCK
         RP_THROW(ctx, "failed to write to pipe");
     }
-    PUNLOCK;
+    PLOCK_UNLOCK;
     duk_push_int(ctx, (int)len + sizeof(size_t));
     return 1;
 }
@@ -6748,7 +6751,7 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
     int readerr=0;
     duk_idx_t pipe_stash_idx;
 
-    PLOCK
+    PLOCK_LOCK
     read_ret= read(fd, &len, sizeof(size_t));
 
     snprintf(pipeid, 32, "%p", p);
@@ -6787,16 +6790,18 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
             duk_push_string(ctx, "pipe.read - full data not read, closing pipe");
         //duk_put_prop_string(ctx, -2, "error");
         readerr=1;
-        PUNLOCK
+        PLOCK_UNLOCK
         goto docall;
     }
 
     buf=duk_push_buffer(ctx, (duk_size_t)len, 0);
-    read_ret = read(fd, buf, len);
-    PUNLOCK
+    read_ret = 0;
+    while( (read_ret += read(fd, buf+read_ret, len-read_ret)) < len  );
+    
+    PLOCK_UNLOCK
     if(read_ret != len)
     {
-        //duk_push_object(ctx);
+        duk_remove(ctx, -1);
         duk_push_undefined(ctx);//first arg
         if(read_ret==-1)
             duk_push_sprintf(ctx, "pipe.read - Error reading: %s", strerror(errno));
@@ -6809,12 +6814,35 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
         }
         else
             duk_push_string(ctx, "pipe.read - full data not read, closing pipe");
-        //duk_put_prop_string(ctx, -2, "error");
         readerr=1;
         goto docall;
     }
 
-    duk_cbor_decode(ctx, -1, 0);
+    duk_push_string(ctx, "CBOR.decode");
+    duk_eval(ctx);
+    duk_pull(ctx, -2);
+
+    if(duk_pcall(ctx, 1))
+    {
+        const char *errmsg;
+        if (duk_is_error(ctx, -1) )
+        {
+            duk_get_prop_string(ctx, -1, "stack");
+            duk_safe_to_string(ctx, -1);
+            errmsg = duk_push_sprintf(ctx, "%s", duk_json_encode(ctx, -1));
+        }
+        else if (duk_is_string(ctx, -1))
+            errmsg = duk_get_string(ctx, -1);
+        else
+            errmsg = duk_push_string(ctx, "unknown error");
+        duk_push_undefined(ctx);
+        duk_push_sprintf(ctx, "pipe.onRead - error decoding cbor: %s", errmsg);
+        duk_remove(ctx, -3);
+        goto docall;
+    }
+
+
+    //duk_cbor_decode(ctx, -1, 0);
     duk_get_prop_string(ctx, -1, "value");
     duk_replace(ctx, -2);
     duk_push_undefined(ctx);
@@ -6889,7 +6917,7 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
 
     // err and no callback found, or (more likely) callback is the error.
     err:
-    PUNLOCK
+    PLOCK_UNLOCK
 
     err_no_unlock:
     fprintf(stderr, "pipe.onRead - error in event: %s\n", errmsg);
@@ -6996,7 +7024,7 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
     duk_push_string(ctx, "CBOR.decode");
     duk_eval(ctx);
 
-    PLOCK
+    PLOCK_LOCK
     read_ret = read(reader, &len, sizeof(size_t));
     if(read_ret != sizeof(size_t))
         goto closepipeerr;
@@ -7008,12 +7036,13 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
 
     buf=duk_push_buffer(ctx, (duk_size_t)len, 0);
 
-    read_ret = read(reader, buf, len);
+    read_ret = 0;
+    while( (read_ret += read(reader, buf+read_ret, len-read_ret)) < len  );
 
     if(read_ret != len)
         goto closepipeerr;
 
-    PUNLOCK
+    PLOCK_UNLOCK
     if(duk_pcall(ctx, 1))
     {
         const char *errmsg;
@@ -7045,7 +7074,7 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
     return 1;
 
     closepipeerr:
-    PUNLOCK
+    PLOCK_UNLOCK
     if(read_ret==-1)
         duk_push_sprintf(ctx, "pipe.read - Error reading: %s", strerror(errno));
     else if(read_ret==0)
@@ -7134,7 +7163,497 @@ static duk_ret_t rp_newpipe(duk_context *ctx)
     return 1;
 }
 
+// abandoning mmap for now.  lmdb is significantly faster.
+#ifdef RP_UTILS_ENABLE_MMAP
+union rp_semun {
+    int val;
+    struct semid_ds *buf;
+    unsigned short *array;
+};
 
+static void wait_semaphore(int sem_id) {
+    struct sembuf sem_op;
+    sem_op.sem_num = 0;
+    sem_op.sem_op = -1;
+    sem_op.sem_flg = 0;
+    semop(sem_id, &sem_op, 1);
+}
+
+static void signal_semaphore(int sem_id) {
+    struct sembuf sem_op;
+    sem_op.sem_num = 0;
+    sem_op.sem_op = 1;
+    sem_op.sem_flg = 0;
+    semop(sem_id, &sem_op, 1);
+}
+
+typedef struct {
+    int64_t *seg_idx;   // the number of this idx.  seg_idx % nmemb will give array index
+    size_t  *data_size; //size of used data in data
+    void    *data;      //the data
+} msegment;
+
+typedef struct {
+    msegment        *segments;     // above struct with pointers into mem
+    int64_t         *write_idx;    // pointer into mem, int64 for alignment, last array index written to 
+                                   // by any process (also largest seg_idx)
+    void            *mem;          // mmapped shared memory
+    size_t           size;         // size of each segment->data
+    int64_t          last_idx;     // The last idx accessed (read or written to) by this process
+    int              nmemb;        // number of segments
+    int              sem_id;       // semaphore locking
+    pid_t            owner;        // pid of original creator of semaphore (parent proc)
+} rpmapinfo;
+
+
+static duk_ret_t _mmap_finalizer(duk_context *ctx)
+{
+    rpmapinfo *m;
+    
+    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("memmap"));
+    m = duk_get_pointer(ctx, -1);
+    duk_pop(ctx);
+
+    if(m)
+    {
+        if(m->owner == getpid())
+        {
+            union rp_semun sem_union;
+            sem_union.val = 1;
+            semctl(m->sem_id, 0, IPC_RMID, sem_union);
+        }
+
+        free(m->segments);
+        
+        munmap(m->mem, m->size * m->nmemb);
+
+        free(m);
+
+        duk_push_pointer(ctx, NULL);
+        duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("memmap"));
+    } 
+
+    return 0;
+}
+
+static duk_ret_t mmap_finalizer(duk_context *ctx)
+{
+    return _mmap_finalizer(ctx);
+}
+
+static duk_ret_t rp_map_write(duk_context *ctx)
+{
+    rpmapinfo *m;
+    msegment *seg;
+    void *buf;
+    int64_t next_idx=0, mod_idx;
+    duk_size_t blen;
+
+    duk_push_object(ctx);
+    duk_pull(ctx, 0);
+    duk_put_prop_string(ctx, -2, "value");
+
+    duk_push_this(ctx);
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("memmap")))
+        RP_THROW(ctx, "map.write - internal error");
+
+    m=duk_get_pointer(ctx,-1);
+    if(!m)
+        RP_THROW(ctx, "map.write - map was closed");
+
+    wait_semaphore(m->sem_id);
+
+    if(*m->write_idx != -1)
+        next_idx = *(m->segments[*m->write_idx].seg_idx) +1;
+
+    //on first go, next_idx is 0;
+    mod_idx = next_idx % m->nmemb;
+
+    duk_cbor_encode(ctx, 0, 0);
+    buf = duk_require_buffer_data(ctx, 0, &blen);
+
+    if(blen > m->size)
+    {
+        signal_semaphore(m->sem_id);
+        RP_THROW(ctx, "map.write - data size is larger than memmap data segment");
+    }
+
+    (*m->write_idx) = next_idx % m->nmemb;
+    seg=&m->segments[mod_idx];
+    *seg->seg_idx = next_idx;
+    *seg->data_size=(uint64_t)blen;
+    m->last_idx = next_idx;
+
+    memcpy(seg->data, buf, (size_t)blen);
+
+    signal_semaphore(m->sem_id);
+    
+    duk_push_number(ctx, (double)blen);
+    return 1;
+}
+
+static void push_map_stats(duk_context *ctx, rpmapinfo *m, int lock, int full)
+{
+    int64_t min_idx;
+
+    if(!m)
+    {
+        duk_push_this(ctx);
+        if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("memmap")))
+            RP_THROW(ctx, "map.read - internal error");
+
+        m=duk_get_pointer(ctx,-1);
+        if(!m)
+            RP_THROW(ctx, "map.read - map was closed");
+    }
+
+    if(!full)
+    {
+        duk_push_number(ctx, (double)m->last_idx);
+        return;
+    }
+
+
+    duk_push_object(ctx);
+    
+    duk_push_number(ctx, (double)m->last_idx);
+    duk_put_prop_string(ctx, -2, "lastIndex");
+
+
+    if(lock)
+        wait_semaphore(m->sem_id);
+
+
+    if(*m->write_idx<0)
+        duk_push_number(ctx, -1);
+    else
+        duk_push_number(ctx, (double)*m->segments[*m->write_idx].seg_idx);
+    duk_put_prop_string(ctx, -2, "maxIndex");
+
+    min_idx = (*m->write_idx + 1) % m->nmemb;
+    if( *m->segments[min_idx].seg_idx == -1)
+        duk_push_number(ctx, (double)*m->segments[0].seg_idx);
+    else
+        duk_push_number(ctx, (double)*m->segments[min_idx].seg_idx);
+    duk_put_prop_string(ctx, -2, "minIndex");
+
+    if(lock)
+        signal_semaphore(m->sem_id);
+
+
+    duk_push_number(ctx, (double)m->size);
+    duk_put_prop_string(ctx, -2, "size");
+
+    duk_push_number(ctx, (double)m->nmemb);
+    duk_put_prop_string(ctx, -2, "length");
+
+    duk_push_number(ctx, (double)m->owner);
+    duk_put_prop_string(ctx, -2, "creatingPid");
+
+
+}
+
+static duk_ret_t rp_map_stats(duk_context *ctx)
+{
+    push_map_stats(ctx, NULL, 1, 1);
+    return 1;
+} 
+
+static duk_ret_t rp_map_read(duk_context *ctx)
+{
+    rpmapinfo *m = NULL;
+    int64_t target_idx=INT64_MIN, mod_idx=0;
+    msegment *seg;
+    duk_idx_t cb_idx=-1;
+    int dostats=0;
+
+    if(duk_is_number(ctx, 0))
+    {
+        target_idx = (int64_t) duk_get_number(ctx,0);
+        if(duk_is_boolean(ctx,1))
+            dostats=duk_get_boolean(ctx,1);
+        else if(!duk_is_undefined(ctx, 1))
+        {
+            REQUIRE_FUNCTION(ctx, 1, "map.read - second argument (if present) must be a function (callback) or a boolean (include stats)");
+            cb_idx=1;
+
+            if(!duk_is_undefined(ctx, 2))
+                dostats=REQUIRE_BOOL(ctx,2, "map.read - last argument (if present) must be a boolean (include stats)");
+        }
+    }
+    else if (duk_is_function(ctx, 0))
+    {
+        cb_idx=0;
+        if(duk_is_boolean(ctx,1))
+            dostats=duk_get_boolean(ctx,1);
+        else if(!duk_is_undefined(ctx, 1))
+        {
+            target_idx = (int64_t)REQUIRE_NUMBER(ctx, 1, "map.read - second argument (if present) must be a number (index)");
+
+            if(!duk_is_undefined(ctx, 2))
+                dostats=REQUIRE_BOOL(ctx,2, "map.read - last argument (if present) must be a boolean (include stats)");
+        }
+    }
+    else if (!duk_is_undefined(ctx, 0))
+        RP_THROW(ctx, "map.read - first argument (if present) must be a function (callback) or a number (index)");
+
+    duk_push_this(ctx);
+    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("memmap")))
+        RP_THROW(ctx, "map.read - internal error");
+
+    m=duk_get_pointer(ctx,-1);
+    if(!m)
+        RP_THROW(ctx, "map.read - map was closed");
+
+
+    wait_semaphore(m->sem_id);
+
+    //index specified, only get if we have a match
+    if(target_idx > -1)
+    {
+        mod_idx = target_idx % m->nmemb;
+        if(*m->segments[mod_idx].seg_idx != target_idx)
+        {
+            signal_semaphore(m->sem_id);
+            goto ret_neg_one;
+        }
+        m->last_idx=target_idx;
+    }
+
+    // no index specified, get the next in sequence, if still there
+    else if (target_idx == INT64_MIN)
+    {
+        m->last_idx++;
+        mod_idx =  m->last_idx % m->nmemb;
+        //printf("seg_idx=%d, last_idx=%d\n", (int)*m->segments[mod_idx].seg_idx,  (int)m->last_idx);
+        if(*m->segments[mod_idx].seg_idx != m->last_idx)
+        {
+            m->last_idx--;
+            signal_semaphore(m->sem_id);
+            goto ret_neg_one;
+        }
+    }    
+
+    // else negative number specified, get the last written value
+    else
+    {
+        mod_idx = *m->write_idx;
+        if(mod_idx == -1)
+        {
+            signal_semaphore(m->sem_id);
+            goto ret_neg_one;
+        }
+        m->last_idx=*m->segments[mod_idx].seg_idx;
+    }
+
+    seg=&m->segments[mod_idx];
+
+    // eval & pcall is the only way to catch cbor decode errors
+    duk_push_string(ctx, "CBOR.decode");
+    duk_eval(ctx);
+
+    duk_push_external_buffer(ctx);
+    duk_config_buffer(ctx, -1, seg->data, (duk_size_t)*seg->data_size);     
+
+    if(duk_pcall(ctx, 1))
+    {
+        const char *errmsg;
+
+        signal_semaphore(m->sem_id);
+        
+        if (duk_is_error(ctx, -1) )
+        {
+            duk_get_prop_string(ctx, -1, "stack");
+            duk_safe_to_string(ctx, -1);
+            errmsg = duk_push_sprintf(ctx, "%s", duk_json_encode(ctx, -1));
+        }
+        else if (duk_is_string(ctx, -1))
+            errmsg = duk_get_string(ctx, -1);
+        else
+            errmsg = duk_push_string(ctx, "unknown error");
+
+        if(cb_idx>-1)
+            duk_pull(ctx,cb_idx); //the callback function
+
+        duk_push_sprintf(ctx, "map.read - error decoding cbor: %s", errmsg);
+        duk_remove(ctx, -2);
+        duk_push_undefined(ctx); // [ ..., errmsg, full_errmsg, undefined ]
+        duk_replace(ctx, -2);    // [ ..., undefined, full_errmsg ]
+
+        if(cb_idx>-1)
+        {
+            duk_push_int(ctx, -1); //the index
+            push_map_stats(ctx, m, 1, dostats); //the stats
+
+            duk_call(ctx, 4);
+            goto ret_neg_one;
+        }
+        else
+        {
+            duk_push_object(ctx);
+            duk_pull(ctx, -2);
+            duk_put_prop_string(ctx, -2, "error");
+            duk_push_int(ctx, -1);
+            duk_put_prop_string(ctx, -2, "index");
+            push_map_stats(ctx, m, 1, dostats);
+            if(dostats)
+                duk_put_prop_string(ctx, -2, "stats");
+            else
+                duk_put_prop_string(ctx, -2, "lastIndex");
+            return 1;
+        }
+    }
+
+
+    if(cb_idx>-1)
+    {
+        duk_pull(ctx,cb_idx); //the callback function
+        duk_get_prop_string(ctx, -2, "value"); //the value
+        duk_push_undefined(ctx); //error
+        duk_push_number(ctx, (double)m->last_idx); // the index
+        push_map_stats(ctx, m, 0, dostats); //stats
+
+        signal_semaphore(m->sem_id);
+        duk_call(ctx, 4);
+
+        duk_push_number(ctx, (double)m->last_idx);
+        return 1;
+    }
+
+    duk_push_number(ctx, (double)m->last_idx);
+    duk_put_prop_string(ctx, -2, "index");
+
+    push_map_stats(ctx, m, 0, dostats);
+
+    signal_semaphore(m->sem_id);
+
+    if(dostats)
+        duk_put_prop_string(ctx, -2, "stats");
+    else
+        duk_put_prop_string(ctx, -2, "lastIndex");
+
+    // {value: var, index: num, ...} is on top
+    return 1;
+
+    ret_neg_one:
+
+    if(cb_idx==-1)
+    {
+        duk_push_object(ctx);
+        duk_push_int(ctx, -1);
+        duk_put_prop_string(ctx, -2, "index");
+        duk_push_number(ctx, (double)m->last_idx);
+        duk_put_prop_string(ctx, -2, "lastIndex");
+        push_map_stats(ctx, m, 1, dostats);
+        if(dostats)
+            duk_put_prop_string(ctx, -2, "stats");
+        else
+            duk_put_prop_string(ctx, -2, "lastIndex");
+
+    }
+    else
+    {
+        duk_pull(ctx,cb_idx); //the callback
+        duk_push_undefined(ctx);
+        duk_push_undefined(ctx);
+        duk_push_int(ctx, -1);
+        push_map_stats(ctx, m, 1, dostats);
+
+        duk_call(ctx, 4);
+        
+        duk_push_int(ctx, -1);
+    }
+    return 1;
+}
+
+
+static duk_ret_t rp_new_memmap(duk_context *ctx)
+{
+    rpmapinfo *m = NULL;
+    int nmemb=1;
+    int sem_id;
+    size_t size;
+    size_t msize;
+    int i=0;
+    double sz = REQUIRE_NUMBER(ctx, 0, "first argument must be a number (mmap size)");
+    void *segstart;
+
+    if(sz < 64.0)
+        sz=64.0;
+
+    if(!duk_is_undefined(ctx, 1))
+        nmemb = REQUIRE_UINT(ctx, 1, "second argument (if defined) must be a positive integer (number of segments)");
+
+    size = (size_t) sz + (sizeof(int64_t)*2); //enough room for msegment with seg_idx and data_size
+
+    //align to size_t
+    if( size % sizeof(int64_t)) //if not a multiple of, e.g. 8
+        size = ((size / sizeof(int64_t)) +1)  * sizeof(int64_t); //increase size to multiple of 8
+
+    msize = size * nmemb + sizeof(int64_t); //room for write_idx at beginning
+
+    sem_id = semget(IPC_PRIVATE, 1, IPC_CREAT | 0600);
+    if (sem_id == -1) 
+    {
+        RP_THROW(ctx, "Failed to set semaphore for mmap: %s", strerror(errno));
+    }
+
+    union rp_semun sem_union;
+    sem_union.val = 1;
+    if (semctl(sem_id, 0, SETVAL, sem_union) == -1) {
+        RP_THROW(ctx, "Failed to set semaphore for mmap: %s", strerror(errno));
+    }
+
+    REMALLOC(m, sizeof(rpmapinfo));
+
+    m->sem_id=sem_id;
+
+    m->mem = mmap(NULL, msize, PROT_READ | PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);
+    if (m->mem == MAP_FAILED) {
+        free(m);
+        RP_THROW(ctx, "newMmap - failed to create map: %s", strerror(errno));
+    }
+
+    m->last_idx=-1;
+    m->nmemb=nmemb;
+    m->size=size;
+    m->owner=getpid();
+
+    m->write_idx=m->mem;
+    *m->write_idx=-1;
+
+    m->segments=NULL;
+    REMALLOC(m->segments, sizeof(msegment) * nmemb);
+
+    segstart=m->mem + sizeof(int64_t);
+    for (i=0;i<nmemb;i++)
+    {
+        m->segments[i].seg_idx = (segstart + (size * i));
+        m->segments[i].data_size = (segstart + sizeof(int64_t) + (size * i));        
+        m->segments[i].data = (segstart + (sizeof(int64_t)*2) + (size * i));        
+
+        *m->segments[i].seg_idx = -1;
+        *m->segments[i].data_size = 0;
+    }
+
+    duk_push_object(ctx);
+    duk_push_pointer(ctx, m);
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("memmap"));
+
+    duk_push_c_function(ctx, rp_map_write, 1);
+    duk_put_prop_string(ctx, -2, "write");
+
+    duk_push_c_function(ctx, rp_map_read, 3);
+    duk_put_prop_string(ctx, -2, "read");
+
+    duk_push_c_function(ctx, rp_map_stats, 0);
+    duk_put_prop_string(ctx, -2, "getStats");
+
+    duk_push_c_function(ctx, mmap_finalizer, 1);
+    duk_set_finalizer(ctx, -2); 
+    return 1;
+}
+#endif //RP_UTILS_ENABLE_MMAP
 #define N_DATE_FORMATS 6
 #define N_DATE_FORMATS_W_OFFSET 2
 static char *dfmts[N_DATE_FORMATS] = {
@@ -7397,7 +7916,10 @@ void duk_printf_init(duk_context *ctx)
 
     duk_push_c_function(ctx, rp_newpipe, 0);
     duk_put_prop_string(ctx, -2, "newPipe");
-
+#ifdef RP_UTILS_ENABLE_MMAP
+    duk_push_c_function(ctx,  rp_new_memmap, 2);
+    duk_put_prop_string(ctx, -2, "newMmap");
+#endif
     duk_push_c_function(ctx, duk_rp_fclose, 1);
     duk_put_prop_string(ctx, -2, "fclose");
 
