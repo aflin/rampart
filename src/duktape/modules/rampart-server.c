@@ -1094,25 +1094,11 @@ evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
         if (duk_get_prop(ctx, -2))
         {
             // [ global_stash, {wsdis}, cbfunc() ]
-            if ((duk_pcall(ctx, 0)))
+            if (duk_pcall(ctx, 0))
             {
-                if (duk_is_error(ctx, -1) )
-                {
-                    duk_get_prop_string(ctx, -1, "stack");
-                    // [ global_stash, {wsdis}, errobj, errstack ]
-                    printerr("error in wsOnDisconnect callback:\n %s\n", duk_safe_to_string(ctx, -1));
-                    duk_pop(ctx);
-                    // [ global_stash, {wsdis}, errobj ]
-                }
-                else if (duk_is_string(ctx, -1))
-                {
-                    printerr("error in wsOnDisconnect callback: '%s'\n", duk_safe_to_string(ctx, -1));
-                    // [ global_stash, {wsdis}, errobj ]
-                }
-                else
-                {
-                    printerr("unknown error in wsOnDisconnect callback");
-                }
+                const char *errmsg = rp_push_error(ctx, -1, "error in wsOnDisconnect callback:", 3);
+                printerr("%s", errmsg);
+                duk_pop(ctx);
             }
             // [ global_stash, {wsdis}, ret/err ]
             duk_pop(ctx);//return value or err
@@ -1628,8 +1614,8 @@ static int push_req_vars(DHS *dhs)
             //duk_get_prop_string(ctx, -3, "body");
             duk_push_external_buffer(ctx);
             duk_config_buffer(ctx,-1,buf,bsz); /* add reference to buf for js buffer */
-            if (!duk_is_undefined(ctx,-1))//why would this be undefined.  Think about why you did this and remove if no good reason.
-            {
+            //if (!duk_is_undefined(ctx,-1))//why would this be undefined.  Think about why you did this and remove if no good reason.
+            //{
                 duk_buffer_to_string(ctx, -1);
                 if(duk_pcall(ctx,1) != 0)
                 {
@@ -1641,9 +1627,9 @@ static int push_req_vars(DHS *dhs)
                 duk_put_prop_string(ctx,-2,"content");
                 //duk_put_prop_index(ctx,-2,0);
                 //duk_put_prop_string(ctx,-2,"postData");
-            }
-            else
-                duk_pop_2(ctx); /*parse() and undefined */
+            //}
+            //else
+            //    duk_pop_2(ctx); /*parse() and undefined */
 
             duk_put_prop_string(ctx,-2,"postData");
 
@@ -3647,27 +3633,13 @@ static void *http_dothread(void *arg)
         }
 
         evhtp_headers_add_header(req->headers_out, evhtp_header_new("Content-Type", "text/html", 0, 0));
-        if (duk_is_error(ctx, -1) )
-        {
-            duk_get_prop_string(ctx, -1, "stack");
-            printerr("error in callback:\n%s\n", duk_safe_to_string(ctx, -1));
-            if (!req->cb_has_websock)
-                send500(req, (char*)duk_safe_to_string(ctx, -1));
-            //send500 calls http_callback, which now empties the stack
-            //duk_pop(ctx);
-        }
-        else if (duk_is_string(ctx, -1))
-        {
-            printerr("error in callback: '%s'\n", duk_safe_to_string(ctx, -1));
-            if (!req->cb_has_websock)
-                send500(req, (char*)duk_safe_to_string(ctx, -1));
-        }
-        else
-        {
-            printerr("unknown error in callback");
-            if (!req->cb_has_websock)
-                send500(req, "unknown error in callback");
-        }
+
+        const char *errmsg = rp_push_error(ctx, -1, "error in callback:", 0);
+        printerr("%s\n", errmsg);
+        if (!req->cb_has_websock)
+            send500(req, (char*)duk_safe_to_string(ctx, -1));
+        //send500 calls http_callback, which now empties the stack
+        //duk_pop(ctx);
 
         if (dhr->have_timeout)
             RP_PTUNLOCK(&(dhr->lock));
@@ -4113,33 +4085,14 @@ static int getmod(DHS *dhs)
     }
     else if(ret == -1)
     {
-        if (duk_is_error(ctx, -1) )
-        {
-            const char *s;
-            duk_get_prop_string(ctx, -1, "stack");
-            s=duk_safe_to_string(ctx, -1);
-            // 404 for trying to load a directory
-            if(strstr(s, "Is a directory"))
-            {
-                send404(dhs->req);
-                return -1;
-            }
-            printerr("error loading module: '%s' - '%s'\n", modname, s);
-            duk_push_sprintf(ctx, "In module %s:\n%s\n", modname, s);
-            send500(dhs->req, (char*)duk_get_string(ctx, -1));
-        }
-        else if ( duk_is_string(ctx, -1))
-        {
-            printerr("error loading module: '%s' - '%s'\n", modname, duk_safe_to_string(ctx, -1));
-            duk_push_sprintf(ctx, "In module %s:\n%s\n", modname, duk_safe_to_string(ctx, -1));
-            send500(dhs->req, (char*)duk_get_string(ctx, -1));
-        }
-        else
-        {
-            printerr("error loading module '%s' - Unknown error", modname);
-            send500(dhs->req, "Unknown error");
-        }
-        //duk_pop_2(ctx);
+        const char *errmsg = rp_push_error(ctx, -1, "error loading module:", 3);
+
+        printerr("%s\n", errmsg);
+        duk_pop(ctx);
+
+        errmsg = rp_push_error(ctx, -1, "In module:", 0);
+        send500(dhs->req, (char*) errmsg);
+
         return -1;
     }
 

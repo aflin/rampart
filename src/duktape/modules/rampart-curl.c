@@ -2272,20 +2272,9 @@ static int check_multi_info(CURLM *cm)
             // [ ..., callback, this, results ]
             /* call the callback */
             if ( duk_pcall_method(ctx, 1) != 0) {
-                if (duk_is_error(ctx, -1) )
-                {
-                    duk_get_prop_string(ctx, -1, "stack");
-                    fprintf(stderr, "Error in curl async callback: %s\n", duk_get_string(ctx, -1));
-                    duk_pop(ctx);
-                }
-                else if (duk_is_string(ctx, -1))
-                {
-                    fprintf(stderr, "Error in curl async callback: %s\n", duk_get_string(ctx, -1));
-                }
-                else
-                {
-                    fprintf(stderr, "Error in curl async callback\n");
-                }
+                const char *errmsg = rp_push_error(ctx, -1, "error in curl async callback:", 3);
+                fprintf(stderr, "%s\n", errmsg);
+                duk_pop(ctx);
             }
             duk_pop(ctx); //result
 

@@ -1052,6 +1052,8 @@ void duk_rp_exit(duk_context *ctx, int ec)
         exit(ec);
     ran_already=1;
 
+    if(main_babel_opt)
+        free(main_babel_opt);
     free_dns();
 
     duk_push_global_stash(ctx);
@@ -1426,6 +1428,12 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     }
     else if(!opt)
     {
+        // if not global, we are overwriting main_babel_opt below
+        if(main_babel_opt)
+        {
+            free(main_babel_opt);
+            main_babel_opt=NULL;
+        }
         opt=checkbabel(src);
         if(!opt) return NULL;
     }
@@ -1500,7 +1508,8 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     duk_push_string(ctx, pfill);
     if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
     {
-        fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+        const char *errmsg = rp_push_error(ctx, -1, NULL, 3);
+        fprintf(stderr, "%s\n", errmsg);
         duk_rp_exit(ctx, 1);
     }
 
@@ -1605,14 +1614,16 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     duk_push_string(ctx,fn);
     if (duk_pcompile(ctx, DUK_COMPILE_FUNCTION) == DUK_EXEC_ERROR)
     {
-        fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+        const char *errmsg = rp_push_error(ctx, -1, NULL, 3);
+        fprintf(stderr, "%s\n", errmsg);
         duk_rp_exit(ctx, 1);
     }
     duk_push_string(ctx,src);
 
     if (duk_pcall(ctx, 1) == DUK_EXEC_ERROR)
     {
-        fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+        const char *errmsg = rp_push_error(ctx, -1, NULL, 3);
+        fprintf(stderr, "%s\n", errmsg);
         duk_rp_exit(ctx, 1);
     }
     babelcode=(char *)duk_get_lstring(ctx,-1,&bsz);
@@ -1719,6 +1730,7 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
     duk_set_top(ctx, 0);
 
     duk_push_global_stash(ctx);
+    // ev_callback_object is at idx=1
     if( !duk_get_prop_string(ctx,-1, "ev_callback_object") )
     {
         RP_THROW(ctx, "internal error in rp_el_doevent()");
@@ -1737,7 +1749,6 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
     // the JS callback function
     duk_push_number(ctx, evargs->key);
     duk_get_prop(ctx, -2);
-
 
     if(duk_is_function(ctx, -1))
     {
@@ -1767,26 +1778,20 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
     {
         if(duk_pcall(ctx, nargs) != 0)
         {
+            const char *errmsg;
+            
             // the function name
             duk_push_number(ctx, evargs->key +0.3);
             duk_get_prop(ctx, 1);
             fname=duk_get_string_default(ctx, -1, fname);
             duk_pop(ctx);
-
-            if (duk_is_error(ctx, -1) )
-            {
-                duk_get_prop_string(ctx, -1, "stack");
-                fprintf(stderr, "Error in %s callback: %s\n", fname, duk_get_string(ctx, -1));
-                duk_pop(ctx);
-            }
-            else if (duk_is_string(ctx, -1))
-            {
-                fprintf(stderr, "Error in %s callback: %s\n", fname, duk_get_string(ctx, -1));
-            }
-            else
-            {
-                fprintf(stderr, "Error in %s callback\n", fname);
-            }
+            
+            fprintf(stderr, "Error in %s callback:\n  ", fname);
+            
+            errmsg = rp_push_error(ctx, -1, NULL, 3);
+            fprintf(stderr, "%s\n", errmsg);
+            
+            duk_pop(ctx);
         }
     }
     else
@@ -1796,25 +1801,19 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
 
         if(duk_pcall_method(ctx, nargs) != 0)
         {
+            const char *errmsg;
             // the function name
             duk_push_number(ctx, evargs->key +0.3);
             duk_get_prop(ctx, 1);
             fname=duk_get_string_default(ctx, -1, fname);
             duk_pop(ctx);
-            if (duk_is_error(ctx, -1) )
-            {
-                duk_get_prop_string(ctx, -1, "stack");
-                fprintf(stderr, "Error in %s callback: %s\n", fname, duk_get_string(ctx, -1));
-                duk_pop(ctx);
-            }
-            else if (duk_is_string(ctx, -1))
-            {
-                fprintf(stderr, "Error in %s callback: %s\n", fname, duk_get_string(ctx, -1));
-            }
-            else
-            {
-                fprintf(stderr, "Error in %s callback\n", fname);
-            }
+
+            fprintf(stderr, "Error in %s callback:\n  ", fname);
+
+            errmsg = rp_push_error(ctx, -1, NULL, 3);
+            fprintf(stderr, "%s\n", errmsg);
+
+            duk_pop(ctx);
         }
     }
     //discard return
@@ -1823,7 +1822,7 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
     /* evargs may have been freed if clearInterval was called from within the function */
     /* if so, function stored in ev_callback_object[key] will have been deleted */
     duk_push_number(ctx, key);
-    if(!duk_has_prop(ctx, -2) )
+    if(!duk_has_prop(ctx, 1) )
     {
         duk_set_top(ctx, 0);
         return;
@@ -1846,11 +1845,11 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
         event_del(evargs->e);
         event_free(evargs->e);
         duk_push_number(ctx, key);
-        duk_del_prop(ctx, -2);
+        duk_del_prop(ctx, 1);
         duk_push_number(ctx, key+0.2);
-        duk_del_prop(ctx, -2);
+        duk_del_prop(ctx, 1);
         duk_push_number(ctx, key+0.3);
-        duk_del_prop(ctx, -2);
+        duk_del_prop(ctx, 1);
         free(evargs);
     }
     //setInterval, but event has expired.
@@ -3532,13 +3531,15 @@ int main(int argc, char *argv[])
             /* run the script */
             if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
             {
-                fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+                const char *errmsg = rp_push_error(ctx, -1, NULL, 3);
+                fprintf(stderr, "%s\n", errmsg);
                 duk_rp_exit(ctx, 1);
             }
 
             if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
             {
-                fprintf(stderr,"%s\n", duk_safe_to_stacktrace(ctx, -1));
+                const char *errmsg = rp_push_error(ctx, -1, NULL, 3);
+                fprintf(stderr, "%s\n", errmsg);
                 duk_rp_exit(ctx, 1);
             }
             if (!mainthr->base)

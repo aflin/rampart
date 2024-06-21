@@ -430,21 +430,10 @@ static int do_callback(duk_context *ctx, const char *ev_s, duk_idx_t nargs)
 
             if(duk_pcall_method(ctx, nargs) != 0)
             {
-                if (duk_is_error(ctx, -1) )
-                {
-                    duk_get_prop_string(ctx, -1, "stack");
-                    fprintf(stderr, "Error in %s callback: %s\n", ev_s, duk_get_string(ctx, -1));
-                    duk_pop_2(ctx);
-                }
-                else if (duk_is_string(ctx, -1))
-                {
-                    fprintf(stderr, "Error in %s callback: %s\n", ev_s, duk_get_string(ctx, -1));
-                    duk_pop(ctx);
-                }
-                else
-                {
-                    fprintf(stderr, "Error in %s callback\n", ev_s);
-                }
+                const char *errmsg = rp_push_error(ctx, -1, NULL, 3);
+                fprintf(stderr, "Error in %s callback:\n", ev_s);
+                fprintf(stderr, "%s\n", errmsg);
+                duk_pop_2(ctx);
                 // [ ..., this, [args, args], eventobj, callback_object, enum]
             }
             else // [ ..., this, [args, args], eventobj, callback_object, enum, retval ]

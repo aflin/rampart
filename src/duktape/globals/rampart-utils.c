@@ -88,6 +88,417 @@ int execvpe(const char *program, char **argv, char **envp)
 #define HOMESUBDIR "/.rampart/"
 
 /* **************************************************
+   A standard way to print errors from
+   pcall()s.  Will print offending line as well.
+   ************************************************** */
+
+duk_ret_t rp_get_line(duk_context *ctx, const char *filename, int line_number, int nlines)
+{
+
+    FILE *file = fopen(filename, "r");
+    int start,end;
+    duk_uarridx_t alen=0;
+
+    if(nlines<0)nlines=0;
+
+    start = line_number - nlines;
+    end = line_number + nlines;
+
+    if (file == NULL) 
+    {
+        duk_push_undefined(ctx);
+        return 0;
+    }
+
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read;
+    int current_line = 1;
+
+    if(nlines)
+    {
+        duk_push_array(ctx);
+        while (start < 1)
+        {
+            duk_push_undefined(ctx);
+            duk_put_prop_index(ctx, -2, alen);
+            alen++;
+            start++;
+        }
+    }
+    while ((read = getline(&line, &len, file)) != -1)
+    {
+        if (current_line >= start)
+        {
+            int lci = strlen(line)-1; 
+            if(line[lci]=='\n')
+                line[lci]='\0';
+            duk_push_string(ctx, line);
+            if(nlines)
+                duk_put_prop_index(ctx, -2, alen++);
+            free(line);
+            line=NULL;
+        }
+
+        if (current_line == end )
+        {
+            break;
+        }
+        current_line++;
+    }
+
+    // If we reached here, the line_number was out of range
+    fclose(file);
+
+    if (line)
+        free(line);
+
+    if(nlines)
+    {
+        while(current_line < end)
+        {
+            duk_push_undefined(ctx);
+            duk_put_prop_index(ctx, -2, alen);
+            alen++;
+            current_line++;
+        }
+        return 1;
+    }
+
+
+    duk_push_undefined(ctx);
+    return 0;
+}
+
+typedef struct {
+    char *filename;
+    char *funcname;
+    int   line;
+    int   type;
+    int   is_c;
+} rp_stack_entry;
+
+typedef struct {
+    rp_stack_entry **entries;
+    char            *msg;
+    int              nentries;
+} rp_stack;
+
+static void free_rp_stack_entry(rp_stack_entry *s)
+{
+    free(s->filename);
+    free(s->funcname);
+    free(s);
+}
+
+rp_stack * free_rp_stack(rp_stack *ss)
+{
+    int i=0;
+    rp_stack_entry *s;
+
+    if(!ss)
+        return ss;
+
+    for(;i<ss->nentries;i++)
+    {
+        s=ss->entries[i];
+        free_rp_stack_entry(s);
+    }
+    free(ss->entries);
+    free(ss->msg);
+    free(ss);
+    return NULL;
+}
+
+
+static rp_stack *parse_stack_string(const char *s )
+{
+    rp_stack *stack=NULL;
+    const char *fn=NULL, *f=NULL;
+    char *p;
+    int fnl=0, fl=0, nl=1, line=0, t=-1;
+
+    REMALLOC(stack, sizeof(rp_stack));
+    stack->nentries=0;
+    stack->entries=NULL;
+    stack->msg=NULL;
+
+    // first line
+    while(*s==' ')s++;
+    p=(char*)s;
+    while(*s!='\n'&& *s!='\0')s++;
+    if(*s!='\n')
+        return stack;
+
+    stack->msg=strndup(p,s-p);
+    s++;
+
+    while(1)
+    {
+        if(nl)
+        {
+            //"\n    at "
+            p=strstr(s,"  at ");
+            if(p)
+            {
+                s=p+5;
+            }
+            else
+            {
+                return stack;
+            }
+
+            f=s;
+            //"myfunc"
+            while(*s!='\0' && *s!=' ')  s++;
+            fl=s-f;
+            nl=0;
+        }
+        else
+        {
+            switch(*s)
+            {
+                case '(':
+                    line=0;
+                    s++;
+                    // skip empty file/line entry
+                    if(*s==')')
+                    {
+                        while(*s!='\n' && *s!='\0') s++;
+                        nl=1;
+                    }
+                    else
+                    {
+                        fn=s;
+                        while(*s!='\0' && *s!=':' && *s!=')')  s++;
+                        fnl=s-fn;
+                        if(*s==':')
+                        {
+                            s++;
+                            line = strtol(s,&p,10);
+                            s=(const char*)p;
+                            s++;
+                        }
+                        while(*s!=' ') s++;
+                        s++;
+                        t=0;
+                        p=(char*)s;
+                        while(t<8 && *p!='\0') p++,t++;
+                        if(t==8)
+                        {
+                            if(!strncmp("strict p", s, 8))
+                                t=2;
+                            if(!strncmp("prevents", s, 8))
+                                t=1;
+                            else if(!strncmp("internal", s, 8))
+                                t=0;
+                        }
+                        else
+                            t=-1;
+                           
+                    }
+                    break;
+                case '\0':
+                    nl=-1;
+                    //fall through
+                case '\n':
+                {
+                    char *fntemp;
+                    rp_stack_entry *e;
+                    int l;
+
+                    if(*s=='\n') nl=1;
+                    REMALLOC(stack->entries, sizeof(rp_stack_entry*) * (stack->nentries+1));
+                    stack->entries[stack->nentries]=NULL;
+                    REMALLOC(stack->entries[stack->nentries], sizeof(rp_stack_entry));
+                    e=stack->entries[stack->nentries];
+                    stack->nentries++;
+
+                    fntemp = strndup(fn,fnl);
+                    p=strstr(fntemp, "babel.js");
+                    if(p)
+                    {
+                        p[0]='j';p[1]='s';p[2]='\0';
+                        if (access(fntemp, F_OK) == 0)
+                        {
+                            fn=fntemp;
+                        }
+                        else
+                        {
+                            free(fntemp);
+                            fn=strndup(fn,fnl);
+                        }
+                    }
+                    else
+                        fn=fntemp;
+
+                    l=strlen(fn);
+                    if(fn[l-2]=='.' && fn[l-1]=='c')
+                        e->is_c=1;
+                    else
+                        e->is_c=0;
+
+                    e->filename=(char*)fn;
+                    e->funcname=strndup(f,fl);
+                    e->type=t;
+                    e->line=line;
+                    break;
+                }
+            }
+        }
+        if(nl == -1)
+            break;
+        s++;        
+    }
+    return stack;
+}
+
+#define PRINT_SIMPLIFIED_ERRORS
+
+// here nlines is the number of lines before and after target line, or -1 for don't print
+void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nlines)
+{
+    const char *fn=NULL;
+    char *stack=NULL;
+    int ln=-1; 
+    rp_stack *ss=NULL;
+    /* we need the whole stack, or we may get things like:
+           at [anon] (/zfs/home/aaron/src/rampart/src/duktape/core/module.c:327) internal
+       instead of
+           at global (myfile.js:20) strict preventsyield
+       upon RP_THROW()
+    if(duk_get_prop_string(ctx, eidx, "fileName"))
+        fn=duk_get_string(ctx,-1);
+    duk_pop(ctx);
+
+    if(duk_get_prop_string(ctx, eidx, "lineNumber"))
+        ln = duk_get_int(ctx,-1);
+    duk_pop(ctx);
+    */
+
+    if(duk_get_prop_string(ctx, eidx, "stack"))
+        stack = strdup(duk_get_string(ctx, -1));
+    duk_pop(ctx);
+
+    if(stack){
+        rp_stack_entry *e;
+        int i=0;
+
+        ss=parse_stack_string(stack);
+        for(;i<ss->nentries;i++)
+        {
+            e=ss->entries[i];
+            if(!e->is_c) //first not file.c
+            {
+                fn=e->filename;
+                ln=e->line;
+                break;
+            }
+        }
+#ifdef PRINT_SIMPLIFIED_ERRORS
+        int l=sprintf(stack, "%s\n", ss->msg); 
+        for(i=0;i<ss->nentries;i++)
+        {
+            //printf("%d: %s %s line:%d, type=%d, isc=%d\n",i, e->funcname, e->filename, e->line, e->type, e->is_c);
+            e=ss->entries[i];
+            if(!e->is_c)
+                l+=sprintf(&stack[l], "    at %s (%s:%d)\n", e->funcname, e->filename, e->line);
+        }
+#endif
+    }
+
+    if(msg)
+    {
+        if(stack)
+            duk_push_sprintf(ctx, "%s\n  %s", msg, stack);
+        else
+            duk_push_string(ctx, msg);
+    }
+    else
+    {
+        duk_push_string(ctx, stack);
+    }
+
+    if(fn && ln>-1 && nlines > -1 )
+    {
+        //duk_push_string(ctx, "\n");
+        //duk_concat(ctx, 2);
+
+        if(rp_get_line(ctx, fn, ln, nlines))
+        {
+            duk_pull(ctx, -2);
+            duk_push_sprintf(ctx, "\n%s line %d\n", fn, ln);
+            duk_concat(ctx, 2);
+            duk_pull(ctx, -2);
+            if(nlines)
+            { //an array of lines
+                duk_uarridx_t i=0;
+                duk_idx_t aidx=duk_normalize_index(ctx, -1);
+                for (i=0;i<nlines*2+1;i++)
+                {
+                    duk_get_prop_index(ctx, aidx, i);
+
+                    if(duk_is_undefined(ctx, -1)) //empty lines when at start of file
+                        duk_push_string(ctx, "");
+                    else if(i == nlines)
+                        duk_push_sprintf(ctx, "line %d: -> |%s\n", ln-nlines+i, duk_get_string(ctx,-1));
+                    else if (i == nlines*2)
+                        duk_push_sprintf(ctx, "line %d:    |%s", ln-nlines+i, duk_get_string(ctx,-1));
+                    else
+                        duk_push_sprintf(ctx, "line %d:    |%s\n", ln-nlines+i, duk_get_string(ctx,-1));
+
+                    duk_remove(ctx, -2);
+
+                    if(i)
+                        duk_concat(ctx, 2);
+                }
+            }
+            else
+                duk_push_sprintf(ctx, "line %d -> |%s", ln, duk_get_string(ctx,-1));
+            duk_remove(ctx, -2);//the array
+            duk_concat(ctx, 2);
+        }
+        else
+        {
+            duk_pop(ctx);
+        }
+    }
+    free_rp_stack(ss);
+    if(stack)
+        free(stack);
+}
+
+// no new line at end
+const char* rp_push_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nlines)
+{
+    const char *errmsg;
+
+    eidx = duk_normalize_index(ctx, eidx);
+
+    if(nlines < 1)
+        nlines=-1;
+    else
+        nlines = nlines/2; //if nlines was not odd will print nlines + 1 so that target is always in middle
+
+    if (duk_is_error(ctx, eidx) )
+    {
+        rp_push_formatted_error(ctx, eidx, msg, nlines);
+        errmsg = duk_get_string(ctx, -1);
+    }
+    else if (duk_is_string(ctx, eidx))
+    {
+        errmsg = duk_get_string(ctx, eidx);
+        errmsg = duk_push_sprintf(ctx, "%s%s%s", msg?msg:"", msg?"\n  ":"", errmsg);
+    }
+    else
+        errmsg = duk_push_sprintf(ctx, "%s%sunknown error", msg?msg:"", msg?"\n  ":"");
+
+    return errmsg;
+}
+
+
+
+/* **************************************************
    like duk_get_int_default but if string, converts
    string to number with strtol
    ************************************************** */
@@ -6822,6 +7233,7 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
     duk_eval(ctx);
     duk_pull(ctx, -2);
 
+    // this will not produce an error in a js file, so don't user rp_push_error()
     if(duk_pcall(ctx, 1))
     {
         const char *errmsg;
@@ -6850,23 +7262,7 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
     docall:
     if(duk_pcall(ctx, 2))
     {
-        if (duk_is_error(ctx, -1) )
-        {
-            duk_get_prop_string(ctx, -1, "stack");
-            duk_remove(ctx, -2);
-            duk_safe_to_string(ctx, -1);
-            errmsg = duk_push_sprintf(ctx, "%s", duk_json_encode(ctx, -1));
-        }
-        else if (duk_is_string(ctx, -1))
-        {
-            duk_safe_to_string(ctx, -1);
-            errmsg = duk_push_sprintf(ctx, "%s", duk_json_encode(ctx, -1));
-        }
-        else
-        {
-            duk_pop(ctx);
-            errmsg = duk_push_string(ctx, "unknown error in callback");
-        }
+        errmsg = rp_push_error(ctx, -1, "pipe.onRead:", 3);
         goto err_no_unlock;
     }
 

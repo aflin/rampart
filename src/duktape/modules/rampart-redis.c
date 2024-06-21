@@ -621,18 +621,15 @@ static int rd_push_response(duk_context *ctx, RESPROTO *response, const char *fn
 
 #define HANDLE_PCALL_ERR \
 if(ret!=DUK_EXEC_SUCCESS) {\
-      if (duk_is_error(ctx, -1) ){\
-          duk_get_prop_string(ctx, -1, "stack");\
-          if(isasync) fprintf(stderr, "error in redis async callback: '%s'\n", duk_safe_to_string(ctx, -1));\
-          else RP_THROW(ctx, "%s", duk_safe_to_string(ctx, -1));\
-      }\
-      else if (duk_is_string(ctx, -1)){\
-          if(isasync) fprintf(stderr, "error in redis async callback: '%s'\n", duk_safe_to_string(ctx, -1));\
-          else RP_THROW(ctx, "%s", duk_safe_to_string(ctx, -1));\
-      } else {\
-          if(isasync) fprintf(stderr,"unknown error in redis async callback");\
-          else RP_THROW(ctx, "unknown error in callback");\
-      }\
+    const char *errmsg;\
+    if(isasync) {\
+        errmsg = rp_push_error(ctx, -1, "error in redis async callback:", 3);\
+        fprintf(stderr, "%s\n", errmsg);\
+    } else {\
+        errmsg = rp_push_error(ctx, -1, "error in redis callback:", 3);\
+        RP_THROW(ctx, "%s", errmsg);\
+    }\
+    duk_pop(ctx);\
 }
 
 #define docallback do{          \

@@ -250,9 +250,9 @@ thr4.exec(
             }
         );
     },
-    function(res) {
+    function(res,err) {
         testFeature("thread - test 'Cannot run a thread created outside ...'",
-            res.error.indexOf('run a thread created') != -1
+            err.indexOf('run a thread created') != -1
         );
     }
 );

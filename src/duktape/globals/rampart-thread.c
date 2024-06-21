@@ -1826,7 +1826,22 @@ static void do_parent_callback(evutil_socket_t fd, short events, void* arg)
 
     dprintf("running parent javascript callback\n");
 
-    duk_call(ctx, 1);
+    if(duk_is_object(ctx, -1))
+    {
+        if(duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("error"))) {
+            duk_push_undefined(ctx); // [ func, obj, errmsg, undefined ]
+            duk_replace(ctx, -3); // [ func, undefined, errmsg ]
+        }
+        // else no pop, leave undefined on stack  [ func, objval, undefined ]
+    }
+    else
+        duk_push_undefined(ctx); // [ func, val, undefined ]
+
+    if(duk_pcall(ctx, 2))
+    {
+        const char *errmsg = rp_push_error(ctx, -1, "thr.exec() - error in parent thread callback:", 3);
+        fprintf(stderr, "%s\n", errmsg);
+    }
     RP_EMPTY_STACK(ctx);
 }
 
@@ -1863,22 +1878,19 @@ static void thread_doevent(evutil_socket_t fd, short events, void* arg)
     if(duk_pcall(ctx,1) != 0)
     {
         RPTHR_CLEAR(thr, RPTHR_FLAG_ACTIVE);
-        duk_push_object(ctx);
-        if (duk_is_error(ctx, -2) )
-            duk_get_prop_string(ctx, -2, "stack");
-        else if (duk_is_string(ctx, -2))
-            duk_pull(ctx, -2);
-        else
-            duk_push_string(ctx,"unknown error");
+        const char *errmsg;
 
+        duk_push_object(ctx);
+
+        errmsg = rp_push_error(ctx, -2, "thr.exec() - error in thread callback:",3);
         //if we don't have a parent thread callback
         if(info->index == -1)
         {
-            fprintf(stderr, "Error in thread without callback: %s\n", duk_get_string(ctx, -1));
+            fprintf(stderr, "%s\n", errmsg);
             RPTHR_CLEAR(thr, RPTHR_FLAG_ACTIVE);
             goto end;
         }
-        duk_put_prop_string(ctx, -2, "error");
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("error"));
     }
     RPTHR_CLEAR(thr, RPTHR_FLAG_ACTIVE);
 

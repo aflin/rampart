@@ -151,8 +151,6 @@ extern "C"
 })
 
 // macro to empty stack
-//#define RP_EMPTY_STACK_TO(rpctx, __rp_min) while (duk_get_top((rpctx)) > (__rp_min)) duk_pop((rpctx))
-//#define RP_EMPTY_STACK(rpctx) RP_EMPTY_STACK_TO((rpctx),0)
 #define RP_EMPTY_STACK(rpctx) duk_set_top((rpctx),0)
 
 
@@ -547,6 +545,14 @@ duk_ret_t duk_rp_push_current_module(duk_context *ctx);
 //needs free
 char *str_rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r);
 
+// standard error printing after pcall()
+// * msg is a message to preppend, or NULL
+// * nlines is the number of lines in source file to print
+const char* rp_push_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nlines);
+// support for above
+duk_ret_t rp_get_line(duk_context *ctx, const char *filename, int line_number, int nlines);
+void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nlines);
+
 /* ******* setTimeout and similar ****** */
 
 /* we might want to do something right before the timeout when using generically */
@@ -612,13 +618,15 @@ void run_b4loop_funcs();
 
 extern void duk_rp_fatal(void *udata, const char *msg);
 
+/*
 #define DUK_USE_FATAL_HANDLER(udata,msg) do { \
-    const char *fatal_msg = (msg); /* avoid double evaluation */ \
+    const char *fatal_msg = (msg); \
     (void) udata; \
     fprintf(stderr, "*** FATAL ERROR (%d) (%s:%d) ***: %s\n", (int)getpid(),__FILE__, __LINE__,fatal_msg ? fatal_msg : "no message"); \
     fflush(stderr); \
     abort(); \
 } while (0)
+*/
 
 /* a list of timeouts pending */
 #define EVARGS struct ev_args
