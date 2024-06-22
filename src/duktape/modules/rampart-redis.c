@@ -623,10 +623,10 @@ static int rd_push_response(duk_context *ctx, RESPROTO *response, const char *fn
 if(ret!=DUK_EXEC_SUCCESS) {\
     const char *errmsg;\
     if(isasync) {\
-        errmsg = rp_push_error(ctx, -1, "error in redis async callback:", 3);\
+        errmsg = rp_push_error(ctx, -1, "error in redis async callback:", rp_print_error_lines);\
         fprintf(stderr, "%s\n", errmsg);\
     } else {\
-        errmsg = rp_push_error(ctx, -1, "error in redis callback:", 3);\
+        errmsg = rp_push_error(ctx, -1, "error in redis callback:", rp_print_error_lines);\
         RP_THROW(ctx, "%s", errmsg);\
     }\
     duk_pop(ctx);\

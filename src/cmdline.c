@@ -1508,7 +1508,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     duk_push_string(ctx, pfill);
     if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
     {
-        const char *errmsg = rp_push_error(ctx, -1, NULL, 3);
+        const char *errmsg = rp_push_error(ctx, -1, NULL, rp_print_error_lines);
         fprintf(stderr, "%s\n", errmsg);
         duk_rp_exit(ctx, 1);
     }
@@ -1614,7 +1614,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
     duk_push_string(ctx,fn);
     if (duk_pcompile(ctx, DUK_COMPILE_FUNCTION) == DUK_EXEC_ERROR)
     {
-        const char *errmsg = rp_push_error(ctx, -1, NULL, 3);
+        const char *errmsg = rp_push_error(ctx, -1, NULL, rp_print_error_lines);
         fprintf(stderr, "%s\n", errmsg);
         duk_rp_exit(ctx, 1);
     }
@@ -1622,7 +1622,7 @@ const char *duk_rp_babelize(duk_context *ctx, char *fn, char *src, time_t src_mt
 
     if (duk_pcall(ctx, 1) == DUK_EXEC_ERROR)
     {
-        const char *errmsg = rp_push_error(ctx, -1, NULL, 3);
+        const char *errmsg = rp_push_error(ctx, -1, NULL, rp_print_error_lines);
         fprintf(stderr, "%s\n", errmsg);
         duk_rp_exit(ctx, 1);
     }
@@ -1788,7 +1788,7 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
             
             fprintf(stderr, "Error in %s callback:\n  ", fname);
             
-            errmsg = rp_push_error(ctx, -1, NULL, 3);
+            errmsg = rp_push_error(ctx, -1, NULL, rp_print_error_lines);
             fprintf(stderr, "%s\n", errmsg);
             
             duk_pop(ctx);
@@ -1810,7 +1810,7 @@ static void rp_el_doevent(evutil_socket_t fd, short events, void* arg)
 
             fprintf(stderr, "Error in %s callback:\n  ", fname);
 
-            errmsg = rp_push_error(ctx, -1, NULL, 3);
+            errmsg = rp_push_error(ctx, -1, NULL, rp_print_error_lines);
             fprintf(stderr, "%s\n", errmsg);
 
             duk_pop(ctx);
@@ -3531,14 +3531,14 @@ int main(int argc, char *argv[])
             /* run the script */
             if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
             {
-                const char *errmsg = rp_push_error(ctx, -1, NULL, 3);
+                const char *errmsg = rp_push_error(ctx, -1, NULL, rp_print_error_lines);
                 fprintf(stderr, "%s\n", errmsg);
                 duk_rp_exit(ctx, 1);
             }
 
             if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
             {
-                const char *errmsg = rp_push_error(ctx, -1, NULL, 3);
+                const char *errmsg = rp_push_error(ctx, -1, NULL, rp_print_error_lines);
                 fprintf(stderr, "%s\n", errmsg);
                 duk_rp_exit(ctx, 1);
             }

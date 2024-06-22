@@ -53,6 +53,8 @@ pthread_mutex_t pflock_err;
 FILE *access_fh;
 FILE *error_fh;
 int duk_rp_server_logging=0;
+int rp_print_simplified_errors=1;
+int rp_print_error_lines=3;
 
 #ifdef __APPLE__
 
@@ -88,10 +90,12 @@ int execvpe(const char *program, char **argv, char **envp)
 #define HOMESUBDIR "/.rampart/"
 
 /* **************************************************
-   A standard way to print errors from
-   pcall()s.  Will print offending line as well.
+   A compact way to format errors and a standard way
+   to print errors from pcall()s.
+   Can optionally print offending lines as well.
    ************************************************** */
 
+// get a line or range of lines from a file
 duk_ret_t rp_get_line(duk_context *ctx, const char *filename, int line_number, int nlines)
 {
 
@@ -104,7 +108,7 @@ duk_ret_t rp_get_line(duk_context *ctx, const char *filename, int line_number, i
     start = line_number - nlines;
     end = line_number + nlines;
 
-    if (file == NULL) 
+    if (file == NULL)
     {
         duk_push_undefined(ctx);
         return 0;
@@ -130,7 +134,7 @@ duk_ret_t rp_get_line(duk_context *ctx, const char *filename, int line_number, i
     {
         if (current_line >= start)
         {
-            int lci = strlen(line)-1; 
+            int lci = strlen(line)-1;
             if(line[lci]=='\n')
                 line[lci]='\0';
             duk_push_string(ctx, line);
@@ -147,7 +151,6 @@ duk_ret_t rp_get_line(duk_context *ctx, const char *filename, int line_number, i
         current_line++;
     }
 
-    // If we reached here, the line_number was out of range
     fclose(file);
 
     if (line)
@@ -165,6 +168,7 @@ duk_ret_t rp_get_line(duk_context *ctx, const char *filename, int line_number, i
         return 1;
     }
 
+    // If we reached here, no lines were in range
 
     duk_push_undefined(ctx);
     return 0;
@@ -210,7 +214,8 @@ rp_stack * free_rp_stack(rp_stack *ss)
     return NULL;
 }
 
-
+// parse error.stack into an object
+// that is useful for compacting the output.
 static rp_stack *parse_stack_string(const char *s )
 {
     rp_stack *stack=NULL;
@@ -237,6 +242,10 @@ static rp_stack *parse_stack_string(const char *s )
     {
         if(nl)
         {
+            // if we got "\n\0"
+            if(*s=='\0')
+                break;
+
             //"\n    at "
             p=strstr(s,"  at ");
             if(p)
@@ -245,7 +254,7 @@ static rp_stack *parse_stack_string(const char *s )
             }
             else
             {
-                return stack;
+                return free_rp_stack(stack);
             }
 
             f=s;
@@ -295,7 +304,7 @@ static rp_stack *parse_stack_string(const char *s )
                         }
                         else
                             t=-1;
-                           
+
                     }
                     break;
                 case '\0':
@@ -342,98 +351,130 @@ static rp_stack *parse_stack_string(const char *s )
                     e->funcname=strndup(f,fl);
                     e->type=t;
                     e->line=line;
+                    if(!e->line || !strlen(e->filename) || !strlen(e->funcname))
+                        return free_rp_stack(stack);
                     break;
                 }
             }
         }
         if(nl == -1)
             break;
-        s++;        
+        s++;
     }
     return stack;
 }
-
-#define PRINT_SIMPLIFIED_ERRORS
-
-// here nlines is the number of lines before and after target line, or -1 for don't print
+// main function that takes an error object and gives a newly formatted string
+// if lines == 0, no text from file is printed.
+// if rampart.utils.errorConfig({lines:0, simple:false}); -
+//    then just return the duktape version of "stack", prepended with message, if not NULL
 void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nlines)
 {
     const char *fn=NULL;
     char *stack=NULL;
-    int ln=-1; 
+    int ln=-1, i=0;
     rp_stack *ss=NULL;
-    /* we need the whole stack, or we may get things like:
-           at [anon] (/zfs/home/aaron/src/rampart/src/duktape/core/module.c:327) internal
-       instead of
-           at global (myfile.js:20) strict preventsyield
-       upon RP_THROW()
-    if(duk_get_prop_string(ctx, eidx, "fileName"))
-        fn=duk_get_string(ctx,-1);
-    duk_pop(ctx);
+    rp_stack_entry *e;
 
-    if(duk_get_prop_string(ctx, eidx, "lineNumber"))
-        ln = duk_get_int(ctx,-1);
-    duk_pop(ctx);
-    */
+    // here nlines is changed to the number of lines before and after target line, or -1 for don't print
+    if(nlines < 1)
+        nlines=-1;
+    else
+        nlines = nlines/2; //if nlines was not odd will print nlines + 1 so that target is always in middle
 
-    if(duk_get_prop_string(ctx, eidx, "stack"))
+    duk_get_prop_string(ctx, eidx, "stack"); //existence already checked
+
+    if(nlines==-1 && !msg && !rp_print_simplified_errors) //we are making no transformations
+        return;
+
+    if( nlines !=-1 || rp_print_simplified_errors) //we only need to parse the stack if ...
+    {
         stack = strdup(duk_get_string(ctx, -1));
-    duk_pop(ctx);
-
-    if(stack){
-        rp_stack_entry *e;
-        int i=0;
+        duk_pop(ctx);
 
         ss=parse_stack_string(stack);
-        for(;i<ss->nentries;i++)
+
+        if(ss)
         {
-            e=ss->entries[i];
-            if(!e->is_c) //first not file.c
+
+            if(nlines != -1) // if we are printing a file line
             {
-                fn=e->filename;
-                ln=e->line;
-                break;
+                i=0;
+                // get the desired filename (not a .c file) and line number
+                for(i=0; i<ss->nentries; i++)
+                {
+                    e=ss->entries[i];
+                    if(!e->is_c) //first not *.c
+                    {
+                        fn=e->filename;
+                        ln=e->line;
+                        break;
+                    }
+                }
+            }
+
+            // if we want simplified error messages
+            if(rp_print_simplified_errors)
+            {
+                int l=sprintf(stack, "%s\n", ss->msg);
+                for(i=0;i<ss->nentries;i++)
+                {
+                    e=ss->entries[i];
+                    if(!e->is_c)
+                        l+=sprintf(&stack[l], "    at %s (%s:%d)\n", e->funcname, e->filename, e->line);
+                }
+                stack[strlen(stack)-1]='\0'; //no new line
             }
         }
-#ifdef PRINT_SIMPLIFIED_ERRORS
-        int l=sprintf(stack, "%s\n", ss->msg); 
-        for(i=0;i<ss->nentries;i++)
-        {
-            //printf("%d: %s %s line:%d, type=%d, isc=%d\n",i, e->funcname, e->filename, e->line, e->type, e->is_c);
-            e=ss->entries[i];
-            if(!e->is_c)
-                l+=sprintf(&stack[l], "    at %s (%s:%d)\n", e->funcname, e->filename, e->line);
+        else if(nlines != -1)
+        { //we had a parse error somewhere, use properties from error object to get file, line
+            int l;
+            if(duk_get_prop_string(ctx, eidx, "fileName"))
+                fn=duk_get_string(ctx,-1);
+            duk_pop(ctx);
+            l=strlen(fn);
+            ln=-1;
+            if(fn[l-2]!='.' || fn[l-1]!='c') //if it's a .c file, don't use, leave ln=-1
+            {
+                if(duk_get_prop_string(ctx, eidx, "lineNumber"))
+                    ln = duk_get_int(ctx,-1);
+                duk_pop(ctx);
+            }
         }
-#endif
-    }
 
-    if(msg)
-    {
-        if(stack)
+        if(msg)
             duk_push_sprintf(ctx, "%s\n  %s", msg, stack);
         else
-            duk_push_string(ctx, msg);
+            duk_push_string(ctx, stack);
     }
-    else
+    else //use unmodified stack string, which is still at -1
     {
-        duk_push_string(ctx, stack);
+        if(msg)
+        {
+            const char *cstack=(char*)duk_get_string(ctx, -1);
+            duk_push_sprintf(ctx, "%s\n  %s", msg, cstack);
+            duk_remove(ctx, -2);
+        } //else use the string (stack) at -1
     }
 
+    // only if we have a filename, line and are requested to print lines from file
     if(fn && ln>-1 && nlines > -1 )
     {
-        //duk_push_string(ctx, "\n");
-        //duk_concat(ctx, 2);
-
         if(rp_get_line(ctx, fn, ln, nlines))
         {
-            duk_pull(ctx, -2);
-            duk_push_sprintf(ctx, "\n%s line %d\n", fn, ln);
-            duk_concat(ctx, 2);
-            duk_pull(ctx, -2);
+            // [ ..., stack_string, file_lines ]
+            duk_pull(ctx, -2); // [ ..., file_lines, stack string ]
+            duk_push_sprintf(ctx, "\n%s line %d\n", fn, ln); // [ ..., file_lines, stack string, new format ]
+            duk_concat(ctx, 2); // [ ..., file_lines, stack string+new format ]
+            duk_pull(ctx, -2); //  [ ..., stack string+new format, file_lines ]
+
             if(nlines)
             { //an array of lines
                 duk_uarridx_t i=0;
                 duk_idx_t aidx=duk_normalize_index(ctx, -1);
+                int width=1, highest=ln+ nlines + 1;
+
+                while((highest/=10)) width++;
+
                 for (i=0;i<nlines*2+1;i++)
                 {
                     duk_get_prop_index(ctx, aidx, i);
@@ -441,11 +482,11 @@ void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nl
                     if(duk_is_undefined(ctx, -1)) //empty lines when at start of file
                         duk_push_string(ctx, "");
                     else if(i == nlines)
-                        duk_push_sprintf(ctx, "line %d: -> |%s\n", ln-nlines+i, duk_get_string(ctx,-1));
+                        duk_push_sprintf(ctx, "line %*d: -> |%s\n", width, ln-nlines+i, duk_get_string(ctx,-1));
                     else if (i == nlines*2)
-                        duk_push_sprintf(ctx, "line %d:    |%s", ln-nlines+i, duk_get_string(ctx,-1));
+                        duk_push_sprintf(ctx, "line %*d:    |%s", width, ln-nlines+i, duk_get_string(ctx,-1));
                     else
-                        duk_push_sprintf(ctx, "line %d:    |%s\n", ln-nlines+i, duk_get_string(ctx,-1));
+                        duk_push_sprintf(ctx, "line %*d:    |%s\n", width, ln-nlines+i, duk_get_string(ctx,-1));
 
                     duk_remove(ctx, -2);
 
@@ -455,35 +496,37 @@ void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nl
             }
             else
                 duk_push_sprintf(ctx, "line %d -> |%s", ln, duk_get_string(ctx,-1));
-            duk_remove(ctx, -2);//the array
-            duk_concat(ctx, 2);
+
+            duk_remove(ctx, -2);//the array/string
+            duk_concat(ctx, 2); //stack+string+new format
         }
         else
         {
-            duk_pop(ctx);
+            //failed to open file or other error
+            duk_pop(ctx);//undefined, stack at -1
         }
     }
+
     free_rp_stack(ss);
     if(stack)
         free(stack);
 }
 
-// no new line at end
+// push formatted error message, adds to stack, does not remove error object
+// error string does not include a terminating newline
 const char* rp_push_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nlines)
 {
     const char *errmsg;
 
     eidx = duk_normalize_index(ctx, eidx);
 
-    if(nlines < 1)
-        nlines=-1;
-    else
-        nlines = nlines/2; //if nlines was not odd will print nlines + 1 so that target is always in middle
 
     if (duk_is_error(ctx, eidx) )
     {
-        rp_push_formatted_error(ctx, eidx, msg, nlines);
+        duk_get_prop_string(ctx, eidx, "stack");
         errmsg = duk_get_string(ctx, -1);
+        errmsg = duk_push_sprintf(ctx, "%s%s%s", msg?msg:"", msg?"\n  ":"", errmsg);
+        duk_remove(ctx, -2);
     }
     else if (duk_is_string(ctx, eidx))
     {
@@ -496,6 +539,25 @@ const char* rp_push_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nline
     return errmsg;
 }
 
+
+static duk_ret_t rp_error_throw(duk_context *ctx)
+{
+    if (!duk_is_error(ctx, 0) )
+        return 1;
+
+    if(!duk_get_prop_string(ctx, 0, "stack"))
+    {
+        // afaik this won't happen
+        duk_pop(ctx);
+        return 1;
+    }
+    duk_put_prop_string(ctx, 0, "duktape_stack");
+
+    rp_push_formatted_error(ctx, 0, NULL, rp_print_error_lines);
+    duk_put_prop_string(ctx, -2, "stack");
+
+    return 1;
+}
 
 
 /* **************************************************
@@ -526,7 +588,7 @@ int duk_rp_get_int_default(duk_context *ctx, duk_idx_t i, int def)
     4) in scriptPath/subdir/file
     5) in $HOME/subdir/file or /tmp/subdir/file
     6) in $RAMPART_PATH/subdir/file
-    7) in rampart_dir/modules/file -- install dir and subdir 
+    7) in rampart_dir/modules/file -- install dir and subdir
 */
 
 #define nstandard_locs 4
@@ -563,7 +625,7 @@ static void make_standard_locs()
     }
     else
         standard_locs[1].loc=NULL;
-    standard_locs[1].subpath=SUB_ONLY; 
+    standard_locs[1].subpath=SUB_ONLY;
 
     standard_locs[2].loc=rampart_path; // env RAMPART_PATH
     standard_locs[2].subpath=NO_SUB;
@@ -653,7 +715,7 @@ RPPATH rp_find_path_vari(char *file, ...)
             }
         }
 
-        if(standard_locs[i].subpath==NO_SUB) 
+        if(standard_locs[i].subpath==NO_SUB)
             continue;
 
         //PLUS_SUB && SUB_ONLY
@@ -1121,7 +1183,7 @@ static double _get_total_mem()
         total_memory = (double)info.totalram * info.mem_unit;
     }
 #endif
-    return total_memory;    
+    return total_memory;
 }
 
 duk_ret_t duk_process_get_total_mem(duk_context *ctx)
@@ -1149,7 +1211,7 @@ duk_ret_t duk_process_set_max_mem(duk_context *ctx)
             RP_THROW(ctx, "process.setMaxMem - string argument must be a percentage greater than 0 and less than \"100%\"");
         if(pc > 100.0)
             RP_THROW(ctx, "process.setMaxMem - string argument must be a percentage greater than 0 and less than \"100%\"");
-        
+
         mb = pc * _get_total_mem()/104857600;
     }
     else if (duk_is_number(ctx,0))
@@ -1162,7 +1224,7 @@ duk_ret_t duk_process_set_max_mem(duk_context *ctx)
     limit.rlim_max = (rlim_t)(mb * 1048576.0);
 
     if (setrlimit(RLIMIT_AS, &limit) != 0) {
-        RP_THROW(ctx, "process.setMaxMem - Failed to set Max");        
+        RP_THROW(ctx, "process.setMaxMem - Failed to set Max");
     }
 
     duk_push_number(ctx, mb);
@@ -1762,7 +1824,7 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
                         duk_put_prop_index(ctx, -2, arrayi);
                     }
                     duk_remove(ctx, -2);
-                } 
+                }
                 //if not an array or object, put it in object as "0"
                 else if (!duk_is_object(ctx, -1))
                 {
@@ -1777,7 +1839,7 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
                 goto done;
             }
             // no goto done;
-        } 
+        }
 
         /* check if exists already, if so, make array or use array */
         if(!duk_get_prop_lstring(ctx,-1, key, keyl))
@@ -1792,7 +1854,7 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
                 arrayi=0;
                 while (duk_has_prop_index(ctx, -1, arrayi)) {
                     arrayi++;
-                    if(arrayi > 4095) 
+                    if(arrayi > 4095)
                     {
                         arrayi=0;
                         break;
@@ -1820,7 +1882,7 @@ static void pushqelem(duk_context *ctx, char *s, size_t l)
         return;
     }
 
-    // no equals '=' in 
+    // no equals '=' in
     keyl = l;
     key = duk_rp_url_decode(s,&keyl);
 
@@ -2533,7 +2595,7 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
     {
         char buf[PATH_MAX];
         int dirfd;
-        
+
         if(getcwd(buf, PATH_MAX))
         {
 #ifdef __APPLE__
@@ -2597,7 +2659,7 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
         else
             duk_push_false(ctx);
         duk_put_prop_string(ctx, -2, "executable");
-    }    
+    }
     pw = getpwuid(path_stat.st_uid);
     gr = getgrgid(path_stat.st_gid);
 
@@ -2614,7 +2676,7 @@ duk_ret_t duk_rp_stat_lstat(duk_context *ctx, int islstat)
         duk_push_sprintf(ctx, "%d", (int) path_stat.st_gid);
 
     duk_put_prop_string(ctx, -2, "group");
-    
+
 
     DUK_PUT_NUMBER(ctx,  "dev", path_stat.st_dev, -2);
     DUK_PUT_NUMBER(ctx,  "ino", path_stat.st_ino, -2);
@@ -2882,7 +2944,7 @@ duk_ret_t duk_rp_exec_raw(duk_context *ctx)
         struct stat sb;
         if(stat(cd, &sb))
             RP_THROW(ctx, "exec(): changeDirectory value does not exist");
-        
+
         if( ! S_ISDIR(sb.st_mode) )
             RP_THROW(ctx, "exec(): changeDirectory value is not a Directory");
     }
@@ -3827,8 +3889,8 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
             setaccess = 2;
             atime = (time_t)duk_get_int(ctx, -1);
         } else if (
-            duk_is_object(ctx, -1)  &&  
-            duk_has_prop_string(ctx, -1, "getMilliseconds") && 
+            duk_is_object(ctx, -1)  &&
+            duk_has_prop_string(ctx, -1, "getMilliseconds") &&
             duk_has_prop_string(ctx, -1, "getUTCDay") )
         {
             duk_push_string(ctx, "getTime");
@@ -3849,8 +3911,8 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
             setmodify = 2;
             mtime = (time_t)duk_get_int(ctx, -1);
         } else if (
-            duk_is_object(ctx, -1)  &&  
-            duk_has_prop_string(ctx, -1, "getMilliseconds") && 
+            duk_is_object(ctx, -1)  &&
+            duk_has_prop_string(ctx, -1, "getMilliseconds") &&
             duk_has_prop_string(ctx, -1, "getUTCDay") )
         {
             duk_push_string(ctx, "getTime");
@@ -3910,8 +3972,8 @@ duk_ret_t duk_rp_touch(duk_context *ctx)
                 new_times.modtime = mtime;
             else
                 new_times.modtime = setmodify ? time(NULL) : filestat.st_mtime; //set to current time if set modify
-            
-            
+
+
             if(setaccess==2)
                 new_times.actime = atime;
             else
@@ -6253,7 +6315,7 @@ static int buffer_seek(void *cookie, off64_t *offset, int whence)
     {
         return -1; // Out of bounds
     }
-    
+
     if (new_pos >= (off64_t)buffer->size)
     {
         duk_context *ctx = buffer->ctx;
@@ -6309,7 +6371,7 @@ static int buffer_fclose(void *cookie)
     return 0;
 }
 
-static duk_ret_t get_buffer(duk_context *ctx) 
+static duk_ret_t get_buffer(duk_context *ctx)
 {
     duk_push_this(ctx);
 
@@ -6318,7 +6380,7 @@ static duk_ret_t get_buffer(duk_context *ctx)
     return 1;
 }
 
-static FILE *open_memstream_buffer(buffer_t *buffer) 
+static FILE *open_memstream_buffer(buffer_t *buffer)
 {
 
     cookie_io_functions_t io_funcs = {
@@ -7063,7 +7125,7 @@ static duk_ret_t rp_pipe_doclose(duk_context *ctx, int is_finalizer)
     }
     else if(!is_finalizer)
     {
-        RP_THROW(ctx, 
+        RP_THROW(ctx,
             "pipe.read - cannot close pipe created for a different parent or child (parentpid:%d, childpid:%d, curpid%d)",
             p->parent, p->child, pid);
     }
@@ -7079,7 +7141,7 @@ static duk_ret_t rp_pipe_doclose(duk_context *ctx, int is_finalizer)
     duk_push_pointer(ctx, NULL);
     duk_put_prop_string(ctx, -3, DUK_HIDDEN_SYMBOL("pipeinfo"));
 
-    return 0;    
+    return 0;
 }
 
 static duk_ret_t rp_pipe_closer(duk_context *ctx)
@@ -7120,7 +7182,7 @@ static duk_ret_t rp_pipe_write(duk_context *ctx)
         writer=p->childtopar[1];
     else
     {
-        RP_THROW(ctx, 
+        RP_THROW(ctx,
             "pipe.write - cannot write from pipe created for a different parent or child (parentpid:%d, childpid:%d, curpid%d)",
             p->parent, p->child, pid);
         return 0; //for gcc warnings
@@ -7168,7 +7230,7 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
     snprintf(pipeid, 32, "%p", p);
 
 
-    duk_push_global_stash(ctx);    
+    duk_push_global_stash(ctx);
     // these should never happen.  But if it does, there is no
     // callback to call, so print to stderr instead.
     if(!duk_get_prop_string(ctx, -1, "pipecbs"))
@@ -7180,7 +7242,7 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
 
     if(!duk_get_prop_string(ctx, pipe_stash_idx, pipeid))
     {
-        errmsg="pipe callback not found";    
+        errmsg="pipe callback not found";
         goto err;
     }
 
@@ -7208,7 +7270,7 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
     buf=duk_push_buffer(ctx, (duk_size_t)len, 0);
     read_ret = 0;
     while( (read_ret += read(fd, buf+read_ret, len-read_ret)) < len  );
-    
+
     PLOCK_UNLOCK
     if(read_ret != len)
     {
@@ -7239,22 +7301,28 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
         const char *errmsg;
         if (duk_is_error(ctx, -1) )
         {
-            duk_get_prop_string(ctx, -1, "stack");
-            duk_safe_to_string(ctx, -1);
-            errmsg = duk_push_sprintf(ctx, "%s", duk_json_encode(ctx, -1));
+            if(!duk_get_prop_string(ctx, -1, "duktape_stack"))
+            {
+                duk_pop(ctx);
+                duk_get_prop_string(ctx, -1, "stack");
+            }
+            duk_remove(ctx, -2); //err obj
+            errmsg = duk_get_string(ctx, -1);
         }
         else if (duk_is_string(ctx, -1))
             errmsg = duk_get_string(ctx, -1);
         else
+        {
             errmsg = duk_push_string(ctx, "unknown error");
+            duk_remove(ctx, -2); //whatever the non-string, non-error is.
+        }
         duk_push_undefined(ctx);
         duk_push_sprintf(ctx, "pipe.onRead - error decoding cbor: %s", errmsg);
-        duk_remove(ctx, -3);
+        duk_remove(ctx, -3);// the errmsg string
         goto docall;
     }
 
 
-    //duk_cbor_decode(ctx, -1, 0);
     duk_get_prop_string(ctx, -1, "value");
     duk_replace(ctx, -2);
     duk_push_undefined(ctx);
@@ -7262,7 +7330,7 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
     docall:
     if(duk_pcall(ctx, 2))
     {
-        errmsg = rp_push_error(ctx, -1, "pipe.onRead:", 3);
+        errmsg = rp_push_error(ctx, -1, "pipe.onRead:", rp_print_error_lines);
         goto err_no_unlock;
     }
 
@@ -7335,7 +7403,7 @@ static duk_ret_t rp_pipe_onread(duk_context *ctx)
     p=duk_get_pointer(ctx, -1);
     if(!p)
         RP_THROW(ctx, "pipe.onRead() - error: pipe was closed");
-    
+
 
     if(p->parent == pid)
         reader=p->childtopar[0];
@@ -7343,12 +7411,12 @@ static duk_ret_t rp_pipe_onread(duk_context *ctx)
         reader=p->partochild[0];
     else
     {
-        RP_THROW(ctx, 
+        RP_THROW(ctx,
             "pipe.onRead - cannot use pipe created for a different parent or child (parentpid:%d, childpid:%d, curpid%d)",
             p->parent, p->child, pid);
         return 0; //for gcc warnings
     }
-    snprintf(pipeid,32, "%p", p);    
+    snprintf(pipeid,32, "%p", p);
 
     duk_push_global_stash(ctx);
 
@@ -7399,7 +7467,7 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
         reader=p->partochild[0];
     else
     {
-        duk_push_sprintf(ctx, 
+        duk_push_sprintf(ctx,
             "pipe.read - cannot use pipe created for a different parent or child (parentpid:%d, childpid:%d, curpid%d)",
             p->parent, p->child, pid);
         errmsg_idx=duk_get_top_index(ctx);
@@ -7444,16 +7512,25 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
         const char *errmsg;
         if (duk_is_error(ctx, -1) )
         {
-            duk_get_prop_string(ctx, -1, "stack");
-            duk_safe_to_string(ctx, -1);
-            errmsg = duk_push_sprintf(ctx, "%s", duk_json_encode(ctx, -1));
+            if(!duk_get_prop_string(ctx, -1, "duktape_stack"))
+            {
+                duk_pop(ctx);
+                duk_get_prop_string(ctx, -1, "stack");
+            }
+            duk_remove(ctx, -2); //err obj
+            errmsg = duk_get_string(ctx, -1);
         }
         else if (duk_is_string(ctx, -1))
             errmsg = duk_get_string(ctx, -1);
         else
+        {
             errmsg = duk_push_string(ctx, "unknown error");
+            duk_remove(ctx, -2); //whatever the non-string, non-error is.
+        }
+        duk_push_undefined(ctx);
         duk_push_sprintf(ctx, "pipe.read - error decoding cbor: %s", errmsg);
-        errmsg_idx=duk_get_top_index(ctx);
+        duk_remove(ctx, -3);// the old errmsg string
+        errmsg_idx=duk_get_top_index(ctx); //the new message
         goto returnerr;
     }
 
@@ -7516,8 +7593,6 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
 
 }
 
-
-
 static duk_ret_t rp_newpipe(duk_context *ctx)
 {
     pipeinfo *p=NULL;
@@ -7531,11 +7606,11 @@ static duk_ret_t rp_newpipe(duk_context *ctx)
 
     REMALLOC(p->lock, sizeof(pthread_mutex_t));
     RP_PTINIT(p->lock);
-    
+
     if (pipe(p->partochild) == -1 || pipe(p->childtopar) == -1)
     {
         free(p);
-        RP_THROW(ctx, "error creating pipe: %s", strerror(errno));    
+        RP_THROW(ctx, "error creating pipe: %s", strerror(errno));
     }
 
     duk_push_object(ctx);
@@ -7544,7 +7619,7 @@ static duk_ret_t rp_newpipe(duk_context *ctx)
 
     duk_push_c_function(ctx, rp_pipe_write, 1);
     duk_put_prop_string(ctx, -2, "write");
-    
+
     duk_push_c_function(ctx, rp_pipe_onread, 2);
     duk_put_prop_string(ctx, -2, "onRead");
 
@@ -7559,497 +7634,6 @@ static duk_ret_t rp_newpipe(duk_context *ctx)
     return 1;
 }
 
-// abandoning mmap for now.  lmdb is significantly faster.
-#ifdef RP_UTILS_ENABLE_MMAP
-union rp_semun {
-    int val;
-    struct semid_ds *buf;
-    unsigned short *array;
-};
-
-static void wait_semaphore(int sem_id) {
-    struct sembuf sem_op;
-    sem_op.sem_num = 0;
-    sem_op.sem_op = -1;
-    sem_op.sem_flg = 0;
-    semop(sem_id, &sem_op, 1);
-}
-
-static void signal_semaphore(int sem_id) {
-    struct sembuf sem_op;
-    sem_op.sem_num = 0;
-    sem_op.sem_op = 1;
-    sem_op.sem_flg = 0;
-    semop(sem_id, &sem_op, 1);
-}
-
-typedef struct {
-    int64_t *seg_idx;   // the number of this idx.  seg_idx % nmemb will give array index
-    size_t  *data_size; //size of used data in data
-    void    *data;      //the data
-} msegment;
-
-typedef struct {
-    msegment        *segments;     // above struct with pointers into mem
-    int64_t         *write_idx;    // pointer into mem, int64 for alignment, last array index written to 
-                                   // by any process (also largest seg_idx)
-    void            *mem;          // mmapped shared memory
-    size_t           size;         // size of each segment->data
-    int64_t          last_idx;     // The last idx accessed (read or written to) by this process
-    int              nmemb;        // number of segments
-    int              sem_id;       // semaphore locking
-    pid_t            owner;        // pid of original creator of semaphore (parent proc)
-} rpmapinfo;
-
-
-static duk_ret_t _mmap_finalizer(duk_context *ctx)
-{
-    rpmapinfo *m;
-    
-    duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("memmap"));
-    m = duk_get_pointer(ctx, -1);
-    duk_pop(ctx);
-
-    if(m)
-    {
-        if(m->owner == getpid())
-        {
-            union rp_semun sem_union;
-            sem_union.val = 1;
-            semctl(m->sem_id, 0, IPC_RMID, sem_union);
-        }
-
-        free(m->segments);
-        
-        munmap(m->mem, m->size * m->nmemb);
-
-        free(m);
-
-        duk_push_pointer(ctx, NULL);
-        duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("memmap"));
-    } 
-
-    return 0;
-}
-
-static duk_ret_t mmap_finalizer(duk_context *ctx)
-{
-    return _mmap_finalizer(ctx);
-}
-
-static duk_ret_t rp_map_write(duk_context *ctx)
-{
-    rpmapinfo *m;
-    msegment *seg;
-    void *buf;
-    int64_t next_idx=0, mod_idx;
-    duk_size_t blen;
-
-    duk_push_object(ctx);
-    duk_pull(ctx, 0);
-    duk_put_prop_string(ctx, -2, "value");
-
-    duk_push_this(ctx);
-    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("memmap")))
-        RP_THROW(ctx, "map.write - internal error");
-
-    m=duk_get_pointer(ctx,-1);
-    if(!m)
-        RP_THROW(ctx, "map.write - map was closed");
-
-    wait_semaphore(m->sem_id);
-
-    if(*m->write_idx != -1)
-        next_idx = *(m->segments[*m->write_idx].seg_idx) +1;
-
-    //on first go, next_idx is 0;
-    mod_idx = next_idx % m->nmemb;
-
-    duk_cbor_encode(ctx, 0, 0);
-    buf = duk_require_buffer_data(ctx, 0, &blen);
-
-    if(blen > m->size)
-    {
-        signal_semaphore(m->sem_id);
-        RP_THROW(ctx, "map.write - data size is larger than memmap data segment");
-    }
-
-    (*m->write_idx) = next_idx % m->nmemb;
-    seg=&m->segments[mod_idx];
-    *seg->seg_idx = next_idx;
-    *seg->data_size=(uint64_t)blen;
-    m->last_idx = next_idx;
-
-    memcpy(seg->data, buf, (size_t)blen);
-
-    signal_semaphore(m->sem_id);
-    
-    duk_push_number(ctx, (double)blen);
-    return 1;
-}
-
-static void push_map_stats(duk_context *ctx, rpmapinfo *m, int lock, int full)
-{
-    int64_t min_idx;
-
-    if(!m)
-    {
-        duk_push_this(ctx);
-        if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("memmap")))
-            RP_THROW(ctx, "map.read - internal error");
-
-        m=duk_get_pointer(ctx,-1);
-        if(!m)
-            RP_THROW(ctx, "map.read - map was closed");
-    }
-
-    if(!full)
-    {
-        duk_push_number(ctx, (double)m->last_idx);
-        return;
-    }
-
-
-    duk_push_object(ctx);
-    
-    duk_push_number(ctx, (double)m->last_idx);
-    duk_put_prop_string(ctx, -2, "lastIndex");
-
-
-    if(lock)
-        wait_semaphore(m->sem_id);
-
-
-    if(*m->write_idx<0)
-        duk_push_number(ctx, -1);
-    else
-        duk_push_number(ctx, (double)*m->segments[*m->write_idx].seg_idx);
-    duk_put_prop_string(ctx, -2, "maxIndex");
-
-    min_idx = (*m->write_idx + 1) % m->nmemb;
-    if( *m->segments[min_idx].seg_idx == -1)
-        duk_push_number(ctx, (double)*m->segments[0].seg_idx);
-    else
-        duk_push_number(ctx, (double)*m->segments[min_idx].seg_idx);
-    duk_put_prop_string(ctx, -2, "minIndex");
-
-    if(lock)
-        signal_semaphore(m->sem_id);
-
-
-    duk_push_number(ctx, (double)m->size);
-    duk_put_prop_string(ctx, -2, "size");
-
-    duk_push_number(ctx, (double)m->nmemb);
-    duk_put_prop_string(ctx, -2, "length");
-
-    duk_push_number(ctx, (double)m->owner);
-    duk_put_prop_string(ctx, -2, "creatingPid");
-
-
-}
-
-static duk_ret_t rp_map_stats(duk_context *ctx)
-{
-    push_map_stats(ctx, NULL, 1, 1);
-    return 1;
-} 
-
-static duk_ret_t rp_map_read(duk_context *ctx)
-{
-    rpmapinfo *m = NULL;
-    int64_t target_idx=INT64_MIN, mod_idx=0;
-    msegment *seg;
-    duk_idx_t cb_idx=-1;
-    int dostats=0;
-
-    if(duk_is_number(ctx, 0))
-    {
-        target_idx = (int64_t) duk_get_number(ctx,0);
-        if(duk_is_boolean(ctx,1))
-            dostats=duk_get_boolean(ctx,1);
-        else if(!duk_is_undefined(ctx, 1))
-        {
-            REQUIRE_FUNCTION(ctx, 1, "map.read - second argument (if present) must be a function (callback) or a boolean (include stats)");
-            cb_idx=1;
-
-            if(!duk_is_undefined(ctx, 2))
-                dostats=REQUIRE_BOOL(ctx,2, "map.read - last argument (if present) must be a boolean (include stats)");
-        }
-    }
-    else if (duk_is_function(ctx, 0))
-    {
-        cb_idx=0;
-        if(duk_is_boolean(ctx,1))
-            dostats=duk_get_boolean(ctx,1);
-        else if(!duk_is_undefined(ctx, 1))
-        {
-            target_idx = (int64_t)REQUIRE_NUMBER(ctx, 1, "map.read - second argument (if present) must be a number (index)");
-
-            if(!duk_is_undefined(ctx, 2))
-                dostats=REQUIRE_BOOL(ctx,2, "map.read - last argument (if present) must be a boolean (include stats)");
-        }
-    }
-    else if (!duk_is_undefined(ctx, 0))
-        RP_THROW(ctx, "map.read - first argument (if present) must be a function (callback) or a number (index)");
-
-    duk_push_this(ctx);
-    if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("memmap")))
-        RP_THROW(ctx, "map.read - internal error");
-
-    m=duk_get_pointer(ctx,-1);
-    if(!m)
-        RP_THROW(ctx, "map.read - map was closed");
-
-
-    wait_semaphore(m->sem_id);
-
-    //index specified, only get if we have a match
-    if(target_idx > -1)
-    {
-        mod_idx = target_idx % m->nmemb;
-        if(*m->segments[mod_idx].seg_idx != target_idx)
-        {
-            signal_semaphore(m->sem_id);
-            goto ret_neg_one;
-        }
-        m->last_idx=target_idx;
-    }
-
-    // no index specified, get the next in sequence, if still there
-    else if (target_idx == INT64_MIN)
-    {
-        m->last_idx++;
-        mod_idx =  m->last_idx % m->nmemb;
-        //printf("seg_idx=%d, last_idx=%d\n", (int)*m->segments[mod_idx].seg_idx,  (int)m->last_idx);
-        if(*m->segments[mod_idx].seg_idx != m->last_idx)
-        {
-            m->last_idx--;
-            signal_semaphore(m->sem_id);
-            goto ret_neg_one;
-        }
-    }    
-
-    // else negative number specified, get the last written value
-    else
-    {
-        mod_idx = *m->write_idx;
-        if(mod_idx == -1)
-        {
-            signal_semaphore(m->sem_id);
-            goto ret_neg_one;
-        }
-        m->last_idx=*m->segments[mod_idx].seg_idx;
-    }
-
-    seg=&m->segments[mod_idx];
-
-    // eval & pcall is the only way to catch cbor decode errors
-    duk_push_string(ctx, "CBOR.decode");
-    duk_eval(ctx);
-
-    duk_push_external_buffer(ctx);
-    duk_config_buffer(ctx, -1, seg->data, (duk_size_t)*seg->data_size);     
-
-    if(duk_pcall(ctx, 1))
-    {
-        const char *errmsg;
-
-        signal_semaphore(m->sem_id);
-        
-        if (duk_is_error(ctx, -1) )
-        {
-            duk_get_prop_string(ctx, -1, "stack");
-            duk_safe_to_string(ctx, -1);
-            errmsg = duk_push_sprintf(ctx, "%s", duk_json_encode(ctx, -1));
-        }
-        else if (duk_is_string(ctx, -1))
-            errmsg = duk_get_string(ctx, -1);
-        else
-            errmsg = duk_push_string(ctx, "unknown error");
-
-        if(cb_idx>-1)
-            duk_pull(ctx,cb_idx); //the callback function
-
-        duk_push_sprintf(ctx, "map.read - error decoding cbor: %s", errmsg);
-        duk_remove(ctx, -2);
-        duk_push_undefined(ctx); // [ ..., errmsg, full_errmsg, undefined ]
-        duk_replace(ctx, -2);    // [ ..., undefined, full_errmsg ]
-
-        if(cb_idx>-1)
-        {
-            duk_push_int(ctx, -1); //the index
-            push_map_stats(ctx, m, 1, dostats); //the stats
-
-            duk_call(ctx, 4);
-            goto ret_neg_one;
-        }
-        else
-        {
-            duk_push_object(ctx);
-            duk_pull(ctx, -2);
-            duk_put_prop_string(ctx, -2, "error");
-            duk_push_int(ctx, -1);
-            duk_put_prop_string(ctx, -2, "index");
-            push_map_stats(ctx, m, 1, dostats);
-            if(dostats)
-                duk_put_prop_string(ctx, -2, "stats");
-            else
-                duk_put_prop_string(ctx, -2, "lastIndex");
-            return 1;
-        }
-    }
-
-
-    if(cb_idx>-1)
-    {
-        duk_pull(ctx,cb_idx); //the callback function
-        duk_get_prop_string(ctx, -2, "value"); //the value
-        duk_push_undefined(ctx); //error
-        duk_push_number(ctx, (double)m->last_idx); // the index
-        push_map_stats(ctx, m, 0, dostats); //stats
-
-        signal_semaphore(m->sem_id);
-        duk_call(ctx, 4);
-
-        duk_push_number(ctx, (double)m->last_idx);
-        return 1;
-    }
-
-    duk_push_number(ctx, (double)m->last_idx);
-    duk_put_prop_string(ctx, -2, "index");
-
-    push_map_stats(ctx, m, 0, dostats);
-
-    signal_semaphore(m->sem_id);
-
-    if(dostats)
-        duk_put_prop_string(ctx, -2, "stats");
-    else
-        duk_put_prop_string(ctx, -2, "lastIndex");
-
-    // {value: var, index: num, ...} is on top
-    return 1;
-
-    ret_neg_one:
-
-    if(cb_idx==-1)
-    {
-        duk_push_object(ctx);
-        duk_push_int(ctx, -1);
-        duk_put_prop_string(ctx, -2, "index");
-        duk_push_number(ctx, (double)m->last_idx);
-        duk_put_prop_string(ctx, -2, "lastIndex");
-        push_map_stats(ctx, m, 1, dostats);
-        if(dostats)
-            duk_put_prop_string(ctx, -2, "stats");
-        else
-            duk_put_prop_string(ctx, -2, "lastIndex");
-
-    }
-    else
-    {
-        duk_pull(ctx,cb_idx); //the callback
-        duk_push_undefined(ctx);
-        duk_push_undefined(ctx);
-        duk_push_int(ctx, -1);
-        push_map_stats(ctx, m, 1, dostats);
-
-        duk_call(ctx, 4);
-        
-        duk_push_int(ctx, -1);
-    }
-    return 1;
-}
-
-
-static duk_ret_t rp_new_memmap(duk_context *ctx)
-{
-    rpmapinfo *m = NULL;
-    int nmemb=1;
-    int sem_id;
-    size_t size;
-    size_t msize;
-    int i=0;
-    double sz = REQUIRE_NUMBER(ctx, 0, "first argument must be a number (mmap size)");
-    void *segstart;
-
-    if(sz < 64.0)
-        sz=64.0;
-
-    if(!duk_is_undefined(ctx, 1))
-        nmemb = REQUIRE_UINT(ctx, 1, "second argument (if defined) must be a positive integer (number of segments)");
-
-    size = (size_t) sz + (sizeof(int64_t)*2); //enough room for msegment with seg_idx and data_size
-
-    //align to size_t
-    if( size % sizeof(int64_t)) //if not a multiple of, e.g. 8
-        size = ((size / sizeof(int64_t)) +1)  * sizeof(int64_t); //increase size to multiple of 8
-
-    msize = size * nmemb + sizeof(int64_t); //room for write_idx at beginning
-
-    sem_id = semget(IPC_PRIVATE, 1, IPC_CREAT | 0600);
-    if (sem_id == -1) 
-    {
-        RP_THROW(ctx, "Failed to set semaphore for mmap: %s", strerror(errno));
-    }
-
-    union rp_semun sem_union;
-    sem_union.val = 1;
-    if (semctl(sem_id, 0, SETVAL, sem_union) == -1) {
-        RP_THROW(ctx, "Failed to set semaphore for mmap: %s", strerror(errno));
-    }
-
-    REMALLOC(m, sizeof(rpmapinfo));
-
-    m->sem_id=sem_id;
-
-    m->mem = mmap(NULL, msize, PROT_READ | PROT_WRITE, MAP_ANON|MAP_SHARED, -1, 0);
-    if (m->mem == MAP_FAILED) {
-        free(m);
-        RP_THROW(ctx, "newMmap - failed to create map: %s", strerror(errno));
-    }
-
-    m->last_idx=-1;
-    m->nmemb=nmemb;
-    m->size=size;
-    m->owner=getpid();
-
-    m->write_idx=m->mem;
-    *m->write_idx=-1;
-
-    m->segments=NULL;
-    REMALLOC(m->segments, sizeof(msegment) * nmemb);
-
-    segstart=m->mem + sizeof(int64_t);
-    for (i=0;i<nmemb;i++)
-    {
-        m->segments[i].seg_idx = (segstart + (size * i));
-        m->segments[i].data_size = (segstart + sizeof(int64_t) + (size * i));        
-        m->segments[i].data = (segstart + (sizeof(int64_t)*2) + (size * i));        
-
-        *m->segments[i].seg_idx = -1;
-        *m->segments[i].data_size = 0;
-    }
-
-    duk_push_object(ctx);
-    duk_push_pointer(ctx, m);
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("memmap"));
-
-    duk_push_c_function(ctx, rp_map_write, 1);
-    duk_put_prop_string(ctx, -2, "write");
-
-    duk_push_c_function(ctx, rp_map_read, 3);
-    duk_put_prop_string(ctx, -2, "read");
-
-    duk_push_c_function(ctx, rp_map_stats, 0);
-    duk_put_prop_string(ctx, -2, "getStats");
-
-    duk_push_c_function(ctx, mmap_finalizer, 1);
-    duk_set_finalizer(ctx, -2); 
-    return 1;
-}
-#endif //RP_UTILS_ENABLE_MMAP
 #define N_DATE_FORMATS 6
 #define N_DATE_FORMATS_W_OFFSET 2
 static char *dfmts[N_DATE_FORMATS] = {
@@ -8266,6 +7850,58 @@ duk_ret_t duk_rp_datefmt(duk_context *ctx)
     return 1;
 }
 
+static duk_ret_t print_simplified_err(duk_context *ctx)
+{
+    if(duk_is_object(ctx, 0))
+    {
+        if(duk_get_prop_string(ctx, 0, "simple"))
+            rp_print_simplified_errors=REQUIRE_BOOL(ctx, -1, "errorConfig - property 'simple' must be a Boolean");
+        if(duk_get_prop_string(ctx, 0, "lines"))
+            rp_print_error_lines = REQUIRE_INT(ctx, -1, "errorConfig - property 'lines' must be an integer");
+    }
+    else if (duk_is_undefined(ctx,0))
+    {
+        RP_THROW(ctx, "errorConfig - first argument must be a Number or a Boolean");
+    }
+    else
+    {
+        duk_idx_t sidx=-1,lidx=-1;
+        if(duk_is_number(ctx, 0))
+            lidx=0;
+        else if(duk_is_boolean(ctx, -0))
+            sidx=0;
+        else
+            RP_THROW(ctx, "errorConfig - first argument must be an Object, Number or a Boolean");
+
+        if(!duk_is_undefined(ctx,1))
+        {
+            if(duk_is_number(ctx, 1))
+            {
+                if(lidx !=-1)
+                     RP_THROW(ctx, "errorConfig - second argument must be a Boolean");
+                lidx=1;
+            }
+            else if(duk_is_boolean(ctx,1))
+            {
+                if(sidx!=-1)
+                    RP_THROW(ctx, "errorConfig - second argument must be a Number");
+                sidx=1;
+            }
+            else if(sidx ==-1)
+                RP_THROW(ctx, "errorConfig - second argument must be a Boolean");
+            else if(lidx==-1)
+                RP_THROW(ctx, "errorConfig - second argument must be a Number");
+            else //this shouldn't happen cuz we should have one of lidx or sidx
+                RP_THROW(ctx, "errorConfig - second argument must be an Number or a Boolean");
+        }
+        if(sidx>-1)
+            rp_print_simplified_errors=duk_get_boolean(ctx, sidx);
+
+        if(lidx>-1)
+            rp_print_error_lines = duk_get_int(ctx, lidx);
+    }
+    return 0;
+}
 
 void duk_printf_init(duk_context *ctx)
 {
@@ -8399,12 +8035,223 @@ void duk_printf_init(duk_context *ctx)
     duk_put_prop_string(ctx, -2, "getchar");
     duk_put_prop_string(ctx, -2, "stdin");
 
+    duk_push_c_function(ctx, print_simplified_err, 2);
+    duk_put_prop_string(ctx, -2, "errorConfig");
+
     duk_put_prop_string(ctx, -2,"utils");
     duk_put_global_string(ctx,"rampart");
+
+    duk_get_global_string(ctx, "Duktape");
+    duk_push_c_function(ctx, rp_error_throw, 1);
+    duk_put_prop_string(ctx, -2, "errThrow");
+    duk_pop(ctx);
+
 
     RP_PTINIT(&pflock);
     RP_PTINIT(&pflock_err);
     RP_PTINIT(&loglock);
     RP_PTINIT(&errlock);
 
+}
+
+/*  duk_console.c
+ *  Minimal 'console' binding.
+ *
+ *  https://github.com/DeveloperToolsWG/console-object/blob/master/api.md
+ *  https://developers.google.com/web/tools/chrome-devtools/debug/console/console-reference
+ *  https://developer.mozilla.org/en/docs/Web/API/console
+ */
+
+// with additions for rampart
+
+/* XXX: Add some form of log level filtering. */
+
+/* XXX: Should all output be written via e.g. console.write(formattedMsg)?
+ * This would make it easier for user code to redirect all console output
+ * to a custom backend.
+ */
+
+/* XXX: Init console object using duk_def_prop() when that call is available. */
+
+static duk_ret_t duk__console_log_helper(duk_context *ctx, const char *error_name) {
+	duk_uint_t flags = (duk_uint_t) duk_get_current_magic(ctx);
+	FILE *output = (flags & DUK_CONSOLE_STDOUT_ONLY) ? stdout : stderr;
+	const char *out;
+	duk_idx_t n = duk_get_top(ctx);
+	duk_idx_t i;
+
+	duk_get_global_string(ctx, "console");
+	duk_get_prop_string(ctx, -1, "format");
+
+	for (i = 0; i < n; i++) {
+/*	    if(duk_is_error(ctx, i))
+	    {
+	        (void)rp_push_error(ctx, -1, NULL, rp_print_error_lines);
+	        duk_replace(ctx, i);
+	    }
+		else
+*/		if (duk_check_type_mask(ctx, i, DUK_TYPE_MASK_OBJECT))
+        {
+			/* Slow path formatting. */
+			duk_dup(ctx, -1);  /* console.format */
+			duk_dup(ctx, i);
+			duk_call(ctx, 1);
+			duk_replace(ctx, i);  /* arg[i] = console.format(arg[i]); */
+		}
+	}
+
+	duk_pop_2(ctx);
+
+	duk_push_string(ctx, " ");
+	duk_insert(ctx, 0);
+	duk_join(ctx, n);
+
+	if (error_name) {
+		duk_push_error_object(ctx, DUK_ERR_ERROR, "%s", duk_require_string(ctx, -1));
+	    /// *
+		duk_push_string(ctx, "name");
+		duk_push_string(ctx, error_name);
+		duk_def_prop(ctx, -3, DUK_DEFPROP_FORCE | DUK_DEFPROP_HAVE_VALUE);  // to get e.g. 'Trace: 1 2 3'
+		duk_get_prop_string(ctx, -1, "stack");
+		//*/
+		//(void)rp_push_error(ctx, -1, NULL, rp_print_error_lines);
+	}
+	out=duk_to_string(ctx, -1);
+	if(strchr(out,0xED)) {
+		char *utf8_out = to_utf8(out);
+		fprintf(output, "%s\n", utf8_out);
+		free(utf8_out);
+	} else
+		fprintf(output, "%s\n", out);
+	if (flags & DUK_CONSOLE_FLUSH) {
+		fflush(output);
+	}
+	return 0;
+}
+
+static duk_ret_t duk__console_assert(duk_context *ctx) {
+	if (duk_to_boolean(ctx, 0)) {
+		return 0;
+	}
+	duk_remove(ctx, 0);
+
+	return duk__console_log_helper(ctx, "AssertionError");
+}
+
+static duk_ret_t duk__console_log(duk_context *ctx) {
+	return duk__console_log_helper(ctx, NULL);
+}
+
+static duk_ret_t duk__console_trace(duk_context *ctx) {
+	return duk__console_log_helper(ctx, "Trace");
+}
+
+static duk_ret_t duk__console_info(duk_context *ctx) {
+	return duk__console_log_helper(ctx, NULL);
+}
+
+static duk_ret_t duk__console_warn(duk_context *ctx) {
+	return duk__console_log_helper(ctx, NULL);
+}
+
+static duk_ret_t duk__console_error(duk_context *ctx) {
+	return duk__console_log_helper(ctx, "Error");
+}
+
+static duk_ret_t duk__console_dir(duk_context *ctx) {
+	/* For now, just share the formatting of .log() */
+	return duk__console_log_helper(ctx, 0);
+}
+
+static void duk__console_reg_vararg_func(duk_context *ctx, duk_c_function func, const char *name, duk_uint_t flags) {
+	duk_push_c_function(ctx, func, DUK_VARARGS);
+	duk_push_string(ctx, "name");
+	duk_push_string(ctx, name);
+	duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_FORCE);  /* Improve stacktraces by displaying function name */
+	duk_set_magic(ctx, -1, (duk_int_t) flags);
+	duk_put_prop_string(ctx, -2, name);
+}
+
+void duk_console_init(duk_context *ctx, duk_uint_t flags) {
+	duk_uint_t flags_orig;
+
+	/* If both DUK_CONSOLE_STDOUT_ONLY and DUK_CONSOLE_STDERR_ONLY where specified,
+	 * just turn off DUK_CONSOLE_STDOUT_ONLY and keep DUK_CONSOLE_STDERR_ONLY.
+	 */
+	if ((flags & DUK_CONSOLE_STDOUT_ONLY) && (flags & DUK_CONSOLE_STDERR_ONLY)) {
+	    flags &= ~DUK_CONSOLE_STDOUT_ONLY;
+	}
+	/* Remember the (possibly corrected) flags we received. */
+	flags_orig = flags;
+
+	duk_push_object(ctx);
+
+	/* Custom function to format objects; user can replace.
+	 * For now, try JX-formatting and if that fails, fall back
+	 * to ToString(v).
+	 */
+	duk_eval_string(ctx,
+		"(function (E) {"
+		    "return function format(v){"
+						"if(v instanceof Error) {"
+							"return String(v.stack);"
+						"}"
+		        "try{"
+		            "return E('jx',v);"
+		        "}catch(e){"
+		            "return String(v);"  /* String() allows symbols, ToString() internal algorithm doesn't. */
+		        "}"
+		    "};"
+		"})(Duktape.enc)");
+	duk_put_prop_string(ctx, -2, "format");
+
+	flags = flags_orig;
+	if (!(flags & DUK_CONSOLE_STDOUT_ONLY) && !(flags & DUK_CONSOLE_STDERR_ONLY)) {
+	    /* No output indicators were specified; these levels go to stdout. */
+	    flags |= DUK_CONSOLE_STDOUT_ONLY;
+	}
+	duk__console_reg_vararg_func(ctx, duk__console_assert, "assert", flags);
+	duk__console_reg_vararg_func(ctx, duk__console_log, "log", flags);
+	duk__console_reg_vararg_func(ctx, duk__console_log, "debug", flags);  /* alias to console.log */
+	duk__console_reg_vararg_func(ctx, duk__console_trace, "trace", flags);
+	duk__console_reg_vararg_func(ctx, duk__console_info, "info", flags);
+
+	flags = flags_orig;
+	if (!(flags & DUK_CONSOLE_STDOUT_ONLY) && !(flags & DUK_CONSOLE_STDERR_ONLY)) {
+	    /* No output indicators were specified; these levels go to stderr. */
+	    flags |= DUK_CONSOLE_STDERR_ONLY;
+	}
+	duk__console_reg_vararg_func(ctx, duk__console_warn, "warn", flags);
+	duk__console_reg_vararg_func(ctx, duk__console_error, "error", flags);
+	duk__console_reg_vararg_func(ctx, duk__console_error, "exception", flags);  /* alias to console.error */
+	duk__console_reg_vararg_func(ctx, duk__console_dir, "dir", flags);
+
+	duk_put_global_string(ctx, "console");
+
+	/* Proxy wrapping: ensures any undefined console method calls are
+	 * ignored silently.  This was required specifically by the
+	 * DeveloperToolsWG proposal (and was implemented also by Firefox:
+	 * https://bugzilla.mozilla.org/show_bug.cgi?id=629607).  This is
+	 * apparently no longer the preferred way of implementing console.
+	 * When Proxy is enabled, whitelist at least .toJSON() to avoid
+	 * confusing JX serialization of the console object.
+	 */
+
+	if (flags & DUK_CONSOLE_PROXY_WRAPPER) {
+		/* Tolerate failure to initialize Proxy wrapper in case
+		 * Proxy support is disabled.
+		 */
+		(void) duk_peval_string_noresult(ctx,
+			"(function(){"
+			    "var D=function(){};"
+			    "var W={toJSON:true};"  /* whitelisted */
+			    "console=new Proxy(console,{"
+			        "get:function(t,k){"
+			            "var v=t[k];"
+			            "return typeof v==='function'||W[k]?v:D;"
+			        "}"
+			    "});"
+			"})();"
+		);
+	}
 }

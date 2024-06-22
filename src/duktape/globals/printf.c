@@ -1488,6 +1488,12 @@ int rp_printf(out_fct_type out, char *buffer, const size_t maxlen, duk_context *
                 l = max = (unsigned int) ln;
                 isbuf=1;
             }
+            /* error objects
+            else if (duk_is_error(ctx, fidx))
+            {
+                p=rp_push_error(ctx, fidx, NULL, rp_print_error_lines);
+                duk_replace(ctx, fidx);        
+            }*/
             /* convert json as above in '%J' */
             else if (duk_is_object(ctx, fidx) && !duk_is_function(ctx, -1))
             {

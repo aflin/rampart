@@ -1096,7 +1096,7 @@ evhtp_hook ws_dis_cb(evhtp_connection_t * conn, short events, void * arg)
             // [ global_stash, {wsdis}, cbfunc() ]
             if (duk_pcall(ctx, 0))
             {
-                const char *errmsg = rp_push_error(ctx, -1, "error in wsOnDisconnect callback:", 3);
+                const char *errmsg = rp_push_error(ctx, -1, "error in wsOnDisconnect callback:", rp_print_error_lines);
                 printerr("%s", errmsg);
                 duk_pop(ctx);
             }
@@ -4085,7 +4085,7 @@ static int getmod(DHS *dhs)
     }
     else if(ret == -1)
     {
-        const char *errmsg = rp_push_error(ctx, -1, "error loading module:", 3);
+        const char *errmsg = rp_push_error(ctx, -1, "error loading module:", rp_print_error_lines);
 
         printerr("%s\n", errmsg);
         duk_pop(ctx);

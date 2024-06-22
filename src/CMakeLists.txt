@@ -52,7 +52,6 @@ ADD_CUSTOM_TARGET (
 add_executable(rampart
 	duktape/register.c
 	duktape/core/duktape.c
-	duktape/core/duk_console.c
 	duktape/core/module.c
 	duktape/globals/rampart-utils.c
 	duktape/globals/rampart-event.c

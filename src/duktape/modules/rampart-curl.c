@@ -2272,7 +2272,7 @@ static int check_multi_info(CURLM *cm)
             // [ ..., callback, this, results ]
             /* call the callback */
             if ( duk_pcall_method(ctx, 1) != 0) {
-                const char *errmsg = rp_push_error(ctx, -1, "error in curl async callback:", 3);
+                const char *errmsg = rp_push_error(ctx, -1, "error in curl async callback:", rp_print_error_lines);
                 fprintf(stderr, "%s\n", errmsg);
                 duk_pop(ctx);
             }

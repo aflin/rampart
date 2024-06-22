@@ -430,7 +430,7 @@ static int do_callback(duk_context *ctx, const char *ev_s, duk_idx_t nargs)
 
             if(duk_pcall_method(ctx, nargs) != 0)
             {
-                const char *errmsg = rp_push_error(ctx, -1, NULL, 3);
+                const char *errmsg = rp_push_error(ctx, -1, NULL, rp_print_error_lines);
                 fprintf(stderr, "Error in %s callback:\n", ev_s);
                 fprintf(stderr, "%s\n", errmsg);
                 duk_pop_2(ctx);

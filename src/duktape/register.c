@@ -5,7 +5,6 @@
  */
 
 #include "register.h"
-#include "core/duk_console.h"
 #include "core/module.h"
 #include "globals/printf.h"
 #include "rampart.h"

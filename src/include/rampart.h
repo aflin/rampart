@@ -19,6 +19,11 @@ extern "C"
 {
 #endif
 
+// How errors are reported when thrown
+extern int rp_print_simplified_errors;
+// How many source lines to print with error message
+extern int rp_print_error_lines;
+
 /* *******************************************************
    macros to help with require_* and throwing errors with
    a stack trace.
@@ -291,9 +296,8 @@ typedef pid_t rp_tid;
 
 #endif
 
-typedef void (*rpthr_fin_cb)(void *fin_cb_arg);
-
 /******************** THREAD AND LOCK RELATED *********************/
+typedef void (*rpthr_fin_cb)(void *fin_cb_arg);
 #define RPTHR struct rampart_thread_s
 
 RPTHR {
@@ -325,7 +329,7 @@ RPTHR {
 #define RPTHR_FLAG_WAITING    0x80  // flag that we are waiting in thread.waitfor()
 #define RPTHR_FLAG_KEEP_OPEN  0x100 //  do not autoclose when thread event base is empty
 
-// for locks
+
 #define RP_USE_LOCKLOCKS
 
 #define RPTHR_LOCK struct rampart_thread_lock_s
@@ -385,7 +389,7 @@ void          rp_thread_preinit();
 } while(0)
 
 
-/* mutex locking with tracking */
+/* mutex locking with tracking for some internal locks and all new rampart.thread.lock()s */
 #define RP_MLOCK(lock) do{\
     /*printf("(%d:%d) locking %s %p at %s:%d\n", (int)getpid(), (int)get_thread_num(), #lock, lock, __FILE__, __LINE__);*/\
     if (rp_lock((lock)) != 0)\
@@ -415,14 +419,11 @@ void          rp_thread_preinit();
 })
 
 /* mutex for locking main_ctx when in a thread with other duk stacks open */
-
+// mainly for the server, which abandons the main thread (but keeps it around for its global vars)
 extern pthread_mutex_t ctxlock;
 extern RPTHR_LOCK *rp_ctxlock;
 #define CTXLOCK RP_MLOCK(rp_ctxlock)
 #define CTXUNLOCK RP_MUNLOCK(rp_ctxlock)
-
-
-#define time_t_max ((((time_t) 1 << (sizeof(time_t) * CHAR_BIT - 2)) - 1) * 2 + 1 )
 
 extern RPTHR **rpthread;                     //every thread in a global array
 extern uint16_t nrpthreads;                  //number of threads malloced in **rpthread
@@ -436,19 +437,24 @@ struct evdns_base *rp_make_dns_base(
 
 /* copy vars between stacks functions */
 int  rpthr_copy_obj    (duk_context *ctx, duk_context *tctx, int objid);
+// objects are marked to avoid recursion while copying.  They need to be cleaned of marks.
 void rpthr_clean_obj   (duk_context *ctx, duk_context *tctx);
+// copy all global vars from one ctx to another tctx
 void rpthr_copy_global (duk_context *ctx, duk_context *tctx);
 duk_ret_t duk_rp_bytefunc(duk_context *ctx);
 
 /* getting, setting thread local thread number */
-void set_thread_num(int thrno);
+void set_thread_num(int thrno);  //don't use this outside of rampart-thread.c
 int get_thread_num();
+
 // return current thread via above
+// convenient for getting the current duktape stack regardless of where you are:
+// i.e. duk_context *ctx = get_current_thread()->ctx;
 RPTHR *get_current_thread();
 // get number of threads that are active
 int get_thread_count();
 
-/* cleanup after fork */
+/* cleanup after fork for rampart-server */
 void rp_post_fork_clean_threads();
 
 /* closing children at end of main loop when finalizer is not called 
@@ -459,7 +465,10 @@ int rp_thread_close_children();
 // set a callback to be run when thread is closed
 // may be called more than once.  Executed fifo
 // data must be malloced
+// see typedef void (*rpthr_fin_cb)(void *fin_cb_arg); above
 void set_thread_fin_cb(RPTHR *thr, rpthr_fin_cb cb, void *data);
+
+// a lock for manipulating RPTHR **rpthread and others
 extern pthread_mutex_t thr_lock;
 extern RPTHR_LOCK *rp_thr_lock;
 #define THRLOCK do{RP_MLOCK(rp_thr_lock);/* printf("lock at %s:%d\n",__FILE__,__LINE__);*/}while(0)
@@ -467,7 +476,7 @@ extern RPTHR_LOCK *rp_thr_lock;
 
 /************* END THREAD AND LOCK RELATED ************************/
 
-
+// main macro for malloc uses realloc.  Set var to null to initiate
 #define REMALLOC(s, t) do{                                        \
     (s) = realloc((s), (t));                                      \
     if ((char *)(s) == (char *)NULL)                              \
@@ -509,6 +518,9 @@ do                                                               \
 // used for no timeout in server
 #define RP_TIME_T_FOREVER 2147483647
 
+// When in threads and copying vars between, i.e. rampart.thread.put()
+// a devoted "clipboard" duktape stack is used
+
 /* copy from/to the clipboard stack */
 duk_ret_t get_from_clipboard(duk_context *ctx, char *key);
 duk_ret_t del_from_clipboard(duk_context *ctx, char *key);
@@ -520,15 +532,16 @@ void rpthr_copy(duk_context *ctx, duk_context *tctx, duk_idx_t idx);
 /* func from rampart-utils.c */
 extern void duk_misc_init(duk_context *ctx);
 
+/* query string processing */
 #define ARRAYREPEAT 0
 #define ARRAYBRACKETREPEAT 1
 #define ARRAYCOMMA 2
 #define ARRAYJSON 3
 char *duk_rp_object2querystring(duk_context *ctx, duk_idx_t qsidx, int atype);
 void  duk_rp_querystring2object(duk_context *ctx, char *q);
+duk_ret_t duk_rp_object2q(duk_context *ctx);
 
 /* random utility functions. TODO: add descriptions */
-duk_ret_t duk_rp_object2q(duk_context *ctx);
 char *strcatdup(char *s, char *adds);
 char *strjoin(char *s, char *adds, char c);
 char *duk_rp_url_encode(char *str, int len);
@@ -705,18 +718,28 @@ int clock_gettime(clockid_t type, struct timespec *rettime);
 
 #else //debug_pipe
 
-// don't close a pipe twice, it might be recreated elsewhere with same int
 #define rp_pipe_close(x,i) ({\
-    int p=(x)[(i)];\
-    if( p != -111111 ) {\
-        close(p);\
-        (x)[(i)] = -111111;\
-    }\
+    close((x)[(i)]);\
 })
 
 #define rp_pipe(x) pipe((x))
 
 #endif //debug_pipe
+
+//duk_console.h -- code is now in rampart-utils.c
+void duk_console_init(duk_context *ctx, duk_uint_t flags);
+/* Use a proxy wrapper to make undefined methods (console.foo()) no-ops. */
+#define DUK_CONSOLE_PROXY_WRAPPER (1U << 0)
+
+/* Flush output after every call. */
+#define DUK_CONSOLE_FLUSH (1U << 1)
+
+/* Send output to stdout only (default is mixed stdout/stderr). */
+#define DUK_CONSOLE_STDOUT_ONLY (1U << 2)
+
+/* Send output to stderr only (default is mixed stdout/stderr). */
+#define DUK_CONSOLE_STDERR_ONLY (1U << 3)
+
 
 #if defined(__cplusplus)
 }

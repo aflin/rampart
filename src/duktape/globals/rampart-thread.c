@@ -1839,7 +1839,7 @@ static void do_parent_callback(evutil_socket_t fd, short events, void* arg)
 
     if(duk_pcall(ctx, 2))
     {
-        const char *errmsg = rp_push_error(ctx, -1, "thr.exec() - error in parent thread callback:", 3);
+        const char *errmsg = rp_push_error(ctx, -1, "thr.exec() - error in parent thread callback:", rp_print_error_lines);
         fprintf(stderr, "%s\n", errmsg);
     }
     RP_EMPTY_STACK(ctx);
@@ -1882,7 +1882,7 @@ static void thread_doevent(evutil_socket_t fd, short events, void* arg)
 
         duk_push_object(ctx);
 
-        errmsg = rp_push_error(ctx, -2, "thr.exec() - error in thread callback:",3);
+        errmsg = rp_push_error(ctx, -2, "thr.exec() - error in thread callback:",rp_print_error_lines);
         //if we don't have a parent thread callback
         if(info->index == -1)
         {
