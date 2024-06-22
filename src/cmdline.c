@@ -2476,7 +2476,7 @@ static int proc_backtick(char *bt_start, char *end, char **ob, char **o, size_t 
                     /* remove the '+ ""' */
                     if( *(out-1) == '"')
                     {
-                        if (bt_start < out - 3 && *(out-2) == '\\' && *(out-3) == '"')
+                        if (outbeg < out - 3 && *(out-2) == '\\' && *(out-3) == '"')
                             scopy('"');
                         else
                         {
@@ -2548,7 +2548,7 @@ char * tickify(char *src, size_t sz, int *err, int *ln)
     *ln=0;
     sstack[0]=ST_NONE;
 
-    REMALLOC(out, osz);
+    CALLOC(out, osz);
     outbeg=out;
     while(*in)
     {
