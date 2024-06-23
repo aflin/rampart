@@ -5041,14 +5041,14 @@ static duk_ret_t _proxyget(duk_context *ctx, int load)
     int ret = duk_rp_resolve(ctx, modname);
     if(ret==-1)
         goto not_success;
-    else
+    else if(ret)
         goto success;
     duk_pop_2(ctx); //name and undefined
 
     ret = duk_rp_resolve(ctx, key);
     if(ret==-1)
         goto not_success;
-    else
+    else if(ret)
         goto success;
     duk_pop(ctx); //undefined
 
@@ -5063,88 +5063,44 @@ static duk_ret_t _proxyget(duk_context *ctx, int load)
         //while(*s) *(s++)=tolower(*s); --compiler warning
         for(; *s; *s=tolower(*s),s++);
 
-        ret = duk_rp_resolve(ctx, key);
+        ret = duk_rp_resolve(ctx, key_lower);
+        if(ret==-1)
+        {
+            free(key_lower);
+            goto not_success;
+        }
+        else if(ret)
+        {
+            free(key_lower);
+            goto success;
+        }
+
+        modname = duk_push_sprintf(ctx, "rampart-%s",key_lower);
+        free(key_lower);
+
+        ret = duk_rp_resolve(ctx, modname);
         if(ret==1)
             goto success;
-
-        duk_pop(ctx); //undefined
-        free(key_lower);
+        //else not found(0) or compile error (-1) goto not_success
     }
 
-
-/*
-    duk_get_global_string(ctx, "require");
-    duk_push_sprintf(ctx, "rampart-%s",key);
-    if(duk_pcall(ctx, 1) == DUK_EXEC_SUCCESS)
-        goto success;
-    else 
-    {
-        duk_get_prop_string(ctx,-1,"stack");
-        errstr=duk_get_string(ctx, -1);
-        // only continue if error is not found
-        if(!strstr(errstr, "Could not resolve"))
-
-            goto not_success;
-        duk_pop(ctx);
-    }
-    duk_pop(ctx);
-
-    // try without 'rampart-'
-    duk_get_global_string(ctx, "require");
-    duk_push_string(ctx, key);
-
-    if(duk_pcall(ctx, 1) == DUK_EXEC_SUCCESS)
-        goto success;
-    else 
-    {
-        duk_get_prop_string(ctx,-1,"stack");
-        errstr=duk_get_string(ctx, -1);
-        // only continue if error is not found
-        if(!strstr(errstr, "Could not resolve"))
-            goto not_success;
-
-        duk_pop(ctx);
-    }
-
-    if(load)
-    {
-        duk_pop(ctx);
-
-        // try lowercase, but only for rampart-*
-        char *key_lower=strdup(key);
-
-        s=key_lower;
-        //while(*s) *(s++)=tolower(*s); --compiler warning
-        for(; *s; *s=tolower(*s),s++);
-        duk_get_global_string(ctx, "require");
-        duk_push_sprintf(ctx, "rampart-%s",key_lower);
-        free(key_lower);
-        if (duk_pcall(ctx, 1) == DUK_EXEC_SUCCESS)
-            goto success;
-        else 
-        {
-            duk_get_prop_string(ctx,-1,"stack");
-            errstr=duk_get_string(ctx, -1);
-        }
-    }
-*/
     not_success:
+
     if(freeme) free(global_key);
-//    RP_THROW(ctx, "error loading module 'rampart-%s' or '%s':\n%s", key, key, errstr);
+
     if(!ret)
          RP_THROW(ctx, "error loading module 'rampart-%s' or '%s':\n%s", key, key, errstr);
     else
-        duk_throw(ctx);
-    // return
+        (void)duk_throw(ctx);
+        // return
 
     success:
 
-    // copy to actual object
     duk_get_prop_string(ctx,-1,"exports");
+    // copy to actual object
     duk_dup(ctx, -1);
     duk_put_prop_string(ctx, 0, key);
 
-    success_exists:
     // if load.key, make global.key=require('[rampart-]key')
     if(load)
     {
@@ -5153,6 +5109,8 @@ static duk_ret_t _proxyget(duk_context *ctx, int load)
     }
 
     if(freeme) free(global_key);
+
+    success_exists:
 
     return 1;
 }
