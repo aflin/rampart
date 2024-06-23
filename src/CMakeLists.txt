@@ -332,41 +332,34 @@ add_dependencies(rampart-server libdeflate)
 add_dependencies(libdeflate cp_libdeflate)
 
 ###NET###
-set(SEARCH_CA_BUNDLE_PATHS
-    /etc/ssl/certs
-    /etc/pki/tls/certs
-    /usr/share/ssl/certs
-    /usr/local/share/certs
-    /etc/ssl
-)
 
 set(SEARCH_CA_BUNDLE_FILES
-    ca-certificates.crt
-    ca-bundle.crt
-    ca-root-nss.crt
-    cert.pem
+    /etc/ssl/certs/ca-certificates.crt
+    /etc/pki/tls/certs/ca-bundle.crt
+    /usr/share/ssl/certs/ca-bundle.crt
+    /usr/local/share/certs/ca-root-nss.crt
+    /etc/ssl/cert.pem
 )
 
 set(NET_CA_FILE "")
 set(NET_CA_PATH "")
 
-foreach(SEARCH_CA_BUNDLE_PATH ${SEARCH_CA_BUNDLE_PATHS})
-  if(EXISTS "${SEARCH_CA_BUNDLE_PATH}")
-    message(STATUS "Found CA bundle path: ${SEARCH_CA_BUNDLE_PATH}")
-    set(NET_CA_PATH "${SEARCH_CA_BUNDLE_PATH}")
-    foreach(SEARCH_CA_BUNDLE_FILE ${SEARCH_CA_BUNDLE_FILES})
-        if(EXISTS "${NET_CA_PATH}/${SEARCH_CA_BUNDLE_FILE}")
-            set(NET_CA_FILE "${SEARCH_CA_BUNDLE_FILE}")
-            message(STATUS "Found CA bundle file: ${NET_CA_PATH}/${SEARCH_CA_BUNDLE_FILE}")
-            break()
-        endif()
-    endforeach()
+foreach(SEARCH_CA_BUNDLE ${SEARCH_CA_BUNDLE_FILES})
+  if(EXISTS "${SEARCH_CA_BUNDLE}")
+    message(STATUS "Found CA bundle file: ${SEARCH_CA_BUNDLE}")
+    set(NET_CA_FILE "${SEARCH_CA_BUNDLE_PATH}")
     break()
   endif()
 endforeach()
 
+if(EXISTS "/etc/ssl/certs")
+  set(NET_CA_PATH "/etc/ssl/certs")
+  message(STATUS "Found CA path at /etc/ssl/certs")
+endif()
+
+
 if("${NET_CA_PATH}" EQUAL "")
-    message( FATAL_ERROR "Cannot find a suitable location for certificate authority file")
+    message( FATAL_ERROR "Cannot find a suitable path for certificate authority file")
 endif()
 
 add_library(rampart-net SHARED
