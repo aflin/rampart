@@ -40,6 +40,7 @@
 #include "event2/thread.h"
 #include "rampart.h"
 #include "../linenoise.h"
+#include "../core/module.h"
 char modules_dir[PATH_MAX];
 /*
     defined in main program here
@@ -214,35 +215,19 @@ rp_stack * free_rp_stack(rp_stack *ss)
     return NULL;
 }
 
-// parse error.stack into an object
-// that is useful for compacting the output.
-static rp_stack *parse_stack_string(const char *s )
+rp_stack *parse_stack_string_lines(rp_stack *stack, const char *s)
 {
-    rp_stack *stack=NULL;
     const char *fn=NULL, *f=NULL;
     char *p;
     int fnl=0, fl=0, nl=1, line=0, t=-1;
-
-    REMALLOC(stack, sizeof(rp_stack));
-    stack->nentries=0;
-    stack->entries=NULL;
-    stack->msg=NULL;
-
-    // first line
-    while(*s==' ')s++;
-    p=(char*)s;
-    while(*s!='\n'&& *s!='\0')s++;
-    if(*s!='\n')
-        return stack;
-
-    stack->msg=strndup(p,s-p);
-    s++;
 
     while(1)
     {
         if(nl)
         {
             // if we got "\n\0"
+            const char *startline;
+
             if(*s=='\0')
                 break;
 
@@ -254,13 +239,31 @@ static rp_stack *parse_stack_string(const char *s )
             }
             else
             {
-                return free_rp_stack(stack);
+                return NULL;
             }
-
+            startline=s;
             f=s;
             //"myfunc"
-            while(*s!='\0' && *s!=' ')  s++;
-            fl=s-f;
+            while(*s!='\0' && *s!=' ' && *s!='\n')s++;
+            if(*s=='\n')
+            {
+                //no funcname, that was the file and line number without ()
+                // do the whole line here
+                fl=-1; //flag that this is malloced already
+                f=strdup("[anon]");
+                s--;
+                while(isdigit(*s))s--;
+                s++;
+                line = strtol(s,NULL,10);
+                s--;
+                fn=startline;
+                fnl=s-startline;
+                while(*s && *s!='\n') s++;
+                s--; //get the '\n' below
+            }
+            else //success
+                fl=s-f;
+
             nl=0;
         }
         else
@@ -348,11 +351,14 @@ static rp_stack *parse_stack_string(const char *s )
                         e->is_c=0;
 
                     e->filename=(char*)fn;
-                    e->funcname=strndup(f,fl);
+                    if(fl==-1)
+                        e->funcname=(char*)f;
+                    else
+                        e->funcname=strndup(f,fl);
                     e->type=t;
                     e->line=line;
                     if(!e->line || !strlen(e->filename) || !strlen(e->funcname))
-                        return free_rp_stack(stack);
+                        return NULL;
                     break;
                 }
             }
@@ -362,12 +368,67 @@ static rp_stack *parse_stack_string(const char *s )
         s++;
     }
     return stack;
+}     
+
+// parse error.stack into an object
+// that is useful for compacting the output.
+static rp_stack *parse_stack_string(const char *s, const char *msg)
+{
+    rp_stack *stack=NULL, *tstack=NULL;
+    char *p;
+    int msglen;
+
+    REMALLOC(stack, sizeof(rp_stack));
+    stack->nentries=0;
+    stack->entries=NULL;
+    stack->msg=NULL;
+
+    p=(char*)s;
+    if(!msg)
+    {
+        // best we can do is get first line
+        while(*s!='\n'&& *s!='\0')s++;
+        if(*s!='\n')
+            return stack;
+        msglen = s-p;
+    }
+    else
+    {
+        char *p2=(char*)msg;
+
+        // msg MAY contains the first "    at func(file:line)" line
+        while(*p2)p2++;// go to end
+        if(p2>msg)
+            p2--; //should now be at '\n'
+        if(p2>msg && *p2=='\n') p2--;
+        while(p2>msg && *p2 != '\n') p2--;
+        if(*p2=='\n' && strstr(p2,"    at "))
+            msglen=p2-msg;
+        else
+            msglen=strlen(msg);
+
+        // add space for the initial "Error: " that is not in e.message        
+        p2=p;
+        while(*p2!=' ' && *p2) p2++,msglen++;
+        while(*p2==' ') p2++,msglen++;
+        s+=msglen;
+    }
+
+    stack->msg=strndup(p,msglen);
+    s++;
+
+    tstack=parse_stack_string_lines(stack,s);
+    if(!tstack)
+        return free_rp_stack(stack);
+    
+    return tstack;
 }
+
 // main function that takes an error object and gives a newly formatted string
 // if lines == 0, no text from file is printed.
 // if rampart.utils.errorConfig({lines:0, simple:false}); -
 //    then just return the duktape version of "stack", prepended with message, if not NULL
-void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nlines)
+static void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, int nlines)
 {
     const char *fn=NULL;
     char *stack=NULL;
@@ -383,15 +444,19 @@ void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nl
 
     duk_get_prop_string(ctx, eidx, "stack"); //existence already checked
 
-    if(nlines==-1 && !msg && !rp_print_simplified_errors) //we are making no transformations
+    if(nlines==-1 && !rp_print_simplified_errors) //we are making no transformations
+    {
         return;
+    }
 
     if( nlines !=-1 || rp_print_simplified_errors) //we only need to parse the stack if ...
     {
         stack = strdup(duk_get_string(ctx, -1));
         duk_pop(ctx);
 
-        ss=parse_stack_string(stack);
+        duk_get_prop_string(ctx, eidx, "message");
+        ss=parse_stack_string(stack, duk_get_string(ctx, -1));
+        duk_pop(ctx);
 
         if(ss)
         {
@@ -441,19 +506,7 @@ void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nl
             }
         }
 
-        if(msg)
-            duk_push_sprintf(ctx, "%s\n  %s", msg, stack);
-        else
-            duk_push_string(ctx, stack);
-    }
-    else //use unmodified stack string, which is still at -1
-    {
-        if(msg)
-        {
-            const char *cstack=(char*)duk_get_string(ctx, -1);
-            duk_push_sprintf(ctx, "%s\n  %s", msg, cstack);
-            duk_remove(ctx, -2);
-        } //else use the string (stack) at -1
+        duk_push_string(ctx, stack);
     }
 
     // only if we have a filename, line and are requested to print lines from file
@@ -463,7 +516,7 @@ void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nl
         {
             // [ ..., stack_string, file_lines ]
             duk_pull(ctx, -2); // [ ..., file_lines, stack string ]
-            duk_push_sprintf(ctx, "\n%s line %d\n", fn, ln); // [ ..., file_lines, stack string, new format ]
+            duk_push_sprintf(ctx, "\n\nFile: %s\n", fn); // [ ..., file_lines, stack string, new format ]
             duk_concat(ctx, 2); // [ ..., file_lines, stack string+new format ]
             duk_pull(ctx, -2); //  [ ..., stack string+new format, file_lines ]
 
@@ -498,7 +551,7 @@ void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nl
                 duk_push_sprintf(ctx, "line %d -> |%s", ln, duk_get_string(ctx,-1));
 
             duk_remove(ctx, -2);//the array/string
-            duk_concat(ctx, 2); //stack+string+new format
+            duk_concat(ctx, 2); //stack+string+ source lines
         }
         else
         {
@@ -506,7 +559,6 @@ void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nl
             duk_pop(ctx);//undefined, stack at -1
         }
     }
-
     free_rp_stack(ss);
     if(stack)
         free(stack);
@@ -539,11 +591,17 @@ const char* rp_push_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nline
     return errmsg;
 }
 
-
 static duk_ret_t rp_error_throw(duk_context *ctx)
 {
     if (!duk_is_error(ctx, 0) )
         return 1;
+
+    if(duk_get_prop_string(ctx, 0, "duktape_stack"))
+    {
+        duk_pop(ctx);
+        return 1; //we've been here before
+    }
+    duk_pop(ctx);
 
     if(!duk_get_prop_string(ctx, 0, "stack"))
     {
@@ -553,9 +611,10 @@ static duk_ret_t rp_error_throw(duk_context *ctx)
     }
     duk_put_prop_string(ctx, 0, "duktape_stack");
 
-    rp_push_formatted_error(ctx, 0, NULL, rp_print_error_lines);
-    duk_put_prop_string(ctx, -2, "stack");
-
+    duk_push_string(ctx, "stack");
+    rp_push_formatted_error(ctx, 0, rp_print_error_lines);
+    duk_def_prop(ctx, 0, DUK_DEFPROP_HAVE_VALUE|DUK_DEFPROP_ATTR_WEC|DUK_DEFPROP_FORCE);
+    duk_pull(ctx,0);
     return 1;
 }
 
@@ -654,7 +713,10 @@ RPPATH rp_find_path_vari(char *file, ...)
     //int n=1;
 
     if(file[0]=='.' && file[1] == '/')
-        file+=2;
+    {
+        file++;
+        while( *file == '/') file++; // in case of ".//file.js"
+    }
     if(*file == '/')
     {
         //printf("0: checking %s\n", file);
@@ -1018,7 +1080,7 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
         {
             name=duk_get_string(ctx, -1);
             if(name && strlen(name))
-                r= strcatdup(r, " ,name: \"");
+                r= strcatdup(r, " ,\"name\": \"");
         }
         duk_pop(ctx);
 
@@ -1028,7 +1090,7 @@ static char *rp_json_object(duk_context *ctx, duk_idx_t idx, char *r, char *path
             {
                 name=duk_get_string(ctx, -1);
                 if(name && strlen(name))
-                    r= strcatdup(r, " ,fname: \"");
+                    r= strcatdup(r, " ,\"fname\": \"");
             }
             duk_pop(ctx);
         }
@@ -4570,14 +4632,14 @@ duk_ret_t duk_rp_irand(duk_context *ctx)
 
 static double gaussrand(duk_context *ctx, double sigma)
 {
-	double x, y, r2;
+   double x, y, r2;
    do
    {
-		/* choose x,y in uniform square (-1,-1) to (+1,+1) */
+       /* choose x,y in uniform square (-1,-1) to (+1,+1) */
       x=rrand;
       y=rrand;
-		/* see if it is in the unit circle */
-		r2 = x * x + y * y;
+        /* see if it is in the unit circle */
+        r2 = x * x + y * y;
    } while (r2 > 1.0 || r2 == 0);
 
    /* Box-Muller transform */
@@ -4946,6 +5008,7 @@ static duk_ret_t _proxyget(duk_context *ctx, int load)
 {
     const char *key = duk_get_string(ctx,1);  //the property we are trying to retrieve
     char *global_key = NULL, *s;
+    const char *errstr=NULL;
     int freeme=0;
 
     if(duk_get_prop_string(ctx, 0, key) ) //see if it already exists
@@ -4973,11 +5036,57 @@ static duk_ret_t _proxyget(duk_context *ctx, int load)
             global_key=(char*)key;
     }
 
+    /* use the is_server method of getting errors from module loading */
+    const char *modname = duk_push_sprintf(ctx, "rampart-%s",key);
+    int ret = duk_rp_resolve(ctx, modname);
+    if(ret==-1)
+        goto not_success;
+    else
+        goto success;
+    duk_pop_2(ctx); //name and undefined
+
+    ret = duk_rp_resolve(ctx, key);
+    if(ret==-1)
+        goto not_success;
+    else
+        goto success;
+    duk_pop(ctx); //undefined
+
+    if(load)
+    {
+        duk_pop(ctx);
+
+        // try lowercase, but only for rampart-*
+        char *key_lower=strdup(key);
+
+        s=key_lower;
+        //while(*s) *(s++)=tolower(*s); --compiler warning
+        for(; *s; *s=tolower(*s),s++);
+
+        ret = duk_rp_resolve(ctx, key);
+        if(ret==1)
+            goto success;
+
+        duk_pop(ctx); //undefined
+        free(key_lower);
+    }
+
+
+/*
     duk_get_global_string(ctx, "require");
     duk_push_sprintf(ctx, "rampart-%s",key);
     if(duk_pcall(ctx, 1) == DUK_EXEC_SUCCESS)
         goto success;
+    else 
+    {
+        duk_get_prop_string(ctx,-1,"stack");
+        errstr=duk_get_string(ctx, -1);
+        // only continue if error is not found
+        if(!strstr(errstr, "Could not resolve"))
 
+            goto not_success;
+        duk_pop(ctx);
+    }
     duk_pop(ctx);
 
     // try without 'rampart-'
@@ -4986,11 +5095,21 @@ static duk_ret_t _proxyget(duk_context *ctx, int load)
 
     if(duk_pcall(ctx, 1) == DUK_EXEC_SUCCESS)
         goto success;
+    else 
+    {
+        duk_get_prop_string(ctx,-1,"stack");
+        errstr=duk_get_string(ctx, -1);
+        // only continue if error is not found
+        if(!strstr(errstr, "Could not resolve"))
+            goto not_success;
 
-    duk_pop(ctx);
+        duk_pop(ctx);
+    }
 
     if(load)
     {
+        duk_pop(ctx);
+
         // try lowercase, but only for rampart-*
         char *key_lower=strdup(key);
 
@@ -5002,16 +5121,26 @@ static duk_ret_t _proxyget(duk_context *ctx, int load)
         free(key_lower);
         if (duk_pcall(ctx, 1) == DUK_EXEC_SUCCESS)
             goto success;
+        else 
+        {
+            duk_get_prop_string(ctx,-1,"stack");
+            errstr=duk_get_string(ctx, -1);
+        }
     }
-
-    // not success:
+*/
+    not_success:
     if(freeme) free(global_key);
-    RP_THROW(ctx, "could not find a module named 'rampart-%s' or '%s'", key, key);
+//    RP_THROW(ctx, "error loading module 'rampart-%s' or '%s':\n%s", key, key, errstr);
+    if(!ret)
+         RP_THROW(ctx, "error loading module 'rampart-%s' or '%s':\n%s", key, key, errstr);
+    else
+        duk_throw(ctx);
     // return
 
     success:
 
     // copy to actual object
+    duk_get_prop_string(ctx,-1,"exports");
     duk_dup(ctx, -1);
     duk_put_prop_string(ctx, 0, key);
 
@@ -5528,6 +5657,20 @@ static duk_ret_t repl_next(duk_context *ctx) {
     return 1;
 }
 
+static struct termios orig_term;
+
+static duk_ret_t repl_close(duk_context *ctx)
+{
+    duk_push_this(ctx);
+    duk_del_prop_string(ctx, -1, "_prompt");
+    duk_del_prop_string(ctx, -1, "next");
+    duk_del_prop_string(ctx, -1, "refresh");
+    duk_del_prop_string(ctx, -1, "close");
+
+    tcsetattr(1,TCSAFLUSH,&orig_term);
+    return 0;
+}
+
 static duk_ret_t rp_repl(duk_context *ctx) {
     // todo: completion, probably should be a js func;
     // char **compl = NULL;
@@ -5561,10 +5704,13 @@ static duk_ret_t rp_repl(duk_context *ctx) {
     else if (!duk_is_undefined(ctx, 0))
         RP_THROW(ctx, "repl: argument must be an Object of options, or a string (prompt)");
 
+    tcgetattr(1,&orig_term);
     //linenoiseSetMultiLine(1);
     linenoiseHistorySetMaxLen(history);
 
     duk_push_object(ctx);
+    duk_push_c_function(ctx, repl_close, 0);
+    duk_put_prop_string(ctx, -2, "close");
     duk_push_c_function(ctx, repl_next, 0);
     duk_put_prop_string(ctx, -2, "next");
     duk_push_c_function(ctx, repl_refresh, 0);
@@ -7861,7 +8007,7 @@ static duk_ret_t print_simplified_err(duk_context *ctx)
     }
     else if (duk_is_undefined(ctx,0))
     {
-        RP_THROW(ctx, "errorConfig - first argument must be a Number or a Boolean");
+        RP_THROW(ctx, "errorConfig - first argument must be an Object, Number or a Boolean");
     }
     else
     {
@@ -8074,184 +8220,184 @@ void duk_printf_init(duk_context *ctx)
 /* XXX: Init console object using duk_def_prop() when that call is available. */
 
 static duk_ret_t duk__console_log_helper(duk_context *ctx, const char *error_name) {
-	duk_uint_t flags = (duk_uint_t) duk_get_current_magic(ctx);
-	FILE *output = (flags & DUK_CONSOLE_STDOUT_ONLY) ? stdout : stderr;
-	const char *out;
-	duk_idx_t n = duk_get_top(ctx);
-	duk_idx_t i;
+    duk_uint_t flags = (duk_uint_t) duk_get_current_magic(ctx);
+    FILE *output = (flags & DUK_CONSOLE_STDOUT_ONLY) ? stdout : stderr;
+    const char *out;
+    duk_idx_t n = duk_get_top(ctx);
+    duk_idx_t i;
 
-	duk_get_global_string(ctx, "console");
-	duk_get_prop_string(ctx, -1, "format");
+    duk_get_global_string(ctx, "console");
+    duk_get_prop_string(ctx, -1, "format");
 
-	for (i = 0; i < n; i++) {
-/*	    if(duk_is_error(ctx, i))
-	    {
-	        (void)rp_push_error(ctx, -1, NULL, rp_print_error_lines);
-	        duk_replace(ctx, i);
-	    }
-		else
-*/		if (duk_check_type_mask(ctx, i, DUK_TYPE_MASK_OBJECT))
+    for (i = 0; i < n; i++) {
+/*        if(duk_is_error(ctx, i))
         {
-			/* Slow path formatting. */
-			duk_dup(ctx, -1);  /* console.format */
-			duk_dup(ctx, i);
-			duk_call(ctx, 1);
-			duk_replace(ctx, i);  /* arg[i] = console.format(arg[i]); */
-		}
-	}
+            (void)rp_push_error(ctx, -1, NULL, rp_print_error_lines);
+            duk_replace(ctx, i);
+        }
+        else
+*/        if (duk_check_type_mask(ctx, i, DUK_TYPE_MASK_OBJECT))
+        {
+            /* Slow path formatting. */
+            duk_dup(ctx, -1);  /* console.format */
+            duk_dup(ctx, i);
+            duk_call(ctx, 1);
+            duk_replace(ctx, i);  /* arg[i] = console.format(arg[i]); */
+        }
+    }
 
-	duk_pop_2(ctx);
+    duk_pop_2(ctx);
 
-	duk_push_string(ctx, " ");
-	duk_insert(ctx, 0);
-	duk_join(ctx, n);
+    duk_push_string(ctx, " ");
+    duk_insert(ctx, 0);
+    duk_join(ctx, n);
 
-	if (error_name) {
-		duk_push_error_object(ctx, DUK_ERR_ERROR, "%s", duk_require_string(ctx, -1));
-	    /// *
-		duk_push_string(ctx, "name");
-		duk_push_string(ctx, error_name);
-		duk_def_prop(ctx, -3, DUK_DEFPROP_FORCE | DUK_DEFPROP_HAVE_VALUE);  // to get e.g. 'Trace: 1 2 3'
-		duk_get_prop_string(ctx, -1, "stack");
-		//*/
-		//(void)rp_push_error(ctx, -1, NULL, rp_print_error_lines);
-	}
-	out=duk_to_string(ctx, -1);
-	if(strchr(out,0xED)) {
-		char *utf8_out = to_utf8(out);
-		fprintf(output, "%s\n", utf8_out);
-		free(utf8_out);
-	} else
-		fprintf(output, "%s\n", out);
-	if (flags & DUK_CONSOLE_FLUSH) {
-		fflush(output);
-	}
-	return 0;
+    if (error_name) {
+        duk_push_error_object(ctx, DUK_ERR_ERROR, "%s", duk_require_string(ctx, -1));
+        /// *
+        duk_push_string(ctx, "name");
+        duk_push_string(ctx, error_name);
+        duk_def_prop(ctx, -3, DUK_DEFPROP_FORCE | DUK_DEFPROP_HAVE_VALUE);  // to get e.g. 'Trace: 1 2 3'
+        duk_get_prop_string(ctx, -1, "stack");
+        //*/
+        //(void)rp_push_error(ctx, -1, NULL, rp_print_error_lines);
+    }
+    out=duk_to_string(ctx, -1);
+    if(strchr(out,0xED)) {
+        char *utf8_out = to_utf8(out);
+        fprintf(output, "%s\n", utf8_out);
+        free(utf8_out);
+    } else
+        fprintf(output, "%s\n", out);
+    if (flags & DUK_CONSOLE_FLUSH) {
+        fflush(output);
+    }
+    return 0;
 }
 
 static duk_ret_t duk__console_assert(duk_context *ctx) {
-	if (duk_to_boolean(ctx, 0)) {
-		return 0;
-	}
-	duk_remove(ctx, 0);
+    if (duk_to_boolean(ctx, 0)) {
+        return 0;
+    }
+    duk_remove(ctx, 0);
 
-	return duk__console_log_helper(ctx, "AssertionError");
+    return duk__console_log_helper(ctx, "AssertionError");
 }
 
 static duk_ret_t duk__console_log(duk_context *ctx) {
-	return duk__console_log_helper(ctx, NULL);
+    return duk__console_log_helper(ctx, NULL);
 }
 
 static duk_ret_t duk__console_trace(duk_context *ctx) {
-	return duk__console_log_helper(ctx, "Trace");
+    return duk__console_log_helper(ctx, "Trace");
 }
 
 static duk_ret_t duk__console_info(duk_context *ctx) {
-	return duk__console_log_helper(ctx, NULL);
+    return duk__console_log_helper(ctx, NULL);
 }
 
 static duk_ret_t duk__console_warn(duk_context *ctx) {
-	return duk__console_log_helper(ctx, NULL);
+    return duk__console_log_helper(ctx, NULL);
 }
 
 static duk_ret_t duk__console_error(duk_context *ctx) {
-	return duk__console_log_helper(ctx, "Error");
+    return duk__console_log_helper(ctx, "Error");
 }
 
 static duk_ret_t duk__console_dir(duk_context *ctx) {
-	/* For now, just share the formatting of .log() */
-	return duk__console_log_helper(ctx, 0);
+    /* For now, just share the formatting of .log() */
+    return duk__console_log_helper(ctx, 0);
 }
 
 static void duk__console_reg_vararg_func(duk_context *ctx, duk_c_function func, const char *name, duk_uint_t flags) {
-	duk_push_c_function(ctx, func, DUK_VARARGS);
-	duk_push_string(ctx, "name");
-	duk_push_string(ctx, name);
-	duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_FORCE);  /* Improve stacktraces by displaying function name */
-	duk_set_magic(ctx, -1, (duk_int_t) flags);
-	duk_put_prop_string(ctx, -2, name);
+    duk_push_c_function(ctx, func, DUK_VARARGS);
+    duk_push_string(ctx, "name");
+    duk_push_string(ctx, name);
+    duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_FORCE);  /* Improve stacktraces by displaying function name */
+    duk_set_magic(ctx, -1, (duk_int_t) flags);
+    duk_put_prop_string(ctx, -2, name);
 }
 
 void duk_console_init(duk_context *ctx, duk_uint_t flags) {
-	duk_uint_t flags_orig;
+    duk_uint_t flags_orig;
 
-	/* If both DUK_CONSOLE_STDOUT_ONLY and DUK_CONSOLE_STDERR_ONLY where specified,
-	 * just turn off DUK_CONSOLE_STDOUT_ONLY and keep DUK_CONSOLE_STDERR_ONLY.
-	 */
-	if ((flags & DUK_CONSOLE_STDOUT_ONLY) && (flags & DUK_CONSOLE_STDERR_ONLY)) {
-	    flags &= ~DUK_CONSOLE_STDOUT_ONLY;
-	}
-	/* Remember the (possibly corrected) flags we received. */
-	flags_orig = flags;
+    /* If both DUK_CONSOLE_STDOUT_ONLY and DUK_CONSOLE_STDERR_ONLY where specified,
+     * just turn off DUK_CONSOLE_STDOUT_ONLY and keep DUK_CONSOLE_STDERR_ONLY.
+     */
+    if ((flags & DUK_CONSOLE_STDOUT_ONLY) && (flags & DUK_CONSOLE_STDERR_ONLY)) {
+        flags &= ~DUK_CONSOLE_STDOUT_ONLY;
+    }
+    /* Remember the (possibly corrected) flags we received. */
+    flags_orig = flags;
 
-	duk_push_object(ctx);
+    duk_push_object(ctx);
 
-	/* Custom function to format objects; user can replace.
-	 * For now, try JX-formatting and if that fails, fall back
-	 * to ToString(v).
-	 */
-	duk_eval_string(ctx,
-		"(function (E) {"
-		    "return function format(v){"
-						"if(v instanceof Error) {"
-							"return String(v.stack);"
-						"}"
-		        "try{"
-		            "return E('jx',v);"
-		        "}catch(e){"
-		            "return String(v);"  /* String() allows symbols, ToString() internal algorithm doesn't. */
-		        "}"
-		    "};"
-		"})(Duktape.enc)");
-	duk_put_prop_string(ctx, -2, "format");
+    /* Custom function to format objects; user can replace.
+     * For now, try JX-formatting and if that fails, fall back
+     * to ToString(v).
+     */
+    duk_eval_string(ctx,
+        "(function (E) {"
+            "return function format(v){"
+                        "if(v instanceof Error) {"
+                            "return String(v.stack);"
+                        "}"
+                "try{"
+                    "return E('jx',v);"
+                "}catch(e){"
+                    "return String(v);"  /* String() allows symbols, ToString() internal algorithm doesn't. */
+                "}"
+            "};"
+        "})(Duktape.enc)");
+    duk_put_prop_string(ctx, -2, "format");
 
-	flags = flags_orig;
-	if (!(flags & DUK_CONSOLE_STDOUT_ONLY) && !(flags & DUK_CONSOLE_STDERR_ONLY)) {
-	    /* No output indicators were specified; these levels go to stdout. */
-	    flags |= DUK_CONSOLE_STDOUT_ONLY;
-	}
-	duk__console_reg_vararg_func(ctx, duk__console_assert, "assert", flags);
-	duk__console_reg_vararg_func(ctx, duk__console_log, "log", flags);
-	duk__console_reg_vararg_func(ctx, duk__console_log, "debug", flags);  /* alias to console.log */
-	duk__console_reg_vararg_func(ctx, duk__console_trace, "trace", flags);
-	duk__console_reg_vararg_func(ctx, duk__console_info, "info", flags);
+    flags = flags_orig;
+    if (!(flags & DUK_CONSOLE_STDOUT_ONLY) && !(flags & DUK_CONSOLE_STDERR_ONLY)) {
+        /* No output indicators were specified; these levels go to stdout. */
+        flags |= DUK_CONSOLE_STDOUT_ONLY;
+    }
+    duk__console_reg_vararg_func(ctx, duk__console_assert, "assert", flags);
+    duk__console_reg_vararg_func(ctx, duk__console_log, "log", flags);
+    duk__console_reg_vararg_func(ctx, duk__console_log, "debug", flags);  /* alias to console.log */
+    duk__console_reg_vararg_func(ctx, duk__console_trace, "trace", flags);
+    duk__console_reg_vararg_func(ctx, duk__console_info, "info", flags);
 
-	flags = flags_orig;
-	if (!(flags & DUK_CONSOLE_STDOUT_ONLY) && !(flags & DUK_CONSOLE_STDERR_ONLY)) {
-	    /* No output indicators were specified; these levels go to stderr. */
-	    flags |= DUK_CONSOLE_STDERR_ONLY;
-	}
-	duk__console_reg_vararg_func(ctx, duk__console_warn, "warn", flags);
-	duk__console_reg_vararg_func(ctx, duk__console_error, "error", flags);
-	duk__console_reg_vararg_func(ctx, duk__console_error, "exception", flags);  /* alias to console.error */
-	duk__console_reg_vararg_func(ctx, duk__console_dir, "dir", flags);
+    flags = flags_orig;
+    if (!(flags & DUK_CONSOLE_STDOUT_ONLY) && !(flags & DUK_CONSOLE_STDERR_ONLY)) {
+        /* No output indicators were specified; these levels go to stderr. */
+        flags |= DUK_CONSOLE_STDERR_ONLY;
+    }
+    duk__console_reg_vararg_func(ctx, duk__console_warn, "warn", flags);
+    duk__console_reg_vararg_func(ctx, duk__console_error, "error", flags);
+    duk__console_reg_vararg_func(ctx, duk__console_error, "exception", flags);  /* alias to console.error */
+    duk__console_reg_vararg_func(ctx, duk__console_dir, "dir", flags);
 
-	duk_put_global_string(ctx, "console");
+    duk_put_global_string(ctx, "console");
 
-	/* Proxy wrapping: ensures any undefined console method calls are
-	 * ignored silently.  This was required specifically by the
-	 * DeveloperToolsWG proposal (and was implemented also by Firefox:
-	 * https://bugzilla.mozilla.org/show_bug.cgi?id=629607).  This is
-	 * apparently no longer the preferred way of implementing console.
-	 * When Proxy is enabled, whitelist at least .toJSON() to avoid
-	 * confusing JX serialization of the console object.
-	 */
+    /* Proxy wrapping: ensures any undefined console method calls are
+     * ignored silently.  This was required specifically by the
+     * DeveloperToolsWG proposal (and was implemented also by Firefox:
+     * https://bugzilla.mozilla.org/show_bug.cgi?id=629607).  This is
+     * apparently no longer the preferred way of implementing console.
+     * When Proxy is enabled, whitelist at least .toJSON() to avoid
+     * confusing JX serialization of the console object.
+     */
 
-	if (flags & DUK_CONSOLE_PROXY_WRAPPER) {
-		/* Tolerate failure to initialize Proxy wrapper in case
-		 * Proxy support is disabled.
-		 */
-		(void) duk_peval_string_noresult(ctx,
-			"(function(){"
-			    "var D=function(){};"
-			    "var W={toJSON:true};"  /* whitelisted */
-			    "console=new Proxy(console,{"
-			        "get:function(t,k){"
-			            "var v=t[k];"
-			            "return typeof v==='function'||W[k]?v:D;"
-			        "}"
-			    "});"
-			"})();"
-		);
-	}
+    if (flags & DUK_CONSOLE_PROXY_WRAPPER) {
+        /* Tolerate failure to initialize Proxy wrapper in case
+         * Proxy support is disabled.
+         */
+        (void) duk_peval_string_noresult(ctx,
+            "(function(){"
+                "var D=function(){};"
+                "var W={toJSON:true};"  /* whitelisted */
+                "console=new Proxy(console,{"
+                    "get:function(t,k){"
+                        "var v=t[k];"
+                        "return typeof v==='function'||W[k]?v:D;"
+                    "}"
+                "});"
+            "})();"
+        );
+    }
 }
