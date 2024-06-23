@@ -55,8 +55,13 @@ struct module_loader
 };
 
 // push error, throw if not server
-#define MOD_THROW(ctx,...) do {\
-    duk_push_error_object(ctx, DUK_ERR_ERROR, __VA_ARGS__);\
+#define MOD_THROW(ctx,type,...) do {\
+    duk_get_prop_string(ctx, module_idx, "id");\
+    const char *id=duk_get_string(ctx, -1);duk_pop(ctx);\
+    duk_push_global_stash(ctx);\
+    duk_get_prop_string(ctx, -1, "module_id_map");\
+    duk_del_prop_string(ctx, -1, id);duk_pop_2(ctx);\
+    duk_push_error_object(ctx, type, __VA_ARGS__);\
     if(is_server) return 0;\
     (void) duk_throw(ctx);\
 } while(0)
@@ -67,7 +72,7 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
     struct stat sb;
     const char *bfn=NULL;
     if (stat(file, &sb))
-        MOD_THROW(ctx, "Could not open %s: %s\n", file, strerror(errno));
+        MOD_THROW(ctx, DUK_ERR_ERROR, "Could not open %s: %s\n", file, strerror(errno));
 
     duk_push_number(ctx, sb.st_mtime);
     duk_put_prop_string(ctx, module_idx, "mtime");
@@ -76,12 +81,12 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
 
     FILE *f = fopen(file, "r");
     if (!f)
-        MOD_THROW(ctx, "Could not open %s: %s\n", file, strerror(errno));
+        MOD_THROW(ctx, DUK_ERR_ERROR, "Could not open %s: %s\n", file, strerror(errno));
 
     char *buffer = malloc(sb.st_size + 1);
     size_t len = fread(buffer, 1, sb.st_size, f);
     if (sb.st_size != len)
-        MOD_THROW(ctx, "Error loading file %s: %s\n", file, strerror(errno));
+        MOD_THROW(ctx, DUK_ERR_ERROR, "Error loading file %s: %s\n", file, strerror(errno));
 
     buffer[sb.st_size]='\0';
     duk_push_string(ctx, "(function (module, exports) { ");
@@ -101,7 +106,7 @@ static int load_js_module(duk_context *ctx, const char *file, duk_idx_t module_i
             buffer = tickified;
             if (err)
             {
-                MOD_THROW(ctx, "SyntaxError: %s (line %d)\n    at %s:%d", tickify_err(err), lineno, file, lineno);
+                MOD_THROW(ctx, DUK_ERR_SYNTAX_ERROR, "%s (line %d)\n    at %s:%d", tickify_err(err), lineno, file, lineno);
             }
         }
 
@@ -401,8 +406,10 @@ static duk_ret_t _duk_resolve(duk_context *ctx, const char *name)
 
     // call appropriate module loader
     if(! (module_loaders[module_loader_idx].loader)(ctx, id, module_idx, (name)?1:0 ) )
+    {
+        duk_del_prop_string(ctx, module_id_map_idx, id);
         return -1;
-
+    }
     // return module
     duk_pull(ctx, module_idx);
     return 1;
@@ -424,11 +431,6 @@ int duk_rp_resolve(duk_context *ctx, const char *name)
 
     duk_insert(ctx, idx);
  
-/*    while (duk_get_top_index(ctx) > idx)
-    {
-        duk_pop(ctx);
-    }
-*/
     duk_set_top(ctx, idx+1);
     return ret;   
 }
