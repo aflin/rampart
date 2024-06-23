@@ -1045,9 +1045,8 @@ static void free_dns(void)
 void duk_rp_exit(duk_context *ctx, int ec)
 {
     int i=0,len=0;
-
     static int ran_already=0;
-//printf("%d exiting once%s\n",(int)getpid(), ran_already?" again":"");
+
     if(ran_already)
         exit(ec);
     ran_already=1;
@@ -1161,6 +1160,9 @@ static void *repl_thr(void *arg)
         linenoiseHistoryLoad(hfn);
     }
 
+    rp_print_simplified_errors=0;
+    rp_print_error_lines=0;
+
     while (1)
     {
         int ln, cont=0;
@@ -1251,7 +1253,7 @@ static void *repl_thr(void *arg)
             if(duk_is_object(ctx, -1) && !duk_is_function(ctx, -1)) {
                 duk_push_string(ctx, "rampart.utils.sprintf");
                 duk_eval(ctx);
-                duk_push_string(ctx, "%3J");
+                duk_push_string(ctx, "%!3J");
                 duk_pull(ctx, -3);
                 duk_call(ctx, 2);
             }
@@ -3531,17 +3533,22 @@ int main(int argc, char *argv[])
             /* run the script */
             if (duk_pcompile(ctx, 0) == DUK_EXEC_ERROR)
             {
-                const char *errmsg = rp_push_error(ctx, -1, NULL, rp_print_error_lines);
+                const char *errmsg;
+                duk_get_prop_string(ctx, -1, "stack");
+                errmsg = duk_get_string(ctx, -1);
                 fprintf(stderr, "%s\n", errmsg);
                 duk_rp_exit(ctx, 1);
             }
 
             if (duk_pcall(ctx, 0) == DUK_EXEC_ERROR)
             {
-                const char *errmsg = rp_push_error(ctx, -1, NULL, rp_print_error_lines);
+                const char *errmsg;
+                duk_get_prop_string(ctx, -1, "stack");
+                errmsg = duk_get_string(ctx, -1);
                 fprintf(stderr, "%s\n", errmsg);
                 duk_rp_exit(ctx, 1);
             }
+
             if (!mainthr->base)
             {
                 fprintf(stderr,"Eventloop error: could not initialize event base\n");
