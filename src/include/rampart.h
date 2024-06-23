@@ -564,7 +564,6 @@ char *str_rp_to_json_safe(duk_context *ctx, duk_idx_t idx, char *r);
 const char* rp_push_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nlines);
 // support for above
 duk_ret_t rp_get_line(duk_context *ctx, const char *filename, int line_number, int nlines);
-void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, char *msg, int nlines);
 
 /* ******* setTimeout and similar ****** */
 
