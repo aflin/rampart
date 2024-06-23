@@ -64,7 +64,6 @@
 */
 
 rampart.globalize(rampart.utils);
-
 load.net;
 load.url;
 load.crypto;
@@ -495,7 +494,6 @@ function initconn(socket, wurl, opts) {
     return socket;
 }
 
-
 function init(opts) {
     var socket = new net.Socket();
     var headers = {};
@@ -536,11 +534,11 @@ function init(opts) {
 
 
 
-
 if(global.module && global.module.exports)
-    module.exports = init;
+    module.exports = init;  //we are the module loaded with require("wsclient.js");
 else
 {
+    /* COMMAND LINE TOOL */
     var args = process.argv.slice(2), i, flag, wurl, headers={}, showheaders=false;
 
     function usage(msg,exitc) {
@@ -591,10 +589,10 @@ else
     }
     var binarydata;
 
+    global.lines=repl(" > "); //copied to thread
     var thr = new rampart.thread();
     
     thr.exec(function(){
-        global.lines=repl(" > ");
     });
 
     function domsg(msg) {
@@ -615,12 +613,18 @@ else
     });
 
     wsocket.on("connect", function(){
-
         function readstdin() {
             return global.lines.next();
         }
 
-        function writeout(line) {
+        function writeout(line, err) {
+            //not doing much in thread that could cause an error.
+            if(err) {
+                global.lines.close();
+                console.log(e);
+                process.exit(1);
+            }
+
             if(line===null)
                 process.exit();
             switch(line) {
@@ -667,8 +671,11 @@ else
             }
             thr.exec( readstdin, writeout );
         }
-
         thr.exec( readstdin, writeout );
         
+    }).on('error',function(e){
+        global.lines.close();
+        console.log(e);
+        process.exit(1);
     });
 }
