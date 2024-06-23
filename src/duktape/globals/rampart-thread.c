@@ -127,6 +127,9 @@ RPTHR_LOCK *rp_init_lock(pthread_mutex_t *lock)
     }
 
     REMALLOC(thrlock, sizeof(RPTHR_LOCK));
+    thrlock->flaglock=NULL;
+    REMALLOC(thrlock->flaglock, sizeof(pthread_mutex_t));
+    RP_PTINIT(thrlock->flaglock); //free on fail? - exiting anyway
 
     if(!lock) //NULL and we make our own lock
     {
@@ -1688,6 +1691,10 @@ RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx)
         ret->index=(uint16_t)thread_no;
     }
 
+    ret->flaglock=NULL;
+    REMALLOC(ret->flaglock, sizeof(pthread_mutex_t));
+    RP_PTINIT(ret->flaglock);
+
     ret->flags=flags;
 
     RPTHR_SET(ret, RPTHR_FLAG_IN_USE);
@@ -1745,16 +1752,6 @@ RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx)
 /* ******************************************
   START JS FUNCTIONS FOR CREATE/EXEC THREADS
 ********************************************* */
-pthread_mutex_t testset_lock;
-
-#define TEST_SET(thr, flag) ({\
-    RP_PTLOCK(&testset_lock);\
-    int ret = RPTHR_TEST(thr, flag);\
-    RPTHR_SET(thr, flag);\
-    RP_PTUNLOCK(&testset_lock);\
-    ret;\
-})
-
 static int32_t cbidx=0;
 static int32_t varidx=0;
 #define RPTINFO struct rp_thread_info
@@ -2022,7 +2019,7 @@ int rp_thread_close_children()
          !  RPTHR_TEST(thr, RPTHR_FLAG_SERVER) &&   //server threads never exit
          !  RPTHR_TEST(thr, RPTHR_FLAG_KEEP_OPEN) ) //user specified to not autoclose.
         {
-            if(!TEST_SET(thr, RPTHR_FLAG_FINAL)) //test and set at same time with lock, avoid race
+            if(!RPTHR_TESTSET(thr, RPTHR_FLAG_FINAL)) //test and set at same time with lock, avoid race
             {
                 e=NULL;
                 REMALLOC(e, sizeof(struct event *));
@@ -2071,7 +2068,7 @@ static duk_ret_t finalize_thr(duk_context *ctx)
 
     duk_del_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("thr"));
 
-    if(thr->base && !TEST_SET(thr, RPTHR_FLAG_FINAL ))
+    if(thr->base && !RPTHR_TESTSET(thr, RPTHR_FLAG_FINAL ))
     {
         duk_push_undefined(ctx);
         duk_set_finalizer(ctx, 0);
@@ -2431,7 +2428,6 @@ void duk_thread_init(duk_context *ctx)
     }
 
     RP_PTINIT(&cblock);
-    RP_PTINIT(&testset_lock);
 
     duk_push_c_function(ctx, new_js_thread, 1);
 

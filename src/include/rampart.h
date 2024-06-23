@@ -311,7 +311,8 @@ RPTHR {
     pthread_t          self;        // unneeded now.
     RPTHR             *parent;      // Parent, if not main.  Otherwise NULL
     RPTHR            **children;    // child threads.  monitor and don't exit if still active
-    _Atomic uint16_t   flags;       // some flags
+    pthread_mutex_t   *flaglock;    // lock for flags
+    uint16_t           flags;       // some flags
     uint16_t           index;       // index pos in **rpthread; remove if not used
     uint16_t           ncb;         // how many of above fin_cb
     uint16_t           nchildren;   // number of child threads.
@@ -339,8 +340,9 @@ RPTHR_LOCK {
     pthread_mutex_t *locklock;
 #endif
     RPTHR_LOCK      *next;
+    pthread_mutex_t *flaglock;    // lock for flags
     uint16_t         thread_idx;
-    _Atomic uint16_t flags;
+    uint16_t         flags;
 };
 
 #define RPTHR_LOCK_FLAG_LOCKED    0x01  // if the lock is currently held
@@ -362,9 +364,19 @@ void          rp_unlock_all_locks(int isparent);    //do after forking in parent
 void          rp_thread_preinit();
 
 /* for locks and threads flags */
-#define RPTHR_SET(thread, flag)   ( (thread)->flags |=  (flag) )
-#define RPTHR_CLEAR(thread, flag) ( (thread)->flags &= ~(flag) )
-#define RPTHR_TEST(thread, flag)  ( (thread)->flags &   (flag) )
+extern pthread_mutex_t testset_lock;
+#define FLAGLOCK(_thr)   RP_PTLOCK(_thr->flaglock)
+#define FLAGUNLOCK(_thr) RP_PTUNLOCK(_thr->flaglock)
+#define RPTHR_SET(thread, flag)   do{ FLAGLOCK(thread); ( (thread)->flags |=  (flag) ); FLAGUNLOCK(thread);}while(0)
+#define RPTHR_CLEAR(thread, flag) do{ FLAGLOCK(thread); ( (thread)->flags &= ~(flag) ); FLAGUNLOCK(thread);}while(0)
+#define RPTHR_TEST(thread, flag)  ({uint16_t _ret; FLAGLOCK(thread); _ret=(thread)->flags & (flag); FLAGUNLOCK(thread);_ret;})
+#define RPTHR_TESTSET(thr, flag) ({\
+    FLAGLOCK(thr);\
+    int ret = (thr)->flags & (flag);\
+    (thr)->flags |=  (flag);\
+    FLAGUNLOCK(thr);\
+    ret;\
+})
 
 /* mutex locking in general */
 #define RP_PTLOCK(lock) do{\

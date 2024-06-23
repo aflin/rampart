@@ -276,13 +276,13 @@ rp_stack *parse_stack_string_lines(rp_stack *stack, const char *s)
                     // skip empty file/line entry
                     if(*s==')')
                     {
-                        while(*s!='\n' && *s!='\0') s++;
+                        while(*s && *s!='\n') s++;
                         nl=1;
                     }
                     else
                     {
                         fn=s;
-                        while(*s!='\0' && *s!=':' && *s!=')')  s++;
+                        while(*s && *s!=':' && *s!=')')  s++;
                         fnl=s-fn;
                         if(*s==':')
                         {
@@ -452,6 +452,7 @@ static void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, int nlines
     if( nlines !=-1 || rp_print_simplified_errors) //we only need to parse the stack if ...
     {
         stack = strdup(duk_get_string(ctx, -1));
+printf("last char = %d, strlen=%d\n", stack[strlen(stack)], strlen(stack));
         duk_pop(ctx);
 
         duk_get_prop_string(ctx, eidx, "message");
