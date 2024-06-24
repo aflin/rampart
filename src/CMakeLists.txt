@@ -33,7 +33,9 @@ add_definitions(
 	-DRP_INST_PATH="${CMAKE_INSTALL_PREFIX}/"
 )
 
-add_compile_options(-Wall -g -O2 -std=c11)
+add_compile_options(-Wall -g -O2 -std=c99)
+#  -fsanitize=address)
+#link_libraries("-fsanitize=address")
 
 #https://stackoverflow.com/questions/24292898/compile-date-and-time-using-cmake
 make_directory(${CMAKE_BINARY_DIR}/include)

@@ -266,7 +266,7 @@ rp_stack *parse_stack_string_lines(rp_stack *stack, const char *s)
 
             nl=0;
         }
-        else
+        else if(*s)
         {
             switch(*s)
             {
@@ -277,12 +277,18 @@ rp_stack *parse_stack_string_lines(rp_stack *stack, const char *s)
                     if(*s==')')
                     {
                         while(*s && *s!='\n') s++;
+
+                        if(*s=='\0')
+                            goto end;
+
                         nl=1;
                     }
                     else
                     {
                         fn=s;
                         while(*s && *s!=':' && *s!=')')  s++;
+                        if(*s=='\0')
+                            goto end;
                         fnl=s-fn;
                         if(*s==':')
                         {
@@ -296,6 +302,8 @@ rp_stack *parse_stack_string_lines(rp_stack *stack, const char *s)
                         t=0;
                         p=(char*)s;
                         while(t<8 && *p!='\0') p++,t++;
+                        if(*p=='\0')
+                            goto end;
                         if(t==8)
                         {
                             if(!strncmp("strict p", s, 8))
@@ -363,10 +371,13 @@ rp_stack *parse_stack_string_lines(rp_stack *stack, const char *s)
                 }
             }
         }
+        else
+            break;
         if(nl == -1)
             break;
         s++;
     }
+    end:
     return stack;
 }     
 
@@ -452,7 +463,7 @@ static void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, int nlines
     if( nlines !=-1 || rp_print_simplified_errors) //we only need to parse the stack if ...
     {
         stack = strdup(duk_get_string(ctx, -1));
-printf("last char = %d, strlen=%d\n", stack[strlen(stack)], strlen(stack));
+
         duk_pop(ctx);
 
         duk_get_prop_string(ctx, eidx, "message");

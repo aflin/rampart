@@ -197,6 +197,11 @@ int rp_remove_lock(RPTHR_LOCK *thrlock)
         if(RPTHR_TEST(l, RPTHR_LOCK_FLAG_FREELOCK))
             free(l->lock);
 
+#ifdef RP_USE_LOCKLOCKS
+        free(l->locklock);
+#endif
+        free(l->flaglock);
+
         free(l);
 
         LISTUNLOCK;
@@ -340,17 +345,27 @@ void rp_unlock_all_locks(int isparent)
             {
                 thrlock->thread_idx=-1;
                 SETUNLOCKED;
+
                 if( RPTHR_TEST(thrlock, RPTHR_LOCK_FLAG_FREELOCK) )
                     free(thrlock->lock);
                 thrlock->lock=NULL;
                 REMALLOC(thrlock->lock, sizeof(pthread_mutex_t));
                 RPTHR_SET(thrlock, RPTHR_LOCK_FLAG_FREELOCK);
-
                 if (pthread_mutex_init((thrlock->lock),NULL) != 0)
                 {
                     fprintf(stderr, "Failed to reinitialize lock after fork\n");
                     exit(1);
                 }
+
+                free(thrlock->flaglock);
+                thrlock->flaglock=NULL;
+                REMALLOC(thrlock->flaglock, sizeof(pthread_mutex_t));
+                if (pthread_mutex_init((thrlock->flaglock),NULL) != 0)
+                {
+                    fprintf(stderr, "Failed to reinitialize lock after fork\n");
+                    exit(1);
+                }
+
 #ifdef RP_USE_LOCKLOCKS
                 free(thrlock->locklock);
                 thrlock->locklock=NULL;
@@ -1346,6 +1361,8 @@ static duk_ret_t _thread_waitfor(duk_context *ctx, const char *key, const char *
     clock_gettime(CLOCK_REALTIME, &ts);
     //timespec_get(&ts, TIME_UTC);
     timemarker = ts.tv_sec *1000 + ts.tv_nsec/1000000;
+
+    //wait for a message from any other thread that a var has been updated
     while(1)
     {
         if((pret = poll(ufds, 1, to)) == -1)
