@@ -996,6 +996,10 @@ duk_ret_t dosearchfile(duk_context *ctx, const char *search, const char *file, A
              nhits++;
         }
     }
+    if(mm)
+        closemmapi(mm);
+    if(cp)
+        closeapicp(cp);                  /* cleanup the control parameters */
     fclose(fh);
     free(buf);                               /* deallocate the data buffer */
     return 1;
