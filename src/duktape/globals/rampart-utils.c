@@ -7215,16 +7215,19 @@ static duk_ret_t rp_fork(duk_context *ctx)
 
 static duk_ret_t rp_pipe_doclose(duk_context *ctx, int is_finalizer)
 {
-    pipeinfo *p;
+    pipeinfo *p=NULL;
     pid_t pid=getpid();
 
     if(!duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pipeinfo")))
         return 0;
 
     p=duk_get_pointer(ctx, -1);
-
     if(!p)
         return 0;
+
+    if(p->lock)
+        free(p->lock);
+
     if(p->parent == pid)
     {
         if(p->childtopar[0] > 0)
@@ -7336,7 +7339,7 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
     pipeinfo *p=(pipeinfo*)arg;
     duk_idx_t top=duk_get_top(ctx);
     const char *errmsg="";
-    ssize_t read_ret;
+    ssize_t read_ret=0, ir=0;
     int readerr=0;
     duk_idx_t pipe_stash_idx;
 
@@ -7385,10 +7388,11 @@ static void pipe_read_ev(evutil_socket_t fd, short events, void *arg)
 
     buf=duk_push_buffer(ctx, (duk_size_t)len, 0);
     read_ret = 0;
-    while( (read_ret += read(fd, buf+read_ret, len-read_ret)) < len  );
+    while( (read_ret += (ir=read(fd, buf+read_ret, len-read_ret))) < len  )
+        if(ir==-1) break;
 
     PLOCK_UNLOCK
-    if(read_ret != len)
+    if(ir==-1 || read_ret != len)
     {
         duk_remove(ctx, -1);
         duk_push_undefined(ctx);//first arg
@@ -7558,7 +7562,7 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
     pid_t pid=getpid();
     size_t len;
     void *buf;
-    ssize_t read_ret;
+    ssize_t read_ret=0, ir=0;
     int have_func=0;
     duk_idx_t errmsg_idx=-1;
 
@@ -7617,7 +7621,8 @@ static duk_ret_t rp_pipe_read(duk_context *ctx)
     buf=duk_push_buffer(ctx, (duk_size_t)len, 0);
 
     read_ret = 0;
-    while( (read_ret += read(reader, buf+read_ret, len-read_ret)) < len  );
+    while( (read_ret += (ir=read(reader, buf+read_ret, len-read_ret))) < len  )
+        if(ir==-1) break;
 
     if(read_ret != len)
         goto closepipeerr;
