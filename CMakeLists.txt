@@ -1,3 +1,13 @@
+## to build a macos universal, run:
+#   cmake -DMACOS_UNIVERSAL=1 ../
+
+## to build with -fsanitize=address
+#   cmake -DRP_SANITIZE=1 ../
+# and maybe export ASAN_OPTIONS=fast_unwind_on_malloc=false
+# if stack traces are incomplete.
+# and if python export PYTHONMALLOC=malloc
+# or pymalloc will be used and asan will miss massive amounts of frees
+
 cmake_minimum_required(VERSION 3.13)
 
 project(Rampart VERSION 0.1.3 LANGUAGES C CXX)
@@ -6,8 +16,6 @@ project(Rampart VERSION 0.1.3 LANGUAGES C CXX)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 
-## to build a macos universal, run:
-#   cmake -DMACOS_UNIVERSAL=1 ../
 
 if (MACOS_UNIVERSAL)
 	message("Making MacOs Universal Binary Build")
