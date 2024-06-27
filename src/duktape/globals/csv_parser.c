@@ -735,7 +735,7 @@ collapseEscapements(CSV *csv,byte *s)
    byte  *p=s;
    byte  *t=s;
    
-   for(;*s;++s,++t)
+   for(;*s && *t; ++s,++t)
    {
       if(*t=='\\')
       {
