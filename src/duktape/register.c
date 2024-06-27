@@ -267,7 +267,8 @@ static duk_ret_t rp_eval_js(duk_context *ctx)
         duk_push_string(ctx, tickified);
         free(tickified);
     }
-
+    if(bfn)
+        free((char*)bfn);
     duk_call(ctx,1);
     return 1;
 }
