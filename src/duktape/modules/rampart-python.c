@@ -185,9 +185,9 @@ int debugl=rpydebug;
 })
 
 #define forkwrite(b,c) ({\
-    int r=0;\
-    r=write(finfo->writer, (b),(c));\
-    if(r==-1) {\
+    int r=0,ir=0;\
+    while( (r += (ir=write(finfo->writer, b+r, c-r))) < c ) if(ir==-1)break;\
+    if(ir==-1) {\
         fprintf(stderr, "fork write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,finfo->writer);\
         if(is_child) {fprintf(stderr, "child proc exiting\n");exit(0);}\
     };\
@@ -195,14 +195,9 @@ int debugl=rpydebug;
 })
 
 #define forkread(b,c) ({\
-    int r=0;\
-    size_t cnt=(c), pos=0;\
-    while ( (r=read(finfo->reader,&((b)[pos]),cnt)) > 0){\
-        cnt-=r;\
-        pos+=r;\
-        if(cnt<1) break;\
-    }\
-    if(r==-1) {\
+    int r=0,ir=0;\
+    while( (r += (ir=read(finfo->reader, b+r, c-r))) < c ) if(ir==-1)break;\
+    if(ir==-1) {\
         fprintf(stderr, "fork read failed: '%s' at %d\n",strerror(errno),__LINE__);\
         if(is_child) {fprintf(stderr, "child proc exiting\n");exit(0);}\
     };\
@@ -3453,6 +3448,8 @@ static PFI *check_fork()
         /* Save parent pointer (****remove me if not needed****) */\
         duk_push_pointer(ctx, _pval);\
         duk_put_prop_string(ctx, _idx, DUK_HIDDEN_SYMBOL("pparent"));\
+        duk_push_c_function(ctx, pvalue_finalizer, 1);\
+        duk_set_finalizer(ctx, _idx);\
         _pval=p;\
         duk_dup(ctx, _idx);\
         put_attributes(ctx, _pval);\
@@ -3514,17 +3511,21 @@ static duk_ret_t pvalue_finalizer(duk_context *ctx)
     if(pValue)
     {
         PyGILState_STATE state = PYLOCK;
-        dprintf_pyvar(5,x,pValue,"decref for %p (%s) with refcnt = %d\n", pValue, x, (int)Py_REFCNT((pValue)));
+        dprintf_pyvar(5,x,pValue,"decref for %p (%s) with refcnt = %d\n", pValue, x, (int)Py_REFCNT(pValue));
         RP_Py_XDECREF(pValue);
         PYUNLOCK(state);
+
+        duk_push_pointer(ctx,NULL);
+        duk_put_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("pvalue"));
     }
     else
     {
-        duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("pref"));
-        pValue=(PyObject *)duk_get_pointer(ctx, -1);
-        duk_pop(ctx);
-        if(pValue)
-            parent_finalizer(pValue);
+        if(duk_get_prop_string(ctx, 0, DUK_HIDDEN_SYMBOL("pref")))
+        {
+            pValue=(PyObject *)duk_get_pointer(ctx, -1);
+            if(pValue)
+                parent_finalizer(pValue);
+        }
     }
     return 0;
 }
@@ -3532,7 +3533,7 @@ static duk_ret_t pvalue_finalizer(duk_context *ctx)
 /*  object must be at idx == -1  */
 static void put_attributes(duk_context *ctx, PyObject *pValue)
 {
-    PyObject *pobj = PyObject_Dir(pValue);
+    PyObject *pobj = PyObject_Dir(pValue);  //keys of obj in a List
     /* we cannot put a proxy object on a function */
     int parent_is_callable = PyCallable_Check(pValue);
 
@@ -3542,14 +3543,14 @@ static void put_attributes(duk_context *ctx, PyObject *pValue)
         return;
 
     Py_ssize_t len=PyList_Size(pobj), i=0;
-    PyObject *value=NULL, *pProp;
+    PyObject *key=NULL, *pProp;
 
     while( i<len )
     {
         const char *fname;
         size_t l;
-        value=PyList_GetItem(pobj, i);
-        fname = PyUnicode_AsUTF8(value);
+        key=PyList_GetItem(pobj, i);//borrowed ref
+        fname = PyUnicode_AsUTF8(key);
         l=strlen(fname);
         if(l>3 && *fname=='_' && fname[1]=='_' && fname[l-2]=='_' && fname[l-1]=='_')
         {
@@ -3557,9 +3558,9 @@ static void put_attributes(duk_context *ctx, PyObject *pValue)
             continue;
         }
 
-        pProp = PyObject_GetAttr(pValue, value);
+        pProp = PyObject_GetAttr(pValue, key); // obj[key]
         dprintf(5,"checking %s (%p)- is %s - iscallable:%d\n",
-            PyUnicode_AsUTF8(value),
+            fname,
             pValue,
             (pProp? Py_TYPE(pProp)->tp_name:"pProp=NULL"),
             pProp ? PyCallable_Check(pProp):0);
@@ -3570,7 +3571,7 @@ static void put_attributes(duk_context *ctx, PyObject *pValue)
             PyObject* pBase = (PyObject*) pValue->ob_type->tp_base;
             if(pBase)
             {
-                pProp = PyObject_GetAttr(pBase, value);
+                pProp = PyObject_GetAttr(pBase, key);
                 dprintf(5,"Got from base, pProp=%p\n", pProp);
             }
         }
@@ -3581,6 +3582,7 @@ static void put_attributes(duk_context *ctx, PyObject *pValue)
             if(PyCallable_Check(pProp))
             {
                 dprintf(4,"push as method, name=%s\n", fname);
+
                 PyObject *Str = PyObject_Str(pProp);
                 char *str=NULL;
 
@@ -3602,15 +3604,19 @@ static void put_attributes(duk_context *ctx, PyObject *pValue)
             else if(parent_is_callable) // if parent is a function and not an object, we cannot use a proxy object for look up. So populate it now.
             {
                 dprintf(4,"make_pyval, name=%s\n", fname);
+
                 make_pyval(pProp, _p_to_string, _p_to_value, NULL, NULL, NULL);
                 // cannot directly set property "name" or "length" on a function in duktape JS
                 put_prop_string_on_function(ctx, -2, fname);
                 //pProp will be xdecreffed by finalizer.
             }
+            else
+                RP_Py_XDECREF(pProp);
         }
 
         i++;
     }
+    RP_Py_XDECREF(pobj);
 }
 
 #define py_throw_fmt(fmtstr) do{\
@@ -3721,7 +3727,7 @@ static void get_pyval_and_push(duk_context *ctx, duk_idx_t idx, const char *key,
     // it will take the make_pyval val with it.
     duk_push_sprintf(ctx, "\xff%p", pValue);
     duk_dup(ctx, -2);
-    duk_put_prop(ctx, 0);
+    duk_put_prop(ctx, idx);
 
     PYUNLOCK(state);
 }
@@ -3973,7 +3979,10 @@ static duk_ret_t _py_call(duk_context *ctx, int is_method)
         RP_Py_XDECREF(pFunc);
     RP_Py_XDECREF(pArgs);
     if(err)
+    {
         py_throw_fmt(err); //includes PYUNLOCK(state);
+        // return
+    }
     else if (PyErr_Occurred())
     {
         // well, we have something valid since pValue is not NULL.  And it might work.
@@ -4118,7 +4127,6 @@ static duk_ret_t _import (duk_context * ctx, int type)
         {
             // compile and execute string.
             PyObject *pCode = Py_CompileString(script, scriptname, Py_file_input);
-
             if(!pCode)
             {
                 if(type==1)
@@ -4128,6 +4136,7 @@ static duk_ret_t _import (duk_context * ctx, int type)
             }
 
             pModule = PyImport_ExecCodeModule(modname, pCode );
+            RP_Py_XDECREF(pCode);
         }
         else
             // import/execute module
@@ -4184,7 +4193,7 @@ static duk_ret_t RP_PimportFile (duk_context * ctx)
 }
 
 
-static duk_ret_t helper(duk_context *ctx)
+static duk_ret_t fork_helper(duk_context *ctx)
 {
     PFI *finfo=&finfo_d;
 
@@ -4214,6 +4223,24 @@ static duk_ret_t helper(duk_context *ctx)
     return 0;
 }
 
+/*
+duk_ret_t RP_Pfinalize(duk_context *ctx)
+{
+
+    (void) PYLOCK;
+    if( PyPickle )
+    {
+        Py_XDECREF(PyPickle);
+        PyPickle=NULL;
+    }
+    
+    Py_FinalizeEx();
+
+    return 0;
+
+}
+*/
+
 /* **************************************************
    Initialize module
    ************************************************** */
@@ -4232,9 +4259,12 @@ duk_ret_t duk_open_module(duk_context *ctx)
     duk_push_c_function(ctx, RP_PimportFile, 1);
     duk_put_prop_string(ctx, -2, "importFile");
 
-    /* used when forking/execing */
-    duk_push_c_function(ctx, helper, 3);
-    duk_put_prop_string(ctx, -2, "__helper");
+    //duk_push_c_function(ctx, RP_Pfinalize, 1);
+    //duk_set_finalizer(ctx, -2);
 
+    /* used when forking/execing */
+    duk_push_string(ctx, "__helper");
+    duk_push_c_function(ctx, fork_helper, 3);
+    duk_def_prop(ctx, -3, DUK_DEFPROP_CLEAR_WEC|DUK_DEFPROP_HAVE_VALUE);
   return 1;
 }
