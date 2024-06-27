@@ -34,8 +34,11 @@ add_definitions(
 )
 
 add_compile_options(-Wall -g -O2 -std=c99)
-#  -fsanitize=address)
-#link_libraries("-fsanitize=address")
+
+if (RP_SANITIZE)
+    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+    link_libraries("-fsanitize=address")
+endif (RP_SANITIZE)
 
 #https://stackoverflow.com/questions/24292898/compile-date-and-time-using-cmake
 make_directory(${CMAKE_BINARY_DIR}/include)
