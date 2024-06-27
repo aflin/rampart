@@ -311,7 +311,7 @@ RPTHR {
     pthread_t          self;        // unneeded now.
     RPTHR             *parent;      // Parent, if not main.  Otherwise NULL
     RPTHR            **children;    // child threads.  monitor and don't exit if still active
-    pthread_mutex_t   *flaglock;    // lock for flags
+    pthread_mutex_t    flaglock;    // lock for flags
     uint16_t           flags;       // some flags
     uint16_t           index;       // index pos in **rpthread; remove if not used
     uint16_t           ncb;         // how many of above fin_cb
@@ -337,10 +337,10 @@ RPTHR {
 RPTHR_LOCK {
     pthread_mutex_t *lock;
 #ifdef RP_USE_LOCKLOCKS
-    pthread_mutex_t *locklock;
+    pthread_mutex_t  locklock;
 #endif
     RPTHR_LOCK      *next;
-    pthread_mutex_t *flaglock;    // lock for flags
+    pthread_mutex_t  flaglock;    // lock for flags
     uint16_t         thread_idx;
     uint16_t         flags;
 };
@@ -365,8 +365,8 @@ void          rp_thread_preinit();
 
 /* for locks and threads flags */
 extern pthread_mutex_t testset_lock;
-#define FLAGLOCK(_thr)   RP_PTLOCK(_thr->flaglock)
-#define FLAGUNLOCK(_thr) RP_PTUNLOCK(_thr->flaglock)
+#define FLAGLOCK(_thr)   RP_PTLOCK(&_thr->flaglock)
+#define FLAGUNLOCK(_thr) RP_PTUNLOCK(&_thr->flaglock)
 #define RPTHR_SET(thread, flag)   do{ FLAGLOCK(thread); ( (thread)->flags |=  (flag) ); FLAGUNLOCK(thread);}while(0)
 #define RPTHR_CLEAR(thread, flag) do{ FLAGLOCK(thread); ( (thread)->flags &= ~(flag) ); FLAGUNLOCK(thread);}while(0)
 #define RPTHR_TEST(thread, flag)  ({uint16_t _ret; FLAGLOCK(thread); _ret=(thread)->flags & (flag); FLAGUNLOCK(thread);_ret;})

@@ -97,8 +97,8 @@ pthread_mutex_t *rp_fork_lock=NULL;
 
 // locks for manipulating the individual locks in the *rampart_locks list
 #ifdef RP_USE_LOCKLOCKS
-#define LOCKLOCK   RP_PTLOCK(thrlock->locklock)
-#define LOCKUNLOCK RP_PTUNLOCK(thrlock->locklock)
+#define LOCKLOCK   RP_PTLOCK(&thrlock->locklock)
+#define LOCKUNLOCK RP_PTUNLOCK(&thrlock->locklock)
 #else
 #define LOCKLOCK   /* niente */
 #define LOCKUNLOCK /* zilch  */
@@ -125,11 +125,9 @@ RPTHR_LOCK *rp_init_lock(pthread_mutex_t *lock)
         while( lastlock->next )
             lastlock=lastlock->next;
     }
-
     REMALLOC(thrlock, sizeof(RPTHR_LOCK));
-    thrlock->flaglock=NULL;
-    REMALLOC(thrlock->flaglock, sizeof(pthread_mutex_t));
-    RP_PTINIT(thrlock->flaglock); //free on fail? - exiting anyway
+    RP_PTINIT(&thrlock->flaglock);
+    thrlock->flags      = 0;
 
     if(!lock) //NULL and we make our own lock
     {
@@ -140,15 +138,12 @@ RPTHR_LOCK *rp_init_lock(pthread_mutex_t *lock)
     thrlock->lock       = lock;
 
     thrlock->thread_idx = -1; // this is >-1 only while holding lock
-    thrlock->flags      = 0;
     thrlock->next       = NULL;
 #ifdef RP_USE_LOCKLOCKS
-    thrlock->locklock=NULL;
-    REMALLOC(thrlock->locklock, sizeof(pthread_mutex_t));
-    RP_PTINIT(thrlock->locklock);
+    RP_PTINIT(&thrlock->locklock);
 #endif
 
-    if (pthread_mutex_init((lock),NULL) != 0)
+    if (pthread_mutex_init((thrlock->lock),NULL) != 0)
     {
         if(RPTHR_TEST(thrlock, RPTHR_LOCK_FLAG_FREELOCK))
             free(thrlock->lock);
@@ -197,13 +192,7 @@ int rp_remove_lock(RPTHR_LOCK *thrlock)
         if(RPTHR_TEST(l, RPTHR_LOCK_FLAG_FREELOCK))
             free(l->lock);
 
-#ifdef RP_USE_LOCKLOCKS
-        free(l->locklock);
-#endif
-        free(l->flaglock);
-
         free(l);
-
         LISTUNLOCK;
 
         return 1;
@@ -357,21 +346,14 @@ void rp_unlock_all_locks(int isparent)
                     exit(1);
                 }
 
-                free(thrlock->flaglock);
-                thrlock->flaglock=NULL;
-                REMALLOC(thrlock->flaglock, sizeof(pthread_mutex_t));
-                if (pthread_mutex_init((thrlock->flaglock),NULL) != 0)
+                if (pthread_mutex_init(&(thrlock->flaglock),NULL) != 0)
                 {
                     fprintf(stderr, "Failed to reinitialize lock after fork\n");
                     exit(1);
                 }
 
 #ifdef RP_USE_LOCKLOCKS
-                free(thrlock->locklock);
-                thrlock->locklock=NULL;
-                REMALLOC(thrlock->locklock, sizeof(pthread_mutex_t));
-
-                if (pthread_mutex_init((thrlock->locklock),NULL) != 0)
+                if (pthread_mutex_init(&(thrlock->locklock),NULL) != 0)
                 {
                     fprintf(stderr, "Failed to reinitialize lock after fork\n");
                     exit(1);
@@ -580,7 +562,7 @@ static duk_ret_t new_user_lock(duk_context *ctx)
 
     duk_push_this(ctx);
 
-    rp_user_lock=RP_MINIT(NULL);
+    rp_user_lock=RP_MINIT(NULL); // this calls rp_init_lock()
     RPTHR_SET(rp_user_lock, RPTHR_LOCK_FLAG_JSLOCK);
 
     duk_push_pointer(ctx, rp_user_lock);
@@ -1706,11 +1688,9 @@ RPTHR *rp_new_thread(uint16_t flags, duk_context *ctx)
         REMALLOC(ret, sizeof(RPTHR) );
         rpthread[thread_no]=ret;
         ret->index=(uint16_t)thread_no;
+        RP_PTINIT(&ret->flaglock);
     }
 
-    ret->flaglock=NULL;
-    REMALLOC(ret->flaglock, sizeof(pthread_mutex_t));
-    RP_PTINIT(ret->flaglock);
 
     ret->flags=flags;
 
@@ -2210,7 +2190,10 @@ static duk_ret_t loop_insert(duk_context *ctx)
         dprintf("failed exec, cannot run a thread created outside the current one\n");
         RP_THROW(ctx, "thr.exec: Cannot run a thread created outside the current one.");
     }
+    // FIXME: mem leak when forked from a different thread and this one disappears.
+    //        Perhaps we need to store it in a list with thread number, and when forked, clean up other threads.
     REMALLOC(info, sizeof(RPTINFO));
+
     info->bytecode=NULL;
     info->bytecode_sz=0;
     info->index=-1;
