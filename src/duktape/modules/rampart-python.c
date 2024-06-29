@@ -132,10 +132,10 @@ int debugl=rpydebug;
         /* deallocated objects often return a random negative number*/\
         if(cnt<0) dprintf(1,"DANGER WILL ROBINSON!!! possible xdecref on deallocated python object\n");\
         if(cnt>0) Py_XDECREF((r));\
-        if(!cnt) dprintf(1,"DANGER, xdecref on an item with refcnt=0\n");\
+        if(!cnt) dprintf(1,"DANGER, attempted xdecref on an item with refcnt=0\n");\
         r=NULL;\
     }\
-    else  dprintf(5,"xdecref, ref was null\n");\
+    /*else  dprintf(5,"xdecref, ref was null\n");*/\
 } while(0)
 
 #define PYUNLOCK(s) do {\
@@ -160,6 +160,7 @@ int debugl=rpydebug;
 #define dcheckvar(...) /* nada */
 
 #define RP_Py_XDECREF(r) do{\
+/*printf("xdecref %p (%d refs) on line %d\n",r, r?(int)Py_REFCNT((r)):-1, __LINE__);*/\
     if(r) {Py_XDECREF((r));r=NULL;}\
 } while(0)
 
@@ -186,9 +187,10 @@ int debugl=rpydebug;
 
 #define forkwrite(b,c) ({\
     int r=0,ir=0;\
-    while( (r += (ir=write(finfo->writer, b+r, c-r))) < c ) if(ir==-1)break;\
-    if(ir==-1) {\
-        fprintf(stderr, "fork write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,finfo->writer);\
+    dprintf(5,"%s writing %d bytes\n", is_child?"child":"parent", (int)c);\
+    while( (r += (ir=write(finfo->writer, b+r, c-r))) < c ) if(ir<1)break;\
+    if(ir<1) {\
+        fprintf(stderr, "rampart-python helper: write failed: '%s' at %d, fd:%d\n",strerror(errno),__LINE__,finfo->writer);\
         if(is_child) {fprintf(stderr, "child proc exiting\n");exit(0);}\
     };\
     r;\
@@ -196,9 +198,14 @@ int debugl=rpydebug;
 
 #define forkread(b,c) ({\
     int r=0,ir=0;\
-    while( (r += (ir=read(finfo->reader, b+r, c-r))) < c ) if(ir==-1)break;\
+    while( (r += (ir=read(finfo->reader, b+r, c-r))) < c ) if(ir<1)break;\
     if(ir==-1) {\
-        fprintf(stderr, "fork read failed: '%s' at %d\n",strerror(errno),__LINE__);\
+        fprintf(stderr, "rampart-python helper: read failed: '%s' at %d\n",strerror(errno),__LINE__);\
+        if(is_child) {fprintf(stderr, "child proc exiting\n");exit(0);}\
+    };\
+    dprintf(5,"%s read %d bytes of %d wanted\n", is_child?"child":"parent", r, (int)c);\
+    if(r!=(int)c) {\
+        fprintf(stderr, "rampart-python helper: read failed: '%s' at %d\n",strerror(errno),__LINE__);\
         if(is_child) {fprintf(stderr, "child proc exiting\n");exit(0);}\
     };\
     r;\
@@ -428,6 +435,7 @@ static int send_val(PFI* finfo, PyObject *pRef, char *err)
         dprintf(4,"bytes sz=%d\n", (int)pickle_sz);
         if(forkwrite(pickle, pickle_sz) == -1)
             return 0;
+        RP_Py_XDECREF(pBytes);
     }
     return 1;
 }
@@ -1495,12 +1503,20 @@ static void parent_fix_pval(duk_context *ctx, duk_idx_t idx)
             // RP_THROW with a free in the middle
             duk_push_error_object(ctx, DUK_ERR_SYNTAX_ERROR, "%s", err);
             free(err);
-            (void) duk_throw(ctx);\
+            (void) duk_throw(ctx);
         }
         duk_pop(ctx); //duplicate of current_function
 
         // do this only once:
         duk_del_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("attr_fname"));
+        duk_push_object(ctx);
+
+        //an object to be finalized and perform decref in child
+        duk_get_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("pref"));
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("pref"));
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("pref_obj"));
+        duk_push_c_function(ctx, pvalue_finalizer, 1);
+        duk_set_finalizer(ctx, -2);
     }
     else
         duk_pop(ctx); // undefined attr_name
@@ -1518,17 +1534,23 @@ static void parent_finalizer(PyObject *pModule)
 
     ctx=finfo->ctx;
 
+
     if(forkwrite("f", sizeof(char)) == -1)
         RP_THROW(ctx, pipe_error);
 
     if(forkwrite(&pModule, sizeof(PyObject *)) == -1)
         RP_THROW(ctx, pipe_error);
 
+    dprintf(4,"Finalized in parent for %p\n", pModule);
+
     if(forkread(&retval, sizeof(char)) == -1)
         RP_THROW(ctx, pipe_error);
 
     if(retval != 'o')
         RP_THROW(ctx, pipe_error);
+
+    dprintf(4,"CONFIRMED Finalized in parent for %p\n", pModule);
+
 }
 
 static int child_finalizer(PFI *finfo)
@@ -1538,8 +1560,9 @@ static int child_finalizer(PFI *finfo)
     if(forkread(&pModule, sizeof(PyObject *)) == -1)
         return 0;
 
+    dprintf(4,"Finalized in child for %p\n", pModule);
+
     RP_Py_XDECREF(pModule);
-    dprintf(4,"Finalized in child\n");
     if(forkwrite("o", sizeof(char)) == -1)
         return 0;
 
@@ -1594,6 +1617,7 @@ static duk_ret_t _get_pref_val(duk_context *ctx)
         pValue=PyPickle_ReadObjectFromString((const char*)pickle, pickle_sz);
         push_ptype(ctx, pValue);
         dprintf_pyvar(4, x, pValue, "got pickle val from child, %s\n", x);
+        RP_Py_XDECREF(pValue);
         PYUNLOCK(state);
 
         free(pickle);
@@ -1702,7 +1726,7 @@ static void push_python_function_as_method(duk_context *ctx, const char *attr_fn
     if(!is_child && must_fork)
     {
         duk_push_c_function(ctx, parent_named_call, DUK_VARARGS);
-        put_func_attributes(ctx, NULL, pParent, attr_fname, refstr);
+        put_func_attributes(ctx, NULL, pParent /*is really pRef*/, attr_fname, refstr);
     }
     else
     {
@@ -1711,57 +1735,60 @@ static void push_python_function_as_method(duk_context *ctx, const char *attr_fn
     }
 }
 
+static void put_attributes_from_string(duk_context *ctx, PyObject *pModule, char *s, int is_func);
+
 /* turn a python var into an object which we can use in js */
-#define make_pyval(pValue, strfunc, valfunc, fn, pRef, refstr) do{\
-    PyGILState_STATE state;\
-    char *funcnames="";\
-\
-    if(fn) funcnames=(char*)(fn);\
-\
-    duk_push_object(ctx); /*return value as object */\
-\
-    if(pValue){\
-        duk_push_pointer(ctx, pValue);\
-        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("pvalue"));\
-    }\
-\
-    duk_push_c_function(ctx, pvalue_finalizer, 1);\
-    duk_set_finalizer(ctx, -2);\
-    \
-    if(refstr) {/*push if null pointer also*/\
-        duk_push_pointer(ctx, pRef);\
-        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("pref"));\
-    }\
-    duk_push_c_function(ctx, strfunc, 0);\
-    if(refstr){\
-        dprintf(4,"putting refstr %s on strfunc\n", (char*)refstr);\
-        duk_push_string(ctx, refstr);\
-        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("prefstr"));\
-    }\
-    duk_put_prop_string(ctx, -2, "toString");\
-\
-    duk_push_c_function(ctx, valfunc, 0);\
-    duk_put_prop_string(ctx, -2, "toValue");\
-\
-    duk_push_c_function(ctx, valfunc, 0);\
-    duk_put_prop_string(ctx, -2, "valueOf");\
-\
-    duk_push_int(ctx, (int)get_thread_num() );\
-    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("thrno"));\
-\
-    state=PYLOCK;\
-    if(pRef){\
-        if(strlen(funcnames))\
-            put_attributes_from_string(ctx, pRef, funcnames, 0);\
-    } else {\
-        dprintf_pyvar(4, x, pValue, "in makepyval, put_attributes for %s\n",x);\
-        put_attributes(ctx, pValue);\
-    }\
-\
-    PYUNLOCK(state);\
-\
-    make_proxy(ctx); /* turn return object into a proxy so we can look up more keys */\
-} while(0)
+static inline void make_pyval(duk_context *ctx, PyObject *pValue, duk_c_function strfunc, duk_c_function valfunc, const char*fn, PyObject *pRef, char *refstr)
+{
+    PyGILState_STATE state;
+    char *funcnames="";
+
+    if(fn) funcnames=(char*)(fn);
+
+    duk_push_object(ctx); /*return value as object */
+
+    if(pValue){
+        duk_push_pointer(ctx, pValue);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("pvalue"));
+    }
+
+    duk_push_c_function(ctx, pvalue_finalizer, 1);
+    duk_set_finalizer(ctx, -2);
+
+    if(refstr) {/*push if null pointer also*/
+        duk_push_pointer(ctx, pRef);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("pref"));
+    }
+    duk_push_c_function(ctx, strfunc, 0);
+    if(refstr){
+        dprintf(4,"putting refstr %s on strfunc\n", (char*)refstr);
+        duk_push_string(ctx, refstr);
+        duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("prefstr"));
+    }
+    duk_put_prop_string(ctx, -2, "toString");
+
+    duk_push_c_function(ctx, valfunc, 0);
+    duk_put_prop_string(ctx, -2, "toValue");
+
+    duk_push_c_function(ctx, valfunc, 0);
+    duk_put_prop_string(ctx, -2, "valueOf");
+
+    duk_push_int(ctx, (int)get_thread_num() );
+    duk_put_prop_string(ctx, -2, DUK_HIDDEN_SYMBOL("thrno"));
+
+    state=PYLOCK;
+    if(pRef){
+        if(strlen(funcnames))
+            put_attributes_from_string(ctx, pRef, funcnames, 0);
+    } else {
+        dprintf_pyvar(4, x, pValue, "in makepyval, put_attributes for %s\n",x);
+        put_attributes(ctx, pValue);
+    }
+
+    PYUNLOCK(state);
+
+    make_proxy(ctx); /* turn return object into a proxy so we can look up more keys */
+}
 
 
 #define put_prop_string_on_function(ctx, idx, propname) do{\
@@ -1810,7 +1837,7 @@ static void put_attributes_from_string(duk_context *ctx, PyObject *pModule, char
                 *end='\0';
             // make the value
 
-            make_pyval(NULL, _get_pref_str, _get_pref_val, NULL, pRef, refstr);
+            make_pyval(ctx, NULL, _get_pref_str, _get_pref_val, NULL, pRef, refstr);
 
             // name, length cannot be set as is.  fileName, caller, callee, arguments, prototype can be set as is on c func.
             // https://duktape.org/guide#functionobjects
@@ -1888,6 +1915,7 @@ static int receive_val_and_push(duk_context *ctx, PFI *finfo)
         pValue=PyPickle_ReadObjectFromString((const char*)pickle, pickle_sz);
         push_ptype(ctx, pValue);
         dprintf_pyvar(4, x, pValue, "got pickle val from child, %s\n", x);
+
         PYUNLOCK(state);
 
         free(pickle);
@@ -2161,7 +2189,7 @@ static char *stringify_funcnames(PyObject* pModule)
     }
 
     Py_ssize_t len = PyList_Size(pobj), i=0;
-    PyObject *value=NULL, *pFunc;
+    PyObject *key=NULL, *pAttr;
     char *str=strdup("");
 
     while( i<len )
@@ -2169,8 +2197,8 @@ static char *stringify_funcnames(PyObject* pModule)
         size_t l;
         const char *fname;
 
-        value=PyList_GetItem(pobj, i);
-        fname = PyUnicode_AsUTF8(value);
+        key=PyList_GetItem(pobj, i);
+        fname = PyUnicode_AsUTF8(key);
         l=strlen(fname);
 
         if(l>3 && *fname=='_' && fname[1]=='_' && fname[l-2]=='_' && fname[l-1]=='_')
@@ -2179,54 +2207,61 @@ static char *stringify_funcnames(PyObject* pModule)
             continue;
         }
 
-        pFunc = PyObject_GetAttr(pModule, value);
+        pAttr = PyObject_GetAttr(pModule, key);//new ref
 
         /* inherited funcs in a class come up as null (at least the first time) */
-        dprintf(5,"checking %s - is %s - iscallable:%d\n", PyUnicode_AsUTF8(value), (pFunc? Py_TYPE(pFunc)->tp_name:"pFunc=NULL"), pFunc ? PyCallable_Check(pFunc):0);
-        if(!pFunc)
+        dprintf(5,"checking %s - is %s - iscallable:%d\n", PyUnicode_AsUTF8(key), (pAttr? Py_TYPE(pAttr)->tp_name:"pAttr=NULL"), pAttr ? PyCallable_Check(pAttr):0);
+        if(!pAttr)
         {
             PyObject* pBase = (PyObject*) pModule->ob_type->tp_base;
             if(pBase)
             {
-                pFunc = PyObject_GetAttr(pBase, value);
-                dprintf(4,"Got from base, pFunc=%p\n", pFunc);
+                pAttr = PyObject_GetAttr(pBase, key);
+                dprintf(4,"Got from base, pAttr=%p\n", pAttr);
             }
         }
-        if(pFunc)
+
+        if(pAttr)
         {
             const char *pvs;
             PyObject *pStr;
 
-            pStr=PyObject_Str(pFunc);
+            pStr=PyObject_Str(pAttr);
             if(pStr)
                 pvs = PyUnicode_AsUTF8(pStr);
             else
                 pvs = "(unknown pyfunction)";
 
-            if(PyCallable_Check(pFunc))
+            dprintf(4,"storing %s - is %s - iscallable:%d\n", PyUnicode_AsUTF8(key), (pAttr? Py_TYPE(pAttr)->tp_name:"pAttr=NULL"), pAttr ? PyCallable_Check(pAttr):0);
+            if(PyCallable_Check(pAttr))
             {
-                dprintf(4,"storing %s - is %s - iscallable:%d\n", PyUnicode_AsUTF8(value), (pFunc? Py_TYPE(pFunc)->tp_name:"pFunc=NULL"), pFunc ? PyCallable_Check(pFunc):0);
                 str = strcatdup(str, (char *)fname);
                 snprintf(scratch,1024,"\xfe%s", pvs);
                 str = strcatdup(str, scratch);
                 str = strcatdup(str, "\xfe");
-                dprintf(4,"DECREF, pFunc=%p\n", pFunc);
-                RP_Py_XDECREF(pFunc);
+
+                dprintf(4,"DECREF %s, pAttr=%p\n", PyUnicode_AsUTF8(key), pAttr);
+                RP_Py_XDECREF(pAttr);
             }
-            else if (parent_is_callable)
+            else if (parent_is_callable) //cuz we cannot get pAttr (a pValue) by proxy if parent is a func.
             {
                 str = strcatdup(str, (char *)fname);
-                sprintf(scratch,"\xff%p",pFunc);
+                sprintf(scratch,"\xff%p",pAttr);
                 str = strcatdup(str, scratch);
                 snprintf(scratch,1024,"\xff%s", pvs);
                 str = strcatdup(str, scratch);
                 str = strcatdup(str, "\xff");
-                //pFunc will be run through make_pyval and decreffed by finalizer, so DON'T do it here.
+                // pAttr is actually pValue, and will be run through make_pyval and decreffed 
+                // by finalizer, so DON'T do it here.
             }
+            else
+                RP_Py_XDECREF(pAttr);  //not processing if value and parent is not func.  Use proxy.
+
             RP_Py_XDECREF(pStr);
         }
         i++;
     }
+    RP_Py_XDECREF(pobj);
     PyErr_Clear();
     return str;
 }
@@ -2295,6 +2330,7 @@ static int child_import(PFI *finfo, int type)
         {
             dprintf(4,"in child_import -PyImport_ExecCodeModule(%s, %p)\n",modname, pCode);
             pModule = PyImport_ExecCodeModule(modname, pCode );
+            RP_Py_XDECREF(pCode);
             dprintf(4,"in child_import - pModule = %p\n", pModule);
         }
     }
@@ -2426,6 +2462,8 @@ int child_get_val(PFI* finfo)
         dprintf(4,"bytes sz=%d\n", (int)pickle_sz);
         if(forkwrite(pickle, pickle_sz) == -1)
             return 0;
+
+        RP_Py_XDECREF(pBytes);
     }
     return 1;
 }
@@ -2533,11 +2571,13 @@ static char *parent_read_val(PFI *finfo, duk_idx_t existing_func_idx)
             return strdup(pipe_error);
         }
 
+        // do this before make_pyval, which might trigger finalizers
+        // and disrupt the flow of info over the pipe
+        errmsg=parent_py_call_read_error(finfo);
+        if(!errmsg)
+            return strdup(pipe_error);
         if(!pRef)
         {
-            errmsg=parent_py_call_read_error(finfo);
-            if(!errmsg)
-                return strdup(pipe_error);
             if(strlen(errmsg))
                 duk_push_string(ctx, errmsg);
             else
@@ -2563,18 +2603,17 @@ static char *parent_read_val(PFI *finfo, duk_idx_t existing_func_idx)
             }
 
             put_func_attributes(ctx, NULL, pRef, NULL, refstr);
+            dprintf(5, "putting finalizer on pRef\n");
         }
         else
         {
-            make_pyval(NULL, _get_pref_str, _get_pref_val, funcnames, pRef, refstr);
+            dprintf(5, "make_pyval\n");
+            make_pyval(ctx, NULL, _get_pref_str, _get_pref_val, funcnames, pRef, refstr);
         }
 
         free(refstr);
         free(funcnames);
 
-        errmsg=parent_py_call_read_error(finfo);
-        if(!errmsg)
-            return strdup(pipe_error);
         duk_push_string(ctx, errmsg);
         free(errmsg);
         errmsg=NULL;
@@ -2848,7 +2887,11 @@ static PyObject *py_call_in_child(char *fname, PyObject *pModule, PyObject *pArg
         //goto end;
     }
 
-end:
+    if(PyCallable_Check(pValue)) //same as in make_pyfunc; too many refs
+        Py_XDECREF(pValue);
+        
+    end:
+
     dprintf(4,"end: pValue=%p\n",pValue);
     if(fname)
         RP_Py_XDECREF(pFunc);
@@ -3054,6 +3097,7 @@ static int child_py_call(PFI *finfo)
                  dprintf(4,"Setting %s to %s\n", PyUnicode_AsUTF8(dkey), PyUnicode_AsUTF8(PyObject_Str(pRef)) );
                  if(PyDict_SetItem(kwdict, dkey, pRef))                //put it as a PyObject in kwdict
                      dprintf(4,"Error HERE\n");
+                 RP_Py_XDECREF(dvalue);
             }
         }
 
@@ -3069,8 +3113,9 @@ static int child_py_call(PFI *finfo)
                  dprintf_pyvar(4,x,pRef,"Got a ref in args, pRef=%p %s\n", pRef, x);
                  dcheckvar(4,pRef);
                  PyTuple_SetItem(pArgs, i, pRef);
-                 Py_XINCREF(pRef);
+                 //Py_XINCREF(pRef);
                  //RP_Py_XDECREF(pLong); -- this is bad.
+                 RP_Py_XDECREF(value);
             }
             i++;
         }
@@ -3078,7 +3123,8 @@ static int child_py_call(PFI *finfo)
     }
 
     pRes=py_call_in_child(fname, pModule, pArgs, kwdict, &errmsg);
-    free(fname);
+    if(fname)
+        free(fname);
 
     ret = child_write_var(finfo, pRes, errmsg);
 
@@ -3162,7 +3208,6 @@ static int child_get(PFI *finfo, int using_index)
         if(forkread(key, sz) == -1)
             return 0;
 
-        dprintf(4,"looking for %s in child\n", key);
         pValue = PyObject_GetAttrString(parentValue, key);
         if(!pValue)
             PyErr_Clear();
@@ -3174,13 +3219,13 @@ static int child_get(PFI *finfo, int using_index)
             if(pValue)
             {
                 Py_INCREF(pValue); // most confusingly, does not provide new reference like PyObject_GetAttrString
-                dprintf(4,"NEW ref for %p\n", pValue);
+                dprintf(4,"NEW ref %p for %s\n", pValue,key);
             }
             else
                 PyErr_Clear();
         }
-    }
 
+    }
     ret = child_write_var(finfo, pValue, NULL);
 
     if(key)
@@ -3199,8 +3244,8 @@ static void do_fork_loop(PFI *finfo)
         char command='\0';
         int ret = 0;
 
-        if( kill(parent_pid,0) )
-            exit(0);
+        //if( kill(parent_pid,0) )
+        //    exit(0);
 
         ret = forkread(&command, sizeof(char));
         if (ret == 0)
@@ -3212,7 +3257,7 @@ static void do_fork_loop(PFI *finfo)
         }
 
         // commands:
-        //   py_call   p
+        //   py_call          p
         //   importString     s
         //   import           i
         //   finalizer        f
@@ -3378,21 +3423,6 @@ static PFI *check_fork()
             dprintf(4,"executing %s -c %s\n", rampart_exec, script);
 
             execl(rampart_exec, rampart_exec, "-c", script, NULL);
-
-            /*
-            // while it would nicer to fork and then do_fork_loop(), python really really
-            // doesn't like to be forked, hates being forked from a thread, and
-            // especially despises being forked from a thread that didn't call Py_Initialize()
-            finfo->writer = child2par[1];
-            finfo->reader = par2child[0];
-
-            libevent_global_shutdown();
-
-            signal(SIGINT, SIG_DFL);
-            signal(SIGTERM, SIG_DFL);
-
-            do_fork_loop(finfo); // loop and never come back;
-            */
         }
         else
         {
@@ -3605,7 +3635,7 @@ static void put_attributes(duk_context *ctx, PyObject *pValue)
             {
                 dprintf(4,"make_pyval, name=%s\n", fname);
 
-                make_pyval(pProp, _p_to_string, _p_to_value, NULL, NULL, NULL);
+                make_pyval(ctx, pProp, _p_to_string, _p_to_value, NULL, NULL, NULL);
                 // cannot directly set property "name" or "length" on a function in duktape JS
                 put_prop_string_on_function(ctx, -2, fname);
                 //pProp will be xdecreffed by finalizer.
@@ -3720,7 +3750,7 @@ static void get_pyval_and_push(duk_context *ctx, duk_idx_t idx, const char *key,
     }
     dprintf_pyvar(4,x,pValue,"found %s\n", x);
 
-    make_pyval(pValue, _p_to_string, _p_to_value, NULL, NULL, NULL);
+    make_pyval(ctx, pValue, _p_to_string, _p_to_value, NULL, NULL, NULL);
 
     // in order for finalizer to be run on this, it needs to be properly in the object (not by proxy).
     // so just store a ref to the val indexed by its pointer.  When object is destroyed
@@ -3799,6 +3829,7 @@ static void make_pyfunc(duk_context *ctx, PyObject *pFunc)
 
     state=PYLOCK;
     put_attributes(ctx, pFunc);
+    RP_Py_XDECREF(pFunc);  //it has too many because it exists in script as well.
     PYUNLOCK(state);
 }
 
@@ -3969,14 +4000,17 @@ static duk_ret_t _py_call(duk_context *ctx, int is_method)
     if(PyCallable_Check(pValue))
         make_pyfunc(ctx, pValue);
     else
-        make_pyval(pValue, _p_to_string, _p_to_value, NULL, NULL, NULL);
+        make_pyval(ctx, pValue, _p_to_string, _p_to_value, NULL, NULL, NULL);
 
     state=PYLOCK;
 
     end:  //if goto, we never unlocked
 
+    // this callable pFunc was retrieved by key (fname) above in PyObject_GetAttrString
+    // so we will let it go here too.
     if(is_method)
         RP_Py_XDECREF(pFunc);
+
     RP_Py_XDECREF(pArgs);
     if(err)
     {
@@ -4191,12 +4225,15 @@ static duk_ret_t RP_PimportFile (duk_context * ctx)
 {
     return _import(ctx, 2);
 }
+void sigh(int sig)
+{
+    exit(0);
+}
 
 
 static duk_ret_t fork_helper(duk_context *ctx)
 {
     PFI *finfo=&finfo_d;
-
 
     setproctitle("rampart py_helper");
 
@@ -4216,7 +4253,7 @@ static duk_ret_t fork_helper(duk_context *ctx)
     parent_pid=getppid();
 
     signal(SIGINT, SIG_DFL);
-    signal(SIGTERM, SIG_DFL);
+    signal(SIGTERM,sigh);
 
     do_fork_loop(finfo); // loop and never come back;
 
