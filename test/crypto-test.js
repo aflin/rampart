@@ -712,7 +712,7 @@ var TESTS = [
     } catch (exception) {
       isInvalid=1;
     }
-    testFeature(`BigInt invalid string`, isInvalid);
+    testFeature(`BigInt invalid string ${i+1}`, isInvalid);
   }
 })();
 
