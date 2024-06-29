@@ -316,10 +316,9 @@ void rp_jsev_doevent(evutil_socket_t fd, short events, void* arg)
             if (duk_is_error(ctx, -1) )\
             {\
                 duk_get_prop_string(ctx, -1, "stack");\
-                printf("Error in event callback: %s\n", duk_get_string(ctx, -1));\
-                /* why won't throw work?  It seems to be in the middle of a throw anyway.\
-                   but I thought that was the point of duk_pcall */\
-                RP_THROW(ctx, duk_safe_to_string(ctx, -1));\
+                fprintf(stderr, "Error in event callback: %s\n", duk_get_string(ctx, -1));\
+                /* throw will never work from within an event.  Best we can do is print the err */\
+                /*RP_THROW(ctx, duk_safe_to_string(ctx, -1));*/\
                 duk_pop(ctx);\
             }\
             else if (duk_is_string(ctx, -1))\
