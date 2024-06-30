@@ -139,6 +139,45 @@ x=5.5
         return sqlite_insert();
     });
 
+    var cscr = `
+def concat(*args):
+  ret=""
+  for arg in args:
+    ret+=arg
+
+  return ret
+
+def upper(a):
+  return a.upper()
+
+def concatkw(**kwargs):
+    ret="";
+    for key, value in kwargs.items():
+        ret+=value
+    return ret
+`;
+    var ps = python.importString(cscr);
+
+    testFeature(`python - ${inthr}python to python variables`, function(){
+        var ps = python.importString(cscr);
+        var as = ps.upper("aaaa");
+        var bs = ps.upper("bbbb");
+        var cs = ps.upper("cccc");
+        //as, bs & cs hold reference pointers to python strings
+        var res = ps.concat(as,bs,cs);
+        return res.toValue() == "AAAABBBBCCCC";
+    });
+
+    testFeature(`python - ${inthr}python to python keyword args`, function(){
+        var ps = python.importString(cscr);
+        var as = ps.upper("aaaa");
+        var bs = ps.upper("bbbb");
+        var cs = ps.upper("cccc");
+        //as, bs & cs hold reference pointers to python strings
+        var res = ps.concatkw({ pyArgs:{as:as,bs:bs,cs:cs} });
+        return res.toValue() == "AAAABBBBCCCC";
+    });
+
     var scr=`
 x=20
 

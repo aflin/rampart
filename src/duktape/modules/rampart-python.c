@@ -2732,29 +2732,27 @@ static char *parent_py_call(PyObject * pModule, const char *fname)
         while (i<top)
         {
             // check if this is a variable returned from this function, with hidden pyobject in it.
+            /*
             if( duk_is_object(ctx,i) &&
                 duk_has_prop_string(ctx, i, DUK_HIDDEN_SYMBOL("pvalue"))
             )
             {
-                duk_get_prop_string(ctx, i, DUK_HIDDEN_SYMBOL("pvalue"));
-                pValue=(PyObject *)duk_get_pointer(ctx, -1);
-                // pytuple_setitem steals reference.  We have to increase to keep it
-                Py_XINCREF(pValue);
-                duk_pop(ctx);
+                //this is actually caught in _py_call and as such is unnecessary
+                RP_THROW(ctx, "Cannot use a python variable from another thread");
             }
+            else   */
+
             // check if this is a reference to a pyobject stored in child proc
-            else if( duk_is_object(ctx,i) &&
+            if( duk_is_object(ctx,i) &&
                 duk_has_prop_string(ctx, i, DUK_HIDDEN_SYMBOL("pref"))
             )
             {
                 //store it as a long in a dictionary
                 void *refptr = NULL;
-
                 parent_fix_pval(ctx, -1);
                 duk_get_prop_string(ctx, i, DUK_HIDDEN_SYMBOL("pref"));
                 refptr = duk_get_pointer(ctx, -1);
                 duk_pop(ctx);
-
                 REMALLOC(pPtrs, sizeof(PyObject *) * (npPtrs + 1));
                 pPtrs[npPtrs] = PyLong_FromVoidPtr(refptr);
                 pValue = PyDict_New();
@@ -3113,9 +3111,9 @@ static int child_py_call(PFI *finfo)
                  dprintf_pyvar(4,x,pRef,"Got a ref in args, pRef=%p %s\n", pRef, x);
                  dcheckvar(4,pRef);
                  PyTuple_SetItem(pArgs, i, pRef);
-                 //Py_XINCREF(pRef);
+                 Py_XINCREF(pRef);    // -- this is good.
                  //RP_Py_XDECREF(pLong); -- this is bad.
-                 RP_Py_XDECREF(value);
+                 RP_Py_XDECREF(value);// -- this is ugly?
             }
             i++;
         }
@@ -3927,13 +3925,6 @@ static duk_ret_t _py_call(duk_context *ctx, int is_method)
                     duk_has_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pvalue"))
                 )
                 {
-                    /*
-                    duk_get_prop_string(ctx, -1, DUK_HIDDEN_SYMBOL("pvalue"));
-                    val=(PyObject *)duk_get_pointer(ctx, -1);
-                    // pydict_setitem DOES NOT steal a reference. Go Figure.
-                    // so dont do: Py_XINCREF(pValue);
-                    duk_pop(ctx);
-                    */
                     val=get_pval(-1,0);
                 }
                 else
@@ -3967,7 +3958,7 @@ static duk_ret_t _py_call(duk_context *ctx, int is_method)
         {
             //duk_get_prop_string(ctx, i, DUK_HIDDEN_SYMBOL("pvalue"));
             //pValue=(PyObject *)duk_get_pointer(ctx, -1);
-            pValue=get_pval(-1,0);
+            pValue=get_pval(i,0);
             // pytuple_setitem steals reference.  We have to increase to keep it
             Py_XINCREF(pValue);
         }
