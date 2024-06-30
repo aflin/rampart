@@ -54,8 +54,8 @@ pthread_mutex_t pflock_err;
 FILE *access_fh;
 FILE *error_fh;
 int duk_rp_server_logging=0;
-int rp_print_simplified_errors=1;
-int rp_print_error_lines=3;
+int rp_print_simplified_errors=0;
+int rp_print_error_lines=0;
 
 #ifdef __APPLE__
 
@@ -143,6 +143,8 @@ duk_ret_t rp_get_line(duk_context *ctx, const char *filename, int line_number, i
                 duk_put_prop_index(ctx, -2, alen++);
             free(line);
             line=NULL;
+            if(!nlines)
+                return 1;
         }
 
         if (current_line == end )
@@ -263,10 +265,9 @@ rp_stack *parse_stack_string_lines(rp_stack *stack, const char *s)
             }
             else //success
                 fl=s-f;
-
             nl=0;
         }
-        else if(*s)
+        else
         {
             switch(*s)
             {
@@ -297,7 +298,9 @@ rp_stack *parse_stack_string_lines(rp_stack *stack, const char *s)
                             s=(const char*)p;
                             s++;
                         }
-                        while(*s!=' ') s++;
+                        while(*s && *s!=' ' && *s!='\n') s++;
+                        if(*s=='\n')
+                            continue;
                         s++;
                         t=0;
                         p=(char*)s;
@@ -315,7 +318,6 @@ rp_stack *parse_stack_string_lines(rp_stack *stack, const char *s)
                         }
                         else
                             t=-1;
-
                     }
                     break;
                 case '\0':
@@ -357,7 +359,6 @@ rp_stack *parse_stack_string_lines(rp_stack *stack, const char *s)
                         e->is_c=1;
                     else
                         e->is_c=0;
-
                     e->filename=(char*)fn;
                     if(fl==-1)
                         e->funcname=(char*)f;
@@ -371,8 +372,7 @@ rp_stack *parse_stack_string_lines(rp_stack *stack, const char *s)
                 }
             }
         }
-        else
-            break;
+
         if(nl == -1)
             break;
         s++;
@@ -438,7 +438,7 @@ static rp_stack *parse_stack_string(const char *s, const char *msg)
 // main function that takes an error object and gives a newly formatted string
 // if lines == 0, no text from file is printed.
 // if rampart.utils.errorConfig({lines:0, simple:false}); -
-//    then just return the duktape version of "stack", prepended with message, if not NULL
+//    then just return the duktape version of "stack"
 static void rp_push_formatted_error(duk_context *ctx, duk_idx_t eidx, int nlines)
 {
     const char *fn=NULL;
