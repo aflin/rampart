@@ -3970,7 +3970,6 @@ static duk_ret_t _py_call(duk_context *ctx, int is_method)
             pValue=get_pval(-1,0);
             // pytuple_setitem steals reference.  We have to increase to keep it
             Py_XINCREF(pValue);
-            duk_pop(ctx);
         }
         else
             pValue=type_to_pytype(ctx, i);
