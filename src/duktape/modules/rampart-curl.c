@@ -19,6 +19,8 @@
 #include "curl_config.h"
 #include "rampart.h"
 
+static char *ca_bundle=NULL;
+
 typedef uint8_t byte;
 
 #define RETTXT struct curl_resStr
@@ -1903,7 +1905,7 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CURLREQ *req)
     CSOS *sopts = req->sopts;
     CURL_OPTS opts;
     CURL_OPTS *ores, *opts_p = &opts;
-    int funcerr = 0;
+    int funcerr = 0, got_cert_opt=0;
     char op[64];
 
     duk_enum(ctx, (duk_idx_t)idx, DUK_ENUM_SORT_ARRAY_INDICES);
@@ -1977,6 +1979,10 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CURLREQ *req)
             continue;
         }
 
+        // check if we are overriding cacert or capath
+        if( !strcmp(op,"cacert") || !strcmp(op,"capath"))
+            got_cert_opt=1;
+
         /* find the option in the list of available options */
         opts.optionName = (char *)op;
         ores = bsearch(opts_p, curl_options, nCurlOpts, sizeof(CURL_OPTS), compare_copts);
@@ -1996,6 +2002,11 @@ void duk_curl_setopts(duk_context *ctx, CURL *curl, int idx, CURLREQ *req)
         duk_pop_2(ctx);
     }
     duk_pop(ctx);
+
+    /* if we have an alternate loc for cacert */
+    if(ca_bundle && !got_cert_opt)
+        curl_easy_setopt(curl, CURLOPT_CAINFO, ca_bundle);
+
 }
 
 static void clean_req(CURLREQ *req)
@@ -2188,6 +2199,8 @@ CURLREQ *new_request(char *url, CURLREQ *cloner, duk_context *ctx, duk_idx_t opt
 
         if (options_idx > -1)
             duk_curl_setopts(ctx, req->curl, options_idx, req);
+        else if(ca_bundle) //set the alternate cacert path here if duk_curl_setopts is not called
+            curl_easy_setopt(req->curl, CURLOPT_CAINFO, ca_bundle);
 
         /* set the url, which may have been altered in duk_curl_setopts to include a query string */
         curl_easy_setopt(req->curl, CURLOPT_URL, req->url);
@@ -2893,11 +2906,50 @@ static const duk_function_list_entry curl_funcs[] = {
 static const duk_number_list_entry curl_consts[] = {
     {NULL, 0.0}};
 
+
+static char *ca_bundle_locs[]={
+    "/etc/ssl/certs/ca-certificates.crt",
+    "/etc/pki/tls/certs/ca-bundle.crt",
+    "/usr/share/ssl/certs/ca-bundle.crt",
+    "/usr/local/share/certs/ca-root-nss.crt",
+    "/etc/ssl/cert.pem",
+    NULL
+};
+
+
+static void find_bundle()
+{
+    char **cur=ca_bundle_locs;
+
+    // if the default is there, all is good
+    if(access(CURL_CA_BUNDLE, R_OK)== 0)
+        return;
+
+    //else if we find one somewhere else, set char *ca_bundle to it
+    while(cur)
+    {
+        if (access(*cur, R_OK) == 0)
+        {
+            ca_bundle=*cur;
+            return;
+        }
+        cur++;
+    }
+}
+
 duk_ret_t duk_open_module(duk_context *ctx)
 {
+
+    find_bundle();
+
     duk_push_object(ctx);
+
     duk_push_string(ctx, "default_ca_file");
-    duk_push_string(ctx,CURL_CA_BUNDLE);
+    if(ca_bundle)
+        duk_push_string(ctx, ca_bundle);
+    else
+        duk_push_string(ctx, CURL_CA_BUNDLE);
+
     duk_def_prop(ctx, -3, DUK_DEFPROP_HAVE_VALUE |DUK_DEFPROP_CLEAR_WEC);
     duk_put_function_list(ctx, -1, curl_funcs);
     duk_put_number_list(ctx, -1, curl_consts);
