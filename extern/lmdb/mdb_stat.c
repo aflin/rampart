@@ -16,24 +16,28 @@
 #include <string.h>
 #include <unistd.h>
 #include "lmdb.h"
-#include "module.h"
 
-#define Z	MDB_FMT_Z
-#define Yu	MDB_PRIy(u)
+#ifdef	_WIN32
+#define	Z	"I"
+#else
+#define	Z	"z"
+#endif
 
 static void prstat(MDB_stat *ms)
 {
+#if 0
 	printf("  Page size: %u\n", ms->ms_psize);
+#endif
 	printf("  Tree depth: %u\n", ms->ms_depth);
-	printf("  Branch pages: %"Yu"\n",   ms->ms_branch_pages);
-	printf("  Leaf pages: %"Yu"\n",     ms->ms_leaf_pages);
-	printf("  Overflow pages: %"Yu"\n", ms->ms_overflow_pages);
-	printf("  Entries: %"Yu"\n",        ms->ms_entries);
+	printf("  Branch pages: %"Z"u\n", ms->ms_branch_pages);
+	printf("  Leaf pages: %"Z"u\n", ms->ms_leaf_pages);
+	printf("  Overflow pages: %"Z"u\n", ms->ms_overflow_pages);
+	printf("  Entries: %"Z"u\n", ms->ms_entries);
 }
 
 static void usage(char *prog)
 {
-	fprintf(stderr, "usage: %s [-V] [-n] [-e] [-r[r]] [-f[f[f]]] [-v] [-m module [-w password]] [-a|-s subdb] dbpath\n", prog);
+	fprintf(stderr, "usage: %s [-V] [-n] [-e] [-r[r]] [-f[f[f]]] [-a|-s subdb] dbpath\n", prog);
 	exit(EXIT_FAILURE);
 }
 
@@ -49,8 +53,6 @@ int main(int argc, char *argv[])
 	char *envname;
 	char *subname = NULL;
 	int alldbs = 0, envinfo = 0, envflags = 0, freinfo = 0, rdrinfo = 0;
-	char *module = NULL, *password = NULL, *errmsg;
-	void *mlm = NULL;
 
 	if (argc < 2) {
 		usage(prog);
@@ -62,11 +64,10 @@ int main(int argc, char *argv[])
 	 * -f: print freelist info
 	 * -r: print reader info
 	 * -n: use NOSUBDIR flag on env_open
-	 * -v: use previous snapshot
 	 * -V: print version and exit
 	 * (default) print stat of only the main DB
 	 */
-	while ((i = getopt(argc, argv, "Vaefm:nrs:vw:")) != EOF) {
+	while ((i = getopt(argc, argv, "Vaefnrs:")) != EOF) {
 		switch(i) {
 		case 'V':
 			printf("%s\n", MDB_VERSION_STRING);
@@ -86,9 +87,6 @@ int main(int argc, char *argv[])
 		case 'n':
 			envflags |= MDB_NOSUBDIR;
 			break;
-		case 'v':
-			envflags |= MDB_PREVSNAPSHOT;
-			break;
 		case 'r':
 			rdrinfo++;
 			break;
@@ -96,12 +94,6 @@ int main(int argc, char *argv[])
 			if (alldbs)
 				usage(prog);
 			subname = optarg;
-			break;
-		case 'm':
-			module = optarg;
-			break;
-		case 'w':
-			password = optarg;
 			break;
 		default:
 			usage(prog);
@@ -116,14 +108,6 @@ int main(int argc, char *argv[])
 	if (rc) {
 		fprintf(stderr, "mdb_env_create failed, error %d %s\n", rc, mdb_strerror(rc));
 		return EXIT_FAILURE;
-	}
-
-	if (module) {
-		mlm = mlm_setup(env, module, password, &errmsg);
-		if (!mlm) {
-			fprintf(stderr, "Failed to load crypto module: %s\n", errmsg);
-			goto env_close;
-		}
 	}
 
 	if (alldbs || subname) {
@@ -141,11 +125,11 @@ int main(int argc, char *argv[])
 		(void)mdb_env_info(env, &mei);
 		printf("Environment Info\n");
 		printf("  Map address: %p\n", mei.me_mapaddr);
-		printf("  Map size: %"Yu"\n", mei.me_mapsize);
+		printf("  Map size: %"Z"u\n", mei.me_mapsize);
 		printf("  Page size: %u\n", mst.ms_psize);
-		printf("  Max pages: %"Yu"\n", mei.me_mapsize / mst.ms_psize);
-		printf("  Number of pages used: %"Yu"\n", mei.me_last_pgno+1);
-		printf("  Last transaction ID: %"Yu"\n", mei.me_last_txnid);
+		printf("  Max pages: %"Z"u\n", mei.me_mapsize / mst.ms_psize);
+		printf("  Number of pages used: %"Z"u\n", mei.me_last_pgno+1);
+		printf("  Last transaction ID: %"Z"u\n", mei.me_last_txnid);
 		printf("  Max readers: %u\n", mei.me_maxreaders);
 		printf("  Number of readers used: %u\n", mei.me_numreaders);
 	}
@@ -172,7 +156,7 @@ int main(int argc, char *argv[])
 	if (freinfo) {
 		MDB_cursor *cursor;
 		MDB_val key, data;
-		mdb_size_t pages = 0, *iptr;
+		size_t pages = 0, *iptr;
 
 		printf("Freelist Status\n");
 		dbi = 0;
@@ -192,7 +176,7 @@ int main(int argc, char *argv[])
 			pages += *iptr;
 			if (freinfo > 1) {
 				char *bad = "";
-				mdb_size_t pg, prev;
+				size_t pg, prev;
 				ssize_t i, j, span = 0;
 				j = *iptr++;
 				for (i = j, prev = 1; --i >= 0; ) {
@@ -203,25 +187,25 @@ int main(int argc, char *argv[])
 					pg += span;
 					for (; i >= span && iptr[i-span] == pg; span++, pg++) ;
 				}
-				printf("    Transaction %"Yu", %"Z"d pages, maxspan %"Z"d%s\n",
-					*(mdb_size_t *)key.mv_data, j, span, bad);
+				printf("    Transaction %"Z"u, %"Z"d pages, maxspan %"Z"d%s\n",
+					*(size_t *)key.mv_data, j, span, bad);
 				if (freinfo > 2) {
 					for (--j; j >= 0; ) {
 						pg = iptr[j];
 						for (span=1; --j >= 0 && iptr[j] == pg+span; span++) ;
-						printf(span>1 ? "     %9"Yu"[%"Z"d]\n" : "     %9"Yu"\n",
+						printf(span>1 ? "     %9"Z"u[%"Z"d]\n" : "     %9"Z"u\n",
 							pg, span);
 					}
 				}
 			}
 		}
 		mdb_cursor_close(cursor);
-		printf("  Free pages: %"Yu"\n", pages);
+		printf("  Free pages: %"Z"u\n", pages);
 	}
 
-	rc = mdb_dbi_open(txn, subname, 0, &dbi);
+	rc = mdb_open(txn, subname, 0, &dbi);
 	if (rc) {
-		fprintf(stderr, "mdb_dbi_open failed, error %d %s\n", rc, mdb_strerror(rc));
+		fprintf(stderr, "mdb_open failed, error %d %s\n", rc, mdb_strerror(rc));
 		goto txn_abort;
 	}
 
@@ -243,12 +227,17 @@ int main(int argc, char *argv[])
 			goto txn_abort;
 		}
 		while ((rc = mdb_cursor_get(cursor, &key, NULL, MDB_NEXT_NODUP)) == 0) {
+			char *str;
 			MDB_dbi db2;
-			if (!mdb_cursor_is_db(cursor))
+			if (memchr(key.mv_data, '\0', key.mv_size))
 				continue;
-			rc = mdb_dbi_open(txn, key.mv_data, 0, &db2);
+			str = malloc(key.mv_size+1);
+			memcpy(str, key.mv_data, key.mv_size);
+			str[key.mv_size] = '\0';
+			rc = mdb_open(txn, str, 0, &db2);
 			if (rc == MDB_SUCCESS)
-				printf("Status of %s\n", (char *)key.mv_data);
+				printf("Status of %s\n", str);
+			free(str);
 			if (rc) continue;
 			rc = mdb_stat(txn, db2, &mst);
 			if (rc) {
@@ -256,7 +245,7 @@ int main(int argc, char *argv[])
 				goto txn_abort;
 			}
 			prstat(&mst);
-			mdb_dbi_close(env, db2);
+			mdb_close(env, db2);
 		}
 		mdb_cursor_close(cursor);
 	}
@@ -264,13 +253,11 @@ int main(int argc, char *argv[])
 	if (rc == MDB_NOTFOUND)
 		rc = MDB_SUCCESS;
 
-	mdb_dbi_close(env, dbi);
+	mdb_close(env, dbi);
 txn_abort:
 	mdb_txn_abort(txn);
 env_close:
 	mdb_env_close(env);
-	if (mlm)
-		mlm_unload(mlm);
 
 	return rc ? EXIT_FAILURE : EXIT_SUCCESS;
 }

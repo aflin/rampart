@@ -195,19 +195,24 @@ target_link_libraries(rampart-lmdb
 
 add_custom_command(
 	OUTPUT ${PROJECT_BINARY_DIR}/extern/lmdb/liblmdb.a
-	COMMAND make CFLAGS=${CMAKE_C_FLAGS} LDFLAGS=${CMAKE_C_FLAGS}
-	COMMAND mkdir -p ${PROJECT_BINARY_DIR}/extern/lmdb
-	COMMAND find './' -type f  -perm 0755 -exec mv {} "${PROJECT_BINARY_DIR}/extern/lmdb" "\;"
-	COMMAND mv liblmdb.a ${PROJECT_BINARY_DIR}/extern/lmdb/
-	COMMAND make clean
-	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/extern/lmdb/
+	COMMAND make XCFLAGS=-fPIC
+	WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/extern/lmdb/
 )
 
 add_custom_target(liblmdb
 	DEPENDS ${PROJECT_BINARY_DIR}/extern/lmdb/liblmdb.a
 )
 
+add_custom_command(
+	OUTPUT ${PROJECT_BINARY_DIR}/extern/lmdb/
+	COMMAND cp -a ${PROJECT_SOURCE_DIR}/extern/lmdb ${PROJECT_BINARY_DIR}/extern/
+)
 
+add_custom_target(lmdb_dir
+	DEPENDS ${PROJECT_BINARY_DIR}/extern/lmdb/
+)
+
+add_dependencies(liblmdb lmdb_dir)
 add_dependencies(rampart-lmdb liblmdb)
 
 ###SQL###
@@ -397,7 +402,7 @@ add_library(rampart-curl SHARED
 target_link_libraries(rampart-curl PRIVATE
 	${CURL_TARGET_DIR}/lib/libcurl.a
 	rampart-crypto
-	ldap z
+	z
 )
 target_include_directories(rampart-curl PRIVATE
 	${PROJECT_SOURCE_DIR}/extern/curl/include/
