@@ -543,6 +543,7 @@ void rpthr_copy(duk_context *ctx, duk_context *tctx, duk_idx_t idx);
 
 /* func from rampart-utils.c */
 extern void duk_misc_init(duk_context *ctx);
+extern char *rp_ca_bundle;
 
 /* query string processing */
 #define ARRAYREPEAT 0

@@ -5137,8 +5137,43 @@ static duk_ret_t proxyload(duk_context *ctx)
     return _proxyget(ctx, 1);
 }
 
+char *rp_ca_bundle=NULL;
+
+static char *ca_bundle_locs[]={
+    "/etc/ssl/certs/ca-certificates.crt",
+    "/etc/pki/tls/certs/ca-bundle.crt",
+    "/usr/share/ssl/certs/ca-bundle.crt",
+    "/usr/local/share/certs/ca-root-nss.crt",
+    "/etc/ssl/cert.pem",
+    NULL
+};
+
+
+static void find_bundle()
+{
+    char **cur=ca_bundle_locs;
+
+    // if the default is there, all is good
+    //if(access(CURL_CA_BUNDLE, R_OK)== 0)
+    //    return;
+
+    //else if we find one somewhere else, set char *ca_bundle to it
+    while(cur)
+    {
+        if (access(*cur, R_OK) == 0)
+        {
+            rp_ca_bundle=*cur;
+            return;
+        }
+        cur++;
+    }
+}
+
+
 void duk_rampart_init(duk_context *ctx)
 {
+    find_bundle();
+
     if (!duk_get_global_string(ctx, "rampart"))
     {
         duk_pop(ctx);
@@ -8023,6 +8058,8 @@ static duk_ret_t print_simplified_err(duk_context *ctx)
     }
     return 0;
 }
+
+
 
 void duk_printf_init(duk_context *ctx)
 {
